@@ -18,7 +18,7 @@ sqlx-postgres = ["dep:sqlx"]
 axum.workspace = true
 baukit-openapi.workspace = true
 baukit-ops.workspace = true
-jsonwebtoken = { workspace = true, features = ["rust_crypto"] }
+jsonwebtoken.workspace = true
 regex.workspace = true
 reqwest.workspace = true
 serde.workspace = true

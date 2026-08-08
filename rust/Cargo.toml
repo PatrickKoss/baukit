@@ -28,7 +28,7 @@ baukit-telemetry = { version = "=0.1.0", path = "crates/baukit-telemetry" }
 chrono = { version = "=0.4.45", features = ["serde"] }
 config = "=0.15.25"
 dotenvy = "=0.15.7"
-jsonwebtoken = "=11.0.0"
+jsonwebtoken = { version = "=11.0.0", default-features = false, features = ["aws_lc_rs", "use_pem"] }
 metrics = "=0.24.6"
 metrics-exporter-prometheus = "=0.18.3"
 metrics-util = "=0.20.4"
