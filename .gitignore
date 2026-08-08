@@ -22,3 +22,4 @@ coverage/
 # Tool output
 .cache/
 *.log
+**/__pycache__/**

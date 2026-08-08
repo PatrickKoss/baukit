@@ -77,24 +77,24 @@ Order: 6a chart + observability (parallel) → 6b release engineering + CLI/back
 - [x] `baukit-runtime`: staggered shutdown — ops listener outlives the API during drain (opt-in)
 - [x] `baukit-ops`: diagnostic (non-gating) readiness checks alongside gating ones
 - [x] analytics: optional `clearPending` transport hook; PostHog adapters purge persisted SDK queues on consent denial
-- [ ] Push, CI green, cut first release-train tag `baukit-v0.1.0`
+- [x] Push, CI green, cut first release-train tag `baukit-v0.1.0` (commit 0e1ff79, CI run 31256851784 green, tag pushed)
 
 ## Focus B: integrate into Fitness Tracker (after Focus A core)
 
 Detailed integration map from the read-only scout (2026-08-08): FT is already on baukit's pinned versions (Axum 0.8.9, SQLx 0.9, OTel 0.32, Utoipa 5.5) — this is a contract migration. Waves per scout plan: B0 config/dependency bridge → B1 (runtime+telemetry+ops | HTTP errors+OpenAPI | analytics core) → B2 (domain metrics | consumers app/MCP | deploy/CI/dashboards) → B3 conformance gate.
 
-- [ ] B0: tagged baukit deps, `BaukitConfig<ProductConfig>` with legacy env aliases, `Secret<T>` adoption, single config load, rust-version 1.95
-- [ ] B1a: runtime/telemetry/ops — TelemetryBuilder, OpsRouter with diagnostic JWKS check, staggered drain, worker+migrate+seed process identity
-- [ ] B1b: HTTP errors/OpenAPI — baukit-http finalize, standard envelope (MCP dual-shape parser first), 404/405/extractor normalization, deterministic `backend/openapi.json`
-- [ ] B1c: analytics — @baukit/analytics-core with per-device tri-state consent, alias-once, scrub union, PostHog ≥4.62, queue clearing
-- [ ] B2a: product metric prefix `fittrack_`, DB acquire instrumentation, worker job metrics
-- [ ] B2b: consumers — app/MCP regenerated types, dual-shape error parsing removal plan, docs/AGENT_API.md
-- [ ] B2c: deploy/CI — release-job migrations, probes to ops listener, dashboards/Alloy `service` label, private git-dep auth, MSRV job
-- [ ] B3: integrated conformance gate — baukit-test suites + full backend/app/MCP/E2E verification
+- [x] B0: tagged baukit deps, `BaukitConfig<ProductConfig>` with legacy env aliases, `Secret<T>` adoption, single config load, rust-version 1.95
+- [x] B1a: runtime/telemetry/ops — TelemetryBuilder, OpsRouter with diagnostic JWKS check, staggered drain, worker+migrate+seed process identity
+- [x] B1b: HTTP errors/OpenAPI — baukit-http finalize, standard envelope (MCP dual-shape parser first), 404/405/extractor normalization, deterministic `backend/openapi.json`
+- [x] B1c: analytics — @baukit/analytics-core with per-device tri-state consent, alias-once, scrub union, PostHog ≥4.62, queue clearing
+- [x] B2a: product metric prefix `fittrack_`, DB acquire instrumentation, worker job metrics
+- [x] B2b: consumers — app/MCP regenerated types, dual-shape error parsing removal plan, docs/AGENT_API.md
+- [x] B2c: deploy/CI — release-job migrations, probes to ops listener, dashboards/Alloy `service` label, private git-dep auth, MSRV job
+- [x] B3: integrated conformance gate — baukit-test suites + full backend/app/MCP/E2E verification
 
-- [ ] Adopt telemetry spec: duration metric plural → singular, log label `service_name` → `service` (covered by B1a/B2c)
-- [ ] Replace bespoke ops/telemetry/HTTP-metrics code with baukit crates (git deps pinned to tags) (covered by B0/B1a)
-- [ ] Adopt `@baukit/analytics-core` keeping existing consent/scrubbing behavior (covered by B1c)
+- [x] Adopt telemetry spec: duration metric plural → singular, log label `service_name` → `service` (covered by B1a/B2c)
+- [x] Replace bespoke ops/telemetry/HTTP-metrics code with baukit crates (git deps pinned to tags) (covered by B0/B1a)
+- [x] Adopt `@baukit/analytics-core` keeping existing consent/scrubbing behavior (covered by B1c)
 
 ## Focus C: integrate into OpenDialog (after Focus A core)
 
@@ -129,3 +129,4 @@ Detailed integration map from the read-only scout (2026-08-08): FT is already on
 - 2026-08-08: Focus A verification complete (orchestrator) — Rust workspace, example, CLI, TS turbo, lints, coherence, and a fresh combined fixture all green; committing and pushing.
 - 2026-08-08: CI green on main (codex) — removed vulnerable RSA, allowed permissive licenses, and made pnpm's age gate reproducible.
 - 2026-08-08: platform gaps closed (codex) — staggered drain, diagnostic readiness, and provider queue purging added.
+- 2026-08-08: Focus B complete (orchestrator) — Fitness Tracker fully migrated onto baukit on branch baukit-migration (5 commits, B0-B3), all gates green with Docker tests mandatory.
