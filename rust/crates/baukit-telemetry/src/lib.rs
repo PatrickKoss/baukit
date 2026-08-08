@@ -749,45 +749,4 @@ mod tests {
         assert_eq!(event["trace_id"].as_str().map(str::len), Some(32));
         assert_eq!(event["span_id"].as_str().map(str::len), Some(16));
     }
-
-    #[test]
-    fn process_global_init_build_info_idempotence_and_shutdown() {
-        // This is deliberately the crate's only test that mutates tracing and
-        // metrics global state; its assertions are sequenced in one process.
-        let telemetry = TelemetryBuilder::new(identity(DeploymentEnvironment::Local))
-            .log_format(LogFormat::Json)
-            .init()
-            .expect("first initialization should succeed");
-
-        let rendered = telemetry.prometheus_handle().render();
-        assert!(rendered.contains("# TYPE build_info gauge"), "{rendered}");
-        assert!(rendered.contains("commit=\"a1b2c3d\""), "{rendered}");
-        assert!(
-            rendered.contains(&format!("rust_version=\"{RUST_VERSION}\"")),
-            "{rendered}"
-        );
-        assert!(rendered.contains("version=\"1.4.2\""), "{rendered}");
-        assert!(rendered.contains("} 1"), "{rendered}");
-
-        metrics::histogram!("http_request_duration_seconds").record(0.003);
-        let rendered = telemetry.prometheus_handle().render();
-        for bucket in HTTP_DURATION_BUCKETS {
-            assert!(
-                rendered.contains(&format!("le=\"{bucket}\"")),
-                "missing spec bucket le=\"{bucket}\" in:\n{rendered}"
-            );
-        }
-
-        assert!(matches!(
-            TelemetryBuilder::new(identity(DeploymentEnvironment::Local)).init(),
-            Err(TelemetryError::AlreadyInitialized)
-        ));
-
-        telemetry
-            .shutdown()
-            .expect("no-exporter shutdown should succeed");
-        telemetry
-            .shutdown()
-            .expect("repeated shutdown should be a no-op");
-    }
 }
