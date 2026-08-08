@@ -4,6 +4,8 @@ All notable changes to `baukit-ops` are documented here.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-08
+
 ### Added
 
 - Instrumented PostgreSQL `begin` helper plus prominent guidance for replacing implicit `&PgPool` executors with `acquire` and an explicit connection.

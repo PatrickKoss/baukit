@@ -13,7 +13,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.95"
 repository = "https://github.com/patrickkoss/baukit"
@@ -21,13 +21,13 @@ repository = "https://github.com/patrickkoss/baukit"
 [workspace.dependencies]
 axum = "=0.8.9"
 base64 = "=0.22.1"
-baukit-auth = { version = "=0.1.0", path = "crates/baukit-auth" }
-baukit-config = { version = "=0.1.0", path = "crates/baukit-config" }
-baukit-core = { version = "=0.1.0", path = "crates/baukit-core" }
-baukit-http = { version = "=0.1.0", path = "crates/baukit-http" }
-baukit-openapi = { version = "=0.1.0", path = "crates/baukit-openapi" }
-baukit-ops = { version = "=0.1.0", path = "crates/baukit-ops" }
-baukit-telemetry = { version = "=0.1.0", path = "crates/baukit-telemetry" }
+baukit-auth = { version = "=0.2.0", path = "crates/baukit-auth" }
+baukit-config = { version = "=0.2.0", path = "crates/baukit-config" }
+baukit-core = { version = "=0.2.0", path = "crates/baukit-core" }
+baukit-http = { version = "=0.2.0", path = "crates/baukit-http" }
+baukit-openapi = { version = "=0.2.0", path = "crates/baukit-openapi" }
+baukit-ops = { version = "=0.2.0", path = "crates/baukit-ops" }
+baukit-telemetry = { version = "=0.2.0", path = "crates/baukit-telemetry" }
 chrono = { version = "=0.4.45", features = ["serde"] }
 config = "=0.15.25"
 dotenvy = "=0.15.7"

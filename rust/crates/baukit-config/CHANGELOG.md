@@ -4,6 +4,8 @@ All notable changes to `baukit-config` are documented here.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-08
+
 ### Fixed
 
 - Environment values retain their literal string representation for secrets, including leading-zero and exponent-shaped values.

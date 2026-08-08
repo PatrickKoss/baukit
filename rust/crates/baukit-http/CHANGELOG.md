@@ -4,6 +4,8 @@ All notable changes to `baukit-http` are documented here.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-08
+
 ### Added
 
 - Standard `unauthenticated` and `permission_denied` error constructors for authentication and authorization boundaries.

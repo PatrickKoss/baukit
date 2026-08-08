@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-08
+
 ### Added
 
 - Mock OIDC discovery/JWKS server, rotating RS256 token fixture, and authentication-envelope conformance assertions.
