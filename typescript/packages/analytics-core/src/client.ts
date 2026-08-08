@@ -343,11 +343,15 @@ export class AnalyticsClient<E extends AnalyticsEvent> implements AnalyticsPort<
   }
 
   public setConsent(value: ConsentState): void {
+    const transitionedToDenied = this.#consent !== 'denied' && value === 'denied';
     this.#consent = value;
     this.#writeStorage(this.#consentKey, value);
     if (value !== 'granted') {
       this.#queue.length = 0;
       this.#clearFlushTimer();
+    }
+    if (transitionedToDenied) {
+      this.#clearTransportPending();
     }
   }
 
@@ -448,6 +452,19 @@ export class AnalyticsClient<E extends AnalyticsEvent> implements AnalyticsPort<
     }
     getTimeoutRuntime().clearTimeout(this.#flushTimer);
     this.#flushTimer = undefined;
+  }
+
+  #clearTransportPending(): void {
+    try {
+      const operation = this.#transport.clearPending?.();
+      if (operation !== undefined) {
+        void Promise.resolve(operation).catch((error: unknown) => {
+          this.#reportTransportFailure({ error, envelopes: [], attempts: 0 });
+        });
+      }
+    } catch (error: unknown) {
+      this.#reportTransportFailure({ error, envelopes: [], attempts: 0 });
+    }
   }
 
   #isNodeStyleTimeout(value: unknown): value is NodeStyleTimeout {

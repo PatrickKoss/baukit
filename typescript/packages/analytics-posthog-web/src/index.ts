@@ -16,6 +16,8 @@ export interface PostHogWebClient {
   identify(distinctId: string, traits?: Readonly<Record<string, unknown>>): unknown;
   alias(alias: string, original?: string): unknown;
   reset(): unknown;
+  opt_in_capturing(options?: { readonly captureEventName?: string | null | false }): unknown;
+  opt_out_capturing(): unknown;
 }
 
 type GuardedPostHogWebOption =
@@ -28,6 +30,8 @@ type GuardedPostHogWebOption =
   | 'capture_pageview'
   | 'disable_session_recording'
   | 'disable_surveys'
+  | 'opt_out_capturing_by_default'
+  | 'opt_out_persistence_by_default'
   | 'person_profiles'
   | 'save_campaign_params'
   | 'save_referrer';
@@ -51,6 +55,22 @@ export interface PostHogWebTransportConfig {
 type ClientFactory = (
   firstEnvelope: AnalyticsEnvelope,
 ) => PostHogWebClient | Promise<PostHogWebClient>;
+
+interface PendingQueueInternals {
+  _queue?: unknown[];
+}
+
+interface PostHogWebInternals {
+  __request_queue?: unknown[];
+  _requestQueue?: PendingQueueInternals;
+  _retryQueue?: PendingQueueInternals;
+}
+
+function clearArray(value: unknown[] | undefined): void {
+  if (value !== undefined) {
+    value.length = 0;
+  }
+}
 
 function requireNonEmpty(name: string, value: string): string {
   const normalized = value.trim();
@@ -106,6 +126,10 @@ export class PostHogWebTransport<
   readonly #clientFactory: ClientFactory;
   readonly #onError: ((error: unknown) => void) | undefined;
   #client: Promise<PostHogWebClient> | undefined;
+  #clearGeneration = 0;
+  #clearRequired = false;
+  #clearOperation: Promise<void> | undefined;
+  #providerOptedOut = true;
 
   public constructor(client: PostHogWebClient | ClientFactory, onError?: (error: unknown) => void) {
     this.#clientFactory = typeof client === 'function' ? client : () => client;
@@ -118,6 +142,7 @@ export class PostHogWebTransport<
       return;
     }
 
+    const generation = this.#clearGeneration;
     let client: PostHogWebClient;
     try {
       client = await this.#getClient(envelopes[0] as AnalyticsEnvelope);
@@ -126,13 +151,61 @@ export class PostHogWebTransport<
       return;
     }
 
+    await this.#clearOperation;
+    if (generation !== this.#clearGeneration) {
+      return;
+    }
+    if (this.#clearRequired) {
+      this.#purgeClient(client);
+      if (generation !== this.#clearGeneration) {
+        return;
+      }
+      this.#clearRequired = false;
+    }
+    if (!this.#optIn(client)) {
+      return;
+    }
+
     for (const envelope of envelopes) {
+      if (generation !== this.#clearGeneration) {
+        return;
+      }
       try {
         await this.#dispatch(client, envelope);
       } catch (error: unknown) {
         this.#reportError(error);
       }
     }
+  }
+
+  /** Opts PostHog out and purges its in-memory batch and retry queues. */
+  public clearPending(): Promise<void> {
+    this.#clearGeneration += 1;
+    this.#clearRequired = true;
+    this.#providerOptedOut = true;
+    const client = this.#client;
+    if (client === undefined) {
+      return Promise.resolve();
+    }
+
+    const generation = this.#clearGeneration;
+    const operation = client
+      .then((resolvedClient) => {
+        this.#purgeClient(resolvedClient);
+        if (generation === this.#clearGeneration) {
+          this.#clearRequired = false;
+        }
+      })
+      .catch((error: unknown) => {
+        this.#reportError(error);
+      })
+      .finally(() => {
+        if (this.#clearOperation === operation) {
+          this.#clearOperation = undefined;
+        }
+      });
+    this.#clearOperation = operation;
+    return operation;
   }
 
   #getClient(firstEnvelope: AnalyticsEnvelope): Promise<PostHogWebClient> {
@@ -159,6 +232,33 @@ export class PostHogWebTransport<
         await Promise.resolve(client.reset());
         break;
     }
+  }
+
+  #optIn(client: PostHogWebClient): boolean {
+    if (!this.#providerOptedOut) {
+      return true;
+    }
+    try {
+      client.opt_in_capturing({ captureEventName: false });
+      this.#providerOptedOut = false;
+      return true;
+    } catch (error: unknown) {
+      this.#reportError(error);
+      return false;
+    }
+  }
+
+  #purgeClient(client: PostHogWebClient): void {
+    try {
+      client.opt_out_capturing();
+    } catch (error: unknown) {
+      this.#reportError(error);
+    }
+
+    const internals = client as PostHogWebClient & PostHogWebInternals;
+    clearArray(internals.__request_queue);
+    clearArray(internals._requestQueue?._queue);
+    clearArray(internals._retryQueue?._queue);
   }
 
   #reportError(error: unknown): void {
@@ -190,6 +290,8 @@ export function createPostHogWebTransport<E extends AnalyticsEvent = AnalyticsEv
       disable_session_recording: true,
       disable_surveys: true,
       advanced_disable_feature_flags_on_first_load: true,
+      opt_out_capturing_by_default: true,
+      opt_out_persistence_by_default: true,
       person_profiles: 'identified_only',
       save_campaign_params: false,
       save_referrer: false,

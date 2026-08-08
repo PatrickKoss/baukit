@@ -76,6 +76,8 @@ export type AnalyticsEnvelope<E extends AnalyticsEvent = AnalyticsEvent> =
 
 export interface Transport<E extends AnalyticsEvent = AnalyticsEvent> {
   send(envelopes: readonly AnalyticsEnvelope<E>[]): Promise<void> | void;
+  /** Purges provider-owned queued commands after consent is denied. */
+  clearPending?(): Promise<void> | void;
 }
 
 /** Synchronous by design so consent can be applied before the first capture call. */

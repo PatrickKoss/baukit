@@ -69,14 +69,14 @@ Order: 6a chart + observability (parallel) → 6b release engineering + CLI/back
 
 ### Wave 7 — ship Focus A (per user 2026-08-08)
 
-- [ ] Commit and push baukit to the remote
+- [x] Commit and push baukit to the remote (32eb916; CI green at 31256104353 after deny/pnpm fixes)
 - [x] Observe CI pipeline via codex subagent until green (fix failures if any)
 
 ### Wave 8 — platform gaps found while scouting Fitness Tracker
 
-- [ ] `baukit-runtime`: staggered shutdown — ops listener outlives the API during drain (opt-in)
-- [ ] `baukit-ops`: diagnostic (non-gating) readiness checks alongside gating ones
-- [ ] analytics: optional `clearPending` transport hook; PostHog adapters purge persisted SDK queues on consent denial
+- [x] `baukit-runtime`: staggered shutdown — ops listener outlives the API during drain (opt-in)
+- [x] `baukit-ops`: diagnostic (non-gating) readiness checks alongside gating ones
+- [x] analytics: optional `clearPending` transport hook; PostHog adapters purge persisted SDK queues on consent denial
 - [ ] Push, CI green, cut first release-train tag `baukit-v0.1.0`
 
 ## Focus B: integrate into Fitness Tracker (after Focus A core)
@@ -128,3 +128,4 @@ Detailed integration map from the read-only scout (2026-08-08): FT is already on
 - 2026-08-08: agent-skills implemented (codex) — four portable CLI-driven workflows with dual-harness installation.
 - 2026-08-08: Focus A verification complete (orchestrator) — Rust workspace, example, CLI, TS turbo, lints, coherence, and a fresh combined fixture all green; committing and pushing.
 - 2026-08-08: CI green on main (codex) — removed vulnerable RSA, allowed permissive licenses, and made pnpm's age gate reproducible.
+- 2026-08-08: platform gaps closed (codex) — staggered drain, diagnostic readiness, and provider queue purging added.

@@ -32,6 +32,10 @@ interface MockClient {
   readonly identify: ReturnType<typeof vi.fn>;
   readonly alias: ReturnType<typeof vi.fn>;
   readonly reset: ReturnType<typeof vi.fn>;
+  readonly optIn: ReturnType<typeof vi.fn>;
+  readonly optOut: ReturnType<typeof vi.fn>;
+  readonly setPersistedProperty: ReturnType<typeof vi.fn>;
+  readonly queue: string[];
 }
 
 function createMockClient(): MockClient {
@@ -39,7 +43,47 @@ function createMockClient(): MockClient {
   const identify = vi.fn();
   const alias = vi.fn();
   const reset = vi.fn();
-  return { client: { capture, identify, alias, reset }, capture, identify, alias, reset };
+  const optIn = vi.fn();
+  const optOut = vi.fn();
+  const setPersistedProperty = vi.fn();
+  const queue: string[] = [];
+  let optedOut = true;
+  const client: PostHogNativeClient = {
+    capture(event, properties, options) {
+      capture(event, properties, options);
+      if (!optedOut) {
+        queue.push(event);
+      }
+    },
+    identify,
+    alias,
+    reset,
+    optIn() {
+      optIn();
+      optedOut = false;
+    },
+    optOut() {
+      optOut();
+      optedOut = true;
+    },
+    setPersistedProperty(key, value) {
+      setPersistedProperty(key, value);
+      if (Array.isArray(value)) {
+        queue.length = 0;
+      }
+    },
+  };
+  return {
+    client,
+    capture,
+    identify,
+    alias,
+    reset,
+    optIn,
+    optOut,
+    setPersistedProperty,
+    queue,
+  };
 }
 
 function lifecycleEnvelopes(): readonly AnalyticsEnvelope<ProductEvent>[] {
@@ -150,6 +194,7 @@ describe('createPostHogNativeTransport', () => {
         disableSurveys: true,
         enableSessionReplay: false,
         errorTracking: { autocapture: false },
+        defaultOptIn: false,
         personProfiles: 'identified_only',
         preloadFeatureFlags: false,
         setDefaultPersonProperties: false,
@@ -159,6 +204,35 @@ describe('createPostHogNativeTransport', () => {
 });
 
 describe('native adapter composed with analytics core', () => {
+  it('opts out and clears the persisted provider queue when consent is withdrawn', async () => {
+    const posthog = createMockClient();
+    const transport = new PostHogNativeTransport<ProductEvent>(posthog.client);
+    const clearPending = vi.spyOn(transport, 'clearPending');
+    const analytics = new AnalyticsClient<ProductEvent>({
+      context,
+      allowlist: { onboarding_started: ['source'] },
+      transport,
+      uuidFactory: () => ANONYMOUS_ID,
+      flushBatchSize: 100,
+      flushIntervalMs: 60_000,
+      development: false,
+    });
+
+    analytics.setConsent('granted');
+    analytics.capture({ name: 'onboarding_started', properties: { source: 'organic' } });
+    await analytics.flush();
+    expect(posthog.queue).toEqual(['onboarding_started']);
+
+    analytics.setConsent('denied');
+    await vi.waitFor(() => {
+      expect(posthog.queue).toEqual([]);
+    });
+
+    expect(clearPending).toHaveBeenCalledOnce();
+    expect(posthog.optOut).toHaveBeenCalledOnce();
+    expect(posthog.setPersistedProperty).toHaveBeenCalledWith('queue', []);
+  });
+
   it('drops before consent and transports only allowlisted, scrubbed properties after opt-in', async () => {
     const posthog = createMockClient();
     const allowlist = {

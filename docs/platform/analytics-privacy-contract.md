@@ -26,6 +26,7 @@ Bounded aggregates and enums about these domains are allowed: `meal_logged` with
 - In `unknown` and `denied`, events are dropped, not buffered for later delivery.
 - Jurisdiction baseline is GDPR (products operated from Germany): analytics runs only after explicit opt-in, withdrawing consent is as easy as granting it, and consent changes are not themselves analytics events.
 - Consent state is stored per device and re-evaluated on application start.
+- On withdrawal, both the core buffer and any provider-owned persisted or retry queue are purged before they can flush later.
 
 ## 4. Identity
 
@@ -56,3 +57,9 @@ Bounded aggregates and enums about these domains are allowed: `meal_logged` with
 
 - `analytics-core` ships no-op and in-memory transports; its tests assert consent gating, identity transitions, allowlisting, and scrubbing.
 - Adding an event requires: the type, a purpose/owner line in the tracking plan, the allowlist entry, and passing privacy tests. The `add-product-event` skill automates this sequence.
+
+## 9. Transport requirements
+
+- The provider-neutral `Transport` may implement `clearPending?(): Promise<void> | void`. `analytics-core` invokes it once whenever consent transitions into `denied`; synchronous throws and rejected promises are contained like send failures. Transports without the capability remain valid.
+- Provider adapters with their own queues must implement the hook by opting the SDK out first and then purging every pending persisted, batch, and retry queue the SDK exposes. A later consent-granted send may opt the provider back in without emitting a provider opt-in analytics event.
+- `reset()` is an ordered identity command, not consent withdrawal. It rotates the core anonymous identity and is delivered through `send`; it does not invoke `clearPending` or discard earlier consented commands.

@@ -102,6 +102,50 @@ async fn readyz_returns_ok_when_all_checks_pass() {
             .iter()
             .all(|check| check["status"] == "pass")
     );
+    assert_eq!(body["diagnostics"], serde_json::json!([]));
+}
+
+#[tokio::test]
+async fn failing_diagnostic_is_reported_without_gating_readiness() {
+    let readiness = ReadinessRegistry::new();
+    readiness
+        .register_diagnostic_fn_default("cache_warmth", || async {
+            Err(ReadinessError::new("cache is cold"))
+        })
+        .expect("unique diagnostic");
+
+    let response = get(app(readiness, TrafficGate::new()), "/readyz").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
+    assert_eq!(body["status"], "ready");
+    assert_eq!(body["checks"].as_array().expect("checks array").len(), 1);
+    assert_eq!(body["diagnostics"][0]["name"], "cache_warmth");
+    assert_eq!(body["diagnostics"][0]["status"], "fail");
+    assert_eq!(body["diagnostics"][0]["error"], "cache is cold");
+}
+
+#[tokio::test]
+async fn failing_gating_check_returns_503_and_keeps_diagnostics() {
+    let readiness = ReadinessRegistry::new();
+    readiness
+        .register_fn_default("database", || async {
+            Err(ReadinessError::new("database unavailable"))
+        })
+        .expect("unique gating check");
+    readiness
+        .register_diagnostic_fn_default("cache_warmth", || async {
+            Err(ReadinessError::new("cache is cold"))
+        })
+        .expect("unique diagnostic");
+
+    let response = get(app(readiness, TrafficGate::new()), "/readyz").await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = json_body(response).await;
+    assert_eq!(body["status"], "not_ready");
+    assert_eq!(body["checks"][1]["name"], "database");
+    assert_eq!(body["checks"][1]["status"], "fail");
+    assert_eq!(body["diagnostics"][0]["name"], "cache_warmth");
+    assert_eq!(body["diagnostics"][0]["status"], "fail");
 }
 
 #[tokio::test]

@@ -1,4 +1,4 @@
-import type { PostHogOptions } from 'posthog-react-native';
+import type { PostHogOptions, PostHogPersistedProperty } from 'posthog-react-native';
 
 import type {
   AnalyticsEnvelope,
@@ -17,6 +17,9 @@ export interface PostHogNativeClient {
   identify(distinctId: string, traits?: Readonly<Record<string, unknown>>): unknown;
   alias(alias: string): unknown;
   reset(): unknown;
+  optIn(): Promise<void> | void;
+  optOut(): Promise<void> | void;
+  setPersistedProperty(key: PostHogPersistedProperty, value: unknown): void;
 }
 
 type GuardedPostHogNativeOption =
@@ -30,7 +33,8 @@ type GuardedPostHogNativeOption =
   | 'host'
   | 'personProfiles'
   | 'preloadFeatureFlags'
-  | 'setDefaultPersonProperties';
+  | 'setDefaultPersonProperties'
+  | 'defaultOptIn';
 
 export type PostHogNativeInitOptions = Omit<PostHogOptions, GuardedPostHogNativeOption>;
 
@@ -51,6 +55,12 @@ export interface PostHogNativeTransportConfig {
 type ClientFactory = (
   firstEnvelope: AnalyticsEnvelope,
 ) => PostHogNativeClient | Promise<PostHogNativeClient>;
+
+const PENDING_QUEUE_KEYS = [
+  'queue',
+  'ai_queue',
+  'logs_queue',
+] as readonly PostHogPersistedProperty[];
 
 function requireNonEmpty(name: string, value: string): string {
   const normalized = value.trim();
@@ -114,6 +124,10 @@ export class PostHogNativeTransport<
   readonly #clientFactory: ClientFactory;
   readonly #onError: ((error: unknown) => void) | undefined;
   #client: Promise<PostHogNativeClient> | undefined;
+  #clearGeneration = 0;
+  #clearRequired = false;
+  #clearOperation: Promise<void> | undefined;
+  #providerOptedOut = true;
 
   public constructor(
     client: PostHogNativeClient | ClientFactory,
@@ -129,6 +143,7 @@ export class PostHogNativeTransport<
       return;
     }
 
+    const generation = this.#clearGeneration;
     let client: PostHogNativeClient;
     try {
       client = await this.#getClient(envelopes[0] as AnalyticsEnvelope);
@@ -137,13 +152,61 @@ export class PostHogNativeTransport<
       return;
     }
 
+    await this.#clearOperation;
+    if (generation !== this.#clearGeneration) {
+      return;
+    }
+    if (this.#clearRequired) {
+      await this.#purgeClient(client);
+      if (generation !== this.#clearGeneration) {
+        return;
+      }
+      this.#clearRequired = false;
+    }
+    if (!(await this.#optIn(client))) {
+      return;
+    }
+
     for (const envelope of envelopes) {
+      if (generation !== this.#clearGeneration) {
+        return;
+      }
       try {
         await this.#dispatch(client, envelope);
       } catch (error: unknown) {
         this.#reportError(error);
       }
     }
+  }
+
+  /** Opts PostHog out and purges every persisted provider queue. */
+  public clearPending(): Promise<void> {
+    this.#clearGeneration += 1;
+    this.#clearRequired = true;
+    this.#providerOptedOut = true;
+    const client = this.#client;
+    if (client === undefined) {
+      return Promise.resolve();
+    }
+
+    const generation = this.#clearGeneration;
+    const operation = client
+      .then(async (resolvedClient) => {
+        await this.#purgeClient(resolvedClient);
+        if (generation === this.#clearGeneration) {
+          this.#clearRequired = false;
+        }
+      })
+      .catch((error: unknown) => {
+        this.#reportError(error);
+      })
+      .finally(() => {
+        if (this.#clearOperation === operation) {
+          this.#clearOperation = undefined;
+        }
+      });
+    this.#clearOperation = operation;
+    return operation;
   }
 
   #getClient(firstEnvelope: AnalyticsEnvelope): Promise<PostHogNativeClient> {
@@ -169,6 +232,35 @@ export class PostHogNativeTransport<
       case 'reset':
         await Promise.resolve(client.reset());
         break;
+    }
+  }
+
+  async #optIn(client: PostHogNativeClient): Promise<boolean> {
+    if (!this.#providerOptedOut) {
+      return true;
+    }
+    try {
+      await Promise.resolve(client.optIn());
+      this.#providerOptedOut = false;
+      return true;
+    } catch (error: unknown) {
+      this.#reportError(error);
+      return false;
+    }
+  }
+
+  async #purgeClient(client: PostHogNativeClient): Promise<void> {
+    try {
+      await Promise.resolve(client.optOut());
+    } catch (error: unknown) {
+      this.#reportError(error);
+    }
+    for (const key of PENDING_QUEUE_KEYS) {
+      try {
+        client.setPersistedProperty(key, []);
+      } catch (error: unknown) {
+        this.#reportError(error);
+      }
     }
   }
 
@@ -200,6 +292,7 @@ export function createPostHogNativeTransport<E extends AnalyticsEvent = Analytic
       disableSurveys: true,
       enableSessionReplay: false,
       errorTracking: { autocapture: false },
+      defaultOptIn: false,
       personProfiles: 'identified_only',
       preloadFeatureFlags: false,
       setDefaultPersonProperties: false,

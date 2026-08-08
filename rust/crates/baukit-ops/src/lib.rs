@@ -8,8 +8,9 @@
 //! # Endpoints
 //!
 //! - `GET /healthz` returns process liveness.
-//! - `GET /readyz` runs every registered check concurrently and also evaluates
-//!   the manual [`TrafficGate`].
+//! - `GET /readyz` runs every registered gating and diagnostic check
+//!   concurrently and also evaluates the manual [`TrafficGate`]. Diagnostic
+//!   failures are reported but never make the process unready.
 //! - `GET /metrics` renders the [`PrometheusHandle`] created by
 //!   `baukit-telemetry`.
 //! - `GET /buildinfo` returns service name, version, commit, and Rust version.
@@ -36,6 +37,10 @@
 //! let readiness = ReadinessRegistry::new();
 //! readiness.register_fn("database", Duration::from_secs(2), || async {
 //!     // Ping the database here. Error text must be safe for an ops response.
+//!     Ok::<_, ReadinessError>(())
+//! })?;
+//! readiness.register_diagnostic_fn_default("upstream_latency", || async {
+//!     // Observability-only checks are reported without gating traffic.
 //!     Ok::<_, ReadinessError>(())
 //! })?;
 //! let traffic = TrafficGate::new();
@@ -152,6 +157,7 @@ struct RegisteredCheck {
     name: String,
     timeout: Duration,
     check: Arc<dyn ReadinessCheck>,
+    gating: bool,
 }
 
 /// A cloneable, thread-safe registry of named readiness checks.
@@ -181,7 +187,7 @@ impl ReadinessRegistry {
     where
         C: ReadinessCheck,
     {
-        self.register_arc(name.into(), timeout, Arc::new(check))
+        self.register_arc(name.into(), timeout, Arc::new(check), true)
     }
 
     /// Registers `check` with [`DEFAULT_READINESS_TIMEOUT`].
@@ -223,6 +229,61 @@ impl ReadinessRegistry {
         self.register_fn(name, DEFAULT_READINESS_TIMEOUT, check)
     }
 
+    /// Registers a non-gating diagnostic `check` with an explicit timeout.
+    ///
+    /// Diagnostic results appear in `/readyz`, but failures and timeouts never
+    /// affect aggregate readiness or its HTTP status.
+    pub fn register_diagnostic<C>(
+        &self,
+        name: impl Into<String>,
+        timeout: Duration,
+        check: C,
+    ) -> Result<(), RegistrationError>
+    where
+        C: ReadinessCheck,
+    {
+        self.register_arc(name.into(), timeout, Arc::new(check), false)
+    }
+
+    /// Registers a non-gating diagnostic `check` with [`DEFAULT_READINESS_TIMEOUT`].
+    pub fn register_diagnostic_default<C>(
+        &self,
+        name: impl Into<String>,
+        check: C,
+    ) -> Result<(), RegistrationError>
+    where
+        C: ReadinessCheck,
+    {
+        self.register_diagnostic(name, DEFAULT_READINESS_TIMEOUT, check)
+    }
+
+    /// Registers a non-gating diagnostic async closure with an explicit timeout.
+    pub fn register_diagnostic_fn<F, Fut>(
+        &self,
+        name: impl Into<String>,
+        timeout: Duration,
+        check: F,
+    ) -> Result<(), RegistrationError>
+    where
+        F: Fn() -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<(), ReadinessError>> + Send + 'static,
+    {
+        self.register_diagnostic(name, timeout, ClosureCheck(check))
+    }
+
+    /// Registers a non-gating diagnostic async closure with [`DEFAULT_READINESS_TIMEOUT`].
+    pub fn register_diagnostic_fn_default<F, Fut>(
+        &self,
+        name: impl Into<String>,
+        check: F,
+    ) -> Result<(), RegistrationError>
+    where
+        F: Fn() -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<(), ReadinessError>> + Send + 'static,
+    {
+        self.register_diagnostic_fn(name, DEFAULT_READINESS_TIMEOUT, check)
+    }
+
     /// Returns the current number of registered dependency checks.
     pub fn len(&self) -> usize {
         self.checks
@@ -241,6 +302,7 @@ impl ReadinessRegistry {
         name: String,
         timeout: Duration,
         check: Arc<dyn ReadinessCheck>,
+        gating: bool,
     ) -> Result<(), RegistrationError> {
         let name = name.trim().to_owned();
         if name.is_empty() {
@@ -264,6 +326,7 @@ impl ReadinessRegistry {
             name,
             timeout,
             check,
+            gating,
         });
         Ok(())
     }
@@ -401,12 +464,14 @@ pub struct CheckResult {
 /// JSON returned by `/readyz`.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ReadinessResponse {
-    /// Aggregate readiness derived from every result.
+    /// Aggregate readiness derived from gating results only.
     pub status: ReadinessStatus,
     /// Whether the manual traffic gate is open.
     pub accepting_traffic: bool,
     /// Gate result followed by dependency results in registration order.
     pub checks: Vec<CheckResult>,
+    /// Non-gating diagnostic results in registration order.
+    pub diagnostics: Vec<CheckResult>,
 }
 
 /// JSON returned by `/buildinfo`.
@@ -512,7 +577,7 @@ async fn healthz() -> Json<HealthResponse> {
 
 async fn readyz(State(state): State<OpsState>) -> impl IntoResponse {
     let accepting = state.traffic_gate.is_accepting();
-    let mut results = vec![CheckResult {
+    let mut gating_results = vec![CheckResult {
         name: "accepting_traffic".to_owned(),
         status: if accepting {
             CheckStatus::Pass
@@ -528,8 +593,9 @@ async fn readyz(State(state): State<OpsState>) -> impl IntoResponse {
     let mut task_metadata = HashMap::new();
     for (index, registered) in checks.into_iter().enumerate() {
         let name = registered.name.clone();
+        let gating = registered.gating;
         let task = tasks.spawn(run_check(index, registered));
-        task_metadata.insert(task.id(), (index, name));
+        task_metadata.insert(task.id(), (index, name, gating));
     }
 
     let mut dependency_results = Vec::new();
@@ -540,11 +606,14 @@ async fn readyz(State(state): State<OpsState>) -> impl IntoResponse {
                 dependency_results.push(result);
             }
             Err(error) => {
-                let (index, name) = task_metadata
-                    .remove(&error.id())
-                    .unwrap_or((usize::MAX, "readiness_task".to_owned()));
+                let (index, name, gating) = task_metadata.remove(&error.id()).unwrap_or((
+                    usize::MAX,
+                    "readiness_task".to_owned(),
+                    true,
+                ));
                 dependency_results.push((
                     index,
+                    gating,
                     CheckResult {
                         name,
                         status: CheckStatus::Fail,
@@ -555,10 +624,17 @@ async fn readyz(State(state): State<OpsState>) -> impl IntoResponse {
             }
         }
     }
-    dependency_results.sort_by_key(|(index, _)| *index);
-    results.extend(dependency_results.into_iter().map(|(_, result)| result));
+    dependency_results.sort_by_key(|(index, _, _)| *index);
+    let mut diagnostic_results = Vec::new();
+    for (_, gating, result) in dependency_results {
+        if gating {
+            gating_results.push(result);
+        } else {
+            diagnostic_results.push(result);
+        }
+    }
 
-    let ready = results
+    let ready = gating_results
         .iter()
         .all(|result| result.status == CheckStatus::Pass);
     let response = ReadinessResponse {
@@ -568,7 +644,8 @@ async fn readyz(State(state): State<OpsState>) -> impl IntoResponse {
             ReadinessStatus::NotReady
         },
         accepting_traffic: accepting,
-        checks: results,
+        checks: gating_results,
+        diagnostics: diagnostic_results,
     };
     let status = if ready {
         StatusCode::OK
@@ -578,7 +655,7 @@ async fn readyz(State(state): State<OpsState>) -> impl IntoResponse {
     (status, Json(response))
 }
 
-async fn run_check(index: usize, registered: RegisteredCheck) -> (usize, CheckResult) {
+async fn run_check(index: usize, registered: RegisteredCheck) -> (usize, bool, CheckResult) {
     let started = Instant::now();
     let outcome = tokio::time::timeout(registered.timeout, registered.check.check()).await;
     let duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
@@ -596,6 +673,7 @@ async fn run_check(index: usize, registered: RegisteredCheck) -> (usize, CheckRe
 
     (
         index,
+        registered.gating,
         CheckResult {
             name: registered.name,
             status,

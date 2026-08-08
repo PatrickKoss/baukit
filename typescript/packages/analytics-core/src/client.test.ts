@@ -96,6 +96,31 @@ describe('AnalyticsClient consent', () => {
     expect(second.consent).toBe('granted');
     expect(second.anonymousId).toBe(first.anonymousId);
   });
+
+  it('clears provider pending data exactly once on a transition to denied', () => {
+    const clearPending = vi.fn();
+    const transport: Transport<ProductEvent> = {
+      send: vi.fn(),
+      clearPending,
+    };
+    const client = createClient({ transport });
+
+    client.setConsent('granted');
+    client.setConsent('denied');
+    client.setConsent('denied');
+
+    expect(clearPending).toHaveBeenCalledOnce();
+  });
+
+  it('keeps transports without the optional clear hook compatible', () => {
+    const transport: Transport<ProductEvent> = { send: vi.fn() };
+    const client = createClient({ transport });
+
+    client.setConsent('granted');
+    expect(() => {
+      client.setConsent('denied');
+    }).not.toThrow();
+  });
 });
 
 describe('AnalyticsClient identity', () => {

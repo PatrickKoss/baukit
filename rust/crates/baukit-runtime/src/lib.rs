@@ -16,7 +16,7 @@
 //! use axum::Router;
 //! use baukit_runtime::{
 //!     ProcessKind, RestartPolicy, ServiceInfo, ShutdownToken, TaskSupervisor,
-//!     build_info, serve_listener_pair,
+//!     ShutdownOrder, build_info, serve_listener_pair_with_shutdown_order,
 //! };
 //! use baukit_telemetry::{DeploymentEnvironment, TelemetryBuilder};
 //! use tokio::net::TcpListener;
@@ -48,12 +48,13 @@
 //!
 //!     let api = TcpListener::bind("127.0.0.1:0").await?;
 //!     let ops = TcpListener::bind("127.0.0.1:0").await?;
-//!     let listener_result = serve_listener_pair(
+//!     let listener_result = serve_listener_pair_with_shutdown_order(
 //!         api,
 //!         Router::new().merge(product_routes()),
 //!         ops,
 //!         Router::new().merge(operations_routes()),
 //!         shutdown.clone(),
+//!         ShutdownOrder::OpsOutlivesApi,
 //!     ).await;
 //!     shutdown.trigger();
 //!     let _ = workers.join().await;
@@ -608,6 +609,16 @@ pub enum ListenerPairError {
 
 type ListenerResult = Result<ListenerKind, (ListenerKind, io::Error)>;
 
+/// Controls when the operations listener stops relative to the public API.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ShutdownOrder {
+    /// Stops both listeners together when process shutdown begins.
+    #[default]
+    Together,
+    /// Keeps operations serving until the API has drained or the deadline expires.
+    OpsOutlivesApi,
+}
+
 /// Runs public API and operations routers concurrently with graceful shutdown.
 ///
 /// Both TCP listeners are supplied already bound, keeping addresses and socket
@@ -622,20 +633,51 @@ pub async fn serve_listener_pair(
     operations_router: Router,
     shutdown: ShutdownToken,
 ) -> Result<(), ListenerPairError> {
+    serve_listener_pair_with_shutdown_order(
+        api_listener,
+        api_router,
+        operations_listener,
+        operations_router,
+        shutdown,
+        ShutdownOrder::Together,
+    )
+    .await
+}
+
+/// Runs an API/operations listener pair with an explicit shutdown order.
+///
+/// [`ShutdownOrder::Together`] is identical to [`serve_listener_pair`]. With
+/// [`ShutdownOrder::OpsOutlivesApi`], process shutdown first stops the API from
+/// accepting new work and lets its in-flight requests drain. The operations
+/// listener continues serving readiness and metrics until the API server exits;
+/// it is then gracefully stopped within the same process-wide drain deadline.
+/// If that deadline expires first, both listener tasks are aborted.
+pub async fn serve_listener_pair_with_shutdown_order(
+    api_listener: TcpListener,
+    api_router: Router,
+    operations_listener: TcpListener,
+    operations_router: Router,
+    shutdown: ShutdownToken,
+    shutdown_order: ShutdownOrder,
+) -> Result<(), ListenerPairError> {
     let mut listeners = JoinSet::new();
+    let operations_shutdown = match shutdown_order {
+        ShutdownOrder::Together => shutdown.observed.clone(),
+        ShutdownOrder::OpsOutlivesApi => CancellationToken::new(),
+    };
     spawn_listener(
         &mut listeners,
         ListenerKind::Api,
         api_listener,
         api_router,
-        shutdown.clone(),
+        shutdown.observed.clone(),
     );
     spawn_listener(
         &mut listeners,
         ListenerKind::Operations,
         operations_listener,
         operations_router,
-        shutdown.clone(),
+        operations_shutdown.clone(),
     );
 
     let mut first_error = None;
@@ -643,6 +685,11 @@ pub async fn serve_listener_pair(
         tokio::select! {
             _ = shutdown.cancelled() => {}
             result = listeners.join_next() => {
+                stop_operations_after_api(
+                    result.as_ref(),
+                    shutdown_order,
+                    &operations_shutdown,
+                );
                 record_listener_result(result, &shutdown, &mut first_error);
             }
         }
@@ -655,6 +702,7 @@ pub async fn serve_listener_pair(
     let remaining = shutdown.remaining();
     let drained = timeout(remaining, async {
         while let Some(result) = listeners.join_next().await {
+            stop_operations_after_api(Some(&result), shutdown_order, &operations_shutdown);
             record_listener_result(Some(result), &shutdown, &mut first_error);
         }
     })
@@ -674,7 +722,7 @@ fn spawn_listener(
     kind: ListenerKind,
     listener: TcpListener,
     router: Router,
-    shutdown: ShutdownToken,
+    shutdown: CancellationToken,
 ) {
     listeners.spawn(async move {
         axum::serve(listener, router)
@@ -683,6 +731,24 @@ fn spawn_listener(
             .map(|()| kind)
             .map_err(|error| (kind, error))
     });
+}
+
+fn stop_operations_after_api(
+    result: Option<&Result<ListenerResult, JoinError>>,
+    shutdown_order: ShutdownOrder,
+    operations_shutdown: &CancellationToken,
+) {
+    if shutdown_order != ShutdownOrder::OpsOutlivesApi {
+        return;
+    }
+
+    let listener = match result {
+        Some(Ok(Ok(kind) | Err((kind, _)))) => Some(*kind),
+        Some(Err(_)) | None => None,
+    };
+    if listener == Some(ListenerKind::Api) {
+        operations_shutdown.cancel();
+    }
 }
 
 fn record_listener_result(
@@ -719,7 +785,32 @@ mod tests {
         },
     };
 
+    use axum::routing::get;
+    use tokio::{
+        io::{AsyncReadExt as _, AsyncWriteExt as _},
+        net::TcpStream,
+        sync::Notify,
+    };
+
     use super::*;
+
+    async fn http_get(address: SocketAddr, path: &str) -> String {
+        let mut stream = TcpStream::connect(address)
+            .await
+            .expect("connect to test listener");
+        let request =
+            format!("GET {path} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n");
+        stream
+            .write_all(request.as_bytes())
+            .await
+            .expect("write test request");
+        let mut response = Vec::new();
+        stream
+            .read_to_end(&mut response)
+            .await
+            .expect("read test response");
+        String::from_utf8(response).expect("HTTP response is UTF-8")
+    }
 
     #[tokio::test]
     async fn token_cancels_children() {
@@ -873,6 +964,63 @@ mod tests {
         tokio::time::timeout(Duration::from_secs(1), pair)
             .await
             .expect("listeners should finish promptly")
+            .expect("listener task should join")
+            .expect("listeners should drain successfully");
+    }
+
+    #[tokio::test]
+    async fn operations_listener_responds_while_api_is_draining() {
+        let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0);
+        let api = TcpListener::bind(address).await.expect("bind API listener");
+        let api_address = api.local_addr().expect("API address");
+        let operations = TcpListener::bind(address)
+            .await
+            .expect("bind operations listener");
+        let operations_address = operations.local_addr().expect("operations address");
+        let request_started = Arc::new(Notify::new());
+        let release_request = Arc::new(Notify::new());
+        let api_router = Router::new().route(
+            "/drain",
+            get({
+                let request_started = Arc::clone(&request_started);
+                let release_request = Arc::clone(&release_request);
+                move || {
+                    let request_started = Arc::clone(&request_started);
+                    let release_request = Arc::clone(&release_request);
+                    async move {
+                        request_started.notify_one();
+                        release_request.notified().await;
+                        "drained"
+                    }
+                }
+            }),
+        );
+        let operations_router = Router::new().route("/readyz", get(|| async { "ready" }));
+        let shutdown = ShutdownToken::new(Duration::from_secs(2));
+        let pair = tokio::spawn(serve_listener_pair_with_shutdown_order(
+            api,
+            api_router,
+            operations,
+            operations_router,
+            shutdown.clone(),
+            ShutdownOrder::OpsOutlivesApi,
+        ));
+        let api_request = tokio::spawn(http_get(api_address, "/drain"));
+
+        request_started.notified().await;
+        shutdown.trigger();
+        assert!(shutdown.is_cancelled());
+
+        let operations_response = http_get(operations_address, "/readyz").await;
+        assert!(operations_response.starts_with("HTTP/1.1 200 OK"));
+        assert!(operations_response.ends_with("ready"));
+
+        release_request.notify_one();
+        let api_response = api_request.await.expect("API request task joins");
+        assert!(api_response.starts_with("HTTP/1.1 200 OK"));
+        tokio::time::timeout(Duration::from_secs(1), pair)
+            .await
+            .expect("listeners should finish after the API drains")
             .expect("listener task should join")
             .expect("listeners should drain successfully");
     }
