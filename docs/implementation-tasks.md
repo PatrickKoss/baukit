@@ -98,9 +98,37 @@ Detailed integration map from the read-only scout (2026-08-08): FT is already on
 
 ## Focus C: integrate into OpenDialog (after Focus A core)
 
-- [ ] Remove duplicate HTTP metric recording (custom RED middleware + `axum-prometheus` → exactly one recorder via `baukit-http`)
-- [ ] Migrate Figment → `baukit-config`
-- [ ] Adopt `@baukit/analytics-core` (its typed interface is the model; add FT-style scrubber)
+Done — verified on open-dialog `main` (commits e9db045..9ad098f, B0–B3 + green verification workflow).
+
+- [x] Remove duplicate HTTP metric recording (custom RED middleware + `axum-prometheus` → exactly one recorder via `baukit-http`; conformance test asserts `axum_http_requests_total` is gone)
+- [x] Migrate Figment → `baukit-config` (tagged git dep baukit-v0.1.0, no figment left in any Cargo.toml)
+- [x] Adopt `@baukit/analytics-core` (vendored tgz in frontend/packages/analytics)
+
+## Focus D: integrate into solo-leveling-system (after Focus C)
+
+Scout summary (2026-08-08): SLS backend (`backend/`, 9 crates `sl-*`) already matches baukit's pins (Axum 0.8, SQLx 0.9, OTel =0.32, Utoipa 5, config+dotenvy, metrics 0.24.6, rust-version 1.97.1 > MSRV 1.95) — contract migration, no version bumps. Bespoke seams to replace: `sl-bin/{settings,telemetry,ops,shutdown}.rs`, `sl-api/error.rs`. HTTP RED metrics currently product-prefixed (`solo_leveling_http_requests_total`) — must become baukit spec §2.1 standard names; product prefix reserved for domain metrics. Frontend: single Expo app (`apps/mobile`) on **npm** (not pnpm), `packages/api-client` (generated from `backend/openapi.json`) + `packages/theme`; no analytics today. Deploy: Docker Compose + Dockerfile; CI: `ci.yml` (frontend) + `backend-ci.yml`. Work happens in the solo-leveling-system repo on branch `baukit-migration`.
+
+### Wave D0 — foundation bridge (sequential, 1 agent)
+
+- [x] Baukit git deps pinned to tag `baukit-v0.1.0` in `backend/Cargo.toml` workspace catalog; `BaukitConfig<ProductConfig>` replacing `sl-bin/settings.rs` bespoke loader with legacy env aliases so existing `.env`/compose files keep working; `Secret<T>` for JWT/SMTP/VAPID/AES secrets; single config load in `sl-bin`; keep rust-version 1.97.1
+
+### Wave D1 — core seams (D1a ∥ D1c, then D1b — D1a/D1b overlap in `telemetry.rs`, cannot run concurrently in one worktree)
+
+- [x] D1a runtime/telemetry/ops: `TelemetryBuilder` replacing `telemetry.rs` init, baukit-runtime shutdown (staggered drain, ops outlives API) replacing `shutdown.rs`, `OpsRouter` with gating Postgres readiness replacing `ops.rs`; process identity for api/worker/migrate/seed bins
+- [x] D1b HTTP + OpenAPI: baukit-http layer stack (request IDs, spans, panic handler, RED metrics recorded exactly once with spec §2.1 standard names — bespoke `solo_leveling_http_*` middleware deleted), standard JSON error envelope in `sl-api/error.rs` with 404/405/extractor normalization, deterministic `backend/openapi.json` via baukit-openapi + drift test
+- [x] D1c frontend api-runtime: vendored `@baukit/api-runtime` tgz consumed by `packages/api-client` (npm), regenerated typed client, request-ID/trace headers, normalized error parsing in the Expo app (tolerate old+new envelope during migration)
+
+### Wave D2 — product surface (up to 3 parallel agents)
+
+- [x] D2a domain metrics:
+- [x] D2a-fix (orchestrator instruction error): worker job metrics must use spec §2.4 platform names `worker_job_runs_total{job, outcome}` / `worker_job_duration_seconds{job}` (unprefixed, `outcome` ∈ success|failure|retry) — D2a was told to prefix them `solo_leveling_` with `status`; baukit dashboards/alerts/lint query the spec names audit `solo_leveling_` prefix reserved for domain/worker metrics per spec, SQLx pool metrics via baukit-ops feature, worker job metrics
+- [x] D2b deploy/CI: compose/Dockerfile healthchecks moved to ops listener, backend-ci SSH auth for private baukit git deps, `make gen-client` pipeline updated for deterministic OpenAPI, docs/CLAUDE.md command updates
+- [x] D2c frontend envelope convergence: drop dual-shape error tolerance once backend envelope ships, Jest coverage kept ≥80%, theme audit + lint green
+
+### Wave D3 — conformance gate (sequential, 1 agent)
+
+- [x] Investigate/fix OpenAPI parameter misclassification flagged by D2c: 147 query-style params (`limit`, `cursor`, …) emitted as `in: path` in `backend/openapi.json` — likely D1b Utoipa annotation regression; fix at the source and regenerate schema + TS client
+- [x] baukit-test conformance suites wired (ops + metrics + OpenAPI drift) and full CI-equivalent verification: backend fmt/clippy/tests/coverage (Docker-gated included), frontend lint/typecheck/test-coverage/build/e2e — all green on `baukit-migration`
 
 ## Log
 
@@ -130,3 +158,15 @@ Detailed integration map from the read-only scout (2026-08-08): FT is already on
 - 2026-08-08: CI green on main (codex) — removed vulnerable RSA, allowed permissive licenses, and made pnpm's age gate reproducible.
 - 2026-08-08: platform gaps closed (codex) — staggered drain, diagnostic readiness, and provider queue purging added.
 - 2026-08-08: Focus B complete (orchestrator) — Fitness Tracker fully migrated onto baukit on branch baukit-migration (5 commits, B0-B3), all gates green with Docker tests mandatory.
+- 2026-08-08: Focus C verified done (orchestrator) — open-dialog main carries B0–B3; figment/axum-prometheus gone, analytics-core vendored; checked off.
+- 2026-08-08: Focus D scouted and planned (orchestrator); SLS branch baukit-migration created; @baukit/api-runtime tgz pre-built for D1c.
+- 2026-08-08: Focus D shipped (orchestrator, per user) — Node bumped 20→24 (LTS; satisfies baukit engines, NPM_CONFIG_ENGINE_STRICT workaround removed) in both CI workflows + Dockerfile.e2e + README, `docs/baukit-setup.md` added (deploy-key ssh/gh setup, mirrors open-dialog/fitness-tracker); e2e re-run green on Node 24 (44/44). Commit 7a3b140 on baukit-migration, merged to main as 103bea7 and pushed.
+- 2026-08-08: D3 complete (codex, commits e28d729/520d286/64c169e) — Focus D done. OpenAPI bug root-caused as a D1b regression: renaming utoipa-recognized extractor identifiers `Path`/`Query` to `ApiPath`/`ApiQuery` broke utoipa's axum inference, defaulting query DTOs to path params; fixed by aliasing back + `#[into_params(parameter_in = Query)]` + regression tests, artifacts regenerated (238 path / 147 query / 0 optional-path params, matches main). Baukit ops + telemetry §6 + OpenAPI drift conformance wired. Full matrix green: fmt/clippy, `cargo test --workspace -- --include-ignored`, backend coverage 361/361 (82.25%), make lint/typecheck, frontend coverage 528 tests (87.1%), build (191 routes), e2e Docker build + 44/44 Playwright, gen-client no-op. JWT crypto provider pinned (baukit-test pulls a conflicting jsonwebtoken provider). Not pushed. New platform backlog: baukit-test crypto-provider conflict + second reqwest version; metrics conformance helper doesn't enforce worker metric families (product must assert them itself).
+- 2026-08-08: D2a-fix complete (codex, commit a651da2) — worker metrics on spec §2.4 names/labels (`worker_job_runs_total{job,outcome}`), domain metrics untouched; fmt/clippy/tests green.
+- 2026-08-08: D2b complete (codex, commit d87d4ef) — /readyz healthchecks on ops ports 19464/19465, BAUKIT_DEPLOY_KEY SSH auth across backend CI + frontend E2E, vendored tgz in E2E image, engine-strict=false for Node 20, deterministic gen-client, docs. Deferred to D3: authenticated Docker build + E2E (no SSH agent in agent shell), repo-wide lint, in-place gen-client.
+- 2026-08-08: D2a complete (codex, commit 19bbe01) — domain metrics conformed and described, worker job metrics instrumented, readiness acquisition via baukit_ops::acquire; fmt/clippy/tests green. Codex correctly flagged a spec conflict: orchestrator's prompt contradicted telemetry-spec §2.4 on worker metric names → D2a-fix dispatched. Gap: baukit_ops::acquire can't instrument implicit PgPool executors/Pool::begin (7 sites listed in transcript).
+- 2026-08-08: D2c complete (codex, commit 4336f32) — TS schema regenerated, legacy envelope parsing removed, envelope coverage added; typecheck/coverage (86.54%)/build green, repo-wide lint deferred to D3. Flagged: openapi.json emits 147 query params as path params → D3 item.
+- 2026-08-08: D1b complete (codex, commit 9bc0590) — baukit-http layer stack + envelope (product codes preserved, SCIM keeps RFC 7644 shape), 404/405/extractor normalization, exact-once spec §2.1 metrics, deterministic openapi.json + drift test; fmt/clippy/tests green. Friction: fixed CORS header set needs product extension (Accept, x-webhook-secret); JSON extractor code `validation_failed` vs product `invalid_json`; template Cargo.toml diagnostics again.
+- 2026-08-08: D1c complete (codex, commit 7abe09e) — @baukit/api-runtime vendored + adopted in api-client and Expo app, dual-envelope error tolerance, 401 refresh preserved; lint/typecheck/coverage (86.54%)/build green. Friction: baukit TS packages declare Node >=24 while product CI runs Node 20 (EBADENGINE); repo does per-scope npm installs, not one workspace install.
+- 2026-08-08: D1a complete (codex, commit c16cefc) — baukit runtime/telemetry/ops adopted for api/worker/migrate/seed, staggered drain, gating Postgres readiness + pool metrics, /buildinfo; fmt/clippy/tests green. Friction: no complete OTEL_SDK_DISABLED switch (mapped to zero sampling); acquisition timing only via baukit's helper.
+- 2026-08-08: D0 complete (codex, commit 59b3614) — BaukitConfig<ProductConfig> bridge with legacy env aliases, Secret<String>, shared loader across api/worker/migrate/seed; fmt/clippy/tests green. Friction noted for platform backlog: env parsing coerces numeric-looking secrets; private git deps needed `git-fetch-with-cli`; unrendered template Cargo.tomls emit parse diagnostics; exact `thiserror =2.0.20` pin advances consumer lockfiles.
