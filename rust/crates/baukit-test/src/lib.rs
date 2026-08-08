@@ -2,7 +2,7 @@
 //!
 //! The crate provides Docker-backed PostgreSQL fixtures, compact test tracing,
 //! Prometheus contract checks, in-process or network operations-endpoint checks,
-//! OpenAPI drift assertions, and small JWT fixtures.
+//! OpenAPI drift assertions, and a mock OIDC/JWKS issuer with JWT fixtures.
 //!
 //! # Telemetry tests
 //!
@@ -24,22 +24,29 @@
 //!     .expires_at(4_102_444_800);
 //! let token = hs256_token(b"test-only-secret", &claims)?;
 //! assert_eq!(token.split('.').count(), 3);
-//! # Ok::<(), jsonwebtoken::errors::Error>(())
+//! # Ok::<(), baukit_test::JwtFixtureError>(())
 //! ```
 
 #![deny(missing_docs)]
 
+mod auth;
 mod jwt;
 mod metrics;
 mod ops;
 mod postgres;
 mod tracing;
 
+pub use auth::{
+    AuthConformanceError, assert_auth_router_conformance, check_auth_router_conformance,
+};
 pub use baukit_openapi::{
     SchemaError as OpenApiDriftError, assert_no_drift as assert_openapi_no_drift,
     check_no_drift as check_openapi_no_drift,
 };
-pub use jwt::{JwtClaims, authorization_header, hs256_token, rs256_token};
+pub use jwt::{
+    JwtClaims, JwtFixtureError, MockOidcServer, authorization_header, hs256_token, rs256_token,
+    rs256_token_with_key_id, unsigned_token,
+};
 pub use metrics::{MetricsConformanceError, assert_metrics_conformance, check_metrics_conformance};
 pub use ops::{
     OpsConformanceError, assert_ops_base_url_conformance, assert_ops_router_conformance,

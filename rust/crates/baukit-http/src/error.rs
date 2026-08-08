@@ -70,9 +70,27 @@ impl ApiError {
         Self::new(StatusCode::UNAUTHORIZED, "unauthorized", message)
     }
 
+    /// Returns the standard `401 unauthenticated` authentication error.
+    pub fn unauthenticated() -> Self {
+        Self::new(
+            StatusCode::UNAUTHORIZED,
+            "unauthenticated",
+            "Authentication is required",
+        )
+    }
+
     /// Returns a `403 forbidden` error with a safe message.
     pub fn forbidden(message: impl Into<String>) -> Self {
         Self::new(StatusCode::FORBIDDEN, "forbidden", message)
+    }
+
+    /// Returns the standard `403 permission_denied` authorization error.
+    pub fn permission_denied() -> Self {
+        Self::new(
+            StatusCode::FORBIDDEN,
+            "permission_denied",
+            "Permission denied",
+        )
     }
 
     /// Returns a `404 not_found` error with a safe message.
