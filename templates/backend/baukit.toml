@@ -1,0 +1,17 @@
+schema_version = 1
+template_version = "{{ context.template_version }}"
+
+[app]
+name = "{{ context.app_name }}"
+
+[capabilities]
+backend = true
+mobile = false
+web = false
+
+[dependencies.baukit]
+{{ context.baukit_manifest }}
+
+[openapi]
+schema = "backend/openapi.json"
+typescript = "generated/openapi.d.ts"

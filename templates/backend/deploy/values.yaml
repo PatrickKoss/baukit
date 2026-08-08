@@ -1,0 +1,28 @@
+product: {{ context.app_name }}
+deploymentEnvironment: staging
+
+config:
+  existingSecretRefs:
+    - name: {{ context.app_name }}-runtime
+
+api:
+  image:
+    repository: ghcr.io/patrickkoss/{{ context.app_name }}
+    tag: latest
+
+migration:
+  enabled: true
+  image:
+    repository: ghcr.io/patrickkoss/{{ context.app_name }}-migrate
+    tag: latest
+  command:
+    - /app/migrate
+
+worker:
+  enabled: false
+
+ingress:
+  enabled: false
+
+serviceMonitor:
+  enabled: false

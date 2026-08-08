@@ -1,0 +1,82 @@
+product: minimal-api
+deploymentEnvironment: staging
+
+imagePullSecrets:
+  - name: ghcr-pull
+
+config:
+  otlpEndpoint: http://alloy.observability.svc.cluster.local:4318
+  overrides:
+    MAX_NOTES: "250"
+    TELEMETRY__TRACE_SAMPLING_RATIO: "0.25"
+  existingSecretRefs:
+    - name: minimal-api-runtime
+
+api:
+  image:
+    repository: ghcr.io/patrickkoss/minimal-api
+    tag: sha-a1b2c3d
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
+migration:
+  image:
+    repository: ghcr.io/patrickkoss/minimal-api-migrate
+    tag: sha-a1b2c3d
+  command:
+    - /app/minimal-api-migrate
+
+ingress:
+  enabled: true
+  certManager:
+    clusterIssuer: letsencrypt-production
+  # Set this after installing the namespaced Traefik Middleware resource.
+  rateLimitMiddleware: ""
+  hosts:
+    - host: api.staging.minimal-api.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: minimal-api-staging-tls
+      hosts:
+        - api.staging.minimal-api.example.com
+
+serviceMonitor:
+  enabled: false
+
+networkPolicy:
+  prometheus:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: observability
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/name: prometheus
+  additionalEgress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: databases
+          podSelector:
+            matchLabels:
+              cnpg.io/cluster: shared-postgres
+      ports:
+        - port: 5432
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: alloy
+      ports:
+        - port: 4318
+          protocol: TCP
+

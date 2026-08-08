@@ -1,0 +1,39 @@
+[package]
+name = "baukit-test"
+description = "Shared integration fixtures and conformance-test support for Baukit services."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = []
+sqlx-postgres = ["dep:sqlx"]
+
+[dependencies]
+axum.workspace = true
+baukit-openapi.workspace = true
+baukit-ops.workspace = true
+jsonwebtoken = { workspace = true, features = ["rust_crypto"] }
+regex.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx = { workspace = true, optional = true, features = ["migrate"] }
+testcontainers.workspace = true
+testcontainers-modules.workspace = true
+thiserror.workspace = true
+tower = { workspace = true, features = ["util"] }
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+baukit-http.workspace = true
+baukit-telemetry.workspace = true
+metrics.workspace = true
+metrics-exporter-prometheus.workspace = true
+tempfile.workspace = true
+tokio.workspace = true

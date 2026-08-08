@@ -1,0 +1,173 @@
+groups:
+  - name: baukit-slo-alerts
+    rules:
+      # 99.9% availability SLO template. Tune the recording-rule budget divisor
+      # and both burn thresholds as one product-specific policy.
+      - alert: BaukitHighErrorBudgetBurnFast
+        expr: |
+          baukit:http_requests_5xx:error_budget_burn_rate5m{service!=""} > 14.4
+          and on (product, service, environment)
+          baukit:http_requests_5xx:error_budget_burn_rate1h{service!=""} > 14.4
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Fast 5xx error-budget burn
+          description: 'The 5m and 1h windows exceed 14.4x budget for {{ $labels }}.'
+          runbook_url: https://runbooks.example.invalid/baukit/high-error-budget-burn
+
+      - alert: BaukitHighErrorBudgetBurnSlow
+        expr: |
+          baukit:http_requests_5xx:error_budget_burn_rate30m{service!=""} > 6
+          and on (product, service, environment)
+          baukit:http_requests_5xx:error_budget_burn_rate6h{service!=""} > 6
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Sustained 5xx error-budget burn
+          description: 'The 30m and 6h windows exceed 6x budget for {{ $labels }}.'
+          runbook_url: https://runbooks.example.invalid/baukit/high-error-budget-burn
+
+      - alert: BaukitHttpP95LatencyHigh
+        expr: baukit:http_request_duration_seconds:p95_5m{service!=""} > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: HTTP p95 latency is high
+          description: 'HTTP p95 latency has exceeded 0.5s for {{ $labels }}.'
+          runbook_url: https://runbooks.example.invalid/baukit/http-latency
+
+      - alert: BaukitHttpP99LatencyHigh
+        expr: baukit:http_request_duration_seconds:p99_5m{service!=""} > 1
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: HTTP p99 latency is high
+          description: 'HTTP p99 latency has exceeded 1s for {{ $labels }}.'
+          runbook_url: https://runbooks.example.invalid/baukit/http-latency
+
+  - name: baukit-readiness-alerts
+    rules:
+      - alert: BaukitServiceScrapeDown
+        expr: up{service!=""} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Baukit service scrape is failing
+          description: 'Prometheus cannot scrape the service target for {{ $labels }}.'
+          runbook_url: https://runbooks.example.invalid/baukit/service-scrape-down
+
+      - alert: BaukitServiceTargetsAbsent
+        expr: absent(up{service!=""})
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: No Baukit service targets are discoverable
+          description: 'Prometheus has no service-labeled targets; alert context is {{ $labels }}.'
+          runbook_url: https://runbooks.example.invalid/baukit/service-targets-absent
+
+      - alert: BaukitBuildInfoAbsent
+        expr: |
+          (up{service!=""} == 1)
+          unless on (product, service, environment, namespace, instance, job)
+          (build_info{service!=""} == 1)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Build metadata is absent
+          description: 'A healthy scrape target is not exposing build_info for {{ $labels }}.'
+          runbook_url: https://runbooks.example.invalid/baukit/build-info-absent
+
+  - name: baukit-database-alerts
+    rules:
+      - alert: BaukitDatabasePoolSaturated
+        expr: |
+          sum by (product, service, environment, namespace, instance) (
+            db_pool_connections_in_use{service!=""}
+          )
+          /
+          clamp_min(
+            sum by (product, service, environment, namespace, instance) (
+              db_pool_connections_max{service!=""}
+            ),
+            1
+          ) > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Database pool is saturated
+          description: 'More than 90% of database pool connections are in use for {{ $labels }}.'
+          runbook_url: https://runbooks.example.invalid/baukit/database-pool-saturation
+
+      - alert: BaukitDatabaseAcquireTimeouts
+        expr: increase(db_pool_acquire_timeouts_total{service!=""}[10m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Database connection acquisition is timing out
+          description: 'Database acquire timeouts increased during the last 10m for {{ $labels }}.'
+          runbook_url: https://runbooks.example.invalid/baukit/database-acquire-timeouts
+
+  - name: baukit-worker-alerts
+    rules:
+      - alert: BaukitWorkerFailureRateHigh
+        expr: |
+          sum by (product, service, environment, namespace, job) (
+            rate(worker_job_runs_total{service!="", outcome="failure"}[5m])
+          )
+          /
+          clamp_min(
+            sum by (product, service, environment, namespace, job) (
+              rate(worker_job_runs_total{service!=""}[5m])
+            ),
+            0.001
+          ) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Worker failure rate is high
+          description: 'More than 10% of worker runs are failing for {{ $labels }}.'
+          runbook_url: https://runbooks.example.invalid/baukit/worker-failures
+
+      - alert: BaukitWorkerRetryStorm
+        expr: |
+          sum by (product, service, environment, namespace, job) (
+            rate(worker_job_runs_total{service!="", outcome="retry"}[5m])
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Worker retries are elevated
+          description: 'Worker retry throughput exceeds one retry per second for {{ $labels }}.'
+          runbook_url: https://runbooks.example.invalid/baukit/worker-retry-storm
+
+      - alert: BaukitWorkerQueueOldestAgeHigh
+        expr: worker_queue_oldest_age_seconds{service!=""} > 300
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Worker queue age is high
+          description: 'The oldest queued job is more than five minutes old for {{ $labels }}.'
+          runbook_url: https://runbooks.example.invalid/baukit/worker-queue-age
+
+  - name: baukit-dead-man-alerts
+    rules:
+      - alert: BaukitDeadMansSwitch
+        expr: vector(1)
+        labels:
+          severity: info
+        annotations:
+          summary: Baukit alert pipeline heartbeat
+          description: 'This alert must always be firing; missing notifications indicate a broken alert path for {{ $labels }}.'
+          runbook_url: https://runbooks.example.invalid/baukit/dead-mans-switch

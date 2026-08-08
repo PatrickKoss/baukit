@@ -1,0 +1,124 @@
+@import './tokens.css';
+
+:root {
+  color: var(--bk-color-text-primary);
+  background: var(--bk-color-background-primary);
+  font-family: var(--bk-typography-family-body);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button {
+  font: inherit;
+}
+
+.shell {
+  width: min(760px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 64px 0;
+}
+
+.eyebrow {
+  margin: 0 0 calc(var(--bk-space-small) * 1px);
+  color: var(--bk-color-background-accent);
+  font-size: 0.75rem;
+  font-weight: var(--bk-typography-weight-bold);
+  letter-spacing: 0.14em;
+}
+
+h1,
+h2,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  margin-bottom: calc(var(--bk-space-small) * 1px);
+  font-size: clamp(2.5rem, 8vw, 4.5rem);
+  line-height: var(--bk-typography-line-height-title);
+}
+
+.lede,
+.muted {
+  color: #59636e;
+  line-height: var(--bk-typography-line-height-body);
+}
+
+.panel,
+.consent {
+  margin-top: 32px;
+  padding: 24px;
+  border: 1px solid #d8dde3;
+  border-radius: 14px;
+  box-shadow: var(--bk-elevation-raised);
+}
+
+.items {
+  display: grid;
+  gap: calc(var(--bk-space-small) * 1px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  justify-content: space-between;
+  gap: calc(var(--bk-space-medium) * 1px);
+  padding: 12px 0;
+  border-bottom: 1px solid #e7eaee;
+}
+
+.item:last-child {
+  border-bottom: 0;
+}
+
+.item-id {
+  color: #76808b;
+  font-family: ui-monospace, monospace;
+  font-size: 0.78rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--bk-space-small) * 1px);
+}
+
+.action {
+  padding: 10px 16px;
+  border: 1px solid var(--bk-color-background-accent);
+  border-radius: calc(var(--bk-radius-small) * 1px);
+  color: var(--bk-color-text-on-accent);
+  background: var(--bk-color-background-accent);
+  cursor: pointer;
+}
+
+.action.secondary {
+  color: var(--bk-color-text-primary);
+  background: transparent;
+}
+
+.error {
+  color: #b42318;
+}
+
+@media (max-width: 560px) {
+  .shell {
+    padding: 32px 0;
+  }
+
+  .item {
+    flex-direction: column;
+  }
+}

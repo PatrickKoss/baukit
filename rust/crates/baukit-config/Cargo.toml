@@ -1,0 +1,19 @@
+[package]
+name = "baukit-config"
+description = "Layered, validated application configuration and secret-handling conventions."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+baukit-core.workspace = true
+config.workspace = true
+dotenvy.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true

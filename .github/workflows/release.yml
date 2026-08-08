@@ -1,0 +1,144 @@
+name: Release train
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: SemVer increment for the next 0.x release train
+        required: true
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+  push:
+    tags:
+      - 'baukit-v*.*.*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-train-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare coordinated release PR
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout main with release history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: typescript/.nvmrc
+
+      - name: Enable pinned pnpm
+        working-directory: typescript
+        run: |
+          corepack enable
+          corepack install
+
+      - name: Install TypeScript dependencies
+        working-directory: typescript
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare Rust, TypeScript, and template versions
+        id: train
+        run: scripts/release-train.sh '${{ inputs.version_bump }}'
+
+      - name: Verify Rust workspace
+        run: |
+          cargo fmt --manifest-path rust/Cargo.toml --all --check
+          cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path rust/Cargo.toml
+
+      - name: Verify TypeScript workspace
+        working-directory: typescript
+        run: pnpm check
+
+      - name: Verify minimal example
+        run: |
+          cargo fmt --manifest-path examples/minimal-api/Cargo.toml --all --check
+          cargo clippy --manifest-path examples/minimal-api/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path examples/minimal-api/Cargo.toml
+
+      - name: Open or update release-train PR
+        uses: peter-evans/create-pull-request@v8
+        with:
+          base: main
+          branch: release-plz-baukit-v${{ steps.train.outputs.version }}
+          commit-message: 'chore: prepare baukit v${{ steps.train.outputs.version }}'
+          title: 'chore: prepare baukit v${{ steps.train.outputs.version }}'
+          body: |
+            Coordinated private release train for Rust crates, TypeScript packages,
+            and templates. Review every generated changelog and confirm that
+            `docs/platform/compatibility-matrix.md` describes the tested baselines.
+          labels: release
+          delete-branch: true
+
+  publish-github-release:
+    name: Validate tag and publish GitHub release
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout tagged train
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: typescript/.nvmrc
+
+      - name: Enable pinned pnpm
+        working-directory: typescript
+        run: |
+          corepack enable
+          corepack install
+
+      - name: Install TypeScript dependencies
+        working-directory: typescript
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate unified tag and versions
+        run: scripts/check-version-coherence.py --tag '${{ github.ref_name }}'
+
+      - name: Verify tagged train
+        run: |
+          cargo test --manifest-path rust/Cargo.toml
+          pnpm --dir typescript check
+          cargo test --manifest-path examples/minimal-api/Cargo.toml
+
+      - name: Aggregate release notes
+        run: |
+          version=${GITHUB_REF_NAME#baukit-v}
+          scripts/aggregate-release-notes.sh "$version" > "$RUNNER_TEMP/release-notes.md"
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md"
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --verify-tag \
+              --title "baukit ${GITHUB_REF_NAME#baukit-v}" \
+              --notes-file "$RUNNER_TEMP/release-notes.md"
+          fi

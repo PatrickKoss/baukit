@@ -1,0 +1,220 @@
+nameOverride: ""
+fullnameOverride: ""
+
+product: minimal-api
+deploymentEnvironment: local
+
+imagePullSecrets: []
+
+podLabels: {}
+podAnnotations: {}
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+serviceAccount:
+  automountToken: false
+
+config:
+  # Defaults to product, normalized as an uppercase environment-variable prefix.
+  envPrefix: ""
+  otlpEndpoint: ""
+  # Keys are suffixes such as MAX_NOTES or DATABASE__MAX_CONNECTIONS.
+  overrides: {}
+  # Existing Secrets are mounted with envFrom. Secret values never belong here.
+  existingSecretRefs: []
+
+api:
+  replicas: 1
+  image:
+    repository: ghcr.io/example/minimal-api
+    tag: latest
+    pullPolicy: IfNotPresent
+  command: []
+  args: []
+  ports:
+    http: 8080
+    ops: 9090
+  terminationGracePeriodSeconds: 30
+  strategy:
+    maxUnavailable: 0
+    maxSurge: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 2
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 3
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+worker:
+  enabled: false
+  replicas: 1
+  image:
+    repository: ghcr.io/example/minimal-worker
+    tag: latest
+    pullPolicy: IfNotPresent
+  command: []
+  args: []
+  ops:
+    enabled: true
+    port: 9090
+  terminationGracePeriodSeconds: 30
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 2
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 3
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+migration:
+  enabled: true
+  image:
+    repository: ghcr.io/example/minimal-migrate
+    tag: latest
+    pullPolicy: IfNotPresent
+  command:
+    - /app/migrate
+  args: []
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
+seed:
+  enabled: false
+  allowProduction: false
+  image:
+    repository: ghcr.io/example/minimal-seed
+    tag: latest
+    pullPolicy: IfNotPresent
+  command:
+    - /app/seed
+  args: []
+  backoffLimit: 1
+  activeDeadlineSeconds: 600
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
+service:
+  type: ClusterIP
+  port: 80
+  annotations: {}
+
+opsService:
+  type: ClusterIP
+  port: 9090
+  annotations: {}
+  prometheusScrape:
+    enabled: true
+    path: /metrics
+
+workerOpsService:
+  type: ClusterIP
+  port: 9090
+  annotations: {}
+  prometheusScrape:
+    enabled: true
+    path: /metrics
+
+ingress:
+  enabled: false
+  className: traefik
+  annotations: {}
+  certManager:
+    clusterIssuer: ""
+  # Example: namespace-traefik-ratelimit@kubernetescrd
+  rateLimitMiddleware: ""
+  hosts:
+    - host: minimal-api.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: ""
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  labels: {}
+
+networkPolicy:
+  enabled: true
+  ingressController:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: kube-system
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/name: traefik
+  prometheus:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: observability
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/name: prometheus
+  dns:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: kube-system
+    podSelector:
+      matchLabels:
+        k8s-app: kube-dns
+  # Kubernetes NetworkPolicy egress rules appended after the DNS rule.
+  additionalEgress: []

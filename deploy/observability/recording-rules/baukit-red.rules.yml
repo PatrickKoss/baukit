@@ -1,0 +1,92 @@
+groups:
+  - name: baukit-red-recording
+    interval: 30s
+    rules:
+      - record: baukit:http_requests:rate5m
+        expr: |
+          sum by (product, service, environment, route) (
+            rate(http_requests_total[5m])
+          )
+
+      - record: baukit:http_requests_5xx:rate5m
+        expr: |
+          sum by (product, service, environment, route) (
+            rate(http_requests_total{status=~"5.."}[5m])
+          )
+
+      - record: baukit:http_requests_5xx:ratio5m
+        expr: |
+          baukit:http_requests_5xx:rate5m
+          /
+          baukit:http_requests:rate5m
+
+      - record: baukit:http_request_duration_seconds:p95_5m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (product, service, environment, route, le) (
+              rate(http_request_duration_seconds_bucket[5m])
+            )
+          )
+
+      - record: baukit:http_request_duration_seconds:p99_5m
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (product, service, environment, route, le) (
+              rate(http_request_duration_seconds_bucket[5m])
+            )
+          )
+
+  - name: baukit-error-budget-recording
+    interval: 30s
+    rules:
+      # Default SLO: 99.9% availability, hence a 0.001 error budget.
+      # Products tune this divisor together with the alert thresholds.
+      - record: baukit:http_requests_5xx:error_budget_burn_rate5m
+        expr: |
+          (
+            sum by (product, service, environment) (
+              rate(http_requests_total{status=~"5.."}[5m])
+            )
+            /
+            sum by (product, service, environment) (
+              rate(http_requests_total[5m])
+            )
+          ) / 0.001
+
+      - record: baukit:http_requests_5xx:error_budget_burn_rate1h
+        expr: |
+          (
+            sum by (product, service, environment) (
+              rate(http_requests_total{status=~"5.."}[1h])
+            )
+            /
+            sum by (product, service, environment) (
+              rate(http_requests_total[1h])
+            )
+          ) / 0.001
+
+      - record: baukit:http_requests_5xx:error_budget_burn_rate30m
+        expr: |
+          (
+            sum by (product, service, environment) (
+              rate(http_requests_total{status=~"5.."}[30m])
+            )
+            /
+            sum by (product, service, environment) (
+              rate(http_requests_total[30m])
+            )
+          ) / 0.001
+
+      - record: baukit:http_requests_5xx:error_budget_burn_rate6h
+        expr: |
+          (
+            sum by (product, service, environment) (
+              rate(http_requests_total{status=~"5.."}[6h])
+            )
+            /
+            sum by (product, service, environment) (
+              rate(http_requests_total[6h])
+            )
+          ) / 0.001

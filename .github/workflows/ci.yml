@@ -1,0 +1,235 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version-coherence:
+    name: Release version coherence
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/check-version-coherence.py
+
+  rustfmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust -> target
+      - run: cargo fmt --manifest-path rust/Cargo.toml --all --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust -> target
+      - run: cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust -> target
+      - run: cargo test --manifest-path rust/Cargo.toml
+
+  cargo-deny:
+    name: Cargo deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust -> target
+      - uses: taiki-e/install-action@cargo-deny
+      - run: cargo deny --manifest-path rust/Cargo.toml --config rust/deny.toml check advisories licenses
+
+  msrv:
+    name: MSRV (Rust 1.95)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.95"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust -> target
+          key: msrv-1.95
+      - run: cargo check --manifest-path rust/Cargo.toml --workspace --all-targets
+
+  typescript:
+    name: TypeScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: typescript/.nvmrc
+      - name: Enable pinned pnpm
+        working-directory: typescript
+        run: |
+          corepack enable
+          corepack install
+          pnpm --version
+      - name: Find pnpm store
+        id: pnpm-store
+        working-directory: typescript
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('typescript/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+      - name: Install TypeScript dependencies
+        working-directory: typescript
+        run: pnpm install --frozen-lockfile
+      - name: Build, lint, and test TypeScript packages
+        working-directory: typescript
+        run: pnpm turbo build lint test
+
+  observability-lint:
+    name: Observability metric names
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 deploy/observability/lint/check-metric-names.py
+
+  cli:
+    name: Baukit CLI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cli -> target
+      - run: cargo fmt --manifest-path cli/Cargo.toml --all --check
+      - run: cargo clippy --manifest-path cli/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --manifest-path cli/Cargo.toml
+
+  generated-fixture:
+    name: Generated fixture (${{ matrix.flavor }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - flavor: backend
+            flags: --backend
+            backend: true
+            mobile: false
+            web: false
+          - flavor: web
+            flags: --web
+            backend: false
+            mobile: false
+            web: true
+          - flavor: combined
+            flags: --backend --mobile --web
+            backend: true
+            mobile: true
+            web: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: actions/setup-node@v4
+        if: matrix.mobile || matrix.web
+        with:
+          node-version-file: typescript/.nvmrc
+      - name: Enable pinned pnpm
+        if: matrix.mobile || matrix.web
+        working-directory: typescript
+        run: |
+          corepack enable
+          corepack install
+          pnpm --version
+      - name: Find pnpm store
+        if: matrix.mobile || matrix.web
+        id: pnpm-store
+        working-directory: typescript
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        if: matrix.mobile || matrix.web
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-generated-${{ matrix.flavor }}-${{ hashFiles('typescript/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-generated-
+            ${{ runner.os }}-pnpm-
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cli -> target
+          key: generated-fixture-cli
+      - name: Build local Baukit TypeScript dependencies
+        if: matrix.mobile || matrix.web
+        working-directory: typescript
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @baukit/analytics-core --filter @baukit/api-runtime --filter @baukit/ui-tokens run build
+      - name: Build CLI and generate local-path fixture
+        run: |
+          cargo build --manifest-path cli/Cargo.toml --bin baukit
+          cli/target/debug/baukit new fixture ${{ matrix.flags }} --dir .generated-fixture --baukit-path rust
+      - uses: Swatinem/rust-cache@v2
+        if: matrix.backend
+        with:
+          workspaces: .generated-fixture/fixture/backend -> target
+          key: generated-fixture-${{ matrix.flavor }}-backend
+      - name: Format generated backend
+        if: matrix.backend
+        run: cargo fmt --manifest-path .generated-fixture/fixture/backend/Cargo.toml --all --check
+      - name: Lint generated backend
+        if: matrix.backend
+        run: cargo clippy --manifest-path .generated-fixture/fixture/backend/Cargo.toml --all-targets -- -D warnings
+      - name: Test generated backend and OpenAPI drift
+        if: matrix.backend
+        run: |
+          cargo test --manifest-path .generated-fixture/fixture/backend/Cargo.toml
+          cargo test --manifest-path .generated-fixture/fixture/backend/Cargo.toml -p fixture-bin --test openapi_drift
+      - name: Install and verify generated web app
+        if: matrix.web
+        working-directory: .generated-fixture/fixture/web
+        run: |
+          pnpm install
+          pnpm build
+          pnpm lint
+          pnpm test
+      # Native Expo builds stay in release workflows; fixture CI checks portable source behavior.
+      - name: Install and verify generated mobile app without a native build
+        if: matrix.mobile
+        working-directory: .generated-fixture/fixture/mobile
+        run: |
+          pnpm install
+          pnpm exec tsc --noEmit
+          pnpm lint
+          pnpm test

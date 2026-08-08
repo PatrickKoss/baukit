@@ -1,0 +1,26 @@
+[advisories]
+ignore = []
+
+[licenses]
+confidence-threshold = 0.8
+private = { ignore = true }
+unused-allowed-license = "allow"
+allow = [
+  "Apache-2.0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "MIT",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "Zlib",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
