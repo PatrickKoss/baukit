@@ -65,7 +65,7 @@ fi
   echo "Release the coordinated baukit $next train."
 } > "$train_changeset"
 
-pnpm --dir typescript version-packages
+(cd typescript && pnpm version-packages)
 
 actual_ts=$(node -p "require('./typescript/packages/analytics-core/package.json').version")
 if [[ "$actual_ts" != "$next" ]]; then
