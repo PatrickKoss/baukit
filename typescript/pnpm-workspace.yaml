@@ -1,4 +1,17 @@
 packages:
   - 'packages/*'
+minimumReleaseAge: 1440
+minimumReleaseAgeStrict: true
+minimumReleaseAgeExclude:
+  # These exact lockfile versions were reviewed when the workspace was created.
+  # Future releases remain subject to the 24-hour maturity gate.
+  - '@turbo/darwin-64@2.10.9'
+  - '@turbo/darwin-arm64@2.10.9'
+  - '@turbo/linux-64@2.10.9'
+  - '@turbo/linux-arm64@2.10.9'
+  - '@turbo/windows-64@2.10.9'
+  - '@turbo/windows-arm64@2.10.9'
+  - 'posthog-js@1.414.0'
+  - 'turbo@2.10.9'
 allowBuilds:
   core-js: true
