@@ -12,6 +12,11 @@ const HTTP_DURATION_SUM: &str = "http_request_duration_seconds_sum";
 const HTTP_DURATION_COUNT: &str = "http_request_duration_seconds_count";
 const HTTP_REQUESTS_IN_FLIGHT: &str = "http_requests_in_flight";
 const BUILD_INFO: &str = "build_info";
+const WORKER_JOB_RUNS_TOTAL: &str = "worker_job_runs_total";
+const WORKER_JOB_DURATION_BUCKET: &str = "worker_job_duration_seconds_bucket";
+const WORKER_JOB_DURATION_SUM: &str = "worker_job_duration_seconds_sum";
+const WORKER_JOB_DURATION_COUNT: &str = "worker_job_duration_seconds_count";
+const WORKER_OUTCOMES: &[&str] = &["success", "failure", "retry"];
 
 static APP_PREFIXED_HTTP: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^.+_http_requests?_.*$").expect("app-prefixed HTTP regex is valid")
@@ -54,6 +59,43 @@ impl fmt::Display for MetricsConformanceError {
 
 impl std::error::Error for MetricsConformanceError {}
 
+/// Selects the process-specific metric families required by conformance checks.
+///
+/// The default mode requires only the metric families that apply to every
+/// process. Use [`MetricsConformanceOptions::require_http_metrics`] for an HTTP
+/// server and [`MetricsConformanceOptions::require_worker_metrics`] when the
+/// product declares that the process runs a worker.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct MetricsConformanceOptions {
+    http_serving: bool,
+    worker: bool,
+}
+
+impl MetricsConformanceOptions {
+    /// Creates options that require only process-independent metrics.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            http_serving: false,
+            worker: false,
+        }
+    }
+
+    /// Requires the canonical HTTP server metric families.
+    #[must_use]
+    pub const fn require_http_metrics(mut self) -> Self {
+        self.http_serving = true;
+        self
+    }
+
+    /// Requires the canonical worker job counter and duration histogram.
+    #[must_use]
+    pub const fn require_worker_metrics(mut self) -> Self {
+        self.worker = true;
+        self
+    }
+}
+
 /// Checks Prometheus exposition against telemetry-spec sections 2 and 6.
 ///
 /// Set `http_serving` when the process serves HTTP. In that mode all canonical
@@ -70,14 +112,34 @@ pub fn check_metrics_conformance(
     exposition: impl AsRef<str>,
     http_serving: bool,
 ) -> Result<(), MetricsConformanceError> {
+    let options = if http_serving {
+        MetricsConformanceOptions::new().require_http_metrics()
+    } else {
+        MetricsConformanceOptions::new()
+    };
+    check_metrics_conformance_with_options(exposition, options)
+}
+
+/// Checks Prometheus exposition with explicit process-specific requirements.
+///
+/// Unlike [`check_metrics_conformance`], this entry point can opt into the
+/// worker families from telemetry-spec section 2.4 through
+/// [`MetricsConformanceOptions::require_worker_metrics`].
+pub fn check_metrics_conformance_with_options(
+    exposition: impl AsRef<str>,
+    options: MetricsConformanceOptions,
+) -> Result<(), MetricsConformanceError> {
     let mut violations = Vec::new();
     let samples = parse_samples(exposition.as_ref(), &mut violations);
 
     check_forbidden_names(exposition.as_ref(), &samples, &mut violations);
     check_label_values(&samples, &mut violations);
     check_build_info(&samples, &mut violations);
-    if http_serving {
+    if options.http_serving {
         check_http_metrics(&samples, &mut violations);
+    }
+    if options.worker {
+        check_worker_metrics(&samples, &mut violations);
     }
 
     if violations.is_empty() {
@@ -96,6 +158,23 @@ pub fn check_metrics_conformance(
 #[track_caller]
 pub fn assert_metrics_conformance(exposition: impl AsRef<str>, http_serving: bool) {
     if let Err(error) = check_metrics_conformance(exposition, http_serving) {
+        panic!("{error}");
+    }
+}
+
+/// Panics when Prometheus exposition violates the selected telemetry contract.
+///
+/// # Panics
+///
+/// Panics with every discovered violation. See
+/// [`check_metrics_conformance_with_options`] when the caller should handle
+/// failures.
+#[track_caller]
+pub fn assert_metrics_conformance_with_options(
+    exposition: impl AsRef<str>,
+    options: MetricsConformanceOptions,
+) {
+    if let Err(error) = check_metrics_conformance_with_options(exposition, options) {
         panic!("{error}");
     }
 }
@@ -348,6 +427,47 @@ fn check_http_metrics(samples: &[Sample], violations: &mut Vec<String>) {
     );
 }
 
+fn check_worker_metrics(samples: &[Sample], violations: &mut Vec<String>) {
+    for metric in [
+        WORKER_JOB_RUNS_TOTAL,
+        WORKER_JOB_DURATION_BUCKET,
+        WORKER_JOB_DURATION_SUM,
+        WORKER_JOB_DURATION_COUNT,
+    ] {
+        require_metric(samples, metric, violations);
+    }
+
+    check_exact_labels(
+        samples,
+        WORKER_JOB_RUNS_TOTAL,
+        &["job", "outcome"],
+        violations,
+    );
+    check_exact_labels(
+        samples,
+        WORKER_JOB_DURATION_BUCKET,
+        &["job", "le"],
+        violations,
+    );
+    for metric in [WORKER_JOB_DURATION_SUM, WORKER_JOB_DURATION_COUNT] {
+        check_exact_labels(samples, metric, &["job"], violations);
+    }
+
+    for sample in samples
+        .iter()
+        .filter(|sample| sample.name == WORKER_JOB_RUNS_TOTAL)
+    {
+        if let Some(outcome) = sample.labels.get("outcome")
+            && !WORKER_OUTCOMES.contains(&outcome.as_str())
+        {
+            violations.push(format!(
+                "line {}: metric `{WORKER_JOB_RUNS_TOTAL}` has unsupported outcome `{outcome}`; expected success, failure, or retry",
+                sample.line
+            ));
+        }
+    }
+}
+
 fn require_metric(samples: &[Sample], name: &str, violations: &mut Vec<String>) {
     if !samples.iter().any(|sample| sample.name == name) {
         violations.push(format!("required metric sample `{name}` is missing"));
@@ -458,6 +578,65 @@ domain_total{kind="person@example.com",subject="550e8400-e29b-41d4-a716-44665544
         assert!(rendered.contains("email-shaped"), "{rendered}");
         assert!(rendered.contains("UUID-shaped"), "{rendered}");
         assert!(rendered.contains("contains `?`"), "{rendered}");
+    }
+
+    #[test]
+    fn default_mode_does_not_require_worker_metrics() {
+        let exposition = r#"
+build_info{version="1",commit="abc",rust_version="1.95"} 1
+"#;
+
+        check_metrics_conformance(exposition, false)
+            .expect("default mode keeps worker metrics optional");
+    }
+
+    #[test]
+    fn worker_mode_requires_and_accepts_spec_metric_families() {
+        let build_only = r#"
+build_info{version="1",commit="abc",rust_version="1.95"} 1
+"#;
+        let options = MetricsConformanceOptions::new().require_worker_metrics();
+        let error = check_metrics_conformance_with_options(build_only, options)
+            .expect_err("worker mode requires worker metric families");
+        let rendered = error.to_string();
+        assert!(rendered.contains(WORKER_JOB_RUNS_TOTAL), "{rendered}");
+        assert!(rendered.contains(WORKER_JOB_DURATION_BUCKET), "{rendered}");
+        assert!(rendered.contains(WORKER_JOB_DURATION_SUM), "{rendered}");
+        assert!(rendered.contains(WORKER_JOB_DURATION_COUNT), "{rendered}");
+
+        let worker_exposition = r#"
+build_info{version="1",commit="abc",rust_version="1.95"} 1
+worker_job_runs_total{job="sync",outcome="success"} 1
+worker_job_runs_total{job="sync",outcome="failure"} 1
+worker_job_runs_total{job="sync",outcome="retry"} 1
+worker_job_duration_seconds_bucket{job="sync",le="1"} 1
+worker_job_duration_seconds_sum{job="sync"} 0.25
+worker_job_duration_seconds_count{job="sync"} 1
+"#;
+        check_metrics_conformance_with_options(worker_exposition, options)
+            .expect("worker metrics conform");
+    }
+
+    #[test]
+    fn worker_mode_rejects_unknown_outcomes_and_label_drift() {
+        let exposition = r#"
+build_info{version="1",commit="abc",rust_version="1.95"} 1
+worker_job_runs_total{job="sync",outcome="cancelled"} 1
+worker_job_duration_seconds_bucket{job="sync",queue="default",le="1"} 1
+worker_job_duration_seconds_sum{job="sync"} 0.25
+worker_job_duration_seconds_count{job="sync"} 1
+"#;
+        let error = check_metrics_conformance_with_options(
+            exposition,
+            MetricsConformanceOptions::new().require_worker_metrics(),
+        )
+        .expect_err("worker labels and outcomes are bounded");
+        let rendered = error.to_string();
+        assert!(
+            rendered.contains("unsupported outcome `cancelled`"),
+            "{rendered}"
+        );
+        assert!(rendered.contains("labels are"), "{rendered}");
     }
 
     #[test]

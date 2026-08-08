@@ -1,14 +1,20 @@
 use std::{env, error::Error, net::SocketAddr, sync::Arc};
 
-use baukit_config::{BaukitConfig, ConfigLoader, Environment};
+{% if context.auth_oidc %}use baukit_auth::{AuthState, OidcConfig, OidcVerifier};
+{% endif %}use baukit_config::{BaukitConfig, ConfigLoader, Environment};
 use baukit_ops::TrafficGate;
 use baukit_runtime::{ProcessKind, ServiceInfo, ShutdownToken, build_info, serve_listener_pair};
 use baukit_telemetry::{TelemetryBuilder, tracing};
+
 use {{ context.app_crate }}_api::{ApiState, router};
-use {{ context.app_crate }}_bin::{InMemoryItemRepository, operations_router};
-use {{ context.app_crate }}_ports::ItemRepository;
+use {{ context.app_crate }}_bin::{InMemoryItemRepository{% if context.auth_oidc %}, ProductConfig{% endif %}, operations_router};
+{% if context.auth_oidc %}use {{ context.app_crate }}_ports::{ItemRepository, UserRepository};
+{% else %}use {{ context.app_crate }}_ports::ItemRepository;
+{% endif %}
 use {{ context.app_crate }}_postgres::PostgresItemRepository;
-use {{ context.app_crate }}_services::ItemService;
+{% if context.auth_oidc %}use {{ context.app_crate }}_services::{ItemService, UserService};
+{% else %}use {{ context.app_crate }}_services::ItemService;
+{% endif %}
 use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
 
@@ -21,11 +27,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .map(|value| value.parse())
         .transpose()?
         .unwrap_or(Environment::Local);
-    let config: BaukitConfig<()> = ConfigLoader::new(PRODUCT, environment)?.load()?;
+    let config: BaukitConfig<{% if context.auth_oidc %}ProductConfig{% else %}(){% endif %}> = ConfigLoader::new(PRODUCT, environment)?.load()?;
     run(config).await
 }
 
-async fn run(config: BaukitConfig<()>) -> Result<(), Box<dyn Error>> {
+async fn run(config: BaukitConfig<{% if context.auth_oidc %}ProductConfig{% else %}(){% endif %}>) -> Result<(), Box<dyn Error>> {
     let service_info =
         ServiceInfo::new(PRODUCT, ProcessKind::Api, build_info!(), config.environment);
     let mut telemetry_builder = TelemetryBuilder::new(service_info.telemetry_identity().clone())
@@ -36,7 +42,28 @@ async fn run(config: BaukitConfig<()>) -> Result<(), Box<dyn Error>> {
     }
     let telemetry = Arc::new(telemetry_builder.init()?);
 
-    let repository: Arc<dyn ItemRepository> = if let Some(database) = &config.database {
+{% if context.auth_oidc %}    let (item_repository, user_repository): (Arc<dyn ItemRepository>, Arc<dyn UserRepository>) =
+        if let Some(database) = &config.database {
+            let pool = PgPoolOptions::new()
+                .max_connections(database.max_connections)
+                .min_connections(database.min_connections)
+                .acquire_timeout(database.acquire_timeout)
+                .connect(database.url.expose())
+                .await?;
+            let repository = Arc::new(PostgresItemRepository::new(pool));
+            (repository.clone(), repository)
+        } else {
+            tracing::warn!(
+                message = "database is not configured; using the in-memory item adapter"
+            );
+            let repository = Arc::new(InMemoryItemRepository::new());
+            (repository.clone(), repository)
+        };
+    let item_service = ItemService::new(item_repository);
+    let user_service = UserService::new(user_repository);
+    let oidc = OidcConfig::new(&config.product.auth.issuer, &config.product.auth.audience)?;
+    let auth = AuthState::new(OidcVerifier::discover(oidc).await?);
+{% else %}    let repository: Arc<dyn ItemRepository> = if let Some(database) = &config.database {
         let pool = PgPoolOptions::new()
             .max_connections(database.max_connections)
             .min_connections(database.min_connections)
@@ -49,10 +76,13 @@ async fn run(config: BaukitConfig<()>) -> Result<(), Box<dyn Error>> {
         Arc::new(InMemoryItemRepository::new())
     };
     let item_service = ItemService::new(repository);
+{% endif %}
     let api = router(
         ApiState {
             items: item_service.clone(),
-        },
+{% if context.auth_oidc %}            users: user_service,
+            auth,
+{% endif %}        },
         &config.http,
     )?;
 

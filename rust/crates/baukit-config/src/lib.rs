@@ -49,7 +49,7 @@ use std::{
 pub use baukit_core::{
     DeploymentEnvironment, DeploymentEnvironment as Environment, LogFormat, ParseEnvironmentError,
 };
-use config::{Config, File};
+use config::{Config, File, Value, ValueKind};
 use serde::{Deserialize, Deserializer};
 use thiserror::Error;
 use zeroize::Zeroize;
@@ -385,6 +385,17 @@ impl<T: Default> Default for BaukitConfig<T> {
     }
 }
 
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct StandardConfig {
+    environment: Environment,
+    http: HttpConfig,
+    ops: OpsConfig,
+    database: Option<DatabaseConfig>,
+    telemetry: TelemetryConfig,
+    shutdown: ShutdownConfig,
+}
+
 impl<T> Validate for BaukitConfig<T>
 where
     T: Default + Validate,
@@ -561,13 +572,27 @@ impl ConfigLoader {
             config::Environment::with_prefix(&self.prefix)
                 .prefix_separator("__")
                 .separator("__")
-                .try_parsing(true),
+                // Keep the source representation intact so values destined for
+                // `Secret<String>` cannot lose leading zeroes or exponent syntax.
+                // `config` still converts strings when deserializing typed fields.
+                .try_parsing(false),
         );
         // The bootstrap environment is authoritative because it controls whether
         // reading a dotenv file is safe.
         builder = builder.set_override("environment", self.environment.to_string())?;
 
-        let loaded = builder.build()?.try_deserialize::<BaukitConfig<T>>()?;
+        let merged = builder.build()?;
+        let standard = merged.clone().try_deserialize::<StandardConfig>()?;
+        let product = deserialize_product_config::<T>(merged.cache)?;
+        let loaded = BaukitConfig {
+            environment: standard.environment,
+            http: standard.http,
+            ops: standard.ops,
+            database: standard.database,
+            telemetry: standard.telemetry,
+            shutdown: standard.shutdown,
+            product,
+        };
         loaded.validate()?;
         Ok(loaded)
     }
@@ -590,6 +615,28 @@ impl ConfigLoader {
             }),
         }
     }
+}
+
+fn deserialize_product_config<T>(mut merged: Value) -> Result<T, config::ConfigError>
+where
+    T: Default + serde::de::DeserializeOwned,
+{
+    if let ValueKind::Table(table) = &mut merged.kind {
+        for standard_key in [
+            "environment",
+            "http",
+            "ops",
+            "database",
+            "telemetry",
+            "shutdown",
+        ] {
+            table.remove(standard_key);
+        }
+        if table.is_empty() {
+            return Ok(T::default());
+        }
+    }
+    merged.try_deserialize()
 }
 
 /// An error that prevents configuration from being loaded for startup.

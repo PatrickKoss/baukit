@@ -13,6 +13,8 @@ use super::*;
 #[serde(default)]
 struct ProductConfig {
     feature_limit: usize,
+    leading_zero_secret: Option<Secret<String>>,
+    exponent_secret: Option<Secret<String>>,
 }
 
 impl Validate for ProductConfig {
@@ -43,6 +45,19 @@ fn default_layer_supplies_standard_values() {
     assert!(config.database.is_none());
     assert_eq!(config.shutdown.drain_timeout, Duration::from_secs(30));
     assert_eq!(config.product.feature_limit, 0);
+}
+
+#[test]
+fn unit_product_uses_standard_configuration_only() {
+    let config = ConfigLoader::new("unit_product", Environment::Local)
+        .expect("valid loader")
+        .without_local_file()
+        .without_dotenv()
+        .load::<()>()
+        .expect("unit product config");
+
+    assert_eq!(config.http.port, 8080);
+    assert_eq!(config.product, ());
 }
 
 #[test]
@@ -91,6 +106,18 @@ fn environment_override_precedence_and_separator_work() {
             ("LAYER_APP__HTTP__PORT", "8282"),
             ("LAYER_APP__HTTP__REQUEST_TIMEOUT", "17"),
             ("LAYER_APP__FEATURE_LIMIT", "9"),
+        ],
+    );
+}
+
+#[test]
+fn numeric_looking_environment_secrets_remain_literal_strings() {
+    run_env_helper(
+        "numeric_looking_environment_secrets_helper",
+        &[
+            ("SECRET_LITERAL_APP__LEADING_ZERO_SECRET", "0123"),
+            ("SECRET_LITERAL_APP__EXPONENT_SECRET", "1e5"),
+            ("SECRET_LITERAL_APP__FEATURE_LIMIT", "9"),
         ],
     );
 }
@@ -175,6 +202,40 @@ request_timeout = 12
     assert_eq!(config.http.request_timeout, Duration::from_secs(17));
     assert_eq!(config.product.feature_limit, 9);
     assert_eq!(config.environment, Environment::Staging);
+}
+
+#[test]
+fn numeric_looking_environment_secrets_helper() {
+    if std::env::var_os("BAUKIT_CONFIG_ENV_HELPER").is_none() {
+        return;
+    }
+
+    let config = ConfigLoader::new("secret-literal-app", Environment::Staging)
+        .expect("valid loader")
+        .without_local_file()
+        .without_dotenv()
+        .load::<ProductConfig>()
+        .expect("valid env config");
+
+    assert_eq!(
+        config
+            .product
+            .leading_zero_secret
+            .as_ref()
+            .expect("leading-zero secret")
+            .expose(),
+        "0123"
+    );
+    assert_eq!(
+        config
+            .product
+            .exponent_secret
+            .as_ref()
+            .expect("exponent secret")
+            .expose(),
+        "1e5"
+    );
+    assert_eq!(config.product.feature_limit, 9);
 }
 
 #[test]

@@ -1,7 +1,9 @@
 use std::{fmt, time::Duration};
 
-use axum::http::HeaderValue;
+use axum::http::{HeaderName, HeaderValue};
 use baukit_config::HttpConfig;
+
+use crate::error::is_valid_error_code;
 
 const DEFAULT_BODY_SIZE_LIMIT: usize = 2 * 1024 * 1024;
 const DEFAULT_CONCURRENCY_LIMIT: usize = 1_024;
@@ -23,6 +25,8 @@ pub struct HttpOptions {
     /// Whether browsers may send credentials to explicitly allowed origins.
     pub allow_credentials: bool,
     pub(crate) allowed_origins: Vec<HeaderValue>,
+    pub(crate) additional_allowed_headers: Vec<HeaderName>,
+    pub(crate) json_rejection_code: String,
 }
 
 impl HttpOptions {
@@ -44,6 +48,58 @@ impl HttpOptions {
         &self.allowed_origins
     }
 
+    /// Adds request headers to the standard CORS allowlist.
+    ///
+    /// The built-in `Authorization`, `Content-Type`, `x-request-id`,
+    /// `traceparent`, and `tracestate` headers remain allowed. Duplicate header
+    /// names are ignored.
+    pub fn with_additional_allowed_headers<I, S>(
+        mut self,
+        headers: I,
+    ) -> Result<Self, HttpOptionsError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        for header in headers {
+            let header = header.as_ref();
+            let parsed = HeaderName::from_bytes(header.as_bytes())
+                .map_err(|_| HttpOptionsError::InvalidHeaderName(header.to_owned()))?;
+            if !self.additional_allowed_headers.contains(&parsed) {
+                self.additional_allowed_headers.push(parsed);
+            }
+        }
+        Ok(self)
+    }
+
+    /// Returns the request headers added to the standard CORS allowlist.
+    #[must_use]
+    pub fn additional_allowed_headers(&self) -> &[HeaderName] {
+        &self.additional_allowed_headers
+    }
+
+    /// Overrides the error code returned when [`crate::ApiJson`] rejects a body.
+    ///
+    /// The default is `validation_failed`. The replacement must be a non-empty
+    /// snake_case identifier.
+    pub fn with_json_rejection_code(
+        mut self,
+        code: impl Into<String>,
+    ) -> Result<Self, HttpOptionsError> {
+        let code = code.into();
+        if !is_valid_error_code(&code) {
+            return Err(HttpOptionsError::InvalidJsonRejectionCode(code));
+        }
+        self.json_rejection_code = code;
+        Ok(self)
+    }
+
+    /// Returns the error code used for JSON extractor rejections.
+    #[must_use]
+    pub fn json_rejection_code(&self) -> &str {
+        &self.json_rejection_code
+    }
+
     /// Builds options from Baukit's standard public-listener configuration.
     ///
     /// Listener address and port are intentionally ignored because they belong
@@ -55,6 +111,8 @@ impl HttpOptions {
             concurrency_limit: config.concurrency_limit,
             allow_credentials: false,
             allowed_origins: parse_origins(&config.cors_allowed_origins)?,
+            additional_allowed_headers: Vec::new(),
+            json_rejection_code: "validation_failed".to_owned(),
         }
         .validate()
     }
@@ -81,6 +139,8 @@ impl Default for HttpOptions {
             concurrency_limit: DEFAULT_CONCURRENCY_LIMIT,
             allow_credentials: false,
             allowed_origins: Vec::new(),
+            additional_allowed_headers: Vec::new(),
+            json_rejection_code: "validation_failed".to_owned(),
         }
     }
 }
@@ -92,6 +152,10 @@ pub enum HttpOptionsError {
     InvalidOrigin(String),
     /// Wildcard CORS origins are deliberately unsupported.
     WildcardOrigin,
+    /// A requested CORS header name is invalid.
+    InvalidHeaderName(String),
+    /// The JSON rejection code is not a snake_case identifier.
+    InvalidJsonRejectionCode(String),
     /// Request timeout must be non-zero.
     ZeroRequestTimeout,
     /// Body size limit must be non-zero.
@@ -106,6 +170,13 @@ impl fmt::Display for HttpOptionsError {
             Self::InvalidOrigin(origin) => write!(formatter, "invalid CORS origin `{origin}`"),
             Self::WildcardOrigin => formatter.write_str(
                 "wildcard CORS origins are unsupported; provide explicit allowed origins",
+            ),
+            Self::InvalidHeaderName(name) => {
+                write!(formatter, "invalid CORS request header name `{name}`")
+            }
+            Self::InvalidJsonRejectionCode(code) => write!(
+                formatter,
+                "invalid JSON rejection error code `{code}`; expected snake_case"
             ),
             Self::ZeroRequestTimeout => formatter.write_str("request timeout must be non-zero"),
             Self::ZeroBodySizeLimit => formatter.write_str("body size limit must be non-zero"),

@@ -8,6 +8,8 @@ name = "{{ context.app_name }}"
 backend = true
 mobile = false
 web = false
+{% if context.auth_oidc %}auth = "oidc"
+{% endif %}
 
 [dependencies.baukit]
 {{ context.baukit_manifest }}

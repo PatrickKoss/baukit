@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 
-use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
-use baukit_config::HttpConfig;
+{% if context.auth_oidc %}use axum::extract::FromRef;
+{% endif %}use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
+{% if context.auth_oidc %}use baukit_auth::{AuthState, Principal};
+{% endif %}use baukit_config::HttpConfig;
 use baukit_http::{
     ApiError, ApiJson, ApiPath, ErrorBody, ErrorEnvelope, HttpOptions, HttpOptionsError,
 };
@@ -13,21 +15,30 @@ use uuid::Uuid;
 
 use {{ context.app_crate }}_domain::Item;
 use {{ context.app_crate }}_ports::RepositoryError;
-use {{ context.app_crate }}_services::{ItemService, ServiceError};
+use {{ context.app_crate }}_services::{ItemService, ServiceError{% if context.auth_oidc %}, UserService{% endif %}};
 
 #[derive(Clone)]
 pub struct ApiState {
     pub items: ItemService,
+{% if context.auth_oidc %}    pub users: UserService,
+    pub auth: AuthState,
+{% endif %}}
+
+{% if context.auth_oidc %}impl FromRef<ApiState> for AuthState {
+    fn from_ref(state: &ApiState) -> Self {
+        state.auth.clone()
+    }
 }
 
-pub fn router(state: ApiState, config: &HttpConfig) -> Result<Router, HttpOptionsError> {
+{% endif %}pub fn router(state: ApiState, config: &HttpConfig) -> Result<Router, HttpOptionsError> {
     let router = Router::new()
         .route("/items", get(list_items).post(create_item))
         .route(
             "/items/{id}",
             get(get_item).put(update_item).delete(delete_item),
         )
-        .with_state(state);
+{% if context.auth_oidc %}        .route("/me", get(current_user))
+{% endif %}        .with_state(state);
     Ok(baukit_http::finalize(
         router,
         HttpOptions::from_config(config)?,
@@ -54,7 +65,38 @@ pub struct SaveItemRequest {
     pub name: String,
 }
 
+{% if context.auth_oidc %}#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct CurrentUserDto {
+    pub id: Uuid,
+    pub subject: String,
+}
+
 #[utoipa::path(
+    get,
+    path = "/me",
+    security(("bearerAuth" = [])),
+    responses(
+        (status = 200, description = "Current internal user", body = CurrentUserDto),
+        (status = 401, description = "Authentication required", body = ErrorEnvelope)
+    ),
+    tag = "auth"
+)]
+async fn current_user(
+    State(state): State<ApiState>,
+    principal: Principal,
+) -> Result<Json<CurrentUserDto>, ApiError> {
+    let user = state
+        .users
+        .resolve_subject(principal.subject())
+        .await
+        .map_err(map_service_error)?;
+    Ok(Json(CurrentUserDto {
+        id: user.id,
+        subject: user.subject,
+    }))
+}
+
+{% endif %}#[utoipa::path(
     get,
     path = "/items",
     responses((status = 200, description = "Items", body = [ItemDto])),
@@ -181,19 +223,23 @@ fn map_service_error(error: ServiceError) -> ApiError {
 #[must_use]
 pub fn openapi_document() -> utoipa::openapi::OpenApi {
     let mut document = ApiDoc::openapi();
-    OpenApiMetadata::new(
+    let metadata = OpenApiMetadata::new(
         "{{ context.app_name }} API",
         env!("CARGO_PKG_VERSION"),
         "Generated Baukit item service.",
-    )
-    .apply_to(&mut document);
+    );
+{% if context.auth_oidc %}    let metadata = metadata.bearer_auth();
+{% endif %}    metadata.apply_to(&mut document);
     document
 }
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(list_items, get_item, create_item, update_item, delete_item),
-    components(schemas(ItemDto, SaveItemRequest, ErrorEnvelope, ErrorBody)),
-    tags((name = "items", description = "Example item operations"))
+    paths(list_items, get_item, create_item, update_item, delete_item{% if context.auth_oidc %}, current_user{% endif %}),
+    components(schemas(ItemDto, SaveItemRequest, ErrorEnvelope, ErrorBody{% if context.auth_oidc %}, CurrentUserDto{% endif %})),
+    tags(
+        (name = "items", description = "Example item operations"){% if context.auth_oidc %},
+        (name = "auth", description = "Protected identity example"){% endif %}
+    )
 )]
 struct ApiDoc;

@@ -47,7 +47,11 @@ pub use jwt::{
     JwtClaims, JwtFixtureError, MockOidcServer, authorization_header, hs256_token, rs256_token,
     rs256_token_with_key_id, unsigned_token,
 };
-pub use metrics::{MetricsConformanceError, assert_metrics_conformance, check_metrics_conformance};
+pub use metrics::{
+    MetricsConformanceError, MetricsConformanceOptions, assert_metrics_conformance,
+    assert_metrics_conformance_with_options, check_metrics_conformance,
+    check_metrics_conformance_with_options,
+};
 pub use ops::{
     OpsConformanceError, assert_ops_base_url_conformance, assert_ops_router_conformance,
     check_ops_base_url_conformance, check_ops_router_conformance,

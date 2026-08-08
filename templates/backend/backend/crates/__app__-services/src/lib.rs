@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
-use {{ context.app_crate }}_domain::{DomainError, Item};
-use {{ context.app_crate }}_ports::{ItemRepository, RepositoryError};
+{% if context.auth_oidc %}use {{ context.app_crate }}_domain::{DomainError, InternalUser, Item};
+{% else %}use {{ context.app_crate }}_domain::{DomainError, Item};
+{% endif %}
+use {{ context.app_crate }}_ports::{ItemRepository, RepositoryError{% if context.auth_oidc %}, UserRepository{% endif %}};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -10,7 +12,25 @@ pub struct ItemService {
     repository: Arc<dyn ItemRepository>,
 }
 
-impl ItemService {
+{% if context.auth_oidc %}#[derive(Clone)]
+pub struct UserService {
+    repository: Arc<dyn UserRepository>,
+}
+
+impl UserService {
+    pub fn new(repository: Arc<dyn UserRepository>) -> Self {
+        Self { repository }
+    }
+
+    pub async fn resolve_subject(&self, subject: &str) -> Result<InternalUser, ServiceError> {
+        self.repository
+            .resolve_subject(subject.to_owned())
+            .await
+            .map_err(Into::into)
+    }
+}
+
+{% endif %}impl ItemService {
     pub fn new(repository: Arc<dyn ItemRepository>) -> Self {
         Self { repository }
     }

@@ -298,6 +298,74 @@ async fn standardized_extractors_map_json_path_and_query_rejections() {
 }
 
 #[tokio::test]
+async fn json_rejection_code_can_be_configured_without_changing_other_extractors() {
+    #[derive(serde::Deserialize)]
+    struct Input {
+        count: usize,
+    }
+
+    async fn json_handler(ApiJson(input): ApiJson<Input>) -> String {
+        input.count.to_string()
+    }
+    async fn query_handler(ApiQuery(input): ApiQuery<Input>) -> String {
+        input.count.to_string()
+    }
+
+    let options = HttpOptions::default()
+        .with_json_rejection_code("invalid_json")
+        .expect("valid error code");
+    let app = finalize(
+        Router::new()
+            .route("/json", post(json_handler))
+            .route("/query", get(query_handler)),
+        options,
+    );
+
+    let json_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/json")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from("not-json"))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(json_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response_json(json_response).await["error"]["code"],
+        "invalid_json"
+    );
+
+    let query_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/query?count=not-a-number")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(query_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response_json(query_response).await["error"]["code"],
+        "validation_failed"
+    );
+}
+
+#[test]
+fn json_rejection_code_must_be_snake_case() {
+    assert_eq!(
+        HttpOptions::default()
+            .with_json_rejection_code("Invalid JSON")
+            .expect_err("invalid code"),
+        HttpOptionsError::InvalidJsonRejectionCode("Invalid JSON".to_owned())
+    );
+}
+
+#[tokio::test]
 async fn finalize_maps_unmatched_routes_and_methods() {
     let app = finalize(
         Router::new().route("/items", get(|| async {})),
@@ -354,6 +422,59 @@ async fn cors_preflight_uses_explicit_origin() {
     assert_eq!(
         response.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN],
         "https://app.example.com"
+    );
+}
+
+#[tokio::test]
+async fn cors_preflight_adds_product_headers_to_the_defaults() {
+    let options = HttpOptions::default()
+        .with_allowed_origins(["https://app.example.com"])
+        .expect("valid origin")
+        .with_additional_allowed_headers(["Accept", "x-webhook-secret"])
+        .expect("valid request headers");
+    let response = layers(Router::new().route("/items", post(|| async {})), options)
+        .oneshot(
+            Request::builder()
+                .method(Method::OPTIONS)
+                .uri("/items")
+                .header(header::ORIGIN, "https://app.example.com")
+                .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                .header(
+                    header::ACCESS_CONTROL_REQUEST_HEADERS,
+                    "accept,content-type,x-webhook-secret",
+                )
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let allowed = response.headers()[header::ACCESS_CONTROL_ALLOW_HEADERS]
+        .to_str()
+        .expect("allowed headers")
+        .split(',')
+        .map(str::trim)
+        .collect::<Vec<_>>();
+    for expected in ["accept", "content-type", "x-webhook-secret"] {
+        assert!(
+            allowed.iter().any(|header| header == &expected),
+            "missing {expected} from {allowed:?}"
+        );
+    }
+}
+
+#[test]
+fn additional_cors_headers_are_validated_and_deduplicated() {
+    let options = HttpOptions::default()
+        .with_additional_allowed_headers(["Accept", "accept"])
+        .expect("valid headers");
+    assert_eq!(options.additional_allowed_headers().len(), 1);
+    assert_eq!(
+        HttpOptions::default()
+            .with_additional_allowed_headers(["not a header"])
+            .expect_err("invalid header"),
+        HttpOptionsError::InvalidHeaderName("not a header".to_owned())
     );
 }
 

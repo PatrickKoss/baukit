@@ -13,6 +13,11 @@ make run
 ```
 
 Migrations are never run during API startup. The public API listens on port 8080 and private health, readiness, metrics, and build endpoints listen on port 9090 by default.
+{% if context.auth_oidc %}
+The protected `GET /me` route verifies OIDC access tokens and maps their stable `sub` claim to an internal user UUID. Auth configuration follows the normal product convention: `{{ context.app_env }}__AUTH__ISSUER` and `{{ context.app_env }}__AUTH__AUDIENCE`, defaulting to the composed realm and `{{ context.app_name }}-backend` audience.
+
+`docker compose up -d postgres keycloak` starts PostgreSQL plus the local Keycloak realm at `http://localhost:8081/realms/{{ context.app_name }}`. Sign in as `test` / `password`; the imported realm also contains the confidential backend client and PKCE-only public web/mobile clients. The checked-in credentials are development-only.
+{% endif %}
 
 Useful commands:
 
@@ -23,7 +28,7 @@ baukit doctor
 baukit generate openapi-client
 ```
 
-`docker compose up -d postgres` starts the matching local database. `.github/workflows/ci.yml` runs formatting, lint, tests, and the schema drift check, while `deploy/values.yaml` is the product-owned input for the shared `baukit-app` Helm chart. Matching backend workflow notes are installed for both Codex and Claude discovery paths.
+`docker compose up -d postgres{% if context.auth_oidc %} keycloak{% endif %}` starts the matching local dependencies. `.github/workflows/ci.yml` runs formatting, lint, tests, and the schema drift check, while `deploy/values.yaml` is the product-owned input for the shared `baukit-app` Helm chart. Matching backend workflow notes are installed for both Codex and Claude discovery paths.
 
 TypeScript generation requires current Node.js LTS plus pnpm or npx. `openapi-typescript` is invoked with `pnpm dlx` (or `npx` when pnpm is unavailable) and writes `generated/openapi.d.ts`.
 

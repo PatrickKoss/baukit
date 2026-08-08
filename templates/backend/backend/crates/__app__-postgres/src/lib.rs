@@ -1,5 +1,7 @@
-use {{ context.app_crate }}_domain::Item;
-use {{ context.app_crate }}_ports::{ItemRepository, PortFuture, RepositoryError};
+{% if context.auth_oidc %}use {{ context.app_crate }}_domain::{InternalUser, Item};
+{% else %}use {{ context.app_crate }}_domain::Item;
+{% endif %}
+use {{ context.app_crate }}_ports::{ItemRepository, PortFuture, RepositoryError{% if context.auth_oidc %}, UserRepository{% endif %}};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -105,4 +107,25 @@ impl ItemRepository for PostgresItemRepository {
                 .map_err(RepositoryError::unavailable)
         })
     }
-}
+}{% if context.auth_oidc %}
+
+impl UserRepository for PostgresItemRepository {
+    fn resolve_subject(
+        &self,
+        subject: String,
+    ) -> PortFuture<'_, Result<InternalUser, RepositoryError>> {
+        Box::pin(async move {
+            sqlx::query_as::<_, (Uuid, String)>(
+                "INSERT INTO user_identities (user_id, subject) VALUES ($1, $2) \
+                 ON CONFLICT (subject) DO UPDATE SET subject = EXCLUDED.subject \
+                 RETURNING user_id, subject",
+            )
+            .bind(Uuid::now_v7())
+            .bind(subject)
+            .fetch_one(&self.pool)
+            .await
+            .map(|(id, subject)| InternalUser { id, subject })
+            .map_err(RepositoryError::unavailable)
+        })
+    }
+}{% endif %}

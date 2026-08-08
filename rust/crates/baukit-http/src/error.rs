@@ -31,7 +31,7 @@ impl ApiError {
     pub fn new(status: StatusCode, code: impl Into<String>, message: impl Into<String>) -> Self {
         let code = code.into();
         assert!(
-            is_snake_case(&code),
+            is_valid_error_code(&code),
             "API error codes must be non-empty snake_case identifiers"
         );
         Self {
@@ -135,6 +135,15 @@ impl ApiError {
         )
     }
 
+    pub(crate) fn json_rejection(code: impl Into<String>) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, code, "The request is invalid").with_details(
+            BTreeMap::from([(
+                "body".to_owned(),
+                Value::String("must be valid JSON matching the request schema".to_owned()),
+            )]),
+        )
+    }
+
     pub(crate) fn internal_without_cause() -> Self {
         Self::new(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -158,10 +167,7 @@ impl ApiError {
 
 impl From<JsonRejection> for ApiError {
     fn from(_rejection: JsonRejection) -> Self {
-        Self::validation(BTreeMap::from([(
-            "body".to_owned(),
-            Value::String("must be valid JSON matching the request schema".to_owned()),
-        )]))
+        Self::json_rejection("validation_failed")
     }
 }
 
@@ -183,7 +189,7 @@ impl From<QueryRejection> for ApiError {
     }
 }
 
-fn is_snake_case(code: &str) -> bool {
+pub(crate) fn is_valid_error_code(code: &str) -> bool {
     !code.is_empty()
         && !code.starts_with('_')
         && !code.ends_with('_')

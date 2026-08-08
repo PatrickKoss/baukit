@@ -1,6 +1,8 @@
 use std::{future::Future, pin::Pin};
 
-use {{ context.app_crate }}_domain::Item;
+{% if context.auth_oidc %}use {{ context.app_crate }}_domain::{InternalUser, Item};
+{% else %}use {{ context.app_crate }}_domain::Item;
+{% endif %}
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -15,7 +17,14 @@ pub trait ItemRepository: Send + Sync + 'static {
     fn ready(&self) -> PortFuture<'_, Result<(), RepositoryError>>;
 }
 
-#[derive(Debug, Error)]
+{% if context.auth_oidc %}pub trait UserRepository: Send + Sync + 'static {
+    fn resolve_subject(
+        &self,
+        subject: String,
+    ) -> PortFuture<'_, Result<InternalUser, RepositoryError>>;
+}
+
+{% endif %}#[derive(Debug, Error)]
 pub enum RepositoryError {
     #[error("item already exists")]
     Conflict,

@@ -1,7 +1,7 @@
 use std::{env, path::PathBuf, process::ExitCode};
 
 use anyhow::Result;
-use baukit_cli::{NewOptions, doctor, generate_new, generate_openapi_client};
+use baukit_cli::{AuthProvider, NewOptions, doctor, generate_new, generate_openapi_client};
 use clap::{Args, Parser, Subcommand};
 
 #[derive(Debug, Parser)]
@@ -41,6 +41,9 @@ struct NewCommand {
     /// Generate the Vite React web application.
     #[arg(long)]
     web: bool,
+    /// Add an authentication capability.
+    #[arg(long, value_enum)]
+    auth: Option<AuthProvider>,
     /// Parent directory in which the product directory is created.
     #[arg(long, default_value = ".")]
     dir: PathBuf,
@@ -77,6 +80,7 @@ fn run() -> Result<()> {
                 backend: command.backend,
                 mobile: command.mobile,
                 web: command.web,
+                auth: command.auth,
                 force: command.force,
                 baukit_path: command.baukit_path,
             })?;

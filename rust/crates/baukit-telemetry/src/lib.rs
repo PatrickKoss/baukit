@@ -45,6 +45,16 @@
 //! wrapper. Metric label values must remain bounded and known at build time;
 //! never use paths, identities, tokens, arbitrary errors, trace IDs, request
 //! IDs, or provider payload data as labels.
+//!
+//! # Disabling the OpenTelemetry SDK
+//!
+//! Setting `OTEL_SDK_DISABLED=true` (case-insensitive) prevents construction of
+//! the tracer provider, OTLP exporter, span processor, and exporter background
+//! tasks. Structured logging and the Prometheus recorder remain active because
+//! Baukit owns those facilities independently of the OpenTelemetry SDK. Other
+//! values, including an empty value, leave the SDK enabled. The programmatic
+//! [`TelemetryBuilder::sdk_disabled`] setting takes precedence over the
+//! environment variable.
 
 #![deny(missing_docs)]
 
@@ -89,6 +99,7 @@ pub use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 const DEFAULT_FILTER: &str = "info";
 const OTLP_ENDPOINT_ENV: &str = "OTEL_EXPORTER_OTLP_ENDPOINT";
+const OTEL_SDK_DISABLED_ENV: &str = "OTEL_SDK_DISABLED";
 
 /// Histogram buckets in seconds applied to `http_request_duration_seconds`,
 /// as required by telemetry-spec §2.1. `baukit-http` records the metric; this
@@ -148,6 +159,7 @@ pub struct TelemetryBuilder {
     log_format: LogFormat,
     otlp_endpoint: Option<String>,
     sampling_ratio: f64,
+    sdk_disabled: Option<bool>,
 }
 
 impl TelemetryBuilder {
@@ -159,6 +171,7 @@ impl TelemetryBuilder {
             log_format: LogFormat::Auto,
             otlp_endpoint: None,
             sampling_ratio: 1.0,
+            sdk_disabled: None,
         }
     }
 
@@ -192,14 +205,26 @@ impl TelemetryBuilder {
         self
     }
 
+    /// Explicitly enables or disables the OpenTelemetry SDK.
+    ///
+    /// This overrides `OTEL_SDK_DISABLED`. When disabled, Baukit does not build
+    /// a tracer provider or exporter; structured logging and Prometheus metrics
+    /// remain active.
+    pub const fn sdk_disabled(mut self, disabled: bool) -> Self {
+        self.sdk_disabled = Some(disabled);
+        self
+    }
+
     /// Installs process-wide telemetry and returns its metrics/shutdown owner.
     ///
     /// Initialization succeeds only once per process. A second call returns
     /// [`TelemetryError::AlreadyInitialized`], including after
     /// [`Telemetry::shutdown`]; successful initialization cannot be reset. Local
     /// processes may omit an OTLP endpoint; staging and production processes must
-    /// configure one. When an endpoint is configured, call this from within the
-    /// process's Tokio runtime so the tonic gRPC exporter can use it.
+    /// configure one unless `OTEL_SDK_DISABLED=true` or
+    /// [`TelemetryBuilder::sdk_disabled`] explicitly disables tracing. When an
+    /// endpoint is configured, call this from within the process's Tokio runtime
+    /// so the tonic gRPC exporter can use it.
     pub fn init(self) -> Result<Telemetry, TelemetryError> {
         if INITIALIZED
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -222,28 +247,37 @@ impl TelemetryBuilder {
             return Err(TelemetryError::TracingAlreadyInitialized);
         }
 
-        let endpoint = self.resolve_endpoint()?;
-        let resource = resource_for(&self.identity);
-        let root_sampler = if self.sampling_ratio == 1.0 {
-            Sampler::AlwaysOn
+        let sdk_disabled = self.sdk_disabled.unwrap_or_else(otel_sdk_disabled_from_env);
+        let mut provider = None;
+        let otel_layer = if sdk_disabled {
+            None
         } else {
-            Sampler::TraceIdRatioBased(self.sampling_ratio)
+            let endpoint = self.resolve_endpoint()?;
+            let resource = resource_for(&self.identity);
+            let root_sampler = if self.sampling_ratio == 1.0 {
+                Sampler::AlwaysOn
+            } else {
+                Sampler::TraceIdRatioBased(self.sampling_ratio)
+            };
+            let sampler = Sampler::ParentBased(Box::new(root_sampler));
+            let mut provider_builder = SdkTracerProvider::builder()
+                .with_resource(resource)
+                .with_sampler(sampler);
+
+            if let Some(endpoint) = endpoint {
+                let exporter = opentelemetry_otlp::SpanExporter::builder()
+                    .with_tonic()
+                    .with_endpoint(endpoint)
+                    .build()
+                    .map_err(TelemetryError::OtlpExporter)?;
+                provider_builder = provider_builder.with_batch_exporter(exporter);
+            }
+
+            let tracer_provider = provider_builder.build();
+            let tracer = tracer_provider.tracer(self.identity.service_name());
+            provider = Some(tracer_provider);
+            Some(tracing_opentelemetry::layer().with_tracer(tracer))
         };
-        let sampler = Sampler::ParentBased(Box::new(root_sampler));
-        let mut provider_builder = SdkTracerProvider::builder()
-            .with_resource(resource)
-            .with_sampler(sampler);
-
-        if let Some(endpoint) = endpoint {
-            let exporter = opentelemetry_otlp::SpanExporter::builder()
-                .with_tonic()
-                .with_endpoint(endpoint)
-                .build()
-                .map_err(TelemetryError::OtlpExporter)?;
-            provider_builder = provider_builder.with_batch_exporter(exporter);
-        }
-
-        let provider = provider_builder.build();
         let recorder = PrometheusBuilder::new()
             .set_buckets_for_metric(
                 Matcher::Full("http_request_duration_seconds".to_owned()),
@@ -253,12 +287,12 @@ impl TelemetryBuilder {
             .build_recorder();
         let prometheus_handle = recorder.handle();
         if let Err(error) = metrics::set_global_recorder(recorder) {
-            let _ = provider.shutdown();
+            if let Some(provider) = provider.take() {
+                let _ = provider.shutdown();
+            }
             return Err(TelemetryError::MetricsAlreadyInitialized(error.to_string()));
         }
 
-        let tracer = provider.tracer(self.identity.service_name());
-        let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
         let filter = self.filter.map(EnvFilter::new).unwrap_or_else(|| {
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(DEFAULT_FILTER))
         });
@@ -292,7 +326,8 @@ impl TelemetryBuilder {
 
         Ok(Telemetry {
             prometheus_handle,
-            provider: Mutex::new(Some(provider)),
+            provider: Mutex::new(provider),
+            sdk_disabled,
         })
     }
 
@@ -317,6 +352,7 @@ impl TelemetryBuilder {
 pub struct Telemetry {
     prometheus_handle: PrometheusHandle,
     provider: Mutex<Option<SdkTracerProvider>>,
+    sdk_disabled: bool,
 }
 
 impl Telemetry {
@@ -325,9 +361,17 @@ impl Telemetry {
         &self.prometheus_handle
     }
 
+    /// Returns whether OpenTelemetry SDK initialization was disabled.
+    ///
+    /// This remains stable after [`Telemetry::shutdown`].
+    pub const fn is_otel_sdk_disabled(&self) -> bool {
+        self.sdk_disabled
+    }
+
     /// Flushes pending spans and shuts down the tracer provider exactly once.
     ///
-    /// Repeated calls and local no-exporter mode are successful no-ops.
+    /// Repeated calls, local no-exporter mode, and disabled-SDK mode are
+    /// successful no-ops.
     pub fn shutdown(&self) -> Result<(), TelemetryError> {
         let provider = self
             .provider
@@ -343,6 +387,16 @@ impl Telemetry {
 
         Ok(())
     }
+}
+
+fn otel_sdk_disabled_from_env() -> bool {
+    env::var(OTEL_SDK_DISABLED_ENV)
+        .ok()
+        .is_some_and(|value| parse_otel_sdk_disabled(&value))
+}
+
+fn parse_otel_sdk_disabled(value: &str) -> bool {
+    value.eq_ignore_ascii_case("true")
 }
 
 fn resource_for(identity: &ServiceIdentity) -> Resource {
@@ -701,6 +755,16 @@ mod tests {
             resolve_log_format(LogFormat::Pretty, DeploymentEnvironment::Production),
             ResolvedLogFormat::Pretty
         );
+    }
+
+    #[test]
+    fn parses_otel_sdk_disabled_using_standard_boolean_semantics() {
+        for enabled in ["true", "TRUE", "True", "tRuE"] {
+            assert!(parse_otel_sdk_disabled(enabled));
+        }
+        for disabled in ["", "false", "FALSE", "1", "yes", " true "] {
+            assert!(!parse_otel_sdk_disabled(disabled));
+        }
     }
 
     #[test]

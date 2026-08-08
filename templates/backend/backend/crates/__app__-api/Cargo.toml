@@ -10,7 +10,8 @@ workspace = true
 
 [dependencies]
 axum.workspace = true
-baukit-config.workspace = true
+{% if context.auth_oidc %}baukit-auth.workspace = true
+{% endif %}baukit-config.workspace = true
 baukit-http.workspace = true
 baukit-openapi.workspace = true
 {{ context.app_crate }}-domain.workspace = true

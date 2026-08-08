@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use baukit_cli::{NewOptions, doctor, generate_new};
+use baukit_cli::{AuthProvider, NewOptions, doctor, generate_new};
 use sha2::{Digest, Sha256};
 
 fn options(parent: &Path, name: &str) -> NewOptions {
@@ -14,6 +14,7 @@ fn options(parent: &Path, name: &str) -> NewOptions {
         backend: true,
         mobile: false,
         web: false,
+        auth: None,
         force: false,
         baukit_path: None,
     }
@@ -26,6 +27,7 @@ fn frontend_options(parent: &Path, name: &str, mobile: bool, web: bool) -> NewOp
         backend: false,
         mobile,
         web,
+        auth: None,
         force: false,
         baukit_path: None,
     }
@@ -96,9 +98,42 @@ fn combined_generation_matches_golden_tree_and_records_capabilities() -> anyhow:
     assert!(manifest.capabilities.backend);
     assert!(manifest.capabilities.mobile);
     assert!(manifest.capabilities.web);
+    assert_eq!(manifest.capabilities.auth, None);
+    assert!(!fs::read_to_string(first.join("baukit.toml"))?.contains("auth"));
     assert!(first.join("backend/Cargo.toml").is_file());
     assert!(first.join("mobile/App.tsx").is_file());
     assert!(first.join("web/src/App.tsx").is_file());
+    Ok(())
+}
+
+#[test]
+fn oidc_generation_is_deterministic_and_records_the_optional_capability() -> anyhow::Result<()> {
+    let first_parent = tempfile::tempdir()?;
+    let second_parent = tempfile::tempdir()?;
+    let mut first_options = options(first_parent.path(), "snapshot-app");
+    first_options.mobile = true;
+    first_options.web = true;
+    first_options.auth = Some(AuthProvider::Oidc);
+    let mut second_options = first_options.clone();
+    second_options.directory = second_parent.path().to_path_buf();
+
+    let first = generate_new(&first_options)?;
+    let second = generate_new(&second_options)?;
+    let first_tree = read_tree(&first)?;
+    assert_eq!(first_tree, read_tree(&second)?);
+    assert_eq!(
+        render_hash_snapshot(&first_tree),
+        include_str!("snapshots/auth.tree")
+    );
+
+    let manifest_source = fs::read_to_string(first.join("baukit.toml"))?;
+    assert!(manifest_source.contains("auth = \"oidc\""));
+    let manifest = baukit_cli::read_manifest(&first)?;
+    assert_eq!(manifest.capabilities.auth, Some(AuthProvider::Oidc));
+    assert!(first.join("keycloak/realm.json").is_file());
+    assert!(first.join("backend/tests/auth_conformance.rs").is_file());
+    assert!(first.join("web/src/auth.ts").is_file());
+    assert!(first.join("mobile/src/auth.ts").is_file());
     Ok(())
 }
 

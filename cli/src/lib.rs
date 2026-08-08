@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow, bail};
+use clap::ValueEnum;
 use include_dir::{Dir, include_dir};
 use minijinja::{Environment, context};
 use serde::{Deserialize, Serialize};
@@ -64,6 +65,16 @@ const EXPECTED_WEB_FILES: &[&str] = &[
     "web/src/tokens.css",
 ];
 
+const EXPECTED_AUTH_BACKEND_FILES: &[&str] = &[
+    "keycloak/realm.json",
+    "backend/migrations/0002_create_user_identities.sql",
+    "backend/tests/auth_conformance.rs",
+];
+
+const EXPECTED_AUTH_MOBILE_FILES: &[&str] = &["mobile/src/auth.ts", "mobile/src/auth.test.ts"];
+
+const EXPECTED_AUTH_WEB_FILES: &[&str] = &["web/src/auth.ts", "web/src/auth.test.ts"];
+
 const EXPECTED_TYPESCRIPT_DEPENDENCIES: &[&str] = &[
     "@baukit/analytics-core",
     "@baukit/api-runtime",
@@ -77,8 +88,15 @@ pub struct NewOptions {
     pub backend: bool,
     pub mobile: bool,
     pub web: bool,
+    pub auth: Option<AuthProvider>,
     pub force: bool,
     pub baukit_path: Option<PathBuf>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum AuthProvider {
+    Oidc,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -101,6 +119,8 @@ pub struct Capabilities {
     pub backend: bool,
     pub mobile: bool,
     pub web: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth: Option<AuthProvider>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -132,6 +152,7 @@ struct TemplateContext {
     baukit_manifest: String,
     baukit_dependency_description: String,
     baukit_typescript_dependency_description: String,
+    auth_oidc: bool,
 }
 
 pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
@@ -154,9 +175,11 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         );
     }
 
+    let auth_oidc = options.auth == Some(AuthProvider::Oidc);
     let dependency = dependency_context(
         options.baukit_path.as_deref(),
         options.mobile || options.web,
+        auth_oidc,
     )?;
     let context = TemplateContext {
         app_name: options.name.clone(),
@@ -168,6 +191,7 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         baukit_manifest: dependency.manifest,
         baukit_dependency_description: dependency.description,
         baukit_typescript_dependency_description: dependency.typescript_description,
+        auth_oidc,
     };
     let rendered = render_product(&context, options)?;
     let mut conflicts = Vec::new();
@@ -239,7 +263,11 @@ struct DependencyContext {
     typescript_description: String,
 }
 
-fn dependency_context(path: Option<&Path>, require_typescript: bool) -> Result<DependencyContext> {
+fn dependency_context(
+    path: Option<&Path>,
+    require_typescript: bool,
+    auth_oidc: bool,
+) -> Result<DependencyContext> {
     if let Some(path) = path {
         let path = path.canonicalize().with_context(|| {
             format!(
@@ -255,7 +283,7 @@ fn dependency_context(path: Option<&Path>, require_typescript: bool) -> Result<D
             );
         }
         let display = path.display().to_string().replace('\\', "\\\\");
-        let names = [
+        let mut names = vec![
             "baukit-config",
             "baukit-http",
             "baukit-openapi",
@@ -264,6 +292,9 @@ fn dependency_context(path: Option<&Path>, require_typescript: bool) -> Result<D
             "baukit-telemetry",
             "baukit-test",
         ];
+        if auth_oidc {
+            names.push("baukit-auth");
+        }
         let cargo = names
             .iter()
             .map(|name| format!("{name} = {{ path = \"{display}/crates/{name}\" }}"))
@@ -313,7 +344,7 @@ fn dependency_context(path: Option<&Path>, require_typescript: bool) -> Result<D
     } else {
         let git = "https://github.com/patrickkoss/baukit.git";
         let tag = format!("v{TEMPLATE_VERSION}");
-        let names = [
+        let mut names = vec![
             "baukit-config",
             "baukit-http",
             "baukit-openapi",
@@ -322,6 +353,9 @@ fn dependency_context(path: Option<&Path>, require_typescript: bool) -> Result<D
             "baukit-telemetry",
             "baukit-test",
         ];
+        if auth_oidc {
+            names.push("baukit-auth");
+        }
         let cargo = names
             .iter()
             .map(|name| format!("{name} = {{ git = \"{git}\", tag = \"{tag}\" }}"))
@@ -355,13 +389,40 @@ fn render_product(
     environment.set_keep_trailing_newline(true);
     let mut rendered = BTreeMap::new();
     if options.backend {
-        render_directory(&BACKEND_TEMPLATE, &environment, context, &mut rendered)?;
+        render_directory(
+            &BACKEND_TEMPLATE,
+            &environment,
+            context,
+            &mut rendered,
+            false,
+        )?;
+        if context.auth_oidc
+            && let Some(overlay) = BACKEND_TEMPLATE.get_dir("__auth__")
+        {
+            render_directory(overlay, &environment, context, &mut rendered, true)?;
+        }
     }
     if options.mobile {
-        render_directory(&MOBILE_TEMPLATE, &environment, context, &mut rendered)?;
+        render_directory(
+            &MOBILE_TEMPLATE,
+            &environment,
+            context,
+            &mut rendered,
+            false,
+        )?;
+        if context.auth_oidc
+            && let Some(overlay) = MOBILE_TEMPLATE.get_dir("__auth__")
+        {
+            render_directory(overlay, &environment, context, &mut rendered, true)?;
+        }
     }
     if options.web {
-        render_directory(&WEB_TEMPLATE, &environment, context, &mut rendered)?;
+        render_directory(&WEB_TEMPLATE, &environment, context, &mut rendered, false)?;
+        if context.auth_oidc
+            && let Some(overlay) = WEB_TEMPLATE.get_dir("__auth__")
+        {
+            render_directory(overlay, &environment, context, &mut rendered, true)?;
+        }
     }
     rendered.insert(
         PathBuf::from("baukit.toml"),
@@ -371,6 +432,10 @@ fn render_product(
 }
 
 fn render_manifest(context: &TemplateContext, options: &NewOptions) -> String {
+    let auth = match options.auth {
+        Some(AuthProvider::Oidc) => "auth = \"oidc\"\n",
+        None => "",
+    };
     format!(
         "schema_version = {MANIFEST_SCHEMA_VERSION}\n\
 template_version = \"{}\"\n\
@@ -382,6 +447,7 @@ name = \"{}\"\n\
 backend = {}\n\
 mobile = {}\n\
 web = {}\n\
+{}\
 \n\
 [dependencies.baukit]\n\
 {}\n\
@@ -394,6 +460,7 @@ typescript = \"generated/openapi.d.ts\"\n",
         options.backend,
         options.mobile,
         options.web,
+        auth,
         context.baukit_manifest,
     )
 }
@@ -403,13 +470,17 @@ fn render_directory(
     environment: &Environment<'_>,
     context: &TemplateContext,
     rendered: &mut BTreeMap<PathBuf, Vec<u8>>,
+    auth_overlay: bool,
 ) -> Result<()> {
     for file in directory.files() {
         let relative = file.path();
+        if is_auth_only(relative) && (!context.auth_oidc || !auth_overlay) {
+            continue;
+        }
         let source = file
             .contents_utf8()
             .ok_or_else(|| anyhow!("template {} is not UTF-8", relative.display()))?;
-        let name = relative.to_string_lossy();
+        let name = relative.to_string_lossy().replace("__auth__/", "");
         let mut output = environment.render_str(source, context!(context))?;
         if relative
             .file_name()
@@ -425,9 +496,17 @@ fn render_directory(
         rendered.insert(output_path, output.into_bytes());
     }
     for child in directory.dirs() {
-        render_directory(child, environment, context, rendered)?;
+        if is_auth_only(child.path()) && !auth_overlay {
+            continue;
+        }
+        render_directory(child, environment, context, rendered, auth_overlay)?;
     }
     Ok(())
+}
+
+fn is_auth_only(path: &Path) -> bool {
+    path.components()
+        .any(|component| component.as_os_str() == "__auth__")
 }
 
 pub fn read_manifest(root: &Path) -> Result<Manifest> {
@@ -474,6 +553,13 @@ pub fn doctor(root: &Path) -> Result<Vec<String>> {
                 failures.push(format!("missing expected backend file `{relative}`"));
             }
         }
+        if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
+            for relative in EXPECTED_AUTH_BACKEND_FILES {
+                if !root.join(relative).is_file() {
+                    failures.push(format!("missing expected OIDC backend file `{relative}`"));
+                }
+            }
+        }
         let cargo = root.join("backend/Cargo.toml");
         if cargo.is_file() {
             let output = Command::new("cargo")
@@ -508,6 +594,13 @@ pub fn doctor(root: &Path) -> Result<Vec<String>> {
             &mut successes,
             &mut failures,
         )?;
+        if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
+            for relative in EXPECTED_AUTH_MOBILE_FILES {
+                if !root.join(relative).is_file() {
+                    failures.push(format!("missing expected OIDC mobile file `{relative}`"));
+                }
+            }
+        }
     }
     if manifest.capabilities.web {
         validate_frontend_capability(
@@ -518,6 +611,13 @@ pub fn doctor(root: &Path) -> Result<Vec<String>> {
             &mut successes,
             &mut failures,
         )?;
+        if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
+            for relative in EXPECTED_AUTH_WEB_FILES {
+                if !root.join(relative).is_file() {
+                    failures.push(format!("missing expected OIDC web file `{relative}`"));
+                }
+            }
+        }
     }
     match &manifest.dependencies.baukit {
         BaukitDependency::Path { path } => {

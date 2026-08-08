@@ -8,7 +8,14 @@ pub struct Item {
     pub name: String,
 }
 
-impl Item {
+{% if context.auth_oidc %}/// Internal application user mapped from a provider-neutral OIDC subject.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct InternalUser {
+    pub id: Uuid,
+    pub subject: String,
+}
+
+{% endif %}impl Item {
     pub fn new(id: Uuid, name: impl Into<String>) -> Result<Self, DomainError> {
         let name = name.into();
         let name = name.trim();

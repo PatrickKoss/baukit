@@ -28,7 +28,7 @@ use tracing::Instrument as _;
 use tracing_opentelemetry::OpenTelemetrySpanExt as _;
 use uuid::Uuid;
 
-use crate::{ApiError, HttpOptions};
+use crate::{ApiError, HttpOptions, extract::JsonRejectionCode};
 
 /// The standard request ID header.
 pub const X_REQUEST_ID: HeaderName = HeaderName::from_static("x-request-id");
@@ -156,6 +156,18 @@ where
 }
 
 fn cors_layer(options: &HttpOptions) -> CorsLayer {
+    let mut allowed_headers = vec![
+        AUTHORIZATION,
+        CONTENT_TYPE,
+        X_REQUEST_ID,
+        TRACEPARENT,
+        TRACESTATE,
+    ];
+    for header in &options.additional_allowed_headers {
+        if !allowed_headers.contains(header) {
+            allowed_headers.push(header.clone());
+        }
+    }
     let mut cors = CorsLayer::new()
         .allow_methods([
             Method::GET,
@@ -166,13 +178,7 @@ fn cors_layer(options: &HttpOptions) -> CorsLayer {
             Method::DELETE,
             Method::OPTIONS,
         ])
-        .allow_headers([
-            AUTHORIZATION,
-            CONTENT_TYPE,
-            X_REQUEST_ID,
-            TRACEPARENT,
-            TRACESTATE,
-        ])
+        .allow_headers(allowed_headers)
         .expose_headers([X_REQUEST_ID, TRACEPARENT, TRACESTATE]);
     if !options.allowed_origins.is_empty() {
         cors = cors.allow_origin(AllowOrigin::list(options.allowed_origins.clone()));
@@ -190,6 +196,9 @@ async fn request_lifecycle(
 ) -> Response {
     let request_id = RequestId::from_headers(request.headers());
     request.extensions_mut().insert(request_id.clone());
+    request
+        .extensions_mut()
+        .insert(JsonRejectionCode(options.json_rejection_code.clone()));
     CURRENT_REQUEST_ID
         .scope(request_id, lifecycle_inner(options, request, next))
         .await

@@ -15,6 +15,16 @@
 //!   `baukit-telemetry`.
 //! - `GET /buildinfo` returns service name, version, commit, and Rust version.
 //!
+//! # PostgreSQL acquisition instrumentation
+//!
+//! With the `sqlx-postgres` feature, use `baukit_ops::acquire` instead of
+//! `PgPool::acquire`, and pass `&mut *connection` to queries that would otherwise
+//! execute directly against `&PgPool`. Use `baukit_ops::begin` instead of
+//! `PgPool::begin`. These patterns record pool wait duration and timeouts. SQLx
+//! exposes no pool hook that can observe implicit `&PgPool` executor
+//! acquisitions, so queries passed a raw pool reference bypass the acquisition
+//! metrics; the periodic pool gauges remain unaffected.
+//!
 //! # Example
 //!
 //! ```no_run
@@ -86,7 +96,7 @@ mod postgres;
 
 #[cfg(feature = "sqlx-postgres")]
 pub use postgres::{
-    PoolMetricsSampler, PoolMetricsSamplerError, acquire, spawn_pool_metrics_sampler,
+    PoolMetricsSampler, PoolMetricsSamplerError, acquire, begin, spawn_pool_metrics_sampler,
 };
 
 /// Default timeout applied by [`ReadinessRegistry::register_default`].

@@ -152,8 +152,18 @@ jobs:
             backend: false
             mobile: false
             web: true
+          - flavor: mobile
+            flags: --mobile
+            backend: false
+            mobile: true
+            web: false
           - flavor: combined
             flags: --backend --mobile --web
+            backend: true
+            mobile: true
+            web: true
+          - flavor: auth
+            flags: --backend --mobile --web --auth oidc
             backend: true
             mobile: true
             web: true

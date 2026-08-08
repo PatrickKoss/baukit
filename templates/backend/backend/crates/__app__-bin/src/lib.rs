@@ -4,19 +4,70 @@ use std::{
 };
 
 use axum::Router;
-use baukit_ops::{
+{% if context.auth_oidc %}use baukit_config::{Validate, ValidationError, ValidationErrors};
+{% endif %}use baukit_ops::{
     OpsRouter, PrometheusHandle, ReadinessError, ReadinessRegistry, RegistrationError,
     ServiceIdentity, TrafficGate,
 };
-use {{ context.app_crate }}_domain::Item;
-use {{ context.app_crate }}_ports::{ItemRepository, PortFuture, RepositoryError};
-use {{ context.app_crate }}_services::ItemService;
-use uuid::Uuid;
 
-#[derive(Clone, Default)]
+{% if context.auth_oidc %}use {{ context.app_crate }}_domain::{InternalUser, Item};
+{% else %}use {{ context.app_crate }}_domain::Item;
+{% endif %}use {{ context.app_crate }}_ports::{ItemRepository, PortFuture, RepositoryError{% if context.auth_oidc %}, UserRepository{% endif %}};
+use {{ context.app_crate }}_services::ItemService;
+
+{% if context.auth_oidc %}use serde::Deserialize;
+{% endif %}use uuid::Uuid;
+
+{% if context.auth_oidc %}#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct ProductConfig {
+    pub auth: AuthConfig,
+}
+
+impl Validate for ProductConfig {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        self.auth.validate()
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(default)]
+pub struct AuthConfig {
+    pub issuer: String,
+    pub audience: String,
+}
+
+impl Default for AuthConfig {
+    fn default() -> Self {
+        Self {
+            issuer: "http://localhost:8081/realms/{{ context.app_name }}".to_owned(),
+            audience: "{{ context.app_name }}-backend".to_owned(),
+        }
+    }
+}
+
+impl Validate for AuthConfig {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let mut errors = Vec::new();
+        if self.issuer.trim().is_empty() {
+            errors.push(ValidationError::new("auth.issuer", "must not be empty"));
+        }
+        if self.audience.trim().is_empty() {
+            errors.push(ValidationError::new("auth.audience", "must not be empty"));
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(ValidationErrors::new(errors))
+        }
+    }
+}
+
+{% endif %}#[derive(Clone, Default)]
 pub struct InMemoryItemRepository {
     items: Arc<RwLock<BTreeMap<Uuid, Item>>>,
-}
+{% if context.auth_oidc %}    users: Arc<RwLock<BTreeMap<String, Uuid>>>,
+{% endif %}}
 
 impl InMemoryItemRepository {
     #[must_use]
@@ -90,7 +141,23 @@ impl ItemRepository for InMemoryItemRepository {
     }
 }
 
-pub fn operations_router(
+{% if context.auth_oidc %}impl UserRepository for InMemoryItemRepository {
+    fn resolve_subject(
+        &self,
+        subject: String,
+    ) -> PortFuture<'_, Result<InternalUser, RepositoryError>> {
+        Box::pin(async move {
+            let mut users = self
+                .users
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let id = *users.entry(subject.clone()).or_insert_with(Uuid::now_v7);
+            Ok(InternalUser { id, subject })
+        })
+    }
+}
+
+{% endif %}pub fn operations_router(
     service: ItemService,
     identity: ServiceIdentity,
     metrics: PrometheusHandle,

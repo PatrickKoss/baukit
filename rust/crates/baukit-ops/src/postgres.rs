@@ -1,9 +1,9 @@
 //! PostgreSQL pool metrics behind the `sqlx-postgres` feature.
 
-use std::{fmt, time::Duration};
+use std::{fmt, future::Future, time::Duration};
 
 use baukit_telemetry::metrics;
-use sqlx::{PgPool, Postgres, pool::PoolConnection};
+use sqlx::{PgPool, Postgres, Transaction, pool::PoolConnection};
 use tokio::{task::JoinHandle, time::Instant};
 
 const CONNECTIONS_MAX: &str = "db_pool_connections_max";
@@ -90,9 +90,25 @@ pub fn spawn_pool_metrics_sampler(
 /// applications that require `db_pool_acquire_*` metrics should use this helper
 /// at acquisition sites. Direct executor calls on `PgPool` are not included.
 pub async fn acquire(pool: &PgPool) -> Result<PoolConnection<Postgres>, sqlx::Error> {
+    observe_acquisition(pool.acquire()).await
+}
+
+/// Begins a PostgreSQL transaction while recording pool acquisition metrics.
+///
+/// Use this in place of [`PgPool::begin`]. SQLx combines pool acquisition and
+/// the initial `BEGIN` round trip in that API, so the recorded duration includes
+/// both. Pool timeouts increment `db_pool_acquire_timeouts_total` just like
+/// [`acquire`].
+pub async fn begin(pool: &PgPool) -> Result<Transaction<'static, Postgres>, sqlx::Error> {
+    observe_acquisition(pool.begin()).await
+}
+
+async fn observe_acquisition<T>(
+    operation: impl Future<Output = Result<T, sqlx::Error>>,
+) -> Result<T, sqlx::Error> {
     describe_pool_metrics();
     let started = Instant::now();
-    let result = pool.acquire().await;
+    let result = operation.await;
     metrics::histogram!(ACQUIRE_DURATION).record(started.elapsed().as_secs_f64());
     if matches!(result, Err(sqlx::Error::PoolTimedOut)) {
         metrics::counter!(ACQUIRE_TIMEOUTS).increment(1);
@@ -146,5 +162,10 @@ mod tests {
     #[test]
     fn acquire_helper_is_available_without_connecting() {
         let _helper = acquire;
+    }
+
+    #[test]
+    fn begin_helper_is_available_without_connecting() {
+        let _helper = begin;
     }
 }
