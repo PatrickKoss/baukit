@@ -179,9 +179,9 @@ Working name `leitbild` (German: guiding vision) — rename at F0 if the user su
 
 ### Wave F0 — scaffold + walking skeleton (sequential, 1 agent)
 
-- [ ] `baukit new leitbild --backend --web --mobile --auth oidc` against tag `baukit-v0.2.0`; private repo created; generated CI green **before any product code** (this is the first real end-to-end test of the generator outside CI fixtures)
-- [ ] Record scaffold friction (missing files, manual steps, doc gaps) in the Log — each manual step is a platform bug
-- [ ] Compose up (Postgres + Keycloak), login from web fixture page, hit protected endpoint — walking skeleton demo
+- [~] `baukit new leitbild --backend --web --mobile --auth oidc` against tag `baukit-v0.2.0`; private repo created; generated CI green **before any product code** (this is the first real end-to-end test of the generator outside CI fixtures)
+- [~] Record scaffold friction (missing files, manual steps, doc gaps) in the Log — each manual step is a platform bug
+- [~] Compose up (Postgres + Keycloak), login from web fixture page, hit protected endpoint — walking skeleton demo
 
 ### Wave F1 — domain + persistence (1 agent)
 
@@ -236,14 +236,87 @@ The analysis' chosen dogfood target (§ executive summary). Per user (2026-08-08
 
 ### Wave G0 — read-only scout (1 agent)
 
-- [ ] Inventory the existing architecture health platform repo: features, data model, integrations, analysis pipelines, deploy, tests; produce a keep/drop/defer list for the rewrite and a wave plan appended to this section (as Focus D's scout did)
-- [ ] Decide frontend targets for the rewrite (likely web-only) and which capabilities (`--auth`, worker) the scaffold needs
+- [x] Inventory the existing architecture health platform repo: features, data model, integrations, analysis pipelines, deploy, tests; produce a keep/drop/defer list for the rewrite and a wave plan appended to this section (as Focus D's scout did)
+- [x] Decide frontend targets for the rewrite (likely web-only) and which capabilities (`--auth`, worker) the scaffold needs
 
-### Waves G1+ — authored after G0
+Scout summary (2026-08-09, full report: [architecture-health-platform-rewrite-scout.md](./architecture-health-platform-rewrite-scout.md)): existing repo is a 139k-line TS prototype (Next.js 16 + tRPC + Prisma [88 models] + BullMQ [31 queues], 236 tRPC procedures, 52 routes, no active code CI) with prototype-level cohesion — specs/fixtures/vocabulary are reference material only. Rewrite: `baukit new architecture-health-platform --backend --web --auth oidc` (NO --mobile), worker is mandatory but the generator has no `--worker` (logged as platform gap — product-local worker crate added after scaffold proves green). Keep core: OIDC + orgs/projects/repos, GitHub-first provider port, durable Postgres job/outbox worker, tree-sitter scanner/graph, high-confidence declarative rules, versioned honest health scoring, findings lifecycle by fingerprint, quality gates, one Rust/OpenAPI contract, web dashboard, local CLI + GitHub Action, PR delta later. Drop: tenant layer, billing/licensing, Clerk/SAML, executable custom rules/isolated-vm, eBPF agent, Bull Board, product Terraform, fake scoring inputs. Defer: other git providers, issue trackers, doc ingestion/vector search, runtime telemetry, LLM features, ADR governance, compliance, reports/notifications, benchmarks. 16 platform-gap candidates logged in the scout report §5 (headline: worker generation in CLI/templates, durable job/outbox as extraction candidate, queue readiness/age helpers).
 
-- [ ] G1 scaffold: `baukit new` into a fresh branch/repo, generated CI green before porting
-- [ ] G2+ port domain in vertical slices per the keep list (placeholder — detailed by G0)
-- [ ] Gn conformance + deploy gate mirroring F7/F8
+### Wave G1 — scaffold + walking skeleton (sequential, 1 agent)
+
+- [ ] Fresh orphan `baukit-rewrite` branch from `baukit new architecture-health-platform --backend --web --auth oidc`, pinned to `baukit-v0.2.0`; old code stays as reference history only, no copied product files
+- [ ] Generated backend/web full local CI-equivalent green (Docker-gated tests, OpenAPI drift, frontend lint/typecheck/test/build, `baukit doctor`) **before product code**
+- [ ] Compose up PostgreSQL + Keycloak; PKCE login → generated protected `/me` → internal user bootstrap demonstrated
+- [ ] Record every scaffold/manual step in the Log, especially the missing worker generation capability
+
+### Wave G2 — core domain + persistence (1 agent)
+
+- [ ] Replace example domain with User/UserIdentity, Organization/OrganizationMember, Project/ProjectRepository, Repository/RepositoryConnection, AnalysisRun, persistent Finding, FindingOccurrence, FindingStatusHistory, Dependency, AnalysisMetric, HealthScore, RulesetConfig, QualityGateConfig, QualityGateEvaluation, JobOutbox
+- [ ] Domain provider-free; ports for repositories/clock/ID gen/job dispatch; services own authz + use cases; SQLx adapters own PostgreSQL; ordered migrations with constraints and org-scope indexes, no JSON dumping of known lifecycle/query fields
+- [ ] Unit/property tests: membership scope, finding fingerprints, status transitions, auto resolve/reopen, sortable IDs, health-history ordering; PostgreSQL integration tests via baukit-test
+
+### Wave G3 — repository intake + worker foundation (1 agent after G2; ∥ G4)
+
+- [ ] Integrations + worker crates + worker bin; product-local durable Postgres job/outbox (`repository.sync`, `analysis.run`, `analysis.schedule`, `webhook.process`)
+- [ ] Git provider port + GitHub adapter: credentials, repo catalog, verified raw-body webhook signatures, platform-ID→internal-repo resolution, idempotent delivery IDs, scoped temp clone credentials
+- [ ] Manual/default-branch/scheduled scans; bounded retry/backoff, per-repo concurrency exclusion, cancellation/timeout, temp-dir cleanup, crash recovery
+- [ ] Worker on baukit runtime/telemetry/ops with exact spec §2.4 worker metric families incl. queue age; integration tests via local bare Git fixture + mocked GitHub HTTP/webhooks
+
+### Wave G4 — scanner, parsers and dependency graph (1 agent after G2; ∥ G3)
+
+- [ ] Analysis crate: ignore-aware scanner, file-size/line limits, deterministic path normalization, explicit language capability matrix
+- [ ] Tree-sitter parsers + import/entity/function extractors for TS/JS and Rust first, then Python/Java/Go behind isolated language modules with golden fixture repos
+- [ ] Directed dependency graph, SCC/cycle canonicalization, module metrics, source locations; analyzed repo code is never executed
+- [ ] Property tests for graph invariants/cycle stability; golden tests for monorepos, aliases, relative imports, generated files, parse failures, oversized files
+
+### Wave G5 — rules, scoring and analysis result contract (1 agent after G4)
+
+- [ ] Versioned declarative rule catalog (initial high-confidence structural/code-quality/security/reliability rules); rule IDs + finding fingerprints are stable public contracts
+- [ ] Per-repo ruleset resolution: enable/disable, severity, typed threshold overrides; no executable custom code, no marketplace
+- [ ] Versioned health scoring from measured components only, with evidence/confidence; missing components redistribute weight explicitly, never guessed values
+- [ ] Analysis result: scan summary, dependencies, findings, metrics, component/overall scores, topology; deterministic JSON snapshots + regression fixtures for score/rule changes
+
+### Wave G6 — analysis orchestration + REST/OpenAPI contract (1 agent after G3/G5)
+
+- [ ] Worker transaction flow: claim → clone → analyze → persist → reconcile findings → commit outbox → clean workspace; idempotent retry cannot duplicate a completed run
+- [ ] Authenticated endpoints: /me, organizations/projects CRUD, repositories CRUD, analyses trigger/list/get, repo health/history/findings/topology/ruleset, finding status update, GitHub webhook
+- [ ] Cursor pagination, org-scoped authz everywhere, standard envelope, request IDs, documented conflict/rate/validation responses
+- [ ] Deterministic committed OpenAPI + generated TS client; API/worker/Postgres integration test proves trigger → job → completed analysis → query results
+
+### Wave G7 — web product (1 agent after G6; ∥ G8)
+
+- [ ] Vite/TanStack authenticated shell with org/project selection and repository onboarding
+- [ ] Repository dashboard: analysis state, versioned overall/component score, trend, finding counts, top findings, manual re-run
+- [ ] Findings table/detail/status workflow, health history, dependency/topology graph, per-repo ruleset editor; accessible loading/error/empty states, zero placeholder data
+- [ ] @baukit/ui-tokens, generated API client, privacy-safe structural analytics; Vitest/Testing Library + Playwright login → connect fixture repo → analyze → inspect finding/topology → change finding status
+
+### Wave G8 — local CLI + CI integration (1 agent after G5; ∥ G7)
+
+- [ ] Rust CLI `scan`/`analyze`/`gates` running the same analysis crate locally; JSON + human output, exclude/ruleset config, score threshold, stable exit codes
+- [ ] GitHub Action wrapper: install/run CLI, safe caches, summary/annotations, pass/fail status, no source upload
+- [ ] Quality-gate templates (strict, relaxed, monolith, modular-monolith, microservices) re-authored against new rule IDs
+- [ ] CLI golden output + exit-code tests; Action fixture workflow covers pass/fail, malformed config, below-threshold
+
+### Wave G9 — remediation + PR governance (1 agent after G6/G8)
+
+- [ ] Persistent finding lifecycle reconciles occurrences by fingerprint, preserves ack/assignment/status history, auto resolve/reopen only under tested rules
+- [ ] GitHub PR job analyzes real head/base, derives changed files/lines from Git, computes finding delta/risk from actual graph data, posts bounded review comments
+- [ ] Quality-gate evaluation persisted per analysis with immutable config snapshot; PR status and CLI evaluate the same result; false-positive annotation never mutates history
+- [ ] E2E fixture: webhook replay, PR synchronize, new/resolved/worsened findings, comment dedup, blocking/non-blocking gates
+
+### Wave G10 — telemetry + conformance gate (sequential, 1 agent after G7–G9)
+
+- [ ] baukit-test ops/auth/metrics/OpenAPI conformance for API and worker; gating readiness checks Postgres and job store
+- [ ] Standard HTTP + worker metric families exactly once; product metrics `architecture_health_platform_` prefix with bounded labels only
+- [ ] Logs/traces scrub source, diffs, repo credentials, webhook bodies, tokens; workspace paths/repo names never metric labels
+- [ ] Full local CI-equivalent gate green: fmt/clippy, unit/property/integration incl. Docker, coverage, deny/MSRV, OpenAPI/client drift, frontend lint/typecheck/coverage/build, Playwright, CLI/Action fixtures
+
+### Wave G11 — deploy + rewrite exit gate (sequential, 1 agent)
+
+- [ ] Separate API/worker/migration images; worker image has Git + parser assets + bounded scratch volume, API image does not
+- [ ] Shared baukit chart values: API + worker + release migration, private ops listeners, Postgres/Keycloak, worker egress to GitHub, default-deny netpol; no Redis/Qdrant/MinIO
+- [ ] Deploy to disposable k3d/K3s; smoke: OIDC login → connect fixture repo → analysis completes → dashboard renders → /metrics scraped → PR/CLI gate agrees
+- [ ] Shared dashboard + burn-rate/worker alerts render unmodified; graceful shutdown proves API drain + in-flight job recovery
+- [ ] Restore/deploy rehearsal + documented rollback; baukit rewrite becomes the release branch
 
 ### Extraction review gate (orchestrator, after F and G both run)
 
@@ -282,6 +355,8 @@ The analysis' chosen dogfood target (§ executive summary). Per user (2026-08-08
 - 2026-08-08: Focus D scouted and planned (orchestrator); SLS branch baukit-migration created; @baukit/api-runtime tgz pre-built for D1c.
 - 2026-08-08: Focus D shipped (orchestrator, per user) — Node bumped 20→24 (LTS; satisfies baukit engines, NPM_CONFIG_ENGINE_STRICT workaround removed) in both CI workflows + Dockerfile.e2e + README, `docs/baukit-setup.md` added (deploy-key ssh/gh setup, mirrors open-dialog/fitness-tracker); e2e re-run green on Node 24 (44/44). Commit 7a3b140 on baukit-migration, merged to main as 103bea7 and pushed.
 - 2026-08-08: D3 complete (codex, commits e28d729/520d286/64c169e) — Focus D done. OpenAPI bug root-caused as a D1b regression: renaming utoipa-recognized extractor identifiers `Path`/`Query` to `ApiPath`/`ApiQuery` broke utoipa's axum inference, defaulting query DTOs to path params; fixed by aliasing back + `#[into_params(parameter_in = Query)]` + regression tests, artifacts regenerated (238 path / 147 query / 0 optional-path params, matches main). Baukit ops + telemetry §6 + OpenAPI drift conformance wired. Full matrix green: fmt/clippy, `cargo test --workspace -- --include-ignored`, backend coverage 361/361 (82.25%), make lint/typecheck, frontend coverage 528 tests (87.1%), build (191 routes), e2e Docker build + 44/44 Playwright, gen-client no-op. JWT crypto provider pinned (baukit-test pulls a conflicting jsonwebtoken provider). Not pushed. New platform backlog: baukit-test crypto-provider conflict + second reqwest version; metrics conformance helper doesn't enforce worker metric families (product must assert them itself).
+- 2026-08-09: G0 complete (codex, read-only) — architecture-health-platform scouted; full report saved to docs/architecture-health-platform-rewrite-scout.md; wave plan G1–G11 authored into Focus G; 16 platform-gap candidates logged (headline: no --worker in generator). Static quality findings confirm rewrite-not-migrate (missing worker deps, phantom Prisma fields, hard-coded scoring inputs, dead webhook handler, Helm probing nonexistent route).
+- 2026-08-09: User decision — GitHub Actions free minutes exhausted; user will not pay for hosted runners (may self-host later, e.g. Blacksmith). Until then every "CI green" gate in Focus F/G is satisfied by running the full CI-equivalent locally (same commands, Docker-gated tests included); pushes proceed without waiting on Actions runs.
 - 2026-08-09: E4 complete (orchestrator + codex prep) — full local gate green (make ci, workspace tests --include-ignored, observability lint, auth fixture backend+web+mobile), release-train.sh minor bump to 0.2.0 (Changesets tried to escalate to 1.0.0 over internal peer deps, normalized back; CLI snapshots version-sensitive, updated), coherence green (9 crates, 6 packages), commit 41fcf52 pushed, tag baukit-v0.2.0 pushed. **BLOCKER (user action):** GitHub Actions refuses ALL jobs on the account (every job fails in ~2s with zero steps/logs, rerun identical, Actions enabled, workflow valid — billing/spending-limit signature). CI runs 31280863546 attempts 1+2 failed this way. User notified; rerun CI on main once billing is fixed. Local verification mirrored the exact CI command set.
 - 2026-08-08: E2 complete (codex) — `baukit new --auth oidc` (manifest `[capabilities] auth = "oidc"`, omitted when absent); backend auth flavor: protected GET /me with bearer OpenAPI security, issuer/audience config, subject→internal-user mapping service+repo+migration, mock-OIDC conformance tests; Keycloak realm.json (test/password user, confidential backend client, public PKCE web/mobile clients, explicit backend audience mapper — added after live smoke exposed missing aud claim); product-local web PKCE auth.ts + Expo AuthSession/SecureStore equivalent; auth flavor in CI fixture matrix; golden snapshots updated. Verified: CLI tests, non-auth combined fixture + auth fixture both fully green (Docker-gated included), live Keycloak smoke (401 no token / 200 with token). Friction: corepack picked pnpm 11.20.0 over pinned 11.18.0 until activated.
 - 2026-08-08: E3a complete (codex) — baukit-test MetricsConformanceOptions with opt-in worker-family enforcement (worker_job_runs_total{job,outcome} outcomes success|failure|retry, worker_job_duration_seconds histogram family, exact label sets; default mode unchanged); reqwest single-version confirmed (0.12.28 via workspace pin). baukit-config env values keep source strings (secrets '0123'/'1e5' survive literally; standard vs product config deserialized separately), thiserror pin relaxed to caret. fmt/clippy/tests --include-ignored (28/28 incl. Docker)/deny/MSRV green.
