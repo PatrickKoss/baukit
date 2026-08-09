@@ -322,6 +322,68 @@ Scout summary (2026-08-09, full report: [architecture-health-platform-rewrite-sc
 
 - [x] Review product-local code repeated across leitbild and the rewrite (web/mobile OIDC client code, LLM port, notification port, outbox) against the two-consumer guardrail (analysis §16): promote proven seams into baukit / `@baukit/*` or record them as deliberately product-owned in analysis §17 *(done 2026-08-09, recorded as analysis §17 entry 19 — promote: outbox/worker runner generalized from the rewrite's `JobQueue`+`Worker` shape, `@baukit/*` web OIDC PKCE client, observability verification harness, PKCE/k3d smoke harness, Expo SQLite `RecordStore` adapter as an explicit guardrail exception; product-owned: mobile OIDC hook, LLM port, notification port, Git-provider port)*
 
+## Focus H: baukit 0.3.0 platform-fix batch (per user 2026-08-09)
+
+Implements the consolidated Focus B–G friction backlog plus the extraction
+review promote decisions (analysis §17 entry 19). Baukit-only work: products
+stay pinned to `baukit-v0.2.0` until `baukit-v0.3.0` exists. All gates run
+locally (no hosted CI). Order: H1 (3 ∥ agents, disjoint top-level areas) →
+H2 (2 ∥) → H3 → H4. Parallel agents never share a top-level directory;
+orchestrator commits per wave after re-verification.
+
+### Wave H1a — `baukit-jobs`: durable job store + worker runner (1 agent, rust/ only)
+
+- [ ] New crate `baukit-jobs` generalizing the rewrite's `JobQueue`+`Worker` superset shape (§17.19a): `job_type` + JSONB payload, idempotent enqueue, `FOR UPDATE SKIP LOCKED` claim with attempt increment, `locked_by`/`locked_until` leases + stale-lease reclaim, cancellation lifecycle, bounded exponential backoff, terminal failure state, atomic completion
+- [ ] Worker runner: concurrent JoinSet execution with per-job timeout, graceful shutdown composing with baukit-runtime, readiness probe (claim-query based), documented outbox schema/migration SQL for products
+- [ ] Runner emits exact telemetry-spec §2.4 worker metrics (`worker_job_runs_total{job,outcome}`, `worker_job_duration_seconds` histogram **with buckets**, `worker_queue_oldest_age_seconds`), zero-initialized where countable
+- [ ] Docker-gated Postgres tests (claim/lease-reclaim/cancel/retry/idempotency/no-duplication) green under `--include-ignored`; fmt/clippy `-D warnings`; deny + MSRV if deps change
+
+### Wave H1b — promoted TS packages (1 agent, typescript/ only, ∥ H1a)
+
+- [ ] `@baukit/auth-web` (§17.19b): OIDC auth-code + PKCE client extracted from the two products' `web/src/auth.ts`, issuer discovery (no hardcoded Keycloak paths), parameterized client-id/scopes, merged hardening deltas (callback dedup + error sanitizer; optional `offline_access` + issuer normalization); vitest coverage
+- [ ] `@baukit/data-contracts-expo-sqlite` (§17.19e guardrail exception): Expo SQLite `RecordStore` adapter conformance-tested against `@baukit/data-contracts`
+- [ ] Fix: data-contracts' optional vitest peer no longer force-installs under Jest consumers; both packages wired into workspace/turbo/lint/format/test + version coherence
+- [ ] Full TS gate green: frozen-where-possible install, build, format:check, lint, test
+
+### Wave H1c — chart + observability pack gaps (1 agent, deploy/ only, ∥ H1a/H1b)
+
+- [ ] Chart (G11 ★2/3/4/5): per-process volumes/volumeMounts/env values; per-process `networkPolicy.additionalEgress`; k3s-compatible DNS egress option (port-53 rule); migration hook Jobs deleted via `hook-succeeded` policy
+- [ ] Observability pack ships Kubernetes provisioning (G11 ★6): dashboard/recording-rule/alert ConfigMaps + Prometheus wiring, consumable without hand-rolled manifests
+- [ ] Parameterized observability verification harness shipped with the pack (§17.19c, rewrite superset variant: metric resolution vs dashboards/alerts, public-/metrics-404 check, log secret-leak grep, known-gap allowlist)
+- [ ] Parameterized headless-PKCE login helper + chart-paired k3d smoke skeleton shipped (§17.19d, generalized from leitbild + rewrite harnesses)
+- [ ] Lints green: `check-metric-names.py`, `helm lint` + `helm template` against test values, promtool on rules
+
+### Wave H2a — telemetry/ops/config/openapi fixes (1 agent, rust/ only, after H1)
+
+- [ ] baukit-telemetry: db pool acquisition exported as histogram (`db_pool_acquire_duration_seconds_bucket` finally resolves the shared dashboard — recurring F7/G10/G11 headline); standard worker-duration buckets so products need no compatibility shims
+- [ ] baukit-ops: `db_pool_acquire_timeouts_total` and related countables zero-initialized
+- [ ] baukit-test: worker conformance requires the §2.4 queue-age family (`worker_queue_oldest_age_seconds`); validated against the `baukit-jobs` runner
+- [ ] baukit-config: collection-valued config (e.g. CORS origins) settable via env vars
+- [ ] baukit-openapi/http: `OffsetDateTime` as RFC 3339 strings (not nine-element tuples); list-operation query params no longer misclassified as path params in generated specs/clients; typed generated responses instead of `Envelope<Value>`; `ApiQuery<Vec<String>>` accepts a documented repeated/CSV encoding; field-level DTO validation helper over `ApiError::validation`
+- [ ] Gate green incl. Docker `--include-ignored`; MSRV + deny after dep changes
+
+### Wave H2b — CLI + template fixes (1 agent, cli/ + templates/ only, ∥ H2a)
+
+- [ ] **Security headline (F8):** `--auth oidc` scaffolds authenticated CRUD — every generated route requires bearer auth, not just `/me`
+- [ ] Keycloak scaffold: compose healthcheck; issuer works for localhost and 127.0.0.1 (documented); seeded user gets `offline_access` when the web client requests it; no mobile client without `--mobile`; PKCE helper client-id parameterized; Secure-cookie-over-dev-HTTP documented
+- [ ] Emission: SSH deps pinned to the correct `baukit-v*` tag; `.cargo/config.toml` with `git-fetch-with-cli`; Cargo + pnpm lockfiles generated; rustfmt-clean output; `.gitignore` no longer ignores the configured `/generated` dir; git init/remote handled or documented
+- [ ] CLI: `baukit doctor` reads the product's actual migrations (no hard-coded demo filenames); `generate openapi-client` doesn't re-run backend generation nor require a globally installed binary; `baukit new` can target an existing (orphan) repo root; install-on-PATH story
+- [ ] Generated Makefile `check` runs `--include-ignored` + web/mobile gates; generated CI covers web/mobile, `--include-ignored`, deploy-key setup
+- [ ] Jinja `Cargo.toml` parse noise eliminated at the source (cargo never scans raw templates — the every-single-wave recurring item); `PostgresItemRepository` demo naming replaced by a per-aggregate convention; generated docs corrected (no "Backend-only" for combined, correct URL/tag, no `--baukit-path` advice, no duplicated sections)
+- [ ] CLI unit/snapshot tests green; full fixture matrix re-run by orchestrator at wave close (H2a edits rust/ concurrently)
+
+### Wave H3 — `--worker` generator + template integration (1 agent, after H1a/H1b/H2b)
+
+- [ ] `baukit new --worker`: worker crate/bin on `baukit-jobs` (standard config section for concurrency/leases/timeouts, private ops listener + readiness, §2.4 metrics, graceful shutdown), outbox migration emitted, deploy values/Make/CI wired — resolves the 3×-hand-built worker headline (F5/G3/G-scout)
+- [ ] Migration binary deserializes `BaukitConfig<ProductConfig>` with chart-injected product overrides present (recurring F8 #6 / G11 ★1)
+- [ ] Web template consumes `@baukit/auth-web` instead of hand-rolled `auth.ts`; mobile template offers the Expo SQLite `RecordStore` adapter
+- [ ] Full fixture matrix incl. new worker flavor green (fmt/clippy/tests `--include-ignored`/drift/web/mobile)
+
+### Wave H4 — release `baukit-v0.3.0` (sequential, orchestrator + 1 agent)
+
+- [ ] Full local CI-equivalent: `make ci`, workspace `--include-ignored`, MSRV 1.95, cargo deny, metric-name lint, version coherence, complete generated-fixture matrix
+- [ ] release-train minor bump 0.2.0 → 0.3.0 coherent across crates/packages/templates/chart; templates pin `baukit-v0.3.0`; tag `baukit-v0.3.0` pushed
+
 ## Log
 
 - 2026-08-08: Task list created; Wave 1 dispatched to Codex.
@@ -358,6 +420,7 @@ Scout summary (2026-08-09, full report: [architecture-health-platform-rewrite-sc
 - 2026-08-09: G0 complete (codex, read-only) — architecture-health-platform scouted; full report saved to docs/architecture-health-platform-rewrite-scout.md; wave plan G1–G11 authored into Focus G; 16 platform-gap candidates logged (headline: no --worker in generator). Static quality findings confirm rewrite-not-migrate (missing worker deps, phantom Prisma fields, hard-coded scoring inputs, dead webhook handler, Helm probing nonexistent route).
 - 2026-08-09: User decision — GitHub Actions free minutes exhausted; user will not pay for hosted runners (may self-host later, e.g. Blacksmith). Until then every "CI green" gate in Focus F/G is satisfied by running the full CI-equivalent locally (same commands, Docker-gated tests included); pushes proceed without waiting on Actions runs.
 - 2026-08-09: E4 complete (orchestrator + codex prep) — full local gate green (make ci, workspace tests --include-ignored, observability lint, auth fixture backend+web+mobile), release-train.sh minor bump to 0.2.0 (Changesets tried to escalate to 1.0.0 over internal peer deps, normalized back; CLI snapshots version-sensitive, updated), coherence green (9 crates, 6 packages), commit 41fcf52 pushed, tag baukit-v0.2.0 pushed. **BLOCKER (user action):** GitHub Actions refuses ALL jobs on the account (every job fails in ~2s with zero steps/logs, rerun identical, Actions enabled, workflow valid — billing/spending-limit signature). CI runs 31280863546 attempts 1+2 failed this way. User notified; rerun CI on main once billing is fixed. Local verification mirrored the exact CI command set.
+- 2026-08-09: Focus H planned and Wave H1 dispatched (orchestrator, per user) — baukit 0.3.0 platform-fix batch: H1 (baukit-jobs crate ∥ promoted TS packages ∥ chart + observability gaps) → H2 (rust seam fixes ∥ CLI/template fixes) → H3 (--worker generator + template integration) → H4 (release baukit-v0.3.0). Backlog consolidated from every F/G wave friction list + §17 entry 19 promote decisions.
 - 2026-08-09: Extraction review gate complete — ALL PHASE 2 WORK DONE (orchestrator, evidence gathered by read-only cross-repo comparison of eight seams). Decisions recorded as analysis §17 entry 19. Promote into 0.3.0: (1) durable job store/outbox + worker runner, generalized from the rewrite's `JobQueue`+`Worker` (JSONB payload, `locked_by/locked_until` leases, cancellation, concurrent runner) — the superset of leitbild's typed variant; both hand-built the same SKIP LOCKED/backoff/idempotency/metrics kernel; (2) web OIDC PKCE client (`web/src/auth.ts` near line-for-line duplicate in both products) as a `@baukit/*` package with issuer discovery + merged hardening deltas; (3) observability verification harness (near-duplicate scripts, rewrite variant is the superset) shipped with the observability pack; (4) PKCE/k3d smoke harness (two consumers as of G11); (5) Expo SQLite `RecordStore` adapter — explicit single-consumer guardrail exception: zero-product-logic implementation of baukit's own contract. Deliberately product-owned: mobile OIDC hook, LLM port (ReflectionKind baked into request type), notification port, Git-provider port — all single-consumer, revisit at a second real consumer.
 - 2026-08-09: G11 complete — FOCUS G DONE (codex, commit 399a68d on architecture-health-platform `baukit-rewrite`, the release branch) — deploy + rewrite exit gate: separate images (worker: Git + static tree-sitter grammars + 256 MiB scratch emptyDir; API without; SQLx migration image); unmodified shared chart with production/local values (private ClusterIP ops, default-deny netpol + worker Git egress, Postgres/Keycloak, no Redis/Qdrant/MinIO); committed `scripts/k3d-smoke.sh` one full green run (seeded PKCE login → mocked GitHub catalog + local smart-HTTP fixture → worker analyzed exact commit → score 69.75/4 findings → API 230 / worker 174 metric lines → CLI exit 2 agrees with server strict blocking gate); shared dashboard + 9 recording rules + 13 alerts applied unmodified, sole unresolved metric = known `db_pool_acquire_duration_seconds_bucket`; shutdown proof (API drains to 200 post-SIGTERM; worker force-killed mid-clone → lease reclaimed, recovery signature succeeded:2:1:1, no duplication); restore rehearsal (124,658-byte dump → fresh release, row signature 2:1:1:4:1 matched, restored org served authenticated) + rollback docs in `docs/deployment-and-recovery.md`. Full local gate re-verified (make check, fmt, clippy -D warnings, tests --include-ignored, full-gate.sh 113s); cluster/images/volumes cleaned up. Friction: (1) ★ generated migrations deserialize `BaukitConfig<()>` but chart injects product overrides — migration must accept ProductConfig (recurring, F8 #6); (2) ★ chart lacks values for volumes/mounts/process-specific env — worker workspace needed a patch; (3) ★ `networkPolicy.additionalEgress` is release-wide, can't express worker-only Git egress; (4) ★ chart's pod-selected CoreDNS rule fails on k3s (policy enforced against Service IP pre-DNAT) — local values need a port-53 rule; (5) ★ migration hook Jobs persist after uninstall (hook policy lacks `hook-succeeded`); (6) ★ observability pack ships no Kubernetes provisioning resources — products supply ConfigMaps/mounts/Prometheus config/dashboard wiring; (7) db summary vs dashboard histogram (recurring, F7 headline); (8) Jinja `Cargo.toml` parse noise (recurring, every wave).
 - 2026-08-09: G10 complete (codex, commits 3643a84/ecfedc3/0162b5d on architecture-health-platform `baukit-rewrite`) — telemetry + conformance gate: full baukit-test conformance (ops/auth/metrics §6/OpenAPI) for API and worker; private ops listeners enforced, public /metrics 404; readiness independently gates Postgres and job store (worker readiness exercises the outbox claim query); standard HTTP + §2.4 worker families emitted exactly once with bounded labels, `worker_queue_oldest_age_seconds` explicitly tested; product metrics confined to bounded `architecture_health_platform_` namespace; privacy tests block source/diffs/credentials/webhook bodies/embedded-credential clone URLs/workspace paths at logging/error boundaries; committed reusable `scripts/full-gate.sh` (130s: fmt/clippy/deny, 66 backend tests incl. all 7 Docker-gated + local Action fixture, OpenAPI/client sync, 13 vitest, Playwright real-stack path, observability verification, coverage 65.64% lines). Shared observability resolves ALL dashboard/alert metric references except exactly `db_pool_acquire_duration_seconds_bucket` (panel 6) — same platform gap as leitbild F7; gate accepts only that exact gap and fails on any additional unresolved metric. Friction: (1) db acquisition exported as summary vs dashboard histogram expectation (recurring, F7 headline); (2) recorder limitation forces product-maintained compatibility bucket samples for worker job duration (recurring, G3); (3) worker conformance helper omits `worker_queue_oldest_age_seconds` (recurring, G3); (4) `db_pool_acquire_timeouts_total` not zero-initialized by baukit-ops (recurring); (5) Jinja `Cargo.toml` parse noise (recurring).
