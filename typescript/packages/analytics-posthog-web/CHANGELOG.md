@@ -1,5 +1,9 @@
 # @baukit/analytics-posthog-web
 
+## Unreleased
+
+- Build the linked analytics core before preparing a Git path dependency.
+
 ## 0.3.4
 
 ### Patch Changes

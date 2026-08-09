@@ -18,7 +18,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "prepare": "pnpm run build",
+    "prepare": "pnpm --dir ../analytics-core run build && pnpm run build",
     "test": "vitest run --config ../../vitest.config.ts",
     "lint": "eslint src --max-warnings=0",
     "format:check": "prettier --check src package.json tsconfig.json"
