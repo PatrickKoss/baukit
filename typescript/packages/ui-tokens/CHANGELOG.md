@@ -1,5 +1,11 @@
 # @baukit/ui-tokens
 
+## 0.3.5
+
+### Patch Changes
+
+- Release the coordinated baukit 0.3.5 train.
+
 ## 0.3.4
 
 ### Patch Changes
