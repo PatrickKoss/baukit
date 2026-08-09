@@ -1,0 +1,542 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: posthog-clickhouse
+  namespace: posthog
+  labels:
+    app.kubernetes.io/name: posthog-clickhouse
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: analytics
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: posthog-clickhouse
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: analytics
+  ports:
+    - name: http
+      port: 8123
+      targetPort: http
+    - name: native
+      port: 9000
+      targetPort: native
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: posthog-clickhouse-config
+  namespace: posthog
+  labels:
+    app.kubernetes.io/name: posthog-clickhouse
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: analytics
+data:
+  posthog.xml: |-
+    <clickhouse>
+      <default_database>posthog</default_database>
+      <remote_servers>
+        <posthog>
+          <shard>
+            <internal_replication>false</internal_replication>
+            <replica>
+              <host>posthog-clickhouse-0.posthog-clickhouse</host>
+              <port>9000</port>
+              <user>posthog</user>
+              <password from_env="CLICKHOUSE_PASSWORD"/>
+            </replica>
+          </shard>
+        </posthog>
+      </remote_servers>
+      <macros>
+        <installation>posthog</installation>
+        <cluster>posthog</cluster>
+        <shard>0</shard>
+        <replica>posthog-clickhouse-0</replica>
+      </macros>
+      <zookeeper>
+        <node>
+          <host>posthog-zookeeper</host>
+          <port>2181</port>
+        </node>
+      </zookeeper>
+      <distributed_ddl>
+        <path>/clickhouse/posthog/task_queue/ddl</path>
+      </distributed_ddl>
+    </clickhouse>
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: posthog-clickhouse
+  namespace: posthog
+  labels:
+    app.kubernetes.io/name: posthog-clickhouse
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: analytics
+spec:
+  serviceName: posthog-clickhouse
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: posthog-clickhouse
+      app.kubernetes.io/part-of: baukit-platform
+      baukit.dev/component: analytics
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: posthog-clickhouse
+        app.kubernetes.io/part-of: baukit-platform
+        baukit.dev/component: analytics
+    spec:
+      securityContext:
+        fsGroup: 101
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: clickhouse
+          image: mirror.gcr.io/clickhouse/clickhouse-server:22.8.21.38-alpine@sha256:d3c96b46a803e35f202b0cacb75e1966be1f5f9ea10a56d051bda7db3bf3cdea
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: CLICKHOUSE_DB
+              value: posthog
+            - name: CLICKHOUSE_USER
+              value: posthog
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: posthog-secrets
+                  key: clickhouse-password
+            - name: CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8123
+            - name: native
+              containerPort: 9000
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 50m, memory: 256Mi}
+            limits: {cpu: 750m, memory: 1Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            runAsNonRoot: true
+            runAsUser: 101
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/clickhouse
+            - name: config
+              mountPath: /etc/clickhouse-server/config.d/posthog.xml
+              subPath: posthog.xml
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: posthog-clickhouse-config
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: posthog-postgresql
+  namespace: posthog
+  labels:
+    app.kubernetes.io/name: posthog-postgresql
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: analytics
+spec:
+  selector:
+    app.kubernetes.io/name: posthog-postgresql
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: analytics
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: posthog-postgresql
+  namespace: posthog
+  labels:
+    app.kubernetes.io/name: posthog-postgresql
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: analytics
+spec:
+  serviceName: posthog-postgresql
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: posthog-postgresql
+      app.kubernetes.io/part-of: baukit-platform
+      baukit.dev/component: analytics
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: posthog-postgresql
+        app.kubernetes.io/part-of: baukit-platform
+        baukit.dev/component: analytics
+    spec:
+      securityContext:
+        fsGroup: 70
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres:14.1-alpine@sha256:578ca5c8452c08a4e0f5e65b55dce5e1812fe63c8fee40ea837641031598e51e
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POSTGRES_DB
+              value: posthog
+            - name: POSTGRES_USER
+              value: posthog
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: posthog-secrets
+                  key: postgresql-password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgres
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, posthog]
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
+          livenessProbe:
+            exec:
+              command: [pg_isready, -U, posthog]
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          resources:
+            requests: {cpu: 15m, memory: 64Mi}
+            limits: {cpu: 300m, memory: 384Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            runAsNonRoot: true
+            runAsUser: 70
+            runAsGroup: 70
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: posthog-redis
+  namespace: posthog
+  labels:
+    app.kubernetes.io/name: posthog-redis
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: analytics
+spec:
+  selector:
+    app.kubernetes.io/name: posthog-redis
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: analytics
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: posthog-redis
+  namespace: posthog
+  labels:
+    app.kubernetes.io/name: posthog-redis
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: analytics
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: posthog-redis
+      app.kubernetes.io/part-of: baukit-platform
+      baukit.dev/component: analytics
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: posthog-redis
+        app.kubernetes.io/part-of: baukit-platform
+        baukit.dev/component: analytics
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: redis
+          image: redis:6.2.6-alpine@sha256:132337b9d7744ffee4fae83f51de53c3530935ad3ba528b7110f2d805f55cbf5
+          imagePullPolicy: IfNotPresent
+          args: [redis-server, --save, "", --appendonly, "no", --maxmemory, 96mb, --maxmemory-policy, allkeys-lru]
+          ports:
+            - name: redis
+              containerPort: 6379
+          readinessProbe:
+            exec:
+              command: [redis-cli, ping]
+            periodSeconds: 5
+            timeoutSeconds: 2
+          livenessProbe:
+            exec:
+              command: [redis-cli, ping]
+            periodSeconds: 10
+            timeoutSeconds: 2
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: posthog-zookeeper
+  namespace: posthog
+  labels:
+    app.kubernetes.io/name: posthog-zookeeper
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: analytics
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: posthog-zookeeper
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: analytics
+  ports:
+    - name: client
+      port: 2181
+      targetPort: client
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: posthog-zookeeper
+  namespace: posthog
+  labels:
+    app.kubernetes.io/name: posthog-zookeeper
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: analytics
+spec:
+  serviceName: posthog-zookeeper
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: posthog-zookeeper
+      app.kubernetes.io/part-of: baukit-platform
+      baukit.dev/component: analytics
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: posthog-zookeeper
+        app.kubernetes.io/part-of: baukit-platform
+        baukit.dev/component: analytics
+    spec:
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: zookeeper
+          image: zookeeper:3.8.4@sha256:20d3c93ebda093d0c90911493396975e0e04523af225d8053d42bab781f9ca48
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ZOO_4LW_COMMANDS_WHITELIST
+              value: ruok
+          ports:
+            - name: client
+              containerPort: 2181
+          readinessProbe:
+            tcpSocket:
+              port: client
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            tcpSocket:
+              port: client
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 5m, memory: 128Mi}
+            limits: {cpu: 200m, memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: datalog
+              mountPath: /datalog
+      volumes:
+        - name: datalog
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: posthog-kafka
+  namespace: posthog
+  labels:
+    app.kubernetes.io/name: posthog-kafka
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: analytics
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: posthog-kafka
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: analytics
+  ports:
+    - name: kafka
+      port: 9092
+      targetPort: kafka
+    - name: admin
+      port: 9644
+      targetPort: admin
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: posthog-kafka
+  namespace: posthog
+  labels:
+    app.kubernetes.io/name: posthog-kafka
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: analytics
+spec:
+  serviceName: posthog-kafka
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: posthog-kafka
+      app.kubernetes.io/part-of: baukit-platform
+      baukit.dev/component: analytics
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: posthog-kafka
+        app.kubernetes.io/part-of: baukit-platform
+        baukit.dev/component: analytics
+    spec:
+      securityContext:
+        fsGroup: 101
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: redpanda
+          image: redpandadata/redpanda:v25.1.9@sha256:8f7e9e4c1422baaa1a5e2a6c6c668cfe05442cb3cb476542c7dff61725e6fe31
+          imagePullPolicy: IfNotPresent
+          args:
+            - redpanda
+            - start
+            - --kafka-addr=internal://0.0.0.0:9092
+            - --advertise-kafka-addr=internal://posthog-kafka.posthog.svc.cluster.local:9092
+            - --rpc-addr=0.0.0.0:33145
+            - --advertise-rpc-addr=posthog-kafka.posthog.svc.cluster.local:33145
+            - --mode=dev-container
+            - --smp=1
+            - --memory=384M
+            - --reserve-memory=0M
+            - --overprovisioned
+          ports:
+            - name: kafka
+              containerPort: 9092
+            - name: admin
+              containerPort: 9644
+          readinessProbe:
+            httpGet:
+              path: /v1/status/ready
+              port: admin
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /v1/status/ready
+              port: admin
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 3
+          resources:
+            requests: {cpu: 10m, memory: 160Mi}
+            limits: {cpu: 500m, memory: 640Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            runAsNonRoot: true
+            runAsUser: 101
+            runAsGroup: 101
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/redpanda/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 1Gi

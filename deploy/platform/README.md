@@ -20,6 +20,7 @@ The conventional namespaces are:
 | certificates | `cert-manager` |
 | ingress | `traefik` |
 | progressive delivery | `flagger-system` |
+| product analytics | `posthog` |
 | admission policy | `kyverno` |
 | coordinated reboot | `kured` |
 | cloud provider drivers | `kube-system` |
