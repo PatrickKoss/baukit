@@ -1,0 +1,152 @@
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: baukit-http-error-percent
+  namespace: flagger-system
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: progressive-delivery
+spec:
+  provider:
+    type: prometheus
+    address: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
+  query: |
+    100 *
+    sum(rate(http_requests_total{
+      product="{{ variables.product }}",
+      service="{{ variables.product }}-api",
+      environment="{{ variables.environment }}",
+      rollout="canary",
+      status=~"5.."
+    }[{{ interval }}]))
+    /
+    clamp_min(
+      sum(rate(http_requests_total{
+        product="{{ variables.product }}",
+        service="{{ variables.product }}-api",
+        environment="{{ variables.environment }}",
+        rollout="canary"
+      }[{{ interval }}])),
+      0.001
+    )
+---
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: baukit-http-p95-seconds
+  namespace: flagger-system
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: progressive-delivery
+spec:
+  provider:
+    type: prometheus
+    address: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
+  query: |
+    histogram_quantile(
+      0.95,
+      sum by (le) (
+        rate(http_request_duration_seconds_bucket{
+          product="{{ variables.product }}",
+          service="{{ variables.product }}-api",
+          environment="{{ variables.environment }}",
+          rollout="canary"
+        }[{{ interval }}])
+      )
+    )
+---
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: baukit-worker-failure-percent
+  namespace: flagger-system
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: progressive-delivery
+spec:
+  provider:
+    type: prometheus
+    address: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
+  query: |
+    (
+      100 *
+      sum(rate(worker_job_runs_total{
+        product="{{ variables.product }}",
+        service="{{ variables.product }}-worker",
+        environment="{{ variables.environment }}",
+        outcome="failure"
+      }[5m]))
+      /
+      clamp_min(
+        sum(rate(worker_job_runs_total{
+          product="{{ variables.product }}",
+          service="{{ variables.product }}-worker",
+          environment="{{ variables.environment }}"
+        }[5m])),
+        0.001
+      )
+    ) or on() vector(0)
+---
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: baukit-worker-p95-seconds
+  namespace: flagger-system
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: progressive-delivery
+spec:
+  provider:
+    type: prometheus
+    address: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
+  query: |
+    histogram_quantile(
+      0.95,
+      sum by (le) (
+        rate(worker_job_duration_seconds_bucket{
+          product="{{ variables.product }}",
+          service="{{ variables.product }}-worker",
+          environment="{{ variables.environment }}"
+        }[5m])
+      )
+    ) or on() vector(0)
+---
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: baukit-worker-retry-rate
+  namespace: flagger-system
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: progressive-delivery
+spec:
+  provider:
+    type: prometheus
+    address: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
+  query: |
+    sum(rate(worker_job_runs_total{
+      product="{{ variables.product }}",
+      service="{{ variables.product }}-worker",
+      environment="{{ variables.environment }}",
+      outcome="retry"
+    }[5m])) or on() vector(0)
+---
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: baukit-worker-queue-age
+  namespace: flagger-system
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: progressive-delivery
+spec:
+  provider:
+    type: prometheus
+    address: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
+  query: |
+    max(worker_queue_oldest_age_seconds{
+      product="{{ variables.product }}",
+      service="{{ variables.product }}-worker",
+      environment="{{ variables.environment }}"
+    }) or on() vector(0)
+
