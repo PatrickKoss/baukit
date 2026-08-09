@@ -4,6 +4,8 @@ All notable changes to `baukit-http` are documented here.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-08-09
+
 ## [0.3.1] - 2026-08-09
 
 ## [0.3.0] - 2026-08-09

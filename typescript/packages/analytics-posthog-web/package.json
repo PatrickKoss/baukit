@@ -1,6 +1,6 @@
 {
   "name": "@baukit/analytics-posthog-web",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "type": "module",
   "engines": {
@@ -29,7 +29,7 @@
     "typescript": "6.0.3"
   },
   "peerDependencies": {
-    "@baukit/analytics-core": "^0.3.1",
+    "@baukit/analytics-core": "^0.3.2",
     "posthog-js": "^1.414.0"
   }
 }

@@ -6,6 +6,9 @@
 
 This table records what the shared baseline is **tested against**. Renovate keeps individual products moving; baukit guarantees compatibility only with the versions listed here. Version cells reflect the review-time state of the three projects and must be re-verified against the lockfiles when the baukit repository is created.
 
+Last verified release train: `baukit-v0.3.2` (dependency versions unchanged
+from 0.3.1; the complete train and platform-base gates were rerun).
+
 ## Toolchain
 
 | Tool | Tested baseline | Notes |

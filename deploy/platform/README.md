@@ -19,6 +19,7 @@ The conventional namespaces are:
 | baseline coordination | `platform-system` |
 | certificates | `cert-manager` |
 | ingress | `traefik` |
+| progressive delivery | `flagger-system` |
 | admission policy | `kyverno` |
 | coordinated reboot | `kured` |
 | cloud provider drivers | `kube-system` |

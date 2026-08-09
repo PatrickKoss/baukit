@@ -59,7 +59,7 @@ convention for those files.
 6. From the merged `main`, verify and push the unified annotated tag:
 
    ```sh
-   version=0.3.1
+   version=0.3.2
    scripts/check-version-coherence.py --tag "baukit-v${version}"
    git tag -a "baukit-v${version}" -m "baukit ${version}"
    git push origin "baukit-v${version}"
@@ -77,7 +77,7 @@ Rust products pin the unified tag; Cargo locates the named crate inside the
 repository:
 
 ```toml
-baukit-runtime = { git = "ssh://git@github.com/patrickkoss/baukit.git", tag = "baukit-v0.3.1" }
+baukit-runtime = { git = "ssh://git@github.com/patrickkoss/baukit.git", tag = "baukit-v0.3.2" }
 ```
 
 pnpm products pin that same tag and the package subdirectory. Quote the value
@@ -86,7 +86,7 @@ because `&` is part of pnpm's git selector:
 ```json
 {
   "dependencies": {
-    "@baukit/api-runtime": "git+ssh://git@github.com/patrickkoss/baukit.git#baukit-v0.3.1&path:typescript/packages/api-runtime"
+    "@baukit/api-runtime": "git+ssh://git@github.com/patrickkoss/baukit.git#baukit-v0.3.2&path:typescript/packages/api-runtime"
   }
 }
 ```
