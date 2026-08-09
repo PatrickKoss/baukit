@@ -24,7 +24,7 @@
     "format:check": "prettier --check src package.json tsconfig.json"
   },
   "devDependencies": {
-    "@baukit/analytics-core": "workspace:*",
+    "@baukit/analytics-core": "file:../analytics-core",
     "posthog-js": "1.414.0",
     "typescript": "6.0.3"
   },

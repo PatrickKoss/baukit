@@ -54,7 +54,7 @@ importers:
   packages/analytics-posthog-web:
     devDependencies:
       '@baukit/analytics-core':
-        specifier: workspace:*
+        specifier: file:../analytics-core
         version: link:../analytics-core
       posthog-js:
         specifier: 1.414.0
