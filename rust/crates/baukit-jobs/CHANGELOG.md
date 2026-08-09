@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## [Unreleased]
+
+## [0.3.0] - 2026-08-09
 
 - Add a durable PostgreSQL job outbox, worker runner, cancellation, retries,
   readiness, and standard worker telemetry.
-

@@ -4,6 +4,8 @@ All notable changes to `baukit-http` are documented here.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-09
+
 ### Added
 
 - Utoipa-recognized `Query` and `Path` names for the standard extractors; the existing `ApiQuery` and `ApiPath` names remain aliases.

@@ -4,6 +4,8 @@ All notable changes to `baukit-ops` are documented here.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-09
+
 ### Fixed
 
 - PostgreSQL pool metric families, including `db_pool_acquire_timeouts_total`, are registered with zero values before their first event.

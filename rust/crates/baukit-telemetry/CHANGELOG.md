@@ -4,6 +4,8 @@ All notable changes to `baukit-telemetry` are documented here.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-09
+
 ### Fixed
 
 - PostgreSQL pool acquisition duration now exports as a Prometheus histogram with standard buckets, matching the shared dashboard's `_bucket` query.

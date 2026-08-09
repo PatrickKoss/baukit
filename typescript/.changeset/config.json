@@ -8,7 +8,9 @@
       "@baukit/analytics-posthog-web",
       "@baukit/analytics-posthog-native",
       "@baukit/api-runtime",
+      "@baukit/auth-web",
       "@baukit/data-contracts",
+      "@baukit/data-contracts-expo-sqlite",
       "@baukit/ui-tokens"
     ]
   ],

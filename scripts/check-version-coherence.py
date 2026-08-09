@@ -55,6 +55,11 @@ def main() -> None:
     if bad_crates:
         fail(f"Rust crates differ from workspace version {rust_version}: {bad_crates}")
 
+    with (ROOT / "cli/Cargo.toml").open("rb") as manifest:
+        cli_version = tomllib.load(manifest)["package"]["version"]
+    if cli_version != rust_version:
+        fail(f"Rust is {rust_version}, but the CLI is {cli_version}")
+
     package_versions: dict[str, str] = {}
     for path in sorted((ROOT / "typescript/packages").glob("*/package.json")):
         package = json.loads(path.read_text())
@@ -63,6 +68,20 @@ def main() -> None:
             if package.get("private") is not True:
                 fail(f"{name} must remain private until the go-public decision")
             package_versions[name] = package["version"]
+            for dependency_group in (
+                "dependencies",
+                "devDependencies",
+                "peerDependencies",
+                "optionalDependencies",
+            ):
+                for dependency, requirement in package.get(dependency_group, {}).items():
+                    if not dependency.startswith("@baukit/") or requirement == "workspace:*":
+                        continue
+                    if requirement != f"^{rust_version}":
+                        fail(
+                            f"{name} {dependency_group} requires {dependency} "
+                            f"at {requirement!r}, expected ^{rust_version}"
+                        )
 
     if not package_versions:
         fail("no @baukit/* TypeScript packages were found")
@@ -79,6 +98,22 @@ def main() -> None:
         if template_version != rust_version:
             fail(f"Rust is {rust_version}, but templates/VERSION is {template_version}")
 
+    chart_versions: dict[str, tuple[str, str]] = {}
+    for path in sorted((ROOT / "deploy").glob("**/Chart.yaml")):
+        values: dict[str, str] = {}
+        for line in path.read_text().splitlines():
+            if line.startswith(("version:", "appVersion:")):
+                key, value = line.split(":", 1)
+                values[key] = value.strip().strip('"')
+        chart_version = values.get("version", "")
+        app_version = values.get("appVersion", "")
+        chart_versions[str(path.relative_to(ROOT))] = (chart_version, app_version)
+        if chart_version != rust_version or app_version != rust_version:
+            fail(
+                f"Rust is {rust_version}, but {path.relative_to(ROOT)} has "
+                f"version {chart_version!r} and appVersion {app_version!r}"
+            )
+
     if args.tag:
         expected_tag = f"baukit-v{rust_version}"
         if args.tag != expected_tag:
@@ -86,7 +121,8 @@ def main() -> None:
 
     print(
         f"baukit release train {rust_version} is coherent "
-        f"({len(crate_versions)} crates, {len(package_versions)} packages)"
+        f"({len(crate_versions)} crates, CLI, {len(package_versions)} packages, "
+        f"{len(chart_versions)} charts)"
     )
 
 

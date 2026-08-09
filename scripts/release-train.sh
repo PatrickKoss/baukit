@@ -56,7 +56,9 @@ fi
     '@baukit/analytics-posthog-web' \
     '@baukit/analytics-posthog-native' \
     '@baukit/api-runtime' \
+    '@baukit/auth-web' \
     '@baukit/data-contracts' \
+    '@baukit/data-contracts-expo-sqlite' \
     '@baukit/ui-tokens'; do
     printf "'%s': %s\n" "$package" "$bump"
   done
@@ -69,9 +71,17 @@ fi
 
 actual_ts=$(node -p "require('./typescript/packages/analytics-core/package.json').version")
 if [[ "$actual_ts" != "$next" ]]; then
-  echo "Changesets selected TypeScript version $actual_ts, expected $next for a $bump train" >&2
-  echo "Review pending changesets; a higher bump may already be requested." >&2
-  exit 1
+  echo "Changesets selected TypeScript version $actual_ts; normalizing the private 0.x train to $next"
+  for manifest in typescript/packages/*/package.json; do
+    TRAIN_VERSION="$next" perl -0pi -e \
+      's{("version": ")[^"]+}{$1.$ENV{TRAIN_VERSION}}e; s{("\@baukit/[^"]+": "\^)[^"]+}{$1.$ENV{TRAIN_VERSION}}eg' \
+      "$manifest"
+  done
+  for changelog in typescript/packages/*/CHANGELOG.md; do
+    ACTUAL_TS="$actual_ts" TRAIN_VERSION="$next" perl -0pi -e \
+      '$actual = quotemeta($ENV{ACTUAL_TS}); s{^## $actual$}{"## ".$ENV{TRAIN_VERSION}}egm; s{(\@baukit/[a-z-]+\@)$actual}{$1.$ENV{TRAIN_VERSION}}eg' \
+      "$changelog"
+  done
 fi
 
 TRAIN_VERSION="$next" perl -0pi -e \
@@ -81,6 +91,11 @@ TRAIN_VERSION="$next" perl -0pi -e \
   's{^(baukit-[a-z-]+ = \{ version = ")=[^"]+(".*)$}{$1."=".$ENV{TRAIN_VERSION}.$2}egm' \
   rust/Cargo.toml
 cargo update --manifest-path rust/Cargo.toml --workspace
+
+TRAIN_VERSION="$next" perl -0pi -e \
+  's{(\[package\]\nname = "baukit-cli"\nversion = ")[^"]+(")}{$1$ENV{TRAIN_VERSION}$2}' \
+  cli/Cargo.toml
+cargo update --manifest-path cli/Cargo.toml --workspace
 
 release_date=${RELEASE_DATE:-$(date -u +%F)}
 for changelog in rust/crates/*/CHANGELOG.md; do
@@ -92,6 +107,15 @@ done
 # The template manifest and generated baukit.toml files use the bare semantic
 # version. The corresponding immutable source version is baukit-vX.Y.Z.
 printf '%s\n' "$next" > templates/VERSION
+
+for chart in deploy/chart/baukit-app/Chart.yaml deploy/observability/Chart.yaml; do
+  TRAIN_VERSION="$next" perl -0pi -e \
+    's{^version: .+$}{"version: ".$ENV{TRAIN_VERSION}}egm; s{^appVersion: .+$}{"appVersion: \"".$ENV{TRAIN_VERSION}."\""}egm' \
+    "$chart"
+done
+TRAIN_VERSION="$next" perl -0pi -e \
+  's{(^  - name: baukit-app\n    version: ).+$}{$1.$ENV{TRAIN_VERSION}}egm' \
+  deploy/chart/baukit-app/README.md
 
 scripts/check-version-coherence.py
 
