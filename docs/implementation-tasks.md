@@ -399,6 +399,24 @@ backups, alert delivery, self-healing locally):
 
 ## Log
 
+- 2026-08-10: **Wave M5 orchestrator re-verification (independent).** All three
+  repos clean == origin (baukit `c706176`, platform-infra `427a27a`, leitbild
+  `8e9ae2b`); tags `baukit-v0.3.3/4/5` on the remote; cluster source pinned
+  `baukit-v0.3.5@sha1:b1f626d9`. Cluster: 23/23 Kustomizations + 14/14
+  HelmReleases Ready (incl. `local-posthog` Ready on v0.3.5), both Canaries
+  Succeeded, zero unhealthy pods, PostHog 8/8 Running. Secret hygiene: no
+  `phc_`/`phx_` material in either repo, `posthog-secrets.enc.yaml` is
+  ENC[AES256_GCM]; leitbild `.env.production` explicit `noop`, `.env.testing`
+  `posthog` + host only (no key in git). Privacy proof re-checked at the storage
+  layer via clickhouse-client: 2 `journal_entry_saved` rows with
+  `entry_id="[redacted]"` + context props; zero rows containing the private
+  journal text, the raw email, a `journal_text` key, or the denied-consent
+  marker `m5-denied-proof`. Gates re-run by orchestrator, all exit 0: baukit
+  coherence `--tag baukit-v0.3.5` + metric lint + `make ci` + rust tests
+  `--include-ignored`; platform-infra `validate.sh`; leitbild `make check` +
+  `render-gitops` + `check-migrations`. Wave M5 confirmed done — all active
+  waves complete; only Wave R remains, parked pending an explicit user ask.
+
 - 2026-08-10: **Wave M5 done — optional, flag-gated in-cluster PostHog proven live.**
   Baukit's new secret-free `deploy/platform/posthog/` base uses the PostHog 30.46.0
   chart / 1.43.0 application image plus pinned PostgreSQL 14.1, Redis 6.2.6,
