@@ -2,7 +2,7 @@ use std::{error::Error, sync::Arc, time::Duration};
 
 use axum::{
     body::{Body, to_bytes},
-    http::{Request, StatusCode, header},
+    http::{Method, Request, StatusCode, header},
 };
 use baukit_auth::{AuthState, OidcConfig, OidcVerifier};
 use baukit_config::HttpConfig;
@@ -10,7 +10,7 @@ use serde_json::Value;
 use tower::ServiceExt as _;
 
 use {{ context.app_crate }}_api::{ApiState, router};
-use {{ context.app_crate }}_bin::InMemoryItemRepository;
+use {{ context.app_crate }}_bin::{InMemoryItemRepository, InMemoryUserRepository};
 use {{ context.app_crate }}_services::{ItemService, UserService};
 
 const AUDIENCE: &str = "{{ context.app_name }}-backend";
@@ -26,14 +26,37 @@ async fn protected_route_conforms_and_maps_subject_to_internal_user() -> Result<
     let repository = Arc::new(InMemoryItemRepository::new());
     let app = router(
         ApiState {
-            items: ItemService::new(repository.clone()),
-            users: UserService::new(repository),
+            items: ItemService::new(repository),
+            users: UserService::new(Arc::new(InMemoryUserRepository::new())),
             auth: AuthState::new(verifier),
         },
         &HttpConfig::default(),
     )?;
 
     baukit_test::check_auth_router_conformance(&app, "/me", &issuer, AUDIENCE).await?;
+
+    for (method, path) in [
+        (Method::GET, "/items"),
+        (Method::POST, "/items"),
+        (Method::GET, "/items/00000000-0000-0000-0000-000000000000"),
+        (Method::PUT, "/items/00000000-0000-0000-0000-000000000000"),
+        (
+            Method::DELETE,
+            "/items/00000000-0000-0000-0000-000000000000",
+        ),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(method)
+                    .uri(path)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"name":"protected"}"#))?,
+            )
+            .await?;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
+    }
 
     let claims = issuer.claims("seeded-test-subject", AUDIENCE, Duration::from_secs(300))?;
     let token = issuer.mint(&claims)?;
@@ -53,6 +76,21 @@ async fn protected_route_conforms_and_maps_subject_to_internal_user() -> Result<
     let body: Value = serde_json::from_slice(&to_bytes(response.into_body(), 1024 * 1024).await?)?;
     assert_eq!(body["subject"], "seeded-test-subject");
     assert!(body["id"].as_str().is_some());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/items")
+                .header(
+                    header::AUTHORIZATION,
+                    baukit_test::authorization_header(&token)?,
+                )
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"name":"protected"}"#))?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::CREATED);
 
     Ok(())
 }

@@ -4,6 +4,10 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Worker metrics conformance now requires `worker_queue_oldest_age_seconds{queue=...}` in addition to the job counter and duration histogram.
+
 ## [0.2.0] - 2026-08-08
 
 ### Added

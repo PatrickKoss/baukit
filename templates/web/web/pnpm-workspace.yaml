@@ -1,0 +1,4 @@
+allowBuilds:
+  '@baukit/analytics-core@git+ssh://git@github.com/PatrickKoss/baukit.git': true
+  '@baukit/api-runtime@git+ssh://git@github.com/PatrickKoss/baukit.git': true
+  '@baukit/ui-tokens@git+ssh://git@github.com/PatrickKoss/baukit.git': true

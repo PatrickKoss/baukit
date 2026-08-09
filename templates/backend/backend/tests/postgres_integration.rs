@@ -1,6 +1,8 @@
 use std::{error::Error, path::PathBuf, sync::Arc};
 
-use {{ context.app_crate }}_postgres::PostgresItemRepository;
+{% if context.auth_oidc %}use {{ context.app_crate }}_postgres::{PostgresItemRepository, PostgresUserRepository};
+{% else %}use {{ context.app_crate }}_postgres::PostgresItemRepository;
+{% endif %}
 {% if context.auth_oidc %}use {{ context.app_crate }}_services::{ItemService, UserService};
 {% else %}use {{ context.app_crate }}_services::ItemService;
 {% endif %}
@@ -12,7 +14,7 @@ async fn postgres_adapter_crud() -> Result<(), Box<dyn Error>> {
     let pool = sqlx::PgPool::connect(fixture.connection_url()).await?;
     let repository = Arc::new(PostgresItemRepository::new(pool.clone()));
     let service = ItemService::new(repository.clone());
-{% if context.auth_oidc %}    let users = UserService::new(repository);
+{% if context.auth_oidc %}    let users = UserService::new(Arc::new(PostgresUserRepository::new(pool.clone())));
 {% endif %}
     let created = service.create("postgres item".to_owned()).await?;
     assert_eq!(service.get(created.id).await?, created);

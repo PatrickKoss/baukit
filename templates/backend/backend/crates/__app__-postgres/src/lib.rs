@@ -18,7 +18,18 @@ impl PostgresItemRepository {
     pub fn pool(&self) -> &PgPool {
         &self.pool
     }
+}{% if context.auth_oidc %}
+
+#[derive(Clone)]
+pub struct PostgresUserRepository {
+    pool: PgPool,
 }
+
+impl PostgresUserRepository {
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}{% endif %}
 
 impl ItemRepository for PostgresItemRepository {
     fn list(&self) -> PortFuture<'_, Result<Vec<Item>, RepositoryError>> {
@@ -109,7 +120,7 @@ impl ItemRepository for PostgresItemRepository {
     }
 }{% if context.auth_oidc %}
 
-impl UserRepository for PostgresItemRepository {
+impl UserRepository for PostgresUserRepository {
     fn resolve_subject(
         &self,
         subject: String,

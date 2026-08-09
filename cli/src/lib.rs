@@ -12,6 +12,7 @@ use minijinja::{Environment, context};
 use serde::{Deserialize, Serialize};
 
 static BACKEND_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/backend");
+static COMMON_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/common");
 static MOBILE_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/mobile");
 static WEB_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/web");
 
@@ -21,14 +22,14 @@ pub const TEMPLATE_VERSION: &str = include_str!("../../templates/VERSION").trim_
 const EXPECTED_BACKEND_FILES: &[&str] = &[
     "README.md",
     "Makefile",
-    ".github/workflows/ci.yml",
+    ".cargo/config.toml",
     "compose.yaml",
     "deploy/values.yaml",
     ".agents/skills/baukit-backend/SKILL.md",
     ".claude/skills/baukit-backend/SKILL.md",
     "scripts/openapi.sh",
+    "scripts/openapi-client.sh",
     "backend/Cargo.toml",
-    "backend/migrations/0001_create_items.sql",
     "backend/openapi.json",
     "backend/crates/__APP__-domain/Cargo.toml",
     "backend/crates/__APP__-ports/Cargo.toml",
@@ -38,8 +39,11 @@ const EXPECTED_BACKEND_FILES: &[&str] = &[
     "backend/crates/__APP__-bin/Cargo.toml",
 ];
 
+const EXPECTED_COMMON_FILES: &[&str] = &[".github/workflows/ci.yml", "scripts/lockfiles.sh"];
+
 const EXPECTED_MOBILE_FILES: &[&str] = &[
     "mobile/package.json",
+    "mobile/pnpm-workspace.yaml",
     "mobile/app.config.ts",
     "mobile/tsconfig.json",
     "mobile/eslint.config.js",
@@ -54,6 +58,7 @@ const EXPECTED_MOBILE_FILES: &[&str] = &[
 
 const EXPECTED_WEB_FILES: &[&str] = &[
     "web/package.json",
+    "web/pnpm-workspace.yaml",
     "web/index.html",
     "web/vite.config.ts",
     "web/tsconfig.json",
@@ -67,8 +72,8 @@ const EXPECTED_WEB_FILES: &[&str] = &[
 
 const EXPECTED_AUTH_BACKEND_FILES: &[&str] = &[
     "keycloak/realm.json",
-    "backend/migrations/0002_create_user_identities.sql",
     "backend/tests/auth_conformance.rs",
+    "scripts/pkce-login.py",
 ];
 
 const EXPECTED_AUTH_MOBILE_FILES: &[&str] = &["mobile/src/auth.ts", "mobile/src/auth.test.ts"];
@@ -90,6 +95,8 @@ pub struct NewOptions {
     pub web: bool,
     pub auth: Option<AuthProvider>,
     pub force: bool,
+    pub into_existing: bool,
+    pub resolve_lockfiles: bool,
     pub baukit_path: Option<PathBuf>,
 }
 
@@ -152,6 +159,10 @@ struct TemplateContext {
     baukit_manifest: String,
     baukit_dependency_description: String,
     baukit_typescript_dependency_description: String,
+    product_description: String,
+    backend: bool,
+    mobile: bool,
+    web: bool,
     auth_oidc: bool,
 }
 
@@ -161,14 +172,18 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         bail!("select at least one capability: --backend, --mobile, or --web");
     }
 
-    let destination = options.directory.join(&options.name);
+    let destination = if options.into_existing {
+        options.directory.clone()
+    } else {
+        options.directory.join(&options.name)
+    };
     let non_empty = destination.exists()
         && fs::read_dir(&destination)
             .with_context(|| format!("could not inspect {}", destination.display()))?
             .next()
             .transpose()?
             .is_some();
-    if non_empty && !options.force {
+    if non_empty && !options.force && !options.into_existing {
         bail!(
             "destination {} is not empty; choose an empty directory or pass --force to add only non-conflicting files",
             destination.display()
@@ -191,6 +206,10 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         baukit_manifest: dependency.manifest,
         baukit_dependency_description: dependency.description,
         baukit_typescript_dependency_description: dependency.typescript_description,
+        product_description: product_description(options),
+        backend: options.backend,
+        mobile: options.mobile,
+        web: options.web,
         auth_oidc,
     };
     let rendered = render_product(&context, options)?;
@@ -234,7 +253,54 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         );
     }
 
+    if options.resolve_lockfiles {
+        resolve_lockfiles(&destination, options)?;
+    }
+
     Ok(destination)
+}
+
+fn resolve_lockfiles(destination: &Path, options: &NewOptions) -> Result<()> {
+    if options.backend && !destination.join("backend/Cargo.lock").is_file() {
+        run_checked(
+            Command::new("cargo").current_dir(destination).args([
+                "generate-lockfile",
+                "--manifest-path",
+                "backend/Cargo.toml",
+            ]),
+            "Cargo lockfile generation",
+        )?;
+    }
+
+    for capability in [(options.web, "web"), (options.mobile, "mobile")]
+        .into_iter()
+        .filter_map(|(enabled, name)| enabled.then_some(name))
+    {
+        if destination
+            .join(capability)
+            .join("pnpm-lock.yaml")
+            .is_file()
+        {
+            continue;
+        }
+        if !command_exists("corepack") {
+            bail!(
+                "generated source files, but {capability}/pnpm-lock.yaml needs current Node.js LTS with corepack; install Node.js, then run `sh scripts/lockfiles.sh`"
+            );
+        }
+        run_checked(
+            Command::new("corepack")
+                .current_dir(destination.join(capability))
+                .args([
+                    "pnpm@11.18.0",
+                    "install",
+                    "--lockfile-only",
+                    "--ignore-scripts",
+                ]),
+            &format!("{capability} pnpm lockfile generation"),
+        )?;
+    }
+    Ok(())
 }
 
 fn available_conflict_path(destination: &Path) -> Result<PathBuf> {
@@ -342,8 +408,8 @@ fn dependency_context(
             typescript_description: format!("local path `{}`", typescript_root.display()),
         })
     } else {
-        let git = "https://github.com/patrickkoss/baukit.git";
-        let tag = format!("v{TEMPLATE_VERSION}");
+        let git = "ssh://git@github.com/PatrickKoss/baukit.git";
+        let tag = format!("baukit-v{TEMPLATE_VERSION}");
         let mut names = vec![
             "baukit-config",
             "baukit-http",
@@ -388,6 +454,13 @@ fn render_product(
     let mut environment = Environment::new();
     environment.set_keep_trailing_newline(true);
     let mut rendered = BTreeMap::new();
+    render_directory(
+        &COMMON_TEMPLATE,
+        &environment,
+        context,
+        &mut rendered,
+        false,
+    )?;
     if options.backend {
         render_directory(
             &BACKEND_TEMPLATE,
@@ -480,13 +553,12 @@ fn render_directory(
         let source = file
             .contents_utf8()
             .ok_or_else(|| anyhow!("template {} is not UTF-8", relative.display()))?;
-        let name = relative.to_string_lossy().replace("__auth__/", "");
+        let mut name = relative.to_string_lossy().replace("__auth__/", "");
+        if name.ends_with(".jinja") {
+            name.truncate(name.len() - ".jinja".len());
+        }
         let mut output = environment.render_str(source, context!(context))?;
-        if relative
-            .file_name()
-            .is_some_and(|name| name == "Cargo.toml")
-            && context.app_crate != context.app_name
-        {
+        if name.ends_with("Cargo.toml") && context.app_crate != context.app_name {
             output = output.replace(
                 &format!("{}-", context.app_crate),
                 &format!("{}-", context.app_name),
@@ -502,6 +574,20 @@ fn render_directory(
         render_directory(child, environment, context, rendered, auth_overlay)?;
     }
     Ok(())
+}
+
+fn product_description(options: &NewOptions) -> String {
+    let mut capabilities = Vec::new();
+    if options.backend {
+        capabilities.push("Rust backend");
+    }
+    if options.web {
+        capabilities.push("web app");
+    }
+    if options.mobile {
+        capabilities.push("mobile app");
+    }
+    format!("Baukit product with {}", capabilities.join(", "))
 }
 
 fn is_auth_only(path: &Path) -> bool {
@@ -524,6 +610,11 @@ pub fn doctor(root: &Path) -> Result<Vec<String>> {
     let manifest = read_manifest(root)?;
     let mut failures = Vec::new();
     let mut successes = Vec::new();
+    for relative in EXPECTED_COMMON_FILES {
+        if !root.join(relative).is_file() {
+            failures.push(format!("missing expected product file `{relative}`"));
+        }
+    }
     if manifest.schema_version == MANIFEST_SCHEMA_VERSION {
         successes.push(format!(
             "manifest schema {} is current",
@@ -553,6 +644,7 @@ pub fn doctor(root: &Path) -> Result<Vec<String>> {
                 failures.push(format!("missing expected backend file `{relative}`"));
             }
         }
+        validate_migrations(root, &mut successes, &mut failures)?;
         if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
             for relative in EXPECTED_AUTH_BACKEND_FILES {
                 if !root.join(relative).is_file() {
@@ -662,6 +754,37 @@ pub fn doctor(root: &Path) -> Result<Vec<String>> {
     }
 }
 
+fn validate_migrations(
+    root: &Path,
+    successes: &mut Vec<String>,
+    failures: &mut Vec<String>,
+) -> Result<()> {
+    let directory = root.join("backend/migrations");
+    if !directory.is_dir() {
+        failures.push("missing backend migration directory `backend/migrations`".to_owned());
+        return Ok(());
+    }
+    let mut migrations = Vec::new();
+    for entry in fs::read_dir(&directory)
+        .with_context(|| format!("could not inspect {}", directory.display()))?
+    {
+        let path = entry?.path();
+        if path.extension().is_some_and(|extension| extension == "sql") {
+            migrations.push(path);
+        }
+    }
+    migrations.sort();
+    if migrations.is_empty() {
+        failures.push("backend migration directory contains no `.sql` migrations".to_owned());
+    } else {
+        successes.push(format!(
+            "backend migration directory contains {} SQL migration(s)",
+            migrations.len()
+        ));
+    }
+    Ok(())
+}
+
 fn validate_frontend_capability(
     root: &Path,
     capability: &str,
@@ -702,28 +825,26 @@ pub fn generate_openapi_client(root: &Path) -> Result<()> {
     if !manifest.capabilities.backend {
         bail!("this product has no backend capability");
     }
-    run_checked(
-        Command::new("cargo").current_dir(root).args([
-            "run",
-            "--manifest-path",
-            "backend/Cargo.toml",
-            "-p",
-            &format!("{}-bin", manifest.app.name),
-            "--bin",
-            "openapi",
-            "--",
-            &manifest.openapi.schema,
-        ]),
-        "OpenAPI export",
-    )?;
-
     let output = root.join(&manifest.openapi.typescript);
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent)?;
     }
+    let corepack = command_exists("corepack");
     let pnpm = command_exists("pnpm");
     let npx = command_exists("npx");
-    if pnpm {
+    if corepack {
+        run_checked(
+            Command::new("corepack").current_dir(root).args([
+                "pnpm",
+                "dlx",
+                "openapi-typescript",
+                &manifest.openapi.schema,
+                "-o",
+                &manifest.openapi.typescript,
+            ]),
+            "TypeScript client generation",
+        )
+    } else if pnpm {
         run_checked(
             Command::new("pnpm").current_dir(root).args([
                 "dlx",
@@ -747,7 +868,7 @@ pub fn generate_openapi_client(root: &Path) -> Result<()> {
         )
     } else {
         bail!(
-            "OpenAPI schema was exported, but TypeScript generation needs Node.js and either pnpm or npx; install current Node LTS, then run `corepack enable` or install openapi-typescript"
+            "TypeScript generation needs current Node.js LTS with corepack, pnpm, or npx; the committed OpenAPI schema was left unchanged"
         );
     }
 }

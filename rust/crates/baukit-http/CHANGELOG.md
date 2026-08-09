@@ -4,6 +4,12 @@ All notable changes to `baukit-http` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Utoipa-recognized `Query` and `Path` names for the standard extractors; the existing `ApiQuery` and `ApiPath` names remain aliases.
+- Repeated query parameters deserialize into collection fields, and `ApiError::validation_field(s)` builds field-level validation details.
+- Typed response-envelope and RFC 3339 date-time wire types are re-exported from `baukit-openapi`.
+
 ## [0.2.0] - 2026-08-08
 
 ### Added

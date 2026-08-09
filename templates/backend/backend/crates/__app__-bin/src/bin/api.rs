@@ -7,11 +7,17 @@ use baukit_runtime::{ProcessKind, ServiceInfo, ShutdownToken, build_info, serve_
 use baukit_telemetry::{TelemetryBuilder, tracing};
 
 use {{ context.app_crate }}_api::{ApiState, router};
-use {{ context.app_crate }}_bin::{InMemoryItemRepository{% if context.auth_oidc %}, ProductConfig{% endif %}, operations_router};
+{% if context.auth_oidc %}use {{ context.app_crate }}_bin::{
+    InMemoryItemRepository, InMemoryUserRepository, ProductConfig, operations_router,
+};
+{% else %}use {{ context.app_crate }}_bin::{InMemoryItemRepository, operations_router};
+{% endif %}
 {% if context.auth_oidc %}use {{ context.app_crate }}_ports::{ItemRepository, UserRepository};
 {% else %}use {{ context.app_crate }}_ports::ItemRepository;
 {% endif %}
-use {{ context.app_crate }}_postgres::PostgresItemRepository;
+{% if context.auth_oidc %}use {{ context.app_crate }}_postgres::{PostgresItemRepository, PostgresUserRepository};
+{% else %}use {{ context.app_crate }}_postgres::PostgresItemRepository;
+{% endif %}
 {% if context.auth_oidc %}use {{ context.app_crate }}_services::{ItemService, UserService};
 {% else %}use {{ context.app_crate }}_services::ItemService;
 {% endif %}
@@ -50,14 +56,18 @@ async fn run(config: BaukitConfig<{% if context.auth_oidc %}ProductConfig{% else
                 .acquire_timeout(database.acquire_timeout)
                 .connect(database.url.expose())
                 .await?;
-            let repository = Arc::new(PostgresItemRepository::new(pool));
-            (repository.clone(), repository)
+            (
+                Arc::new(PostgresItemRepository::new(pool.clone())),
+                Arc::new(PostgresUserRepository::new(pool)),
+            )
         } else {
             tracing::warn!(
                 message = "database is not configured; using the in-memory item adapter"
             );
-            let repository = Arc::new(InMemoryItemRepository::new());
-            (repository.clone(), repository)
+            (
+                Arc::new(InMemoryItemRepository::new()),
+                Arc::new(InMemoryUserRepository::new()),
+            )
         };
     let item_service = ItemService::new(item_repository);
     let user_service = UserService::new(user_repository);

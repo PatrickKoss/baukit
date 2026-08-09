@@ -66,8 +66,7 @@ impl Validate for AuthConfig {
 {% endif %}#[derive(Clone, Default)]
 pub struct InMemoryItemRepository {
     items: Arc<RwLock<BTreeMap<Uuid, Item>>>,
-{% if context.auth_oidc %}    users: Arc<RwLock<BTreeMap<String, Uuid>>>,
-{% endif %}}
+}
 
 impl InMemoryItemRepository {
     #[must_use]
@@ -141,7 +140,19 @@ impl ItemRepository for InMemoryItemRepository {
     }
 }
 
-{% if context.auth_oidc %}impl UserRepository for InMemoryItemRepository {
+{% if context.auth_oidc %}#[derive(Clone, Default)]
+pub struct InMemoryUserRepository {
+    users: Arc<RwLock<BTreeMap<String, Uuid>>>,
+}
+
+impl InMemoryUserRepository {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl UserRepository for InMemoryUserRepository {
     fn resolve_subject(
         &self,
         subject: String,

@@ -1,4 +1,4 @@
-use std::{error::Error, sync::Arc};
+use std::{error::Error, sync::Arc{% if context.auth_oidc %}, time::Duration{% endif %}};
 
 use axum::{
     body::Body,
@@ -12,7 +12,7 @@ use baukit_telemetry::TelemetryBuilder;
 use tower::ServiceExt as _;
 
 use {{ context.app_crate }}_api::{ApiState, router};
-use {{ context.app_crate }}_bin::{InMemoryItemRepository, operations_router};
+use {{ context.app_crate }}_bin::{InMemoryItemRepository{% if context.auth_oidc %}, InMemoryUserRepository{% endif %}, operations_router};
 {% if context.auth_oidc %}use {{ context.app_crate }}_services::{ItemService, UserService};
 {% else %}use {{ context.app_crate }}_services::ItemService;
 {% endif %}
@@ -29,7 +29,7 @@ async fn health_and_metrics_conform_to_baukit() -> Result<(), Box<dyn Error>> {
         .init()?;
     let repository = Arc::new(InMemoryItemRepository::new());
     let items = ItemService::new(repository.clone());
-{% if context.auth_oidc %}    let users = UserService::new(repository);
+{% if context.auth_oidc %}    let users = UserService::new(Arc::new(InMemoryUserRepository::new()));
     let issuer = baukit_test::MockOidcServer::start().await?;
     let verifier =
         OidcVerifier::discover(OidcConfig::new(issuer.issuer(), "{{ context.app_name }}-backend")?).await?;
@@ -41,14 +41,18 @@ async fn health_and_metrics_conform_to_baukit() -> Result<(), Box<dyn Error>> {
 {% endif %}        },
         &HttpConfig::default(),
     )?;
-    let response = api
-        .oneshot(
-            Request::builder()
-                .method(Method::GET)
-                .uri("/items")
-                .body(Body::empty())?,
-        )
-        .await?;
+    let request = Request::builder().method(Method::GET).uri("/items");
+{% if context.auth_oidc %}    let claims = issuer.claims(
+        "conformance-user",
+        "{{ context.app_name }}-backend",
+        Duration::from_secs(60),
+    )?;
+    let token = issuer.mint(&claims)?;
+    let request = request.header(
+        axum::http::header::AUTHORIZATION,
+        baukit_test::authorization_header(&token)?,
+    );
+{% endif %}    let response = api.oneshot(request.body(Body::empty())?).await?;
     assert_eq!(response.status(), StatusCode::OK);
 
     let (ops, readiness) = operations_router(

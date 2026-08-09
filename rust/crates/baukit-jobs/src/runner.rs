@@ -423,6 +423,7 @@ mod tests {
     };
 
     use chrono::TimeDelta;
+    use metrics_exporter_prometheus::{Matcher, PrometheusBuilder};
     use serde_json::json;
     use tokio::sync::Notify;
 
@@ -447,6 +448,39 @@ mod tests {
         let error = validate_config(&WorkerConfig::default(), &["sync", "sync"])
             .expect_err("duplicate label must fail");
         assert!(error.to_string().contains("duplicate job type"));
+    }
+
+    #[test]
+    fn runner_initial_metrics_pass_worker_conformance() {
+        let recorder = PrometheusBuilder::new()
+            .set_buckets_for_metric(
+                Matcher::Full("worker_job_duration_seconds".to_owned()),
+                baukit_telemetry::WORKER_DURATION_BUCKETS,
+            )
+            .expect("worker buckets are valid")
+            .build_recorder();
+        let handle = recorder.handle();
+        let _guard = baukit_telemetry::metrics::set_default_local_recorder(&recorder);
+        baukit_telemetry::metrics::gauge!(
+            "build_info",
+            "version" => "0.2.0",
+            "commit" => "test",
+            "rust_version" => "1.95"
+        )
+        .set(1.0);
+
+        WorkerRunner::new(
+            Arc::new(FakeStore::with_jobs(0)),
+            Arc::new(PendingHandler),
+            test_config(),
+        )
+        .expect("valid runner");
+
+        baukit_test::check_metrics_conformance_with_options(
+            handle.render(),
+            baukit_test::MetricsConformanceOptions::new().require_worker_metrics(),
+        )
+        .expect("WorkerRunner startup output conforms to telemetry-spec section 2.4");
     }
 
     #[tokio::test]

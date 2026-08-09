@@ -65,6 +65,35 @@ impl ApiError {
         .with_details(details)
     }
 
+    /// Returns a validation error for one DTO field.
+    ///
+    /// This is the concise form of [`ApiError::validation`] for the common case
+    /// where a product has one field-level semantic or bounds error.
+    pub fn validation_field(field: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::validation(BTreeMap::from([(
+            field.into(),
+            Value::String(message.into()),
+        )]))
+    }
+
+    /// Returns a validation error containing multiple DTO field messages.
+    ///
+    /// Field names are sorted in the serialized details object. If an iterator
+    /// contains the same field more than once, the last message wins.
+    pub fn validation_fields<K, M, I>(fields: I) -> Self
+    where
+        K: Into<String>,
+        M: Into<String>,
+        I: IntoIterator<Item = (K, M)>,
+    {
+        Self::validation(
+            fields
+                .into_iter()
+                .map(|(field, message)| (field.into(), Value::String(message.into())))
+                .collect(),
+        )
+    }
+
     /// Returns a `401 unauthorized` error with a safe message.
     pub fn unauthorized(message: impl Into<String>) -> Self {
         Self::new(StatusCode::UNAUTHORIZED, "unauthorized", message)
@@ -144,6 +173,10 @@ impl ApiError {
         )
     }
 
+    pub(crate) fn query_rejection() -> Self {
+        Self::validation_field("query", "must contain valid query parameters")
+    }
+
     pub(crate) fn internal_without_cause() -> Self {
         Self::new(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -182,10 +215,7 @@ impl From<PathRejection> for ApiError {
 
 impl From<QueryRejection> for ApiError {
     fn from(_rejection: QueryRejection) -> Self {
-        Self::validation(BTreeMap::from([(
-            "query".to_owned(),
-            Value::String("must contain valid query parameters".to_owned()),
-        )]))
+        Self::query_rejection()
     }
 }
 

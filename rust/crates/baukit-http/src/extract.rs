@@ -2,7 +2,7 @@ use std::ops::{Deref, DerefMut};
 
 use axum::{
     Json,
-    extract::{FromRequest, FromRequestParts, Path, Query, Request},
+    extract::{FromRequest, FromRequestParts, Path as AxumPath, Request},
     http::request::Parts,
 };
 use serde::de::DeserializeOwned;
@@ -61,12 +61,12 @@ impl<T> DerefMut for ApiJson<T> {
 /// This delegates parsing to Axum's [`Path`] extractor and maps every rejection
 /// to a safe `validation_failed` [`ApiError`] containing the current request ID.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct ApiPath<T>(
+pub struct Path<T>(
     /// The successfully deserialized route parameters.
     pub T,
 );
 
-impl<T, S> FromRequestParts<S> for ApiPath<T>
+impl<T, S> FromRequestParts<S> for Path<T>
 where
     T: DeserializeOwned + Send,
     S: Send + Sync,
@@ -74,14 +74,14 @@ where
     type Rejection = ApiError;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        Path::<T>::from_request_parts(parts, state)
+        AxumPath::<T>::from_request_parts(parts, state)
             .await
-            .map(|Path(value)| Self(value))
+            .map(|AxumPath(value)| Self(value))
             .map_err(ApiError::from)
     }
 }
 
-impl<T> Deref for ApiPath<T> {
+impl<T> Deref for Path<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -89,38 +89,44 @@ impl<T> Deref for ApiPath<T> {
     }
 }
 
-impl<T> DerefMut for ApiPath<T> {
+impl<T> DerefMut for Path<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
+/// Backward-compatible name for [`Path`].
+pub use Path as ApiPath;
+
 /// A query-string extractor whose rejections use Baukit's standard error envelope.
 ///
-/// This delegates parsing to Axum's [`Query`] extractor and maps every rejection
-/// to a safe `validation_failed` [`ApiError`] containing the current request ID.
+/// Collection fields use HTML-form repeated-parameter encoding, for example
+/// `?tag=rust&tag=typescript` deserializes into `tag: Vec<String>`. This is also
+/// OpenAPI's default `form`/`explode=true` query-array representation.
+///
+/// The extractor intentionally uses the name `Query`, which Utoipa's Axum
+/// integration recognizes when inferring query rather than path parameters.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct ApiQuery<T>(
+pub struct Query<T>(
     /// The successfully deserialized query parameters.
     pub T,
 );
 
-impl<T, S> FromRequestParts<S> for ApiQuery<T>
+impl<T, S> FromRequestParts<S> for Query<T>
 where
     T: DeserializeOwned,
     S: Send + Sync,
 {
     type Rejection = ApiError;
 
-    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        Query::<T>::from_request_parts(parts, state)
-            .await
-            .map(|Query(value)| Self(value))
-            .map_err(ApiError::from)
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        serde_html_form::from_str(parts.uri.query().unwrap_or_default())
+            .map(Self)
+            .map_err(|_| ApiError::query_rejection())
     }
 }
 
-impl<T> Deref for ApiQuery<T> {
+impl<T> Deref for Query<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -128,8 +134,11 @@ impl<T> Deref for ApiQuery<T> {
     }
 }
 
-impl<T> DerefMut for ApiQuery<T> {
+impl<T> DerefMut for Query<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
+
+/// Backward-compatible name for [`Query`].
+pub use Query as ApiQuery;

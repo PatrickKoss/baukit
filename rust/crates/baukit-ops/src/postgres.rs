@@ -63,8 +63,9 @@ impl Drop for PoolMetricsSampler {
 
 /// Spawns a task that periodically samples SQLx PostgreSQL pool gauges.
 ///
-/// The first sample is emitted immediately. The returned handle owns and
-/// cancels the task; retain it for as long as sampling should continue.
+/// The first sample and all zero-valued countable families are emitted before
+/// this function returns. The returned handle owns and cancels the task; retain
+/// it for as long as sampling should continue.
 pub fn spawn_pool_metrics_sampler(
     pool: PgPool,
     interval: Duration,
@@ -73,7 +74,8 @@ pub fn spawn_pool_metrics_sampler(
         return Err(PoolMetricsSamplerError::ZeroInterval);
     }
 
-    describe_pool_metrics();
+    initialize_pool_metrics();
+    sample_pool(&pool);
     let task = tokio::spawn(async move {
         let mut ticker = tokio::time::interval(interval);
         loop {
@@ -106,7 +108,7 @@ pub async fn begin(pool: &PgPool) -> Result<Transaction<'static, Postgres>, sqlx
 async fn observe_acquisition<T>(
     operation: impl Future<Output = Result<T, sqlx::Error>>,
 ) -> Result<T, sqlx::Error> {
-    describe_pool_metrics();
+    initialize_pool_metrics();
     let started = Instant::now();
     let result = operation.await;
     metrics::histogram!(ACQUIRE_DURATION).record(started.elapsed().as_secs_f64());
@@ -126,7 +128,7 @@ fn sample_pool(pool: &PgPool) {
     metrics::gauge!(CONNECTIONS_IN_USE).set(f64::from(in_use));
 }
 
-fn describe_pool_metrics() {
+fn initialize_pool_metrics() {
     metrics::describe_gauge!(CONNECTIONS_MAX, "Configured maximum SQLx pool connections");
     metrics::describe_gauge!(CONNECTIONS_IDLE, "Idle SQLx pool connections");
     metrics::describe_gauge!(CONNECTIONS_IN_USE, "In-use SQLx pool connections");
@@ -135,10 +137,14 @@ fn describe_pool_metrics() {
         "Time spent acquiring an SQLx pool connection in seconds"
     );
     metrics::describe_counter!(ACQUIRE_TIMEOUTS, "Timed-out SQLx pool acquisitions");
+    let _acquire_duration = metrics::histogram!(ACQUIRE_DURATION);
+    metrics::counter!(ACQUIRE_TIMEOUTS).absolute(0);
 }
 
 #[cfg(test)]
 mod tests {
+    use metrics_exporter_prometheus::PrometheusBuilder;
+
     use super::*;
 
     #[test]
@@ -167,5 +173,27 @@ mod tests {
     #[test]
     fn begin_helper_is_available_without_connecting() {
         let _helper = begin;
+    }
+
+    #[tokio::test]
+    async fn sampler_registers_zero_valued_families_before_the_first_event() {
+        let recorder = PrometheusBuilder::new().build_recorder();
+        let handle = recorder.handle();
+        let _guard = metrics::set_default_local_recorder(&recorder);
+        let pool = PgPool::connect_lazy("postgres://localhost/test").expect("valid database URL");
+
+        let sampler = spawn_pool_metrics_sampler(pool, Duration::from_secs(60))
+            .expect("valid sampler interval");
+        let rendered = handle.render();
+
+        assert!(
+            rendered.contains("db_pool_acquire_timeouts_total 0"),
+            "{rendered}"
+        );
+        for gauge in [CONNECTIONS_MAX, CONNECTIONS_IDLE, CONNECTIONS_IN_USE] {
+            assert!(rendered.contains(gauge), "missing {gauge} in:\n{rendered}");
+        }
+        assert!(rendered.contains(ACQUIRE_DURATION), "{rendered}");
+        sampler.shutdown().await;
     }
 }

@@ -7,7 +7,7 @@ use clap::{Args, Parser, Subcommand};
 #[derive(Debug, Parser)]
 #[command(
     name = "baukit",
-    version,
+    version = baukit_cli::TEMPLATE_VERSION,
     about = "Generate and maintain Baukit products"
 )]
 struct Cli {
@@ -50,6 +50,12 @@ struct NewCommand {
     /// Add missing files in a non-empty destination; modified files become conflicts.
     #[arg(long)]
     force: bool,
+    /// Render directly into --dir, including an existing repository root.
+    #[arg(long)]
+    into_existing: bool,
+    /// Skip network-backed Cargo/pnpm lockfile resolution.
+    #[arg(long)]
+    skip_lockfiles: bool,
     /// Use Baukit crates and packages from a local checkout's rust/ workspace.
     #[arg(long)]
     baukit_path: Option<PathBuf>,
@@ -57,7 +63,7 @@ struct NewCommand {
 
 #[derive(Debug, Subcommand)]
 enum GenerateCommand {
-    /// Export OpenAPI and generate TypeScript declarations with openapi-typescript.
+    /// Generate TypeScript declarations from the committed OpenAPI schema.
     OpenapiClient,
 }
 
@@ -82,6 +88,8 @@ fn run() -> Result<()> {
                 web: command.web,
                 auth: command.auth,
                 force: command.force,
+                into_existing: command.into_existing,
+                resolve_lockfiles: !command.skip_lockfiles,
                 baukit_path: command.baukit_path,
             })?;
             println!("generated {}", destination.display());
@@ -97,7 +105,7 @@ fn run() -> Result<()> {
             command: GenerateCommand::OpenapiClient,
         } => {
             generate_openapi_client(&env::current_dir()?)?;
-            println!("generated OpenAPI schema and TypeScript declarations");
+            println!("generated TypeScript declarations from the committed OpenAPI schema");
         }
     }
     Ok(())

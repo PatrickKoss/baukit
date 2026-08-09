@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+{% if context.backend %}  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend -> target
+      - run: cargo fmt --manifest-path backend/Cargo.toml --all --check
+      - run: cargo clippy --manifest-path backend/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --manifest-path backend/Cargo.toml -- --include-ignored
+      - run: cargo test --manifest-path backend/Cargo.toml -p {{ context.app_name }}-bin --test openapi_drift
+
+{% endif %}{% if context.web %}  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: corepack pnpm@11.18.0 install --frozen-lockfile
+      - run: corepack pnpm@11.18.0 build
+      - run: corepack pnpm@11.18.0 lint
+      - run: corepack pnpm@11.18.0 test
+
+{% endif %}{% if context.mobile %}  mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: corepack pnpm@11.18.0 install --frozen-lockfile
+      - run: corepack pnpm@11.18.0 exec tsc --noEmit
+      - run: corepack pnpm@11.18.0 lint
+      - run: corepack pnpm@11.18.0 test
+{% endif %}

@@ -1,6 +1,6 @@
 # {{ context.app_name }}
 
-Backend-only Baukit product generated with template {{ context.template_version }}.
+{{ context.product_description }} generated with Baukit template {{ context.template_version }}.
 
 ## Run locally
 
@@ -14,9 +14,23 @@ make run
 
 Migrations are never run during API startup. The public API listens on port 8080 and private health, readiness, metrics, and build endpoints listen on port 9090 by default.
 {% if context.auth_oidc %}
-The protected `GET /me` route verifies OIDC access tokens and maps their stable `sub` claim to an internal user UUID. Auth configuration follows the normal product convention: `{{ context.app_env }}__AUTH__ISSUER` and `{{ context.app_env }}__AUTH__AUDIENCE`, defaulting to the composed realm and `{{ context.app_name }}-backend` audience.
+Every generated API route requires a bearer token. `GET /me` also maps the token's stable `sub` claim to an internal user UUID. Auth configuration follows the product convention `{{ context.app_env }}__AUTH__ISSUER` and `{{ context.app_env }}__AUTH__AUDIENCE`, defaulting to the composed realm and `{{ context.app_name }}-backend` audience.
 
-`docker compose up -d postgres keycloak` starts PostgreSQL plus the local Keycloak realm at `http://localhost:8081/realms/{{ context.app_name }}`. Sign in as `test` / `password`; the imported realm also contains the confidential backend client and PKCE-only public web/mobile clients. The checked-in credentials are development-only.
+`docker compose up -d --wait postgres keycloak` starts PostgreSQL and waits for Keycloak's readiness endpoint. Sign in as `test` / `password`; the imported realm contains the confidential backend client{% if context.web %}, a PKCE-only web client{% endif %}{% if context.mobile %}, and a PKCE-only mobile client{% endif %}. The checked-in credentials are development-only.
+
+Keycloak's development hostname is deliberately dynamic. Discovery through `http://localhost:8081/realms/{{ context.app_name }}` advertises `localhost`; discovery through `http://127.0.0.1:8081/realms/{{ context.app_name }}` advertises `127.0.0.1`. Pick one spelling and use it consistently for backend issuer configuration, browser/mobile configuration, discovery, and token validation. Prefer `localhost` for browser development: Keycloak may mark its login cookie `Secure`, and browsers give `localhost` special secure-context treatment that is not portable to arbitrary HTTP hostnames. The generated headless helper accepts that cookie over local HTTP solely for disposable development; production issuers must use HTTPS.
+
+{% if context.web or context.mobile %}After the API is running, exercise discovery, PKCE, and authenticated `/me` without a client secret:
+
+```sh
+python3 scripts/pkce-login.py \
+  --issuer http://localhost:8081/realms/{{ context.app_name }} \
+  --client-id {{ context.app_name }}-{% if context.web %}web{% elif context.mobile %}mobile{% else %}backend{% endif %}
+```
+
+{% if context.mobile %}For the mobile client, also pass `--redirect-uri {{ context.app_name }}://oauth`. {% endif %}The helper's client ID is always explicit so product smoke tests cannot silently use another product's client.
+{% else %}This realm has no public PKCE client. Add a product-owned public client before using `scripts/pkce-login.py`; its `--client-id` argument is mandatory so smoke tests cannot silently use another product's client.
+{% endif %}
 {% endif %}
 
 Useful commands:
@@ -25,12 +39,12 @@ Useful commands:
 make check
 make openapi
 baukit doctor
-baukit generate openapi-client
+make openapi-client
 ```
 
-`docker compose up -d postgres{% if context.auth_oidc %} keycloak{% endif %}` starts the matching local dependencies. `.github/workflows/ci.yml` runs formatting, lint, tests, and the schema drift check, while `deploy/values.yaml` is the product-owned input for the shared `baukit-app` Helm chart. Matching backend workflow notes are installed for both Codex and Claude discovery paths.
+`.github/workflows/ci.yml` runs every generated backend{% if context.web %}, web{% endif %}{% if context.mobile %}, and mobile{% endif %} gate, including ignored Docker-backed Rust tests. Configure the private Baukit repository's read-only deploy key as the `BAUKIT_DEPLOY_KEY` Actions secret. `deploy/values.yaml` is the product-owned input for the shared `baukit-app` Helm chart. Matching backend workflow notes are installed for both Codex and Claude discovery paths.
 
-TypeScript generation requires current Node.js LTS plus pnpm or npx. `openapi-typescript` is invoked with `pnpm dlx` (or `npx` when pnpm is unavailable) and writes `generated/openapi.d.ts`.
+`make openapi` refreshes the committed backend schema. `make openapi-client` consumes that schema without rebuilding the backend or requiring `baukit` on `PATH`; it uses current Node.js LTS with corepack or npx and writes `generated/openapi.d.ts`.
 
 ## Backend layout
 
@@ -38,8 +52,24 @@ TypeScript generation requires current Node.js LTS plus pnpm or npx. `openapi-ty
 - `{{ context.app_name }}-ports`: repository traits and boundary errors.
 - `{{ context.app_name }}-services`: use cases that depend only on ports.
 - `{{ context.app_name }}-api`: Axum routes, DTOs, error mapping, and Utoipa schema.
-- `{{ context.app_name }}-postgres`: SQLx repository adapter.
+- `{{ context.app_name }}-postgres`: one SQLx adapter per aggregate (`PostgresItemRepository`, `PostgresUserRepository`, and future peers), all allowed to share a pool without growing one catch-all repository.
 - `{{ context.app_name }}-bin`: API composition plus `migrate` and `openapi` binaries; its API composition includes the in-memory adapter.
 - `backend/tests`: Baukit conformance, OpenAPI drift, and ignored Docker-backed PostgreSQL tests.
 
-The workspace consumes Baukit from {{ context.baukit_dependency_description }}. Release-generated products use the pinned `v{{ context.template_version }}` git tag. For local development and fixture CI, regenerate with `--baukit-path /path/to/baukit/rust` to use path dependencies instead. Generated applications build and run directly with Cargo and do not need the Baukit CLI.
+The workspace consumes Baukit from {{ context.baukit_dependency_description }}. `.cargo/config.toml` delegates Git fetching to the SSH-aware Git CLI. Generated applications build and run directly with Cargo and do not need the Baukit CLI.
+
+By default, `baukit new` resolves and emits Cargo and pnpm lockfiles at scaffold time. Keep them committed, update them with `make lockfiles` after dependency changes, and use `--locked` / `--frozen-lockfile` in automation. Offline generation can use `--skip-lockfiles`, but `sh scripts/lockfiles.sh` must run before the first build.
+
+## Repository setup
+
+Generation never commits or pushes on your behalf. For a new directory:
+
+```sh
+git init
+git add .
+git commit -m "Scaffold {{ context.app_name }} with Baukit"
+git remote add origin git@github.com:YOUR_ORG/{{ context.app_name }}.git
+git push -u origin main
+```
+
+For an existing or orphan-branch repository root, run `baukit new {{ context.app_name }} ... --dir . --into-existing`; existing differing files are reported as conflicts and never overwritten.

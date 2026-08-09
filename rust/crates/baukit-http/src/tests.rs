@@ -22,8 +22,25 @@ use serde_json::{Value, json};
 use tower::ServiceExt as _;
 use tracing::{Subscriber, field::Visit};
 use tracing_subscriber::{Layer, Registry, layer::SubscriberExt as _};
+use utoipa::OpenApi as _;
 
 use super::*;
+
+#[allow(dead_code)]
+#[derive(serde::Deserialize, utoipa::IntoParams)]
+struct InferredListQuery {
+    tag: Vec<String>,
+}
+
+#[utoipa::path(get, path = "/inferred-items", params(InferredListQuery))]
+#[allow(dead_code)]
+async fn inferred_list_query(Query(query): Query<InferredListQuery>) {
+    let _ = query.tag;
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(inferred_list_query))]
+struct InferredQueryApi;
 
 async fn response_json(response: axum::response::Response) -> Value {
     let bytes = to_bytes(response.into_body(), usize::MAX)
@@ -295,6 +312,76 @@ async fn standardized_extractors_map_json_path_and_query_rejections() {
                 .is_some_and(|request_id| request_id.ends_with("-rejection"))
         );
     }
+}
+
+#[tokio::test]
+async fn query_collection_fields_accept_repeated_parameters() {
+    #[derive(serde::Deserialize)]
+    struct Filters {
+        tag: Vec<String>,
+    }
+
+    async fn handler(Query(filters): Query<Filters>) -> String {
+        filters.tag.join(",")
+    }
+
+    let response = Router::new()
+        .route("/items", get(handler))
+        .oneshot(
+            Request::builder()
+                .uri("/items?tag=rust&tag=typescript")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body"),
+        "rust,typescript"
+    );
+}
+
+#[test]
+fn utoipa_infers_baukit_query_collections_as_query_parameters() {
+    let document = InferredQueryApi::openapi();
+    let json = serde_json::to_value(document).expect("OpenAPI JSON");
+    let parameters = json["paths"]["/inferred-items"]["get"]["parameters"]
+        .as_array()
+        .unwrap_or_else(|| panic!("missing inferred parameters in {json}"));
+
+    assert_eq!(parameters.len(), 1, "{json}");
+    assert_eq!(parameters[0]["name"], "tag");
+    assert_eq!(parameters[0]["in"], "query");
+    assert_eq!(parameters[0]["schema"]["type"], "array");
+    assert_ne!(parameters[0]["in"], "path");
+}
+
+#[tokio::test]
+async fn validation_field_helpers_build_standard_details() {
+    let one =
+        response_json(ApiError::validation_field("limit", "must be at most 100").into_response())
+            .await;
+    assert_eq!(
+        one["error"]["details"],
+        json!({"limit": "must be at most 100"})
+    );
+
+    let many = response_json(
+        ApiError::validation_fields([
+            ("name", "must not be empty"),
+            ("limit", "must be at least 1"),
+        ])
+        .into_response(),
+    )
+    .await;
+    assert_eq!(
+        many["error"]["details"],
+        json!({"limit": "must be at least 1", "name": "must not be empty"})
+    );
 }
 
 #[tokio::test]

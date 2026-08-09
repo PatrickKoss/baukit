@@ -99,11 +99,19 @@ async fn current_user(
 {% endif %}#[utoipa::path(
     get,
     path = "/items",
-    responses((status = 200, description = "Items", body = [ItemDto])),
+{% if context.auth_oidc %}    security(("bearerAuth" = [])),
+{% endif %}    responses(
+        (status = 200, description = "Items", body = [ItemDto]){% if context.auth_oidc %},
+        (status = 401, description = "Authentication required", body = ErrorEnvelope){% endif %}
+    ),
     tag = "items"
 )]
-async fn list_items(State(state): State<ApiState>) -> Result<Json<Vec<ItemDto>>, ApiError> {
-    let items = state
+{% if context.auth_oidc %}async fn list_items(
+    State(state): State<ApiState>,
+    _principal: Principal,
+) -> Result<Json<Vec<ItemDto>>, ApiError> {
+{% else %}async fn list_items(State(state): State<ApiState>) -> Result<Json<Vec<ItemDto>>, ApiError> {
+{% endif %}    let items = state
         .items
         .list()
         .await
@@ -117,17 +125,20 @@ async fn list_items(State(state): State<ApiState>) -> Result<Json<Vec<ItemDto>>,
 #[utoipa::path(
     get,
     path = "/items/{id}",
-    params(("id" = Uuid, Path, description = "Item identifier")),
+{% if context.auth_oidc %}    security(("bearerAuth" = [])),
+{% endif %}    params(("id" = Uuid, Path, description = "Item identifier")),
     responses(
         (status = 200, description = "Item", body = ItemDto),
-        (status = 404, description = "Not found", body = ErrorEnvelope)
+        (status = 404, description = "Not found", body = ErrorEnvelope){% if context.auth_oidc %},
+        (status = 401, description = "Authentication required", body = ErrorEnvelope){% endif %}
     ),
     tag = "items"
 )]
 async fn get_item(
     State(state): State<ApiState>,
     ApiPath(id): ApiPath<Uuid>,
-) -> Result<Json<ItemDto>, ApiError> {
+{% if context.auth_oidc %}    _principal: Principal,
+{% endif %}) -> Result<Json<ItemDto>, ApiError> {
     state
         .items
         .get(id)
@@ -140,17 +151,20 @@ async fn get_item(
 #[utoipa::path(
     post,
     path = "/items",
-    request_body = SaveItemRequest,
+{% if context.auth_oidc %}    security(("bearerAuth" = [])),
+{% endif %}    request_body = SaveItemRequest,
     responses(
         (status = 201, description = "Created", body = ItemDto),
         (status = 400, description = "Invalid request", body = ErrorEnvelope),
-        (status = 409, description = "Conflict", body = ErrorEnvelope)
+        (status = 409, description = "Conflict", body = ErrorEnvelope){% if context.auth_oidc %},
+        (status = 401, description = "Authentication required", body = ErrorEnvelope){% endif %}
     ),
     tag = "items"
 )]
 async fn create_item(
     State(state): State<ApiState>,
-    ApiJson(request): ApiJson<SaveItemRequest>,
+{% if context.auth_oidc %}    _principal: Principal,
+{% endif %}    ApiJson(request): ApiJson<SaveItemRequest>,
 ) -> Result<(StatusCode, Json<ItemDto>), ApiError> {
     let item = state
         .items
@@ -163,19 +177,22 @@ async fn create_item(
 #[utoipa::path(
     put,
     path = "/items/{id}",
-    params(("id" = Uuid, Path, description = "Item identifier")),
+{% if context.auth_oidc %}    security(("bearerAuth" = [])),
+{% endif %}    params(("id" = Uuid, Path, description = "Item identifier")),
     request_body = SaveItemRequest,
     responses(
         (status = 200, description = "Updated", body = ItemDto),
         (status = 400, description = "Invalid request", body = ErrorEnvelope),
-        (status = 404, description = "Not found", body = ErrorEnvelope)
+        (status = 404, description = "Not found", body = ErrorEnvelope){% if context.auth_oidc %},
+        (status = 401, description = "Authentication required", body = ErrorEnvelope){% endif %}
     ),
     tag = "items"
 )]
 async fn update_item(
     State(state): State<ApiState>,
     ApiPath(id): ApiPath<Uuid>,
-    ApiJson(request): ApiJson<SaveItemRequest>,
+{% if context.auth_oidc %}    _principal: Principal,
+{% endif %}    ApiJson(request): ApiJson<SaveItemRequest>,
 ) -> Result<Json<ItemDto>, ApiError> {
     state
         .items
@@ -189,17 +206,20 @@ async fn update_item(
 #[utoipa::path(
     delete,
     path = "/items/{id}",
-    params(("id" = Uuid, Path, description = "Item identifier")),
+{% if context.auth_oidc %}    security(("bearerAuth" = [])),
+{% endif %}    params(("id" = Uuid, Path, description = "Item identifier")),
     responses(
         (status = 204, description = "Deleted"),
-        (status = 404, description = "Not found", body = ErrorEnvelope)
+        (status = 404, description = "Not found", body = ErrorEnvelope){% if context.auth_oidc %},
+        (status = 401, description = "Authentication required", body = ErrorEnvelope){% endif %}
     ),
     tag = "items"
 )]
 async fn delete_item(
     State(state): State<ApiState>,
     ApiPath(id): ApiPath<Uuid>,
-) -> Result<StatusCode, ApiError> {
+{% if context.auth_oidc %}    _principal: Principal,
+{% endif %}) -> Result<StatusCode, ApiError> {
     state.items.delete(id).await.map_err(map_service_error)?;
     Ok(StatusCode::NO_CONTENT)
 }

@@ -1,6 +1,7 @@
 use baukit_telemetry::{
-    DeploymentEnvironment, HTTP_DURATION_BUCKETS, LogFormat, ProcessKind, ServiceIdentity,
-    TelemetryBuilder, TelemetryError, WORKER_DURATION_BUCKETS, metrics,
+    DB_POOL_ACQUIRE_DURATION_BUCKETS, DeploymentEnvironment, HTTP_DURATION_BUCKETS, LogFormat,
+    ProcessKind, ServiceIdentity, TelemetryBuilder, TelemetryError, WORKER_DURATION_BUCKETS,
+    metrics,
 };
 
 fn identity() -> ServiceIdentity {
@@ -35,6 +36,21 @@ fn process_global_init_build_info_idempotence_and_shutdown() {
         assert!(
             rendered.contains(&format!("le=\"{bucket}\"")),
             "missing spec bucket le=\"{bucket}\" in:\n{rendered}"
+        );
+    }
+
+    metrics::histogram!("db_pool_acquire_duration_seconds").record(0.003);
+    let rendered = telemetry.prometheus_handle().render();
+    assert!(
+        rendered.contains("# TYPE db_pool_acquire_duration_seconds histogram"),
+        "{rendered}"
+    );
+    for bucket in DB_POOL_ACQUIRE_DURATION_BUCKETS {
+        assert!(
+            rendered.contains(&format!(
+                "db_pool_acquire_duration_seconds_bucket{{le=\"{bucket}\"}}"
+            )),
+            "missing database acquisition bucket le=\"{bucket}\" in:\n{rendered}"
         );
     }
 

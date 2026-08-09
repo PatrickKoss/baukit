@@ -141,6 +141,91 @@ pub struct ErrorBody {
     pub details: BTreeMap<String, Value>,
 }
 
+/// An API timestamp with one JSON and OpenAPI representation: an RFC 3339
+/// string with OpenAPI `date-time` format.
+///
+/// Use this at DTO boundaries around a domain [`time::OffsetDateTime`]. The
+/// wrapper prevents `time`'s default non-human-readable nine-element tuple from
+/// leaking into JSON while keeping conversion to and from the domain type
+/// explicit and lossless.
+#[derive(
+    Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, ToSchema,
+)]
+#[schema(value_type = String, format = DateTime)]
+pub struct Rfc3339DateTime(#[serde(with = "time::serde::rfc3339")] pub time::OffsetDateTime);
+
+impl Rfc3339DateTime {
+    /// Wraps a domain timestamp for use in an API DTO.
+    pub const fn new(value: time::OffsetDateTime) -> Self {
+        Self(value)
+    }
+
+    /// Returns the wrapped domain timestamp.
+    pub const fn into_inner(self) -> time::OffsetDateTime {
+        self.0
+    }
+}
+
+impl From<time::OffsetDateTime> for Rfc3339DateTime {
+    fn from(value: time::OffsetDateTime) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<Rfc3339DateTime> for time::OffsetDateTime {
+    fn from(value: Rfc3339DateTime) -> Self {
+        value.into_inner()
+    }
+}
+
+impl fmt::Display for Rfc3339DateTime {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let rendered = self
+            .0
+            .format(&time::format_description::well_known::Rfc3339)
+            .map_err(|_| fmt::Error)?;
+        formatter.write_str(&rendered)
+    }
+}
+
+impl std::str::FromStr for Rfc3339DateTime {
+    type Err = time::error::Parse;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        time::OffsetDateTime::parse(value, &time::format_description::well_known::Rfc3339).map(Self)
+    }
+}
+
+/// A fully typed success-response envelope.
+///
+/// Both `data` and `meta` remain concrete generic schema arguments. Products
+/// should define DTOs for them rather than substituting [`serde_json::Value`],
+/// so generated clients retain the complete response contract. A paginated
+/// response uses `Vec<ItemDto>` as `T` and a product-owned pagination metadata
+/// DTO as `M`.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
+pub struct ResponseEnvelope<T, M> {
+    /// The typed response payload.
+    pub data: T,
+    /// Typed response metadata, such as request ID and pagination cursor.
+    pub meta: M,
+}
+
+impl<T, M> ResponseEnvelope<T, M> {
+    /// Creates a fully typed response envelope.
+    pub const fn new(data: T, meta: M) -> Self {
+        Self { data, meta }
+    }
+
+    /// Maps the payload without weakening the metadata type.
+    pub fn map<U>(self, map: impl FnOnce(T) -> U) -> ResponseEnvelope<U, M> {
+        ResponseEnvelope {
+            data: map(self.data),
+            meta: self.meta,
+        }
+    }
+}
+
 /// An error produced while serializing, writing, or comparing an OpenAPI schema.
 ///
 /// Its display text includes the affected path and, for drift, the first differing line together
@@ -409,15 +494,17 @@ mod tests {
     use std::collections::BTreeMap;
     use std::fs;
 
+    use serde::{Deserialize, Serialize};
     use serde_json::{Value, json};
     use tempfile::tempdir;
     use utoipa::openapi::extensions::Extensions;
     use utoipa::openapi::security::{HttpAuthScheme, SecurityScheme};
     use utoipa::openapi::{Info, OpenApi, Paths, Server};
+    use utoipa::{PartialSchema, ToSchema};
 
     use super::{
-        BEARER_AUTH_SCHEME, ErrorBody, ErrorEnvelope, OpenApiMetadata, assert_no_drift,
-        check_no_drift, serialize_schema, write_schema,
+        BEARER_AUTH_SCHEME, ErrorBody, ErrorEnvelope, OpenApiMetadata, ResponseEnvelope,
+        Rfc3339DateTime, assert_no_drift, check_no_drift, serialize_schema, write_schema,
     };
 
     fn document() -> OpenApi {
@@ -510,6 +597,48 @@ mod tests {
                 }
             })
         );
+        Ok(())
+    }
+
+    #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
+    struct TimestampDto {
+        observed_at: Rfc3339DateTime,
+    }
+
+    #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
+    struct TestMeta {
+        request_id: String,
+    }
+
+    #[test]
+    fn api_datetime_uses_rfc3339_json_and_date_time_schema()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let timestamp = "2026-08-09T12:34:56.123456789+02:00".parse::<Rfc3339DateTime>()?;
+        let dto = TimestampDto {
+            observed_at: timestamp,
+        };
+
+        let json = serde_json::to_value(&dto)?;
+        assert_eq!(json["observed_at"], "2026-08-09T12:34:56.123456789+02:00");
+        assert_eq!(serde_json::from_value::<TimestampDto>(json)?, dto);
+
+        let schema = serde_json::to_value(Rfc3339DateTime::schema())?;
+        assert_eq!(schema["type"], "string");
+        assert_eq!(schema["format"], "date-time");
+        Ok(())
+    }
+
+    #[test]
+    fn typed_response_envelope_keeps_concrete_payload_and_metadata_schemas()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let schema = serde_json::to_value(
+            <ResponseEnvelope<TimestampDto, TestMeta> as PartialSchema>::schema(),
+        )?;
+        let rendered = schema.to_string();
+
+        assert!(rendered.contains("TimestampDto"), "{rendered}");
+        assert!(rendered.contains("TestMeta"), "{rendered}");
+        assert!(!rendered.contains("serde_json.Value"), "{rendered}");
         Ok(())
     }
 

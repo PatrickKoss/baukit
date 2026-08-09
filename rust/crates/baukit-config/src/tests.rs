@@ -13,6 +13,8 @@ use super::*;
 #[serde(default)]
 struct ProductConfig {
     feature_limit: usize,
+    labels: Vec<String>,
+    json_array_secret: Option<Secret<String>>,
     leading_zero_secret: Option<Secret<String>>,
     exponent_secret: Option<Secret<String>>,
 }
@@ -118,6 +120,24 @@ fn numeric_looking_environment_secrets_remain_literal_strings() {
             ("SECRET_LITERAL_APP__LEADING_ZERO_SECRET", "0123"),
             ("SECRET_LITERAL_APP__EXPONENT_SECRET", "1e5"),
             ("SECRET_LITERAL_APP__FEATURE_LIMIT", "9"),
+        ],
+    );
+}
+
+#[test]
+fn collection_valued_environment_fields_accept_json_arrays() {
+    run_env_helper(
+        "collection_environment_helper",
+        &[
+            (
+                "COLLECTION_APP__HTTP__CORS_ALLOWED_ORIGINS",
+                r#"["https://app.example.com","http://127.0.0.1:5173"]"#,
+            ),
+            ("COLLECTION_APP__LABELS", r#"["alpha","beta"]"#),
+            (
+                "COLLECTION_APP__JSON_ARRAY_SECRET",
+                r#"["this","is","literal"]"#,
+            ),
         ],
     );
 }
@@ -236,6 +256,36 @@ fn numeric_looking_environment_secrets_helper() {
         "1e5"
     );
     assert_eq!(config.product.feature_limit, 9);
+}
+
+#[test]
+fn collection_environment_helper() {
+    if std::env::var_os("BAUKIT_CONFIG_ENV_HELPER").is_none() {
+        return;
+    }
+
+    let config = ConfigLoader::new("collection-app", Environment::Staging)
+        .expect("valid loader")
+        .without_local_file()
+        .without_dotenv()
+        .environment_collection("labels")
+        .load::<ProductConfig>()
+        .expect("valid collection env config");
+
+    assert_eq!(
+        config.http.cors_allowed_origins,
+        ["https://app.example.com", "http://127.0.0.1:5173"]
+    );
+    assert_eq!(config.product.labels, ["alpha", "beta"]);
+    assert_eq!(
+        config
+            .product
+            .json_array_secret
+            .as_ref()
+            .expect("JSON-looking secret")
+            .expose(),
+        r#"["this","is","literal"]"#
+    );
 }
 
 #[test]

@@ -16,6 +16,8 @@ fn options(parent: &Path, name: &str) -> NewOptions {
         web: false,
         auth: None,
         force: false,
+        into_existing: false,
+        resolve_lockfiles: false,
         baukit_path: None,
     }
 }
@@ -29,6 +31,8 @@ fn frontend_options(parent: &Path, name: &str, mobile: bool, web: bool) -> NewOp
         web,
         auth: None,
         force: false,
+        into_existing: false,
+        resolve_lockfiles: false,
         baukit_path: None,
     }
 }
@@ -134,6 +138,97 @@ fn oidc_generation_is_deterministic_and_records_the_optional_capability() -> any
     assert!(first.join("backend/tests/auth_conformance.rs").is_file());
     assert!(first.join("web/src/auth.ts").is_file());
     assert!(first.join("mobile/src/auth.ts").is_file());
+
+    let api = fs::read_to_string(first.join("backend/crates/snapshot-app-api/src/lib.rs"))?;
+    assert_eq!(api.matches("security((\"bearerAuth\" = []))").count(), 6);
+    assert_eq!(api.matches("_principal: Principal").count(), 5);
+    let openapi = fs::read_to_string(first.join("backend/openapi.json"))?;
+    assert_eq!(openapi.matches("\"bearerAuth\": []").count(), 6);
+    let realm = fs::read_to_string(first.join("keycloak/realm.json"))?;
+    assert!(realm.contains("\"realmRoles\": [\"offline_access\"]"));
+    assert!(realm.contains("snapshot-app-mobile"));
+    Ok(())
+}
+
+#[test]
+fn oidc_realm_only_emits_selected_public_clients() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut selected = options(parent.path(), "web-product");
+    selected.web = true;
+    selected.auth = Some(AuthProvider::Oidc);
+    let root = generate_new(&selected)?;
+    let realm = fs::read_to_string(root.join("keycloak/realm.json"))?;
+    assert!(realm.contains("web-product-web"));
+    assert!(!realm.contains("web-product-mobile"));
+    assert!(realm.contains("offline_access"));
+    assert!(fs::read_to_string(root.join("compose.yaml"))?.contains("KC_HEALTH_ENABLED"));
+    assert!(
+        fs::read_to_string(root.join("scripts/pkce-login.py"))?
+            .contains("parser.add_argument(\"--client-id\", required=True)")
+    );
+    Ok(())
+}
+
+#[test]
+fn release_emission_uses_private_ssh_tag_and_reproducibility_files() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut combined = options(parent.path(), "release-product");
+    combined.web = true;
+    combined.mobile = true;
+    let root = generate_new(&combined)?;
+
+    let cargo = fs::read_to_string(root.join("backend/Cargo.toml"))?;
+    assert!(cargo.contains("ssh://git@github.com/PatrickKoss/baukit.git"));
+    assert!(cargo.contains(&format!(
+        "tag = \"baukit-v{}\"",
+        baukit_cli::TEMPLATE_VERSION
+    )));
+    assert_eq!(
+        fs::read_to_string(root.join(".cargo/config.toml"))?,
+        "[net]\ngit-fetch-with-cli = true\n"
+    );
+    assert!(!fs::read_to_string(root.join(".gitignore"))?.contains("/generated/"));
+    let locks = fs::read_to_string(root.join("scripts/lockfiles.sh"))?;
+    assert!(locks.contains("cargo generate-lockfile"));
+    assert_eq!(
+        locks
+            .matches("install --lockfile-only --ignore-scripts")
+            .count(),
+        2
+    );
+    assert!(fs::read_to_string(root.join("web/pnpm-workspace.yaml"))?.contains("allowBuilds"));
+    assert!(fs::read_to_string(root.join("mobile/pnpm-workspace.yaml"))?.contains("allowBuilds"));
+    let makefile = fs::read_to_string(root.join("Makefile"))?;
+    assert!(
+        makefile.contains("cargo test --manifest-path $(BACKEND_MANIFEST) -- --include-ignored")
+    );
+    assert!(makefile.contains("check: fmt lint test check-web check-mobile"));
+    assert!(!makefile.contains("baukit generate openapi-client"));
+    let client = fs::read_to_string(root.join("scripts/openapi-client.sh"))?;
+    assert!(client.contains("schema=backend/openapi.json"));
+    assert!(!client.contains("cargo run"));
+    let workflow = fs::read_to_string(root.join(".github/workflows/ci.yml"))?;
+    assert_eq!(workflow.matches("BAUKIT_DEPLOY_KEY").count(), 3);
+    assert!(
+        workflow.contains("cargo test --manifest-path backend/Cargo.toml -- --include-ignored")
+    );
+    assert!(workflow.contains("working-directory: web"));
+    assert!(workflow.contains("working-directory: mobile"));
+    Ok(())
+}
+
+#[test]
+fn generation_can_render_directly_into_an_existing_repository_root() -> anyhow::Result<()> {
+    let root = tempfile::tempdir()?;
+    fs::create_dir_all(root.path().join(".git"))?;
+    fs::write(root.path().join(".git/HEAD"), "ref: refs/heads/main\n")?;
+    let mut existing = options(root.path(), "existing-product");
+    existing.into_existing = true;
+
+    assert_eq!(generate_new(&existing)?, root.path());
+    assert!(root.path().join("baukit.toml").is_file());
+    assert!(root.path().join(".git/HEAD").is_file());
+    assert!(!root.path().join("existing-product").exists());
     Ok(())
 }
 
@@ -166,6 +261,26 @@ fn at_least_one_capability_is_required() -> anyhow::Result<()> {
 }
 
 #[test]
+fn raw_templates_do_not_contain_cargo_manifests() -> anyhow::Result<()> {
+    let templates = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../templates");
+    let tree = read_tree(&templates)?;
+    assert!(
+        tree.keys()
+            .all(|path| path.file_name().is_none_or(|name| name != "Cargo.toml")),
+        "raw template Cargo.toml files are discovered and parsed by downstream Cargo commands"
+    );
+    assert_eq!(
+        tree.keys()
+            .filter(|path| path
+                .file_name()
+                .is_some_and(|name| name == "Cargo.toml.jinja"))
+            .count(),
+        7
+    );
+    Ok(())
+}
+
+#[test]
 fn doctor_validates_a_local_generated_product() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let baukit_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust");
@@ -174,6 +289,10 @@ fn doctor_validates_a_local_generated_product() -> anyhow::Result<()> {
     local.web = true;
     local.baukit_path = Some(baukit_path);
     let root = generate_new(&local)?;
+    fs::rename(
+        root.join("backend/migrations/0001_create_items.sql"),
+        root.join("backend/migrations/0042_product_schema.sql"),
+    )?;
     let results = doctor(&root)?;
     assert!(results.iter().any(|result| result.contains("schema")));
     assert!(
@@ -183,6 +302,11 @@ fn doctor_validates_a_local_generated_product() -> anyhow::Result<()> {
     );
     assert!(results.iter().any(|result| result.contains("mobile")));
     assert!(results.iter().any(|result| result.contains("web")));
+    assert!(
+        results
+            .iter()
+            .any(|result| result.contains("SQL migration"))
+    );
     Ok(())
 }
 

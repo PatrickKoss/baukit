@@ -13,7 +13,8 @@
       "enabled": true,
       "firstName": "Test",
       "lastName": "User",
-      "credentials": [{ "type": "password", "value": "password", "temporary": false }]
+{% if context.web or context.mobile %}      "realmRoles": ["offline_access"],
+{% endif %}      "credentials": [{ "type": "password", "value": "password", "temporary": false }]
     }
   ],
   "clients": [
@@ -40,7 +41,7 @@
           }
         }
       ]
-    },
+    }{% if context.web %},
     {
       "clientId": "{{ context.app_name }}-web",
       "name": "Web public PKCE client",
@@ -64,7 +65,7 @@
           }
         }
       ]
-    },
+    }{% endif %}{% if context.mobile %},
     {
       "clientId": "{{ context.app_name }}-mobile",
       "name": "Mobile public PKCE client",
@@ -88,6 +89,6 @@
           }
         }
       ]
-    }
+    }{% endif %}
   ]
 }

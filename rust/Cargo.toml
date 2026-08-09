@@ -46,6 +46,7 @@ regex = "=1.13.1"
 reqwest = { version = "=0.12.28", default-features = false, features = ["json", "rustls-tls"] }
 ring = "=0.17.14"
 serde = { version = "=1.0.229", features = ["derive"] }
+serde_html_form = "=0.4.1"
 serde_json = "=1.0.151"
 sqlx = { version = "=0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "chrono", "json", "uuid"] }
 tempfile = "=3.23.0"
@@ -59,7 +60,8 @@ tower-http = "=0.7.0"
 tracing = "=0.1.44"
 tracing-opentelemetry = "=0.33.0"
 tracing-subscriber = { version = "=0.3.23", features = ["env-filter", "json"] }
-utoipa = "=5.5.0"
+time = { version = "=0.3.47", features = ["formatting", "parsing", "serde"] }
+utoipa = { version = "=5.5.0", features = ["axum_extras", "time"] }
 utoipa-axum = "=0.2.0"
 uuid = { version = "=1.24.0", features = ["v4", "v7", "serde"] }
 zeroize = "=1.9.0"

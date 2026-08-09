@@ -107,6 +107,13 @@ const OTEL_SDK_DISABLED_ENV: &str = "OTEL_SDK_DISABLED";
 pub const HTTP_DURATION_BUCKETS: &[f64] = &[
     0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
 ];
+/// Histogram buckets in seconds applied to
+/// `db_pool_acquire_duration_seconds`. The low-millisecond boundaries make
+/// ordinary pool contention visible while the upper boundaries cover timeout
+/// configurations used by deployed services.
+pub const DB_POOL_ACQUIRE_DURATION_BUCKETS: &[f64] = &[
+    0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
+];
 /// Histogram buckets in seconds applied to `worker_job_duration_seconds`, as
 /// required by telemetry-spec §2.4.
 pub const WORKER_DURATION_BUCKETS: &[f64] = &[
@@ -289,6 +296,11 @@ impl TelemetryBuilder {
                 HTTP_DURATION_BUCKETS,
             )
             .expect("HTTP_DURATION_BUCKETS is non-empty")
+            .set_buckets_for_metric(
+                Matcher::Full("db_pool_acquire_duration_seconds".to_owned()),
+                DB_POOL_ACQUIRE_DURATION_BUCKETS,
+            )
+            .expect("DB_POOL_ACQUIRE_DURATION_BUCKETS is non-empty")
             .set_buckets_for_metric(
                 Matcher::Full("worker_job_duration_seconds".to_owned()),
                 WORKER_DURATION_BUCKETS,

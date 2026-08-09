@@ -5,6 +5,12 @@
 //! an application prefix and a double-underscore separator, such as
 //! `MYAPP__HTTP__PORT=8080`. A local `.env` file is loaded only when the loader's
 //! deployment [`Environment`] is [`Environment::Local`].
+//! Collection-valued environment variables use JSON array syntax, for example
+//! `MYAPP__HTTP__CORS_ALLOWED_ORIGINS=["https://app.example.com"]`. Scalar
+//! environment values retain their exact source strings, including values that
+//! look numeric, so secret-string preservation is unchanged.
+//! `http.cors_allowed_origins` is registered automatically; product collection
+//! fields must be declared with [`ConfigLoader::environment_collection`].
 //!
 //! Durations in the standard sections are represented as [`Duration`] values and
 //! deserialize from integer seconds.
@@ -40,6 +46,7 @@
 #![deny(missing_docs)]
 
 use std::{
+    collections::BTreeSet,
     fmt,
     net::{IpAddr, Ipv4Addr},
     path::PathBuf,
@@ -49,7 +56,7 @@ use std::{
 pub use baukit_core::{
     DeploymentEnvironment, DeploymentEnvironment as Environment, LogFormat, ParseEnvironmentError,
 };
-use config::{Config, File, Value, ValueKind};
+use config::{Config, File, Map as ConfigMap, Source, Value, ValueKind};
 use serde::{Deserialize, Deserializer};
 use thiserror::Error;
 use zeroize::Zeroize;
@@ -505,6 +512,7 @@ pub struct ConfigLoader {
     environment: Environment,
     local_file: Option<PathBuf>,
     dotenv_file: Option<PathBuf>,
+    environment_collections: BTreeSet<String>,
 }
 
 impl ConfigLoader {
@@ -519,6 +527,7 @@ impl ConfigLoader {
             environment,
             local_file: Some(PathBuf::from(DEFAULT_LOCAL_FILE)),
             dotenv_file: Some(PathBuf::from(DEFAULT_DOTENV_FILE)),
+            environment_collections: BTreeSet::from(["http.cors_allowed_origins".to_owned()]),
         })
     }
 
@@ -557,6 +566,20 @@ impl ConfigLoader {
         &self.prefix
     }
 
+    /// Registers a product collection field for JSON-array environment input.
+    ///
+    /// Use its configuration path after prefix/separator normalization, such as
+    /// `allowed_tags` or `notifications.channels`. The standard
+    /// `http.cors_allowed_origins` field is registered automatically. Other
+    /// environment values remain literal strings, even when they contain valid
+    /// JSON array syntax.
+    #[must_use]
+    pub fn environment_collection(mut self, path: impl Into<String>) -> Self {
+        self.environment_collections
+            .insert(path.into().to_ascii_lowercase());
+        self
+    }
+
     /// Loads, deserializes, and validates a standard configuration plus product fields.
     pub fn load<T>(&self) -> Result<BaukitConfig<T>, LoadError>
     where
@@ -568,7 +591,7 @@ impl ConfigLoader {
         if let Some(path) = &self.local_file {
             builder = builder.add_source(File::from(path.clone()).required(false));
         }
-        builder = builder.add_source(
+        builder = builder.add_source(CollectionEnvironment::new(
             config::Environment::with_prefix(&self.prefix)
                 .prefix_separator("__")
                 .separator("__")
@@ -576,7 +599,8 @@ impl ConfigLoader {
                 // `Secret<String>` cannot lose leading zeroes or exponent syntax.
                 // `config` still converts strings when deserializing typed fields.
                 .try_parsing(false),
-        );
+            self.environment_collections.clone(),
+        ));
         // The bootstrap environment is authoritative because it controls whether
         // reading a dotenv file is safe.
         builder = builder.set_override("environment", self.environment.to_string())?;
@@ -615,6 +639,80 @@ impl ConfigLoader {
             }),
         }
     }
+}
+
+#[derive(Clone, Debug)]
+struct CollectionEnvironment {
+    inner: config::Environment,
+    keys: BTreeSet<String>,
+}
+
+impl CollectionEnvironment {
+    fn new(inner: config::Environment, keys: BTreeSet<String>) -> Self {
+        Self { inner, keys }
+    }
+}
+
+impl Source for CollectionEnvironment {
+    fn clone_into_box(&self) -> Box<dyn Source + Send + Sync> {
+        Box::new(self.clone())
+    }
+
+    fn collect(&self) -> Result<ConfigMap<String, Value>, config::ConfigError> {
+        let mut values = self.inner.collect()?;
+        for (key, value) in &mut values {
+            if self.keys.contains(key) {
+                parse_json_array(value);
+            }
+        }
+        Ok(values)
+    }
+}
+
+fn parse_json_array(value: &mut Value) {
+    let ValueKind::String(raw) = &value.kind else {
+        return;
+    };
+    let Ok(serde_json::Value::Array(items)) = serde_json::from_str(raw) else {
+        return;
+    };
+    let origin = value.origin().map(str::to_owned);
+    value.kind = ValueKind::Array(
+        items
+            .into_iter()
+            .map(|item| json_to_config_value(item, origin.as_ref()))
+            .collect(),
+    );
+}
+
+fn json_to_config_value(value: serde_json::Value, origin: Option<&String>) -> Value {
+    let kind = match value {
+        serde_json::Value::Null => ValueKind::Nil,
+        serde_json::Value::Bool(value) => ValueKind::Boolean(value),
+        serde_json::Value::Number(value) => value.as_i64().map_or_else(
+            || {
+                value.as_u64().map_or_else(
+                    || ValueKind::Float(value.as_f64().unwrap_or_default()),
+                    ValueKind::U64,
+                )
+            },
+            ValueKind::I64,
+        ),
+        serde_json::Value::String(value) => ValueKind::String(value),
+        serde_json::Value::Array(values) => ValueKind::Array(
+            values
+                .into_iter()
+                .map(|value| json_to_config_value(value, origin))
+                .collect(),
+        ),
+        serde_json::Value::Object(values) => ValueKind::Table(
+            values
+                .into_iter()
+                .map(|(key, value)| (key, json_to_config_value(value, origin)))
+                .collect(),
+        ),
+    };
+    Value::new(origin, kind)
 }
 
 fn deserialize_product_config<T>(mut merged: Value) -> Result<T, config::ConfigError>

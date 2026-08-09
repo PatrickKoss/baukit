@@ -24,4 +24,5 @@ uuid.workspace = true
 
 [dev-dependencies]
 baukit-test = { workspace = true, features = ["sqlx-postgres"] }
+metrics-exporter-prometheus.workspace = true
 metrics-util.workspace = true

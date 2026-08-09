@@ -4,6 +4,10 @@ All notable changes to `baukit-config` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Collection-valued configuration fields accept JSON arrays from environment variables (CORS automatically, product fields via `environment_collection`) while all other source strings remain unchanged.
+
 ## [0.2.0] - 2026-08-08
 
 ### Fixed

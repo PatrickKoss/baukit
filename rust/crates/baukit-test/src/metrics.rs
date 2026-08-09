@@ -16,6 +16,7 @@ const WORKER_JOB_RUNS_TOTAL: &str = "worker_job_runs_total";
 const WORKER_JOB_DURATION_BUCKET: &str = "worker_job_duration_seconds_bucket";
 const WORKER_JOB_DURATION_SUM: &str = "worker_job_duration_seconds_sum";
 const WORKER_JOB_DURATION_COUNT: &str = "worker_job_duration_seconds_count";
+const WORKER_QUEUE_OLDEST_AGE: &str = "worker_queue_oldest_age_seconds";
 const WORKER_OUTCOMES: &[&str] = &["success", "failure", "retry"];
 
 static APP_PREFIXED_HTTP: LazyLock<Regex> = LazyLock::new(|| {
@@ -88,7 +89,8 @@ impl MetricsConformanceOptions {
         self
     }
 
-    /// Requires the canonical worker job counter and duration histogram.
+    /// Requires the canonical worker job counter, duration histogram, and
+    /// oldest-pending-job queue-age gauge from telemetry-spec section 2.4.
     #[must_use]
     pub const fn require_worker_metrics(mut self) -> Self {
         self.worker = true;
@@ -433,6 +435,7 @@ fn check_worker_metrics(samples: &[Sample], violations: &mut Vec<String>) {
         WORKER_JOB_DURATION_BUCKET,
         WORKER_JOB_DURATION_SUM,
         WORKER_JOB_DURATION_COUNT,
+        WORKER_QUEUE_OLDEST_AGE,
     ] {
         require_metric(samples, metric, violations);
     }
@@ -452,6 +455,7 @@ fn check_worker_metrics(samples: &[Sample], violations: &mut Vec<String>) {
     for metric in [WORKER_JOB_DURATION_SUM, WORKER_JOB_DURATION_COUNT] {
         check_exact_labels(samples, metric, &["job"], violations);
     }
+    check_exact_labels(samples, WORKER_QUEUE_OLDEST_AGE, &["queue"], violations);
 
     for sample in samples
         .iter()
@@ -603,6 +607,7 @@ build_info{version="1",commit="abc",rust_version="1.95"} 1
         assert!(rendered.contains(WORKER_JOB_DURATION_BUCKET), "{rendered}");
         assert!(rendered.contains(WORKER_JOB_DURATION_SUM), "{rendered}");
         assert!(rendered.contains(WORKER_JOB_DURATION_COUNT), "{rendered}");
+        assert!(rendered.contains(WORKER_QUEUE_OLDEST_AGE), "{rendered}");
 
         let worker_exposition = r#"
 build_info{version="1",commit="abc",rust_version="1.95"} 1
@@ -612,6 +617,7 @@ worker_job_runs_total{job="sync",outcome="retry"} 1
 worker_job_duration_seconds_bucket{job="sync",le="1"} 1
 worker_job_duration_seconds_sum{job="sync"} 0.25
 worker_job_duration_seconds_count{job="sync"} 1
+worker_queue_oldest_age_seconds{queue="default"} 0
 "#;
         check_metrics_conformance_with_options(worker_exposition, options)
             .expect("worker metrics conform");
@@ -625,6 +631,7 @@ worker_job_runs_total{job="sync",outcome="cancelled"} 1
 worker_job_duration_seconds_bucket{job="sync",queue="default",le="1"} 1
 worker_job_duration_seconds_sum{job="sync"} 0.25
 worker_job_duration_seconds_count{job="sync"} 1
+worker_queue_oldest_age_seconds{job="sync"} 0
 "#;
         let error = check_metrics_conformance_with_options(
             exposition,
