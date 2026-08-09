@@ -1,5 +1,11 @@
 # @baukit/analytics-core
 
+## 0.3.3
+
+### Patch Changes
+
+- Release the coordinated baukit 0.3.3 train.
+
 ## 0.3.2
 
 ### Patch Changes

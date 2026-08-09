@@ -1,5 +1,14 @@
 # @baukit/analytics-posthog-web
 
+## 0.3.3
+
+### Patch Changes
+
+- Release the coordinated baukit 0.3.3 train.
+- Accept the legacy PostHog JS client used by the optional in-cluster deployment.
+- Updated dependencies
+  - @baukit/analytics-core@0.3.3
+
 ## 0.3.2
 
 ### Patch Changes
