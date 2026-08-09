@@ -16,8 +16,22 @@ spec:
   endpoints:
     - port: metrics
       path: /metrics
+      honorLabels: true
       interval: {{ .Values.serviceMonitor.interval }}
       scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout }}
+      relabelings:
+        # Metrics deliberately omit deployment identity dimensions. Attach the
+        # bounded platform labels during target discovery, as required by the
+        # shared observability contract.
+        - action: replace
+          targetLabel: product
+          replacement: {{ include "baukit-app.labelValue" .Values.product | quote }}
+        - action: replace
+          targetLabel: service
+          replacement: {{ printf "%s-api" (include "baukit-app.labelValue" .Values.product) | quote }}
+        - action: replace
+          targetLabel: environment
+          replacement: {{ .Values.deploymentEnvironment | quote }}
 {{- if and .Values.worker.enabled .Values.worker.ops.enabled }}
 ---
 apiVersion: monitoring.coreos.com/v1
@@ -37,7 +51,18 @@ spec:
   endpoints:
     - port: metrics
       path: /metrics
+      honorLabels: true
       interval: {{ .Values.serviceMonitor.interval }}
       scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout }}
+      relabelings:
+        - action: replace
+          targetLabel: product
+          replacement: {{ include "baukit-app.labelValue" .Values.product | quote }}
+        - action: replace
+          targetLabel: service
+          replacement: {{ printf "%s-worker" (include "baukit-app.labelValue" .Values.product) | quote }}
+        - action: replace
+          targetLabel: environment
+          replacement: {{ .Values.deploymentEnvironment | quote }}
 {{- end }}
 {{- end }}

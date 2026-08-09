@@ -68,8 +68,8 @@ baukit.dev/process: {{ .process }}
 {{- $root := .root -}}
 {{- $process := .process -}}
 {{- $prefix := include "baukit-app.envPrefix" $root -}}
-{{- if not (has $root.Values.deploymentEnvironment (list "local" "staging" "production")) -}}
-{{- fail "deploymentEnvironment must be local, staging, or production" -}}
+{{- if not (has $root.Values.deploymentEnvironment (list "local" "testing" "staging" "production")) -}}
+{{- fail "deploymentEnvironment must be local, testing, staging, or production" -}}
 {{- end -}}
 - name: {{ printf "%s_ENVIRONMENT" $prefix }}
   value: {{ $root.Values.deploymentEnvironment | quote }}
