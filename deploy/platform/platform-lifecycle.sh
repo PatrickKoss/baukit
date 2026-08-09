@@ -261,7 +261,7 @@ ensure_cluster() {
 }
 
 ensure_snapshot_dns() {
-  [[ $baukit_source_mode == local-snapshot ]] || return
+  [[ $baukit_source_mode == local-snapshot ]] || return 0
   local gateway
   gateway=$(docker network inspect "k3d-$cluster_name" \
     --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}')
