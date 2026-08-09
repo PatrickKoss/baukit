@@ -10,16 +10,18 @@
 
 use std::{fmt, str::FromStr};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// The deployment environment attached to configuration and telemetry signals.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DeploymentEnvironment {
     /// A developer workstation or other local process.
     #[default]
     Local,
+    /// A deployed environment used for integration and acceptance testing.
+    Testing,
     /// A deployed pre-production process.
     Staging,
     /// A deployed production process.
@@ -30,6 +32,7 @@ impl DeploymentEnvironment {
     const fn as_str(self) -> &'static str {
         match self {
             Self::Local => "local",
+            Self::Testing => "testing",
             Self::Staging => "staging",
             Self::Production => "production",
         }
@@ -48,6 +51,7 @@ impl FromStr for DeploymentEnvironment {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "local" => Ok(Self::Local),
+            "testing" => Ok(Self::Testing),
             "staging" => Ok(Self::Staging),
             "production" => Ok(Self::Production),
             _ => Err(ParseEnvironmentError(value.to_owned())),
@@ -57,14 +61,14 @@ impl FromStr for DeploymentEnvironment {
 
 /// An error returned when a deployment environment name is not supported.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
-#[error("unsupported environment `{0}`; expected local, staging, or production")]
+#[error("unsupported environment `{0}`; expected local, testing, staging, or production")]
 pub struct ParseEnvironmentError(String);
 
 /// Selection policy for the stdout log formatter.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum LogFormat {
-    /// Select JSON for staging and production, and pretty output locally.
+    /// Select JSON for deployed environments, and pretty output locally.
     #[default]
     Auto,
     /// Always emit newline-delimited JSON.
@@ -79,9 +83,12 @@ impl LogFormat {
     pub const fn resolve(self, environment: DeploymentEnvironment) -> Self {
         match (self, environment) {
             (Self::Auto, DeploymentEnvironment::Local) => Self::Pretty,
-            (Self::Auto, DeploymentEnvironment::Staging | DeploymentEnvironment::Production) => {
-                Self::Json
-            }
+            (
+                Self::Auto,
+                DeploymentEnvironment::Testing
+                | DeploymentEnvironment::Staging
+                | DeploymentEnvironment::Production,
+            ) => Self::Json,
             (explicit, _) => explicit,
         }
     }
@@ -234,5 +241,27 @@ mod tests {
             LogFormat::Auto.resolve(DeploymentEnvironment::Production),
             LogFormat::Json
         );
+    }
+
+    #[test]
+    fn deployment_environments_parse_display_and_serialize() {
+        for (text, environment) in [
+            ("local", DeploymentEnvironment::Local),
+            ("testing", DeploymentEnvironment::Testing),
+            ("staging", DeploymentEnvironment::Staging),
+            ("production", DeploymentEnvironment::Production),
+        ] {
+            assert_eq!(text.parse::<DeploymentEnvironment>(), Ok(environment));
+            assert_eq!(environment.to_string(), text);
+            assert_eq!(
+                serde_json::to_string(&environment).expect("serialize environment"),
+                format!("\"{text}\"")
+            );
+            assert_eq!(
+                serde_json::from_str::<DeploymentEnvironment>(&format!("\"{text}\""))
+                    .expect("deserialize environment"),
+                environment
+            );
+        }
     }
 }

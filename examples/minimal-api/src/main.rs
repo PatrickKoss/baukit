@@ -140,7 +140,7 @@ impl Arguments {
                     let value = arguments.next().ok_or_else(|| {
                         io::Error::new(
                             io::ErrorKind::InvalidInput,
-                            "--environment requires local, staging, or production",
+                            "--environment requires local, testing, staging, or production",
                         )
                     })?;
                     environment = value.parse()?;
@@ -165,7 +165,7 @@ impl Arguments {
 
 fn print_usage() {
     println!(
-        "Usage: minimal-api [--environment local|staging|production] [--openapi]\n\
+        "Usage: minimal-api [--environment local|testing|staging|production] [--openapi]\n\
          MINIMAL_API_ENVIRONMENT selects the deployment environment.\n\
          OPENAPI_OUT writes the schema to that path and exits."
     );

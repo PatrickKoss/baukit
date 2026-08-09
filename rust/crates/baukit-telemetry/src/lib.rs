@@ -232,7 +232,7 @@ impl TelemetryBuilder {
     /// Initialization succeeds only once per process. A second call returns
     /// [`TelemetryError::AlreadyInitialized`], including after
     /// [`Telemetry::shutdown`]; successful initialization cannot be reset. Local
-    /// processes may omit an OTLP endpoint; staging and production processes must
+    /// processes may omit an OTLP endpoint; deployed processes must
     /// configure one unless `OTEL_SDK_DISABLED=true` or
     /// [`TelemetryBuilder::sdk_disabled`] explicitly disables tracing. When an
     /// endpoint is configured, call this from within the process's Tokio runtime
@@ -462,9 +462,9 @@ const fn resolve_log_format(
         LogFormat::Pretty => ResolvedLogFormat::Pretty,
         LogFormat::Auto => match environment {
             DeploymentEnvironment::Local => ResolvedLogFormat::Pretty,
-            DeploymentEnvironment::Staging | DeploymentEnvironment::Production => {
-                ResolvedLogFormat::Json
-            }
+            DeploymentEnvironment::Testing
+            | DeploymentEnvironment::Staging
+            | DeploymentEnvironment::Production => ResolvedLogFormat::Json,
         },
     }
 }
@@ -760,6 +760,10 @@ mod tests {
         assert_eq!(
             resolve_log_format(LogFormat::Auto, DeploymentEnvironment::Local),
             ResolvedLogFormat::Pretty
+        );
+        assert_eq!(
+            resolve_log_format(LogFormat::Auto, DeploymentEnvironment::Testing),
+            ResolvedLogFormat::Json
         );
         assert_eq!(
             resolve_log_format(LogFormat::Auto, DeploymentEnvironment::Staging),

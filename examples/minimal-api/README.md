@@ -19,7 +19,7 @@ MINIMAL_API__MAX_NOTES=25 \
 cargo run
 ```
 
-`MINIMAL_API_ENVIRONMENT=local|staging|production` (or `--environment`) selects bootstrap behavior and log format. Staging and production also require `OTEL_EXPORTER_OTLP_ENDPOINT`. Local runs may use an optional `config/local.toml` and `.env`.
+`MINIMAL_API_ENVIRONMENT=local|testing|staging|production` (or `--environment`) selects bootstrap behavior and log format. Testing, staging, and production also require `OTEL_EXPORTER_OTLP_ENDPOINT`. Local runs may use an optional `config/local.toml` and `.env`.
 
 Try the API:
 

@@ -4,6 +4,10 @@ All notable changes to `baukit-telemetry` are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- The `testing` environment uses deployed JSON logging and OTLP endpoint policy.
+
 ## [0.3.0] - 2026-08-09
 
 ### Fixed

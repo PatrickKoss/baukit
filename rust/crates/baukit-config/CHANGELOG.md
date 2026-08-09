@@ -4,6 +4,10 @@ All notable changes to `baukit-config` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Configuration bootstrap accepts `testing` as a deployed environment.
+
 ## [0.3.0] - 2026-08-09
 
 ### Added

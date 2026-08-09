@@ -349,6 +349,7 @@ fn validation_aggregates_qualified_errors() {
 fn environment_parsing_and_rendering_follow_contract() {
     for (text, expected) in [
         ("local", Environment::Local),
+        ("testing", Environment::Testing),
         ("staging", Environment::Staging),
         ("production", Environment::Production),
     ] {
@@ -360,7 +361,7 @@ fn environment_parsing_and_rendering_follow_contract() {
             .parse::<Environment>()
             .expect_err("unsupported name")
             .to_string(),
-        "unsupported environment `prod`; expected local, staging, or production"
+        "unsupported environment `prod`; expected local, testing, staging, or production"
     );
 }
 
@@ -369,6 +370,10 @@ fn automatic_log_format_depends_on_environment() {
     assert_eq!(
         LogFormat::Auto.resolve(Environment::Local),
         LogFormat::Pretty
+    );
+    assert_eq!(
+        LogFormat::Auto.resolve(Environment::Testing),
+        LogFormat::Json
     );
     assert_eq!(
         LogFormat::Auto.resolve(Environment::Staging),

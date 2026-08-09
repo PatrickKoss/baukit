@@ -48,7 +48,7 @@ Most CNIs can apply the pod-selected CoreDNS rule. K3s installations may enforce
 | `nameOverride` | `""` | Override the chart name used in resource names and labels. |
 | `fullnameOverride` | `""` | Override the complete release-scoped resource-name prefix. |
 | `product` | `minimal-api` | Stable product identity used in labels and as the default config prefix. |
-| `deploymentEnvironment` | `local` | `local`, `staging`, or `production`; injected as `<APP>_ENVIRONMENT`. |
+| `deploymentEnvironment` | `local` | `local`, `testing`, `staging`, or `production`; injected as `<APP>_ENVIRONMENT`. |
 | `imagePullSecrets` | `[]` | Pod-level existing image-pull Secret references, typically for GHCR. |
 | `podLabels` | `{}` | Extra labels added to every process pod. Do not overwrite selector labels. |
 | `podAnnotations` | `{}` | Extra annotations added to every process pod. |
