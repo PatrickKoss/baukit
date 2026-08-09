@@ -39,7 +39,9 @@ supported current PostHog hobby topology or a production recommendation.
 GeoIP/MMDB enrichment is also disabled so startup does not depend on an external
 database download; IP location properties are therefore unavailable.
 Migration Jobs receive a five-minute completion TTL so failed retry pods do not
-become permanent cluster debris after a successful retry.
+become permanent cluster debris after a successful retry. Their dependency
+probe also has a bounded connection timeout so a transient PostgreSQL endpoint
+gap during an upgrade cannot hang the hook.
 
 ## Overlay contract
 

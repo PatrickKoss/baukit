@@ -152,3 +152,10 @@ spec:
               - op: add
                 path: /spec/ttlSecondsAfterFinished
                 value: 300
+              - op: replace
+                path: /spec/template/spec/initContainers/0/command/2
+                value: |-
+                  until nc -vz -w 2 posthog-pgbouncer 6543; do
+                    echo "waiting for PostgreSQL compatibility service"
+                    sleep 1
+                  done
