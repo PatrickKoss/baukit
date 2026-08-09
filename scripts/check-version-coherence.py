@@ -77,6 +77,13 @@ def main() -> None:
                 for dependency, requirement in package.get(dependency_group, {}).items():
                     if not dependency.startswith("@baukit/") or requirement == "workspace:*":
                         continue
+                    if dependency_group == "devDependencies" and requirement.startswith("file:"):
+                        linked_package = (path.parent / requirement.removeprefix("file:")).resolve()
+                        linked_manifest = linked_package / "package.json"
+                        if linked_manifest.is_file():
+                            linked_name = json.loads(linked_manifest.read_text()).get("name")
+                            if linked_name == dependency:
+                                continue
                     if requirement != f"^{rust_version}":
                         fail(
                             f"{name} {dependency_group} requires {dependency} "
