@@ -1,6 +1,7 @@
 use std::{env, error::Error, io, path::PathBuf};
 
 use baukit_config::{BaukitConfig, ConfigLoader, Environment};
+use {{ context.app_crate }}_bin::ProductConfig;
 
 const PRODUCT: &str = "{{ context.app_name }}";
 
@@ -11,7 +12,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .map(|value| value.parse())
         .transpose()?
         .unwrap_or(Environment::Local);
-    let config: BaukitConfig<()> = ConfigLoader::new(PRODUCT, environment)?.load()?;
+    let config: BaukitConfig<ProductConfig> = ConfigLoader::new(PRODUCT, environment)?.load()?;
     let database = config.database.ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidInput,

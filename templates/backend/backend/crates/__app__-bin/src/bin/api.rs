@@ -7,10 +7,13 @@ use baukit_runtime::{ProcessKind, ServiceInfo, ShutdownToken, build_info, serve_
 use baukit_telemetry::{TelemetryBuilder, tracing};
 
 use {{ context.app_crate }}_api::{ApiState, router};
-{% if context.auth_oidc %}use {{ context.app_crate }}_bin::{
-    InMemoryItemRepository, InMemoryUserRepository, ProductConfig, operations_router,
-};
-{% else %}use {{ context.app_crate }}_bin::{InMemoryItemRepository, operations_router};
+{% if context.auth_oidc %}use {{ context.app_crate }}_bin::InMemoryItemRepository;
+use {{ context.app_crate }}_bin::InMemoryUserRepository;
+use {{ context.app_crate }}_bin::ProductConfig;
+use {{ context.app_crate }}_bin::operations_router;
+{% else %}use {{ context.app_crate }}_bin::InMemoryItemRepository;
+use {{ context.app_crate }}_bin::ProductConfig;
+use {{ context.app_crate }}_bin::operations_router;
 {% endif %}
 {% if context.auth_oidc %}use {{ context.app_crate }}_ports::{ItemRepository, UserRepository};
 {% else %}use {{ context.app_crate }}_ports::ItemRepository;
@@ -33,11 +36,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .map(|value| value.parse())
         .transpose()?
         .unwrap_or(Environment::Local);
-    let config: BaukitConfig<{% if context.auth_oidc %}ProductConfig{% else %}(){% endif %}> = ConfigLoader::new(PRODUCT, environment)?.load()?;
+    let config: BaukitConfig<ProductConfig> = ConfigLoader::new(PRODUCT, environment)?.load()?;
     run(config).await
 }
 
-async fn run(config: BaukitConfig<{% if context.auth_oidc %}ProductConfig{% else %}(){% endif %}>) -> Result<(), Box<dyn Error>> {
+async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> {
     let service_info =
         ServiceInfo::new(PRODUCT, ProcessKind::Api, build_info!(), config.environment);
     let mut telemetry_builder = TelemetryBuilder::new(service_info.telemetry_identity().clone())

@@ -7,7 +7,8 @@ members = [
   "crates/{{ context.app_name }}-api",
   "crates/{{ context.app_name }}-postgres",
   "crates/{{ context.app_name }}-bin",
-]
+{% if context.worker %}  "crates/{{ context.app_name }}-worker",
+{% endif %}]
 
 [workspace.package]
 version = "0.1.0"
@@ -32,6 +33,8 @@ uuid = { version = "=1.24.0", features = ["v4", "v7", "serde"] }
 {{ context.app_crate }}-services = { path = "crates/{{ context.app_name }}-services" }
 {{ context.app_crate }}-api = { path = "crates/{{ context.app_name }}-api" }
 {{ context.app_crate }}-postgres = { path = "crates/{{ context.app_name }}-postgres" }
+{% if context.worker %}{{ context.app_crate }}-worker = { path = "crates/{{ context.app_name }}-worker" }
+{% endif %}
 
 [workspace.lints.rust]
 unsafe_code = "deny"

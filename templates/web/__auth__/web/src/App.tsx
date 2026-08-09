@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { ConsentState } from '@baukit/analytics-core';
+import { safeAuthErrorMessage } from '@baukit/auth-web';
 
 import { analytics } from './analytics';
 import { currentUser, listItems } from './api';
@@ -26,7 +27,7 @@ export function App() {
         }
       })
       .catch((cause: unknown) => {
-        setAuthError(cause instanceof Error ? cause.message : 'OIDC login failed.');
+        setAuthError(safeAuthErrorMessage(cause));
       });
   }, []);
 
@@ -45,7 +46,7 @@ export function App() {
     <main className="shell">
       <p className="eyebrow">BAUKIT WEB</p>
       <h1>{{ context.app_name }}</h1>
-      <p className="lede">A Vite app with product-local OIDC authorization code + PKCE.</p>
+      <p className="lede">A Vite app using Baukit OIDC discovery and authorization code + PKCE.</p>
 
       <section className="panel" aria-labelledby="identity-title">
         <h2 id="identity-title">Identity</h2>
@@ -61,7 +62,7 @@ export function App() {
               className="action secondary"
               type="button"
               onClick={() => {
-                authClient.logout();
+                void authClient.logout();
               }}
             >
               Sign out

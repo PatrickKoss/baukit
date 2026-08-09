@@ -12,6 +12,7 @@ fn options(parent: &Path, name: &str) -> NewOptions {
         name: name.to_owned(),
         directory: parent.to_path_buf(),
         backend: true,
+        worker: false,
         mobile: false,
         web: false,
         auth: None,
@@ -27,6 +28,7 @@ fn frontend_options(parent: &Path, name: &str, mobile: bool, web: bool) -> NewOp
         name: name.to_owned(),
         directory: parent.to_path_buf(),
         backend: false,
+        worker: false,
         mobile,
         web,
         auth: None,
@@ -54,6 +56,51 @@ fn backend_generation_matches_golden_tree_and_is_deterministic() -> anyhow::Resu
     let actual = render_hash_snapshot(&first_tree);
     let expected = include_str!("snapshots/backend.tree");
     assert_eq!(actual, expected, "generated backend tree changed");
+    Ok(())
+}
+
+#[test]
+fn worker_generation_matches_golden_tree_and_records_capability() -> anyhow::Result<()> {
+    let first_parent = tempfile::tempdir()?;
+    let second_parent = tempfile::tempdir()?;
+    let mut first_options = options(first_parent.path(), "snapshot-app");
+    first_options.worker = true;
+    let mut second_options = options(second_parent.path(), "snapshot-app");
+    second_options.worker = true;
+
+    let first = generate_new(&first_options)?;
+    let second = generate_new(&second_options)?;
+    let first_tree = read_tree(&first)?;
+    assert_eq!(first_tree, read_tree(&second)?);
+    assert_eq!(
+        render_hash_snapshot(&first_tree),
+        include_str!("snapshots/worker.tree")
+    );
+
+    let manifest = baukit_cli::read_manifest(&first)?;
+    assert!(manifest.capabilities.backend);
+    assert!(manifest.capabilities.worker);
+    assert!(
+        first
+            .join("backend/crates/snapshot-app-worker/src/lib.rs")
+            .is_file()
+    );
+    assert!(
+        first
+            .join("backend/crates/snapshot-app-bin/src/bin/worker.rs")
+            .is_file()
+    );
+    assert!(
+        first
+            .join("backend/migrations/0003_baukit_jobs.sql")
+            .is_file()
+    );
+    assert!(fs::read_to_string(first.join("deploy/values.yaml"))?.contains("enabled: true"));
+    assert!(fs::read_to_string(first.join("Makefile"))?.contains("run-worker:"));
+    assert!(
+        fs::read_to_string(first.join("backend/crates/snapshot-app-bin/src/bin/migrate.rs"))?
+            .contains("BaukitConfig<ProductConfig>")
+    );
     Ok(())
 }
 
@@ -100,6 +147,7 @@ fn combined_generation_matches_golden_tree_and_records_capabilities() -> anyhow:
 
     let manifest = baukit_cli::read_manifest(&first)?;
     assert!(manifest.capabilities.backend);
+    assert!(!manifest.capabilities.worker);
     assert!(manifest.capabilities.mobile);
     assert!(manifest.capabilities.web);
     assert_eq!(manifest.capabilities.auth, None);
@@ -261,6 +309,16 @@ fn at_least_one_capability_is_required() -> anyhow::Result<()> {
 }
 
 #[test]
+fn worker_requires_backend() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut worker = frontend_options(parent.path(), "worker-only", false, false);
+    worker.worker = true;
+    let error = generate_new(&worker).expect_err("worker without backend must fail");
+    assert!(error.to_string().contains("--worker requires --backend"));
+    Ok(())
+}
+
+#[test]
 fn raw_templates_do_not_contain_cargo_manifests() -> anyhow::Result<()> {
     let templates = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../templates");
     let tree = read_tree(&templates)?;
@@ -275,7 +333,7 @@ fn raw_templates_do_not_contain_cargo_manifests() -> anyhow::Result<()> {
                 .file_name()
                 .is_some_and(|name| name == "Cargo.toml.jinja"))
             .count(),
-        7
+        8
     );
     Ok(())
 }

@@ -1,9 +1,13 @@
+{% if context.worker %}use baukit_jobs::{NewJob, PostgresJobStore};
+
+{% endif %}use sqlx::PgPool;
+use uuid::Uuid;
+
 {% if context.auth_oidc %}use {{ context.app_crate }}_domain::{InternalUser, Item};
 {% else %}use {{ context.app_crate }}_domain::Item;
 {% endif %}
-use {{ context.app_crate }}_ports::{ItemRepository, PortFuture, RepositoryError{% if context.auth_oidc %}, UserRepository{% endif %}};
-use sqlx::PgPool;
-use uuid::Uuid;
+{% if context.worker %}use {{ context.app_crate }}_domain::{ITEM_CREATED_JOB_TYPE, ItemCreatedJob};
+{% endif %}use {{ context.app_crate }}_ports::{ItemRepository, PortFuture, RepositoryError{% if context.auth_oidc %}, UserRepository{% endif %}};
 
 #[derive(Clone)]
 pub struct PostgresItemRepository {
@@ -61,7 +65,47 @@ impl ItemRepository for PostgresItemRepository {
 
     fn create(&self, item: Item) -> PortFuture<'_, Result<Item, RepositoryError>> {
         Box::pin(async move {
+{% if context.worker %}            let mut transaction = self
+                .pool
+                .begin()
+                .await
+                .map_err(RepositoryError::unavailable)?;
             let result = sqlx::query_as::<_, (Uuid, String)>(
+                "INSERT INTO items (id, name) VALUES ($1, $2) RETURNING id, name",
+            )
+            .bind(item.id)
+            .bind(&item.name)
+            .fetch_one(&mut *transaction)
+            .await;
+            let (id, name) = match result {
+                Ok(row) => row,
+                Err(error)
+                    if error
+                        .as_database_error()
+                        .and_then(|error| error.code())
+                        .as_deref()
+                        == Some("23505") =>
+                {
+                    return Err(RepositoryError::Conflict);
+                }
+                Err(error) => return Err(RepositoryError::unavailable(error)),
+            };
+            let payload = serde_json::to_value(ItemCreatedJob { item_id: id })
+                .map_err(RepositoryError::unavailable)?;
+            PostgresJobStore::new(self.pool.clone())
+                .enqueue_in_transaction(
+                    &mut transaction,
+                    NewJob::new(ITEM_CREATED_JOB_TYPE, payload, 3)
+                        .idempotency_key(format!("item-created:{id}")),
+                )
+                .await
+                .map_err(RepositoryError::unavailable)?;
+            transaction
+                .commit()
+                .await
+                .map_err(RepositoryError::unavailable)?;
+            Ok(Item { id, name })
+{% else %}            let result = sqlx::query_as::<_, (Uuid, String)>(
                 "INSERT INTO items (id, name) VALUES ($1, $2) RETURNING id, name",
             )
             .bind(item.id)
@@ -81,7 +125,7 @@ impl ItemRepository for PostgresItemRepository {
                 }
                 Err(error) => Err(RepositoryError::unavailable(error)),
             }
-        })
+{% endif %}        })
     }
 
     fn update(&self, item: Item) -> PortFuture<'_, Result<Option<Item>, RepositoryError>> {

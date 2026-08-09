@@ -6,16 +6,23 @@ use uuid::Uuid;
 pub struct Item {
     pub id: Uuid,
     pub name: String,
-}
+}{% if context.worker %}
 
-{% if context.auth_oidc %}/// Internal application user mapped from a provider-neutral OIDC subject.
+pub const ITEM_CREATED_JOB_TYPE: &str = "item.created";
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ItemCreatedJob {
+    pub item_id: Uuid,
+}{% endif %}{% if context.auth_oidc %}
+
+/// Internal application user mapped from a provider-neutral OIDC subject.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct InternalUser {
     pub id: Uuid,
     pub subject: String,
-}
+}{% endif %}
 
-{% endif %}impl Item {
+impl Item {
     pub fn new(id: Uuid, name: impl Into<String>) -> Result<Self, DomainError> {
         let name = name.into();
         let name = name.trim();

@@ -11,7 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-{{ context.baukit_typescript_dependencies }},
+{{ context.baukit_web_typescript_dependencies }},
     "@tanstack/react-query": "5.101.4",
     "react": "19.2.8",
     "react-dom": "19.2.8"

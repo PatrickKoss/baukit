@@ -25,6 +25,8 @@ jobs:
       - run: cargo fmt --manifest-path backend/Cargo.toml --all --check
       - run: cargo clippy --manifest-path backend/Cargo.toml --all-targets -- -D warnings
       - run: cargo test --manifest-path backend/Cargo.toml -- --include-ignored
+{% if context.worker %}      # Includes the generated worker's Docker PostgreSQL outbox test.
+{% endif %}
       - run: cargo test --manifest-path backend/Cargo.toml -p {{ context.app_name }}-bin --test openapi_drift
 
 {% endif %}{% if context.web %}  web:

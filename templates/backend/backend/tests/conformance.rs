@@ -29,10 +29,10 @@ async fn health_and_metrics_conform_to_baukit() -> Result<(), Box<dyn Error>> {
         .init()?;
     let repository = Arc::new(InMemoryItemRepository::new());
     let items = ItemService::new(repository.clone());
-{% if context.auth_oidc %}    let users = UserService::new(Arc::new(InMemoryUserRepository::new()));
+{% if context.auth_oidc %}    const AUDIENCE: &str = "{{ context.app_name }}-backend";
+    let users = UserService::new(Arc::new(InMemoryUserRepository::new()));
     let issuer = baukit_test::MockOidcServer::start().await?;
-    let verifier =
-        OidcVerifier::discover(OidcConfig::new(issuer.issuer(), "{{ context.app_name }}-backend")?).await?;
+    let verifier = OidcVerifier::discover(OidcConfig::new(issuer.issuer(), AUDIENCE)?).await?;
 {% endif %}    let api = router(
         ApiState {
             items: items.clone(),
@@ -42,11 +42,7 @@ async fn health_and_metrics_conform_to_baukit() -> Result<(), Box<dyn Error>> {
         &HttpConfig::default(),
     )?;
     let request = Request::builder().method(Method::GET).uri("/items");
-{% if context.auth_oidc %}    let claims = issuer.claims(
-        "conformance-user",
-        "{{ context.app_name }}-backend",
-        Duration::from_secs(60),
-    )?;
+{% if context.auth_oidc %}    let claims = issuer.claims("conformance-user", AUDIENCE, Duration::from_secs(60))?;
     let token = issuer.mint(&claims)?;
     let request = request.header(
         axum::http::header::AUTHORIZATION,

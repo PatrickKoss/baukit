@@ -4,7 +4,8 @@ use std::{
 };
 
 use axum::Router;
-{% if context.auth_oidc %}use baukit_config::{Validate, ValidationError, ValidationErrors};
+use baukit_config::{Validate{% if context.auth_oidc or context.worker %}, ValidationError{% endif %}, ValidationErrors};
+{% if context.worker %}use baukit_jobs::WorkerRunner;
 {% endif %}use baukit_ops::{
     OpsRouter, PrometheusHandle, ReadinessError, ReadinessRegistry, RegistrationError,
     ServiceIdentity, TrafficGate,
@@ -15,22 +16,36 @@ use axum::Router;
 {% endif %}use {{ context.app_crate }}_ports::{ItemRepository, PortFuture, RepositoryError{% if context.auth_oidc %}, UserRepository{% endif %}};
 use {{ context.app_crate }}_services::ItemService;
 
-{% if context.auth_oidc %}use serde::Deserialize;
-{% endif %}use uuid::Uuid;
+use serde::Deserialize;
+use uuid::Uuid;
 
-{% if context.auth_oidc %}#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
-pub struct ProductConfig {
-    pub auth: AuthConfig,
-}
-
+{% if context.auth_oidc or context.worker %}pub struct ProductConfig {
+{% if context.auth_oidc %}    pub auth: AuthConfig,
+{% endif %}{% if context.worker %}    pub worker: WorkerProductConfig,
+{% endif %}}
+{% else %}pub struct ProductConfig {}
+{% endif %}
 impl Validate for ProductConfig {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        self.auth.validate()
-    }
+{% if context.auth_oidc or context.worker %}        let mut errors = Vec::new();
+{% if context.auth_oidc %}        if let Err(auth) = self.auth.validate() {
+            errors.extend(auth.into_errors());
+        }
+{% endif %}{% if context.worker %}        if let Err(worker) = self.worker.validate() {
+            errors.extend(worker.into_errors());
+        }
+{% endif %}        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(ValidationErrors::new(errors))
+        }
+{% else %}        Ok(())
+{% endif %}    }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+{% if context.auth_oidc %}#[derive(Clone, Debug, Deserialize)]
 #[serde(default)]
 pub struct AuthConfig {
     pub issuer: String,
@@ -54,6 +69,61 @@ impl Validate for AuthConfig {
         }
         if self.audience.trim().is_empty() {
             errors.push(ValidationError::new("auth.audience", "must not be empty"));
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(ValidationErrors::new(errors))
+        }
+    }
+}
+
+{% endif %}{% if context.worker %}#[derive(Clone, Debug, Deserialize)]
+#[serde(default)]
+pub struct WorkerProductConfig {
+    pub concurrency: usize,
+    pub lease_duration_seconds: u64,
+    pub job_timeout_seconds: u64,
+    pub poll_interval_milliseconds: u64,
+}
+
+impl Default for WorkerProductConfig {
+    fn default() -> Self {
+        Self {
+            concurrency: 5,
+            lease_duration_seconds: 15 * 60,
+            job_timeout_seconds: 10 * 60,
+            poll_interval_milliseconds: 250,
+        }
+    }
+}
+
+impl Validate for WorkerProductConfig {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let mut errors = Vec::new();
+        if !(1..=64).contains(&self.concurrency) {
+            errors.push(ValidationError::new(
+                "worker.concurrency",
+                "must be between 1 and 64",
+            ));
+        }
+        for (field, value) in [
+            ("worker.lease_duration_seconds", self.lease_duration_seconds),
+            ("worker.job_timeout_seconds", self.job_timeout_seconds),
+            (
+                "worker.poll_interval_milliseconds",
+                self.poll_interval_milliseconds,
+            ),
+        ] {
+            if value == 0 {
+                errors.push(ValidationError::new(field, "must be greater than zero"));
+            }
+        }
+        if self.job_timeout_seconds >= self.lease_duration_seconds {
+            errors.push(ValidationError::new(
+                "worker.job_timeout_seconds",
+                "must be less than worker.lease_duration_seconds",
+            ));
         }
         if errors.is_empty() {
             Ok(())
@@ -189,4 +259,27 @@ impl UserRepository for InMemoryUserRepository {
         .with_traffic_gate(traffic_gate)
         .into_router();
     Ok((router, readiness))
-}
+}{% if context.worker %}
+
+pub fn worker_operations_router(
+    runner: WorkerRunner,
+    identity: ServiceIdentity,
+    metrics: PrometheusHandle,
+    traffic_gate: TrafficGate,
+) -> Result<(Router, ReadinessRegistry), RegistrationError> {
+    let readiness = ReadinessRegistry::new();
+    readiness.register_fn_default("job_store", move || {
+        let runner = runner.clone();
+        async move {
+            runner
+                .ready()
+                .await
+                .map_err(|_| ReadinessError::new("job store cannot probe the durable outbox"))
+        }
+    })?;
+    let router = OpsRouter::new(identity, metrics)
+        .with_readiness(readiness.clone())
+        .with_traffic_gate(traffic_gate)
+        .into_router();
+    Ok((router, readiness))
+}{% endif %}

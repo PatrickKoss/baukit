@@ -35,6 +35,9 @@ struct NewCommand {
     /// Generate the Rust backend.
     #[arg(long)]
     backend: bool,
+    /// Generate a durable PostgreSQL worker in the backend workspace.
+    #[arg(long, requires = "backend")]
+    worker: bool,
     /// Generate the Expo React Native application.
     #[arg(long)]
     mobile: bool,
@@ -84,6 +87,7 @@ fn run() -> Result<()> {
                 name: command.name,
                 directory: command.dir,
                 backend: command.backend,
+                worker: command.worker,
                 mobile: command.mobile,
                 web: command.web,
                 auth: command.auth,

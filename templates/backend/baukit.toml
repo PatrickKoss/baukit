@@ -6,6 +6,7 @@ name = "{{ context.app_name }}"
 
 [capabilities]
 backend = true
+worker = {{ context.worker }}
 mobile = false
 web = false
 {% if context.auth_oidc %}auth = "oidc"

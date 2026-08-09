@@ -1,5 +1,5 @@
 [package]
-name = "{{ context.app_name }}-postgres"
+name = "{{ context.app_name }}-worker"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,9 +9,8 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+baukit-jobs.workspace = true
+baukit-telemetry.workspace = true
 {{ context.app_crate }}-domain.workspace = true
-{{ context.app_crate }}-ports.workspace = true
-{% if context.worker %}baukit-jobs.workspace = true
 serde_json.workspace = true
-{% endif %}sqlx.workspace = true
-uuid.workspace = true
+

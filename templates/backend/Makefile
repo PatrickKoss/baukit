@@ -1,4 +1,4 @@
-.PHONY: fmt lint test check{% if context.web %} check-web{% endif %}{% if context.mobile %} check-mobile{% endif %} lockfiles run migrate openapi openapi-client db-up db-down
+.PHONY: fmt lint test check{% if context.web %} check-web{% endif %}{% if context.mobile %} check-mobile{% endif %} lockfiles run{% if context.worker %} run-worker{% endif %} migrate openapi openapi-client db-up db-down
 
 BACKEND_MANIFEST := backend/Cargo.toml
 
@@ -28,6 +28,10 @@ check: fmt lint test{% if context.web %} check-web{% endif %}{% if context.mobil
 {% endif %}run:
 	cargo run --manifest-path $(BACKEND_MANIFEST) -p {{ context.app_name }}-bin --bin api
 
+{% if context.worker %}run-worker:
+	cargo run --manifest-path $(BACKEND_MANIFEST) -p {{ context.app_name }}-bin --bin worker
+
+{% endif %}
 migrate:
 	cargo run --manifest-path $(BACKEND_MANIFEST) -p {{ context.app_name }}-bin --bin migrate
 

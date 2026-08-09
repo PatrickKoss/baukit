@@ -12,7 +12,7 @@ npx expo start
 
 `EXPO_PUBLIC_API_URL` points at the backend's public listener and defaults to `http://localhost:8080`. A physical device cannot reach your computer through its own `localhost`; use the computer's LAN address instead.
 
-The app lists the backend template's `/items` resource through `@baukit/api-runtime`. `@baukit/ui-tokens` supplies the cross-platform token source used by `src/theme.ts`. `@baukit/analytics-core` starts with consent `unknown` and a `NoopTransport`; the inline privacy settings demonstrate explicit grant, denial, and withdrawal without sending data to a provider.
+The app lists the backend template's `/items` resource through `@baukit/api-runtime`. `src/record-store.ts` exposes a `RecordStore<Item>` seam backed by the shared `@baukit/data-contracts-expo-sqlite` adapter; open the product-owned database with `expo-sqlite` and pass it to `createItemRecordStore` when adding cache policy. `@baukit/ui-tokens` supplies the cross-platform token source used by `src/theme.ts`. `@baukit/analytics-core` starts with consent `unknown` and a `NoopTransport`; the inline privacy settings demonstrate explicit grant, denial, and withdrawal without sending data to a provider.
 
 The Baukit packages come from {{ context.baukit_typescript_dependency_description }}. Release-generated apps pin the Baukit repository tag; local fixtures use `file:` dependencies. The app runs directly with Expo and does not require the Baukit CLI.
 
@@ -24,4 +24,4 @@ pnpm lint
 pnpm test
 ```
 
-Native compilation is intentionally outside the lightweight fixture check. CI installs dependencies, runs TypeScript with `--noEmit`, lints, and executes unit tests; use EAS or local Expo native tooling for release builds.
+Native compilation is intentionally outside the lightweight fixture check. CI installs dependencies, runs TypeScript with `--noEmit`, lints, and executes the Jest Expo suite. `jest.config.cjs` maps Baukit's ESM package exports to their built files and transforms them, so the SQLite adapter remains consumable under Jest 29. Use EAS or local Expo native tooling for release builds.

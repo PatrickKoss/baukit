@@ -2,3 +2,5 @@ allowBuilds:
   '@baukit/analytics-core@git+ssh://git@github.com/PatrickKoss/baukit.git': true
   '@baukit/api-runtime@git+ssh://git@github.com/PatrickKoss/baukit.git': true
   '@baukit/ui-tokens@git+ssh://git@github.com/PatrickKoss/baukit.git': true
+{% if context.auth_oidc %}  '@baukit/auth-web@git+ssh://git@github.com/PatrickKoss/baukit.git': true
+{% endif %}

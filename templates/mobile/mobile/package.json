@@ -11,27 +11,31 @@
     "tokens": "node scripts/generate-tokens.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint App.tsx app.config.ts src --max-warnings=0",
-    "test": "vitest run"
+    "test": "jest --runInBand"
   },
   "dependencies": {
-{{ context.baukit_typescript_dependencies }},
+{{ context.baukit_mobile_typescript_dependencies }},
     "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "57.0.11",
     "expo-constants": "57.0.9",
     "expo-crypto": "57.0.1",
+    "expo-sqlite": "57.0.1",
     "react": "19.2.8",
     "react-native": "0.86.2"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
+    "@jest/globals": "29.7.0",
     "@types/node": "26.2.0",
+    "@types/jest": "30.0.0",
     "@types/react": "19.2.18",
     "eslint": "9.39.5",
     "eslint-plugin-react-hooks": "7.1.1",
     "globals": "17.9.0",
     "typescript": "6.0.3",
     "typescript-eslint": "8.66.0",
-    "vitest": "4.1.10"
+    "jest": "29.7.0",
+    "jest-expo": "57.0.3"
   },
   "engines": {
     "node": ">=24.0.0"

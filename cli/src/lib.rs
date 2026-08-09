@@ -15,6 +15,7 @@ static BACKEND_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../template
 static COMMON_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/common");
 static MOBILE_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/mobile");
 static WEB_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/web");
+static WORKER_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/worker");
 
 pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
 pub const TEMPLATE_VERSION: &str = include_str!("../../templates/VERSION").trim_ascii();
@@ -39,6 +40,14 @@ const EXPECTED_BACKEND_FILES: &[&str] = &[
     "backend/crates/__APP__-bin/Cargo.toml",
 ];
 
+const EXPECTED_WORKER_FILES: &[&str] = &[
+    "backend/crates/__APP__-worker/Cargo.toml",
+    "backend/crates/__APP__-worker/src/lib.rs",
+    "backend/crates/__APP__-bin/src/bin/worker.rs",
+    "backend/migrations/0003_baukit_jobs.sql",
+    "backend/tests/worker_integration.rs",
+];
+
 const EXPECTED_COMMON_FILES: &[&str] = &[".github/workflows/ci.yml", "scripts/lockfiles.sh"];
 
 const EXPECTED_MOBILE_FILES: &[&str] = &[
@@ -47,13 +56,14 @@ const EXPECTED_MOBILE_FILES: &[&str] = &[
     "mobile/app.config.ts",
     "mobile/tsconfig.json",
     "mobile/eslint.config.js",
-    "mobile/vitest.config.ts",
+    "mobile/jest.config.cjs",
     "mobile/App.tsx",
     "mobile/scripts/generate-tokens.mjs",
     "mobile/src/api.ts",
     "mobile/src/analytics.ts",
     "mobile/src/theme.ts",
     "mobile/src/tokens.ts",
+    "mobile/src/record-store.ts",
 ];
 
 const EXPECTED_WEB_FILES: &[&str] = &[
@@ -86,11 +96,17 @@ const EXPECTED_TYPESCRIPT_DEPENDENCIES: &[&str] = &[
     "@baukit/ui-tokens",
 ];
 
+const EXPECTED_MOBILE_STORE_DEPENDENCIES: &[&str] = &[
+    "@baukit/data-contracts",
+    "@baukit/data-contracts-expo-sqlite",
+];
+
 #[derive(Clone, Debug)]
 pub struct NewOptions {
     pub name: String,
     pub directory: PathBuf,
     pub backend: bool,
+    pub worker: bool,
     pub mobile: bool,
     pub web: bool,
     pub auth: Option<AuthProvider>,
@@ -124,6 +140,8 @@ pub struct AppManifest {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Capabilities {
     pub backend: bool,
+    #[serde(default)]
+    pub worker: bool,
     pub mobile: bool,
     pub web: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -155,12 +173,14 @@ struct TemplateContext {
     app_env: String,
     template_version: String,
     baukit_dependencies: String,
-    baukit_typescript_dependencies: String,
+    baukit_web_typescript_dependencies: String,
+    baukit_mobile_typescript_dependencies: String,
     baukit_manifest: String,
     baukit_dependency_description: String,
     baukit_typescript_dependency_description: String,
     product_description: String,
     backend: bool,
+    worker: bool,
     mobile: bool,
     web: bool,
     auth_oidc: bool,
@@ -168,6 +188,9 @@ struct TemplateContext {
 
 pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
     validate_name(&options.name)?;
+    if options.worker && !options.backend {
+        bail!("--worker requires --backend because it is generated in the backend workspace");
+    }
     if !options.backend && !options.mobile && !options.web {
         bail!("select at least one capability: --backend, --mobile, or --web");
     }
@@ -193,8 +216,10 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
     let auth_oidc = options.auth == Some(AuthProvider::Oidc);
     let dependency = dependency_context(
         options.baukit_path.as_deref(),
-        options.mobile || options.web,
+        options.mobile,
+        options.web,
         auth_oidc,
+        options.worker,
     )?;
     let context = TemplateContext {
         app_name: options.name.clone(),
@@ -202,12 +227,14 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         app_env: options.name.replace('-', "_").to_ascii_uppercase(),
         template_version: TEMPLATE_VERSION.to_owned(),
         baukit_dependencies: dependency.cargo,
-        baukit_typescript_dependencies: dependency.typescript,
+        baukit_web_typescript_dependencies: dependency.web_typescript,
+        baukit_mobile_typescript_dependencies: dependency.mobile_typescript,
         baukit_manifest: dependency.manifest,
         baukit_dependency_description: dependency.description,
         baukit_typescript_dependency_description: dependency.typescript_description,
         product_description: product_description(options),
         backend: options.backend,
+        worker: options.worker,
         mobile: options.mobile,
         web: options.web,
         auth_oidc,
@@ -323,7 +350,8 @@ fn available_conflict_path(destination: &Path) -> Result<PathBuf> {
 
 struct DependencyContext {
     cargo: String,
-    typescript: String,
+    web_typescript: String,
+    mobile_typescript: String,
     manifest: String,
     description: String,
     typescript_description: String,
@@ -331,9 +359,13 @@ struct DependencyContext {
 
 fn dependency_context(
     path: Option<&Path>,
-    require_typescript: bool,
+    mobile: bool,
+    web: bool,
     auth_oidc: bool,
+    worker: bool,
 ) -> Result<DependencyContext> {
+    let web_packages = typescript_packages(false, web && auth_oidc);
+    let mobile_packages = typescript_packages(mobile, false);
     if let Some(path) = path {
         let path = path.canonicalize().with_context(|| {
             format!(
@@ -361,6 +393,9 @@ fn dependency_context(
         if auth_oidc {
             names.push("baukit-auth");
         }
+        if worker {
+            names.push("baukit-jobs");
+        }
         let cargo = names
             .iter()
             .map(|name| format!("{name} = {{ path = \"{display}/crates/{name}\" }}"))
@@ -370,8 +405,8 @@ fn dependency_context(
             .parent()
             .ok_or_else(|| anyhow!("Baukit Rust workspace has no repository parent"))?;
         let typescript_root = repository.join("typescript");
-        if require_typescript {
-            for package in EXPECTED_TYPESCRIPT_DEPENDENCIES {
+        if mobile || web {
+            for package in web_packages.iter().chain(&mobile_packages) {
                 let directory = package.trim_start_matches("@baukit/");
                 if !typescript_root
                     .join("packages")
@@ -392,17 +427,20 @@ fn dependency_context(
             .to_string()
             .replace('\\', "\\\\")
             .replace('"', "\\\"");
-        let typescript = EXPECTED_TYPESCRIPT_DEPENDENCIES
-            .iter()
-            .map(|package| {
-                let directory = package.trim_start_matches("@baukit/");
-                format!("    \"{package}\": \"file:{typescript_display}/packages/{directory}\"")
-            })
-            .collect::<Vec<_>>()
-            .join(",\n");
+        let render_typescript = |packages: &[&str]| {
+            packages
+                .iter()
+                .map(|package| {
+                    let directory = package.trim_start_matches("@baukit/");
+                    format!("    \"{package}\": \"file:{typescript_display}/packages/{directory}\"")
+                })
+                .collect::<Vec<_>>()
+                .join(",\n")
+        };
         Ok(DependencyContext {
             cargo,
-            typescript,
+            web_typescript: render_typescript(&web_packages),
+            mobile_typescript: render_typescript(&mobile_packages),
             manifest: format!("source = \"path\"\npath = \"{display}\""),
             description: format!("local path `{}`", path.display()),
             typescript_description: format!("local path `{}`", typescript_root.display()),
@@ -422,29 +460,46 @@ fn dependency_context(
         if auth_oidc {
             names.push("baukit-auth");
         }
+        if worker {
+            names.push("baukit-jobs");
+        }
         let cargo = names
             .iter()
             .map(|name| format!("{name} = {{ git = \"{git}\", tag = \"{tag}\" }}"))
             .collect::<Vec<_>>()
             .join("\n");
-        let typescript = EXPECTED_TYPESCRIPT_DEPENDENCIES
-            .iter()
-            .map(|package| {
-                let directory = package.trim_start_matches("@baukit/");
-                format!(
-                    "    \"{package}\": \"git+{git}#{tag}&path:typescript/packages/{directory}\""
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(",\n");
+        let render_typescript = |packages: &[&str]| {
+            packages
+                .iter()
+                .map(|package| {
+                    let directory = package.trim_start_matches("@baukit/");
+                    format!(
+                        "    \"{package}\": \"git+{git}#{tag}&path:typescript/packages/{directory}\""
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",\n")
+        };
         Ok(DependencyContext {
             cargo,
-            typescript,
+            web_typescript: render_typescript(&web_packages),
+            mobile_typescript: render_typescript(&mobile_packages),
             manifest: format!("source = \"git\"\ngit = \"{git}\"\ntag = \"{tag}\""),
             description: format!("git tag `{tag}` from `{git}`"),
             typescript_description: format!("git tag `{tag}` from `{git}`"),
         })
     }
+}
+
+fn typescript_packages(mobile_store: bool, web_auth: bool) -> Vec<&'static str> {
+    let mut packages = EXPECTED_TYPESCRIPT_DEPENDENCIES.to_vec();
+    if mobile_store {
+        packages.extend(EXPECTED_MOBILE_STORE_DEPENDENCIES);
+    }
+    if web_auth {
+        packages.push("@baukit/auth-web");
+    }
+    packages
 }
 
 fn render_product(
@@ -473,6 +528,15 @@ fn render_product(
             && let Some(overlay) = BACKEND_TEMPLATE.get_dir("__auth__")
         {
             render_directory(overlay, &environment, context, &mut rendered, true)?;
+        }
+        if options.worker {
+            render_directory(
+                &WORKER_TEMPLATE,
+                &environment,
+                context,
+                &mut rendered,
+                false,
+            )?;
         }
     }
     if options.mobile {
@@ -518,6 +582,7 @@ name = \"{}\"\n\
 \n\
 [capabilities]\n\
 backend = {}\n\
+worker = {}\n\
 mobile = {}\n\
 web = {}\n\
 {}\
@@ -531,6 +596,7 @@ typescript = \"generated/openapi.d.ts\"\n",
         context.template_version,
         context.app_name,
         options.backend,
+        options.worker,
         options.mobile,
         options.web,
         auth,
@@ -580,6 +646,9 @@ fn product_description(options: &NewOptions) -> String {
     let mut capabilities = Vec::new();
     if options.backend {
         capabilities.push("Rust backend");
+    }
+    if options.worker {
+        capabilities.push("durable worker");
     }
     if options.web {
         capabilities.push("web app");
@@ -645,6 +714,14 @@ pub fn doctor(root: &Path) -> Result<Vec<String>> {
             }
         }
         validate_migrations(root, &mut successes, &mut failures)?;
+        if manifest.capabilities.worker {
+            for expected in EXPECTED_WORKER_FILES {
+                let relative = expected.replace("__APP__", &manifest.app.name);
+                if !root.join(&relative).is_file() {
+                    failures.push(format!("missing expected worker file `{relative}`"));
+                }
+            }
+        }
         if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
             for relative in EXPECTED_AUTH_BACKEND_FILES {
                 if !root.join(relative).is_file() {
@@ -682,7 +759,13 @@ pub fn doctor(root: &Path) -> Result<Vec<String>> {
             root,
             "mobile",
             EXPECTED_MOBILE_FILES,
-            &["expo", "react-native"],
+            &[
+                "expo",
+                "expo-sqlite",
+                "react-native",
+                "@baukit/data-contracts",
+                "@baukit/data-contracts-expo-sqlite",
+            ],
             &mut successes,
             &mut failures,
         )?;
@@ -695,11 +778,15 @@ pub fn doctor(root: &Path) -> Result<Vec<String>> {
         }
     }
     if manifest.capabilities.web {
+        let mut dependencies = vec!["@tanstack/react-query", "vite"];
+        if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
+            dependencies.push("@baukit/auth-web");
+        }
         validate_frontend_capability(
             root,
             "web",
             EXPECTED_WEB_FILES,
-            &["@tanstack/react-query", "vite"],
+            &dependencies,
             &mut successes,
             &mut failures,
         )?;
