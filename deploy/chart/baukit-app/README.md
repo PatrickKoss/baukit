@@ -10,7 +10,7 @@ The migration hook only starts the migrate process. Advisory locking, lock timeo
 # Chart.yaml in a product repository
 dependencies:
   - name: baukit-app
-    version: 0.3.3
+    version: 0.3.4
     repository: oci://ghcr.io/patrickkoss/charts
     alias: application
 ```

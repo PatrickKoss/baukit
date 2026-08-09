@@ -191,7 +191,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "baukit-auth"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "axum",
  "base64",
@@ -209,7 +209,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-config"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "baukit-core",
  "config",
@@ -222,7 +222,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-core"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "serde",
  "serde_json",
@@ -231,7 +231,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-http"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "axum",
  "baukit-config",
@@ -255,7 +255,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-jobs"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "baukit-runtime",
  "baukit-telemetry",
@@ -274,7 +274,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-openapi"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "serde",
  "serde_json",
@@ -285,7 +285,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-ops"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "axum",
  "baukit-core",
@@ -300,7 +300,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-runtime"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "axum",
  "baukit-core",
@@ -313,7 +313,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-telemetry"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "baukit-core",
  "chrono",
@@ -332,7 +332,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-test"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "axum",
  "base64",

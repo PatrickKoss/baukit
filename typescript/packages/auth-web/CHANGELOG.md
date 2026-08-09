@@ -1,5 +1,11 @@
 # @baukit/auth-web
 
+## 0.3.4
+
+### Patch Changes
+
+- Release the coordinated baukit 0.3.4 train.
+
 ## 0.3.3
 
 ### Patch Changes
