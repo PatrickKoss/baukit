@@ -1,0 +1,16 @@
+# Initial creation only: copy this resource into the identity-bearing overlay,
+# replace the placeholder realm, and apply it once. Changing this resource later
+# does not reconcile or delete an existing realm.
+#
+# apiVersion: k8s.keycloak.org/v2beta1
+# kind: KeycloakRealmImport
+# metadata:
+#   name: product-realm-initial
+# spec:
+#   keycloakCRName: keycloak
+#   realm:
+#     id: product
+#     realm: product
+#     displayName: Product
+#     enabled: true
+

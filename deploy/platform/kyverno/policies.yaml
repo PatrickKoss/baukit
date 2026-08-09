@@ -1,0 +1,180 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-container-resources
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: require-requests-and-limits
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: Every container must set CPU and memory requests and limits.
+        foreach:
+          - list: request.object.spec.[initContainers, containers][]
+            pattern:
+              resources:
+                requests:
+                  cpu: "?*"
+                  memory: "?*"
+                limits:
+                  cpu: "?*"
+                  memory: "?*"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-latest-image-tag
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: containers
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: Mutable :latest image tags are not allowed.
+        foreach:
+          - list: request.object.spec.[initContainers, containers][]
+            pattern:
+              image: "!*:latest"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: protect-operations-ports
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: public-services-must-not-expose-9xxx
+      match:
+        any:
+          - resources:
+              kinds:
+                - Service
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.type || 'ClusterIP' }}"
+            operator: AnyIn
+            value:
+              - NodePort
+              - LoadBalancer
+      validate:
+        message: Public Services must not expose private operations ports 9000-9999.
+        foreach:
+          - list: request.object.spec.ports
+            deny:
+              conditions:
+                all:
+                  - key: "{{ element.port }}"
+                    operator: GreaterThanOrEquals
+                    value: 9000
+                  - key: "{{ element.port }}"
+                    operator: LessThanOrEquals
+                    value: 9999
+    - name: public-services-must-not-target-9xxx
+      match:
+        any:
+          - resources:
+              kinds:
+                - Service
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.type || 'ClusterIP' }}"
+            operator: AnyIn
+            value:
+              - NodePort
+              - LoadBalancer
+      validate:
+        message: Public Services must not target private operations ports 9000-9999.
+        foreach:
+          - list: request.object.spec.ports
+            preconditions:
+              all:
+                - key: "{{ element.targetPort || `0` }}"
+                  operator: GreaterThanOrEquals
+                  value: 9000
+            deny:
+              conditions:
+                all:
+                  - key: "{{ element.targetPort || `0` }}"
+                    operator: LessThanOrEquals
+                    value: 9999
+    - name: public-services-must-not-use-ops-names
+      match:
+        any:
+          - resources:
+              kinds:
+                - Service
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.type || 'ClusterIP' }}"
+            operator: AnyIn
+            value:
+              - NodePort
+              - LoadBalancer
+      validate:
+        message: Public Services must not expose ports named ops or metrics.
+        foreach:
+          - list: request.object.spec.ports
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.name || '' }}"
+                    operator: AnyIn
+                    value:
+                      - ops
+                      - metrics
+    - name: ingress-must-not-route-to-9xxx
+      match:
+        any:
+          - resources:
+              kinds:
+                - Ingress
+      validate:
+        message: Ingress must not route to private operations ports 9000-9999.
+        foreach:
+          - list: request.object.spec.rules[].http.paths[]
+            preconditions:
+              all:
+                - key: "{{ element.backend.service.port.number || `0` }}"
+                  operator: GreaterThanOrEquals
+                  value: 9000
+            deny:
+              conditions:
+                all:
+                  - key: "{{ element.backend.service.port.number || `0` }}"
+                    operator: LessThanOrEquals
+                    value: 9999
+    - name: ingress-must-not-route-to-ops-names
+      match:
+        any:
+          - resources:
+              kinds:
+                - Ingress
+      validate:
+        message: Ingress must not route to service ports named ops or metrics.
+        foreach:
+          - list: request.object.spec.rules[].http.paths[]
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.backend.service.port.name || '' }}"
+                    operator: AnyIn
+                    value:
+                      - ops
+                      - metrics

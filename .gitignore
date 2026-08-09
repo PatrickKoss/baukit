@@ -23,3 +23,5 @@ coverage/
 .cache/
 *.log
 **/__pycache__/**
+.generated-fixture/
+deploy/platform/.local-state/

@@ -1,0 +1,105 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+  namespace: observability
+spec:
+  values:
+    alertmanager:
+      alertmanagerSpec:
+        resources:
+          requests:
+            cpu: 10m
+            memory: 48Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+    grafana:
+      resources:
+        requests:
+          cpu: 25m
+          memory: 96Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+    prometheusOperator:
+      resources:
+        requests:
+          cpu: 25m
+          memory: 96Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+    prometheus:
+      prometheusSpec:
+        retention: 2d
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 600m
+            memory: 768Mi
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              resources:
+                requests:
+                  storage: 2Gi
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: loki
+  namespace: observability
+spec:
+  values:
+    loki:
+      limits_config:
+        retention_period: 48h
+    singleBinary:
+      resources:
+        requests:
+          cpu: 75m
+          memory: 192Mi
+        limits:
+          cpu: 500m
+          memory: 640Mi
+      persistence:
+        size: 2Gi
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: tempo
+  namespace: observability
+spec:
+  values:
+    tempo:
+      memBallastSizeMbs: 32
+      retention: 48h
+      resources:
+        requests:
+          cpu: 75m
+          memory: 192Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+    persistence:
+      size: 2Gi
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: alloy
+  namespace: observability
+spec:
+  values:
+    alloy:
+      resources:
+        requests:
+          cpu: 25m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 192Mi

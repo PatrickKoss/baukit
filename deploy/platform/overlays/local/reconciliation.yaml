@@ -1,0 +1,180 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: local-baseline
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 30s
+  timeout: 5m
+  path: ./deploy/platform/cluster-baseline
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: local-foundation
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: local-baseline
+  interval: 10m
+  retryInterval: 30s
+  timeout: 5m
+  path: ./deploy/platform/overlays/local/components/foundation
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: local-cert-manager
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: local-baseline
+  interval: 10m
+  retryInterval: 30s
+  timeout: 10m
+  path: ./deploy/platform/overlays/local/components/cert-manager
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: local-issuer
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: local-cert-manager
+  interval: 10m
+  retryInterval: 30s
+  timeout: 5m
+  path: ./deploy/platform/overlays/local/components/issuer
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: local-observability
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: local-foundation
+  interval: 10m
+  retryInterval: 30s
+  timeout: 20m
+  path: ./deploy/platform/overlays/local/components/observability
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: local-cnpg
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: local-cert-manager
+  interval: 10m
+  retryInterval: 30s
+  timeout: 15m
+  path: ./deploy/platform/overlays/local/components/cnpg
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: local-postgres
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: local-cnpg
+    - name: local-foundation
+    - name: local-observability
+  interval: 10m
+  retryInterval: 30s
+  timeout: 20m
+  path: ./deploy/platform/overlays/local/components/postgres
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: local-keycloak
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: local-postgres
+  interval: 10m
+  retryInterval: 30s
+  timeout: 20m
+  path: ./deploy/platform/overlays/local/components/keycloak
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: local-realm
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: local-keycloak
+  interval: 10m
+  retryInterval: 30s
+  timeout: 10m
+  path: ./deploy/platform/overlays/local/components/realm
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: local-traefik
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: local-observability
+  interval: 10m
+  retryInterval: 30s
+  timeout: 15m
+  path: ./deploy/platform/overlays/local/components/traefik
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+

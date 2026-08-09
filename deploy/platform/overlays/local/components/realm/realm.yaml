@@ -1,0 +1,13 @@
+apiVersion: k8s.keycloak.org/v2beta1
+kind: KeycloakRealmImport
+metadata:
+  name: platform-local-initial
+spec:
+  keycloakCRName: keycloak
+  realm:
+    id: platform-local
+    realm: platform-local
+    displayName: Baukit local platform
+    enabled: true
+    sslRequired: none
+

@@ -1,0 +1,101 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: hcloud-csi
+  namespace: kube-system
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: hcloud-csi
+      version: "2.22.1"
+      sourceRef:
+        kind: HelmRepository
+        name: hetzner
+        namespace: kube-system
+      interval: 24h
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    controller:
+      replicaCount: 1
+      hcloudToken:
+        value: ""
+        file: ""
+        existingSecret:
+          name: hcloud
+          key: token
+      resources:
+        csiAttacher:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        csiResizer:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        csiProvisioner:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        livenessProbe:
+          requests:
+            cpu: 5m
+            memory: 16Mi
+          limits:
+            cpu: 50m
+            memory: 32Mi
+        hcloudCSIDriver:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+    node:
+      resources:
+        csiNodeDriverRegistrar:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        livenessProbe:
+          requests:
+            cpu: 5m
+            memory: 16Mi
+          limits:
+            cpu: 50m
+            memory: 32Mi
+        hcloudCSIDriver:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: false
+    storageClasses:
+      - name: hcloud-volumes
+        defaultStorageClass: true
+        reclaimPolicy: Retain
+        annotations: {}
+        extraParameters: {}
