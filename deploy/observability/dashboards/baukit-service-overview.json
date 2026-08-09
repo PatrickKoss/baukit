@@ -119,7 +119,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "100 * sum(baukit:http_requests_5xx:rate5m{product=~\"$product\", service=~\"$service\", environment=~\"$environment\"}) / sum(baukit:http_requests:rate5m{product=~\"$product\", service=~\"$service\", environment=~\"$environment\"})",
+          "expr": "(100 * sum(baukit:http_requests_5xx:rate5m{product=~\"$product\", service=~\"$service\", environment=~\"$environment\"}) / sum(baukit:http_requests:rate5m{product=~\"$product\", service=~\"$service\", environment=~\"$environment\"})) or on() vector(0)",
           "legendFormat": "5xx ratio",
           "range": true,
           "refId": "A"
