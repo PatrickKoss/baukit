@@ -56,6 +56,9 @@ fn backend_generation_matches_golden_tree_and_is_deterministic() -> anyhow::Resu
     let actual = render_hash_snapshot(&first_tree);
     let expected = include_str!("snapshots/backend.tree");
     assert_eq!(actual, expected, "generated backend tree changed");
+    let dockerfile = fs::read_to_string(first.join("backend/Dockerfile"))?;
+    assert!(dockerfile.contains("ARG GIT_COMMIT=unknown"));
+    assert!(dockerfile.contains("ENV GIT_COMMIT=${GIT_COMMIT}"));
     Ok(())
 }
 
