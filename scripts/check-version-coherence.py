@@ -100,6 +100,8 @@ def main() -> None:
 
     chart_versions: dict[str, tuple[str, str]] = {}
     for path in sorted((ROOT / "deploy").glob("**/Chart.yaml")):
+        if ".local-state" in path.parts:
+            continue
         values: dict[str, str] = {}
         for line in path.read_text().splitlines():
             if line.startswith(("version:", "appVersion:")):
