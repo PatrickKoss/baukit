@@ -13,6 +13,14 @@ make run
 ```
 
 Migrations are never run during API startup. The public API listens on port 8080 and private health, readiness, metrics, and build endpoints listen on port 9090 by default.
+
+`backend/Dockerfile` has separate `api`, `migrate`{% if context.worker %}, and
+`worker`{% endif %} runtime targets. Build each process from the backend context,
+for example `docker build --target api -t {{ context.app_name }}-api:local backend`.
+For a checkout generated with `--baukit-path`, use the Baukit repository root as
+the context and pass `BACKEND_CONTEXT`, `BAUKIT_CONTEXT`, and the generated
+absolute Cargo path as `BAUKIT_DESTINATION`; this keeps local path dependencies
+inside the Docker build context without editing generated source.
 {% if context.worker %}
 `make run-worker` starts the durable worker, which requires PostgreSQL and exposes only the private operations listener. Its `[worker]` product configuration is available through `{{ context.app_env }}__WORKER__CONCURRENCY`, `{{ context.app_env }}__WORKER__LEASE_DURATION_SECONDS`, `{{ context.app_env }}__WORKER__JOB_TIMEOUT_SECONDS`, and `{{ context.app_env }}__WORKER__POLL_INTERVAL_MILLISECONDS`; the generated deploy values carry the same defaults. Creating an item through the PostgreSQL adapter atomically emits the demo `item.created` outbox job. The generated handler logs identifiers only, and the ignored Docker integration test proves the real claim, handle, and completion path.
 {% endif %}

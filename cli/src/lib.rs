@@ -31,6 +31,7 @@ const EXPECTED_BACKEND_FILES: &[&str] = &[
     "scripts/openapi.sh",
     "scripts/openapi-client.sh",
     "backend/Cargo.toml",
+    "backend/Dockerfile",
     "backend/openapi.json",
     "backend/crates/__APP__-domain/Cargo.toml",
     "backend/crates/__APP__-ports/Cargo.toml",

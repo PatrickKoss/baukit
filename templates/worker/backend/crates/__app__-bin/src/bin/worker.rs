@@ -2,7 +2,7 @@ use std::{env, error::Error, io, net::SocketAddr, sync::Arc, time::Duration};
 
 use baukit_config::{BaukitConfig, ConfigLoader, Environment};
 use baukit_jobs::{PostgresJobStore, WorkerConfig, WorkerRunner};
-use baukit_ops::TrafficGate;
+use baukit_ops::{TrafficGate, spawn_pool_metrics_sampler};
 use baukit_runtime::{
     ProcessKind, RestartPolicy, ServiceInfo, ShutdownToken, TaskSupervisor, build_info,
 };
@@ -53,6 +53,7 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         .acquire_timeout(database.acquire_timeout)
         .connect(database.url.expose())
         .await?;
+    let pool_metrics = spawn_pool_metrics_sampler(pool.clone(), Duration::from_secs(15))?;
     let runner = WorkerRunner::new(
         Arc::new(PostgresJobStore::new(pool.clone())),
         Arc::new(DemoJobHandler::new()),
@@ -111,6 +112,7 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
     }
     let _signal_result = signal_task.await;
     pool.close().await;
+    pool_metrics.shutdown().await;
     let telemetry_for_shutdown = Arc::clone(&telemetry);
     shutdown
         .run_during_drain(async move {

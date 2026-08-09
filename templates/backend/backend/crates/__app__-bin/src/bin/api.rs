@@ -1,8 +1,8 @@
-use std::{env, error::Error, net::SocketAddr, sync::Arc};
+use std::{env, error::Error, net::SocketAddr, sync::Arc, time::Duration};
 
 {% if context.auth_oidc %}use baukit_auth::{AuthState, OidcConfig, OidcVerifier};
 {% endif %}use baukit_config::{BaukitConfig, ConfigLoader, Environment};
-use baukit_ops::TrafficGate;
+use baukit_ops::{PoolMetricsSampler, TrafficGate, spawn_pool_metrics_sampler};
 use baukit_runtime::{ProcessKind, ServiceInfo, ShutdownToken, build_info, serve_listener_pair};
 use baukit_telemetry::{TelemetryBuilder, tracing};
 
@@ -51,7 +51,36 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
     }
     let telemetry = Arc::new(telemetry_builder.init()?);
 
-{% if context.auth_oidc %}    let (item_repository, user_repository): (Arc<dyn ItemRepository>, Arc<dyn UserRepository>) =
+{% if context.auth_oidc %}    let (item_repository, user_repository, pool_metrics): (
+        Arc<dyn ItemRepository>,
+        Arc<dyn UserRepository>,
+        Option<PoolMetricsSampler>,
+    ) = if let Some(database) = &config.database {
+        let pool = PgPoolOptions::new()
+            .max_connections(database.max_connections)
+            .min_connections(database.min_connections)
+            .acquire_timeout(database.acquire_timeout)
+            .connect(database.url.expose())
+            .await?;
+        let pool_metrics = spawn_pool_metrics_sampler(pool.clone(), Duration::from_secs(15))?;
+        (
+            Arc::new(PostgresItemRepository::new(pool.clone())),
+            Arc::new(PostgresUserRepository::new(pool)),
+            Some(pool_metrics),
+        )
+    } else {
+        tracing::warn!(message = "database is not configured; using the in-memory item adapter");
+        (
+            Arc::new(InMemoryItemRepository::new()),
+            Arc::new(InMemoryUserRepository::new()),
+            None,
+        )
+    };
+    let item_service = ItemService::new(item_repository);
+    let user_service = UserService::new(user_repository);
+    let oidc = OidcConfig::new(&config.product.auth.issuer, &config.product.auth.audience)?;
+    let auth = AuthState::new(OidcVerifier::discover(oidc).await?);
+{% else %}    let (repository, pool_metrics): (Arc<dyn ItemRepository>, Option<PoolMetricsSampler>) =
         if let Some(database) = &config.database {
             let pool = PgPoolOptions::new()
                 .max_connections(database.max_connections)
@@ -59,35 +88,17 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
                 .acquire_timeout(database.acquire_timeout)
                 .connect(database.url.expose())
                 .await?;
+            let pool_metrics = spawn_pool_metrics_sampler(pool.clone(), Duration::from_secs(15))?;
             (
-                Arc::new(PostgresItemRepository::new(pool.clone())),
-                Arc::new(PostgresUserRepository::new(pool)),
+                Arc::new(PostgresItemRepository::new(pool)),
+                Some(pool_metrics),
             )
         } else {
             tracing::warn!(
                 message = "database is not configured; using the in-memory item adapter"
             );
-            (
-                Arc::new(InMemoryItemRepository::new()),
-                Arc::new(InMemoryUserRepository::new()),
-            )
+            (Arc::new(InMemoryItemRepository::new()), None)
         };
-    let item_service = ItemService::new(item_repository);
-    let user_service = UserService::new(user_repository);
-    let oidc = OidcConfig::new(&config.product.auth.issuer, &config.product.auth.audience)?;
-    let auth = AuthState::new(OidcVerifier::discover(oidc).await?);
-{% else %}    let repository: Arc<dyn ItemRepository> = if let Some(database) = &config.database {
-        let pool = PgPoolOptions::new()
-            .max_connections(database.max_connections)
-            .min_connections(database.min_connections)
-            .acquire_timeout(database.acquire_timeout)
-            .connect(database.url.expose())
-            .await?;
-        Arc::new(PostgresItemRepository::new(pool))
-    } else {
-        tracing::warn!(message = "database is not configured; using the in-memory item adapter");
-        Arc::new(InMemoryItemRepository::new())
-    };
     let item_service = ItemService::new(repository);
 {% endif %}
     let api = router(
@@ -136,6 +147,9 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         signal_task.abort();
     }
     let _signal_result = signal_task.await;
+    if let Some(pool_metrics) = pool_metrics {
+        pool_metrics.shutdown().await;
+    }
     let telemetry_for_shutdown = Arc::clone(&telemetry);
     shutdown
         .run_during_drain(async move {
