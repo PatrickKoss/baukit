@@ -1,6 +1,6 @@
 use baukit_telemetry::{
     DeploymentEnvironment, HTTP_DURATION_BUCKETS, LogFormat, ProcessKind, ServiceIdentity,
-    TelemetryBuilder, TelemetryError, metrics,
+    TelemetryBuilder, TelemetryError, WORKER_DURATION_BUCKETS, metrics,
 };
 
 fn identity() -> ServiceIdentity {
@@ -35,6 +35,15 @@ fn process_global_init_build_info_idempotence_and_shutdown() {
         assert!(
             rendered.contains(&format!("le=\"{bucket}\"")),
             "missing spec bucket le=\"{bucket}\" in:\n{rendered}"
+        );
+    }
+
+    metrics::histogram!("worker_job_duration_seconds", "job" => "sync").record(0.003);
+    let rendered = telemetry.prometheus_handle().render();
+    for bucket in WORKER_DURATION_BUCKETS {
+        assert!(
+            rendered.contains(&format!("le=\"{bucket}\"")),
+            "missing worker bucket le=\"{bucket}\" in:\n{rendered}"
         );
     }
 

@@ -25,7 +25,7 @@ helm template minimal-api . -f ../examples/minimal-api-values.yaml
 
 For `product: minimal-api`, the chart normalizes the configuration prefix to `MINIMAL_API`. It injects `MINIMAL_API_ENVIRONMENT`, `OTEL_EXPORTER_OTLP_ENDPOINT` when configured, listener/drain values such as `MINIMAL_API__HTTP__PORT`, and every entry in `config.overrides` as `MINIMAL_API__<KEY>`. Override keys are suffixes, so `DATABASE__MAX_CONNECTIONS` becomes `MINIMAL_API__DATABASE__MAX_CONNECTIONS`.
 
-Secrets are only consumed through `envFrom` references to existing Secrets. This chart deliberately has no value that accepts secret contents; create encrypted Secret manifests separately with SOPS/age.
+Secrets are consumed through `envFrom` references to existing Secrets or `secretKeyRef` entries in a process's raw `env` list. This chart deliberately has no value that accepts secret contents; create encrypted Secret manifests separately with SOPS/age. Process `env` entries are appended after chart-managed entries and should not redefine those names.
 
 Kubernetes metadata carries `app.kubernetes.io/part-of` and `baukit.dev/product` for the telemetry `product` identity, plus `app.kubernetes.io/component` and `baukit.dev/process` for `api`, `worker`, `migrate`, or `seed`. The application continues to own OpenTelemetry resource attributes such as `service.name=<product>-<process>` and its build version/commit.
 
@@ -35,7 +35,9 @@ Only the API Service is an Ingress backend. The private ops Service exposes the 
 
 Annotation discovery is enabled on ops Services by default. Set `opsService.prometheusScrape.enabled=false` (and the worker equivalent) if the collector does not use annotations. `serviceMonitor.enabled=true` offers an alternative for Prometheus Operator installations; the template is emitted only when the cluster advertises `monitoring.coreos.com/v1/ServiceMonitor`. The chart ships no CRDs.
 
-NetworkPolicy is enabled by default and selects every process in the release. It denies all ingress and egress, then allows the configured Traefik pods to the API port, configured Prometheus pods to ops ports, DNS to CoreDNS, and the explicit `networkPolicy.additionalEgress` rules. The defaults assume K3s Traefik in `kube-system`, Prometheus in `observability`, and CoreDNS in `kube-system`; products must adjust selectors and add database, OTLP, identity-provider, and external-service destinations. The example shows PostgreSQL and Alloy rules.
+NetworkPolicy is enabled by default and selects every process in the release. It denies all ingress and egress, then allows the configured Traefik pods to the API port, configured Prometheus pods to ops ports, DNS to CoreDNS, and the release-wide `networkPolicy.additionalEgress` rules. Each process also has `networkPolicy.additionalEgress`; those rules select only that process, so worker Git access need not open the API. The defaults assume K3s Traefik in `kube-system`, Prometheus in `observability`, and CoreDNS in `kube-system`; products must adjust selectors and add database, OTLP, identity-provider, and external-service destinations.
+
+Most CNIs can apply the pod-selected CoreDNS rule. K3s installations may enforce policy against the DNS Service IP before destination NAT, which prevents that selector from matching. Set `networkPolicy.dns.k3sCompatible=true` to add a destination-independent rule restricted to TCP/UDP port 53. This trades destination restriction for working DNS and is intentionally opt-in.
 
 ## Values
 
@@ -72,6 +74,9 @@ The pod and container security-context maps can be replaced when an image needs 
 | `api.image.tag` | `latest` | API image tag. Pin an immutable release tag or digest policy in production. |
 | `api.image.pullPolicy` | `IfNotPresent` | API image pull policy. |
 | `api.command` / `api.args` | `[]` / `[]` | Optional container entrypoint and arguments. |
+| `api.env` | `[]` | Raw API container environment entries; use `secretKeyRef` rather than inline secret values. |
+| `api.volumes` / `api.volumeMounts` | `[]` / `[]` | API-only pod volumes and matching container mounts. |
+| `api.networkPolicy.additionalEgress` | `[]` | Egress rules added only for API pods. |
 | `api.ports.http` / `api.ports.ops` | `8080` / `9090` | Public API and private operations listener ports. |
 | `api.terminationGracePeriodSeconds` | `30` | SIGTERM drain window; also injected as `SHUTDOWN__DRAIN_TIMEOUT`. |
 | `api.strategy.maxUnavailable` / `api.strategy.maxSurge` | `0` / `1` | RollingUpdate availability controls. |
@@ -90,6 +95,9 @@ The pod and container security-context maps can be replaced when an image needs 
 | `worker.enabled` / `worker.replicas` | `false` / `1` | Enable the optional worker Deployment and set replicas. |
 | `worker.image.repository` / `tag` / `pullPolicy` | `ghcr.io/example/minimal-worker` / `latest` / `IfNotPresent` | Worker-only image settings. |
 | `worker.command` / `worker.args` | `[]` / `[]` | Optional worker entrypoint and arguments. |
+| `worker.env` | `[]` | Raw worker container environment entries. |
+| `worker.volumes` / `worker.volumeMounts` | `[]` / `[]` | Worker-only pod volumes and matching mounts, such as an `emptyDir` scratch workspace. |
+| `worker.networkPolicy.additionalEgress` | `[]` | Egress rules added only for worker pods. |
 | `worker.ops.enabled` / `worker.ops.port` | `true` / `9090` | Enable the worker ops listener, probes, and private ops Service. |
 | `worker.terminationGracePeriodSeconds` | `30` | Worker SIGTERM drain window and injected shutdown timeout. |
 | `worker.resources.requests.cpu` / `memory` | `50m` / `64Mi` | Initial worker requests. |
@@ -102,17 +110,23 @@ The pod and container security-context maps can be replaced when an image needs 
 | `migration.enabled` | `true` | Create the `pre-install,pre-upgrade` migration hook Job. |
 | `migration.image.repository` / `tag` / `pullPolicy` | `ghcr.io/example/minimal-migrate` / `latest` / `IfNotPresent` | Migrator-only image settings. |
 | `migration.command` / `migration.args` | `[/app/migrate]` / `[]` | Migrator entrypoint and arguments. |
+| `migration.env` | `[]` | Raw migration container environment entries. |
+| `migration.volumes` / `migration.volumeMounts` | `[]` / `[]` | Migration Job pod volumes and matching mounts. |
+| `migration.networkPolicy.additionalEgress` | `[]` | Egress rules selecting migration pods. On an initial Helm install, hook ordering may require namespace-level policy to already admit migration dependencies. |
 | `migration.backoffLimit` / `migration.activeDeadlineSeconds` | `2` / `600` | Migration retry and deadline bounds. |
 | `migration.resources.requests.cpu` / `memory` | `50m` / `64Mi` | Migration requests. |
 | `migration.resources.limits.cpu` / `memory` | `250m` / `128Mi` | Migration limits. |
 | `seed.enabled` / `seed.allowProduction` | `false` / `false` | Enable post-release seeding; production also requires an explicit safety override. |
 | `seed.image.repository` / `tag` / `pullPolicy` | `ghcr.io/example/minimal-seed` / `latest` / `IfNotPresent` | Seed-only image settings. |
 | `seed.command` / `seed.args` | `[/app/seed]` / `[]` | Seed entrypoint and arguments. |
+| `seed.env` | `[]` | Raw seed container environment entries. |
+| `seed.volumes` / `seed.volumeMounts` | `[]` / `[]` | Seed Job pod volumes and matching mounts. |
+| `seed.networkPolicy.additionalEgress` | `[]` | Egress rules added only for seed pods. |
 | `seed.backoffLimit` / `seed.activeDeadlineSeconds` | `1` / `600` | Seed retry and deadline bounds. |
 | `seed.resources.requests.cpu` / `memory` | `50m` / `64Mi` | Seed requests. |
 | `seed.resources.limits.cpu` / `memory` | `250m` / `128Mi` | Seed limits. |
 
-Migration uses `helm.sh/hook-delete-policy: before-hook-creation`. Seed uses a `post-install,post-upgrade` hook and refuses to render in production unless both seed flags are explicitly true.
+Migration uses `helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded`, so completed release Jobs do not accumulate while failed Jobs remain inspectable. Seed uses a `post-install,post-upgrade` hook and refuses to render in production unless both seed flags are explicitly true.
 
 ### Services, ingress, and scaling
 
@@ -151,6 +165,7 @@ Migration uses `helm.sh/hook-delete-policy: before-hook-creation`. Seed uses a `
 | `networkPolicy.prometheus.podSelector` | `app.kubernetes.io/name=prometheus` | Scraper pod selector allowed to ops ports. |
 | `networkPolicy.dns.namespaceSelector` | `kube-system` | Namespace selector for DNS. |
 | `networkPolicy.dns.podSelector` | `k8s-app=kube-dns` | CoreDNS pod selector. |
+| `networkPolicy.dns.k3sCompatible` | `false` | Add a destination-independent TCP/UDP port-53 rule for k3s Service-IP policy enforcement. |
 | `networkPolicy.additionalEgress` | `[]` | Raw NetworkPolicy egress-rule list appended after TCP/UDP DNS. |
 
 ## Local validation
@@ -159,5 +174,5 @@ Migration uses `helm.sh/hook-delete-policy: before-hook-creation`. Seed uses a `
 helm lint .
 helm template default .
 helm template example . -f ../examples/minimal-api-values.yaml
+helm template all-options . -f tests/all-options-values.yaml
 ```
-

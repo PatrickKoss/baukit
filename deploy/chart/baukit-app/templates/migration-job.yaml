@@ -8,7 +8,7 @@ metadata:
   annotations:
     helm.sh/hook: pre-install,pre-upgrade
     helm.sh/hook-weight: "-5"
-    helm.sh/hook-delete-policy: before-hook-creation
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
 spec:
   backoffLimit: {{ .Values.migration.backoffLimit }}
   activeDeadlineSeconds: {{ .Values.migration.activeDeadlineSeconds }}
@@ -48,10 +48,21 @@ spec:
           {{- end }}
           env:
             {{- include "baukit-app.env" (dict "root" . "process" "migrate") | nindent 12 }}
+            {{- with .Values.migration.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- with .Values.config.existingSecretRefs }}
           envFrom:
             {{- include "baukit-app.envFrom" $ | nindent 12 }}
           {{- end }}
           resources:
             {{- toYaml .Values.migration.resources | nindent 12 }}
+          {{- with .Values.migration.volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.migration.volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
 {{- end }}

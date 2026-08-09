@@ -1,10 +1,25 @@
 # Baukit observability pack
 
-This directory contains the portable application dashboard, Prometheus recording rules, and alert rules for the metric and log contract in [`docs/platform/telemetry-spec.md`](../../docs/platform/telemetry-spec.md). Target discovery must attach the bounded `product`, `service`, `environment`, and `namespace` labels; these are platform labels, not additional application metric dimensions.
+This directory contains the portable application dashboard, Prometheus recording rules, alert rules, Kubernetes provisioning, and a live verification harness for the metric and log contract in [`docs/platform/telemetry-spec.md`](../../docs/platform/telemetry-spec.md). Target discovery must attach the bounded `product`, `service`, `environment`, and `namespace` labels; these are platform labels, not additional application metric dimensions.
+
+## Kubernetes provisioning
+
+Install the pack into the observability namespace:
+
+```sh
+helm upgrade --install baukit-observability deploy/observability \
+  --namespace observability --create-namespace
+```
+
+The chart emits separate dashboard, recording-rule, and alert-rule ConfigMaps. The dashboard has `grafana_dashboard: "1"`, the default discovery label used by Grafana dashboard sidecars. Labels and annotations can be extended through `dashboardConfigMap` and `ruleConfigMaps` values.
+
+When the cluster advertises `monitoring.coreos.com/v1/PrometheusRule`, the chart also combines the exact shipped recording and alert groups into a `PrometheusRule`. Ensure the Prometheus instance's `spec.ruleSelector` admits `app.kubernetes.io/part-of: baukit-observability`; no product needs to copy rule content into a manifest. Set `prometheusRule.enabled=false` if another rule loader consumes the ConfigMaps. The application chart's `serviceMonitor.enabled=true` supplies scrape discovery separately, because scrape targets belong to each product release.
+
+Plain Prometheus installations can mount the `*-recording-rules` and `*-alert-rules` ConfigMaps and use the paths below. The ConfigMaps keep their source filenames stable.
 
 ## Grafana
 
-Provision `dashboards/baukit-service-overview.json` with Grafana's file dashboard provider, or import it through the Grafana UI. Select Prometheus and Loki through the dashboard's `${DS_PROMETHEUS}` and `${DS_LOKI}` datasource variables. The Loki panel uses only the allowed `service` and `environment` labels; `product` remains a Prometheus-only filter because it is not an allowed Loki label.
+Outside Kubernetes, provision `dashboards/baukit-service-overview.json` with Grafana's file dashboard provider, or import it through the Grafana UI. Select Prometheus and Loki through the dashboard's `${DS_PROMETHEUS}` and `${DS_LOKI}` datasource variables. The Loki panel uses only the allowed `service` and `environment` labels; `product` remains a Prometheus-only filter because it is not an allowed Loki label.
 
 A minimal provisioning layout is:
 
@@ -48,3 +63,23 @@ python3 deploy/observability/lint/check-metric-names.py
 ```
 
 The standard-library-only linter reads dashboard expressions and Prometheus rule files. It rejects metric names outside telemetry spec section 2 (apart from Prometheus's `up` and locally defined recording rules), the forbidden plural HTTP duration name, Loki selectors using `service_name`, and stored status-class matchers such as `status=~"2xx"`. CI runs the same command; adding a metric requires updating the telemetry specification first and then its single `SPEC_METRICS` list in the linter.
+
+## Live verification harness
+
+`verify/verify-observability.sh` checks a running product without embedding its build or startup logic. Its one argument is the product's normalized environment-variable prefix. Settings are then read as `<PREFIX>_VERIFY_*`, allowing the same script to be used unchanged by every product.
+
+Required settings are `LOG_FILES` (colon-delimited runtime log paths) and `FORBIDDEN_VALUES_FILE` (one non-empty secret or sensitive literal per line). The API defaults to `http://127.0.0.1:18080` with ops on `:19090`; set `WORKER_OPS_URL` when a worker is present. `KNOWN_GAPS_FILE` is optional and contains one unresolved metric per line with `#` comments allowed. It is an exact allowlist: verification fails for both a new gap and a fixed gap that was not removed from the file.
+
+```sh
+MY_PRODUCT_VERIFY_API_PUBLIC_URL=http://127.0.0.1:18080 \
+MY_PRODUCT_VERIFY_API_OPS_URL=http://127.0.0.1:19090 \
+MY_PRODUCT_VERIFY_WORKER_OPS_URL=http://127.0.0.1:19091 \
+MY_PRODUCT_VERIFY_LOG_FILES="$tmp/api.log:$tmp/worker.log" \
+MY_PRODUCT_VERIFY_FORBIDDEN_VALUES_FILE="$tmp/forbidden-values" \
+MY_PRODUCT_VERIFY_KNOWN_GAPS_FILE="$PWD/deploy/known-observability-gaps.txt" \
+deploy/observability/verify/verify-observability.sh MY_PRODUCT
+```
+
+The harness lints expressions, checks all rule files with local `promtool` or a pinned Prometheus container, waits for health and readiness, asserts that public `/metrics` is exactly 404, scrapes every configured private ops listener, searches the supplied logs for every forbidden literal, and resolves all dashboard/alert metric references against the union of live scrapes and local recording rules. The caller owns product startup and teardown so Compose, host-process, and Kubernetes consumers can share the same verifier.
+
+`verify/check-observability-metrics.py` can be called directly with repeated `--metrics process=path` arguments and repeated `--known-gap` or `--known-gap-file` options. `verify/known-gaps.example.txt` documents the allowlist format.

@@ -52,6 +52,9 @@ spec:
           {{- end }}
           env:
             {{- include "baukit-app.env" (dict "root" . "process" "worker") | nindent 12 }}
+            {{- with .Values.worker.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- with .Values.config.existingSecretRefs }}
           envFrom:
             {{- include "baukit-app.envFrom" $ | nindent 12 }}
@@ -78,6 +81,14 @@ spec:
           {{- end }}
           resources:
             {{- toYaml .Values.worker.resources | nindent 12 }}
+          {{- with .Values.worker.volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.worker.volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.worker.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

@@ -107,6 +107,11 @@ const OTEL_SDK_DISABLED_ENV: &str = "OTEL_SDK_DISABLED";
 pub const HTTP_DURATION_BUCKETS: &[f64] = &[
     0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
 ];
+/// Histogram buckets in seconds applied to `worker_job_duration_seconds`, as
+/// required by telemetry-spec §2.4.
+pub const WORKER_DURATION_BUCKETS: &[f64] = &[
+    0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 300.0, 600.0,
+];
 const RUST_VERSION: &str = env!("BAUKIT_RUST_VERSION");
 
 static INITIALIZED: AtomicBool = AtomicBool::new(false);
@@ -284,6 +289,11 @@ impl TelemetryBuilder {
                 HTTP_DURATION_BUCKETS,
             )
             .expect("HTTP_DURATION_BUCKETS is non-empty")
+            .set_buckets_for_metric(
+                Matcher::Full("worker_job_duration_seconds".to_owned()),
+                WORKER_DURATION_BUCKETS,
+            )
+            .expect("WORKER_DURATION_BUCKETS is non-empty")
             .build_recorder();
         let prometheus_handle = recorder.handle();
         if let Err(error) = metrics::set_global_recorder(recorder) {

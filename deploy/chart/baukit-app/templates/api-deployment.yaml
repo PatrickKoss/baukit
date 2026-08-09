@@ -59,6 +59,9 @@ spec:
               protocol: TCP
           env:
             {{- include "baukit-app.env" (dict "root" . "process" "api") | nindent 12 }}
+            {{- with .Values.api.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- with .Values.config.existingSecretRefs }}
           envFrom:
             {{- include "baukit-app.envFrom" $ | nindent 12 }}
@@ -85,6 +88,14 @@ spec:
           {{- end }}
           resources:
             {{- toYaml .Values.api.resources | nindent 12 }}
+          {{- with .Values.api.volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.api.volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.api.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

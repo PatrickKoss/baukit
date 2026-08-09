@@ -50,10 +50,21 @@ spec:
           {{- end }}
           env:
             {{- include "baukit-app.env" (dict "root" . "process" "seed") | nindent 12 }}
+            {{- with .Values.seed.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- with .Values.config.existingSecretRefs }}
           envFrom:
             {{- include "baukit-app.envFrom" $ | nindent 12 }}
           {{- end }}
           resources:
             {{- toYaml .Values.seed.resources | nindent 12 }}
+          {{- with .Values.seed.volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.seed.volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
 {{- end }}

@@ -1,5 +1,5 @@
 {
-  "name": "@baukit/data-contracts",
+  "name": "@baukit/auth-web",
   "version": "0.2.0",
   "private": true,
   "type": "module",
@@ -11,10 +11,6 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./vitest": {
-      "types": "./dist/vitest.d.ts",
-      "import": "./dist/vitest.js"
     }
   },
   "files": [
@@ -28,7 +24,6 @@
     "format:check": "prettier --check src package.json tsconfig.json"
   },
   "devDependencies": {
-    "typescript": "6.0.3",
-    "vitest": "4.1.10"
+    "typescript": "6.0.3"
   }
 }

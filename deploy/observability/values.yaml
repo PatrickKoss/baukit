@@ -1,0 +1,21 @@
+nameOverride: ""
+fullnameOverride: ""
+
+dashboardConfigMap:
+  enabled: true
+  # Grafana's dashboard sidecar watches this label by default.
+  labels:
+    grafana_dashboard: "1"
+  annotations: {}
+
+ruleConfigMaps:
+  enabled: true
+  labels: {}
+  annotations: {}
+
+# Prometheus Operator wiring. The resource is rendered only when the cluster
+# advertises monitoring.coreos.com/v1/PrometheusRule.
+prometheusRule:
+  enabled: true
+  labels: {}
+  annotations: {}

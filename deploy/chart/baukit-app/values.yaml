@@ -39,6 +39,11 @@ api:
     pullPolicy: IfNotPresent
   command: []
   args: []
+  # Raw container env entries appended after the chart-managed environment.
+  env: []
+  # Pod volumes and matching API container mounts.
+  volumes: []
+  volumeMounts: []
   ports:
     http: 8080
     ops: 9090
@@ -68,6 +73,8 @@ api:
   nodeSelector: {}
   tolerations: []
   affinity: {}
+  networkPolicy:
+    additionalEgress: []
 
 worker:
   enabled: false
@@ -78,6 +85,9 @@ worker:
     pullPolicy: IfNotPresent
   command: []
   args: []
+  env: []
+  volumes: []
+  volumeMounts: []
   ops:
     enabled: true
     port: 9090
@@ -104,6 +114,8 @@ worker:
   nodeSelector: {}
   tolerations: []
   affinity: {}
+  networkPolicy:
+    additionalEgress: []
 
 migration:
   enabled: true
@@ -114,6 +126,9 @@ migration:
   command:
     - /app/migrate
   args: []
+  env: []
+  volumes: []
+  volumeMounts: []
   backoffLimit: 2
   activeDeadlineSeconds: 600
   resources:
@@ -123,6 +138,8 @@ migration:
     limits:
       cpu: 250m
       memory: 128Mi
+  networkPolicy:
+    additionalEgress: []
 
 seed:
   enabled: false
@@ -134,6 +151,9 @@ seed:
   command:
     - /app/seed
   args: []
+  env: []
+  volumes: []
+  volumeMounts: []
   backoffLimit: 1
   activeDeadlineSeconds: 600
   resources:
@@ -143,6 +163,8 @@ seed:
     limits:
       cpu: 250m
       memory: 128Mi
+  networkPolicy:
+    additionalEgress: []
 
 service:
   type: ClusterIP
@@ -216,5 +238,8 @@ networkPolicy:
     podSelector:
       matchLabels:
         k8s-app: kube-dns
+    # Add a destination-unrestricted TCP/UDP port-53 rule for k3s CNIs that
+    # enforce policy against the CoreDNS Service IP before DNAT.
+    k3sCompatible: false
   # Kubernetes NetworkPolicy egress rules appended after the DNS rule.
   additionalEgress: []
