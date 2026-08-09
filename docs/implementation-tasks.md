@@ -337,16 +337,16 @@ Orchestrator answers to LD's five open questions (binding decisions for this wav
 
 ### Wave M5 — PostHog in-cluster, optional + flag-gated
 
-- [ ] `deploy/platform/posthog/` base in baukit: self-hosted PostHog as a small k8s
+- [x] `deploy/platform/posthog/` base in baukit: self-hosted PostHog as a small k8s
   deployment (pinned versions, resources sized for near-zero traffic — measured, not
   copied from hobby sizing), secret-free, optional per architecture decision 3 (a
   base you simply don't compose)
-- [ ] platform-infra local overlay composes it behind an easy on/off (include the
+- [x] platform-infra local overlay composes it behind an easy on/off (include the
   base + one values/secret file); documented as off-by-default, on for this test
-- [ ] leitbild analytics: provider-neutral port unchanged; PostHog web transport
+- [x] leitbild analytics: provider-neutral port unchanged; PostHog web transport
   enabled by a per-env flag (testing on, production off initially); events verified
   arriving in the local PostHog; consent/scrubber behavior re-verified live
-- [ ] Resource footprint measured + enable-later runbook documented
+- [x] Resource footprint measured + enable-later runbook documented
 
 ### Wave I5a — leitbild onto baukit-v0.3.0 (1 agent, leitbild repo)
 
@@ -398,6 +398,47 @@ backups, alert delivery, self-healing locally):
 - [ ] Self-hosted CI runners (Blacksmith or actions-runner-controller on the cluster) — trigger: the user decides to un-block hosted CI or its local substitute becomes the bottleneck
 
 ## Log
+
+- 2026-08-10: **Wave M5 done — optional, flag-gated in-cluster PostHog proven live.**
+  Baukit's new secret-free `deploy/platform/posthog/` base uses the PostHog 30.46.0
+  chart / 1.43.0 application image plus pinned PostgreSQL 14.1, Redis 6.2.6,
+  ZooKeeper 3.8.4, Redpanda 25.1.9, ClickHouse 22.8.21.38, and BusyBox 1.36.1
+  images. It keeps only the ingestion/UI path (web, events, combined plugins,
+  single-node dependencies); worker/Celery, recordings, feature-flag service,
+  Temporal, object storage, email, backups, toolbox, bundled monitoring, MMDB, and
+  the ClickHouse operator are excluded from this near-zero-traffic local profile.
+  Releases `baukit-v0.3.3`, `v0.3.4`, then `v0.3.5` were cut: v0.3.4 bounded an
+  upstream migration dependency probe discovered during rollout; v0.3.5 made the
+  PostHog adapter's immutable Git source self-preparing. Final tag commit
+  `b1f626d9`; coherence, `make ci`, Docker-gated Rust tests, metric lint, and the
+  combined backend/web/mobile generated fixture all pass. platform-infra
+  `427a27a` pins v0.3.5 and composes `local-posthog` plus one SOPS values/secret
+  file as the obvious toggle (documented off by default, enabled for this proof).
+  leitbild `8e9ae2b` leaves its provider-neutral event seam unchanged and selects
+  the PostHog web adapter only with `VITE_ANALYTICS_PROVIDER=posthog`; testing is
+  on, production is explicit noop, and missing key/host fails closed. The real
+  testing singleton emitted a consented proof event through the pinned 1.43.1 web
+  client: attempted `entry_id=person@example.com` arrived as `[redacted]`, the
+  deliberately forbidden `journal_text` property was absent, and context retained
+  `app=leitbild` / `environment=testing`; ClickHouse and the authenticated PostHog
+  events API each returned the matching event. A denied-consent event produced no
+  row. Three settled idle samples totalled 67–86m CPU and about 1.55 GiB RAM; pod
+  ranges and measured storage are recorded in the enable/rotate/disable runbook.
+  Requests total 130m CPU / 1.77 GiB, limits 3.25 CPU / 4.38 GiB, and claims 5.5
+  GiB. Final live audit: 23/23 Kustomizations and 14/14 HelmReleases Ready, both
+  leitbild Canaries Succeeded with zero failed checks after testing 20/50 and
+  production 1/5/10/25/50, PostHog health `ok`, and zero unhealthy pods. No
+  product image release was required because the current cluster has no web
+  workload; the chart metadata rollout still rode both canaries without bypass.
+  Gates pass: platform-infra `validate.sh`; leitbild `make check`, web format/build/
+  lint/test, `make render-gitops`, and `make check-migrations`. Deviations: the
+  release advanced twice for rollout-found fixes; Docker Hub rate limiting uses
+  the same-digest `mirror.gcr.io` ClickHouse image; during proof diagnostics an
+  initial database password and then a client project key were each exposed once
+  in local command output, immediately rotated in the live service and SOPS file,
+  with no plaintext committed. Focus J: fix `make up` ordering so a suspended
+  parent reconciliation is resumed before waiting for the Baukit source, and
+  evaluate a newer lean analytics backend when upgrading beyond legacy PostHog.
 
 - 2026-08-09: **Wave M2 done — GHCR-backed delivery live (codex gpt-5.6-sol, orchestrator-verified).**
   Delivery now flows through GHCR instead of `k3d image import`. Images minimized to
