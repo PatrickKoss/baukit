@@ -277,17 +277,17 @@ superseded — revisit only if in-cluster proves insufficient, see Wave R).
 
 ### Wave M2 — GHCR-backed delivery (replaces k3d image import)
 
-- [~] GHCR wired via the existing gh CLI token, tested non-interactively first; if
+- [x] GHCR wired via the existing gh CLI token, tested non-interactively first; if
   the token lacks package permissions, stop and report exactly what the user must
   grant — never attempt interactive re-auth
-- [~] Images minimized and sizes recorded (multi-stage, static/distroless, stripped);
+- [x] Images minimized and sizes recorded (multi-stage, static/distroless, stripped);
   the three leitbild process images pushed as private packages
-- [~] leitbild `make release` pushes `ghcr.io/patrickkoss/leitbild-{api,worker,migrate}:<sha>`
+- [x] leitbild `make release` pushes `ghcr.io/patrickkoss/leitbild-{api,worker,migrate}:<sha>`
   and bumps pins as before; cluster pulls via a SOPS-encrypted dockerconfig pull
   secret in leitbild's gitops (rotation documented); `imagePullPolicy` off `Never`
-- [~] Retention: newest 3 versions per package, enforced by a script wired into
+- [x] Retention: newest 3 versions per package, enforced by a script wired into
   `make release`; quota usage documented; rollback-target-must-be-retained risk noted
-- [~] Prove one full release→testing→promote→merge→production round pulling from
+- [x] Prove one full release→testing→promote→merge→production round pulling from
   GHCR; runbooks updated where the flow changed
 
 ### Wave M3 — TLS + exposure checks, fully local (self-signed CA)
@@ -398,6 +398,46 @@ backups, alert delivery, self-healing locally):
 - [ ] Self-hosted CI runners (Blacksmith or actions-runner-controller on the cluster) — trigger: the user decides to un-block hosted CI or its local substitute becomes the bottleneck
 
 ## Log
+
+- 2026-08-09: **Wave M2 done — GHCR-backed delivery live (codex gpt-5.6-sol, orchestrator-verified).**
+  Delivery now flows through GHCR instead of `k3d image import`. Images minimized to
+  process-specific scratch runtimes: api 122→22 MB, worker 122→21 MB, migrate
+  122→10 MB, rollout-gate 67→61 MB (73.8% total reduction; ~40.6 MB unique
+  compressed layer bytes across all four packages; ≤3-version ceiling ≈127 MiB
+  compressed). `make release` (scripts/release.sh) logs into ghcr.io via
+  `gh auth token`, pushes `ghcr.io/patrickkoss/leitbild-{api,worker,migrate,rollout-gate}:<12-sha>`,
+  and runs `scripts/prune-ghcr.sh` (keep-newest-3, refuses non-private packages).
+  Pull secret `leitbild-ghcr` (dockerconfigjson) SOPS-encrypted in both env gitops
+  dirs; inherited by Flagger-cloned primary/canary Deployments and by both
+  loadtesters (HelmRelease post-render patch); all GHCR workloads `IfNotPresent`.
+  Smoke-ai deliberately stays node-local `Never` (avoids a fifth private package).
+  Proof round `dd2f1a091d38` (build 0.1.3): release 104 s; testing canary walked
+  20/50 in 161 s; PR #6 merged `4e31d85`; production walked 1/5/10/25/50 in 519 s
+  (merge→completion 684 s); real registry pull events on canary AND promoted
+  primary pods in both envs (e.g. api pull 726 ms / 8.8 MB). Synthetic TLS traffic:
+  testing 711 requests all expected; production 2,295 with one 504 during primary
+  transition (same M4 symptom, Focus J). Retention verified: exactly one version
+  per package (`dd2f1a091d38`), migration-bridge `70da…` versions deleted, no probe
+  or temp artifacts left in GHCR/cluster/git.
+  Orchestrator re-verification: all three repos clean == origin (leitbild `135788b`,
+  platform-infra `3f31d87`, baukit untouched); GHCR listed via `gh api` — 4 packages
+  × 1 version, tags exactly `dd2f1a091d38`; `git grep` for `gho_`/`ghp_`/`github_pat_`
+  clean in both repos; both pull-secret files ENC[AES256_GCM]; cluster 22/22
+  Kustomizations + 13/13 HelmReleases Ready, both Canaries Succeeded failedChecks 0,
+  zero unhealthy pods; live Deployments show GHCR image refs + `IfNotPresent` +
+  `leitbild-ghcr` on api/primary/worker/loadtester in both envs; kubelet `Pulled`
+  events confirm real GHCR pulls at walk timestamps; `build_info` from production
+  primary reports commit `dd2f1a091d38…` v0.1.3; PR #6 MERGED; only remaining k3d
+  imports are smoke-ai + the dev smoke script. Gates re-run by orchestrator: leitbild
+  `make check`/`render-gitops`/`check-migrations` and platform-infra `validate.sh`
+  all exit 0. Deviations: Flux briefly reconciled the source-bump commit before the
+  release commit during the one-time migration, causing pulls of the old tag's new
+  GHCR name; agent published exact-byte bridge images to let remediation finish,
+  then deleted them (primary stayed serving throughout). Focus J: the recurring
+  single 504 during primary template transition; first-class loadtester pull-secret
+  seam (currently product-local post-render patch); N/N-1 gate work continues.
+  Risks: only `dd2f1a091d38` retained — rollback to older tags requires exact-source
+  re-release; minimized runtimes assume amd64 + Ubuntu 24.04-compatible glibc.
 
 - 2026-08-09: **Wave M4 done** (1 codex agent, all three repos) — **canary delivery is live: Flagger 1.44.0 gates every leitbild release in both environments, proven good AND bad**. baukit: `baukit-v0.3.2` released (tag object `16a5d9e1` → commit `c7ab39e`; carries the `78ad746` lifecycle fix — orchestrator confirmed ancestry) with new composable base `deploy/platform/flagger/` + six shared MetricTemplates; commits `be8addc`,`da2938a`,`1d6b27f`,`c7ab39e` (+docs `21760bc`); full release train green (agent: make ci, --include-ignored, six fixture flavors, coherence, metric lint, cargo deny; orchestrator re-ran make ci + --include-ignored + coherence `--tag baukit-v0.3.2` + metric lint + backend fixture flavor — all exit 0; release diff in cli/templates was version-bumps + snapshots only). platform-infra `cfc9d20`,`5db30fc`: Flagger install (CRD-race-safe phases) + pin → `baukit-v0.3.2`; cluster source `baukit-v0.3.2@sha1:c7ab39ee` live. leitbild adopted 0.3.2 (`1cb4569`…`05a8e57` incl. PR #5): **staging bridge DELETED** — `LEITBILD_ENVIRONMENT=testing` live in the testing primary (orchestrator read the Deployment env), and `build_info{commit="70da514c…"}` now reports the real SHA from BOTH envs (orchestrator port-forwarded both primaries); full leitbild CI mirror green (orchestrator re-ran make check + render-gitops + check-migrations, exit 0). Canary wiring exactly per the five binding decisions (orchestrator read the live Canaries): only `leitbild-api`; testing 20/50 @30s threshold 3, production 1/5/10/25/50 @1m threshold 5; blocking metrics error%≤1 + p95≤0.5s @1m; worker templates observe-only; blocking `type: bash` pre-rollout webhook → namespaced loadtester 0.38.0 running the pinned headless-PKCE/CRUD/worker gate image against `leitbild-canary` at weight 0 (zero customer traffic). GOOD run `70da514c0966`: testing walk 164 s, production walk 522 s, Flagger events per phase, promotions clean. BAD run `2c1fa7fd5fd0` (testing only): 3 consecutive gate failures → auto-rollback at threshold, canary weight stayed 0, primary stayed `11ca65c84c8c`, 1,046-request TLS probe with ZERO unexpected responses; bad tag absent from git (orchestrator grepped gitops). Final state (orchestrator re-verified): 22/22 Kustomizations, 13/13 HelmReleases Ready, both Canaries `Succeeded` failedChecks 0, zero unhealthy pods, both envs fully pinned `70da514c0966`, Traefik `leitbild-primary=100`, validate.sh green, all three repos clean == origin/main. Docs: progressive-delivery.md design→reality, promote-release runbook (promotion rides the canary, N/N-1 worker guard), flagger base README. Deviations: loadtester `type: cmd` is async and can't block — live resources use `type: bash` (the immutable v0.3.2 README still shows `cmd`; Focus J to fix next release); production gate checks authenticated enqueue acceptance (no deterministic AI backend there by design); one transient customer-visible 504 per env during primary spec transitions (Focus J: investigate). Further Focus J: chart-native Canary/ServiceMonitor/NetworkPolicy seams; parameterize idle/NaN-safe API templates; formalize + continuously test N/N-1 API-worker contract; decide production worker-completion backend vs enqueue-only.
 - 2026-08-09: **Wave M2 unblocked (user action).** The gh CLI's fine-grained PAT could not push GHCR packages (fine-grained PATs are unsupported by the container registry regardless of permissions — verified live via probe push, `permission_denied` on scopes). User switched gh to an OAuth login with `write:packages` + `delete:packages` (+ repo/read:org). Orchestrator verified the full chain live: `docker login ghcr.io` via `gh auth token`, probe image push to `ghcr.io/patrickkoss/baukit-auth-probe:tmp`, and package deletion via `gh api DELETE /user/packages/container/…` — all green; probe package deleted, no leftovers. M2 relaunches after M4 completes (leitbild collision avoidance); token sourcing stays `gh auth token`.
