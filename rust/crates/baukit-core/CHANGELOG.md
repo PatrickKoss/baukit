@@ -4,6 +4,8 @@ All notable changes to `baukit-core` are documented here.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-09
+
 ### Added
 
 - The shared deployment environment accepts and serializes `testing` alongside the existing values.

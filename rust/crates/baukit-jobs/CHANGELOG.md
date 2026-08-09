@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-09
+
 ## [0.3.0] - 2026-08-09
 
 - Add a durable PostgreSQL job outbox, worker runner, cancellation, retries,

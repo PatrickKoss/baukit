@@ -1,6 +1,6 @@
 {
   "name": "@baukit/analytics-posthog-native",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "type": "module",
   "engines": {
@@ -29,7 +29,7 @@
     "typescript": "6.0.3"
   },
   "peerDependencies": {
-    "@baukit/analytics-core": "^0.3.0",
+    "@baukit/analytics-core": "^0.3.1",
     "posthog-react-native": "^4.62.0"
   }
 }

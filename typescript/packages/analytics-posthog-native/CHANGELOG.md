@@ -1,5 +1,13 @@
 # @baukit/analytics-posthog-native
 
+## 0.3.1
+
+### Patch Changes
+
+- Release the coordinated baukit 0.3.1 train.
+- Updated dependencies
+  - @baukit/analytics-core@0.3.1
+
 ## 0.3.0
 
 ### Minor Changes
