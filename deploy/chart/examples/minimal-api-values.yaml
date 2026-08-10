@@ -8,6 +8,11 @@ config:
   otlpEndpoint: http://alloy.observability.svc.cluster.local:4318
   overrides:
     MAX_NOTES: "250"
+    # The application owns rate-limit configuration. For the `minimal-api`
+    # Helm release, the optional Redis Service is `minimal-api-redis`.
+    RATE_LIMIT__REDIS_URL: redis://minimal-api-redis:6379
+    RATE_LIMIT__IDENTITY__ENABLED: "true"
+    RATE_LIMIT__IP__ENABLED: "true"
     TELEMETRY__TRACE_SAMPLING_RATIO: "0.25"
   existingSecretRefs:
     - name: minimal-api-runtime
@@ -31,12 +36,16 @@ migration:
   command:
     - /app/minimal-api-migrate
 
+# Expendable, in-memory state for the application-level rate limiter.
+redis:
+  enabled: true
+
 ingress:
   enabled: true
   certManager:
     clusterIssuer: letsencrypt-production
-  # Set this after installing the namespaced Traefik Middleware resource.
-  rateLimitMiddleware: ""
+  # Coarse edge safety net; application-level identity/IP limits remain primary.
+  rateLimitMiddleware: minimal-api-traefik-ratelimit@kubernetescrd
   hosts:
     - host: api.staging.minimal-api.example.com
       paths:
@@ -79,4 +88,3 @@ networkPolicy:
       ports:
         - port: 4318
           protocol: TCP
-

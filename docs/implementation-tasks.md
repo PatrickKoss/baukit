@@ -397,7 +397,136 @@ backups, alert delivery, self-healing locally):
 - [ ] external-dns optional base activation if terraform-managed records become churn-heavy
 - [ ] Self-hosted CI runners (Blacksmith or actions-runner-controller on the cluster) — trigger: the user decides to un-block hosted CI or its local substitute becomes the bottleneck
 
+## Focus RL: Redis-backed identity + IP rate limiting (planned 2026-08-10)
+
+**Motivation (user ask):** Traefik's `rateLimit` middleware is per-instance,
+IP-only, and error-prone as the primary control. Replace it as the real limit
+with an app-level, Redis-backed limiter in the Rust backend: **identity-scoped
+limits are the primary (low) control; IP-scoped limits are the (very high)
+safety net**. Traefik's middleware stays only as a coarse edge net. Leitbild is
+the reference integration.
+
+Architecture decisions for this focus:
+
+1. **New crate `rust/crates/baukit-ratelimit`** (ports & adapters, small and
+   composable like the rest): a `RateLimitStore` port (async check-and-consume
+   for a key + quota → allowed/limited + retry-after), a Redis adapter (single
+   atomic Lua token-bucket eval — no MULTI read-modify-write races, `redis`
+   crate with tokio connection-manager, pinned `=` version), and an in-memory
+   adapter for tests/local dev without Redis.
+2. **Axum layer in the same crate**, composable with `baukit_http::layers`:
+   per request evaluate **identity scope** (key = `baukit_auth::Principal`
+   subject from request extensions, applied only when authenticated, low
+   quota) and **IP scope** (client IP with trusted-proxy `X-Forwarded-For`
+   handling, high quota, always). Limited → 429 through the standard
+   `ApiError` envelope + `Retry-After` and `RateLimit-*` headers. Store
+   failure → **fail-open by default** (configurable), warn + metric.
+3. **Config** through the existing `baukit-config` conventions
+   (`<PREFIX>__RATE_LIMIT__…`: redis URL, per-scope rate/burst/enabled, fail
+   mode). No new env-var vocabulary in the chart.
+4. **One new metric:** `http_rate_limit_decisions_total{scope="identity|ip",
+   outcome="allowed|limited|error"}` — registered in the observability pack
+   (lint, dashboard panel, alert on sustained `outcome="error"`).
+5. **Chart:** optional `redis.enabled` in `baukit-app` — single-instance,
+   pinned image, no persistence (rate-limit state is expendable), NetworkPolicy
+   consistent with the baseline, service name `<release>-redis`. Products wire
+   the URL themselves via their config env (decision 3).
+6. **Release:** new crate ⇒ minor bump `0.3.5 → 0.4.0` across the coherence
+   surface, tag `baukit-v0.4.0` via `scripts/release-train.sh`.
+7. **Leitbild:** git deps `baukit-v0.3.2 → baukit-v0.4.0`, limiter wired with
+   identity low / IP very high, chart redis enabled, compose.yaml redis for
+   local dev, Traefik middleware kept but raised to coarse-net levels;
+   platform-infra cluster pin `baukit-v0.3.5 → baukit-v0.4.0`. Live 429 proof
+   on the local k3d cluster.
+8. **Platform Redis base** (user addition 2026-08-10): `deploy/platform/redis/`
+   in baukit — a secret-free, optional shared Redis component base per
+   architecture decision 3 (component menu), for products that want a shared
+   platform Redis instead of the per-product chart redis (decision 5; both are
+   legitimate, products choose). Composed by platform-infra's **local** overlay
+   and proven live on the k3d cluster like every other component. The base only
+   becomes consumable from the cluster after the `baukit-v0.4.0` pin bump, so
+   authoring happens in RL1, the live proof in RL3.
+9. **Redis version** (user decision 2026-08-10): pin `redis:8.10.0-alpine`
+   (digest `sha256:978f0e01593e65eed801f2402944efcd936d43b5027e4908a7897baf88ed6241`
+   where digests are used) everywhere — chart, platform base, leitbild compose.
+
+### Wave RL1 — baukit library + platform surface (2 ∥ agents, disjoint dirs)
+
+- [x] RL1a (`rust/` only): `baukit-ratelimit` crate per decisions 1–4 (port,
+  Redis + in-memory adapters, axum layer, config options, metric, docs);
+  `baukit-test` gains a Redis testcontainers helper mirroring `postgres.rs`;
+  unit tests (in-memory, keying, headers, fail-open) + Docker-gated Redis
+  integration tests (atomicity under concurrency, TTL, refill, error path);
+  workspace + `deny.toml` additions clean
+- [x] RL1b (`deploy/` only): chart optional redis per decision 5 (values,
+  templates, README, chart examples); observability pack: metric-name lint
+  entry, dashboard panel(s) for `http_rate_limit_decisions_total`, alert on
+  sustained store errors; `check-metric-names.py` green
+- [x] RL1c (baukit `deploy/platform/redis/` + platform-infra only): secret-free
+  platform Redis base per decision 8 (namespace, pinned image, resources sized
+  for near-zero traffic, NetworkPolicy, README documenting when to choose it
+  over chart redis), following the conventions of the sibling bases;
+  platform-infra `platform/local/` composes it (Kustomization against the
+  baukit GitRepository, live only after the RL3 pin bump); `validate.sh` green
+- [x] Orchestrator gate: `make ci`, rust tests `--include-ignored`, cargo deny,
+  MSRV 1.95 check, metric lint, helm template smoke, platform-infra
+  `validate.sh`
+
+### Wave RL2 — release train baukit-v0.4.0 (1 agent)
+
+- [ ] Version bump 0.3.5 → 0.4.0 everywhere `scripts/check-version-coherence.py`
+  demands (crates, packages, templates, charts); coherence green
+- [ ] Full local gate incl. generated-fixture matrix (backend at minimum; web +
+  mobile flavors since template versions change) per CLAUDE.md
+- [ ] `scripts/release-train.sh` → tag `baukit-v0.4.0`, push branch + tag
+- [ ] Orchestrator gate: re-run coherence `--tag baukit-v0.4.0` + `make ci`
+
+### Wave RL3 — leitbild reference integration + live proof (1 agent)
+
+- [ ] Leitbild backend: bump all baukit git deps to `baukit-v0.4.0`; wire the
+  limiter (identity low, IP very high — values chosen in leitbild config per
+  env); log migration friction 0.3.2→0.4.0 in leitbild docs
+- [ ] Leitbild deploy: chart `redis.enabled`, `<PREFIX>__RATE_LIMIT__…` env in
+  HelmRelease values, compose.yaml redis for local dev, Traefik middleware
+  raised to coarse-net levels (kept as outer safety net)
+- [ ] Leitbild full gate green (`make check`, tests `--include-ignored`,
+  render-gitops) + platform-infra pin bump `baukit-v0.4.0` + `validate.sh`
+- [ ] Live proof on local k3d: deploy, hammer an authenticated endpoint past the
+  identity quota → 429 + `Retry-After` while a second identity stays 200;
+  unauthenticated flood trips the IP net; `http_rate_limit_decisions_total`
+  visible in Prometheus/dashboard
+- [ ] Platform Redis base live on local k3d (decision 8): after the pin bump the
+  `local-redis` Kustomization reconciles Ready, redis pod Ready, reachable from
+  an allowed namespace and blocked otherwise per its NetworkPolicy
+- [ ] Orchestrator gate: independent re-run of leitbild + platform-infra gates,
+  live-proof spot check
+
 ## Log
+
+- 2026-08-10: **Wave RL1 done — Redis rate-limiting foundation (3 ∥ codex agents,
+  orchestrator-verified).** RL1a: new `baukit-ratelimit` crate — `RateLimitStore`
+  port, Redis adapter (one atomic Lua token-bucket `EVAL` using Redis server
+  TIME, TTL'd keys), in-memory adapter, axum layer (identity scope off the
+  cached `baukit-auth` `Principal` extension at 60/min+10 burst default, IP
+  scope with 1-trusted-hop XFF at 6000/min+500 burst default, fail-open
+  default), `ApiError::rate_limited` 429 envelope + `Retry-After`/`RateLimit-*`
+  headers, `http_rate_limit_decisions_total{scope,outcome}`, `baukit-test`
+  Redis testcontainers helper (pinned `8.10.0-alpine` per decision 9),
+  Docker-gated concurrency/TTL/refill/layer integration tests; `Principal` now
+  cached in request extensions by the auth extractor; `BSL-1.0` (Boost)
+  allowlisted in deny.toml for redis→`xxhash-rust`. RL1b: chart opt-in
+  `redis.enabled` (`redis:8.10.0-alpine`, 1 replica, no persistence, NetPol
+  API-pods→6379 only, service `<release>-redis`), observability pack: metric
+  registered in linter, dashboard panels, critical alert on 10m sustained
+  `outcome="error"`. RL1c: `deploy/platform/redis/` shared base (ns
+  `platform-redis`, digest-pinned 8.10.0-alpine, opt-in NetPol via
+  `baukit.dev/redis-client: "true"` ns+pod labels, URL
+  `redis://redis.platform-redis.svc:6379`) + platform-infra `local-redis`
+  Kustomization (pin still v0.3.5 — live after RL3 pin bump). Redis 7→8.10.0
+  correction applied mid-wave (user decision 9). Orchestrator gates all green:
+  fmt/clippy/tests `--include-ignored`, cargo deny, MSRV 1.95, coherence (11
+  crates), metric lint, `make ci`, `deploy/platform/validate.sh` (13 bases),
+  platform-infra `validate.sh`.
 
 - 2026-08-10: **Wave M5 orchestrator re-verification (independent).** All three
   repos clean == origin (baukit `c706176`, platform-infra `427a27a`, leitbild

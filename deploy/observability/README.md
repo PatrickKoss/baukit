@@ -50,7 +50,7 @@ Load recording rules before evaluating alerts. Prometheus evaluates groups indep
 
 The shipped availability template assumes a 99.9% SLO: the burn-rate recording rules divide the 5xx ratio by a `0.001` error budget. Every ratio ends with `or on() vector(0)`, so an idle or all-success window renders as zero instead of disappearing. The fast pair uses 5m/1h windows at `14.4x`; the sustained pair uses 30m/6h windows at `6x`. A product adopting a different SLO must change the four divisors and review both alert thresholds together.
 
-The default HTTP latency thresholds are p95 > 0.5s and p99 > 1s for ten minutes. Database saturation defaults to 90%, worker failures to 10%, retries to one per second, and oldest queue age to five minutes. Treat these as product templates and test changes with `promtool check rules`.
+The default HTTP latency thresholds are p95 > 0.5s and p99 > 1s for ten minutes. Database saturation defaults to 90%, worker failures to 10%, retries to one per second, and oldest queue age to five minutes. Rate-limit store errors alert at critical severity when `outcome="error"` remains non-zero for ten minutes, because a default fail-open limiter may no longer enforce quotas. Treat these as product templates and test changes with `promtool check rules`.
 
 Replace every `https://runbooks.example.invalid/...` annotation before routing alerts to production. The always-firing `BaukitDeadMansSwitch` must be monitored for absence by the notification receiver.
 

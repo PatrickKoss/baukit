@@ -141,6 +141,15 @@ impl ApiError {
         )
     }
 
+    /// Returns the standard `429 rate_limited` error.
+    pub fn rate_limited() -> Self {
+        Self::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "rate_limited",
+            "Too many requests",
+        )
+    }
+
     /// Returns an opaque `500 internal` error and retains its cause for logging.
     pub fn internal(error: impl StdError + Send + Sync + 'static) -> Self {
         let mut api_error = Self::internal_without_cause();

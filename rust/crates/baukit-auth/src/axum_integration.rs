@@ -77,12 +77,17 @@ where
     type Rejection = AuthRejection;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        if let Some(principal) = parts.extensions.get::<Principal>() {
+            return Ok(principal.clone());
+        }
         let token = bearer_token(parts).ok_or(AuthRejection::Unauthenticated)?;
-        AuthState::from_ref(state)
+        let principal = AuthState::from_ref(state)
             .verifier
             .verify(token)
             .await
-            .map_err(log_verification_failure)
+            .map_err(log_verification_failure)?;
+        parts.extensions.insert(principal.clone());
+        Ok(principal)
     }
 }
 

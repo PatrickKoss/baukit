@@ -101,6 +101,30 @@ url = "postgres://file-secret@localhost/file"
 }
 
 #[test]
+fn partial_ip_rate_limit_section_retains_ip_defaults() {
+    let directory = TestDirectory::new();
+    let file = directory.path().join("local.toml");
+    fs::write(
+        &file,
+        r#"
+[rate_limit.ip]
+period = 120
+"#,
+    )
+    .expect("write local config");
+
+    let config = ConfigLoader::new("rate-limit-partial", Environment::Local)
+        .expect("valid loader")
+        .local_file(file)
+        .without_dotenv()
+        .load::<()>()
+        .expect("valid config");
+    assert_eq!(config.rate_limit.ip.requests_per_period, 6_000);
+    assert_eq!(config.rate_limit.ip.period, Duration::from_secs(120));
+    assert_eq!(config.rate_limit.ip.burst, 500);
+}
+
+#[test]
 fn environment_override_precedence_and_separator_work() {
     run_env_helper(
         "env_override_helper",
@@ -108,6 +132,26 @@ fn environment_override_precedence_and_separator_work() {
             ("LAYER_APP__HTTP__PORT", "8282"),
             ("LAYER_APP__HTTP__REQUEST_TIMEOUT", "17"),
             ("LAYER_APP__FEATURE_LIMIT", "9"),
+        ],
+    );
+}
+
+#[test]
+fn rate_limit_environment_overrides_use_standard_nested_path() {
+    run_env_helper(
+        "rate_limit_environment_helper",
+        &[
+            (
+                "RATE_LIMIT_APP__RATE_LIMIT__REDIS_URL",
+                "redis://redis.internal:6379/",
+            ),
+            (
+                "RATE_LIMIT_APP__RATE_LIMIT__IDENTITY__REQUESTS_PER_PERIOD",
+                "25",
+            ),
+            ("RATE_LIMIT_APP__RATE_LIMIT__IDENTITY__PERIOD", "30"),
+            ("RATE_LIMIT_APP__RATE_LIMIT__FAIL_MODE", "closed"),
+            ("RATE_LIMIT_APP__RATE_LIMIT__TRUSTED_PROXY_HOPS", "2"),
         ],
     );
 }
@@ -222,6 +266,29 @@ request_timeout = 12
     assert_eq!(config.http.request_timeout, Duration::from_secs(17));
     assert_eq!(config.product.feature_limit, 9);
     assert_eq!(config.environment, Environment::Staging);
+}
+
+#[test]
+fn rate_limit_environment_helper() {
+    if std::env::var_os("BAUKIT_CONFIG_ENV_HELPER").is_none() {
+        return;
+    }
+
+    let config = ConfigLoader::new("rate-limit-app", Environment::Staging)
+        .expect("valid loader")
+        .without_local_file()
+        .without_dotenv()
+        .load::<()>()
+        .expect("valid rate-limit config");
+
+    assert_eq!(
+        config.rate_limit.redis_url.expose(),
+        "redis://redis.internal:6379/"
+    );
+    assert_eq!(config.rate_limit.identity.requests_per_period, 25);
+    assert_eq!(config.rate_limit.identity.period, Duration::from_secs(30));
+    assert_eq!(config.rate_limit.fail_mode, RateLimitFailMode::Closed);
+    assert_eq!(config.rate_limit.trusted_proxy_hops, 2);
 }
 
 #[test]

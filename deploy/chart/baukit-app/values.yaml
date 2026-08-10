@@ -117,6 +117,33 @@ worker:
   networkPolicy:
     additionalEgress: []
 
+# Optional product-scoped Redis for expendable state such as rate limiting.
+# Products configure their own <PREFIX>__RATE_LIMIT__REDIS_URL to point at
+# redis://<release>-redis:6379; the chart does not inject application config.
+redis:
+  enabled: false
+  image:
+    repository: redis
+    tag: 8.10.0-alpine
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 10m
+      memory: 16Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+  livenessProbe:
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+  readinessProbe:
+    initialDelaySeconds: 2
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 3
+
 migration:
   enabled: true
   image:

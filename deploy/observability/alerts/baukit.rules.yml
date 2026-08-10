@@ -116,6 +116,21 @@ groups:
           description: 'Database acquire timeouts increased during the last 10m for {{ $labels }}.'
           runbook_url: https://runbooks.example.invalid/baukit/database-acquire-timeouts
 
+  - name: baukit-rate-limit-alerts
+    rules:
+      - alert: BaukitRateLimitStoreErrors
+        expr: |
+          sum by (product, service, environment, namespace, scope) (
+            rate(http_rate_limit_decisions_total{service!="", outcome="error"}[5m])
+          ) > 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: Rate-limit store errors are sustained
+          description: 'The rate limiter has reported store errors for ten minutes for {{ $labels }}; verify Redis health and whether the configured fail mode is preserving enforcement.'
+          runbook_url: https://runbooks.example.invalid/baukit/rate-limit-store-errors
+
   - name: baukit-worker-alerts
     rules:
       - alert: BaukitWorkerFailureRateHigh

@@ -17,6 +17,11 @@
 {{- end -}}
 {{- end }}
 
+{{/* Stable Redis name: products use redis://<release>-redis:6379. */}}
+{{- define "baukit-app.redisName" -}}
+{{- printf "%s-redis" .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- end }}
+
 {{/* Chart label. */}}
 {{- define "baukit-app.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" -}}

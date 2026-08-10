@@ -117,6 +117,50 @@ spec:
     {{- with .Values.networkPolicy.additionalEgress }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
+{{- if .Values.redis.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "baukit-app.redisName" . }}-ingress
+  labels:
+    {{- include "baukit-app.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "baukit-app.processSelectorLabels" (dict "root" . "process" "redis") | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "baukit-app.processSelectorLabels" (dict "root" . "process" "api") | nindent 14 }}
+      ports:
+        - port: 6379
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "baukit-app.redisName" . }}-api-egress
+  labels:
+    {{- include "baukit-app.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "baukit-app.processSelectorLabels" (dict "root" . "process" "api") | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "baukit-app.processSelectorLabels" (dict "root" . "process" "redis") | nindent 14 }}
+      ports:
+        - port: 6379
+          protocol: TCP
+{{- end }}
 {{ with .Values.api.networkPolicy.additionalEgress }}
 ---
 apiVersion: networking.k8s.io/v1

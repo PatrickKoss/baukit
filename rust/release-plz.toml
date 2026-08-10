@@ -49,6 +49,11 @@ version_group = "baukit-release-train"
 publish = false
 
 [[package]]
+name = "baukit-ratelimit"
+version_group = "baukit-release-train"
+publish = false
+
+[[package]]
 name = "baukit-test"
 version_group = "baukit-release-train"
 publish = false

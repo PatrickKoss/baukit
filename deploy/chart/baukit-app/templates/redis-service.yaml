@@ -1,0 +1,18 @@
+{{- if .Values.redis.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "baukit-app.redisName" . }}
+  labels:
+    {{- include "baukit-app.processLabels" (dict "root" . "process" "redis") | nindent 4 }}
+    baukit.dev/endpoint: redis
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "baukit-app.processSelectorLabels" (dict "root" . "process" "redis") | nindent 4 }}
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+      protocol: TCP
+{{- end }}
