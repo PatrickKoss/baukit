@@ -474,9 +474,9 @@ Architecture decisions for this focus:
 
 ### Wave RL2 — release train baukit-v0.4.0 (1 agent)
 
-- [ ] Version bump 0.3.5 → 0.4.0 everywhere `scripts/check-version-coherence.py`
+- [~] Version bump 0.3.5 → 0.4.0 everywhere `scripts/check-version-coherence.py`
   demands (crates, packages, templates, charts); coherence green
-- [ ] Full local gate incl. generated-fixture matrix (backend at minimum; web +
+- [~] Full local gate incl. generated-fixture matrix (backend at minimum; web +
   mobile flavors since template versions change) per CLAUDE.md
 - [ ] `scripts/release-train.sh` → tag `baukit-v0.4.0`, push branch + tag
 - [ ] Orchestrator gate: re-run coherence `--tag baukit-v0.4.0` + `make ci`
