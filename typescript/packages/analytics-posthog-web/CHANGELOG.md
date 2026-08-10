@@ -1,5 +1,16 @@
 # @baukit/analytics-posthog-web
 
+## 0.4.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.4.0 train.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/analytics-core@0.4.0
+
 ## 0.3.5
 
 ### Patch Changes

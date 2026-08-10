@@ -474,12 +474,12 @@ Architecture decisions for this focus:
 
 ### Wave RL2 — release train baukit-v0.4.0 (1 agent)
 
-- [~] Version bump 0.3.5 → 0.4.0 everywhere `scripts/check-version-coherence.py`
+- [x] Version bump 0.3.5 → 0.4.0 everywhere `scripts/check-version-coherence.py`
   demands (crates, packages, templates, charts); coherence green
-- [~] Full local gate incl. generated-fixture matrix (backend at minimum; web +
+- [x] Full local gate incl. generated-fixture matrix (backend at minimum; web +
   mobile flavors since template versions change) per CLAUDE.md
-- [ ] `scripts/release-train.sh` → tag `baukit-v0.4.0`, push branch + tag
-- [ ] Orchestrator gate: re-run coherence `--tag baukit-v0.4.0` + `make ci`
+- [x] `scripts/release-train.sh` → tag `baukit-v0.4.0`, push branch + tag
+- [x] Orchestrator gate: re-run coherence `--tag baukit-v0.4.0` + `make ci`
 
 ### Wave RL3 — leitbild reference integration + live proof (1 agent)
 
@@ -502,6 +502,16 @@ Architecture decisions for this focus:
   live-proof spot check
 
 ## Log
+
+- 2026-08-10: **Wave RL2 done — baukit-v0.4.0 release train (1 codex agent +
+  orchestrator).** `scripts/release-train.sh minor` bumped 41 files (11 crates
+  incl. new `baukit-ratelimit`, CLI, 8 TS packages, templates/VERSION, both
+  charts); six CLI golden trees refreshed for version-bearing generated files.
+  Agent gate: full matrix incl. generated fixture in all three flavors
+  (backend fmt/clippy/tests/openapi-drift + `--include-ignored`, web
+  build/lint/test, mobile tsc/lint/test). Orchestrator re-ran coherence (0.4.0
+  coherent), metric lint, `make ci`, workspace tests `--include-ignored` — all
+  green. Tagged `baukit-v0.4.0`, pushed branch + tag.
 
 - 2026-08-10: **Wave RL1 done — Redis rate-limiting foundation (3 ∥ codex agents,
   orchestrator-verified).** RL1a: new `baukit-ratelimit` crate — `RateLimitStore`
