@@ -4,6 +4,8 @@ All notable changes to `baukit-ratelimit` are documented here.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-10
+
 ### Added
 
 - Redis Sentinel master discovery through `redis+sentinel://` URLs and the

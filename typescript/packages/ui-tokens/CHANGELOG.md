@@ -1,5 +1,11 @@
 # @baukit/ui-tokens
 
+## 0.5.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.5.0 train.
+
 ## 0.4.0
 
 ### Minor Changes

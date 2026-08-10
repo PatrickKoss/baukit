@@ -4,6 +4,8 @@ All notable changes to `baukit-telemetry` are documented here.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-10
+
 ## [0.4.0] - 2026-08-10
 
 ## [0.3.5] - 2026-08-09
