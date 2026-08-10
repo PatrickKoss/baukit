@@ -4,6 +4,11 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- `start_redis_sentinel()` for Docker-backed Redis master, replica, and
+  quorum-one Sentinel failover tests.
+
 ## [0.4.0] - 2026-08-10
 
 ## [0.3.5] - 2026-08-09

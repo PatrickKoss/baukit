@@ -540,13 +540,13 @@ Architecture decisions for this focus:
 
 ### Wave RL4 — Sentinel HA option (decisions 10–14, planned 2026-08-10)
 
-- [~] RL4a (`rust/` only; may run ∥ RL3): `RedisRateLimitStore` sentinel
+- [x] RL4a (`rust/` only; may run ∥ RL3): `RedisRateLimitStore` sentinel
   support per decision 10 (`redis+sentinel://` URL scheme +
   `connect_sentinel`), `baukit-test` `start_redis_sentinel()` helper per
   decision 14, unit tests (URL parsing/validation) + Docker-gated sentinel
   tests (connect, quota, failover), crate README/CHANGELOG; gates: fmt,
   clippy `-D warnings`, tests `--include-ignored`, cargo deny, MSRV 1.95
-- [ ] RL4b (`deploy/` only; **only after RL3 gates done** per decision 13):
+- [~] RL4b (`deploy/` only; **only after RL3 gates done** per decision 13):
   chart `redis.replicas` + sentinel StatefulSet path per decision 11;
   platform `redis-ha` base per decision 12; helm lint/template both modes,
   metric lint untouched, platform-infra `validate.sh` compatibility

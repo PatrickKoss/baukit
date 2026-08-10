@@ -1,8 +1,9 @@
 //! Shared integration fixtures and conformance assertions for Baukit services.
 //!
-//! The crate provides Docker-backed PostgreSQL and Redis fixtures, compact test tracing,
-//! Prometheus contract checks, in-process or network operations-endpoint checks,
-//! OpenAPI drift assertions, and a mock OIDC/JWKS issuer with JWT fixtures.
+//! The crate provides Docker-backed PostgreSQL, direct Redis, and Redis Sentinel
+//! fixtures, compact test tracing, Prometheus contract checks, in-process or network
+//! operations-endpoint checks, OpenAPI drift assertions, and a mock OIDC/JWKS issuer
+//! with JWT fixtures.
 //!
 //! # Telemetry tests
 //!
@@ -60,5 +61,8 @@ pub use ops::{
 #[cfg(feature = "sqlx-postgres")]
 pub use postgres::start_postgres_with_migrations;
 pub use postgres::{PostgresTestContainer, PostgresTestError, start_postgres};
-pub use redis::{RedisTestContainer, RedisTestError, start_redis};
+pub use redis::{
+    RedisSentinelTestContainer, RedisTestContainer, RedisTestError, start_redis,
+    start_redis_sentinel,
+};
 pub use tracing::init_test_tracing;

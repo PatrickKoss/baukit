@@ -96,6 +96,82 @@ async fn redis_bucket_refills_over_time() -> Result<(), Box<dyn Error>> {
 
 #[tokio::test]
 #[ignore = "requires Docker; mandatory in the full local gate"]
+async fn sentinel_url_enforces_quota() -> Result<(), Box<dyn Error>> {
+    let fixture = baukit_test::start_redis_sentinel().await?;
+    let store = RedisRateLimitStore::connect(fixture.connection_url()).await?;
+    let quota = Quota::new(2, Duration::from_secs(60), 0)?;
+
+    let first = store
+        .check_and_consume("rl:test:sentinel:quota", quota)
+        .await?;
+    assert!(first.allowed);
+    assert_eq!(first.remaining, 1);
+    assert_eq!(first.retry_after, Duration::ZERO);
+
+    let second = store
+        .check_and_consume("rl:test:sentinel:quota", quota)
+        .await?;
+    assert!(second.allowed);
+    assert_eq!(second.remaining, 0);
+
+    let limited = store
+        .check_and_consume("rl:test:sentinel:quota", quota)
+        .await?;
+    assert!(!limited.allowed);
+    assert_eq!(limited.remaining, 0);
+    assert!(limited.retry_after > Duration::ZERO);
+    assert!(limited.retry_after <= Duration::from_secs(30));
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn sentinel_store_recovers_after_master_failover() -> Result<(), Box<dyn Error>> {
+    let fixture = baukit_test::start_redis_sentinel().await?;
+    let store = RedisRateLimitStore::connect(fixture.connection_url()).await?;
+    let probe_quota = Quota::new(100, Duration::from_secs(60), 0)?;
+    assert!(
+        store
+            .check_and_consume("rl:test:sentinel:initial", probe_quota)
+            .await?
+            .allowed
+    );
+
+    fixture.stop_master().await?;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        match store
+            .check_and_consume("rl:test:sentinel:recovery-probe", probe_quota)
+            .await
+        {
+            Ok(decision) if decision.allowed => break,
+            Ok(_) | Err(_) if tokio::time::Instant::now() < deadline => {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+            }
+            Ok(decision) => panic!("store did not admit after failover: {decision:?}"),
+            Err(error) => {
+                return Err(format!("store did not recover after failover: {error}").into());
+            }
+        }
+    }
+
+    let quota = Quota::new(1, Duration::from_secs(60), 0)?;
+    let allowed = store
+        .check_and_consume("rl:test:sentinel:post-failover", quota)
+        .await?;
+    let limited = store
+        .check_and_consume("rl:test:sentinel:post-failover", quota)
+        .await?;
+    assert!(allowed.allowed);
+    assert_eq!(allowed.remaining, 0);
+    assert!(!limited.allowed);
+    assert_eq!(limited.remaining, 0);
+    assert!(limited.retry_after > Duration::ZERO);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
 async fn real_redis_works_through_full_axum_layer() -> Result<(), Box<dyn Error>> {
     let fixture = baukit_test::start_redis().await?;
     let store = RedisRateLimitStore::connect(fixture.connection_url()).await?;
