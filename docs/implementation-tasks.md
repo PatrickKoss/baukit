@@ -528,15 +528,22 @@ Architecture decisions for this focus:
   raised to coarse-net levels (kept as outer safety net)
 - [x] Leitbild full gate green (`make check`, tests `--include-ignored`,
   render-gitops) + platform-infra pin bump `baukit-v0.4.0` + `validate.sh`
-- [ ] Live proof on local k3d: deploy, hammer an authenticated endpoint past the
-  identity quota → 429 + `Retry-After` while a second identity stays 200;
-  unauthenticated flood trips the IP net; `http_rate_limit_decisions_total`
-  visible in Prometheus/dashboard
-- [ ] Platform Redis base live on local k3d (decision 8): after the pin bump the
-  `local-redis` Kustomization reconciles Ready, redis pod Ready, reachable from
-  an allowed namespace and blocked otherwise per its NetworkPolicy
-- [ ] Orchestrator gate: independent re-run of leitbild + platform-infra gates,
-  live-proof spot check
+- [~] Live proof on local k3d (codex verifier, 2026-08-11): canary promoted on
+  chart 0.5.0 + release `083b5343796f`; identity hammer (900 req, conc 50)
+  → 709×200 then 191×429 with `Retry-After: 1` + `RateLimit-Remaining: 0`
+  (limit 700 = 600+100 burst); unauth flood advanced the `scope="ip"` counter
+  710→1710 (limit 13000); Prometheus shows
+  `http_rate_limit_decisions_total{scope="identity",outcome="limited"} 191`.
+  **Open**: A-429-while-B-200 isolation pair — testing realm has only one
+  identity (`wave-l2-smoke`); creating a temp Keycloak identity was blocked
+  by the session permission classifier, needs user go-ahead
+- [x] Platform Redis base live on local k3d (decision 8): proven at v0.4.0
+  (Kustomization Ready, pod Ready, NetworkPolicy allow + both deny cases) and
+  re-proven at v0.5.0 on the `redis-ha` base (RL4d live proof)
+- [~] Orchestrator gate: leitbild + platform-infra gates re-verified via the
+  RL4c/pin-bump codex runs (all green incl. `--include-ignored`); live-proof
+  reviewed from the codex report — pending only the identity-isolation pair
+  above
 
 ### Wave RL4 — Sentinel HA option (decisions 10–14, planned 2026-08-10)
 
@@ -550,14 +557,59 @@ Architecture decisions for this focus:
   chart `redis.replicas` + sentinel StatefulSet path per decision 11;
   platform `redis-ha` base per decision 12; helm lint/template both modes,
   metric lint untouched, platform-infra `validate.sh` compatibility
-- [~] RL4c: release train `0.4.0 → 0.5.0`, full gate incl. generated-fixture
+- [x] RL4c: release train `0.4.0 → 0.5.0`, full gate incl. generated-fixture
   matrix, tag `baukit-v0.5.0`, push
-- [ ] RL4d: platform-infra `local-redis` → `redis-ha` base + pin bump
+- [x] RL4d: platform-infra `local-redis` → `redis-ha` base + pin bump
   `baukit-v0.5.0`, `validate.sh`; live k3d proof — sentinel failover
   (delete master pod → promoted replica, labeled client keeps working)
-- [ ] Orchestrator gate: independent re-run of all RL4 gates + live spot check
+- [x] Orchestrator gate: independent re-run of all RL4 gates + live spot check
+  (RL4a re-verified green pre-release; RL4b renders structurally re-checked;
+  RL4c gates run by orchestrator; RL4d live proof by dedicated codex verifier —
+  failover promotion 6.7s, write success 7.0s, full 3/3 rejoin 35.6s)
 
 ## Log
+
+- 2026-08-11: **Wave RL3 live proof nearly done (codex verifier on k3d
+  testing).** Leitbild pinned to baukit-v0.5.0 (16 files, scoped lock
+  updates only — 11 baukit crates + `@baukit/*` pins; commit 083b534),
+  released `083b5343796f` to testing (f8d7723), Flagger canary
+  20→50→Promoting→Succeeded in ~2.5 min, redis pod healthy with
+  `runAsUser: 999`. Live: `/me` via PKCE (`leitbild-web`,
+  realm `leitbild-testing`); baseline 200 with
+  `RateLimit-Limit: 700` / `Remaining: 699` / `Reset: 60`; hammer 900 req
+  → 191×429 (`Retry-After: 1`, `Remaining: 0`, `rate_limited` envelope);
+  IP scope: 1000 unauth req advanced `scope="ip",outcome="allowed"`
+  710→1710 (`RateLimit-Limit: 13000`), no exhaustion flood per DoS cap;
+  Prometheus confirms `identity/limited 191`. Remaining: two-identity
+  isolation pair (A 429 while B 200) — realm has a single user and the
+  permission classifier blocked launching the codex run that would create
+  a temporary second Keycloak identity; awaiting user decision.
+  agents + codex live verifier, orchestrator release).** RL4a:
+  `RedisRateLimitStore::connect` now dispatches on URL scheme
+  (`redis://` direct, `redis+sentinel://h1:26379,…/<master>`), new
+  `connect_sentinel`; sentinel state = mutexed `SentinelClient` +
+  generation-guarded `RwLock` master connection, failed EVAL → re-resolve →
+  single retry; `baukit-test` `start_redis_sentinel()` (bridge-net
+  master+replica+sentinel, quorum 1) + Docker-gated quota/failover tests.
+  RL4b: chart `redis.replicas` (1 = Deployment, odd ≥3 = StatefulSet with
+  redis+sentinel containers, `<release>-redis-sentinel`:26379, `mymaster`,
+  quorum floor(n/2)+1, even → template `fail`); fixed live-breaking redis
+  securityContext (explicit runAsUser 999 — old render inherited
+  runAsNonRoot without runAsUser ⇒ CreateContainerConfigError); platform
+  `deploy/platform/redis-ha/` 3-replica base (kept `redis` ClusterIP name
+  for clean base switching). RL4c: release train 0.4.0 → 0.5.0 (35 files),
+  `make ci` + full generated-fixture matrix green, tagged + pushed
+  `baukit-v0.5.0`, coherence vs tag green. RL4d: platform-infra
+  `local-redis` → `redis-ha` path + all env pins → v0.5.0 (`validate.sh`
+  24 dirs green); live k3d proof by codex verifier: Kustomizations applied
+  v0.5.0 (had to reconcile `local-baseline` dependency first), StatefulSet
+  3/3, old Deployment pruned, sentinel topology 1 master + 2 replicas via
+  labeled client; failover: master pod deleted → sentinel promoted new
+  master in 6.7s, write on new master at 7.0s, deleted pod rejoined as
+  replica, 3/3 at 35.6s — `RL4D_LIVE_PROOF_GREEN`. Leitbild pinned to
+  v0.5.0 (16 files, lockfiles moved baukit-only; all gates incl.
+  `--include-ignored`, render-gitops, web/mobile green), released
+  `083b5343796f` to testing.
 
 - 2026-08-10: **Wave RL2 done — baukit-v0.4.0 release train (1 codex agent +
   orchestrator).** `scripts/release-train.sh minor` bumped 41 files (11 crates
