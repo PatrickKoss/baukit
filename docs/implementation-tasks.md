@@ -449,6 +449,43 @@ Architecture decisions for this focus:
 9. **Redis version** (user decision 2026-08-10): pin `redis:8.10.0-alpine`
    (digest `sha256:978f0e01593e65eed801f2402944efcd936d43b5027e4908a7897baf88ed6241`
    where digests are used) everywhere — chart, platform base, leitbild compose.
+10. **Sentinel-aware store** (user addition 2026-08-10): the mode is decided by
+    the replica count — one replica ⇒ plain Redis, more than one ⇒ Sentinel.
+    In the crate this stays a single knob: `RedisRateLimitStore::connect`
+    accepts `redis://…` (direct, unchanged) **and**
+    `redis+sentinel://h1:26379,h2:26379,h3:26379/<master-name>`
+    (Sentinel-mediated master discovery via the `redis` crate's `sentinel`
+    feature, master role, re-resolve on connection failure). Plus an explicit
+    `connect_sentinel(sentinels, master_name)` constructor. No new config
+    vocabulary — products switch by changing the URL value only. Fail-open
+    semantics and the metric contract are unchanged.
+11. **Chart HA:** `redis.replicas` (default 1). `1` ⇒ today's Deployment +
+    `<release>-redis` service. Odd `>= 3` ⇒ StatefulSet with a redis and a
+    sentinel container per pod, headless service for stable peer DNS, sentinel
+    service `<release>-redis-sentinel:26379`, master name `mymaster`, quorum
+    `floor(n/2)+1`; template `fail`s on `2` or even counts. Still no
+    persistence — replication covers pod loss; full restart resets state,
+    which is acceptable for rate-limit buckets and documented. NetworkPolicy
+    extended: API pods → 6379+26379, redis pods ↔ redis pods for replication
+    and sentinel gossip.
+12. **Platform HA base:** new sibling base `deploy/platform/redis-ha/`
+    (3 replicas + sentinel, same `platform-redis` namespace, same opt-in
+    client label, contract
+    `redis+sentinel://redis-sentinel.platform-redis.svc:26379/mymaster`).
+    platform-infra's local overlay switches `local-redis` to the HA base so
+    Sentinel failover is proven live on k3d; the single-instance base stays
+    covered by `validate.sh`.
+13. **Release + sequencing:** new public API + chart feature ⇒
+    `baukit-v0.5.0`; platform-infra pin `baukit-v0.4.0 → baukit-v0.5.0`
+    afterwards. Leitbild stays on v0.4.0 single-redis (HA is an option
+    products choose). Constraint: leitbild's `render-gitops` renders the
+    baukit **working-tree** chart, so RL4's `deploy/` work must not run while
+    RL3 verification is in flight; the `rust/` work is safe in parallel
+    (leitbild consumes crates via git tag).
+14. **Sentinel testing:** `baukit-test` gains `start_redis_sentinel()` —
+    a docker network with master + replica + one sentinel (quorum 1 so
+    failover is actually exercisable); Docker-gated tests cover
+    sentinel-URL connect + quota enforcement and a master-kill failover.
 
 ### Wave RL1 — baukit library + platform surface (2 ∥ agents, disjoint dirs)
 
@@ -483,13 +520,13 @@ Architecture decisions for this focus:
 
 ### Wave RL3 — leitbild reference integration + live proof (1 agent)
 
-- [ ] Leitbild backend: bump all baukit git deps to `baukit-v0.4.0`; wire the
+- [x] Leitbild backend: bump all baukit git deps to `baukit-v0.4.0`; wire the
   limiter (identity low, IP very high — values chosen in leitbild config per
   env); log migration friction 0.3.2→0.4.0 in leitbild docs
-- [ ] Leitbild deploy: chart `redis.enabled`, `<PREFIX>__RATE_LIMIT__…` env in
+- [x] Leitbild deploy: chart `redis.enabled`, `<PREFIX>__RATE_LIMIT__…` env in
   HelmRelease values, compose.yaml redis for local dev, Traefik middleware
   raised to coarse-net levels (kept as outer safety net)
-- [ ] Leitbild full gate green (`make check`, tests `--include-ignored`,
+- [x] Leitbild full gate green (`make check`, tests `--include-ignored`,
   render-gitops) + platform-infra pin bump `baukit-v0.4.0` + `validate.sh`
 - [ ] Live proof on local k3d: deploy, hammer an authenticated endpoint past the
   identity quota → 429 + `Retry-After` while a second identity stays 200;
@@ -500,6 +537,25 @@ Architecture decisions for this focus:
   an allowed namespace and blocked otherwise per its NetworkPolicy
 - [ ] Orchestrator gate: independent re-run of leitbild + platform-infra gates,
   live-proof spot check
+
+### Wave RL4 — Sentinel HA option (decisions 10–14, planned 2026-08-10)
+
+- [~] RL4a (`rust/` only; may run ∥ RL3): `RedisRateLimitStore` sentinel
+  support per decision 10 (`redis+sentinel://` URL scheme +
+  `connect_sentinel`), `baukit-test` `start_redis_sentinel()` helper per
+  decision 14, unit tests (URL parsing/validation) + Docker-gated sentinel
+  tests (connect, quota, failover), crate README/CHANGELOG; gates: fmt,
+  clippy `-D warnings`, tests `--include-ignored`, cargo deny, MSRV 1.95
+- [ ] RL4b (`deploy/` only; **only after RL3 gates done** per decision 13):
+  chart `redis.replicas` + sentinel StatefulSet path per decision 11;
+  platform `redis-ha` base per decision 12; helm lint/template both modes,
+  metric lint untouched, platform-infra `validate.sh` compatibility
+- [ ] RL4c: release train `0.4.0 → 0.5.0`, full gate incl. generated-fixture
+  matrix, tag `baukit-v0.5.0`, push
+- [ ] RL4d: platform-infra `local-redis` → `redis-ha` base + pin bump
+  `baukit-v0.5.0`, `validate.sh`; live k3d proof — sentinel failover
+  (delete master pod → promoted replica, labeled client keeps working)
+- [ ] Orchestrator gate: independent re-run of all RL4 gates + live spot check
 
 ## Log
 
