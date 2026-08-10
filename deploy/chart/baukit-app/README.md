@@ -1,6 +1,6 @@
 # Baukit application chart
 
-`baukit-app` is the reusable workload chart for a Baukit product. A product pins this chart as a Helm dependency and keeps only thin environment-specific values files. It creates one API Deployment, an optional worker Deployment, a pre-release migration Job, an opt-in seed Job, and an optional single-replica Redis Deployment for expendable product state. Each application process has its own runtime image.
+`baukit-app` is the reusable workload chart for a Baukit product. A product pins this chart as a Helm dependency and keeps only thin environment-specific values files. It creates one API Deployment, an optional worker Deployment, a pre-release migration Job, an opt-in seed Job, and optional direct or Sentinel-HA Redis for expendable product state. Each application process has its own runtime image.
 
 The migration hook only starts the migrate process. Advisory locking, lock timeout, and expand/migrate/contract compatibility remain application responsibilities; the API never runs migrations implicitly.
 
@@ -27,7 +27,9 @@ For `product: minimal-api`, the chart normalizes the configuration prefix to `MI
 
 Secrets are consumed through `envFrom` references to existing Secrets or `secretKeyRef` entries in a process's raw `env` list. This chart deliberately has no value that accepts secret contents; create encrypted Secret manifests separately with SOPS/age. Process `env` entries are appended after chart-managed entries and should not redefine those names.
 
-Set `redis.enabled=true` to create an in-memory Redis instance for application-level rate limiting or other expendable product state. Its stable Service name is `<release>-redis` on port `6379`, so products point their own `<PREFIX>__RATE_LIMIT__REDIS_URL` setting at `redis://<release>-redis:6379`. For example, release `minimal-api` uses `redis://minimal-api-redis:6379`. The chart deliberately does not invent or inject rate-limit environment variables. Redis persistence is disabled and the Deployment has no StatefulSet or PVC; losing the pod resets its state.
+Set `redis.enabled=true` to create Redis for application-level rate limiting or other expendable product state. With the default `redis.replicas=1`, products use `redis://<release>-redis:6379`. With an odd replica count of at least three, the chart creates a Redis/Sentinel StatefulSet and products use `redis+sentinel://<release>-redis-sentinel:26379/mymaster`. For example, release `minimal-api` uses `redis://minimal-api-redis:6379` in direct mode or `redis+sentinel://minimal-api-redis-sentinel:26379/mymaster` in HA mode. A value of 2 or any even replica count is rejected because Sentinel requires a reliable majority. The application-side store switches solely on the URL scheme; the chart deliberately does not invent or inject rate-limit environment variables.
+
+Persistence is disabled in both modes: Redis data, Sentinel configuration, and scratch paths use `emptyDir` volumes, with no PVC. HA replication covers individual pod loss, but a full StatefulSet restart resets all rate-limit buckets. This is acceptable only for expendable state.
 
 Kubernetes metadata carries `app.kubernetes.io/part-of` and `baukit.dev/product` for the telemetry `product` identity, plus `app.kubernetes.io/component` and `baukit.dev/process` for `api`, `worker`, `migrate`, `seed`, or the optional `redis` component. The application continues to own OpenTelemetry resource attributes such as `service.name=<product>-<process>` and its build version/commit.
 
@@ -37,7 +39,7 @@ Only the API Service is an Ingress backend. The private ops Service exposes the 
 
 Annotation discovery is enabled on ops Services by default. Set `opsService.prometheusScrape.enabled=false` (and the worker equivalent) if the collector does not use annotations. `serviceMonitor.enabled=true` offers an alternative for Prometheus Operator installations; the template is emitted only when the cluster advertises `monitoring.coreos.com/v1/ServiceMonitor`. Those monitors attach the bounded `product`, `<product>-<process>` `service`, and `environment` discovery labels required by the shared dashboards, and honor application labels so the worker's bounded `job` dimension is not replaced by Prometheus's target job. The chart ships no CRDs.
 
-NetworkPolicy is enabled by default and selects every process in the release. It denies all ingress and egress, then allows the configured Traefik pods to the API port, configured Prometheus pods to ops ports, DNS to CoreDNS, and the release-wide `networkPolicy.additionalEgress` rules. When Redis is enabled, a separate rule permits only this release's API pods to reach its Redis pod on TCP port `6379`; no other Redis ingress is admitted by the chart. Each process also has `networkPolicy.additionalEgress`; those rules select only that process, so worker Git access need not open the API. The defaults assume K3s Traefik in `kube-system`, Prometheus in `observability`, and CoreDNS in `kube-system`; products must adjust selectors and add database, OTLP, identity-provider, and external-service destinations.
+NetworkPolicy is enabled by default and selects every process in the release. It denies all ingress and egress, then allows the configured Traefik pods to the API port, configured Prometheus pods to ops ports, DNS to CoreDNS, and the release-wide `networkPolicy.additionalEgress` rules. When Redis is enabled, a separate rule permits only this release's API pods to reach Redis on TCP port `6379`; HA mode also permits API access to Sentinel on `26379` and Redis pods to communicate with each other on both ports for replication and Sentinel gossip. No other Redis ingress is admitted by the chart. Each process also has `networkPolicy.additionalEgress`; those rules select only that process, so worker Git access need not open the API. The defaults assume K3s Traefik in `kube-system`, Prometheus in `observability`, and CoreDNS in `kube-system`; products must adjust selectors and add database, OTLP, identity-provider, and external-service destinations.
 
 Most CNIs can apply the pod-selected CoreDNS rule. K3s installations may enforce policy against the DNS Service IP before destination NAT, which prevents that selector from matching. Set `networkPolicy.dns.k3sCompatible=true` to add a destination-independent rule restricted to TCP/UDP port 53. This trades destination restriction for working DNS and is intentionally opt-in.
 
@@ -134,14 +136,15 @@ Migration uses `helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded`
 
 | Value | Default | Description |
 |---|---:|---|
-| `redis.enabled` | `false` | Create a single-replica, non-persistent Redis Deployment and `<release>-redis` Service. |
+| `redis.enabled` | `false` | Create non-persistent Redis for expendable product state. |
+| `redis.replicas` | `1` | `1` creates a Deployment; odd values `>= 3` create Redis + Sentinel pods in a StatefulSet. `2` and even values fail rendering. |
 | `redis.image.repository` / `tag` / `pullPolicy` | `redis` / `8.10.0-alpine` / `IfNotPresent` | Redis image settings; the default tag is an exact Redis 8 Alpine patch release. |
 | `redis.resources.requests.cpu` / `memory` | `10m` / `16Mi` | Minimal Redis resource requests for expendable rate-limit state. |
 | `redis.resources.limits.cpu` / `memory` | `100m` / `64Mi` | Redis resource limits. |
 | `redis.livenessProbe.*` | `5s` initial delay, `10s` period, `2s` timeout, `3` failures | `redis-cli ping` liveness settings. |
 | `redis.readinessProbe.*` | `2s` initial delay, `5s` period, `2s` timeout, `3` failures | `redis-cli ping` readiness settings. |
 
-Redis reuses the chart-wide pod/container security contexts and image-pull Secrets. Its writable `/data` path is an `emptyDir`, while both RDB snapshots and append-only files are disabled; there is no persistent storage contract.
+Redis uses a fixed image-specific UID/GID security context (`999:1000`), drops all capabilities, and keeps a read-only root filesystem. Writable data, Sentinel configuration, and `/tmp` paths are `emptyDir` volumes. Both RDB snapshots and append-only files are disabled; there is no persistent storage contract, and a full restart resets all buckets.
 
 ### Services, ingress, and scaling
 

@@ -118,10 +118,15 @@ worker:
     additionalEgress: []
 
 # Optional product-scoped Redis for expendable state such as rate limiting.
-# Products configure their own <PREFIX>__RATE_LIMIT__REDIS_URL to point at
-# redis://<release>-redis:6379; the chart does not inject application config.
+# Use one replica for direct Redis, or an odd replica count of at least three
+# for Sentinel HA. Products configure their own <PREFIX>__RATE_LIMIT__REDIS_URL
+# with the matching URL scheme; the chart does not inject application config.
 redis:
   enabled: false
+  # 1 creates a Deployment. Odd values >= 3 create a Redis + Sentinel
+  # StatefulSet. Even values and 2 are rejected because they cannot provide a
+  # reliable Sentinel majority.
+  replicas: 1
   image:
     repository: redis
     tag: 8.10.0-alpine

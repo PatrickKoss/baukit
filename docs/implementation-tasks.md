@@ -546,11 +546,11 @@ Architecture decisions for this focus:
   decision 14, unit tests (URL parsing/validation) + Docker-gated sentinel
   tests (connect, quota, failover), crate README/CHANGELOG; gates: fmt,
   clippy `-D warnings`, tests `--include-ignored`, cargo deny, MSRV 1.95
-- [~] RL4b (`deploy/` only; **only after RL3 gates done** per decision 13):
+- [x] RL4b (`deploy/` only; **only after RL3 gates done** per decision 13):
   chart `redis.replicas` + sentinel StatefulSet path per decision 11;
   platform `redis-ha` base per decision 12; helm lint/template both modes,
   metric lint untouched, platform-infra `validate.sh` compatibility
-- [ ] RL4c: release train `0.4.0 → 0.5.0`, full gate incl. generated-fixture
+- [~] RL4c: release train `0.4.0 → 0.5.0`, full gate incl. generated-fixture
   matrix, tag `baukit-v0.5.0`, push
 - [ ] RL4d: platform-infra `local-redis` → `redis-ha` base + pin bump
   `baukit-v0.5.0`, `validate.sh`; live k3d proof — sentinel failover

@@ -26,6 +26,7 @@ The conventional namespaces are:
 | cloud provider drivers | `kube-system` |
 | database operator | `cnpg-system` |
 | shared database cluster | `postgres` |
+| shared Redis (direct or Sentinel HA) | `platform-redis` |
 | identity | `keycloak` |
 | metrics, logs, and traces | `observability` |
 
