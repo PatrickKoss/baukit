@@ -1,6 +1,6 @@
 {
   "name": "@baukit/data-contracts-expo-sqlite",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "type": "module",
   "engines": {
@@ -29,7 +29,7 @@
     "typescript": "6.0.3"
   },
   "peerDependencies": {
-    "@baukit/data-contracts": "^0.5.0",
+    "@baukit/data-contracts": "^0.5.1",
     "expo-sqlite": "^57.0.1"
   }
 }

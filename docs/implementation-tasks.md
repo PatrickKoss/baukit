@@ -39,10 +39,10 @@ Standing facts that govern all remaining work:
   environments, and PostHog runs in-cluster as an optional flag-gated base.
 - **Baukit commit freeze lifted** (2026-08-09): the orchestrator commits/pushes
   baukit and cuts releases (`scripts/release-train.sh`).
-- Latest release-train tag: `baukit-v0.5.0`; leitbild and the platform-infra
-  cluster pins are on it. The three earlier migrated products (Fitness
-  Tracker, OpenDialog, solo-leveling-system) remain on `baukit-v0.2.0` —
-  later product work.
+- Latest release-train tag: `baukit-v0.5.1`; leitbild and the platform-infra
+  cluster remain pinned to `baukit-v0.5.0`. Fitness Tracker and
+  solo-leveling-system remain on `baukit-v0.2.0`; OpenDialog is the first
+  product moving to the direct pnpm Git packages from `baukit-v0.5.1`.
 
 ## Focus I: Phase 3 — cheap production platform (roadmap §15 Phase 3)
 
@@ -293,6 +293,14 @@ Full RL1/RL2/RL4 task lists and log entries are in
 Wave-log entries for all completed waves (I0–I3, L1/L1b/LD/L2/L3, M1–M5, I5a,
 RL1/RL2/RL4) are archived verbatim in
 [implementation-tasks-archive-phase3-rl.md](./implementation-tasks-archive-phase3-rl.md).
+
+- 2026-08-14: **Git-path TypeScript package distribution fixed and
+  `baukit-v0.5.1` released.** A root pnpm marker and lockfile make pnpm prepare
+  subdirectory packages with the nested TypeScript workspace instead of
+  falling back to npm and rejecting `workspace:*`. Direct external installs
+  of analytics core plus both PostHog adapters were built and imported; the
+  full local CI mirror, Docker-gated Rust suite, dependency policy checks,
+  observability lint, and combined/auth generated fixtures passed.
 
 - 2026-08-11: **Wave RL3 live proof nearly done (codex verifier on k3d
   testing).** Leitbild pinned to baukit-v0.5.0 (16 files, scoped lock

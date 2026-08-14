@@ -1,5 +1,11 @@
 # @baukit/api-runtime
 
+## 0.5.1
+
+### Patch Changes
+
+- Release the coordinated baukit 0.5.1 train.
+
 ## 0.5.0
 
 ### Minor Changes

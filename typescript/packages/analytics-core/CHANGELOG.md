@@ -1,5 +1,13 @@
 # @baukit/analytics-core
 
+## 0.5.1
+
+### Patch Changes
+
+- beeaf6c: Make Git-path package preparation use pnpm so private packages can be consumed
+  directly from the Baukit release tag without vendored tarballs.
+- Release the coordinated baukit 0.5.1 train.
+
 ## 0.5.0
 
 ### Minor Changes
