@@ -39,7 +39,7 @@ preparation and the complete local CI-equivalent gates were rerun).
 | Responsibility | Dependency | Tested baseline | Notes |
 |---|---|---|---|
 | Mobile runtime | Expo SDK | 57 (RN 0.86, React 19.2) | React/RN versions follow the Expo SDK, verified with Expo Doctor |
-| Mobile navigation | Expo Router | SDK 57 line | |
+| Mobile navigation | Expo Router (recommended) | SDK 57 line (product-managed) | Recommended product baseline; the generated mobile template currently emits a single `App.tsx` and does not install or configure Expo Router. |
 | Remote state | TanStack Query | 5 | |
 | Web routing | TanStack Router | current v1 | re-verify TanStack Start status separately |
 | Local state | Zustand | 5 | |

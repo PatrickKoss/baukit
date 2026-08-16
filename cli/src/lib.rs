@@ -1,9 +1,13 @@
 use std::{
     collections::BTreeMap,
-    fs,
+    ffi::OsString,
+    fs, io,
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
+
+#[cfg(unix)]
+use std::os::unix::fs::FileTypeExt;
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::ValueEnum;
@@ -49,7 +53,11 @@ const EXPECTED_WORKER_FILES: &[&str] = &[
     "backend/tests/worker_integration.rs",
 ];
 
-const EXPECTED_COMMON_FILES: &[&str] = &[".github/workflows/ci.yml", "scripts/lockfiles.sh"];
+const EXPECTED_COMMON_FILES: &[&str] = &[
+    ".github/workflows/ci.yml",
+    "scripts/lockfiles.sh",
+    "scripts/preflight.sh",
+];
 
 const EXPECTED_MOBILE_FILES: &[&str] = &[
     "mobile/package.json",
@@ -677,6 +685,78 @@ pub fn read_manifest(root: &Path) -> Result<Manifest> {
 }
 
 pub fn doctor(root: &Path) -> Result<Vec<String>> {
+    doctor_with_host(root, &SystemDoctorHost)
+}
+
+#[derive(Debug)]
+struct DoctorCommandOutput {
+    success: bool,
+    code: Option<i32>,
+    stderr: String,
+}
+
+trait DoctorHost {
+    fn env_var_os(&self, name: &str) -> Option<OsString>;
+    fn is_socket(&self, path: &Path) -> bool;
+    fn run_command(
+        &self,
+        program: &str,
+        args: &[String],
+        current_dir: Option<&Path>,
+    ) -> io::Result<DoctorCommandOutput>;
+}
+
+struct SystemDoctorHost;
+
+impl DoctorHost for SystemDoctorHost {
+    fn env_var_os(&self, name: &str) -> Option<OsString> {
+        std::env::var_os(name)
+    }
+
+    fn is_socket(&self, path: &Path) -> bool {
+        is_socket(path)
+    }
+
+    fn run_command(
+        &self,
+        program: &str,
+        args: &[String],
+        current_dir: Option<&Path>,
+    ) -> io::Result<DoctorCommandOutput> {
+        let mut command = Command::new(program);
+        command
+            .args(args)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+        if let Some(directory) = current_dir {
+            command.current_dir(directory);
+        }
+        if program == "git" {
+            command.env("GIT_TERMINAL_PROMPT", "0").env(
+                "GIT_SSH_COMMAND",
+                "ssh -o BatchMode=yes -o IdentityFile=none",
+            );
+        }
+        let output = command.output()?;
+        Ok(DoctorCommandOutput {
+            success: output.status.success(),
+            code: output.status.code(),
+            stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+        })
+    }
+}
+
+#[cfg(unix)]
+fn is_socket(path: &Path) -> bool {
+    fs::metadata(path).is_ok_and(|metadata| metadata.file_type().is_socket())
+}
+
+#[cfg(not(unix))]
+fn is_socket(_path: &Path) -> bool {
+    false
+}
+
+fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
     let manifest = read_manifest(root)?;
     let mut failures = Vec::new();
     let mut successes = Vec::new();
@@ -732,26 +812,21 @@ pub fn doctor(root: &Path) -> Result<Vec<String>> {
         }
         let cargo = root.join("backend/Cargo.toml");
         if cargo.is_file() {
-            let output = Command::new("cargo")
-                .args([
-                    "metadata",
-                    "--manifest-path",
-                    cargo.to_string_lossy().as_ref(),
-                    "--format-version",
-                    "1",
-                    "--no-deps",
-                ])
-                .stdout(Stdio::null())
-                .stderr(Stdio::piped())
-                .output()
+            let args = vec![
+                "metadata".to_owned(),
+                "--manifest-path".to_owned(),
+                cargo.to_string_lossy().into_owned(),
+                "--format-version".to_owned(),
+                "1".to_owned(),
+                "--no-deps".to_owned(),
+            ];
+            let output = host
+                .run_command("cargo", &args, None)
                 .context("could not run cargo metadata; install Rust from https://rustup.rs")?;
-            if output.status.success() {
+            if output.success {
                 successes.push("Cargo workspace and dependency manifests parse".to_owned());
             } else {
-                failures.push(format!(
-                    "Cargo workspace does not parse: {}",
-                    String::from_utf8_lossy(&output.stderr).trim()
-                ));
+                failures.push(format!("Cargo workspace does not parse: {}", output.stderr));
             }
         }
     }
@@ -799,7 +874,7 @@ pub fn doctor(root: &Path) -> Result<Vec<String>> {
             }
         }
     }
-    match &manifest.dependencies.baukit {
+    let ssh_agent_ready = match &manifest.dependencies.baukit {
         BaukitDependency::Path { path } => {
             if Path::new(path)
                 .join("crates/baukit-config/Cargo.toml")
@@ -811,24 +886,28 @@ pub fn doctor(root: &Path) -> Result<Vec<String>> {
                     "Baukit path dependency `{path}` is unavailable; regenerate with --baukit-path or restore that checkout"
                 ));
             }
+            None
         }
         BaukitDependency::Git { git, tag } => {
-            let status = Command::new("git")
-                .args(["ls-remote", "--exit-code", "--tags", git, tag])
-                .stdout(Stdio::null())
-                .stderr(Stdio::piped())
-                .status();
-            match status {
-                Ok(status) if status.success() => {
-                    successes.push(format!("Baukit git dependency resolves at tag {tag}"));
-                }
-                Ok(_) => failures.push(format!(
-                    "Baukit git dependency `{git}` tag `{tag}` is not resolvable; check network access and the release tag"
-                )),
-                Err(error) => failures.push(format!(
-                    "could not run git to resolve Baukit dependency: {error}"
-                )),
-            }
+            let ready = diagnose_ssh_agent(host, &mut successes, &mut failures);
+            probe_git_dependency(host, git, tag, &mut successes, &mut failures);
+            Some(ready)
+        }
+    };
+    if has_docker_build_targets(root) {
+        let docker_ready = diagnose_docker(host, &mut successes, &mut failures);
+        match ssh_agent_ready {
+            Some(true) if docker_ready => successes
+                .push("Docker BuildKit SSH forwarding prerequisites are present".to_owned()),
+            Some(false) if docker_ready => failures.push(
+                "Docker and BuildKit are available, but SSH forwarding is not ready; fix the SSH agent problem above"
+                    .to_owned(),
+            ),
+            None if docker_ready => successes.push(
+                "Docker image builds are ready; local Baukit path dependencies do not require SSH forwarding"
+                    .to_owned(),
+            ),
+            Some(_) | None => {}
         }
     }
     if failures.is_empty() {
@@ -839,6 +918,137 @@ pub fn doctor(root: &Path) -> Result<Vec<String>> {
             failures.len(),
             failures.join("\n- ")
         )
+    }
+}
+
+fn diagnose_ssh_agent(
+    host: &dyn DoctorHost,
+    successes: &mut Vec<String>,
+    failures: &mut Vec<String>,
+) -> bool {
+    let Some(socket) = host
+        .env_var_os("SSH_AUTH_SOCK")
+        .filter(|value| !value.is_empty())
+    else {
+        failures.push(
+            "SSH_AUTH_SOCK is unset; start an agent with `eval \"$(ssh-agent -s)\"`, then load a key with `ssh-add ~/.ssh/<private-key>`"
+                .to_owned(),
+        );
+        return false;
+    };
+    if !host.is_socket(Path::new(&socket)) {
+        failures.push(
+            "SSH_AUTH_SOCK does not point to a socket; restart the agent, then load a key with `ssh-add ~/.ssh/<private-key>`"
+                .to_owned(),
+        );
+        return false;
+    }
+
+    let args = vec!["-l".to_owned()];
+    match host.run_command("ssh-add", &args, None) {
+        Ok(output) if output.success => {
+            successes.push("SSH agent is usable and has at least one loaded identity".to_owned());
+            true
+        }
+        Ok(output) if output.code == Some(1) => {
+            failures.push(
+                "SSH agent has no loaded identities; add one with `ssh-add ~/.ssh/<private-key>`"
+                    .to_owned(),
+            );
+            false
+        }
+        Ok(output) if output.code == Some(2) => {
+            failures.push(
+                "SSH agent is unusable; restart it with `eval \"$(ssh-agent -s)\"`, then add a key with `ssh-add ~/.ssh/<private-key>`"
+                    .to_owned(),
+            );
+            false
+        }
+        Ok(_) => {
+            failures.push(
+                "could not query the SSH agent; restart it, then add a key with `ssh-add ~/.ssh/<private-key>`"
+                    .to_owned(),
+            );
+            false
+        }
+        Err(_) => {
+            failures.push(
+                "could not run `ssh-add`; install an OpenSSH client, start an agent, and load a key"
+                    .to_owned(),
+            );
+            false
+        }
+    }
+}
+
+fn probe_git_dependency(
+    host: &dyn DoctorHost,
+    git: &str,
+    tag: &str,
+    successes: &mut Vec<String>,
+    failures: &mut Vec<String>,
+) {
+    let args = ["ls-remote", "--exit-code", "--tags", git, tag]
+        .map(str::to_owned)
+        .to_vec();
+    match host.run_command("git", &args, None) {
+        Ok(output) if output.success => successes.push(format!(
+            "Baukit git dependency resolves at tag {tag} through the current SSH identity"
+        )),
+        Ok(_) => failures.push(format!(
+            "Baukit git dependency `{git}` tag `{tag}` is not resolvable; check network access, SSH repository access, and the release tag"
+        )),
+        Err(error) => failures.push(format!(
+            "could not run git to resolve Baukit dependency: {error}"
+        )),
+    }
+}
+
+fn has_docker_build_targets(root: &Path) -> bool {
+    ["compose.yaml", "Dockerfile", "backend/Dockerfile"]
+        .iter()
+        .any(|relative| root.join(relative).is_file())
+}
+
+fn diagnose_docker(
+    host: &dyn DoctorHost,
+    successes: &mut Vec<String>,
+    failures: &mut Vec<String>,
+) -> bool {
+    let version_args = ["version", "--format", "{{.Server.Version}}"]
+        .map(str::to_owned)
+        .to_vec();
+    match host.run_command("docker", &version_args, None) {
+        Ok(output) if output.success => {}
+        Ok(_) => {
+            failures.push(
+                "Docker daemon is unavailable; start Docker before building generated images"
+                    .to_owned(),
+            );
+            return false;
+        }
+        Err(_) => {
+            failures.push(
+                "Docker is unavailable; install Docker and start it before building generated images"
+                    .to_owned(),
+            );
+            return false;
+        }
+    }
+
+    let buildx_args = vec!["buildx".to_owned(), "version".to_owned()];
+    match host.run_command("docker", &buildx_args, None) {
+        Ok(output) if output.success => {
+            successes.push("Docker daemon and BuildKit are available".to_owned());
+            true
+        }
+        Ok(_) | Err(_) => {
+            failures.push(
+                "Docker BuildKit is unavailable; install or enable Docker Buildx before building generated images"
+                    .to_owned(),
+            );
+            false
+        }
     }
 }
 
@@ -996,5 +1206,236 @@ fn validate_name(name: &str) -> Result<()> {
         bail!(
             "invalid application name `{name}`; use 1-64 lowercase ASCII letters, digits, and single hyphens, starting with a letter"
         )
+    }
+}
+
+#[cfg(test)]
+mod doctor_tests {
+    use std::{
+        cell::RefCell,
+        collections::VecDeque,
+        ffi::OsString,
+        io,
+        path::{Path, PathBuf},
+    };
+
+    use super::{
+        DoctorCommandOutput, DoctorHost, diagnose_docker, diagnose_ssh_agent, probe_git_dependency,
+    };
+
+    struct ExpectedCommand {
+        program: &'static str,
+        args: Vec<&'static str>,
+        result: io::Result<DoctorCommandOutput>,
+    }
+
+    struct FakeHost {
+        ssh_auth_sock: Option<OsString>,
+        socket: bool,
+        commands: RefCell<VecDeque<ExpectedCommand>>,
+    }
+
+    impl FakeHost {
+        fn new(ssh_auth_sock: Option<&str>, socket: bool, commands: Vec<ExpectedCommand>) -> Self {
+            Self {
+                ssh_auth_sock: ssh_auth_sock.map(OsString::from),
+                socket,
+                commands: RefCell::new(commands.into()),
+            }
+        }
+
+        fn assert_finished(&self) {
+            assert!(self.commands.borrow().is_empty());
+        }
+    }
+
+    impl DoctorHost for FakeHost {
+        fn env_var_os(&self, name: &str) -> Option<OsString> {
+            assert_eq!(name, "SSH_AUTH_SOCK");
+            self.ssh_auth_sock.clone()
+        }
+
+        fn is_socket(&self, path: &Path) -> bool {
+            assert_eq!(path, PathBuf::from("/agent.sock"));
+            self.socket
+        }
+
+        fn run_command(
+            &self,
+            program: &str,
+            args: &[String],
+            current_dir: Option<&Path>,
+        ) -> io::Result<DoctorCommandOutput> {
+            assert!(current_dir.is_none());
+            let expected = self
+                .commands
+                .borrow_mut()
+                .pop_front()
+                .expect("unexpected command");
+            assert_eq!(program, expected.program);
+            assert_eq!(
+                args,
+                &expected
+                    .args
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+            );
+            expected.result
+        }
+    }
+
+    fn output(code: i32) -> io::Result<DoctorCommandOutput> {
+        Ok(DoctorCommandOutput {
+            success: code == 0,
+            code: Some(code),
+            stderr: String::new(),
+        })
+    }
+
+    #[test]
+    fn ssh_agent_reports_missing_and_non_socket_values_without_running_commands() {
+        for (socket, is_socket, expected) in [
+            (None, false, "SSH_AUTH_SOCK is unset"),
+            (
+                Some("/agent.sock"),
+                false,
+                "SSH_AUTH_SOCK does not point to a socket",
+            ),
+        ] {
+            let host = FakeHost::new(socket, is_socket, Vec::new());
+            let mut successes = Vec::new();
+            let mut failures = Vec::new();
+            assert!(!diagnose_ssh_agent(&host, &mut successes, &mut failures));
+            assert!(successes.is_empty());
+            assert_eq!(failures.len(), 1);
+            assert!(failures[0].contains(expected));
+            assert!(failures[0].contains("ssh-add"));
+            assert!(!failures[0].contains("/agent.sock"));
+            host.assert_finished();
+        }
+    }
+
+    #[test]
+    fn ssh_agent_distinguishes_no_identities_from_an_unusable_agent() {
+        for (code, expected) in [(1, "no loaded identities"), (2, "agent is unusable")] {
+            let host = FakeHost::new(
+                Some("/agent.sock"),
+                true,
+                vec![ExpectedCommand {
+                    program: "ssh-add",
+                    args: vec!["-l"],
+                    result: output(code),
+                }],
+            );
+            let mut successes = Vec::new();
+            let mut failures = Vec::new();
+            assert!(!diagnose_ssh_agent(&host, &mut successes, &mut failures));
+            assert!(failures[0].contains(expected));
+            assert!(failures[0].contains("ssh-add"));
+            host.assert_finished();
+        }
+    }
+
+    #[test]
+    fn ssh_agent_accepts_a_socket_with_a_loaded_identity() {
+        let host = FakeHost::new(
+            Some("/agent.sock"),
+            true,
+            vec![ExpectedCommand {
+                program: "ssh-add",
+                args: vec!["-l"],
+                result: output(0),
+            }],
+        );
+        let mut successes = Vec::new();
+        let mut failures = Vec::new();
+        assert!(diagnose_ssh_agent(&host, &mut successes, &mut failures));
+        assert!(failures.is_empty());
+        assert!(successes[0].contains("loaded identity"));
+        host.assert_finished();
+    }
+
+    #[test]
+    fn git_probe_uses_only_the_remote_and_tag() {
+        let host = FakeHost::new(
+            None,
+            false,
+            vec![ExpectedCommand {
+                program: "git",
+                args: vec![
+                    "ls-remote",
+                    "--exit-code",
+                    "--tags",
+                    "ssh://git@example.test/baukit.git",
+                    "baukit-v1.2.3",
+                ],
+                result: output(0),
+            }],
+        );
+        let mut successes = Vec::new();
+        let mut failures = Vec::new();
+        probe_git_dependency(
+            &host,
+            "ssh://git@example.test/baukit.git",
+            "baukit-v1.2.3",
+            &mut successes,
+            &mut failures,
+        );
+        assert!(failures.is_empty());
+        assert!(successes[0].contains("current SSH identity"));
+        host.assert_finished();
+    }
+
+    #[test]
+    fn docker_diagnostic_checks_the_daemon_then_buildkit() {
+        let host = FakeHost::new(
+            None,
+            false,
+            vec![
+                ExpectedCommand {
+                    program: "docker",
+                    args: vec!["version", "--format", "{{.Server.Version}}"],
+                    result: output(0),
+                },
+                ExpectedCommand {
+                    program: "docker",
+                    args: vec!["buildx", "version"],
+                    result: output(0),
+                },
+            ],
+        );
+        let mut successes = Vec::new();
+        let mut failures = Vec::new();
+        assert!(diagnose_docker(&host, &mut successes, &mut failures));
+        assert!(failures.is_empty());
+        assert!(successes[0].contains("BuildKit"));
+        host.assert_finished();
+    }
+
+    #[test]
+    fn docker_diagnostic_reports_a_missing_buildkit_plugin() {
+        let host = FakeHost::new(
+            None,
+            false,
+            vec![
+                ExpectedCommand {
+                    program: "docker",
+                    args: vec!["version", "--format", "{{.Server.Version}}"],
+                    result: output(0),
+                },
+                ExpectedCommand {
+                    program: "docker",
+                    args: vec!["buildx", "version"],
+                    result: output(1),
+                },
+            ],
+        );
+        let mut successes = Vec::new();
+        let mut failures = Vec::new();
+        assert!(!diagnose_docker(&host, &mut successes, &mut failures));
+        assert!(successes.is_empty());
+        assert!(failures[0].contains("BuildKit is unavailable"));
+        host.assert_finished();
     }
 }

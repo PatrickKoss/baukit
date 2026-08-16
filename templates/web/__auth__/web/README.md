@@ -6,6 +6,8 @@ Run `docker compose up -d --wait keycloak` from the product root, copy `.env.exa
 
 Use the same issuer hostname everywhere. The dynamic local Keycloak advertises whichever of `localhost` or `127.0.0.1` was used for discovery; token validation requires an exact issuer match. Prefer `localhost` in browsers because development login cookies marked `Secure` receive special localhost handling. Production must use HTTPS.
 
+The generated target also includes local interaction references: a same-tick mutation mutex, focus trap and inert-background dialog, mutually exclusive detail-route states, safe back-or-replace navigation, linked live validation, semantic headings, visible keyboard focus, and 44-by-44 CSS-pixel minimum targets. See the helpers and their acceptance tests under `src/`; keep server-side idempotency for network mutations even when the UI is single-flight.
+
 The Baukit packages come from {{ context.baukit_typescript_dependency_description }} and the generated lockfile makes the first install reproducible. The app runs without a globally installed Baukit CLI.
 
 Run `corepack pnpm@11.18.0 build`, `corepack pnpm@11.18.0 lint`, and `corepack pnpm@11.18.0 test` before shipping.

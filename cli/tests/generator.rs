@@ -7,6 +7,13 @@ use std::{
 use baukit_cli::{AuthProvider, NewOptions, doctor, generate_new};
 use sha2::{Digest, Sha256};
 
+#[cfg(unix)]
+use std::{
+    env,
+    os::unix::{fs::PermissionsExt, net::UnixListener},
+    process::Command,
+};
+
 fn options(parent: &Path, name: &str) -> NewOptions {
     NewOptions {
         name: name.to_owned(),
@@ -247,13 +254,19 @@ fn release_emission_uses_private_ssh_tag_and_reproducibility_files() -> anyhow::
             .count(),
         2
     );
+    let preflight = fs::read_to_string(root.join("scripts/preflight.sh"))?;
+    assert!(preflight.contains("BAUKIT_PREBUILT_IMAGES"));
+    assert!(preflight.contains("ssh-add -l"));
+    assert!(preflight.contains("PLAYWRIGHT_BROWSERS_PATH"));
+    assert!(preflight.contains("executable resolved outside the repository cache"));
     assert!(fs::read_to_string(root.join("web/pnpm-workspace.yaml"))?.contains("allowBuilds"));
     assert!(fs::read_to_string(root.join("mobile/pnpm-workspace.yaml"))?.contains("allowBuilds"));
     let makefile = fs::read_to_string(root.join("Makefile"))?;
     assert!(
         makefile.contains("cargo test --manifest-path $(BACKEND_MANIFEST) -- --include-ignored")
     );
-    assert!(makefile.contains("check: fmt lint test check-web check-mobile"));
+    assert!(makefile.contains("check: preflight fmt lint test check-web check-mobile"));
+    assert!(makefile.contains("test: preflight"));
     assert!(!makefile.contains("baukit generate openapi-client"));
     let client = fs::read_to_string(root.join("scripts/openapi-client.sh"))?;
     assert!(client.contains("schema=backend/openapi.json"));
@@ -265,6 +278,151 @@ fn release_emission_uses_private_ssh_tag_and_reproducibility_files() -> anyhow::
     );
     assert!(workflow.contains("working-directory: web"));
     assert!(workflow.contains("working-directory: mobile"));
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn generated_preflight_fails_without_an_agent_and_supports_prebuilt_images() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = generate_new(&options(parent.path(), "preflight-app"))?;
+
+    let missing_agent = Command::new("sh")
+        .arg("scripts/preflight.sh")
+        .current_dir(&root)
+        .env_remove("SSH_AUTH_SOCK")
+        .output()?;
+    assert!(!missing_agent.status.success());
+    assert!(String::from_utf8_lossy(&missing_agent.stderr).contains("SSH_AUTH_SOCK is unset"));
+
+    let prebuilt = Command::new("sh")
+        .arg("scripts/preflight.sh")
+        .current_dir(&root)
+        .env_remove("SSH_AUTH_SOCK")
+        .env("BAUKIT_PREBUILT_IMAGES", "true")
+        .output()?;
+    assert!(prebuilt.status.success());
+    assert!(String::from_utf8_lossy(&prebuilt.stdout).contains("prebuilt-image mode"));
+
+    let not_a_socket = root.join("not-an-agent");
+    fs::write(&not_a_socket, "not a socket\n")?;
+    let invalid_agent = Command::new("sh")
+        .arg("scripts/preflight.sh")
+        .current_dir(&root)
+        .env("SSH_AUTH_SOCK", &not_a_socket)
+        .output()?;
+    assert!(!invalid_agent.status.success());
+    let stderr = String::from_utf8_lossy(&invalid_agent.stderr);
+    assert!(stderr.contains("does not point to a socket"));
+    assert!(!stderr.contains(not_a_socket.to_string_lossy().as_ref()));
+
+    let fake_bin = parent.path().join("fake-bin");
+    fs::create_dir(&fake_bin)?;
+    write_executable(
+        &fake_bin.join("ssh-add"),
+        "#!/bin/sh\nexit \"$BAUKIT_TEST_SSH_ADD_STATUS\"\n",
+    )?;
+    let agent_socket = parent.path().join("agent.sock");
+    let _agent = UnixListener::bind(&agent_socket)?;
+    let path = format!(
+        "{}:{}",
+        fake_bin.display(),
+        env::var("PATH").unwrap_or_default()
+    );
+    for (status, expected) in [("1", "no loaded identities"), ("2", "agent is unusable")] {
+        let result = Command::new("sh")
+            .arg("scripts/preflight.sh")
+            .current_dir(&root)
+            .env("PATH", &path)
+            .env("SSH_AUTH_SOCK", &agent_socket)
+            .env("BAUKIT_TEST_SSH_ADD_STATUS", status)
+            .output()?;
+        assert!(!result.status.success());
+        assert!(String::from_utf8_lossy(&result.stderr).contains(expected));
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn generated_preflight_uses_one_playwright_cache_for_check_install_and_run() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = generate_new(&frontend_options(
+        parent.path(),
+        "playwright-app",
+        false,
+        true,
+    ))?;
+    fs::write(
+        root.join("web/package.json"),
+        "{\"devDependencies\":{\"@playwright/test\":\"1.0.0\"}}\n",
+    )?;
+    let fake_bin = parent.path().join("fake-bin");
+    fs::create_dir(&fake_bin)?;
+    write_executable(
+        &fake_bin.join("corepack"),
+        r#"#!/bin/sh
+case "$*" in
+  *"install --frozen-lockfile"*)
+    mkdir -p "$BAUKIT_TEST_PLAYWRIGHT_MODULE"
+    ;;
+  *"exec node -e"*)
+    [ -f "$BAUKIT_TEST_PLAYWRIGHT_MARKER" ]
+    ;;
+  *"exec playwright install chromium webkit"*)
+    printf '%s\n' "$PLAYWRIGHT_BROWSERS_PATH" >"$BAUKIT_TEST_INSTALL_LOG"
+    : >"$BAUKIT_TEST_PLAYWRIGHT_MARKER"
+    ;;
+  *) exit 2 ;;
+esac
+"#,
+    )?;
+    write_executable(
+        &fake_bin.join("record-playwright-cache"),
+        "#!/bin/sh\nprintf '%s\\n' \"$PLAYWRIGHT_BROWSERS_PATH\" >\"$BAUKIT_TEST_RUN_LOG\"\n",
+    )?;
+    let marker = parent.path().join("browser-installed");
+    let install_log = parent.path().join("install-cache");
+    let run_log = parent.path().join("run-cache");
+    let path = format!(
+        "{}:{}",
+        fake_bin.display(),
+        env::var("PATH").unwrap_or_default()
+    );
+    let result = Command::new("sh")
+        .args(["scripts/preflight.sh", "--", "record-playwright-cache"])
+        .current_dir(&root)
+        .env("PATH", path)
+        .env("BAUKIT_PREBUILT_IMAGES", "true")
+        .env(
+            "BAUKIT_TEST_PLAYWRIGHT_MODULE",
+            root.join("web/node_modules/@playwright/test"),
+        )
+        .env("BAUKIT_TEST_PLAYWRIGHT_MARKER", marker)
+        .env("BAUKIT_TEST_INSTALL_LOG", &install_log)
+        .env("BAUKIT_TEST_RUN_LOG", &run_log)
+        .output()?;
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let expected_cache = format!(
+        "{}\n",
+        root.join("web/node_modules/.cache/playwright-browsers")
+            .display()
+    );
+    assert_eq!(fs::read_to_string(install_log)?, expected_cache);
+    assert_eq!(fs::read_to_string(run_log)?, expected_cache);
+    Ok(())
+}
+
+#[cfg(unix)]
+fn write_executable(path: &Path, contents: &str) -> anyhow::Result<()> {
+    fs::write(path, contents)?;
+    let mut permissions = fs::metadata(path)?.permissions();
+    permissions.set_mode(0o700);
+    fs::set_permissions(path, permissions)?;
     Ok(())
 }
 

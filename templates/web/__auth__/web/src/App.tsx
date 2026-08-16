@@ -3,11 +3,20 @@ import { useQuery } from '@tanstack/react-query';
 import type { ConsentState } from '@baukit/analytics-core';
 import { safeAuthErrorMessage } from '@baukit/auth-web';
 
+import { AccessibleDialogExample } from './accessible-dialog';
 import { analytics } from './analytics';
-import { currentUser, listItems } from './api';
+import { currentUser, listItems, type Item } from './api';
 import { authClient } from './auth';
+import { backOrReplace, browserNavigation } from './back-or-replace';
+import { deriveDetailRouteState } from './route-state';
+import { DetailRouteStateView } from './route-state-view';
+import { useAriaHiddenInert } from './use-inert';
+
+const ITEM_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function App() {
+  useAriaHiddenInert();
   const items = useQuery({ queryKey: ['items'], queryFn: () => listItems() });
   const [authenticated, setAuthenticated] = useState(authClient.hasSession());
   const [authError, setAuthError] = useState<string>();
@@ -17,6 +26,14 @@ export function App() {
     enabled: authenticated,
   });
   const [consent, setConsent] = useState<ConsentState>(analytics.consent);
+  const detailId = new URLSearchParams(window.location.search).get('item');
+  const detailState = deriveDetailRouteState({
+    id: detailId,
+    isValidId: (id) => ITEM_ID_PATTERN.test(id),
+    loading: items.isPending,
+    error: items.error,
+    value: items.data?.find((item) => item.id === detailId),
+  });
 
   useEffect(() => {
     void authClient
@@ -47,6 +64,30 @@ export function App() {
       <p className="eyebrow">BAUKIT WEB</p>
       <h1>{{ context.app_name }}</h1>
       <p className="lede">A Vite app using Baukit OIDC discovery and authorization code + PKCE.</p>
+
+      {detailId === null ? null : (
+        <DetailRouteStateView<Item>
+          state={detailState}
+          onExit={() => {
+            backOrReplace(browserNavigation(), '/');
+          }}
+          renderReady={(item) => (
+            <section className="panel" aria-labelledby="detail-title">
+              <h2 id="detail-title">Item detail</h2>
+              <p>{item.name}</p>
+              <button
+                className="action secondary"
+                type="button"
+                onClick={() => {
+                  backOrReplace(browserNavigation(), '/');
+                }}
+              >
+                Back to items
+              </button>
+            </section>
+          )}
+        />
+      )}
 
       <section className="panel" aria-labelledby="identity-title">
         <h2 id="identity-title">Identity</h2>
@@ -89,6 +130,8 @@ export function App() {
           ))}
         </ul>
       </section>
+
+      <AccessibleDialogExample />
 
       <aside className="consent" aria-labelledby="privacy-title">
         <h2 id="privacy-title">Analytics privacy</h2>

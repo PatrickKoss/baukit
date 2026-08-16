@@ -22,12 +22,24 @@ button {
   font: inherit;
 }
 
+button,
+[role='button'] {
+  min-block-size: 44px;
+  min-inline-size: 44px;
+}
+
+:focus-visible {
+  outline: 3px solid var(--bk-color-background-accent);
+  outline-offset: 3px;
+}
+
 .shell {
   width: min(760px, calc(100% - 32px));
   margin: 0 auto;
   padding: 64px 0;
 }
 
+/* Typography is visual only; App.tsx uses real h1/h2 elements for heading semantics. */
 .eyebrow {
   margin: 0 0 calc(var(--bk-space-small) * 1px);
   color: var(--bk-color-background-accent);
@@ -111,6 +123,66 @@ h1 {
 
 .error {
   color: #b42318;
+}
+
+.dialog-backdrop {
+  position: fixed;
+  z-index: 10;
+  display: grid;
+  inset: 0;
+  place-items: center;
+  padding: 16px;
+  background: rgb(16 24 40 / 55%);
+}
+
+.dialog {
+  width: min(480px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 24px;
+  border-radius: 14px;
+  background: var(--bk-color-background-primary);
+  box-shadow: var(--bk-elevation-raised);
+}
+
+.dialog form {
+  display: grid;
+  gap: 8px;
+}
+
+.dialog input {
+  min-block-size: 44px;
+  padding: 8px 10px;
+  border: 1px solid #76808b;
+  border-radius: calc(var(--bk-radius-small) * 1px);
+  color: inherit;
+  background: inherit;
+  font: inherit;
+}
+
+.dialog-actions {
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.field-help,
+.field-error,
+.success {
+  margin: 0;
+  line-height: var(--bk-typography-line-height-body);
+}
+
+.field-help {
+  color: #59636e;
+  font-size: 0.875rem;
+}
+
+.field-error {
+  color: #b42318;
+}
+
+.success {
+  color: #067647;
 }
 
 @media (max-width: 560px) {

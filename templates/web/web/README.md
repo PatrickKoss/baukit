@@ -14,6 +14,18 @@ pnpm dev
 
 `@baukit/ui-tokens` compiles the shared token fixture to `src/tokens.css`, which the root stylesheet imports. `@baukit/analytics-core` starts with consent `unknown` and a `NoopTransport`; the privacy banner changes consent only after an explicit grant or denial. Configure a provider transport only when the product is ready to send consented analytics.
 
+## Interaction and accessibility references
+
+The generated target keeps these small patterns local so products can adapt them without taking on a UI framework:
+
+- `src/use-single-flight.ts` provides a synchronous same-tick mutex for async mutations. It prevents duplicate UI activation; use a backend idempotency contract as well when retries can cross the network.
+- `src/use-focus-trap.ts`, `src/use-inert.ts`, and `src/accessible-dialog.tsx` demonstrate initial focus, Tab containment, Escape handling, background inertness, inactive-scene inertness, and focus restoration.
+- `src/route-state.ts` derives one of `loading | invalid | not-found | error | ready` for a detail route. Try `?item=invalid` to see invalid deep-link handling.
+- `src/back-or-replace.ts` goes back only when the navigation adapter reports usable history; direct loads replace to a semantic destination. Router-based products should wire the router's own `canGoBack`, `back`, and `replace` operations.
+- `src/validation.ts` links fields to help/error text, exposes live errors, and focuses the first invalid field.
+
+The example uses real `h1`/`h2` elements for document structure. Visual classes such as `eyebrow` do not imply a heading level. `styles.css` supplies visible `:focus-visible` treatment and a 44-by-44 CSS-pixel minimum effective target for interactive controls.
+
 The Baukit packages come from {{ context.baukit_typescript_dependency_description }}. Release-generated apps pin the Baukit repository tag; local fixtures use `file:` dependencies. The app builds and runs without the Baukit CLI.
 
 ## Checks
@@ -23,3 +35,5 @@ pnpm build
 pnpm lint
 pnpm test
 ```
+
+The Vitest acceptance tests cover keyboard focus wrapping and visibility, modal containment and restoration, inactive scenes, invalid deep links, direct-load terminal navigation, validation linkage, and same-tick duplicate activation.

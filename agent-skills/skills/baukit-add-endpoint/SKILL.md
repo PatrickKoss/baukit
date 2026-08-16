@@ -28,6 +28,55 @@ Keep dependency direction domain → ports → services → adapters/API → bin
 4. Add the handler to `ApiDoc`'s `paths(...)`; add new DTOs and error schemas to `components(schemas(...))`.
 5. Follow the contracts in the matching Baukit checkout: `docs/platform/baukit-conventions.md` and `docs/platform/telemetry-spec.md`. Do not add endpoint-specific HTTP metrics; `baukit-http` records the standard RED metrics once.
 
+Use the field helpers that `baukit-http` exports:
+
+```rust
+return Err(ApiError::validation_field(
+    "name",
+    "must contain at most 120 characters",
+));
+
+return Err(ApiError::validation_fields([
+    ("starts_at", "must be before ends_at"),
+    ("ends_at", "must be after starts_at"),
+]));
+```
+
+Use `ApiError::new(...).with_details(...)` when the endpoint needs a stable product code other than `validation_failed`. Keep detail keys stable and values safe for clients.
+
+## Prove ingress parity and replay behavior
+
+Before implementing, write down and test:
+
+1. Length, numeric, chronology, enum, uniqueness, and cross-field bounds.
+2. The same invariant at every applicable write ingress: REST, MCP/agent tools, sync ingestion, local persistence, imports, and background jobs. Put the rule in product domain/service code so adapters cannot diverge.
+3. A stable snake_case error code and structured details for each client-actionable outcome.
+4. One transaction for every compound action, including derived records and outbox rows.
+5. Same-tick duplicate activation, client retry, transport timeout, process restart, and replay behavior.
+6. An idempotency key representing the user's intent whenever one action may create multiple records. Store and check it in the same transaction as the result. Do not invent a platform-wide expiry/storage policy; that remains product-owned until a shared contract exists.
+
+Add tests at each ingress plus transaction rollback and idempotent replay tests. A UI disabled state is not a same-tick mutex and an HTTP timeout is not proof that a write failed.
+
+For generated TypeScript clients, branch on the typed Baukit error and localize from `code + details`:
+
+```ts
+import { isApiError } from "@baukit/api-runtime";
+
+try {
+  await createWidget(input);
+} catch (error) {
+  if (isApiError(error, "validation_failed")) {
+    showFieldErrors(error.details);
+  } else if (isApiError(error)) {
+    showError(resolveApiError(error.code, error.details) ?? error.message);
+  } else {
+    throw error;
+  }
+}
+```
+
+`message` is safe fallback text, not a stable localization key. Keep resolution and user-facing copy product-owned.
+
 ## Regenerate and verify
 
 From the product root, format, export the schema, run the drift test, and regenerate TypeScript declarations:

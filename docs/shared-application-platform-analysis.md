@@ -1319,6 +1319,8 @@ These decisions are made and are the authoritative record for the platform. Chan
 
 29. **2026-08-09 — Phase 3 component pins:** The remaining I1 chart pins are cert-manager `v1.21.1`, Traefik `41.2.0` (app `v3.7.10`), Kyverno stable `3.8.2` (app `v1.18.2`; not `3.9.0-rc.1`), kured `6.1.0` (app `1.23.0`), hcloud cloud-controller-manager `1.34.0`, hcloud CSI `2.22.1`, and external-dns `1.21.1` (app `0.21.0`). hcloud CCM remains an optional future managed-LB base, hcloud CSI is the active Volume provisioner, and external-dns remains an inactive optional base while OpenTofu owns DNS. The complete mechanism/value-key pin matrix is recorded in [implementation-tasks.md](./implementation-tasks.md). Sources: [cert-manager chart index](https://charts.jetstack.io/index.yaml), [Traefik chart index](https://traefik.github.io/charts/index.yaml), [Kyverno chart index](https://kyverno.github.io/kyverno/index.yaml), [kured chart index](https://kubereboot.github.io/charts/index.yaml), [Hetzner chart index](https://charts.hetzner.cloud/index.yaml), and [external-dns chart index](https://kubernetes-sigs.github.io/external-dns/index.yaml).
 
+30. **2026-08-16 — Expo Router promise:** Expo Router remains the recommended navigation baseline for products that need structured mobile navigation, but the current generated mobile target is intentionally narrower: it emits a single `App.tsx` and does not install or configure Expo Router. The compatibility matrix records that recommendation without claiming template support. Adding Router requires a later, separately tested template change; this feedback batch does not add it.
+
 ## 18. Immediate next actions
 
 The first pull requests should be deliberately small:

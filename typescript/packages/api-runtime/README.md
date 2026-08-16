@@ -67,6 +67,8 @@ try {
 - `HttpError`: an HTTP failure with a missing or malformed envelope, including non-JSON bodies.
 - `NetworkError`: no HTTP response, such as an offline, DNS, fetch, or CORS failure. Aborts set `aborted` to `true`.
 
+The backend `message` is public, safe fallback text. Localized clients should resolve `ApiError.code` plus structured `ApiError.details` through their product catalog and use `ApiError.message` only when that resolution is unavailable. Do not parse the message or use it as a stable localization key.
+
 ## Retry semantics
 
 Retries use exponential backoff with full jitter, capped by `maxDelayMs`. The same request ID is retained across attempts.

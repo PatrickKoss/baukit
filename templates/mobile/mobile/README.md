@@ -14,6 +14,10 @@ npx expo start
 
 The app lists the backend template's `/items` resource through `@baukit/api-runtime`. `src/record-store.ts` exposes a `RecordStore<Item>` seam backed by the shared `@baukit/data-contracts-expo-sqlite` adapter; open the product-owned database with `expo-sqlite` and pass it to `createItemRecordStore` when adding cache policy. `@baukit/ui-tokens` supplies the cross-platform token source used by `src/theme.ts`. `@baukit/analytics-core` starts with consent `unknown` and a `NoopTransport`; the inline privacy settings demonstrate explicit grant, denial, and withdrawal without sending data to a provider.
 
+`src/use-single-flight.ts` is a synchronous same-tick mutex for async mutations; pair it with server-side idempotency when network retries can repeat a consequence. `src/route-state.ts` derives one mutually exclusive `loading | invalid | not-found | error | ready` detail-route state, including invalid deep links. Both helpers are pure apart from the small React hook wrapper and have Jest tests.
+
+This lightweight mobile template intentionally does not include Expo Router. Consequently it does not provide a mobile `backOrReplace`; when a product adds a router, use its reliable history-availability API and replace direct loads with a semantic destination instead of always calling `back()`.
+
 The Baukit packages come from {{ context.baukit_typescript_dependency_description }}. Release-generated apps pin the Baukit repository tag; local fixtures use `file:` dependencies. The app runs directly with Expo and does not require the Baukit CLI.
 
 ## Checks
