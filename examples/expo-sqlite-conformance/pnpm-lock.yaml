@@ -392,7 +392,7 @@ packages:
     resolution: {directory: ../../typescript/packages/data-contracts-expo-sqlite, type: directory}
     engines: {node: '>=24.0.0'}
     peerDependencies:
-      '@baukit/data-contracts': ^0.5.1
+      '@baukit/data-contracts': ^0.6.0
       expo-sqlite: ^57.0.1
 
   '@baukit/data-contracts@file:../../typescript/packages/data-contracts':

@@ -4,6 +4,13 @@ All notable changes to `baukit-telemetry` are documented here.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-16
+
+### Changed
+
+- Advanced with the coordinated baukit 0.6.0 release train; no crate-specific
+  API changes.
+
 ## [0.5.1] - 2026-08-14
 
 ## [0.5.0] - 2026-08-10

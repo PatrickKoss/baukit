@@ -1,5 +1,18 @@
 # @baukit/data-contracts-expo-sqlite
 
+## 0.6.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.6.0 train.
+- Add the composite transactional Expo SQLite store and identity-scoped
+  persistence conformance coverage.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/data-contracts@0.6.0
+
 ## 0.5.1
 
 ### Patch Changes

@@ -1,5 +1,13 @@
 # @baukit/data-contracts
 
+## 0.6.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.6.0 train.
+- Add transactional store conformance plus identity-scoped persistence naming,
+  registry, lifecycle, and subject-recheck contracts.
+
 ## 0.5.1
 
 ### Patch Changes

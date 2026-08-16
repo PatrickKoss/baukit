@@ -39,7 +39,7 @@ Standing facts that govern all remaining work:
   environments, and PostHog runs in-cluster as an optional flag-gated base.
 - **Baukit commit freeze lifted** (2026-08-09): the orchestrator commits/pushes
   baukit and cuts releases (`scripts/release-train.sh`).
-- Latest release-train tag: `baukit-v0.5.1`; leitbild and the platform-infra
+- Latest release-train tag: `baukit-v0.6.0`; leitbild and the platform-infra
   cluster remain pinned to `baukit-v0.5.0`. Fitness Tracker and
   solo-leveling-system remain on `baukit-v0.2.0`; OpenDialog is the first
   product moving to the direct pnpm Git packages from `baukit-v0.5.1`.
@@ -293,6 +293,14 @@ Full RL1/RL2/RL4 task lists and log entries are in
 Wave-log entries for all completed waves (I0–I3, L1/L1b/LD/L2/L3, M1–M5, I5a,
 RL1/RL2/RL4) are archived verbatim in
 [implementation-tasks-archive-phase3-rl.md](./implementation-tasks-archive-phase3-rl.md).
+
+- 2026-08-16: **Fitness-feedback playback prepared as the `baukit-v0.6.0`
+  release train.** Added `@baukit/auth-native`,
+  `@baukit/data-contracts-dexie`, auth lifecycle recovery, jobs retry hints and
+  `failure_reason` via the additive `0002` migration, native compile and real
+  Expo SQLite gates, the accessibility contract, and identity-scoped
+  persistence. The implementation tracker lives in
+  `/home/patrick/projects/fitness-tracker/docs/BAUKIT_FEEDBACK_ANALYSIS.md`.
 
 - 2026-08-14: **Git-path TypeScript package distribution fixed and
   `baukit-v0.5.1` released.** A root pnpm marker and lockfile make pnpm prepare

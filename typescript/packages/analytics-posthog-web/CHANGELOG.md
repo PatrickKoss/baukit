@@ -1,5 +1,17 @@
 # @baukit/analytics-posthog-web
 
+## 0.6.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.6.0 train.
+- Build the linked analytics core before preparing a Git path dependency.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/analytics-core@0.6.0
+
 ## 0.5.1
 
 ### Patch Changes
@@ -38,10 +50,6 @@
 - Release the coordinated baukit 0.3.5 train.
 - Updated dependencies
   - @baukit/analytics-core@0.3.5
-
-## Unreleased
-
-- Build the linked analytics core before preparing a Git path dependency.
 
 ## 0.3.4
 

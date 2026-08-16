@@ -6,16 +6,17 @@
 
 This table records what the shared baseline is **tested against**. Renovate keeps individual products moving; baukit guarantees compatibility only with the versions listed here. Version cells reflect the review-time state of the three projects and must be re-verified against the lockfiles when the baukit repository is created.
 
-Last verified release train: `baukit-v0.5.1` (pnpm Git-path package
-preparation and the complete local CI-equivalent gates were rerun).
+Last verified release train: `baukit-v0.6.0` (fitness-feedback playback,
+six-flavour generated fixtures, native Android compile, real Expo SQLite, and
+the complete local CI-equivalent gates).
 
 ## Toolchain
 
 | Tool | Tested baseline | Notes |
 |---|---|---|
-| Rust | MSRV per [conventions](./baukit-conventions.md) | CI-enforced |
-| Node | current LTS | pinned via `.nvmrc`/engines |
-| pnpm | 11 | pinned via `packageManager` |
+| Rust | 1.95.0 MSRV | CI-enforced with Rust 1.95 |
+| Node | 24 (v24.19.0 test host) | pinned via `typescript/.nvmrc`/engines |
+| pnpm | 11.18.0 | pinned via `packageManager` |
 | Turbo | 2 | |
 
 ## Backend (Rust)
@@ -46,8 +47,11 @@ preparation and the complete local CI-equivalent gates were rerun).
 | Web build | Vite | 8 | |
 | Styling | Tailwind CSS | 4 | |
 | Web persistence | `@baukit/data-contracts-dexie` / Dexie | 4.4.5 | only when offline is enabled; Chromium and WebKit conformance-tested |
-| Web e2e | Playwright | latest | |
-| Android native compile | Expo prebuild + Gradle | API 36, Java 21 | Blocking for relevant generated-product and Baukit fixture changes |
+| Native scoped persistence digest | `expo-crypto` | 57.0.1 | Expo adapter injected into the identity-scoping contract |
+| Native accessibility lint | `eslint-plugin-react-native-a11y` + `@eslint/compat` | 3.5.1 + 2.1.0 | Generated mobile template lint baseline |
+| Web accessibility checks | axe-core | 4.13.0 | Serious/critical jsdom scan seam; contrast remains a real-browser check |
+| Web e2e | Playwright | 1.62.1 | Chromium 151.0.7922.34 (revision 1234) and WebKit 26.5 (revision 2336) |
+| Android native compile | Expo prebuild + Gradle | API 36, build-tools 36.0.0, Java 21 | Blocking for relevant generated-product and Baukit fixture changes |
 | Native e2e | Maestro | latest | Configurable for product-owned critical paths; scheduled/manual, not part of the universal pull-request promise |
 | iOS native compile | Xcode + iOS Simulator | macOS runner | Scheduled/manual; Linux is recorded as blocked, never as a passing skip |
 

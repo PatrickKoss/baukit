@@ -15,7 +15,7 @@ bump; compatible changes normally use a patch bump.
 - `rust/release-plz.toml` defines the Rust version group, per-crate changelogs,
   private git-only mode, and the single `baukit-v{{ version }}` tag emitter.
   Every crate also has `publish = false`, so a train cannot reach crates.io.
-- Changesets records TypeScript changes. Its fixed group advances all eight
+- Changesets records TypeScript changes. Its fixed group advances all ten
   packages together, versions private packages, creates package changelogs,
   and emits no package tags. No workflow runs `changeset publish`.
 - `scripts/release-train.sh` is the cross-ecosystem coordinator. A standalone
@@ -77,7 +77,7 @@ Rust products pin the unified tag; Cargo locates the named crate inside the
 repository:
 
 ```toml
-baukit-runtime = { git = "ssh://git@github.com/patrickkoss/baukit.git", tag = "baukit-v0.5.1" }
+baukit-runtime = { git = "ssh://git@github.com/patrickkoss/baukit.git", tag = "baukit-v0.6.0" }
 ```
 
 pnpm products pin that same tag and the package subdirectory. Quote the value
@@ -86,7 +86,7 @@ because `&` is part of pnpm's git selector:
 ```json
 {
   "dependencies": {
-    "@baukit/api-runtime": "git+ssh://git@github.com/patrickkoss/baukit.git#baukit-v0.5.1&path:typescript/packages/api-runtime"
+    "@baukit/api-runtime": "git+ssh://git@github.com/patrickkoss/baukit.git#baukit-v0.6.0&path:typescript/packages/api-runtime"
   }
 }
 ```

@@ -4,6 +4,8 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-16
+
 ### Changed
 
 - Bound unknown-JWKS-key refreshes with a short negative cache and return safe

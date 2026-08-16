@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-16
+
 ### Added
 
 - Mock OIDC sessions with short-lived access tokens, delayed/countable refresh,

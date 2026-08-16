@@ -1,7 +1,10 @@
 # @baukit/api-runtime
 
-## Unreleased
+## 0.6.0
 
+### Minor Changes
+
+- Release the coordinated baukit 0.6.0 train.
 - Add an abort-aware, clone-safe, explicit one-replay handshake for 401 credential recovery.
 
 ## 0.5.1

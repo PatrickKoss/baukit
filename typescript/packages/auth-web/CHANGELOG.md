@@ -1,7 +1,10 @@
 # @baukit/auth-web
 
-## Unreleased
+## 0.6.0
 
+### Minor Changes
+
+- Release the coordinated baukit 0.6.0 train.
 - Preserve sessions on retryable refresh failures and add forced refresh plus observable terminal expiry.
 
 ## 0.5.1
