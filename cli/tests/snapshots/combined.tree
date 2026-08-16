@@ -12,7 +12,7 @@ d513a692cc77c83ea463d719d29947d80cf01fefd3cd4580200de6370de5f528  backend/crates
 1eea5774e5dbcc10fc45cdd1d44e856826fbd8bdcbb5258dfbcfbeb02849c058  backend/crates/snapshot-app-api/src/lib.rs
 9d8a71261ab29e6e3d8979800f2fc0a99c01898aa2defd868b9ab1bf806e36c1  backend/crates/snapshot-app-bin/Cargo.toml
 c29d1a9e836ddf3e8783c33fb7806b27fff712d8ec57264a3bbb43373bbd5c21  backend/crates/snapshot-app-bin/src/bin/api.rs
-aed5730339ffe6b8e4a95f317d0df393dc7f246ca1ff3fa6100c545445cca7dc  backend/crates/snapshot-app-bin/src/bin/migrate.rs
+841e5437ae08735fbfa397d193dfe12158a7e0e04135ebad61d06991ba74275f  backend/crates/snapshot-app-bin/src/bin/migrate.rs
 41e539550d97d5204c6959e3cb04f5cbea9453209245a20269ce155caef39afd  backend/crates/snapshot-app-bin/src/bin/openapi.rs
 28b70e5056e2c339b4cba68b2654a7dcc668976bdfefc0fe22eb5dd09dc2e820  backend/crates/snapshot-app-bin/src/lib.rs
 adc7dd922e875c94d13114d1bddb8115b21ba308d5b10d123138c7f25a31fbdb  backend/crates/snapshot-app-domain/Cargo.toml

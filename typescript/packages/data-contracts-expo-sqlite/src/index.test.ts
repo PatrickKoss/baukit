@@ -4,6 +4,7 @@ import {
   describeKeyValueContract,
   describeRecordStoreContract,
   describeSchemaMetadataContract,
+  describeScopedPersistenceContract,
   describeTransactionalStorageContract,
 } from '@baukit/data-contracts/vitest';
 import type { SQLiteDatabase } from 'expo-sqlite';
@@ -116,8 +117,8 @@ class FakeSQLiteConnection {
 class FakeSQLiteDatabase extends FakeSQLiteConnection {
   public closed = false;
 
-  public constructor() {
-    super(emptyState());
+  public constructor(state: FakeState = emptyState()) {
+    super(state);
   }
 
   public get rows(): Map<string, FakeRow> {
@@ -176,6 +177,25 @@ describeRecordStoreContract(makeRecordStore);
 describeKeyValueContract(async () => (await makeCompositeStore()).keyValues);
 describeSchemaMetadataContract(async () => (await makeCompositeStore()).schemaMetadata);
 describeTransactionalStorageContract(makeCompositeStore);
+describeScopedPersistenceContract(() => {
+  const databases = new Map<string, FakeState>();
+  return {
+    open: async (storeName) => {
+      let state = databases.get(storeName);
+      if (state === undefined) {
+        state = emptyState();
+        databases.set(storeName, state);
+      }
+      const store = new ExpoSqliteStore<ContractTestRecord>(
+        sqlite(new FakeSQLiteDatabase(state)),
+        'contract',
+      );
+      await store.initialize();
+      compositeStores.push(store);
+      return store;
+    },
+  };
+});
 
 describe('SQLite adapters', () => {
   it('isolates records in separate namespaces sharing a database', async () => {

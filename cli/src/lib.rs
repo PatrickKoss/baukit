@@ -95,9 +95,21 @@ const EXPECTED_AUTH_BACKEND_FILES: &[&str] = &[
     "scripts/pkce-login.py",
 ];
 
-const EXPECTED_AUTH_MOBILE_FILES: &[&str] = &["mobile/src/auth.ts", "mobile/src/auth.test.ts"];
+const EXPECTED_AUTH_MOBILE_FILES: &[&str] = &[
+    "mobile/src/auth.ts",
+    "mobile/src/auth.test.ts",
+    "mobile/src/local-data.ts",
+    "mobile/src/persistence-lifecycle.ts",
+    "mobile/docs/local-data-retention.md",
+];
 
-const EXPECTED_AUTH_WEB_FILES: &[&str] = &["web/src/auth.ts", "web/src/auth.test.ts"];
+const EXPECTED_AUTH_WEB_FILES: &[&str] = &[
+    "web/src/auth.ts",
+    "web/src/auth.test.ts",
+    "web/src/local-data.ts",
+    "web/src/persistence-lifecycle.ts",
+    "web/docs/local-data-retention.md",
+];
 
 const EXPECTED_TYPESCRIPT_DEPENDENCIES: &[&str] = &[
     "@baukit/analytics-core",
@@ -111,6 +123,7 @@ const EXPECTED_MOBILE_STORE_DEPENDENCIES: &[&str] = &[
 ];
 
 const EXPECTED_MOBILE_AUTH_DEPENDENCIES: &[&str] = &["@baukit/auth-native"];
+const EXPECTED_WEB_AUTH_DEPENDENCIES: &[&str] = &["@baukit/auth-web", "@baukit/data-contracts"];
 
 #[derive(Clone, Debug)]
 pub struct NewOptions {
@@ -511,7 +524,7 @@ fn typescript_packages(mobile_store: bool, mobile_auth: bool, web_auth: bool) ->
         packages.extend(EXPECTED_MOBILE_AUTH_DEPENDENCIES);
     }
     if web_auth {
-        packages.push("@baukit/auth-web");
+        packages.extend(EXPECTED_WEB_AUTH_DEPENDENCIES);
     }
     packages
 }
@@ -865,7 +878,7 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
     if manifest.capabilities.web {
         let mut dependencies = vec!["@tanstack/react-query", "vite"];
         if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
-            dependencies.push("@baukit/auth-web");
+            dependencies.extend(EXPECTED_WEB_AUTH_DEPENDENCIES);
         }
         validate_frontend_capability(
             root,

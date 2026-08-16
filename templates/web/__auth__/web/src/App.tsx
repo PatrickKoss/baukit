@@ -1,15 +1,20 @@
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ConsentState } from '@baukit/analytics-core';
 import { safeAuthErrorMessage } from '@baukit/auth-web';
+import {
+  isPersistenceIdentityMismatchError,
+  recheckServerSubjectBeforeSyncAdoption,
+} from '@baukit/data-contracts';
 
 import { AccessibleDialogExample } from './accessible-dialog';
 import { analytics } from './analytics';
-import { currentUser, listItems, type Item } from './api';
+import { currentUser, listItems, type CurrentUser, type Item } from './api';
 import { authClient } from './auth';
 import { backOrReplace, browserNavigation } from './back-or-replace';
 import { deriveDetailRouteState } from './route-state';
 import { DetailRouteStateView } from './route-state-view';
+import { useAuthenticatedLocalData } from './local-data';
 import { useAriaHiddenInert } from './use-inert';
 
 const ITEM_ID_PATTERN =
@@ -17,13 +22,23 @@ const ITEM_ID_PATTERN =
 
 export function App() {
   useAriaHiddenInert();
-  const items = useQuery({ queryKey: ['items'], queryFn: () => listItems() });
+  const queryClient = useQueryClient();
   const [authenticated, setAuthenticated] = useState(authClient.hasSession());
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [authError, setAuthError] = useState<string>();
-  const user = useQuery({
-    queryKey: ['current-user'],
-    queryFn: () => currentUser(),
-    enabled: authenticated,
+  const [user, setUser] = useState<CurrentUser>();
+  const localData = useAuthenticatedLocalData(user?.subject, sessionExpired, queryClient);
+  const blockIdentityMismatch = localData.blockIdentityMismatch;
+  const partition =
+    localData.state.status === 'ready' &&
+    localData.state.partition.subject === user?.subject &&
+    !sessionExpired
+      ? localData.state.partition
+      : undefined;
+  const items = useQuery({
+    queryKey: ['items', partition?.subject],
+    queryFn: () => listItems(),
+    enabled: partition !== undefined,
   });
   const [consent, setConsent] = useState<ConsentState>(analytics.consent);
   const detailId = new URLSearchParams(window.location.search).get('item');
@@ -37,12 +52,15 @@ export function App() {
 
   useEffect(() => {
     const unsubscribe = authClient.subscribeSessionExpired(() => {
+      setSessionExpired(true);
       setAuthenticated(false);
+      setUser(undefined);
     });
     void authClient
       .handleCallback()
       .then((handled) => {
         if (handled) {
+          setSessionExpired(false);
           setAuthenticated(true);
         }
       })
@@ -53,6 +71,42 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (!authenticated) {
+      return;
+    }
+    let active = true;
+    void currentUser()
+      .then((nextUser) => {
+        if (active) setUser(nextUser);
+      })
+      .catch((cause: unknown) => {
+        if (active) {
+          setAuthError(cause instanceof Error ? cause.message : 'Could not confirm account identity.');
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [authenticated]);
+
+  useEffect(() => {
+    if (partition === undefined || user === undefined) return;
+    void recheckServerSubjectBeforeSyncAdoption({
+      partitionSubject: partition.subject,
+      readServerSubject: () => Promise.resolve(user.subject),
+      adopt: () => {
+        analytics.identify(user.id);
+      },
+    }).catch((cause: unknown) => {
+      if (isPersistenceIdentityMismatchError(cause)) {
+        void blockIdentityMismatch(cause).catch(() => {
+          setAuthError('Could not safely close local account data.');
+        });
+      }
+    });
+  }, [blockIdentityMismatch, partition, user]);
+
+  useEffect(() => {
     if (items.data !== undefined && consent === 'granted') {
       analytics.capture({ name: 'items_viewed', properties: { count: items.data.length } });
     }
@@ -61,6 +115,18 @@ export function App() {
   function chooseConsent(nextConsent: ConsentState): void {
     analytics.setConsent(nextConsent);
     setConsent(nextConsent);
+  }
+
+  async function signOut(): Promise<void> {
+    setAuthError(undefined);
+    try {
+      await localData.clear();
+      setAuthenticated(false);
+      setUser(undefined);
+      await authClient.logout();
+    } catch (cause) {
+      setAuthError(cause instanceof Error ? cause.message : 'Could not close local account data.');
+    }
   }
 
   return (
@@ -96,18 +162,22 @@ export function App() {
       <section className="panel" aria-labelledby="identity-title">
         <h2 id="identity-title">Identity</h2>
         {authError === undefined ? null : <p className="error">{authError}</p>}
+        {localData.state.status === 'blocked' ? (
+          <p className="error" role="alert">
+            Local account data is blocked. Sign in again or contact support before continuing.
+          </p>
+        ) : null}
         {authenticated ? (
           <>
             <p className="muted">
-              Signed in as {user.data?.subject ?? 'loading…'}; internal user ID{' '}
-              {user.data?.id ?? 'loading…'}.
+              Signed in as {user?.subject ?? 'confirming…'}; internal user ID{' '}
+              {user?.id ?? 'confirming…'}. Local data: {localData.state.status}.
             </p>
-            {user.error === null ? null : <p className="error">{user.error.message}</p>}
             <button
               className="action secondary"
               type="button"
               onClick={() => {
-                void authClient.logout();
+                void signOut();
               }}
             >
               Sign out
@@ -122,9 +192,13 @@ export function App() {
 
       <section className="panel" aria-labelledby="items-title">
         <h2 id="items-title">Items</h2>
-        {items.isPending ? <p className="muted">Loading items…</p> : null}
+        {localData.state.status === 'initializing' ? (
+          <p className="muted" role="status">Preparing local account data…</p>
+        ) : null}
+        {partition !== undefined && items.isPending ? <p className="muted">Loading items…</p> : null}
         {items.error === null ? null : <p className="error">{items.error.message}</p>}
-        {items.data?.length === 0 ? <p className="muted">No items yet.</p> : null}
+        {!authenticated ? <p className="muted">Sign in to open your local data partition.</p> : null}
+        {partition !== undefined && items.data?.length === 0 ? <p className="muted">No items yet.</p> : null}
         <ul className="items">
           {items.data?.map((item) => (
             <li className="item" key={item.id}>

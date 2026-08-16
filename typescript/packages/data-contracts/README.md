@@ -26,6 +26,33 @@ with `StorageError.code === "storage_closed"`. Quota failures use
 The older `StorageTransaction` and `Transaction` interfaces remain available
 for adapters that implement only the original surface.
 
+## Authenticated partitions
+
+`deriveScopedStoreName(namespace, subject)` hashes a length-delimited canonical
+identity with SHA-256 and returns an opaque name. Browser and Node runtimes use
+`globalThis.crypto.subtle`. React Native must install a standards-compatible
+Web Crypto polyfill before calling the default helper, or inject a
+`ScopedPersistenceDigest`; the generated Expo template injects `expo-crypto`.
+
+Keep `ScopedPersistenceRegistryStore` outside the domain database (for example,
+SecureStore or localStorage). `resolveScopedStore` serializes access through one
+registry instance, validates all versioned metadata, and only claims a legacy
+store when an explicit inspector returns `claimable` or `current-subject`.
+Malformed, unknown-version, inconsistent, or digest-mismatched metadata throws
+`PersistenceIdentityMismatchError` with code
+`persistence_identity_mismatch` before a domain store is opened.
+Keep the configured legacy store name available after a successful claim: every
+reopen verifies the recorded name against that configuration and fails closed
+if it is missing or changed. A store name may belong to only one registry entry,
+including across namespaces.
+
+`ScopedPersistenceLifecycle` immediately hides stale handles, closes before it
+opens another subject, resets product-provided user-scoped memory, and publishes
+only an open/migrated/hydrated partition. Call `handleSessionExpired()` for a
+terminal authentication expiry; it closes and blocks without inventing a
+subject switch. Use `recheckServerSubjectBeforeSyncAdoption` immediately before
+server identity adoption or an outbox push.
+
 `RecordStore.list` orders immutable string IDs ascending using JavaScript string comparison. Page sizes are limited to `1..MAX_PAGE_SIZE`, and continuation cursors must be opaque to callers. Adapters should implement keyset cursors based on the last returned ID, not numeric offsets, so insertion before a cursor cannot shift later pages.
 
 ## Proving an adapter
@@ -37,6 +64,7 @@ import {
   describeKeyValueContract,
   describeRecordStoreContract,
   describeSchemaMetadataContract,
+  describeScopedPersistenceContract,
   describeTransactionContract,
   describeTransactionalStorageContract,
 } from '@baukit/data-contracts/vitest';
@@ -47,6 +75,7 @@ describeKeyValueContract(() => makeDatabase().keyValues);
 describeRecordStoreContract(() => makeDatabase().records);
 describeTransactionContract(makeDatabase);
 describeTransactionalStorageContract(makeDatabase);
+describeScopedPersistenceContract(makeNamedDatabaseAdapter);
 describeSchemaMetadataContract(() => makeDatabase().schemaMetadata);
 ```
 
@@ -56,7 +85,11 @@ must expose a callback-scoped view and make all callback writes visible
 together, or none if the callback throws/rejects. The stronger composite suite
 also proves callback results, compound and write-plus-outbox-shaped atomicity,
 joined reentrancy, quota normalization, close behavior, and concurrent
-transaction serialization. The included `InMemoryStore` exposes `keyValues`,
+transaction serialization. The scoped suite proves offline E→F→E record and
+outbox isolation, close-before-open ordering, memory reset, legacy claims,
+corrupt-registry blocking, server-subject checks, and terminal expiry. Its
+adapter factory must reopen the same durable data for the same name. The
+included `InMemoryStore` exposes `keyValues`,
 `records`, and `schemaMetadata` namespaces and is itself tested by every suite.
 
 Persistence adapters and product-specific migration logic belong in product or future adapter packages. The production entry point has no runtime dependencies; only the `/vitest` subpath expects the consumer's Vitest installation.

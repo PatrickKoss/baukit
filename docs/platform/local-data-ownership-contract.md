@@ -1,6 +1,6 @@
 # Authenticated local-data ownership contract
 
-**Status:** Contract now; helpers planned for `@baukit/data-contracts` in wave P2.
+**Status:** Contract and provider-neutral helpers shipped in `@baukit/data-contracts`.
 **Applies to:** Every authenticated product that persists user-scoped data on a device.
 **Related:** [offline readiness](./offline-readiness-contract.md) and [analytics identity](./analytics-privacy-contract.md).
 
@@ -48,9 +48,9 @@ Every product must choose and document one policy per data class:
 
 Logout always performs the close and in-memory reset regardless of retention. Retention never permits a different subject to mount the partition.
 
-## 5. Planned P2 helper shape
+## 5. Shipped helper shape
 
-Wave P2 should add provider-neutral helpers to `@baukit/data-contracts`, approximately:
+`@baukit/data-contracts` exports these provider-neutral seams:
 
 ```ts
 type LocalDataRetention = "retain" | "delete" | "quarantine";
@@ -60,10 +60,12 @@ interface ScopedPersistenceRegistryStore {
   write(serialized: string): Promise<void>;
 }
 
-interface LegacyStoreInspection {
-  exists: boolean;
-  ownership: "claimable" | "current-subject" | "other-subject" | "ambiguous";
-}
+type LegacyStoreInspection =
+  | { exists: false }
+  | {
+      exists: true;
+      ownership: "claimable" | "current-subject" | "other-subject" | "ambiguous";
+    };
 
 interface ResolveScopedStoreOptions {
   namespace: string;
@@ -89,7 +91,30 @@ declare class PersistenceIdentityMismatchError extends Error {
 }
 ```
 
-Exact names may change in P2, but the seams are required: injected registry storage, optional legacy inspection, opaque derivation, a stable blocking error code, and no dependency on React, OIDC provider SDKs, database adapters, product user IDs, or product schemas. The product maps legacy schema evidence into the neutral ownership classification. Lifecycle composition and adapter conformance should be separate from the pure registry helper.
+The exact implementation additionally exports `InMemoryScopedPersistenceRegistryStore`,
+`ScopedPersistenceLifecycle`, `recheckServerSubjectBeforeSyncAdoption`, and the
+adapter-parameterized `describeScopedPersistenceContract` Vitest suite. The
+lifecycle has explicit signed-out, initializing, ready, and blocked states. It
+hides an old handle immediately, waits for close and user-memory reset, and
+publishes the new partition only after the injected open/migrate/hydrate hook
+finishes. Terminal `subscribeSessionExpired` events call
+`handleSessionExpired()`: close and block, never a fabricated subject switch.
+
+Browser and Node runtimes use `globalThis.crypto.subtle` for SHA-256. React
+Native must install a compatible Web Crypto polyfill before using the default
+digest or inject `ScopedPersistenceDigest`; the generated Expo composition uses
+`expo-crypto`. The injected registry store should be backed by SecureStore,
+localStorage, or an equivalent key/value service outside the domain database.
+All callers sharing a registry must share one registry-store instance so the
+in-process claim queue can serialize access. Cross-process products need their
+backing store to provide the corresponding exclusive-write guarantee.
+
+These seams have no dependency on React, OIDC SDKs, database adapters, product
+user IDs, or product schemas. Products map their own legacy evidence into the
+neutral ownership classification.
+After a legacy claim, products must continue supplying the configured legacy
+store name so the registry can verify it on every reopen. One store name may
+belong to only one registry entry, including across namespaces.
 
 ## 6. Acceptance checks
 

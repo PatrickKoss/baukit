@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import type { JsonValue, StoredRecord } from './contracts.js';
-import { InMemoryStore } from './memory.js';
+import { InMemoryStore, InMemoryStorePool } from './memory.js';
 import {
   describeKeyValueContract,
   describeRecordStoreContract,
   describeSchemaMetadataContract,
   describeTransactionContract,
   describeTransactionalStorageContract,
+  describeScopedPersistenceContract,
 } from './vitest.js';
 
 interface TestRecord extends StoredRecord {
@@ -22,6 +23,10 @@ describeRecordStoreContract(() => makeStore().records);
 describeTransactionContract(makeStore);
 describeTransactionalStorageContract(makeStore);
 describeSchemaMetadataContract(() => makeStore().schemaMetadata);
+describeScopedPersistenceContract(() => {
+  const pool = new InMemoryStorePool<TestRecord>();
+  return { open: (storeName: string) => Promise.resolve(pool.open(storeName)) };
+});
 
 describe('InMemoryStore schema migration hook', () => {
   it('advances matching schema metadata', async () => {

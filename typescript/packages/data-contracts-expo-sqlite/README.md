@@ -43,4 +43,6 @@ The package's fast Vitest suite uses a deterministic database fake. The
 [Expo SQLite device-conformance app](../../../examples/expo-sqlite-conformance/README.md)
 mirrors the shared contract cases against real `expo-sqlite` on Android,
 including creation/reopening, namespace isolation, malformed data, rollback,
-and schema-metadata upgrades. iOS is a scheduled/manual macOS gate.
+schema-metadata upgrades, and authenticated E→F→E database isolation. Products
+derive the database name and resolve its registry with `@baukit/data-contracts`
+before opening the Expo database. iOS is a scheduled/manual macOS gate.

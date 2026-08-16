@@ -2,6 +2,7 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
+    process::Command,
 };
 
 use baukit_cli::{AuthProvider, NewOptions, doctor, generate_new};
@@ -11,7 +12,6 @@ use sha2::{Digest, Sha256};
 use std::{
     env,
     os::unix::{fs::PermissionsExt, net::UnixListener},
-    process::Command,
 };
 
 fn options(parent: &Path, name: &str) -> NewOptions {
@@ -115,6 +115,32 @@ fn worker_generation_matches_golden_tree_and_records_capability() -> anyhow::Res
 }
 
 #[test]
+fn generated_backend_is_rustfmt_clean_across_product_name_sort_positions() -> anyhow::Result<()> {
+    for name in ["aaa", "zeta"] {
+        let parent = tempfile::tempdir()?;
+        let mut generated_options = options(parent.path(), name);
+        generated_options.worker = true;
+        generated_options.auth = Some(AuthProvider::Oidc);
+        let root = generate_new(&generated_options)?;
+        let tree = read_tree(&root.join("backend"))?;
+        let rust_sources = tree
+            .keys()
+            .filter(|path| path.extension().is_some_and(|extension| extension == "rs"));
+        let output = Command::new("rustfmt")
+            .args(["--edition", "2024", "--check"])
+            .args(rust_sources.map(|path| root.join("backend").join(path)))
+            .output()?;
+        assert!(
+            output.status.success(),
+            "generated backend for {name} is not rustfmt-clean:\n{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn mobile_generation_matches_golden_tree_and_is_deterministic() -> anyhow::Result<()> {
     assert_deterministic_snapshot(
         |parent| frontend_options(parent, "snapshot-app", true, false),
@@ -195,8 +221,17 @@ fn oidc_generation_is_deterministic_and_records_the_optional_capability() -> any
     assert!(first.join("keycloak/realm.json").is_file());
     assert!(first.join("backend/tests/auth_conformance.rs").is_file());
     assert!(first.join("web/src/auth.ts").is_file());
+    assert!(first.join("web/src/local-data.ts").is_file());
     assert!(first.join("mobile/src/auth.ts").is_file());
-    assert!(fs::read_to_string(first.join("mobile/package.json"))?.contains("@baukit/auth-native"));
+    assert!(first.join("mobile/src/local-data.ts").is_file());
+    assert!(first.join("web/docs/local-data-retention.md").is_file());
+    assert!(first.join("mobile/docs/local-data-retention.md").is_file());
+    let mobile_package = fs::read_to_string(first.join("mobile/package.json"))?;
+    assert!(mobile_package.contains("@baukit/auth-native"));
+    assert!(mobile_package.contains("@baukit/data-contracts"));
+    let web_package = fs::read_to_string(first.join("web/package.json"))?;
+    assert!(web_package.contains("@baukit/auth-web"));
+    assert!(web_package.contains("@baukit/data-contracts"));
 
     let api = fs::read_to_string(first.join("backend/crates/snapshot-app-api/src/lib.rs"))?;
     assert_eq!(api.matches("security((\"bearerAuth\" = []))").count(), 6);

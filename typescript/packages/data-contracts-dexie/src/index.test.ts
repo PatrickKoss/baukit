@@ -3,6 +3,7 @@ import {
   describeKeyValueContract,
   describeRecordStoreContract,
   describeSchemaMetadataContract,
+  describeScopedPersistenceContract,
   describeTransactionalStorageContract,
 } from '@baukit/data-contracts/vitest';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
@@ -31,6 +32,19 @@ describeKeyValueContract(async () => (await makeStore()).keyValues);
 describeRecordStoreContract(async () => (await makeStore()).records);
 describeSchemaMetadataContract(async () => (await makeStore()).schemaMetadata);
 describeTransactionalStorageContract(makeStore);
+describeScopedPersistenceContract(() => {
+  const indexedDB = new IDBFactory();
+  return {
+    open: async (storeName) => {
+      const store = await openDexieStore<ContractTestRecord>(storeName, {
+        indexedDB,
+        IDBKeyRange,
+      });
+      stores.push(store);
+      return store;
+    },
+  };
+});
 
 describe('DexieStore', () => {
   it('isolates separate databases', async () => {

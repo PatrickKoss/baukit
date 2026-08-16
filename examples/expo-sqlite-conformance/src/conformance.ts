@@ -1,9 +1,13 @@
 import {
+  InMemoryScopedPersistenceRegistryStore,
   MAX_PAGE_SIZE,
+  ScopedPersistenceLifecycle,
   type JsonValue,
   type StoredRecord,
+  recheckServerSubjectBeforeSyncAdoption,
 } from "@baukit/data-contracts";
 import { ExpoSqliteStore } from "@baukit/data-contracts-expo-sqlite";
+import * as Crypto from "expo-crypto";
 import * as SQLite from "expo-sqlite";
 
 interface ContractRecord extends StoredRecord {
@@ -25,6 +29,11 @@ const RECORDS = {
 
 const DATABASE_NAME = "baukit-contract.db";
 let namespaceSequence = 0;
+
+interface IdentityPersistence {
+  readonly store: ExpoSqliteStore<ContractRecord>;
+  close(): Promise<void>;
+}
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -61,6 +70,20 @@ function syntheticQuotaError(): Error {
   const error = new Error("simulated adapter quota");
   error.name = "QuotaExceededError";
   return error;
+}
+
+function identityDigest(value: string): Promise<string> {
+  return Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, value);
+}
+
+async function deleteIdentityDatabases(
+  names: ReadonlySet<string>,
+): Promise<void> {
+  await Promise.all(
+    [...names].map((name) =>
+      SQLite.deleteDatabaseAsync(`${name}.db`).catch(() => undefined),
+    ),
+  );
 }
 
 export async function runConformance(): Promise<{ readonly passed: number }> {
@@ -486,6 +509,274 @@ export async function runConformance(): Promise<{ readonly passed: number }> {
           "malformed error was unstable",
         );
         assert(!message.includes("journal"), "malformed error leaked payload");
+      },
+    },
+    {
+      name: "real SQLite offline E to F to E identity isolation",
+      run: async () => {
+        const databaseNames = new Set<string>();
+        const events: string[] = [];
+        let resetCount = 0;
+        const lifecycle = new ScopedPersistenceLifecycle<IdentityPersistence>({
+          namespace: "expo-conformance",
+          registry: new InMemoryScopedPersistenceRegistryStore(),
+          digest: identityDigest,
+          open: async ({ storeName, subject }) => {
+            databaseNames.add(storeName);
+            events.push(`open:${subject}`);
+            const connection = await SQLite.openDatabaseAsync(
+              `${storeName}.db`,
+            );
+            const store = new ExpoSqliteStore<ContractRecord>(
+              connection,
+              "identity",
+              { closeDatabase: true },
+            );
+            await store.initialize();
+            return {
+              store,
+              close: async () => {
+                events.push(`close:start:${subject}`);
+                await store.close();
+                events.push(`close:end:${subject}`);
+              },
+            };
+          },
+          resetUserScopedState: () => {
+            resetCount += 1;
+          },
+        });
+        try {
+          const accountE = await lifecycle.selectSubject("account-e");
+          assert(accountE !== undefined, "account E partition was not ready");
+          await accountE.persistence.store.withTransaction(
+            async (transaction) => {
+              await transaction.records.put({
+                id: "shared",
+                label: "account E",
+                payload: 1,
+              });
+              await transaction.keyValues.set("outbox:pending", "mutation-e");
+            },
+          );
+          const accountF = await lifecycle.selectSubject("account-f");
+          assert(accountF !== undefined, "account F partition was not ready");
+          assert(
+            (await accountF.persistence.store.records.get("shared")) ===
+              undefined,
+            "account F read account E data",
+          );
+          assert(
+            (await accountF.persistence.store.keyValues.get(
+              "outbox:pending",
+            )) === undefined,
+            "account F read account E outbox",
+          );
+          await accountF.persistence.store.records.put({
+            id: "shared",
+            label: "account F",
+            payload: 2,
+          });
+          const accountEReturned = await lifecycle.selectSubject("account-e");
+          assert(
+            accountEReturned !== undefined,
+            "account E return partition was not ready",
+          );
+          assertDeep(
+            await accountEReturned.persistence.store.records.get("shared"),
+            { id: "shared", label: "account E", payload: 1 },
+            "account E data changed across account F",
+          );
+          assert(
+            (await accountEReturned.persistence.store.keyValues.get(
+              "outbox:pending",
+            )) === "mutation-e",
+            "account E outbox changed across account F",
+          );
+          assert(
+            events.indexOf("close:end:account-e") <
+              events.indexOf("open:account-f"),
+            "account F opened before account E closed",
+          );
+          assert(resetCount >= 3, "user-scoped memory was not reset");
+          await lifecycle.clear();
+        } finally {
+          await deleteIdentityDatabases(databaseNames);
+        }
+      },
+    },
+    {
+      name: "real SQLite legacy claim and corrupt-registry blocking",
+      run: async () => {
+        const legacyName = "baukit-identity-legacy";
+        await SQLite.deleteDatabaseAsync(`${legacyName}.db`).catch(
+          () => undefined,
+        );
+        const legacyConnection = await SQLite.openDatabaseAsync(
+          `${legacyName}.db`,
+        );
+        const legacy = new ExpoSqliteStore<ContractRecord>(
+          legacyConnection,
+          "identity",
+          { closeDatabase: true },
+        );
+        await legacy.initialize();
+        await legacy.records.put({
+          id: "legacy",
+          label: "legacy account E",
+          payload: null,
+        });
+        await legacy.close();
+        const databaseNames = new Set<string>([legacyName]);
+        const lifecycle = new ScopedPersistenceLifecycle<
+          ExpoSqliteStore<ContractRecord>
+        >({
+          namespace: "expo-legacy-conformance",
+          registry: new InMemoryScopedPersistenceRegistryStore(),
+          digest: identityDigest,
+          legacyStoreName: legacyName,
+          inspectLegacy: () =>
+            Promise.resolve({ exists: true, ownership: "claimable" }),
+          open: async ({ storeName }) => {
+            databaseNames.add(storeName);
+            const connection = await SQLite.openDatabaseAsync(
+              `${storeName}.db`,
+            );
+            const store = new ExpoSqliteStore<ContractRecord>(
+              connection,
+              "identity",
+              { closeDatabase: true },
+            );
+            await store.initialize();
+            return store;
+          },
+          resetUserScopedState: () => undefined,
+        });
+        try {
+          const accountE = await lifecycle.selectSubject("account-e");
+          assert(
+            accountE?.storeName === legacyName,
+            "claimable legacy store was not selected",
+          );
+          assert(
+            (await accountE.persistence.records.get("legacy")) !== undefined,
+            "legacy record was not preserved",
+          );
+          const accountF = await lifecycle.selectSubject("account-f");
+          assert(accountF !== undefined, "account F partition was not ready");
+          assert(
+            accountF.storeName !== legacyName,
+            "legacy store was claimed more than once",
+          );
+          assert(
+            (await accountF.persistence.records.get("legacy")) === undefined,
+            "second account read the legacy partition",
+          );
+          await lifecycle.clear();
+
+          let opens = 0;
+          const corrupt = new ScopedPersistenceLifecycle<
+            ExpoSqliteStore<ContractRecord>
+          >({
+            namespace: "expo-corrupt-conformance",
+            registry: new InMemoryScopedPersistenceRegistryStore("{broken"),
+            digest: identityDigest,
+            open: async ({ storeName }) => {
+              opens += 1;
+              const connection = await SQLite.openDatabaseAsync(
+                `${storeName}.db`,
+              );
+              const store = new ExpoSqliteStore<ContractRecord>(
+                connection,
+                "identity",
+                { closeDatabase: true },
+              );
+              await store.initialize();
+              return store;
+            },
+            resetUserScopedState: () => undefined,
+          });
+          const cause = await expectReject(
+            corrupt.selectSubject("account-e"),
+            "corrupt identity registry",
+          );
+          assert(
+            errorCode(cause) === "persistence_identity_mismatch",
+            "corrupt registry error code mismatch",
+          );
+          assert(opens === 0, "corrupt registry opened a domain database");
+        } finally {
+          await deleteIdentityDatabases(databaseNames);
+        }
+      },
+    },
+    {
+      name: "real SQLite session expiry and server-subject mismatch block",
+      run: async () => {
+        const databaseNames = new Set<string>();
+        let adopted = false;
+        const lifecycle = new ScopedPersistenceLifecycle<
+          ExpoSqliteStore<ContractRecord>
+        >({
+          namespace: "expo-expiry-conformance",
+          registry: new InMemoryScopedPersistenceRegistryStore(),
+          digest: identityDigest,
+          open: async ({ storeName }) => {
+            databaseNames.add(storeName);
+            const connection = await SQLite.openDatabaseAsync(
+              `${storeName}.db`,
+            );
+            const store = new ExpoSqliteStore<ContractRecord>(
+              connection,
+              "identity",
+              { closeDatabase: true },
+            );
+            await store.initialize();
+            return store;
+          },
+          resetUserScopedState: () => undefined,
+        });
+        try {
+          const accountE = await lifecycle.selectSubject("account-e");
+          assert(accountE !== undefined, "account E partition was not ready");
+          await accountE.persistence.records.put({
+            id: "preserved",
+            label: "before sync",
+            payload: true,
+          });
+          const cause = await expectReject(
+            recheckServerSubjectBeforeSyncAdoption({
+              partitionSubject: "account-e",
+              readServerSubject: () => Promise.resolve("account-f"),
+              adopt: () => {
+                adopted = true;
+              },
+            }),
+            "server subject mismatch",
+          );
+          assert(
+            errorCode(cause) === "persistence_identity_mismatch",
+            "server mismatch error code mismatch",
+          );
+          assert(!adopted, "sync adoption ran after a subject mismatch");
+          assertDeep(
+            await accountE.persistence.records.get("preserved"),
+            { id: "preserved", label: "before sync", payload: true },
+            "server mismatch changed local data",
+          );
+          await lifecycle.handleSessionExpired();
+          assert(
+            lifecycle.state.status === "blocked" &&
+              lifecycle.state.reason === "session-expired",
+            "terminal expiry did not block persistence",
+          );
+          assert(
+            lifecycle.current() === undefined,
+            "expired persistence remained available",
+          );
+        } finally {
+          await deleteIdentityDatabases(databaseNames);
+        }
       },
     },
   ];

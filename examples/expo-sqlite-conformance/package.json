@@ -13,6 +13,7 @@
     "@baukit/data-contracts": "file:../../typescript/packages/data-contracts",
     "@baukit/data-contracts-expo-sqlite": "file:../../typescript/packages/data-contracts-expo-sqlite",
     "expo": "57.0.11",
+    "expo-crypto": "57.0.1",
     "expo-sqlite": "57.0.1",
     "react": "19.2.8",
     "react-native": "0.86.2"

@@ -285,9 +285,9 @@ export class InMemoryStore<T extends StoredRecord>
   private transactionTail: Promise<void> = Promise.resolve();
   private readonly lifecycle: MemoryLifecycle;
 
-  public constructor() {
+  public constructor(state: MemoryState<T> = emptyState()) {
     const lifecycle: MemoryLifecycle = { status: 'open' };
-    super(emptyState(), () => {
+    super(state, () => {
       assertStoreOpen(lifecycle);
     });
     this.lifecycle = lifecycle;
@@ -343,5 +343,22 @@ export class InMemoryStore<T extends StoredRecord>
       throw new Error('A migration target version must be greater than its source.');
     }
     await this.schemaMetadata.setSchemaMeta(to);
+  }
+}
+
+/** Named persistent backing for exercising close/reopen identity transitions in memory. */
+export class InMemoryStorePool<T extends StoredRecord> {
+  private readonly databases = new Map<string, MemoryState<T>>();
+
+  public open(storeName: string): InMemoryStore<T> {
+    if (storeName.trim().length === 0) {
+      throw new TypeError('Store name must not be empty.');
+    }
+    let state = this.databases.get(storeName);
+    if (state === undefined) {
+      state = emptyState();
+      this.databases.set(storeName, state);
+    }
+    return new InMemoryStore(state);
   }
 }

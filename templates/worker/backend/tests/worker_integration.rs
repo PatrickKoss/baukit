@@ -4,6 +4,7 @@ use baukit_jobs::{PostgresJobStore, WorkerConfig, WorkerRunner};
 use baukit_ops::TrafficGate;
 use baukit_runtime::{DeploymentEnvironment, ProcessKind, ServiceInfo, ShutdownToken, build_info};
 use baukit_telemetry::TelemetryBuilder;
+
 use {{ context.app_crate }}_bin::worker_operations_router;
 use {{ context.app_crate }}_postgres::PostgresItemRepository;
 use {{ context.app_crate }}_services::ItemService;

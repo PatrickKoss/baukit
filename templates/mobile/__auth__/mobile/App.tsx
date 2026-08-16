@@ -1,16 +1,23 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  isPersistenceIdentityMismatchError,
+  recheckServerSubjectBeforeSyncAdoption,
+} from '@baukit/data-contracts';
 
 import { loadAnalytics } from './src/analytics';
 import type { ProductEvent } from './src/analytics-client';
 import { currentUser, listItems } from './src/api';
 import type { CurrentUser, Item } from './src/api';
 import { useOidcAuth } from './src/auth';
+import { useAuthenticatedLocalData } from './src/local-data';
 import { theme } from './src/theme';
 import type { AnalyticsClient, ConsentState } from '@baukit/analytics-core';
 
 export default function App() {
   const auth = useOidcAuth();
+  const localData = useAuthenticatedLocalData(auth.subject, auth.sessionExpired);
+  const blockIdentityMismatch = localData.blockIdentityMismatch;
   const [items, setItems] = useState<readonly Item[]>([]);
   const [user, setUser] = useState<CurrentUser>();
   const [error, setError] = useState<string>();
@@ -31,18 +38,65 @@ export default function App() {
     };
   }, []);
 
+  const partition =
+    localData.state.status === 'ready' &&
+    localData.state.partition.subject === auth.subject &&
+    !auth.sessionExpired
+      ? localData.state.partition
+      : undefined;
+
   useEffect(() => {
     let active = true;
-    void listItems()
-      .then((nextItems) => {
+    if (partition === undefined) {
+      void Promise.resolve().then(() => {
         if (active) {
-          setItems(nextItems);
-          setError(undefined);
+          setItems([]);
+          setUser(undefined);
+          setLoading(false);
         }
+      });
+      return () => {
+        active = false;
+      };
+    }
+    void Promise.resolve().then(() => {
+      if (active) {
+        setLoading(true);
+        setError(undefined);
+      }
+    });
+    void Promise.all([listItems(), currentUser()])
+      .then(async ([nextItems, nextUser]) => {
+        await recheckServerSubjectBeforeSyncAdoption({
+          partitionSubject: partition.subject,
+          readServerSubject: () => Promise.resolve(nextUser.subject),
+          adopt: async () => {
+            const client = await loadAnalytics();
+            if (active) {
+              client.identify(nextUser.id);
+              setItems(nextItems);
+              setUser(nextUser);
+            }
+          },
+        });
       })
-      .catch((cause: unknown) => {
+      .catch(async (cause: unknown) => {
+        if (isPersistenceIdentityMismatchError(cause)) {
+          try {
+            await blockIdentityMismatch(cause);
+          } catch {
+            if (active) setError('Could not safely close local account data.');
+            return;
+          }
+        }
         if (active) {
-          setError(cause instanceof Error ? cause.message : 'Could not load items.');
+          setError(
+            isPersistenceIdentityMismatchError(cause)
+              ? 'The server account does not match this local data partition.'
+              : cause instanceof Error
+                ? cause.message
+                : 'Could not load authenticated data.',
+          );
         }
       })
       .finally(() => {
@@ -53,28 +107,7 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, []);
-
-  useEffect(() => {
-    if (auth.accessToken === undefined) {
-      return;
-    }
-    let active = true;
-    void currentUser()
-      .then((nextUser) => {
-        if (active) {
-          setUser(nextUser);
-        }
-      })
-      .catch((cause: unknown) => {
-        if (active) {
-          setError(cause instanceof Error ? cause.message : 'Could not load current user.');
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [auth.accessToken]);
+  }, [blockIdentityMismatch, partition]);
 
   function chooseConsent(nextConsent: ConsentState): void {
     if (analytics === undefined) {
@@ -97,6 +130,11 @@ export default function App() {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Identity</Text>
           {auth.error === undefined ? null : <Text style={styles.error}>{auth.error}</Text>}
+          {localData.state.status === 'blocked' ? (
+            <Text accessibilityLiveRegion="assertive" style={styles.error}>
+              Local data is blocked. Sign in again or contact support before continuing.
+            </Text>
+          ) : null}
           {auth.announcement === undefined ? null : (
             <Text accessibilityLiveRegion="polite" style={styles.muted}>
               {auth.announcement}
@@ -114,6 +152,7 @@ export default function App() {
                 OIDC subject {auth.subject}; backend subject {user?.subject ?? 'loading…'}; internal
                 user ID {user?.id ?? 'loading…'}.
               </Text>
+              <Text style={styles.muted}>Local data: {localData.state.status}.</Text>
               <ActionButton label="Sign out" onPress={() => void auth.signOut()} secondary />
             </>
           )}
@@ -121,9 +160,18 @@ export default function App() {
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Items</Text>
-          {loading ? <ActivityIndicator color={theme.color.accent} /> : null}
+          {loading || localData.state.status === 'initializing' ? (
+            <ActivityIndicator
+              accessibilityHint="Wait until the authenticated local partition is ready"
+              accessibilityLabel="Preparing local data"
+              color={theme.color.accent}
+            />
+          ) : null}
           {error === undefined ? null : <Text style={styles.error}>{error}</Text>}
-          {!loading && error === undefined && items.length === 0 ? (
+          {localData.state.status === 'signed-out' ? (
+            <Text style={styles.muted}>Sign in to open your local data partition.</Text>
+          ) : null}
+          {!loading && localData.state.status === 'ready' && error === undefined && items.length === 0 ? (
             <Text style={styles.muted}>No items yet.</Text>
           ) : null}
           {items.map((item) => (

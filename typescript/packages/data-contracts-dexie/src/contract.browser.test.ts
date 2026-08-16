@@ -1,5 +1,8 @@
 import type { ContractTestRecord } from '@baukit/data-contracts/vitest';
-import { describeTransactionalStorageContract } from '@baukit/data-contracts/vitest';
+import {
+  describeScopedPersistenceContract,
+  describeTransactionalStorageContract,
+} from '@baukit/data-contracts/vitest';
 import { afterEach } from 'vitest';
 
 import { type DexieStore, openDexieStore } from './index.js';
@@ -19,3 +22,13 @@ afterEach(async () => {
 });
 
 describeTransactionalStorageContract(makeStore);
+describeScopedPersistenceContract(() => {
+  const prefix = `baukit-browser-identity-${crypto.randomUUID()}`;
+  return {
+    open: async (storeName) => {
+      const store = await openDexieStore<ContractTestRecord>(`${prefix}-${storeName}`);
+      stores.push(store);
+      return store;
+    },
+  };
+});

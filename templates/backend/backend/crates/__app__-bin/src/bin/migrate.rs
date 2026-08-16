@@ -1,6 +1,7 @@
 use std::{env, error::Error, io, path::PathBuf};
 
 use baukit_config::{BaukitConfig, ConfigLoader, Environment};
+
 use {{ context.app_crate }}_bin::ProductConfig;
 
 const PRODUCT: &str = "{{ context.app_name }}";

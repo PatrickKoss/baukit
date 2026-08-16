@@ -27,6 +27,11 @@ The package owns three generic IndexedDB object stores. It does not define
 product tables, entity relationships, soft-delete behavior, revisions, sync
 protocols, or database naming policy.
 
+Authenticated products should resolve an opaque name with
+`@baukit/data-contracts` before calling `openDexieStore`. The fake-IndexedDB and
+Chromium/WebKit suites run the shared offline E→F→E identity-transition cases
+in addition to the transaction contract.
+
 ## Transaction model
 
 Nested transactions explicitly join the ambient transaction when they are
