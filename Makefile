@@ -1,4 +1,4 @@
-.PHONY: fmt lint test check ci platform-validate platform-up platform-down platform-nuke platform-recreate platform-status ts-install ts-build ts-fmt ts-lint ts-test ts-check cli-fmt cli-lint cli-test cli-check cli-ci install-skills
+.PHONY: fmt lint test check ci platform-validate platform-up platform-down platform-nuke platform-recreate platform-status ts-install ts-build ts-fmt ts-lint ts-test ts-browser-test ts-check cli-fmt cli-lint cli-test cli-check cli-ci install-skills
 
 RUST_MANIFEST := rust/Cargo.toml
 TS_DIR := typescript
@@ -16,7 +16,7 @@ test: ts-test
 check: ts-check
 	cargo check --manifest-path $(RUST_MANIFEST) --workspace --all-targets
 
-ci: fmt lint test check ts-check cli-ci platform-validate
+ci: fmt lint test check ts-check ts-browser-test cli-ci platform-validate
 
 platform-validate:
 	./deploy/platform/validate.sh
@@ -56,6 +56,10 @@ ts-lint: ts-install
 
 ts-test: ts-install
 	corepack pnpm --dir $(TS_DIR) run test
+
+ts-browser-test: ts-install
+	PLAYWRIGHT_BROWSERS_PATH="$(CURDIR)/$(TS_DIR)/.playwright-browsers" corepack pnpm --dir $(TS_DIR) --filter @baukit/data-contracts-dexie exec playwright install --with-deps chromium webkit
+	PLAYWRIGHT_BROWSERS_PATH="$(CURDIR)/$(TS_DIR)/.playwright-browsers" corepack pnpm --dir $(TS_DIR) --filter @baukit/data-contracts-dexie run test:browser
 
 ts-check: ts-install
 	corepack pnpm --dir $(TS_DIR) run check

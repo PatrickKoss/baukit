@@ -1,0 +1,41 @@
+{
+  "name": "@baukit/data-contracts-dexie",
+  "version": "0.5.1",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "pnpm run build",
+    "test": "vitest run --config ../../vitest.config.ts --exclude 'src/**/*.browser.test.ts'",
+    "test:browser": "tsc -p tsconfig.browser.json && vitest run --config vitest.browser.config.ts",
+    "check": "pnpm run build && pnpm run lint && pnpm run test && pnpm run format:check && pnpm run test:browser",
+    "lint": "eslint src --max-warnings=0",
+    "format:check": "prettier --check src package.json tsconfig.json tsconfig.browser.json vitest.browser.config.ts"
+  },
+  "devDependencies": {
+    "@baukit/data-contracts": "workspace:*",
+    "@vitest/browser-playwright": "4.1.10",
+    "dexie": "4.4.5",
+    "fake-indexeddb": "6.2.5",
+    "playwright": "1.62.1",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  },
+  "peerDependencies": {
+    "@baukit/data-contracts": "^0.5.1",
+    "dexie": "^4.4.5"
+  }
+}

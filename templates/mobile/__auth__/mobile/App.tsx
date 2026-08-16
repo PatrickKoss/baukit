@@ -92,11 +92,16 @@ export default function App() {
       <ScrollView contentContainerStyle={styles.page}>
         <Text style={styles.eyebrow}>BAUKIT MOBILE</Text>
         <Text style={styles.title}>{{ context.app_name }}</Text>
-        <Text style={styles.subtitle}>Expo AuthSession authorization code + PKCE</Text>
+        <Text style={styles.subtitle}>Standard OIDC discovery + authorization code PKCE</Text>
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Identity</Text>
           {auth.error === undefined ? null : <Text style={styles.error}>{auth.error}</Text>}
+          {auth.announcement === undefined ? null : (
+            <Text accessibilityLiveRegion="polite" style={styles.muted}>
+              {auth.announcement}
+            </Text>
+          )}
           {auth.accessToken === undefined ? (
             <ActionButton
               disabled={!auth.ready}
@@ -106,8 +111,8 @@ export default function App() {
           ) : (
             <>
               <Text style={styles.muted}>
-                Signed in as {user?.subject ?? 'loading…'}; internal user ID{' '}
-                {user?.id ?? 'loading…'}.
+                OIDC subject {auth.subject}; backend subject {user?.subject ?? 'loading…'}; internal
+                user ID {user?.id ?? 'loading…'}.
               </Text>
               <ActionButton label="Sign out" onPress={() => void auth.signOut()} secondary />
             </>

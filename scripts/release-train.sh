@@ -56,8 +56,10 @@ fi
     '@baukit/analytics-posthog-web' \
     '@baukit/analytics-posthog-native' \
     '@baukit/api-runtime' \
+    '@baukit/auth-native' \
     '@baukit/auth-web' \
     '@baukit/data-contracts' \
+    '@baukit/data-contracts-dexie' \
     '@baukit/data-contracts-expo-sqlite' \
     '@baukit/ui-tokens'; do
     printf "'%s': %s\n" "$package" "$bump"

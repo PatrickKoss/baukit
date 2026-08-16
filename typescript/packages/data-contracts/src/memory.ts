@@ -6,12 +6,14 @@ import {
   type Page,
   type PageOptions,
   type RecordStore,
+  type ReentrantStorageTransaction,
   type SchemaMeta,
   type SchemaMetadataStore,
   type SchemaMigrationHook,
-  type StorageTransaction,
   type StoredRecord,
-  type Transaction,
+  StorageError,
+  type TransactionalStorageStore,
+  normalizeStorageError,
 } from './contracts.js';
 
 const CURSOR_PREFIX = 'bk1:';
@@ -80,6 +82,16 @@ interface MemoryState<T extends StoredRecord> {
   schemaMetadata: MetadataState;
 }
 
+interface MemoryLifecycle {
+  status: 'closed' | 'closing' | 'open';
+}
+
+function assertStoreOpen(lifecycle: MemoryLifecycle): void {
+  if (lifecycle.status !== 'open') {
+    throw new StorageError('storage_closed', 'The storage adapter is closed.');
+  }
+}
+
 function emptyState<T extends StoredRecord>(): MemoryState<T> {
   return {
     keyValues: { values: new Map() },
@@ -105,53 +117,76 @@ function copyState<T extends StoredRecord>(state: MemoryState<T>): MemoryState<T
 
 /** Dependency-free reference key/value adapter. */
 export class InMemoryKeyValueStore implements KeyValueStore {
-  public constructor(private readonly state: KeyValueState = { values: new Map() }) {}
+  public constructor(
+    private readonly state: KeyValueState = { values: new Map() },
+    private readonly assertAvailable: () => void = () => undefined,
+  ) {}
 
   public get(key: string): Promise<JsonValue | undefined> {
-    const value = this.state.values.get(key);
-    return Promise.resolve(value === undefined ? undefined : clone(value));
+    return Promise.resolve().then(() => {
+      this.assertAvailable();
+      const value = this.state.values.get(key);
+      return value === undefined ? undefined : clone(value);
+    });
   }
 
   public set(key: string, value: JsonValue): Promise<void> {
-    this.state.values.set(key, clone(value));
-    return Promise.resolve();
+    return Promise.resolve().then(() => {
+      this.assertAvailable();
+      this.state.values.set(key, clone(value));
+    });
   }
 
   public delete(key: string): Promise<void> {
-    this.state.values.delete(key);
-    return Promise.resolve();
+    return Promise.resolve().then(() => {
+      this.assertAvailable();
+      this.state.values.delete(key);
+    });
   }
 
   public clear(): Promise<void> {
-    this.state.values.clear();
-    return Promise.resolve();
+    return Promise.resolve().then(() => {
+      this.assertAvailable();
+      this.state.values.clear();
+    });
   }
 }
 
 /** Dependency-free reference record adapter using ID-based keyset cursors. */
 export class InMemoryRecordStore<T extends StoredRecord> implements RecordStore<T> {
-  public constructor(private readonly state: RecordState<T> = { values: new Map() }) {}
+  public constructor(
+    private readonly state: RecordState<T> = { values: new Map() },
+    private readonly assertAvailable: () => void = () => undefined,
+  ) {}
 
   public put(record: T): Promise<void> {
-    if (record.id.length === 0) {
-      throw new TypeError('Record id must not be empty.');
-    }
-    this.state.values.set(record.id, clone(record));
-    return Promise.resolve();
+    return Promise.resolve().then(() => {
+      this.assertAvailable();
+      if (record.id.length === 0) {
+        throw new TypeError('Record id must not be empty.');
+      }
+      this.state.values.set(record.id, clone(record));
+    });
   }
 
   public get(id: string): Promise<T | undefined> {
-    const record = this.state.values.get(id);
-    return Promise.resolve(record === undefined ? undefined : clone(record));
+    return Promise.resolve().then(() => {
+      this.assertAvailable();
+      const record = this.state.values.get(id);
+      return record === undefined ? undefined : clone(record);
+    });
   }
 
   public delete(id: string): Promise<void> {
-    this.state.values.delete(id);
-    return Promise.resolve();
+    return Promise.resolve().then(() => {
+      this.assertAvailable();
+      this.state.values.delete(id);
+    });
   }
 
   public list(options?: PageOptions): Promise<Page<T>> {
     return Promise.resolve().then(() => {
+      this.assertAvailable();
       const limit = pageLimit(options);
       const afterId =
         options?.cursor === undefined || options.cursor === null
@@ -173,51 +208,95 @@ export class InMemoryRecordStore<T extends StoredRecord> implements RecordStore<
 
 /** Dependency-free reference schema metadata adapter. */
 export class InMemorySchemaMetadataStore implements SchemaMetadataStore {
-  public constructor(private readonly state: MetadataState = { value: undefined }) {}
+  public constructor(
+    private readonly state: MetadataState = { value: undefined },
+    private readonly assertAvailable: () => void = () => undefined,
+  ) {}
 
   public getSchemaMeta(): Promise<SchemaMeta | undefined> {
-    return Promise.resolve(this.state.value === undefined ? undefined : clone(this.state.value));
+    return Promise.resolve().then(() => {
+      this.assertAvailable();
+      return this.state.value === undefined ? undefined : clone(this.state.value);
+    });
   }
 
   public setSchemaMeta(metadata: SchemaMeta): Promise<void> {
-    if (metadata.name.length === 0) {
-      throw new TypeError('Schema name must not be empty.');
-    }
-    if (!Number.isInteger(metadata.version) || metadata.version < 0) {
-      throw new TypeError('Schema version must be a non-negative integer.');
-    }
-    this.state.value = clone(metadata);
-    return Promise.resolve();
+    return Promise.resolve().then(() => {
+      this.assertAvailable();
+      if (metadata.name.length === 0) {
+        throw new TypeError('Schema name must not be empty.');
+      }
+      if (!Number.isInteger(metadata.version) || metadata.version < 0) {
+        throw new TypeError('Schema version must be a non-negative integer.');
+      }
+      this.state.value = clone(metadata);
+    });
   }
 }
 
 /** A transaction-scoped in-memory view. It must not be retained after the callback. */
-export class InMemoryTransaction<T extends StoredRecord> implements StorageTransaction<T> {
+export class InMemoryTransaction<T extends StoredRecord> implements ReentrantStorageTransaction<T> {
   public readonly keyValues: InMemoryKeyValueStore;
   public readonly records: InMemoryRecordStore<T>;
   public readonly schemaMetadata: InMemorySchemaMetadataStore;
 
-  public constructor(protected readonly state: MemoryState<T>) {
-    this.keyValues = new InMemoryKeyValueStore(state.keyValues);
-    this.records = new InMemoryRecordStore(state.records);
-    this.schemaMetadata = new InMemorySchemaMetadataStore(state.schemaMetadata);
+  private active = true;
+
+  public constructor(
+    protected readonly state: MemoryState<T>,
+    assertAvailable?: () => void,
+  ) {
+    const assertTransactionActive =
+      assertAvailable ??
+      (() => {
+        if (!this.active) {
+          throw new StorageError('storage_closed', 'The transaction context is no longer active.');
+        }
+      });
+    this.keyValues = new InMemoryKeyValueStore(state.keyValues, assertTransactionActive);
+    this.records = new InMemoryRecordStore(state.records, assertTransactionActive);
+    this.schemaMetadata = new InMemorySchemaMetadataStore(
+      state.schemaMetadata,
+      assertTransactionActive,
+    );
+  }
+
+  public withTransaction<TResult>(
+    operation: (context: ReentrantStorageTransaction<T>) => Promise<TResult> | TResult,
+  ): Promise<TResult> {
+    return Promise.resolve().then(() => {
+      if (!this.active) {
+        throw new StorageError('storage_closed', 'The transaction context is no longer active.');
+      }
+      return operation(this);
+    });
+  }
+
+  public finish(): void {
+    this.active = false;
   }
 }
 
 /** Composite reference adapter with snapshot-backed atomic transactions. */
 export class InMemoryStore<T extends StoredRecord>
   extends InMemoryTransaction<T>
-  implements Transaction<StorageTransaction<T>>, SchemaMigrationHook
+  implements TransactionalStorageStore<T>, SchemaMigrationHook
 {
   private transactionTail: Promise<void> = Promise.resolve();
+  private readonly lifecycle: MemoryLifecycle;
 
   public constructor() {
-    super(emptyState());
+    const lifecycle: MemoryLifecycle = { status: 'open' };
+    super(emptyState(), () => {
+      assertStoreOpen(lifecycle);
+    });
+    this.lifecycle = lifecycle;
   }
 
-  public async withTransaction<TResult>(
-    operation: (context: StorageTransaction<T>) => Promise<TResult> | TResult,
+  public override async withTransaction<TResult>(
+    operation: (context: ReentrantStorageTransaction<T>) => Promise<TResult> | TResult,
   ): Promise<TResult> {
+    assertStoreOpen(this.lifecycle);
     const previous = this.transactionTail;
     let release = (): void => undefined;
     this.transactionTail = new Promise<void>((resolve) => {
@@ -225,16 +304,31 @@ export class InMemoryStore<T extends StoredRecord>
     });
     await previous;
 
+    let transaction: InMemoryTransaction<T> | undefined;
     try {
+      assertStoreOpen(this.lifecycle);
       const pending = copyState(this.state);
-      const result = await operation(new InMemoryTransaction(pending));
+      transaction = new InMemoryTransaction(pending);
+      const result = await operation(transaction);
       this.state.keyValues.values = pending.keyValues.values;
       this.state.records.values = pending.records.values;
       this.state.schemaMetadata.value = pending.schemaMetadata.value;
       return result;
+    } catch (cause) {
+      throw normalizeStorageError(cause);
     } finally {
+      transaction?.finish();
       release();
     }
+  }
+
+  public async close(): Promise<void> {
+    if (this.lifecycle.status === 'closed') {
+      return;
+    }
+    this.lifecycle.status = 'closing';
+    await this.transactionTail;
+    this.lifecycle.status = 'closed';
   }
 
   public async migrate(from: SchemaMeta, to: SchemaMeta): Promise<void> {

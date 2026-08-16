@@ -16,7 +16,7 @@ free of product-specific logic.
 ```text
 rust/crates/        baukit-runtime, -config, -http, -ops, -telemetry, -openapi, -test
 typescript/packages/ analytics-core, analytics-posthog-{web,native}, api-runtime,
-                     data-contracts, ui-tokens
+                     auth-{native,web}, data-contracts{,-dexie,-expo-sqlite}, ui-tokens
 cli/                `baukit` CLI (scaffolds products from templates/)
 templates/          project templates consumed by the CLI
 deploy/             Helm chart + observability (dashboards, alerts, recording rules)
@@ -44,6 +44,7 @@ change:
 | Cargo deny | `cargo deny --manifest-path rust/Cargo.toml --config rust/deny.toml check advisories licenses` (after dependency changes) |
 | MSRV (Rust 1.95) | `cargo +1.95 check --manifest-path rust/Cargo.toml --workspace --all-targets` (after using new language/std features) |
 | Observability metric names | `python3 deploy/observability/lint/check-metric-names.py` (after touching deploy/observability or metric names) |
+| Dexie real-browser conformance | `make ts-browser-test` |
 | Generated fixture | see below (after touching cli/, templates/, or public APIs the templates use) |
 
 Docker is available locally — never skip Docker-gated (`#[ignore]`) tests; run
@@ -67,7 +68,7 @@ cargo test  --manifest-path .generated-fixture/fixture/backend/Cargo.toml -p fix
 ```
 
 (For web/mobile flavors, first build the local TS deps:
-`corepack pnpm --dir typescript install --frozen-lockfile && corepack pnpm --dir typescript --filter @baukit/analytics-core --filter @baukit/api-runtime --filter @baukit/ui-tokens run build`.)
+`corepack pnpm --dir typescript install --frozen-lockfile && corepack pnpm --dir typescript --filter @baukit/analytics-core --filter @baukit/api-runtime --filter @baukit/auth-native --filter @baukit/ui-tokens run build`.)
 
 ## Conventions
 

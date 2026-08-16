@@ -196,6 +196,7 @@ fn oidc_generation_is_deterministic_and_records_the_optional_capability() -> any
     assert!(first.join("backend/tests/auth_conformance.rs").is_file());
     assert!(first.join("web/src/auth.ts").is_file());
     assert!(first.join("mobile/src/auth.ts").is_file());
+    assert!(fs::read_to_string(first.join("mobile/package.json"))?.contains("@baukit/auth-native"));
 
     let api = fs::read_to_string(first.join("backend/crates/snapshot-app-api/src/lib.rs"))?;
     assert_eq!(api.matches("security((\"bearerAuth\" = []))").count(), 6);

@@ -110,6 +110,8 @@ const EXPECTED_MOBILE_STORE_DEPENDENCIES: &[&str] = &[
     "@baukit/data-contracts-expo-sqlite",
 ];
 
+const EXPECTED_MOBILE_AUTH_DEPENDENCIES: &[&str] = &["@baukit/auth-native"];
+
 #[derive(Clone, Debug)]
 pub struct NewOptions {
     pub name: String,
@@ -373,8 +375,8 @@ fn dependency_context(
     auth_oidc: bool,
     worker: bool,
 ) -> Result<DependencyContext> {
-    let web_packages = typescript_packages(false, web && auth_oidc);
-    let mobile_packages = typescript_packages(mobile, false);
+    let web_packages = typescript_packages(false, false, web && auth_oidc);
+    let mobile_packages = typescript_packages(mobile, mobile && auth_oidc, false);
     if let Some(path) = path {
         let path = path.canonicalize().with_context(|| {
             format!(
@@ -500,10 +502,13 @@ fn dependency_context(
     }
 }
 
-fn typescript_packages(mobile_store: bool, web_auth: bool) -> Vec<&'static str> {
+fn typescript_packages(mobile_store: bool, mobile_auth: bool, web_auth: bool) -> Vec<&'static str> {
     let mut packages = EXPECTED_TYPESCRIPT_DEPENDENCIES.to_vec();
     if mobile_store {
         packages.extend(EXPECTED_MOBILE_STORE_DEPENDENCIES);
+    }
+    if mobile_auth {
+        packages.extend(EXPECTED_MOBILE_AUTH_DEPENDENCIES);
     }
     if web_auth {
         packages.push("@baukit/auth-web");
@@ -831,17 +836,21 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
         }
     }
     if manifest.capabilities.mobile {
+        let mut dependencies = vec![
+            "expo",
+            "expo-sqlite",
+            "react-native",
+            "@baukit/data-contracts",
+            "@baukit/data-contracts-expo-sqlite",
+        ];
+        if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
+            dependencies.extend(EXPECTED_MOBILE_AUTH_DEPENDENCIES);
+        }
         validate_frontend_capability(
             root,
             "mobile",
             EXPECTED_MOBILE_FILES,
-            &[
-                "expo",
-                "expo-sqlite",
-                "react-native",
-                "@baukit/data-contracts",
-                "@baukit/data-contracts-expo-sqlite",
-            ],
+            &dependencies,
             &mut successes,
             &mut failures,
         )?;

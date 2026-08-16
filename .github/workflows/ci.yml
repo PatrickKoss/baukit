@@ -112,6 +112,13 @@ jobs:
       - name: Build, lint, and test TypeScript packages
         working-directory: typescript
         run: pnpm turbo build lint test
+      - name: Test Dexie conformance in Chromium and WebKit
+        working-directory: typescript
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/typescript/.playwright-browsers
+        run: |
+          pnpm --filter @baukit/data-contracts-dexie exec playwright install --with-deps chromium webkit
+          pnpm --filter @baukit/data-contracts-dexie run test:browser
 
   observability-lint:
     name: Observability metric names
@@ -205,7 +212,7 @@ jobs:
         working-directory: typescript
         run: |
           pnpm install --frozen-lockfile
-          pnpm --filter @baukit/analytics-core --filter @baukit/api-runtime --filter @baukit/ui-tokens run build
+          pnpm --filter @baukit/analytics-core --filter @baukit/api-runtime --filter @baukit/auth-native --filter @baukit/ui-tokens run build
       - name: Build CLI and generate local-path fixture
         run: |
           cargo build --manifest-path cli/Cargo.toml --bin baukit

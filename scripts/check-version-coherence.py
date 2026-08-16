@@ -12,6 +12,19 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+EXPECTED_TYPESCRIPT_PACKAGES = {
+    "@baukit/analytics-core",
+    "@baukit/analytics-posthog-native",
+    "@baukit/analytics-posthog-web",
+    "@baukit/api-runtime",
+    "@baukit/auth-native",
+    "@baukit/auth-web",
+    "@baukit/data-contracts",
+    "@baukit/data-contracts-dexie",
+    "@baukit/data-contracts-expo-sqlite",
+    "@baukit/ui-tokens",
+}
+
 
 def fail(message: str) -> None:
     print(f"version coherence error: {message}", file=sys.stderr)
@@ -92,6 +105,9 @@ def main() -> None:
 
     if not package_versions:
         fail("no @baukit/* TypeScript packages were found")
+    missing_packages = EXPECTED_TYPESCRIPT_PACKAGES - package_versions.keys()
+    if missing_packages:
+        fail(f"missing TypeScript packages: {sorted(missing_packages)}")
     ts_versions = set(package_versions.values())
     if len(ts_versions) != 1:
         fail(f"TypeScript packages do not share one version: {package_versions}")

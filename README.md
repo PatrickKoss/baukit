@@ -22,7 +22,11 @@ baukit/
 │       ├── analytics-posthog-web/
 │       ├── analytics-posthog-native/
 │       ├── api-runtime/
+│       ├── auth-native/
+│       ├── auth-web/
 │       ├── data-contracts/
+│       ├── data-contracts-dexie/
+│       ├── data-contracts-expo-sqlite/
 │       └── ui-tokens/
 ├── cli/
 ├── templates/
@@ -48,7 +52,11 @@ baukit/
 | `@baukit/analytics-posthog-web` | PostHog transport for web applications. |
 | `@baukit/analytics-posthog-native` | PostHog transport for native applications. |
 | `@baukit/api-runtime` | Generated-client runtime policy for auth, tracing, errors, retries, and tests. |
+| `@baukit/auth-native` | Provider-neutral native OIDC lifecycle with an optional Expo adapter. |
+| `@baukit/auth-web` | Provider-neutral browser OIDC authorization-code and PKCE client. |
 | `@baukit/data-contracts` | Storage contracts, adapter helpers, and reusable conformance suites. |
+| `@baukit/data-contracts-dexie` | Dexie storage adapters with fake and real-browser transaction conformance. |
+| `@baukit/data-contracts-expo-sqlite` | Expo SQLite implementation of the shared storage contracts. |
 | `@baukit/ui-tokens` | Cross-platform design-token schema, validation, and generated outputs. |
 
 ## Agent skills

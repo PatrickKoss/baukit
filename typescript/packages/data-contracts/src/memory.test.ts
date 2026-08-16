@@ -7,6 +7,7 @@ import {
   describeRecordStoreContract,
   describeSchemaMetadataContract,
   describeTransactionContract,
+  describeTransactionalStorageContract,
 } from './vitest.js';
 
 interface TestRecord extends StoredRecord {
@@ -19,6 +20,7 @@ const makeStore = (): InMemoryStore<TestRecord> => new InMemoryStore<TestRecord>
 describeKeyValueContract(() => makeStore().keyValues);
 describeRecordStoreContract(() => makeStore().records);
 describeTransactionContract(makeStore);
+describeTransactionalStorageContract(makeStore);
 describeSchemaMetadataContract(() => makeStore().schemaMetadata);
 
 describe('InMemoryStore schema migration hook', () => {

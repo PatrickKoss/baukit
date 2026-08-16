@@ -45,7 +45,7 @@ preparation and the complete local CI-equivalent gates were rerun).
 | Local state | Zustand | 5 | |
 | Web build | Vite | 8 | |
 | Styling | Tailwind CSS | 4 | |
-| Web persistence | Dexie | latest 4.x | only when offline is enabled |
+| Web persistence | `@baukit/data-contracts-dexie` / Dexie | 4.4.5 | only when offline is enabled; Chromium and WebKit conformance-tested |
 | Web e2e | Playwright | latest | |
 | Native e2e | Maestro | latest | |
 

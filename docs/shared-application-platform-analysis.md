@@ -1157,7 +1157,11 @@ baukit/
       analytics-posthog-web/
       analytics-posthog-native/
       api-runtime/
+      auth-native/
+      auth-web/
       data-contracts/
+      data-contracts-dexie/
+      data-contracts-expo-sqlite/
       ui-tokens/
   cli/
   templates/
