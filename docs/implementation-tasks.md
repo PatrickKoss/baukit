@@ -39,7 +39,7 @@ Standing facts that govern all remaining work:
   environments, and PostHog runs in-cluster as an optional flag-gated base.
 - **Baukit commit freeze lifted** (2026-08-09): the orchestrator commits/pushes
   baukit and cuts releases (`scripts/release-train.sh`).
-- Latest release-train tag: `baukit-v0.6.0`; leitbild and the platform-infra
+- Latest release-train tag: `baukit-v0.6.1`; leitbild and the platform-infra
   cluster remain pinned to `baukit-v0.5.0`. Fitness Tracker and
   solo-leveling-system remain on `baukit-v0.2.0`; OpenDialog is the first
   product moving to the direct pnpm Git packages from `baukit-v0.5.1`.
@@ -293,6 +293,14 @@ Full RL1/RL2/RL4 task lists and log entries are in
 Wave-log entries for all completed waves (I0–I3, L1/L1b/LD/L2/L3, M1–M5, I5a,
 RL1/RL2/RL4) are archived verbatim in
 [implementation-tasks-archive-phase3-rl.md](./implementation-tasks-archive-phase3-rl.md).
+
+- 2026-08-16: **Integration-reliability gaps closed in the `baukit-v0.6.1`
+  release train.** Added allowlisted multi-issuer OIDC verification with
+  explicit JWKS endpoints, atomic handler-owned job completion, terminal 401
+  replay notifications, injectable Expo secure storage, and product-owned
+  scoped-persistence resolution. The full local CI mirror, Rust 1.95 check,
+  Docker-backed integration tests, generated combined fixture, native Android
+  compile, real Expo SQLite, and observability lint passed.
 
 - 2026-08-16: **Fitness-feedback playback prepared as the `baukit-v0.6.0`
   release train.** Added `@baukit/auth-native`,

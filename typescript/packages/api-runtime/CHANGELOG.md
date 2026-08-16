@@ -1,9 +1,12 @@
 # @baukit/api-runtime
 
-## Unreleased
+## 0.6.1
 
-- Expose a terminal notification when the explicit 401 credential replay is
+### Patch Changes
+
+- f4e0153: Expose a terminal notification when the explicit 401 credential replay is
   exhausted.
+- Release the coordinated baukit 0.6.1 train.
 
 ## 0.6.0
 

@@ -1,6 +1,6 @@
 {
   "name": "@baukit/data-contracts-dexie",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "private": true,
   "type": "module",
   "engines": {
@@ -35,7 +35,7 @@
     "vitest": "4.1.10"
   },
   "peerDependencies": {
-    "@baukit/data-contracts": "^0.6.0",
+    "@baukit/data-contracts": "^0.6.1",
     "dexie": "^4.4.5"
   }
 }

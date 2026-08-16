@@ -1,9 +1,12 @@
 # @baukit/data-contracts
 
-## Unreleased
+## 0.6.1
 
-- Allow products with pre-existing ownership registries to supply a compatible
+### Patch Changes
+
+- f4e0153: Allow products with pre-existing ownership registries to supply a compatible
   store resolver while reusing the scoped persistence lifecycle.
+- Release the coordinated baukit 0.6.1 train.
 
 ## 0.6.0
 

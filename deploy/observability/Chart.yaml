@@ -2,8 +2,8 @@ apiVersion: v2
 name: baukit-observability
 description: Kubernetes provisioning for the Baukit dashboards and Prometheus rules
 type: application
-version: 0.6.0
-appVersion: "0.6.0"
+version: 0.6.1
+appVersion: "0.6.1"
 kubeVersion: ">=1.25.0-0"
 annotations:
   artifacthub.io/license: MIT

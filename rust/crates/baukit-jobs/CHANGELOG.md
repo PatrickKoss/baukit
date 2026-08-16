@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-08-16
+
 ### Fixed
 
 - Let handlers report a successful transition committed atomically with their

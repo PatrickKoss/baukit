@@ -6,9 +6,9 @@
 
 This table records what the shared baseline is **tested against**. Renovate keeps individual products moving; baukit guarantees compatibility only with the versions listed here. Version cells reflect the review-time state of the three projects and must be re-verified against the lockfiles when the baukit repository is created.
 
-Last verified release train: `baukit-v0.6.0` (fitness-feedback playback,
-six-flavour generated fixtures, native Android compile, real Expo SQLite, and
-the complete local CI-equivalent gates).
+Last verified release train: `baukit-v0.6.1` (integration-reliability playback,
+generated backend/web/mobile fixture, native Android compile, real Expo SQLite,
+Docker-backed integration tests, and the complete local CI-equivalent gates).
 
 ## Toolchain
 

@@ -77,7 +77,7 @@ Rust products pin the unified tag; Cargo locates the named crate inside the
 repository:
 
 ```toml
-baukit-runtime = { git = "ssh://git@github.com/patrickkoss/baukit.git", tag = "baukit-v0.6.0" }
+baukit-runtime = { git = "ssh://git@github.com/patrickkoss/baukit.git", tag = "baukit-v0.6.1" }
 ```
 
 pnpm products pin that same tag and the package subdirectory. Quote the value
@@ -86,7 +86,7 @@ because `&` is part of pnpm's git selector:
 ```json
 {
   "dependencies": {
-    "@baukit/api-runtime": "git+ssh://git@github.com/patrickkoss/baukit.git#baukit-v0.6.0&path:typescript/packages/api-runtime"
+    "@baukit/api-runtime": "git+ssh://git@github.com/patrickkoss/baukit.git#baukit-v0.6.1&path:typescript/packages/api-runtime"
   }
 }
 ```
