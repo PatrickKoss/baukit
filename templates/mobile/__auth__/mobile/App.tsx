@@ -60,7 +60,7 @@ export default function App() {
       return;
     }
     let active = true;
-    void currentUser(auth.accessToken)
+    void currentUser()
       .then((nextUser) => {
         if (active) {
           setUser(nextUser);

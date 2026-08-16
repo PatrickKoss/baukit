@@ -4,6 +4,11 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Mock OIDC sessions with short-lived access tokens, delayed/countable refresh,
+  terminal refresh rejection, and session revocation fixtures.
+
 ## [0.5.1] - 2026-08-14
 
 ## [0.5.0] - 2026-08-10

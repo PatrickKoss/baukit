@@ -4,6 +4,11 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Bound unknown-JWKS-key refreshes with a short negative cache and return safe
+  expired/invalid bearer challenge hints without changing the JSON error code.
+
 ## [0.5.1] - 2026-08-14
 
 ## [0.5.0] - 2026-08-10

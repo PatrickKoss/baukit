@@ -5,6 +5,7 @@ export type OidcErrorCode =
   | 'invalid_discovery_document'
   | 'invalid_token_response'
   | 'issuer_mismatch'
+  | 'refresh_failed'
   | 'token_exchange_failed';
 
 const SAFE_ERROR_MESSAGES = {
@@ -14,6 +15,7 @@ const SAFE_ERROR_MESSAGES = {
   invalid_discovery_document: 'OIDC provider returned invalid discovery metadata.',
   invalid_token_response: 'OIDC token endpoint returned an invalid response.',
   issuer_mismatch: 'OIDC provider issuer did not match the configured issuer.',
+  refresh_failed: 'OIDC token refresh failed.',
   token_exchange_failed: 'OIDC token exchange failed.',
 } as const satisfies Record<OidcErrorCode, string>;
 
@@ -21,12 +23,18 @@ const SAFE_ERROR_MESSAGES = {
 export class OidcError extends Error {
   public readonly code: OidcErrorCode;
   public readonly status: number | undefined;
+  /** True only when retrying the failed operation may succeed without signing in again. */
+  public readonly retryable: boolean;
 
-  public constructor(code: OidcErrorCode, options: { readonly status?: number } = {}) {
+  public constructor(
+    code: OidcErrorCode,
+    options: { readonly retryable?: boolean; readonly status?: number } = {},
+  ) {
     super(SAFE_ERROR_MESSAGES[code]);
     this.name = 'OidcError';
     this.code = code;
     this.status = options.status;
+    this.retryable = options.retryable ?? false;
   }
 }
 
@@ -36,7 +44,7 @@ export interface OidcClientConfig {
   readonly redirectUri: string;
   /** `openid` is prepended when omitted. Defaults to `openid profile email`. */
   readonly scopes?: readonly string[];
-  /** Adds `offline_access` to the requested scopes. */
+  /** Adds `offline_access` to the requested scopes. Defaults to false. */
   readonly offlineAccess?: boolean;
   /** Defaults to `redirectUri`. */
   readonly postLogoutRedirectUri?: string;
@@ -93,6 +101,15 @@ interface TokenResponse {
   readonly id_token?: string;
 }
 
+export type SessionExpiredReason = 'refresh_rejected' | 'refresh_unavailable';
+
+export interface SessionExpiredEvent {
+  readonly type: 'session-expired';
+  readonly reason: SessionExpiredReason;
+}
+
+type SessionExpiredListener = (event: SessionExpiredEvent) => void;
+
 interface RawProviderMetadata {
   readonly issuer: string;
   readonly authorization_endpoint: string;
@@ -148,9 +165,11 @@ export class OidcClient {
   private readonly environment: OidcClientEnvironment;
   private readonly tokenStorageKey: string;
   private readonly transactionStorageKey: string;
+  private readonly sessionExpiredListeners = new Set<SessionExpiredListener>();
   private metadataPromise: Promise<OidcProviderMetadata> | undefined;
   private callbackPromise: Promise<boolean> | undefined;
   private refreshPromise: Promise<string | undefined> | undefined;
+  private sessionRevision = 0;
 
   public constructor(
     config: OidcClientConfig,
@@ -169,6 +188,14 @@ export class OidcClient {
   public discover(): Promise<OidcProviderMetadata> {
     this.metadataPromise ??= discoverProvider(this.config.issuer, this.environment.fetch);
     return this.metadataPromise;
+  }
+
+  /** Observes terminal expiry separately from explicit logout or manual clearing. */
+  public subscribeSessionExpired(listener: SessionExpiredListener): () => void {
+    this.sessionExpiredListeners.add(listener);
+    return () => {
+      this.sessionExpiredListeners.delete(listener);
+    };
   }
 
   public async login(): Promise<void> {
@@ -202,16 +229,21 @@ export class OidcClient {
     return this.callbackPromise;
   }
 
-  public async accessToken(): Promise<string | undefined> {
+  public async accessToken(
+    options: { readonly forceRefresh?: boolean } = {},
+  ): Promise<string | undefined> {
     const tokens = this.readTokens();
     if (tokens === undefined) {
       return undefined;
     }
-    if (tokens.expiresAt > this.environment.now() + this.config.refreshLeewayMs) {
+    if (
+      options.forceRefresh !== true &&
+      tokens.expiresAt > this.environment.now() + this.config.refreshLeewayMs
+    ) {
       return tokens.accessToken;
     }
     if (tokens.refreshToken === undefined) {
-      this.clearSession();
+      this.expireSession('refresh_unavailable');
       return undefined;
     }
     if (this.refreshPromise !== undefined) {
@@ -248,6 +280,7 @@ export class OidcClient {
 
   /** Clears local authentication state without contacting the provider. */
   public clearSession(): void {
+    this.sessionRevision += 1;
     this.environment.localStorage.removeItem(this.tokenStorageKey);
     this.environment.sessionStorage.removeItem(this.transactionStorageKey);
   }
@@ -281,7 +314,8 @@ export class OidcClient {
       throw new OidcError('callback_state_mismatch');
     }
 
-    await this.exchange(
+    const sessionRevision = this.sessionRevision;
+    const tokens = await this.exchange(
       new URLSearchParams({
         grant_type: 'authorization_code',
         client_id: this.config.clientId,
@@ -289,7 +323,12 @@ export class OidcClient {
         code,
         code_verifier: transaction.verifier,
       }),
+      undefined,
+      'token_exchange_failed',
     );
+    if (this.sessionRevision === sessionRevision) {
+      this.writeTokens(tokens);
+    }
     return true;
   }
 
@@ -309,6 +348,7 @@ export class OidcClient {
   }
 
   private async refresh(tokens: StoredTokens, refreshToken: string): Promise<string | undefined> {
+    const sessionRevision = this.sessionRevision;
     try {
       const refreshed = await this.exchange(
         new URLSearchParams({
@@ -317,17 +357,29 @@ export class OidcClient {
           refresh_token: refreshToken,
         }),
         tokens,
+        'refresh_failed',
       );
+      if (this.sessionRevision !== sessionRevision) {
+        return this.readTokens()?.accessToken;
+      }
+      this.writeTokens(refreshed);
       return refreshed.accessToken;
     } catch (cause) {
-      this.clearSession();
-      throw cause;
+      if (isTerminalRefreshError(cause)) {
+        if (this.sessionRevision !== sessionRevision) {
+          return this.readTokens()?.accessToken;
+        }
+        this.expireSession('refresh_rejected');
+        return undefined;
+      }
+      throw transientRefreshError(cause);
     }
   }
 
   private async exchange(
     body: URLSearchParams,
-    existingTokens?: StoredTokens,
+    existingTokens: StoredTokens | undefined,
+    failureCode: 'refresh_failed' | 'token_exchange_failed',
   ): Promise<StoredTokens> {
     const metadata = await this.discover();
     let response: Response;
@@ -338,10 +390,17 @@ export class OidcClient {
         body,
       });
     } catch {
-      throw new OidcError('token_exchange_failed');
+      throw new OidcError(failureCode, { retryable: failureCode === 'refresh_failed' });
     }
+    const receivedAt = this.environment.now();
     if (!response.ok) {
-      throw new OidcError('token_exchange_failed', { status: response.status });
+      const providerError = await readProviderError(response);
+      throw new OidcError(failureCode, {
+        status: response.status,
+        retryable:
+          failureCode === 'refresh_failed' &&
+          !isTerminalRefreshRejection(response.status, providerError),
+      });
     }
 
     let payload: unknown;
@@ -358,12 +417,28 @@ export class OidcClient {
     const idToken = payload.id_token ?? existingTokens?.idToken;
     const tokens: StoredTokens = {
       accessToken: payload.access_token,
-      expiresAt: this.environment.now() + payload.expires_in * 1000,
+      expiresAt: receivedAt + payload.expires_in * 1000,
       ...(refreshToken === undefined ? {} : { refreshToken }),
       ...(idToken === undefined ? {} : { idToken }),
     };
-    this.environment.localStorage.setItem(this.tokenStorageKey, JSON.stringify(tokens));
     return tokens;
+  }
+
+  private writeTokens(tokens: StoredTokens): void {
+    this.environment.localStorage.setItem(this.tokenStorageKey, JSON.stringify(tokens));
+    this.sessionRevision += 1;
+  }
+
+  private expireSession(reason: SessionExpiredReason): void {
+    this.clearSession();
+    const event: SessionExpiredEvent = { type: 'session-expired', reason };
+    for (const listener of this.sessionExpiredListeners) {
+      try {
+        listener(event);
+      } catch {
+        // Observers cannot change the terminal unauthenticated result.
+      }
+    }
   }
 
   private readTokens(): StoredTokens | undefined {
@@ -380,8 +455,41 @@ export class OidcClient {
       // Invalid state is discarded below without reflecting its content.
     }
     this.environment.localStorage.removeItem(this.tokenStorageKey);
+    this.sessionRevision += 1;
     return undefined;
   }
+}
+
+async function readProviderError(response: Response): Promise<string | undefined> {
+  try {
+    const value: unknown = await response.json();
+    return isObject(value) && typeof value['error'] === 'string' ? value['error'] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isTerminalRefreshRejection(status: number, providerError: string | undefined): boolean {
+  return (
+    status === 400 ||
+    status === 401 ||
+    providerError === 'invalid_grant' ||
+    providerError === 'invalid_token'
+  );
+}
+
+function isTerminalRefreshError(cause: unknown): boolean {
+  return cause instanceof OidcError && cause.code === 'refresh_failed' && !cause.retryable;
+}
+
+function transientRefreshError(cause: unknown): OidcError {
+  if (cause instanceof OidcError && cause.code === 'refresh_failed' && cause.retryable) {
+    return cause;
+  }
+  return new OidcError('refresh_failed', {
+    retryable: true,
+    ...(cause instanceof OidcError && cause.status !== undefined ? { status: cause.status } : {}),
+  });
 }
 
 async function discoverProvider(

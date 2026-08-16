@@ -64,7 +64,19 @@ export interface UnauthorizedContext {
   readonly error: ApiError | HttpError;
   readonly request: Request;
   readonly response: Response;
+  /** False when the request body cannot be cloned safely for replay. */
+  readonly canRetry: boolean;
 }
+
+/** Explicit outcome of a 401 hook. `handled` preserves the original normalized rejection. */
+export type UnauthorizedRecovery = 'handled' | 'retry-once';
+
+/** Backward-compatible 401 notification or explicit recovery callback. */
+export type UnauthorizedHandler =
+  | ((context: UnauthorizedContext) => void)
+  | ((context: UnauthorizedContext) => Promise<void>)
+  | ((context: UnauthorizedContext) => UnauthorizedRecovery)
+  | ((context: UnauthorizedContext) => Promise<UnauthorizedRecovery>);
 
 /** Options shared by the standalone fetch wrapper and generated clients. */
 export interface ApiRuntimeOptions extends ApiEnvironmentConfig {
@@ -73,7 +85,7 @@ export interface ApiRuntimeOptions extends ApiEnvironmentConfig {
   readonly tokenProvider?: TokenProvider;
   readonly traceparentProvider?: TraceparentProvider;
   readonly requestIdFactory?: () => string;
-  readonly onUnauthorized?: (context: UnauthorizedContext) => void | Promise<void>;
+  readonly onUnauthorized?: UnauthorizedHandler;
   readonly retry?: RetryOptions | false;
 }
 
@@ -245,28 +257,7 @@ export function createApiFetch(options: ApiRuntimeOptions): FetchImplementation 
     let request: Request;
     try {
       request = createRequest(input, init, baseUrl, requestConstructor);
-      throwIfAborted(request.signal, requestId);
-
-      const headers = new Headers(request.headers);
-      headers.set(REQUEST_ID_HEADER, requestId);
-
-      if (options.tokenProvider !== undefined) {
-        const token = await options.tokenProvider();
-        throwIfAborted(request.signal, requestId);
-        if (token !== null) {
-          headers.set('authorization', `Bearer ${token}`);
-        }
-      }
-
-      if (options.traceparentProvider !== undefined) {
-        const traceparent = await options.traceparentProvider(request);
-        throwIfAborted(request.signal, requestId);
-        if (traceparent !== null) {
-          headers.set('traceparent', traceparent);
-        }
-      }
-
-      request = new requestConstructor(request, { headers });
+      request = await decorateRequest(request, requestId, requestConstructor, options);
     } catch (cause) {
       if (cause instanceof NetworkError) {
         throw cause;
@@ -274,13 +265,24 @@ export function createApiFetch(options: ApiRuntimeOptions): FetchImplementation 
       throw networkError(cause, requestId, init?.signal ?? null);
     }
 
+    let replaySource = cloneRequest(request);
+    let useOriginalRequest = true;
     let retries = 0;
+    let unauthorizedReplayUsed = false;
     for (;;) {
       throwIfAborted(request.signal, requestId);
       try {
-        const response = await transport(request.clone());
+        const attempt = useOriginalRequest ? request : replaySource?.clone();
+        if (attempt === undefined) {
+          throw new TypeError('API request body cannot be replayed');
+        }
+        useOriginalRequest = false;
+        const response = await transport(attempt);
         throwIfAborted(request.signal, requestId);
-        if (shouldRetryResponse(request.method, response.status, retries, retry)) {
+        if (
+          replaySource !== undefined &&
+          shouldRetryResponse(request.method, response.status, retries, retry)
+        ) {
           await retryDelay(retries, retry, request.signal, requestId);
           retries += 1;
           continue;
@@ -291,11 +293,46 @@ export function createApiFetch(options: ApiRuntimeOptions): FetchImplementation 
         }
 
         const error = await normalizeResponseError(response);
-        if (response.status === 401 && options.onUnauthorized !== undefined) {
+        if (
+          response.status === 401 &&
+          options.onUnauthorized !== undefined &&
+          !unauthorizedReplayUsed
+        ) {
+          let recovery: unknown;
           try {
-            await options.onUnauthorized({ error, request: request.clone(), response });
+            recovery = await options.onUnauthorized({
+              error,
+              request: replaySource?.clone() ?? request,
+              response,
+              canRetry: replaySource !== undefined,
+            });
           } catch {
             // Re-authentication failures must not replace the normalized API failure.
+          }
+          throwIfAborted(request.signal, requestId);
+          if (recovery === 'retry-once' && replaySource !== undefined) {
+            unauthorizedReplayUsed = true;
+            try {
+              request = await decorateRequest(
+                replaySource.clone(),
+                requestId,
+                requestConstructor,
+                options,
+              );
+            } catch (cause) {
+              throwIfAborted(request.signal, requestId);
+              if (cause instanceof NetworkError) {
+                throw cause;
+              }
+              throw error;
+            }
+            replaySource = cloneRequest(request);
+            if (replaySource === undefined) {
+              throw error;
+            }
+            useOriginalRequest = true;
+            retries = 0;
+            continue;
           }
         }
         throw error;
@@ -305,7 +342,12 @@ export function createApiFetch(options: ApiRuntimeOptions): FetchImplementation 
         }
 
         const aborted = request.signal.aborted || isAbortError(cause);
-        if (!aborted && shouldRetryMethod(request.method, retry) && retries < retry.maxRetries) {
+        if (
+          !aborted &&
+          replaySource !== undefined &&
+          shouldRetryMethod(request.method, retry) &&
+          retries < retry.maxRetries
+        ) {
           await retryDelay(retries, retry, request.signal, requestId);
           retries += 1;
           continue;
@@ -319,6 +361,44 @@ export function createApiFetch(options: ApiRuntimeOptions): FetchImplementation 
       }
     }
   };
+}
+
+async function decorateRequest(
+  request: Request,
+  requestId: string,
+  requestConstructor: typeof Request,
+  options: ApiRuntimeOptions,
+): Promise<Request> {
+  throwIfAborted(request.signal, requestId);
+  const headers = new Headers(request.headers);
+  headers.set(REQUEST_ID_HEADER, requestId);
+
+  if (options.tokenProvider !== undefined) {
+    const token = await options.tokenProvider();
+    throwIfAborted(request.signal, requestId);
+    headers.delete('authorization');
+    if (token !== null) {
+      headers.set('authorization', `Bearer ${token}`);
+    }
+  }
+
+  if (options.traceparentProvider !== undefined) {
+    const traceparent = await options.traceparentProvider(request);
+    throwIfAborted(request.signal, requestId);
+    if (traceparent !== null) {
+      headers.set('traceparent', traceparent);
+    }
+  }
+
+  return new requestConstructor(request, { headers });
+}
+
+function cloneRequest(request: Request): Request | undefined {
+  try {
+    return request.clone();
+  } catch {
+    return undefined;
+  }
 }
 
 /** Expected request fields used by MockFetch assertions. */

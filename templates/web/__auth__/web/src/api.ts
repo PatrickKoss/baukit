@@ -1,6 +1,6 @@
-import { createApiRuntime } from '@baukit/api-runtime';
 import type { FetchImplementation } from '@baukit/api-runtime';
 
+import { createAuthenticatedApiRuntime } from './authenticated-api';
 import { authClient } from './auth';
 
 export interface Item {
@@ -14,7 +14,8 @@ export interface CurrentUser {
 }
 
 const configuredBaseUrl: unknown = import.meta.env['VITE_API_URL'];
-const api = createApiRuntime({
+const api = createAuthenticatedApiRuntime({
+  auth: authClient,
   baseUrl: typeof configuredBaseUrl === 'string' ? configuredBaseUrl : 'http://localhost:8080',
   environment: import.meta.env.MODE,
 });
@@ -25,13 +26,7 @@ export async function listItems(fetch: FetchImplementation = api.fetch): Promise
 }
 
 export async function currentUser(fetch: FetchImplementation = api.fetch): Promise<CurrentUser> {
-  const accessToken = await authClient.accessToken();
-  if (accessToken === undefined) {
-    throw new Error('Sign in before calling the protected API.');
-  }
-  const response = await fetch('/me', {
-    headers: { authorization: `Bearer ${accessToken}` },
-  });
+  const response = await fetch('/me');
   const value: unknown = await response.json();
   if (!isCurrentUser(value)) {
     throw new TypeError('The API returned an invalid current-user response.');

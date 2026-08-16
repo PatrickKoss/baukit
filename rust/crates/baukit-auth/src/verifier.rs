@@ -8,13 +8,16 @@ use std::{
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use reqwest::{Client, StatusCode, Url};
-use ring::signature;
+use ring::{digest, signature};
 use serde::Deserialize;
 use serde_json::Value;
 use thiserror::Error;
 use tokio::sync::Mutex;
 
 use crate::{OidcConfig, SigningAlgorithm};
+
+const UNKNOWN_KEY_TTL: std::time::Duration = std::time::Duration::from_secs(30);
+const MAX_UNKNOWN_KEYS: usize = 128;
 
 /// A verified, provider-neutral application identity.
 ///
@@ -100,6 +103,7 @@ struct VerifierInner {
 struct JwksCache {
     fetched_at: Option<Instant>,
     set: JwkSet,
+    unknown_keys: BTreeMap<[u8; 32], Instant>,
 }
 
 impl OidcVerifier {
@@ -166,21 +170,34 @@ impl OidcVerifier {
         let fresh = cache
             .fetched_at
             .is_some_and(|fetched_at| fetched_at.elapsed() < self.inner.config.cache_ttl);
-        if fresh && let Some(key) = cache.set.find(key_id) {
-            return Ok(key.clone());
+        if fresh && let Some(key) = cache.set.find(key_id).cloned() {
+            cache.unknown_keys.remove(&unknown_key_hash(key_id));
+            return Ok(key);
+        }
+
+        if fresh
+            && cache
+                .unknown_keys
+                .get(&unknown_key_hash(key_id))
+                .is_some_and(|cached_at| cached_at.elapsed() < UNKNOWN_KEY_TTL)
+        {
+            return Err(VerificationError::UnknownKeyId);
         }
 
         // A missing kid refreshes even a fresh cache, which handles provider key
         // rotation without waiting for the normal TTL. Holding the mutex avoids
         // a request stampede during refresh.
         let set = self.fetch_jwks().await?;
-        let key = set
-            .find(key_id)
-            .cloned()
-            .ok_or(VerificationError::UnknownKeyId)?;
+        let key = set.find(key_id).cloned();
         cache.set = set;
         cache.fetched_at = Some(Instant::now());
-        Ok(key)
+        if let Some(key) = key {
+            cache.unknown_keys.remove(&unknown_key_hash(key_id));
+            Ok(key)
+        } else {
+            cache.remember_unknown_key(key_id);
+            Err(VerificationError::UnknownKeyId)
+        }
     }
 
     async fn fetch_jwks(&self) -> Result<JwkSet, VerificationError> {
@@ -199,6 +216,31 @@ impl OidcVerifier {
             .await
             .map_err(VerificationError::InvalidJwksDocument)
     }
+}
+
+impl JwksCache {
+    fn remember_unknown_key(&mut self, key_id: &str) {
+        self.unknown_keys
+            .retain(|_, cached_at| cached_at.elapsed() < UNKNOWN_KEY_TTL);
+        if self.unknown_keys.len() >= MAX_UNKNOWN_KEYS
+            && let Some(oldest) = self
+                .unknown_keys
+                .iter()
+                .min_by_key(|(_, cached_at)| *cached_at)
+                .map(|(key_id, _)| *key_id)
+        {
+            self.unknown_keys.remove(&oldest);
+        }
+        self.unknown_keys
+            .insert(unknown_key_hash(key_id), Instant::now());
+    }
+}
+
+fn unknown_key_hash(key_id: &str) -> [u8; 32] {
+    let hash = digest::digest(&digest::SHA256, key_id.as_bytes());
+    let mut bytes = [0; 32];
+    bytes.copy_from_slice(hash.as_ref());
+    bytes
 }
 
 impl IdentityVerifier for OidcVerifier {
@@ -634,5 +676,19 @@ mod tests {
         assert_eq!(principal.subject(), "subject");
         assert_eq!(principal.organization(), Some("org"));
         assert_eq!(principal.tenant(), Some("tenant"));
+    }
+
+    #[test]
+    fn unknown_key_cache_has_a_hard_entry_bound() {
+        let mut cache = JwksCache::default();
+        for index in 0..=MAX_UNKNOWN_KEYS {
+            cache.remember_unknown_key(&format!("unknown-{index}"));
+        }
+        assert_eq!(cache.unknown_keys.len(), MAX_UNKNOWN_KEYS);
+        assert!(
+            cache
+                .unknown_keys
+                .contains_key(&unknown_key_hash("unknown-128"))
+        );
     }
 }

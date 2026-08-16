@@ -285,7 +285,10 @@ async fn process_claimed_job(
         }
         AttemptResult::Handled(Err(error)) => {
             let now = Utc::now();
-            let retry_at = add_duration(now, retry_delay(&config, job.attempts))?;
+            let delay = error
+                .retry_after()
+                .unwrap_or_else(|| retry_delay(&config, job.attempts));
+            let retry_at = add_duration(now, delay)?;
             if let Some(disposition) = store
                 .record_failure(
                     job.id,
@@ -560,6 +563,27 @@ mod tests {
         task.await.expect("runner task").expect("clean shutdown");
     }
 
+    #[tokio::test]
+    async fn provider_retry_delay_overrides_exponential_backoff() {
+        let store = Arc::new(FakeStore::with_jobs(0));
+        process_claimed_job(
+            store.clone(),
+            Arc::new(RetryAfterHandler),
+            test_config(),
+            fake_job(0),
+        )
+        .await
+        .expect("attempt recorded");
+
+        assert_eq!(
+            *store
+                .recorded_retry_delay
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+            Some(chrono::Duration::seconds(42))
+        );
+    }
+
     fn test_config() -> WorkerConfig {
         WorkerConfig {
             worker_id: "test-worker".to_owned(),
@@ -581,6 +605,7 @@ mod tests {
         cancelled: AtomicUsize,
         cancel_requested: AtomicBool,
         transition: Notify,
+        recorded_retry_delay: Mutex<Option<chrono::Duration>>,
     }
 
     impl FakeStore {
@@ -592,6 +617,7 @@ mod tests {
                 cancelled: AtomicUsize::new(0),
                 cancel_requested: AtomicBool::new(false),
                 transition: Notify::new(),
+                recorded_retry_delay: Mutex::new(None),
             }
         }
 
@@ -645,11 +671,15 @@ mod tests {
             _job_id: Uuid,
             _worker_id: &'a str,
             _retryable: bool,
-            _retry_at: chrono::DateTime<Utc>,
+            retry_at: chrono::DateTime<Utc>,
             _error: &'a str,
-            _now: chrono::DateTime<Utc>,
+            now: chrono::DateTime<Utc>,
         ) -> StoreFuture<'a, Result<Option<FailureDisposition>, StoreError>> {
             Box::pin(async move {
+                *self
+                    .recorded_retry_delay
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(retry_at - now);
                 self.retried.fetch_add(1, Ordering::SeqCst);
                 self.transition.notify_one();
                 Ok(Some(FailureDisposition::Retry))
@@ -747,6 +777,25 @@ mod tests {
         }
     }
 
+    struct RetryAfterHandler;
+
+    impl JobHandler for RetryAfterHandler {
+        fn job_types(&self) -> &'static [&'static str] {
+            &["test.job"]
+        }
+
+        fn handle<'a>(
+            &'a self,
+            _job: &'a ClaimedJob,
+            _cancellation: JobCancellation,
+        ) -> JobFuture<'a, Result<(), JobError>> {
+            Box::pin(std::future::ready(Err(JobError::retryable_after(
+                "provider rate limited",
+                Duration::from_secs(42),
+            ))))
+        }
+    }
+
     fn fake_job(sequence: usize) -> Job {
         let now = Utc::now();
         Job {
@@ -761,6 +810,7 @@ mod tests {
             locked_until: Some(now + TimeDelta::minutes(1)),
             idempotency_key: None,
             last_error: None,
+            failure_reason: None,
             cancel_requested_at: None,
             created_at: now,
             updated_at: now,

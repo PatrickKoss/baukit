@@ -1,4 +1,4 @@
-.PHONY: fmt lint test check ci platform-validate platform-up platform-down platform-nuke platform-recreate platform-status ts-install ts-build ts-fmt ts-lint ts-test ts-browser-test ts-check cli-fmt cli-lint cli-test cli-check cli-ci install-skills
+.PHONY: fmt lint test check ci platform-validate platform-up platform-down platform-nuke platform-recreate platform-status ts-install ts-build ts-fmt ts-lint ts-test ts-browser-test ts-check cli-fmt cli-lint cli-test cli-check cli-ci install-skills android-sdk-setup native-android-gate expo-sqlite-conformance
 
 RUST_MANIFEST := rust/Cargo.toml
 TS_DIR := typescript
@@ -41,6 +41,24 @@ cli-ci: cli-fmt cli-lint cli-test cli-check
 install-skills:
 	@test -n "$(TARGET)" || (echo "TARGET is required: make install-skills TARGET=<product-dir>" >&2; exit 2)
 	./agent-skills/install.sh --target "$(TARGET)"
+
+android-sdk-setup:
+	./scripts/android-sdk-setup.sh
+
+native-android-gate: android-sdk-setup
+	@fixture_parent="$$(mktemp -d)"; \
+	trap 'rm -rf "$$fixture_parent"' EXIT; \
+	corepack pnpm --dir $(TS_DIR) install --frozen-lockfile; \
+	corepack pnpm --dir $(TS_DIR) --filter @baukit/analytics-core --filter @baukit/api-runtime --filter @baukit/data-contracts --filter @baukit/data-contracts-expo-sqlite --filter @baukit/ui-tokens run build; \
+	cargo build --manifest-path $(CLI_MANIFEST) --bin baukit; \
+	cli/target/debug/baukit new fixture --mobile --dir "$$fixture_parent" --baukit-path rust; \
+	corepack pnpm --dir "$$fixture_parent/fixture/mobile" install --frozen-lockfile; \
+	CI=1 corepack pnpm --dir "$$fixture_parent/fixture/mobile" exec expo prebuild --clean --platform android; \
+	ANDROID_HOME="$${ANDROID_HOME:-$$HOME/Android/Sdk}" ANDROID_SDK_ROOT="$${ANDROID_SDK_ROOT:-$${ANDROID_HOME:-$$HOME/Android/Sdk}}" \
+		"$$fixture_parent/fixture/mobile/android/gradlew" -p "$$fixture_parent/fixture/mobile/android" --no-daemon --stacktrace assembleDebug
+
+expo-sqlite-conformance:
+	./examples/expo-sqlite-conformance/scripts/run-android.sh
 
 ts-install:
 	corepack pnpm --dir $(TS_DIR) install --frozen-lockfile

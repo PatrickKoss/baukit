@@ -1,4 +1,5 @@
 import { OidcClient } from '@baukit/auth-web';
+import type { SessionExpiredEvent } from '@baukit/auth-web';
 
 const configuredIssuer: unknown = import.meta.env['VITE_OIDC_ISSUER'];
 const configuredClientId: unknown = import.meta.env['VITE_OIDC_CLIENT_ID'];
@@ -26,8 +27,10 @@ export const authClient = {
   login: (): Promise<void> => client().login(),
   handleCallback: (): Promise<boolean> =>
     typeof window === 'undefined' ? Promise.resolve(false) : client().handleCallback(),
-  accessToken: (): Promise<string | undefined> =>
-    typeof window === 'undefined' ? Promise.resolve(undefined) : client().accessToken(),
+  accessToken: (options: { readonly forceRefresh?: boolean } = {}): Promise<string | undefined> =>
+    typeof window === 'undefined' ? Promise.resolve(undefined) : client().accessToken(options),
+  subscribeSessionExpired: (listener: (event: SessionExpiredEvent) => void): (() => void) =>
+    typeof window === 'undefined' ? () => undefined : client().subscribeSessionExpired(listener),
   logout: (): Promise<boolean> =>
     typeof window === 'undefined' ? Promise.resolve(false) : client().logout(),
 };

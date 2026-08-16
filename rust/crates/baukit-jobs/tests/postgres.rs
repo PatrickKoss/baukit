@@ -1,6 +1,9 @@
 use std::{collections::HashSet, error::Error, path::PathBuf, sync::Arc, time::Duration};
 
-use baukit_jobs::{FailureDisposition, JobStatus, JobStore as _, NewJob, PostgresJobStore};
+use baukit_jobs::{
+    FailureDisposition, JobFailureReason, JobStatus, JobStore as _, NewJob,
+    POSTGRES_MIGRATION_0002_SQL, POSTGRES_MIGRATION_SQL, PostgresJobStore,
+};
 use chrono::{TimeDelta, Utc};
 use serde_json::json;
 use sqlx::PgPool;
@@ -152,6 +155,10 @@ async fn postgres_expired_lease_is_reclaimed_without_a_sweep_process() -> Result
         "an expired final attempt is not reclaimed"
     );
     assert_eq!(status(&pool, exhausted.id).await?, "failed");
+    assert_eq!(
+        failure_reason(&pool, exhausted.id).await?.as_deref(),
+        Some("attempts_exhausted")
+    );
 
     pool.close().await;
     drop(fixture);
@@ -201,7 +208,7 @@ async fn postgres_retry_is_bounded_by_attempts_and_has_terminal_failure()
 -> Result<(), Box<dyn Error>> {
     let (fixture, pool, store) = fixture().await?;
     let retried = store
-        .enqueue(NewJob::new("retry.test", json!({}), 2))
+        .enqueue(NewJob::new("retry.test", json!({}), 2).idempotency_key("retry-terminal"))
         .await?
         .job;
     let now = Utc::now();
@@ -242,9 +249,20 @@ async fn postgres_retry_is_bounded_by_attempts_and_has_terminal_failure()
         Some(FailureDisposition::Failed)
     );
     assert_eq!(status(&pool, retried.id).await?, "failed");
+    let exhausted = store
+        .enqueue(
+            NewJob::new("retry.test", json!({"ignored": true}), 99)
+                .idempotency_key("retry-terminal"),
+        )
+        .await?
+        .job;
+    assert_eq!(
+        exhausted.failure_reason,
+        Some(JobFailureReason::AttemptsExhausted)
+    );
 
     let permanent = store
-        .enqueue(NewJob::new("retry.permanent", json!({}), 8))
+        .enqueue(NewJob::new("retry.permanent", json!({}), 8).idempotency_key("permanent-terminal"))
         .await?
         .job;
     let permanent_now = Utc::now();
@@ -265,6 +283,14 @@ async fn postgres_retry_is_bounded_by_attempts_and_has_terminal_failure()
             .await?,
         Some(FailureDisposition::Failed)
     );
+    let permanent = store
+        .enqueue(
+            NewJob::new("retry.permanent", json!({"ignored": true}), 99)
+                .idempotency_key("permanent-terminal"),
+        )
+        .await?
+        .job;
+    assert_eq!(permanent.failure_reason, Some(JobFailureReason::Permanent));
 
     pool.close().await;
     drop(fixture);
@@ -330,6 +356,65 @@ async fn postgres_readiness_executes_the_claim_query_shape() -> Result<(), Box<d
     Ok(())
 }
 
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn postgres_v051_schema_upgrades_to_failure_reasons() -> Result<(), Box<dyn Error>> {
+    let fixture = baukit_test::start_postgres().await?;
+    let pool = PgPool::connect(fixture.connection_url()).await?;
+    sqlx::raw_sql(POSTGRES_MIGRATION_SQL).execute(&pool).await?;
+
+    sqlx::query(
+        "INSERT INTO job_outbox (id, job_type, payload, status, attempts, max_attempts) VALUES ($1, 'legacy.exhausted', '{}', 'failed', 3, 3), ($2, 'legacy.permanent', '{}', 'failed', 1, 3)",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(uuid::Uuid::new_v4())
+    .execute(&pool)
+    .await?;
+
+    sqlx::raw_sql(POSTGRES_MIGRATION_0002_SQL)
+        .execute(&pool)
+        .await?;
+
+    let reasons: Vec<String> =
+        sqlx::query_scalar("SELECT failure_reason FROM job_outbox ORDER BY job_type")
+            .fetch_all(&pool)
+            .await?;
+    assert_eq!(reasons, ["attempts_exhausted", "permanent"]);
+
+    let store = PostgresJobStore::new(pool.clone());
+    let current = store
+        .enqueue(NewJob::new("current.failure", json!({}), 2).idempotency_key("upgrade-check"))
+        .await?
+        .job;
+    let now = Utc::now();
+    store
+        .claim("upgrade-worker", now, Duration::from_secs(30))
+        .await?
+        .expect("current job is claimable after the upgrade");
+    assert_eq!(
+        store
+            .record_failure(
+                current.id,
+                "upgrade-worker",
+                false,
+                now,
+                "permanent failure",
+                now,
+            )
+            .await?,
+        Some(FailureDisposition::Failed)
+    );
+    let current = store
+        .enqueue(NewJob::new("current.failure", json!({}), 99).idempotency_key("upgrade-check"))
+        .await?
+        .job;
+    assert_eq!(current.failure_reason, Some(JobFailureReason::Permanent));
+
+    pool.close().await;
+    drop(fixture);
+    Ok(())
+}
+
 async fn fixture()
 -> Result<(baukit_test::PostgresTestContainer, PgPool, PostgresJobStore), Box<dyn Error>> {
     let migrations = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("migrations");
@@ -341,6 +426,13 @@ async fn fixture()
 
 async fn status(pool: &PgPool, job_id: uuid::Uuid) -> Result<String, sqlx::Error> {
     sqlx::query_scalar("SELECT status FROM job_outbox WHERE id = $1")
+        .bind(job_id)
+        .fetch_one(pool)
+        .await
+}
+
+async fn failure_reason(pool: &PgPool, job_id: uuid::Uuid) -> Result<Option<String>, sqlx::Error> {
+    sqlx::query_scalar("SELECT failure_reason FROM job_outbox WHERE id = $1")
         .bind(job_id)
         .fetch_one(pool)
         .await

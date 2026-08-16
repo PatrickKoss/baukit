@@ -19,6 +19,16 @@ pub enum JobStatus {
     Cancelled,
 }
 
+/// Stable reason a job entered terminal [`JobStatus::Failed`].
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JobFailureReason {
+    /// The handler classified the failure as non-retryable.
+    Permanent,
+    /// A retryable failure or expired lease consumed the final attempt.
+    AttemptsExhausted,
+}
+
 /// A job persisted in the product's outbox table.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Job {
@@ -44,6 +54,8 @@ pub struct Job {
     pub idempotency_key: Option<String>,
     /// Bounded diagnostic text for the most recent failure.
     pub last_error: Option<String>,
+    /// Stable terminal failure reason; set only while status is `failed`.
+    pub failure_reason: Option<JobFailureReason>,
     /// Time cancellation was requested for a running job.
     pub cancel_requested_at: Option<DateTime<Utc>>,
     /// Creation timestamp used for queue-age telemetry.

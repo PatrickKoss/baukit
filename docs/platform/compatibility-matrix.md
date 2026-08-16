@@ -47,7 +47,9 @@ preparation and the complete local CI-equivalent gates were rerun).
 | Styling | Tailwind CSS | 4 | |
 | Web persistence | `@baukit/data-contracts-dexie` / Dexie | 4.4.5 | only when offline is enabled; Chromium and WebKit conformance-tested |
 | Web e2e | Playwright | latest | |
-| Native e2e | Maestro | latest | |
+| Android native compile | Expo prebuild + Gradle | API 36, Java 21 | Blocking for relevant generated-product and Baukit fixture changes |
+| Native e2e | Maestro | latest | Configurable for product-owned critical paths; scheduled/manual, not part of the universal pull-request promise |
+| iOS native compile | Xcode + iOS Simulator | macOS runner | Scheduled/manual; Linux is recorded as blocked, never as a passing skip |
 
 ## Update rules
 

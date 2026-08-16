@@ -18,6 +18,20 @@ The app lists the backend template's `/items` resource through `@baukit/api-runt
 
 This lightweight mobile template intentionally does not include Expo Router. Consequently it does not provide a mobile `backOrReplace`; when a product adds a router, use its reliable history-availability API and replace direct loads with a semantic destination instead of always calling `back()`.
 
+## Accessibility reference
+
+`src/accessibility.ts` keeps native accessibility wiring explicit and product-owned. Apply `backgroundAccessibilityProps(open)` to the app content _behind_ an overlay and `overlayAccessibilityProps()` to the overlay container. Supply stable trigger and overlay refs yourself: use `focusAccessibilityTargetOnLayout(containerRef)` for focus entry after layout and `focusAccessibilityTarget(triggerRef)` for restoration. The helper cannot discover previous native focus reliably.
+
+Use `announceForAccessibility` only for important state changes that focus does not already communicate, and read `isReduceMotionEnabled` before non-essential animation. The Jest seam switches `Platform.OS` to cover iOS modal/background props, Android `no-hide-descendants`, announcements, reduced motion, and focus-after-layout. ESLint applies the React Native accessibility rules through `@eslint/compat` so the maintained rule set works with this template's flat ESLint 9 config, and lint fails on warnings.
+
+Before claiming native accessibility, follow the VoiceOver and TalkBack release protocol in Baukit's `docs/platform/accessibility-contract.md`. Lint and Jest cannot validate spoken copy, traversal, gesture operation, or focus behavior on a real release binary.
+
+## Native smoke guidance
+
+The generated native workflow clean-prebuilds and compiles Android for relevant mobile/configuration changes. Its scheduled/manual iOS layer requires a macOS runner; Maestro is opt-in and runs only product-owned `.maestro/` critical paths.
+
+For device smoke testing, open a custom-scheme deep link from a terminated app and verify valid, invalid, and unauthenticated route outcomes. With the software keyboard visible, check that focused controls remain visible, dismissal preserves input, and content and overlays respect top and bottom safe-area insets. Exact routes, OAuth callback URLs, screen wrappers, credentials, and journeys remain product-owned.
+
 The Baukit packages come from {{ context.baukit_typescript_dependency_description }}. Release-generated apps pin the Baukit repository tag; local fixtures use `file:` dependencies. The app runs directly with Expo and does not require the Baukit CLI.
 
 ## Checks

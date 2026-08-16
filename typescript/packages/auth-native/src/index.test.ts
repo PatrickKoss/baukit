@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   NativeOidcClient,
@@ -74,6 +74,7 @@ interface HarnessOptions {
   readonly tokenResponses?: unknown[];
   readonly userInfo?: unknown;
   readonly fetchOverride?: FetchPort;
+  readonly userInfoNow?: number;
 }
 
 const issuer = 'https://identity.example.test/tenant';
@@ -108,6 +109,9 @@ function makeHarness(options: HarnessOptions = {}): Harness {
         );
       }
       if (url.endsWith('/userinfo')) {
+        if (options.userInfoNow !== undefined) {
+          now = options.userInfoNow;
+        }
         return Promise.resolve(jsonResponse(options.userInfo ?? { sub: 'subject-123' }));
       }
       return Promise.resolve(jsonResponse(tokenResponses.shift() ?? defaultTokens()));
@@ -287,13 +291,164 @@ describe('NativeOidcClient', () => {
     });
   });
 
-  it('clears an expired session without a refresh token', async () => {
-    const test = makeHarness();
-    test.storage.values.set(sessionKey, storedSession({ refreshToken: undefined, expiresAt: 900 }));
+  it('anchors expiry to token receipt before later UserInfo work', async () => {
+    const test = makeHarness({ userInfoNow: 500_000 });
+
+    await test.client.signIn();
+
+    expect(test.client.session()?.expiresAt).toBe(61_000);
+  });
+
+  it('shares one refresh across proactive and forced concurrent callers', async () => {
+    let resolveRefresh: ((response: Response) => void) | undefined;
+    let refreshCalls = 0;
+    const test = makeHarness({
+      fetchOverride: (url) => {
+        if (url.endsWith('/.well-known/openid-configuration')) {
+          return Promise.resolve(
+            jsonResponse({
+              issuer,
+              authorization_endpoint: 'https://login.example.test/oauth/authorize',
+              token_endpoint: 'https://login.example.test/oauth/token',
+              userinfo_endpoint: 'https://login.example.test/oauth/userinfo',
+            }),
+          );
+        }
+        refreshCalls += 1;
+        return new Promise((resolve) => {
+          resolveRefresh = resolve;
+        });
+      },
+    });
+    test.storage.values.set(sessionKey, storedSession({ expiresAt: 900 }));
+
+    const proactive = test.client.accessToken();
+    const forced = test.client.accessToken({ forceRefresh: true });
+    await vi.waitFor(() => {
+      expect(refreshCalls).toBe(1);
+    });
+    resolveRefresh?.(
+      jsonResponse(defaultTokens({ access_token: 'shared-access', refresh_token: undefined })),
+    );
+
+    await expect(Promise.all([proactive, forced])).resolves.toEqual([
+      'shared-access',
+      'shared-access',
+    ]);
+    expect(refreshCalls).toBe(1);
+  });
+
+  it('does not report expiry after a session is cleared during a rejected refresh', async () => {
+    let resolveRefresh: ((response: Response) => void) | undefined;
+    const test = makeHarness({
+      fetchOverride: (url) => {
+        if (url.endsWith('/.well-known/openid-configuration')) {
+          return Promise.resolve(
+            jsonResponse({
+              issuer,
+              authorization_endpoint: 'https://login.example.test/oauth/authorize',
+              token_endpoint: 'https://login.example.test/oauth/token',
+              userinfo_endpoint: 'https://login.example.test/oauth/userinfo',
+            }),
+          );
+        }
+        return new Promise((resolve) => {
+          resolveRefresh = resolve;
+        });
+      },
+    });
+    test.storage.values.set(sessionKey, storedSession({ expiresAt: 900 }));
+    const expired: unknown[] = [];
+    test.client.subscribeSessionExpired((event) => expired.push(event));
+
+    const pending = test.client.accessToken();
+    await vi.waitFor(() => {
+      expect(resolveRefresh).toBeDefined();
+    });
+    await test.client.clearSession();
+    resolveRefresh?.(jsonResponse({ error: 'invalid_grant' }, 400));
+
+    await expect(pending).resolves.toBeUndefined();
+    expect(test.client.session()).toBeUndefined();
+    expect(expired).toEqual([]);
+  });
+
+  it('forces refresh outside the proactive expiry window', async () => {
+    const test = makeHarness({
+      tokenResponses: [defaultTokens(), defaultTokens({ access_token: 'forced-access' })],
+    });
+    await test.client.signIn();
+
+    await expect(test.client.accessToken({ forceRefresh: true })).resolves.toBe('forced-access');
+    expect(test.requests.filter(({ url }) => url.endsWith('/token'))).toHaveLength(2);
+  });
+
+  it('keeps a session retryable after a transient refresh failure', async () => {
+    const test = makeHarness({
+      fetchOverride: (url) => {
+        if (url.endsWith('/.well-known/openid-configuration')) {
+          return Promise.resolve(
+            jsonResponse({
+              issuer,
+              authorization_endpoint: 'https://login.example.test/oauth/authorize',
+              token_endpoint: 'https://login.example.test/oauth/token',
+              userinfo_endpoint: 'https://login.example.test/oauth/userinfo',
+            }),
+          );
+        }
+        return Promise.resolve(jsonResponse({ error: 'temporarily_unavailable' }, 503));
+      },
+    });
+    test.storage.values.set(sessionKey, storedSession({ expiresAt: 900 }));
+
+    await expect(test.client.accessToken()).rejects.toMatchObject({
+      code: 'refresh_failed',
+      retryable: true,
+      status: 503,
+    });
+    expect(test.client.session()?.refreshToken).toBe('stored-refresh');
+    expect(test.storage.values.has(sessionKey)).toBe(true);
+  });
+
+  it.each([
+    [400, { error: 'provider_error' }],
+    [403, { error: 'invalid_token' }],
+  ] as const)('expires the session for terminal refresh rejection %#', async (status, body) => {
+    const test = makeHarness({
+      fetchOverride: (url) => {
+        if (url.endsWith('/.well-known/openid-configuration')) {
+          return Promise.resolve(
+            jsonResponse({
+              issuer,
+              authorization_endpoint: 'https://login.example.test/oauth/authorize',
+              token_endpoint: 'https://login.example.test/oauth/token',
+              userinfo_endpoint: 'https://login.example.test/oauth/userinfo',
+            }),
+          );
+        }
+        return Promise.resolve(jsonResponse(body, status));
+      },
+    });
+    test.storage.values.set(sessionKey, storedSession({ expiresAt: 900 }));
+    const expired: unknown[] = [];
+    test.client.subscribeSessionExpired((event) => expired.push(event));
 
     await expect(test.client.accessToken()).resolves.toBeUndefined();
     expect(test.client.session()).toBeUndefined();
     expect(test.storage.values.has(sessionKey)).toBe(false);
+    expect(expired).toEqual([{ type: 'session-expired', reason: 'refresh_rejected' }]);
+  });
+
+  it('clears an expired session without a refresh token', async () => {
+    const test = makeHarness();
+    test.storage.values.set(sessionKey, storedSession({ refreshToken: undefined, expiresAt: 900 }));
+    const expired: unknown[] = [];
+    test.client.subscribeSessionExpired((event) => expired.push(event));
+
+    await expect(test.client.accessToken()).resolves.toBeUndefined();
+    expect(test.client.session()).toBeUndefined();
+    expect(test.storage.values.has(sessionKey)).toBe(false);
+    expect(expired).toEqual([{ type: 'session-expired', reason: 'refresh_unavailable' }]);
   });
 
   it('deletes corrupt secure storage and initializes signed out', async () => {

@@ -36,6 +36,9 @@ export function App() {
   });
 
   useEffect(() => {
+    const unsubscribe = authClient.subscribeSessionExpired(() => {
+      setAuthenticated(false);
+    });
     void authClient
       .handleCallback()
       .then((handled) => {
@@ -46,6 +49,7 @@ export function App() {
       .catch((cause: unknown) => {
         setAuthError(safeAuthErrorMessage(cause));
       });
+    return unsubscribe;
   }, []);
 
   useEffect(() => {

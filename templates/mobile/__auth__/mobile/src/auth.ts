@@ -26,7 +26,7 @@ const redirectUri = AuthSession.makeRedirectUri({
   path: 'oauth',
 });
 
-const client = createExpoOidcClient({
+export const authClient = createExpoOidcClient({
   issuer,
   clientId,
   redirectUri,
@@ -41,6 +41,7 @@ export interface OidcAuth {
   readonly ready: boolean;
   readonly error?: string;
   readonly announcement?: string;
+  readonly sessionExpired: boolean;
   readonly signIn: () => Promise<SignInResult | undefined>;
   readonly signOut: () => Promise<SignOutResult | undefined>;
 }
@@ -50,15 +51,22 @@ export function useOidcAuth(): OidcAuth {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string>();
   const [announcement, setAnnouncement] = useState<string>();
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   useEffect(() => {
     let active = true;
-    const unsubscribe = client.subscribe((nextSession) => {
+    const unsubscribe = authClient.subscribe((nextSession) => {
       if (active) {
         setSession(nextSession);
       }
     });
-    void client
+    const unsubscribeExpired = authClient.subscribeSessionExpired(() => {
+      if (active) {
+        setSessionExpired(true);
+        setAnnouncement('Your session expired. Sign in again to continue.');
+      }
+    });
+    void authClient
       .initialize()
       .then((nextSession) => {
         if (active) {
@@ -75,6 +83,7 @@ export function useOidcAuth(): OidcAuth {
     return () => {
       active = false;
       unsubscribe();
+      unsubscribeExpired();
     };
   }, []);
 
@@ -84,7 +93,7 @@ export function useOidcAuth(): OidcAuth {
     }
     const delay = Math.max(session.expiresAt - Date.now() - 30_000, 0);
     const timeout = setTimeout(() => {
-      void client.accessToken().catch((cause: unknown) => {
+      void authClient.accessToken().catch((cause: unknown) => {
         setError(safeAuthErrorMessage(cause));
       });
     }, delay);
@@ -96,8 +105,9 @@ export function useOidcAuth(): OidcAuth {
   const signIn = useCallback(async (): Promise<SignInResult | undefined> => {
     setError(undefined);
     setAnnouncement(undefined);
+    setSessionExpired(false);
     try {
-      const result = await client.signIn();
+      const result = await authClient.signIn();
       setAnnouncement(signInFeedback(result));
       return result;
     } catch (cause) {
@@ -110,7 +120,7 @@ export function useOidcAuth(): OidcAuth {
     setError(undefined);
     setAnnouncement(undefined);
     try {
-      return await client.signOut();
+      return await authClient.signOut();
     } catch (cause) {
       setError(safeAuthErrorMessage(cause));
       return undefined;
@@ -123,6 +133,7 @@ export function useOidcAuth(): OidcAuth {
     ready,
     ...(error === undefined ? {} : { error }),
     ...(announcement === undefined ? {} : { announcement }),
+    sessionExpired,
     signIn,
     signOut,
   };

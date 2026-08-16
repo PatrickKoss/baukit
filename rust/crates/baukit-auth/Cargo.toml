@@ -25,4 +25,4 @@ tracing.workspace = true
 
 [dev-dependencies]
 tower = { workspace = true, features = ["util"] }
-
+tracing-subscriber.workspace = true

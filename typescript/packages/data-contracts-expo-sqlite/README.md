@@ -38,3 +38,9 @@ logical adapter; pass `{ closeDatabase: true }` when it should also own the
 supplied database handle.
 
 Namespaces share one fixed `baukit_records` table without colliding. Call `initialize()` before using a store. Records are serialized as JSON, pagination is bounded and keyset-based, and malformed persisted payloads produce a content-free error. The package does not choose a database name, open a singleton, define product entities, or implement product cache policy.
+
+The package's fast Vitest suite uses a deterministic database fake. The
+[Expo SQLite device-conformance app](../../../examples/expo-sqlite-conformance/README.md)
+mirrors the shared contract cases against real `expo-sqlite` on Android,
+including creation/reopening, namespace isolation, malformed data, rollback,
+and schema-metadata upgrades. iOS is a scheduled/manual macOS gate.

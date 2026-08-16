@@ -1,5 +1,9 @@
 # @baukit/auth-native
 
+## Unreleased
+
+- Add forced single-flight refresh, terminal/transient rejection handling, receipt-time expiry, and observable session expiry.
+
 ## 0.5.1
 
 ### Patch Changes

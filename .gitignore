@@ -24,5 +24,10 @@ coverage/
 *.log
 **/__pycache__/**
 .generated-fixture/
+.generated-native-fixture/
 typescript/.playwright-browsers/
 deploy/platform/.local-state/
+examples/expo-sqlite-conformance/.expo/
+examples/expo-sqlite-conformance/android/
+examples/expo-sqlite-conformance/ios/
+examples/expo-sqlite-conformance/artifacts/

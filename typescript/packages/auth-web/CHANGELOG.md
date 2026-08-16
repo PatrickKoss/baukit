@@ -1,5 +1,9 @@
 # @baukit/auth-web
 
+## Unreleased
+
+- Preserve sessions on retryable refresh failures and add forced refresh plus observable terminal expiry.
+
 ## 0.5.1
 
 ### Patch Changes

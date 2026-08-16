@@ -41,6 +41,10 @@ impl std::fmt::Debug for AuthState {
 pub enum AuthRejection {
     /// The request has no valid bearer identity.
     Unauthenticated,
+    /// A bearer token was supplied but is invalid.
+    InvalidToken,
+    /// A bearer token was supplied but has expired.
+    ExpiredToken,
     /// The identity is valid but is not allowed to perform the operation.
     PermissionDenied,
 }
@@ -64,9 +68,23 @@ impl IntoResponse for AuthRejection {
                 );
                 response
             }
+            Self::InvalidToken => invalid_token_response("invalid"),
+            Self::ExpiredToken => invalid_token_response("expired"),
             Self::PermissionDenied => baukit_http::ApiError::permission_denied().into_response(),
         }
     }
+}
+
+fn invalid_token_response(hint: &'static str) -> Response {
+    let mut response = baukit_http::ApiError::unauthenticated().into_response();
+    response.headers_mut().insert(
+        header::WWW_AUTHENTICATE,
+        header::HeaderValue::from_static(match hint {
+            "expired" => "Bearer error=\"invalid_token\", hint=\"expired\"",
+            _ => "Bearer error=\"invalid_token\", hint=\"invalid\"",
+        }),
+    );
+    response
 }
 
 impl<S> FromRequestParts<S> for Principal
@@ -99,12 +117,20 @@ fn bearer_token(parts: &Parts) -> Option<&str> {
 
 fn log_verification_failure(error: VerificationError) -> AuthRejection {
     tracing::debug!(error = %error, "bearer authentication failed");
-    AuthRejection::Unauthenticated
+    if matches!(error, VerificationError::Expired) {
+        AuthRejection::ExpiredToken
+    } else {
+        AuthRejection::InvalidToken
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{future::ready, pin::Pin};
+    use std::{
+        future::ready,
+        pin::Pin,
+        sync::{Arc, Mutex},
+    };
 
     use axum::{
         Router,
@@ -125,10 +151,10 @@ mod tests {
             token: &'a str,
         ) -> Pin<Box<dyn Future<Output = Result<Principal, VerificationError>> + Send + 'a>>
         {
-            Box::pin(ready(if token == "valid" {
-                Ok(Principal::new("fixture"))
-            } else {
-                Err(VerificationError::MalformedToken)
+            Box::pin(ready(match token {
+                "valid" => Ok(Principal::new("fixture")),
+                "expired" => Err(VerificationError::Expired),
+                _ => Err(VerificationError::MalformedToken),
             }))
         }
     }
@@ -176,6 +202,79 @@ mod tests {
         )
         .expect("JSON response");
         assert_eq!(json["error"]["code"], "unauthenticated");
+    }
+
+    #[tokio::test]
+    async fn invalid_tokens_have_safe_specific_bearer_challenges() {
+        for (token, challenge) in [
+            (
+                "expired",
+                "Bearer error=\"invalid_token\", hint=\"expired\"",
+            ),
+            (
+                "invalid",
+                "Bearer error=\"invalid_token\", hint=\"invalid\"",
+            ),
+        ] {
+            let response = Router::new()
+                .route("/", get(handler))
+                .with_state(AuthState::new(AcceptFixture))
+                .oneshot(
+                    Request::builder()
+                        .uri("/")
+                        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                        .body(Body::empty())
+                        .expect("request"),
+                )
+                .await
+                .expect("response");
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+            assert_eq!(response.headers()[header::WWW_AUTHENTICATE], challenge);
+            let json: Value = serde_json::from_slice(
+                &to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .expect("response body"),
+            )
+            .expect("JSON response");
+            assert_eq!(json["error"]["code"], "unauthenticated");
+        }
+    }
+
+    #[test]
+    fn verification_logs_never_contain_the_bearer_token() {
+        #[derive(Clone)]
+        struct Captured(Arc<Mutex<Vec<u8>>>);
+
+        impl std::io::Write for Captured {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().expect("capture lock").write(bytes)
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let output = Arc::new(Mutex::new(Vec::new()));
+        let writer = Captured(Arc::clone(&output));
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_target(false)
+            .with_max_level(tracing::Level::DEBUG)
+            .with_writer(move || writer.clone())
+            .finish();
+        let secret = "sensitive.token.value";
+
+        let rejection = tracing::subscriber::with_default(subscriber, || {
+            log_verification_failure(VerificationError::MalformedToken)
+        });
+        assert_eq!(rejection, AuthRejection::InvalidToken);
+
+        let output = String::from_utf8(output.lock().expect("capture lock").clone())
+            .expect("UTF-8 tracing output");
+        assert!(output.contains("bearer authentication failed"));
+        assert!(!output.contains(secret));
     }
 
     #[tokio::test]

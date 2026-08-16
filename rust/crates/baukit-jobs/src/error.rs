@@ -1,5 +1,7 @@
 //! Error vocabulary shared by the store and runner.
 
+use std::time::Duration;
+
 /// A durable job store error.
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -26,6 +28,7 @@ impl StoreError {
 pub struct JobError {
     message: String,
     retryable: bool,
+    retry_after: Option<Duration>,
 }
 
 impl JobError {
@@ -34,6 +37,16 @@ impl JobError {
         Self {
             message: message.into(),
             retryable: true,
+            retry_after: None,
+        }
+    }
+
+    /// Creates a retryable error with a provider-directed delay.
+    pub fn retryable_after(message: impl Into<String>, retry_after: Duration) -> Self {
+        Self {
+            message: message.into(),
+            retryable: true,
+            retry_after: Some(retry_after),
         }
     }
 
@@ -42,12 +55,18 @@ impl JobError {
         Self {
             message: message.into(),
             retryable: false,
+            retry_after: None,
         }
     }
 
     /// Returns whether the failure may be retried.
     pub const fn is_retryable(&self) -> bool {
         self.retryable
+    }
+
+    /// Returns the provider-directed retry delay, when supplied.
+    pub const fn retry_after(&self) -> Option<Duration> {
+        self.retry_after
     }
 }
 

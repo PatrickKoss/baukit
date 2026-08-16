@@ -45,6 +45,8 @@ change:
 | MSRV (Rust 1.95) | `cargo +1.95 check --manifest-path rust/Cargo.toml --workspace --all-targets` (after using new language/std features) |
 | Observability metric names | `python3 deploy/observability/lint/check-metric-names.py` (after touching deploy/observability or metric names) |
 | Dexie real-browser conformance | `make ts-browser-test` |
+| Generated mobile Android compile | `make native-android-gate` (after touching mobile templates, CLI generation, or their native dependencies) |
+| Real Expo SQLite on Android | `make expo-sqlite-conformance` (after touching data contracts or the Expo SQLite adapter) |
 | Generated fixture | see below (after touching cli/, templates/, or public APIs the templates use) |
 
 Docker is available locally — never skip Docker-gated (`#[ignore]`) tests; run

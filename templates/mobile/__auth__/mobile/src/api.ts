@@ -1,6 +1,8 @@
 import Constants from 'expo-constants';
-import { createApiRuntime } from '@baukit/api-runtime';
 import type { FetchImplementation } from '@baukit/api-runtime';
+
+import { createAuthenticatedApiRuntime } from './authenticated-api';
+import { authClient } from './auth';
 
 export interface Item {
   readonly id: string;
@@ -14,20 +16,19 @@ export interface CurrentUser {
 
 const configuredBaseUrl: unknown = Constants.expoConfig?.extra?.['apiBaseUrl'];
 const baseUrl = typeof configuredBaseUrl === 'string' ? configuredBaseUrl : 'http://localhost:8080';
-const api = createApiRuntime({ baseUrl, environment: __DEV__ ? 'development' : 'production' });
+const api = createAuthenticatedApiRuntime({
+  auth: authClient,
+  baseUrl,
+  environment: __DEV__ ? 'development' : 'production',
+});
 
 export async function listItems(fetch: FetchImplementation = api.fetch): Promise<readonly Item[]> {
   const response = await fetch('/items');
   return parseItems(await response.json());
 }
 
-export async function currentUser(
-  accessToken: string,
-  fetch: FetchImplementation = api.fetch,
-): Promise<CurrentUser> {
-  const response = await fetch('/me', {
-    headers: { authorization: `Bearer ${accessToken}` },
-  });
+export async function currentUser(fetch: FetchImplementation = api.fetch): Promise<CurrentUser> {
+  const response = await fetch('/me');
   const value: unknown = await response.json();
   if (!isCurrentUser(value)) {
     throw new TypeError('The API returned an invalid current-user response.');

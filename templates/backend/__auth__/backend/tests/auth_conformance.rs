@@ -58,8 +58,7 @@ async fn protected_route_conforms_and_maps_subject_to_internal_user() -> Result<
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
     }
 
-    let claims = issuer.claims("seeded-test-subject", AUDIENCE, Duration::from_secs(300))?;
-    let token = issuer.mint(&claims)?;
+    let session = issuer.issue_session("seeded-test-subject", AUDIENCE, Duration::from_secs(1))?;
     let response = app
         .clone()
         .oneshot(
@@ -67,7 +66,7 @@ async fn protected_route_conforms_and_maps_subject_to_internal_user() -> Result<
                 .uri("/me")
                 .header(
                     header::AUTHORIZATION,
-                    baukit_test::authorization_header(&token)?,
+                    baukit_test::authorization_header(session.access_token())?,
                 )
                 .body(Body::empty())?,
         )
@@ -78,19 +77,77 @@ async fn protected_route_conforms_and_maps_subject_to_internal_user() -> Result<
     assert!(body["id"].as_str().is_some());
 
     let response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
                 .uri("/items")
                 .header(
                     header::AUTHORIZATION,
-                    baukit_test::authorization_header(&token)?,
+                    baukit_test::authorization_header(session.access_token())?,
                 )
                 .header(header::CONTENT_TYPE, "application/json")
                 .body(Body::from(r#"{"name":"protected"}"#))?,
         )
         .await?;
     assert_eq!(response.status(), StatusCode::CREATED);
+
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/me")
+                .header(
+                    header::AUTHORIZATION,
+                    baukit_test::authorization_header(session.access_token())?,
+                )
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        response.headers()[header::WWW_AUTHENTICATE],
+        "Bearer error=\"invalid_token\", hint=\"expired\""
+    );
+
+    issuer.set_refresh_delay(Duration::from_millis(20));
+    let refreshed = issuer.refresh_session(session.refresh_token()).await?;
+    let (concurrent_a, concurrent_b) = tokio::join!(
+        issuer.refresh_session(session.refresh_token()),
+        issuer.refresh_session(session.refresh_token()),
+    );
+    concurrent_a?;
+    concurrent_b?;
+    assert_eq!(issuer.refresh_request_count(), 3);
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/me")
+                .header(
+                    header::AUTHORIZATION,
+                    baukit_test::authorization_header(refreshed.access_token())?,
+                )
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    assert!(issuer.reject_refresh(session.refresh_token()));
+    assert!(matches!(
+        issuer.refresh_session(session.refresh_token()).await,
+        Err(baukit_test::JwtFixtureError::RefreshRejected { ref code })
+            if code == "invalid_grant"
+    ));
+    let revoked =
+        issuer.issue_session("revoked-test-subject", AUDIENCE, Duration::from_secs(60))?;
+    assert!(issuer.revoke_session(revoked.refresh_token()));
+    assert!(matches!(
+        issuer.refresh_session(revoked.refresh_token()).await,
+        Err(baukit_test::JwtFixtureError::RefreshRejected { ref code })
+            if code == "invalid_grant"
+    ));
 
     Ok(())
 }

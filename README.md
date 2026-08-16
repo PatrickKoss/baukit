@@ -61,11 +61,11 @@ baukit/
 
 ## Agent skills
 
-Portable workflows for scaffolding, endpoint work, localization, mirrored domain logic, upgrades, and observability live in [`agent-skills/`](agent-skills/). Install them with `./agent-skills/install.sh --target <product-dir> [--claude] [--codex] [--copy]` or `make install-skills TARGET=<product-dir>`; without harness flags, the installer uses existing `.claude/` and `.agents/` parents.
+Portable workflows for scaffolding, endpoint work, [integration work](agent-skills/skills/baukit-add-integration/SKILL.md), [accessibility](agent-skills/skills/baukit-accessibility/SKILL.md), localization, mirrored domain logic, upgrades, and observability live in [`agent-skills/`](agent-skills/). Install them with `./agent-skills/install.sh --target <product-dir> [--claude] [--codex] [--copy]` or `make install-skills TARGET=<product-dir>`; without harness flags, the installer uses existing `.claude/` and `.agents/` parents.
 
 ## Platform contracts and recipes
 
-The platform guides cover [local-data ownership](docs/platform/local-data-ownership-contract.md), [offline readiness](docs/platform/offline-readiness-contract.md), [localization](docs/platform/localization-contract.md), [onboarding](docs/platform/onboarding-recipe.md), and [mirrored Rust/TypeScript domain logic](docs/platform/mirrored-domain-logic.md).
+The platform guides cover [local-data ownership](docs/platform/local-data-ownership-contract.md), [offline readiness](docs/platform/offline-readiness-contract.md), [integration reliability](docs/platform/integration-reliability.md), [native quality gates](docs/platform/native-quality-gates.md), [accessibility](docs/platform/accessibility-contract.md), [localization](docs/platform/localization-contract.md), [onboarding](docs/platform/onboarding-recipe.md), and [mirrored Rust/TypeScript domain logic](docs/platform/mirrored-domain-logic.md).
 
 ## Toolchains and releases
 

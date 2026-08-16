@@ -37,3 +37,5 @@ pnpm test
 ```
 
 The Vitest acceptance tests cover keyboard focus wrapping and visibility, modal containment and restoration, inactive scenes, invalid deep links, direct-load terminal navigation, validation linkage, and same-tick duplicate activation.
+
+`src/accessibility.test.tsx` also runs axe-core against the app shell and the open accessible-dialog example, failing on serious or critical violations. Keep the jsdom scan fast and extend it for changed route and overlay states. Axe cannot evaluate keyboard behavior, visual contrast rendered by a real browser, spoken meaning, or native screen-reader behavior, so retain interaction tests and manual accessibility passes.

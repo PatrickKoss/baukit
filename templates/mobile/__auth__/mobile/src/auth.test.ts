@@ -9,7 +9,7 @@ import {
 import { signInFeedback } from './auth-feedback';
 
 class MemoryStorage implements SecureStoragePort {
-  private readonly values = new Map<string, string>();
+  public readonly values = new Map<string, string>();
 
   public get(key: string): Promise<string | null> {
     return Promise.resolve(this.values.get(key) ?? null);
@@ -26,12 +26,58 @@ class MemoryStorage implements SecureStoragePort {
   }
 }
 
-function jsonResponse(body: unknown): Response {
+function jsonResponse(body: unknown, status = 200): Response {
   return {
-    ok: true,
-    status: 200,
+    ok: status >= 200 && status < 300,
+    status,
     json: () => Promise.resolve(body),
   } as Response;
+}
+
+const issuer = 'https://identity.example.test/tenant';
+
+function providerMetadata(): Response {
+  return jsonResponse({
+    issuer,
+    authorization_endpoint: 'https://identity.example.test/authorize',
+    token_endpoint: 'https://identity.example.test/token',
+    userinfo_endpoint: 'https://identity.example.test/userinfo',
+  });
+}
+
+function seedExpiredSession(storage: MemoryStorage): void {
+  storage.values.set(
+    'refresh-test:session',
+    JSON.stringify({
+      subject: 'subject-123',
+      accessToken: 'expired-access',
+      refreshToken: 'refresh-token',
+      expiresAt: 900,
+    }),
+  );
+}
+
+function refreshClient(
+  storage: MemoryStorage,
+  fetch: (url: string) => Promise<Response>,
+): NativeOidcClient {
+  return new NativeOidcClient(
+    {
+      issuer,
+      clientId: 'product-mobile',
+      redirectUri: 'product://oauth',
+      storageKeyPrefix: 'refresh-test',
+    },
+    {
+      storage,
+      browser: {
+        authorize: () => Promise.resolve({ type: 'cancel' }),
+        endSession: () => Promise.resolve(false),
+      },
+      now: () => 1_000,
+      fetch,
+    },
+  );
 }
 
 describe('mobile OIDC integration', () => {
@@ -44,6 +90,73 @@ describe('mobile OIDC integration', () => {
       expect(result).toEqual({ status: 'cancelled', reason });
     },
   );
+
+  it('shares one refresh across concurrent expired-token callers', async () => {
+    const storage = new MemoryStorage();
+    seedExpiredSession(storage);
+    let tokenCalls = 0;
+    let resolveRefresh: ((response: Response) => void) | undefined;
+    let markStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const client = refreshClient(storage, (url) => {
+      if (url.endsWith('/.well-known/openid-configuration')) {
+        return Promise.resolve(providerMetadata());
+      }
+      tokenCalls += 1;
+      markStarted?.();
+      return new Promise((resolve) => {
+        resolveRefresh = resolve;
+      });
+    });
+
+    const first = client.accessToken();
+    const second = client.accessToken({ forceRefresh: true });
+    await started;
+    expect(tokenCalls).toBe(1);
+    resolveRefresh?.(jsonResponse({ access_token: 'fresh-access', expires_in: 60 }));
+
+    await expect(Promise.all([first, second])).resolves.toEqual(['fresh-access', 'fresh-access']);
+    expect(tokenCalls).toBe(1);
+  });
+
+  it('preserves a session after transient refresh failure', async () => {
+    const storage = new MemoryStorage();
+    seedExpiredSession(storage);
+    const client = refreshClient(storage, (url) =>
+      Promise.resolve(
+        url.endsWith('/.well-known/openid-configuration')
+          ? providerMetadata()
+          : jsonResponse({ error: 'temporarily_unavailable' }, 503),
+      ),
+    );
+
+    await expect(client.accessToken()).rejects.toMatchObject({
+      retryable: true,
+      status: 503,
+    });
+    expect(client.session()?.subject).toBe('subject-123');
+    expect(storage.values.has('refresh-test:session')).toBe(true);
+  });
+
+  it('makes terminal refresh rejection observable and expires the session', async () => {
+    const storage = new MemoryStorage();
+    seedExpiredSession(storage);
+    const client = refreshClient(storage, (url) =>
+      Promise.resolve(
+        url.endsWith('/.well-known/openid-configuration')
+          ? providerMetadata()
+          : jsonResponse({ error: 'invalid_grant' }, 400),
+      ),
+    );
+    const expired: unknown[] = [];
+    client.subscribeSessionExpired((event) => expired.push(event));
+
+    await expect(client.accessToken()).resolves.toBeUndefined();
+    expect(client.session()).toBeUndefined();
+    expect(expired).toEqual([{ type: 'session-expired', reason: 'refresh_rejected' }]);
+  });
 
   it('forces credentials after provider logout fails', async () => {
     const storage = new MemoryStorage();

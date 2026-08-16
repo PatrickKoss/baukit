@@ -1,5 +1,9 @@
 # @baukit/api-runtime
 
+## Unreleased
+
+- Add an abort-aware, clone-safe, explicit one-replay handshake for 401 credential recovery.
+
 ## 0.5.1
 
 ### Patch Changes

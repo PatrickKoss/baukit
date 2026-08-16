@@ -184,8 +184,97 @@ describe('request decoration', () => {
     });
     expect(onUnauthorized).toHaveBeenCalledOnce();
     expect(onUnauthorized).toHaveBeenCalledWith(
-      expect.objectContaining({ error: expect.any(ApiError) as ApiError }),
+      expect.objectContaining({ canRetry: true, error: expect.any(ApiError) as ApiError }),
     );
+  });
+
+  it('reacquires credentials and replays one cloneable request after explicit consent', async () => {
+    const mock = new MockFetch()
+      .enqueueJson(rustEnvelopeSample, { status: 401 })
+      .enqueueJson({ ok: true });
+    const tokenProvider = vi
+      .fn()
+      .mockResolvedValueOnce('expired-token')
+      .mockResolvedValue('fresh-token');
+    const onUnauthorized = vi.fn().mockResolvedValue('retry-once');
+    const apiFetch = createApiFetch({
+      ...baseOptions,
+      fetch: mock.fetch,
+      onUnauthorized,
+      retry: false,
+      tokenProvider,
+    });
+
+    await expect(apiFetch('/private')).resolves.toHaveProperty('status', 200);
+    expect(mock.requests).toHaveLength(2);
+    expect(mock.request(0).headers.get('authorization')).toBe('Bearer expired-token');
+    expect(mock.request(1).headers.get('authorization')).toBe('Bearer fresh-token');
+    expect(tokenProvider).toHaveBeenCalledTimes(2);
+    expect(onUnauthorized).toHaveBeenCalledOnce();
+  });
+
+  it('stops after the replay returns a second 401', async () => {
+    const mock = new MockFetch()
+      .enqueueJson(rustEnvelopeSample, { status: 401 })
+      .enqueueJson(rustEnvelopeSample, { status: 401 });
+    const onUnauthorized = vi.fn().mockReturnValue('retry-once');
+    const apiFetch = createApiFetch({
+      ...baseOptions,
+      fetch: mock.fetch,
+      onUnauthorized,
+      retry: false,
+    });
+
+    await expect(apiFetch('/private')).rejects.toMatchObject({ status: 401 });
+    expect(mock.requests).toHaveLength(2);
+    expect(onUnauthorized).toHaveBeenCalledOnce();
+  });
+
+  it('honors abort while unauthorized recovery is running', async () => {
+    const controller = new AbortController();
+    const mock = new MockFetch()
+      .enqueueJson(rustEnvelopeSample, { status: 401 })
+      .enqueueJson({ ok: true });
+    const apiFetch = createApiFetch({
+      ...baseOptions,
+      fetch: mock.fetch,
+      onUnauthorized: () => {
+        controller.abort('stop recovery');
+        return 'retry-once';
+      },
+      retry: false,
+    });
+
+    const caught = await apiFetch('/private', { signal: controller.signal }).catch(
+      (error: unknown) => error,
+    );
+    expect(caught).toBeInstanceOf(NetworkError);
+    expect(caught).toMatchObject({ aborted: true });
+    expect(mock.requests).toHaveLength(1);
+  });
+
+  it('reports a non-cloneable request and preserves the original 401', async () => {
+    class NonCloneableRequest extends Request {
+      public override clone(): Request {
+        throw new TypeError('body cannot be cloned');
+      }
+    }
+
+    const mock = new MockFetch().enqueueJson(rustEnvelopeSample, { status: 401 });
+    const onUnauthorized = vi.fn().mockReturnValue('retry-once');
+    const apiFetch = createApiFetch({
+      ...baseOptions,
+      fetch: mock.fetch,
+      onUnauthorized,
+      requestConstructor: NonCloneableRequest,
+      retry: false,
+    });
+
+    await expect(apiFetch('/private', { body: 'one-shot', method: 'POST' })).rejects.toMatchObject({
+      status: 401,
+    });
+    expect(mock.requests).toHaveLength(1);
+    expect(onUnauthorized).toHaveBeenCalledWith(expect.objectContaining({ canRetry: false }));
   });
 });
 

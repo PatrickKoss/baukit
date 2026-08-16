@@ -46,8 +46,8 @@ pub use baukit_openapi::{
     check_no_drift as check_openapi_no_drift,
 };
 pub use jwt::{
-    JwtClaims, JwtFixtureError, MockOidcServer, authorization_header, hs256_token, rs256_token,
-    rs256_token_with_key_id, unsigned_token,
+    JwtClaims, JwtFixtureError, MockOidcServer, MockOidcSession, authorization_header, hs256_token,
+    rs256_token, rs256_token_with_key_id, unsigned_token,
 };
 pub use metrics::{
     MetricsConformanceError, MetricsConformanceOptions, assert_metrics_conformance,

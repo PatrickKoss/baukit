@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   OidcClient,
@@ -90,6 +90,36 @@ function required<T>(value: T | null | undefined): T {
     throw new Error('Expected test value to be present.');
   }
   return value;
+}
+
+function discoveryResponse(): Response {
+  return jsonResponse({
+    issuer: 'https://identity.example.test/tenant',
+    authorization_endpoint: 'https://login.example.test/oauth/authorize',
+    token_endpoint: 'https://login.example.test/oauth/token',
+  });
+}
+
+function storedTokens(overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    accessToken: 'stored-access',
+    refreshToken: 'stored-refresh',
+    idToken: 'stored-id',
+    expiresAt: 900,
+    ...overrides,
+  });
+}
+
+function makeClient(test: TestEnvironment): OidcClient {
+  return new OidcClient(
+    {
+      issuer: 'https://identity.example.test/tenant',
+      clientId: 'product-web',
+      redirectUri: 'https://app.example.test/callback',
+      storageKeyPrefix: 'lifecycle',
+    },
+    test.environment,
+  );
 }
 
 describe('OidcClient', () => {
@@ -193,6 +223,133 @@ describe('OidcClient', () => {
     expect(normalizeIssuer('https://provider.example.test/path///')).toBe(
       'https://provider.example.test/path',
     );
+  });
+
+  it('shares one refresh across proactive and forced callers', async () => {
+    let resolveRefresh: ((response: Response) => void) | undefined;
+    let refreshCalls = 0;
+    const test = makeEnvironment((input) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (url.includes('.well-known')) {
+        return Promise.resolve(discoveryResponse());
+      }
+      refreshCalls += 1;
+      return new Promise((resolve) => {
+        resolveRefresh = resolve;
+      });
+    });
+    test.localStorage.setItem('lifecycle:tokens', storedTokens());
+    const client = makeClient(test);
+
+    const proactive = client.accessToken();
+    const forced = client.accessToken({ forceRefresh: true });
+    await vi.waitFor(() => {
+      expect(refreshCalls).toBe(1);
+    });
+    resolveRefresh?.(
+      jsonResponse({
+        access_token: 'shared-access',
+        expires_in: 120,
+      }),
+    );
+
+    await expect(Promise.all([proactive, forced])).resolves.toEqual([
+      'shared-access',
+      'shared-access',
+    ]);
+    expect(refreshCalls).toBe(1);
+  });
+
+  it('does not restore a session cleared while refresh is pending', async () => {
+    let resolveRefresh: ((response: Response) => void) | undefined;
+    const test = makeEnvironment((input) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (url.includes('.well-known')) {
+        return Promise.resolve(discoveryResponse());
+      }
+      return new Promise((resolve) => {
+        resolveRefresh = resolve;
+      });
+    });
+    test.localStorage.setItem('lifecycle:tokens', storedTokens());
+    const client = makeClient(test);
+
+    const pending = client.accessToken();
+    await vi.waitFor(() => {
+      expect(resolveRefresh).toBeDefined();
+    });
+    client.clearSession();
+    resolveRefresh?.(jsonResponse({ access_token: 'stale-access', expires_in: 120 }));
+
+    await expect(pending).resolves.toBeUndefined();
+    expect(client.hasSession()).toBe(false);
+  });
+
+  it('forces refresh outside the proactive window and retains token rotation state', async () => {
+    let tokenCalls = 0;
+    const test = makeEnvironment((input) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (url.includes('.well-known')) {
+        return Promise.resolve(discoveryResponse());
+      }
+      tokenCalls += 1;
+      return Promise.resolve(
+        jsonResponse({
+          access_token: 'forced-access',
+          expires_in: 120,
+        }),
+      );
+    });
+    test.localStorage.setItem('lifecycle:tokens', storedTokens({ expiresAt: 2_000_000 }));
+    const client = makeClient(test);
+
+    await expect(client.accessToken({ forceRefresh: true })).resolves.toBe('forced-access');
+    expect(tokenCalls).toBe(1);
+    expect(JSON.parse(required(test.localStorage.getItem('lifecycle:tokens')))).toMatchObject({
+      refreshToken: 'stored-refresh',
+      idToken: 'stored-id',
+    });
+  });
+
+  it('preserves the session and exposes a retryable transient refresh failure', async () => {
+    const test = makeEnvironment((input) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      return Promise.resolve(
+        url.includes('.well-known')
+          ? discoveryResponse()
+          : jsonResponse({ error: 'temporarily_unavailable' }, 503),
+      );
+    });
+    test.localStorage.setItem('lifecycle:tokens', storedTokens());
+    const client = makeClient(test);
+
+    await expect(client.accessToken()).rejects.toMatchObject({
+      code: 'refresh_failed',
+      retryable: true,
+      status: 503,
+    });
+    expect(client.hasSession()).toBe(true);
+    expect(test.localStorage.getItem('lifecycle:tokens')).not.toBeNull();
+  });
+
+  it.each([
+    [401, { error: 'provider_error' }],
+    [403, { error: 'invalid_grant' }],
+  ] as const)('expires the session for terminal refresh rejection %#', async (status, body) => {
+    const test = makeEnvironment((input) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      return Promise.resolve(
+        url.includes('.well-known') ? discoveryResponse() : jsonResponse(body, status),
+      );
+    });
+    test.localStorage.setItem('lifecycle:tokens', storedTokens());
+    const client = makeClient(test);
+    const expired: unknown[] = [];
+    client.subscribeSessionExpired((event) => expired.push(event));
+
+    await expect(client.accessToken()).resolves.toBeUndefined();
+    expect(client.hasSession()).toBe(false);
+    expect(expired).toEqual([{ type: 'session-expired', reason: 'refresh_rejected' }]);
   });
 
   it('sanitizes provider errors, response content, and unknown errors', async () => {

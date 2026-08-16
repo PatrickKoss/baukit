@@ -17,6 +17,9 @@ CREATE TABLE job_outbox (
     last_error TEXT CHECK (
         last_error IS NULL OR length(trim(last_error)) BETWEEN 1 AND 10000
     ),
+    failure_reason TEXT CHECK (
+        failure_reason IS NULL OR failure_reason IN ('permanent', 'attempts_exhausted')
+    ),
     cancel_requested_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -26,6 +29,7 @@ CREATE TABLE job_outbox (
         (status <> 'running' AND locked_by IS NULL AND locked_until IS NULL)
     ),
     CHECK (cancel_requested_at IS NULL OR status = 'running'),
+    CHECK ((status = 'failed') = (failure_reason IS NOT NULL)),
     CHECK (updated_at >= created_at)
 );
 
@@ -43,4 +47,3 @@ CREATE INDEX job_outbox_expired_lease_idx
 
 COMMENT ON TABLE job_outbox IS
     'Durable product job outbox managed by baukit-jobs; payload data must not enter metric labels';
-

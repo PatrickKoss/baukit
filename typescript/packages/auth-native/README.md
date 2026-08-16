@@ -24,6 +24,10 @@ The issuer is resolved only through `/.well-known/openid-configuration`; provide
 
 `session()` exposes the subject, access token, optional refresh and ID tokens, and absolute expiry. Refresh responses retain the previous refresh token or ID token when the provider omits either. When a session inside the configured refresh window has no refresh token, `accessToken()` clears it and returns `undefined`; callers should present sign-in again.
 
+`offlineAccess` deliberately defaults to `false`; set it to `true` only when the provider is configured to issue refresh tokens for `offline_access`. `accessToken()` shares one refresh across concurrent callers. Pass `{ forceRefresh: true }` after a 401 to bypass the proactive expiry window while still joining any refresh already in flight.
+
+Terminal refresh rejection (`invalid_grant`, `invalid_token`, or HTTP 400/401) clears the session and resolves to `undefined`. Subscribe with `subscribeSessionExpired()` to stop schedulers and move UI to signed-out state. Network, malformed-response, rate-limit, and provider 5xx failures preserve the stored session and reject with a sanitized `OidcError` whose `retryable` property is `true`.
+
 `signOut()` deletes the local session before provider interaction. It then attempts the discovered end-session endpoint. A missing, cancelled, or failing provider logout persists a fail-safe flag so the next `signIn()` includes `prompt=login`; that flag is removed only after provider logout or a later successful sign-in. Corrupt secure-storage state is deleted and treated as signed out.
 
 Use `safeAuthErrorMessage(error)` at UI boundaries. Errors contain only allowlisted library codes/messages and optional HTTP status numbers. Provider bodies, authorization codes, tokens, and adapter exception messages are never copied into errors or logs.

@@ -148,10 +148,14 @@ async fn check_response(
         .headers()
         .get(header::WWW_AUTHENTICATE)
         .and_then(|value| value.to_str().ok())
-        != Some("Bearer")
+        != Some(if case == "expired" {
+            "Bearer error=\"invalid_token\", hint=\"expired\""
+        } else {
+            "Bearer error=\"invalid_token\", hint=\"invalid\""
+        })
     {
         violations.push(format!(
-            "{case} response omitted `WWW-Authenticate: Bearer`"
+            "{case} response had an incorrect `WWW-Authenticate` challenge"
         ));
     }
     let body = match to_bytes(response.into_body(), BODY_LIMIT).await {

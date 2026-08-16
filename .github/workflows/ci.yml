@@ -7,11 +7,51 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  native-changes:
+    name: Detect native gate changes
+    runs-on: ubuntu-latest
+    outputs:
+      mobile: ${{ steps.filter.outputs.mobile }}
+      sqlite: ${{ steps.filter.outputs.sqlite }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            mobile:
+              - '.github/workflows/ci.yml'
+              - 'Makefile'
+              - 'scripts/android-sdk-setup.sh'
+              - 'cli/**'
+              - 'templates/common/.github/**'
+              - 'templates/mobile/**'
+              - 'typescript/pnpm-lock.yaml'
+              - 'typescript/packages/analytics-core/**'
+              - 'typescript/packages/api-runtime/**'
+              - 'typescript/packages/auth-native/**'
+              - 'typescript/packages/data-contracts/**'
+              - 'typescript/packages/data-contracts-expo-sqlite/**'
+              - 'typescript/packages/ui-tokens/**'
+            sqlite:
+              - '.github/workflows/ci.yml'
+              - 'Makefile'
+              - 'scripts/android-sdk-setup.sh'
+              - 'examples/expo-sqlite-conformance/**'
+              - 'typescript/pnpm-lock.yaml'
+              - 'typescript/packages/data-contracts/**'
+              - 'typescript/packages/data-contracts-expo-sqlite/**'
+
   version-coherence:
     name: Release version coherence
     runs-on: ubuntu-latest
@@ -237,16 +277,181 @@ jobs:
         if: matrix.web
         working-directory: .generated-fixture/fixture/web
         run: |
-          pnpm install
+          pnpm install --frozen-lockfile
           pnpm build
           pnpm lint
           pnpm test
-      # Native Expo builds stay in release workflows; fixture CI checks portable source behavior.
+      # Keep the fast source layer here; the path-filtered Android gate below compiles a clean fixture.
       - name: Install and verify generated mobile app without a native build
         if: matrix.mobile
         working-directory: .generated-fixture/fixture/mobile
         run: |
-          pnpm install
+          pnpm install --frozen-lockfile
           pnpm exec tsc --noEmit
           pnpm lint
           pnpm test
+
+  generated-mobile-android-build:
+    name: Build generated mobile Android fixture
+    needs: native-changes
+    if: needs.native-changes.outputs.mobile == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: typescript/.nvmrc
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Enable pinned pnpm
+        working-directory: typescript
+        run: |
+          corepack enable
+          corepack install
+      - name: Find pnpm store
+        id: native-pnpm-store
+        working-directory: typescript
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.native-pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-native-${{ hashFiles('typescript/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-native-
+            ${{ runner.os }}-pnpm-
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cli -> target
+          key: generated-native-fixture-cli
+      - name: Build local mobile dependencies
+        working-directory: typescript
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @baukit/analytics-core --filter @baukit/api-runtime --filter @baukit/data-contracts --filter @baukit/data-contracts-expo-sqlite --filter @baukit/ui-tokens run build
+      - name: Generate mobile fixture
+        run: |
+          cargo build --manifest-path cli/Cargo.toml --bin baukit
+          cli/target/debug/baukit new fixture --mobile --dir .generated-native-fixture --baukit-path rust
+      - name: Install fixture dependencies
+        working-directory: .generated-native-fixture/fixture/mobile
+        run: pnpm install --frozen-lockfile
+      - name: Clean Expo Android prebuild
+        working-directory: .generated-native-fixture/fixture/mobile
+        run: |
+          set -o pipefail
+          CI=1 pnpm exec expo prebuild --clean --platform android 2>&1 | tee native-prebuild.log
+      - name: Compile Android debug binary
+        working-directory: .generated-native-fixture/fixture/mobile
+        run: |
+          set -o pipefail
+          ./android/gradlew -p android --no-daemon --stacktrace assembleDebug 2>&1 | tee native-assemble.log
+      - name: Upload native failure diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-mobile-android-failure
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            .generated-native-fixture/fixture/mobile/native-prebuild.log
+            .generated-native-fixture/fixture/mobile/native-assemble.log
+            .generated-native-fixture/fixture/mobile/.expo/
+            .generated-native-fixture/fixture/mobile/android/app/build/reports/
+            .generated-native-fixture/fixture/mobile/android/build/reports/
+
+  generated-mobile-android-gate:
+    name: Generated mobile Android gate
+    needs: [native-changes, generated-mobile-android-build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce relevant native build result
+        env:
+          MOBILE_RELEVANT: ${{ needs.native-changes.outputs.mobile }}
+          BUILD_RESULT: ${{ needs.generated-mobile-android-build.result }}
+        run: |
+          if [[ "$MOBILE_RELEVANT" != "true" ]]; then
+            echo "No mobile, config, CLI, or dependency paths changed; gate is not applicable."
+          elif [[ "$BUILD_RESULT" == "success" ]]; then
+            echo "Generated mobile Android fixture compiled successfully."
+          else
+            echo "Relevant Android build result was $BUILD_RESULT; skipped or unavailable is not green." >&2
+            exit 1
+          fi
+
+  expo-sqlite-android-build:
+    name: Expo SQLite conformance on Android
+    needs: native-changes
+    if: needs.native-changes.outputs.sqlite == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: typescript/.nvmrc
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Enable pinned pnpm
+        run: |
+          corepack enable
+          corepack install
+      - name: Enable KVM for the runner user
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Find pnpm store
+        id: sqlite-pnpm-store
+        working-directory: typescript
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.sqlite-pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-sqlite-${{ hashFiles('typescript/pnpm-lock.yaml', 'examples/expo-sqlite-conformance/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-sqlite-
+            ${{ runner.os }}-pnpm-
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+      - name: Run real Expo SQLite conformance
+        run: make expo-sqlite-conformance
+      - name: Upload conformance failure diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: expo-sqlite-android-failure
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            examples/expo-sqlite-conformance/artifacts/
+            examples/expo-sqlite-conformance/.expo/
+            examples/expo-sqlite-conformance/android/app/build/reports/
+
+  expo-sqlite-android-gate:
+    name: Expo SQLite Android gate
+    needs: [native-changes, expo-sqlite-android-build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce relevant device-conformance result
+        env:
+          SQLITE_RELEVANT: ${{ needs.native-changes.outputs.sqlite }}
+          BUILD_RESULT: ${{ needs.expo-sqlite-android-build.result }}
+        run: |
+          if [[ "$SQLITE_RELEVANT" != "true" ]]; then
+            echo "No SQLite adapter or conformance paths changed; gate is not applicable."
+          elif [[ "$BUILD_RESULT" == "success" ]]; then
+            echo "Real Expo SQLite conformance passed on Android."
+          else
+            echo "Relevant SQLite conformance result was $BUILD_RESULT; skipped or unavailable is not green." >&2
+            exit 1
+          fi

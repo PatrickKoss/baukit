@@ -4,7 +4,10 @@ use chrono::{DateTime, Utc};
 use sqlx::{PgConnection, PgPool, Postgres, Row as _, Transaction};
 use uuid::Uuid;
 
-use crate::{ClaimedJob, EnqueueOutcome, FailureDisposition, Job, JobStatus, NewJob, StoreError};
+use crate::{
+    ClaimedJob, EnqueueOutcome, FailureDisposition, Job, JobFailureReason, JobStatus, NewJob,
+    StoreError,
+};
 
 const MAX_JOB_TYPE_LENGTH: usize = 200;
 const MAX_WORKER_ID_LENGTH: usize = 300;
@@ -172,7 +175,7 @@ impl JobStore for PostgresJobStore {
             .await
             .map_err(StoreError::database)?;
             sqlx::query(
-                "UPDATE job_outbox SET status = 'failed', locked_by = NULL, locked_until = NULL, cancel_requested_at = NULL, last_error = COALESCE(last_error, 'worker lease expired after final attempt'), updated_at = $1 WHERE status = 'running' AND locked_until <= $1 AND attempts >= max_attempts",
+                "UPDATE job_outbox SET status = 'failed', locked_by = NULL, locked_until = NULL, cancel_requested_at = NULL, last_error = COALESCE(last_error, 'worker lease expired after final attempt'), failure_reason = 'attempts_exhausted', updated_at = $1 WHERE status = 'running' AND locked_until <= $1 AND attempts >= max_attempts",
             )
             .bind(now)
             .execute(&mut *transaction)
@@ -180,7 +183,7 @@ impl JobStore for PostgresJobStore {
             .map_err(StoreError::database)?;
 
             let row = sqlx::query(
-                "WITH candidate AS (SELECT id FROM job_outbox WHERE attempts < max_attempts AND cancel_requested_at IS NULL AND ((status = 'pending' AND run_after <= $1) OR (status = 'running' AND locked_until <= $1)) ORDER BY run_after, created_at, id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE job_outbox AS job SET status = 'running', attempts = job.attempts + 1, locked_by = $2, locked_until = $3, last_error = NULL, updated_at = $1 FROM candidate WHERE job.id = candidate.id RETURNING job.id, job.job_type, job.payload, job.status, job.attempts, job.max_attempts, job.run_after, job.locked_by, job.locked_until, job.idempotency_key, job.last_error, job.cancel_requested_at, job.created_at, job.updated_at",
+                "WITH candidate AS (SELECT id FROM job_outbox WHERE attempts < max_attempts AND cancel_requested_at IS NULL AND ((status = 'pending' AND run_after <= $1) OR (status = 'running' AND locked_until <= $1)) ORDER BY run_after, created_at, id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE job_outbox AS job SET status = 'running', attempts = job.attempts + 1, locked_by = $2, locked_until = $3, last_error = NULL, failure_reason = NULL, updated_at = $1 FROM candidate WHERE job.id = candidate.id RETURNING job.id, job.job_type, job.payload, job.status, job.attempts, job.max_attempts, job.run_after, job.locked_by, job.locked_until, job.idempotency_key, job.last_error, job.failure_reason, job.cancel_requested_at, job.created_at, job.updated_at",
             )
                 .bind(now)
                 .bind(worker_id)
@@ -226,7 +229,7 @@ impl JobStore for PostgresJobStore {
         Box::pin(async move {
             validate_worker_id(worker_id)?;
             let row = sqlx::query(
-                "UPDATE job_outbox SET status = CASE WHEN $3 AND attempts < max_attempts THEN 'pending' ELSE 'failed' END, run_after = CASE WHEN $3 AND attempts < max_attempts THEN $4 ELSE run_after END, locked_by = NULL, locked_until = NULL, cancel_requested_at = NULL, last_error = $5, updated_at = $6 WHERE id = $1 AND status = 'running' AND locked_by = $2 AND locked_until > $6 RETURNING status",
+                "UPDATE job_outbox SET status = CASE WHEN $3 AND attempts < max_attempts THEN 'pending' ELSE 'failed' END, run_after = CASE WHEN $3 AND attempts < max_attempts THEN $4 ELSE run_after END, locked_by = NULL, locked_until = NULL, cancel_requested_at = NULL, last_error = $5, failure_reason = CASE WHEN $3 AND attempts < max_attempts THEN NULL WHEN $3 THEN 'attempts_exhausted' ELSE 'permanent' END, updated_at = $6 WHERE id = $1 AND status = 'running' AND locked_by = $2 AND locked_until > $6 RETURNING status",
             )
             .bind(job_id)
             .bind(worker_id)
@@ -339,7 +342,7 @@ async fn enqueue_on(
         StoreError::InvalidInput("max_attempts exceeds PostgreSQL INTEGER".to_owned())
     })?;
     let inserted = sqlx::query(
-        "INSERT INTO job_outbox (id, job_type, payload, status, attempts, max_attempts, run_after, idempotency_key, created_at, updated_at) VALUES ($1, $2, $3, 'pending', 0, $4, $5, $6, $7, $7) ON CONFLICT (job_type, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING RETURNING id, job_type, payload, status, attempts, max_attempts, run_after, locked_by, locked_until, idempotency_key, last_error, cancel_requested_at, created_at, updated_at",
+        "INSERT INTO job_outbox (id, job_type, payload, status, attempts, max_attempts, run_after, idempotency_key, created_at, updated_at) VALUES ($1, $2, $3, 'pending', 0, $4, $5, $6, $7, $7) ON CONFLICT (job_type, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING RETURNING id, job_type, payload, status, attempts, max_attempts, run_after, locked_by, locked_until, idempotency_key, last_error, failure_reason, cancel_requested_at, created_at, updated_at",
     )
         .bind(job.id)
         .bind(&job.job_type)
@@ -362,7 +365,7 @@ async fn enqueue_on(
         StoreError::InvalidData("non-idempotent enqueue unexpectedly conflicted".to_owned())
     })?;
     let row = sqlx::query(
-        "SELECT id, job_type, payload, status, attempts, max_attempts, run_after, locked_by, locked_until, idempotency_key, last_error, cancel_requested_at, created_at, updated_at FROM job_outbox WHERE job_type = $1 AND idempotency_key = $2",
+        "SELECT id, job_type, payload, status, attempts, max_attempts, run_after, locked_by, locked_until, idempotency_key, last_error, failure_reason, cancel_requested_at, created_at, updated_at FROM job_outbox WHERE job_type = $1 AND idempotency_key = $2",
     )
         .bind(job.job_type)
         .bind(key)
@@ -386,7 +389,7 @@ async fn finish_on(
     let status = status_name(status);
     let allow_cancellation = status == "cancelled";
     sqlx::query(
-        "UPDATE job_outbox SET status = $3, locked_by = NULL, locked_until = NULL, cancel_requested_at = NULL, last_error = $4, updated_at = $5 WHERE id = $1 AND status = 'running' AND locked_by = $2 AND locked_until > $5 AND ($6 OR cancel_requested_at IS NULL)",
+        "UPDATE job_outbox SET status = $3, locked_by = NULL, locked_until = NULL, cancel_requested_at = NULL, last_error = $4, failure_reason = NULL, updated_at = $5 WHERE id = $1 AND status = 'running' AND locked_by = $2 AND locked_until > $5 AND ($6 OR cancel_requested_at IS NULL)",
     )
     .bind(job_id)
     .bind(worker_id)
@@ -418,6 +421,11 @@ fn row_to_job(row: sqlx::postgres::PgRow) -> Result<Job, StoreError> {
         locked_until: row.try_get("locked_until")?,
         idempotency_key: row.try_get("idempotency_key")?,
         last_error: row.try_get("last_error")?,
+        failure_reason: row
+            .try_get::<Option<String>, _>("failure_reason")?
+            .as_deref()
+            .map(parse_failure_reason)
+            .transpose()?,
         cancel_requested_at: row.try_get("cancel_requested_at")?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
@@ -480,6 +488,16 @@ fn parse_status(status: &str) -> Result<JobStatus, StoreError> {
         "cancelled" => Ok(JobStatus::Cancelled),
         value => Err(StoreError::InvalidData(format!(
             "unknown job status `{value}`"
+        ))),
+    }
+}
+
+fn parse_failure_reason(reason: &str) -> Result<JobFailureReason, StoreError> {
+    match reason {
+        "permanent" => Ok(JobFailureReason::Permanent),
+        "attempts_exhausted" => Ok(JobFailureReason::AttemptsExhausted),
+        value => Err(StoreError::InvalidData(format!(
+            "unknown job failure reason `{value}`"
         ))),
     }
 }

@@ -26,6 +26,14 @@ Upgrade every Baukit component as one release train. Do not invent or call a `ba
 3. Update `baukit.toml` so `template_version` and `[dependencies.baukit].tag` describe the target train. Apply release-note migrations to template-owned files deliberately; preserve product-owned behavior and surface conflicts for review.
 4. Refresh Cargo and pnpm lockfiles. Do not mix unrelated dependency upgrades into this change, and do not switch to public registries while the project remains private-first.
 
+When upgrading a product that already copied the `baukit-jobs` v0.5.1 schema,
+add `rust/crates/baukit-jobs/migrations/0002_baukit_jobs_failure_reason.sql`
+from the target checkout as a new product-owned migration. It adds
+`failure_reason`, backfills legacy `failed` rows as `attempts_exhausted` when
+`attempts >= max_attempts` and `permanent` otherwise, then adds the current
+value and status-consistency checks. Do not replace or edit the product's
+already-applied initial migration.
+
 ## Validate and verify
 
 Run from the product root:
