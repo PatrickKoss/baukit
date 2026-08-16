@@ -1,5 +1,10 @@
 # @baukit/auth-native
 
+## Unreleased
+
+- Allow Expo compositions to override the default SecureStore port for
+  universal apps and product-owned storage migrations.
+
 ## 0.6.0
 
 ### Minor Changes

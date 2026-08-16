@@ -33,3 +33,8 @@ Terminal refresh rejection (`invalid_grant`, `invalid_token`, or HTTP 400/401) c
 Use `safeAuthErrorMessage(error)` at UI boundaries. Errors contain only allowlisted library codes/messages and optional HTTP status numbers. Provider bodies, authorization codes, tokens, and adapter exception messages are never copied into errors or logs.
 
 The default Expo entry point uses `expo-auth-session`, `expo-secure-store`, and `expo-web-browser`, which are peer dependencies. For deterministic tests or another native stack, construct `NativeOidcClient` with your own `SecureStoragePort`, `BrowserFlowPort`, `fetch`, and clock.
+
+Universal Expo products can pass a `storage` port to
+`createExpoOidcEnvironment` or `createExpoOidcClient`. This supports a web
+localStorage adapter or a product-owned compatibility/migration wrapper while
+retaining the standard Expo browser flow.

@@ -78,6 +78,9 @@ export type UnauthorizedHandler =
   | ((context: UnauthorizedContext) => UnauthorizedRecovery)
   | ((context: UnauthorizedContext) => Promise<UnauthorizedRecovery>);
 
+/** Notification emitted when an explicit credential replay also returns 401. */
+export type UnauthorizedExhaustedHandler = (context: UnauthorizedContext) => void | Promise<void>;
+
 /** Options shared by the standalone fetch wrapper and generated clients. */
 export interface ApiRuntimeOptions extends ApiEnvironmentConfig {
   readonly fetch?: FetchImplementation;
@@ -86,6 +89,7 @@ export interface ApiRuntimeOptions extends ApiEnvironmentConfig {
   readonly traceparentProvider?: TraceparentProvider;
   readonly requestIdFactory?: () => string;
   readonly onUnauthorized?: UnauthorizedHandler;
+  readonly onUnauthorizedExhausted?: UnauthorizedExhaustedHandler;
   readonly retry?: RetryOptions | false;
 }
 
@@ -293,6 +297,23 @@ export function createApiFetch(options: ApiRuntimeOptions): FetchImplementation 
         }
 
         const error = await normalizeResponseError(response);
+        if (
+          response.status === 401 &&
+          unauthorizedReplayUsed &&
+          options.onUnauthorizedExhausted !== undefined
+        ) {
+          try {
+            await options.onUnauthorizedExhausted({
+              error,
+              request: replaySource?.clone() ?? request,
+              response,
+              canRetry: false,
+            });
+          } catch {
+            // Terminal authentication observers cannot replace the normalized API failure.
+          }
+          throwIfAborted(request.signal, requestId);
+        }
         if (
           response.status === 401 &&
           options.onUnauthorized !== undefined &&

@@ -49,6 +49,11 @@ const api = createClient<paths>({ baseUrl: runtime.baseUrl, fetch: runtime.fetch
 
 `onUnauthorized` remains a notification hook when it returns `void` or `'handled'`: the normalized 401 is thrown as before. Returning `'retry-once'` explicitly asks the runtime to reacquire credentials through `tokenProvider` and replay a preflighted request clone. The hook receives `canRetry: false` when the body cannot be cloned; returning `'retry-once'` then safely falls back to the original 401. Recovery runs at most once, a second 401 stops, and the original `AbortSignal` remains effective during refresh and replay.
 
+Set `onUnauthorizedExhausted` when the product must stop schedulers or move to
+a signed-out state after that replay also returns 401. It receives the final
+normalized error with `canRetry: false`; observer failures never replace the
+API failure.
+
 This handshake does not make arbitrary mutations safe. Replaying `POST`, `PATCH`, or any write whose outcome may already have committed still requires a product/server idempotency contract. Follow the repository's [integration reliability recipe](../../../docs/platform/integration-reliability.md), [offline replay contract](../../../docs/platform/offline-readiness-contract.md), and [add-endpoint replay/idempotency guidance](../../../agent-skills/skills/baukit-add-endpoint/SKILL.md).
 
 ## Error handling

@@ -1,5 +1,10 @@
 # @baukit/api-runtime
 
+## Unreleased
+
+- Expose a terminal notification when the explicit 401 credential replay is
+  exhausted.
+
 ## 0.6.0
 
 ### Minor Changes

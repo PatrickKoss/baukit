@@ -1,5 +1,10 @@
 # @baukit/data-contracts
 
+## Unreleased
+
+- Allow products with pre-existing ownership registries to supply a compatible
+  store resolver while reusing the scoped persistence lifecycle.
+
 ## 0.6.0
 
 ### Minor Changes

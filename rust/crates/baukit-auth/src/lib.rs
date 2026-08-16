@@ -35,4 +35,7 @@ mod verifier;
 pub use axum_integration::{AuthRejection, AuthState};
 pub use baukit_openapi::{BEARER_AUTH_SCHEME, OpenApiMetadata};
 pub use config::{OidcConfig, OidcConfigError, PrincipalClaimMapping, SigningAlgorithm};
-pub use verifier::{IdentityVerifier, OidcVerifier, Principal, VerificationError};
+pub use verifier::{
+    IdentityVerifier, MultiIssuerError, MultiIssuerVerifier, OidcVerifier, Principal,
+    VerificationError,
+};

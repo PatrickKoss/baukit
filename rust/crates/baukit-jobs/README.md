@@ -42,8 +42,12 @@ The backfill classifies a legacy failed row as `attempts_exhausted` when
 Use `PostgresJobStore::enqueue_in_transaction` to commit a domain mutation and
 its outbox row atomically. If a job's product-side result is stored in the same
 PostgreSQL database, use `complete_in_transaction` after writing the result so
-both changes commit together. External side effects still need an idempotency
-key at the destination because a crashed worker's expired lease is reclaimed.
+both changes commit together. Pass `JobCancellation::worker_id()` as the lease
+owner. After the transaction commits, call
+`JobCancellation::mark_completed_in_transaction()` and return success
+immediately; the runner will record success without attempting a second job
+transition. External side effects still need an idempotency key at the
+destination because a crashed worker's expired lease is reclaimed.
 
 Handlers classify failures with `JobError::permanent`, `JobError::retryable`,
 or `JobError::retryable_after`. The last form preserves a provider's

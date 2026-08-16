@@ -203,6 +203,32 @@ describe('scoped persistence registry', () => {
 });
 
 describe('scoped persistence lifecycle', () => {
+  it('accepts a product compatibility resolver without weakening lifecycle ordering', async () => {
+    const persistence = { close: vi.fn(() => Promise.resolve()) };
+    const resolveStore = vi.fn(() =>
+      Promise.resolve({ storeName: 'pre-v0.6-account-e', claimedLegacy: false }),
+    );
+    const open = vi.fn(() => Promise.resolve(persistence));
+    const lifecycle = new ScopedPersistenceLifecycle({
+      namespace: 'example',
+      registry: new InMemoryScopedPersistenceRegistryStore('{corrupt'),
+      digest,
+      resolveStore,
+      open,
+      resetUserScopedState: () => undefined,
+    });
+
+    await expect(lifecycle.selectSubject('account-e')).resolves.toMatchObject({
+      storeName: 'pre-v0.6-account-e',
+      persistence,
+    });
+    expect(resolveStore).toHaveBeenCalledWith('account-e');
+    expect(open).toHaveBeenCalledWith({
+      subject: 'account-e',
+      storeName: 'pre-v0.6-account-e',
+    });
+  });
+
   it('does not publish a partition until open and hydration finish', async () => {
     let finishOpen: (() => void) | undefined;
     const opening = new Promise<void>((resolve) => {

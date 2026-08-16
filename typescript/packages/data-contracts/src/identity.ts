@@ -35,6 +35,9 @@ export interface ResolvedScopedStore {
   readonly claimedLegacy: boolean;
 }
 
+/** Product compatibility resolver used when older ownership metadata already exists. */
+export type ScopedPersistenceResolver = (subject: string) => MaybePromise<ResolvedScopedStore>;
+
 /** Stable blocking failure for corrupt ownership metadata or a subject mismatch. */
 export class PersistenceIdentityMismatchError extends Error {
   public override readonly name = 'PersistenceIdentityMismatchError';
@@ -397,6 +400,8 @@ export type ScopedPersistenceLifecycleState<TPersistence extends ClosableScopedP
 export interface ScopedPersistenceLifecycleOptions<
   TPersistence extends ClosableScopedPersistence,
 > extends Omit<ResolveScopedStoreOptions, 'subject'> {
+  /** Overrides registry resolution while retaining lifecycle transition guarantees. */
+  readonly resolveStore?: ScopedPersistenceResolver;
   readonly open: (context: OpenScopedPersistenceContext) => Promise<TPersistence>;
   readonly resetUserScopedState: () => MaybePromise<void>;
 }
@@ -486,7 +491,11 @@ export class ScopedPersistenceLifecycle<TPersistence extends ClosableScopedPersi
     try {
       await this.closeAndReset();
       if (revision !== this.revision) return undefined;
-      const resolved = await resolveScopedStore({ ...this.options, subject });
+      const resolved =
+        this.options.resolveStore === undefined
+          ? await resolveScopedStore({ ...this.options, subject })
+          : await this.options.resolveStore(subject);
+      requiredIdentityPart(resolved.storeName, 'Resolved persistence store name');
       if (revision !== this.revision) return undefined;
       const persistence = await this.options.open({
         subject,

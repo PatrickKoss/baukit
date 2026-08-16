@@ -4,6 +4,14 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Added an allowlisted `MultiIssuerVerifier` and preserved the verified issuer
+  on OIDC principals so applications can safely key identities by
+  `(issuer, subject)` across providers.
+- Added explicit JWKS endpoint constructors for deployments where public token
+  issuers and private key-retrieval addresses differ.
+
 ## [0.6.0] - 2026-08-16
 
 ### Changed

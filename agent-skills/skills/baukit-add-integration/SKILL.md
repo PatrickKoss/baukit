@@ -25,7 +25,7 @@ Define static job types in a product `JobHandler`. Enqueue with `NewJob`; use `P
 
 Keep the existing lifecycle: `pending`, `running`, `succeeded`, `failed`, and `cancelled`. Do not add `dead_letter`. Query terminal `failed` jobs through `Job.failure_reason`, which distinguishes `JobFailureReason::Permanent` from `JobFailureReason::AttemptsExhausted`; keep `last_error` diagnostic, bounded, and secret-free.
 
-When a handler writes a PostgreSQL result, finish with `PostgresJobStore::complete_in_transaction` in the same transaction. External side effects still require a destination idempotency key because a lease can expire after the provider accepted a request.
+When a handler writes a PostgreSQL result, finish with `PostgresJobStore::complete_in_transaction` in the same transaction, using `JobCancellation::worker_id()` as the lease owner. After commit, call `JobCancellation::mark_completed_in_transaction()` and return success immediately so the runner does not attempt a second completion. External side effects still require a destination idempotency key because a lease can expire after the provider accepted a request.
 
 ## Make accepted ingress durable
 

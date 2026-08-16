@@ -1,4 +1,12 @@
-use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 use baukit_runtime::ShutdownToken;
 use chrono::Utc;
@@ -40,13 +48,31 @@ pub trait JobHandler: Send + Sync + 'static {
 #[derive(Clone, Debug)]
 pub struct JobCancellation {
     token: CancellationToken,
+    worker_id: Arc<str>,
+    completed_in_transaction: Arc<AtomicBool>,
 }
 
 impl JobCancellation {
-    fn new() -> Self {
+    fn new(worker_id: &str) -> Self {
         Self {
             token: CancellationToken::new(),
+            worker_id: Arc::from(worker_id),
+            completed_in_transaction: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// Returns the lease owner required by `PostgresJobStore::complete_in_transaction`.
+    pub fn worker_id(&self) -> &str {
+        &self.worker_id
+    }
+
+    /// Reports that the handler committed its result and successful job transition together.
+    ///
+    /// Call this only after the transaction containing `complete_in_transaction`
+    /// commits successfully, and return success immediately afterward. The runner
+    /// then records success without attempting a second completion transition.
+    pub fn mark_completed_in_transaction(&self) {
+        self.completed_in_transaction.store(true, Ordering::Release);
     }
 
     /// Returns whether timeout or cancellation has stopped this attempt.
@@ -61,6 +87,10 @@ impl JobCancellation {
 
     fn cancel(&self) {
         self.token.cancel();
+    }
+
+    fn was_completed_in_transaction(&self) -> bool {
+        self.completed_in_transaction.load(Ordering::Acquire)
     }
 }
 
@@ -223,7 +253,7 @@ async fn process_claimed_job(
     job: ClaimedJob,
 ) -> Result<(), RunnerError> {
     let started = Instant::now();
-    let cancellation = JobCancellation::new();
+    let cancellation = JobCancellation::new(&config.worker_id);
     let future = handler.handle(&job, cancellation.clone());
     tokio::pin!(future);
     let timeout = tokio::time::sleep(config.job_timeout);
@@ -247,6 +277,16 @@ async fn process_claimed_job(
             }
         }
     };
+
+    if cancellation.was_completed_in_transaction() {
+        metrics::record(
+            &job.job_type,
+            handler.job_types(),
+            SUCCESS,
+            started.elapsed(),
+        );
+        return Ok(());
+    }
 
     match result {
         AttemptResult::Cancelled => {
@@ -584,6 +624,21 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn handler_owned_transactional_completion_is_not_completed_twice() {
+        let store = Arc::new(FakeStore::with_jobs(0));
+        process_claimed_job(
+            store.clone(),
+            Arc::new(TransactionalCompletionHandler),
+            test_config(),
+            fake_job(0),
+        )
+        .await
+        .expect("transactionally completed attempt succeeds");
+
+        assert_eq!(store.completed.load(Ordering::SeqCst), 0);
+    }
+
     fn test_config() -> WorkerConfig {
         WorkerConfig {
             worker_id: "test-worker".to_owned(),
@@ -793,6 +848,26 @@ mod tests {
                 "provider rate limited",
                 Duration::from_secs(42),
             ))))
+        }
+    }
+
+    struct TransactionalCompletionHandler;
+
+    impl JobHandler for TransactionalCompletionHandler {
+        fn job_types(&self) -> &'static [&'static str] {
+            &["test.job"]
+        }
+
+        fn handle<'a>(
+            &'a self,
+            _job: &'a ClaimedJob,
+            cancellation: JobCancellation,
+        ) -> JobFuture<'a, Result<(), JobError>> {
+            Box::pin(async move {
+                assert_eq!(cancellation.worker_id(), "test-worker");
+                cancellation.mark_completed_in_transaction();
+                Ok(())
+            })
         }
     }
 

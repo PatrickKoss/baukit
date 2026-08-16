@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Let handlers report a successful transition committed atomically with their
+  product result, avoiding a second runner completion and false lease loss.
+
 ## [0.6.0] - 2026-08-16
 
 ### Added

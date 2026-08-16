@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, btree_map::Entry},
     future::Future,
     pin::Pin,
     sync::Arc,
@@ -26,6 +26,7 @@ const MAX_UNKNOWN_KEYS: usize = 128;
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Principal {
     subject: String,
+    issuer: Option<String>,
     organization: Option<String>,
     tenant: Option<String>,
 }
@@ -36,6 +37,7 @@ impl Principal {
     pub fn new(subject: impl Into<String>) -> Self {
         Self {
             subject: subject.into(),
+            issuer: None,
             organization: None,
             tenant: None,
         }
@@ -59,6 +61,16 @@ impl Principal {
     #[must_use]
     pub fn subject(&self) -> &str {
         &self.subject
+    }
+
+    /// Returns the verified OIDC issuer when the principal came from an OIDC token.
+    ///
+    /// Internal principals created with [`Principal::new`] have no issuer. OIDC
+    /// identities should be keyed by the `(issuer, subject)` pair because `sub`
+    /// is only unique within one issuer.
+    #[must_use]
+    pub fn issuer(&self) -> Option<&str> {
+        self.issuer.as_deref()
     }
 
     /// Returns normalized organization context when configured and present.
@@ -92,6 +104,157 @@ pub struct OidcVerifier {
     inner: Arc<VerifierInner>,
 }
 
+/// OIDC verifier that accepts tokens from an explicit set of issuers.
+///
+/// The unverified `iss` claim is used only to select a preconfigured verifier.
+/// That verifier then performs the normal signature, issuer, audience, expiry,
+/// and claim validation before a principal is returned.
+#[derive(Clone)]
+pub struct MultiIssuerVerifier {
+    verifiers: Arc<BTreeMap<String, OidcVerifier>>,
+}
+
+impl MultiIssuerVerifier {
+    /// Discovers every configured issuer and constructs an allowlisted verifier.
+    ///
+    /// At least one unique issuer must be supplied. Discovery is completed for
+    /// the whole set before the verifier is returned, so partial configuration
+    /// never reaches request handling.
+    pub async fn discover<I>(configs: I) -> Result<Self, MultiIssuerError>
+    where
+        I: IntoIterator<Item = OidcConfig>,
+    {
+        let mut configs_by_issuer = BTreeMap::new();
+        for config in configs {
+            let issuer = config.issuer().to_owned();
+            match configs_by_issuer.entry(issuer.clone()) {
+                Entry::Vacant(entry) => {
+                    entry.insert(config);
+                }
+                Entry::Occupied(_) => return Err(MultiIssuerError::DuplicateIssuer(issuer)),
+            }
+        }
+        if configs_by_issuer.is_empty() {
+            return Err(MultiIssuerError::NoIssuers);
+        }
+
+        let mut verifiers = BTreeMap::new();
+        for (issuer, config) in configs_by_issuer {
+            let verifier = OidcVerifier::discover(config).await.map_err(|source| {
+                MultiIssuerError::Discovery {
+                    issuer: issuer.clone(),
+                    source,
+                }
+            })?;
+            verifiers.insert(issuer, verifier);
+        }
+        Ok(Self {
+            verifiers: Arc::new(verifiers),
+        })
+    }
+
+    /// Constructs an allowlisted verifier from explicit JWKS endpoints.
+    ///
+    /// This is useful when tokens contain a public issuer URL but the verifier
+    /// must fetch keys through a private network endpoint. The configured
+    /// issuer is still validated exactly against each token's `iss` claim.
+    pub fn from_jwks_uris<I, S>(configs: I) -> Result<Self, MultiIssuerError>
+    where
+        I: IntoIterator<Item = (OidcConfig, S)>,
+        S: AsRef<str>,
+    {
+        let mut verifiers = BTreeMap::new();
+        for (config, jwks_uri) in configs {
+            let issuer = config.issuer().to_owned();
+            match verifiers.entry(issuer.clone()) {
+                Entry::Vacant(entry) => {
+                    let verifier =
+                        OidcVerifier::from_jwks_uri(config, jwks_uri).map_err(|source| {
+                            MultiIssuerError::Configuration {
+                                issuer: issuer.clone(),
+                                source,
+                            }
+                        })?;
+                    entry.insert(verifier);
+                }
+                Entry::Occupied(_) => return Err(MultiIssuerError::DuplicateIssuer(issuer)),
+            }
+        }
+        if verifiers.is_empty() {
+            return Err(MultiIssuerError::NoIssuers);
+        }
+        Ok(Self {
+            verifiers: Arc::new(verifiers),
+        })
+    }
+
+    /// Verifies one access token against its configured issuer.
+    pub async fn verify(&self, token: &str) -> Result<Principal, VerificationError> {
+        let issuer = ParsedToken::parse(token)?
+            .claims
+            .iss
+            .ok_or(VerificationError::WrongIssuer)?;
+        let verifier = self
+            .verifiers
+            .get(&issuer)
+            .ok_or(VerificationError::UnconfiguredIssuer)?;
+        verifier.verify(token).await
+    }
+
+    /// Returns whether an exact normalized issuer is configured.
+    #[must_use]
+    pub fn supports_issuer(&self, issuer: &str) -> bool {
+        self.verifiers.contains_key(issuer)
+    }
+}
+
+impl IdentityVerifier for MultiIssuerVerifier {
+    fn verify<'a>(
+        &'a self,
+        token: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<Principal, VerificationError>> + Send + 'a>> {
+        Box::pin(MultiIssuerVerifier::verify(self, token))
+    }
+}
+
+impl std::fmt::Debug for MultiIssuerVerifier {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("MultiIssuerVerifier")
+            .field("issuers", &self.verifiers.keys().collect::<Vec<_>>())
+            .finish()
+    }
+}
+
+/// Failure while constructing a multi-issuer verifier.
+#[derive(Debug, Error)]
+pub enum MultiIssuerError {
+    /// No issuer configuration was supplied.
+    #[error("at least one OIDC issuer must be configured")]
+    NoIssuers,
+    /// The same normalized issuer was configured more than once.
+    #[error("OIDC issuer was configured more than once: {0}")]
+    DuplicateIssuer(String),
+    /// One configured issuer could not be discovered.
+    #[error("could not discover OIDC issuer {issuer}: {source}")]
+    Discovery {
+        /// The exact configured issuer whose discovery failed.
+        issuer: String,
+        /// The underlying discovery failure.
+        #[source]
+        source: VerificationError,
+    },
+    /// One configured issuer had an invalid explicit JWKS endpoint.
+    #[error("could not configure OIDC issuer {issuer}: {source}")]
+    Configuration {
+        /// The exact configured issuer whose endpoint was invalid.
+        issuer: String,
+        /// The underlying configuration failure.
+        #[source]
+        source: VerificationError,
+    },
+}
+
 struct VerifierInner {
     config: OidcConfig,
     client: Client,
@@ -107,6 +270,31 @@ struct JwksCache {
 }
 
 impl OidcVerifier {
+    /// Constructs a verifier with an explicit JWKS endpoint.
+    ///
+    /// Use this when the token issuer is a public URL but key retrieval must use
+    /// a distinct private-network URL. Token issuer validation remains bound to
+    /// [`OidcConfig::issuer`]; only discovery is bypassed.
+    pub fn from_jwks_uri(
+        config: OidcConfig,
+        jwks_uri: impl AsRef<str>,
+    ) -> Result<Self, VerificationError> {
+        let client = Client::builder()
+            .timeout(config.request_timeout)
+            .build()
+            .map_err(VerificationError::Client)?;
+        let jwks_uri =
+            Url::parse(jwks_uri.as_ref()).map_err(|_| VerificationError::InvalidJwksUri)?;
+        Ok(Self {
+            inner: Arc::new(VerifierInner {
+                config,
+                client,
+                jwks_uri,
+                cache: Mutex::new(JwksCache::default()),
+            }),
+        })
+    }
+
     /// Discovers the configured issuer and constructs a verifier.
     ///
     /// The discovery response must report the exact configured issuer. JWKS are
@@ -511,6 +699,7 @@ impl JwtClaims {
         let tenant = mapped_claim(&self.extra, config.claim_mapping.tenant.as_deref())?;
         Ok(Principal {
             subject,
+            issuer: Some(config.issuer().to_owned()),
             organization,
             tenant,
         })
@@ -632,6 +821,9 @@ pub enum VerificationError {
     /// The issuer claim did not match configuration.
     #[error("access token issuer is invalid")]
     WrongIssuer,
+    /// The token names an issuer outside the configured allowlist.
+    #[error("access token issuer is not configured")]
+    UnconfiguredIssuer,
     /// No token audience matched configuration.
     #[error("access token audience is invalid")]
     WrongAudience,
@@ -674,6 +866,7 @@ mod tests {
             .with_organization("org")
             .with_tenant("tenant");
         assert_eq!(principal.subject(), "subject");
+        assert_eq!(principal.issuer(), None);
         assert_eq!(principal.organization(), Some("org"));
         assert_eq!(principal.tenant(), Some("tenant"));
     }

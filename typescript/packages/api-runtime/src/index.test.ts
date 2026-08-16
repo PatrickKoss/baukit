@@ -230,6 +230,26 @@ describe('request decoration', () => {
     expect(onUnauthorized).toHaveBeenCalledOnce();
   });
 
+  it('notifies the product when the one credential replay is exhausted', async () => {
+    const mock = new MockFetch()
+      .enqueueJson(rustEnvelopeSample, { status: 401 })
+      .enqueueJson(rustEnvelopeSample, { status: 401 });
+    const onUnauthorizedExhausted = vi.fn();
+    const apiFetch = createApiFetch({
+      ...baseOptions,
+      fetch: mock.fetch,
+      onUnauthorized: () => 'retry-once',
+      onUnauthorizedExhausted,
+      retry: false,
+    });
+
+    await expect(apiFetch('/private')).rejects.toMatchObject({ status: 401 });
+    expect(onUnauthorizedExhausted).toHaveBeenCalledOnce();
+    expect(onUnauthorizedExhausted).toHaveBeenCalledWith(
+      expect.objectContaining({ canRetry: false, error: expect.any(ApiError) as ApiError }),
+    );
+  });
+
   it('honors abort while unauthorized recovery is running', async () => {
     const controller = new AbortController();
     const mock = new MockFetch()

@@ -53,6 +53,12 @@ Query pending and failed work in product operations surfaces so retry schedules,
 
 When a domain mutation and its durable consequence use one PostgreSQL database, begin a product transaction, write the domain/inbox record, call `PostgresJobStore::enqueue_in_transaction`, and commit once. When a handler writes its result in PostgreSQL, write the result and call `PostgresJobStore::complete_in_transaction` last in the same transaction.
 
+Pass the attempt's `JobCancellation::worker_id()` to that completion call.
+After the transaction commits, call
+`JobCancellation::mark_completed_in_transaction()` and return success
+immediately so the runner records the attempt without issuing a second
+completion transition.
+
 External side effects still require a provider idempotency key. A worker can lose its lease after the provider accepted the call but before local completion committed.
 
 For webhooks:

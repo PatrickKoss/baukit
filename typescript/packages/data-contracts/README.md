@@ -50,8 +50,12 @@ including across namespaces.
 opens another subject, resets product-provided user-scoped memory, and publishes
 only an open/migrated/hydrated partition. Call `handleSessionExpired()` for a
 terminal authentication expiry; it closes and blocks without inventing a
-subject switch. Use `recheckServerSubjectBeforeSyncAdoption` immediately before
-server identity adoption or an outbox push.
+subject switch. Products with an older, already-versioned ownership registry
+may supply `resolveStore` to retain those database names while adopting the
+shared close/reset/publish lifecycle. The compatibility resolver remains
+responsible for validating its legacy metadata and failing closed. Use
+`recheckServerSubjectBeforeSyncAdoption` immediately before server identity
+adoption or an outbox push.
 
 `RecordStore.list` orders immutable string IDs ascending using JavaScript string comparison. Page sizes are limited to `1..MAX_PAGE_SIZE`, and continuation cursors must be opaque to callers. Adapters should implement keyset cursors based on the last returned ID, not numeric offsets, so insertion before a cursor cannot shift later pages.
 

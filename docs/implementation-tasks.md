@@ -300,7 +300,7 @@ RL1/RL2/RL4) are archived verbatim in
   `failure_reason` via the additive `0002` migration, native compile and real
   Expo SQLite gates, the accessibility contract, and identity-scoped
   persistence. The implementation tracker lives in
-  `/home/patrick/projects/fitness-tracker/docs/BAUKIT_FEEDBACK_ANALYSIS.md`.
+  `/home/patrick/projects/fitness-tracker/docs/BAUKIT_V0_6_ADOPTION.md`.
 
 - 2026-08-14: **Git-path TypeScript package distribution fixed and
   `baukit-v0.5.1` released.** A root pnpm marker and lockfile make pnpm prepare

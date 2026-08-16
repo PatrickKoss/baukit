@@ -15,6 +15,8 @@ import type {
 export interface ExpoOidcEnvironmentOptions {
   readonly fetch?: FetchPort;
   readonly now?: () => number;
+  /** Overrides SecureStore for universal Expo apps or product-owned migration adapters. */
+  readonly storage?: SecureStoragePort;
   readonly secureStoreOptions?: SecureStore.SecureStoreOptions;
 }
 
@@ -27,7 +29,7 @@ export function completeExpoAuthSession(): void {
 export function createExpoOidcEnvironment(
   options: ExpoOidcEnvironmentOptions = {},
 ): NativeOidcEnvironment {
-  const storage = createExpoSecureStorage(options.secureStoreOptions);
+  const storage = options.storage ?? createExpoSecureStorage(options.secureStoreOptions);
   const browser: BrowserFlowPort = {
     async authorize(request) {
       const authRequest = new AuthSession.AuthRequest({

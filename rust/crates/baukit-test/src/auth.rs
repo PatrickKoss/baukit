@@ -188,7 +188,9 @@ async fn check_response(
 #[cfg(test)]
 mod tests {
     use axum::routing::get;
-    use baukit_auth::{AuthState, OidcConfig, OidcVerifier, Principal};
+    use baukit_auth::{
+        AuthState, MultiIssuerVerifier, OidcConfig, OidcVerifier, Principal, VerificationError,
+    };
     use baukit_http::{HttpOptions, finalize};
 
     use super::*;
@@ -207,6 +209,56 @@ mod tests {
             .with_state(AuthState::new(verifier));
         let router = finalize(router, HttpOptions::default());
         check_auth_router_conformance(&router, "/protected", &issuer, "conformance-api").await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn multi_issuer_verifier_accepts_each_allowlisted_provider()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let clerk = MockOidcServer::start().await?;
+        let keycloak = MockOidcServer::start().await?;
+        let verifier = MultiIssuerVerifier::discover([
+            OidcConfig::new(clerk.issuer(), "conformance-api")?,
+            OidcConfig::new(keycloak.issuer(), "conformance-api")?,
+        ])
+        .await?;
+
+        for (issuer, subject) in [(&clerk, "clerk-user"), (&keycloak, "keycloak-user")] {
+            let claims = issuer.claims(subject, "conformance-api", Duration::from_secs(300))?;
+            let principal = verifier.verify(&issuer.mint(&claims)?).await?;
+            assert_eq!(principal.issuer(), Some(issuer.issuer()));
+            assert_eq!(principal.subject(), subject);
+        }
+
+        let unknown = MockOidcServer::start().await?;
+        let claims = unknown.claims("unknown-user", "conformance-api", Duration::from_secs(300))?;
+        assert!(matches!(
+            verifier.verify(&unknown.mint(&claims)?).await,
+            Err(VerificationError::UnconfiguredIssuer)
+        ));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn explicit_jwks_uri_keeps_validation_bound_to_the_public_issuer()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let keys = MockOidcServer::start().await?;
+        let public_issuer = "https://login.example.test/tenant";
+        let verifier = MultiIssuerVerifier::from_jwks_uris([(
+            OidcConfig::new(public_issuer, "conformance-api")?,
+            format!(
+                "{}/realms/baukit-test/protocol/openid-connect/certs",
+                keys.base_url()
+            ),
+        )])?;
+        let claims = keys
+            .claims("public-user", "conformance-api", Duration::from_secs(300))?
+            .issuer(public_issuer);
+        let principal = verifier.verify(&keys.mint(&claims)?).await?;
+
+        assert_eq!(principal.issuer(), Some(public_issuer));
+        assert_eq!(principal.subject(), "public-user");
+        assert_eq!(keys.jwks_request_count(), 1);
         Ok(())
     }
 }
