@@ -138,7 +138,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "baukit-config"
-version = "0.3.0"
+version = "0.1.0"
 dependencies = [
  "baukit-core",
  "config",
@@ -151,7 +151,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-core"
-version = "0.3.0"
+version = "0.1.0"
 dependencies = [
  "serde",
  "thiserror",
@@ -159,16 +159,20 @@ dependencies = [
 
 [[package]]
 name = "baukit-http"
-version = "0.3.0"
+version = "0.1.0"
 dependencies = [
  "axum",
+ "base64",
  "baukit-config",
  "baukit-openapi",
  "metrics",
  "opentelemetry",
+ "ring",
  "serde",
  "serde_html_form",
  "serde_json",
+ "thiserror",
+ "time",
  "tokio",
  "tower",
  "tower-http",
@@ -179,7 +183,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-openapi"
-version = "0.3.0"
+version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -189,7 +193,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-ops"
-version = "0.3.0"
+version = "0.1.0"
 dependencies = [
  "axum",
  "baukit-core",
@@ -200,7 +204,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-runtime"
-version = "0.3.0"
+version = "0.1.0"
 dependencies = [
  "axum",
  "baukit-core",
@@ -212,7 +216,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-telemetry"
-version = "0.3.0"
+version = "0.1.0"
 dependencies = [
  "baukit-core",
  "chrono",

@@ -64,9 +64,21 @@ def main() -> None:
     crate_versions: dict[str, str] = {}
     for path in sorted((ROOT / "rust/crates").glob("*/Cargo.toml")):
         with path.open("rb") as manifest:
-            package = tomllib.load(manifest)["package"]
+            manifest_data = tomllib.load(manifest)
+        package = manifest_data["package"]
         if package.get("publish") is False:
             fail(f"{package['name']} is published to crates.io; drop its publish flag")
+        # A dev-dependency on a sibling crate must stay path-only. Carrying a
+        # version makes cargo resolve it against the registry when packaging,
+        # which the crates form a cycle through and no publish order can satisfy.
+        for name, dependency in manifest_data.get("dev-dependencies", {}).items():
+            if not name.startswith("baukit-") or not isinstance(dependency, dict):
+                continue
+            if "version" in dependency or dependency.get("workspace") is True:
+                fail(
+                    f"{package['name']} dev-depends on {name} with a version; "
+                    "use a path-only dependency so cargo package can strip it"
+                )
         version = package["version"]
         if isinstance(version, dict) and version.get("workspace") is True:
             version = rust_version

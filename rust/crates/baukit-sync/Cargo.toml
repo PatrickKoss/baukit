@@ -20,6 +20,6 @@ sqlx.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-baukit-test = { workspace = true, features = ["sqlx-postgres"] }
+baukit-test = { path = "../baukit-test", features = ["sqlx-postgres"] }
 chrono.workspace = true
 tokio.workspace = true

@@ -130,25 +130,33 @@ Crates must go up in dependency order, because each one's internal
 `version = "=X.Y.Z"` requirements must already resolve on the registry:
 
 ```text
-baukit-core, baukit-events, baukit-openapi, baukit-runtime, baukit-sync,
-baukit-telemetry, baukit-config, baukit-credential-vault, baukit-http,
-baukit-integrations, baukit-jobs, baukit-ops, baukit-push, baukit-auth,
+baukit-core, baukit-events, baukit-openapi, baukit-sync, baukit-config,
+baukit-runtime, baukit-telemetry, baukit-credential-vault, baukit-http,
+baukit-jobs, baukit-ops, baukit-auth, baukit-integrations, baukit-push,
 baukit-ratelimit, baukit-test
 ```
 
-`cargo publish` waits for the index between crates, so publish them one at a
-time and let each finish:
+Several crates dev-depend on siblings for test fixtures, and those edges form a
+cycle: `baukit-test` depends on `baukit-integrations`, which dev-depends on
+`baukit-jobs`, which dev-depends back on `baukit-test`. Cargo resolves a
+dev-dependency against the registry whenever it carries a version, so no publish
+order can satisfy that. These dependencies are therefore declared path-only,
+which makes `cargo package` strip them from the published manifest while local
+`cargo test` still resolves them. `scripts/check-version-coherence.py` fails the
+train if one regains a version or `workspace = true`.
+
+crates.io rate-limits new crate names: an initial burst, then roughly one new
+crate every ten minutes. A first release of all sixteen therefore cannot run
+straight through. `scripts/publish-crates.sh` skips crates already on the
+registry and waits out a 429 instead of failing the run:
 
 ```sh
 cargo login
-for crate in baukit-core baukit-events baukit-openapi baukit-runtime \
-             baukit-sync baukit-telemetry baukit-config \
-             baukit-credential-vault baukit-http baukit-integrations \
-             baukit-jobs baukit-ops baukit-push baukit-auth \
-             baukit-ratelimit baukit-test; do
-  cargo publish --manifest-path "rust/crates/$crate/Cargo.toml"
-done
+scripts/publish-crates.sh
 ```
+
+Later trains publish new versions of existing crates, which fall under a much
+higher limit, so they finish in one pass.
 
 A dry run only works for crates whose internal dependencies are already
 published; `cargo publish --dry-run` on a dependent crate fails with

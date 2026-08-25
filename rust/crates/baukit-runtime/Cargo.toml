@@ -23,5 +23,5 @@ tokio-util.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-baukit-telemetry.workspace = true
+baukit-telemetry = { path = "../baukit-telemetry" }
 tokio = { workspace = true, features = ["test-util"] }
