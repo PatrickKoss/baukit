@@ -23,7 +23,12 @@ members = [
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
-repository = "https://github.com/patrickkoss/baukit"
+repository = "https://github.com/PatrickKoss/baukit"
+homepage = "https://github.com/PatrickKoss/baukit"
+license = "MIT"
+authors = ["Patrick Koss"]
+keywords = ["baukit", "foundation", "axum", "telemetry"]
+categories = ["web-programming", "development-tools"]
 
 [workspace.dependencies]
 axum = "=0.8.9"

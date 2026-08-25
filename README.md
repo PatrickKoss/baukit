@@ -116,12 +116,12 @@ SwiftPM packages against a Darwin SDK that `xtool setup` generates from an
 `Xcode.xip` downloaded manually with an Apple ID, but Linux has no iOS
 simulator.
 
-Baukit is MIT licensed. The `@baukit/*` TypeScript packages are published to npm; the Rust crates stay on Git tags and are not on crates.io. All components remain on one `0.x` release train. Before 1.0, breaking changes bump the minor version; Rust releases use release-plz and TypeScript releases use Changesets. The latest minor of the latest release train is the only supported line, with no pre-1.0 backports.
+Baukit is MIT licensed. The `@baukit/*` TypeScript packages are published to npm and the sixteen library crates to crates.io; the `baukit` CLI is installed from a Git tag. All components remain on one `0.x` release train. Before 1.0, breaking changes bump the minor version; Rust releases use release-plz and TypeScript releases use Changesets. The latest minor of the latest release train is the only supported line, with no pre-1.0 backports.
 
 ## Releases
 
 Crates, `@baukit/*` packages, and templates advance together under one
-`vX.Y.Z` tag. Each train publishes the `@baukit/*` packages to npm; the Rust
-crates are consumed from that tag. Add TypeScript release notes with
+`vX.Y.Z` tag. Each train publishes the `@baukit/*` packages to npm and the
+library crates to crates.io. Add TypeScript release notes with
 `pnpm --dir typescript changeset`, then follow the coordinated cut, validation,
 tagging, and product-consumption steps in [the release runbook](docs/releasing.md).

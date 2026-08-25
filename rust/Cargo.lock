@@ -383,7 +383,6 @@ dependencies = [
  "axum",
  "baukit-config",
  "baukit-http",
- "baukit-push",
  "reqwest",
  "serde",
  "serde_json",

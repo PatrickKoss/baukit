@@ -48,6 +48,8 @@ def main() -> None:
     with (ROOT / "rust/Cargo.toml").open("rb") as manifest:
         rust_workspace = tomllib.load(manifest)["workspace"]
     rust_version = rust_workspace["package"]["version"]
+    if rust_workspace["package"].get("license") != "MIT":
+        fail("rust/Cargo.toml must declare the MIT license for the workspace")
 
     for name, dependency in rust_workspace["dependencies"].items():
         if not name.startswith("baukit-") or not isinstance(dependency, dict):
@@ -63,6 +65,8 @@ def main() -> None:
     for path in sorted((ROOT / "rust/crates").glob("*/Cargo.toml")):
         with path.open("rb") as manifest:
             package = tomllib.load(manifest)["package"]
+        if package.get("publish") is False:
+            fail(f"{package['name']} is published to crates.io; drop its publish flag")
         version = package["version"]
         if isinstance(version, dict) and version.get("workspace") is True:
             version = rust_version

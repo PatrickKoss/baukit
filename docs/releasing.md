@@ -13,8 +13,8 @@ bump; compatible changes normally use a patch bump.
 ## Tool ownership
 
 - `rust/release-plz.toml` defines the Rust version group, per-crate changelogs,
-  private git-only mode, and the single `v{{ version }}` tag emitter.
-  Every crate also has `publish = false`, so a train cannot reach crates.io.
+  and the single `v{{ version }}` tag emitter. The sixteen library crates
+  publish to crates.io; the `baukit` CLI keeps `publish = false`.
 - Changesets records TypeScript changes. Its fixed group advances all sixteen
   packages together, creates package changelogs, and emits no package tags.
   Publishing to npm is a separate step (see below), not `changeset publish`.
@@ -73,8 +73,8 @@ the post-merge tag remain deliberate maintainer actions.
 
 ## Consume a train from Git
 
-Rust crates are not on crates.io, so Rust products pin the unified tag and
-Cargo locates the named crate inside the repository:
+Rust products normally depend on the published crates. To pin the Git tag
+instead, Cargo locates the named crate inside the repository:
 
 ```toml
 baukit-runtime = { git = "ssh://git@github.com/patrickkoss/baukit.git", tag = "v0.1.0" }
@@ -119,5 +119,41 @@ requirements to the published version. Only `dist/`, `README.md`, and
 A published version is permanent: npm allows unpublishing only within 72 hours,
 and never allows reusing the version number afterwards. Run the dry run first.
 
-The Rust crates stay on Git tags. Every crate sets `publish = false`, so a
-train cannot reach crates.io by accident.
+## Publish the Rust crates
+
+The sixteen library crates are published to crates.io, MIT licensed. The
+`baukit` CLI keeps `publish = false` and stays a Git-tag install.
+`scripts/check-version-coherence.py` fails the train if a library crate regains
+that flag or the workspace loses its licence.
+
+Crates must go up in dependency order, because each one's internal
+`version = "=X.Y.Z"` requirements must already resolve on the registry:
+
+```text
+baukit-core, baukit-events, baukit-openapi, baukit-runtime, baukit-sync,
+baukit-telemetry, baukit-config, baukit-credential-vault, baukit-http,
+baukit-integrations, baukit-jobs, baukit-ops, baukit-push, baukit-auth,
+baukit-ratelimit, baukit-test
+```
+
+`cargo publish` waits for the index between crates, so publish them one at a
+time and let each finish:
+
+```sh
+cargo login
+for crate in baukit-core baukit-events baukit-openapi baukit-runtime \
+             baukit-sync baukit-telemetry baukit-config \
+             baukit-credential-vault baukit-http baukit-integrations \
+             baukit-jobs baukit-ops baukit-push baukit-auth \
+             baukit-ratelimit baukit-test; do
+  cargo publish --manifest-path "rust/crates/$crate/Cargo.toml"
+done
+```
+
+A dry run only works for crates whose internal dependencies are already
+published; `cargo publish --dry-run` on a dependent crate fails with
+"no matching package named ..." until its siblings are up. That is expected,
+not a defect.
+
+A crates.io release is permanent. Versions can be yanked but never deleted or
+reused, and a yanked version still resolves for existing lockfiles.
