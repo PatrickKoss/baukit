@@ -1,0 +1,30 @@
+[package]
+name = "baukit-auth"
+description = "Provider-neutral OIDC verification, personal access tokens, and Axum principal extraction for Baukit services."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+axum.workspace = true
+base64.workspace = true
+baukit-http.workspace = true
+baukit-openapi.workspace = true
+chrono.workspace = true
+reqwest.workspace = true
+ring.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tower = { workspace = true, features = ["util"] }
+tracing-subscriber.workspace = true

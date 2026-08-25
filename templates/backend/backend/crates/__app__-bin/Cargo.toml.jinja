@@ -1,0 +1,75 @@
+[package]
+name = "{{ context.app_name }}-bin"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+axum.workspace = true
+{% if context.auth_oidc %}baukit-auth.workspace = true
+{% endif %}baukit-config.workspace = true
+baukit-openapi.workspace = true
+baukit-ops = { workspace = true, features = ["sqlx-postgres"] }
+baukit-runtime.workspace = true
+baukit-telemetry.workspace = true
+{{ context.app_crate }}-api.workspace = true
+{{ context.app_crate }}-domain.workspace = true
+{{ context.app_crate }}-ports.workspace = true
+{{ context.app_crate }}-postgres.workspace = true
+{{ context.app_crate }}-services.workspace = true
+{% if context.worker %}{{ context.app_crate }}-worker.workspace = true
+baukit-jobs.workspace = true
+serde_json.workspace = true
+{% endif %}sqlx.workspace = true
+serde.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+baukit-http.workspace = true
+baukit-test = { workspace = true, features = ["sqlx-postgres"] }
+serde_json.workspace = true
+tower.workspace = true
+
+[[bin]]
+name = "api"
+path = "src/bin/api.rs"
+
+[[bin]]
+name = "migrate"
+path = "src/bin/migrate.rs"
+
+[[bin]]
+name = "openapi"
+path = "src/bin/openapi.rs"
+{% if context.worker %}
+[[bin]]
+name = "worker"
+path = "src/bin/worker.rs"
+{% endif %}
+
+[[test]]
+name = "conformance"
+path = "../../tests/conformance.rs"
+
+[[test]]
+name = "openapi_drift"
+path = "../../tests/openapi_drift.rs"
+
+[[test]]
+name = "postgres_integration"
+path = "../../tests/postgres_integration.rs"
+{% if context.worker %}
+[[test]]
+name = "worker_integration"
+path = "../../tests/worker_integration.rs"
+{% endif %}
+{% if context.auth_oidc %}
+[[test]]
+name = "auth_conformance"
+path = "../../tests/auth_conformance.rs"
+{% endif %}

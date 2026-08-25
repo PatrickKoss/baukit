@@ -1,0 +1,216 @@
+{
+  "contract_version": 1,
+  "representation": {
+    "event_id_length": "unicode_scalar_values_1_to_64",
+    "event_type": "three_lower_snake_ascii_segments_1_to_32_each",
+    "timestamps": "rfc3339_utc_z",
+    "payload": "json_object_with_at_most_32_lower_snake_ascii_keys",
+    "age_boundary": "event_too_old_when_occurred_at_is_more_than_604800_seconds_before_now",
+    "validation_order": [
+      "event_schema_unsupported",
+      "event_id_invalid",
+      "event_type_invalid",
+      "event_user_mismatch",
+      "event_too_old"
+    ]
+  },
+  "constants": {
+    "schema_version": 1,
+    "maximum_event_id_characters": 64,
+    "maximum_event_type_segment_characters": 32,
+    "maximum_event_age_seconds": 604800,
+    "maximum_payload_keys": 32
+  },
+  "cases": [
+    {
+      "name": "canonical envelope is valid",
+      "input": {
+        "envelope": {
+          "event_id": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+          "type": "hebkit.workout.completed",
+          "user_id": "oidc-subject-1",
+          "occurred_at": "2026-08-24T10:00:00Z",
+          "source_app": "hebkit",
+          "schema_version": 1,
+          "payload": {
+            "duration_minutes": 42,
+            "workout_id": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d78"
+          }
+        },
+        "expected_user_id": "oidc-subject-1",
+        "now": "2026-08-24T12:00:00Z"
+      },
+      "expected_code": null
+    },
+    {
+      "name": "event ID at 64 characters is valid",
+      "input": {
+        "envelope": {
+          "event_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "type": "focus.session.completed",
+          "user_id": "oidc-subject-1",
+          "occurred_at": "2026-08-24T11:00:00Z",
+          "source_app": "tiefgang",
+          "schema_version": 1,
+          "payload": {}
+        },
+        "expected_user_id": "oidc-subject-1",
+        "now": "2026-08-24T12:00:00Z"
+      },
+      "expected_code": null
+    },
+    {
+      "name": "empty event ID is invalid",
+      "input": {
+        "envelope": {
+          "event_id": "",
+          "type": "focus.session.completed",
+          "user_id": "oidc-subject-1",
+          "occurred_at": "2026-08-24T11:00:00Z",
+          "source_app": "tiefgang",
+          "schema_version": 1,
+          "payload": {}
+        },
+        "expected_user_id": "oidc-subject-1",
+        "now": "2026-08-24T12:00:00Z"
+      },
+      "expected_code": "event_id_invalid"
+    },
+    {
+      "name": "event ID over 64 characters is invalid",
+      "input": {
+        "envelope": {
+          "event_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "type": "focus.session.completed",
+          "user_id": "oidc-subject-1",
+          "occurred_at": "2026-08-24T11:00:00Z",
+          "source_app": "tiefgang",
+          "schema_version": 1,
+          "payload": {}
+        },
+        "expected_user_id": "oidc-subject-1",
+        "now": "2026-08-24T12:00:00Z"
+      },
+      "expected_code": "event_id_invalid"
+    },
+    {
+      "name": "event type needs three segments",
+      "input": {
+        "envelope": {
+          "event_id": "event-type-two-segments",
+          "type": "focus.completed",
+          "user_id": "oidc-subject-1",
+          "occurred_at": "2026-08-24T11:00:00Z",
+          "source_app": "tiefgang",
+          "schema_version": 1,
+          "payload": {}
+        },
+        "expected_user_id": "oidc-subject-1",
+        "now": "2026-08-24T12:00:00Z"
+      },
+      "expected_code": "event_type_invalid"
+    },
+    {
+      "name": "event type rejects uppercase characters",
+      "input": {
+        "envelope": {
+          "event_id": "event-type-uppercase",
+          "type": "Focus.session.completed",
+          "user_id": "oidc-subject-1",
+          "occurred_at": "2026-08-24T11:00:00Z",
+          "source_app": "tiefgang",
+          "schema_version": 1,
+          "payload": {}
+        },
+        "expected_user_id": "oidc-subject-1",
+        "now": "2026-08-24T12:00:00Z"
+      },
+      "expected_code": "event_type_invalid"
+    },
+    {
+      "name": "connection subject must match the envelope user",
+      "input": {
+        "envelope": {
+          "event_id": "event-user-mismatch",
+          "type": "journal.reflection.written",
+          "user_id": "oidc-subject-2",
+          "occurred_at": "2026-08-24T11:00:00Z",
+          "source_app": "journal",
+          "schema_version": 1,
+          "payload": {}
+        },
+        "expected_user_id": "oidc-subject-1",
+        "now": "2026-08-24T12:00:00Z"
+      },
+      "expected_code": "event_user_mismatch"
+    },
+    {
+      "name": "event exactly seven days old is valid",
+      "input": {
+        "envelope": {
+          "event_id": "event-age-boundary",
+          "type": "relax.session.completed",
+          "user_id": "oidc-subject-1",
+          "occurred_at": "2026-08-17T12:00:00Z",
+          "source_app": "relax",
+          "schema_version": 1,
+          "payload": {}
+        },
+        "expected_user_id": "oidc-subject-1",
+        "now": "2026-08-24T12:00:00Z"
+      },
+      "expected_code": null
+    },
+    {
+      "name": "event older than seven days by one second is too old",
+      "input": {
+        "envelope": {
+          "event_id": "event-age-over-boundary",
+          "type": "relax.session.completed",
+          "user_id": "oidc-subject-1",
+          "occurred_at": "2026-08-17T11:59:59Z",
+          "source_app": "relax",
+          "schema_version": 1,
+          "payload": {}
+        },
+        "expected_user_id": "oidc-subject-1",
+        "now": "2026-08-24T12:00:00Z"
+      },
+      "expected_code": "event_too_old"
+    },
+    {
+      "name": "future event is not too old",
+      "input": {
+        "envelope": {
+          "event_id": "event-in-future",
+          "type": "sololeveling.dailies.completed",
+          "user_id": "oidc-subject-1",
+          "occurred_at": "2026-08-24T12:00:01Z",
+          "source_app": "sololeveling",
+          "schema_version": 1,
+          "payload": {}
+        },
+        "expected_user_id": "oidc-subject-1",
+        "now": "2026-08-24T12:00:00Z"
+      },
+      "expected_code": null
+    },
+    {
+      "name": "unsupported schema wins over other validation errors",
+      "input": {
+        "envelope": {
+          "event_id": "",
+          "type": "Focus.completed",
+          "user_id": "oidc-subject-2",
+          "occurred_at": "2026-08-17T11:59:59Z",
+          "source_app": "tiefgang",
+          "schema_version": 2,
+          "payload": {}
+        },
+        "expected_user_id": "oidc-subject-1",
+        "now": "2026-08-24T12:00:00Z"
+      },
+      "expected_code": "event_schema_unsupported"
+    }
+  ]
+}

@@ -1,0 +1,84 @@
+[workspace]
+git_only = true
+release_always = false
+changelog_update = true
+dependencies_update = false
+git_release_enable = false
+git_tag_enable = false
+git_tag_name = "v{{ version }}"
+pr_branch_prefix = "release-plz-"
+pr_name = "chore: prepare baukit release train{% if version %} v{{ version }}{% endif %}"
+semver_check = true
+
+# Every crate shares rust/Cargo.toml's workspace version. Only baukit-core is
+# allowed to emit a tag, producing one tag for the complete train.
+[[package]]
+name = "baukit-core"
+version_group = "baukit-release-train"
+publish = false
+git_tag_enable = true
+
+[[package]]
+name = "baukit-runtime"
+version_group = "baukit-release-train"
+publish = false
+
+[[package]]
+name = "baukit-config"
+version_group = "baukit-release-train"
+publish = false
+
+[[package]]
+name = "baukit-http"
+version_group = "baukit-release-train"
+publish = false
+
+[[package]]
+name = "baukit-ops"
+version_group = "baukit-release-train"
+publish = false
+
+[[package]]
+name = "baukit-telemetry"
+version_group = "baukit-release-train"
+publish = false
+
+[[package]]
+name = "baukit-openapi"
+version_group = "baukit-release-train"
+publish = false
+
+[[package]]
+name = "baukit-credential-vault"
+version_group = "baukit-release-train"
+publish = false
+
+[[package]]
+name = "baukit-events"
+version_group = "baukit-release-train"
+publish = false
+
+[[package]]
+name = "baukit-ratelimit"
+version_group = "baukit-release-train"
+publish = false
+
+[[package]]
+name = "baukit-sync"
+version_group = "baukit-release-train"
+publish = false
+
+[[package]]
+name = "baukit-integrations"
+version_group = "baukit-release-train"
+publish = false
+
+[[package]]
+name = "baukit-test"
+version_group = "baukit-release-train"
+publish = false
+
+[changelog]
+protect_breaking_commits = true
+tag_pattern = "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+sort_commits = "oldest"

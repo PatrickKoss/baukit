@@ -1,0 +1,11 @@
+API service: {{ include "baukit-app.fullname" . }}:{{ .Values.service.port }}
+Operations service (private): {{ include "baukit-app.fullname" . }}-ops:{{ .Values.opsService.port }}
+{{- if .Values.ingress.enabled }}
+Public hosts:
+{{- range .Values.ingress.hosts }}
+  https://{{ .host }}
+{{- end }}
+{{- else }}
+Ingress is disabled.
+{{- end }}
+

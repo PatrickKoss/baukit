@@ -1,0 +1,20 @@
+{{- if and .Values.prometheusRule.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/PrometheusRule") }}
+{{- $recording := .Files.Get "recording-rules/baukit-red.rules.yml" | fromYaml -}}
+{{- $alerts := .Files.Get "alerts/baukit.rules.yml" | fromYaml -}}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "baukit-observability.fullname" . }}
+  labels:
+    {{- include "baukit-observability.labels" . | nindent 4 }}
+    {{- with .Values.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.prometheusRule.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  groups:
+    {{- concat $recording.groups $alerts.groups | toYaml | nindent 4 }}
+{{- end }}

@@ -1,0 +1,69 @@
+[
+  {
+    "name": "language preference from old peer",
+    "key": "language",
+    "wire": "absent",
+    "expectedState": "absent",
+    "roundTrip": "absent"
+  },
+  {
+    "name": "language preference value",
+    "key": "language",
+    "wire": { "language": "de" },
+    "expectedState": "value",
+    "expectedValue": "de",
+    "roundTrip": { "language": "de" }
+  },
+  {
+    "name": "theme mode from old peer",
+    "key": "theme_mode",
+    "wire": "absent",
+    "expectedState": "absent",
+    "roundTrip": "absent"
+  },
+  {
+    "name": "theme mode value",
+    "key": "theme_mode",
+    "wire": { "theme_mode": "dark" },
+    "expectedState": "value",
+    "expectedValue": "dark",
+    "roundTrip": { "theme_mode": "dark" }
+  },
+  {
+    "name": "game-layer boolean from old peer",
+    "key": "game_layer_enabled",
+    "wire": "absent",
+    "expectedState": "absent",
+    "roundTrip": "absent"
+  },
+  {
+    "name": "game-layer boolean value",
+    "key": "game_layer_enabled",
+    "wire": { "game_layer_enabled": true },
+    "expectedState": "value",
+    "expectedValue": true,
+    "roundTrip": { "game_layer_enabled": true }
+  },
+  {
+    "name": "custom color from old peer",
+    "key": "custom_color",
+    "wire": "absent",
+    "expectedState": "absent",
+    "roundTrip": "absent"
+  },
+  {
+    "name": "custom color explicitly cleared",
+    "key": "custom_color",
+    "wire": { "custom_color": null },
+    "expectedState": "null",
+    "roundTrip": { "custom_color": null }
+  },
+  {
+    "name": "custom color selected",
+    "key": "custom_color",
+    "wire": { "custom_color": "#C026D3" },
+    "expectedState": "value",
+    "expectedValue": "#C026D3",
+    "roundTrip": { "custom_color": "#C026D3" }
+  }
+]

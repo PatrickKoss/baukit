@@ -1,0 +1,47 @@
+product: {{ context.app_name }}
+deploymentEnvironment: staging
+
+config:
+  existingSecretRefs:
+    - name: {{ context.app_name }}-runtime
+{% if context.worker %}  overrides:
+    WORKER__CONCURRENCY: 5
+    WORKER__LEASE_DURATION_SECONDS: 900
+    WORKER__JOB_TIMEOUT_SECONDS: 600
+    WORKER__POLL_INTERVAL_MILLISECONDS: 250
+{% endif %}
+
+api:
+  image:
+    repository: ghcr.io/patrickkoss/{{ context.app_name }}
+    tag: latest{% if context.port_offset > 0 %}
+  ports:
+    http: {{ context.api_host_port }}
+    ops: {{ context.ops_host_port }}
+{% endif %}
+
+migration:
+  enabled: true
+  image:
+    repository: ghcr.io/patrickkoss/{{ context.app_name }}-migrate
+    tag: latest
+  command:
+    - /app/migrate
+
+worker:
+  enabled: {{ context.worker }}
+{% if context.worker %}  image:
+    repository: ghcr.io/patrickkoss/{{ context.app_name }}-worker
+    tag: latest
+  command:
+    - /app/worker{% if context.port_offset > 0 %}
+  ops:
+    port: {{ context.ops_host_port }}
+{% endif %}
+{% endif %}
+
+ingress:
+  enabled: false
+
+serviceMonitor:
+  enabled: false

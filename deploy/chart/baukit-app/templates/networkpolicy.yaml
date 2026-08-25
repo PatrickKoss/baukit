@@ -1,0 +1,282 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "baukit-app.fullname" . }}-default-deny
+  labels:
+    {{- include "baukit-app.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "baukit-app.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "baukit-app.fullname" . }}-api-ingress
+  labels:
+    {{- include "baukit-app.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "baukit-app.processSelectorLabels" (dict "root" . "process" "api") | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            {{- toYaml .Values.networkPolicy.ingressController.namespaceSelector | nindent 12 }}
+          podSelector:
+            {{- toYaml .Values.networkPolicy.ingressController.podSelector | nindent 12 }}
+      ports:
+        - port: {{ .Values.api.ports.http }}
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "baukit-app.fullname" . }}-api-ops-ingress
+  labels:
+    {{- include "baukit-app.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "baukit-app.processSelectorLabels" (dict "root" . "process" "api") | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            {{- toYaml .Values.networkPolicy.prometheus.namespaceSelector | nindent 12 }}
+          podSelector:
+            {{- toYaml .Values.networkPolicy.prometheus.podSelector | nindent 12 }}
+      ports:
+        - port: {{ .Values.api.ports.ops }}
+          protocol: TCP
+{{- if and .Values.worker.enabled .Values.worker.ops.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "baukit-app.fullname" . }}-worker-ops-ingress
+  labels:
+    {{- include "baukit-app.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "baukit-app.processSelectorLabels" (dict "root" . "process" "worker") | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            {{- toYaml .Values.networkPolicy.prometheus.namespaceSelector | nindent 12 }}
+          podSelector:
+            {{- toYaml .Values.networkPolicy.prometheus.podSelector | nindent 12 }}
+      ports:
+        - port: {{ .Values.worker.ops.port }}
+          protocol: TCP
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "baukit-app.fullname" . }}-egress
+  labels:
+    {{- include "baukit-app.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "baukit-app.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            {{- toYaml .Values.networkPolicy.dns.namespaceSelector | nindent 12 }}
+          podSelector:
+            {{- toYaml .Values.networkPolicy.dns.podSelector | nindent 12 }}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    {{- if .Values.networkPolicy.dns.k3sCompatible }}
+    # k3s commonly evaluates the CoreDNS Service IP before DNAT, where the
+    # pod-selected rule above cannot match. Restrict this compatibility rule
+    # to DNS ports while leaving it destination-independent.
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    {{- end }}
+    {{- with .Values.networkPolicy.additionalEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- if .Values.redis.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "baukit-app.redisName" . }}-ingress
+  labels:
+    {{- include "baukit-app.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "baukit-app.processSelectorLabels" (dict "root" . "process" "redis") | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "baukit-app.processSelectorLabels" (dict "root" . "process" "api") | nindent 14 }}
+      ports:
+        - port: 6379
+          protocol: TCP
+        {{- if gt (int .Values.redis.replicas) 1 }}
+        - port: 26379
+          protocol: TCP
+        {{- end }}
+    {{- if gt (int .Values.redis.replicas) 1 }}
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "baukit-app.processSelectorLabels" (dict "root" . "process" "redis") | nindent 14 }}
+      ports:
+        - port: 6379
+          protocol: TCP
+        - port: 26379
+          protocol: TCP
+    {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "baukit-app.redisName" . }}-api-egress
+  labels:
+    {{- include "baukit-app.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "baukit-app.processSelectorLabels" (dict "root" . "process" "api") | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "baukit-app.processSelectorLabels" (dict "root" . "process" "redis") | nindent 14 }}
+      ports:
+        - port: 6379
+          protocol: TCP
+        {{- if gt (int .Values.redis.replicas) 1 }}
+        - port: 26379
+          protocol: TCP
+        {{- end }}
+{{- if gt (int .Values.redis.replicas) 1 }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "baukit-app.redisName" . }}-peer-egress
+  labels:
+    {{- include "baukit-app.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "baukit-app.processSelectorLabels" (dict "root" . "process" "redis") | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "baukit-app.processSelectorLabels" (dict "root" . "process" "redis") | nindent 14 }}
+      ports:
+        - port: 6379
+          protocol: TCP
+        - port: 26379
+          protocol: TCP
+{{- end }}
+{{- end }}
+{{ with .Values.api.networkPolicy.additionalEgress }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "baukit-app.fullname" $ }}-api-egress
+  labels:
+    {{- include "baukit-app.processLabels" (dict "root" $ "process" "api") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "baukit-app.processSelectorLabels" (dict "root" $ "process" "api") | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    {{- toYaml . | nindent 4 }}
+{{- end }}
+{{- if .Values.worker.enabled }}
+{{- with .Values.worker.networkPolicy.additionalEgress }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "baukit-app.fullname" $ }}-worker-egress
+  labels:
+    {{- include "baukit-app.processLabels" (dict "root" $ "process" "worker") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "baukit-app.processSelectorLabels" (dict "root" $ "process" "worker") | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    {{- toYaml . | nindent 4 }}
+{{- end }}
+{{- end }}
+{{- if .Values.migration.enabled }}
+{{- with .Values.migration.networkPolicy.additionalEgress }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "baukit-app.fullname" $ }}-migrate-egress
+  labels:
+    {{- include "baukit-app.processLabels" (dict "root" $ "process" "migrate") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "baukit-app.processSelectorLabels" (dict "root" $ "process" "migrate") | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    {{- toYaml . | nindent 4 }}
+{{- end }}
+{{- end }}
+{{- if .Values.seed.enabled }}
+{{- with .Values.seed.networkPolicy.additionalEgress }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "baukit-app.fullname" $ }}-seed-egress
+  labels:
+    {{- include "baukit-app.processLabels" (dict "root" $ "process" "seed") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "baukit-app.processSelectorLabels" (dict "root" $ "process" "seed") | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    {{- toYaml . | nindent 4 }}
+{{- end }}
+{{- end }}
+{{- end }}

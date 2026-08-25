@@ -1,0 +1,23 @@
+[package]
+name = "{{ context.app_name }}-api"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+axum.workspace = true
+{% if context.auth_oidc %}baukit-auth.workspace = true
+{% endif %}baukit-config.workspace = true
+baukit-http.workspace = true
+baukit-openapi.workspace = true
+{{ context.app_crate }}-domain.workspace = true
+{{ context.app_crate }}-ports.workspace = true
+{{ context.app_crate }}-services.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+utoipa.workspace = true
+uuid.workspace = true

@@ -1,0 +1,42 @@
+# syntax=docker/dockerfile:1.7
+
+ARG RUST_IMAGE=rust:1.95.0-bookworm
+ARG RUNTIME_IMAGE=gcr.io/distroless/cc-debian12:nonroot
+
+FROM ${RUST_IMAGE} AS builder
+ARG BACKEND_CONTEXT=.
+ARG BAUKIT_CONTEXT=.
+ARG BAUKIT_DESTINATION=/tmp/unused-baukit-context
+ARG GIT_COMMIT=unknown
+ENV GIT_COMMIT=${GIT_COMMIT}
+WORKDIR /workspace
+
+# BACKEND_CONTEXT defaults to a standalone product backend. The extra context
+# arguments let a fixture generated with --baukit-path be built from the Baukit
+# repository root without rewriting its absolute Cargo path dependencies.
+COPY ${BACKEND_CONTEXT}/ /workspace/
+COPY ${BAUKIT_CONTEXT}/ ${BAUKIT_DESTINATION}/
+RUN cargo build --locked --release -p {{ context.app_name }}-bin \
+    --bin api --bin migrate{% if context.worker %} --bin worker{% endif %}
+
+FROM ${RUNTIME_IMAGE} AS api
+WORKDIR /app
+COPY --from=builder /workspace/target/release/api /app/api
+ENTRYPOINT ["/app/api"]
+
+FROM ${RUNTIME_IMAGE} AS migrate
+# The generated migrator resolves ../../migrations from its compile-time
+# CARGO_MANIFEST_DIR. Keep that path available in the runtime image.
+WORKDIR /workspace
+COPY --from=builder /workspace/target/release/migrate /app/migrate
+COPY --from=builder /workspace/migrations /workspace/migrations
+# This file materializes the intermediate compile-time crate directory too;
+# distroless deliberately has no shell with which to create it at startup.
+COPY --from=builder /workspace/crates/{{ context.app_name }}-bin/Cargo.toml /workspace/crates/{{ context.app_name }}-bin/Cargo.toml
+ENTRYPOINT ["/app/migrate"]
+
+{% if context.worker %}FROM ${RUNTIME_IMAGE} AS worker
+WORKDIR /app
+COPY --from=builder /workspace/target/release/worker /app/worker
+ENTRYPOINT ["/app/worker"]
+{% endif %}

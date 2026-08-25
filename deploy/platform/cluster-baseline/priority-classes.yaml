@@ -1,0 +1,19 @@
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: platform-critical
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+value: 1000000
+globalDefault: false
+description: Shared platform controllers required for cluster recovery and ingress.
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: platform-standard
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+value: 100000
+globalDefault: false
+description: Shared platform services that should precede application workloads.

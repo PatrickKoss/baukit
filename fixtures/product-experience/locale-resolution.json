@@ -1,0 +1,146 @@
+[
+  {
+    "name": "null preference uses fallback",
+    "preference": null,
+    "deviceLocales": ["de-DE"],
+    "supported": ["en", "de"],
+    "fallback": "en",
+    "expected": "en"
+  },
+  {
+    "name": "boolean preference uses fallback",
+    "preference": true,
+    "deviceLocales": ["de-DE"],
+    "supported": ["en", "de"],
+    "fallback": "en",
+    "expected": "en"
+  },
+  {
+    "name": "number preference uses fallback",
+    "preference": 7,
+    "deviceLocales": ["de-DE"],
+    "supported": ["en", "de"],
+    "fallback": "en",
+    "expected": "en"
+  },
+  {
+    "name": "array preference uses fallback",
+    "preference": ["de"],
+    "deviceLocales": ["de-DE"],
+    "supported": ["en", "de"],
+    "fallback": "en",
+    "expected": "en"
+  },
+  {
+    "name": "object preference uses fallback",
+    "preference": { "locale": "de" },
+    "deviceLocales": ["de-DE"],
+    "supported": ["en", "de"],
+    "fallback": "en",
+    "expected": "en"
+  },
+  {
+    "name": "empty preference uses fallback",
+    "preference": "",
+    "deviceLocales": ["de-DE"],
+    "supported": ["en", "de"],
+    "fallback": "en",
+    "expected": "en"
+  },
+  {
+    "name": "whitespace preference uses fallback",
+    "preference": " de ",
+    "deviceLocales": ["de-DE"],
+    "supported": ["en", "de"],
+    "fallback": "en",
+    "expected": "en"
+  },
+  {
+    "name": "object-like key uses fallback",
+    "preference": "__proto__",
+    "deviceLocales": ["de-DE"],
+    "supported": ["en", "de"],
+    "fallback": "en",
+    "expected": "en"
+  },
+  {
+    "name": "path-like preference uses fallback",
+    "preference": "../de",
+    "deviceLocales": ["de-DE"],
+    "supported": ["en", "de"],
+    "fallback": "en",
+    "expected": "en"
+  },
+  {
+    "name": "oversized preference uses fallback",
+    "preference": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "deviceLocales": ["de-DE"],
+    "supported": ["en", "de"],
+    "fallback": "en",
+    "expected": "en"
+  },
+  {
+    "name": "explicit locale normalizes case and separator",
+    "preference": "DE_at",
+    "deviceLocales": [],
+    "supported": ["en", "de-AT"],
+    "fallback": "en",
+    "expected": "de-AT"
+  },
+  {
+    "name": "unsupported explicit locale ignores device locales",
+    "preference": "fr",
+    "deviceLocales": ["de-DE"],
+    "supported": ["en", "de"],
+    "fallback": "en",
+    "expected": "en"
+  },
+  {
+    "name": "exact tag across device list wins before earlier base match",
+    "preference": "system",
+    "deviceLocales": ["de-DE", "es-MX"],
+    "supported": ["en", "de", "es-MX"],
+    "fallback": "en",
+    "expected": "es-MX"
+  },
+  {
+    "name": "first supported exact device locale wins",
+    "preference": "system",
+    "deviceLocales": ["fr-FR", "de-AT", "es-MX"],
+    "supported": ["en", "de-AT", "es-MX"],
+    "fallback": "en",
+    "expected": "de-AT"
+  },
+  {
+    "name": "ordered device base match uses first supported language",
+    "preference": "system",
+    "deviceLocales": ["fr-FR", "de-DE", "es-ES"],
+    "supported": ["en", "de", "es"],
+    "fallback": "en",
+    "expected": "de"
+  },
+  {
+    "name": "regional exact tag wins over base locale",
+    "preference": "system",
+    "deviceLocales": ["de-AT"],
+    "supported": ["en", "de", "de-AT"],
+    "fallback": "en",
+    "expected": "de-AT"
+  },
+  {
+    "name": "regional device tag falls back to base locale",
+    "preference": "system",
+    "deviceLocales": ["de_AT"],
+    "supported": ["en", "de"],
+    "fallback": "en",
+    "expected": "de"
+  },
+  {
+    "name": "unsupported device locales use product fallback",
+    "preference": "system",
+    "deviceLocales": ["fr-FR", "it-IT"],
+    "supported": ["en", "de"],
+    "fallback": "de",
+    "expected": "de"
+  }
+]

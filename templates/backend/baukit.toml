@@ -1,0 +1,20 @@
+schema_version = 1
+template_version = "{{ context.template_version }}"
+
+[app]
+name = "{{ context.app_name }}"
+
+[capabilities]
+backend = true
+worker = {{ context.worker }}
+mobile = false
+web = false
+{% if context.auth_oidc %}auth = "oidc"
+{% endif %}
+
+[dependencies.baukit]
+{{ context.baukit_manifest }}
+
+[openapi]
+schema = "backend/openapi.json"
+typescript = "generated/openapi.d.ts"

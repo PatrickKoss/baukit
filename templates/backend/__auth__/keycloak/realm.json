@@ -1,0 +1,94 @@
+{
+  "realm": "{{ context.app_name }}",
+  "displayName": "{{ context.app_name }} local development",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "users": [
+    {
+      "username": "test",
+      "email": "test@{{ context.app_name }}.local",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Test",
+      "lastName": "User",
+{% if context.web or context.mobile %}      "realmRoles": ["offline_access"],
+{% endif %}      "credentials": [{ "type": "password", "value": "password", "temporary": false }]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "{{ context.app_name }}-backend",
+      "name": "Backend confidential client",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "local-backend-secret",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "backend audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "{{ context.app_name }}-backend",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }{% if context.web %},
+    {
+      "clientId": "{{ context.app_name }}-web",
+      "name": "Web public PKCE client",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://localhost:5173/*"],
+      "webOrigins": ["http://localhost:5173"],
+      "attributes": { "pkce.code.challenge.method": "S256" },
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "backend audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "{{ context.app_name }}-backend",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }{% endif %}{% if context.mobile %},
+    {
+      "clientId": "{{ context.app_name }}-mobile",
+      "name": "Mobile public PKCE client",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["{{ context.app_name }}://oauth"],
+      "webOrigins": [],
+      "attributes": { "pkce.code.challenge.method": "S256" },
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "backend audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "{{ context.app_name }}-backend",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }{% endif %}
+  ]
+}

@@ -1,0 +1,34 @@
+# Rust
+target/
+rust/target-msrv/
+
+# JavaScript and TypeScript
+node_modules/
+dist/
+.turbo/
+coverage/
+*.tsbuildinfo
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Tool output
+.cache/
+*.log
+**/__pycache__/**
+.generated-fixture/
+.generated-native-fixture/
+typescript/.playwright-browsers/
+deploy/platform/.local-state/
+examples/expo-sqlite-conformance/.expo/
+examples/expo-sqlite-conformance/android/
+examples/expo-sqlite-conformance/ios/
+examples/expo-sqlite-conformance/artifacts/

@@ -1,0 +1,32 @@
+[package]
+name = "minimal-api"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+
+[workspace]
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+dbg_macro = "warn"
+todo = "warn"
+
+[dependencies]
+axum = "=0.8.9"
+baukit-config = { path = "../../rust/crates/baukit-config" }
+baukit-http = { path = "../../rust/crates/baukit-http" }
+baukit-openapi = { path = "../../rust/crates/baukit-openapi" }
+baukit-ops = { path = "../../rust/crates/baukit-ops" }
+baukit-runtime = { path = "../../rust/crates/baukit-runtime" }
+baukit-telemetry = { path = "../../rust/crates/baukit-telemetry" }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+tokio = { version = "=1.53.1", features = ["full"] }
+utoipa = "=5.5.0"
+
+[dev-dependencies]
+tower = { version = "=0.5.3", features = ["util"] }

@@ -1,0 +1,173 @@
+{% if context.mobile %}name: Native quality
+
+on:
+  pull_request:
+    paths:
+      - mobile/**
+      - baukit.toml
+      - .github/workflows/native.yml
+  push:
+    branches: [main]
+    paths:
+      - mobile/**
+      - baukit.toml
+      - .github/workflows/native.yml
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Native platform to compile
+        required: true
+        default: android
+        type: choice
+        options:
+          - android
+          - ios
+      run_maestro:
+        description: Run product-owned mobile/.maestro critical paths (iOS only)
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: {% raw %}native-${{ github.workflow }}-${{ github.ref }}{% endraw %}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Android prebuild and assembleDebug
+    if: {% raw %}github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.platform == 'android'){% endraw %}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Enable pinned pnpm
+        run: corepack enable
+      - name: Find pnpm store
+        id: pnpm-store
+        run: echo "path=$(corepack pnpm@11.18.0 store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: {% raw %}${{ steps.pnpm-store.outputs.path }}{% endraw %}
+          key: {% raw %}${{ runner.os }}-pnpm-mobile-${{ hashFiles('mobile/pnpm-lock.yaml') }}{% endraw %}
+          restore-keys: |
+            {% raw %}${{ runner.os }}-pnpm-mobile-{% endraw %}
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: {% raw %}${{ github.ref != 'refs/heads/main' }}{% endraw %}
+      - name: Install dependencies
+        run: corepack pnpm@11.18.0 install --frozen-lockfile
+      - name: Clean Expo prebuild
+        run: |
+          set -o pipefail
+          CI=1 corepack pnpm@11.18.0 exec expo prebuild --clean --platform android 2>&1 | tee native-prebuild.log
+      - name: Compile Android debug binary
+        run: |
+          set -o pipefail
+          ./android/gradlew -p android --no-daemon --stacktrace assembleDebug 2>&1 | tee native-assemble.log
+      - name: Upload native failure diagnostics
+        if: {% raw %}${{ failure() }}{% endraw %}
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-native-failure
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            mobile/native-prebuild.log
+            mobile/native-assemble.log
+            mobile/.expo/
+            mobile/android/app/build/reports/
+            mobile/android/build/reports/
+
+  # This scheduled/manual layer requires a billed macOS runner. It is not a
+  # required pull-request gate and must not be represented by a Linux no-op.
+  ios:
+    name: iOS Simulator compile and optional Maestro
+    if: {% raw %}github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.platform == 'ios'){% endraw %}
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install and prebuild
+        run: |
+          corepack enable
+          corepack pnpm@11.18.0 install --frozen-lockfile
+          CI=1 corepack pnpm@11.18.0 exec expo prebuild --clean --platform ios
+      - name: Compile for iOS Simulator
+        run: |
+          set -euo pipefail
+          workspace="$(find ios -maxdepth 1 -name '*.xcworkspace' -print -quit)"
+          test -n "$workspace"
+          scheme="$(xcodebuild -workspace "$workspace" -list -json | python3 -c 'import json,sys; print(json.load(sys.stdin)["workspace"]["schemes"][0])')"
+          xcodebuild -workspace "$workspace" -scheme "$scheme" -configuration Debug -sdk iphonesimulator -derivedDataPath ios-build CODE_SIGNING_ALLOWED=NO build 2>&1 | tee native-ios.log
+      - name: Run product-owned Maestro critical paths when configured
+        env:
+          SCHEDULED_MAESTRO: {% raw %}${{ vars.RUN_MAESTRO_NATIVE_GATE }}{% endraw %}
+          MANUAL_MAESTRO: {% raw %}${{ inputs.run_maestro }}{% endraw %}
+        run: |
+          set -euo pipefail
+          if [[ "$MANUAL_MAESTRO" != "true" && "$SCHEDULED_MAESTRO" != "true" ]]; then
+            echo "Maestro not requested; iOS compile remains the only claimed result."
+            exit 0
+          fi
+          test -d .maestro || { echo "Maestro was requested but mobile/.maestro is missing" >&2; exit 1; }
+          simulator="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next(x["udid"] for runtime, values in d.items() if ".iOS-" in runtime for x in values if x["isAvailable"]))')"
+          xcrun simctl boot "$simulator" || true
+          xcrun simctl bootstatus "$simulator" -b
+          app="$(find ios-build/Build/Products/Debug-iphonesimulator -maxdepth 1 -name '*.app' -print -quit)"
+          test -n "$app"
+          xcrun simctl install "$simulator" "$app"
+          curl -Ls https://get.maestro.mobile.dev | bash
+          "$HOME/.maestro/bin/maestro" --device "$simulator" test .maestro
+      - name: Upload iOS failure diagnostics
+        if: {% raw %}${{ failure() }}{% endraw %}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-native-failure
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            mobile/native-ios.log
+            mobile/.expo/
+            mobile/ios-build/Logs/
+{% else %}name: Native quality unavailable
+
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+jobs:
+  unavailable:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report missing mobile capability
+        run: |
+          echo "This product was generated without the mobile capability." >&2
+          echo "Regenerate or upgrade with mobile support before running native gates." >&2
+          exit 1
+{% endif %}

@@ -1,0 +1,285 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+{% if context.backend %}  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend -> target
+      - run: cargo fmt --manifest-path backend/Cargo.toml --all --check
+      - run: cargo clippy --manifest-path backend/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --manifest-path backend/Cargo.toml -- --include-ignored
+{% if context.worker %}      # Includes the generated worker's Docker PostgreSQL outbox test.
+{% endif %}
+      - run: cargo test --manifest-path backend/Cargo.toml -p {{ context.app_name }}-bin --test openapi_drift
+
+  backend-msrv:
+    name: Backend minimum supported Rust version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
+      # Read the floor from the manifest so it is stated once. A literal here
+      # would drift silently the first time Cargo.toml is bumped.
+      - name: Read rust-version from the workspace manifest
+        id: msrv
+        run: |
+          set -euo pipefail
+          version="$(python3 -c '
+          import re, sys
+          text = open("backend/Cargo.toml").read()
+          match = re.search(r"^\s*rust-version\s*=\s*\"([^\"]+)\"", text, re.MULTILINE)
+          if match is None:
+              sys.exit("backend/Cargo.toml declares no rust-version")
+          print(match.group(1))
+          ')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Minimum supported Rust version: $version"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: {% raw %}${{ steps.msrv.outputs.version }}{% endraw %}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend -> target
+          key: {% raw %}msrv-${{ steps.msrv.outputs.version }}{% endraw %}
+      - run: cargo check --manifest-path backend/Cargo.toml --workspace --all-targets --locked
+
+  api-drift:
+    name: OpenAPI specification and consumers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend -> target
+{% if context.web or context.mobile %}      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+{% endif %}      # Regenerate in place and diff, so a failure prints the specification
+      # delta rather than only an exit code.
+      - name: Verify the committed specification matches the code
+        run: |
+          set -euo pipefail
+          committed="$(mktemp)"
+          trap 'rm -f "$committed"' EXIT
+          cp backend/openapi.json "$committed"
+          sh scripts/openapi.sh
+          diff -u "$committed" backend/openapi.json
+{% if context.web or context.mobile %}      # Every consumer that is committed is regenerated and compared. A product
+      # that has not generated its client yet has nothing to drift from.
+      - name: Regenerate and verify the committed TypeScript consumers
+        run: |
+          set -euo pipefail
+          if ! git ls-files --error-unmatch generated/openapi.d.ts >/dev/null 2>&1; then
+            echo "generated/openapi.d.ts is not committed; run scripts/openapi-client.sh and commit it."
+            exit 0
+          fi
+          sh scripts/openapi-client.sh
+          git diff --exit-code -- generated/openapi.d.ts
+{% endif %}
+  docker-build:
+    name: Production backend image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
+      - uses: docker/setup-buildx-action@v3
+      # Build only. Publishing belongs to the release workflow, not to CI.
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile
+          push: false
+          ssh: default
+          cache-from: type=gha,scope=backend-production
+          cache-to: type=gha,mode=max,scope=backend-production
+
+{% endif %}{% if context.web %}  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: corepack pnpm@11.18.0 install --frozen-lockfile
+      - run: corepack pnpm@11.18.0 build
+      - run: corepack pnpm@11.18.0 lint
+      - run: corepack pnpm@11.18.0 test
+
+  web-coverage:
+    name: Web coverage thresholds
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: corepack pnpm@11.18.0 install --frozen-lockfile
+      # Thresholds live in web/vitest.config.ts, so a local run fails the same way.
+      - run: corepack pnpm@11.18.0 run test:coverage
+      - uses: actions/upload-artifact@v4
+        if: {% raw %}${{ always() }}{% endraw %}
+        with:
+          name: web-coverage
+          path: web/coverage
+          if-no-files-found: warn
+          retention-days: 7
+
+  e2e-web:
+    name: Browser QA ({% raw %}${{ matrix.browser }}{% endraw %})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - browser: chromium
+            projects: --project=desktop-chromium --project=mobile-chrome
+          - browser: webkit
+            projects: --project=webkit-desktop --project=mobile-safari
+    defaults:
+      run:
+        working-directory: web
+    env:
+      CI: "true"
+      E2E_WORKERS: "2"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: corepack pnpm@11.18.0 install --frozen-lockfile
+      - name: Install Playwright browsers and system dependencies
+        run: corepack pnpm@11.18.0 exec playwright install --with-deps {% raw %}${{ matrix.browser }}{% endraw %}
+      - name: Build the app the browser gate serves
+        run: corepack pnpm@11.18.0 build
+      # The specs stub every API path from e2e/qa.config.ts, so this gate needs
+      # no backend, database, or identity provider.
+      - name: Run the qa specs
+        run: corepack pnpm@11.18.0 exec playwright test --config e2e/playwright.config.ts {% raw %}${{ matrix.projects }}{% endraw %}
+      - uses: actions/upload-artifact@v4
+        if: {% raw %}${{ failure() }}{% endraw %}
+        with:
+          name: playwright-failure-{% raw %}${{ matrix.browser }}{% endraw %}
+          path: |
+            web/playwright-report
+            web/test-results
+          if-no-files-found: warn
+          retention-days: 7
+
+{% endif %}{% if context.mobile %}  mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: corepack pnpm@11.18.0 install --frozen-lockfile
+      - run: corepack pnpm@11.18.0 exec tsc --noEmit
+      - run: corepack pnpm@11.18.0 lint
+      - run: corepack pnpm@11.18.0 test
+
+  mobile-coverage:
+    name: Mobile coverage thresholds
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: corepack pnpm@11.18.0 install --frozen-lockfile
+      # Thresholds live in mobile/jest.config.cjs, so a local run fails the same way.
+      - run: corepack pnpm@11.18.0 run test:coverage
+      - uses: actions/upload-artifact@v4
+        if: {% raw %}${{ always() }}{% endraw %}
+        with:
+          name: mobile-coverage
+          path: mobile/coverage
+          if-no-files-found: warn
+          retention-days: 7
+
+{% endif %}  observability-lint:
+    name: Observability metric names
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The linter and the metric vocabulary it enforces live in Baukit. A
+      # product supplies its own metric names through the shim described in
+      # docs/observability-lint.md and calls linter.main().
+      - name: Check for a product observability shim
+        id: shim
+        run: |
+          set -euo pipefail
+          if [ -f scripts/observability-lint.py ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "No scripts/observability-lint.py; this product declares no dashboards to lint."
+            echo "See docs/observability-lint.md to wire one."
+          fi
+      - uses: webfactory/ssh-agent@v0.9.1
+        if: {% raw %}${{ steps.shim.outputs.present == 'true' }}{% endraw %}
+        with:
+          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
+      - name: Fetch the matching Baukit observability contract
+        if: {% raw %}${{ steps.shim.outputs.present == 'true' }}{% endraw %}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          git clone --branch v{{ context.template_version }} --depth 1 \
+            ssh://git@github.com/patrickkoss/baukit.git .baukit
+      - name: Lint dashboards against Baukit and product metric names
+        if: {% raw %}${{ steps.shim.outputs.present == 'true' }}{% endraw %}
+        run: python3 scripts/observability-lint.py .baukit/deploy/observability/lint/check-metric-names.py

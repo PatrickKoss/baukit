@@ -1,0 +1,10 @@
+Installed Baukit observability provisioning.
+
+Dashboard ConfigMap: {{ include "baukit-observability.fullname" . }}-dashboard
+Recording-rule ConfigMap: {{ include "baukit-observability.fullname" . }}-recording-rules
+Alert-rule ConfigMap: {{ include "baukit-observability.fullname" . }}-alert-rules
+{{- if and .Values.prometheusRule.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/PrometheusRule") }}
+PrometheusRule: {{ include "baukit-observability.fullname" . }}
+{{- else if .Values.prometheusRule.enabled }}
+PrometheusRule was requested but the CRD was not advertised by the cluster.
+{{- end }}

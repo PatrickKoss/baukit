@@ -1,0 +1,23 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: postgres-restore-test
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  groups:
+    - name: baukit.postgres.restore-test
+      rules:
+        - alert: BaukitPostgresRestoreTestStale
+          expr: |
+            (time() - baukit_restore_test_last_success_timestamp_seconds > 3024000)
+            or absent(baukit_restore_test_last_success_timestamp_seconds)
+          for: 1h
+          labels:
+            severity: critical
+          annotations:
+            summary: The PostgreSQL restore test has not succeeded in 35 days
+            description: >-
+              The monthly recovery proof is absent or older than 35 days. Check
+              the postgres-restore-test CronJob and the CNPG backup object store.
+

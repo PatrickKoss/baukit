@@ -1,0 +1,163 @@
+import {
+  createContext,
+  createElement,
+  type PropsWithChildren,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from 'react';
+import Constants from 'expo-constants';
+import * as AuthSession from 'expo-auth-session';
+import {
+  safeAuthErrorMessage,
+  type OidcSession,
+  type SignInResult,
+  type SignOutResult,
+} from '@baukit/auth-native';
+import { completeExpoAuthSession, createExpoOidcClient } from '@baukit/auth-native/expo';
+
+import { signInFeedback } from './auth-feedback';
+
+completeExpoAuthSession();
+
+const configuredIssuer: unknown = Constants.expoConfig?.extra?.['oidcIssuer'];
+const configuredClientId: unknown = Constants.expoConfig?.extra?.['oidcClientId'];
+const issuer =
+  typeof configuredIssuer === 'string'
+    ? configuredIssuer
+    : 'http://localhost:{{ context.keycloak_host_port }}/realms/{{ context.app_name }}';
+const clientId =
+  typeof configuredClientId === 'string' ? configuredClientId : '{{ context.app_name }}-mobile';
+const redirectUri = AuthSession.makeRedirectUri({
+  scheme: '{{ context.app_name }}',
+  path: 'oauth',
+});
+
+export const authClient = createExpoOidcClient({
+  issuer,
+  clientId,
+  redirectUri,
+  scopes: ['openid', 'profile', 'email'],
+  offlineAccess: true,
+  storageKeyPrefix: '{{ context.app_name }}:oidc',
+});
+
+export interface OidcAuth {
+  readonly accessToken?: string;
+  readonly subject?: string;
+  readonly ready: boolean;
+  readonly error?: string;
+  readonly announcement?: string;
+  readonly sessionExpired: boolean;
+  readonly signIn: () => Promise<SignInResult | undefined>;
+  readonly signOut: () => Promise<SignOutResult | undefined>;
+}
+
+const OidcAuthContext = createContext<OidcAuth | undefined>(undefined);
+
+export function OidcAuthProvider({ children }: PropsWithChildren) {
+  const auth = useOidcAuthState();
+  return createElement(OidcAuthContext.Provider, { value: auth }, children);
+}
+
+export function useOidcAuth(): OidcAuth {
+  const auth = useContext(OidcAuthContext);
+  if (auth === undefined) {
+    throw new Error('useOidcAuth must be used within OidcAuthProvider.');
+  }
+  return auth;
+}
+
+function useOidcAuthState(): OidcAuth {
+  const [session, setSession] = useState<OidcSession>();
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState<string>();
+  const [announcement, setAnnouncement] = useState<string>();
+  const [sessionExpired, setSessionExpired] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const unsubscribe = authClient.subscribe((nextSession) => {
+      if (active) {
+        setSession(nextSession);
+      }
+    });
+    const unsubscribeExpired = authClient.subscribeSessionExpired(() => {
+      if (active) {
+        setSessionExpired(true);
+        setAnnouncement('Your session expired. Sign in again to continue.');
+      }
+    });
+    void authClient
+      .initialize()
+      .then((nextSession) => {
+        if (active) {
+          setSession(nextSession);
+          setReady(true);
+        }
+      })
+      .catch((cause: unknown) => {
+        if (active) {
+          setError(safeAuthErrorMessage(cause));
+          setReady(true);
+        }
+      });
+    return () => {
+      active = false;
+      unsubscribe();
+      unsubscribeExpired();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (session === undefined) {
+      return;
+    }
+    const delay = Math.max(session.expiresAt - Date.now() - 30_000, 0);
+    const timeout = setTimeout(() => {
+      void authClient.accessToken().catch((cause: unknown) => {
+        setError(safeAuthErrorMessage(cause));
+      });
+    }, delay);
+    return () => {
+      clearTimeout(timeout);
+    };
+  }, [session]);
+
+  const signIn = useCallback(async (): Promise<SignInResult | undefined> => {
+    setError(undefined);
+    setAnnouncement(undefined);
+    setSessionExpired(false);
+    try {
+      const result = await authClient.signIn();
+      setAnnouncement(signInFeedback(result));
+      return result;
+    } catch (cause) {
+      setError(safeAuthErrorMessage(cause));
+      return undefined;
+    }
+  }, []);
+
+  const signOut = useCallback(async (): Promise<SignOutResult | undefined> => {
+    setError(undefined);
+    setAnnouncement(undefined);
+    try {
+      return await authClient.signOut();
+    } catch (cause) {
+      setError(safeAuthErrorMessage(cause));
+      return undefined;
+    }
+  }, []);
+
+  return {
+    ...(session?.accessToken === undefined ? {} : { accessToken: session.accessToken }),
+    ...(session?.subject === undefined ? {} : { subject: session.subject }),
+    ready,
+    ...(error === undefined ? {} : { error }),
+    ...(announcement === undefined ? {} : { announcement }),
+    sessionExpired,
+    signIn,
+    signOut,
+  };
+}

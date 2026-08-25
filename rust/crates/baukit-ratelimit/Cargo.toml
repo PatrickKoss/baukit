@@ -1,0 +1,28 @@
+[package]
+name = "baukit-ratelimit"
+description = "Redis-backed identity and client-IP token-bucket rate limiting for Axum services."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+axum.workspace = true
+baukit-auth.workspace = true
+baukit-config.workspace = true
+baukit-http.workspace = true
+metrics.workspace = true
+redis.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+baukit-test.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tower = { workspace = true, features = ["util"] }

@@ -1,0 +1,64 @@
+{
+  "name": "@baukit/sync-client",
+  "version": "0.1.0",
+  "description": "Client-side scheduling, transport, status reporting, and ordering for offline-capable sync loops.",
+  "license": "MIT",
+  "author": "Patrick Koss",
+  "homepage": "https://github.com/PatrickKoss/baukit#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PatrickKoss/baukit.git",
+    "directory": "typescript/packages/sync-client"
+  },
+  "bugs": {
+    "url": "https://github.com/PatrickKoss/baukit/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./expo": {
+      "types": "./dist/expo.d.ts",
+      "import": "./dist/expo.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "pnpm run build",
+    "test": "tsc -p tsconfig.exports.json && vitest run --config ../../vitest.config.ts",
+    "lint": "eslint src --max-warnings=0",
+    "format:check": "prettier --check src type-tests package.json tsconfig*.json"
+  },
+  "devDependencies": {
+    "expo-network": "57.0.1",
+    "react-native": "0.86.2",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  },
+  "peerDependencies": {
+    "expo-network": "^57.0.1",
+    "react-native": "^0.86.2"
+  },
+  "peerDependenciesMeta": {
+    "expo-network": {
+      "optional": true
+    },
+    "react-native": {
+      "optional": true
+    }
+  }
+}

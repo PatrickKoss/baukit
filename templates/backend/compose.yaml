@@ -1,0 +1,45 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: {{ context.app_crate }}
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+    ports:
+      - "{{ context.postgres_host_port }}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d {{ context.app_crate }}"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+{% if context.auth_oidc %}  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.0
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+    ports:
+      - "{{ context.keycloak_host_port }}:8080"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          bash -ec 'exec 3<>/dev/tcp/127.0.0.1/9000;
+          printf "GET /health/ready HTTP/1.1\r\nhost: localhost\r\nConnection: close\r\n\r\n" >&3;
+          grep -q "200 OK" <&3'
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 10s
+    volumes:
+      - ./keycloak/realm.json:/opt/keycloak/data/import/{{ context.app_name }}-realm.json:ro
+
+{% endif %}
+
+volumes:
+  postgres-data:

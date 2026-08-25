@@ -1,0 +1,12 @@
+allowBuilds:
+  '@baukit/analytics-core@git+ssh://git@github.com/PatrickKoss/baukit.git': true
+  '@baukit/api-runtime@git+ssh://git@github.com/PatrickKoss/baukit.git': true
+  '@baukit/ui-tokens@git+ssh://git@github.com/PatrickKoss/baukit.git': true
+  '@baukit/data-contracts@git+ssh://git@github.com/PatrickKoss/baukit.git': true
+  '@baukit/data-contracts-expo-sqlite@git+ssh://git@github.com/PatrickKoss/baukit.git': true
+  '@baukit/localization-core@git+ssh://git@github.com/PatrickKoss/baukit.git': true
+  unrs-resolver: true
+
+peerDependencyRules:
+  allowedVersions:
+    'eslint-plugin-react-native-a11y>eslint': '9'

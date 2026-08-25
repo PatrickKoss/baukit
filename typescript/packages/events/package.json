@@ -1,0 +1,49 @@
+{
+  "name": "@baukit/events",
+  "version": "0.1.0",
+  "description": "TypeScript half of the Baukit version 1 event envelope: types, Zod schemas, and stable helpers.",
+  "license": "MIT",
+  "author": "Patrick Koss",
+  "homepage": "https://github.com/PatrickKoss/baukit#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PatrickKoss/baukit.git",
+    "directory": "typescript/packages/events"
+  },
+  "bugs": {
+    "url": "https://github.com/PatrickKoss/baukit/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "pnpm run build",
+    "test": "vitest run --config ../../vitest.config.ts",
+    "lint": "eslint src --max-warnings=0",
+    "format:check": "prettier --check src package.json tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  }
+}

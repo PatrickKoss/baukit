@@ -1,0 +1,59 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Shared private-first Baukit dependency update policy",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "automerge": false,
+  "platformAutomerge": false,
+  "dependencyDashboard": true,
+  "rangeStrategy": "pin",
+  "pinDigests": true,
+  "separateMajorMinor": true,
+  "enabledManagers": [
+    "cargo",
+    "dockerfile",
+    "flux",
+    "helm-values",
+    "helmv3",
+    "kubernetes",
+    "kustomize",
+    "npm"
+  ],
+  "flux": {
+    "managerFilePatterns": ["/(^|/)\\w[^/]*\\.ya?ml$/"]
+  },
+  "helm-values": {
+    "managerFilePatterns": ["/(^|/)\\w[^/]*values[^/]*\\.ya?ml$/"]
+  },
+  "kubernetes": {
+    "managerFilePatterns": ["/(^|/)\\w[^/]*\\.ya?ml$/"]
+  },
+  "packageRules": [
+    {
+      "description": "One reviewed PR for compatible non-major updates",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest", "lockFileMaintenance"],
+      "groupName": "non-major dependencies",
+      "groupSlug": "non-major-dependencies"
+    },
+    {
+      "description": "Cargo git dependencies use immutable release tags",
+      "matchManagers": ["cargo"],
+      "matchDatasources": ["git-tags", "github-tags", "git-refs"],
+      "rangeStrategy": "pin"
+    },
+    {
+      "description": "Flux GitRepository sources update only exact tags",
+      "matchManagers": ["flux"],
+      "matchDatasources": ["git-tags", "github-tags", "gitlab-tags"],
+      "rangeStrategy": "pin"
+    },
+    {
+      "description": "Major upgrades stay isolated for explicit review",
+      "matchUpdateTypes": ["major"],
+      "groupName": null
+    }
+  ]
+}
+

@@ -1,0 +1,20 @@
+[package]
+name = "baukit-credential-vault"
+description = "Versioned AES-256-GCM envelope encryption and a storage-neutral vault port for third-party credentials held by Baukit services."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+base64.workspace = true
+baukit-config.workspace = true
+ring.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+zeroize.workspace = true

@@ -1,0 +1,65 @@
+[
+  {
+    "name": "success",
+    "serverRetry": "not-required",
+    "sessionRetained": false,
+    "result": {
+      "status": "erased",
+      "receipt": { "operationId": "erase-1", "status": "completed" },
+      "warnings": []
+    }
+  },
+  {
+    "name": "warnings-only",
+    "serverRetry": "not-required",
+    "sessionRetained": false,
+    "result": {
+      "status": "erased",
+      "receipt": { "operationId": "erase-1", "status": "completed" },
+      "warnings": [{ "stage": "before-server", "cause": "Error" }]
+    }
+  },
+  {
+    "name": "server-failure",
+    "serverRetry": "retry",
+    "sessionRetained": true,
+    "result": {
+      "status": "server-failure",
+      "error": { "stage": "server", "cause": "TypeError" },
+      "warnings": []
+    }
+  },
+  {
+    "name": "ambiguous",
+    "serverRetry": "reconcile",
+    "sessionRetained": true,
+    "result": {
+      "status": "ambiguous",
+      "error": { "stage": "server", "cause": "TimeoutError" },
+      "warnings": []
+    }
+  },
+  {
+    "name": "local-failure",
+    "serverRetry": "not-required",
+    "sessionRetained": false,
+    "result": {
+      "status": "local-failure",
+      "receipt": { "operationId": "erase-1", "status": "completed" },
+      "error": { "stage": "local", "cause": "RangeError" },
+      "signOutError": null,
+      "warnings": []
+    }
+  },
+  {
+    "name": "signout-failure",
+    "serverRetry": "not-required",
+    "sessionRetained": true,
+    "result": {
+      "status": "signout-failure",
+      "receipt": { "operationId": "erase-1", "status": "completed" },
+      "error": { "stage": "sign-out", "cause": "AbortError" },
+      "warnings": []
+    }
+  }
+]

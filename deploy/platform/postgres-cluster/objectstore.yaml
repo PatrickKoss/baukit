@@ -1,0 +1,32 @@
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: postgres-backups
+spec:
+  retentionPolicy: 30d
+  instanceSidecarConfiguration:
+    retentionPolicyIntervalSeconds: 1800
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+  configuration:
+    # Required schema marker. The overlay MUST replace this entire path.
+    destinationPath: s3://__OVERLAY_REQUIRED__/
+    s3Credentials:
+      accessKeyId:
+        name: postgres-backup-credentials
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: postgres-backup-credentials
+        key: ACCESS_SECRET_KEY
+    wal:
+      compression: gzip
+      maxParallel: 2
+    data:
+      compression: gzip
+      jobs: 1
+

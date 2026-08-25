@@ -1,0 +1,38 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: flagger
+  namespace: flagger-system
+spec:
+  interval: 30m
+  timeout: 5m
+  chart:
+    spec:
+      chart: flagger
+      version: "1.44.0"
+      sourceRef:
+        kind: HelmRepository
+        name: flagger
+        namespace: flagger-system
+      interval: 24h
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    meshProvider: traefik
+    metricsServer: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
+    selectorLabels: baukit.dev/workload
+    serviceMonitor:
+      enabled: true
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+

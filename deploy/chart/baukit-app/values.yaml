@@ -1,0 +1,277 @@
+nameOverride: ""
+fullnameOverride: ""
+
+product: minimal-api
+deploymentEnvironment: local
+
+imagePullSecrets: []
+
+podLabels: {}
+podAnnotations: {}
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+serviceAccount:
+  automountToken: false
+
+config:
+  # Defaults to product, normalized as an uppercase environment-variable prefix.
+  envPrefix: ""
+  otlpEndpoint: ""
+  # Keys are suffixes such as MAX_NOTES or DATABASE__MAX_CONNECTIONS.
+  overrides: {}
+  # Existing Secrets are mounted with envFrom. Secret values never belong here.
+  existingSecretRefs: []
+
+api:
+  replicas: 1
+  image:
+    repository: ghcr.io/example/minimal-api
+    tag: latest
+    pullPolicy: IfNotPresent
+  command: []
+  args: []
+  # Raw container env entries appended after the chart-managed environment.
+  env: []
+  # Pod volumes and matching API container mounts.
+  volumes: []
+  volumeMounts: []
+  ports:
+    http: 8080
+    ops: 9090
+  terminationGracePeriodSeconds: 30
+  strategy:
+    maxUnavailable: 0
+    maxSurge: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 2
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 3
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  networkPolicy:
+    additionalEgress: []
+
+worker:
+  enabled: false
+  replicas: 1
+  image:
+    repository: ghcr.io/example/minimal-worker
+    tag: latest
+    pullPolicy: IfNotPresent
+  command: []
+  args: []
+  env: []
+  volumes: []
+  volumeMounts: []
+  ops:
+    enabled: true
+    port: 9090
+  terminationGracePeriodSeconds: 30
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 2
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 3
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  networkPolicy:
+    additionalEgress: []
+
+# Optional product-scoped Redis for expendable state such as rate limiting.
+# Use one replica for direct Redis, or an odd replica count of at least three
+# for Sentinel HA. Products configure their own <PREFIX>__RATE_LIMIT__REDIS_URL
+# with the matching URL scheme; the chart does not inject application config.
+redis:
+  enabled: false
+  # 1 creates a Deployment. Odd values >= 3 create a Redis + Sentinel
+  # StatefulSet. Even values and 2 are rejected because they cannot provide a
+  # reliable Sentinel majority.
+  replicas: 1
+  image:
+    repository: redis
+    tag: 8.10.0-alpine
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 10m
+      memory: 16Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+  livenessProbe:
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+  readinessProbe:
+    initialDelaySeconds: 2
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 3
+
+migration:
+  enabled: true
+  image:
+    repository: ghcr.io/example/minimal-migrate
+    tag: latest
+    pullPolicy: IfNotPresent
+  command:
+    - /app/migrate
+  args: []
+  env: []
+  volumes: []
+  volumeMounts: []
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+  networkPolicy:
+    additionalEgress: []
+
+seed:
+  enabled: false
+  allowProduction: false
+  image:
+    repository: ghcr.io/example/minimal-seed
+    tag: latest
+    pullPolicy: IfNotPresent
+  command:
+    - /app/seed
+  args: []
+  env: []
+  volumes: []
+  volumeMounts: []
+  backoffLimit: 1
+  activeDeadlineSeconds: 600
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+  networkPolicy:
+    additionalEgress: []
+
+service:
+  type: ClusterIP
+  port: 80
+  annotations: {}
+
+opsService:
+  type: ClusterIP
+  port: 9090
+  annotations: {}
+  prometheusScrape:
+    enabled: true
+    path: /metrics
+
+workerOpsService:
+  type: ClusterIP
+  port: 9090
+  annotations: {}
+  prometheusScrape:
+    enabled: true
+    path: /metrics
+
+ingress:
+  enabled: false
+  className: traefik
+  annotations: {}
+  certManager:
+    clusterIssuer: ""
+  # Example: namespace-traefik-ratelimit@kubernetescrd
+  rateLimitMiddleware: ""
+  hosts:
+    - host: minimal-api.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: ""
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  labels: {}
+
+networkPolicy:
+  enabled: true
+  ingressController:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: kube-system
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/name: traefik
+  prometheus:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: observability
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/name: prometheus
+  dns:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: kube-system
+    podSelector:
+      matchLabels:
+        k8s-app: kube-dns
+    # Add a destination-unrestricted TCP/UDP port-53 rule for k3s CNIs that
+    # enforce policy against the CoreDNS Service IP before DNAT.
+    k3sCompatible: false
+  # Kubernetes NetworkPolicy egress rules appended after the DNS rule.
+  additionalEgress: []

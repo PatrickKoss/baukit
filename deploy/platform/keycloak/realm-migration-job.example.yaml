@@ -1,0 +1,54 @@
+# Skeleton only; copy to the overlay for a real post-creation change. Give every
+# migration an immutable sequence/name and image digest, and make the migration
+# script idempotent against the Keycloak Admin API.
+#
+# apiVersion: batch/v1
+# kind: Job
+# metadata:
+#   name: keycloak-realm-migration-0001
+#   labels:
+#     app.kubernetes.io/name: keycloak-realm-migration
+# spec:
+#   backoffLimit: 2
+#   activeDeadlineSeconds: 600
+#   ttlSecondsAfterFinished: 86400
+#   template:
+#     metadata:
+#       labels:
+#         app.kubernetes.io/name: keycloak-realm-migration
+#     spec:
+#       restartPolicy: Never
+#       containers:
+#         - name: migrate
+#           image: MIGRATION_IMAGE_REQUIRED@sha256:DIGEST_REQUIRED
+#           args:
+#             - apply
+#             - --migration=0001
+#             - --realm=PRODUCT_REALM_REQUIRED
+#           env:
+#             - name: KEYCLOAK_URL
+#               value: https://keycloak-service:8443
+#             - name: KEYCLOAK_CLIENT_ID
+#               valueFrom:
+#                 secretKeyRef:
+#                   name: keycloak-realm-migrator
+#                   key: client-id
+#             - name: KEYCLOAK_CLIENT_SECRET
+#               valueFrom:
+#                 secretKeyRef:
+#                   name: keycloak-realm-migrator
+#                   key: client-secret
+#           resources:
+#             requests:
+#               cpu: 25m
+#               memory: 64Mi
+#             limits:
+#               cpu: 250m
+#               memory: 256Mi
+#           securityContext:
+#             allowPrivilegeEscalation: false
+#             capabilities:
+#               drop:
+#                 - ALL
+#             readOnlyRootFilesystem: true
+

@@ -1,0 +1,5 @@
+.expo/
+android/
+ios/
+artifacts/
+node_modules/

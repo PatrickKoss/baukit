@@ -1,0 +1,151 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: alloy
+  namespace: observability
+spec:
+  interval: 30m
+  timeout: 10m
+  dependsOn:
+    - name: loki
+      namespace: observability
+  chart:
+    spec:
+      chart: alloy
+      version: "1.11.1"
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: observability
+      interval: 24h
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    crds:
+      create: false
+    controller:
+      type: daemonset
+    alloy:
+      enableReporting: false
+      extraEnv:
+        - name: DEPLOYMENT_ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: observability-cluster
+              key: environment
+      mounts:
+        varlog: true
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 300m
+          memory: 384Mi
+      configMap:
+        content: |-
+          // Alloy owns logs only. Metrics remain Prometheus-scraped and
+          // applications send traces directly to Tempo's OTLP service.
+          discovery.kubernetes "pods" {
+            role = "pod"
+          }
+
+          discovery.relabel "pod_logs" {
+            targets = discovery.kubernetes.pods.targets
+
+            rule {
+              source_labels = ["__meta_kubernetes_namespace"]
+              target_label  = "namespace"
+            }
+
+            // Platform workloads retain the cluster-wide fallback while app
+            // pods can identify independent environments sharing a cluster.
+            rule {
+              target_label = "environment"
+              replacement  = sys.env("DEPLOYMENT_ENVIRONMENT")
+            }
+
+            rule {
+              source_labels = ["__meta_kubernetes_pod_label_baukit_dev_environment"]
+              regex         = "(.+)"
+              replacement   = "$1"
+              target_label  = "environment"
+            }
+
+            rule {
+              source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_part_of", "__meta_kubernetes_pod_label_baukit_dev_process"]
+              separator     = "/"
+              regex         = "(.+)/(.+)"
+              replacement   = "$1-$2"
+              target_label  = "service"
+            }
+
+            rule {
+              source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]
+              separator     = "/"
+              target_label  = "__path__"
+              replacement   = "/var/log/pods/*$1/*.log"
+            }
+          }
+
+          local.file_match "pod_logs" {
+            path_targets = discovery.relabel.pod_logs.output
+          }
+
+          loki.source.file "pod_logs" {
+            targets    = local.file_match.pod_logs.targets
+            forward_to = [loki.process.pod_logs.receiver]
+          }
+
+          loki.process "pod_logs" {
+            stage.cri {}
+
+            stage.json {
+              expressions = {
+                level = "level",
+              }
+            }
+
+            stage.labels {
+              values = {
+                level = "",
+              }
+            }
+
+            stage.label_drop {
+              values = ["filename", "stream"]
+            }
+
+            forward_to = [loki.write.default.receiver]
+          }
+
+          loki.write "default" {
+            endpoint {
+              url = "http://loki-gateway.observability.svc.cluster.local/loki/api/v1/push"
+            }
+          }
+    configReloader:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi
+    rbac:
+      create: true
+      rules:
+        - apiGroups:
+            - ""
+          resources:
+            - pods
+          verbs:
+            - get
+            - list
+            - watch
+    serviceMonitor:
+      enabled: true

@@ -1,0 +1,6 @@
+[tools]
+java = "temurin-21"
+node = { version = "24", postinstall = "corepack enable" }
+rust = { version = "1.97.1", components = "clippy,rustfmt" }
+swift = "6.3.3"
+"github:xtool-org/xtool" = { version = "1.17.0", asset_pattern = "xtool-x86_64.AppImage", postinstall = "cd \"$MISE_TOOL_INSTALL_PATH\" && ./xtool.AppImage --appimage-extract >/dev/null && printf '#!/bin/sh\nexec \"$(dirname \"$(readlink -f \"$0\")\")/squashfs-root/AppRun\" \"$@\"\n' > xtool && chmod +x xtool" }

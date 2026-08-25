@@ -1,0 +1,23 @@
+[package]
+name = "baukit-runtime"
+description = "Process lifecycle and service composition primitives for Baukit applications."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+axum.workspace = true
+baukit-core.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+baukit-telemetry.workspace = true
+tokio = { workspace = true, features = ["test-util"] }

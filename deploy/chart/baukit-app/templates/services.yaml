@@ -1,0 +1,76 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "baukit-app.fullname" . }}
+  labels:
+    {{- include "baukit-app.processLabels" (dict "root" . "process" "api") | nindent 4 }}
+    baukit.dev/endpoint: api
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "baukit-app.processSelectorLabels" (dict "root" . "process" "api") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "baukit-app.fullname" . }}-ops
+  labels:
+    {{- include "baukit-app.processLabels" (dict "root" . "process" "api") | nindent 4 }}
+    baukit.dev/endpoint: ops
+  {{- $apiOpsAnnotations := deepCopy .Values.opsService.annotations }}
+  {{- if .Values.opsService.prometheusScrape.enabled }}
+  {{- $_ := set $apiOpsAnnotations "prometheus.io/scrape" "true" }}
+  {{- $_ := set $apiOpsAnnotations "prometheus.io/path" .Values.opsService.prometheusScrape.path }}
+  {{- $_ := set $apiOpsAnnotations "prometheus.io/port" (toString .Values.opsService.port) }}
+  {{- end }}
+  {{- with $apiOpsAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.opsService.type }}
+  selector:
+    {{- include "baukit-app.processSelectorLabels" (dict "root" . "process" "api") | nindent 4 }}
+  ports:
+    - name: metrics
+      port: {{ .Values.opsService.port }}
+      targetPort: ops
+      protocol: TCP
+{{- if and .Values.worker.enabled .Values.worker.ops.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "baukit-app.fullname" . }}-worker-ops
+  labels:
+    {{- include "baukit-app.processLabels" (dict "root" . "process" "worker") | nindent 4 }}
+    baukit.dev/endpoint: ops
+  {{- $workerOpsAnnotations := deepCopy .Values.workerOpsService.annotations }}
+  {{- if .Values.workerOpsService.prometheusScrape.enabled }}
+  {{- $_ := set $workerOpsAnnotations "prometheus.io/scrape" "true" }}
+  {{- $_ := set $workerOpsAnnotations "prometheus.io/path" .Values.workerOpsService.prometheusScrape.path }}
+  {{- $_ := set $workerOpsAnnotations "prometheus.io/port" (toString .Values.workerOpsService.port) }}
+  {{- end }}
+  {{- with $workerOpsAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.workerOpsService.type }}
+  selector:
+    {{- include "baukit-app.processSelectorLabels" (dict "root" . "process" "worker") | nindent 4 }}
+  ports:
+    - name: metrics
+      port: {{ .Values.workerOpsService.port }}
+      targetPort: ops
+      protocol: TCP
+{{- end }}

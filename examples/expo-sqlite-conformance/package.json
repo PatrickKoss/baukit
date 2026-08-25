@@ -1,0 +1,29 @@
+{
+  "name": "baukit-expo-sqlite-conformance",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "expo/AppEntry.js",
+  "scripts": {
+    "android": "expo run:android",
+    "prebuild:android": "expo prebuild --clean --platform android",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@baukit/data-contracts": "file:../../typescript/packages/data-contracts",
+    "@baukit/data-contracts-expo-sqlite": "file:../../typescript/packages/data-contracts-expo-sqlite",
+    "expo": "57.0.11",
+    "expo-crypto": "57.0.1",
+    "expo-sqlite": "57.0.1",
+    "react": "19.2.8",
+    "react-native": "0.86.2"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.18",
+    "typescript": "6.0.3"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "packageManager": "pnpm@11.18.0"
+}

@@ -1,0 +1,17 @@
+# Composed "everything" fixture: every platform base at once.
+# Not a deployable flavor — exists so validate.sh proves the bases compose
+# without resource collisions. Real flavors pick a subset (see ../../README.md).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../cert-manager
+  - ../../cluster-baseline
+  - ../../cnpg
+  - ../../flagger
+  - ../../hcloud
+  - ../../keycloak
+  - ../../kured
+  - ../../kyverno
+  - ../../observability-stack
+  - ../../postgres-cluster
+  - ../../traefik

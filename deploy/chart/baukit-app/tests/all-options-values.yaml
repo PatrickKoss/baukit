@@ -1,0 +1,99 @@
+product: chart-options
+fullnameOverride: chart-options
+
+api:
+  env:
+    - name: API_CACHE_DIR
+      value: /var/cache/api
+  volumes:
+    - name: api-cache
+      emptyDir:
+        sizeLimit: 32Mi
+  volumeMounts:
+    - name: api-cache
+      mountPath: /var/cache/api
+  networkPolicy:
+    additionalEgress:
+      - to:
+          - ipBlock:
+              cidr: 192.0.2.10/32
+        ports:
+          - protocol: TCP
+            port: 443
+
+worker:
+  enabled: true
+  env:
+    - name: TMPDIR
+      value: /work
+  volumes:
+    - name: clone-workspaces
+      emptyDir:
+        sizeLimit: 256Mi
+  volumeMounts:
+    - name: clone-workspaces
+      mountPath: /work
+  networkPolicy:
+    additionalEgress:
+      - to:
+          - ipBlock:
+              cidr: 0.0.0.0/0
+        ports:
+          - protocol: TCP
+            port: 22
+          - protocol: TCP
+            port: 9418
+
+migration:
+  env:
+    - name: MIGRATION_LOCK_TIMEOUT_SECONDS
+      value: "30"
+  volumes:
+    - name: migration-state
+      emptyDir: {}
+  volumeMounts:
+    - name: migration-state
+      mountPath: /var/run/migration
+  networkPolicy:
+    additionalEgress:
+      - to:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/name: postgres
+        ports:
+          - protocol: TCP
+            port: 5432
+
+seed:
+  enabled: true
+  env:
+    - name: SEED_FIXTURE_SET
+      value: smoke
+  volumes:
+    - name: seed-input
+      configMap:
+        name: chart-options-seed-input
+  volumeMounts:
+    - name: seed-input
+      mountPath: /var/lib/seed
+      readOnly: true
+  networkPolicy:
+    additionalEgress:
+      - to:
+          - ipBlock:
+              cidr: 198.51.100.20/32
+        ports:
+          - protocol: TCP
+            port: 443
+
+networkPolicy:
+  dns:
+    k3sCompatible: true
+  additionalEgress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: alloy
+      ports:
+        - protocol: TCP
+          port: 4317

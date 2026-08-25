@@ -1,0 +1,71 @@
+# Integration-proof values for a CLI-generated `fixture` product. The images
+# are built from the generated Dockerfile and imported into k3d by the Wave I2
+# procedure; runtime credentials remain in Kubernetes Secrets.
+fullnameOverride: fixture
+product: fixture
+deploymentEnvironment: local
+
+config:
+  otlpEndpoint: http://tempo.observability.svc.cluster.local:4317
+  overrides:
+    AUTH__ISSUER: http://keycloak-service.keycloak.svc.cluster.local:8080/realms/fixture
+    AUTH__AUDIENCE: fixture-backend
+    DATABASE__MAX_CONNECTIONS: "5"
+    WORKER__CONCURRENCY: "1"
+  existingSecretRefs:
+    - name: fixture-runtime
+
+api:
+  image:
+    repository: fixture-api
+    tag: i2
+    pullPolicy: Never
+  command:
+    - /app/api
+
+worker:
+  enabled: true
+  image:
+    repository: fixture-worker
+    tag: i2
+    pullPolicy: Never
+  command:
+    - /app/worker
+
+migration:
+  image:
+    repository: fixture-migrate
+    tag: i2
+    pullPolicy: Never
+  command:
+    - /app/migrate
+
+ingress:
+  enabled: true
+  hosts:
+    - host: fixture.localhost
+      paths:
+        - path: /
+          pathType: Prefix
+
+serviceMonitor:
+  enabled: true
+
+networkPolicy:
+  ingressController:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: traefik
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/name: traefik
+  dns:
+    k3sCompatible: true
+  additionalEgress:
+    - ports:
+        - port: 5432
+          protocol: TCP
+        - port: 8080
+          protocol: TCP
+        - port: 4317
+          protocol: TCP

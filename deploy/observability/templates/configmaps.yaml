@@ -1,0 +1,57 @@
+{{- if .Values.dashboardConfigMap.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "baukit-observability.fullname" . }}-dashboard
+  labels:
+    {{- include "baukit-observability.labels" . | nindent 4 }}
+    baukit.dev/observability-kind: dashboard
+    {{- with .Values.dashboardConfigMap.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.dashboardConfigMap.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  baukit-service-overview.json: |
+    {{- .Files.Get "dashboards/baukit-service-overview.json" | nindent 4 }}
+{{- end }}
+{{- if .Values.ruleConfigMaps.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "baukit-observability.fullname" . }}-recording-rules
+  labels:
+    {{- include "baukit-observability.labels" . | nindent 4 }}
+    baukit.dev/observability-kind: recording-rules
+    {{- with .Values.ruleConfigMaps.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.ruleConfigMaps.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  baukit-red.rules.yml: |
+    {{- .Files.Get "recording-rules/baukit-red.rules.yml" | nindent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "baukit-observability.fullname" . }}-alert-rules
+  labels:
+    {{- include "baukit-observability.labels" . | nindent 4 }}
+    baukit.dev/observability-kind: alert-rules
+    {{- with .Values.ruleConfigMaps.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.ruleConfigMaps.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  baukit.rules.yml: |
+    {{- .Files.Get "alerts/baukit.rules.yml" | nindent 4 }}
+{{- end }}

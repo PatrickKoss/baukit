@@ -1,0 +1,29 @@
+[package]
+name = "baukit-ops"
+description = "Operational health, readiness, metrics, and build-information endpoints."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish = false
+build = "build.rs"
+
+[lints]
+workspace = true
+
+[features]
+default = []
+sqlx-postgres = ["dep:sqlx"]
+
+[dependencies]
+axum.workspace = true
+baukit-core.workspace = true
+baukit-telemetry.workspace = true
+serde.workspace = true
+sqlx = { workspace = true, optional = true }
+tokio.workspace = true
+
+[dev-dependencies]
+metrics-exporter-prometheus.workspace = true
+serde_json.workspace = true
+tower.workspace = true

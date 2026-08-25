@@ -1,0 +1,2 @@
+# One unresolved metric name per line. Keep this file empty when there are no
+# accepted gaps. Verification fails when the live gap set differs either way.

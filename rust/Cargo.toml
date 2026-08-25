@@ -1,0 +1,89 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/baukit-auth",
+  "crates/baukit-core",
+  "crates/baukit-credential-vault",
+  "crates/baukit-events",
+  "crates/baukit-runtime",
+  "crates/baukit-config",
+  "crates/baukit-http",
+  "crates/baukit-integrations",
+  "crates/baukit-jobs",
+  "crates/baukit-ops",
+  "crates/baukit-telemetry",
+  "crates/baukit-openapi",
+  "crates/baukit-push",
+  "crates/baukit-ratelimit",
+  "crates/baukit-sync",
+  "crates/baukit-test",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+repository = "https://github.com/patrickkoss/baukit"
+
+[workspace.dependencies]
+axum = "=0.8.9"
+base64 = "=0.22.1"
+baukit-auth = { version = "=0.1.0", path = "crates/baukit-auth" }
+baukit-config = { version = "=0.1.0", path = "crates/baukit-config" }
+baukit-core = { version = "=0.1.0", path = "crates/baukit-core" }
+baukit-credential-vault = { version = "=0.1.0", path = "crates/baukit-credential-vault" }
+baukit-events = { version = "=0.1.0", path = "crates/baukit-events" }
+baukit-http = { version = "=0.1.0", path = "crates/baukit-http" }
+baukit-integrations = { version = "=0.1.0", path = "crates/baukit-integrations" }
+baukit-jobs = { version = "=0.1.0", path = "crates/baukit-jobs" }
+baukit-openapi = { version = "=0.1.0", path = "crates/baukit-openapi" }
+baukit-push = { version = "=0.1.0", path = "crates/baukit-push" }
+baukit-ratelimit = { version = "=0.1.0", path = "crates/baukit-ratelimit" }
+baukit-ops = { version = "=0.1.0", path = "crates/baukit-ops" }
+baukit-runtime = { version = "=0.1.0", path = "crates/baukit-runtime" }
+baukit-sync = { version = "=0.1.0", path = "crates/baukit-sync" }
+baukit-telemetry = { version = "=0.1.0", path = "crates/baukit-telemetry" }
+baukit-test = { version = "=0.1.0", path = "crates/baukit-test" }
+chrono = { version = "=0.4.45", features = ["serde"] }
+config = "=0.15.25"
+dotenvy = "=0.15.7"
+metrics = "=0.24.6"
+metrics-exporter-prometheus = "=0.18.3"
+metrics-util = "=0.20.4"
+opentelemetry = "=0.32.0"
+opentelemetry-otlp = { version = "=0.32.0", default-features = false, features = ["grpc-tonic", "trace"] }
+opentelemetry_sdk = "=0.32.1"
+pem = "=3.0.6"
+regex = "=1.13.1"
+reqwest = { version = "=0.12.28", default-features = false, features = ["json", "rustls-tls"] }
+redis = { version = "=1.5.0", default-features = false, features = ["connection-manager", "sentinel", "tokio-comp"] }
+ring = "=0.17.14"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_html_form = "=0.4.1"
+serde_json = "=1.0.151"
+sqlx = { version = "=0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "chrono", "json", "uuid"] }
+tempfile = "=3.23.0"
+testcontainers = "=0.27.3"
+testcontainers-modules = { version = "=0.15.0", features = ["postgres", "redis"] }
+thiserror = "2.0.20"
+tokio = { version = "=1.53.1", features = ["full"] }
+tokio-util = { version = "=0.7.19", features = ["rt"] }
+tower = "=0.5.3"
+tower-http = "=0.7.0"
+tracing = "=0.1.44"
+tracing-opentelemetry = "=0.33.0"
+tracing-subscriber = { version = "=0.3.23", features = ["env-filter", "json"] }
+time = { version = "=0.3.47", features = ["formatting", "parsing", "serde"] }
+utoipa = { version = "=5.5.0", features = ["axum_extras", "time"] }
+utoipa-axum = "=0.2.0"
+uuid = { version = "=1.24.0", features = ["v4", "v7", "serde"] }
+zeroize = "=1.9.0"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"

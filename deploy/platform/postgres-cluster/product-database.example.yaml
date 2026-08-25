@@ -1,0 +1,32 @@
+# Copy this pair once for every additional product, then replace every
+# `product` token with the product's stable Kubernetes/PostgreSQL identifier.
+# The password Secret is overlay-owned and must contain `username` and
+# `password`; its username must match `spec.name` on the DatabaseRole.
+#
+# apiVersion: postgresql.cnpg.io/v1
+# kind: DatabaseRole
+# metadata:
+#   name: product-owner
+# spec:
+#   cluster:
+#     name: postgres-cluster
+#   name: product_owner
+#   login: true
+#   superuser: false
+#   createdb: false
+#   createrole: false
+#   databaseRoleReclaimPolicy: retain
+#   passwordSecret:
+#     name: product-db-credentials
+# ---
+# apiVersion: postgresql.cnpg.io/v1
+# kind: Database
+# metadata:
+#   name: product
+# spec:
+#   cluster:
+#     name: postgres-cluster
+#   name: product
+#   owner: product_owner
+#   databaseReclaimPolicy: retain
+

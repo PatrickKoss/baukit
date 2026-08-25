@@ -1,0 +1,254 @@
+{{- if .Values.redis.enabled }}
+{{- $replicasText := printf "%v" .Values.redis.replicas -}}
+{{- if not (regexMatch "^[0-9]+$" $replicasText) -}}
+{{- fail "redis.replicas must be 1 or an odd integer greater than or equal to 3" -}}
+{{- end -}}
+{{- $replicas := int .Values.redis.replicas -}}
+{{- if or (lt $replicas 1) (and (ne $replicas 1) (or (lt $replicas 3) (eq (mod $replicas 2) 0))) -}}
+{{- fail "redis.replicas must be 1 or an odd integer greater than or equal to 3" -}}
+{{- end -}}
+{{- if eq $replicas 1 }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "baukit-app.redisName" . }}
+  labels:
+    {{- include "baukit-app.processLabels" (dict "root" . "process" "redis") | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "baukit-app.processSelectorLabels" (dict "root" . "process" "redis") | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "baukit-app.processLabels" (dict "root" . "process" "redis") | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountToken }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: redis
+          image: {{ include "baukit-app.image" .Values.redis.image | quote }}
+          imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          command:
+            - redis-server
+          args:
+            - --save
+            - ""
+            - --appendonly
+            - "no"
+          ports:
+            - name: redis
+              containerPort: 6379
+              protocol: TCP
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: {{ .Values.redis.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.redis.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.redis.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.redis.livenessProbe.failureThreshold }}
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: {{ .Values.redis.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.redis.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.redis.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.redis.readinessProbe.failureThreshold }}
+          resources:
+            {{- toYaml .Values.redis.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+{{- else }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "baukit-app.redisName" . }}
+  labels:
+    {{- include "baukit-app.processLabels" (dict "root" . "process" "redis") | nindent 4 }}
+spec:
+  serviceName: {{ include "baukit-app.redisName" . }}-headless
+  replicas: {{ $replicas }}
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      {{- include "baukit-app.processSelectorLabels" (dict "root" . "process" "redis") | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "baukit-app.processLabels" (dict "root" . "process" "redis") | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountToken }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: redis
+          image: {{ include "baukit-app.image" .Values.redis.image | quote }}
+          imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - |
+              ordinal="${HOSTNAME##*-}"
+              if [ "$ordinal" = "0" ]; then
+                exec redis-server --save "" --appendonly no
+              fi
+              exec redis-server --save "" --appendonly no \
+                --replicaof {{ include "baukit-app.redisName" . }}-0.{{ include "baukit-app.redisName" . }}-headless 6379
+          ports:
+            - name: redis
+              containerPort: 6379
+              protocol: TCP
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: {{ .Values.redis.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.redis.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.redis.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.redis.livenessProbe.failureThreshold }}
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: {{ .Values.redis.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.redis.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.redis.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.redis.readinessProbe.failureThreshold }}
+          resources:
+            {{- toYaml .Values.redis.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+        - name: sentinel
+          image: {{ include "baukit-app.image" .Values.redis.image | quote }}
+          imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - |
+              printf '%s\n' \
+                'port 26379' \
+                'dir /tmp' \
+                'sentinel resolve-hostnames yes' \
+                'sentinel monitor mymaster {{ include "baukit-app.redisName" . }}-0.{{ include "baukit-app.redisName" . }}-headless 6379 {{ add (div $replicas 2) 1 }}' \
+                'sentinel down-after-milliseconds mymaster 5000' \
+                'sentinel failover-timeout mymaster 30000' \
+                'sentinel parallel-syncs mymaster 1' \
+                > /sentinel/sentinel.conf
+              exec redis-sentinel /sentinel/sentinel.conf
+          ports:
+            - name: sentinel
+              containerPort: 26379
+              protocol: TCP
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - -p
+                - "26379"
+                - ping
+            initialDelaySeconds: {{ .Values.redis.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.redis.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.redis.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.redis.livenessProbe.failureThreshold }}
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - -p
+                - "26379"
+                - ping
+            initialDelaySeconds: {{ .Values.redis.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.redis.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.redis.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.redis.readinessProbe.failureThreshold }}
+          resources:
+            {{- toYaml .Values.redis.resources | nindent 12 }}
+          volumeMounts:
+            - name: sentinel-config
+              mountPath: /sentinel
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: sentinel-config
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+{{- end }}
+{{- end }}

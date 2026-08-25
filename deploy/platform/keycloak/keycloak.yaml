@@ -1,0 +1,35 @@
+apiVersion: k8s.keycloak.org/v2beta1
+kind: Keycloak
+metadata:
+  name: keycloak
+spec:
+  instances: 1
+  bootstrapAdmin:
+    user:
+      secret: keycloak-bootstrap-admin
+  db:
+    vendor: postgres
+    host: postgres-cluster-rw.postgres.svc.cluster.local
+    port: 5432
+    database: keycloak
+    usernameSecret:
+      name: keycloak-db-credentials
+      key: username
+    passwordSecret:
+      name: keycloak-db-credentials
+      key: password
+    poolInitialSize: 1
+    poolMinSize: 1
+    poolMaxSize: 10
+  ingress:
+    enabled: false
+  networkPolicy:
+    enabled: true
+  resources:
+    requests:
+      cpu: 250m
+      memory: 768Mi
+    limits:
+      cpu: "1"
+      memory: 1200Mi
+

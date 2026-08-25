@@ -1,0 +1,16 @@
+[package]
+name = "baukit-events"
+description = "Versioned event envelope and validation contract for product-to-product events."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true

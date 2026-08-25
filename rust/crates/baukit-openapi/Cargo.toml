@@ -1,0 +1,20 @@
+[package]
+name = "baukit-openapi"
+description = "Small OpenAPI metadata, serialization, writing, and drift-check helpers."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+time.workspace = true
+utoipa.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
