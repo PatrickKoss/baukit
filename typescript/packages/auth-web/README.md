@@ -27,3 +27,15 @@ Pass a unique `storageKeyPrefix` when more than one client for the same issuer/c
 Terminal refresh rejection (`invalid_grant`, `invalid_token`, or HTTP 400/401) clears tokens, emits `subscribeSessionExpired()`, and resolves to `undefined`. Transient network/provider failures preserve the session and reject with a sanitized `OidcError` whose `retryable` property is `true`.
 
 Display `safeAuthErrorMessage(error)` at the UI boundary. It returns only library-owned allowlisted messages and never provider descriptions, response bodies, authorization codes, or token content.
+
+## Boundaries
+
+The package handles the OIDC authorization-code flow and the tokens it produces. It renders no UI,
+depends on no framework or router, and makes no authorization decision: what a signed-in user is
+allowed to do is the product's question, and the server's.
+
+Token storage uses browser storage under `storageKeyPrefix`. That is a deliberate tradeoff rather
+than an oversight, and it is why `safeAuthErrorMessage` exists: provider bodies, authorization
+codes, and token contents never reach a message the UI can render or a logger can capture.
+
+`@baukit/auth-native` is the same contract for React Native and Expo.

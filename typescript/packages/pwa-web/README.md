@@ -1,4 +1,4 @@
-# @baukit/pwa-web
+# `@baukit/pwa-web`
 
 `@baukit/pwa-web` decides which caching strategy a PWA service worker should apply to a request.
 The decision is a pure function over the request's method, URL, mode, and destination. Nothing in

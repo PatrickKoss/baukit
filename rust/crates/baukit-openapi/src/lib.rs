@@ -733,3 +733,8 @@ mod tests {
         Ok(())
     }
 }
+
+// Compiles the README's examples so they cannot drift from the API.
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+struct ReadmeDoctests;

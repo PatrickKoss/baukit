@@ -38,3 +38,15 @@ Universal Expo products can pass a `storage` port to
 `createExpoOidcEnvironment` or `createExpoOidcClient`. This supports a web
 localStorage adapter or a product-owned compatibility/migration wrapper while
 retaining the standard Expo browser flow.
+
+## Boundaries
+
+The package owns the native OIDC flow, session storage, and refresh. It ships no screens, no
+navigation, and no authorization logic; what a signed-in user may do is decided by the product and
+enforced by the server.
+
+The core has no React, router, or product UI dependency, and the Expo entry point is a separate
+subpath. Construct `NativeOidcClient` with your own `SecureStoragePort`, `BrowserFlowPort`, `fetch`,
+and clock when you are on another native stack or want a deterministic test.
+
+`@baukit/auth-web` is the same contract for browsers.

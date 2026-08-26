@@ -2,8 +2,6 @@
 
 A dependency-free design-token schema, validator, accessibility checker, and deterministic compiler for web and React Native.
 
-This package shares semantic values such as `color.background.primary`; it is deliberately not a design system or cross-platform component library. DOM/React Native components, interaction behavior, raw brand-palette decisions, and product-specific themes remain outside the package.
-
 ## Define and validate tokens
 
 ```ts
@@ -26,7 +24,7 @@ const css = toCssVariables(tokens);
 const nativeModule = toReactNative(tokens);
 ```
 
-`toCssVariables` emits sorted `--bk-*` declarations in `:root`, then dark color overrides under `[data-theme="dark"]`. `toReactNative` emits a sorted nested `tokens` constant with an inferred `Tokens` type. Accessibility declarations are build metadata and are omitted from generated runtime constants. `exampleTokens` is available as a test fixture demonstrating every group; it is intentionally not a Baukit visual language.
+`toCssVariables` emits sorted `--bk-*` declarations in `:root`, then dark color overrides under `[data-theme="dark"]`. `toReactNative` emits a sorted nested `tokens` constant with an inferred `Tokens` type. Accessibility declarations are build metadata and are omitted from generated runtime constants.
 
 ## Enforce tokens with `no-raw-color`
 
@@ -76,5 +74,14 @@ Options:
 | `additionalStyleProperties` | `[]` | Extra property or attribute names treated as style-like. |
 | `reportKeywords` | `true` | Set to `false` to report only hex and functional notations. |
 
-eslint is an optional peer dependency. Importing `@baukit/ui-tokens` itself
-never loads it.
+## Boundaries
+
+This package shares semantic values such as `color.background.primary`. It is deliberately not a
+design system and not a cross-platform component library: DOM and React Native components,
+interaction behavior, raw brand-palette decisions, and product themes all stay outside it.
+
+`exampleTokens` demonstrates every group as a test fixture. It is not a Baukit visual language, and
+copying it into a product as a starting palette is not what it is for.
+
+The production entry point has no runtime dependencies. `eslint` is an optional peer dependency
+reached only through the `/eslint` subpath, so importing the package never loads it.

@@ -1,12 +1,8 @@
-# @baukit/localization-core
+# `@baukit/localization-core`
 
 `@baukit/localization-core` provides dependency-free locale resolution, catalog key comparison,
 stable-code localization, and explicit-locale `Intl` formatter factories. Products supply the
 supported locale list, fallback locale, translation catalogs, and copy.
-
-The package does not include translations, product catalog IDs, persistence, React providers,
-Expo Localization, or a localization library. It also does not choose plural or unit policy for
-an application.
 
 i18next and React composition stays in the consuming app. Resolve and hydrate the locale before
 rendering localized UI, then pass that resolved locale to this package's formatter factories.
@@ -37,3 +33,13 @@ addCivilDays('2026-03-07', 1); // '2026-03-08', DST does not shift a calendar da
   day.
 - `assertTimeZone(zone)` validates an IANA zone. `resolvedTimeZone()` reads the host zone; every
   other function takes the zone explicitly, so nothing silently depends on where the process runs.
+
+## Boundaries
+
+The package does not include translations, product catalog IDs, persistence, React providers, Expo
+Localization, or a localization library. It also does not choose plural or unit policy for an
+application.
+
+Every function that depends on a locale or a time zone takes it as an argument. `resolvedTimeZone()`
+is the one reader of host state, and it is a separate call you make deliberately. That is what keeps
+a test suite from passing in Berlin and failing in CI.

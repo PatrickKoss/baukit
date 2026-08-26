@@ -159,3 +159,8 @@ pub async fn current_revision_for_update(
         .fetch_optional(&mut **transaction)
         .await
 }
+
+// Compiles the README's examples so they cannot drift from the API.
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+struct ReadmeDoctests;

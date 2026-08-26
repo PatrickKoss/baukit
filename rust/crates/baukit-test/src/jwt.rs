@@ -702,9 +702,13 @@ mod tests {
     #[tokio::test]
     async fn mock_server_exercises_jwks_timeout() -> Result<(), Box<dyn std::error::Error>> {
         let server = MockOidcServer::start().await?;
-        server.set_jwks_delay(Duration::from_millis(300));
+        // The timeout covers discovery too, and discovery is served without delay,
+        // so too tight a budget fails discovery instead of the JWKS fetch under test.
+        // Measured discovery is under 30 ms, but the margin has to absorb a clock
+        // jump, not just slow I/O, so keep it wide and keep the delay well past it.
+        server.set_jwks_delay(Duration::from_secs(10));
         let config = OidcConfig::new(server.issuer(), "api")?
-            .with_request_timeout(Duration::from_millis(100))?;
+            .with_request_timeout(Duration::from_secs(1))?;
         let verifier = OidcVerifier::discover(config).await?;
         let claims = server.claims("user-123", "api", Duration::from_secs(60))?;
         assert!(matches!(

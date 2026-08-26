@@ -1,4 +1,4 @@
-# @baukit/a11y-core
+# `@baukit/a11y-core`
 
 `@baukit/a11y-core` holds the accessibility behavior that web and React Native products share:
 overlay focus, inert background content, announcements, reduced motion, and keyboard movement

@@ -84,3 +84,8 @@ pub use verifier::{
     IdentityVerifier, MultiIssuerError, MultiIssuerVerifier, OidcVerifier, Principal,
     VerificationError,
 };
+
+// Compiles the README's examples so they cannot drift from the API.
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+struct ReadmeDoctests;

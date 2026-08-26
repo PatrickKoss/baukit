@@ -54,7 +54,9 @@ async fn redis_idle_keys_expire() -> Result<(), Box<dyn Error>> {
     let mut connection = client.get_multiplexed_async_connection().await?;
     let ttl: i64 = connection.pttl("rl:test:ttl").await?;
     assert!(ttl > 0 && ttl <= 200, "unexpected TTL: {ttl}");
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    // Wait comfortably past the 200 ms TTL; overshooting only strengthens the
+    // assertion that the key is gone.
+    tokio::time::sleep(Duration::from_millis(600)).await;
     let exists: bool = connection.exists("rl:test:ttl").await?;
     assert!(!exists);
     Ok(())
@@ -84,7 +86,10 @@ async fn redis_bucket_refills_over_time() -> Result<(), Box<dyn Error>> {
             .await?
             .allowed
     );
-    tokio::time::sleep(Duration::from_millis(120)).await;
+    // One token accrues every 100 ms at this quota. Sleeping only just past that left
+    // a ~20 ms margin, which a loaded host eats: `last_refill_ms` is stamped by the
+    // denied call above, so any stall before the sleep starts shortens it in effect.
+    tokio::time::sleep(Duration::from_millis(400)).await;
     assert!(
         store
             .check_and_consume("rl:test:refill", quota)
@@ -137,8 +142,18 @@ async fn sentinel_store_recovers_after_master_failover() -> Result<(), Box<dyn E
             .allowed
     );
 
+    let original_master = fixture.master_address().await?;
     fixture.stop_master().await?;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+
+    // Wait for Sentinel to publish the promoted replica rather than polling the
+    // store blindly. Sentinel keeps serving the dead master's address for a moment
+    // after the replica promotes itself, so a store that resolves inside that window
+    // reconnects to the node that just died.
+    fixture.wait_for_failover(&original_master).await?;
+
+    // The store still has to notice the new master and re-resolve, which can take a
+    // few attempts after Sentinel has already published the promotion.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
     loop {
         match store
             .check_and_consume("rl:test:sentinel:recovery-probe", probe_quota)

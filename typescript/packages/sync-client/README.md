@@ -1,4 +1,4 @@
-# @baukit/sync-client
+# `@baukit/sync-client`
 
 `@baukit/sync-client` holds the four client-side pieces every offline-capable product rebuilds
 around a sync loop: when to run, how to send a request, how to report status, and what order to

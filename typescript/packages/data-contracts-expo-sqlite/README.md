@@ -37,7 +37,7 @@ transaction. Independent root calls are serialized. `close()` closes the
 logical adapter; pass `{ closeDatabase: true }` when it should also own the
 supplied database handle.
 
-Namespaces share one fixed `baukit_records` table without colliding. Call `initialize()` before using a store. Records are serialized as JSON, pagination is bounded and keyset-based, and malformed persisted payloads produce a content-free error. The package does not choose a database name, open a singleton, define product entities, or implement product cache policy.
+Namespaces share one fixed `baukit_records` table without colliding. Call `initialize()` before using a store. Records are serialized as JSON, pagination is bounded and keyset-based, and malformed persisted payloads produce a content-free error.
 
 The package's fast Vitest suite uses a deterministic database fake. The
 [Expo SQLite device-conformance app](../../../examples/expo-sqlite-conformance/README.md)
@@ -46,3 +46,13 @@ including creation/reopening, namespace isolation, malformed data, rollback,
 schema-metadata upgrades, and authenticated E→F→E database isolation. Products
 derive the database name and resolve its registry with `@baukit/data-contracts`
 before opening the Expo database. iOS is a scheduled/manual macOS gate.
+
+## Boundaries
+
+The package implements `@baukit/data-contracts` on Expo SQLite and nothing else. It does not choose a
+database name, open a singleton, define product entities, or implement cache policy.
+
+Passing the database handle in rather than opening one is what makes an authenticated product able to
+derive its database name per identity, which is what the shared E→F→E isolation cases exercise.
+
+`@baukit/data-contracts-dexie` is the same contract on the web.

@@ -1041,3 +1041,8 @@ mod tests {
         assert_eq!(service.telemetry_identity().version(), "1.2.3");
     }
 }
+
+// Compiles the README's examples so they cannot drift from the API.
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+struct ReadmeDoctests;

@@ -840,3 +840,8 @@ mod tests {
         assert_eq!(event["span_id"].as_str().map(str::len), Some(16));
     }
 }
+
+// Compiles the README's examples so they cannot drift from the API.
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+struct ReadmeDoctests;

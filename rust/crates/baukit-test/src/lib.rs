@@ -82,3 +82,8 @@ pub use redis::{
     start_redis_sentinel,
 };
 pub use tracing::init_test_tracing;
+
+// Compiles the README's examples so they cannot drift from the API.
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+struct ReadmeDoctests;

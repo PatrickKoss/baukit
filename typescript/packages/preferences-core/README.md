@@ -1,4 +1,4 @@
-# @baukit/preferences-core
+# `@baukit/preferences-core`
 
 `@baukit/preferences-core` defines typed preferences and their update behavior. Products provide
 the definitions, storage adapter, and any effects caused by a change.
