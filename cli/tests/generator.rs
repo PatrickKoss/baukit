@@ -335,7 +335,7 @@ fn oidc_realm_only_emits_selected_public_clients() -> anyhow::Result<()> {
 }
 
 #[test]
-fn release_emission_uses_private_ssh_tag_and_reproducibility_files() -> anyhow::Result<()> {
+fn release_emission_uses_registry_versions_and_reproducibility_files() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut combined = options(parent.path(), "release-product");
     combined.web = true;
@@ -343,8 +343,17 @@ fn release_emission_uses_private_ssh_tag_and_reproducibility_files() -> anyhow::
     let root = generate_new(&combined)?;
 
     let cargo = fs::read_to_string(root.join("backend/Cargo.toml"))?;
-    assert!(cargo.contains("ssh://git@github.com/PatrickKoss/baukit.git"));
-    assert!(cargo.contains(&format!("tag = \"v{}\"", baukit_cli::TEMPLATE_VERSION)));
+    assert!(!cargo.contains("ssh://git@github.com/PatrickKoss/baukit.git"));
+    assert!(cargo.contains(&format!(
+        "baukit-config = \"{}\"",
+        baukit_cli::TEMPLATE_VERSION
+    )));
+    let web_manifest = fs::read_to_string(root.join("web/package.json"))?;
+    assert!(!web_manifest.contains("git+ssh://"));
+    assert!(web_manifest.contains(&format!(
+        "\"@baukit/api-runtime\": \"{}\"",
+        baukit_cli::TEMPLATE_VERSION
+    )));
     assert_eq!(
         fs::read_to_string(root.join(".cargo/config.toml"))?,
         "[net]\ngit-fetch-with-cli = true\n"
@@ -363,8 +372,12 @@ fn release_emission_uses_private_ssh_tag_and_reproducibility_files() -> anyhow::
     assert!(preflight.contains("ssh-add -l"));
     assert!(preflight.contains("PLAYWRIGHT_BROWSERS_PATH"));
     assert!(preflight.contains("executable resolved outside the repository cache"));
-    assert!(fs::read_to_string(root.join("web/pnpm-workspace.yaml"))?.contains("allowBuilds"));
-    assert!(fs::read_to_string(root.join("mobile/pnpm-workspace.yaml"))?.contains("allowBuilds"));
+    // Registry tarballs ship prebuilt `dist/`, so only non-Baukit packages need build approval.
+    let web_workspace = fs::read_to_string(root.join("web/pnpm-workspace.yaml"))?;
+    assert!(!web_workspace.contains("@baukit/"));
+    let mobile_workspace = fs::read_to_string(root.join("mobile/pnpm-workspace.yaml"))?;
+    assert!(mobile_workspace.contains("unrs-resolver: true"));
+    assert!(!mobile_workspace.contains("@baukit/"));
     let makefile = fs::read_to_string(root.join("Makefile"))?;
     assert!(
         makefile.contains("cargo test --manifest-path $(BACKEND_MANIFEST) -- --include-ignored")
@@ -414,6 +427,25 @@ fn release_emission_uses_private_ssh_tag_and_reproducibility_files() -> anyhow::
 fn generated_preflight_fails_without_an_agent_and_supports_prebuilt_images() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let root = generate_new(&options(parent.path(), "preflight-app"))?;
+
+    // Registry dependencies need no SSH agent, so preflight must pass without one.
+    let registry_default = Command::new("sh")
+        .arg("scripts/preflight.sh")
+        .current_dir(&root)
+        .env_remove("SSH_AUTH_SOCK")
+        .output()?;
+    assert!(registry_default.status.success());
+
+    // The SSH checks below still guard products pinned to a Baukit git tag.
+    let manifest_path = root.join("baukit.toml");
+    let manifest = fs::read_to_string(&manifest_path)?;
+    fs::write(
+        &manifest_path,
+        manifest.replace(
+            "source = \"registry\"",
+            "source = \"git\"\ngit = \"ssh://git@github.com/PatrickKoss/baukit.git\"",
+        ),
+    )?;
 
     let missing_agent = Command::new("sh")
         .arg("scripts/preflight.sh")

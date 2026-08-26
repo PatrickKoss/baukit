@@ -26,7 +26,7 @@ Shared accessibility behavior comes from `@baukit/a11y-core/web`, the entry poin
 
 The example uses real `h1`/`h2` elements for document structure. Visual classes such as `eyebrow` do not imply a heading level. `styles.css` supplies visible `:focus-visible` treatment and a 44-by-44 CSS-pixel minimum effective target for interactive controls.
 
-The Baukit packages come from {{ context.baukit_typescript_dependency_description }}. Release-generated apps pin the Baukit repository tag; local fixtures use `file:` dependencies. The app builds and runs without the Baukit CLI.
+The Baukit packages come from {{ context.baukit_typescript_dependency_description }}. Release-generated apps pin an exact npm version; local fixtures use `file:` dependencies. The app builds and runs without the Baukit CLI.
 
 ## Checks
 

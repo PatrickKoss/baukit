@@ -65,7 +65,7 @@ with browsers under the repository-local
 `web/node_modules/.cache/playwright-browsers` cache (for example,
 `sh scripts/preflight.sh -- corepack pnpm --dir web exec playwright test`).
 
-`.github/workflows/ci.yml` runs every generated backend{% if context.web %}, web{% endif %}{% if context.mobile %}, and mobile{% endif %} gate, including ignored Docker-backed Rust tests. Configure the private Baukit repository's read-only deploy key as the `BAUKIT_DEPLOY_KEY` Actions secret. `deploy/values.yaml` is the product-owned input for the shared `baukit-app` Helm chart. Matching backend workflow notes are installed for both Codex and Claude discovery paths.
+`.github/workflows/ci.yml` runs every generated backend{% if context.web %}, web{% endif %}{% if context.mobile %}, and mobile{% endif %} gate, including ignored Docker-backed Rust tests. `deploy/values.yaml` is the product-owned input for the shared `baukit-app` Helm chart. Matching backend workflow notes are installed for both Codex and Claude discovery paths.
 
 `make openapi` refreshes the committed backend schema. `make openapi-client` consumes that schema without rebuilding the backend or requiring `baukit` on `PATH`; it uses current Node.js LTS with corepack or npx and writes `generated/openapi.d.ts`.
 
@@ -81,7 +81,7 @@ with browsers under the repository-local
 - `{{ context.app_name }}-bin`: API composition plus `migrate` and `openapi` binaries; its API composition includes the in-memory adapter.
 - `backend/tests`: Baukit conformance, OpenAPI drift, and ignored Docker-backed PostgreSQL tests.
 
-The workspace consumes Baukit from {{ context.baukit_dependency_description }}. `.cargo/config.toml` delegates Git fetching to the SSH-aware Git CLI. Generated applications build and run directly with Cargo and do not need the Baukit CLI.
+The workspace consumes Baukit from {{ context.baukit_dependency_description }}. Generated applications build and run directly with Cargo and do not need the Baukit CLI.
 
 By default, `baukit new` resolves and emits Cargo and pnpm lockfiles at scaffold time. Keep them committed, update them with `make lockfiles` after dependency changes, and use `--locked` / `--frozen-lockfile` in automation. Offline generation can use `--skip-lockfiles`, but `sh scripts/lockfiles.sh` must run before the first build.
 

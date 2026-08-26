@@ -28,7 +28,7 @@
 ## Versioning and releases
 
 - Everything stays 0.x until the fourth application (the architecture health platform) has survived two foundation upgrades. Pre-1.0, breaking changes bump the minor version.
-- Rust: `release-plz` for versioning, changelogs, and release tags. While private, products consume the crates as git dependencies pinned to release tags (`git = "ssh://git@github.com/patrickkoss/baukit.git", tag = "..."`); crates.io publishing begins at the go-public decision.
+- Rust: `release-plz` for versioning, changelogs, and release tags. Products consume the crates from crates.io pinned to an exact version; a git dependency on a release tag stays available for unreleased work.
 - TypeScript: Changesets for versioning and changelogs; no npm registry while private. Products consume packages as pnpm git dependencies pinned to release tags, resolving subdirectory packages from the baukit monorepo, with a `prepare` script building on install (or committed dist output). Going public is only a dependency-source switch from git tag to npmjs version; the `@baukit/*` import names never change. Renovate updates the pinned tags.
 - Templates: versioned with the platform release train; `baukit.toml` records the template version used at generation time.
 - One release train: a platform release bumps crates, packages, and templates together and updates the [compatibility matrix](./compatibility-matrix.md). There are no independent template releases.

@@ -84,6 +84,6 @@ Run it locally the same way CI does:
 
 ```sh
 git clone --branch v{{ context.template_version }} --depth 1 \
-  ssh://git@github.com/patrickkoss/baukit.git /tmp/baukit
+  https://github.com/PatrickKoss/baukit.git /tmp/baukit
 python3 scripts/observability-lint.py /tmp/baukit/deploy/observability/lint/check-metric-names.py
 ```

@@ -48,7 +48,7 @@ The generated native workflow clean-prebuilds and compiles Android for relevant 
 
 For device smoke testing, open a custom-scheme deep link from a terminated app and verify valid, invalid, and unauthenticated route outcomes. With the software keyboard visible, check that focused controls remain visible, dismissal preserves input, and content and overlays respect top and bottom safe-area insets. Exact routes, OAuth callback URLs, screen wrappers, credentials, and journeys remain product-owned.
 
-The Baukit packages come from {{ context.baukit_typescript_dependency_description }}. Release-generated apps pin the Baukit repository tag; local fixtures use `file:` dependencies. The app runs directly with Expo and does not require the Baukit CLI.
+The Baukit packages come from {{ context.baukit_typescript_dependency_description }}. Release-generated apps pin an exact npm version; local fixtures use `file:` dependencies. The app runs directly with Expo and does not require the Baukit CLI.
 
 ## Checks
 

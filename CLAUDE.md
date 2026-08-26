@@ -55,6 +55,17 @@ Docker is available locally — never skip Docker-gated (`#[ignore]`) tests; run
 `cargo test --manifest-path rust/Cargo.toml -- --include-ignored` when your
 change touches anything they cover.
 
+### Golden snapshot trees
+
+`cli/tests/snapshots/*.tree` pins a SHA-256 per generated file. Any template or
+generator change makes those tests fail. Regenerate them, then read the diff and
+confirm every changed path is one you meant to touch:
+
+```bash
+cargo run --manifest-path cli/Cargo.toml --example bless_snapshots
+git diff --stat cli/tests/snapshots/
+```
+
 ### Generated-fixture check
 
 CI scaffolds a product with the CLI and verifies the output builds clean. If

@@ -36,6 +36,16 @@ sleep_until_retry_time() {
     wait_for=$(( $(date -d "$retry_at" +%s) - $(date +%s) + 15 ))
     (( wait_for < 15 )) && wait_for=15
   fi
+  # Trusted-publishing tokens live 30 minutes. Sleeping past that turns a
+  # rate-limit wait into an opaque 403 on the next crate, so stop while the
+  # already-published crates are still a clean prefix to resume from.
+  if [[ -n "${TOKEN_DEADLINE:-}" ]] && (( $(date +%s) + wait_for >= TOKEN_DEADLINE )); then
+    cat >&2 <<MSG
+rate limited for ${wait_for}s, which outlasts the crates.io token.
+Crates published so far are on the registry; re-run this job to resume.
+MSG
+    exit 75
+  fi
   echo "rate limited; waiting ${wait_for}s" >&2
   sleep "$wait_for"
 }

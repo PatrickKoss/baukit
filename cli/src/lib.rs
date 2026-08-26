@@ -222,6 +222,7 @@ pub struct Dependencies {
 pub enum BaukitDependency {
     Path { path: String },
     Git { git: String, tag: String },
+    Registry { version: String },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -571,8 +572,7 @@ fn dependency_context(
             typescript_description: format!("local path `{}`", typescript_root.display()),
         })
     } else {
-        let git = "ssh://git@github.com/PatrickKoss/baukit.git";
-        let tag = format!("v{TEMPLATE_VERSION}");
+        let version = TEMPLATE_VERSION;
         let mut names = vec![
             "baukit-config",
             "baukit-http",
@@ -590,18 +590,13 @@ fn dependency_context(
         }
         let cargo = names
             .iter()
-            .map(|name| format!("{name} = {{ git = \"{git}\", tag = \"{tag}\" }}"))
+            .map(|name| format!("{name} = \"{version}\""))
             .collect::<Vec<_>>()
             .join("\n");
         let render_typescript = |packages: &[&str]| {
             packages
                 .iter()
-                .map(|package| {
-                    let directory = package.trim_start_matches("@baukit/");
-                    format!(
-                        "    \"{package}\": \"git+{git}#{tag}&path:typescript/packages/{directory}\""
-                    )
-                })
+                .map(|package| format!("    \"{package}\": \"{version}\""))
                 .collect::<Vec<_>>()
                 .join(",\n")
         };
@@ -609,9 +604,9 @@ fn dependency_context(
             cargo,
             web_typescript: render_typescript(&web_packages),
             mobile_typescript: render_typescript(&mobile_packages),
-            manifest: format!("source = \"git\"\ngit = \"{git}\"\ntag = \"{tag}\""),
-            description: format!("git tag `{tag}` from `{git}`"),
-            typescript_description: format!("git tag `{tag}` from `{git}`"),
+            manifest: format!("source = \"registry\"\nversion = \"{version}\""),
+            description: format!("crates.io version `{version}`"),
+            typescript_description: format!("npm version `{version}`"),
         })
     }
 }
@@ -1035,6 +1030,12 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
             probe_git_dependency(host, git, tag, &mut successes, &mut failures);
             Some(ready)
         }
+        BaukitDependency::Registry { version } => {
+            successes.push(format!(
+                "Baukit dependencies resolve from crates.io and npm at version {version}"
+            ));
+            None
+        }
     };
     if has_docker_build_targets(root) {
         let docker_ready = diagnose_docker(host, &mut successes, &mut failures);
@@ -1046,7 +1047,7 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
                     .to_owned(),
             ),
             None if docker_ready => successes.push(
-                "Docker image builds are ready; local Baukit path dependencies do not require SSH forwarding"
+                "Docker image builds are ready; registry and local path dependencies do not require SSH forwarding"
                     .to_owned(),
             ),
             Some(_) | None => {}

@@ -13,9 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: webfactory/ssh-agent@v0.9.1
-        with:
-          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -34,9 +31,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: webfactory/ssh-agent@v0.9.1
-        with:
-          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
       # Read the floor from the manifest so it is stated once. A literal here
       # would drift silently the first time Cargo.toml is bumped.
       - name: Read rust-version from the workspace manifest
@@ -67,9 +61,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: webfactory/ssh-agent@v0.9.1
-        with:
-          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -104,9 +95,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: webfactory/ssh-agent@v0.9.1
-        with:
-          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
       - uses: docker/setup-buildx-action@v3
       # Build only. Publishing belongs to the release workflow, not to CI.
       - uses: docker/build-push-action@v6
@@ -114,7 +102,6 @@ jobs:
           context: backend
           file: backend/Dockerfile
           push: false
-          ssh: default
           cache-from: type=gha,scope=backend-production
           cache-to: type=gha,mode=max,scope=backend-production
 
@@ -125,9 +112,6 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@v4
-      - uses: webfactory/ssh-agent@v0.9.1
-        with:
-          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -144,9 +128,6 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@v4
-      - uses: webfactory/ssh-agent@v0.9.1
-        with:
-          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -181,9 +162,6 @@ jobs:
       E2E_WORKERS: "2"
     steps:
       - uses: actions/checkout@v4
-      - uses: webfactory/ssh-agent@v0.9.1
-        with:
-          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -213,9 +191,6 @@ jobs:
         working-directory: mobile
     steps:
       - uses: actions/checkout@v4
-      - uses: webfactory/ssh-agent@v0.9.1
-        with:
-          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -232,9 +207,6 @@ jobs:
         working-directory: mobile
     steps:
       - uses: actions/checkout@v4
-      - uses: webfactory/ssh-agent@v0.9.1
-        with:
-          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -268,18 +240,12 @@ jobs:
             echo "No scripts/observability-lint.py; this product declares no dashboards to lint."
             echo "See docs/observability-lint.md to wire one."
           fi
-      - uses: webfactory/ssh-agent@v0.9.1
-        if: {% raw %}${{ steps.shim.outputs.present == 'true' }}{% endraw %}
-        with:
-          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
       - name: Fetch the matching Baukit observability contract
         if: {% raw %}${{ steps.shim.outputs.present == 'true' }}{% endraw %}
         run: |
           set -euo pipefail
-          mkdir -p ~/.ssh
-          ssh-keyscan github.com >> ~/.ssh/known_hosts
           git clone --branch v{{ context.template_version }} --depth 1 \
-            ssh://git@github.com/patrickkoss/baukit.git .baukit
+            https://github.com/PatrickKoss/baukit.git .baukit
       - name: Lint dashboards against Baukit and product metric names
         if: {% raw %}${{ steps.shim.outputs.present == 'true' }}{% endraw %}
         run: python3 scripts/observability-lint.py .baukit/deploy/observability/lint/check-metric-names.py

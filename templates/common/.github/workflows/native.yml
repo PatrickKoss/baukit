@@ -47,9 +47,6 @@ jobs:
         working-directory: mobile
     steps:
       - uses: actions/checkout@v4
-      - uses: webfactory/ssh-agent@v0.9.1
-        with:
-          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -106,9 +103,6 @@ jobs:
         working-directory: mobile
     steps:
       - uses: actions/checkout@v4
-      - uses: webfactory/ssh-agent@v0.9.1
-        with:
-          ssh-private-key: {% raw %}${{ secrets.BAUKIT_DEPLOY_KEY }}{% endraw %}
       - uses: actions/setup-node@v4
         with:
           node-version: 24

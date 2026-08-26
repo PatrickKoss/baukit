@@ -77,7 +77,7 @@ Rust products normally depend on the published crates. To pin the Git tag
 instead, Cargo locates the named crate inside the repository:
 
 ```toml
-baukit-runtime = { git = "ssh://git@github.com/patrickkoss/baukit.git", tag = "v0.1.0" }
+baukit-runtime = { git = "https://github.com/PatrickKoss/baukit.git", tag = "v0.1.0" }
 ```
 
 TypeScript packages are on npm (see below), so pnpm products normally install
@@ -87,7 +87,7 @@ because `&` is part of pnpm's git selector:
 ```json
 {
   "dependencies": {
-    "@baukit/api-runtime": "git+ssh://git@github.com/patrickkoss/baukit.git#v0.1.0&path:typescript/packages/api-runtime"
+    "@baukit/api-runtime": "git+https://github.com/PatrickKoss/baukit.git#v0.1.0&path:typescript/packages/api-runtime"
   }
 }
 ```
