@@ -20,7 +20,7 @@ pub struct ApiError {
     code: String,
     message: String,
     details: BTreeMap<String, Value>,
-    headers: HeaderMap,
+    headers: Option<Box<HeaderMap>>,
     cause: Option<Box<dyn StdError + Send + Sync>>,
 }
 
@@ -40,7 +40,7 @@ impl ApiError {
             code,
             message: message.into(),
             details: BTreeMap::new(),
-            headers: HeaderMap::new(),
+            headers: None,
             cause: None,
         }
     }
@@ -58,7 +58,9 @@ impl ApiError {
     /// request middleware always supplies the final `X-Request-Id` value.
     #[must_use]
     pub fn with_header(mut self, name: HeaderName, value: HeaderValue) -> Self {
-        self.headers.insert(name, value);
+        self.headers
+            .get_or_insert_with(Default::default)
+            .insert(name, value);
         self
     }
 
@@ -304,7 +306,9 @@ impl IntoResponse for ApiError {
             },
         };
         let mut response = (self.status, Json(envelope)).into_response();
-        response.headers_mut().extend(self.headers);
+        if let Some(headers) = self.headers {
+            response.headers_mut().extend(*headers);
+        }
         response.headers_mut().insert(
             crate::X_REQUEST_ID,
             request_id

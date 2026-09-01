@@ -4,6 +4,11 @@ All notable changes to `baukit-http` are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- `ApiError` stores response headers behind a lazily allocated box so the type stays at 104 bytes and
+  does not trigger `clippy::result_large_err` in consumers that return `Result<_, ApiError>`.
+
 ## [0.1.1] - 2026-09-01
 
 ### Added

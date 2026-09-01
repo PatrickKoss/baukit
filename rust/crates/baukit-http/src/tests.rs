@@ -142,6 +142,12 @@ async fn error_envelope_has_the_exact_shared_shape() {
     );
 }
 
+#[test]
+fn api_error_stays_below_the_clippy_large_error_threshold() {
+    const CLIPPY_LARGE_ERROR_THRESHOLD: usize = 128;
+    assert!(std::mem::size_of::<ApiError>() <= CLIPPY_LARGE_ERROR_THRESHOLD);
+}
+
 #[tokio::test]
 async fn api_error_adds_headers_without_changing_the_envelope() {
     async fn handler() -> ApiError {
