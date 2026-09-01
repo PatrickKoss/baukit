@@ -4,15 +4,16 @@ use std::fmt;
 use sqlx::Row as _;
 #[cfg(feature = "sqlx-postgres")]
 use std::path::Path;
-use testcontainers::{ContainerAsync, runners::AsyncRunner};
+use testcontainers::{ContainerAsync, ImageExt as _, runners::AsyncRunner};
 use testcontainers_modules::postgres::Postgres;
 
 #[cfg(feature = "sqlx-postgres")]
 use crate::{CleanupKind, OwnedResourceCheck};
 
+const POSTGRES_IMAGE_TAG: &str = "18-alpine";
 const POSTGRES_PORT: u16 = 5432;
 
-/// A running disposable PostgreSQL container and its connection URL.
+/// A running disposable PostgreSQL 18 container and its connection URL.
 ///
 /// Keep this value alive for as long as the database is in use. Dropping it
 /// invokes Testcontainers' container cleanup behavior.
@@ -81,12 +82,15 @@ pub struct ForeignKeyDeleteMismatch {
     pub declared_cleanup: CleanupKind,
 }
 
-/// Starts a disposable PostgreSQL container asynchronously.
+/// Starts a disposable PostgreSQL 18 container asynchronously.
 ///
 /// The default Testcontainers module credentials and database are all
 /// `postgres`. Docker is contacted only when this function is called.
 pub async fn start_postgres() -> Result<PostgresTestContainer, PostgresTestError> {
-    let container = Postgres::default().start().await?;
+    let container = Postgres::default()
+        .with_tag(POSTGRES_IMAGE_TAG)
+        .start()
+        .await?;
     let host = container.get_host().await?;
     let port = container.get_host_port_ipv4(POSTGRES_PORT).await?;
     let connection_url = format!("postgres://postgres:postgres@{host}:{port}/postgres");
@@ -96,7 +100,7 @@ pub async fn start_postgres() -> Result<PostgresTestContainer, PostgresTestError
     })
 }
 
-/// Starts PostgreSQL and applies SQLx migrations from `migrations_path`.
+/// Starts PostgreSQL 18 and applies SQLx migrations from `migrations_path`.
 ///
 /// This helper is available with the `sqlx-postgres` feature. Migration files
 /// use SQLx's ordinary file naming and checksum rules.
@@ -204,6 +208,14 @@ mod tests {
         )?;
         let fixture = start_postgres_with_migrations(directory.path()).await?;
         let pool = sqlx::PgPool::connect(fixture.connection_url()).await?;
+        let version = sqlx::query("SELECT current_setting('server_version_num') AS version")
+            .fetch_one(&pool)
+            .await?
+            .try_get::<String, _>("version")?;
+        assert!(
+            version.starts_with("18"),
+            "unexpected PostgreSQL version: {version}"
+        );
         let row = sqlx::query("SELECT to_regclass('fixture')::text AS table_name")
             .fetch_one(&pool)
             .await?;

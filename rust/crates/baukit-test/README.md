@@ -38,10 +38,10 @@ let pool = sqlx::PgPool::connect(postgres.connection_url()).await?;
 # }
 ```
 
-`start_postgres`, `start_redis`, and `start_redis_sentinel` bind random host ports and hand back a
-container that lives until the value drops, so tests run in parallel without fighting over ports. The
-Sentinel fixture builds a real master/replica/sentinel topology on its own network, which is the only
-way to test failover behavior honestly.
+`start_postgres` runs PostgreSQL 18 Alpine. It, `start_redis`, and `start_redis_sentinel` bind random
+host ports and hand back a container that lives until the value drops, so tests run in parallel
+without fighting over ports. The Sentinel fixture builds a real master/replica/sentinel topology on
+its own network, which is the only way to test failover behavior honestly.
 
 These need a running Docker daemon. Mark tests that use them `#[ignore]` and run them explicitly:
 

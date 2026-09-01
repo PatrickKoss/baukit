@@ -24,7 +24,7 @@ Example invocation shape:
 ```sh
 BAUKIT_SMOKE_PRODUCT=my-product \
 BAUKIT_SMOKE_VALUES_FILE="$PWD/deploy/environments/local.yaml" \
-BAUKIT_SMOKE_IMAGES='my-product:smoke postgres:17-alpine quay.io/keycloak/keycloak:26.7.0' \
+BAUKIT_SMOKE_IMAGES='my-product:smoke postgres:18-alpine quay.io/keycloak/keycloak:26.7.0' \
 BAUKIT_SMOKE_DEPENDENCIES_FILE="$PWD/deploy/local/dependencies.yaml" \
 BAUKIT_SMOKE_DEPENDENCY_DEPLOYMENTS='postgres keycloak' \
 BAUKIT_SMOKE_WORKER_ENABLED=true \

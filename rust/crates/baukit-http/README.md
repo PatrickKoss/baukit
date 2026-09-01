@@ -45,6 +45,23 @@ occurred" to the client. Leaking a driver error to a caller is how connection st
 and internal hostnames end up in someone's browser console. The type makes doing it right the shorter
 path.
 
+Use `with_header` to add response headers without wrapping `ApiError`. `with_retry_after` writes a
+`Retry-After` value in delta seconds, which covers the common quota response:
+
+```rust
+use axum::http::{HeaderValue, header};
+use baukit_http::ApiError;
+
+# fn quota_error() -> ApiError {
+ApiError::rate_limited()
+    .with_retry_after(30)
+    .with_header(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))
+# }
+```
+
+If code adds `X-Request-Id` through `with_header`, the request middleware replaces it with the
+request's actual ID.
+
 Extractor and routing failures produce the same envelope. A malformed JSON body should not return
 Axum's default plain-text rejection while every other error on the service returns structured JSON;
 clients then need two parsers for one API.

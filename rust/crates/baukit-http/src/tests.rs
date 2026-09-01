@@ -8,7 +8,7 @@ use std::{
 use axum::{
     Router,
     body::{Body, to_bytes},
-    http::{Method, Request, StatusCode, header},
+    http::{HeaderValue, Method, Request, StatusCode, header},
     response::IntoResponse,
     routing::{any, get, post},
 };
@@ -137,6 +137,52 @@ async fn error_envelope_has_the_exact_shared_shape() {
                 "message": "The request is invalid",
                 "request_id": "validation-request",
                 "details": {"email": ["is invalid"]}
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn api_error_adds_headers_without_changing_the_envelope() {
+    async fn handler() -> ApiError {
+        ApiError::rate_limited()
+            .with_header(
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("private, no-store"),
+            )
+            .with_retry_after(120)
+            .with_header(X_REQUEST_ID, HeaderValue::from_static("error-request-id"))
+    }
+
+    let response = layers(
+        Router::new().route("/limited", get(handler)),
+        HttpOptions::default(),
+    )
+    .oneshot(
+        Request::builder()
+            .uri("/limited")
+            .header(X_REQUEST_ID, "caller-request-id")
+            .body(Body::empty())
+            .expect("request"),
+    )
+    .await
+    .expect("response");
+
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(
+        response.headers()[header::CACHE_CONTROL],
+        "private, no-store"
+    );
+    assert_eq!(response.headers()[header::RETRY_AFTER], "120");
+    assert_eq!(response.headers()[X_REQUEST_ID], "caller-request-id");
+    assert_eq!(
+        response_json(response).await,
+        json!({
+            "error": {
+                "code": "rate_limited",
+                "message": "Too many requests",
+                "request_id": "caller-request-id",
+                "details": {}
             }
         })
     );

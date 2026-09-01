@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, error::Error as StdError, fmt};
 use axum::{
     Json,
     extract::rejection::{JsonRejection, PathRejection, QueryRejection},
-    http::StatusCode,
+    http::{HeaderMap, HeaderName, HeaderValue, StatusCode, header::RETRY_AFTER},
     response::{IntoResponse, Response},
 };
 use serde_json::Value;
@@ -20,6 +20,7 @@ pub struct ApiError {
     code: String,
     message: String,
     details: BTreeMap<String, Value>,
+    headers: HeaderMap,
     cause: Option<Box<dyn StdError + Send + Sync>>,
 }
 
@@ -39,6 +40,7 @@ impl ApiError {
             code,
             message: message.into(),
             details: BTreeMap::new(),
+            headers: HeaderMap::new(),
             cause: None,
         }
     }
@@ -48,6 +50,26 @@ impl ApiError {
     pub fn with_details(mut self, details: BTreeMap<String, Value>) -> Self {
         self.details = details;
         self
+    }
+
+    /// Adds a header to the error response.
+    ///
+    /// A later call with the same name replaces the previous value. The
+    /// request middleware always supplies the final `X-Request-Id` value.
+    #[must_use]
+    pub fn with_header(mut self, name: HeaderName, value: HeaderValue) -> Self {
+        self.headers.insert(name, value);
+        self
+    }
+
+    /// Adds a `Retry-After` response header using delta seconds.
+    #[must_use]
+    pub fn with_retry_after(self, seconds: u64) -> Self {
+        self.with_header(
+            RETRY_AFTER,
+            HeaderValue::from_str(&seconds.to_string())
+                .expect("unsigned integers are valid header values"),
+        )
     }
 
     /// Returns a `400 bad_request` error with a safe message.
@@ -246,6 +268,7 @@ impl fmt::Debug for ApiError {
             .field("code", &self.code)
             .field("message", &self.message)
             .field("details", &self.details)
+            .field("headers", &self.headers)
             .field("has_cause", &self.cause.is_some())
             .finish()
     }
@@ -281,6 +304,7 @@ impl IntoResponse for ApiError {
             },
         };
         let mut response = (self.status, Json(envelope)).into_response();
+        response.headers_mut().extend(self.headers);
         response.headers_mut().insert(
             crate::X_REQUEST_ID,
             request_id
