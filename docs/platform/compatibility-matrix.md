@@ -5,7 +5,8 @@
 
 This table records what the shared baseline is **tested against**. Renovate keeps individual products moving; baukit guarantees compatibility only with the versions listed here. Version cells reflect the review-time state of the three projects and must be re-verified against the lockfiles when the baukit repository is created.
 
-Last verified release train: `v0.1.0` (shared version 1 event envelopes
+Last verified release train: `v0.1.1` (PostgreSQL 18 test containers,
+`ApiError` response headers, shared version 1 event envelopes
 in Rust and TypeScript, one cross-runtime fixture corpus, and local language
 pins through mise; backend, web, mobile, combined, and authenticated generated
 fixtures, native Android compile, real Expo SQLite conformance, browser Dexie
@@ -38,7 +39,7 @@ local CI-equivalent gates were verified).
 | Configuration | config + dotenvy | chosen loader (analysis §4.1) | Figment is not supported by the shared kit |
 | Outbound HTTP | reqwest | latest, rustls | |
 | Auth | jsonwebtoken + JWKS | latest | Keycloak default; Clerk/WorkOS adapters |
-| Integration tests | testcontainers | latest | |
+| Integration tests | testcontainers | latest | `baukit-test` pins `postgres:18-alpine`; templates and smoke deploys use the same image |
 | Sync revisions | `baukit-sync` | 0.1.0 | Per-owner revision allocation, locking revision reads, the syncable-table column convention, and a `user_id` to `owner_id` migration; SQLx 0.9, PostgreSQL. |
 | Provider connectors | `baukit-integrations` | 0.1.0 | Contract-only connector port, cursor-paged pages, and `baukit-http` retry classes; no SQLx, no HTTP client. |
 

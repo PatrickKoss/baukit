@@ -1,6 +1,6 @@
 {
   "name": "@baukit/localization-core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Dependency-free locale resolution, catalog key comparison, stable-code localization, and explicit-locale Intl formatter factories.",
   "license": "MIT",
   "author": "Patrick Koss",

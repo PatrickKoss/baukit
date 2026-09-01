@@ -1,6 +1,6 @@
 {
   "name": "@baukit/data-contracts-dexie",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Dexie 4.x implementation of @baukit/data-contracts for web applications.",
   "license": "MIT",
   "author": "Patrick Koss",
@@ -51,7 +51,7 @@
     "vitest": "4.1.10"
   },
   "peerDependencies": {
-    "@baukit/data-contracts": "^0.1.0",
+    "@baukit/data-contracts": "^0.1.1",
     "dexie": "^4.4.5"
   }
 }

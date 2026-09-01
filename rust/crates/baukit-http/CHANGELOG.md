@@ -4,6 +4,8 @@ All notable changes to `baukit-http` are documented here.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-01
+
 ### Added
 
 - `ApiError::with_header` and `ApiError::with_retry_after` add response headers while preserving the

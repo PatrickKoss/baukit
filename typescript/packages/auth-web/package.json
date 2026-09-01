@@ -1,6 +1,6 @@
 {
   "name": "@baukit/auth-web",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Framework-neutral browser OIDC authorization-code client with S256 PKCE, provider discovery, and callback deduplication.",
   "license": "MIT",
   "author": "Patrick Koss",

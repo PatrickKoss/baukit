@@ -2,8 +2,8 @@ apiVersion: v2
 name: baukit-app
 description: Shared application chart for Baukit API, worker, migration, and seed processes
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.1.1
+appVersion: "0.1.1"
 kubeVersion: ">=1.25.0-0"
 annotations:
   artifacthub.io/license: MIT
