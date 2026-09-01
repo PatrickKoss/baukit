@@ -26,7 +26,7 @@ Baukit is that work, extracted from real products, with the tests attached.
 Scaffold a product:
 
 ```bash
-cargo install --git https://github.com/PatrickKoss/baukit --tag v0.1.1 --locked baukit-cli
+cargo install --git https://github.com/PatrickKoss/baukit --tag v0.1.2 --locked baukit-cli
 baukit new orders --backend --web
 cd orders && make check
 ```
@@ -171,6 +171,6 @@ Corepack picks up pnpm 11.18.0 from `typescript/package.json`. Docker and the An
 
 ## Status and license
 
-The `@baukit/*` packages are on npm and the sixteen library crates are on crates.io at `0.1.1`. The CLI installs from a Git tag. Crates, packages, and templates move together under one `vX.Y.Z` tag.
+The `@baukit/*` packages are on npm and the sixteen library crates are on crates.io at `0.1.2`. The CLI installs from a Git tag. Crates, packages, and templates move together under one `vX.Y.Z` tag.
 
 MIT. See [LICENSE](LICENSE).

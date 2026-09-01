@@ -4,6 +4,8 @@ All notable changes to `baukit-http` are documented here.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-09-01
+
 ### Fixed
 
 - `ApiError` stores response headers behind a lazily allocated box so the type stays at 104 bytes and

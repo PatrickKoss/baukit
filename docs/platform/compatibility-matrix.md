@@ -5,7 +5,7 @@
 
 This table records what the shared baseline is **tested against**. Renovate keeps individual products moving; baukit guarantees compatibility only with the versions listed here. Version cells reflect the review-time state of the three projects and must be re-verified against the lockfiles when the baukit repository is created.
 
-Last verified release train: `v0.1.1` (PostgreSQL 18 test containers,
+Last verified release train: `v0.1.2` (PostgreSQL 18 test containers,
 `ApiError` response headers, shared version 1 event envelopes
 in Rust and TypeScript, one cross-runtime fixture corpus, and local language
 pins through mise; backend, web, mobile, combined, and authenticated generated

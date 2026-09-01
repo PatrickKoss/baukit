@@ -1,6 +1,6 @@
 {
   "name": "@baukit/preferences-core",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Typed preferences and their update behavior, with storage and effects supplied by the product.",
   "license": "MIT",
   "author": "Patrick Koss",
