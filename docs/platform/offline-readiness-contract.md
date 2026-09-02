@@ -71,7 +71,9 @@ underneath its own engine:
   headers, classifies failures, and preserves `Retry-After` on 429 responses. `SyncStatusStore`
   exposes attempt and success times, typed failure metadata, retry state, pending work, and
   readiness helpers. `rankPushBatch` orders and coalesces product-owned entities. Pull-page and
-  push-outcome validators reject payloads that could skip work or loop without progress.
+  push-outcome validators reject payloads that could skip work or loop without progress. The
+  `@baukit/sync-client/conformance` entry runs the shared failure and convergence cases against
+  product callbacks without choosing the product's protocol.
 - `baukit-sync` on the server: `next_revision`, which bumps a per-owner counter inside the
   caller's transaction so an allocation rolls back with its row write, plus the syncable-table
   column convention (`id`, `owner_id`, `updated_at`, `deleted_at`, `revision`, and an
@@ -80,7 +82,28 @@ underneath its own engine:
 Both are mechanism, not protocol. Entity names, dependency order, endpoint paths, payload shapes,
 and conflict rules remain product-owned.
 
-## 6. Acceptance checks
+## 6. Product conformance gate
+
+Register every case returned by `createSyncConformanceTests` in the product's normal Vitest or Jest
+suite. Build an isolated scenario for each case with two local clients and one fake server. Supply
+these callbacks:
+
+- outbox enqueue, pending listing, acknowledgement, and actionable-rejection storage;
+- local cursor reads, full snapshots including tombstones, pending-state reads, and atomic page
+  application with injected failure;
+- push encoding, push-outcome decoding, pull-page decoding, and cursor comparison; and
+- fake-server push, paged pull, seeding, snapshots, incomplete outcomes, cursor faults, and network
+  and server failures.
+
+Map the harness fixtures to product entities and payloads at the adapter boundary. Use the same
+wire codecs, outbox operations, transaction code, cursor store, and pending-state derivation as
+the production sync path. Keep the fake deterministic. An injected local failure after one staged
+row must roll back the whole page and its cursor.
+
+Partition each scenario by the same stable identity key used in production. A client wired to one
+partition must never read another partition's outbox, cursor, rejection log, or local rows.
+
+## 7. Acceptance checks
 
 - A cold start never flashes a settled empty state before hydration/pull is known.
 - Cached data remains visible with an offline explanation when the initial network request fails.
@@ -95,5 +118,7 @@ and conflict rules remain product-owned.
   acknowledged.
 - A pull cursor never regresses, and `has_more` requires cursor progress.
 - The stored pull cursor changes only after the local transaction succeeds.
+- Every product sync suite passes all cases from `createSyncConformanceTests` against its own
+  adapters and fake server.
 - A parent with a rejected required child remains incomplete; repair can converge the whole group and discard follows product-defined atomic/cascade rules.
 - The same outcome reducer is exercised for retry, timeout, cancellation, and restart/replay paths without prescribing a wire protocol.

@@ -29,6 +29,10 @@
     "./expo": {
       "types": "./dist/expo.d.ts",
       "import": "./dist/expo.js"
+    },
+    "./conformance": {
+      "types": "./dist/conformance.d.ts",
+      "import": "./dist/conformance.js"
     }
   },
   "files": [

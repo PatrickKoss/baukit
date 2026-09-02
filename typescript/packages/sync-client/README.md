@@ -223,3 +223,33 @@ or `hasMore` without cursor progress throws `SyncPayloadCompatibilityError`.
 `commitCursorAfterLocalTransaction` runs the supplied local transaction first. It invokes
 `commitCursor` only after that promise resolves, and wraps local failures in `SyncLocalApplyError`.
 This ordering prevents a failed local apply from skipping remote changes on the next pull.
+
+## Conformance harness
+
+`@baukit/sync-client/conformance` exports `createSyncConformanceTests`. It returns plain async test
+cases and has no Vitest or Jest dependency. Register the returned cases with the runner already in
+the product:
+
+```ts
+import { createSyncConformanceTests } from '@baukit/sync-client/conformance';
+
+describe('product sync contract', () => {
+  for (const testCase of createSyncConformanceTests(productAdapter)) {
+    it(testCase.name, testCase.run);
+  }
+});
+```
+
+The adapter supplies two isolated clients and one fake server per case. It also supplies callbacks
+for outbox enqueue, listing, acknowledgement, and rejection storage; atomic pull application and
+cursor storage; pending-state reporting; wire encoding and decoding; and fake-server push, pull,
+seeding, snapshots, and fault injection. Canonical fixture changes contain opaque entity names,
+values, logical times, dependencies, and tombstones. The adapter maps them to the product's schema
+and payloads.
+
+The cases cover replay, transaction rollback, paged cursor progress, stalled and regressing
+cursors, complete push outcomes, pending state after network, server, and local failures,
+actionable rejections, dependency-safe push order, and two-client convergence with a tombstone.
+`wire.decodePush` must call `validatePushOutcomeCoverage` before returning acknowledged rows. The
+local apply callback must commit the page and cursor in one transaction. Its injected failure must
+roll both back.
