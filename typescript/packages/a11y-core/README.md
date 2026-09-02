@@ -11,9 +11,10 @@ product's Expo SDK decides the versions, and React Native is optional.
 
 A React Native product imports the package root and gets everything. A plain React web app imports
 `@baukit/a11y-core/web` and gets `useFocusTrap`, `useInert`, `useAriaHiddenInert`,
-`useSingleFlight`, and the `dom-boundary` helpers. Nothing reachable from that entry imports
-`react-native`, at runtime or in its types, so the app needs no React Native in its dependency
-tree. `react-native` is an optional peer dependency for exactly that reason.
+`useSingleFlight`, `createRouteFocusController`, and the `dom-boundary` helpers. Nothing reachable
+from that entry imports `react-native`, at runtime or in its types, so the app needs no React
+Native in its dependency tree. `react-native` is an optional peer dependency for exactly that
+reason.
 
 The DOM hooks ask whether a document exists rather than asking `Platform` which OS this is. The
 two questions have the same answer here: every branch those hooks guard reads or writes the DOM,
@@ -56,7 +57,7 @@ const deferFocus = (task: () => void) => {
 };
 ```
 
-Spread `backgroundProps` onto the content *behind* the overlay, never the overlay itself. It sets
+Spread `backgroundProps` onto the content _behind_ the overlay, never the overlay itself. It sets
 `accessibilityElementsHidden` and `importantForAccessibility` while the overlay is open, and is
 empty on web and while closed. Spread `containerProps` onto the overlay container.
 
@@ -64,6 +65,29 @@ empty on web and while closed. Spread `containerProps` onto the overlay containe
 overlay. `useAriaHiddenInert` covers a separate problem: routers mark inactive web scenes
 `aria-hidden`, which leaves their descendants in the keyboard focus order. Mount it once at the
 app root. Put `ARIA_HIDDEN_INERT_OPT_OUT` on an element that must stay focusable anyway.
+
+## Route focus
+
+WebKit can blur the initiating control to `body` when a router makes the outgoing scene inert.
+Create one `createRouteFocusController` at app startup so it can remember the last reachable
+focused element. Enter a route with a target getter, then run the returned cleanup when the route
+becomes inactive:
+
+```ts
+const routeFocus = createRouteFocusController();
+
+const leaveRoute = routeFocus.enterRoute(() =>
+  document.querySelector<HTMLElement>('[data-route-heading]'),
+);
+
+leaveRoute();
+routeFocus.dispose();
+```
+
+The controller waits for the destination target to mount and retries on animation frames for up to
+1.5 seconds. It waits for inert or hidden return targets to become reachable. It stops if the user
+moves focus to another reachable element, and it never focuses a target below `inert`,
+`aria-hidden="true"`, or `hidden`.
 
 ## The React Native to DOM boundary
 
@@ -85,8 +109,11 @@ product-owned id, and `assertive: true` to interrupt rather than wait for a paus
 
 ## Reduced motion, groups, and forms
 
-`useReducedMotion` reads the web media query or `AccessibilityInfo.isReduceMotionEnabled`, and
-follows changes made during a running session on both platforms.
+`useReducedMotionPreference` returns `{ reducedMotion, resolved }` and follows preference changes
+on both platforms. Web resolves during the first render. The native query is asynchronous, so
+`resolved` starts as `false` and becomes `true` whether the query succeeds or fails. Do not start
+non-essential motion until it is `true`. `useReducedMotion` remains the boolean form for existing
+callers.
 
 `useRovingRadioGroup` gives a radio group a single tab stop and arrow-key movement between its
 options, wrapping at both ends and honoring Home and End. `radioProps(index)` returns the

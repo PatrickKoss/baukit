@@ -20,9 +20,14 @@ Use this checklist:
 - Give controls and graphics meaningful names, roles, state/value, reading order, and non-color cues. Keep real heading semantics independent of typography.
 - Meet the product target minimum: web 44 by 44 CSS pixels; native 44 by 44 points on iOS and 48 by 48 dp on Android, with separable hit areas.
 - Link form labels, help, required/invalid state, and errors. Announce the result and focus the first invalid field without erasing input.
-- Respect reduced motion on web and through `AccessibilityInfo.isReduceMotionEnabled()` on native. Preserve meaning without unnecessary movement.
+- Use `useReducedMotionPreference` when startup motion depends on the preference. Wait for `resolved` before starting non-essential motion because the native query is asynchronous.
 - Announce important asynchronous outcomes once, using localized, task-specific copy.
 - Give every data graphic a structured text/table alternative with relevant values, units, range, trend, and exceptions.
+
+For web route focus, create one `createRouteFocusController` before navigation starts. It preserves
+the real initiating control when an inert outgoing scene makes WebKit blur focus to `body`. Pass a
+getter for the destination heading or primary target, and run the returned cleanup when the route
+becomes inactive. Do not focus inert or `aria-hidden="true"` targets.
 
 For a web modal, provide initial focus, Tab containment, Escape behavior, inert background content, and focus restoration.
 

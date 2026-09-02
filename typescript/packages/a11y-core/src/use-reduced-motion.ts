@@ -3,24 +3,33 @@ import { AccessibilityInfo, Platform } from 'react-native';
 
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 
+export interface ReducedMotionPreference {
+  reducedMotion: boolean;
+  resolved: boolean;
+}
+
 function mediaQuery(): MediaQueryList | null {
   return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
     ? window.matchMedia(REDUCED_MOTION_QUERY)
     : null;
 }
 
-/** Tracks the reduced-motion preference and follows changes during the session. */
-export function useReducedMotion(): boolean {
-  const [reducedMotion, setReducedMotion] = useState(
-    () => Platform.OS === 'web' && (mediaQuery()?.matches ?? false),
-  );
+/** Tracks when the reduced-motion preference is ready and follows later changes. */
+export function useReducedMotionPreference(): ReducedMotionPreference {
+  const [preference, setPreference] = useState<ReducedMotionPreference>(() => {
+    const web = Platform.OS === 'web';
+    return {
+      reducedMotion: web && (mediaQuery()?.matches ?? false),
+      resolved: web,
+    };
+  });
 
   useEffect(() => {
     if (Platform.OS === 'web') {
       const query = mediaQuery();
       if (!query) return;
       const onChange = (event: MediaQueryListEvent) => {
-        setReducedMotion(event.matches);
+        setPreference({ reducedMotion: event.matches, resolved: true });
       };
       query.addEventListener('change', onChange);
       return () => {
@@ -29,11 +38,22 @@ export function useReducedMotion(): boolean {
     }
 
     let mounted = true;
-    void AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
-      if (mounted) setReducedMotion(enabled);
+    let preferenceChanged = false;
+    const settle = (reducedMotion?: boolean) => {
+      if (!mounted) return;
+      setPreference((current) => ({
+        reducedMotion:
+          reducedMotion === undefined || preferenceChanged ? current.reducedMotion : reducedMotion,
+        resolved: true,
+      }));
+    };
+    void AccessibilityInfo.isReduceMotionEnabled().then(settle, () => {
+      settle();
     });
     const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', (enabled) => {
-      setReducedMotion(enabled);
+      if (!mounted) return;
+      preferenceChanged = true;
+      setPreference({ reducedMotion: enabled, resolved: true });
     });
     return () => {
       mounted = false;
@@ -41,5 +61,10 @@ export function useReducedMotion(): boolean {
     };
   }, []);
 
-  return reducedMotion;
+  return preference;
+}
+
+/** Tracks the reduced-motion preference and follows changes during the session. */
+export function useReducedMotion(): boolean {
+  return useReducedMotionPreference().reducedMotion;
 }

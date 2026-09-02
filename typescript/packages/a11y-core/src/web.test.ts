@@ -18,6 +18,7 @@ describe('the web entry point', () => {
       'asFocusContainer',
       'asFocusTarget',
       'asTreeElement',
+      'createRouteFocusController',
       'focusOverlayEntry',
       'focusableElements',
       'hostElement',

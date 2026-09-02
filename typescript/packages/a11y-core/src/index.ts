@@ -1,5 +1,6 @@
 export * from './announce.js';
 export * from './dom-boundary.js';
+export * from './route-focus.js';
 export * from './use-enter-to-next.js';
 export * from './use-focus-trap.js';
 export * from './use-inert.js';

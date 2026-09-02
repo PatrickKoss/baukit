@@ -18,7 +18,7 @@ vi.mock('react-native', () => ({
   },
 }));
 
-import { useReducedMotion } from './use-reduced-motion.js';
+import { useReducedMotion, useReducedMotionPreference } from './use-reduced-motion.js';
 
 /** jsdom has no matchMedia, so the query it would return is supplied here. */
 type MediaListener = (event: MediaQueryListEvent) => void;
@@ -55,10 +55,14 @@ afterEach(() => {
 });
 
 describe('useReducedMotion on web', () => {
-  it('reads the media query on the first render', () => {
+  it('reads the media query and resolves on the first render', () => {
     stubMatchMedia(true);
 
     expect(renderHook(() => useReducedMotion()).result.current).toBe(true);
+    expect(renderHook(() => useReducedMotionPreference()).result.current).toEqual({
+      reducedMotion: true,
+      resolved: true,
+    });
   });
 
   it('asks for the reduced-motion query specifically', () => {
@@ -98,7 +102,18 @@ describe('useReducedMotion on web', () => {
 });
 
 describe('useReducedMotion on native', () => {
-  it.each(['ios', 'android'])('reads and observes the platform setting on %s', async (os) => {
+  it('starts unresolved while the platform query is pending', () => {
+    platform.OS = 'ios';
+    isReduceMotionEnabled.mockReturnValue(new Promise(() => undefined));
+    addEventListener.mockReturnValue({ remove: vi.fn() });
+
+    expect(renderHook(() => useReducedMotionPreference()).result.current).toEqual({
+      reducedMotion: false,
+      resolved: false,
+    });
+  });
+
+  it.each(['ios', 'android'])('resolves and observes the platform setting on %s', async (os) => {
     platform.OS = os;
     isReduceMotionEnabled.mockResolvedValue(true);
     let listener: ((enabled: boolean) => void) | undefined;
@@ -108,33 +123,57 @@ describe('useReducedMotion on native', () => {
       return { remove };
     });
 
-    const view = renderHook(() => useReducedMotion());
+    const view = renderHook(() => useReducedMotionPreference());
 
     await vi.waitFor(() => {
-      expect(view.result.current).toBe(true);
+      expect(view.result.current).toEqual({ reducedMotion: true, resolved: true });
     });
     expect(addEventListener).toHaveBeenCalledWith('reduceMotionChanged', expect.any(Function));
 
     act(() => {
       listener?.(false);
     });
-    expect(view.result.current).toBe(false);
+    expect(view.result.current).toEqual({ reducedMotion: false, resolved: true });
 
     view.unmount();
     expect(remove).toHaveBeenCalled();
   });
 
-  it('ignores a slow read that resolves after unmount', async () => {
+  it('resolves after a rejected platform query', async () => {
     platform.OS = 'ios';
-    isReduceMotionEnabled.mockResolvedValue(true);
+    isReduceMotionEnabled.mockRejectedValue(new Error('query unavailable'));
     addEventListener.mockReturnValue({ remove: vi.fn() });
 
-    const view = renderHook(() => useReducedMotion());
+    const view = renderHook(() => useReducedMotionPreference());
+
+    await vi.waitFor(() => {
+      expect(view.result.current).toEqual({ reducedMotion: false, resolved: true });
+    });
+  });
+
+  it('does not update after unmount when a slow read resolves', async () => {
+    platform.OS = 'ios';
+    let resolveQuery: ((enabled: boolean) => void) | undefined;
+    isReduceMotionEnabled.mockReturnValue(
+      new Promise((resolve) => {
+        resolveQuery = resolve;
+      }),
+    );
+    const remove = vi.fn();
+    addEventListener.mockReturnValue({ remove });
+    let renders = 0;
+
+    const view = renderHook(() => {
+      renders += 1;
+      return useReducedMotionPreference();
+    });
     view.unmount();
     await act(async () => {
+      resolveQuery?.(true);
       await Promise.resolve();
     });
 
-    expect(view.result.current).toBe(false);
+    expect(renders).toBe(1);
+    expect(remove).toHaveBeenCalledOnce();
   });
 });
