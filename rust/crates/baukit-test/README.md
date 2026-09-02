@@ -17,6 +17,10 @@ opted into:
 - `assert_auth_router_conformance`: protected routes reject missing, malformed, and expired tokens.
 - `assert_openapi_no_drift`: the committed schema matches the code.
 - `check_product_profile_erasure_conformance`: a user-deletion path actually removes what it claims.
+- `check_limit_boundaries`: a validator accepts `limit - 1` and `limit`, then rejects `limit + 1`.
+- `check_update_at_capacity` and `check_soft_delete_capacity_reuse`: live-row caps allow updates and
+  release capacity after soft deletion.
+- `check_ingress_reason_code_parity`: every named write path returns the same stable reason code.
 
 A contract stated only in a document decays. Someone renames a metric, someone adds a route without
 auth, someone changes an error envelope, and nothing fails until an alert stops firing months later.
@@ -60,6 +64,46 @@ tests that exercise personal access tokens.
 `FakeConnector` plays back scripted outbound-integration scenarios, including signature headers, for
 testing retry and failure handling without a real upstream.
 
+## Resource limits
+
+Products own their limits and reason codes. `baukit-test` checks the behavior without knowing either.
+Use `check_limit_boundaries` with a payload builder and the product validator:
+
+```rust
+# tokio_test_block(async {
+use baukit_test::{check_limit_boundaries, trimmed_text_length};
+
+check_limit_boundaries(
+    120,
+    |length| "é".repeat(length),
+    |text| async move {
+        if trimmed_text_length(&text) <= 120 {
+            Ok(())
+        } else {
+            Err("text_too_long")
+        }
+    },
+)
+.await?;
+# Ok::<(), baukit_test::LimitsConformanceError>(())
+# });
+# fn tokio_test_block<F: std::future::Future>(future: F) -> F::Output {
+#     tokio::runtime::Builder::new_current_thread()
+#         .build()
+#         .expect("runtime")
+#         .block_on(future)
+# }
+```
+
+`trimmed_text_length` counts Unicode scalar values after trimming. `compact_document_bytes` measures
+the UTF-8 bytes produced by compact JSON serialization.
+
+Implement `LiveRowLimitAdapter` around a fresh owner or parent fixture. Run
+`check_update_at_capacity` and `check_soft_delete_capacity_reuse` separately because each helper fills
+the fixture to its cap. Use `NamedIngress` with `check_ingress_reason_code_parity` to invoke REST,
+sync, import, and local write paths against the same invalid input. The caller-supplied extractor reads
+the product's reason code from each output.
+
 ## Telemetry in tests
 
 `init_test_tracing` installs a lightweight subscriber for tests that just need log output. It is not an
@@ -72,5 +116,5 @@ execution order, which is a miserable afternoon to debug from the symptom.
 
 ## Scope
 
-Fixtures and contract checks, no product test helpers. Deciding what your service should do is your
-test's job; this crate checks that it still does what the platform requires.
+This crate provides fixtures and contract checks. Products still decide their limits, persistence,
+error types, and policy. The helpers only check the behavior a product declares.

@@ -2,7 +2,7 @@
 
 **Status:** Product-facing implementation recipe; the generic connector port is `baukit-integrations`.
 **Applies to:** Outbound provider calls, OAuth-backed connections, webhooks, imports, notifications, and client delivery queues.
-**Related:** [telemetry specification](./telemetry-spec.md) and [offline readiness](./offline-readiness-contract.md).
+**Related:** [telemetry specification](./telemetry-spec.md), [offline readiness](./offline-readiness-contract.md), and [resource budgets](./resource-budgets-contract.md).
 
 Baukit supplies durable execution and operational contracts. Provider resources, OAuth models and recovery, webhook schemas and verification rules, cursor formats, credentials, normalized entities, and localized product UX remain product-local. A collection of providers in one domain is evidence for a shared connector *contract* but not for a shared connector *framework*. `baukit-integrations` owns the port shape, the retry vocabulary, and the scripted fake; the product-local list above stays product-local. See [ADR 0002](../adr/0002-integration-connector-contract.md) for the reasoning and [the crate README](../../rust/crates/baukit-integrations/README.md) for the API.
 

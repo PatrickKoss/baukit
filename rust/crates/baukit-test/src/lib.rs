@@ -2,8 +2,8 @@
 //!
 //! The crate provides Docker-backed PostgreSQL, direct Redis, and Redis Sentinel
 //! fixtures, compact test tracing, Prometheus contract checks, in-process or network
-//! operations-endpoint checks, OpenAPI drift assertions, and a mock OIDC/JWKS issuer
-//! with JWT fixtures.
+//! operations-endpoint checks, OpenAPI drift assertions, resource-limit checks,
+//! and a mock OIDC/JWKS issuer with JWT fixtures.
 //!
 //! # Telemetry tests
 //!
@@ -37,6 +37,7 @@ mod erasure;
 #[cfg(test)]
 mod fixture_tests;
 mod jwt;
+mod limits;
 mod metrics;
 mod ops;
 mod postgres;
@@ -62,6 +63,13 @@ pub use erasure::{
 pub use jwt::{
     JwtClaims, JwtFixtureError, MockOidcServer, MockOidcSession, authorization_header, hs256_token,
     rs256_token, rs256_token_with_key_id, unsigned_token,
+};
+pub use limits::{
+    LimitsConformanceError, LiveRowLimitAdapter, NamedIngress, NamedOutput,
+    assert_ingress_reason_code_parity, assert_limit_boundaries, assert_reason_code_conformance,
+    assert_soft_delete_capacity_reuse, assert_update_at_capacity, check_ingress_reason_code_parity,
+    check_limit_boundaries, check_reason_code_conformance, check_soft_delete_capacity_reuse,
+    check_update_at_capacity, compact_document_bytes, trimmed_text_length,
 };
 pub use metrics::{
     MetricsConformanceError, MetricsConformanceOptions, assert_metrics_conformance,

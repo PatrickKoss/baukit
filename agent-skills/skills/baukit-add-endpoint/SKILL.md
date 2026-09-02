@@ -27,7 +27,7 @@ For a table pulled by offline clients, follow the generated product's `docs/sync
 2. Return `ApiError`; never serialize an ad hoc error body. Public codes must be stable snake_case, messages must be safe, validation details must be structured, and internal causes must stay out of responses. The envelope is `ErrorEnvelope { error: ErrorBody { code, message, request_id, details } }`.
 3. Document every success and error response with `#[utoipa::path]`. Use `ErrorEnvelope` for error bodies.
 4. Add the handler to `ApiDoc`'s `paths(...)`; add new DTOs and error schemas to `components(schemas(...))`.
-5. Follow the contracts in the matching Baukit checkout: `docs/platform/baukit-conventions.md` and `docs/platform/telemetry-spec.md`. Do not add endpoint-specific HTTP metrics; `baukit-http` records the standard RED metrics once.
+5. Follow the contracts in the matching Baukit checkout: `docs/platform/baukit-conventions.md`, `docs/platform/telemetry-spec.md`, and `docs/platform/resource-budgets-contract.md`. Do not add endpoint-specific HTTP metrics; `baukit-http` records the standard RED metrics once.
 
 Use the field helpers that `baukit-http` exports:
 
@@ -77,6 +77,42 @@ try {
 ```
 
 `message` is safe fallback text, not a stable localization key. Keep resolution and user-facing copy product-owned.
+
+## Set resource budgets
+
+Before implementing a write endpoint, record an explicit limit or an explicit decision that no limit
+applies for each of these:
+
+- request body bytes;
+- collection length;
+- compact serialized document bytes;
+- live rows per owner and, where applicable, per parent;
+- bulk batch size; and
+- expensive work per named time window.
+
+Enforce body and batch limits before parsing, persistence, outbound calls, or other expensive work.
+Count text as Unicode scalar values after trimming. Measure documents by the UTF-8 bytes in their
+compact JSON encoding. Row caps count live rows. Updates must succeed at capacity, and soft-deleted
+rows must release capacity.
+
+Give every rejected budget a stable snake_case reason code with safe structured details. Apply the
+same rule and code to REST, sync ingestion, imports, and local writes. Include equivalent background
+writes when they accept the same data. Keep the limits, reason codes, persistence, and policy in the
+product.
+
+Use `baukit-test` in product tests:
+
+- `check_limit_boundaries` checks payloads built at `limit - 1`, `limit`, and `limit + 1`.
+- `trimmed_text_length` and `compact_document_bytes` use the contract's text and document
+  measurements.
+- `LiveRowLimitAdapter` with `check_update_at_capacity` proves updates do not consume capacity.
+- `LiveRowLimitAdapter` with `check_soft_delete_capacity_reuse` proves soft deletion releases a slot.
+- `NamedIngress` with `check_ingress_reason_code_parity` invokes each write path and compares the
+  reason code returned by the caller-supplied extractor.
+
+Run row checks separately for per-owner and per-parent caps. Metrics for budget rejection or expensive
+work may use only bounded, code-defined labels. Never use owner IDs, parent IDs, payload values, URLs,
+request IDs, or error text as metric labels.
 
 ## Regenerate and verify
 
