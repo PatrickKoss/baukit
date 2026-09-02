@@ -52,3 +52,30 @@ export function getTabContentInset(
   if (layoutMode === 'expanded') return 0;
   return tabBarHeight + Math.max(0, safeAreaBottom);
 }
+
+function validateNonNegativeDimension(name: string, value: number): void {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new RangeError(
+      `${name} must be a finite non-negative number; received ${String(value)}.`,
+    );
+  }
+}
+
+/** Returns the viewport height left after fixed footer and bottom inset. */
+export function getUsableContentHeight(
+  viewportHeight: number,
+  fixedFooterHeight: number,
+  bottomInset: number,
+): number {
+  validateNonNegativeDimension('viewportHeight', viewportHeight);
+  validateNonNegativeDimension('fixedFooterHeight', fixedFooterHeight);
+  validateNonNegativeDimension('bottomInset', bottomInset);
+  return Math.max(0, viewportHeight - fixedFooterHeight - bottomInset);
+}
+
+/** True when the viewport height is at or below the caller's threshold. */
+export function isShortViewport(viewportHeight: number, threshold: number): boolean {
+  validateNonNegativeDimension('viewportHeight', viewportHeight);
+  validateNonNegativeDimension('threshold', threshold);
+  return viewportHeight <= threshold;
+}

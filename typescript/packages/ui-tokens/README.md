@@ -15,6 +15,78 @@ Colors are opaque `#RGB` or `#RRGGBB` sRGB values with light and dark variants. 
 
 Validation is handwritten rather than Zod-based: the schema is small, this keeps production dependencies at zero, and it enables diagnostics tailored to semantic token paths.
 
+## Work with colors
+
+The color helpers accept three- or six-digit hexadecimal sRGB colors, with an
+optional `#`. Normalized and calculated colors use lowercase `#rrggbb` form.
+
+```ts
+import {
+  blendColors,
+  chooseReadableForeground,
+  hexToRgb,
+  normalizeHexColor,
+  rgbToHex,
+} from '@baukit/ui-tokens';
+
+normalizeHexColor('09C'); // '#0099cc'
+hexToRgb('#0099cc'); // { r: 0, g: 153, b: 204 }
+rgbToHex({ r: 0, g: 153, b: 204 }); // '#0099cc'
+blendColors('#ffffff', '#000000', 0.25); // '#404040'
+
+const foreground = chooseReadableForeground('#005fcc', ['#ffffff', '#111111'], 4.5);
+// { foreground: '#ffffff', ratio: 5.98..., meetsThreshold: true }
+```
+
+`blendColors` clamps its ratio to `[0, 1]`. `chooseReadableForeground` returns
+the first candidate that meets the threshold. If none passes, it returns the
+candidate with the highest ratio and sets `meetsThreshold` to `false`.
+
+## Check a semantic contrast matrix
+
+`DEFAULT_SEMANTIC_CONTRAST_REQUIREMENTS` defines these role paths:
+
+- `color.background.primary` and `color.background.elevated`
+- `color.text.primary` and `color.text.muted`
+- `color.border.primary` and `color.focus.ring`
+- `color.action.primary`, `color.action.onPrimary`, `color.action.secondary`, and `color.action.onSecondary`
+- `color.status.success`, `color.status.warning`, `color.status.danger`, and their `onSuccess`, `onWarning`, and `onDanger` foregrounds
+
+Text and labeled foregrounds require 4.5:1. Borders and focus rings require
+3:1 against both background roles. The checker tests every requirement in the
+light and dark variants and returns every failure.
+
+```ts
+import {
+  checkSemanticContrastMatrix,
+  DEFAULT_SEMANTIC_CONTRAST_REQUIREMENTS,
+} from '@baukit/ui-tokens';
+
+const failures = checkSemanticContrastMatrix(tokens, [
+  ...DEFAULT_SEMANTIC_CONTRAST_REQUIREMENTS,
+  {
+    foregroundRole: 'color.chart.label',
+    backgroundRole: 'color.chart.background',
+    minimumRatio: 4.5,
+  },
+]);
+```
+
+Pass a different list to replace the defaults. A missing role or a minimum
+outside the possible WCAG range of 1 through 21 throws a descriptive error.
+
+## Calculate vertical layout
+
+Products supply every dimension and threshold. Both functions reject negative
+or non-finite values.
+
+```ts
+import { getUsableContentHeight, isShortViewport } from '@baukit/ui-tokens';
+
+getUsableContentHeight(720, 112, 128); // 480
+isShortViewport(600, productLayout.shortViewportHeight); // true
+```
+
 ## Compile
 
 ```ts
@@ -67,12 +139,12 @@ restriction keeps route names, test ids, and ordinary prose off the report.
 
 Options:
 
-| Option | Default | Meaning |
-| --- | --- | --- |
-| `allowedFiles` | `[]` | Glob-like paths that may declare raw colors. `*` matches inside a path segment, `**` across segments. Put the token definition here. |
-| `allowedValues` | `transparent`, `currentColor`, `inherit`, `none` | Literals allowed everywhere. Entries add to the defaults. |
-| `additionalStyleProperties` | `[]` | Extra property or attribute names treated as style-like. |
-| `reportKeywords` | `true` | Set to `false` to report only hex and functional notations. |
+| Option                      | Default                                          | Meaning                                                                                                                              |
+| --------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `allowedFiles`              | `[]`                                             | Glob-like paths that may declare raw colors. `*` matches inside a path segment, `**` across segments. Put the token definition here. |
+| `allowedValues`             | `transparent`, `currentColor`, `inherit`, `none` | Literals allowed everywhere. Entries add to the defaults.                                                                            |
+| `additionalStyleProperties` | `[]`                                             | Extra property or attribute names treated as style-like.                                                                             |
+| `reportKeywords`            | `true`                                           | Set to `false` to report only hex and functional notations.                                                                          |
 
 ## Boundaries
 

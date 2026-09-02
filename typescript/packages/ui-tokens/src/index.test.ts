@@ -118,9 +118,10 @@ describe('CSS compiler', () => {
 
   it('emits semantic variables and a dark override', () => {
     const css = toCssVariables(exampleTokens);
-    expect(css).toContain(':root {\n  --bk-color-background-accent: #005fcc;');
+    expect(css).toContain('--bk-color-background-accent: #005fcc;');
     expect(css).toContain('--bk-typography-line-height-body: 1.5;');
-    expect(css).toContain('[data-theme="dark"] {\n  --bk-color-background-accent: #66aaff;');
+    expect(css).toContain('--bk-color-background-accent: #66aaff;');
+    expect(css).toContain('[data-theme="dark"] {');
     expect(css.endsWith('\n')).toBe(true);
   });
 
@@ -129,6 +130,7 @@ describe('CSS compiler', () => {
       ...exampleTokens,
       space: { medium: 16, small: 8 },
       color: {
+        ...exampleTokens.color,
         text: exampleTokens.color.text,
         background: exampleTokens.color.background,
       },

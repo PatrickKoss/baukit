@@ -4,6 +4,8 @@ import {
   getLayoutMode,
   getScreenMaxWidth,
   getTabContentInset,
+  getUsableContentHeight,
+  isShortViewport,
   type LayoutBreakpoints,
 } from './layout.js';
 
@@ -73,5 +75,50 @@ describe('getTabContentInset', () => {
 
   it('ignores a negative safe area', () => {
     expect(getTabContentInset('compact', -10, 56)).toBe(56);
+  });
+});
+
+describe('getUsableContentHeight', () => {
+  it('subtracts footer and inset and clamps the result at zero', () => {
+    expect(getUsableContentHeight(720, 112, 128)).toBe(480);
+    expect(getUsableContentHeight(100, 112, 56)).toBe(0);
+    expect(getUsableContentHeight(0, 0, 0)).toBe(0);
+  });
+
+  it.each([
+    ['viewportHeight', Number.NaN, 0, 0],
+    ['viewportHeight', Number.POSITIVE_INFINITY, 0, 0],
+    ['viewportHeight', -1, 0, 0],
+    ['fixedFooterHeight', 100, Number.NaN, 0],
+    ['fixedFooterHeight', 100, Number.POSITIVE_INFINITY, 0],
+    ['fixedFooterHeight', 100, -1, 0],
+    ['bottomInset', 100, 0, Number.NaN],
+    ['bottomInset', 100, 0, Number.POSITIVE_INFINITY],
+    ['bottomInset', 100, 0, -1],
+  ] as const)('rejects an invalid %s', (name, viewportHeight, footerHeight, bottomInset) => {
+    expect(() => getUsableContentHeight(viewportHeight, footerHeight, bottomInset)).toThrow(
+      `${name} must be a finite non-negative number`,
+    );
+  });
+});
+
+describe('isShortViewport', () => {
+  it('includes the caller-supplied threshold boundary', () => {
+    expect(isShortViewport(599, 600)).toBe(true);
+    expect(isShortViewport(600, 600)).toBe(true);
+    expect(isShortViewport(601, 600)).toBe(false);
+  });
+
+  it.each([
+    [Number.NaN, 600, 'viewportHeight'],
+    [Number.POSITIVE_INFINITY, 600, 'viewportHeight'],
+    [-1, 600, 'viewportHeight'],
+    [600, Number.NaN, 'threshold'],
+    [600, Number.POSITIVE_INFINITY, 'threshold'],
+    [600, -1, 'threshold'],
+  ] as const)('rejects invalid dimensions', (viewportHeight, threshold, name) => {
+    expect(() => isShortViewport(viewportHeight, threshold)).toThrow(
+      `${name} must be a finite non-negative number`,
+    );
   });
 });
