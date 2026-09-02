@@ -83,7 +83,19 @@ Client delivery queues need both size and attempt bounds. Persist an idempotency
 
 Map provider/transport failures to stable snake_case machine codes at the product boundary, for example `provider_rate_limited`, `provider_unavailable`, `provider_revoked`, or `delivery_exhausted`. APIs return those codes with safe structured details. Web and mobile map `code + details` to localized copy and recovery actions; they never display `last_error` or an exception string.
 
-Provider connection state, reconnect flows, OAuth consent, scopes, and recovery copy remain product-local even when their failure classes follow this recipe.
+`@baukit/integrations-client` maps server health and client events to fixed connection states and
+available actions. Its output contains no display text. Products map those states to localized copy
+and must not render the machine diagnostic code. Raw provider diagnostics are discarded.
+
+The same package coordinates OAuth sessions through injected browser, native, redirect, storage,
+timer, nonce, and clock ports. Allow a callback only when its origin and path match the configured
+allowlist exactly and its state nonce matches the stored in-flight session. Discard stale sessions.
+Reserve a web popup before awaiting the server's authorization URL so the browser still associates
+the popup with the user's click.
+
+Products continue to own provider consent parameters, scopes, persistence, identity, localized copy,
+and recovery policy. Build the package's provider registry from those product values. Do not add
+provider branches to the shared package.
 
 ## 6. Deterministic fakes and acceptance checks
 

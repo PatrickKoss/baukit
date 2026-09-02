@@ -7,7 +7,7 @@
 
 The boring 80% of a Rust backend and its TypeScript clients, already built and already tested.
 
-*Baukit* is German for a construction kit, and that is the whole idea. Sixteen Rust crates and sixteen npm packages, each small enough to adopt on its own, plus a CLI that wires them into a working product when you want the whole thing.
+*Baukit* is German for a construction kit, and that is the whole idea. Sixteen Rust crates and seventeen npm packages, each small enough to adopt on its own, plus a CLI that wires them into a working product when you want the whole thing.
 
 > [!WARNING]
 > **Under heavy development. Expect breaking changes.**
@@ -30,6 +30,8 @@ cargo install --git https://github.com/PatrickKoss/baukit --tag v0.1.2 --locked 
 baukit new orders --backend --web
 cd orders && make check
 ```
+
+Add `--quality strict` to generate capability-specific coverage, migration, OpenAPI, browser, image, and native gates. The generated `scripts/quality-gate.sh` runs the same checks locally. Standard remains the default.
 
 You get a hexagonal Rust backend (`orders-domain`, `-ports`, `-services`, `-api`, `-postgres`, `-bin`), a Vite React app with a typed client generated from the backend's OpenAPI schema, Docker builds, a Helm values file, CI, and conformance tests that fail if the health and metrics contracts drift.
 
@@ -127,6 +129,7 @@ Nothing here depends on the CLI, and no crate drags in the rest. Take the error 
 | [`@baukit/auth-web`](typescript/packages/auth-web) · [`-native`](typescript/packages/auth-native) | OIDC authorization code with S256 PKCE, refresh rotation |
 | [`@baukit/data-contracts`](typescript/packages/data-contracts) | Storage contracts plus conformance suites you run against your adapter |
 | [`@baukit/data-contracts-dexie`](typescript/packages/data-contracts-dexie) · [`-expo-sqlite`](typescript/packages/data-contracts-expo-sqlite) | IndexedDB and Expo SQLite adapters, verified in a real browser and on a real Android device in CI |
+| [`@baukit/integrations-client`](typescript/packages/integrations-client) | Connection health, OAuth session coordination, provider registry |
 | [`@baukit/sync-client`](typescript/packages/sync-client) | Sync scheduling, transport, status store, push-batch ordering |
 | [`@baukit/ui-tokens`](typescript/packages/ui-tokens) | Design-token schema, contrast checker, CSS and React Native compilers, a `no-raw-color` eslint rule |
 | [`@baukit/a11y-core`](typescript/packages/a11y-core) | Focus traps, inert backgrounds, announcements, reduced motion, on both web and native |

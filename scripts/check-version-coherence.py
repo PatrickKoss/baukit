@@ -24,6 +24,7 @@ EXPECTED_TYPESCRIPT_PACKAGES = {
     "@baukit/data-contracts-dexie",
     "@baukit/data-contracts-expo-sqlite",
     "@baukit/events",
+    "@baukit/integrations-client",
     "@baukit/localization-core",
     "@baukit/preferences-core",
     "@baukit/pwa-web",

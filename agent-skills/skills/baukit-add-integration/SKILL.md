@@ -19,6 +19,18 @@ Before implementing, write down:
 
 Never log credentials, authorization headers, signature secrets, provider payloads, or raw exception text.
 
+## Build the client connection flow
+
+Use `@baukit/integrations-client` to reduce server health and client events into connection states and
+available actions. Pass only stable snake_case diagnostic codes. Never render the diagnostic field or
+copy raw provider errors into it.
+
+Coordinate OAuth through `OAuthSessionCoordinator`. Inject product storage, nonce creation, timers,
+clock, popup or native runners, and any same-tab redirect handler. Configure an exact return origin
+and path allowlist. The product still owns provider scopes, authorization parameters, persistence,
+identity, recovery policy, and localized copy. Build `ProviderRegistry` entries from those values;
+do not add provider-specific branches to the package.
+
 ## Use `baukit-jobs` for durable work
 
 Define static job types in a product `JobHandler`. Enqueue with `NewJob`; use `PostgresJobStore::enqueue_in_transaction` when the domain write and outbox row share PostgreSQL. Use `JobError::retryable` for runner backoff, `JobError::retryable_after` for a provider-directed delay, and `JobError::permanent` for terminal classification. The runner still enforces `max_attempts`.
