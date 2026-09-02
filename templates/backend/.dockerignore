@@ -1,0 +1,10 @@
+.git
+backend/target
+mobile/node_modules
+mobile/android
+mobile/ios
+mobile/dist
+web/node_modules
+web/dist
+web/playwright-report
+web/test-results

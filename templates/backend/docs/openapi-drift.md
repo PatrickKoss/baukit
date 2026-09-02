@@ -31,16 +31,14 @@ One specification usually feeds several clients: a web app, a mobile app, an MCP
 server, a partner SDK. They drift independently, and the one nobody regenerated
 is the one that breaks in production.
 
-Add each consumer to `scripts/openapi-client.sh` rather than to the workflow.
-The script is what a developer runs; the workflow only reruns it and checks the
-result. Keeping the list in one place means a local `sh scripts/openapi-client.sh`
-regenerates everything, and CI cannot enforce a rule the script does not know
-about.
+Add each consumer to `openapi.consumers` in `baukit.toml`. The script reads that
+list, and the workflow checks each committed output. A local
+`sh scripts/openapi-client.sh` and CI therefore cover the same files.
 
-```sh
-# scripts/openapi-client.sh
-corepack pnpm dlx openapi-typescript backend/openapi.json -o generated/openapi.d.ts
-corepack pnpm dlx openapi-typescript backend/openapi.json -o web/src/api/schema.d.ts
+```toml
+[openapi]
+schema = "backend/openapi.json"
+consumers = ["generated/openapi.d.ts", "web/src/api/schema.d.ts"]
 ```
 
 Commit every generated file the script writes. An untracked one passes a `git

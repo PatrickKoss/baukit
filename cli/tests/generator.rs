@@ -5,7 +5,7 @@ use std::{
     process::Command,
 };
 
-use baukit_cli::{AuthProvider, NewOptions, doctor, generate_new};
+use baukit_cli::{AuthProvider, NewOptions, QualityProfile, doctor, generate_new};
 use sha2::{Digest, Sha256};
 
 #[cfg(unix)]
@@ -28,6 +28,7 @@ fn options(parent: &Path, name: &str) -> NewOptions {
         resolve_lockfiles: false,
         baukit_path: None,
         port_offset: 0,
+        quality: QualityProfile::Standard,
     }
 }
 
@@ -45,6 +46,7 @@ fn frontend_options(parent: &Path, name: &str, mobile: bool, web: bool) -> NewOp
         resolve_lockfiles: false,
         baukit_path: None,
         port_offset: 0,
+        quality: QualityProfile::Standard,
     }
 }
 
@@ -188,13 +190,146 @@ fn combined_generation_matches_golden_tree_and_records_capabilities() -> anyhow:
     assert!(!manifest.capabilities.worker);
     assert!(manifest.capabilities.mobile);
     assert!(manifest.capabilities.web);
+    assert!(!manifest.capabilities.pwa);
     assert_eq!(manifest.capabilities.auth, None);
+    assert_eq!(manifest.quality.profile, QualityProfile::Standard);
+    assert_eq!(manifest.quality.backend_coverage_lines, 70);
+    assert_eq!(manifest.quality.webkit_repeats, 3);
+    assert!(manifest.quality.critical_paths.is_empty());
+    assert!(!manifest.quality.full_stack_e2e);
+    assert_eq!(manifest.openapi.consumers(), ["generated/openapi.d.ts"]);
     assert!(!fs::read_to_string(first.join("baukit.toml"))?.contains("auth"));
+    assert!(!first.join("scripts/quality-gate.sh").exists());
     assert!(first.join("backend/Cargo.toml").is_file());
     assert!(first.join("mobile/app/_layout.tsx").is_file());
     assert!(first.join("mobile/app/(tabs)/index.tsx").is_file());
     assert!(!first.join("mobile/App.tsx").exists());
     assert!(first.join("web/src/App.tsx").is_file());
+    Ok(())
+}
+
+#[test]
+fn legacy_manifest_defaults_to_standard_quality_and_legacy_consumer() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = generate_new(&options(parent.path(), "legacy-app"))?;
+    let path = root.join("baukit.toml");
+    let source = fs::read_to_string(&path)?
+        .replace(
+            "[quality]\nprofile = \"standard\"\nbackend_coverage_lines = 70\ncritical_paths = []\nwebkit_repeats = 3\nfull_stack_e2e = false\n\n",
+            "",
+        )
+        .replace(
+            "consumers = [\"generated/openapi.d.ts\"]",
+            "typescript = \"generated/openapi.d.ts\"",
+        );
+    fs::write(path, source)?;
+
+    let manifest = baukit_cli::read_manifest(&root)?;
+    assert_eq!(manifest.quality.profile, QualityProfile::Standard);
+    assert_eq!(manifest.openapi.consumers(), ["generated/openapi.d.ts"]);
+    Ok(())
+}
+
+#[test]
+fn strict_generation_is_capability_driven_and_matches_golden_tree() -> anyhow::Result<()> {
+    let cases = [
+        ("backend", true, false, false),
+        ("web", false, false, true),
+        ("mobile", false, true, false),
+        ("combined", true, true, true),
+    ];
+
+    for (name, backend, mobile, web) in cases {
+        let parent = tempfile::tempdir()?;
+        let mut strict = if backend {
+            options(parent.path(), &format!("strict-{name}"))
+        } else {
+            frontend_options(parent.path(), &format!("strict-{name}"), mobile, web)
+        };
+        strict.mobile = mobile;
+        strict.web = web;
+        strict.quality = QualityProfile::Strict;
+        let root = generate_new(&strict)?;
+        let manifest = baukit_cli::read_manifest(&root)?;
+        assert_eq!(manifest.quality.profile, QualityProfile::Strict);
+
+        let runner = fs::read_to_string(root.join("scripts/quality-gate.sh"))?;
+        assert_eq!(runner.contains("cargo llvm-cov nextest"), backend);
+        assert_eq!(runner.contains("check-migrations-immutable.sh"), backend);
+        assert_eq!(runner.contains("playwright test"), web);
+        assert_eq!(runner.contains("--repeat-each"), web);
+        assert_eq!(runner.contains("expo-doctor"), mobile);
+        assert_eq!(runner.contains("assembleDebug"), mobile);
+        assert_eq!(
+            root.join("scripts/check-migrations-immutable.sh").is_file(),
+            backend
+        );
+
+        let workflow = fs::read_to_string(root.join(".github/workflows/ci.yml"))?;
+        assert!(workflow.contains("  strict-quality:"));
+        assert_eq!(
+            workflow.contains("taiki-e/install-action@cargo-llvm-cov"),
+            backend
+        );
+        assert_eq!(workflow.contains("playwright install --with-deps"), web);
+        assert_eq!(workflow.contains("actions/setup-java@v4"), mobile);
+    }
+
+    let parent = tempfile::tempdir()?;
+    let mut combined = options(parent.path(), "snapshot-app");
+    combined.mobile = true;
+    combined.web = true;
+    combined.quality = QualityProfile::Strict;
+    let root = generate_new(&combined)?;
+    assert_eq!(
+        render_hash_snapshot(&read_tree(&root)?),
+        include_str!("snapshots/strict.tree")
+    );
+    Ok(())
+}
+
+#[test]
+fn quality_flag_generates_the_strict_profile() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let output = Command::new(env!("CARGO_BIN_EXE_baukit"))
+        .args([
+            "new",
+            "strict-flag",
+            "--web",
+            "--quality",
+            "strict",
+            "--skip-lockfiles",
+            "--dir",
+        ])
+        .arg(parent.path())
+        .output()?;
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let manifest = baukit_cli::read_manifest(&parent.path().join("strict-flag"))?;
+    assert_eq!(manifest.quality.profile, QualityProfile::Strict);
+    Ok(())
+}
+
+#[test]
+fn generated_migration_guard_ports_failure_cases() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut strict = options(parent.path(), "strict-migrations");
+    strict.quality = QualityProfile::Strict;
+    let root = generate_new(&strict)?;
+    let output = Command::new("sh")
+        .arg("scripts/check-migrations-immutable.test.sh")
+        .current_dir(root)
+        .output()?;
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
     Ok(())
 }
 
@@ -386,7 +521,8 @@ fn release_emission_uses_registry_versions_and_reproducibility_files() -> anyhow
     assert!(makefile.contains("test: preflight"));
     assert!(!makefile.contains("baukit generate openapi-client"));
     let client = fs::read_to_string(root.join("scripts/openapi-client.sh"))?;
-    assert!(client.contains("schema=backend/openapi.json"));
+    assert!(client.contains("openapi.get(\"consumers\")"));
+    assert!(client.contains("tomllib.load(source)[\"openapi\"][\"schema\"]"));
     assert!(!client.contains("cargo run"));
     let workflow = fs::read_to_string(root.join(".github/workflows/ci.yml"))?;
     // Every job that builds product code needs the private Baukit dependency.

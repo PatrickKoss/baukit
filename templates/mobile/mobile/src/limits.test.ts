@@ -26,6 +26,16 @@ describe('shared limits policy', () => {
     );
   });
 
+  it('rejects malformed policy objects and sections', () => {
+    expect(() => parseLimitsPolicy(null)).toThrow(LimitsPolicyError);
+    expect(() => parseLimitsPolicy([])).toThrow(LimitsPolicyError);
+    expect(() => parseLimitsPolicy({ ...limitsFixture, $comment: 1 })).toThrow(LimitsPolicyError);
+    expect(() => parseLimitsPolicy({ ...limitsFixture, text: null })).toThrow(LimitsPolicyError);
+    expect(() => {
+      parseLimitsPolicy({ ...limitsFixture, text: { max_characters: 1.5 } });
+    }).toThrow(LimitsPolicyError);
+  });
+
   it('accepts boundaries and reports every stable reason code', () => {
     expect(() => {
       checkText('title', 'é'.repeat(LIMITS_POLICY.text.max_characters));
@@ -59,6 +69,12 @@ describe('shared limits policy', () => {
     expect(() => {
       checkBody('request', Number.NaN);
     }).toThrow(RangeError);
+  });
+
+  it('counts UTF-8 bytes at every encoding width', () => {
+    expect(() => {
+      checkJsonDocument('metadata', 'a¢€𐍈');
+    }).not.toThrow();
   });
 });
 

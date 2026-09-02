@@ -13,6 +13,7 @@ Treat the `baukit` CLI as the source of truth. Never hand-scaffold files or dire
    - `--backend`: Rust workspace with domain, ports, services, API, PostgreSQL adapter, binaries, migrations, tests, local Compose, deploy values, and CI.
    - `--mobile`: Expo/React Native application under `mobile/`.
    - `--web`: Vite/React/TanStack Query application under `web/`.
+   - `--quality strict`: blocking coverage, drift, real-browser, image, and native checks selected from the enabled capabilities. The default is `standard`.
 2. Check the required tools:
 
    ```sh
@@ -49,6 +50,8 @@ CLI applies it to the generated service ports and records it in `baukit.toml`
 for `baukit doctor`.
 
 The product root contains `baukit.toml`. Selected capabilities add `backend/`, `mobile/`, and/or `web/`; backend generation also adds the shared root Makefile, CI, Compose, deployment values, and OpenAPI workflow.
+
+Strict products also contain `scripts/quality-gate.sh`. Configure coverage, repeated WebKit spec paths, full-stack E2E, and OpenAPI consumers in `baukit.toml`. Run the script from the product root before pushing. Keep full-stack external-service E2E disabled until the product provides its own deterministic harness.
 
 The mobile target uses Expo Router. `mobile/app/_layout.tsx` owns startup providers and the root stack, `mobile/app/(tabs)/_layout.tsx` owns primary navigation, and `mobile/app/(tabs)/index.tsx` is the initial screen. `mobile/src/app-preferences.ts` persists language, theme, and analytics consent through the generated record store. OIDC generation keys those preferences by subject and resets visible preferences on sign-out. It also adds `mobile/app/(auth)/sign-in.tsx` and gates the route groups in the root layout. Add screens as files under the appropriate route group. Use `mobile/src/back-or-replace.ts` for a deep-linkable screen's back action, with its semantic parent as the fallback.
 

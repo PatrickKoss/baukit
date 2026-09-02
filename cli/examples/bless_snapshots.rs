@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use baukit_cli::{AuthProvider, NewOptions, generate_new};
+use baukit_cli::{AuthProvider, NewOptions, QualityProfile, generate_new};
 use sha2::{Digest, Sha256};
 
 fn base(parent: &Path) -> NewOptions {
@@ -22,6 +22,7 @@ fn base(parent: &Path) -> NewOptions {
         resolve_lockfiles: false,
         baukit_path: None,
         port_offset: 0,
+        quality: QualityProfile::Standard,
     }
 }
 
@@ -80,6 +81,11 @@ fn main() {
     bless("combined", |o| {
         o.mobile = true;
         o.web = true;
+    });
+    bless("strict", |o| {
+        o.mobile = true;
+        o.web = true;
+        o.quality = QualityProfile::Strict;
     });
     bless("auth", |o| {
         o.mobile = true;

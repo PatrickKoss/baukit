@@ -4,11 +4,19 @@ template_version = "{{ context.template_version }}"
 [app]
 name = "{{ context.app_name }}"
 
+[quality]
+profile = "{{ "strict" if context.quality_strict else "standard" }}"
+backend_coverage_lines = 70
+critical_paths = []
+webkit_repeats = 3
+full_stack_e2e = false
+
 [capabilities]
 backend = true
 worker = {{ context.worker }}
 mobile = false
 web = false
+pwa = false
 {% if context.auth_oidc %}auth = "oidc"
 {% endif %}
 
@@ -17,4 +25,4 @@ web = false
 
 [openapi]
 schema = "backend/openapi.json"
-typescript = "generated/openapi.d.ts"
+consumers = ["generated/openapi.d.ts"]

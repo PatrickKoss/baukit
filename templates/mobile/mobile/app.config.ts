@@ -14,6 +14,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     apiBaseUrl: typeof configuredApiUrl === 'string' ? configuredApiUrl : 'http://localhost:{{ context.api_host_port }}',
   },
   ios: {
+    bundleIdentifier: 'dev.baukit.{{ context.app_name }}',
     supportsTablet: true,
   },
   android: {

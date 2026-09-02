@@ -1,2 +1,8 @@
 allowBuilds:
   unrs-resolver: true
+
+catalog:
+  expo-constants: 57.0.13
+
+overrides:
+  expo-constants: 'catalog:'

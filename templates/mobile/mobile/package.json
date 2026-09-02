@@ -18,7 +18,7 @@
 {{ context.baukit_mobile_typescript_dependencies }},
     "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "57.0.11",
-    "expo-constants": "57.0.13",
+    "expo-constants": "catalog:",
     "expo-crypto": "57.0.1",
     "expo-linking": "57.0.7",
     "expo-localization": "57.0.1",
@@ -52,6 +52,22 @@
   },
   "engines": {
     "node": ">=24.0.0"
+  },
+  "expo": {
+    "install": {
+      "exclude": [
+        "@types/jest",
+        "expo",
+        "expo-constants",
+        "expo-crypto",
+        "expo-linking",
+        "expo-router",
+        "expo-sqlite",
+        "jest-expo",
+        "react",
+        "react-native"
+      ]
+    }
   },
   "packageManager": "pnpm@11.18.0"
 }

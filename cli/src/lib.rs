@@ -29,10 +29,12 @@ const API_HOST_PORT: u32 = 8080;
 const OPS_HOST_PORT: u32 = 9090;
 const KEYCLOAK_HOST_PORT: u32 = 8081;
 const FAKE_PROVIDER_HOST_PORT: u32 = 18081;
+const OPENAPI_TYPESCRIPT_PACKAGE: &str = "openapi-typescript@7.13.0";
 
 const EXPECTED_BACKEND_FILES: &[&str] = &[
     "README.md",
     "Makefile",
+    ".dockerignore",
     ".cargo/config.toml",
     "compose.yaml",
     "deploy/values.yaml",
@@ -44,8 +46,10 @@ const EXPECTED_BACKEND_FILES: &[&str] = &[
     "docs/openapi-drift.md",
     "docs/syncable-tables.md",
     "backend/Cargo.toml",
+    "backend/.dockerignore",
     "backend/Dockerfile",
     "backend/openapi.json",
+    "generated/openapi.d.ts",
     "backend/crates/__APP__-domain/Cargo.toml",
     "backend/crates/__APP__-domain/src/limits.rs",
     "backend/crates/__APP__-ports/Cargo.toml",
@@ -64,6 +68,8 @@ const EXPECTED_WORKER_FILES: &[&str] = &[
 ];
 
 const EXPECTED_COMMON_FILES: &[&str] = &[
+    "CLAUDE.md",
+    "AGENTS.md",
     ".github/workflows/ci.yml",
     "limits.json",
     "docs/navigation-recipe.md",
@@ -71,6 +77,13 @@ const EXPECTED_COMMON_FILES: &[&str] = &[
     "docs/resource-budgets.md",
     "scripts/lockfiles.sh",
     "scripts/preflight.sh",
+];
+
+const EXPECTED_STRICT_FILES: &[&str] = &["scripts/quality-gate.sh"];
+
+const EXPECTED_STRICT_BACKEND_FILES: &[&str] = &[
+    "scripts/check-migrations-immutable.sh",
+    "scripts/check-migrations-immutable.test.sh",
 ];
 
 const EXPECTED_MOBILE_FILES: &[&str] = &[
@@ -190,12 +203,21 @@ pub struct NewOptions {
     pub resolve_lockfiles: bool,
     pub baukit_path: Option<PathBuf>,
     pub port_offset: u32,
+    pub quality: QualityProfile,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum AuthProvider {
     Oidc,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum QualityProfile {
+    #[default]
+    Standard,
+    Strict,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -205,6 +227,8 @@ pub struct Manifest {
     #[serde(default)]
     pub port_offset: u32,
     pub app: AppManifest,
+    #[serde(default)]
+    pub quality: QualityManifest,
     pub capabilities: Capabilities,
     pub dependencies: Dependencies,
     pub openapi: OpenApiPaths,
@@ -216,12 +240,48 @@ pub struct AppManifest {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct QualityManifest {
+    #[serde(default)]
+    pub profile: QualityProfile,
+    #[serde(default = "default_backend_coverage_lines")]
+    pub backend_coverage_lines: u8,
+    #[serde(default)]
+    pub critical_paths: Vec<String>,
+    #[serde(default = "default_webkit_repeats")]
+    pub webkit_repeats: u8,
+    #[serde(default)]
+    pub full_stack_e2e: bool,
+}
+
+impl Default for QualityManifest {
+    fn default() -> Self {
+        Self {
+            profile: QualityProfile::Standard,
+            backend_coverage_lines: default_backend_coverage_lines(),
+            critical_paths: Vec::new(),
+            webkit_repeats: default_webkit_repeats(),
+            full_stack_e2e: false,
+        }
+    }
+}
+
+const fn default_backend_coverage_lines() -> u8 {
+    70
+}
+
+const fn default_webkit_repeats() -> u8 {
+    3
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Capabilities {
     pub backend: bool,
     #[serde(default)]
     pub worker: bool,
     pub mobile: bool,
     pub web: bool,
+    #[serde(default)]
+    pub pwa: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth: Option<AuthProvider>,
 }
@@ -242,7 +302,20 @@ pub enum BaukitDependency {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct OpenApiPaths {
     pub schema: String,
-    pub typescript: String,
+    #[serde(default)]
+    pub consumers: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub typescript: Option<String>,
+}
+
+impl OpenApiPaths {
+    pub fn consumers(&self) -> Vec<&str> {
+        if self.consumers.is_empty() {
+            self.typescript.iter().map(String::as_str).collect()
+        } else {
+            self.consumers.iter().map(String::as_str).collect()
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -263,6 +336,7 @@ struct TemplateContext {
     mobile: bool,
     web: bool,
     auth_oidc: bool,
+    quality_strict: bool,
     port_offset: u32,
     postgres_host_port: u16,
     api_host_port: u16,
@@ -372,6 +446,7 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         mobile: options.mobile,
         web: options.web,
         auth_oidc,
+        quality_strict: options.quality == QualityProfile::Strict,
         port_offset: options.port_offset,
         postgres_host_port: ports.postgres,
         api_host_port: ports.api,
@@ -653,6 +728,9 @@ fn render_product(
         &mut rendered,
         false,
     )?;
+    if let Some(guide) = rendered.get(Path::new("CLAUDE.md")).cloned() {
+        rendered.insert(PathBuf::from("AGENTS.md"), guide);
+    }
     if options.backend {
         render_directory(
             &BACKEND_TEMPLATE,
@@ -723,11 +801,19 @@ template_version = \"{}\"\n\
 [app]\n\
 name = \"{}\"\n\
 \n\
+[quality]\n\
+profile = \"{}\"\n\
+backend_coverage_lines = {}\n\
+critical_paths = []\n\
+webkit_repeats = {}\n\
+full_stack_e2e = false\n\
+\n\
 [capabilities]\n\
 backend = {}\n\
 worker = {}\n\
 mobile = {}\n\
 web = {}\n\
+pwa = false\n\
 {}\
 \n\
 [dependencies.baukit]\n\
@@ -735,10 +821,16 @@ web = {}\n\
 \n\
 [openapi]\n\
 schema = \"backend/openapi.json\"\n\
-typescript = \"generated/openapi.d.ts\"\n",
+consumers = [\"generated/openapi.d.ts\"]\n",
         context.template_version,
         port_offset,
         context.app_name,
+        match options.quality {
+            QualityProfile::Standard => "standard",
+            QualityProfile::Strict => "strict",
+        },
+        default_backend_coverage_lines(),
+        default_webkit_repeats(),
         options.backend,
         options.worker,
         options.mobile,
@@ -760,10 +852,20 @@ fn render_directory(
         if is_auth_only(relative) && (!context.auth_oidc || !auth_overlay) {
             continue;
         }
+        if is_strict_only(relative) && !context.quality_strict {
+            continue;
+        }
+        if is_backend_only(relative) && !context.backend {
+            continue;
+        }
         let source = file
             .contents_utf8()
             .ok_or_else(|| anyhow!("template {} is not UTF-8", relative.display()))?;
-        let mut name = relative.to_string_lossy().replace("__auth__/", "");
+        let mut name = relative
+            .to_string_lossy()
+            .replace("__auth__/", "")
+            .replace("__strict__/", "")
+            .replace("__backend__/", "");
         if name.ends_with(".jinja") {
             name.truncate(name.len() - ".jinja".len());
         }
@@ -779,6 +881,12 @@ fn render_directory(
     }
     for child in directory.dirs() {
         if is_auth_only(child.path()) && !auth_overlay {
+            continue;
+        }
+        if is_strict_only(child.path()) && !context.quality_strict {
+            continue;
+        }
+        if is_backend_only(child.path()) && !context.backend {
             continue;
         }
         render_directory(child, environment, context, rendered, auth_overlay)?;
@@ -806,6 +914,16 @@ fn product_description(options: &NewOptions) -> String {
 fn is_auth_only(path: &Path) -> bool {
     path.components()
         .any(|component| component.as_os_str() == "__auth__")
+}
+
+fn is_strict_only(path: &Path) -> bool {
+    path.components()
+        .any(|component| component.as_os_str() == "__strict__")
+}
+
+fn is_backend_only(path: &Path) -> bool {
+    path.components()
+        .any(|component| component.as_os_str() == "__backend__")
 }
 
 pub fn read_manifest(root: &Path) -> Result<Manifest> {
@@ -900,6 +1018,53 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
             failures.push(format!("missing expected product file `{relative}`"));
         }
     }
+    if manifest.quality.profile == QualityProfile::Strict {
+        for relative in EXPECTED_STRICT_FILES {
+            if !root.join(relative).is_file() {
+                failures.push(format!("missing expected strict quality file `{relative}`"));
+            }
+        }
+        if manifest.capabilities.backend {
+            for relative in EXPECTED_STRICT_BACKEND_FILES {
+                if !root.join(relative).is_file() {
+                    failures.push(format!("missing expected strict backend file `{relative}`"));
+                }
+            }
+        }
+        if manifest.quality.full_stack_e2e && !root.join("scripts/full-stack-e2e.sh").is_file() {
+            failures.push("quality.full_stack_e2e requires `scripts/full-stack-e2e.sh`".to_owned());
+        }
+    }
+    if !(1..=100).contains(&manifest.quality.backend_coverage_lines) {
+        failures.push("quality.backend_coverage_lines must be between 1 and 100".to_owned());
+    }
+    if manifest.quality.webkit_repeats == 0 {
+        failures.push("quality.webkit_repeats must be greater than zero".to_owned());
+    }
+    if !manifest.capabilities.web && !manifest.quality.critical_paths.is_empty() {
+        failures.push("quality.critical_paths requires the web capability".to_owned());
+    }
+    for critical_path in &manifest.quality.critical_paths {
+        let path = Path::new(critical_path);
+        if path.is_absolute()
+            || path
+                .components()
+                .any(|component| component == std::path::Component::ParentDir)
+            || !critical_path.starts_with("e2e/tests/")
+            || !critical_path.ends_with(".spec.ts")
+        {
+            failures.push(format!(
+                "critical path `{critical_path}` must be an e2e/tests/*.spec.ts file"
+            ));
+        } else if manifest.capabilities.web && !root.join("web").join(path).is_file() {
+            failures.push(format!(
+                "critical path `web/{critical_path}` does not exist"
+            ));
+        }
+    }
+    if manifest.capabilities.pwa && !manifest.capabilities.web {
+        failures.push("the PWA capability requires the web capability".to_owned());
+    }
     if manifest.schema_version == MANIFEST_SCHEMA_VERSION {
         successes.push(format!(
             "manifest schema {} is current",
@@ -924,6 +1089,22 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
     }
     validate_port_configuration(root, &manifest, &mut successes, &mut failures)?;
     if manifest.capabilities.backend {
+        let consumers = manifest.openapi.consumers();
+        if consumers.is_empty() {
+            failures.push("openapi.consumers must list at least one output".to_owned());
+        }
+        for consumer in consumers {
+            let path = Path::new(consumer);
+            if path.is_absolute()
+                || path
+                    .components()
+                    .any(|component| component == std::path::Component::ParentDir)
+            {
+                failures.push(format!(
+                    "OpenAPI consumer `{consumer}` must stay inside the product root"
+                ));
+            }
+        }
         for expected in EXPECTED_BACKEND_FILES {
             let relative = expected.replace("__APP__", &manifest.app.name);
             if !root.join(&relative).is_file() {
@@ -1017,6 +1198,14 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
             &mut successes,
             &mut failures,
         )?;
+        if manifest.quality.profile == QualityProfile::Strict && manifest.capabilities.pwa {
+            let package_json = fs::read_to_string(root.join("web/package.json"))?;
+            if !package_json.contains("\"build:sw:check\"") {
+                failures.push(
+                    "the strict PWA capability requires the web `build:sw:check` script".to_owned(),
+                );
+            }
+        }
         if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
             for relative in EXPECTED_AUTH_WEB_FILES {
                 if !root.join(relative).is_file() {
@@ -1419,52 +1608,45 @@ pub fn generate_openapi_client(root: &Path) -> Result<()> {
     if !manifest.capabilities.backend {
         bail!("this product has no backend capability");
     }
-    let output = root.join(&manifest.openapi.typescript);
-    if let Some(parent) = output.parent() {
-        fs::create_dir_all(parent)?;
+    let consumers = manifest.openapi.consumers();
+    if consumers.is_empty() {
+        bail!("baukit.toml lists no OpenAPI consumers");
     }
     let corepack = command_exists("corepack");
     let pnpm = command_exists("pnpm");
     let npx = command_exists("npx");
-    if corepack {
-        run_checked(
-            Command::new("corepack").current_dir(root).args([
-                "pnpm",
-                "dlx",
-                "openapi-typescript",
-                &manifest.openapi.schema,
-                "-o",
-                &manifest.openapi.typescript,
-            ]),
-            "TypeScript client generation",
-        )
-    } else if pnpm {
-        run_checked(
-            Command::new("pnpm").current_dir(root).args([
-                "dlx",
-                "openapi-typescript",
-                &manifest.openapi.schema,
-                "-o",
-                &manifest.openapi.typescript,
-            ]),
-            "TypeScript client generation",
-        )
-    } else if npx {
-        run_checked(
-            Command::new("npx").current_dir(root).args([
-                "--yes",
-                "openapi-typescript",
-                &manifest.openapi.schema,
-                "-o",
-                &manifest.openapi.typescript,
-            ]),
-            "TypeScript client generation",
-        )
-    } else {
+    if !corepack && !pnpm && !npx {
         bail!(
             "TypeScript generation needs current Node.js LTS with corepack, pnpm, or npx; the committed OpenAPI schema was left unchanged"
         );
     }
+    for consumer in consumers {
+        let output = root.join(consumer);
+        if let Some(parent) = output.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let mut command = if corepack {
+            let mut command = Command::new("corepack");
+            command.args(["pnpm", "dlx", OPENAPI_TYPESCRIPT_PACKAGE]);
+            command
+        } else if pnpm {
+            let mut command = Command::new("pnpm");
+            command.args(["dlx", OPENAPI_TYPESCRIPT_PACKAGE]);
+            command
+        } else {
+            let mut command = Command::new("npx");
+            command.args(["--yes", OPENAPI_TYPESCRIPT_PACKAGE]);
+            command
+        };
+        command
+            .current_dir(root)
+            .args([&manifest.openapi.schema, "-o", consumer]);
+        run_checked(
+            &mut command,
+            &format!("TypeScript client generation for {consumer}"),
+        )?;
+    }
+    Ok(())
 }
 
 fn command_exists(command: &str) -> bool {

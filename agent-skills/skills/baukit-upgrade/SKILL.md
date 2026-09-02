@@ -9,7 +9,7 @@ Upgrade every Baukit component as one release train. Do not invent or call a `ba
 
 ## Prepare
 
-1. Start with a clean worktree and record the current `baukit.toml` capabilities and dependency source.
+1. Start with a clean worktree and record the current `baukit.toml` capabilities, quality profile, and dependency source.
 2. Read the target release notes and the target checkout's:
    - `docs/platform/compatibility-matrix.md`
    - `docs/platform/baukit-conventions.md`
@@ -24,6 +24,7 @@ Upgrade every Baukit component as one release train. Do not invent or call a `ba
 1. Change every Baukit git dependency in `backend/Cargo.toml` from the old tag to the target tag. Keep all `baukit-*` crates on exactly the same tag.
 2. Change every `@baukit/*` git dependency in `mobile/package.json` and/or `web/package.json` to that same tag while preserving each package's `path:typescript/packages/...` selector.
 3. Update `baukit.toml` so `template_version` and `[dependencies.baukit].tag` describe the target train. Apply release-note migrations to template-owned files deliberately; preserve product-owned behavior and surface conflicts for review.
+   Preserve `[quality]` thresholds, critical paths, the full-stack E2E opt-in, and every `openapi.consumers` entry. Add generated strict-profile scripts only when the product selects `profile = "strict"`.
 4. Refresh Cargo and pnpm lockfiles. Do not mix unrelated dependency upgrades into this change, and do not switch to public registries while the project remains private-first.
 
 When upgrading a product that already copied the `baukit-jobs` v0.5.1 schema,
@@ -61,3 +62,5 @@ pnpm --dir web test
 ```
 
 Run only commands for selected capabilities. If a lockfile does not exist yet, run the corresponding install once without `--frozen-lockfile`, review it, then rerun the full product CI equivalent. If Docker is available, also run the ignored PostgreSQL adapter integration test. Review the final diff for one target train, regenerated API artifacts, and only documented migration changes.
+
+For a strict product, finish with `sh scripts/quality-gate.sh`. Set `BAUKIT_BASE_REVISION` to the pre-upgrade commit so the migration guard checks that the upgrade added migrations instead of rewriting applied files.

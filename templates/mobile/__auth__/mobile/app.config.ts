@@ -21,6 +21,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     oidcClientId:
       typeof configuredClientId === 'string' ? configuredClientId : '{{ context.app_name }}-mobile',
   },
-  ios: { supportsTablet: true },
+  ios: {
+    bundleIdentifier: 'dev.baukit.{{ context.app_name }}',
+    supportsTablet: true,
+  },
   android: { package: 'dev.baukit.{{ context.app_crate }}' },
 });

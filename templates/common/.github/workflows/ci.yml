@@ -9,7 +9,64 @@ permissions:
   contents: read
 
 jobs:
-{% if context.backend %}  backend:
+{% if context.quality_strict %}  strict-quality:
+    name: Strict quality profile
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+{% if context.backend %}      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy, llvm-tools-preview
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - uses: taiki-e/install-action@nextest
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend -> target
+{% endif %}{% if context.backend or context.web or context.mobile %}      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+{% endif %}{% if context.web %}      - name: Install Playwright browsers
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: web/node_modules/.cache/playwright-browsers
+        run: |
+          corepack pnpm@11.18.0 --dir web install --frozen-lockfile
+          corepack pnpm@11.18.0 --dir web exec playwright install --with-deps chromium webkit
+{% endif %}{% if context.mobile %}      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+{% endif %}      - name: Select migration comparison base
+        if: {% raw %}${{ hashFiles('backend/migrations/*.sql') != '' }}{% endraw %}
+        run: |
+          if [ "{% raw %}${{ github.event_name }}{% endraw %}" = "pull_request" ]; then
+            echo "BAUKIT_BASE_REVISION={% raw %}${{ github.event.pull_request.base.sha }}{% endraw %}" >> "$GITHUB_ENV"
+          else
+            echo "BAUKIT_BASE_REVISION=$(git rev-parse HEAD^ 2>/dev/null || git rev-list --max-parents=0 HEAD)" >> "$GITHUB_ENV"
+          fi
+      - run: sh scripts/quality-gate.sh
+{% if context.backend %}      - uses: actions/upload-artifact@v4
+        if: {% raw %}${{ always() }}{% endraw %}
+        with:
+          name: backend-coverage
+          path: |
+            backend/target/llvm-cov/html
+            backend/target/llvm-cov/lcov.info
+          if-no-files-found: warn
+          retention-days: 7
+{% endif %}{% if context.web %}      - uses: actions/upload-artifact@v4
+        if: {% raw %}${{ failure() }}{% endraw %}
+        with:
+          name: playwright-failure
+          path: |
+            web/playwright-report
+            web/test-results
+          if-no-files-found: warn
+          retention-days: 7
+{% endif %}
+{% else %}{% if context.backend %}  backend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -99,8 +156,9 @@ jobs:
       # Build only. Publishing belongs to the release workflow, not to CI.
       - uses: docker/build-push-action@v6
         with:
-          context: backend
+          context: .
           file: backend/Dockerfile
+          build-args: BACKEND_CONTEXT=backend
           push: false
           cache-from: type=gha,scope=backend-production
           cache-to: type=gha,mode=max,scope=backend-production
@@ -249,3 +307,4 @@ jobs:
       - name: Lint dashboards against Baukit and product metric names
         if: {% raw %}${{ steps.shim.outputs.present == 'true' }}{% endraw %}
         run: python3 scripts/observability-lint.py .baukit/deploy/observability/lint/check-metric-names.py
+{% endif %}

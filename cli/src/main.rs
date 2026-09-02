@@ -1,7 +1,9 @@
 use std::{env, path::PathBuf, process::ExitCode};
 
 use anyhow::Result;
-use baukit_cli::{AuthProvider, NewOptions, doctor, generate_new, generate_openapi_client};
+use baukit_cli::{
+    AuthProvider, NewOptions, QualityProfile, doctor, generate_new, generate_openapi_client,
+};
 use clap::{Args, Parser, Subcommand};
 
 #[derive(Debug, Parser)]
@@ -65,6 +67,9 @@ struct NewCommand {
     /// Add N to generated local service ports.
     #[arg(long, default_value_t = 0)]
     port_offset: u32,
+    /// Select the generated CI and local quality-gate profile.
+    #[arg(long, value_enum, default_value_t = QualityProfile::Standard)]
+    quality: QualityProfile,
 }
 
 #[derive(Debug, Subcommand)]
@@ -99,6 +104,7 @@ fn run() -> Result<()> {
                 resolve_lockfiles: !command.skip_lockfiles,
                 baukit_path: command.baukit_path,
                 port_offset: command.port_offset,
+                quality: command.quality,
             })?;
             println!("generated {}", destination.display());
         }
