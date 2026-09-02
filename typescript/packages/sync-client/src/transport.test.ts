@@ -1,17 +1,33 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { SyncAuthError, SyncPartitionMismatchError, SyncTransportError } from './error.js';
 import {
+  SyncAuthError,
+  SyncLocalApplyError,
+  SyncNetworkError,
+  SyncPartitionMismatchError,
+  SyncPayloadCompatibilityError,
+  SyncRateLimitError,
+  SyncServerError,
+  SyncTransportError,
+  syncFailureFromError,
+} from './error.js';
+import {
+  commitCursorAfterLocalTransaction,
+  parseRetryAfter,
   SyncTransport,
+  validatePullPage,
   type SyncFetch,
   type SyncFetchResponse,
   type SyncPrebuiltRequest,
 } from './transport.js';
 
-function response(status: number, body: string): SyncFetchResponse {
+function response(status: number, body: string, retryAfter?: string): SyncFetchResponse {
   return {
     ok: status >= 200 && status < 300,
     status,
+    headers: {
+      get: (name) => (name.toLowerCase() === 'retry-after' ? (retryAfter ?? null) : null),
+    },
     text: () => Promise.resolve(body),
   };
 }
@@ -153,6 +169,28 @@ describe('SyncTransport', () => {
     expect((error as SyncTransportError).retryable).toBe(true);
   });
 
+  it('maps 429 to a typed rate-limit error with the parsed retry time', async () => {
+    const now = Date.parse('2026-08-22T10:00:00Z');
+    const fetch: SyncFetch = () => Promise.resolve(response(429, '{"message":"slow down"}', '17'));
+    const client = new SyncTransport({
+      baseUrl: 'https://api.example.test',
+      fetch,
+      authHeaders: () => ({}),
+      now: () => now,
+    });
+
+    const error = await client.request('/sync/pull').catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(SyncRateLimitError);
+    expect(error).toMatchObject({
+      kind: 'rate_limited',
+      retryable: true,
+      retryAfter: '17',
+      retryAt: '2026-08-22T10:00:17.000Z',
+    });
+    expect(error).not.toBeInstanceOf(SyncNetworkError);
+  });
+
   it.each([400, 404, 409, 422])('treats %i as non-retryable', async (status) => {
     const fetch: SyncFetch = () => Promise.resolve(response(status, '{}'));
 
@@ -161,6 +199,7 @@ describe('SyncTransport', () => {
       .catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(SyncTransportError);
+    expect(error).toBeInstanceOf(SyncServerError);
     expect((error as SyncTransportError).retryable).toBe(false);
     expect((error as SyncTransportError).message).toBe(
       `sync request failed with status ${String(status)}`,
@@ -176,6 +215,7 @@ describe('SyncTransport', () => {
       .catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(SyncTransportError);
+    expect(error).toBeInstanceOf(SyncNetworkError);
     expect((error as SyncTransportError).retryable).toBe(true);
     expect((error as SyncTransportError).message).toBe('network down');
     expect((error as SyncTransportError).cause).toBe(cause);
@@ -188,6 +228,7 @@ describe('SyncTransport', () => {
       .request('/sync/push')
       .catch((caught: unknown) => caught);
 
+    expect(error).toBeInstanceOf(SyncPayloadCompatibilityError);
     expect(error).toBeInstanceOf(SyncTransportError);
     expect((error as SyncTransportError).retryable).toBe(false);
   });
@@ -207,5 +248,110 @@ describe('SyncTransport', () => {
     const fetch: SyncFetch = () => Promise.resolve(response(204, ''));
 
     await expect(transport(fetch).request('/sync/ack')).resolves.toBeUndefined();
+  });
+});
+
+describe('parseRetryAfter', () => {
+  const now = Date.parse('2026-08-22T10:00:00Z');
+  const fallback = '2026-08-22T10:00:42.000Z';
+
+  it('accepts delta seconds', () => {
+    expect(parseRetryAfter('12', { now, fallbackMs: 42_000 })).toBe('2026-08-22T10:00:12.000Z');
+  });
+
+  it('accepts an HTTP date', () => {
+    expect(parseRetryAfter('Sat, 22 Aug 2026 10:02:00 GMT', { now, fallbackMs: 42_000 })).toBe(
+      '2026-08-22T10:02:00.000Z',
+    );
+  });
+
+  it.each([
+    ['a past date', 'Sat, 22 Aug 2026 09:59:00 GMT'],
+    ['a negative delta', '-5'],
+    ['garbage', 'later'],
+    ['a missing header', null],
+  ])('uses the injected fallback for %s', (_label, value) => {
+    expect(parseRetryAfter(value, { now, fallbackMs: 42_000 })).toBe(fallback);
+  });
+});
+
+describe('syncFailureFromError', () => {
+  it('keeps every failure category distinct', () => {
+    const retryAt = '2026-08-22T10:02:00.000Z';
+
+    expect([
+      syncFailureFromError(new SyncAuthError('auth')),
+      syncFailureFromError(new SyncPartitionMismatchError('partition')),
+      syncFailureFromError(new SyncRateLimitError('limited', retryAt, '120')),
+      syncFailureFromError(new SyncNetworkError('offline')),
+      syncFailureFromError(new SyncServerError('server', true)),
+      syncFailureFromError(new SyncPayloadCompatibilityError('payload')),
+      syncFailureFromError(new SyncLocalApplyError('apply')),
+    ]).toEqual([
+      { kind: 'auth' },
+      { kind: 'partition_mismatch' },
+      { kind: 'rate_limited', retryAt },
+      { kind: 'network' },
+      { kind: 'server' },
+      { kind: 'payload_compatibility' },
+      { kind: 'local_apply' },
+    ]);
+  });
+});
+
+describe('validatePullPage', () => {
+  const compare = (left: number, right: number): number => left - right;
+
+  it('returns a progressing page', () => {
+    const page = { nextCursor: 4, hasMore: true, changes: ['row'] };
+
+    expect(validatePullPage(3, page, compare)).toBe(page);
+  });
+
+  it('rejects a regressing cursor', () => {
+    expect(() => validatePullPage(3, { nextCursor: 2, hasMore: false }, compare)).toThrow(
+      SyncPayloadCompatibilityError,
+    );
+  });
+
+  it('rejects hasMore without progress instead of allowing another loop', () => {
+    expect(() => validatePullPage(3, { nextCursor: 3, hasMore: true }, compare)).toThrow(
+      SyncPayloadCompatibilityError,
+    );
+  });
+});
+
+describe('commitCursorAfterLocalTransaction', () => {
+  it('commits the cursor after the local transaction resolves', async () => {
+    const calls: string[] = [];
+
+    const result = await commitCursorAfterLocalTransaction({
+      nextCursor: 8,
+      transaction: () => {
+        calls.push('transaction');
+        return Promise.resolve('applied');
+      },
+      commitCursor: (cursor) => {
+        calls.push(`cursor:${String(cursor)}`);
+      },
+    });
+
+    expect(result).toBe('applied');
+    expect(calls).toEqual(['transaction', 'cursor:8']);
+  });
+
+  it('leaves the cursor unchanged when the local transaction fails', async () => {
+    let cursor = 3;
+
+    const task = commitCursorAfterLocalTransaction({
+      nextCursor: 8,
+      transaction: () => Promise.reject(new Error('constraint failed')),
+      commitCursor: (nextCursor) => {
+        cursor = nextCursor;
+      },
+    });
+
+    await expect(task).rejects.toBeInstanceOf(SyncLocalApplyError);
+    expect(cursor).toBe(3);
   });
 });

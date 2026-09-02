@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { dependencyRankByOrder, rankPushBatch, type PushCandidate } from './push-batch.js';
+import { SyncPayloadCompatibilityError } from './error.js';
+import {
+  dependencyRankByOrder,
+  rankPushBatch,
+  validatePushOutcomeCoverage,
+  type PushCandidate,
+} from './push-batch.js';
 
 // A three-level graph: a container owns groups, a group owns leaves.
 const rank = dependencyRankByOrder(['container', 'group', 'leaf']);
@@ -162,5 +168,40 @@ describe('rankPushBatch', () => {
     const batch = rankPushBatch(pending, { rank, batchSize: 10 });
 
     expect(batch[0]?.change.payload).toBe('second');
+  });
+});
+
+describe('validatePushOutcomeCoverage', () => {
+  const key = ({ entityType, entityId }: { entityType: string; entityId: string }): string =>
+    `${entityType}:${entityId}`;
+
+  it('returns a complete mix of accepted and rejected outcomes', () => {
+    const submitted = [change('container', 'c1'), change('leaf', 'l1')];
+    const outcomes = [
+      { entityType: 'container', entityId: 'c1', result: 'accepted' },
+      { entityType: 'leaf', entityId: 'l1', result: 'rejected' },
+    ];
+
+    expect(
+      validatePushOutcomeCoverage(submitted, outcomes, {
+        submittedKey: key,
+        outcomeKey: key,
+      }),
+    ).toBe(outcomes);
+  });
+
+  it('rejects a partial outcome set before a caller acknowledges changes', () => {
+    const acknowledged: string[] = [];
+    const submitted = [change('container', 'c1'), change('leaf', 'l1')];
+    const outcomes = [{ entityType: 'container', entityId: 'c1', result: 'accepted' }];
+
+    expect(() => {
+      const validated = validatePushOutcomeCoverage(submitted, outcomes, {
+        submittedKey: key,
+        outcomeKey: key,
+      });
+      acknowledged.push(...validated.map(key));
+    }).toThrow(SyncPayloadCompatibilityError);
+    expect(acknowledged).toEqual([]);
   });
 });

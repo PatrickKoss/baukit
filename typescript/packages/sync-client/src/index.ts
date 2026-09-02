@@ -1,6 +1,23 @@
-export { SyncAuthError, SyncPartitionMismatchError, SyncTransportError } from './error.js';
-export { dependencyRankByOrder, rankPushBatch } from './push-batch.js';
-export type { PushCandidate, RankedPushItem, RankPushBatchOptions } from './push-batch.js';
+export {
+  SyncAuthError,
+  SyncLocalApplyError,
+  SyncNetworkError,
+  SyncPartitionMismatchError,
+  SyncPayloadCompatibilityError,
+  SyncRateLimitError,
+  SyncServerError,
+  SyncTransportError,
+  syncFailureFromError,
+  toSnakeCaseFailure,
+} from './error.js';
+export type { SnakeCaseSyncFailure, SyncFailure } from './error.js';
+export { dependencyRankByOrder, rankPushBatch, validatePushOutcomeCoverage } from './push-batch.js';
+export type {
+  PushCandidate,
+  PushOutcomeCoverageOptions,
+  RankedPushItem,
+  RankPushBatchOptions,
+} from './push-batch.js';
 export { SyncScheduler } from './scheduler.js';
 export type {
   SyncSchedulerEnvironment,
@@ -20,14 +37,28 @@ export type {
   LocalStoreReadinessInput,
   SnakeCaseSyncStatusSnapshot,
   SyncAttentionItem,
+  SyncFailureUpdate,
   SyncStatus,
+  SyncStatusHydration,
   SyncStatusSink,
   SyncStatusSnapshot,
+  SyncStatusStoreOptions,
 } from './store.js';
-export { SyncTransport } from './transport.js';
+export {
+  commitCursorAfterLocalTransaction,
+  DEFAULT_RETRY_AFTER_FALLBACK_MS,
+  parseRetryAfter,
+  SyncTransport,
+  validatePullPage,
+} from './transport.js';
 export type {
+  CursorCommitOptions,
+  ParseRetryAfterOptions,
+  PullPagePosition,
+  SyncCursorComparator,
   SyncFetch,
   SyncFetchResponse,
+  SyncResponseHeaders,
   SyncPrebuiltRequest,
   SyncPrebuiltRequestTransportOptions,
   SyncRequestOptions,

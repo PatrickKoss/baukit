@@ -1,3 +1,5 @@
+import { SyncPayloadCompatibilityError } from './error.js';
+
 /**
  * One unsent local change, as baukit sees it.
  *
@@ -36,6 +38,32 @@ export interface RankPushBatchOptions<T extends PushCandidate> {
    * a later run, once their children have been accepted.
    */
   isHeldBack?: (change: T) => boolean;
+}
+
+export interface PushOutcomeCoverageOptions<TSubmitted, TOutcome> {
+  submittedKey: (submitted: TSubmitted) => string;
+  outcomeKey: (outcome: TOutcome) => string;
+}
+
+/**
+ * Rejects a response that omits an outcome for any submitted entity.
+ *
+ * Call this before acknowledging accepted or rejected changes. Products supply
+ * key readers because their wire field names remain product-owned.
+ */
+export function validatePushOutcomeCoverage<TSubmitted, TOutcome>(
+  submitted: readonly TSubmitted[],
+  outcomes: readonly TOutcome[],
+  { submittedKey, outcomeKey }: PushOutcomeCoverageOptions<TSubmitted, TOutcome>,
+): readonly TOutcome[] {
+  const outcomeKeys = new Set(outcomes.map(outcomeKey));
+  const missing = new Set(submitted.map(submittedKey).filter((key) => !outcomeKeys.has(key)));
+  if (missing.size > 0) {
+    throw new SyncPayloadCompatibilityError(
+      `The push response omitted outcomes for ${String(missing.size)} submitted entities.`,
+    );
+  }
+  return outcomes;
 }
 
 /**

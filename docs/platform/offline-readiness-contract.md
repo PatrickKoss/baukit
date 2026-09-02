@@ -17,6 +17,7 @@ Expose an explicit initial-readiness state with these meanings, even if product 
 | `settled-empty`     | Required hydration completed and the active partition contains no records. | A true empty state is now allowed.                             |
 | `settled-populated` | Required hydration completed with records.                                 | Render the local records.                                      |
 | `offline-cached`    | The network failed, but hydration completed and cached records are usable. | Render cached data and explain that local data remains safe.   |
+| `sync-error-cached` | A non-network sync failure occurred, but cached records are usable.        | Render cached data without claiming the device is offline.     |
 | `blocked`           | Identity, corruption, migration, or another safety failure prevents use.   | Do not mount repositories or imply an empty dataset.           |
 
 Never render `settled-empty` merely because a query returned no rows while readiness is `unknown` or `loading`.
@@ -31,6 +32,11 @@ Keep sync activity separate from initial readiness. The user-visible activity vo
 - `attention`: at least one actionable rejection needs product/user action; and
 - `transport-error`: the latest attempt failed without proving local data loss.
 
+Expose machine-readable failure metadata separately from activity. The shared failure kinds are
+`auth`, `partition_mismatch`, `rate_limited`, `network`, `server`, `payload_compatibility`, and
+`local_apply`. A rate-limit failure carries its retry time. A scheduled retry also exposes a
+`retrying` indicator and retry time. Products supply any copy shown to users.
+
 Classify each submitted mutation as `accepted`, `actionable-rejection`, or `superseded`. A superseded last-writer-wins outcome is benign only when the authoritative snapshot has already converged locally and no repair remains. Every other rejection is actionable unless the product proves another terminal, non-actionable classification.
 
 Never display “synced” while unsent changes or actionable rejections remain. A completed HTTP request is not by itself a successful sync.
@@ -41,6 +47,12 @@ Never display “synced” while unsent changes or actionable rejections remain.
 - On network failure, keep committed local data and pending mutations. Explain retryability without exposing raw transport errors.
 - A retry, timeout, cancellation, or process restart must not convert an unknown outcome into success. Reconcile or replay according to the product protocol.
 - Reset readiness and sync state when the authenticated local-data partition changes.
+
+`lastSyncAt` is a deprecated compatibility field for one release cycle. It always equals
+`lastSuccessAt`. The snake-case projection follows the same rule: `last_sync_at` equals
+`last_success_at`. Products must migrate persisted state to separate attempt and success fields.
+When importing one old `lastSyncAt` value, use it as both timestamps because the old model cannot
+recover the attempt time independently.
 
 ## 4. Compound changes
 
@@ -54,14 +66,12 @@ Baukit still does not standardize revisions, conflict algorithms, transport payl
 engines, or repair workflows. It does ship the two mechanisms every product was rebuilding
 underneath its own engine:
 
-- `@baukit/sync-client` on the client: `SyncScheduler` (one run at a time, driven by an injected
-  environment for timers, foreground state, and connectivity, with a single queued follow-up for
-  writes that land mid-run), `SyncTransport` (injected `fetch` and per-attempt auth headers,
-  failures typed as auth, partition mismatch, or retryable/non-retryable transport errors),
-  `SyncStatusStore` (the section 2 vocabulary as an observable, React-free state, with
-  `deriveLocalStoreReadiness` and `deriveInitialSyncState` for section 1), and `rankPushBatch`
-  (orders a push batch parent-before-child, coalesces per entity, and holds back a parent whose
-  required children are unsent, implementing section 4 without naming any entity).
+- `@baukit/sync-client` on the client: `SyncScheduler` runs one callback at a time and queues one
+  follow-up for writes made during a run. `SyncTransport` injects `fetch` and per-attempt auth
+  headers, classifies failures, and preserves `Retry-After` on 429 responses. `SyncStatusStore`
+  exposes attempt and success times, typed failure metadata, retry state, pending work, and
+  readiness helpers. `rankPushBatch` orders and coalesces product-owned entities. Pull-page and
+  push-outcome validators reject payloads that could skip work or loop without progress.
 - `baukit-sync` on the server: `next_revision`, which bumps a per-owner counter inside the
   caller's transaction so an allocation rolls back with its row write, plus the syncable-table
   column convention (`id`, `owner_id`, `updated_at`, `deleted_at`, `revision`, and an
@@ -78,5 +88,12 @@ and conflict rules remain product-owned.
 - A superseded mutation becomes non-actionable only after the authoritative state is present locally.
 - `lastAttemptAt` advances on a failed run while `lastSuccessAt` remains unchanged.
 - Network errors preserve local records and outbox rows.
+- Server and local-apply failures also preserve the pending count.
+- A 429 remains `rate_limited`, carries the resolved retry time, and does not become a generic
+  offline state.
+- A successful push response has an outcome for every submitted entity before any outcome is
+  acknowledged.
+- A pull cursor never regresses, and `has_more` requires cursor progress.
+- The stored pull cursor changes only after the local transaction succeeds.
 - A parent with a rejected required child remains incomplete; repair can converge the whole group and discard follows product-defined atomic/cascade rules.
 - The same outcome reducer is exercised for retry, timeout, cancellation, and restart/replay paths without prescribing a wire protocol.

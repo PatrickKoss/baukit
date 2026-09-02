@@ -12,6 +12,11 @@ type ProductAttention = SyncAttentionItem<{
 }>;
 
 const store = new SyncStatusStore<ProductAttention>();
+store.setSyncing('2026-08-22T10:00:00Z');
+store.setFailure({ kind: 'network' }, 'offline', {
+  pendingCount: 1,
+  retryAt: '2026-08-22T10:01:00Z',
+});
 store.setAttention(
   [
     {
@@ -25,5 +30,6 @@ store.setAttention(
 const snapshot: SnakeCaseSyncStatusSnapshot<ProductAttention> = toSnakeCaseSnapshot(
   store.getSnapshot(),
 );
+const successAt: string | null = snapshot.last_success_at;
 
-export { snapshot, store };
+export { snapshot, store, successAt };

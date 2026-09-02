@@ -53,14 +53,20 @@ non-Expo consumers never import this subpath.
 
 ## Transport
 
-The original `SyncTransport` constructor wraps an injected `fetch` and auth header provider, and
-turns every failure into a typed error:
+The fetch-backed `SyncTransport` constructor wraps an injected `fetch` and auth header provider.
+It classifies failures as follows:
 
-- `SyncAuthError` for 401, never retryable;
-- `SyncPartitionMismatchError` when the body carries the configured partition-mismatch code,
-  meaning the local database belongs to an erased or replaced owner;
-- `SyncTransportError` otherwise, with `retryable` true for 408, 429, and 5xx, plus network and
-  body-read failures.
+- `SyncAuthError` for 401, never retryable
+- `SyncPartitionMismatchError` when the body carries the configured partition-mismatch code
+- `SyncRateLimitError` for 429, always retryable and carrying `retryAt` plus the raw `retryAfter`
+  header
+- `SyncNetworkError` when `fetch` or response-body reading fails, always retryable
+- `SyncServerError` for other HTTP failures, retryable for 408 and 5xx
+- `SyncPayloadCompatibilityError` when a successful response is not valid JSON, never retryable
+
+`Retry-After` accepts integer delta seconds and HTTP dates. Missing, invalid, negative, and past
+values use `now + retryAfterFallbackMs`. The default fallback is 60 seconds. Tests and products
+with another policy can inject `now` and `retryAfterFallbackMs` in the fetch-backed constructor.
 
 Auth headers resolve per attempt, so a token refreshed between retries is picked up. The
 partition header is sent only when the caller passes a `partitionId`, and both its name and the
@@ -86,8 +92,8 @@ await transport.request('/api/v1/sync/push', {
 
 This mode builds the relative path, query string, JSON body, and partition header, then delegates.
 The request function owns decoding and errors, which keeps the product API client's existing auth
-recovery intact. The fetch-backed constructor remains unchanged for products that want
-`SyncTransportError` classification from response status and body.
+recovery intact. Use the fetch-backed constructor when the product wants package-owned response
+classification.
 
 ## Status store
 
@@ -99,13 +105,24 @@ wrong:
   still reads `attention`;
 - unsent work outranks a bare error, so a failed run with pending changes reads `pending`,
   not `error`;
-- the first run is the initial pull; later runs are settled activity.
+- the first run is the initial pull; later runs are settled activity;
+- a failure updates `lastAttemptAt` without changing `lastSuccessAt` or clearing `pendingCount`.
+
+Call `setSyncing(attemptAt)` when an attempt starts. `setIdle(successAt)` records a successful
+attempt and clears work only after the product's success predicate passes. `setFailure` accepts
+machine-readable metadata with one of these kinds: `auth`, `partition_mismatch`, `rate_limited`,
+`network`, `server`, `payload_compatibility`, or `local_apply`. Product copy remains in the
+separate `error` field.
+
+Rate-limit metadata contains `retryAt`. Other retryable failures can pass `retryAt` in the
+`SyncFailureUpdate` argument or call `setRetrying(retryAt)`. Snapshots expose both `retrying` and
+`retryAt`, so a screen can distinguish scheduled retries and rate limits from an offline state.
 
 `refreshRevision` increments whenever a run delivers a new authoritative snapshot.
 `deriveLocalStoreReadiness` compares it against what a consumer has actually rendered, which is
 how a cold start avoids flashing an empty state over data that is still arriving.
-`deriveInitialSyncState` maps a snapshot onto the contract's `unknown` / `syncing` /
-`offline-cached` / `settled` vocabulary.
+`deriveInitialSyncState` maps a snapshot onto `unknown`, `syncing`, `offline-cached`,
+`sync-error-cached`, or `settled`. Only a first-run `network` failure maps to `offline-cached`.
 
 The store is generic over its attention item and defaults to the existing
 `{ entityType, entityId }` shape. This keeps one store API while allowing a product to retain the
@@ -127,7 +144,12 @@ For stores and screens that use API-style names, `toSnakeCaseSnapshot` returns a
 ```ts
 const snapshot = toSnakeCaseSnapshot(status.getSnapshot());
 
+snapshot.last_attempt_at;
+snapshot.last_success_at;
 snapshot.last_sync_at;
+snapshot.failure;
+snapshot.retrying;
+snapshot.retry_at;
 snapshot.pending_count;
 snapshot.initial_pull_status;
 snapshot.refresh_revision;
@@ -136,6 +158,29 @@ snapshot.security_block;
 
 `status`, `error`, and `attention` keep their names. Attention items also keep their original
 shape.
+
+### Timestamp migration
+
+`lastSyncAt` and `last_sync_at` are deprecated compatibility fields for one release cycle. They
+are derived from `lastSuccessAt` and `last_success_at`. New code must not write or persist them as
+attempt timestamps.
+
+Replace `snapshot.lastSyncAt` with `snapshot.lastSuccessAt`. Replace `snapshot.last_sync_at` with
+`snapshot.last_success_at`. Persist both attempt and success timestamps, then hydrate with an
+object:
+
+```ts
+status.hydrate({
+  lastAttemptAt: persisted.lastAttemptAt,
+  lastSuccessAt: persisted.lastSuccessAt,
+  attention: persisted.attention,
+  pendingCount: persisted.pendingCount,
+});
+```
+
+The deprecated `hydrate(lastSyncAt, attention, pendingCount)` overload treats the old value as
+both the last attempt and last success. Remove that overload call when the persisted schema has
+both fields.
 
 ## Push batch ranking
 
@@ -163,3 +208,18 @@ missing. Held-back entities do not consume batch-size slots.
 
 Entity names, the dependency order, and the hold-back predicate are all product inputs. Baukit
 knows only that a rank exists.
+
+## Payload validators
+
+Call `validatePushOutcomeCoverage` before acknowledging any submitted change. Pass one key reader
+for submitted entities and one for outcomes, then combine all accepted and rejected outcomes in
+the second argument. The function throws `SyncPayloadCompatibilityError` if any submitted entity
+has no outcome.
+
+Call `validatePullPage(currentCursor, page, compare)` before following `hasMore`. Cursors are
+opaque. The injected comparator defines their order. A regressing cursor, a non-finite comparison,
+or `hasMore` without cursor progress throws `SyncPayloadCompatibilityError`.
+
+`commitCursorAfterLocalTransaction` runs the supplied local transaction first. It invokes
+`commitCursor` only after that promise resolves, and wraps local failures in `SyncLocalApplyError`.
+This ordering prevents a failed local apply from skipping remote changes on the next pull.
