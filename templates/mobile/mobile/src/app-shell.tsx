@@ -19,10 +19,11 @@ import {
   defaultAppPreferences,
   type AppPreferenceRecord,
   type AppPreferences,
+  type ThemePreference,
 } from './app-preferences';
 import { initializeI18n } from './localization/i18n';
 import { createAppPreferenceRecordStore } from './record-store';
-import { theme } from './theme';
+import { AppThemeProvider, lightTheme } from './theme';
 
 const DEVICE_PREFERENCE_SUBJECT = 'device';
 
@@ -34,7 +35,9 @@ export interface AnalyticsConsent {
 
 export interface AppPreferencesContextValue extends AnalyticsConsent {
   readonly preferences: AppPreferences;
-  readonly updatePreferences: (patch: Partial<AppPreferences>) => Promise<AppPreferences>;
+  readonly updatePreferences: (
+    patch: Partial<AppPreferences>,
+  ) => Promise<AppPreferences>;
   readonly resetPreferenceIdentity: () => Promise<void>;
 }
 
@@ -42,12 +45,17 @@ interface AppShellProps extends PropsWithChildren {
   readonly preferenceSubjectId?: string | null;
 }
 
-const AppPreferencesContext = createContext<AppPreferencesContextValue | undefined>(undefined);
+const AppPreferencesContext = createContext<
+  AppPreferencesContextValue | undefined
+>(undefined);
 
 export function AppShell({ children, preferenceSubjectId }: AppShellProps) {
   const subjectId =
-    preferenceSubjectId === undefined ? DEVICE_PREFERENCE_SUBJECT : preferenceSubjectId;
-  const [recordStore, setRecordStore] = useState<RecordStore<AppPreferenceRecord>>();
+    preferenceSubjectId === undefined
+      ? DEVICE_PREFERENCE_SUBJECT
+      : preferenceSubjectId;
+  const [recordStore, setRecordStore] =
+    useState<RecordStore<AppPreferenceRecord>>();
   const [analytics, setAnalytics] = useState<AnalyticsClient<ProductEvent>>();
   const [preferences, setPreferences] = useState(defaultAppPreferences);
   const [ready, setReady] = useState(false);
@@ -55,7 +63,9 @@ export function AppShell({ children, preferenceSubjectId }: AppShellProps) {
   useEffect(() => {
     let active = true;
     let database: SQLite.SQLiteDatabase | undefined;
-    const openRecordStore = SQLite.openDatabaseAsync('{{ context.app_name }}-preferences.db')
+    const openRecordStore = SQLite.openDatabaseAsync(
+      '{{ context.app_name }}-preferences.db',
+    )
       .then(async (opened) => {
         database = opened;
         return createAppPreferenceRecordStore(opened);
@@ -65,14 +75,16 @@ export function AppShell({ children, preferenceSubjectId }: AppShellProps) {
         database = undefined;
         return new InMemoryRecordStore<AppPreferenceRecord>();
       });
-    void Promise.all([openRecordStore, loadAnalytics()]).then(([store, client]) => {
-      if (active) {
-        setRecordStore(store);
-        setAnalytics(client);
-      } else {
-        void database?.closeAsync();
-      }
-    });
+    void Promise.all([openRecordStore, loadAnalytics()]).then(
+      ([store, client]) => {
+        if (active) {
+          setRecordStore(store);
+          setAnalytics(client);
+        } else {
+          void database?.closeAsync();
+        }
+      },
+    );
     return () => {
       active = false;
       void database?.closeAsync();
@@ -81,7 +93,9 @@ export function AppShell({ children, preferenceSubjectId }: AppShellProps) {
 
   const runtime = useMemo(
     () =>
-      recordStore === undefined ? undefined : new AppPreferenceRuntime(recordStore, setPreferences),
+      recordStore === undefined
+        ? undefined
+        : new AppPreferenceRuntime(recordStore, setPreferences),
     [recordStore],
   );
 
@@ -148,6 +162,13 @@ export function AppShell({ children, preferenceSubjectId }: AppShellProps) {
     [updatePreferences],
   );
 
+  const persistThemeMode = useCallback(
+    async (mode: ThemePreference): Promise<void> => {
+      await updatePreferences({ theme: mode });
+    },
+    [updatePreferences],
+  );
+
   const contextValue = useMemo<AppPreferencesContextValue>(
     () => ({
       analytics,
@@ -157,19 +178,29 @@ export function AppShell({ children, preferenceSubjectId }: AppShellProps) {
       setConsent,
       updatePreferences,
     }),
-    [analytics, preferences, resetPreferenceIdentity, setConsent, updatePreferences],
+    [
+      analytics,
+      preferences,
+      resetPreferenceIdentity,
+      setConsent,
+      updatePreferences,
+    ],
   );
 
   if (!ready) {
     return (
       <View style={styles.bootstrap}>
-        <ActivityIndicator color={theme.color.accent} />
+        <ActivityIndicator color={lightTheme.color.accent} />
       </View>
     );
   }
 
   return (
-    <AppPreferencesContext.Provider value={contextValue}>{children}</AppPreferencesContext.Provider>
+    <AppPreferencesContext.Provider value={contextValue}>
+      <AppThemeProvider mode={preferences.theme} persistMode={persistThemeMode}>
+        {children}
+      </AppThemeProvider>
+    </AppPreferencesContext.Provider>
   );
 }
 
@@ -190,6 +221,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     flex: 1,
-    backgroundColor: theme.color.background,
+    backgroundColor: lightTheme.color.background,
   },
 });

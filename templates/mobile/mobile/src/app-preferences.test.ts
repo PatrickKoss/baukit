@@ -18,7 +18,9 @@ describe('app preferences', () => {
       analytics_consent: 'denied',
     });
     const visible: AppPreferences[] = [];
-    const runtime = new AppPreferenceRuntime(records, (values) => visible.push(values));
+    const runtime = new AppPreferenceRuntime(records, (values) =>
+      visible.push(values),
+    );
 
     await expect(runtime.switchIdentity('subject-a')).resolves.toEqual({
       language: 'de',
@@ -56,7 +58,9 @@ describe('app preferences', () => {
       analytics_consent: 'denied',
     });
     const visible: AppPreferences[] = [];
-    const runtime = new AppPreferenceRuntime(records, (values) => visible.push(values));
+    const runtime = new AppPreferenceRuntime(records, (values) =>
+      visible.push(values),
+    );
     await runtime.switchIdentity('subject-a');
 
     const switched = runtime.switchIdentity('subject-b');
@@ -70,5 +74,35 @@ describe('app preferences', () => {
     const reset = runtime.switchIdentity(null);
     expect(visible.at(-1)).toEqual(defaultAppPreferences);
     await expect(reset).resolves.toEqual(defaultAppPreferences);
+  });
+
+  it('publishes an optimistic theme and rolls it back when persistence fails', async () => {
+    let writesFail = false;
+    const records = new InMemoryRecordStore<AppPreferenceRecord>(
+      undefined,
+      () => {
+        if (writesFail) {
+          throw new Error('theme persistence failed');
+        }
+      },
+    );
+    await records.put({
+      id: 'subject-a',
+      language: 'system',
+      theme: 'system',
+      analytics_consent: 'unknown',
+    });
+    const visible: AppPreferences[] = [];
+    const runtime = new AppPreferenceRuntime(records, (values) =>
+      visible.push(values),
+    );
+    await runtime.switchIdentity('subject-a');
+    writesFail = true;
+
+    const update = runtime.update({ theme: 'dark' });
+    expect(visible.at(-1)?.theme).toBe('dark');
+    await expect(update).rejects.toThrow('theme persistence failed');
+    expect(visible.at(-1)?.theme).toBe('system');
+    expect(runtime.preferences.theme).toBe('system');
   });
 });

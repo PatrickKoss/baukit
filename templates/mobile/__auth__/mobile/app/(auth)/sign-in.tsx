@@ -2,10 +2,12 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton } from '../../src/action-button';
 import { useOidcAuth } from '../../src/auth';
-import { theme } from '../../src/theme';
+import { useTheme, type AppTheme } from '../../src/theme';
 
 export default function SignInScreen() {
   const auth = useOidcAuth();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   return (
     <View style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.page}>
@@ -32,19 +34,21 @@ export default function SignInScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: theme.color.background },
-  page: { gap: theme.space.medium, padding: theme.space.large },
-  eyebrow: { color: theme.color.accent, fontSize: 12, fontWeight: '700', letterSpacing: 1.5 },
-  title: { color: theme.color.text, fontSize: 34, fontWeight: '700' },
-  subtitle: { color: theme.color.muted, fontSize: 16 },
-  card: {
-    gap: theme.space.small,
-    padding: theme.space.medium,
-    backgroundColor: theme.color.surface,
-    borderRadius: theme.radius.card,
-  },
-  sectionTitle: { color: theme.color.text, fontSize: 18, fontWeight: '700' },
-  error: { color: theme.color.error },
-  muted: { color: theme.color.muted, lineHeight: 21 },
-});
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    safeArea: { flex: 1, backgroundColor: theme.color.background },
+    page: { gap: theme.space.medium, padding: theme.space.large },
+    eyebrow: { color: theme.color.accent, fontSize: 12, fontWeight: '700', letterSpacing: 1.5 },
+    title: { color: theme.color.text, fontSize: 34, fontWeight: '700' },
+    subtitle: { color: theme.color.muted, fontSize: 16 },
+    card: {
+      gap: theme.space.small,
+      padding: theme.space.medium,
+      backgroundColor: theme.color.surface,
+      borderRadius: theme.radius.card,
+    },
+    sectionTitle: { color: theme.color.text, fontSize: 18, fontWeight: '700' },
+    error: { color: theme.color.error },
+    muted: { color: theme.color.muted, lineHeight: 21 },
+  });
+}

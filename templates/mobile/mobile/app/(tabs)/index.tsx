@@ -5,11 +5,14 @@ import { useTranslation } from 'react-i18next';
 import { ActionButton } from '../../src/action-button';
 import { useAnalyticsConsent } from '../../src/app-shell';
 import { listItems, type Item } from '../../src/api';
-import { theme } from '../../src/theme';
+import { useTheme, type AppTheme } from '../../src/theme';
+import { ThemeModeControl } from '../../src/theme-mode-control';
 import type { ConsentState } from '@baukit/analytics-core';
 
 export default function TodayScreen() {
   const { t } = useTranslation(['bootstrap', 'home']);
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const { analytics, consent, setConsent } = useAnalyticsConsent();
   const [items, setItems] = useState<readonly Item[]>([]);
   const [error, setError] = useState<string>();
@@ -74,6 +77,11 @@ export default function TodayScreen() {
         </View>
 
         <View style={styles.settings}>
+          <Text style={styles.sectionTitle}>Appearance</Text>
+          <ThemeModeControl />
+        </View>
+
+        <View style={styles.settings}>
           <Text style={styles.sectionTitle}>Analytics privacy</Text>
           <Text style={styles.muted}>
             Current consent: {consent}. Analytics uses a no-op transport until you configure a
@@ -100,31 +108,33 @@ export default function TodayScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: theme.color.background },
-  page: { gap: theme.space.medium, padding: theme.space.large },
-  eyebrow: { color: theme.color.accent, fontSize: 12, fontWeight: '700', letterSpacing: 1.5 },
-  title: { color: theme.color.text, fontSize: 34, fontWeight: '700' },
-  subtitle: { color: theme.color.muted, fontSize: 16 },
-  card: {
-    gap: theme.space.small,
-    padding: theme.space.medium,
-    backgroundColor: theme.color.surface,
-    borderRadius: theme.radius.card,
-  },
-  loading: { alignItems: 'center', flexDirection: 'row', gap: theme.space.small },
-  item: { gap: 3, paddingVertical: theme.space.small },
-  itemName: { color: theme.color.text, fontSize: 17, fontWeight: '600' },
-  itemId: { color: theme.color.muted, fontSize: 12 },
-  error: { color: theme.color.error },
-  muted: { color: theme.color.muted, lineHeight: 21 },
-  settings: {
-    gap: theme.space.small,
-    padding: theme.space.medium,
-    borderColor: theme.color.border,
-    borderRadius: theme.radius.card,
-    borderWidth: 1,
-  },
-  sectionTitle: { color: theme.color.text, fontSize: 18, fontWeight: '700' },
-  actions: { flexDirection: 'row', gap: theme.space.small, marginTop: theme.space.small },
-});
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    safeArea: { flex: 1, backgroundColor: theme.color.background },
+    page: { gap: theme.space.medium, padding: theme.space.large },
+    eyebrow: { color: theme.color.accent, fontSize: 12, fontWeight: '700', letterSpacing: 1.5 },
+    title: { color: theme.color.text, fontSize: 34, fontWeight: '700' },
+    subtitle: { color: theme.color.muted, fontSize: 16 },
+    card: {
+      gap: theme.space.small,
+      padding: theme.space.medium,
+      backgroundColor: theme.color.surface,
+      borderRadius: theme.radius.card,
+    },
+    loading: { alignItems: 'center', flexDirection: 'row', gap: theme.space.small },
+    item: { gap: 3, paddingVertical: theme.space.small },
+    itemName: { color: theme.color.text, fontSize: 17, fontWeight: '600' },
+    itemId: { color: theme.color.muted, fontSize: 12 },
+    error: { color: theme.color.error },
+    muted: { color: theme.color.muted, lineHeight: 21 },
+    settings: {
+      gap: theme.space.small,
+      padding: theme.space.medium,
+      borderColor: theme.color.border,
+      borderRadius: theme.radius.card,
+      borderWidth: 1,
+    },
+    sectionTitle: { color: theme.color.text, fontSize: 18, fontWeight: '700' },
+    actions: { flexDirection: 'row', gap: theme.space.small, marginTop: theme.space.small },
+  });
+}

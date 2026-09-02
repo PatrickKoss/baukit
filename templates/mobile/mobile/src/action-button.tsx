@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text } from 'react-native';
 
-import { theme } from './theme';
+import { useTheme, type AppTheme } from './theme';
 
 export interface ActionButtonProps {
   readonly disabled?: boolean;
@@ -15,6 +15,8 @@ export function ActionButton({
   onPress,
   secondary = false,
 }: ActionButtonProps) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   return (
     <Pressable
       accessibilityRole="button"
@@ -26,22 +28,29 @@ export function ActionButton({
         disabled ? styles.buttonDisabled : undefined,
       ]}
     >
-      <Text style={[styles.buttonText, secondary ? styles.buttonTextSecondary : undefined]}>
+      <Text
+        style={[
+          styles.buttonText,
+          secondary ? styles.buttonTextSecondary : undefined,
+        ]}
+      >
         {label}
       </Text>
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
-  button: {
-    paddingHorizontal: theme.space.medium,
-    paddingVertical: theme.space.small,
-    backgroundColor: theme.color.accent,
-    borderRadius: theme.radius.button,
-  },
-  buttonDisabled: { opacity: 0.5 },
-  buttonSecondary: { backgroundColor: theme.color.surface },
-  buttonText: { color: theme.color.onAccent, fontWeight: '700' },
-  buttonTextSecondary: { color: theme.color.text },
-});
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    button: {
+      paddingHorizontal: theme.space.medium,
+      paddingVertical: theme.space.small,
+      backgroundColor: theme.color.accent,
+      borderRadius: theme.radius.button,
+    },
+    buttonDisabled: { opacity: 0.5 },
+    buttonSecondary: { backgroundColor: theme.color.surface },
+    buttonText: { color: theme.color.onAccent, fontWeight: '700' },
+    buttonTextSecondary: { color: theme.color.text },
+  });
+}
