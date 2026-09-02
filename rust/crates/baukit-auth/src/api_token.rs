@@ -50,7 +50,7 @@ impl ApiToken {
     /// Returns whether the token is still usable at `now`.
     #[must_use]
     pub fn is_active_at(&self, now: DateTime<Utc>) -> bool {
-        self.revoked_at.is_none() && !self.expires_at.is_some_and(|expires_at| expires_at <= now)
+        self.revoked_at.is_none() && self.expires_at.is_none_or(|expires_at| expires_at > now)
     }
 }
 
