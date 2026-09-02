@@ -14,7 +14,7 @@ cd "$repo_root"
 ORDER=(
   a11y-core analytics-core api-runtime events localization-core
   preferences-core ui-tokens data-contracts auth-native auth-web
-  pwa-web sync-client
+  pwa-web sync-client integrations-client
   analytics-posthog-native analytics-posthog-web
   data-contracts-dexie data-contracts-expo-sqlite
 )
