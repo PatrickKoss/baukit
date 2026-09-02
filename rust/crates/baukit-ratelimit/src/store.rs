@@ -1,4 +1,10 @@
-use std::{error::Error, fmt, future::Future, pin::Pin, time::Duration};
+use std::{
+    error::Error,
+    fmt,
+    future::Future,
+    pin::Pin,
+    time::{Duration, SystemTime},
+};
 
 /// A token-bucket quota.
 ///
@@ -162,4 +168,34 @@ pub trait RateLimitStore: Send + Sync {
         key: &'a str,
         quota: Quota,
     ) -> Pin<Box<dyn Future<Output = Result<RateLimitDecision, RateLimitStoreError>> + Send + 'a>>;
+}
+
+/// Store-level result of an atomic amount-budget decision.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AmountBudgetStoreDecision {
+    /// Whether the store added the requested amount.
+    pub allowed: bool,
+    /// Units left after the decision.
+    pub remaining: u64,
+}
+
+/// Persistence port for atomic fixed-window amount-budget decisions.
+pub trait AmountBudgetStore: Send + Sync {
+    /// Adds `amount` when doing so would not exceed `limit`.
+    ///
+    /// The store must create or update the counter and set its expiry to
+    /// `reset_at` in one atomic operation. `now` lets process-local adapters
+    /// expire entries against an injected clock.
+    fn check_and_consume_amount<'a>(
+        &'a self,
+        key: &'a str,
+        amount: u64,
+        limit: u64,
+        now: SystemTime,
+        reset_at: SystemTime,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<AmountBudgetStoreDecision, RateLimitStoreError>> + Send + 'a,
+        >,
+    >;
 }

@@ -1,4 +1,8 @@
-use std::{fmt, sync::Arc, time::Duration};
+use std::{
+    fmt,
+    sync::Arc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use redis::{
     aio::{ConnectionManager, MultiplexedConnection},
@@ -6,7 +10,10 @@ use redis::{
 };
 use tokio::sync::{Mutex, RwLock};
 
-use crate::{Quota, RateLimitDecision, RateLimitStore, RateLimitStoreError};
+use crate::{
+    AmountBudgetStore, AmountBudgetStoreDecision, Quota, RateLimitDecision, RateLimitStore,
+    RateLimitStoreError,
+};
 
 const TOKEN_BUCKET_SCRIPT: &str = r#"
 local current = redis.call('TIME')
@@ -33,6 +40,21 @@ end
 redis.call('HSET', KEYS[1], 'tokens', tokens, 'last_refill_ms', now_ms)
 redis.call('PEXPIRE', KEYS[1], ttl_ms)
 return {allowed, math.floor(tokens), retry_ms}
+"#;
+
+const AMOUNT_BUDGET_SCRIPT: &str = r#"
+local current = tonumber(redis.call('GET', KEYS[1])) or 0
+local amount = tonumber(ARGV[1])
+local limit = tonumber(ARGV[2])
+local allowed = 0
+
+if current <= limit and amount <= (limit - current) then
+  current = redis.call('INCRBY', KEYS[1], ARGV[1])
+  redis.call('PEXPIREAT', KEYS[1], ARGV[3])
+  allowed = 1
+end
+
+return {allowed, limit - math.min(current, limit)}
 "#;
 
 /// Redis adapter using one atomic Lua token-bucket script.
@@ -198,6 +220,52 @@ impl RateLimitStore for RedisRateLimitStore {
     }
 }
 
+impl AmountBudgetStore for RedisRateLimitStore {
+    fn check_and_consume_amount<'a>(
+        &'a self,
+        key: &'a str,
+        amount: u64,
+        limit: u64,
+        now: SystemTime,
+        reset_at: SystemTime,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<AmountBudgetStoreDecision, RateLimitStoreError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            if reset_at <= now {
+                return Err(RateLimitStoreError::unavailable(
+                    "amount-budget reset must be after the current time",
+                ));
+            }
+            let amount = i64::try_from(amount).map_err(|_| {
+                RateLimitStoreError::unavailable("amount-budget amount exceeds Redis integer range")
+            })?;
+            let limit = i64::try_from(limit).map_err(|_| {
+                RateLimitStoreError::unavailable("amount-budget limit exceeds Redis integer range")
+            })?;
+            let reset_at_ms = system_time_millis_ceil(reset_at)?;
+            let (allowed, remaining) = match &self.connection {
+                StoreConnection::Direct(connection) => {
+                    let mut connection = connection.clone();
+                    eval_amount_budget(&mut connection, key, amount, limit, reset_at_ms).await
+                }
+                StoreConnection::Sentinel(state) => {
+                    eval_amount_with_sentinel_retry(state, key, amount, limit, reset_at_ms).await
+                }
+            }
+            .map_err(RateLimitStoreError::new)?;
+            Ok(AmountBudgetStoreDecision {
+                allowed: allowed == 1,
+                remaining,
+            })
+        })
+    }
+}
+
 async fn eval_with_sentinel_retry(
     state: &SentinelState,
     key: &str,
@@ -226,6 +294,34 @@ async fn eval_with_sentinel_retry(
     }
 }
 
+async fn eval_amount_with_sentinel_retry(
+    state: &SentinelState,
+    key: &str,
+    amount: i64,
+    limit: i64,
+    reset_at_ms: i64,
+) -> redis::RedisResult<(i64, u64)> {
+    let (mut connection, generation) = {
+        let current = state.current.read().await;
+        (current.connection.clone(), current.generation)
+    };
+    match eval_amount_budget(&mut connection, key, amount, limit, reset_at_ms).await {
+        Ok(decision) => Ok(decision),
+        Err(_) => {
+            let mut client = state.client.lock().await;
+            let mut current = state.current.write().await;
+            if current.generation == generation {
+                current.connection = client.get_async_connection().await?;
+                current.generation = current.generation.wrapping_add(1);
+            }
+            let mut connection = current.connection.clone();
+            drop(current);
+            drop(client);
+            eval_amount_budget(&mut connection, key, amount, limit, reset_at_ms).await
+        }
+    }
+}
+
 async fn eval_token_bucket<C>(
     connection: &mut C,
     key: &str,
@@ -244,6 +340,27 @@ where
         .arg(quota.requests_per_period())
         .arg(period_ms)
         .arg(ttl_ms)
+        .query_async(connection)
+        .await
+}
+
+async fn eval_amount_budget<C>(
+    connection: &mut C,
+    key: &str,
+    amount: i64,
+    limit: i64,
+    reset_at_ms: i64,
+) -> redis::RedisResult<(i64, u64)>
+where
+    C: redis::aio::ConnectionLike + Send + Unpin,
+{
+    redis::cmd("EVAL")
+        .arg(AMOUNT_BUDGET_SCRIPT)
+        .arg(1)
+        .arg(key)
+        .arg(amount)
+        .arg(limit)
+        .arg(reset_at_ms)
         .query_async(connection)
         .await
 }
@@ -388,6 +505,16 @@ fn configuration_error(message: impl Into<String>) -> RateLimitStoreError {
 fn duration_millis_ceil(duration: Duration) -> u64 {
     let rounded = duration.as_nanos().div_ceil(1_000_000);
     u64::try_from(rounded.clamp(1, i64::MAX as u128)).unwrap_or(i64::MAX as u64)
+}
+
+fn system_time_millis_ceil(time: SystemTime) -> Result<i64, RateLimitStoreError> {
+    let duration = time.duration_since(UNIX_EPOCH).map_err(|_| {
+        RateLimitStoreError::unavailable("amount-budget reset precedes the Unix epoch")
+    })?;
+    let millis = duration.as_nanos().div_ceil(1_000_000);
+    i64::try_from(millis).map_err(|_| {
+        RateLimitStoreError::unavailable("amount-budget reset exceeds Redis timestamp range")
+    })
 }
 
 #[cfg(test)]

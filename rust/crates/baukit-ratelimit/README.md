@@ -48,3 +48,27 @@ resolved connection and refresh state.
 Store failures are fail-open by default and can be configured fail-closed. All
 decisions record `http_rate_limit_decisions_total` with only `scope` and
 `outcome` labels.
+
+## Fixed-window amount budgets
+
+`FixedWindowAmountBudget` limits units rather than requests. A caller supplies
+an opaque subject and the number of units to consume. The budget admits the
+whole amount or leaves the counter unchanged. Its decision includes the units
+left and the UTC reset instant, which callers can convert to `Retry-After`.
+
+Create `FixedWindowBudgetOptions` with a stable namespace, a limit, a fail
+mode, and either `FixedWindow::utc_day()` or an epoch-aligned duration window.
+The namespace separates Redis keys and is the only caller-defined metric label.
+Do not put subject IDs in it.
+
+`RedisRateLimitStore` checks the limit, increments the counter, and sets its
+absolute expiry in one Lua script. `InMemoryRateLimitStore` implements the same
+port and accepts the coordinator's clock, which makes boundary tests
+deterministic. Store errors return an allowed decision with the full configured
+limit in fail-open mode. Fail-closed mode returns a denied decision with zero
+remaining units.
+
+Amount-budget decisions record
+`fixed_window_amount_budget_decisions_total`. Its labels are `namespace` and
+`outcome`. Outcome is one of `allowed`, `denied`, or `error`; subject values are
+never metric labels.

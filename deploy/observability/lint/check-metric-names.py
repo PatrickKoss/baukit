@@ -18,6 +18,7 @@ SPEC_METRICS = (
     "http_request_duration_seconds",
     "http_requests_in_flight",
     "http_rate_limit_decisions_total",
+    "fixed_window_amount_budget_decisions_total",
     "build_info",
     "db_pool_connections_max",
     "db_pool_connections_idle",

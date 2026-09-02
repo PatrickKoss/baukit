@@ -1,4 +1,9 @@
-use std::{error::Error, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    error::Error,
+    net::SocketAddr,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 use axum::{
     Extension, Router,
@@ -9,8 +14,8 @@ use axum::{
 };
 use baukit_auth::Principal;
 use baukit_ratelimit::{
-    Quota, RATE_LIMIT_LIMIT, RATE_LIMIT_REMAINING, RateLimitOptions, RateLimitStore as _,
-    RedisRateLimitStore, layers,
+    AmountBudgetStore as _, Quota, RATE_LIMIT_LIMIT, RATE_LIMIT_REMAINING, RateLimitOptions,
+    RateLimitStore as _, RedisRateLimitStore, layers,
 };
 use redis::AsyncCommands as _;
 use tokio::sync::Barrier;
@@ -39,6 +44,86 @@ async fn concurrent_redis_consumption_never_over_admits() -> Result<(), Box<dyn 
         admitted += usize::from(task.await??.allowed);
     }
     assert_eq!(admitted, 10);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn concurrent_amount_consumers_never_exceed_the_fixed_window_limit()
+-> Result<(), Box<dyn Error>> {
+    let fixture = baukit_test::start_redis().await?;
+    let store = Arc::new(RedisRateLimitStore::connect(fixture.connection_url()).await?);
+    let now = SystemTime::now();
+    let reset_at = now + Duration::from_secs(3_600);
+    let barrier = Arc::new(Barrier::new(51));
+    let mut tasks = Vec::new();
+    for _ in 0..50 {
+        let store = Arc::clone(&store);
+        let barrier = Arc::clone(&barrier);
+        tasks.push(tokio::spawn(async move {
+            barrier.wait().await;
+            store
+                .check_and_consume_amount("amount-budget:test:atomic:subject", 3, 30, now, reset_at)
+                .await
+        }));
+    }
+    barrier.wait().await;
+
+    let mut admitted = 0;
+    for task in tasks {
+        admitted += usize::from(task.await??.allowed);
+    }
+    assert_eq!(admitted, 10);
+
+    let final_decision = store
+        .check_and_consume_amount("amount-budget:test:atomic:subject", 1, 30, now, reset_at)
+        .await?;
+    assert!(!final_decision.allowed);
+    assert_eq!(final_decision.remaining, 0);
+
+    for (suffix, amount, allowed, remaining) in [
+        ("below", 29, true, 1),
+        ("at", 30, true, 0),
+        ("above", 31, false, 30),
+    ] {
+        let decision = store
+            .check_and_consume_amount(
+                &format!("amount-budget:test:{suffix}:subject"),
+                amount,
+                30,
+                now,
+                reset_at,
+            )
+            .await?;
+        assert_eq!(decision.allowed, allowed, "amount {amount}");
+        assert_eq!(decision.remaining, remaining, "amount {amount}");
+    }
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn redis_amount_counter_expires_at_the_supplied_boundary() -> Result<(), Box<dyn Error>> {
+    let fixture = baukit_test::start_redis().await?;
+    let store = RedisRateLimitStore::connect(fixture.connection_url()).await?;
+    let now = SystemTime::now();
+    let reset_after = Duration::from_secs(5);
+    let reset_at = now + reset_after;
+    let key = "amount-budget:test:expiry:subject";
+    let decision = store
+        .check_and_consume_amount(key, 4, 10, now, reset_at)
+        .await?;
+    assert!(decision.allowed);
+    assert_eq!(decision.remaining, 6);
+
+    let client = redis::Client::open(fixture.connection_url())?;
+    let mut connection = client.get_multiplexed_async_connection().await?;
+    let ttl: i64 = connection.pttl(key).await?;
+    let maximum_ttl = i64::try_from(reset_after.as_millis())? + 1;
+    assert!(ttl > 0 && ttl <= maximum_ttl, "unexpected TTL: {ttl}");
+    tokio::time::sleep(reset_after + Duration::from_secs(1)).await;
+    let exists: bool = connection.exists(key).await?;
+    assert!(!exists);
     Ok(())
 }
 
