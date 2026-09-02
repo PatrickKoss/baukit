@@ -38,79 +38,86 @@ export function App() {
   }
 
   return (
-    <main className="shell">
-      <p className="eyebrow">BAUKIT WEB</p>
-      <h1>{{ context.app_name }}</h1>
-      <p className="lede">A small Vite app reading the shared backend through TanStack Query.</p>
+    <>
+      <nav className="primary-navigation" data-testid="primary-navigation" aria-label="Primary">
+        <a href="/" aria-label="Home" aria-current="page">
+          <span aria-hidden="true">H</span>
+        </a>
+      </nav>
+      <main className="shell">
+        <p className="eyebrow">BAUKIT WEB</p>
+        <h1>{{ context.app_name }}</h1>
+        <p className="lede">A small Vite app reading the shared backend through TanStack Query.</p>
 
-      {detailId === null ? null : (
-        <DetailRouteStateView<Item>
-          state={detailState}
-          onExit={() => {
-            backOrReplace(browserNavigation(), '/');
-          }}
-          renderReady={(item) => (
-            <section className="panel" aria-labelledby="detail-title">
-              <h2 id="detail-title">Item detail</h2>
-              <p>{item.name}</p>
-              <button
-                className="action secondary"
-                type="button"
-                onClick={() => {
-                  backOrReplace(browserNavigation(), '/');
-                }}
-              >
-                Back to items
-              </button>
-            </section>
-          )}
-        />
-      )}
-
-      <section className="panel" aria-labelledby="items-title">
-        <h2 id="items-title">Items</h2>
-        {items.isPending ? <p className="muted">Loading items…</p> : null}
-        {items.error === null ? null : <p className="error">{items.error.message}</p>}
-        {items.data?.length === 0 ? <p className="muted">No items yet.</p> : null}
-        <ul className="items">
-          {items.data?.map((item) => (
-            <li className="item" key={item.id}>
-              <strong>{item.name}</strong>
-              <span className="item-id">{item.id}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <AccessibleDialogExample />
-
-      <aside className="consent" aria-labelledby="privacy-title">
-        <h2 id="privacy-title">Analytics privacy</h2>
-        <p className="muted">
-          Consent is <strong>{consent}</strong>. Events are dropped unless you explicitly allow
-          analytics, and the generated app uses a no-op transport by default.
-        </p>
-        <div className="actions">
-          <button
-            className="action"
-            type="button"
-            onClick={() => {
-              chooseConsent('granted');
+        {detailId === null ? null : (
+          <DetailRouteStateView<Item>
+            state={detailState}
+            onExit={() => {
+              backOrReplace(browserNavigation(), '/');
             }}
-          >
-            Allow analytics
-          </button>
-          <button
-            className="action secondary"
-            type="button"
-            onClick={() => {
-              chooseConsent('denied');
-            }}
-          >
-            Deny analytics
-          </button>
-        </div>
-      </aside>
-    </main>
+            renderReady={(item) => (
+              <section className="panel" aria-labelledby="detail-title">
+                <h2 id="detail-title">Item detail</h2>
+                <p>{item.name}</p>
+                <button
+                  className="action secondary"
+                  type="button"
+                  onClick={() => {
+                    backOrReplace(browserNavigation(), '/');
+                  }}
+                >
+                  Back to items
+                </button>
+              </section>
+            )}
+          />
+        )}
+
+        <section className="panel" aria-labelledby="items-title">
+          <h2 id="items-title">Items</h2>
+          {items.isPending ? <p className="muted">Loading items…</p> : null}
+          {items.error === null ? null : <p className="error">{items.error.message}</p>}
+          {items.data?.length === 0 ? <p className="muted">No items yet.</p> : null}
+          <ul className="items">
+            {items.data?.map((item) => (
+              <li className="item" key={item.id}>
+                <strong>{item.name}</strong>
+                <span className="item-id">{item.id}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <AccessibleDialogExample />
+
+        <aside className="consent" aria-labelledby="privacy-title">
+          <h2 id="privacy-title">Analytics privacy</h2>
+          <p className="muted">
+            Consent is <strong>{consent}</strong>. Events are dropped unless you explicitly allow
+            analytics, and the generated app uses a no-op transport by default.
+          </p>
+          <div className="actions">
+            <button
+              className="action"
+              type="button"
+              onClick={() => {
+                chooseConsent('granted');
+              }}
+            >
+              Allow analytics
+            </button>
+            <button
+              className="action secondary"
+              type="button"
+              onClick={() => {
+                chooseConsent('denied');
+              }}
+            >
+              Deny analytics
+            </button>
+          </div>
+        </aside>
+      </main>
+    </>
   );
 }

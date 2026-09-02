@@ -1,0 +1,22 @@
+{
+  "$comment": "Example product resource limits. Replace these values with reviewed product policy.",
+  "version": 1,
+  "text": {
+    "max_characters": 200
+  },
+  "collection": {
+    "max_elements": 100
+  },
+  "document": {
+    "max_bytes": 8192
+  },
+  "rows": {
+    "max_count": 1000
+  },
+  "body": {
+    "max_bytes": 1048576
+  },
+  "batch": {
+    "max_items": 500
+  }
+}

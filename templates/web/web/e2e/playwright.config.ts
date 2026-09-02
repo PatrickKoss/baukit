@@ -30,14 +30,17 @@ export default defineConfig({
   projects: [
     {
       name: 'desktop-chromium',
-      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1440, height: 900 },
+      },
     },
     { name: 'mobile-chrome', use: { ...devices['Pixel 7'] } },
     { name: 'webkit-desktop', use: { ...devices['Desktop Safari'] } },
     { name: 'mobile-safari', use: { ...devices['iPhone 14'] } },
   ],
   webServer: {
-    command: `pnpm exec vite preview --port ${String(port)} --strictPort`,
+    command: `pnpm --dir .. exec vite preview --port ${String(port)} --strictPort`,
     url: baseURL,
     reuseExistingServer: process.env['CI'] === undefined,
     timeout: 120_000,

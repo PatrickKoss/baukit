@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
 
+pub mod limits;
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Item {
     pub id: Uuid,
@@ -29,7 +31,7 @@ impl Item {
         if name.is_empty() {
             return Err(DomainError::EmptyName);
         }
-        if name.chars().count() > 200 {
+        if limits::check_text("item.name", name).is_err() {
             return Err(DomainError::NameTooLong);
         }
         Ok(Self {

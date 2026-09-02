@@ -1,13 +1,16 @@
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { ActionButton } from '../../src/action-button';
 import { useAnalyticsConsent } from '../../src/app-shell';
 import { listItems, type Item } from '../../src/api';
+import { useRouteHeadingFocus } from '../../src/route-heading-focus';
 import { useTheme, type AppTheme } from '../../src/theme';
 import { ThemeModeControl } from '../../src/theme-mode-control';
 import type { ConsentState } from '@baukit/analytics-core';
+
+const routeHeadingFocusProps = Platform.OS === 'web' ? { tabIndex: -1 } : {};
 
 export default function TodayScreen() {
   const { t } = useTranslation(['bootstrap', 'home']);
@@ -17,6 +20,9 @@ export default function TodayScreen() {
   const [items, setItems] = useState<readonly Item[]>([]);
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
+  const headingRef = useRef<Text>(null);
+
+  useRouteHeadingFocus(headingRef, !loading);
 
   useEffect(() => {
     let active = true;
@@ -53,7 +59,14 @@ export default function TodayScreen() {
     <View style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.page}>
         <Text style={styles.eyebrow}>BAUKIT MOBILE</Text>
-        <Text style={styles.title}>{{ context.app_name }}</Text>
+        <Text
+          ref={headingRef}
+          accessibilityRole="header"
+          style={styles.title}
+          {...routeHeadingFocusProps}
+        >
+          {{ context.app_name }}
+        </Text>
         <Text style={styles.subtitle}>Items from the shared backend API</Text>
 
         <View style={styles.card}>

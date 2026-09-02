@@ -47,6 +47,7 @@ const EXPECTED_BACKEND_FILES: &[&str] = &[
     "backend/Dockerfile",
     "backend/openapi.json",
     "backend/crates/__APP__-domain/Cargo.toml",
+    "backend/crates/__APP__-domain/src/limits.rs",
     "backend/crates/__APP__-ports/Cargo.toml",
     "backend/crates/__APP__-services/Cargo.toml",
     "backend/crates/__APP__-api/Cargo.toml",
@@ -64,7 +65,10 @@ const EXPECTED_WORKER_FILES: &[&str] = &[
 
 const EXPECTED_COMMON_FILES: &[&str] = &[
     ".github/workflows/ci.yml",
+    "limits.json",
+    "docs/navigation-recipe.md",
     "docs/observability-lint.md",
+    "docs/resource-budgets.md",
     "scripts/lockfiles.sh",
     "scripts/preflight.sh",
 ];
@@ -90,6 +94,10 @@ const EXPECTED_MOBILE_FILES: &[&str] = &[
     "mobile/src/localization/de.ts",
     "mobile/src/localization/en.ts",
     "mobile/src/localization/i18n.ts",
+    "mobile/src/limits.ts",
+    "mobile/src/limits.test.ts",
+    "mobile/src/route-heading-focus.ts",
+    "mobile/src/route-heading-focus.test.ts",
     "mobile/src/theme.ts",
     "mobile/src/tokens.ts",
     "mobile/src/record-store.ts",
@@ -106,11 +114,15 @@ const EXPECTED_WEB_FILES: &[&str] = &[
     "web/src/App.tsx",
     "web/src/api.ts",
     "web/src/analytics.ts",
+    "web/src/limits.ts",
+    "web/src/limits.test.ts",
     "web/src/tokens.css",
     "web/e2e/playwright.config.ts",
     "web/e2e/qa.config.ts",
     "web/e2e/tsconfig.json",
     "web/e2e/tests/qa.ts",
+    "web/e2e/tests/geometry.ts",
+    "web/e2e/tests/console-warnings.ts",
     "web/e2e/tests/qa-axe.spec.ts",
     "web/e2e/tests/qa-keyboard.spec.ts",
     "web/e2e/tests/qa-overlay-dismiss.spec.ts",
@@ -119,6 +131,8 @@ const EXPECTED_WEB_FILES: &[&str] = &[
     "web/e2e/tests/qa-auth-expiry.spec.ts",
     "web/e2e/tests/qa-auth-isolation.spec.ts",
     "web/e2e/tests/qa-scroll.spec.ts",
+    "web/e2e/tests/qa-geometry.spec.ts",
+    "web/e2e/tests/qa-console.spec.ts",
 ];
 
 const EXPECTED_AUTH_BACKEND_FILES: &[&str] = &[

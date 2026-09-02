@@ -48,17 +48,21 @@ The Vitest acceptance tests cover keyboard focus wrapping and visibility, modal 
 
 `pnpm test:e2e` builds the app, serves it with `vite preview`, and runs the `qa-*` Playwright specs against Chromium and WebKit at desktop and mobile viewports. The specs stub every API path themselves, so the gate needs no backend, database, or identity provider.
 
-`e2e/qa.config.ts` is the only file a product edits. It lists the routes, overlays, submit targets, deep links that must land in a route state, protected routes, and API stubs; each spec iterates over those lists. Adding a screen to the gate means adding an entry, never editing a spec.
+`e2e/qa.config.ts` is the only file a product edits. It lists routes, overlays, submit targets, deep links that must land in a route state, protected routes, geometry selectors, and API stubs. Each spec reads that file. Add screens and selectors there instead of editing a spec.
 
-| Spec | What it proves |
-|---|---|
-| `qa-axe` | No serious or critical axe violations on any route, overlay, or route state |
-| `qa-keyboard` | Modal focus entry, Tab containment, Escape, focus restoration, no tab stop on inert or hidden content, a distinct visible focus ring |
-| `qa-overlay-dismiss` | Every overlay closes without committing, by Escape, by its dismiss control, and by an outside click when one is configured |
-| `qa-submit-guards` | A double activation produces one result; a failed submit keeps input and focuses the invalid field |
-| `qa-route-state` | A deep link that cannot resolve renders a contextual state with a recovery control, never a blank page |
-| `qa-auth-expiry` | An expired session removes private data and says so, and recovers when the session is valid again |
-| `qa-auth-isolation` | An account switch never leaks one account's records into another's view |
-| `qa-scroll` | The last content of a route is reachable at every viewport and the scroller is edge-aligned |
+| Spec                 | What it proves                                                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `qa-axe`             | No serious or critical axe violations on any route, overlay, or route state                                                          |
+| `qa-keyboard`        | Modal focus entry, Tab containment, Escape, focus restoration, no tab stop on inert or hidden content, a distinct visible focus ring |
+| `qa-overlay-dismiss` | Every overlay closes without committing, by Escape, by its dismiss control, and by an outside click when one is configured           |
+| `qa-submit-guards`   | A double activation produces one result; a failed submit keeps input and focuses the invalid field                                   |
+| `qa-route-state`     | A deep link that cannot resolve renders a contextual state with a recovery control, never a blank page                               |
+| `qa-auth-expiry`     | An expired session removes private data and says so, and recovers when the session is valid again                                    |
+| `qa-auth-isolation`  | An account switch never leaks one account's records into another's view                                                              |
+| `qa-scroll`          | The last content of a route is reachable at every viewport and the scroller is edge-aligned                                          |
+| `qa-geometry`        | No horizontal overflow, fixed-navigation overlap, scroll-container clipping, or undersized targets at 320, 1023, and 1024 CSS pixels |
+| `qa-console`         | Every console warning matches an exact allowlist entry that records why the warning is safe                                          |
+
+The product-root `limits.json` is the resource policy shared by backend, web, and mobile validation helpers. Read `docs/resource-budgets.md` before replacing its example values.
 
 Install the browsers once with `pnpm exec playwright install --with-deps chromium webkit`. Narrow a run with `pnpm exec playwright test --config e2e/playwright.config.ts --project=desktop-chromium`.

@@ -40,6 +40,10 @@ Overlay focus, announcements, and reduced motion come from `@baukit/a11y-core`, 
 
 Call `announce(message)` only for important state changes that focus does not already communicate, and read `useReducedMotion()` before non-essential animation. `src/accessibility.test.ts` proves the wiring through the Jest seam that switches `Platform.OS`. ESLint applies the React Native accessibility rules through `@eslint/compat` so the maintained rule set works with this template's flat ESLint 9 config, and lint fails on warnings.
 
+`src/route-heading-focus.ts` connects Expo Router's active-route lifecycle to the DOM-only route focus controller for Expo web. A generated screen supplies its heading ref and waits until route content is ready. Native headings keep their header role and need product-owned screen-reader focus when a transition calls for it.
+
+The product-root `limits.json` is the resource policy shared by backend, web, and mobile validation helpers. Read `docs/resource-budgets.md` before replacing its example values.
+
 Before claiming native accessibility, follow the VoiceOver and TalkBack release protocol in Baukit's `docs/platform/accessibility-contract.md`. Lint and Jest cannot validate spoken copy, traversal, gesture operation, or focus behavior on a real release binary.
 
 ## Native smoke guidance

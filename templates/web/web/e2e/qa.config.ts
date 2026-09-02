@@ -94,10 +94,21 @@ export interface QaConfig {
   readonly protectedRoutes: readonly QaProtectedRoute[];
   /** CSS selector for the element each route's scroller must be flush with. */
   readonly screenSelector: string;
+  /** Selectors and threshold used by qa-geometry. */
+  readonly geometry: QaGeometry;
   /** Stubbed API responses, so the browser gate needs no backend. */
   readonly apiStubs: readonly QaApiStub[];
   /** Two accounts' worth of stub data, to prove one never leaks into the other. */
   readonly accounts: readonly QaAccount[];
+}
+
+export interface QaGeometry {
+  readonly fixedNavigationSelector: string;
+  readonly overlapTargetSelector: string;
+  readonly scrollContainerSelector: string;
+  readonly scrollTargetSelector: string;
+  readonly interactiveTargetSelector: string;
+  readonly minimumTargetSize: number;
 }
 
 export interface QaAccount {
@@ -181,5 +192,13 @@ export const qaConfig: QaConfig = {
     },
   ],
   screenSelector: '.shell',
+  geometry: {
+    fixedNavigationSelector: '[data-testid="primary-navigation"]',
+    overlapTargetSelector: '.consent .action:last-child',
+    scrollContainerSelector: '.items',
+    scrollTargetSelector: '.item:first-child',
+    interactiveTargetSelector: 'a, button, input',
+    minimumTargetSize: 44,
+  },
   apiStubs: [{ url: '**/items', status: 200, body: OWNER_ITEMS }],
 };

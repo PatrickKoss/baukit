@@ -83,6 +83,8 @@ with browsers under the repository-local
 
 The workspace consumes Baukit from {{ context.baukit_dependency_description }}. Generated applications build and run directly with Cargo and do not need the Baukit CLI.
 
+The product-root `limits.json` contains example resource limits. The domain `limits` module embeds and validates it, and web and mobile load the same file. Read `docs/resource-budgets.md` before replacing the values.
+
 By default, `baukit new` resolves and emits Cargo and pnpm lockfiles at scaffold time. Keep them committed, update them with `make lockfiles` after dependency changes, and use `--locked` / `--frozen-lockfile` in automation. Offline generation can use `--skip-lockfiles`, but `sh scripts/lockfiles.sh` must run before the first build.
 
 ## Repository setup
