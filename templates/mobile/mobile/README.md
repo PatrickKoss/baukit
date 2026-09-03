@@ -42,7 +42,7 @@ Call `announce(message)` only for important state changes that focus does not al
 
 `src/route-heading-focus.ts` connects Expo Router's active-route lifecycle to the DOM-only route focus controller for Expo web. A generated screen supplies its heading ref and waits until route content is ready. Native headings keep their header role and need product-owned screen-reader focus when a transition calls for it.
 
-The product-root `limits.json` is the resource policy shared by backend, web, and mobile validation helpers. Read `docs/resource-budgets.md` before replacing its example values.
+The product-root `limits.json` is the resource policy shared by backend, web, and mobile validation helpers. `metro.config.js` watches the product root so Expo can bundle the policy, while its block list keeps Metro out of sibling directories. Read `docs/resource-budgets.md` before replacing its example values.
 
 Before claiming native accessibility, follow the VoiceOver and TalkBack release protocol in Baukit's `docs/platform/accessibility-contract.md`. Lint and Jest cannot validate spoken copy, traversal, gesture operation, or focus behavior on a real release binary.
 

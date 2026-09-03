@@ -20,6 +20,9 @@ Products own the values and policy. Keep the values in one product-owned source 
 operations code do not drift. A missing limit needs a written reason. It is not an implicit unlimited
 budget.
 
+The mobile template's `metro.config.js` watches the product root so Metro can resolve `limits.json`,
+and blocks every sibling directory except `mobile/`.
+
 Count user text as Unicode scalar values after trimming leading and trailing whitespace. Measure a
 document as the UTF-8 byte length of its compact JSON serialization. A row cap counts live rows only.
 An update to an existing row does not consume another slot, and a soft-deleted row releases its slot.

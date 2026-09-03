@@ -88,6 +88,7 @@ const EXPECTED_MOBILE_FILES: &[&str] = &[
     "mobile/pnpm-workspace.yaml",
     "mobile/app.config.ts",
     "mobile/tsconfig.json",
+    "mobile/metro.config.js",
     "mobile/eslint.config.js",
     "mobile/jest.config.cjs",
     "mobile/app/_layout.tsx",

@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { ActionButton } from '../../src/action-button';
 import { useAnalyticsConsent } from '../../src/app-shell';
 import { listItems, type Item } from '../../src/api';
+import { checkText } from '../../src/limits';
 import { useRouteHeadingFocus } from '../../src/route-heading-focus';
 import { useTheme, type AppTheme } from '../../src/theme';
 import { ThemeModeControl } from '../../src/theme-mode-control';
@@ -29,6 +30,9 @@ export default function TodayScreen() {
     void listItems()
       .then((nextItems) => {
         if (active) {
+          nextItems.forEach((item) => {
+            checkText('item.name', item.name);
+          });
           setItems(nextItems);
           setError(undefined);
         }
