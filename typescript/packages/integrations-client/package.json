@@ -1,6 +1,6 @@
 {
   "name": "@baukit/integrations-client",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Provider-neutral connection state, OAuth session coordination, and provider registration for web and native clients.",
   "license": "MIT",
   "author": "Patrick Koss",

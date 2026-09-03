@@ -1,6 +1,6 @@
 {
   "name": "@baukit/events",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "TypeScript half of the Baukit version 1 event envelope: types, Zod schemas, and stable helpers.",
   "license": "MIT",
   "author": "Patrick Koss",

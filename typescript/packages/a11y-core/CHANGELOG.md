@@ -1,5 +1,13 @@
 # @baukit/a11y-core
 
+## 0.2.0
+
+### Minor Changes
+
+- Add route-heading focus recovery for client-side navigation.
+- Expose reduced-motion readiness so applications can avoid rendering before
+  the user's motion preference is known.
+
 ## 0.1.2
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@baukit/pwa-web",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Pure-function caching-strategy decisions for PWA service workers.",
   "license": "MIT",
   "author": "Patrick Koss",

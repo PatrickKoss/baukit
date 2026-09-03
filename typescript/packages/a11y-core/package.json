@@ -1,6 +1,6 @@
 {
   "name": "@baukit/a11y-core",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Accessibility behavior shared by web and React Native products: overlay focus, inert background content, announcements, reduced motion, and keyboard movement.",
   "license": "MIT",
   "author": "Patrick Koss",

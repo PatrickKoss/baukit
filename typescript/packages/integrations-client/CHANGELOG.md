@@ -1,7 +1,8 @@
 # @baukit/integrations-client
 
-## 0.1.2
+## 0.2.0
 
-### Patch changes
+### Minor Changes
 
-- Add the first connection health, OAuth coordination, and provider registry APIs.
+- First public release. It includes a connection-health reducer, OAuth session
+  coordinator, and provider registry.

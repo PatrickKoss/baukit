@@ -20,7 +20,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.95"
 repository = "https://github.com/PatrickKoss/baukit"
@@ -33,22 +33,22 @@ categories = ["web-programming", "development-tools"]
 [workspace.dependencies]
 axum = "=0.8.9"
 base64 = "=0.22.1"
-baukit-auth = { version = "=0.1.2", path = "crates/baukit-auth" }
-baukit-config = { version = "=0.1.2", path = "crates/baukit-config" }
-baukit-core = { version = "=0.1.2", path = "crates/baukit-core" }
-baukit-credential-vault = { version = "=0.1.2", path = "crates/baukit-credential-vault" }
-baukit-events = { version = "=0.1.2", path = "crates/baukit-events" }
-baukit-http = { version = "=0.1.2", path = "crates/baukit-http" }
-baukit-integrations = { version = "=0.1.2", path = "crates/baukit-integrations" }
-baukit-jobs = { version = "=0.1.2", path = "crates/baukit-jobs" }
-baukit-openapi = { version = "=0.1.2", path = "crates/baukit-openapi" }
-baukit-push = { version = "=0.1.2", path = "crates/baukit-push" }
-baukit-ratelimit = { version = "=0.1.2", path = "crates/baukit-ratelimit" }
-baukit-ops = { version = "=0.1.2", path = "crates/baukit-ops" }
-baukit-runtime = { version = "=0.1.2", path = "crates/baukit-runtime" }
-baukit-sync = { version = "=0.1.2", path = "crates/baukit-sync" }
-baukit-telemetry = { version = "=0.1.2", path = "crates/baukit-telemetry" }
-baukit-test = { version = "=0.1.2", path = "crates/baukit-test" }
+baukit-auth = { version = "=0.2.0", path = "crates/baukit-auth" }
+baukit-config = { version = "=0.2.0", path = "crates/baukit-config" }
+baukit-core = { version = "=0.2.0", path = "crates/baukit-core" }
+baukit-credential-vault = { version = "=0.2.0", path = "crates/baukit-credential-vault" }
+baukit-events = { version = "=0.2.0", path = "crates/baukit-events" }
+baukit-http = { version = "=0.2.0", path = "crates/baukit-http" }
+baukit-integrations = { version = "=0.2.0", path = "crates/baukit-integrations" }
+baukit-jobs = { version = "=0.2.0", path = "crates/baukit-jobs" }
+baukit-openapi = { version = "=0.2.0", path = "crates/baukit-openapi" }
+baukit-push = { version = "=0.2.0", path = "crates/baukit-push" }
+baukit-ratelimit = { version = "=0.2.0", path = "crates/baukit-ratelimit" }
+baukit-ops = { version = "=0.2.0", path = "crates/baukit-ops" }
+baukit-runtime = { version = "=0.2.0", path = "crates/baukit-runtime" }
+baukit-sync = { version = "=0.2.0", path = "crates/baukit-sync" }
+baukit-telemetry = { version = "=0.2.0", path = "crates/baukit-telemetry" }
+baukit-test = { version = "=0.2.0", path = "crates/baukit-test" }
 chrono = { version = "=0.4.45", features = ["serde"] }
 config = "=0.15.25"
 dotenvy = "=0.15.7"
