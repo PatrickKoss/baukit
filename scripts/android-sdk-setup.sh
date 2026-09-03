@@ -5,7 +5,8 @@ set -euo pipefail
 # small so local and CI native gates install the same supported baseline.
 ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Android/Sdk}}"
 ANDROID_HOME="$ANDROID_SDK_ROOT"
-export ANDROID_HOME ANDROID_SDK_ROOT
+ANDROID_AVD_HOME="${ANDROID_AVD_HOME:-$HOME/.android/avd}"
+export ANDROID_AVD_HOME ANDROID_HOME ANDROID_SDK_ROOT
 
 command_tools_version="13114758"
 command_tools_url="https://dl.google.com/android/repository/commandlinetools-linux-${command_tools_version}_latest.zip"
@@ -42,8 +43,8 @@ sdkmanager --sdk_root="$ANDROID_SDK_ROOT" \
   "build-tools;36.0.0" \
   "system-images;android-36;google_apis;x86_64"
 
-mkdir -p "$HOME/.android/avd"
-if ! avdmanager list avd | grep -Fq "Name: $avd_name"; then
+mkdir -p "$ANDROID_AVD_HOME"
+if [[ ! -f "$ANDROID_AVD_HOME/$avd_name.ini" ]]; then
   echo "no" | avdmanager create avd \
     --force \
     --name "$avd_name" \
@@ -51,10 +52,16 @@ if ! avdmanager list avd | grep -Fq "Name: $avd_name"; then
     --device "pixel_6"
 fi
 
+if [[ ! -f "$ANDROID_AVD_HOME/$avd_name.ini" ]]; then
+  echo "Android AVD was not created at $ANDROID_AVD_HOME/$avd_name.ini" >&2
+  exit 1
+fi
+
 cat <<EOF
 Android SDK is ready.
 export ANDROID_HOME="$ANDROID_HOME"
 export ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT"
+export ANDROID_AVD_HOME="$ANDROID_AVD_HOME"
 export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/emulator:$ANDROID_SDK_ROOT/platform-tools:\$PATH"
 AVD: $avd_name
 EOF

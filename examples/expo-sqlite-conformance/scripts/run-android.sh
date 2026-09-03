@@ -5,7 +5,8 @@ example_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 repo_dir="$(cd "$example_dir/../.." && pwd)"
 ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Android/Sdk}}"
 ANDROID_HOME="$ANDROID_SDK_ROOT"
-export ANDROID_HOME ANDROID_SDK_ROOT
+ANDROID_AVD_HOME="${ANDROID_AVD_HOME:-$HOME/.android/avd}"
+export ANDROID_AVD_HOME ANDROID_HOME ANDROID_SDK_ROOT
 export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/emulator:$ANDROID_SDK_ROOT/platform-tools:$PATH"
 
 avd_name="${BAUKIT_ANDROID_AVD:-baukit-api-36}"
@@ -77,7 +78,7 @@ elif command -v docker >/dev/null && docker info >/dev/null 2>&1; then
     -v /usr/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:ro \
     -e HOME="$HOME" \
     -e ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" \
-    -e ANDROID_AVD_HOME="$HOME/.android/avd" \
+    -e ANDROID_AVD_HOME="$ANDROID_AVD_HOME" \
     ubuntu:24.04 \
     "$ANDROID_SDK_ROOT/emulator/emulator" \
     "${emulator_args[@]}" \
