@@ -15,7 +15,7 @@ bump; compatible changes normally use a patch bump.
 - `rust/release-plz.toml` defines the Rust version group, per-crate changelogs,
   and the single `v{{ version }}` tag emitter. The sixteen library crates
   publish to crates.io; the `baukit` CLI keeps `publish = false`.
-- Changesets records TypeScript changes. Its fixed group advances all sixteen
+- Changesets records TypeScript changes. Its fixed group advances all seventeen
   packages together, creates package changelogs, and emits no package tags.
   Publishing to npm is a separate step (see below), not `changeset publish`.
 - `scripts/release-train.sh` is the cross-ecosystem coordinator. A standalone
@@ -98,7 +98,7 @@ compatibility matrix before merging the upgrade.
 
 ## Publish the TypeScript packages
 
-The sixteen `@baukit/*` packages are published to npm under the `baukit`
+The seventeen `@baukit/*` packages are published to npm under the `baukit`
 organization scope, MIT licensed. Each one sets `publishConfig.access` to
 `public`; `scripts/check-version-coherence.py` fails the train if a package
 loses that setting or its licence.
