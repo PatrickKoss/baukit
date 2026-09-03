@@ -95,6 +95,10 @@ Count text as Unicode scalar values after trimming. Measure documents by the UTF
 compact JSON encoding. Row caps count live rows. Updates must succeed at capacity, and soft-deleted
 rows must release capacity.
 
+When only accepted changes should consume a time-window budget, reserve the submitted batch with
+`AmountBudget::consume` before processing. Call `AmountBudget::release` with the rejected amount
+afterward. A release applies to the current subject window and floors usage at zero.
+
 Give every rejected budget a stable snake_case reason code with safe structured details. Apply the
 same rule and code to REST, sync ingestion, imports, and local writes. Include equivalent background
 writes when they accept the same data. Keep the limits, reason codes, persistence, and policy in the

@@ -13,10 +13,10 @@ const MAX_NAMESPACE_LENGTH: usize = 64;
 pub const FIXED_WINDOW_AMOUNT_BUDGET_DECISIONS_TOTAL: &str =
     "fixed_window_amount_budget_decisions_total";
 
-/// Result of checking and conditionally consuming an amount.
+/// Result of consuming or releasing an amount.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AmountBudgetDecision {
-    /// Whether the store consumed the requested amount.
+    /// Whether the requested operation succeeded.
     pub allowed: bool,
     /// Units left in the current window after the decision.
     pub remaining: u64,
@@ -28,6 +28,13 @@ pub struct AmountBudgetDecision {
 pub trait AmountBudget: Send + Sync {
     /// Checks and conditionally consumes `amount` for an opaque subject.
     fn consume<'a>(
+        &'a self,
+        subject: &'a str,
+        amount: u64,
+    ) -> Pin<Box<dyn Future<Output = AmountBudgetDecision> + Send + 'a>>;
+
+    /// Releases `amount` previously consumed for an opaque subject.
+    fn release<'a>(
         &'a self,
         subject: &'a str,
         amount: u64,
@@ -274,6 +281,50 @@ where
             }
         })
     }
+
+    fn release<'a>(
+        &'a self,
+        subject: &'a str,
+        amount: u64,
+    ) -> Pin<Box<dyn Future<Output = AmountBudgetDecision> + Send + 'a>> {
+        Box::pin(async move {
+            let now = self.clock.now();
+            let Some(window) = self.options.window.at(now) else {
+                tracing::warn!(
+                    namespace = self.options.namespace(),
+                    "amount-budget clock is outside the supported range"
+                );
+                return self.after_error(now);
+            };
+            let key = format!(
+                "amount-budget:{}:{}:{subject}",
+                self.options.namespace, window.index
+            );
+            match self
+                .store
+                .release_amount(&key, amount, self.options.limit, now, window.reset_at)
+                .await
+            {
+                Ok(decision) => {
+                    record(self.options.namespace(), "released");
+                    AmountBudgetDecision {
+                        allowed: decision.allowed,
+                        remaining: decision.remaining,
+                        reset_at: window.reset_at,
+                    }
+                }
+                Err(error) => {
+                    record(self.options.namespace(), "error");
+                    tracing::warn!(
+                        namespace = self.options.namespace(),
+                        error = %error,
+                        "amount-budget store release failed"
+                    );
+                    self.after_error(window.reset_at)
+                }
+            }
+        })
+    }
 }
 
 impl<S, C> FixedWindowAmountBudget<S, C> {
@@ -381,6 +432,29 @@ mod tests {
         assert_eq!(next.reset_at, UNIX_EPOCH + Duration::from_secs(1_020));
     }
 
+    #[tokio::test]
+    async fn release_uses_only_the_current_window() {
+        let store = InMemoryRateLimitStore::new(2).expect("store");
+        let clock = TestClock::new(UNIX_EPOCH + Duration::from_secs(1_005));
+        let options = FixedWindowBudgetOptions::new(
+            "uploads",
+            FixedWindow::duration(Duration::from_secs(10)).expect("window"),
+            10,
+            RateLimitFailMode::Closed,
+        )
+        .expect("options");
+        let budget = FixedWindowAmountBudget::with_clock(store, options, clock.clone());
+
+        assert!(budget.consume("subject", 10).await.allowed);
+        clock.set(UNIX_EPOCH + Duration::from_secs(1_010));
+
+        let released = budget.release("subject", 6).await;
+        assert!(released.allowed);
+        assert_eq!(released.remaining, 10);
+        assert_eq!(released.reset_at, UNIX_EPOCH + Duration::from_secs(1_020));
+        assert!(budget.consume("subject", 10).await.allowed);
+    }
+
     #[test]
     fn utc_day_resets_at_the_next_midnight() {
         let before_midnight = UNIX_EPOCH + Duration::from_secs(1_788_393_599);
@@ -426,6 +500,22 @@ mod tests {
                 reset_at: UNIX_EPOCH + Duration::from_secs(1_010),
             }
         );
+        assert_eq!(
+            open.release("subject", 4).await,
+            AmountBudgetDecision {
+                allowed: true,
+                remaining: 10,
+                reset_at: UNIX_EPOCH + Duration::from_secs(1_010),
+            }
+        );
+        assert_eq!(
+            closed.release("subject", 4).await,
+            AmountBudgetDecision {
+                allowed: false,
+                remaining: 0,
+                reset_at: UNIX_EPOCH + Duration::from_secs(1_010),
+            }
+        );
     }
 
     #[test]
@@ -450,6 +540,23 @@ mod tests {
 
     impl AmountBudgetStore for FailingStore {
         fn check_and_consume_amount<'a>(
+            &'a self,
+            _key: &'a str,
+            _amount: u64,
+            _limit: u64,
+            _now: SystemTime,
+            _reset_at: SystemTime,
+        ) -> Pin<
+            Box<
+                dyn Future<Output = Result<AmountBudgetStoreDecision, RateLimitStoreError>>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            Box::pin(async { Err(RateLimitStoreError::unavailable("fixture unavailable")) })
+        }
+
+        fn release_amount<'a>(
             &'a self,
             _key: &'a str,
             _amount: u64,

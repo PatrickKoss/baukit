@@ -842,6 +842,97 @@ fn doctor_validates_a_local_generated_product() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[test]
+fn doctor_uses_manifest_declared_openapi_paths() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let baukit_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust");
+    let mut local = options(parent.path(), "doctor-openapi");
+    local.baukit_path = Some(baukit_path);
+    let root = generate_new(&local)?;
+    fs::create_dir_all(root.join("contracts"))?;
+    fs::create_dir_all(root.join("clients"))?;
+    fs::rename(
+        root.join("backend/openapi.json"),
+        root.join("contracts/service.json"),
+    )?;
+    fs::rename(
+        root.join("generated/openapi.d.ts"),
+        root.join("clients/service.d.ts"),
+    )?;
+    let manifest_path = root.join("baukit.toml");
+    let manifest = fs::read_to_string(&manifest_path)?
+        .replace(
+            "schema = \"backend/openapi.json\"",
+            "schema = \"contracts/service.json\"",
+        )
+        .replace(
+            "consumers = [\"generated/openapi.d.ts\"]",
+            "typescript = \"clients/service.d.ts\"",
+        );
+    fs::write(manifest_path, manifest)?;
+
+    let results = doctor(&root)?;
+    assert!(
+        results
+            .iter()
+            .any(|result| result.contains("manifest-declared OpenAPI"))
+    );
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_a_timestamped_jobs_migration() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let baukit_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust");
+    let mut local = options(parent.path(), "doctor-worker");
+    local.worker = true;
+    local.baukit_path = Some(baukit_path);
+    let root = generate_new(&local)?;
+    fs::rename(
+        root.join("backend/migrations/0003_baukit_jobs.sql"),
+        root.join("backend/migrations/20260903120000_create_job_outbox.sql"),
+    )?;
+
+    let results = doctor(&root)?;
+    assert!(
+        results
+            .iter()
+            .any(|result| result.contains("creates the baukit-jobs"))
+    );
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_an_env_only_api_source() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = frontend_options(parent.path(), "doctor-env", true, false);
+    local.port_offset = 100;
+    let root = generate_new(&local)?;
+    fs::write(
+        root.join("mobile/src/api.ts"),
+        "export const apiUrl = process.env.EXPO_PUBLIC_API_URL;\n",
+    )?;
+
+    let results = doctor(&root)?;
+    assert!(
+        results
+            .iter()
+            .any(|result| result.contains("port offset 100"))
+    );
+
+    fs::write(
+        root.join("mobile/src/api.ts"),
+        "export const apiUrl = \"http://localhost:8080\";\n",
+    )?;
+    let error = doctor(&root).expect_err("doctor must find a stale localhost port");
+    assert!(
+        error
+            .to_string()
+            .contains("mobile/src/api.ts` does not use port offset 100")
+    );
+    Ok(())
+}
+
 fn assert_deterministic_snapshot(
     make_options: impl Fn(&Path) -> NewOptions,
     expected: &str,

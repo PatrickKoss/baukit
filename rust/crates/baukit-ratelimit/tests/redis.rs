@@ -129,6 +129,47 @@ async fn redis_amount_counter_expires_at_the_supplied_boundary() -> Result<(), B
 
 #[tokio::test]
 #[ignore = "requires Docker; mandatory in the full local gate"]
+async fn redis_amount_release_is_floored_and_keeps_the_window_expiry() -> Result<(), Box<dyn Error>>
+{
+    let fixture = baukit_test::start_redis().await?;
+    let store = RedisRateLimitStore::connect(fixture.connection_url()).await?;
+    let now = SystemTime::now();
+    let reset_after = Duration::from_secs(30);
+    let reset_at = now + reset_after;
+    let key = "amount-budget:test:release:subject";
+    store
+        .check_and_consume_amount(key, 7, 10, now, reset_at)
+        .await?;
+
+    let partial = store.release_amount(key, 3, 10, now, reset_at).await?;
+    assert!(partial.allowed);
+    assert_eq!(partial.remaining, 6);
+
+    let floored = store.release_amount(key, 20, 10, now, reset_at).await?;
+    assert!(floored.allowed);
+    assert_eq!(floored.remaining, 10);
+
+    let client = redis::Client::open(fixture.connection_url())?;
+    let mut connection = client.get_multiplexed_async_connection().await?;
+    let consumed: u64 = connection.get(key).await?;
+    assert_eq!(consumed, 0);
+    let ttl: i64 = connection.pttl(key).await?;
+    let maximum_ttl = i64::try_from(reset_after.as_millis())? + 1;
+    assert!(ttl > 0 && ttl <= maximum_ttl, "unexpected TTL: {ttl}");
+
+    let new_window_key = "amount-budget:test:release-next-window:subject";
+    let new_window = store
+        .release_amount(new_window_key, 7, 10, now, reset_at)
+        .await?;
+    assert!(new_window.allowed);
+    assert_eq!(new_window.remaining, 10);
+    let exists: bool = connection.exists(new_window_key).await?;
+    assert!(!exists);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
 async fn redis_idle_keys_expire() -> Result<(), Box<dyn Error>> {
     let fixture = baukit_test::start_redis().await?;
     let store = RedisRateLimitStore::connect(fixture.connection_url()).await?;

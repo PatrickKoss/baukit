@@ -4,6 +4,11 @@ All notable changes to `baukit-ratelimit` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Add atomic fixed-window amount release for accepted-change accounting in the
+  in-memory and Redis stores.
+
 ## [0.2.0] - 2026-09-03
 
 ### Added

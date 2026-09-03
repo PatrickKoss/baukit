@@ -53,8 +53,10 @@ decisions record `http_rate_limit_decisions_total` with only `scope` and
 
 `FixedWindowAmountBudget` limits units rather than requests. A caller supplies
 an opaque subject and the number of units to consume. The budget admits the
-whole amount or leaves the counter unchanged. Its decision includes the units
-left and the UTC reset instant, which callers can convert to `Retry-After`.
+whole amount or leaves the counter unchanged. Call `release` to return units
+that the product did not accept after reserving a larger amount. Decisions
+include the units left and the UTC reset instant, which callers can convert to
+`Retry-After`.
 
 Create `FixedWindowBudgetOptions` with a stable namespace, a limit, a fail
 mode, and either `FixedWindow::utc_day()` or an epoch-aligned duration window.
@@ -70,5 +72,5 @@ remaining units.
 
 Amount-budget decisions record
 `fixed_window_amount_budget_decisions_total`. Its labels are `namespace` and
-`outcome`. Outcome is one of `allowed`, `denied`, or `error`; subject values are
-never metric labels.
+`outcome`. Outcome is one of `allowed`, `denied`, `released`, or `error`;
+subject values are never metric labels.

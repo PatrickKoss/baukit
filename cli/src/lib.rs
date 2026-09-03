@@ -48,8 +48,6 @@ const EXPECTED_BACKEND_FILES: &[&str] = &[
     "backend/Cargo.toml",
     "backend/.dockerignore",
     "backend/Dockerfile",
-    "backend/openapi.json",
-    "generated/openapi.d.ts",
     "backend/crates/__APP__-domain/Cargo.toml",
     "backend/crates/__APP__-domain/src/limits.rs",
     "backend/crates/__APP__-ports/Cargo.toml",
@@ -63,7 +61,6 @@ const EXPECTED_WORKER_FILES: &[&str] = &[
     "backend/crates/__APP__-worker/Cargo.toml",
     "backend/crates/__APP__-worker/src/lib.rs",
     "backend/crates/__APP__-bin/src/bin/worker.rs",
-    "backend/migrations/0003_baukit_jobs.sql",
     "backend/tests/worker_integration.rs",
 ];
 
@@ -1089,22 +1086,7 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
     }
     validate_port_configuration(root, &manifest, &mut successes, &mut failures)?;
     if manifest.capabilities.backend {
-        let consumers = manifest.openapi.consumers();
-        if consumers.is_empty() {
-            failures.push("openapi.consumers must list at least one output".to_owned());
-        }
-        for consumer in consumers {
-            let path = Path::new(consumer);
-            if path.is_absolute()
-                || path
-                    .components()
-                    .any(|component| component == std::path::Component::ParentDir)
-            {
-                failures.push(format!(
-                    "OpenAPI consumer `{consumer}` must stay inside the product root"
-                ));
-            }
-        }
+        validate_openapi_paths(root, &manifest.openapi, &mut successes, &mut failures);
         for expected in EXPECTED_BACKEND_FILES {
             let relative = expected.replace("__APP__", &manifest.app.name);
             if !root.join(&relative).is_file() {
@@ -1113,6 +1095,7 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
         }
         validate_migrations(root, &mut successes, &mut failures)?;
         if manifest.capabilities.worker {
+            validate_jobs_migration(root, &mut successes, &mut failures)?;
             for expected in EXPECTED_WORKER_FILES {
                 let relative = expected.replace("__APP__", &manifest.app.name);
                 if !root.join(&relative).is_file() {
@@ -1358,7 +1341,17 @@ fn validate_port_configuration(
     for (relative, snippet) in expected {
         let relative = relative.replace("PLACEHOLDER", &manifest.app.name);
         let path = root.join(&relative);
-        if path.is_file() && !fs::read_to_string(&path)?.contains(&snippet) {
+        if !path.is_file() {
+            continue;
+        }
+        let source = fs::read_to_string(&path)?;
+        let mismatched = if is_environment_capable_source(&relative) {
+            let expected_port = localhost_port(&snippet).expect("expected snippet has a port");
+            has_mismatched_localhost_port(&source, expected_port)
+        } else {
+            !source.contains(&snippet)
+        };
+        if mismatched {
             failures.push(format!(
                 "generated file `{relative}` does not use port offset {}",
                 manifest.port_offset
@@ -1372,6 +1365,40 @@ fn validate_port_configuration(
         ));
     }
     Ok(())
+}
+
+fn is_environment_capable_source(relative: &str) -> bool {
+    matches!(
+        relative,
+        "mobile/src/api.ts" | "mobile/src/auth.ts" | "web/src/api.ts" | "web/src/auth.ts"
+    )
+}
+
+fn localhost_port(snippet: &str) -> Option<u16> {
+    snippet
+        .split_once("localhost:")?
+        .1
+        .split(|character: char| !character.is_ascii_digit())
+        .next()?
+        .parse()
+        .ok()
+}
+
+fn has_mismatched_localhost_port(source: &str, expected_port: u16) -> bool {
+    let mut found_numeric_port = false;
+    for (index, marker) in source.match_indices("localhost:") {
+        let port = source[index + marker.len()..]
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect::<String>();
+        if let Ok(port) = port.parse::<u16>() {
+            found_numeric_port = true;
+            if port == expected_port {
+                return false;
+            }
+        }
+    }
+    found_numeric_port
 }
 
 fn diagnose_ssh_agent(
@@ -1505,6 +1532,42 @@ fn diagnose_docker(
     }
 }
 
+fn validate_openapi_paths(
+    root: &Path,
+    openapi: &OpenApiPaths,
+    successes: &mut Vec<String>,
+    failures: &mut Vec<String>,
+) {
+    let initial_failure_count = failures.len();
+    validate_openapi_file(root, "schema", &openapi.schema, failures);
+    let consumers = openapi.consumers();
+    if consumers.is_empty() {
+        failures.push("openapi.consumers must list at least one output".to_owned());
+    }
+    for consumer in consumers {
+        validate_openapi_file(root, "consumer", consumer, failures);
+    }
+    if failures.len() == initial_failure_count {
+        successes.push("manifest-declared OpenAPI files are present".to_owned());
+    }
+}
+
+fn validate_openapi_file(root: &Path, kind: &str, relative: &str, failures: &mut Vec<String>) {
+    let path = Path::new(relative);
+    if relative.is_empty()
+        || path.is_absolute()
+        || path
+            .components()
+            .any(|component| component == std::path::Component::ParentDir)
+    {
+        failures.push(format!(
+            "OpenAPI {kind} `{relative}` must stay inside the product root"
+        ));
+    } else if !root.join(path).is_file() {
+        failures.push(format!("missing OpenAPI {kind} file `{relative}`"));
+    }
+}
+
 fn validate_migrations(
     root: &Path,
     successes: &mut Vec<String>,
@@ -1534,6 +1597,68 @@ fn validate_migrations(
         ));
     }
     Ok(())
+}
+
+fn validate_jobs_migration(
+    root: &Path,
+    successes: &mut Vec<String>,
+    failures: &mut Vec<String>,
+) -> Result<()> {
+    let directory = root.join("backend/migrations");
+    if !directory.is_dir() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(&directory)
+        .with_context(|| format!("could not inspect {}", directory.display()))?
+    {
+        let path = entry?.path();
+        if path.extension().is_some_and(|extension| extension == "sql") {
+            let source = fs::read_to_string(&path)
+                .with_context(|| format!("could not read {}", path.display()))?;
+            if sql_creates_table(&source, "job_outbox") {
+                successes.push(
+                    "a backend migration creates the baukit-jobs `job_outbox` table".to_owned(),
+                );
+                return Ok(());
+            }
+        }
+    }
+    failures.push("no backend migration creates the baukit-jobs `job_outbox` table".to_owned());
+    Ok(())
+}
+
+fn sql_creates_table(source: &str, table: &str) -> bool {
+    let uncommented = source
+        .lines()
+        .map(|line| line.split_once("--").map_or(line, |(sql, _)| sql))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let tokens = uncommented
+        .split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+        .filter(|token| !token.is_empty())
+        .map(str::to_ascii_lowercase)
+        .collect::<Vec<_>>();
+
+    tokens.iter().enumerate().any(|(index, token)| {
+        if token != "create" || tokens.get(index + 1).is_none_or(|token| token != "table") {
+            return false;
+        }
+        let mut name_index = index + 2;
+        if tokens.get(name_index).is_some_and(|token| token == "if")
+            && tokens
+                .get(name_index + 1)
+                .is_some_and(|token| token == "not")
+            && tokens
+                .get(name_index + 2)
+                .is_some_and(|token| token == "exists")
+        {
+            name_index += 3;
+        }
+        tokens.get(name_index).is_some_and(|token| token == table)
+            || tokens
+                .get(name_index + 1)
+                .is_some_and(|token| token == table)
+    })
 }
 
 fn validate_frontend_capability(
@@ -1698,8 +1823,8 @@ mod doctor_tests {
     };
 
     use super::{
-        DoctorCommandOutput, DoctorHost, diagnose_docker, diagnose_ssh_agent, probe_git_dependency,
-        validate_mobile_router_configuration,
+        DoctorCommandOutput, DoctorHost, diagnose_docker, diagnose_ssh_agent,
+        has_mismatched_localhost_port, probe_git_dependency, validate_mobile_router_configuration,
     };
 
     struct ExpectedCommand {
@@ -1801,6 +1926,16 @@ mod doctor_tests {
                 .any(|failure| failure.contains("deep-link scheme"))
         );
         Ok(())
+    }
+
+    #[test]
+    fn localhost_check_allows_an_expected_service_port_with_a_frontend_origin() {
+        let source = r#"
+            const issuer = "http://localhost:8081/realms/product";
+            const origin = "http://localhost:5173";
+        "#;
+        assert!(!has_mismatched_localhost_port(source, 8081));
+        assert!(has_mismatched_localhost_port(source, 8181));
     }
 
     #[test]

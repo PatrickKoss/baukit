@@ -148,6 +148,47 @@ impl InMemoryRateLimitStore {
             remaining: limit.saturating_sub(entry.consumed),
         })
     }
+
+    fn release_amount_at(
+        &self,
+        key: &str,
+        amount: u64,
+        limit: u64,
+        now: SystemTime,
+        reset_at: SystemTime,
+    ) -> Result<AmountBudgetStoreDecision, RateLimitStoreError> {
+        if reset_at <= now {
+            return Err(RateLimitStoreError::unavailable(
+                "amount-budget reset must be after the current time",
+            ));
+        }
+        let mut state = self
+            .inner
+            .lock()
+            .map_err(|_| RateLimitStoreError::unavailable("in-memory store lock poisoned"))?;
+        state.amount_checks = state.amount_checks.wrapping_add(1);
+        if state.amount_checks % PRUNE_INTERVAL == 0
+            || state.amount_entries.len() >= self.max_entries
+        {
+            state.amount_entries.retain(|_, entry| entry.reset_at > now);
+        }
+        if state
+            .amount_entries
+            .get(key)
+            .is_some_and(|entry| entry.reset_at <= now)
+        {
+            state.amount_entries.remove(key);
+        }
+        let consumed = state.amount_entries.get_mut(key).map_or(0, |entry| {
+            entry.consumed = entry.consumed.saturating_sub(amount);
+            entry.reset_at = reset_at;
+            entry.consumed
+        });
+        Ok(AmountBudgetStoreDecision {
+            allowed: true,
+            remaining: limit.saturating_sub(consumed),
+        })
+    }
 }
 
 fn remove_earliest_amount_entry(state: &mut State) {
@@ -204,6 +245,23 @@ impl AmountBudgetStore for InMemoryRateLimitStore {
         >,
     > {
         Box::pin(async move { self.check_amount_at(key, amount, limit, now, reset_at) })
+    }
+
+    fn release_amount<'a>(
+        &'a self,
+        key: &'a str,
+        amount: u64,
+        limit: u64,
+        now: SystemTime,
+        reset_at: SystemTime,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<AmountBudgetStoreDecision, RateLimitStoreError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move { self.release_amount_at(key, amount, limit, now, reset_at) })
     }
 }
 
@@ -309,6 +367,28 @@ mod tests {
             .expect("decision");
         assert!(final_unit.allowed);
         assert_eq!(final_unit.remaining, 0);
+    }
+
+    #[test]
+    fn amount_budget_release_is_floored_at_zero() {
+        let store = InMemoryRateLimitStore::new(8).expect("store");
+        let now = UNIX_EPOCH + Duration::from_secs(1_000);
+        let reset_at = now + Duration::from_secs(60);
+        store
+            .check_amount_at("budget", 7, 10, now, reset_at)
+            .expect("consume");
+
+        let partial = store
+            .release_amount_at("budget", 3, 10, now, reset_at)
+            .expect("release");
+        assert!(partial.allowed);
+        assert_eq!(partial.remaining, 6);
+
+        let floored = store
+            .release_amount_at("budget", 20, 10, now, reset_at)
+            .expect("release");
+        assert!(floored.allowed);
+        assert_eq!(floored.remaining, 10);
     }
 
     #[test]

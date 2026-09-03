@@ -198,4 +198,21 @@ pub trait AmountBudgetStore: Send + Sync {
             dyn Future<Output = Result<AmountBudgetStoreDecision, RateLimitStoreError>> + Send + 'a,
         >,
     >;
+
+    /// Subtracts `amount` from the current consumed total, floored at zero.
+    ///
+    /// The store must update an existing counter and preserve its expiry at
+    /// `reset_at` in one atomic operation. A missing key remains absent.
+    fn release_amount<'a>(
+        &'a self,
+        key: &'a str,
+        amount: u64,
+        limit: u64,
+        now: SystemTime,
+        reset_at: SystemTime,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<AmountBudgetStoreDecision, RateLimitStoreError>> + Send + 'a,
+        >,
+    >;
 }

@@ -43,6 +43,12 @@ Run from the product root:
 baukit doctor
 ```
 
+`doctor` checks the OpenAPI schema and consumer paths declared in `baukit.toml`.
+For workers, any product migration filename is valid if its SQL creates the
+`job_outbox` table. Frontend API and auth sources may read their URLs entirely
+from environment variables; `doctor` reports those files only when they contain
+a `localhost:` URL with the wrong configured port.
+
 Resolve every failure before continuing. Then run the checks for each enabled capability:
 
 ```sh

@@ -28,6 +28,12 @@ Define both per-owner and per-parent caps when either scope can grow independent
 Enforce request-body and batch limits before parsing, database work, outbound calls, or other expensive
 work. Rate or work budgets use a named time window and define what consumes the budget.
 
+For accepted-change accounting, reserve the submitted amount with
+`AmountBudget::consume` before processing, then call `AmountBudget::release`
+with the rejected amount. Release affects only the subject's current window,
+floors consumed units at zero, and does not carry unused capacity into a later
+window.
+
 ## 2. Keep failure behavior stable
 
 Each rejected budget has a stable snake_case reason code and safe structured details. Product code owns

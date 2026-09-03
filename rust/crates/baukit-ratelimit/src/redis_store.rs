@@ -57,6 +57,20 @@ end
 return {allowed, limit - math.min(current, limit)}
 "#;
 
+const RELEASE_AMOUNT_SCRIPT: &str = r#"
+local current = tonumber(redis.call('GET', KEYS[1])) or 0
+local amount = tonumber(ARGV[1])
+local limit = tonumber(ARGV[2])
+
+if current > 0 then
+  current = math.max(0, current - amount)
+  redis.call('SET', KEYS[1], current)
+  redis.call('PEXPIREAT', KEYS[1], ARGV[3])
+end
+
+return {1, limit - math.min(current, limit)}
+"#;
+
 /// Redis adapter using one atomic Lua token-bucket script.
 ///
 /// Direct `redis://` connections use Redis' reconnecting connection manager.
@@ -264,6 +278,50 @@ impl AmountBudgetStore for RedisRateLimitStore {
             })
         })
     }
+
+    fn release_amount<'a>(
+        &'a self,
+        key: &'a str,
+        amount: u64,
+        limit: u64,
+        now: SystemTime,
+        reset_at: SystemTime,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<AmountBudgetStoreDecision, RateLimitStoreError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            if reset_at <= now {
+                return Err(RateLimitStoreError::unavailable(
+                    "amount-budget reset must be after the current time",
+                ));
+            }
+            let amount = i64::try_from(amount).map_err(|_| {
+                RateLimitStoreError::unavailable("amount-budget amount exceeds Redis integer range")
+            })?;
+            let limit = i64::try_from(limit).map_err(|_| {
+                RateLimitStoreError::unavailable("amount-budget limit exceeds Redis integer range")
+            })?;
+            let reset_at_ms = system_time_millis_ceil(reset_at)?;
+            let (allowed, remaining) = match &self.connection {
+                StoreConnection::Direct(connection) => {
+                    let mut connection = connection.clone();
+                    eval_release_amount(&mut connection, key, amount, limit, reset_at_ms).await
+                }
+                StoreConnection::Sentinel(state) => {
+                    eval_release_with_sentinel_retry(state, key, amount, limit, reset_at_ms).await
+                }
+            }
+            .map_err(RateLimitStoreError::new)?;
+            Ok(AmountBudgetStoreDecision {
+                allowed: allowed == 1,
+                remaining,
+            })
+        })
+    }
 }
 
 async fn eval_with_sentinel_retry(
@@ -322,6 +380,34 @@ async fn eval_amount_with_sentinel_retry(
     }
 }
 
+async fn eval_release_with_sentinel_retry(
+    state: &SentinelState,
+    key: &str,
+    amount: i64,
+    limit: i64,
+    reset_at_ms: i64,
+) -> redis::RedisResult<(i64, u64)> {
+    let (mut connection, generation) = {
+        let current = state.current.read().await;
+        (current.connection.clone(), current.generation)
+    };
+    match eval_release_amount(&mut connection, key, amount, limit, reset_at_ms).await {
+        Ok(decision) => Ok(decision),
+        Err(_) => {
+            let mut client = state.client.lock().await;
+            let mut current = state.current.write().await;
+            if current.generation == generation {
+                current.connection = client.get_async_connection().await?;
+                current.generation = current.generation.wrapping_add(1);
+            }
+            let mut connection = current.connection.clone();
+            drop(current);
+            drop(client);
+            eval_release_amount(&mut connection, key, amount, limit, reset_at_ms).await
+        }
+    }
+}
+
 async fn eval_token_bucket<C>(
     connection: &mut C,
     key: &str,
@@ -356,6 +442,27 @@ where
 {
     redis::cmd("EVAL")
         .arg(AMOUNT_BUDGET_SCRIPT)
+        .arg(1)
+        .arg(key)
+        .arg(amount)
+        .arg(limit)
+        .arg(reset_at_ms)
+        .query_async(connection)
+        .await
+}
+
+async fn eval_release_amount<C>(
+    connection: &mut C,
+    key: &str,
+    amount: i64,
+    limit: i64,
+    reset_at_ms: i64,
+) -> redis::RedisResult<(i64, u64)>
+where
+    C: redis::aio::ConnectionLike + Send + Unpin,
+{
+    redis::cmd("EVAL")
+        .arg(RELEASE_AMOUNT_SCRIPT)
         .arg(1)
         .arg(key)
         .arg(amount)
