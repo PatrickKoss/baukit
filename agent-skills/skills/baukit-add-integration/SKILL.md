@@ -28,8 +28,27 @@ copy raw provider errors into it.
 Coordinate OAuth through `OAuthSessionCoordinator`. Inject product storage, nonce creation, timers,
 clock, popup or native runners, and any same-tab redirect handler. Configure an exact return origin
 and path allowlist. The product still owns provider scopes, authorization parameters, persistence,
-identity, recovery policy, and localized copy. Build `ProviderRegistry` entries from those values;
-do not add provider-specific branches to the package.
+identity, recovery policy, and localized copy.
+
+Register providers once with product-owned connectors, then overlay live server state:
+
+```ts
+const providerDefinitions = createProviderRegistry([
+  {
+    id: 'calendar',
+    labelKey: 'integrations.calendar',
+    capabilities: ['read_events'],
+    connector: { startOAuth, useConnection, icon: CalendarIcon },
+  },
+] as const);
+
+const providers = providerDefinitions.withConnectionStates(connectionStates);
+```
+
+The connector may hold functions, hooks, icons, or other product values. Baukit does not call or
+inspect it. Replace the overlay when server state changes; `withConnectionStates` leaves the static
+registry untouched. Missing states become `disconnected` with no actions. Do not add
+provider-specific branches to the package.
 
 ## Use `baukit-jobs` for durable work
 

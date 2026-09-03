@@ -69,21 +69,52 @@ parameters.
 
 ## Provider registry
 
-The product owns provider IDs, translation keys, and capabilities:
+Register static product data once. The connector type belongs to the product, so it can hold an
+OAuth starter, product hooks, icons, or other UI-specific values without adding those dependencies
+to Baukit:
 
 ```ts
 import { createProviderRegistry } from '@baukit/integrations-client';
 
-const providers = createProviderRegistry([
+const providerDefinitions = createProviderRegistry([
   {
     id: 'calendar',
     labelKey: 'integrations.calendar',
     capabilities: ['read_events'],
-    connection: state,
+    connector: {
+      startOAuth: startCalendarOAuth,
+      useConnection: useCalendarConnection,
+      icon: CalendarIcon,
+    },
+  },
+  {
+    id: 'storage',
+    labelKey: 'integrations.storage',
+    capabilities: ['read_files'],
+    connector: {
+      startOAuth: startStorageOAuth,
+      useConnection: useStorageConnection,
+      icon: StorageIcon,
+    },
   },
 ] as const);
+
+const providers = providerDefinitions.withConnectionStates(
+  new Map([
+    ['calendar', calendarConnectionState],
+    ['storage', storageConnectionState],
+  ]),
+);
+
+await providers.get('calendar')?.connector?.startOAuth();
 ```
 
-The registry copies caller-owned arrays, rejects duplicate IDs, and exposes each provider's current
-state and available actions. Persistence, provider OAuth parameters, identity, copy, and policy stay
-in the product.
+`list()` keeps registration order. `get()` returns the typed connector and returns `undefined` for an
+unknown ID. `withConnectionStates()` accepts a read-only map or partial record and returns a new
+registry; it does not change `providerDefinitions`. A provider omitted from the state collection has
+state `disconnected` and no available actions. Passing `connection` in a registration still works
+for callers using the 0.2.0 API.
+
+The registry copies capability and action arrays and rejects duplicate IDs. It keeps connector
+objects by reference so hooks, functions, and component identities remain stable. Persistence,
+provider OAuth parameters, identity, copy, and policy stay in the product.

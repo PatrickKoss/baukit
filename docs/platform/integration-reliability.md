@@ -94,8 +94,11 @@ Reserve a web popup before awaiting the server's authorization URL so the browse
 the popup with the user's click.
 
 Products continue to own provider consent parameters, scopes, persistence, identity, localized copy,
-and recovery policy. Build the package's provider registry from those product values. Do not add
-provider branches to the shared package.
+and recovery policy. Register the product's provider definitions once. Each definition may carry a
+typed product connector, including its OAuth starter, hooks, and icon. Apply current server state
+with `withConnectionStates` when a query or local cache changes. The method returns a new registry;
+the definitions and their registration order remain unchanged. A provider missing from the state
+collection is `disconnected` with no actions. Do not add provider branches to the shared package.
 
 ## 6. Deterministic fakes and acceptance checks
 

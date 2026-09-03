@@ -34,3 +34,16 @@ Web and native products use the same state transitions and callback checks witho
 Expo, or browser globals through the package root. Products still own display text and every
 provider-specific branch. A full-page redirect can finish through `handleRedirect` because the
 in-flight transaction lives in injected storage.
+
+## Amendment, 2026-09-03
+
+The provider-registry decision now separates product definitions from connection state. A
+registration may contain a typed, product-owned connector with functions, hooks, icons, or other UI
+values. Baukit stores that connector without interpreting it. This does not move provider logic or
+frontend dependencies into the package.
+
+`connection` remains accepted on a registration for source compatibility, but it is optional.
+Products can register providers once and call `withConnectionStates` whenever server state changes.
+The method returns a new registry in the same registration order and leaves the original untouched.
+If the supplied map or record has no state for a registered provider, the new entry is
+`disconnected` with no available actions.
