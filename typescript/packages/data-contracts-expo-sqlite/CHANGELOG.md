@@ -1,5 +1,13 @@
 # @baukit/data-contracts-expo-sqlite
 
+## 0.2.1
+
+### Patch Changes
+
+- Release the coordinated baukit 0.2.1 train.
+- Updated dependencies
+  - @baukit/data-contracts@0.2.1
+
 ## 0.2.0
 
 ### Minor Changes

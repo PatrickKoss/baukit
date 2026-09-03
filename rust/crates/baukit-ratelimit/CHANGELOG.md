@@ -4,6 +4,8 @@ All notable changes to `baukit-ratelimit` are documented here.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-03
+
 ### Added
 
 - Add atomic fixed-window amount release for accepted-change accounting in the

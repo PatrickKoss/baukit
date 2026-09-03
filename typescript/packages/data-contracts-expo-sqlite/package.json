@@ -1,6 +1,6 @@
 {
   "name": "@baukit/data-contracts-expo-sqlite",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Expo SQLite implementation of the @baukit/data-contracts base storage contracts.",
   "license": "MIT",
   "author": "Patrick Koss",
@@ -45,7 +45,7 @@
     "typescript": "6.0.3"
   },
   "peerDependencies": {
-    "@baukit/data-contracts": "^0.2.0",
+    "@baukit/data-contracts": "^0.2.1",
     "expo-sqlite": "^57.0.1"
   }
 }

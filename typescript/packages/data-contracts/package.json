@@ -1,6 +1,6 @@
 {
   "name": "@baukit/data-contracts",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Provider-neutral asynchronous storage contracts plus executable adapter conformance tests.",
   "license": "MIT",
   "author": "Patrick Koss",

@@ -1,6 +1,6 @@
 {
   "name": "@baukit/sync-client",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Client-side scheduling, transport, status reporting, and ordering for offline-capable sync loops.",
   "license": "MIT",
   "author": "Patrick Koss",

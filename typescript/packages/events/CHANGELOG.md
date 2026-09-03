@@ -1,5 +1,11 @@
 # @baukit/events
 
+## 0.2.1
+
+### Patch Changes
+
+- Release the coordinated baukit 0.2.1 train.
+
 ## 0.2.0
 
 ### Minor Changes

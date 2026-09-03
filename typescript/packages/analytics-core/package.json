@@ -1,6 +1,6 @@
 {
   "name": "@baukit/analytics-core",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Provider-neutral, privacy-first product analytics port and safety policy.",
   "license": "MIT",
   "author": "Patrick Koss",
