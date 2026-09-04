@@ -64,8 +64,8 @@ Each study ends in one written decision under `docs/studies/`.
 - [x] 30. Offline asset management (batch 7)
 - [x] 31. Expo UI and headless accessibility behavior (batch 7)
 - [x] 32. Notifications and timeline playback (batch 7)
-- [~] 33. Calendar export (batch 7)
-- [~] 34. Release, GitOps, and migration compatibility (batch 7)
+- [x] 33. Calendar export (batch 7)
+- [x] 34. Release, GitOps, and migration compatibility (batch 7)
 - [x] 35. Browser identity composition (batch 7)
 - [x] 36. Other deferred contracts review (batch 7)
 
@@ -108,6 +108,8 @@ Filled in as items complete. Each line names the product file to delete once the
 - Item 28, Eigenruhe: replace the unprotected count operations in `row_caps.rs` with one documented enforcement method, implement `PostgresLiveRowCapAdapter`, and delete `assert_practice_cap` plus the duplicated update and tombstone-release blocks in `backend/tests/postgres_integration.rs`.
 - Item 31 (decision: implement `useRovingMenu` in `@baukit/a11y-core`, not yet built): Tiefgang and Eigenruhe delete the index, ref, and key-handling blocks in `mobile/src/components/context-menu.tsx`; Redemut deletes the DOM query and `moveFocus` logic in `packages/ui/src/context-menu.tsx`. Fitness Tracker must be inspected before any rendered Expo package.
 - Item 32 (decision: implement `@baukit/notifications-core` and an Expo adapter, not yet built; timeline deferred): Eigenruhe deletes `mobile/src/features/reminders/schedule.ts`, `port.ts`, and most of `expo-adapter.ts`; Redemut deletes the civil-date loop in `mobile/src/reminders.ts` and the cancel-all block in `mobile/src/notification-adapter.ts`.
+- Item 33 (decision: recipe for `icalendar` plus `chrono-tz` and `ical-generator` plus `temporal-polyfill`, no Baukit encoder): after adopting the recipe, Redemut deletes `packages/domain/src/calendar-ics.ts` and the generic encoding in `backend/crates/redemut-domain/src/calendar.rs`; Eigenruhe removes the generic encoding from `mobile/src/integrations/ics.ts`. Run a packed `ical-generator` smoke test in web and Expo builds first.
+- Item 34 (decision: release-manifest contract and expand-and-contract rules first, read-only validator later): after the validator ships, Leitbild deletes `scripts/set-release-tag.py`; a metadata-based N/N-1 migration gate later replaces `scripts/check-expand-contract.sh`.
 - Item 35 (decision: contract plus recipes, no popup coordinator until the correlation, mismatch, timeout, callback-failure, and cleanup cases have executable tests): after a tested coordinator ships, Redemut deletes `web/src/auth-popup-protocol.ts` and the `PopupOidcClient` and `waitForPopupCompletion` blocks in `web/src/auth.ts`. Callback pages, account routes, token handlers, and storage composition stay product-owned.
 - Item 36 (decision: keep the catch-all rows deferred): SQLite migration conformance and MCP execution helpers may each get a focused study; sync coordinators stay local with only repeated invariants in conformance; the generated distroless Dockerfile already covers minimal runtime images. Nothing to delete in any product.
 
@@ -121,6 +123,7 @@ Filled in as items complete. Each line names the product file to delete once the
 - 2026-09-04: Item 20 committed (38e3201); batch 4 complete. Its Node-typed tests leaked Node types into the shared test lint program and broke the sync-client Expo file, fixed in 93e0c33 by linting auth-node tests through their own tsconfig. Batch 5 items 22 and 24 committed (9b92f9f and the credential-probe commit); item 18 still running; item 21 started after item 20 landed.
 - 2026-09-04: Items 18, 23, 25, 27 committed (70b65e2, 29c7382, 40882f6). Python tests run inside `templates/` leave `__pycache__` directories that the generator rejects as non-UTF-8 template files; the final verification pass should make the generator and snapshot blessing skip `__pycache__` and `*.pyc` instead of relying on `PYTHONDONTWRITEBYTECODE`. Batch 7 studies started with items 29+30 while items 21, 26, 28 finish.
 - 2026-09-04: Items 21, 26, 28 committed (93b7d17, cbb21a5, d8d9362). Every implementation item is now in Baukit; studies 31 to 36 are in flight, then the final verification pass and release preparation.
+- 2026-09-04: Batch 7 done. Studies 29 to 36 committed (a58ff3d, 5df8f27, cb871dc, and the calendar/release study commit). All eight decided on recipes, contracts, or deferral; none added runtime code. The study agent for items 33 and 34 saw the `oidc` snapshot tree drift on the generated `ci.yml` and `CHANGELOG.md`, which the final verification pass re-blesses together with the compose mount and `__pycache__` fixes.
 
 ## Purpose
 
