@@ -69,7 +69,37 @@ that locked removal directly and resolves `true` when it removes an entry or
 `false` when no matching entry exists. Products use these APIs rather than read,
 parse, edit, or rewrite the serialized registry JSON themselves.
 
-## 6. Shipped helper shape
+## 6. Import safety
+
+Treat every import file as untrusted input, even when the product created the export. Read a bounded
+string or byte array, check its byte length before decoding, and stop row iteration as soon as it
+exceeds the product's row limit. Apply a product-defined field allowlist before row decoding. Check
+strings inside allowed fields against the product's byte limit so a nested object cannot bypass the
+same bound used by a top-level field.
+
+An import has two phases. Preparation decodes the product envelope, validates rows, and builds a
+preview plan without receiving a write adapter. Commit passes that plan to one product transaction.
+The product must not advance a cursor, publish a sync state, or request sync until the transaction
+commits. A failed write rolls back the complete plan and leaves those states unchanged.
+
+`@baukit/data-contracts/import-envelope` supplies `prepareImportEnvelope` and
+`commitImportEnvelope`. The product supplies the envelope decoder, field allowlist, row decoder,
+preview planner, transaction adapter, and post-commit callback. Schema versions, entities,
+required fields, duplicate-ID handling, tombstone policy, conflict policy, provenance, deletion
+order, and user copy remain product code. Source ownership, revision, and dirty-state fields should
+usually be absent from the allowlist. The transaction should assign the active partition's
+ownership and local sync metadata instead.
+
+Do not log rejected source text, field values, or decoder errors that contain file content. Release
+the source and prepared plan when the screen closes or the active identity changes. A preview can
+become stale while another write runs, so the product must enforce its conflict policy again inside
+the commit transaction.
+
+Migration is additive. A product can first wrap its current parser and preview planner, then move
+its existing write loop behind `commitImportEnvelope`. No file format, schema version, or storage
+migration is required.
+
+## 7. Shipped helper shape
 
 `@baukit/data-contracts` exports these provider-neutral seams:
 
@@ -87,7 +117,8 @@ type LegacyStoreInspection =
   | { exists: false }
   | {
       exists: true;
-      ownership: "claimable" | "current-subject" | "other-subject" | "ambiguous";
+      ownership:
+        "claimable" | "current-subject" | "other-subject" | "ambiguous";
     };
 
 interface ResolveScopedStoreOptions {
@@ -149,7 +180,7 @@ After a legacy claim, products must continue supplying the configured legacy
 store name so the registry can verify it on every reopen. One store name may
 belong to only one registry entry, including across namespaces.
 
-## 7. Acceptance checks
+## 8. Acceptance checks
 
 - E signs in, writes records and pending mutations, signs out; F signs in and can neither read nor modify E's data; E returns and sees only E's original data and pending mutations.
 - E→F→E waits for close before each open and resets every named in-memory store and query/analytics identity.
@@ -163,3 +194,6 @@ belong to only one registry entry, including across namespaces.
 - Active-partition erasure closes and resets before physical deletion, removes
   the matching registry entry only after deletion succeeds, and returns local
   deletion or registry failures to the caller.
+- Import preparation rejects unsupported fields and configured limits without writing. A halfway
+  commit failure leaves all rows, cursors, and sync state unchanged. A successful commit advances
+  cursor or sync state only after every row is durable.

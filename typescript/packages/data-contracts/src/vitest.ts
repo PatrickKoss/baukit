@@ -17,6 +17,8 @@ import {
   recheckServerSubjectBeforeSyncAdoption,
 } from './identity.js';
 
+export * from './import-envelope.vitest.js';
+
 export type ContractStoreFactory<TStore> = () => Promise<TStore> | TStore;
 
 /** Canonical JSON-shaped record supplied to adapter contract suites. */

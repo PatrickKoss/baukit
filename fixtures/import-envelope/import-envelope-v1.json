@@ -1,0 +1,132 @@
+{
+  "fixture_version": 1,
+  "limits": {
+    "max_source_bytes": 2048,
+    "max_rows": 2,
+    "max_string_bytes": 16
+  },
+  "cases": [
+    {
+      "name": "valid",
+      "outcome": "accept",
+      "source": {
+        "format": "baukit-test-import",
+        "schema_versions": [1],
+        "rows": [
+          { "collection": "records", "id": "row-a", "title": "Alpha" },
+          { "collection": "records", "id": "row-b", "title": "Beta" }
+        ]
+      }
+    },
+    {
+      "name": "unknown-fields",
+      "outcome": "reject",
+      "source": {
+        "format": "baukit-test-import",
+        "schema_versions": [1],
+        "rows": [
+          {
+            "collection": "records",
+            "id": "row-a",
+            "title": "Alpha",
+            "debug": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "duplicate-ids",
+      "outcome": "reject",
+      "source": {
+        "format": "baukit-test-import",
+        "schema_versions": [1],
+        "rows": [
+          { "collection": "records", "id": "row-a", "title": "Alpha" },
+          { "collection": "records", "id": "row-a", "title": "Beta" }
+        ]
+      }
+    },
+    {
+      "name": "tombstones",
+      "outcome": "reject",
+      "source": {
+        "format": "baukit-test-import",
+        "schema_versions": [1],
+        "rows": [
+          {
+            "collection": "records",
+            "id": "row-a",
+            "title": "Alpha",
+            "deleted_at": "2026-09-04T10:00:00Z"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ownership-and-revision-fields",
+      "outcome": "reject",
+      "source": {
+        "format": "baukit-test-import",
+        "schema_versions": [1],
+        "rows": [
+          {
+            "collection": "records",
+            "id": "row-a",
+            "title": "Alpha",
+            "owner_id": "source-owner",
+            "revision": 42
+          }
+        ]
+      }
+    },
+    {
+      "name": "oversized-strings",
+      "outcome": "reject",
+      "source": {
+        "format": "baukit-test-import",
+        "schema_versions": [1],
+        "rows": [
+          {
+            "collection": "records",
+            "id": "row-a",
+            "title": "0123456789abcdefg"
+          }
+        ]
+      }
+    },
+    {
+      "name": "excess-rows",
+      "outcome": "reject",
+      "source": {
+        "format": "baukit-test-import",
+        "schema_versions": [1],
+        "rows": [
+          { "collection": "records", "id": "row-a", "title": "Alpha" },
+          { "collection": "records", "id": "row-b", "title": "Beta" },
+          { "collection": "records", "id": "row-c", "title": "Gamma" }
+        ]
+      }
+    },
+    {
+      "name": "mixed-versions",
+      "outcome": "reject",
+      "source": {
+        "format": "baukit-test-import",
+        "schema_versions": [1, 2],
+        "rows": [{ "collection": "records", "id": "row-a", "title": "Alpha" }]
+      }
+    },
+    {
+      "name": "failure-halfway-through-commit",
+      "outcome": "commit-failure",
+      "source": {
+        "format": "baukit-test-import",
+        "schema_versions": [1],
+        "rows": [
+          { "collection": "records", "id": "row-a", "title": "Alpha" },
+          { "collection": "records", "id": "row-b", "title": "Beta" }
+        ]
+      }
+    }
+  ]
+}

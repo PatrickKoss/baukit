@@ -30,6 +30,10 @@
       "types": "./dist/limits.d.ts",
       "import": "./dist/limits.js"
     },
+    "./import-envelope": {
+      "types": "./dist/import-envelope.d.ts",
+      "import": "./dist/import-envelope.js"
+    },
     "./vitest": {
       "types": "./dist/vitest.d.ts",
       "import": "./dist/vitest.js"

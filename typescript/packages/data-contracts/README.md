@@ -54,6 +54,47 @@ with `trimmedUnicodeScalarCount(value)`, and replace a `JSON.stringify` plus `Te
 with `compactJsonUtf8Bytes(value)`. Unlike raw `JSON.stringify`, the helper rejects values that JSON
 would omit or replace with `null`.
 
+## Import envelopes
+
+The `/import-envelope` subpath separates import safety from a product's file format. The product
+decoder returns a safe context and an iterable of named row objects. `prepareImportEnvelope` checks
+the source byte limit before calling that decoder, stops when the row limit is exceeded, rejects
+fields outside the allowlist, checks strings nested inside allowed fields, decodes each row, and
+runs the product's preview planner. The planner receives decoded rows but no transaction adapter.
+
+```ts
+import {
+  commitImportEnvelope,
+  prepareImportEnvelope,
+} from '@baukit/data-contracts/import-envelope';
+
+const preview = await prepareImportEnvelope({
+  source,
+  limits: { maxSourceBytes: 2_097_152, maxRows: 5_000, maxStringBytes: 8_192 },
+  decodeEnvelope: decodeProductExport,
+  fieldAllowlist: { notes: ['id', 'title', 'body'] },
+  decodeRow: decodePortableRow,
+  plan: planImport,
+});
+
+await commitImportEnvelope({
+  preview,
+  transaction: repositories,
+  write: writeImportPlan,
+  afterCommit: () => requestSync(),
+});
+```
+
+The decoder still owns format and schema versions, required fields, duplicate IDs, tombstone
+policy, and entity decoding. The planner owns conflicts, provenance, and deletion order.
+`commitImportEnvelope` puts the complete product write behind one `withTransaction` call. It invokes
+`afterCommit` only after that call resolves. Keep `afterCommit` idempotent because its failure does
+not roll back the committed transaction.
+
+This API is additive. Existing import code can migrate by wrapping its current decoder and preview
+planner first, then moving the write loop into `commitImportEnvelope`. It does not require a file
+format or database migration.
+
 ## Authenticated partitions
 
 `deriveScopedStoreName(namespace, subject)` hashes a length-delimited canonical
@@ -93,6 +134,7 @@ Vitest helpers are isolated in a test-only subpath. Vitest is deliberately not a
 
 ```ts
 import {
+  describeImportEnvelopeContract,
   describeKeyValueContract,
   describeRecordStoreContract,
   describeSchemaMetadataContract,
@@ -109,6 +151,7 @@ describeTransactionContract(makeDatabase);
 describeTransactionalStorageContract(makeDatabase);
 describeScopedPersistenceContract(makeNamedDatabaseAdapter);
 describeSchemaMetadataContract(() => makeDatabase().schemaMetadata);
+describeImportEnvelopeContract(importEnvelopeOptions);
 ```
 
 Each factory must return a fresh, empty store. The record suite supplies its
@@ -123,5 +166,8 @@ corrupt-registry blocking, server-subject checks, and terminal expiry. Its
 adapter factory must reopen the same durable data for the same name. The
 included `InMemoryStore` exposes `keyValues`,
 `records`, and `schemaMetadata` namespaces and is itself tested by every suite.
+The import-envelope suite uses caller-supplied fixtures and a fresh harness. It checks malformed
+files, a write-free preview, field filtering, rollback after a halfway failure, and cursor or sync
+state changes after commit.
 
 Persistence adapters and product-specific migration logic belong in product or future adapter packages. The production entry point has no runtime dependencies; only the `/vitest` subpath expects the consumer's Vitest installation.
