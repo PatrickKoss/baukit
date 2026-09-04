@@ -62,8 +62,8 @@ Each study ends in one written decision under `docs/studies/`.
 
 - [x] 29. Revisioned write queue and durable form drafts (batch 7)
 - [x] 30. Offline asset management (batch 7)
-- [~] 31. Expo UI and headless accessibility behavior (batch 7)
-- [~] 32. Notifications and timeline playback (batch 7)
+- [x] 31. Expo UI and headless accessibility behavior (batch 7)
+- [x] 32. Notifications and timeline playback (batch 7)
 - [~] 33. Calendar export (batch 7)
 - [~] 34. Release, GitOps, and migration compatibility (batch 7)
 - [~] 35. Browser identity composition (batch 7)
@@ -106,6 +106,8 @@ Filled in as items complete. Each line names the product file to delete once the
 - Item 26, Tiefgang: remove the inbox replay assertions from `backend/tests/postgres_integration.rs`, the multi-target delivery loop in `backend/crates/tiefgang-worker/src/lib.rs`, and the duplicate signature helper in `backend/tests/worker_integration.rs`; run `check_postgres_inbox_conformance` and the scripted webhook receiver instead.
 - Item 21, Tiefgang, Leitbild, Eigenruhe: delete `mcp/src/index.ts` and `mcp/src/server.ts` after adopting the generated bootstrap; keep tool and route code. With `node-oidc` each also deletes `mcp/src/auth.ts` (same file as item 20).
 - Item 28, Eigenruhe: replace the unprotected count operations in `row_caps.rs` with one documented enforcement method, implement `PostgresLiveRowCapAdapter`, and delete `assert_practice_cap` plus the duplicated update and tombstone-release blocks in `backend/tests/postgres_integration.rs`.
+- Item 31 (decision: implement `useRovingMenu` in `@baukit/a11y-core`, not yet built): Tiefgang and Eigenruhe delete the index, ref, and key-handling blocks in `mobile/src/components/context-menu.tsx`; Redemut deletes the DOM query and `moveFocus` logic in `packages/ui/src/context-menu.tsx`. Fitness Tracker must be inspected before any rendered Expo package.
+- Item 32 (decision: implement `@baukit/notifications-core` and an Expo adapter, not yet built; timeline deferred): Eigenruhe deletes `mobile/src/features/reminders/schedule.ts`, `port.ts`, and most of `expo-adapter.ts`; Redemut deletes the civil-date loop in `mobile/src/reminders.ts` and the cancel-all block in `mobile/src/notification-adapter.ts`.
 
 ### Log
 
