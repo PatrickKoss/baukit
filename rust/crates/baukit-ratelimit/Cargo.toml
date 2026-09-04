@@ -28,6 +28,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 baukit-test = { path = "../baukit-test" }
+metrics-util.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tower = { workspace = true, features = ["util"] }

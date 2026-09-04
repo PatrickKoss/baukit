@@ -76,12 +76,67 @@ Store failures are fail-open by default and can be configured fail-closed. All
 decisions record `http_rate_limit_decisions_total` with only `scope` and
 `outcome` labels.
 
+## Authenticated route groups
+
+`authenticated_route_group` applies another token bucket to selected requests
+inside an authenticated router. Construct `AuthenticatedRouteGroupOptions` with
+a bounded group name and quota. The options reuse the global key prefix and
+fail mode. The application supplies a principal key function and a request
+predicate:
+
+```rust
+use std::time::Duration;
+
+use axum::{Router, extract::Request, http::Method};
+use baukit_auth::Principal;
+use baukit_ratelimit::{
+    AuthenticatedRouteGroupOptions, InMemoryRateLimitStore, Quota,
+    RateLimitOptions, authenticated_route_group,
+};
+
+let rate_limit = RateLimitOptions::default();
+let writes = AuthenticatedRouteGroupOptions::new(
+    "item_writes",
+    Quota::new(30, Duration::from_secs(60), 0)?,
+    &rate_limit,
+)?;
+let app: Router = authenticated_route_group(
+    Router::new(),
+    InMemoryRateLimitStore::default(),
+    writes,
+    |principal: &Principal| principal.subject().to_owned(),
+    |request: &Request| request.method() == Method::POST,
+);
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Group keys use `group:<name>:` and cannot collide with global `id:` or `ip:`
+keys. The group name is the metric `scope`; the extracted subject key is never
+a label. Rejections include `Retry-After`, `RateLimit-Limit`,
+`RateLimit-Remaining`, and `RateLimit-Reset`. The JSON error details contain the
+same whole-second `retry_after` value as the `Retry-After` header.
+
+Place principal-establishing middleware outside the global layer and place the
+global layer outside route groups. Axum runs the last added layer first:
+
+```text
+establish principal -> global identity/IP limit -> authenticated group -> route
+```
+
+`SharedRateLimitStore` wraps any adapter that implements `RateLimitStore` and
+`AmountBudgetStore`. Use it when startup selects between the Redis and in-memory
+adapters and both request limits and fixed-window amount budgets need the same
+selection.
+
 ## Migration
 
 Existing `layers` calls keep their behavior. Replace product-owned bearer
 middleware with `baukit_auth::establish_principal` and place it outside
 `baukit_ratelimit::layers`. Startup code that conditionally connects Redis can
-replace its scope checks with `RedisRateLimitStore::connect_if_enabled`.
+replace its scope checks with `RedisRateLimitStore::connect_if_enabled`. Rate
+limit rejections now add numeric `details.retry_after`; their status, code,
+message, and headers remain unchanged. Applications can delete response
+normalizers that only copied the retry delay into the standard error body.
 
 ## Fixed-window amount budgets
 

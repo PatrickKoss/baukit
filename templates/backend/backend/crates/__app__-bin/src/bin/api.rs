@@ -1,10 +1,12 @@
 use std::{env, error::Error, net::SocketAddr, sync::Arc, time::Duration};
 
-{% if context.auth_oidc %}use axum::middleware;
-use baukit_auth::{AuthState, OidcConfig, OidcVerifier};
+{% if context.auth_oidc %}use axum::{extract::Request, http::Method, middleware};
+use baukit_auth::{AuthState, OidcConfig, OidcVerifier, Principal};
 {% endif %}use baukit_config::{BaukitConfig, ConfigLoader, Environment};
 use baukit_ops::{PoolMetricsSampler, TrafficGate, spawn_pool_metrics_sampler};
-{% if context.auth_oidc %}use baukit_ratelimit::{RateLimitOptions, RedisRateLimitStore};
+{% if context.auth_oidc %}use baukit_ratelimit::{
+    AuthenticatedRouteGroupOptions, Quota, RateLimitOptions, RedisRateLimitStore,
+};
 {% endif %}use baukit_runtime::{ProcessKind, ServiceInfo, ShutdownToken, build_info, serve_listener_pair};
 use baukit_telemetry::{TelemetryBuilder, tracing};
 
@@ -30,7 +32,9 @@ use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
 
 const PRODUCT: &str = "{{ context.app_name }}";
-
+{% if context.auth_oidc %}const ITEM_WRITE_GROUP: &str = "item_writes";
+const ITEM_WRITE_REQUESTS_PER_MINUTE: u64 = 30;
+{% endif %}
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let environment = env::var("{{ context.app_env }}_ENVIRONMENT")
@@ -114,6 +118,18 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
 {% if context.auth_oidc %}    let rate_limit_options = RateLimitOptions::from_config(&config.rate_limit)?;
     let rate_limit_store = RedisRateLimitStore::connect_if_enabled(&rate_limit_options).await?;
     let api = if let Some(store) = rate_limit_store {
+        let item_write_options = AuthenticatedRouteGroupOptions::new(
+            ITEM_WRITE_GROUP,
+            Quota::new(ITEM_WRITE_REQUESTS_PER_MINUTE, Duration::from_secs(60), 0)?,
+            &rate_limit_options,
+        )?;
+        let api = baukit_ratelimit::authenticated_route_group(
+            api,
+            store.clone(),
+            item_write_options,
+            item_write_subject,
+            is_item_write,
+        );
         baukit_ratelimit::layers(api, store, rate_limit_options)
     } else {
         api
@@ -172,4 +188,15 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         .await???;
     result?;
     Ok(())
+}{% if context.auth_oidc %}
+
+fn item_write_subject(principal: &Principal) -> String {
+    principal.subject().to_owned()
 }
+
+fn is_item_write(request: &Request) -> bool {
+    matches!(
+        *request.method(),
+        Method::POST | Method::PUT | Method::PATCH | Method::DELETE
+    )
+}{% endif %}

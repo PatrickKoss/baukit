@@ -401,6 +401,7 @@ dependencies = [
  "baukit-http",
  "baukit-test",
  "metrics",
+ "metrics-util",
  "redis",
  "serde_json",
  "thiserror",
@@ -428,7 +429,10 @@ version = "0.2.1"
 dependencies = [
  "baukit-test",
  "chrono",
+ "serde",
+ "serde_json",
  "sqlx",
+ "thiserror",
  "tokio",
  "uuid",
 ]

@@ -14,8 +14,9 @@ use axum::{
 };
 use baukit_auth::Principal;
 use baukit_ratelimit::{
-    AmountBudgetStore as _, Quota, RATE_LIMIT_LIMIT, RATE_LIMIT_REMAINING, RateLimitOptions,
-    RateLimitStore as _, RedisRateLimitStore, layers,
+    AmountBudgetStore as _, AuthenticatedRouteGroupOptions, InMemoryRateLimitStore, Quota,
+    RATE_LIMIT_LIMIT, RATE_LIMIT_REMAINING, RateLimitOptions, RateLimitStore, RedisRateLimitStore,
+    authenticated_route_group, layers,
 };
 use redis::AsyncCommands as _;
 use tokio::sync::Barrier;
@@ -338,6 +339,37 @@ async fn real_redis_works_through_full_axum_layer() -> Result<(), Box<dyn Error>
     Ok(())
 }
 
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn memory_and_redis_route_groups_make_the_same_decisions() -> Result<(), Box<dyn Error>> {
+    let fixture = baukit_test::start_redis().await?;
+    let redis = RedisRateLimitStore::connect(fixture.connection_url()).await?;
+    let memory = route_group_statuses(InMemoryRateLimitStore::default()).await?;
+    let redis = route_group_statuses(redis).await?;
+
+    assert_eq!(memory, redis);
+    assert_eq!(redis, [StatusCode::OK, StatusCode::TOO_MANY_REQUESTS]);
+    Ok(())
+}
+
+async fn route_group_statuses(
+    store: impl RateLimitStore + 'static,
+) -> Result<[StatusCode; 2], Box<dyn Error>> {
+    let quota = Quota::new(1, Duration::from_secs(3_600), 0)?;
+    let options =
+        AuthenticatedRouteGroupOptions::new("redis_parity", quota, &RateLimitOptions::default())?;
+    let app = authenticated_route_group(
+        Router::new().route("/", get(|| async { "ok" })),
+        store,
+        options,
+        |principal: &Principal| principal.subject().to_owned(),
+        |_| true,
+    );
+    let first = app.clone().oneshot(group_request()).await?.status();
+    let second = app.oneshot(group_request()).await?.status();
+    Ok([first, second])
+}
+
 fn request() -> Request<Body> {
     let mut request = Request::builder()
         .uri("/")
@@ -346,5 +378,14 @@ fn request() -> Request<Body> {
     request.extensions_mut().insert(ConnectInfo(
         "192.0.2.1:1234".parse::<SocketAddr>().expect("peer"),
     ));
+    request
+}
+
+fn group_request() -> Request<Body> {
+    let mut request = Request::builder()
+        .uri("/")
+        .body(Body::empty())
+        .expect("request");
+    request.extensions_mut().insert(Principal::new("subject"));
     request
 }

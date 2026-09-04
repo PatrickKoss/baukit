@@ -1,17 +1,17 @@
-use std::{net::IpAddr, net::SocketAddr, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, net::IpAddr, net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{
     Router,
     extract::{ConnectInfo, Request, State},
-    http::{HeaderMap, HeaderName, HeaderValue, header::RETRY_AFTER},
+    http::{HeaderMap, HeaderName, HeaderValue},
     middleware::{self, Next},
     response::{IntoResponse as _, Response},
 };
 use baukit_auth::Principal;
 
 use crate::{
-    Quota, RateLimitDecision, RateLimitFailMode, RateLimitOptions, RateLimitScopeOptions,
-    RateLimitStore,
+    AuthenticatedRouteGroupOptions, Quota, RateLimitDecision, RateLimitFailMode, RateLimitOptions,
+    RateLimitScopeOptions, RateLimitStore,
 };
 
 /// Counter for rate-limit decisions, labeled exactly `scope` and `outcome`.
@@ -31,6 +31,17 @@ struct LayerState {
     options: RateLimitOptions,
 }
 
+type SubjectKeyExtractor = dyn Fn(&Principal) -> String + Send + Sync;
+type RequestPredicate = dyn Fn(&Request) -> bool + Send + Sync;
+
+#[derive(Clone)]
+struct AuthenticatedRouteGroupState {
+    store: Arc<dyn RateLimitStore>,
+    options: AuthenticatedRouteGroupOptions,
+    subject_key: Arc<SubjectKeyExtractor>,
+    request_predicate: Arc<RequestPredicate>,
+}
+
 /// Applies identity-first and client-IP rate limiting to an Axum router.
 ///
 /// Compose this function independently with [`baukit_http::layers`]. A verified
@@ -48,6 +59,83 @@ where
         },
         rate_limit_request,
     ))
+}
+
+/// Applies one named token bucket to selected requests with a verified principal.
+///
+/// `subject_key` derives an opaque counter key from the principal. The key is
+/// used only in the store and never as a metric label. `request_predicate`
+/// selects which requests consume the group bucket. Requests without a cached
+/// principal pass through so the route's authentication policy can reject them.
+pub fn authenticated_route_group<S, Store, SubjectKey, Predicate>(
+    router: Router<S>,
+    store: Store,
+    options: AuthenticatedRouteGroupOptions,
+    subject_key: SubjectKey,
+    request_predicate: Predicate,
+) -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+    Store: RateLimitStore + 'static,
+    SubjectKey: Fn(&Principal) -> String + Send + Sync + 'static,
+    Predicate: Fn(&Request) -> bool + Send + Sync + 'static,
+{
+    router.layer(middleware::from_fn_with_state(
+        AuthenticatedRouteGroupState {
+            store: Arc::new(store),
+            options,
+            subject_key: Arc::new(subject_key),
+            request_predicate: Arc::new(request_predicate),
+        },
+        rate_limit_authenticated_route_group,
+    ))
+}
+
+async fn rate_limit_authenticated_route_group(
+    State(state): State<AuthenticatedRouteGroupState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    if !(state.request_predicate)(&request) {
+        return next.run(request).await;
+    }
+    let Some(principal) = request.extensions().get::<Principal>() else {
+        return next.run(request).await;
+    };
+    let key = state.options.key(&(state.subject_key)(principal));
+    match state
+        .store
+        .check_and_consume(&key, state.options.quota)
+        .await
+    {
+        Ok(decision) if decision.allowed => {
+            record(state.options.group(), "allowed");
+            next.run(request).await
+        }
+        Ok(decision) => {
+            record(state.options.group(), "limited");
+            limited_response(state.options.quota, decision)
+        }
+        Err(error) => {
+            record(state.options.group(), "error");
+            tracing::warn!(
+                group = state.options.group(),
+                error = %error,
+                "authenticated route-group rate-limit store decision failed"
+            );
+            match state.options.fail_mode {
+                RateLimitFailMode::Open => next.run(request).await,
+                RateLimitFailMode::Closed => limited_response(
+                    state.options.quota,
+                    RateLimitDecision {
+                        allowed: false,
+                        remaining: 0,
+                        retry_after: state.options.quota.period(),
+                    },
+                ),
+            }
+        }
+    }
 }
 
 async fn rate_limit_request(
@@ -140,16 +228,19 @@ async fn evaluate(
 }
 
 fn limited_response(quota: Quota, decision: RateLimitDecision) -> Response {
-    let mut response = baukit_http::ApiError::rate_limited().into_response();
+    let retry_after = duration_seconds_ceil(decision.retry_after);
+    let mut response = baukit_http::ApiError::rate_limited()
+        .with_details(BTreeMap::from([(
+            "retry_after".to_owned(),
+            retry_after.into(),
+        )]))
+        .with_retry_after(retry_after)
+        .into_response();
     insert_rate_limit_headers(
         response.headers_mut(),
         quota,
         decision,
         decision.retry_after,
-    );
-    response.headers_mut().insert(
-        RETRY_AFTER,
-        number_header(duration_seconds_ceil(decision.retry_after)),
     );
     response
 }
@@ -178,10 +269,10 @@ fn duration_seconds_ceil(duration: Duration) -> u64 {
         .saturating_add(u64::from(duration.subsec_nanos() != 0))
 }
 
-fn record(scope: &'static str, outcome: &'static str) {
+fn record(scope: &str, outcome: &'static str) {
     metrics::counter!(
         HTTP_RATE_LIMIT_DECISIONS_TOTAL,
-        "scope" => scope,
+        "scope" => scope.to_owned(),
         "outcome" => outcome
     )
     .increment(1);
@@ -228,9 +319,12 @@ mod tests {
 
     use axum::{
         body::{Body, to_bytes},
-        http::{Request, StatusCode, header},
+        http::{
+            Method, Request, StatusCode,
+            header::{self, RETRY_AFTER},
+        },
         middleware,
-        routing::get,
+        routing::{any, get},
     };
     use baukit_auth::{
         AuthState, IdentityVerifier, Principal, VerificationError, establish_principal,
@@ -410,6 +504,201 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn identities_and_named_groups_use_independent_counters() {
+        let store = RecordingStore::default();
+        let rate_limit = RateLimitOptions::default();
+        let quota = Quota::new(1, Duration::from_secs(60), 0).expect("quota");
+        let first = authenticated_route_group(
+            Router::new().route("/first", any(|| async { "first" })),
+            store.clone(),
+            AuthenticatedRouteGroupOptions::new("first", quota, &rate_limit).expect("group"),
+            |principal: &Principal| format!("account:{}", principal.subject()),
+            |_| true,
+        );
+        let second = authenticated_route_group(
+            Router::new().route("/second", any(|| async { "second" })),
+            store.clone(),
+            AuthenticatedRouteGroupOptions::new("second", quota, &rate_limit).expect("group"),
+            |principal: &Principal| format!("account:{}", principal.subject()),
+            |_| true,
+        );
+        let app = first.merge(second);
+
+        for (path, subject, expected) in [
+            ("/first", "alice", StatusCode::OK),
+            ("/first", "alice", StatusCode::TOO_MANY_REQUESTS),
+            ("/second", "alice", StatusCode::OK),
+            ("/first", "bob", StatusCode::OK),
+            ("/second", "bob", StatusCode::OK),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(request_with_principal(Method::GET, path, subject))
+                .await
+                .expect("response");
+            assert_eq!(response.status(), expected, "{subject} {path}");
+        }
+
+        assert_eq!(
+            store.counts(),
+            BTreeMap::from([
+                ("rl:group:first:account:alice".to_owned(), 2),
+                ("rl:group:first:account:bob".to_owned(), 1),
+                ("rl:group:second:account:alice".to_owned(), 1),
+                ("rl:group:second:account:bob".to_owned(), 1),
+            ])
+        );
+    }
+
+    #[tokio::test]
+    async fn route_group_predicate_bypasses_requests_that_do_not_count() {
+        let store = RecordingStore::default();
+        let quota = Quota::new(1, Duration::from_secs(60), 0).expect("quota");
+        let app = authenticated_route_group(
+            Router::new().route("/items", any(|| async { "ok" })),
+            store.clone(),
+            AuthenticatedRouteGroupOptions::new("item_writes", quota, &RateLimitOptions::default())
+                .expect("group"),
+            |principal: &Principal| principal.subject().to_owned(),
+            |request| request.method() != Method::GET,
+        );
+
+        for method in [Method::GET, Method::GET, Method::POST] {
+            let response = app
+                .clone()
+                .oneshot(request_with_principal(method, "/items", "alice"))
+                .await
+                .expect("response");
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+        let response = app
+            .oneshot(request_with_principal(Method::POST, "/items", "alice"))
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            store.counts(),
+            BTreeMap::from([("rl:group:item_writes:alice".to_owned(), 2)])
+        );
+    }
+
+    #[tokio::test]
+    async fn route_group_headers_and_body_use_the_same_retry_delay() {
+        let quota = Quota::new(1, Duration::from_secs(60), 0).expect("quota");
+        let app = authenticated_route_group(
+            Router::new().route("/", get(|| async { "ok" })),
+            InMemoryRateLimitStore::default(),
+            AuthenticatedRouteGroupOptions::new("reads", quota, &RateLimitOptions::default())
+                .expect("group"),
+            |principal: &Principal| principal.subject().to_owned(),
+            |_| true,
+        );
+        assert_eq!(
+            app.clone()
+                .oneshot(request_with_principal(Method::GET, "/", "private-subject"))
+                .await
+                .expect("response")
+                .status(),
+            StatusCode::OK
+        );
+
+        let response = app
+            .oneshot(request_with_principal(Method::GET, "/", "private-subject"))
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        let retry_after = response.headers()[RETRY_AFTER]
+            .to_str()
+            .expect("retry header")
+            .parse::<u64>()
+            .expect("retry seconds");
+        assert_eq!(response.headers()[RATE_LIMIT_LIMIT], "1");
+        assert_eq!(response.headers()[RATE_LIMIT_REMAINING], "0");
+        assert_eq!(
+            response.headers()[RATE_LIMIT_RESET],
+            retry_after.to_string()
+        );
+        let json: Value = serde_json::from_slice(
+            &to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("body"),
+        )
+        .expect("JSON");
+        assert_eq!(json["error"]["code"], "rate_limited");
+        assert_eq!(json["error"]["details"]["retry_after"], retry_after);
+    }
+
+    #[tokio::test]
+    async fn route_group_store_errors_follow_the_configured_fail_mode() {
+        for (fail_mode, expected) in [
+            (RateLimitFailMode::Open, StatusCode::OK),
+            (RateLimitFailMode::Closed, StatusCode::TOO_MANY_REQUESTS),
+        ] {
+            let mut rate_limit = RateLimitOptions::default();
+            rate_limit.fail_mode = fail_mode;
+            let quota = Quota::new(1, Duration::from_secs(60), 0).expect("quota");
+            let app = authenticated_route_group(
+                Router::new().route("/", get(|| async { "ok" })),
+                FailingStore,
+                AuthenticatedRouteGroupOptions::new("reads", quota, &rate_limit).expect("group"),
+                |principal: &Principal| principal.subject().to_owned(),
+                |_| true,
+            );
+            let response = app
+                .oneshot(request_with_principal(Method::GET, "/", "alice"))
+                .await
+                .expect("response");
+            assert_eq!(response.status(), expected);
+            if fail_mode == RateLimitFailMode::Closed {
+                assert_eq!(response.headers()[RETRY_AFTER], "60");
+            }
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn identity_values_do_not_become_metric_labels() {
+        use metrics_util::debugging::DebuggingRecorder;
+
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let _guard = metrics::set_default_local_recorder(&recorder);
+        let quota = Quota::new(1, Duration::from_secs(60), 0).expect("quota");
+        let app = authenticated_route_group(
+            Router::new().route("/", get(|| async { "ok" })),
+            InMemoryRateLimitStore::default(),
+            AuthenticatedRouteGroupOptions::new(
+                "private_reads",
+                quota,
+                &RateLimitOptions::default(),
+            )
+            .expect("group"),
+            |principal: &Principal| principal.subject().to_owned(),
+            |_| true,
+        );
+        let response = app
+            .oneshot(request_with_principal(Method::GET, "/", "private-user-42"))
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let metrics = snapshotter.snapshot().into_vec();
+        let metric = metrics
+            .iter()
+            .find(|(key, _, _, _)| key.key().name() == HTTP_RATE_LIMIT_DECISIONS_TOTAL)
+            .expect("rate-limit decision metric");
+        let labels = metric
+            .0
+            .key()
+            .labels()
+            .map(|label| (label.key(), label.value()))
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(labels.get("scope"), Some(&"private_reads"));
+        assert_eq!(labels.get("outcome"), Some(&"allowed"));
+        assert_eq!(labels.len(), 2);
+        assert!(!format!("{:?}", metric.0).contains("private-user-42"));
+    }
+
+    #[tokio::test]
     async fn limited_response_uses_standard_envelope_and_headers() {
         let mut options = RateLimitOptions::default();
         options.identity.enabled = false;
@@ -441,6 +730,7 @@ mod tests {
         )
         .expect("JSON");
         assert_eq!(json["error"]["code"], "rate_limited");
+        assert_eq!(json["error"]["details"]["retry_after"], 60);
     }
 
     #[tokio::test]
@@ -494,6 +784,16 @@ mod tests {
         request.extensions_mut().insert(ConnectInfo(
             "192.0.2.10:1234".parse::<SocketAddr>().expect("peer"),
         ));
+        request
+    }
+
+    fn request_with_principal(method: Method, path: &str, subject: &str) -> Request<Body> {
+        let mut request = Request::builder()
+            .method(method)
+            .uri(path)
+            .body(Body::empty())
+            .expect("request");
+        request.extensions_mut().insert(Principal::new(subject));
         request
     }
 

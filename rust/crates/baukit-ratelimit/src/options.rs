@@ -6,6 +6,8 @@ use baukit_config::{
 
 use crate::{Quota, QuotaError};
 
+const MAX_ROUTE_GROUP_NAME_LENGTH: usize = 64;
+
 /// Validated options for one request scope.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RateLimitScopeOptions {
@@ -97,6 +99,77 @@ impl fmt::Debug for RateLimitOptions {
             .field("key_prefix", &self.key_prefix)
             .finish()
     }
+}
+
+/// Validated options for one authenticated route group.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuthenticatedRouteGroupOptions {
+    group: String,
+    /// Token-bucket quota for this group and subject key.
+    pub quota: Quota,
+    /// Behavior when the store cannot make a decision.
+    pub fail_mode: RateLimitFailMode,
+    key_prefix: String,
+}
+
+impl AuthenticatedRouteGroupOptions {
+    /// Creates a route-group policy that shares the global key prefix and fail mode.
+    pub fn new(
+        group: impl Into<String>,
+        quota: Quota,
+        rate_limit: &RateLimitOptions,
+    ) -> Result<Self, AuthenticatedRouteGroupOptionsError> {
+        let group = group.into();
+        validate_route_group_name(&group)?;
+        Ok(Self {
+            group,
+            quota,
+            fail_mode: rate_limit.fail_mode,
+            key_prefix: rate_limit.key_prefix.clone(),
+        })
+    }
+
+    /// Returns the bounded group name used as a metric label.
+    #[must_use]
+    pub fn group(&self) -> &str {
+        &self.group
+    }
+
+    pub(crate) fn key(&self, subject_key: &str) -> String {
+        format!("{}group:{}:{subject_key}", self.key_prefix, self.group)
+    }
+}
+
+/// Invalid authenticated route-group options.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum AuthenticatedRouteGroupOptionsError {
+    /// A group name is required for the counter namespace and metric label.
+    #[error("authenticated route-group name must not be empty")]
+    EmptyGroup,
+    /// Group names are bounded to keep counter keys and metric labels small.
+    #[error("authenticated route-group name must be at most 64 bytes")]
+    GroupTooLong,
+    /// Group names use a restricted ASCII character set.
+    #[error(
+        "authenticated route-group name may contain only ASCII letters, digits, `_`, `-`, and `.`"
+    )]
+    InvalidGroup,
+}
+
+fn validate_route_group_name(group: &str) -> Result<(), AuthenticatedRouteGroupOptionsError> {
+    if group.is_empty() {
+        return Err(AuthenticatedRouteGroupOptionsError::EmptyGroup);
+    }
+    if group.len() > MAX_ROUTE_GROUP_NAME_LENGTH {
+        return Err(AuthenticatedRouteGroupOptionsError::GroupTooLong);
+    }
+    if !group
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
+    {
+        return Err(AuthenticatedRouteGroupOptionsError::InvalidGroup);
+    }
+    Ok(())
 }
 
 /// Failure while converting rate-limit configuration into runtime options.
@@ -199,5 +272,41 @@ mod tests {
 
         assert!(!options.is_enabled());
         assert!(options.redis_url().is_empty());
+    }
+
+    #[test]
+    fn route_group_names_are_bounded_and_safe_for_keys_and_labels() {
+        let options = RateLimitOptions::default();
+        let quota = Quota::new(1, Duration::from_secs(60), 0).expect("quota");
+        let group = AuthenticatedRouteGroupOptions::new("sync_push.v2", quota, &options)
+            .expect("valid group");
+        assert_eq!(group.group(), "sync_push.v2");
+        assert_eq!(group.key("subject"), "rl:group:sync_push.v2:subject");
+
+        for (name, expected) in [
+            ("", AuthenticatedRouteGroupOptionsError::EmptyGroup),
+            (
+                &"a".repeat(MAX_ROUTE_GROUP_NAME_LENGTH + 1),
+                AuthenticatedRouteGroupOptionsError::GroupTooLong,
+            ),
+            (
+                "sync/push",
+                AuthenticatedRouteGroupOptionsError::InvalidGroup,
+            ),
+            (
+                "sync:push",
+                AuthenticatedRouteGroupOptionsError::InvalidGroup,
+            ),
+            (
+                "sync push",
+                AuthenticatedRouteGroupOptionsError::InvalidGroup,
+            ),
+        ] {
+            assert_eq!(
+                AuthenticatedRouteGroupOptions::new(name, quota, &options)
+                    .expect_err("unsafe group name"),
+                expected
+            );
+        }
     }
 }

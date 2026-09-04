@@ -3,6 +3,7 @@ use std::{
     fmt,
     future::Future,
     pin::Pin,
+    sync::Arc,
     time::{Duration, SystemTime},
 };
 
@@ -215,4 +216,120 @@ pub trait AmountBudgetStore: Send + Sync {
             dyn Future<Output = Result<AmountBudgetStoreDecision, RateLimitStoreError>> + Send + 'a,
         >,
     >;
+}
+
+trait RequestAndAmountRateLimitStore: RateLimitStore + AmountBudgetStore {}
+
+impl<T> RequestAndAmountRateLimitStore for T where T: RateLimitStore + AmountBudgetStore {}
+
+/// Cloneable type-erased store for request limits and amount budgets.
+///
+/// Applications that choose between the in-memory and Redis adapters at
+/// runtime can wrap either adapter in this type instead of defining a local
+/// delegation enum.
+#[derive(Clone)]
+pub struct SharedRateLimitStore {
+    inner: Arc<dyn RequestAndAmountRateLimitStore>,
+}
+
+impl SharedRateLimitStore {
+    /// Wraps one store that implements both persistence ports.
+    #[must_use]
+    pub fn new(store: impl RateLimitStore + AmountBudgetStore + 'static) -> Self {
+        Self {
+            inner: Arc::new(store),
+        }
+    }
+}
+
+impl fmt::Debug for SharedRateLimitStore {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SharedRateLimitStore")
+            .finish_non_exhaustive()
+    }
+}
+
+impl RateLimitStore for SharedRateLimitStore {
+    fn check_and_consume<'a>(
+        &'a self,
+        key: &'a str,
+        quota: Quota,
+    ) -> Pin<Box<dyn Future<Output = Result<RateLimitDecision, RateLimitStoreError>> + Send + 'a>>
+    {
+        self.inner.check_and_consume(key, quota)
+    }
+}
+
+impl AmountBudgetStore for SharedRateLimitStore {
+    fn check_and_consume_amount<'a>(
+        &'a self,
+        key: &'a str,
+        amount: u64,
+        limit: u64,
+        now: SystemTime,
+        reset_at: SystemTime,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<AmountBudgetStoreDecision, RateLimitStoreError>> + Send + 'a,
+        >,
+    > {
+        self.inner
+            .check_and_consume_amount(key, amount, limit, now, reset_at)
+    }
+
+    fn release_amount<'a>(
+        &'a self,
+        key: &'a str,
+        amount: u64,
+        limit: u64,
+        now: SystemTime,
+        reset_at: SystemTime,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<AmountBudgetStoreDecision, RateLimitStoreError>> + Send + 'a,
+        >,
+    > {
+        self.inner.release_amount(key, amount, limit, now, reset_at)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, SystemTime};
+
+    use crate::InMemoryRateLimitStore;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn shared_store_forwards_both_persistence_ports() {
+        let store = SharedRateLimitStore::new(InMemoryRateLimitStore::default());
+        let quota = Quota::new(1, Duration::from_secs(60), 0).expect("quota");
+        assert!(
+            store
+                .check_and_consume("request", quota)
+                .await
+                .expect("request decision")
+                .allowed
+        );
+
+        let now = SystemTime::now();
+        let reset_at = now + Duration::from_secs(60);
+        assert!(
+            store
+                .check_and_consume_amount("amount", 2, 2, now, reset_at)
+                .await
+                .expect("amount decision")
+                .allowed
+        );
+        assert_eq!(
+            store
+                .release_amount("amount", 1, 2, now, reset_at)
+                .await
+                .expect("amount release")
+                .remaining,
+            1
+        );
+    }
 }
