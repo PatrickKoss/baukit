@@ -28,7 +28,7 @@ use tracing::Instrument as _;
 use tracing_opentelemetry::OpenTelemetrySpanExt as _;
 use uuid::Uuid;
 
-use crate::{ApiError, HttpOptions, extract::JsonRejectionCode};
+use crate::{ApiError, HttpOptions};
 
 /// The standard request ID header.
 pub const X_REQUEST_ID: HeaderName = HeaderName::from_static("x-request-id");
@@ -198,7 +198,7 @@ async fn request_lifecycle(
     request.extensions_mut().insert(request_id.clone());
     request
         .extensions_mut()
-        .insert(JsonRejectionCode(options.json_rejection_code.clone()));
+        .insert(options.json_rejection_mode.clone());
     CURRENT_REQUEST_ID
         .scope(request_id, lifecycle_inner(options, request, next))
         .await
@@ -242,7 +242,8 @@ async fn lifecycle_inner(options: HttpOptions, request: Request, next: Next) -> 
                     tracing::error!("request handler panicked");
                     ApiError::internal_without_cause().into_response()
                 } else if response.status() == StatusCode::PAYLOAD_TOO_LARGE {
-                    ApiError::payload_too_large().into_response()
+                    ApiError::configured_payload_too_large(&options.json_rejection_mode)
+                        .into_response()
                 } else {
                     response
                 }

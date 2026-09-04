@@ -6,7 +6,7 @@ spans, HTTP RED metrics, panic and timeout envelopes, body and concurrency limit
 
 ```rust
 use axum::{Router, routing::get};
-use baukit_http::{HttpOptions, RequestId, finalize};
+use baukit_http::{HttpOptions, JsonRejectionCodes, RequestId, finalize};
 
 async fn hello(request_id: RequestId) -> String {
     format!("hello from request {}", request_id.as_str())
@@ -15,7 +15,7 @@ async fn hello(request_id: RequestId) -> String {
 let options = HttpOptions::default()
     .with_allowed_origins(["https://app.example.com"])?
     .with_additional_allowed_headers(["accept", "x-webhook-secret"])?
-    .with_json_rejection_code("invalid_json")?;
+    .with_json_rejection_codes(JsonRejectionCodes::default());
 let app = finalize(Router::new().route("/hello", get(hello)), options);
 # let _: Router = app;
 # Ok::<(), baukit_http::HttpOptionsError>(())
@@ -65,6 +65,50 @@ request's actual ID.
 Extractor and routing failures produce the same envelope. A malformed JSON body should not return
 Axum's default plain-text rejection while every other error on the service returns structured JSON;
 clients then need two parsers for one API.
+
+### JSON rejection classes
+
+`ApiJson<T>` can retain the reason Axum rejected a JSON body. Enable this behavior with
+`HttpOptions::with_json_rejection_codes`. The default class codes are:
+
+| Rejection | Status | Default code | Safe detail |
+| --- | ---: | --- | --- |
+| Body exceeds the configured limit | 413 | `payload_too_large` | None |
+| Missing or invalid JSON content type | 415 | `unsupported_media_type` | None |
+| Malformed JSON | 400 | `invalid_json` | `body: must contain valid JSON` |
+| JSON does not match the target type | 422 | `validation_failed` | `body: must match the request schema` |
+
+Use `JsonRejectionCodes::new` when a product already has different public codes:
+
+```rust
+use baukit_http::{HttpOptions, JsonRejectionCodes};
+
+let codes = JsonRejectionCodes::new(
+    "payload_too_large",
+    "invalid_content_type",
+    "malformed_payload",
+    "invalid_payload",
+)?;
+let options = HttpOptions::default().with_json_rejection_codes(codes);
+# let _ = options;
+# Ok::<(), baukit_http::HttpOptionsError>(())
+```
+
+Baukit never copies the submitted body, Axum rejection text, or serde parser details into the
+response or request logs. Products map the stable codes to their own user-facing text. Products also
+set route-specific body limits, for example with Axum's `DefaultBodyLimit`.
+
+### Migration from one JSON rejection code
+
+No change is required for current consumers. `HttpOptions::default()` and
+`with_json_rejection_code("invalid_json")` keep the previous behavior: every `ApiJson<T>` rejection
+returns status 400 with the one configured code. This compatibility mode remains available for this
+release cycle.
+
+To distinguish oversized bodies and content-type failures, replace `with_json_rejection_code` with
+`with_json_rejection_codes`. Review clients for the new 413, 415, and 422 statuses before making the
+switch. The global `HttpOptions::body_size_limit` uses the configured body-too-large code in
+class-specific mode.
 
 ## Request identity and tracing
 

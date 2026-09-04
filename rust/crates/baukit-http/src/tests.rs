@@ -8,6 +8,7 @@ use std::{
 use axum::{
     Router,
     body::{Body, to_bytes},
+    extract::DefaultBodyLimit,
     http::{HeaderValue, Method, Request, StatusCode, header},
     response::IntoResponse,
     routing::{any, get, post},
@@ -47,6 +48,44 @@ async fn response_json(response: axum::response::Response) -> Value {
         .await
         .expect("response body");
     serde_json::from_slice(&bytes).expect("JSON response")
+}
+
+#[derive(serde::Deserialize)]
+struct JsonInput {
+    count: usize,
+}
+
+async fn json_input_handler(ApiJson(input): ApiJson<JsonInput>) -> String {
+    input.count.to_string()
+}
+
+fn classified_json_options() -> HttpOptions {
+    let codes = JsonRejectionCodes::new(
+        "payload_too_large",
+        "unsupported_media_type",
+        "invalid_json",
+        "validation_failed",
+    )
+    .expect("valid JSON rejection codes");
+    HttpOptions::default().with_json_rejection_codes(codes)
+}
+
+async fn json_request(
+    options: HttpOptions,
+    content_type: Option<&str>,
+    body: impl Into<Body>,
+) -> axum::response::Response {
+    let app = finalize(
+        Router::new().route("/json", post(json_input_handler)),
+        options,
+    );
+    let mut request = Request::builder().method(Method::POST).uri("/json");
+    if let Some(content_type) = content_type {
+        request = request.header(header::CONTENT_TYPE, content_type);
+    }
+    app.oneshot(request.body(body.into()).expect("request"))
+        .await
+        .expect("response")
 }
 
 #[tokio::test]
@@ -367,6 +406,179 @@ async fn standardized_extractors_map_json_path_and_query_rejections() {
 }
 
 #[tokio::test]
+async fn malformed_json_has_the_syntax_class() {
+    let response = json_request(
+        classified_json_options(),
+        Some("application/json"),
+        "not-json",
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = response_json(response).await;
+    assert_eq!(body["error"]["code"], "invalid_json");
+    assert_eq!(
+        body["error"]["details"],
+        json!({"body": "must contain valid JSON"})
+    );
+}
+
+#[tokio::test]
+async fn missing_json_content_type_has_the_content_type_class() {
+    let response = json_request(classified_json_options(), None, r#"{"count": 1}"#).await;
+
+    assert_eq!(response.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    let body = response_json(response).await;
+    assert_eq!(body["error"]["code"], "unsupported_media_type");
+    assert_eq!(body["error"]["details"], json!({}));
+}
+
+#[tokio::test]
+async fn unsupported_json_content_type_has_the_content_type_class() {
+    let response = json_request(
+        classified_json_options(),
+        Some("text/plain"),
+        r#"{"count": 1}"#,
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    assert_eq!(
+        response_json(response).await["error"]["code"],
+        "unsupported_media_type"
+    );
+}
+
+#[tokio::test]
+async fn json_field_type_mismatch_has_the_data_class() {
+    let response = json_request(
+        classified_json_options(),
+        Some("application/json"),
+        r#"{"count": "many"}"#,
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body = response_json(response).await;
+    assert_eq!(body["error"]["code"], "validation_failed");
+    assert_eq!(
+        body["error"]["details"],
+        json!({"body": "must match the request schema"})
+    );
+}
+
+#[tokio::test]
+async fn configured_body_limit_has_the_body_too_large_class() {
+    const BODY_LIMIT: usize = 16;
+    let options = HttpOptions {
+        body_size_limit: BODY_LIMIT,
+        ..classified_json_options()
+    };
+    let body = r#"{"count": 123456789}"#;
+    let app = finalize(
+        Router::new().route("/json", post(json_input_handler)),
+        options,
+    );
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/json")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::CONTENT_LENGTH, body.len())
+                .body(Body::from(body))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    let body = response_json(response).await;
+    assert_eq!(body["error"]["code"], "payload_too_large");
+    assert_eq!(body["error"]["details"], json!({}));
+}
+
+#[tokio::test]
+async fn route_body_limit_has_the_body_too_large_class() {
+    const BODY_LIMIT: usize = 16;
+    let body = r#"{"count": 123456789}"#;
+    let app = finalize(
+        Router::new().route(
+            "/json",
+            post(json_input_handler).layer(DefaultBodyLimit::max(BODY_LIMIT)),
+        ),
+        classified_json_options(),
+    );
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/json")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(
+        response_json(response).await["error"]["code"],
+        "payload_too_large"
+    );
+}
+
+#[tokio::test]
+async fn classified_json_rejection_propagates_the_request_id() {
+    let app = finalize(
+        Router::new().route("/json", post(json_input_handler)),
+        classified_json_options(),
+    );
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/json")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(X_REQUEST_ID, "json-class-request")
+                .body(Body::from("not-json"))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.headers()[X_REQUEST_ID], "json-class-request");
+    assert_eq!(
+        response_json(response).await["error"]["request_id"],
+        "json-class-request"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn json_rejections_do_not_log_or_return_body_and_parser_details() {
+    const PRIVATE_BODY: &str = r#"{"count": private-body-marker}"#;
+    init_test_tracing();
+
+    let response = json_request(
+        classified_json_options(),
+        Some("application/json"),
+        PRIVATE_BODY,
+    )
+    .await;
+    let response_body = response_json(response).await.to_string();
+    let records = format!(
+        "{:?}{:?}",
+        CAPTURED_SPANS.lock().expect("span capture lock"),
+        CAPTURED_EVENTS.lock().expect("event capture lock")
+    );
+
+    for private_text in ["private-body-marker", "line 1 column"] {
+        assert!(!response_body.contains(private_text), "{response_body}");
+        assert!(!records.contains(private_text), "{records}");
+    }
+}
+
+#[tokio::test]
 async fn query_collection_fields_accept_repeated_parameters() {
     #[derive(serde::Deserialize)]
     struct Filters {
@@ -437,7 +649,7 @@ async fn validation_field_helpers_build_standard_details() {
 }
 
 #[tokio::test]
-async fn json_rejection_code_can_be_configured_without_changing_other_extractors() {
+async fn legacy_json_rejection_code_remains_compatible() {
     #[derive(serde::Deserialize)]
     struct Input {
         count: usize,
@@ -501,6 +713,36 @@ fn json_rejection_code_must_be_snake_case() {
             .with_json_rejection_code("Invalid JSON")
             .expect_err("invalid code"),
         HttpOptionsError::InvalidJsonRejectionCode("Invalid JSON".to_owned())
+    );
+}
+
+#[test]
+fn class_specific_json_rejection_codes_must_be_snake_case() {
+    assert_eq!(
+        JsonRejectionCodes::new(
+            "payload_too_large",
+            "unsupported_media_type",
+            "Invalid JSON",
+            "validation_failed",
+        )
+        .expect_err("invalid syntax code"),
+        HttpOptionsError::InvalidJsonRejectionCode("Invalid JSON".to_owned())
+    );
+}
+
+#[test]
+fn default_json_rejection_codes_are_stable() {
+    let codes = JsonRejectionCodes::default();
+
+    assert_eq!(codes.body_too_large(), "payload_too_large");
+    assert_eq!(codes.content_type(), "unsupported_media_type");
+    assert_eq!(codes.syntax(), "invalid_json");
+    assert_eq!(codes.data_shape(), "validation_failed");
+    assert_eq!(
+        HttpOptions::default()
+            .with_json_rejection_codes(codes.clone())
+            .json_rejection_codes(),
+        Some(&codes)
     );
 }
 
@@ -753,6 +995,8 @@ type CapturedSpans = Arc<Mutex<Vec<BTreeMap<String, String>>>>;
 struct SpanCapture(CapturedSpans);
 
 static CAPTURED_SPANS: LazyLock<CapturedSpans> = LazyLock::new(|| Arc::new(Mutex::new(Vec::new())));
+static CAPTURED_EVENTS: LazyLock<CapturedSpans> =
+    LazyLock::new(|| Arc::new(Mutex::new(Vec::new())));
 static TEST_TRACING: Once = Once::new();
 
 fn init_test_tracing() {
@@ -781,6 +1025,19 @@ where
             BTreeMap::from([("span".to_owned(), attributes.metadata().name().to_owned())]);
         attributes.record(&mut FieldCapture(&mut fields));
         self.0.lock().expect("span capture lock").push(fields);
+    }
+
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _context: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        let mut fields = BTreeMap::from([("event".to_owned(), event.metadata().name().to_owned())]);
+        event.record(&mut FieldCapture(&mut fields));
+        CAPTURED_EVENTS
+            .lock()
+            .expect("event capture lock")
+            .push(fields);
     }
 }
 

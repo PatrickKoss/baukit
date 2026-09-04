@@ -9,6 +9,79 @@ const DEFAULT_BODY_SIZE_LIMIT: usize = 2 * 1024 * 1024;
 const DEFAULT_CONCURRENCY_LIMIT: usize = 1_024;
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Stable error codes for each JSON extractor rejection class.
+///
+/// Supplying this through [`HttpOptions::with_json_rejection_codes`] enables
+/// class-specific statuses and codes. Products still choose route body limits
+/// and the text shown to users.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct JsonRejectionCodes {
+    body_too_large: String,
+    content_type: String,
+    syntax: String,
+    data_shape: String,
+}
+
+impl JsonRejectionCodes {
+    /// Creates a class-specific code set.
+    ///
+    /// Each code must be a non-empty snake_case identifier.
+    pub fn new(
+        body_too_large: impl Into<String>,
+        content_type: impl Into<String>,
+        syntax: impl Into<String>,
+        data_shape: impl Into<String>,
+    ) -> Result<Self, HttpOptionsError> {
+        Ok(Self {
+            body_too_large: valid_json_rejection_code(body_too_large.into())?,
+            content_type: valid_json_rejection_code(content_type.into())?,
+            syntax: valid_json_rejection_code(syntax.into())?,
+            data_shape: valid_json_rejection_code(data_shape.into())?,
+        })
+    }
+
+    /// Returns the code for a body rejected because it is too large.
+    #[must_use]
+    pub fn body_too_large(&self) -> &str {
+        &self.body_too_large
+    }
+
+    /// Returns the code for a missing or invalid JSON content type.
+    #[must_use]
+    pub fn content_type(&self) -> &str {
+        &self.content_type
+    }
+
+    /// Returns the code for malformed JSON syntax.
+    #[must_use]
+    pub fn syntax(&self) -> &str {
+        &self.syntax
+    }
+
+    /// Returns the code for JSON that does not match the target data shape.
+    #[must_use]
+    pub fn data_shape(&self) -> &str {
+        &self.data_shape
+    }
+}
+
+impl Default for JsonRejectionCodes {
+    fn default() -> Self {
+        Self {
+            body_too_large: "payload_too_large".to_owned(),
+            content_type: "unsupported_media_type".to_owned(),
+            syntax: "invalid_json".to_owned(),
+            data_shape: "validation_failed".to_owned(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum JsonRejectionMode {
+    Legacy(String),
+    Classified(JsonRejectionCodes),
+}
+
 /// Configuration for the shared HTTP layer stack.
 ///
 /// CORS denies cross-origin access until explicit origins are supplied through
@@ -26,7 +99,7 @@ pub struct HttpOptions {
     pub allow_credentials: bool,
     pub(crate) allowed_origins: Vec<HeaderValue>,
     pub(crate) additional_allowed_headers: Vec<HeaderName>,
-    pub(crate) json_rejection_code: String,
+    pub(crate) json_rejection_mode: JsonRejectionMode,
 }
 
 impl HttpOptions {
@@ -86,18 +159,41 @@ impl HttpOptions {
         mut self,
         code: impl Into<String>,
     ) -> Result<Self, HttpOptionsError> {
-        let code = code.into();
-        if !is_valid_error_code(&code) {
-            return Err(HttpOptionsError::InvalidJsonRejectionCode(code));
-        }
-        self.json_rejection_code = code;
+        self.json_rejection_mode =
+            JsonRejectionMode::Legacy(valid_json_rejection_code(code.into())?);
         Ok(self)
     }
 
-    /// Returns the error code used for JSON extractor rejections.
+    /// Enables class-specific JSON rejection statuses and codes.
+    ///
+    /// This preserves Axum's protocol statuses, including `413 Payload Too
+    /// Large`, `415 Unsupported Media Type`, and `422 Unprocessable Entity`.
+    #[must_use]
+    pub fn with_json_rejection_codes(mut self, codes: JsonRejectionCodes) -> Self {
+        self.json_rejection_mode = JsonRejectionMode::Classified(codes);
+        self
+    }
+
+    /// Returns the single JSON rejection code in compatibility mode.
+    ///
+    /// In class-specific mode this returns the data-shape code to preserve the
+    /// existing return type. Use [`HttpOptions::json_rejection_codes`] to read
+    /// all four codes.
     #[must_use]
     pub fn json_rejection_code(&self) -> &str {
-        &self.json_rejection_code
+        match &self.json_rejection_mode {
+            JsonRejectionMode::Legacy(code) => code,
+            JsonRejectionMode::Classified(codes) => codes.data_shape(),
+        }
+    }
+
+    /// Returns the class-specific JSON rejection codes when that mode is active.
+    #[must_use]
+    pub fn json_rejection_codes(&self) -> Option<&JsonRejectionCodes> {
+        match &self.json_rejection_mode {
+            JsonRejectionMode::Legacy(_) => None,
+            JsonRejectionMode::Classified(codes) => Some(codes),
+        }
     }
 
     /// Builds options from Baukit's standard public-listener configuration.
@@ -112,7 +208,7 @@ impl HttpOptions {
             allow_credentials: false,
             allowed_origins: parse_origins(&config.cors_allowed_origins)?,
             additional_allowed_headers: Vec::new(),
-            json_rejection_code: "validation_failed".to_owned(),
+            json_rejection_mode: JsonRejectionMode::Legacy("validation_failed".to_owned()),
         }
         .validate()
     }
@@ -140,7 +236,7 @@ impl Default for HttpOptions {
             allow_credentials: false,
             allowed_origins: Vec::new(),
             additional_allowed_headers: Vec::new(),
-            json_rejection_code: "validation_failed".to_owned(),
+            json_rejection_mode: JsonRejectionMode::Legacy("validation_failed".to_owned()),
         }
     }
 }
@@ -203,4 +299,12 @@ where
                 .map_err(|_| HttpOptionsError::InvalidOrigin(origin.to_owned()))
         })
         .collect()
+}
+
+fn valid_json_rejection_code(code: String) -> Result<String, HttpOptionsError> {
+    if is_valid_error_code(&code) {
+        Ok(code)
+    } else {
+        Err(HttpOptionsError::InvalidJsonRejectionCode(code))
+    }
 }

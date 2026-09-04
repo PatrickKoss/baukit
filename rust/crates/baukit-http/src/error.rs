@@ -8,7 +8,40 @@ use axum::{
 };
 use serde_json::Value;
 
-use crate::{ErrorBody, ErrorEnvelope, middleware::current_request_id};
+use crate::{
+    ErrorBody, ErrorEnvelope,
+    middleware::current_request_id,
+    options::{JsonRejectionCodes, JsonRejectionMode},
+};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum JsonRejectionClass {
+    BodyTooLarge,
+    ContentType,
+    Syntax,
+    DataShape,
+}
+
+impl JsonRejectionClass {
+    fn from_rejection(rejection: &JsonRejection) -> Self {
+        match rejection {
+            JsonRejection::JsonDataError(_) => Self::DataShape,
+            JsonRejection::JsonSyntaxError(_) => Self::Syntax,
+            JsonRejection::MissingJsonContentType(_) => Self::ContentType,
+            JsonRejection::BytesRejection(_) => {
+                if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE {
+                    Self::BodyTooLarge
+                } else {
+                    Self::Syntax
+                }
+            }
+            _ if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE => Self::BodyTooLarge,
+            _ if rejection.status() == StatusCode::UNSUPPORTED_MEDIA_TYPE => Self::ContentType,
+            _ if rejection.status() == StatusCode::UNPROCESSABLE_ENTITY => Self::DataShape,
+            _ => Self::Syntax,
+        }
+    }
+}
 
 /// A safe public API error rendered in Baukit's standard JSON envelope.
 ///
@@ -190,20 +223,67 @@ impl ApiError {
     }
 
     pub(crate) fn payload_too_large() -> Self {
+        Self::body_too_large("payload_too_large")
+    }
+
+    pub(crate) fn configured_payload_too_large(mode: &JsonRejectionMode) -> Self {
+        match mode {
+            JsonRejectionMode::Legacy(_) => Self::payload_too_large(),
+            JsonRejectionMode::Classified(codes) => Self::body_too_large(codes.body_too_large()),
+        }
+    }
+
+    pub(crate) fn json_rejection(rejection: &JsonRejection, mode: &JsonRejectionMode) -> Self {
+        match mode {
+            JsonRejectionMode::Legacy(code) => Self::legacy_json_rejection(code),
+            JsonRejectionMode::Classified(codes) => {
+                Self::classified_json_rejection(rejection, codes)
+            }
+        }
+    }
+
+    fn body_too_large(code: impl Into<String>) -> Self {
         Self::new(
             StatusCode::PAYLOAD_TOO_LARGE,
-            "payload_too_large",
+            code,
             "The request body is too large",
         )
     }
 
-    pub(crate) fn json_rejection(code: impl Into<String>) -> Self {
+    fn legacy_json_rejection(code: impl Into<String>) -> Self {
         Self::new(StatusCode::BAD_REQUEST, code, "The request is invalid").with_details(
             BTreeMap::from([(
                 "body".to_owned(),
                 Value::String("must be valid JSON matching the request schema".to_owned()),
             )]),
         )
+    }
+
+    fn classified_json_rejection(rejection: &JsonRejection, codes: &JsonRejectionCodes) -> Self {
+        match JsonRejectionClass::from_rejection(rejection) {
+            JsonRejectionClass::BodyTooLarge => Self::body_too_large(codes.body_too_large()),
+            JsonRejectionClass::ContentType => Self::new(
+                rejection.status(),
+                codes.content_type(),
+                "The request content type is unsupported",
+            ),
+            JsonRejectionClass::Syntax => {
+                Self::new(rejection.status(), codes.syntax(), "The request is invalid")
+                    .with_details(BTreeMap::from([(
+                        "body".to_owned(),
+                        Value::String("must contain valid JSON".to_owned()),
+                    )]))
+            }
+            JsonRejectionClass::DataShape => Self::new(
+                rejection.status(),
+                codes.data_shape(),
+                "The request is invalid",
+            )
+            .with_details(BTreeMap::from([(
+                "body".to_owned(),
+                Value::String("must match the request schema".to_owned()),
+            )])),
+        }
     }
 
     pub(crate) fn query_rejection() -> Self {
@@ -233,7 +313,7 @@ impl ApiError {
 
 impl From<JsonRejection> for ApiError {
     fn from(_rejection: JsonRejection) -> Self {
-        Self::json_rejection("validation_failed")
+        Self::legacy_json_rejection("validation_failed")
     }
 }
 

@@ -104,7 +104,7 @@ pub use middleware::{
     RequestId, X_REQUEST_ID, extract_trace_context, inject_current_trace_context,
     inject_trace_context, layers,
 };
-pub use options::{HttpOptions, HttpOptionsError};
+pub use options::{HttpOptions, HttpOptionsError, JsonRejectionCodes};
 pub use pagination::{
     Cursor, DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT, Page, PageKey, PageParams, PaginationError,
 };

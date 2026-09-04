@@ -4,6 +4,19 @@ All notable changes to `baukit-http` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- `JsonRejectionCodes` and `HttpOptions::with_json_rejection_codes` preserve JSON rejection classes.
+  Oversized bodies return 413, missing or invalid content types return 415, malformed JSON returns
+  400, and data-shape errors return 422. Responses contain fixed safe text without submitted body or
+  parser details.
+
+### Compatibility
+
+- `HttpOptions::default()` and `with_json_rejection_code` retain the previous single-code 400
+  response for `ApiJson<T>` rejections during this release cycle. See the README migration section
+  before opting into class-specific responses.
+
 ## [0.2.1] - 2026-09-03
 
 ## [0.2.0] - 2026-09-03

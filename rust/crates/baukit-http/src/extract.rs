@@ -7,15 +7,13 @@ use axum::{
 };
 use serde::de::DeserializeOwned;
 
-use crate::ApiError;
-
-#[derive(Clone, Debug)]
-pub(crate) struct JsonRejectionCode(pub(crate) String);
+use crate::{ApiError, options::JsonRejectionMode};
 
 /// A JSON body extractor whose rejections use Baukit's standard error envelope.
 ///
-/// This delegates parsing to Axum's [`Json`] extractor and maps every rejection
-/// to a safe `validation_failed` [`ApiError`] containing the current request ID.
+/// This delegates parsing to Axum's [`Json`] extractor. The configured JSON
+/// rejection mode maps failures to safe [`ApiError`] values containing the
+/// current request ID.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ApiJson<T>(
     /// The successfully deserialized request body.
@@ -30,15 +28,15 @@ where
     type Rejection = ApiError;
 
     async fn from_request(request: Request, state: &S) -> Result<Self, Self::Rejection> {
-        let rejection_code = request
+        let rejection_mode = request
             .extensions()
-            .get::<JsonRejectionCode>()
-            .map_or("validation_failed", |code| code.0.as_str())
-            .to_owned();
+            .get::<JsonRejectionMode>()
+            .cloned()
+            .unwrap_or_else(|| JsonRejectionMode::Legacy("validation_failed".to_owned()));
         Json::<T>::from_request(request, state)
             .await
             .map(|Json(value)| Self(value))
-            .map_err(|_| ApiError::json_rejection(rejection_code))
+            .map_err(|rejection| ApiError::json_rejection(&rejection, &rejection_mode))
     }
 }
 
