@@ -1,6 +1,6 @@
 [package]
 name = "baukit-sync"
-description = "Per-owner revision allocation and the syncable-table column convention for Baukit services."
+description = "Revision allocation and hybrid logical clocks for Baukit sync implementations."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -16,10 +16,13 @@ readme = "README.md"
 workspace = true
 
 [dependencies]
+serde.workspace = true
 sqlx.workspace = true
+thiserror.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
 baukit-test = { path = "../baukit-test", features = ["sqlx-postgres"] }
 chrono.workspace = true
+serde_json.workspace = true
 tokio.workspace = true

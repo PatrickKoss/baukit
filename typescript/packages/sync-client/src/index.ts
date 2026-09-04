@@ -11,6 +11,22 @@ export {
   toSnakeCaseFailure,
 } from './error.js';
 export type { SnakeCaseSyncFailure, SyncFailure } from './error.js';
+export {
+  compareHybridLogicalTimestamps,
+  decodeHybridLogicalTimestamp,
+  encodeHybridLogicalTimestamp,
+  HybridLogicalClock,
+  HybridLogicalClockError,
+  HLC_COUNTERS_PER_MILLISECOND,
+  HLC_STORAGE_KEY,
+  MAX_HLC_TIMESTAMP,
+} from './hlc.js';
+export type {
+  HlcPhysicalClock,
+  HlcStorage,
+  HybridLogicalClockErrorCode,
+  HybridLogicalClockState,
+} from './hlc.js';
 export { dependencyRankByOrder, rankPushBatch, validatePushOutcomeCoverage } from './push-batch.js';
 export type {
   PushCandidate,

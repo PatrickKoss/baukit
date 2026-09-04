@@ -1,0 +1,93 @@
+{
+  "encode": [
+    { "wallTimeMs": 0, "counter": 0, "timestamp": 1 },
+    { "wallTimeMs": 0, "counter": 999, "timestamp": 1000 },
+    { "wallTimeMs": 1, "counter": 0, "timestamp": 1001 },
+    {
+      "wallTimeMs": 1700000000123,
+      "counter": 42,
+      "timestamp": 1700000000123043
+    },
+    {
+      "wallTimeMs": 9007199254740,
+      "counter": 990,
+      "timestamp": 9007199254740991
+    }
+  ],
+  "compare": [
+    { "left": 1, "right": 2, "ordering": -1 },
+    { "left": 1000006, "right": 1000006, "ordering": 0 },
+    { "left": 1700000000123043, "right": 1001001, "ordering": 1 },
+    { "left": 9007199254740990, "right": 9007199254740991, "ordering": -1 }
+  ],
+  "merge": [
+    {
+      "deviceId": "device-a",
+      "initial": { "wallTimeMs": 1000, "counter": 2, "deviceId": "device-a" },
+      "physicalTimeMs": 900,
+      "remoteTimestamp": 1000006,
+      "expectedTimestamp": 1000007,
+      "expectedState": {
+        "wallTimeMs": 1000,
+        "counter": 6,
+        "deviceId": "device-a"
+      }
+    },
+    {
+      "deviceId": "device-b",
+      "initial": { "wallTimeMs": 1000, "counter": 7, "deviceId": "device-b" },
+      "physicalTimeMs": 900,
+      "remoteTimestamp": 999901,
+      "expectedTimestamp": 1000009,
+      "expectedState": {
+        "wallTimeMs": 1000,
+        "counter": 8,
+        "deviceId": "device-b"
+      }
+    },
+    {
+      "deviceId": "server",
+      "initial": { "wallTimeMs": 1000, "counter": 7, "deviceId": "server" },
+      "physicalTimeMs": 1300,
+      "remoteTimestamp": 1200004,
+      "expectedTimestamp": 1300001,
+      "expectedState": {
+        "wallTimeMs": 1300,
+        "counter": 0,
+        "deviceId": "server"
+      }
+    },
+    {
+      "deviceId": "device-rollover",
+      "initial": {
+        "wallTimeMs": 1000,
+        "counter": 999,
+        "deviceId": "device-rollover"
+      },
+      "physicalTimeMs": 1000,
+      "remoteTimestamp": 999001,
+      "expectedTimestamp": 1001001,
+      "expectedState": {
+        "wallTimeMs": 1001,
+        "counter": 0,
+        "deviceId": "device-rollover"
+      }
+    },
+    {
+      "deviceId": "device-remote-rollover",
+      "initial": {
+        "wallTimeMs": 900,
+        "counter": 1,
+        "deviceId": "device-remote-rollover"
+      },
+      "physicalTimeMs": 800,
+      "remoteTimestamp": 1001000,
+      "expectedTimestamp": 1001001,
+      "expectedState": {
+        "wallTimeMs": 1001,
+        "counter": 0,
+        "deviceId": "device-remote-rollover"
+      }
+    }
+  ]
+}

@@ -1,15 +1,54 @@
 # baukit-sync
 
-`baukit-sync` allocates per-owner revision numbers for incremental sync, and documents the column
-convention a syncable table follows. That is the whole crate.
+`baukit-sync` allocates per-owner revision numbers for incremental sync, documents the column
+convention a syncable table follows, and supplies a hybrid logical clock shared with
+`@baukit/sync-client`.
 
 It is deliberately not a sync engine. Wire payloads, conflict resolution, batching, and the pull
 endpoint stay product-owned, as
 [the offline readiness contract](../../../docs/platform/offline-readiness-contract.md) says they
-should. Baukit owns one mechanism here: handing out the next revision without losing or
-duplicating one.
+should. The clock orders timestamps. It does not choose which record wins.
 
-## Why a counter and not a timestamp
+## Hybrid logical clock
+
+`hlc::HybridLogicalClock` produces timestamps that remain ordered when its injected physical clock
+stalls or moves backward. Callers provide the device ID and physical clock. Callers also load and
+save `HybridLogicalClockState`, so the module has no database, device-identity, or random-number
+dependency.
+
+```rust
+use baukit_sync::hlc::{HybridLogicalClock, HybridLogicalClockState};
+
+let restored: Option<HybridLogicalClockState> = None;
+let mut clock = HybridLogicalClock::open("device-a", || 1_700_000_000_123, restored)?;
+let local_timestamp = clock.now()?;
+let after_remote = clock.observe(local_timestamp)?;
+let state_to_persist = clock.snapshot();
+# assert!(after_remote > local_timestamp);
+# let _ = state_to_persist;
+# Ok::<(), baukit_sync::hlc::HlcError>(())
+```
+
+The encoding is `wall_time_ms * 1000 + counter + 1`. It matches Redemut's existing Rust and
+TypeScript clocks. The added one reserves zero as invalid. `compare` returns `None` if either input
+is invalid. A counter that reaches 1,000 moves the wall component forward by one millisecond and
+resets the counter to zero.
+
+Encoded values cannot exceed JavaScript's maximum safe integer, `9_007_199_254_740_991`. The last
+valid value decodes to wall time `9_007_199_254_740` and counter `990`. A later `now` or `observe`
+call returns `HlcError::ExceedsSafeInteger` without changing state.
+
+`open` accepts only state whose device ID matches and whose components encode successfully. It
+resets missing, corrupt, or foreign state to `{ wall_time_ms: 0, counter: 0 }`. Persistence read and
+write failures remain the caller's errors because persistence stays outside this module.
+
+### Clock migration
+
+Redemut can replace `redemut_services::hlc` with `baukit_sync::hlc`. Its stored integer timestamps
+and camel-case serialized state need no data migration. Keep the product's server
+compare-and-swap loop, last-writer-wins merge, and device tie-break in Redemut.
+
+## Why revisions use a counter
 
 A client pulls by asking for everything above the revision it last saw. That only works if the
 ordering is total and gap-free from the client's point of view, which wall-clock timestamps are

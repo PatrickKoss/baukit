@@ -1,17 +1,19 @@
-//! Per-owner revision allocation for incremental sync.
+//! Revision allocation and hybrid logical clocks for incremental sync.
 //!
 //! A syncable row carries a `revision` drawn from a counter that is private to
 //! its owner. A client pulls by asking for everything above the revision it
 //! last saw, so the counter must be monotonic per owner and must move in the
 //! same transaction as the row write it stamps. [`next_revision`] does exactly
-//! that and nothing else.
+//! that. The [`hlc`] module supplies a cross-runtime logical clock for ordering
+//! writes when physical clocks stall or move backward.
 //!
 //! # What this crate is not
 //!
 //! Baukit does not standardize a sync protocol. Wire payloads, conflict
 //! resolution, batching, and the pull endpoint stay product-owned, as
-//! `docs/platform/offline-readiness-contract.md` says. This crate owns one
-//! mechanism: allocating the next revision safely.
+//! `docs/platform/offline-readiness-contract.md` says. This crate owns two
+//! mechanisms: revision allocation and timestamp generation. Merge rules stay
+//! product-owned.
 //!
 //! # Schema
 //!
@@ -47,6 +49,8 @@
 
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
+
+pub mod hlc;
 
 /// Reference PostgreSQL schema and column convention for product migrations.
 ///

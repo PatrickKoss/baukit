@@ -1,9 +1,9 @@
 # `@baukit/sync-client`
 
-`@baukit/sync-client` holds the four client-side pieces every offline-capable product rebuilds
-around a sync loop: when to run, how to send a request, how to report status, and what order to
-push a batch in. It does not define a sync protocol. Endpoint paths, payloads, conflict rules, and
-the sync engine itself stay product-owned, as
+`@baukit/sync-client` holds client-side mechanics that offline-capable products rebuild around a
+sync loop: scheduling, transport, status, push ordering, and hybrid logical timestamps. It does
+not define a sync protocol. Endpoint paths, payloads, conflict rules, and the sync engine itself
+stay product-owned, as
 [the offline readiness contract](../../../docs/platform/offline-readiness-contract.md) says they
 must.
 
@@ -12,6 +12,48 @@ and `fetch` all arrive by injection, so the same code runs under Node, a browser
 The optional `@baukit/sync-client/expo` entry imports `react-native` and `expo-network`; neither is
 loaded by the root entry. The `@baukit/sync-client/browser` entry reads browser globals only when
 `createBrowserSyncEnvironment` is called, so importing it under Node is safe.
+
+## Hybrid logical clock
+
+Import the clock from the root package or `@baukit/sync-client/hlc`. It uses the same integer
+encoding as `baukit_sync::hlc`, so Rust and TypeScript can compare stored timestamps directly.
+
+```ts
+import { HybridLogicalClock } from '@baukit/sync-client/hlc';
+
+const clock = await HybridLogicalClock.open('device-a', metadataStore, Date.now);
+const localTimestamp = await clock.now();
+const afterRemote = await clock.observe(remoteTimestamp);
+const state = clock.snapshot();
+```
+
+The encoding is `wallTimeMs * 1000 + counter + 1`. The added one reserves zero as invalid. Use
+`encodeHybridLogicalTimestamp`, `decodeHybridLogicalTimestamp`, and
+`compareHybridLogicalTimestamps` when no stateful clock is needed. Comparison returns `null` if
+either input is invalid.
+
+JavaScript can represent integers exactly only through `Number.MAX_SAFE_INTEGER`,
+`9_007_199_254_740_991`. The last valid HLC value decodes to wall time `9_007_199_254_740` and
+counter `990`. Calls beyond that point reject with `HybridLogicalClockError` code
+`exceeds_safe_integer` and leave committed state unchanged. Within the normal range, counter 1,000
+moves the wall component forward by one millisecond and resets the counter to zero.
+
+The device ID and physical clock are caller inputs. The module does not generate device IDs or
+choose a storage system. Pass no store for an in-memory clock, or implement `HlcStorage` for product
+persistence. A stored state is restored only when its device ID matches and its components form a
+valid encoded timestamp. Missing, corrupt, and foreign state reset to zero. Storage read and write
+failures reject unchanged.
+
+When storage is present, `now` and `observe` run in call order. A later call waits for the prior
+write to finish. Failed writes do not update the snapshot and do not stop the queue. `snapshot`
+therefore reports the last state committed to storage.
+
+### Clock migration
+
+Redemut can replace its local HLC import with `@baukit/sync-client/hlc`. The existing
+`open(deviceId, storage, physicalClock)` call and `hlc-state` record remain compatible. No stored
+timestamp or state rewrite is needed. Redemut keeps its IndexedDB and SQLite adapters, device ID
+creation, merge rules, server compare-and-swap, and cursor protocol.
 
 ## Scheduler
 

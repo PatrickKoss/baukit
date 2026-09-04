@@ -26,6 +26,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./hlc": {
+      "types": "./dist/hlc.d.ts",
+      "import": "./dist/hlc.js"
+    },
     "./expo": {
       "types": "./dist/expo.d.ts",
       "import": "./dist/expo.js"
