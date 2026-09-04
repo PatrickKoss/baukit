@@ -62,6 +62,7 @@ verified).
 | Accessibility behavior | `@baukit/a11y-core` | 0.2.1 | Overlay focus, inert, announcements, reduced motion. React peer range is `^19.2.0`; React Native is optional, and a plain web app imports `@baukit/a11y-core/web` instead. |
 | Localization behavior | `@baukit/localization-core` | 0.2.1 | Locale resolution, catalog key comparison, stable-code localization, and timezone-safe civil-date arithmetic. |
 | Preference behavior | `@baukit/preferences-core` | 0.2.1 | Identity guard and repository store, with `null` repository records treated as missing. |
+| Node device authentication | `@baukit/auth-node` | 0.2.1 | Node 24 OIDC device authorization with S256 PKCE, bounded responses and timeouts, refresh rotation, and a locked local profile cache. Plain HTTP requires an explicit loopback-only development policy. |
 | Provider registry | `@baukit/integrations-client` | 0.2.1 | Typed product connectors, stable registration order, and immutable connection-state overlays. |
 | Client sync primitives | `@baukit/sync-client` | 0.2.1 | Scheduler, request-function and HTTP transports, status store, and push-batch ranking. The optional `@baukit/sync-client/expo` entry uses Expo Network 57.0.1 and React Native 0.86.2; the root entry has no runtime dependencies and no React. |
 | PWA cache strategy | `@baukit/pwa-web` | 0.2.1 | ESM and CJS builds, request classification, `navigationFallback`, and strategy execution for a product-owned service worker; no dependencies and no service-worker globals. |

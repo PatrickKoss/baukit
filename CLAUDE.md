@@ -16,7 +16,7 @@ free of product-specific logic.
 ```text
 rust/crates/        baukit-runtime, -config, -http, -ops, -telemetry, -openapi, -test
 typescript/packages/ a11y-core, analytics-core, analytics-posthog-{web,native},
-                     api-runtime, auth-{native,web},
+                     api-runtime, auth-{native,node,web},
                      data-contracts{,-dexie,-expo-sqlite}, localization-core,
                      preferences-core, ui-tokens
 cli/                `baukit` CLI (scaffolds products from templates/)

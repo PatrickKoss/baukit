@@ -58,6 +58,7 @@ fi
     '@baukit/analytics-posthog-native' \
     '@baukit/api-runtime' \
     '@baukit/auth-native' \
+    '@baukit/auth-node' \
     '@baukit/auth-web' \
     '@baukit/data-contracts' \
     '@baukit/data-contracts-dexie' \

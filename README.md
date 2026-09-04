@@ -7,7 +7,7 @@
 
 The boring 80% of a Rust backend and its TypeScript clients, already built and already tested.
 
-*Baukit* is German for a construction kit, and that is the whole idea. Sixteen Rust crates and seventeen npm packages, each small enough to adopt on its own, plus a CLI that wires them into a working product when you want the whole thing.
+*Baukit* is German for a construction kit, and that is the whole idea. Sixteen Rust crates and eighteen npm packages, each small enough to adopt on its own, plus a CLI that wires them into a working product when you want the whole thing.
 
 > [!WARNING]
 > **Under heavy development. Expect breaking changes.**
@@ -127,6 +127,7 @@ Nothing here depends on the CLI, and no crate drags in the rest. Take the error 
 |---|---|
 | [`@baukit/api-runtime`](typescript/packages/api-runtime) | Auth and request-ID headers, trace propagation, normalized errors, safe retries |
 | [`@baukit/auth-web`](typescript/packages/auth-web) · [`-native`](typescript/packages/auth-native) | OIDC authorization code with S256 PKCE, refresh rotation |
+| [`@baukit/auth-node`](typescript/packages/auth-node) | OIDC device authorization with S256 PKCE, bounded polling, refresh rotation, and a locked profile cache |
 | [`@baukit/data-contracts`](typescript/packages/data-contracts) | Storage contracts plus conformance suites you run against your adapter |
 | [`@baukit/data-contracts-dexie`](typescript/packages/data-contracts-dexie) · [`-expo-sqlite`](typescript/packages/data-contracts-expo-sqlite) | IndexedDB and Expo SQLite adapters, verified in a real browser and on a real Android device in CI |
 | [`@baukit/integrations-client`](typescript/packages/integrations-client) | Connection health, OAuth session coordination, provider registry |
@@ -159,7 +160,7 @@ Three workspaces, no root workspace, so always pass a manifest path.
 
 ```text
 rust/        16 library crates
-typescript/  16 packages, pnpm + Turborepo
+typescript/  18 packages, pnpm + Turborepo
 cli/         the baukit binary
 templates/   what the CLI renders
 examples/    minimal-api, expo-sqlite-conformance

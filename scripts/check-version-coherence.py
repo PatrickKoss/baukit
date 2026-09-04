@@ -19,6 +19,7 @@ EXPECTED_TYPESCRIPT_PACKAGES = {
     "@baukit/analytics-posthog-web",
     "@baukit/api-runtime",
     "@baukit/auth-native",
+    "@baukit/auth-node",
     "@baukit/auth-web",
     "@baukit/data-contracts",
     "@baukit/data-contracts-dexie",
