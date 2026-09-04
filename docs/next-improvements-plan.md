@@ -44,7 +44,7 @@ Batches group items that can run in parallel with disjoint file ownership. Each 
 
 - [x] 20. `@baukit/auth-node` device-flow package (batch 4)
 - [x] 7b. Templates adopt the production measurements (backend domain `limits.rs`, web and mobile `limits.ts`) (batch 4, follow-up from item 7)
-- [~] 21. Opt-in MCP capability and generator (batch 5)
+- [x] 21. Opt-in MCP capability and generator (batch 5)
 
 ### Wave 5
 
@@ -66,8 +66,8 @@ Each study ends in one written decision under `docs/studies/`.
 - [~] 32. Notifications and timeline playback (batch 7)
 - [~] 33. Calendar export (batch 7)
 - [~] 34. Release, GitOps, and migration compatibility (batch 7)
-- [ ] 35. Browser identity composition (batch 7)
-- [ ] 36. Other deferred contracts review (batch 7)
+- [~] 35. Browser identity composition (batch 7)
+- [~] 36. Other deferred contracts review (batch 7)
 
 ### Release
 
@@ -104,6 +104,7 @@ Filled in as items complete. Each line names the product file to delete once the
 - Item 18, Leitbild: delete `keycloak/themes/leitbild/login/login.ftl` and `keycloak/themes/leitbild/login/resources/js/required-validation.js`. Tiefgang: delete `keycloak/themes/tiefgang/login/login.ftl`, `resources/js/required-validation.js`, and `required-validation.test.mjs`; both keep CSS, messages, preferences script, and product theme properties as children of `baukit-accessible`.
 - Item 29 (decision: implement, not yet built): after the helpers ship, Leitbild deletes `mobile/src/autosave.ts` and its test and shrinks the web autosave to a React wrapper; Redemut removes `FormDraftController` from `web/src/form-draft.tsx`. Item 30 (deferred): Eigenruhe first unifies its manifest schema and adds runtime hash verification, paused and corrupt states, cleanup planning, and identity fencing in `mobile/src/downloads/`.
 - Item 26, Tiefgang: remove the inbox replay assertions from `backend/tests/postgres_integration.rs`, the multi-target delivery loop in `backend/crates/tiefgang-worker/src/lib.rs`, and the duplicate signature helper in `backend/tests/worker_integration.rs`; run `check_postgres_inbox_conformance` and the scripted webhook receiver instead.
+- Item 21, Tiefgang, Leitbild, Eigenruhe: delete `mcp/src/index.ts` and `mcp/src/server.ts` after adopting the generated bootstrap; keep tool and route code. With `node-oidc` each also deletes `mcp/src/auth.ts` (same file as item 20).
 
 ### Log
 
