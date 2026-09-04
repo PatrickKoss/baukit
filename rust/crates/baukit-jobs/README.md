@@ -4,6 +4,10 @@
 worker runner. Products own job identifiers, JSON payload types, handlers, and
 migration order.
 
+Optional owner-scoped enqueue and erasure are not implemented. The accepted
+[durable job ownership design](../../../docs/platform/durable-job-ownership.md)
+defines the compatibility and migration requirements for that later change.
+
 ## Migration
 
 Copy `migrations/0001_baukit_jobs.sql` and

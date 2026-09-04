@@ -28,3 +28,8 @@ Keycloak, and fake-provider host port, then records the offset in `baukit.toml`.
 An offset of zero keeps the default ports and is omitted from the manifest.
 `baukit doctor` checks the generated port references against the recorded
 offset.
+
+`openapi.consumers` lists generated TypeScript declarations. Raw schema copies
+remain product-owned until a second product needs them. The
+[raw OpenAPI mirror design](../docs/platform/openapi-mirrors.md) records the
+proposed manifest and strict-check behavior.
