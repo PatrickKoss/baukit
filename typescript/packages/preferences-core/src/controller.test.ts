@@ -68,6 +68,39 @@ function deferred<T>(): {
   return { promise, resolve: resolvePromise, reject: rejectPromise };
 }
 
+function gatedStore(initialValues: TestPreferences): {
+  readonly store: PreferenceStore<TestPreferences>;
+  readonly writes: TestPreferences[];
+  resolve(index: number): void;
+  reject(index: number, error: Error): void;
+} {
+  let stored = initialValues;
+  const writes: TestPreferences[] = [];
+  const gates: ReturnType<typeof deferred<undefined>>[] = [];
+  return {
+    store: {
+      read: () => Promise.resolve(stored),
+      patch: (patch) => {
+        const next = { ...stored, ...patch };
+        const gate = deferred<undefined>();
+        writes.push(next);
+        gates.push(gate);
+        return gate.promise.then(() => {
+          stored = next;
+          return stored;
+        });
+      },
+    },
+    writes,
+    resolve: (index) => {
+      gates[index]?.resolve(undefined);
+    },
+    reject: (index, error) => {
+      gates[index]?.reject(error);
+    },
+  };
+}
+
 describe('preference controller hydration', () => {
   it('normalizes stored values and supplies defaults for omitted values', async () => {
     const store: PreferenceStore<TestPreferences> = {
@@ -116,6 +149,35 @@ describe('preference controller updates', () => {
     expect(visible.at(-1)).toEqual(defaults);
   });
 
+  it('keeps optimistic updates as the default compatibility behavior', async () => {
+    const firstWrite = deferred<TestPreferences>();
+    const secondWrite = deferred<TestPreferences>();
+    const patch = vi
+      .fn<(value: Partial<TestPreferences>) => Promise<TestPreferences>>()
+      .mockReturnValueOnce(firstWrite.promise)
+      .mockReturnValueOnce(secondWrite.promise);
+    const controller = createPreferenceController({
+      definitions: definitions(),
+      store: { read: () => Promise.resolve(defaults), patch },
+      onVisibleChange: () => undefined,
+    });
+    await controller.hydrate();
+
+    const first = controller.update({ theme: 'dark' });
+    const second = controller.update({ language: 'de' });
+
+    expect(patch).toHaveBeenCalledTimes(2);
+    expect(controller.getState().values).toEqual({ ...defaults, theme: 'dark', language: 'de' });
+    expect('pendingCount' in controller.getState()).toBe(false);
+
+    secondWrite.resolve({ ...defaults, language: 'de' });
+    await expect(second).resolves.toEqual({ ...defaults, language: 'de' });
+    firstWrite.resolve({ ...defaults, theme: 'dark' });
+    await expect(first).resolves.toEqual({ ...defaults, theme: 'dark' });
+
+    expect(controller.getState().values).toEqual({ ...defaults, theme: 'dark' });
+  });
+
   it('does not patch storage when an old payload omits a preference', async () => {
     const stored = { ...defaults, language: 'de' as const };
     const patch = vi.fn<(value: Partial<TestPreferences>) => Promise<TestPreferences>>();
@@ -148,6 +210,234 @@ describe('preference controller updates', () => {
     await expect(store.read()).resolves.toEqual({ ...stored, customColor: null });
   });
 });
+
+describe('serialized preference controller updates', () => {
+  it('serializes rapid writes against the latest committed values', async () => {
+    const gated = gatedStore(defaults);
+    const controller = createPreferenceController({
+      definitions: definitions(),
+      store: gated.store,
+      onVisibleChange: () => undefined,
+      updateMode: 'serialized',
+    });
+    await controller.hydrate();
+
+    const theme = controller.update({ theme: 'dark' });
+    const language = controller.update({ language: 'de' });
+
+    expect(gated.writes).toEqual([{ ...defaults, theme: 'dark' }]);
+    expect(controller.getState()).toMatchObject({ values: defaults, pendingCount: 2 });
+
+    gated.resolve(0);
+    await expect(theme).resolves.toEqual({ ...defaults, theme: 'dark' });
+    await vi.waitFor(() => {
+      expect(gated.writes).toHaveLength(2);
+    });
+    expect(gated.writes[1]).toEqual({ ...defaults, theme: 'dark', language: 'de' });
+    expect(controller.getState()).toMatchObject({
+      values: { ...defaults, theme: 'dark' },
+      pendingCount: 1,
+    });
+
+    gated.resolve(1);
+    await expect(language).resolves.toEqual({ ...defaults, theme: 'dark', language: 'de' });
+    expect(controller.getState()).toEqual({
+      values: { ...defaults, theme: 'dark', language: 'de' },
+      status: 'ready',
+      pendingCount: 0,
+      error: null,
+    });
+  });
+
+  it('continues after a failed first write without leaking its value', async () => {
+    const gated = gatedStore(defaults);
+    const controller = createPreferenceController({
+      definitions: definitions(),
+      store: gated.store,
+      onVisibleChange: () => undefined,
+      updateMode: 'serialized',
+    });
+    await controller.hydrate();
+
+    const failed = controller.update({ theme: 'dark' });
+    const next = controller.update({ language: 'de' });
+    const failure = new Error('disk full');
+    gated.reject(0, failure);
+
+    await expect(failed).rejects.toBe(failure);
+    await vi.waitFor(() => {
+      expect(gated.writes).toHaveLength(2);
+    });
+    expect(gated.writes[1]).toEqual({ ...defaults, language: 'de' });
+    gated.resolve(1);
+
+    await expect(next).resolves.toEqual({ ...defaults, language: 'de' });
+    expect(controller.getState()).toMatchObject({
+      values: { ...defaults, language: 'de' },
+      pendingCount: 0,
+      error: null,
+    });
+  });
+
+  it('rolls back a preview after a failed serialized write', async () => {
+    const events: string[] = [];
+    const failure = new Error('write failed');
+    const write = deferred<TestPreferences>();
+    const controller = createPreferenceController({
+      definitions: definitions({
+        mode: 'preview-with-rollback',
+        onError: 'report',
+        preview: () => events.push('preview'),
+        rollback: () => events.push('rollback'),
+        afterPersistence: () => events.push('persisted'),
+      }),
+      store: { read: () => Promise.resolve(defaults), patch: () => write.promise },
+      onVisibleChange: () => undefined,
+      updateMode: 'serialized',
+    });
+    await controller.hydrate();
+
+    const update = controller.update({ gameLayerEnabled: true });
+    await vi.waitFor(() => {
+      expect(events).toEqual(['preview']);
+    });
+    expect(controller.getState()).toMatchObject({ values: defaults, pendingCount: 1 });
+    write.reject(failure);
+
+    await expect(update).rejects.toBe(failure);
+    expect(events).toEqual(['preview', 'rollback']);
+    expect(controller.getState()).toMatchObject({
+      values: defaults,
+      pendingCount: 0,
+      error: failure,
+    });
+  });
+
+  it('invalidates in-flight publication and queued writes after an identity switch', async () => {
+    const old = gatedStore({ ...defaults, theme: 'dark' });
+    const nextValues = { ...defaults, language: 'de' as const };
+    const nextPatch = vi.fn<(patch: Partial<TestPreferences>) => Promise<TestPreferences>>();
+    const visible: TestPreferences[] = [];
+    const controller = createPreferenceController({
+      definitions: definitions(),
+      store: old.store,
+      onVisibleChange: (values) => visible.push(values),
+      updateMode: 'serialized',
+    });
+    await controller.hydrate();
+
+    const inFlight = controller.update({ theme: 'light' });
+    const queued = controller.update({ language: 'en' });
+    await controller.switchIdentity({
+      read: () => Promise.resolve(nextValues),
+      patch: nextPatch,
+    });
+
+    old.resolve(0);
+    await expect(inFlight).resolves.toEqual(nextValues);
+    await expect(queued).resolves.toEqual(nextValues);
+
+    expect(old.writes).toHaveLength(1);
+    expect(nextPatch).not.toHaveBeenCalled();
+    expect(visible.at(-1)).toEqual(nextValues);
+    expect(controller.getState()).toEqual({
+      values: nextValues,
+      status: 'ready',
+      pendingCount: 0,
+      error: null,
+    });
+  });
+
+  it('stops publishing pending and committed values during an in-flight write', async () => {
+    const gated = gatedStore(defaults);
+    const visible: TestPreferences[] = [];
+    const controller = createPreferenceController({
+      definitions: definitions(),
+      store: gated.store,
+      onVisibleChange: (values) => visible.push(values),
+      updateMode: 'serialized',
+    });
+    await controller.hydrate();
+
+    const update = controller.update({ theme: 'dark' });
+    const publishedBeforeStop = visible.length;
+    controller.stop();
+    gated.resolve(0);
+
+    await expect(update).resolves.toEqual({ ...defaults, theme: 'dark' });
+    expect(visible).toHaveLength(publishedBeforeStop);
+    expect(controller.getState()).toEqual({
+      values: { ...defaults, theme: 'dark' },
+      status: 'ready',
+      pendingCount: 0,
+      error: null,
+    });
+  });
+
+  it('rejects unknown keys without adding them to the queue', async () => {
+    const patch = vi.fn<(value: Partial<TestPreferences>) => Promise<TestPreferences>>();
+    const controller = createPreferenceController({
+      definitions: definitions(),
+      store: { read: () => Promise.resolve(defaults), patch },
+      onVisibleChange: () => undefined,
+      updateMode: 'serialized',
+    });
+    await controller.hydrate();
+
+    await expect(
+      controller.update({ removedPreference: true } as unknown as Partial<TestPreferences>),
+    ).rejects.toThrow('Unknown preference key: removedPreference');
+    expect(patch).not.toHaveBeenCalled();
+    expect(controller.getState()).toMatchObject({ pendingCount: 0, error: null });
+  });
+
+  it('reports pending-count transitions while committed values stay visible', async () => {
+    const gated = gatedStore(defaults);
+    const transitions: { pendingCount: number; theme: TestPreferences['theme'] }[] = [];
+    const controllerRef: { current?: ReturnType<typeof createSerializedController> } = {};
+    const controller = createSerializedController(gated.store, () => {
+      const state = controllerRef.current?.getState();
+      if (!state) {
+        return;
+      }
+      transitions.push({ pendingCount: state.pendingCount, theme: state.values.theme });
+    });
+    controllerRef.current = controller;
+    await controller.hydrate();
+
+    const first = controller.update({ theme: 'dark' });
+    const second = controller.update({ language: 'de' });
+    expect(controller.getState().pendingCount).toBe(2);
+    expect(controller.getState().values).toEqual(defaults);
+
+    gated.resolve(0);
+    await first;
+    expect(controller.getState()).toMatchObject({
+      values: { ...defaults, theme: 'dark' },
+      pendingCount: 1,
+    });
+    await vi.waitFor(() => {
+      expect(gated.writes).toHaveLength(2);
+    });
+    gated.resolve(1);
+    await second;
+    expect(controller.getState().pendingCount).toBe(0);
+    expect(transitions).toContainEqual({ pendingCount: 2, theme: 'system' });
+    expect(transitions.at(-1)).toEqual({ pendingCount: 0, theme: 'dark' });
+  });
+});
+
+function createSerializedController(
+  store: PreferenceStore<TestPreferences>,
+  onVisibleChange: (values: TestPreferences) => void,
+) {
+  return createPreferenceController({
+    definitions: definitions(),
+    store,
+    onVisibleChange,
+    updateMode: 'serialized',
+  });
+}
 
 describe('preference controller identity changes', () => {
   it('clears the previous identity before reading the next identity', async () => {

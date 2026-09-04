@@ -3,12 +3,31 @@
 `@baukit/preferences-core` defines typed preferences and their update behavior. Products provide
 the definitions, storage adapter, and any effects caused by a change.
 
-## Update model
+## Update modes
 
 Each definition supplies a key, default value, normalizer, and scope. Hydration reads the store,
-normalizes every stored field, and fills omitted fields from their definitions. A local update is
-visible immediately, then written as a patch. If the write fails, the controller restores the
-previous visible values and records the error.
+normalizes every stored field, and fills omitted fields from their definitions.
+
+The default `optimistic` mode makes a local update visible immediately, then writes it as a patch.
+If the write fails, the controller restores the previous visible values and records the error.
+This remains the default for compatibility.
+
+Set `updateMode: "serialized"` when each update must start from the latest committed values:
+
+```ts
+const controller = createPreferenceController({
+  definitions,
+  store,
+  updateMode: 'serialized',
+  onVisibleChange: (values) => renderPreferences(values),
+});
+```
+
+Serialized mode runs one patch at a time. It keeps committed values visible while writes are
+pending and returns `SerializedPreferenceControllerState` from `getState()`. Its `pendingCount`
+includes the active write and every queued write. `onVisibleChange` also runs when this count
+changes, even when the values argument has not changed. A failed write leaves committed values
+unchanged. The next patch still runs and uses the last successful result.
 
 Call `switchIdentity` with the next identity's store when the authenticated subject changes. The
 controller publishes defaults before it starts the new read. A slow read or write for the old
@@ -17,7 +36,13 @@ side-effect failure that belongs to the replaced identity does not land on the n
 
 Call `stop()` when whatever owns `onVisibleChange` goes away, such as a React provider
 unmounting. In-flight work still settles and `getState()` stays accurate; the callback just stops
-firing. Consumers do not need their own mounted flag around `onVisibleChange`.
+firing. In serialized mode, queued writes continue against their captured store without publishing
+after `stop()`. Consumers do not need their own mounted flag around `onVisibleChange`.
+
+An identity switch cancels queued writes for the old identity. A write already sent to the old
+store may settle, but it cannot publish values or start an old queued patch against the new store.
+A cancelled queued update and a successful stale in-flight update resolve to the current
+identity's values. A failed in-flight store call still rejects with its store error.
 
 Wire codecs distinguish three states by checking whether a payload owns a field:
 
@@ -38,6 +63,13 @@ Some visual changes need an immediate preview. A definition can opt into
 `preview-with-rollback`, provide the preview operation, and provide its inverse. The controller
 runs that rollback if preview or persistence fails. Its optional `afterPersistence` hook still
 runs only after the write.
+
+## Migration
+
+Existing callers do not need to change. Calls without `updateMode` still use optimistic visibility
+and may have overlapping store writes. Callers that currently maintain their own write queue can
+set `updateMode: "serialized"`, read `pendingCount` from `getState()`, and remove that queue. Their
+UI must expect committed visibility while updates are pending.
 
 ## Storage adapter tests
 
