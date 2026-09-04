@@ -28,6 +28,9 @@ if [ "$(manifest_value quality.profile)" != "strict" ]; then
   exit 2
 fi
 
+python3 scripts/reconcile-env.test.py
+python3 scripts/check-markdown-links.test.py
+python3 scripts/check-markdown-links.py README.md CLAUDE.md AGENTS.md docs
 sh scripts/preflight.sh
 {% if context.web %}PLAYWRIGHT_BROWSERS_PATH="$repository_root/web/node_modules/.cache/playwright-browsers"
 export PLAYWRIGHT_BROWSERS_PATH

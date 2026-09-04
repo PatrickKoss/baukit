@@ -2,6 +2,8 @@
 
 `baukit new --quality strict` adds a blocking CI job and `scripts/quality-gate.sh`. The script runs the same checks locally in the same order. The standard profile remains the default.
 
+Every strict project also gets `scripts/check-markdown-links.py`. The strict gate runs its standard-library test suite, then checks committed Markdown under `README.md`, `CLAUDE.md`, `AGENTS.md`, and `docs/`. Relative links resolve from the source file. Repository-absolute links resolve from the product root. External URLs, query strings, and fragments do not trigger network requests. The checker reports the source file, line, and missing target. It does not validate anchors.
+
 The generator reads capabilities before it renders the workflow. A backend gets coverage, MSRV, migration, OpenAPI, and production-image checks. A web app gets unit coverage plus the complete Chromium and WebKit Playwright suite, including geometry and console-warning specs. A mobile app gets Expo Doctor, lint, type checks, Jest coverage, an iOS JavaScript bundle, and Android `assembleDebug`. Missing capabilities do not leave placeholder jobs.
 
 ## Manifest settings
@@ -40,3 +42,14 @@ For migration checks, set `BAUKIT_BASE_REVISION` to the pull request base commit
 The backend coverage gate uses `cargo llvm-cov nextest --run-ignored all`. Docker must be running because generated PostgreSQL tests use `#[ignore]`. Coverage HTML and LCOV files are written under `backend/target/llvm-cov/`, and CI uploads both.
 
 Observability checks run only when `scripts/observability-lint.py` exists. A production image builds only when `backend/Dockerfile` exists. The generated web app sets `capabilities.pwa = false`. If a product adds a PWA and changes that value to true, its web package must provide `build:sw:check`; the strict runner calls it in both local and CI runs.
+
+## Migration
+
+Existing strict products can copy `scripts/check-markdown-links.py` and its test from the current template. Add both commands to `scripts/quality-gate.sh` before capability-specific build checks:
+
+```sh
+python3 scripts/check-markdown-links.test.py
+python3 scripts/check-markdown-links.py README.md CLAUDE.md AGENTS.md docs
+```
+
+Pass different repository-relative roots if the product keeps Markdown elsewhere. Commit the files before checking them because the script uses `git ls-files` to keep local and CI input identical.

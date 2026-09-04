@@ -7,6 +7,7 @@ This repository is a Baukit product generated with the `{{ "strict" if context.q
 Run commands from the repository root unless a command changes directory.
 
 ```sh
+sh scripts/setup.sh
 sh scripts/preflight.sh
 {% if context.backend %}cargo fmt --manifest-path backend/Cargo.toml --all --check
 cargo clippy --manifest-path backend/Cargo.toml --all-targets -- -D warnings
@@ -23,11 +24,15 @@ corepack pnpm@11.18.0 --dir mobile test
 {% endif %}baukit doctor
 ```
 
+`scripts/setup.sh` creates each local `.env` from its matching `.env.example` and appends newly added example assignments on later runs. It never replaces existing bytes. Existing assignments, including blank and exported assignments, count as local choices. If either file repeats a key, the first example assignment is the append candidate and any existing occurrence suppresses the append.
+
 {% if context.quality_strict %}Run the complete strict profile in CI order with:
 
 ```sh
 sh scripts/quality-gate.sh
 ```
+
+The strict gate checks local file links in committed Markdown under `README.md`, `CLAUDE.md`, `AGENTS.md`, and `docs/`. It ignores external URLs and fragments. Pass a different list of repository-relative files or directories to `scripts/check-markdown-links.py` when product documentation lives elsewhere.
 
 The strict runner requires the tools used by the enabled capabilities. Backend coverage needs `cargo-llvm-cov`, `cargo-nextest`, and Docker. Browser checks need the Playwright Chromium and WebKit binaries. Native checks need the Android SDK and Java 21. The iOS check prebuilds the native project and bundles JavaScript on Linux. It does not compile Objective-C or Swift.
 

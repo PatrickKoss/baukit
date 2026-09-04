@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "setup": "sh ../scripts/setup.sh",
     "dev": "vite",
     "tokens": "node scripts/generate-tokens.mjs",
     "build:sw": "node scripts/build-sw.mjs",

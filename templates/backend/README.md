@@ -29,7 +29,11 @@ inside the Docker build context without editing generated source.
 {% if context.auth_oidc %}
 Every generated API route requires a bearer token. `GET /me` also maps the token's stable `sub` claim to an internal user UUID. Auth configuration follows the product convention `{{ context.app_env }}__AUTH__ISSUER` and `{{ context.app_env }}__AUTH__AUDIENCE`, defaulting to the composed realm and `{{ context.app_name }}-backend` audience.
 
-`docker compose up -d --wait postgres keycloak` starts PostgreSQL and waits for Keycloak's readiness endpoint. Sign in as `test` / `password`; the imported realm contains the confidential backend client{% if context.web %}, a PKCE-only web client{% endif %}{% if context.mobile %}, and a PKCE-only mobile client{% endif %}. The checked-in credentials are development-only.
+`make dev` starts Keycloak, validates the declared development policy, and reconciles the retained Keycloak volume. Run `make db-up` separately when the API needs PostgreSQL. Sign in as `test` / `development-password`; the imported realm contains the confidential backend client{% if context.web %}, a PKCE-only web client{% endif %}{% if context.mobile %}, and a PKCE-only mobile client{% endif %}. The checked-in credentials are development-only. Existing generated realms used the shorter `password` credential. The reconciler leaves that existing password unchanged unless you request a reset.
+
+`keycloak/realm-policy.json` declares the environment class and the accepted password, TLS, brute-force, PKCE, direct-grant, and redirect bounds. Run `make keycloak-policy` after editing the realm. `keycloak/reconcile.json` selects the realm fields, public clients, users, origins, and redirects that `make keycloak-reconcile` may repair. The reconciler merges active URLs and leaves unselected live fields intact. It creates a missing selected user with the checked-in development credential, but it does not reset an existing password unless you pass `--reset-password USERNAME` to `scripts/reconcile_keycloak.py`.
+
+If the configured development administrator no longer authenticates, the reconciler creates a random temporary recovery administrator while Keycloak is stopped, repairs the configured administrator, and removes the temporary account. It also attempts that cleanup when reconciliation is interrupted or fails. The script does not print administrator passwords, user credentials, access tokens, or Keycloak response bodies.
 
 Keycloak's development hostname is deliberately dynamic. Discovery through `http://localhost:{{ context.keycloak_host_port }}/realms/{{ context.app_name }}` advertises `localhost`; discovery through `http://127.0.0.1:{{ context.keycloak_host_port }}/realms/{{ context.app_name }}` advertises `127.0.0.1`. Pick one spelling and use it consistently for backend issuer configuration, browser/mobile configuration, discovery, and token validation. Prefer `localhost` for browser development: Keycloak may mark its login cookie `Secure`, and browsers give `localhost` special secure-context treatment that is not portable to arbitrary HTTP hostnames. The generated headless helper accepts that cookie over local HTTP solely for disposable development; production issuers must use HTTPS.
 
@@ -49,12 +53,17 @@ python3 scripts/pkce-login.py \
 Useful commands:
 
 ```sh
+make setup
 make preflight
 make check
-make openapi
+{% if context.auth_oidc %}make keycloak-policy
+make dev
+{% endif %}make openapi
 baukit doctor
 make openapi-client
 ```
+
+`make setup` creates `web/.env` and `mobile/.env` when those capabilities exist. Later runs append assignments that were added to the matching `.env.example`, in example-file order, without replacing local values, comments, whitespace, or line endings. The script prints added key names but never their values. Any existing assignment wins, including `export`, blank, and quoted assignments. For duplicate example keys, the first assignment is used. For duplicate local keys, the file is left unchanged.
 
 `make preflight` fails before dependency resolution when the generated product
 needs a private Git dependency but its SSH agent is missing, unusable, or has no
@@ -100,3 +109,5 @@ git push -u origin main
 ```
 
 For an existing or orphan-branch repository root, run `baukit new {{ context.app_name }} ... --dir . --into-existing`; existing differing files are reported as conflicts and never overwritten.
+
+Existing generated products can adopt append-only environment setup by copying `scripts/setup.sh`, `scripts/reconcile-env.py`, and its test from the current template, then replacing instructions that copy `.env.example` over `.env` with `make setup`. Existing `.env` bytes remain unchanged. The script only appends missing assignments.

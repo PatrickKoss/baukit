@@ -5,6 +5,7 @@
   "type": "module",
   "main": "expo-router/entry",
   "scripts": {
+    "setup": "sh ../scripts/setup.sh",
     "start": "pnpm run tokens && expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",

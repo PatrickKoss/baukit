@@ -9,6 +9,15 @@ permissions:
   contents: read
 
 jobs:
+  generated-scripts:
+    name: Generated repository scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/reconcile-env.test.py
+{% if context.quality_strict %}      - run: python3 scripts/check-markdown-links.test.py
+      - run: python3 scripts/check-markdown-links.py README.md CLAUDE.md AGENTS.md docs
+{% endif %}
 {% if context.quality_strict %}  strict-quality:
     name: Strict quality profile
     runs-on: ubuntu-latest

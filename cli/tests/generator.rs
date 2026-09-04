@@ -308,6 +308,8 @@ fn strict_generation_is_capability_driven_and_matches_golden_tree() -> anyhow::R
         assert_eq!(manifest.quality.profile, QualityProfile::Strict);
 
         let runner = fs::read_to_string(root.join("scripts/quality-gate.sh"))?;
+        assert!(runner.contains("check-markdown-links.test.py"));
+        assert!(runner.contains("check-markdown-links.py README.md CLAUDE.md AGENTS.md docs"));
         assert_eq!(runner.contains("cargo llvm-cov nextest"), backend);
         assert_eq!(runner.contains("check-migrations-immutable.sh"), backend);
         assert_eq!(runner.contains("playwright test"), web);
@@ -318,6 +320,8 @@ fn strict_generation_is_capability_driven_and_matches_golden_tree() -> anyhow::R
             root.join("scripts/check-migrations-immutable.sh").is_file(),
             backend
         );
+        assert!(root.join("scripts/check-markdown-links.py").is_file());
+        assert!(root.join("scripts/check-markdown-links.test.py").is_file());
 
         let workflow = fs::read_to_string(root.join(".github/workflows/ci.yml"))?;
         assert!(workflow.contains("  strict-quality:"));
@@ -384,6 +388,125 @@ fn generated_migration_guard_ports_failure_cases() -> anyhow::Result<()> {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+    Ok(())
+}
+
+#[test]
+fn generated_environment_reconciler_is_tested_and_setup_is_idempotent() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut generated_options = options(parent.path(), "env-setup");
+    generated_options.mobile = true;
+    generated_options.web = true;
+    let root = generate_new(&generated_options)?;
+    for package in ["web/package.json", "mobile/package.json"] {
+        assert!(
+            fs::read_to_string(root.join(package))?
+                .contains("\"setup\": \"sh ../scripts/setup.sh\"")
+        );
+    }
+
+    let tests = Command::new("python3")
+        .arg("scripts/reconcile-env.test.py")
+        .current_dir(&root)
+        .output()?;
+    assert!(
+        tests.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&tests.stdout),
+        String::from_utf8_lossy(&tests.stderr)
+    );
+
+    fs::write(root.join("web/.env"), "VITE_API_URL=http://local.test")?;
+    let first = Command::new("sh")
+        .arg("scripts/setup.sh")
+        .current_dir(&root)
+        .output()?;
+    assert!(first.status.success());
+    assert_eq!(
+        fs::read(root.join("web/.env"))?,
+        b"VITE_API_URL=http://local.test"
+    );
+    assert!(root.join("mobile/.env").is_file());
+    let before = fs::read(root.join("mobile/.env"))?;
+    let second = Command::new("sh")
+        .arg("scripts/setup.sh")
+        .current_dir(&root)
+        .output()?;
+    assert!(second.status.success());
+    assert_eq!(fs::read(root.join("mobile/.env"))?, before);
+    Ok(())
+}
+
+#[test]
+fn generated_markdown_link_check_fails_for_a_committed_missing_target() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut strict = options(parent.path(), "strict-links");
+    strict.quality = QualityProfile::Strict;
+    let root = generate_new(&strict)?;
+
+    let tests = Command::new("python3")
+        .arg("scripts/check-markdown-links.test.py")
+        .current_dir(&root)
+        .output()?;
+    assert!(
+        tests.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&tests.stdout),
+        String::from_utf8_lossy(&tests.stderr)
+    );
+
+    assert!(
+        Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&root)
+            .status()?
+            .success()
+    );
+    assert!(
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(&root)
+            .status()?
+            .success()
+    );
+    let passing = Command::new("python3")
+        .args([
+            "scripts/check-markdown-links.py",
+            "README.md",
+            "CLAUDE.md",
+            "AGENTS.md",
+            "docs",
+        ])
+        .current_dir(&root)
+        .output()?;
+    assert!(
+        passing.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&passing.stdout),
+        String::from_utf8_lossy(&passing.stderr)
+    );
+
+    fs::write(root.join("docs/broken.md"), "[missing](absent.md)\n")?;
+    assert!(
+        Command::new("git")
+            .args(["add", "docs/broken.md"])
+            .current_dir(&root)
+            .status()?
+            .success()
+    );
+    let broken = Command::new("python3")
+        .args(["scripts/check-markdown-links.py", "docs"])
+        .current_dir(&root)
+        .output()?;
+    assert!(!broken.status.success());
+    assert!(String::from_utf8_lossy(&broken.stderr).contains("docs/broken.md:1 -> absent.md"));
+
+    fs::write(root.join("docs/absent.md"), "# Present\n")?;
+    let fixed = Command::new("python3")
+        .args(["scripts/check-markdown-links.py", "docs"])
+        .current_dir(&root)
+        .status()?;
+    assert!(fixed.success());
     Ok(())
 }
 
@@ -571,7 +694,9 @@ fn release_emission_uses_registry_versions_and_reproducibility_files() -> anyhow
     assert!(
         makefile.contains("cargo test --manifest-path $(BACKEND_MANIFEST) -- --include-ignored")
     );
-    assert!(makefile.contains("check: preflight fmt lint test check-web check-mobile"));
+    assert!(
+        makefile.contains("check: preflight fmt lint test test-scripts check-web check-mobile")
+    );
     assert!(makefile.contains("test: preflight"));
     assert!(!makefile.contains("baukit generate openapi-client"));
     let client = fs::read_to_string(root.join("scripts/openapi-client.sh"))?;
@@ -882,6 +1007,11 @@ fn doctor_validates_a_local_generated_product() -> anyhow::Result<()> {
             .iter()
             .any(|result| result.contains("port offset 100"))
     );
+    assert!(
+        results
+            .iter()
+            .any(|result| result.contains("environment reconciliation"))
+    );
 
     fs::write(
         root.join("mobile/.env.example"),
@@ -893,6 +1023,34 @@ fn doctor_validates_a_local_generated_product() -> anyhow::Result<()> {
             .to_string()
             .contains("mobile/.env.example` does not use port offset 100")
     );
+    Ok(())
+}
+
+#[test]
+fn doctor_requires_generated_environment_and_strict_markdown_scripts() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let baukit_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust");
+    let mut strict = options(parent.path(), "doctor-scripts");
+    strict.quality = QualityProfile::Strict;
+    strict.baukit_path = Some(baukit_path);
+    let root = generate_new(&strict)?;
+
+    let results = doctor(&root)?;
+    assert!(
+        results
+            .iter()
+            .any(|result| result.contains("strict Markdown link check"))
+    );
+
+    fs::remove_file(root.join("scripts/reconcile-env.py"))?;
+    fs::remove_file(root.join("scripts/check-markdown-links.py"))?;
+    let error = doctor(&root).expect_err("doctor must require generated scripts");
+    assert!(
+        error
+            .to_string()
+            .contains("environment reconciliation file")
+    );
+    assert!(error.to_string().contains("Markdown link check file"));
     Ok(())
 }
 

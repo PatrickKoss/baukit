@@ -67,6 +67,7 @@ const EXPECTED_WORKER_FILES: &[&str] = &[
 const EXPECTED_COMMON_FILES: &[&str] = &[
     "CLAUDE.md",
     "AGENTS.md",
+    "CHANGELOG.md",
     ".github/workflows/ci.yml",
     "limits.json",
     "docs/navigation-recipe.md",
@@ -77,6 +78,17 @@ const EXPECTED_COMMON_FILES: &[&str] = &[
 ];
 
 const EXPECTED_STRICT_FILES: &[&str] = &["scripts/quality-gate.sh"];
+
+const ENV_RECONCILIATION_FILES: &[&str] = &[
+    "scripts/setup.sh",
+    "scripts/reconcile-env.py",
+    "scripts/reconcile-env.test.py",
+];
+
+const MARKDOWN_LINK_CHECK_FILES: &[&str] = &[
+    "scripts/check-markdown-links.py",
+    "scripts/check-markdown-links.test.py",
+];
 
 const EXPECTED_STRICT_BACKEND_FILES: &[&str] = &[
     "scripts/check-migrations-immutable.sh",
@@ -1018,6 +1030,7 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
             failures.push(format!("missing expected product file `{relative}`"));
         }
     }
+    validate_env_reconciliation_files(root, &mut successes, &mut failures);
     if manifest.quality.profile == QualityProfile::Strict {
         for relative in EXPECTED_STRICT_FILES {
             if !root.join(relative).is_file() {
@@ -1034,6 +1047,7 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
         if manifest.quality.full_stack_e2e && !root.join("scripts/full-stack-e2e.sh").is_file() {
             failures.push("quality.full_stack_e2e requires `scripts/full-stack-e2e.sh`".to_owned());
         }
+        validate_markdown_link_check_files(root, &mut successes, &mut failures);
     }
     if !(1..=100).contains(&manifest.quality.backend_coverage_lines) {
         failures.push("quality.backend_coverage_lines must be between 1 and 100".to_owned());
@@ -1245,6 +1259,44 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
             failures.len(),
             failures.join("\n- ")
         )
+    }
+}
+
+fn validate_env_reconciliation_files(
+    root: &Path,
+    successes: &mut Vec<String>,
+    failures: &mut Vec<String>,
+) {
+    let mut complete = true;
+    for relative in ENV_RECONCILIATION_FILES {
+        if !root.join(relative).is_file() {
+            failures.push(format!(
+                "missing expected environment reconciliation file `{relative}`"
+            ));
+            complete = false;
+        }
+    }
+    if complete {
+        successes.push("environment reconciliation scripts are present".to_owned());
+    }
+}
+
+fn validate_markdown_link_check_files(
+    root: &Path,
+    successes: &mut Vec<String>,
+    failures: &mut Vec<String>,
+) {
+    let mut complete = true;
+    for relative in MARKDOWN_LINK_CHECK_FILES {
+        if !root.join(relative).is_file() {
+            failures.push(format!(
+                "missing expected Markdown link check file `{relative}`"
+            ));
+            complete = false;
+        }
+    }
+    if complete {
+        successes.push("strict Markdown link check scripts are present".to_owned());
     }
 }
 
