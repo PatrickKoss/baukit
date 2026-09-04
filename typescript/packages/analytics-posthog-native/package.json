@@ -1,6 +1,6 @@
 {
   "name": "@baukit/analytics-posthog-native",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "PostHog React Native transport for @baukit/analytics-core.",
   "license": "MIT",
   "author": "Patrick Koss",
@@ -45,7 +45,7 @@
     "typescript": "6.0.3"
   },
   "peerDependencies": {
-    "@baukit/analytics-core": "^0.2.1",
+    "@baukit/analytics-core": "^0.3.0",
     "posthog-react-native": "^4.62.0"
   }
 }

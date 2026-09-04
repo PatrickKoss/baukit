@@ -1,5 +1,18 @@
 # @baukit/data-contracts-dexie
 
+## 0.3.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.3.0 train.
+
+### Patch Changes
+
+- Updated dependencies [40882f6]
+- Updated dependencies
+- Updated dependencies [5472d3d]
+  - @baukit/data-contracts@0.3.0
+
 ## 0.2.1
 
 ### Patch Changes

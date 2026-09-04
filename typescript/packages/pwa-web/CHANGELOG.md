@@ -1,5 +1,12 @@
 # @baukit/pwa-web
 
+## 0.3.0
+
+### Minor Changes
+
+- ca98c4e: Publish a worker-safe IIFE artifact and add product-controlled cache cleanup for version and identity changes.
+- Release the coordinated baukit 0.3.0 train.
+
 ## 0.2.1
 
 ### Patch Changes

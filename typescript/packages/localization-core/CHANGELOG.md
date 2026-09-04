@@ -1,5 +1,12 @@
 # @baukit/localization-core
 
+## 0.3.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.3.0 train.
+- a299f89: Add typed catalog segments that enforce product locale coverage, exact reference keys, and string versus plural-message shape.
+
 ## 0.2.1
 
 ### Patch Changes

@@ -1,5 +1,12 @@
 # @baukit/api-runtime
 
+## 0.3.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.3.0 train.
+- a299f89: Add dependency-free, display-only identity hints from unverified JWT claims with product-supplied fallback text.
+
 ## 0.2.1
 
 ### Patch Changes

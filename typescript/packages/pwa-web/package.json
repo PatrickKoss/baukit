@@ -1,6 +1,6 @@
 {
   "name": "@baukit/pwa-web",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Cache strategy, cleanup, and a classic worker artifact for web PWAs.",
   "license": "MIT",
   "author": "Patrick Koss",
