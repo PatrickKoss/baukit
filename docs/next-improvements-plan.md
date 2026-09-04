@@ -14,21 +14,21 @@ Batches group items that can run in parallel with disjoint file ownership. Each 
 
 ### Wave 1
 
-- [ ] 1. JSON rejection classes in `baukit-http` (batch 1)
-- [ ] 2. Typed `ApiTokenStoreError` in `baukit-auth` and `baukit-test` (batch 1)
-- [ ] 3. Principal-establishing middleware, authentication before rate limiting (batch 2)
+- [x] 1. JSON rejection classes in `baukit-http` (batch 1)
+- [x] 2. Typed `ApiTokenStoreError` in `baukit-auth` and `baukit-test` (batch 1)
+- [~] 3. Principal-establishing middleware, authentication before rate limiting (batch 2)
 - [ ] 4. Named authenticated route-group limits (batch 3, after 3)
-- [ ] 5. Bounded terminal-job cleanup in `baukit-jobs` (batch 1)
-- [ ] 6. Fixed recurring-slot helpers in `baukit-jobs` (batch 1)
-- [ ] 7. Production resource-budget measurements, Rust and TypeScript, shared fixtures (batch 1)
+- [x] 5. Bounded terminal-job cleanup in `baukit-jobs` (batch 1)
+- [x] 6. Fixed recurring-slot helpers in `baukit-jobs` (batch 1)
+- [x] 7. Production resource-budget measurements, Rust and TypeScript, shared fixtures (batch 1)
 
 ### Wave 2
 
-- [ ] 8. Overlapping sync-response conformance (batch 2)
-- [ ] 9. `@baukit/sync-client/browser` scheduler environment (batch 2)
-- [ ] 10. Serialized preference updates (batch 2)
+- [~] 8. Overlapping sync-response conformance (batch 2)
+- [~] 9. `@baukit/sync-client/browser` scheduler environment (batch 2)
+- [~] 10. Serialized preference updates (batch 2)
 - [ ] 11. Cross-runtime hybrid logical clock (batch 3)
-- [ ] 12. Supported PWA worker artifact (batch 2)
+- [~] 12. Supported PWA worker artifact (batch 2)
 
 ### Wave 3
 
@@ -43,6 +43,7 @@ Batches group items that can run in parallel with disjoint file ownership. Each 
 ### Wave 4
 
 - [ ] 20. `@baukit/auth-node` device-flow package (batch 4)
+- [ ] 7b. Templates adopt the production measurements (backend domain `limits.rs`, web and mobile `limits.ts`) (batch 4, follow-up from item 7)
 - [ ] 21. Opt-in MCP capability and generator (batch 5)
 
 ### Wave 5
@@ -78,9 +79,16 @@ Each study ends in one written decision under `docs/studies/`.
 
 Filled in as items complete. Each line names the product file to delete once the product pins the released train.
 
+- Item 1, Eigenruhe: delete `backend/crates/eigenruhe-api/src/json.rs`, re-export `baukit_http::ApiJson`, and configure `JsonRejectionCodes::new("payload_too_large", "validation_failed", "validation_failed", "validation_failed")`.
+- Item 2, Leitbild: remove the `limit_exceeded:api_tokens_active:N` string protocol from `leitbild-postgres/src/api_token.rs`, `leitbild-bin/src/lib.rs`, and `leitbild-api/src/api_token.rs`; return `ApiTokenPolicyRejection` instead.
+- Item 5, Tiefgang: delete the `JobOutboxCompleted` and `JobOutboxFailed` sweep branches in `backend/crates/tiefgang-postgres/src/retention.rs` and call `PostgresJobStore::cleanup_terminal_jobs`.
+- Item 6, Eigenruhe: delete `notification_slot`, `notification_job_key`, `retention_slot`, and `retention_job_key` in `backend/crates/eigenruhe-worker/src/lib.rs`; use `FixedUtcInterval`.
+- Item 7, Eigenruhe: delete the measurement bodies in `backend/crates/eigenruhe-domain/src/limits.rs`, `mobile/src/limits.ts`, and `mcp/src/limits.ts`; keep policy parsing and reason codes.
+
 ### Log
 
 - 2026-09-04: Tracker added. Batch plan fixed: batch 1 = items 1, 2, 5+6, 7; batch 2 = items 3, 8+9, 10, 12; batch 3 = items 4, 11, 13, 19; batch 4 = items 14+15, 16+17, 20; batch 5 = items 18, 21, 22, 24; batch 6 = items 23+27, 25, 26, 28; batch 7 = studies 29 to 36; then release preparation.
+- 2026-09-04: Batch 1 done. Items 1, 2, 5, 6, 7 committed (8eae0aa, 32baa8b, 7f13c71, 5472d3d). Evidence records live under `docs/evidence/`. Templates were kept out of batch 1; the backend template opts into classified JSON rejections in batch 2 (item 3 task) and the limits examples adopt the production measurements in batch 4 (item 7b). Note for later: `bless_snapshots` must run from `cli/` because it writes paths relative to the crate directory.
 
 ## Purpose
 
