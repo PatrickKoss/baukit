@@ -1,5 +1,13 @@
 export { catalogKeySet, compareCatalogKeys, type CatalogDifference } from './catalog.js';
 export {
+  defineCatalogSegment,
+  type CatalogMessage,
+  type CatalogSegment,
+  type CatalogSegmentLocales,
+  type LocalizedCatalogSegment,
+  type PluralMessage,
+} from './catalog-segment.js';
+export {
   addCivilDays,
   assertCivilDate,
   assertCivilTime,

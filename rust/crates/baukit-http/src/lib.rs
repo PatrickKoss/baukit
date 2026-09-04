@@ -90,6 +90,7 @@
 
 mod error;
 mod extract;
+mod locale;
 mod middleware;
 mod options;
 pub mod pagination;
@@ -99,6 +100,10 @@ mod routing;
 pub use baukit_openapi::{ErrorBody, ErrorEnvelope, ResponseEnvelope, Rfc3339DateTime};
 pub use error::ApiError;
 pub use extract::{ApiJson, ApiPath, ApiQuery, Path, Query};
+pub use locale::{
+    LocaleQueryOverride, MAX_ACCEPT_LANGUAGE_BYTES, MAX_LOCALE_QUERY_BYTES, MAX_SUPPORTED_LOCALES,
+    RequestLocale, RequestLocaleConfig, RequestLocaleConfigError, RequestLocaleRejection,
+};
 pub use middleware::{
     DURATION_BUCKETS, HTTP_REQUEST_DURATION_SECONDS, HTTP_REQUESTS_IN_FLIGHT, HTTP_REQUESTS_TOTAL,
     RequestId, X_REQUEST_ID, extract_trace_context, inject_current_trace_context,

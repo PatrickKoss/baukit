@@ -110,6 +110,47 @@ To distinguish oversized bodies and content-type failures, replace `with_json_re
 switch. The global `HttpOptions::body_size_limit` uses the configured body-too-large code in
 class-specific mode.
 
+## Request locale extraction
+
+`RequestLocale` selects only from product-configured locales. Put `RequestLocaleConfig` in Axum
+state directly, or derive `FromRef` for a field in the application state.
+
+```rust
+use axum::{Router, routing::get};
+use baukit_http::{LocaleQueryOverride, RequestLocale, RequestLocaleConfig};
+
+async fn greeting(locale: RequestLocale) -> String {
+    format!("locale={}", locale.as_str())
+}
+
+let locale_config = RequestLocaleConfig::new(
+    ["en", "de", "es-MX"],
+    "en",
+    LocaleQueryOverride::parameter("locale")?,
+)?;
+let app = Router::new()
+    .route("/greeting", get(greeting))
+    .with_state(locale_config);
+# let _: Router = app;
+# Ok::<(), baukit_http::RequestLocaleConfigError>(())
+```
+
+An enabled, percent-decoded query override wins over `Accept-Language`. An unsupported explicit
+query locale is a 400 validation error. Header choices use the highest quality value, then header
+order for equal values. Locale lookup checks an exact configured tag, a configured regional tag for
+a bare language, then progressively shorter requested tags. Configuration order resolves multiple
+matches for one range. A wildcard selects the first configured locale. Missing or unmatched headers
+use the configured fallback.
+
+Malformed percent escapes, duplicate override parameters, malformed language ranges or quality
+values, and oversized inputs return a 400 `validation_failed` envelope. The raw query limit is 2,048
+bytes and the combined `Accept-Language` limit is 1,024 bytes. The extractor does not log or return
+submitted values.
+
+This API is additive. Existing handlers keep their current locale behavior until they add
+`RequestLocaleConfig` to state and accept `RequestLocale`. Product locale lists and translated copy
+remain outside `baukit-http`.
+
 ## Request identity and tracing
 
 Every request carries a `RequestId`, echoed in `X-Request-Id` and available as an extractor. It goes

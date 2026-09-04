@@ -56,6 +56,26 @@ API failure.
 
 This handshake does not make arbitrary mutations safe. Replaying `POST`, `PATCH`, or any write whose outcome may already have committed still requires a product/server idempotency contract. Follow the repository's [integration reliability recipe](../../../docs/platform/integration-reliability.md), [offline replay contract](../../../docs/platform/offline-readiness-contract.md), and [add-endpoint replay/idempotency guidance](../../../agent-skills/skills/baukit-add-endpoint/SKILL.md).
 
+## Unverified display identity hints
+
+`unverifiedDisplayIdentityHintsFromJwt` decodes local JWT claims for display only. It prefers
+`name`, then joined `given_name` and `family_name`, `preferred_username`, and `email`. It derives at
+most two initials. Invalid tokens and missing claims use product-supplied fallback text.
+
+```ts
+import { unverifiedDisplayIdentityHintsFromJwt } from '@baukit/api-runtime';
+
+const hints = unverifiedDisplayIdentityHintsFromJwt(session.accessToken, {
+  displayName: 'Local account',
+  initials: 'LA',
+});
+```
+
+The claims have not been verified. Never use these hints for authorization, a storage partition,
+analytics identity, cache ownership, or synchronization ownership. Those decisions need the
+server-validated subject. Existing web and native helpers can be replaced directly, but products
+must keep their fallback copy at the call site.
+
 ## Error handling
 
 Non-success responses throw one of three typed errors. Raw fetch/CORS errors are always wrapped.

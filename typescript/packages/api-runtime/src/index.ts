@@ -3,6 +3,12 @@
 import createClient from 'openapi-fetch';
 import type { Client, ClientOptions } from 'openapi-fetch';
 
+export {
+  unverifiedDisplayIdentityHintsFromJwt,
+  type UnverifiedDisplayIdentityFallback,
+  type UnverifiedDisplayIdentityHints,
+} from './unverified-display-identity.js';
+
 /** The request ID header accepted and returned by `baukit-http`. */
 export const REQUEST_ID_HEADER = 'x-request-id' as const;
 

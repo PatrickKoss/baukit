@@ -50,6 +50,12 @@ Every stable error, warning, and recommendation reason code emitted by the backe
 
 `baukit-http` requires a stable snake_case `code`, structured `details`, a request ID, and a safe public `message`. In `@baukit/api-runtime`, localized clients should resolve `ApiError.code + ApiError.details` into localized text. `ApiError.message` is the safe English fallback when a code is unknown, a catalog is unavailable, or details cannot be rendered; it is not the primary localization key.
 
+Backend handlers that select copy by request locale should use `baukit-http::RequestLocale` with a
+product-owned `RequestLocaleConfig`. An enabled, decoded query override has priority over
+`Accept-Language`. Header selection uses quality first and header order for ties. Malformed,
+duplicate override, unsupported explicit, and oversized inputs fail with a 400 validation envelope.
+Products still own the locale set, fallback, query parameter name, and localized response text.
+
 ## 5. Shared runtime
 
 `@baukit/localization-core` implements the library-neutral behavior in this
@@ -67,6 +73,9 @@ contract:
   paths. It compares keys, not translation values or whether strings are empty.
   Products use these functions for ordinary catalog parity, immutable catalog-ID
   coverage, and emitted-code coverage tests.
+- `defineCatalogSegment(supportedLocales, referenceLocale, referenceCatalog, localizedCatalogs)`
+  uses the reference catalog as the exact TypeScript key and message-shape contract. It accepts any
+  product locale tuple and does not register resources or choose a localization library.
 - `createLocalizedCodeResolver({ catalog, fallback })` resolves a string entry or
   calls an entry with structured details. It uses the caller-provided fallback
   when an entry is absent, blank, returns no string, or throws.
