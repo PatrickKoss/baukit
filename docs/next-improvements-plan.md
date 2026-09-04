@@ -43,7 +43,7 @@ Batches group items that can run in parallel with disjoint file ownership. Each 
 ### Wave 4
 
 - [~] 20. `@baukit/auth-node` device-flow package (batch 4)
-- [~] 7b. Templates adopt the production measurements (backend domain `limits.rs`, web and mobile `limits.ts`) (batch 4, follow-up from item 7)
+- [x] 7b. Templates adopt the production measurements (backend domain `limits.rs`, web and mobile `limits.ts`) (batch 4, follow-up from item 7)
 - [ ] 21. Opt-in MCP capability and generator (batch 5)
 
 ### Wave 5
