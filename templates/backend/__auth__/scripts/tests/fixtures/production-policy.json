@@ -1,0 +1,16 @@
+{
+  "environmentClass": "production",
+  "password": {
+    "minimumLength": 14,
+    "maximumLength": 96,
+    "excludeUsername": true,
+    "excludeEmail": false
+  },
+  "requireBruteForceProtection": true,
+  "minimumTls": "external",
+  "redirectUris": {
+    "maximumPerClient": 2,
+    "allowDevelopmentLoopbackHttp": false,
+    "allowedCustomSchemes": []
+  }
+}

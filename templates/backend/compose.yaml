@@ -38,8 +38,11 @@ services:
       start_period: 10s
     volumes:
       - ./keycloak/realm.json:/opt/keycloak/data/import/{{ context.app_name }}-realm.json:ro
+      - keycloak-data:/opt/keycloak/data
 
 {% endif %}
 
 volumes:
   postgres-data:
+{% if context.auth_oidc %}  keycloak-data:
+{% endif %}

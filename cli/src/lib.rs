@@ -164,6 +164,16 @@ const EXPECTED_AUTH_BACKEND_FILES: &[&str] = &[
     "scripts/pkce-login.py",
 ];
 
+const EXPECTED_KEYCLOAK_REALM_TOOL_FILES: &[&str] = &[
+    "keycloak/CHANGELOG.md",
+    "keycloak/realm-policy.json",
+    "keycloak/reconcile.json",
+    "scripts/keycloak_policy.py",
+    "scripts/reconcile_keycloak.py",
+    "scripts/tests/test_keycloak_policy.py",
+    "scripts/tests/test_reconcile_keycloak.py",
+];
+
 const EXPECTED_AUTH_MOBILE_FILES: &[&str] = &[
     "mobile/app/(auth)/_layout.tsx",
     "mobile/app/(auth)/sign-in.tsx",
@@ -1126,6 +1136,7 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
                     failures.push(format!("missing expected OIDC backend file `{relative}`"));
                 }
             }
+            validate_keycloak_realm_tools(root, host, &mut successes, &mut failures);
         }
         let cargo = root.join("backend/Cargo.toml");
         if cargo.is_file() {
@@ -1297,6 +1308,49 @@ fn validate_markdown_link_check_files(
     }
     if complete {
         successes.push("strict Markdown link check scripts are present".to_owned());
+    }
+}
+
+fn validate_keycloak_realm_tools(
+    root: &Path,
+    host: &dyn DoctorHost,
+    successes: &mut Vec<String>,
+    failures: &mut Vec<String>,
+) {
+    let mut complete = true;
+    for relative in EXPECTED_KEYCLOAK_REALM_TOOL_FILES {
+        if !root.join(relative).is_file() {
+            failures.push(format!(
+                "missing expected Keycloak realm tool file `{relative}`"
+            ));
+            complete = false;
+        }
+    }
+    if !complete {
+        return;
+    }
+    for (label, arguments) in [
+        (
+            "Keycloak development realm policy",
+            vec![
+                "scripts/keycloak_policy.py".to_owned(),
+                "--environment-class".to_owned(),
+                "development".to_owned(),
+            ],
+        ),
+        (
+            "Keycloak reconciliation inputs",
+            vec![
+                "scripts/reconcile_keycloak.py".to_owned(),
+                "--check".to_owned(),
+            ],
+        ),
+    ] {
+        match host.run_command("python3", &arguments, Some(root)) {
+            Ok(output) if output.success => successes.push(format!("{label} passed")),
+            Ok(output) => failures.push(format!("{label} failed: {}", output.stderr)),
+            Err(error) => failures.push(format!("could not run {label}: {error}")),
+        }
     }
 }
 

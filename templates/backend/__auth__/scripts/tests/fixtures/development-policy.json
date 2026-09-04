@@ -1,0 +1,16 @@
+{
+  "environmentClass": "development",
+  "password": {
+    "minimumLength": 12,
+    "maximumLength": 128,
+    "excludeUsername": true,
+    "excludeEmail": true
+  },
+  "requireBruteForceProtection": true,
+  "minimumTls": "none",
+  "redirectUris": {
+    "maximumPerClient": 4,
+    "allowDevelopmentLoopbackHttp": true,
+    "allowedCustomSchemes": ["fixture"]
+  }
+}

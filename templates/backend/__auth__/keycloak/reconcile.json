@@ -1,0 +1,25 @@
+{
+  "environmentClass": "development",
+  "realmFields": [
+    "displayName",
+    "enabled",
+    "sslRequired",
+    "registrationAllowed",
+    "loginWithEmailAllowed",
+    "passwordPolicy",
+    "bruteForceProtected"
+  ],
+  "clients": [{% if context.web %}
+    {
+      "clientId": "{{ context.app_name }}-web",
+      "activeOrigins": ["http://localhost:5173"],
+      "activeRedirectUris": ["http://localhost:5173/*"]
+    }{% if context.mobile %},{% endif %}{% endif %}{% if context.mobile %}
+    {
+      "clientId": "{{ context.app_name }}-mobile",
+      "activeOrigins": [],
+      "activeRedirectUris": ["{{ context.app_name }}://oauth"]
+    }{% endif %}
+  ],
+  "users": ["test"]
+}

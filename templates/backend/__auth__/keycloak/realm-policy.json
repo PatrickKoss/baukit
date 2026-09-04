@@ -1,0 +1,16 @@
+{
+  "environmentClass": "development",
+  "password": {
+    "minimumLength": 12,
+    "maximumLength": 128,
+    "excludeUsername": true,
+    "excludeEmail": true
+  },
+  "requireBruteForceProtection": true,
+  "minimumTls": "none",
+  "redirectUris": {
+    "maximumPerClient": 8,
+    "allowDevelopmentLoopbackHttp": true,
+    "allowedCustomSchemes": [{% if context.mobile %}"{{ context.app_name }}"{% endif %}]
+  }
+}

@@ -1,4 +1,4 @@
-use std::{error::Error, sync::Arc, time::Duration};
+use std::{error::Error, path::PathBuf, process::Command, sync::Arc, time::Duration};
 
 use axum::{
     body::{Body, to_bytes},
@@ -16,6 +16,33 @@ use {{ context.app_crate }}_bin::{InMemoryItemRepository, InMemoryUserRepository
 use {{ context.app_crate }}_services::{ItemService, UserService};
 
 const AUDIENCE: &str = "{{ context.app_name }}-backend";
+
+#[test]
+fn generated_keycloak_tools_pass_their_offline_checks() -> Result<(), Box<dyn Error>> {
+    let product_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    for arguments in [
+        vec!["-m", "unittest", "discover", "-s", "scripts/tests"],
+        vec![
+            "scripts/keycloak_policy.py",
+            "--environment-class",
+            "development",
+        ],
+        vec!["scripts/reconcile_keycloak.py", "--check"],
+    ] {
+        let output = Command::new("python3")
+            .args(arguments)
+            .env("PYTHONDONTWRITEBYTECODE", "1")
+            .current_dir(&product_root)
+            .output()?;
+        assert!(
+            output.status.success(),
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    Ok(())
+}
 
 #[tokio::test]
 async fn protected_route_conforms_and_maps_subject_to_internal_user() -> Result<(), Box<dyn Error>>

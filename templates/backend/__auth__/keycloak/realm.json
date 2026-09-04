@@ -5,6 +5,8 @@
   "sslRequired": "none",
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
+  "passwordPolicy": "length(12) and notUsername and notEmail and maxLength(128)",
+  "bruteForceProtected": true,
   "users": [
     {
       "username": "test",
@@ -14,7 +16,7 @@
       "firstName": "Test",
       "lastName": "User",
 {% if context.web or context.mobile %}      "realmRoles": ["offline_access"],
-{% endif %}      "credentials": [{ "type": "password", "value": "password", "temporary": false }]
+{% endif %}      "credentials": [{ "type": "password", "value": "development-password", "temporary": false }]
     }
   ],
   "clients": [

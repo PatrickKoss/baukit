@@ -1,0 +1,20 @@
+{
+  "realm": "fixture",
+  "sslRequired": "none",
+  "passwordPolicy": "length(12) and notUsername and notEmail and maxLength(128)",
+  "bruteForceProtected": true,
+  "clients": [
+    {
+      "clientId": "fixture-backend",
+      "publicClient": false,
+      "directAccessGrantsEnabled": false
+    },
+    {
+      "clientId": "fixture-web",
+      "publicClient": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://localhost:5173/*", "fixture://oauth"],
+      "attributes": {"pkce.code.challenge.method": "S256"}
+    }
+  ]
+}

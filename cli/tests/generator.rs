@@ -624,6 +624,11 @@ fn oidc_generation_is_deterministic_and_records_the_optional_capability() -> any
     let realm = fs::read_to_string(first.join("keycloak/realm.json"))?;
     assert!(realm.contains("\"realmRoles\": [\"offline_access\"]"));
     assert!(realm.contains("snapshot-app-mobile"));
+    assert!(first.join("keycloak/realm-policy.json").is_file());
+    assert!(first.join("keycloak/reconcile.json").is_file());
+    assert!(first.join("scripts/keycloak_policy.py").is_file());
+    assert!(first.join("scripts/reconcile_keycloak.py").is_file());
+    assert!(fs::read_to_string(first.join("compose.yaml"))?.contains("keycloak-data:"));
     Ok(())
 }
 
@@ -643,6 +648,115 @@ fn oidc_realm_only_emits_selected_public_clients() -> anyhow::Result<()> {
         fs::read_to_string(root.join("scripts/pkce-login.py"))?
             .contains("parser.add_argument(\"--client-id\", required=True)")
     );
+    Ok(())
+}
+
+#[test]
+fn generated_keycloak_policy_and_reconciler_fixtures_pass() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let baukit_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust");
+    let mut selected = options(parent.path(), "keycloak-tools");
+    selected.web = true;
+    selected.mobile = true;
+    selected.auth = Some(AuthProvider::Oidc);
+    selected.baukit_path = Some(baukit_path);
+    let root = generate_new(&selected)?;
+
+    for arguments in [
+        vec!["-m", "unittest", "discover", "-s", "scripts/tests"],
+        vec![
+            "scripts/keycloak_policy.py",
+            "--environment-class",
+            "development",
+        ],
+        vec![
+            "scripts/keycloak_policy.py",
+            "--realm",
+            "scripts/tests/fixtures/production-realm.json",
+            "--policy",
+            "scripts/tests/fixtures/production-policy.json",
+            "--environment-class",
+            "production",
+        ],
+        vec!["scripts/reconcile_keycloak.py", "--check"],
+    ] {
+        let output = Command::new("python3")
+            .args(arguments)
+            .current_dir(&root)
+            .output()?;
+        assert!(
+            output.status.success(),
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let results = doctor(&root)?;
+    assert!(
+        results
+            .iter()
+            .any(|result| result.contains("development realm policy passed"))
+    );
+    assert!(
+        results
+            .iter()
+            .any(|result| result.contains("reconciliation inputs passed"))
+    );
+    Ok(())
+}
+
+#[test]
+fn generated_keycloak_policy_rejects_a_weakened_realm() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let baukit_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust");
+    let mut selected = options(parent.path(), "weak-realm");
+    selected.web = true;
+    selected.auth = Some(AuthProvider::Oidc);
+    selected.baukit_path = Some(baukit_path);
+    let root = generate_new(&selected)?;
+    let realm_path = root.join("keycloak/realm.json");
+    let weakened = fs::read_to_string(&realm_path)?
+        .replace(
+            "length(12) and notUsername and notEmail and maxLength(128)",
+            "length(8) and maxLength(512)",
+        )
+        .replace(
+            "\"bruteForceProtected\": true",
+            "\"bruteForceProtected\": false",
+        )
+        .replace(
+            "\"pkce.code.challenge.method\": \"S256\"",
+            "\"pkce.code.challenge.method\": \"plain\"",
+        )
+        .replace(
+            "\"directAccessGrantsEnabled\": false",
+            "\"directAccessGrantsEnabled\": true",
+        );
+    fs::write(&realm_path, weakened)?;
+
+    let output = Command::new("python3")
+        .args([
+            "scripts/keycloak_policy.py",
+            "--environment-class",
+            "development",
+        ])
+        .current_dir(&root)
+        .output()?;
+    assert!(!output.status.success());
+    let error = String::from_utf8_lossy(&output.stderr);
+    for expected in [
+        "at least 12",
+        "at most 128",
+        "notUsername",
+        "notEmail",
+        "bruteForceProtected",
+        "direct-access",
+        "PKCE S256",
+    ] {
+        assert!(error.contains(expected), "missing {expected:?} in {error}");
+    }
+    let doctor_error = doctor(&root).expect_err("doctor must reject the weakened realm");
+    assert!(doctor_error.to_string().contains("realm policy failed"));
     Ok(())
 }
 

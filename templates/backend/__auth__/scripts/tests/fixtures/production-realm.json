@@ -1,0 +1,15 @@
+{
+  "realm": "fixture-live",
+  "sslRequired": "external",
+  "passwordPolicy": "length(16) and notUsername and maxLength(80)",
+  "bruteForceProtected": true,
+  "clients": [
+    {
+      "clientId": "fixture-web",
+      "publicClient": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["https://app.example.test/oauth/*"],
+      "attributes": {"pkce.code.challenge.method": "S256"}
+    }
+  ]
+}
