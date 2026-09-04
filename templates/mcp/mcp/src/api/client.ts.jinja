@@ -1,0 +1,106 @@
+import type { paths } from './schema.js';
+import type { BearerTokenProvider } from '../auth.js';
+
+const MAX_RESPONSE_BYTES = 1024 * 1024;
+
+type HttpMethod = 'delete' | 'get' | 'patch' | 'post' | 'put';
+export type OpenApiPath = Extract<keyof paths, string>;
+type OpenApiMethod<Path extends OpenApiPath> = Extract<
+  keyof paths[Path],
+  HttpMethod
+>;
+export type OpenApiRoute = {
+  [Path in OpenApiPath]: {
+    [Method in OpenApiMethod<Path>]: {
+      readonly method: Method;
+      readonly path: Path;
+    };
+  }[OpenApiMethod<Path>];
+}[OpenApiPath];
+
+export interface ApiClientOptions {
+  readonly baseUrl: string;
+  readonly bearerToken: BearerTokenProvider;
+  readonly fetch?: typeof globalThis.fetch;
+}
+
+export class AuthenticationError extends Error {
+  public constructor() {
+    super('Authentication is unavailable.');
+    this.name = 'AuthenticationError';
+  }
+}
+
+export class ApiClientError extends Error {
+  public constructor(public readonly status?: number) {
+    super('The API request failed.');
+    this.name = 'ApiClientError';
+  }
+}
+
+export class ApiClient {
+  readonly #baseUrl: string;
+  readonly #bearerToken: BearerTokenProvider;
+  readonly #fetch: typeof globalThis.fetch;
+
+  public constructor(options: ApiClientOptions) {
+    this.#baseUrl = options.baseUrl.replace(/\/$/u, '');
+    this.#bearerToken = options.bearerToken;
+    this.#fetch = options.fetch ?? globalThis.fetch;
+  }
+
+  public async request(route: OpenApiRoute): Promise<unknown> {
+    let token: string;
+    try {
+      token = (await this.#bearerToken()).trim();
+    } catch {
+      throw new AuthenticationError();
+    }
+    if (token.length === 0) throw new AuthenticationError();
+
+    let response: Response;
+    try {
+      response = await this.#fetch(new URL(route.path, `${this.#baseUrl}/`), {
+        method: route.method.toUpperCase(),
+        headers: {
+          accept: 'application/json',
+          authorization: `Bearer ${token}`,
+          'user-agent': '{{ context.app_name }}-mcp/0.1.0',
+        },
+      });
+    } catch {
+      throw new ApiClientError();
+    }
+    if (!response.ok) throw new ApiClientError(response.status);
+    try {
+      return await readBoundedJson(response);
+    } catch {
+      throw new ApiClientError(response.status);
+    }
+  }
+}
+
+async function readBoundedJson(response: Response): Promise<unknown> {
+  if (response.body === null) return null;
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_RESPONSE_BYTES) {
+      await reader.cancel();
+      throw new Error('response too large');
+    }
+    chunks.push(value);
+  }
+  const body = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  if (body.byteLength === 0) return null;
+  return JSON.parse(new TextDecoder().decode(body)) as unknown;
+}

@@ -80,6 +80,8 @@ cargo test  --manifest-path .generated-fixture/fixture/backend/Cargo.toml
 cargo test  --manifest-path .generated-fixture/fixture/backend/Cargo.toml -p fixture-bin --test openapi_drift
 # web:    cd .generated-fixture/fixture/web    && pnpm install && pnpm build && pnpm lint && pnpm test
 # mobile: cd .generated-fixture/fixture/mobile && pnpm install && pnpm exec tsc --noEmit && pnpm lint && pnpm test
+# MCP:    `make mcp-fixture-gate` generates `--backend --mcp`, checks the backend,
+#         then builds, lints, typechecks, tests, and runs both MCP drift checks.
 ```
 
 (For web/mobile flavors, first build the local TS deps:

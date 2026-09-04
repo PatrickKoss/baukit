@@ -1,0 +1,39 @@
+# {{ context.app_name }} MCP server
+
+This package runs a Model Context Protocol server over stdio and calls the product API with a bearer token. It contains one read-only example tool. Replace that tool with product-owned names, descriptions, input schemas, routes, and handlers.
+
+## Commands
+
+```sh
+corepack pnpm@11.18.0 install --frozen-lockfile
+corepack pnpm@11.18.0 build
+corepack pnpm@11.18.0 typecheck
+corepack pnpm@11.18.0 lint
+corepack pnpm@11.18.0 test
+corepack pnpm@11.18.0 openapi:check
+corepack pnpm@11.18.0 docs:check
+```
+
+Run `node dist/cli.js --help` for command help. When the server runs, stdout contains MCP messages only. Startup, shutdown, and tool outcomes go to stderr without arguments, response bodies, or credentials.
+
+## Authentication
+
+{% if context.mcp_auth_node_oidc %}This fixture uses `@baukit/auth-node`. Set `{{ context.app_env }}_OIDC_ISSUER` and `{{ context.app_env }}_OIDC_CLIENT_ID`, then run `node dist/cli.js login`. The optional `{{ context.app_env }}_API_TOKEN` environment variable takes precedence over the cached profile. Run `node dist/cli.js logout` to remove that profile.
+{% elif context.mcp_auth_caller_supplied %}Set `{{ context.app_env }}_MCP_BEARER_PROVIDER` to an absolute or working-directory-relative module path before starting the server. The module must export a `bearerToken` function and must not print the token.
+{% else %}Personal access tokens are the default. Set `{{ context.app_env }}_API_TOKEN` before starting the server. The bootstrap injects `personalTokenProvider()` into the API client.
+{% endif %}
+Library composition can pass any `BearerTokenProvider` directly to `createServer`. Keep token acquisition outside tools so every route uses the same failure and redaction rules.
+
+## Tool and route ownership
+
+`src/tools/read.ts` and `src/tools/write.ts` are separate registries. Every entry must set all four MCP annotations. `src/tool-routes.ts` is the product-owned tool-to-route allowlist. `pnpm openapi:check` rejects missing methods, missing paths, mismatched routes, and unused allowlist entries against `../backend/openapi.json`.
+
+Run `pnpm run docs` after editing either registry. It imports the built registry metadata and rewrites [docs/tools.md](docs/tools.md). `pnpm docs:check` reports drift without changing the file. It does not scan source text.
+
+The generated OpenAPI declaration is `src/api/schema.d.ts`. The root `openapi.consumers` list registers it, and `scripts/openapi-client.sh` regenerates it. The package does not copy the raw schema.
+
+## Migration from a product-local package
+
+Keep the product's tools and API policy. Replace its stdio bootstrap, server creation, bearer-token wiring, safe error conversion, outcome logger, registry checks, and generated docs with these files. Move existing tools into the read or write registry, add each route to `PRODUCT_TOOL_ROUTES`, and declare complete annotations. Remove old raw schema copies after the declaration consumer passes `pnpm openapi:check`.
+
+The package does not generate a tool for every API operation. It also does not define product scopes, destructive tools, consent text, recovery text, or mappings for backend exceptions.

@@ -16,6 +16,8 @@ fn base(parent: &Path) -> NewOptions {
         worker: false,
         mobile: false,
         web: false,
+        mcp: false,
+        mcp_auth: None,
         auth: None,
         force: false,
         into_existing: false,
@@ -82,6 +84,7 @@ fn main() {
         o.mobile = true;
         o.web = true;
     });
+    bless("mcp", |o| o.mcp = true);
     bless("strict", |o| {
         o.mobile = true;
         o.web = true;

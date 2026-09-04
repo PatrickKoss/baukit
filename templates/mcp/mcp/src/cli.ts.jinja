@@ -1,0 +1,76 @@
+#!/usr/bin/env node
+
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { pathToFileURL } from 'node:url';
+{% if context.mcp_auth_node_oidc %}import { nodeOidcProvider } from './auth.js';
+{% elif context.mcp_auth_caller_supplied %}import { callerSuppliedProvider } from './auth.js';
+{% else %}
+import { personalTokenProvider } from './auth.js';
+{% endif %}
+import { createServer } from './server.js';
+
+const HELP = `Usage: {{ context.app_name }}-mcp{% if context.mcp_auth_node_oidc %} [login|logout]{% endif %}
+
+Starts an MCP server over stdio. stdout is reserved for MCP protocol messages.
+`;
+
+export async function main(
+  arguments_: readonly string[] = process.argv.slice(2),
+): Promise<void> {
+  const command = arguments_[0];
+  if (command === '--help' || command === '-h' || command === 'help') {
+    process.stdout.write(HELP);
+    return;
+  }
+{% if context.mcp_auth_node_oidc %}  const oidc = nodeOidcProvider();
+  if (command === 'login') {
+    await oidc.login();
+    process.stderr.write('authentication outcome=success\n');
+    return;
+  }
+  if (command === 'logout') {
+    const removed = await oidc.logout();
+    process.stderr.write(
+      `authentication outcome=${removed ? 'removed' : 'absent'}\n`,
+    );
+    return;
+  }
+{% endif %}  if (command !== undefined) throw new Error(`Unknown command: ${command}`);
+
+  const configuredApiUrl = process.env['{{ context.app_env }}_API_URL']?.trim();
+  const defaultApiUrl = 'http://localhost:{{ context.api_host_port }}';
+  const apiUrl = (configuredApiUrl || defaultApiUrl).replace(/\/$/u, '');
+{% if context.mcp_auth_node_oidc %}  const bearerToken = oidc.bearerToken;
+{% elif context.mcp_auth_caller_supplied %}  const providerModule = process.env['{{ context.app_env }}_MCP_BEARER_PROVIDER']?.trim();
+  if (!providerModule) throw new Error('Bearer provider module is required.');
+  const bearerToken = callerSuppliedProvider(providerModule);
+{% else %}
+  const bearerToken = personalTokenProvider();
+{% endif %}  const server = createServer({
+    apiUrl,
+    bearerToken,
+    logger: ({ name, outcome, status }) => {
+      process.stderr.write(
+        `tool=${name} outcome=${outcome}${status === undefined ? '' : ` status=${String(status)}`}\n`,
+      );
+    },
+  });
+  let closing: Promise<void> | undefined;
+  const close = (signal: NodeJS.Signals): Promise<void> => {
+    closing ??= server.close().then(() => {
+      process.stderr.write(`server outcome=stopped signal=${signal}\n`);
+    });
+    return closing;
+  };
+  process.once('SIGINT', () => void close('SIGINT'));
+  process.once('SIGTERM', () => void close('SIGTERM'));
+  await server.connect(new StdioServerTransport());
+  process.stderr.write('server outcome=started transport=stdio\n');
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  main().catch(() => {
+    process.stderr.write('server outcome=failed\n');
+    process.exitCode = 1;
+  });
+}

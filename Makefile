@@ -1,4 +1,4 @@
-.PHONY: toolchain fmt lint test check ci platform-validate platform-up platform-down platform-nuke platform-recreate platform-status ts-install ts-build ts-fmt ts-lint ts-test ts-browser-test ts-check cli-fmt cli-lint cli-test cli-check cli-ci install-skills android-sdk-setup native-android-gate expo-sqlite-conformance
+.PHONY: toolchain fmt lint test check ci platform-validate platform-up platform-down platform-nuke platform-recreate platform-status ts-install ts-build ts-fmt ts-lint ts-test ts-browser-test ts-check cli-fmt cli-lint cli-test cli-check cli-ci mcp-fixture-gate install-skills android-sdk-setup native-android-gate expo-sqlite-conformance
 
 RUST_MANIFEST := rust/Cargo.toml
 TS_DIR := typescript
@@ -42,6 +42,24 @@ cli-check:
 	cargo check --manifest-path $(CLI_MANIFEST) --all-targets
 
 cli-ci: cli-fmt cli-lint cli-test cli-check
+
+mcp-fixture-gate:
+	@set -eu; \
+	fixture_parent="$$(mktemp -d)"; \
+	trap 'rm -rf "$$fixture_parent"' EXIT; \
+	cargo build --manifest-path $(CLI_MANIFEST) --bin baukit; \
+	cli/target/debug/baukit new fixture --backend --mcp --dir "$$fixture_parent" --baukit-path rust; \
+	cargo fmt --manifest-path "$$fixture_parent/fixture/backend/Cargo.toml" --all --check; \
+	cargo clippy --manifest-path "$$fixture_parent/fixture/backend/Cargo.toml" --all-targets -- -D warnings; \
+	cargo test --manifest-path "$$fixture_parent/fixture/backend/Cargo.toml"; \
+	cargo test --manifest-path "$$fixture_parent/fixture/backend/Cargo.toml" -p fixture-bin --test openapi_drift; \
+	corepack pnpm@11.18.0 --dir "$$fixture_parent/fixture/mcp" install --frozen-lockfile; \
+	corepack pnpm@11.18.0 --dir "$$fixture_parent/fixture/mcp" build; \
+	corepack pnpm@11.18.0 --dir "$$fixture_parent/fixture/mcp" typecheck; \
+	corepack pnpm@11.18.0 --dir "$$fixture_parent/fixture/mcp" lint; \
+	corepack pnpm@11.18.0 --dir "$$fixture_parent/fixture/mcp" test; \
+	corepack pnpm@11.18.0 --dir "$$fixture_parent/fixture/mcp" openapi:check; \
+	corepack pnpm@11.18.0 --dir "$$fixture_parent/fixture/mcp" docs:check
 
 install-skills:
 	@test -n "$(TARGET)" || (echo "TARGET is required: make install-skills TARGET=<product-dir>" >&2; exit 2)

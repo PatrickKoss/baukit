@@ -5,7 +5,9 @@ use std::{
     process::Command,
 };
 
-use baukit_cli::{AuthProvider, NewOptions, QualityProfile, doctor, generate_new};
+use baukit_cli::{
+    AuthProvider, McpAuthentication, NewOptions, QualityProfile, doctor, generate_new,
+};
 use sha2::{Digest, Sha256};
 
 #[cfg(unix)]
@@ -22,6 +24,8 @@ fn options(parent: &Path, name: &str) -> NewOptions {
         worker: false,
         mobile: false,
         web: false,
+        mcp: false,
+        mcp_auth: None,
         auth: None,
         force: false,
         into_existing: false,
@@ -40,6 +44,8 @@ fn frontend_options(parent: &Path, name: &str, mobile: bool, web: bool) -> NewOp
         worker: false,
         mobile,
         web,
+        mcp: false,
+        mcp_auth: None,
         auth: None,
         force: false,
         into_existing: false,
@@ -369,6 +375,37 @@ fn quality_flag_generates_the_strict_profile() -> anyhow::Result<()> {
     );
     let manifest = baukit_cli::read_manifest(&parent.path().join("strict-flag"))?;
     assert_eq!(manifest.quality.profile, QualityProfile::Strict);
+    Ok(())
+}
+
+#[test]
+fn mcp_flag_generates_the_package_and_records_the_default_authentication() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let output = Command::new(env!("CARGO_BIN_EXE_baukit"))
+        .args([
+            "new",
+            "mcp-flag",
+            "--backend",
+            "--mcp",
+            "--skip-lockfiles",
+            "--dir",
+        ])
+        .arg(parent.path())
+        .output()?;
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let root = parent.path().join("mcp-flag");
+    let manifest = baukit_cli::read_manifest(&root)?;
+    assert_eq!(
+        manifest.capabilities.mcp.map(|mcp| mcp.authentication),
+        Some(McpAuthentication::PersonalToken)
+    );
+    assert!(root.join("mcp/package.json").is_file());
     Ok(())
 }
 
@@ -1302,6 +1339,140 @@ fn doctor_accepts_an_env_only_api_source() -> anyhow::Result<()> {
             .to_string()
             .contains("mobile/src/api.ts` does not use port offset 100")
     );
+    Ok(())
+}
+
+#[test]
+fn mcp_generation_matches_golden_tree_and_records_personal_token_auth() -> anyhow::Result<()> {
+    let first_parent = tempfile::tempdir()?;
+    let second_parent = tempfile::tempdir()?;
+    let mut first_options = options(first_parent.path(), "snapshot-app");
+    first_options.mcp = true;
+    let mut second_options = options(second_parent.path(), "snapshot-app");
+    second_options.mcp = true;
+
+    let first = generate_new(&first_options)?;
+    let second = generate_new(&second_options)?;
+    let first_tree = read_tree(&first)?;
+    assert_eq!(first_tree, read_tree(&second)?);
+    assert_eq!(
+        render_hash_snapshot(&first_tree),
+        include_str!("snapshots/mcp.tree")
+    );
+
+    let manifest = baukit_cli::read_manifest(&first)?;
+    assert_eq!(
+        manifest
+            .capabilities
+            .mcp
+            .as_ref()
+            .map(|mcp| mcp.authentication),
+        Some(McpAuthentication::PersonalToken)
+    );
+    assert_eq!(
+        manifest.openapi.consumers(),
+        ["generated/openapi.d.ts", "mcp/src/api/schema.d.ts"]
+    );
+    let package = fs::read_to_string(first.join("mcp/package.json"))?;
+    assert!(package.contains("\"@modelcontextprotocol/sdk\": \"1.30.0\""));
+    assert!(!package.contains("@baukit/auth-node"));
+    assert!(!first.join("mcp/openapi.json").exists());
+    assert!(first.join("mcp/src/api/schema.d.ts").is_file());
+    assert!(
+        fs::read_to_string(first.join("mcp/src/tools/read.ts"))?.contains("readOnlyHint: true")
+    );
+    assert!(fs::read_to_string(first.join("mcp/src/tools/write.ts"))?.contains("WRITE_TOOLS = []"));
+    let results = doctor(&first)?;
+    assert!(
+        results
+            .iter()
+            .any(|result| result.contains("MCP package files"))
+    );
+    Ok(())
+}
+
+#[test]
+fn oidc_mcp_generation_selects_auth_node_and_caller_auth_remains_available() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let baukit_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust");
+    let mut oidc = options(parent.path(), "oidc-mcp");
+    oidc.mobile = true;
+    oidc.web = true;
+    oidc.auth = Some(AuthProvider::Oidc);
+    oidc.mcp = true;
+    oidc.baukit_path = Some(baukit_path);
+    let root = generate_new(&oidc)?;
+
+    let manifest = baukit_cli::read_manifest(&root)?;
+    assert_eq!(
+        manifest
+            .capabilities
+            .mcp
+            .as_ref()
+            .map(|mcp| mcp.authentication),
+        Some(McpAuthentication::NodeOidc)
+    );
+    let package = fs::read_to_string(root.join("mcp/package.json"))?;
+    assert!(package.contains("\"@baukit/auth-node\": \"file:"));
+    let auth = fs::read_to_string(root.join("mcp/src/auth.ts"))?;
+    assert!(auth.contains("DeviceFlowClient"));
+    assert!(auth.contains("allowLoopbackHttp"));
+
+    let caller_parent = tempfile::tempdir()?;
+    let mut caller = options(caller_parent.path(), "caller-mcp");
+    caller.mcp = true;
+    caller.mcp_auth = Some(McpAuthentication::CallerSupplied);
+    let caller_root = generate_new(&caller)?;
+    let caller_manifest = baukit_cli::read_manifest(&caller_root)?;
+    assert_eq!(
+        caller_manifest
+            .capabilities
+            .mcp
+            .as_ref()
+            .map(|mcp| mcp.authentication),
+        Some(McpAuthentication::CallerSupplied)
+    );
+    assert!(
+        fs::read_to_string(caller_root.join("mcp/src/auth.ts"))?.contains("callerSuppliedProvider")
+    );
+    Ok(())
+}
+
+#[test]
+fn mcp_requires_a_backend_and_node_oidc_requires_oidc() {
+    let parent = tempfile::tempdir().expect("temporary directory");
+    let mut no_backend = frontend_options(parent.path(), "mcp-web", false, true);
+    no_backend.mcp = true;
+    assert!(
+        generate_new(&no_backend)
+            .expect_err("MCP without a backend must fail")
+            .to_string()
+            .contains("--mcp requires --backend")
+    );
+
+    let mut no_oidc = options(parent.path(), "mcp-no-oidc");
+    no_oidc.mcp = true;
+    no_oidc.mcp_auth = Some(McpAuthentication::NodeOidc);
+    assert!(
+        generate_new(&no_oidc)
+            .expect_err("node-oidc without OIDC must fail")
+            .to_string()
+            .contains("requires --auth oidc")
+    );
+}
+
+#[test]
+fn backend_without_mcp_has_no_mcp_files_dependencies_or_configuration() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = generate_new(&options(parent.path(), "plain-backend"))?;
+    let tree = read_tree(&root)?;
+    assert!(tree.keys().all(|path| !path.starts_with("mcp")));
+    for contents in tree.values() {
+        let source = String::from_utf8_lossy(contents).to_ascii_lowercase();
+        assert!(!source.contains("modelcontextprotocol"));
+        assert!(!source.contains("capabilities.mcp"));
+    }
+    assert!(baukit_cli::read_manifest(&root)?.capabilities.mcp.is_none());
     Ok(())
 }
 

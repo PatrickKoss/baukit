@@ -131,7 +131,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: backend -> target
-{% if context.web or context.mobile %}      - uses: actions/setup-node@v4
+{% if context.web or context.mobile or context.mcp %}      - uses: actions/setup-node@v4
         with:
           node-version: 24
 {% endif %}      # Regenerate in place and diff, so a failure prints the specification
@@ -144,17 +144,18 @@ jobs:
           cp backend/openapi.json "$committed"
           sh scripts/openapi.sh
           diff -u "$committed" backend/openapi.json
-{% if context.web or context.mobile %}      # Every consumer that is committed is regenerated and compared. A product
+{% if context.web or context.mobile or context.mcp %}      # Every consumer that is committed is regenerated and compared. A product
       # that has not generated its client yet has nothing to drift from.
       - name: Regenerate and verify the committed TypeScript consumers
         run: |
           set -euo pipefail
           if ! git ls-files --error-unmatch generated/openapi.d.ts >/dev/null 2>&1; then
-            echo "generated/openapi.d.ts is not committed; run scripts/openapi-client.sh and commit it."
-            exit 0
+{% if context.mcp %}            echo "OpenAPI declarations are not committed; run scripts/openapi-client.sh and commit them."
+{% else %}            echo "generated/openapi.d.ts is not committed; run scripts/openapi-client.sh and commit it."
+{% endif %}            exit 0
           fi
           sh scripts/openapi-client.sh
-          git diff --exit-code -- generated/openapi.d.ts
+          git diff --exit-code -- {% if context.mcp %}mcp/src/api/schema.d.ts {% endif %}generated/openapi.d.ts
 {% endif %}
   docker-build:
     name: Production backend image
@@ -287,6 +288,25 @@ jobs:
           path: mobile/coverage
           if-no-files-found: warn
           retention-days: 7
+
+{% endif %}{% if context.mcp %}  mcp:
+    name: MCP package
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mcp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: corepack pnpm@11.18.0 install --frozen-lockfile
+      - run: corepack pnpm@11.18.0 build
+      - run: corepack pnpm@11.18.0 typecheck
+      - run: corepack pnpm@11.18.0 lint
+      - run: corepack pnpm@11.18.0 test
+      - run: corepack pnpm@11.18.0 openapi:check
+      - run: corepack pnpm@11.18.0 docs:check
 
 {% endif %}  observability-lint:
     name: Observability metric names

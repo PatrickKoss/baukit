@@ -1,0 +1,154 @@
+import { spawn } from 'node:child_process';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterEach, describe, expect, it } from 'vitest';
+
+const packageRoot = fileURLToPath(new URL('..', import.meta.url));
+const temporaryDirectories: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true })),
+  );
+});
+
+describe('stdio bootstrap', () => {
+  it('keeps stdout protocol-clean and closes on SIGTERM', async () => {
+    const secret = 'stdio-private-token';
+{% if context.mcp_auth_caller_supplied %}    const providerDirectory = await mkdtemp(join(tmpdir(), 'mcp-provider-'));
+    temporaryDirectories.push(providerDirectory);
+    const providerModule = join(providerDirectory, 'provider.mjs');
+    await writeFile(
+      providerModule,
+      `export const bearerToken = () => ${JSON.stringify(secret)};\n`,
+    );
+{% endif %}
+    const child = spawn(process.execPath, ['dist/cli.js'], {
+      cwd: packageRoot,
+      env: {
+        ...process.env,
+        ['{{ context.app_env }}_API_TOKEN']: secret,
+{% if context.mcp_auth_caller_supplied %}        ['{{ context.app_env }}_MCP_BEARER_PROVIDER']: providerModule,
+{% endif %}      },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout
+      .setEncoding('utf8')
+      .on('data', (chunk: string) => (stdout += chunk));
+    child.stderr
+      .setEncoding('utf8')
+      .on('data', (chunk: string) => (stderr += chunk));
+    child.stdin.write('{malformed json\n');
+    child.stdin.write(
+      `${JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-06-18',
+          capabilities: {},
+          clientInfo: { name: 'scripted-client', version: '1.0.0' },
+        },
+      })}\n`,
+    );
+
+    await waitFor(() => stdout.includes('"id":1'));
+    child.kill('SIGTERM');
+    const exitCode = await new Promise<number | null>((resolve) =>
+      child.once('exit', resolve),
+    );
+
+    expect(exitCode).toBe(0);
+    const messages = stdout
+      .split('\n')
+      .filter((line) => line.length > 0)
+      .map((line) => JSON.parse(line) as { jsonrpc?: string });
+    expect(messages.length).toBeGreaterThanOrEqual(1);
+    expect(messages.every(({ jsonrpc }) => jsonrpc === '2.0')).toBe(true);
+    expect(stdout).not.toContain('server outcome');
+    expect(stderr).toContain('server outcome=started transport=stdio');
+    expect(stderr).toContain('server outcome=stopped signal=SIGTERM');
+    expect(`${stdout}${stderr}`).not.toContain(secret);
+  });
+
+  it('prints help without starting the protocol transport', async () => {
+    const child = spawn(process.execPath, ['dist/cli.js', '--help'], {
+      cwd: packageRoot,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    child.stdout
+      .setEncoding('utf8')
+      .on('data', (chunk: string) => (stdout += chunk));
+    const exitCode = await new Promise<number | null>((resolve) =>
+      child.once('exit', resolve),
+    );
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain('Usage: {{ context.app_name }}-mcp');
+    expect(stdout).toContain('stdout is reserved for MCP protocol messages');
+  });
+});
+
+describe('generated checks', () => {
+  it('detects OpenAPI route drift', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'mcp-openapi-'));
+    temporaryDirectories.push(directory);
+    const schema = join(directory, 'openapi.json');
+    await writeFile(schema, JSON.stringify({ openapi: '3.1.0', paths: {} }));
+    const result = await runNode('scripts/check-openapi-allowlist.mjs', {
+      MCP_OPENAPI_SCHEMA: schema,
+    });
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('GET /items is absent from OpenAPI');
+  });
+
+  it('detects generated tool documentation drift', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'mcp-docs-'));
+    temporaryDirectories.push(directory);
+    const documentation = join(directory, 'tools.md');
+    await writeFile(documentation, '# stale\n');
+    const result = await runNode(
+      'scripts/generate-tool-docs.mjs',
+      {
+        MCP_TOOL_DOCS_PATH: documentation,
+      },
+      '--check',
+    );
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('does not match the tool registries');
+    expect(await readFile(documentation, 'utf8')).toBe('# stale\n');
+  });
+});
+
+async function runNode(
+  script: string,
+  environment: Record<string, string>,
+  ...arguments_: string[]
+): Promise<{ code: number | null; stderr: string }> {
+  const child = spawn(process.execPath, [script, ...arguments_], {
+    cwd: packageRoot,
+    env: { ...process.env, ...environment },
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  let stderr = '';
+  child.stderr
+    .setEncoding('utf8')
+    .on('data', (chunk: string) => (stderr += chunk));
+  const code = await new Promise<number | null>((resolve) =>
+    child.once('exit', resolve),
+  );
+  return { code, stderr };
+}
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+  const timeoutAt = Date.now() + 5_000;
+  while (!predicate()) {
+    if (Date.now() >= timeoutAt)
+      throw new Error('Timed out waiting for MCP output.');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}

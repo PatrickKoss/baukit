@@ -17,6 +17,8 @@ worker = {{ context.worker }}
 mobile = false
 web = false
 pwa = false
+{% if context.mcp %}mcp = { authentication = "{{ "node-oidc" if context.mcp_auth_node_oidc else "caller-supplied" if context.mcp_auth_caller_supplied else "personal-token" }}" }
+{% endif %}
 {% if context.auth_oidc %}auth = "oidc"
 {% endif %}
 
@@ -25,4 +27,4 @@ pwa = false
 
 [openapi]
 schema = "backend/openapi.json"
-consumers = ["generated/openapi.d.ts"]
+consumers = ["generated/openapi.d.ts"{% if context.mcp %}, "mcp/src/api/schema.d.ts"{% endif %}]

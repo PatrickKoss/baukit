@@ -1,0 +1,85 @@
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+
+import {
+  ApiClient,
+  ApiClientError,
+  AuthenticationError,
+} from './api/client.js';
+import type { BearerTokenProvider } from './auth.js';
+import { READ_TOOLS } from './tools/read.js';
+import type { ToolDefinition, ToolLogger } from './tools/registry.js';
+import { jsonResult } from './tools/registry.js';
+import { WRITE_TOOLS } from './tools/write.js';
+
+export interface ServerOptions {
+  readonly apiUrl: string;
+  readonly bearerToken: BearerTokenProvider;
+  readonly fetch?: typeof globalThis.fetch;
+  readonly logger?: ToolLogger;
+}
+
+export function createServer(options: ServerOptions): McpServer {
+  const server = new McpServer({
+    name: '{{ context.app_name }}-mcp',
+    version: '0.1.0',
+  });
+  const api = new ApiClient({
+    baseUrl: options.apiUrl,
+    bearerToken: options.bearerToken,
+    ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+  });
+  registerTools(server, api, READ_TOOLS, options.logger);
+  registerTools(server, api, WRITE_TOOLS, options.logger);
+  return server;
+}
+
+function registerTools(
+  server: McpServer,
+  api: ApiClient,
+  tools: readonly ToolDefinition[],
+  logger: ToolLogger = () => undefined,
+): void {
+  for (const tool of tools) {
+    server.registerTool(
+      tool.name,
+      {
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        annotations: tool.annotations,
+      },
+      async () => {
+        try {
+          const result = jsonResult(await tool.run(api));
+          logger({ name: tool.name, outcome: 'success' });
+          return result;
+        } catch (error: unknown) {
+          const status =
+            error instanceof ApiClientError ? error.status : undefined;
+          logger({
+            name: tool.name,
+            outcome: 'error',
+            ...(status === undefined ? {} : { status }),
+          });
+          return {
+            ...jsonResult(safeToolError(error)),
+            isError: true,
+          };
+        }
+      },
+    );
+  }
+}
+
+function safeToolError(error: unknown): Readonly<Record<string, unknown>> {
+  if (error instanceof AuthenticationError) {
+    return { error: 'authentication_failed', message: error.message };
+  }
+  if (error instanceof ApiClientError) {
+    return {
+      error: 'api_error',
+      message: error.message,
+      ...(error.status === undefined ? {} : { status: error.status }),
+    };
+  }
+  return { error: 'tool_error', message: 'The tool could not complete.' };
+}

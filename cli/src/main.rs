@@ -2,7 +2,8 @@ use std::{env, path::PathBuf, process::ExitCode};
 
 use anyhow::Result;
 use baukit_cli::{
-    AuthProvider, NewOptions, QualityProfile, doctor, generate_new, generate_openapi_client,
+    AuthProvider, McpAuthentication, NewOptions, QualityProfile, doctor, generate_new,
+    generate_openapi_client,
 };
 use clap::{Args, Parser, Subcommand};
 
@@ -46,6 +47,12 @@ struct NewCommand {
     /// Generate the Vite React web application.
     #[arg(long)]
     web: bool,
+    /// Generate a TypeScript MCP server package for the backend.
+    #[arg(long, requires = "backend")]
+    mcp: bool,
+    /// Select how the generated MCP bootstrap obtains bearer tokens.
+    #[arg(long, value_enum, requires = "mcp")]
+    mcp_auth: Option<McpAuthentication>,
     /// Add an authentication capability.
     #[arg(long, value_enum)]
     auth: Option<AuthProvider>,
@@ -98,6 +105,8 @@ fn run() -> Result<()> {
                 worker: command.worker,
                 mobile: command.mobile,
                 web: command.web,
+                mcp: command.mcp,
+                mcp_auth: command.mcp_auth,
                 auth: command.auth,
                 force: command.force,
                 into_existing: command.into_existing,

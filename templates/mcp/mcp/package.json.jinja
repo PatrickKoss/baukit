@@ -1,0 +1,44 @@
+{
+  "name": "{{ context.app_name }}-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server for the {{ context.app_name }} API",
+  "type": "module",
+  "packageManager": "pnpm@11.18.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "bin": {
+    "{{ context.app_name }}-mcp": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "docs",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "docs": "node scripts/generate-tool-docs.mjs",
+    "docs:check": "node scripts/generate-tool-docs.mjs --check",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint . --max-warnings 0 && prettier --check .",
+    "openapi:check": "node scripts/check-openapi-allowlist.mjs",
+    "start": "node dist/cli.js",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+{{ context.baukit_mcp_typescript_dependency }}    "@modelcontextprotocol/sdk": "1.30.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.13.3",
+    "eslint": "10.8.1",
+    "prettier": "3.9.6",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.66.0",
+    "vitest": "4.1.10"
+  }
+}

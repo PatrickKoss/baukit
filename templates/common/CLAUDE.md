@@ -21,6 +21,13 @@ corepack pnpm@11.18.0 --dir web test
 corepack pnpm@11.18.0 --dir mobile typecheck
 corepack pnpm@11.18.0 --dir mobile lint
 corepack pnpm@11.18.0 --dir mobile test
+{% endif %}{% if context.mcp %}corepack pnpm@11.18.0 --dir mcp install --frozen-lockfile
+corepack pnpm@11.18.0 --dir mcp build
+corepack pnpm@11.18.0 --dir mcp typecheck
+corepack pnpm@11.18.0 --dir mcp lint
+corepack pnpm@11.18.0 --dir mcp test
+corepack pnpm@11.18.0 --dir mcp openapi:check
+corepack pnpm@11.18.0 --dir mcp docs:check
 {% endif %}baukit doctor
 ```
 
@@ -40,7 +47,7 @@ Set `BAUKIT_BASE_REVISION` to the pull request base commit when running the migr
 
 {% endif %}## Dependency and generated-file rules
 
-Commit `Cargo.lock`{% if context.web %}, `web/pnpm-lock.yaml`{% endif %}{% if context.mobile %}, `mobile/pnpm-lock.yaml`{% endif %}. CI uses `--locked` or `--frozen-lockfile`. Use Corepack's pinned pnpm version. Do not use a globally installed pnpm.
+Commit `Cargo.lock`{% if context.web %}, `web/pnpm-lock.yaml`{% endif %}{% if context.mobile %}, `mobile/pnpm-lock.yaml`{% endif %}{% if context.mcp %}, `mcp/pnpm-lock.yaml`{% endif %}. CI uses `--locked` or `--frozen-lockfile`. Use Corepack's pinned pnpm version. Do not use a globally installed pnpm.
 
 {% if context.backend %}The Rust workspace declares its minimum supported Rust version in `backend/Cargo.toml`. Keep code compatible with that version. Regenerate `backend/openapi.json` with `sh scripts/openapi.sh`. List every committed TypeScript declaration in `openapi.consumers` in `baukit.toml`, then regenerate all of them with `sh scripts/openapi-client.sh`.
 
@@ -51,6 +58,8 @@ Applied files under `backend/migrations/` are immutable. Change the schema with 
 If `capabilities.pwa` becomes true, provide `web`'s `build:sw:check` command and commit its generated service-worker output. The strict runner treats drift as a failure.
 
 {% endif %}{% if context.mobile %}Run Expo Doctor after changing Expo packages or app configuration. Changes to native dependencies, config plugins, or `mobile/app.config.ts` require the iOS bundle check and Android `assembleDebug`.
+
+{% endif %}{% if context.mcp %}The MCP package keeps read and write tools in separate registries. Each tool needs complete annotations and a matching entry in `mcp/src/tool-routes.ts`. Run the OpenAPI and generated-doc checks after changing a registry or route. Keep stdout for protocol messages and send outcome-only logs to stderr.
 
 {% endif %}## Boundaries
 

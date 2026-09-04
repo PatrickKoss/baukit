@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 static BACKEND_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/backend");
 static COMMON_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/common");
 static MOBILE_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/mobile");
+static MCP_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/mcp");
 static WEB_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/web");
 static WORKER_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/worker");
 
@@ -208,6 +209,28 @@ const EXPECTED_MOBILE_TYPESCRIPT_DEPENDENCIES: &[&str] = &[
 
 const EXPECTED_MOBILE_AUTH_DEPENDENCIES: &[&str] = &["@baukit/auth-native"];
 const EXPECTED_WEB_AUTH_DEPENDENCIES: &[&str] = &["@baukit/auth-web"];
+const EXPECTED_MCP_FILES: &[&str] = &[
+    "mcp/package.json",
+    "mcp/README.md",
+    "mcp/tsconfig.json",
+    "mcp/tsconfig.build.json",
+    "mcp/eslint.config.js",
+    "mcp/vitest.config.ts",
+    "mcp/src/api/client.ts",
+    "mcp/src/api/schema.d.ts",
+    "mcp/src/auth.ts",
+    "mcp/src/cli.ts",
+    "mcp/src/server.ts",
+    "mcp/src/tool-routes.ts",
+    "mcp/src/tools/registry.ts",
+    "mcp/src/tools/read.ts",
+    "mcp/src/tools/write.ts",
+    "mcp/scripts/check-openapi-allowlist.mjs",
+    "mcp/scripts/generate-tool-docs.mjs",
+    "mcp/docs/tools.md",
+    "mcp/test/server.test.ts",
+    "mcp/test/stdio.test.ts",
+];
 
 #[derive(Clone, Debug)]
 pub struct NewOptions {
@@ -217,6 +240,8 @@ pub struct NewOptions {
     pub worker: bool,
     pub mobile: bool,
     pub web: bool,
+    pub mcp: bool,
+    pub mcp_auth: Option<McpAuthentication>,
     pub auth: Option<AuthProvider>,
     pub force: bool,
     pub into_existing: bool,
@@ -230,6 +255,14 @@ pub struct NewOptions {
 #[serde(rename_all = "lowercase")]
 pub enum AuthProvider {
     Oidc,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
+#[serde(rename_all = "kebab-case")]
+pub enum McpAuthentication {
+    PersonalToken,
+    NodeOidc,
+    CallerSupplied,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
@@ -303,7 +336,14 @@ pub struct Capabilities {
     #[serde(default)]
     pub pwa: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp: Option<McpCapability>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth: Option<AuthProvider>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct McpCapability {
+    pub authentication: McpAuthentication,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -347,6 +387,7 @@ struct TemplateContext {
     baukit_dependencies: String,
     baukit_web_typescript_dependencies: String,
     baukit_mobile_typescript_dependencies: String,
+    baukit_mcp_typescript_dependency: String,
     baukit_manifest: String,
     baukit_dependency_description: String,
     baukit_typescript_dependency_description: String,
@@ -355,6 +396,9 @@ struct TemplateContext {
     worker: bool,
     mobile: bool,
     web: bool,
+    mcp: bool,
+    mcp_auth_node_oidc: bool,
+    mcp_auth_caller_supplied: bool,
     auth_oidc: bool,
     quality_strict: bool,
     port_offset: u32,
@@ -419,6 +463,7 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
     if options.worker && !options.backend {
         bail!("--worker requires --backend because it is generated in the backend workspace");
     }
+    let mcp_authentication = selected_mcp_authentication(options)?;
     if !options.backend && !options.mobile && !options.web {
         bail!("select at least one capability: --backend, --mobile, or --web");
     }
@@ -448,6 +493,7 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         options.web,
         auth_oidc,
         options.worker,
+        mcp_authentication,
     )?;
     let context = TemplateContext {
         app_name: options.name.clone(),
@@ -457,6 +503,7 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         baukit_dependencies: dependency.cargo,
         baukit_web_typescript_dependencies: dependency.web_typescript,
         baukit_mobile_typescript_dependencies: dependency.mobile_typescript,
+        baukit_mcp_typescript_dependency: dependency.mcp_typescript,
         baukit_manifest: dependency.manifest,
         baukit_dependency_description: dependency.description,
         baukit_typescript_dependency_description: dependency.typescript_description,
@@ -465,6 +512,9 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         worker: options.worker,
         mobile: options.mobile,
         web: options.web,
+        mcp: options.mcp,
+        mcp_auth_node_oidc: mcp_authentication == Some(McpAuthentication::NodeOidc),
+        mcp_auth_caller_supplied: mcp_authentication == Some(McpAuthentication::CallerSupplied),
         auth_oidc,
         quality_strict: options.quality == QualityProfile::Strict,
         port_offset: options.port_offset,
@@ -534,9 +584,13 @@ fn resolve_lockfiles(destination: &Path, options: &NewOptions) -> Result<()> {
         )?;
     }
 
-    for capability in [(options.web, "web"), (options.mobile, "mobile")]
-        .into_iter()
-        .filter_map(|(enabled, name)| enabled.then_some(name))
+    for capability in [
+        (options.web, "web"),
+        (options.mobile, "mobile"),
+        (options.mcp, "mcp"),
+    ]
+    .into_iter()
+    .filter_map(|(enabled, name)| enabled.then_some(name))
     {
         if destination
             .join(capability)
@@ -587,6 +641,7 @@ struct DependencyContext {
     cargo: String,
     web_typescript: String,
     mobile_typescript: String,
+    mcp_typescript: String,
     manifest: String,
     description: String,
     typescript_description: String,
@@ -598,6 +653,7 @@ fn dependency_context(
     web: bool,
     auth_oidc: bool,
     worker: bool,
+    mcp_authentication: Option<McpAuthentication>,
 ) -> Result<DependencyContext> {
     let web_packages = typescript_packages(false, false, web && auth_oidc);
     let mobile_packages = typescript_packages(mobile, mobile && auth_oidc, false);
@@ -673,10 +729,26 @@ fn dependency_context(
                 .collect::<Vec<_>>()
                 .join(",\n")
         };
+        let mcp_typescript = if mcp_authentication == Some(McpAuthentication::NodeOidc) {
+            let auth_node = typescript_root.join("packages/auth-node/package.json");
+            if !auth_node.is_file() {
+                bail!(
+                    "--baukit-path {} has no matching TypeScript package `@baukit/auth-node` at {}",
+                    path.display(),
+                    typescript_root.display()
+                );
+            }
+            format!(
+                "    \"@baukit/auth-node\": \"file:{typescript_display}/packages/auth-node\",\n"
+            )
+        } else {
+            String::new()
+        };
         Ok(DependencyContext {
             cargo,
             web_typescript: render_typescript(&web_packages),
             mobile_typescript: render_typescript(&mobile_packages),
+            mcp_typescript,
             manifest: format!("source = \"path\"\npath = \"{display}\""),
             description: format!("local path `{}`", path.display()),
             typescript_description: format!("local path `{}`", typescript_root.display()),
@@ -715,6 +787,11 @@ fn dependency_context(
             cargo,
             web_typescript: render_typescript(&web_packages),
             mobile_typescript: render_typescript(&mobile_packages),
+            mcp_typescript: if mcp_authentication == Some(McpAuthentication::NodeOidc) {
+                format!("    \"@baukit/auth-node\": \"{version}\",\n")
+            } else {
+                String::new()
+            },
             manifest: format!("source = \"registry\"\nversion = \"{version}\""),
             description: format!("crates.io version `{version}`"),
             typescript_description: format!("npm version `{version}`"),
@@ -798,6 +875,14 @@ fn render_product(
             render_directory(overlay, &environment, context, &mut rendered, true)?;
         }
     }
+    if options.mcp {
+        render_directory(&MCP_TEMPLATE, &environment, context, &mut rendered, false)?;
+        let declaration = rendered
+            .get(Path::new("generated/openapi.d.ts"))
+            .cloned()
+            .ok_or_else(|| anyhow!("backend template has no generated OpenAPI declaration"))?;
+        rendered.insert(PathBuf::from("mcp/src/api/schema.d.ts"), declaration);
+    }
     rendered.insert(
         PathBuf::from("baukit.toml"),
         render_manifest(context, options).into_bytes(),
@@ -814,6 +899,24 @@ fn render_manifest(context: &TemplateContext, options: &NewOptions) -> String {
         String::new()
     } else {
         format!("port_offset = {}\n", options.port_offset)
+    };
+    let mcp = selected_mcp_authentication(options)
+        .expect("MCP options were validated before rendering")
+        .map(|authentication| {
+            format!(
+                "mcp = {{ authentication = \"{}\" }}\n",
+                match authentication {
+                    McpAuthentication::PersonalToken => "personal-token",
+                    McpAuthentication::NodeOidc => "node-oidc",
+                    McpAuthentication::CallerSupplied => "caller-supplied",
+                }
+            )
+        })
+        .unwrap_or_default();
+    let consumers = if options.mcp {
+        "[\"generated/openapi.d.ts\", \"mcp/src/api/schema.d.ts\"]"
+    } else {
+        "[\"generated/openapi.d.ts\"]"
     };
     format!(
         "schema_version = {MANIFEST_SCHEMA_VERSION}\n\
@@ -837,13 +940,14 @@ mobile = {}\n\
 web = {}\n\
 pwa = false\n\
 {}\
+{}\
 \n\
 [dependencies.baukit]\n\
 {}\n\
 \n\
 [openapi]\n\
 schema = \"backend/openapi.json\"\n\
-consumers = [\"generated/openapi.d.ts\"]\n",
+consumers = {}\n",
         context.template_version,
         port_offset,
         context.app_name,
@@ -857,9 +961,34 @@ consumers = [\"generated/openapi.d.ts\"]\n",
         options.worker,
         options.mobile,
         options.web,
+        mcp,
         auth,
         context.baukit_manifest,
+        consumers,
     )
+}
+
+fn selected_mcp_authentication(options: &NewOptions) -> Result<Option<McpAuthentication>> {
+    if !options.mcp {
+        if options.mcp_auth.is_some() {
+            bail!("--mcp-auth requires --mcp");
+        }
+        return Ok(None);
+    }
+    if !options.backend {
+        bail!("--mcp requires --backend because the generated package consumes its OpenAPI schema");
+    }
+    let authentication = options
+        .mcp_auth
+        .unwrap_or(if options.auth == Some(AuthProvider::Oidc) {
+            McpAuthentication::NodeOidc
+        } else {
+            McpAuthentication::PersonalToken
+        });
+    if authentication == McpAuthentication::NodeOidc && options.auth != Some(AuthProvider::Oidc) {
+        bail!("--mcp-auth node-oidc requires --auth oidc");
+    }
+    Ok(Some(authentication))
 }
 
 fn render_directory(
@@ -929,6 +1058,9 @@ fn product_description(options: &NewOptions) -> String {
     }
     if options.mobile {
         capabilities.push("mobile app");
+    }
+    if options.mcp {
+        capabilities.push("MCP server");
     }
     format!("Baukit product with {}", capabilities.join(", "))
 }
@@ -1089,6 +1221,15 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
     if manifest.capabilities.pwa && !manifest.capabilities.web {
         failures.push("the PWA capability requires the web capability".to_owned());
     }
+    if manifest.capabilities.mcp.is_some() && !manifest.capabilities.backend {
+        failures.push("the MCP capability requires the backend capability".to_owned());
+    }
+    if manifest.capabilities.mcp.as_ref().is_some_and(|mcp| {
+        mcp.authentication == McpAuthentication::NodeOidc
+            && manifest.capabilities.auth != Some(AuthProvider::Oidc)
+    }) {
+        failures.push("MCP node-oidc authentication requires the OIDC capability".to_owned());
+    }
     if manifest.schema_version == MANIFEST_SCHEMA_VERSION {
         successes.push(format!(
             "manifest schema {} is current",
@@ -1137,6 +1278,9 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
                 }
             }
             validate_keycloak_realm_tools(root, host, &mut successes, &mut failures);
+        }
+        if let Some(mcp) = &manifest.capabilities.mcp {
+            validate_mcp_capability(root, &manifest.openapi, mcp, &mut successes, &mut failures)?;
         }
         let cargo = root.join("backend/Cargo.toml");
         if cargo.is_file() {
@@ -1442,6 +1586,9 @@ fn validate_port_configuration(
             ]);
         }
     }
+    if manifest.capabilities.mcp.is_some() {
+        expected.push(("mcp/src/cli.ts", format!("localhost:{}", ports.api)));
+    }
     for (relative, snippet) in expected {
         let relative = relative.replace("PLACEHOLDER", &manifest.app.name);
         let path = root.join(&relative);
@@ -1670,6 +1817,52 @@ fn validate_openapi_file(root: &Path, kind: &str, relative: &str, failures: &mut
     } else if !root.join(path).is_file() {
         failures.push(format!("missing OpenAPI {kind} file `{relative}`"));
     }
+}
+
+fn validate_mcp_capability(
+    root: &Path,
+    openapi: &OpenApiPaths,
+    mcp: &McpCapability,
+    successes: &mut Vec<String>,
+    failures: &mut Vec<String>,
+) -> Result<()> {
+    let initial_failure_count = failures.len();
+    for relative in EXPECTED_MCP_FILES {
+        if !root.join(relative).is_file() {
+            failures.push(format!("missing expected MCP file `{relative}`"));
+        }
+    }
+    if !openapi.consumers().contains(&"mcp/src/api/schema.d.ts") {
+        failures.push(
+            "the MCP capability requires `mcp/src/api/schema.d.ts` in openapi.consumers".to_owned(),
+        );
+    }
+
+    let package_path = root.join("mcp/package.json");
+    if package_path.is_file() {
+        let source = fs::read_to_string(&package_path)
+            .with_context(|| format!("could not read {}", package_path.display()))?;
+        if !source.contains("\"@modelcontextprotocol/sdk\": \"1.30.0\"") {
+            failures.push(
+                "mcp/package.json must pin `@modelcontextprotocol/sdk` to `1.30.0`".to_owned(),
+            );
+        }
+        let has_auth_node = source.contains("\"@baukit/auth-node\"");
+        if has_auth_node != (mcp.authentication == McpAuthentication::NodeOidc) {
+            failures.push(
+                "mcp/package.json must include `@baukit/auth-node` only for node-oidc authentication"
+                    .to_owned(),
+            );
+        }
+    }
+
+    if failures.len() == initial_failure_count {
+        successes.push(format!(
+            "MCP package files and {:?} authentication are configured",
+            mcp.authentication
+        ));
+    }
+    Ok(())
 }
 
 fn validate_migrations(

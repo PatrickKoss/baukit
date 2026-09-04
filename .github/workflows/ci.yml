@@ -194,49 +194,60 @@ jobs:
             backend: true
             mobile: false
             web: false
+            mcp: false
           - flavor: web
             flags: --web
             backend: false
             mobile: false
             web: true
+            mcp: false
           - flavor: mobile
             flags: --mobile
             backend: false
             mobile: true
             web: false
+            mcp: false
           - flavor: combined
             flags: --backend --mobile --web
             backend: true
             mobile: true
             web: true
+            mcp: false
+          - flavor: mcp
+            flags: --backend --mcp
+            backend: true
+            mobile: false
+            web: false
+            mcp: true
           - flavor: auth
-            flags: --backend --mobile --web --auth oidc
+            flags: --backend --mobile --web --auth oidc --mcp
             backend: true
             mobile: true
             web: true
+            mcp: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: actions/setup-node@v4
-        if: matrix.mobile || matrix.web
+        if: matrix.mobile || matrix.web || matrix.mcp
         with:
           node-version-file: typescript/.nvmrc
       - name: Enable pinned pnpm
-        if: matrix.mobile || matrix.web
+        if: matrix.mobile || matrix.web || matrix.mcp
         working-directory: typescript
         run: |
           corepack enable
           corepack install
           pnpm --version
       - name: Find pnpm store
-        if: matrix.mobile || matrix.web
+        if: matrix.mobile || matrix.web || matrix.mcp
         id: pnpm-store
         working-directory: typescript
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
-        if: matrix.mobile || matrix.web
+        if: matrix.mobile || matrix.web || matrix.mcp
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ runner.os }}-pnpm-generated-${{ matrix.flavor }}-${{ hashFiles('typescript/pnpm-lock.yaml') }}
@@ -248,11 +259,11 @@ jobs:
           workspaces: cli -> target
           key: generated-fixture-cli
       - name: Build local Baukit TypeScript dependencies
-        if: matrix.mobile || matrix.web
+        if: matrix.mobile || matrix.web || matrix.mcp
         working-directory: typescript
         run: |
           pnpm install --frozen-lockfile
-          pnpm --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/api-runtime --filter @baukit/auth-native --filter @baukit/data-contracts --filter @baukit/ui-tokens run build
+          pnpm --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/api-runtime --filter @baukit/auth-native --filter @baukit/auth-node --filter @baukit/data-contracts --filter @baukit/ui-tokens run build
       - name: Build CLI and generate local-path fixture
         run: |
           cargo build --manifest-path cli/Cargo.toml --bin baukit
@@ -290,6 +301,17 @@ jobs:
           pnpm exec tsc --noEmit
           pnpm lint
           pnpm test
+      - name: Install and verify generated MCP package
+        if: matrix.mcp
+        working-directory: .generated-fixture/fixture/mcp
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+          pnpm typecheck
+          pnpm lint
+          pnpm test
+          pnpm openapi:check
+          pnpm docs:check
 
   generated-mobile-android-build:
     name: Build generated mobile Android fixture
