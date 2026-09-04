@@ -1,5 +1,9 @@
 use std::sync::OnceLock;
 
+use baukit_core::limits::{
+    CompactJsonLimitError, LimitExceeded, check_compact_json_utf8_bytes, check_measurement,
+    check_trimmed_unicode_scalars,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
@@ -140,21 +144,24 @@ impl LimitError {
 }
 
 pub fn check_text(field: &'static str, value: &str) -> Result<(), LimitError> {
-    check_count(
+    map_limit_exceeded(
         field,
-        value.trim().chars().count(),
-        limits_policy().text.max_characters,
         LimitReason::TextTooLong,
+        check_trimmed_unicode_scalars(value, limits_policy().text.max_characters),
     )
 }
 
 pub fn check_json_document(field: &'static str, value: &Value) -> Result<(), LimitError> {
-    check_count(
-        field,
-        value.to_string().len(),
-        limits_policy().document.max_bytes,
-        LimitReason::JsonbTooLarge,
-    )
+    match check_compact_json_utf8_bytes(value, limits_policy().document.max_bytes) {
+        Ok(_) => Ok(()),
+        Err(CompactJsonLimitError::Limit(_)) => Err(LimitError {
+            reason: LimitReason::JsonbTooLarge,
+            field,
+        }),
+        Err(CompactJsonLimitError::Encoding(_)) => {
+            unreachable!("serde_json::Value must serialize")
+        }
+    }
 }
 
 pub fn check_collection(field: &'static str, count: usize) -> Result<(), LimitError> {
@@ -199,10 +206,15 @@ fn check_count(
     maximum: usize,
     reason: LimitReason,
 ) -> Result<(), LimitError> {
-    if actual > maximum {
-        return Err(LimitError { reason, field });
-    }
-    Ok(())
+    map_limit_exceeded(field, reason, check_measurement(actual, maximum))
+}
+
+fn map_limit_exceeded(
+    field: &'static str,
+    reason: LimitReason,
+    result: Result<baukit_core::limits::LimitMeasurement, LimitExceeded>,
+) -> Result<(), LimitError> {
+    result.map(|_| ()).map_err(|_| LimitError { reason, field })
 }
 
 #[cfg(test)]

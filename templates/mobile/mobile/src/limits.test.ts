@@ -1,4 +1,14 @@
 import limitsFixture from '../../limits.json';
+import { ResourceMeasurementError } from '@baukit/data-contracts/limits';
+
+jest.mock(
+  '@baukit/data-contracts/limits',
+  () =>
+    jest.requireActual<typeof import('@baukit/data-contracts/limits')>(
+      '../node_modules/@baukit/data-contracts/dist/limits.js',
+    ),
+  { virtual: true },
+);
 
 import {
   LIMITS_POLICY,
@@ -40,26 +50,50 @@ describe('shared limits policy', () => {
     expect(() => {
       checkText('title', 'é'.repeat(LIMITS_POLICY.text.max_characters));
     }).not.toThrow();
-    expectReason(() => {
-      checkText('title', 'é'.repeat(LIMITS_POLICY.text.max_characters + 1));
-    }, 'text_too_long');
-    expectReason(() => {
-      checkJsonDocument('metadata', {
-        value: 'x'.repeat(LIMITS_POLICY.document.max_bytes),
-      });
-    }, 'jsonb_too_large');
-    expectReason(() => {
-      checkCollection('entries', LIMITS_POLICY.collection.max_elements + 1);
-    }, 'too_many_elements');
-    expectReason(() => {
-      checkRows('records', LIMITS_POLICY.rows.max_count + 1);
-    }, 'too_many_rows');
-    expectReason(() => {
-      checkBody('request', LIMITS_POLICY.body.max_bytes + 1);
-    }, 'body_too_large');
-    expectReason(() => {
-      checkBatch('changes', LIMITS_POLICY.batch.max_items + 1);
-    }, 'batch_too_large');
+    expectReason(
+      () => {
+        checkText('title', 'é'.repeat(LIMITS_POLICY.text.max_characters + 1));
+      },
+      'text_too_long',
+      'title',
+    );
+    expectReason(
+      () => {
+        checkJsonDocument('metadata', {
+          value: 'x'.repeat(LIMITS_POLICY.document.max_bytes),
+        });
+      },
+      'jsonb_too_large',
+      'metadata',
+    );
+    expectReason(
+      () => {
+        checkCollection('entries', LIMITS_POLICY.collection.max_elements + 1);
+      },
+      'too_many_elements',
+      'entries',
+    );
+    expectReason(
+      () => {
+        checkRows('records', LIMITS_POLICY.rows.max_count + 1);
+      },
+      'too_many_rows',
+      'records',
+    );
+    expectReason(
+      () => {
+        checkBody('request', LIMITS_POLICY.body.max_bytes + 1);
+      },
+      'body_too_large',
+      'request',
+    );
+    expectReason(
+      () => {
+        checkBatch('changes', LIMITS_POLICY.batch.max_items + 1);
+      },
+      'batch_too_large',
+      'changes',
+    );
   });
 
   it('rejects invalid counts instead of treating them as within policy', () => {
@@ -76,14 +110,24 @@ describe('shared limits policy', () => {
       checkJsonDocument('metadata', 'a¢€𐍈');
     }).not.toThrow();
   });
+
+  it('passes production measurement failures through without product content', () => {
+    expect(() => {
+      checkText('title', '\ud800');
+    }).toThrow(ResourceMeasurementError);
+    expect(() => {
+      checkJsonDocument('metadata', Number.NaN);
+    }).toThrow(ResourceMeasurementError);
+  });
 });
 
-function expectReason(action: () => void, reason: LimitError['reason']): void {
+function expectReason(action: () => void, reason: LimitError['reason'], field: string): void {
   try {
     action();
     throw new Error('expected a limit error');
   } catch (error) {
     expect(error).toBeInstanceOf(LimitError);
-    expect((error as LimitError).reason).toBe(reason);
+    expect(error).toMatchObject({ reason, field });
+    expect((error as Error).message).toBe(`Limit exceeded for ${field}: ${reason}`);
   }
 }

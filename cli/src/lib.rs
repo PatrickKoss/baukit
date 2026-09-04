@@ -174,18 +174,18 @@ const EXPECTED_TYPESCRIPT_DEPENDENCIES: &[&str] = &[
     "@baukit/a11y-core",
     "@baukit/analytics-core",
     "@baukit/api-runtime",
+    "@baukit/data-contracts",
     "@baukit/ui-tokens",
 ];
 
 const EXPECTED_MOBILE_TYPESCRIPT_DEPENDENCIES: &[&str] = &[
-    "@baukit/data-contracts",
     "@baukit/data-contracts-expo-sqlite",
     "@baukit/localization-core",
     "@baukit/preferences-core",
 ];
 
 const EXPECTED_MOBILE_AUTH_DEPENDENCIES: &[&str] = &["@baukit/auth-native"];
-const EXPECTED_WEB_AUTH_DEPENDENCIES: &[&str] = &["@baukit/auth-web", "@baukit/data-contracts"];
+const EXPECTED_WEB_AUTH_DEPENDENCIES: &[&str] = &["@baukit/auth-web"];
 
 #[derive(Clone, Debug)]
 pub struct NewOptions {
@@ -595,6 +595,7 @@ fn dependency_context(
         }
         let display = path.display().to_string().replace('\\', "\\\\");
         let mut names = vec![
+            "baukit-core",
             "baukit-config",
             "baukit-http",
             "baukit-openapi",
@@ -661,6 +662,7 @@ fn dependency_context(
     } else {
         let version = TEMPLATE_VERSION;
         let mut names = vec![
+            "baukit-core",
             "baukit-config",
             "baukit-http",
             "baukit-openapi",

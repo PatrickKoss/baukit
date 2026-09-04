@@ -252,7 +252,7 @@ jobs:
         working-directory: typescript
         run: |
           pnpm install --frozen-lockfile
-          pnpm --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/api-runtime --filter @baukit/auth-native --filter @baukit/ui-tokens run build
+          pnpm --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/api-runtime --filter @baukit/auth-native --filter @baukit/data-contracts --filter @baukit/ui-tokens run build
       - name: Build CLI and generate local-path fixture
         run: |
           cargo build --manifest-path cli/Cargo.toml --bin baukit

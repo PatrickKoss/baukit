@@ -46,3 +46,15 @@ An Eigenruhe dependency upgrade can remove `codePointLength`, the local UTF-8 co
 compact JSON byte functions. Its `limits.json`, parsers, public reason types, and operation mappings
 remain product-owned. The adoption pull request has not been opened because the product repository
 is read-only for this batch.
+
+## Template adoption
+
+The generated backend domain now calls `baukit_core::limits` for text, compact JSON, and numeric
+checks. Generated web and mobile code call `@baukit/data-contracts/limits`. The adapters preserve
+the generated `LimitError` type, field, reason code, and message. Policy parsing and `limits.json`
+remain in the generated product.
+
+Existing valid JSON and valid Unicode inputs keep their prior boundary behavior. Generated
+TypeScript projects now reject unpaired UTF-16 surrogates and unsupported JSON values with
+`ResourceMeasurementError` instead of measuring JavaScript's fallback encoding. Products that
+accepted those inputs must handle the stable measurement error codes during adoption.

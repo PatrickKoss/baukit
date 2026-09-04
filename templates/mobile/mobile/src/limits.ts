@@ -1,4 +1,10 @@
 import limitsFixture from '../../limits.json';
+import {
+  LimitExceededError,
+  checkCompactJsonUtf8Bytes,
+  checkMeasurement,
+  checkTrimmedUnicodeScalars,
+} from '@baukit/data-contracts/limits';
 
 const SUPPORTED_POLICY_VERSION = 1;
 
@@ -61,21 +67,14 @@ export function parseLimitsPolicy(value: unknown): LimitsPolicy {
 export const LIMITS_POLICY = parseLimitsPolicy(limitsFixture);
 
 export function checkText(field: string, value: string): void {
-  checkCount(
-    field,
-    Array.from(value.trim()).length,
-    LIMITS_POLICY.text.max_characters,
-    'text_too_long',
+  mapLimitExceeded(field, 'text_too_long', () =>
+    checkTrimmedUnicodeScalars(value, LIMITS_POLICY.text.max_characters),
   );
 }
 
 export function checkJsonDocument(field: string, value: JsonValue): void {
-  const serialized = JSON.stringify(value);
-  checkCount(
-    field,
-    utf8ByteLength(serialized),
-    LIMITS_POLICY.document.max_bytes,
-    'jsonb_too_large',
+  mapLimitExceeded(field, 'jsonb_too_large', () =>
+    checkCompactJsonUtf8Bytes(value, LIMITS_POLICY.document.max_bytes),
   );
 }
 
@@ -131,18 +130,14 @@ function checkCount(field: string, actual: number, maximum: number, reason: Limi
   if (!Number.isSafeInteger(actual) || actual < 0) {
     throw new RangeError(`${field} count must be a non-negative integer`);
   }
-  if (actual > maximum) throw new LimitError(reason, field);
+  mapLimitExceeded(field, reason, () => checkMeasurement(actual, maximum));
 }
 
-function utf8ByteLength(value: string): number {
-  let bytes = 0;
-  for (const character of value) {
-    const codePoint = character.codePointAt(0);
-    if (codePoint === undefined) continue;
-    if (codePoint <= 0x7f) bytes += 1;
-    else if (codePoint <= 0x7ff) bytes += 2;
-    else if (codePoint <= 0xffff) bytes += 3;
-    else bytes += 4;
+function mapLimitExceeded(field: string, reason: LimitReason, check: () => unknown): void {
+  try {
+    check();
+  } catch (error) {
+    if (error instanceof LimitExceededError) throw new LimitError(reason, field);
+    throw error;
   }
-  return bytes;
 }
