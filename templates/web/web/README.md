@@ -28,6 +28,18 @@ The example uses real `h1`/`h2` elements for document structure. Visual classes 
 
 The Baukit packages come from {{ context.baukit_typescript_dependency_description }}. Release-generated apps pin an exact npm version; local fixtures use `file:` dependencies. The app builds and runs without the Baukit CLI.
 
+## Optional PWA worker
+
+The generated manifest keeps `capabilities.pwa = false`. To add a PWA, first add
+`@baukit/pwa-web` to this package and set `capabilities.pwa = true` in the product-root
+`baukit.toml`. Then run `pnpm build:sw`. The script copies the published classic-worker artifact to
+`public/baukit-pwa-worker.js`. It does not generate `sw.js`, registration code, a manifest, icons,
+routes, cache names, offline copy, or identity partition keys.
+
+Load the copied artifact with `importScripts('/baukit-pwa-worker.js')` in a product-owned `sw.js`.
+Run `pnpm build:sw:check` in CI to reject a missing or stale copy. When PWA support remains disabled,
+the check verifies that no copied artifact is present.
+
 ## Checks
 
 ```sh
@@ -36,6 +48,7 @@ pnpm lint
 pnpm test
 pnpm test:coverage
 pnpm test:e2e
+pnpm build:sw:check
 ```
 
 The Vitest acceptance tests cover keyboard focus wrapping and visibility, modal containment and restoration, inactive scenes, invalid deep links, direct-load terminal navigation, validation linkage, and same-tick duplicate activation.

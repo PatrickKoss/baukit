@@ -1,7 +1,7 @@
 {
   "name": "@baukit/pwa-web",
   "version": "0.2.1",
-  "description": "Pure-function caching-strategy decisions for PWA service workers.",
+  "description": "Cache strategy, cleanup, and a classic worker artifact for web PWAs.",
   "license": "MIT",
   "author": "Patrick Koss",
   "homepage": "https://github.com/PatrickKoss/baukit#readme",
@@ -21,12 +21,16 @@
     "node": ">=24.0.0"
   },
   "types": "./dist/index.d.ts",
+  "sideEffects": [
+    "./dist/worker.js"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/cjs/index.js"
-    }
+    },
+    "./worker": "./dist/worker.js"
   },
   "files": [
     "dist",
@@ -34,13 +38,16 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node --input-type=module -e \"import { writeFileSync } from 'node:fs'; writeFileSync('dist/cjs/package.json', '{\\\"type\\\":\\\"commonjs\\\"}\\\\n')\"",
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node scripts/build-worker.mjs && node --input-type=module -e \"import { writeFileSync } from 'node:fs'; writeFileSync('dist/cjs/package.json', '{\\\"type\\\":\\\"commonjs\\\"}\\\\n')\"",
     "prepare": "pnpm run build",
-    "test": "vitest run --config ../../vitest.config.ts",
+    "test": "pnpm run build && vitest run --config ../../vitest.config.ts && pnpm run test:artifact && pnpm run test:package",
+    "test:artifact": "node scripts/test-artifact.mjs",
+    "test:package": "node scripts/test-package.mjs",
     "lint": "eslint src --max-warnings=0",
-    "format:check": "prettier --check src package.json tsconfig.json tsconfig.cjs.json"
+    "format:check": "prettier --check src scripts package.json tsconfig.json tsconfig.cjs.json"
   },
   "devDependencies": {
+    "rolldown": "1.2.3",
     "typescript": "6.0.3",
     "vitest": "4.1.10"
   }

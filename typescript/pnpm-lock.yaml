@@ -211,6 +211,9 @@ importers:
 
   packages/pwa-web:
     devDependencies:
+      rolldown:
+        specifier: 1.2.3
+        version: 1.2.3
       typescript:
         specifier: 6.0.3
         version: 6.0.3

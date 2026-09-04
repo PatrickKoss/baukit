@@ -1,4 +1,10 @@
 export {
+  cleanupCaches,
+  type CacheCleanupOptions,
+  type CacheCleanupPorts,
+  type CacheCleanupResult,
+} from './cache-cleanup.js';
+export {
   CACHE_STRATEGIES,
   createCacheStrategyDecider,
   decideCacheStrategy,

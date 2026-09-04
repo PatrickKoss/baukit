@@ -1182,13 +1182,8 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
             &mut successes,
             &mut failures,
         )?;
-        if manifest.quality.profile == QualityProfile::Strict && manifest.capabilities.pwa {
-            let package_json = fs::read_to_string(root.join("web/package.json"))?;
-            if !package_json.contains("\"build:sw:check\"") {
-                failures.push(
-                    "the strict PWA capability requires the web `build:sw:check` script".to_owned(),
-                );
-            }
+        if manifest.capabilities.pwa {
+            validate_pwa_worker_build(root, &mut successes, &mut failures)?;
         }
         if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
             for relative in EXPECTED_AUTH_WEB_FILES {
@@ -1697,6 +1692,52 @@ fn validate_frontend_capability(
     Ok(())
 }
 
+fn validate_pwa_worker_build(
+    root: &Path,
+    successes: &mut Vec<String>,
+    failures: &mut Vec<String>,
+) -> Result<()> {
+    let initial_failure_count = failures.len();
+    let package_path = root.join("web/package.json");
+    if package_path.is_file() {
+        let package = fs::read_to_string(&package_path)
+            .with_context(|| format!("could not read {}", package_path.display()))?;
+        for (snippet, message) in [
+            (
+                "\"build:sw\"",
+                "the PWA capability requires the web `build:sw` script",
+            ),
+            (
+                "\"build:sw:check\"",
+                "the PWA capability requires the web `build:sw:check` script",
+            ),
+            (
+                "\"@baukit/pwa-web\"",
+                "the PWA capability requires the web `@baukit/pwa-web` dependency",
+            ),
+        ] {
+            if !package.contains(snippet) {
+                failures.push(message.to_owned());
+            }
+        }
+    }
+
+    let script_path = root.join("web/scripts/build-sw.mjs");
+    if !script_path.is_file() {
+        failures.push("the PWA capability requires `web/scripts/build-sw.mjs`".to_owned());
+    } else if !fs::read_to_string(&script_path)?.contains("@baukit/pwa-web/worker") {
+        failures.push(
+            "web/scripts/build-sw.mjs must copy the supported `@baukit/pwa-web/worker` artifact"
+                .to_owned(),
+        );
+    }
+
+    if failures.len() == initial_failure_count {
+        successes.push("web PWA worker build uses the supported Baukit artifact".to_owned());
+    }
+    Ok(())
+}
+
 fn validate_mobile_router_configuration(
     root: &Path,
     successes: &mut Vec<String>,
@@ -1826,6 +1867,7 @@ mod doctor_tests {
     use super::{
         DoctorCommandOutput, DoctorHost, diagnose_docker, diagnose_ssh_agent,
         has_mismatched_localhost_port, probe_git_dependency, validate_mobile_router_configuration,
+        validate_pwa_worker_build,
     };
 
     struct ExpectedCommand {
@@ -1925,6 +1967,48 @@ mod doctor_tests {
             failures
                 .iter()
                 .any(|failure| failure.contains("deep-link scheme"))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn pwa_worker_build_requires_supported_artifact_wiring() -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        fs::create_dir_all(root.path().join("web/scripts"))?;
+        fs::write(
+            root.path().join("web/package.json"),
+            r#"{
+                "scripts": {
+                    "build:sw": "node scripts/build-sw.mjs",
+                    "build:sw:check": "node scripts/build-sw.mjs --check"
+                },
+                "dependencies": { "@baukit/pwa-web": "0.3.0" }
+            }"#,
+        )?;
+        fs::write(
+            root.path().join("web/scripts/build-sw.mjs"),
+            "import.meta.resolve('@baukit/pwa-web/worker');\n",
+        )?;
+        let mut successes = Vec::new();
+        let mut failures = Vec::new();
+
+        validate_pwa_worker_build(root.path(), &mut successes, &mut failures)?;
+
+        assert!(failures.is_empty());
+        assert_eq!(
+            successes,
+            ["web PWA worker build uses the supported Baukit artifact"]
+        );
+
+        fs::write(
+            root.path().join("web/scripts/build-sw.mjs"),
+            "import.meta.resolve('@baukit/pwa-web');\n",
+        )?;
+        validate_pwa_worker_build(root.path(), &mut Vec::new(), &mut failures)?;
+        assert!(
+            failures
+                .iter()
+                .any(|failure| failure.contains("supported `@baukit/pwa-web/worker` artifact"))
         );
         Ok(())
     }
