@@ -37,7 +37,7 @@ Batches group items that can run in parallel with disjoint file ownership. Each 
 - [x] 15. Local Markdown link check in the strict profile (batch 4)
 - [x] 16. Parameterized Keycloak realm policy validation (batch 4)
 - [x] 17. Idempotent development-realm reconciler (batch 4, after 16)
-- [~] 18. Script-only accessible Keycloak theme (batch 5)
+- [x] 18. Script-only accessible Keycloak theme (batch 5)
 - [x] 19. Localization and identity helpers: catalog segments, request locale extractor, identity hints, UUIDv7 study (batch 3)
 
 ### Wave 4
@@ -60,8 +60,8 @@ Batches group items that can run in parallel with disjoint file ownership. Each 
 
 Each study ends in one written decision under `docs/studies/`.
 
-- [ ] 29. Revisioned write queue and durable form drafts (batch 7)
-- [ ] 30. Offline asset management (batch 7)
+- [~] 29. Revisioned write queue and durable form drafts (batch 7)
+- [~] 30. Offline asset management (batch 7)
 - [ ] 31. Expo UI and headless accessibility behavior (batch 7)
 - [ ] 32. Notifications and timeline playback (batch 7)
 - [ ] 33. Calendar export (batch 7)
@@ -101,6 +101,7 @@ Filled in as items complete. Each line names the product file to delete once the
 - Item 23, Tiefgang: erasure in `backend/crates/tiefgang-postgres/src/erasure.rs` checks top-level payload keys while webhook jobs store the subject at `event.user_id`; that is a product privacy bug to fix now, independent of `owner_key`. Eigenruhe: replace the hard-coded zero background-job count in `backend/crates/eigenruhe-postgres/src/profile.rs` once owner-scoped jobs exist.
 - Item 27, Tiefgang: `extension/scripts/copy-openapi.mjs`, `extension/scripts/check-openapi.mjs`, the MCP copy line in `scripts/openapi-client.sh`, and the equality checks in `scripts/quality-gate.sh` and `extension/test/contracts.test.ts` stay until `openapi.mirrors` ships.
 - Item 25, Eigenruhe: replace the local import preparation, allowlist, preview, and atomic commit code with `@baukit/data-contracts/import-envelope` and run the fixture-backed conformance cases against its adapter; Tiefgang: same for its partial import once it adopts the envelope.
+- Item 18, Leitbild: delete `keycloak/themes/leitbild/login/login.ftl` and `keycloak/themes/leitbild/login/resources/js/required-validation.js`. Tiefgang: delete `keycloak/themes/tiefgang/login/login.ftl`, `resources/js/required-validation.js`, and `required-validation.test.mjs`; both keep CSS, messages, preferences script, and product theme properties as children of `baukit-accessible`.
 
 ### Log
 
@@ -110,6 +111,7 @@ Filled in as items complete. Each line names the product file to delete once the
 - 2026-09-04: Batch 3 done. Items 4, 11, 13, 19 committed (763f197, 9f0dc94, and the two commits after them). The UUIDv7 study found `uuid` 14.0.2 portable, so no Baukit helper was added. The CLI has no changelog; template-only changes are recorded in `docs/evidence/` and the template READMEs. Batch 4 started: items 14+15, 16+17, 20, 7b.
 - 2026-09-04: Batch 4 items 7b, 14+15, 16+17 committed (69ddb55, f4eac43, c150ee1). Found while testing item 17: the generated `compose.yaml` mounts PostgreSQL 18 at `/var/lib/postgresql/data`, which the image rejects on a fresh volume; fix it in the final verification pass. `make dev` in OIDC projects starts Keycloak only until that is fixed.
 - 2026-09-04: Item 20 committed (38e3201); batch 4 complete. Its Node-typed tests leaked Node types into the shared test lint program and broke the sync-client Expo file, fixed in 93e0c33 by linting auth-node tests through their own tsconfig. Batch 5 items 22 and 24 committed (9b92f9f and the credential-probe commit); item 18 still running; item 21 started after item 20 landed.
+- 2026-09-04: Items 18, 23, 25, 27 committed (70b65e2, 29c7382, 40882f6). Python tests run inside `templates/` leave `__pycache__` directories that the generator rejects as non-UTF-8 template files; the final verification pass should make the generator and snapshot blessing skip `__pycache__` and `*.pyc` instead of relying on `PYTHONDONTWRITEBYTECODE`. Batch 7 studies started with items 29+30 while items 21, 26, 28 finish.
 
 ## Purpose
 
