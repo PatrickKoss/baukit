@@ -6,6 +6,12 @@ All notable changes to `baukit-test` are documented here.
 
 ### Added
 
+- Add a PostgreSQL live-row cap race check for concurrent last-slot creates,
+  updates at capacity, soft-delete release, live counts, and stable limit codes.
+- Add PostgreSQL inbox conformance checks for scoped replay, real concurrent
+  replay, transaction rollback, owner isolation, and durable outcomes.
+- Add HMAC-SHA256 webhook signing helpers and a bounded scripted HTTP receiver
+  for retry and idempotency tests.
 - Add a scripted credential-probe HTTP server and a provider-neutral
   conformance suite for health mapping, retry hints, timeouts, invalid data,
   and response bounds.

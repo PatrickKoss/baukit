@@ -37,13 +37,16 @@ mod credential_probe;
 mod erasure;
 #[cfg(test)]
 mod fixture_tests;
+mod inbox;
 mod jwt;
 mod limits;
+mod live_row_cap;
 mod metrics;
 mod ops;
 mod postgres;
 mod redis;
 mod tracing;
+mod webhook;
 
 pub use api_token::InMemoryApiTokenStore;
 pub use auth::{
@@ -81,6 +84,10 @@ pub use limits::{
     assert_soft_delete_capacity_reuse, assert_update_at_capacity, check_ingress_reason_code_parity,
     check_limit_boundaries, check_reason_code_conformance, check_soft_delete_capacity_reuse,
     check_update_at_capacity, compact_document_bytes, trimmed_text_length,
+};
+pub use live_row_cap::{
+    LiveRowCapConformanceCases, LiveRowCapConformanceError, PostgresLiveRowCapAdapter,
+    assert_postgres_live_row_cap_conformance, check_postgres_live_row_cap_conformance,
 };
 pub use metrics::{
     MetricsConformanceError, MetricsConformanceOptions, assert_metrics_conformance,

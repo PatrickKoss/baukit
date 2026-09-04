@@ -20,9 +20,13 @@ opted into:
 - `check_limit_boundaries`: a validator accepts `limit - 1` and `limit`, then rejects `limit + 1`.
 - `check_update_at_capacity` and `check_soft_delete_capacity_reuse`: live-row caps allow updates and
   release capacity after soft deletion.
+- `check_postgres_live_row_cap_conformance`: two creates race for the last slot, then the check
+  verifies the live count, update behavior, soft-delete release, and stable limit code.
 - `check_ingress_reason_code_parity`: every named write path returns the same stable reason code.
 - `check_credential_probe_conformance`: a product provider adapter maps raw HTTP responses to the
   shared credential outcomes, preserves `Retry-After`, bounds response reads, and times out.
+- `check_postgres_inbox_conformance`: a product inbox adapter preserves one domain effect and one
+  outbox message across first delivery, replay, concurrent replay, and transaction failures.
 
 A contract stated only in a document decays. Someone renames a metric, someone adds a route without
 auth, someone changes an error envelope, and nothing fails until an alert stops firing months later.
@@ -74,6 +78,26 @@ request headers, paths, bodies, or credentials. Pass product-authored responses 
 builds the product adapter against the supplied loopback origin. Baukit does not need a provider name
 or a branch for provider-specific scope and response rules.
 
+## Inbox and webhook fixtures
+
+Implement `PostgresInboxPort` in a product integration test. The adapter maps `InboxScope` to the
+product's owner, source, and event ID columns, then maps its stored result to `InboxReceipt`. Run
+`check_postgres_inbox_conformance` against a fresh PostgreSQL database. The check races two exact
+deliveries and verifies rollback after the inbox insert, domain write failure, and outbox write
+failure. It also checks owner and source isolation and reads the outcome again after process-local
+state is discarded. Inbox values that carry product identifiers, payloads, or outcomes do not
+implement `Debug`.
+
+`sign_webhook_hmac_sha256` and `verify_webhook_hmac_sha256` use the canonical signing bytes documented
+in the integration reliability recipe. `ScriptedWebhookReceiver` records bounded requests without a
+`Debug` implementation and returns queued statuses in order. Use it to test successful delivery,
+`Retry-After`, permanent receiver responses, timeouts, stable request bodies, and idempotency headers.
+
+These APIs are additive. Existing connector and credential-probe tests need no migration. Products
+adopting the inbox check must use a uniqueness constraint over owner, source, and event ID. Products
+adopting the signing helper must version their signature header and retain the previous verification
+key for their documented rotation overlap.
+
 ## Resource limits
 
 Products own their limits and reason codes. `baukit-test` checks the behavior without knowing either.
@@ -115,6 +139,18 @@ Implement `LiveRowLimitAdapter` around a fresh owner or parent fixture. Run
 the fixture to its cap. Use `NamedIngress` with `check_ingress_reason_code_parity` to invoke REST,
 sync, import, and local write paths against the same invalid input. The caller-supplied extractor reads
 the product's reason code from each output.
+
+For a PostgreSQL cap, implement `PostgresLiveRowCapAdapter` around a clean scope and run
+`check_postgres_live_row_cap_conformance`. The adapter uses `&self` so its two raced creates can take
+separate connections from a pool. The check fills all but one slot, requires exactly one raced create
+to succeed, updates at capacity, soft-deletes a row, and creates a replacement. It compares the
+rejected create with the product's stable limit code without formatting the rest of the product error.
+See the [PostgreSQL live-row cap recipe](../../../docs/platform/live-row-caps.md) for row-lock,
+serializable, counter, and slot-constraint SQL.
+
+The PostgreSQL API is additive. Existing `LiveRowLimitAdapter` implementations and sequential checks
+remain available. Migrate a database-backed suite by adding a separate clean-scope adapter for the
+race check; no existing helper call needs to change.
 
 ## Telemetry in tests
 
