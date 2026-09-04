@@ -1000,6 +1000,9 @@ fn render_directory(
 ) -> Result<()> {
     for file in directory.files() {
         let relative = file.path();
+        if is_python_cache_artifact(relative) {
+            continue;
+        }
         if is_auth_only(relative) && (!context.auth_oidc || !auth_overlay) {
             continue;
         }
@@ -1031,6 +1034,9 @@ fn render_directory(
         rendered.insert(output_path, output.into_bytes());
     }
     for child in directory.dirs() {
+        if is_python_cache_artifact(child.path()) {
+            continue;
+        }
         if is_auth_only(child.path()) && !auth_overlay {
             continue;
         }
@@ -1078,6 +1084,12 @@ fn is_strict_only(path: &Path) -> bool {
 fn is_backend_only(path: &Path) -> bool {
     path.components()
         .any(|component| component.as_os_str() == "__backend__")
+}
+
+fn is_python_cache_artifact(path: &Path) -> bool {
+    path.components()
+        .any(|component| component.as_os_str() == "__pycache__")
+        || path.extension().is_some_and(|extension| extension == "pyc")
 }
 
 pub fn read_manifest(root: &Path) -> Result<Manifest> {
@@ -2152,6 +2164,75 @@ fn validate_name(name: &str) -> Result<()> {
         bail!(
             "invalid application name `{name}`; use 1-64 lowercase ASCII letters, digits, and single hyphens, starting with a letter"
         )
+    }
+}
+
+#[cfg(test)]
+mod generator_tests {
+    use std::{collections::BTreeMap, path::PathBuf};
+
+    use include_dir::{Dir, DirEntry, File};
+    use minijinja::Environment;
+
+    use super::{TemplateContext, render_directory};
+
+    static PYTHON_CACHE_ENTRIES: &[DirEntry<'_>] = &[DirEntry::File(File::new(
+        "__pycache__/template.cpython-313.pyc",
+        &[0, 159, 146, 150],
+    ))];
+    static TEMPLATE_ENTRIES: &[DirEntry<'_>] = &[
+        DirEntry::File(File::new("kept.txt.jinja", b"{{ context.app_name }}")),
+        DirEntry::File(File::new("stray.pyc", &[0, 159, 146, 150])),
+        DirEntry::Dir(Dir::new("__pycache__", PYTHON_CACHE_ENTRIES)),
+    ];
+    static TEMPLATE: Dir<'_> = Dir::new("", TEMPLATE_ENTRIES);
+
+    #[test]
+    fn embedded_python_cache_artifacts_do_not_reach_the_generated_tree() -> anyhow::Result<()> {
+        let context = TemplateContext {
+            app_name: "cache-test".to_owned(),
+            app_crate: "cache_test".to_owned(),
+            app_env: "CACHE_TEST".to_owned(),
+            template_version: "0.0.0".to_owned(),
+            baukit_dependencies: String::new(),
+            baukit_web_typescript_dependencies: String::new(),
+            baukit_mobile_typescript_dependencies: String::new(),
+            baukit_mcp_typescript_dependency: String::new(),
+            baukit_manifest: String::new(),
+            baukit_dependency_description: String::new(),
+            baukit_typescript_dependency_description: String::new(),
+            product_description: String::new(),
+            backend: true,
+            worker: false,
+            mobile: false,
+            web: false,
+            mcp: false,
+            mcp_auth_node_oidc: false,
+            mcp_auth_caller_supplied: false,
+            auth_oidc: false,
+            quality_strict: false,
+            port_offset: 0,
+            postgres_host_port: 5432,
+            api_host_port: 8080,
+            ops_host_port: 9090,
+            keycloak_host_port: 8081,
+            fake_provider_host_port: 18081,
+        };
+        let mut rendered = BTreeMap::new();
+
+        render_directory(
+            &TEMPLATE,
+            &Environment::new(),
+            &context,
+            &mut rendered,
+            false,
+        )?;
+
+        assert_eq!(
+            rendered,
+            BTreeMap::from([(PathBuf::from("kept.txt"), b"cache-test".to_vec())])
+        );
+        Ok(())
     }
 }
 

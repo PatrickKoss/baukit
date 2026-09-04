@@ -39,7 +39,7 @@ corepack pnpm@11.18.0 --dir mcp docs:check
 sh scripts/quality-gate.sh
 ```
 
-The strict gate checks local file links in committed Markdown under `README.md`, `CLAUDE.md`, `AGENTS.md`, and `docs/`. It ignores external URLs and fragments. Pass a different list of repository-relative files or directories to `scripts/check-markdown-links.py` when product documentation lives elsewhere.
+The strict gate checks local file links in committed Markdown under `README.md`, `CLAUDE.md`, `AGENTS.md`, and `docs/`. Before the first commit, it checks Markdown files present under those paths. It ignores external URLs and fragments. Pass a different list of repository-relative files or directories to `scripts/check-markdown-links.py` when product documentation lives elsewhere.
 
 The strict runner requires the tools used by the enabled capabilities. Backend coverage needs `cargo-llvm-cov`, `cargo-nextest`, and Docker. Browser checks need the Playwright Chromium and WebKit binaries. Native checks need the Android SDK and Java 21. The iOS check prebuilds the native project and bundles JavaScript on Linux. It does not compile Objective-C or Swift.
 

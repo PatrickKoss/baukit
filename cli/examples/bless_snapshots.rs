@@ -35,6 +35,9 @@ fn read_tree(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
         for entry in fs::read_dir(&dir).expect("read_dir") {
             let entry = entry.expect("entry");
             let path = entry.path();
+            if is_python_cache_artifact(&path) {
+                continue;
+            }
             if path.is_dir() {
                 stack.push(path);
             } else {
@@ -44,6 +47,12 @@ fn read_tree(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
         }
     }
     tree
+}
+
+fn is_python_cache_artifact(path: &Path) -> bool {
+    path.components()
+        .any(|component| component.as_os_str() == "__pycache__")
+        || path.extension().is_some_and(|extension| extension == "pyc")
 }
 
 fn render(tree: &BTreeMap<PathBuf, Vec<u8>>) -> String {

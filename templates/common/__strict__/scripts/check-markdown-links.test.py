@@ -20,6 +20,14 @@ class MarkdownLinkCheckTest(unittest.TestCase):
         self.script = scripts / SOURCE_SCRIPT.name
         shutil.copyfile(SOURCE_SCRIPT, self.script)
         subprocess.run(["git", "init", "-q", str(self.root)], check=True)
+        subprocess.run(
+            ["git", "-C", str(self.root), "config", "user.email", "links@example.invalid"],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(self.root), "config", "user.name", "Link tests"],
+            check=True,
+        )
 
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
@@ -31,6 +39,10 @@ class MarkdownLinkCheckTest(unittest.TestCase):
 
     def add_all(self) -> None:
         subprocess.run(["git", "-C", str(self.root), "add", "."], check=True)
+        subprocess.run(
+            ["git", "-C", str(self.root), "commit", "-q", "-m", "add files"],
+            check=True,
+        )
 
     def run_check(self, *roots: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -81,6 +93,14 @@ class MarkdownLinkCheckTest(unittest.TestCase):
         completed = self.run_check("README.md", "docs")
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_checks_present_markdown_before_first_git_commit(self) -> None:
+        self.write("README.md", "[missing](docs/absent.md)\n")
+
+        completed = self.run_check("README.md")
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertIn("README.md:1 -> docs/absent.md", completed.stderr)
 
 
 if __name__ == "__main__":

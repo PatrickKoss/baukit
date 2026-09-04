@@ -16,20 +16,32 @@ EXTERNAL_SCHEME = re.compile(r"^[a-z][a-z\d+.-]*:", re.IGNORECASE)
 DEFAULT_ROOTS = ("README.md", "CLAUDE.md", "AGENTS.md", "docs")
 
 
-def committed_markdown(repository_root: Path, roots: list[str]) -> list[Path]:
-    completed = subprocess.run(
-        ["git", "-C", str(repository_root), "ls-files", "-z", "--", *roots],
+def markdown_files(repository_root: Path, roots: list[str]) -> list[Path]:
+    history = subprocess.run(
+        ["git", "-C", str(repository_root), "rev-parse", "--verify", "HEAD"],
         check=False,
         capture_output=True,
     )
-    if completed.returncode != 0:
-        message = completed.stderr.decode("utf-8", errors="replace").strip()
-        raise RuntimeError(message or "git ls-files failed")
-    return sorted(
-        repository_root / Path(raw.decode("utf-8"))
-        for raw in completed.stdout.split(b"\0")
-        if raw and raw.lower().endswith(b".md")
-    )
+    if history.returncode == 0:
+        completed = subprocess.run(
+            ["git", "-C", str(repository_root), "ls-files", "-z", "--", *roots],
+            check=True,
+            capture_output=True,
+        )
+        return sorted(
+            repository_root / Path(raw.decode("utf-8"))
+            for raw in completed.stdout.split(b"\0")
+            if raw and raw.lower().endswith(b".md")
+        )
+
+    markdown: list[Path] = []
+    for root in roots:
+        path = repository_root / root
+        if path.is_file() and path.suffix.lower() == ".md":
+            markdown.append(path)
+        elif path.is_dir():
+            markdown.extend(path.rglob("*.md"))
+    return sorted(markdown)
 
 
 def link_destinations(source: str) -> list[tuple[str, int]]:
@@ -57,7 +69,7 @@ def local_destination(raw_destination: str) -> str | None:
 
 def missing_links(repository_root: Path, roots: list[str]) -> list[str]:
     missing: list[str] = []
-    for markdown_file in committed_markdown(repository_root, roots):
+    for markdown_file in markdown_files(repository_root, roots):
         source = markdown_file.read_text(encoding="utf-8")
         for raw_destination, offset in link_destinations(source):
             destination = local_destination(raw_destination)
@@ -81,11 +93,7 @@ def main() -> int:
     parser.add_argument("roots", nargs="*", default=list(DEFAULT_ROOTS))
     args = parser.parse_args()
     repository_root = Path(__file__).resolve().parent.parent
-    try:
-        missing = missing_links(repository_root, args.roots)
-    except RuntimeError as error:
-        print(f"Markdown link check could not list committed files: {error}", file=sys.stderr)
-        return 2
+    missing = missing_links(repository_root, args.roots)
     if missing:
         print("Missing local Markdown links:", file=sys.stderr)
         for item in missing:

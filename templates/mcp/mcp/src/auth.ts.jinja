@@ -48,8 +48,7 @@ export function nodeOidcProvider(options: NodeOidcProviderOptions = {}): {
       issuer:
         environment['{{ context.app_env }}_OIDC_ISSUER']?.trim() ??
         'http://localhost:{{ context.keycloak_host_port }}/realms/{{ context.app_name }}',
-      clientId:
-        environment['{{ context.app_env }}_OIDC_CLIENT_ID']?.trim() ?? '{{ context.app_name }}-mcp',
+      clientId: environment['{{ context.app_env }}_OIDC_CLIENT_ID']?.trim() ?? '{{ context.app_name }}-mcp',
       scopes: ['openid', 'profile', 'offline_access'],
       cache: { namespace: '{{ context.app_name }}-mcp' },
       endpointPolicy: {

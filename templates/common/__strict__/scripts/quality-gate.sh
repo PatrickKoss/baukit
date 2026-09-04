@@ -32,6 +32,11 @@ python3 scripts/reconcile-env.test.py
 python3 scripts/check-markdown-links.test.py
 python3 scripts/check-markdown-links.py README.md CLAUDE.md AGENTS.md docs
 sh scripts/preflight.sh
+if git rev-parse --verify HEAD >/dev/null 2>&1; then
+  has_git_history=true
+else
+  has_git_history=false
+fi
 {% if context.web %}PLAYWRIGHT_BROWSERS_PATH="$repository_root/web/node_modules/.cache/playwright-browsers"
 export PLAYWRIGHT_BROWSERS_PATH
 {% endif %}
@@ -61,29 +66,51 @@ PY
 cargo "+$rust_version" check --manifest-path backend/Cargo.toml --workspace --all-targets --locked
 
 sh scripts/check-migrations-immutable.test.sh
-base_revision=${BAUKIT_BASE_REVISION:-}
-if [ -z "$base_revision" ]; then
-  base_revision=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD^ 2>/dev/null || git rev-list --max-parents=0 HEAD 2>/dev/null || true)
+if [ "$has_git_history" = true ]; then
+  base_revision=${BAUKIT_BASE_REVISION:-}
+  if [ -z "$base_revision" ]; then
+    base_revision=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD^ 2>/dev/null || git rev-list --max-parents=0 HEAD 2>/dev/null || true)
+  fi
+  if [ -z "$base_revision" ]; then
+    echo "quality gate: set BAUKIT_BASE_REVISION to check migration immutability" >&2
+    exit 2
+  fi
+  sh scripts/check-migrations-immutable.sh "$base_revision" HEAD
+else
+  echo "quality gate: migration immutability has no history to compare"
 fi
-if [ -z "$base_revision" ]; then
-  echo "quality gate: set BAUKIT_BASE_REVISION to check migration immutability" >&2
-  exit 2
-fi
-sh scripts/check-migrations-immutable.sh "$base_revision" HEAD
 
 committed_schema=$(mktemp)
 cp "$(manifest_value openapi.schema)" "$committed_schema"
 sh scripts/openapi.sh
 diff -u "$committed_schema" "$(manifest_value openapi.schema)"
 rm "$committed_schema"
+if [ "$has_git_history" = false ]; then
+  consumer_snapshot=$(mktemp -d)
+  manifest_value openapi.consumers | while IFS= read -r consumer; do
+    test -f "$consumer" || {
+      echo "quality gate: OpenAPI consumer is missing: $consumer" >&2
+      exit 1
+    }
+    mkdir -p "$consumer_snapshot/$(dirname "$consumer")"
+    cp "$consumer" "$consumer_snapshot/$consumer"
+  done
+fi
 sh scripts/openapi-client.sh
 manifest_value openapi.consumers | while IFS= read -r consumer; do
-  git ls-files --error-unmatch "$consumer" >/dev/null 2>&1 || {
-    echo "quality gate: OpenAPI consumer is not committed: $consumer" >&2
-    exit 1
-  }
-  git diff --exit-code -- "$consumer"
+  if [ "$has_git_history" = true ]; then
+    git ls-files --error-unmatch "$consumer" >/dev/null 2>&1 || {
+      echo "quality gate: OpenAPI consumer is not committed: $consumer" >&2
+      exit 1
+    }
+    git diff --exit-code -- "$consumer"
+  else
+    cmp "$consumer_snapshot/$consumer" "$consumer"
+  fi
 done
+if [ "$has_git_history" = false ]; then
+  rm -rf "$consumer_snapshot"
+fi
 
 if [ -f backend/Dockerfile ]; then
   if [ "$(manifest_value dependencies.baukit.source)" = "path" ]; then
