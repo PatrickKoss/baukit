@@ -1,4 +1,4 @@
-.PHONY: setup preflight fmt lint test test-scripts check{% if context.web %} check-web{% endif %}{% if context.mobile %} check-mobile{% endif %} lockfiles run{% if context.worker %} run-worker{% endif %} migrate openapi openapi-client db-up db-down{% if context.auth_oidc %} dev keycloak-policy keycloak-reconcile keycloak-test{% endif %}
+.PHONY: setup preflight fmt lint test test-scripts check{% if context.web %} check-web{% endif %}{% if context.mobile %} check-mobile{% endif %} lockfiles run{% if context.worker %} run-worker{% endif %} migrate openapi openapi-client db-up db-down{% if context.auth_oidc %} dev keycloak-policy keycloak-reconcile keycloak-test keycloak-theme-test{% if context.web %} keycloak-theme-browser-test{% endif %}{% endif %}
 
 BACKEND_MANIFEST := backend/Cargo.toml
 PLAYWRIGHT_BROWSERS_PATH := $(abspath web/node_modules/.cache/playwright-browsers)
@@ -22,6 +22,7 @@ test: preflight
 test-scripts:
 	python3 scripts/reconcile-env.test.py
 {% if context.auth_oidc %}	python3 -m unittest discover -s scripts/tests
+	node --test scripts/tests/keycloak_accessibility.test.mjs
 {% endif %}
 {% if context.quality_strict %}	python3 scripts/check-markdown-links.test.py
 
@@ -63,6 +64,16 @@ db-up:
 
 keycloak-test:
 	python3 -m unittest discover -s scripts/tests
+
+keycloak-theme-test:
+	node --test scripts/tests/keycloak_accessibility.test.mjs
+
+{% if context.web %}keycloak-theme-browser-test: keycloak-theme-test
+	cd web && corepack pnpm@11.18.0 install --frozen-lockfile
+	cd web && corepack pnpm@11.18.0 exec playwright install chromium
+	sh scripts/test-keycloak-theme-patches.sh
+
+{% endif %}
 
 keycloak-reconcile: keycloak-policy
 	docker compose up -d --wait keycloak

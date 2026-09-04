@@ -5,6 +5,7 @@
   "sslRequired": "none",
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
+  "loginTheme": "baukit-accessible",
   "passwordPolicy": "length(12) and notUsername and notEmail and maxLength(128)",
   "bruteForceProtected": true,
   "users": [

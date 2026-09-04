@@ -624,11 +624,57 @@ fn oidc_generation_is_deterministic_and_records_the_optional_capability() -> any
     let realm = fs::read_to_string(first.join("keycloak/realm.json"))?;
     assert!(realm.contains("\"realmRoles\": [\"offline_access\"]"));
     assert!(realm.contains("snapshot-app-mobile"));
+    assert!(realm.contains("\"loginTheme\": \"baukit-accessible\""));
     assert!(first.join("keycloak/realm-policy.json").is_file());
     assert!(first.join("keycloak/reconcile.json").is_file());
+    assert!(
+        first
+            .join("keycloak/themes/baukit-accessible/login/theme.properties")
+            .is_file()
+    );
+    assert!(
+        first
+            .join("keycloak/themes/baukit-accessible/login/resources/js/accessibility.js")
+            .is_file()
+    );
+    assert!(
+        first
+            .join("keycloak/themes/baukit-accessible-test/login/theme.properties")
+            .is_file()
+    );
+    assert!(
+        first
+            .join("keycloak/themes/baukit-accessible-test/login/resources/css/fixture.css")
+            .is_file()
+    );
+    assert!(
+        first
+            .join("keycloak/themes/baukit-accessible-test/login/messages/messages_en.properties")
+            .is_file()
+    );
+    assert!(first.join("scripts/keycloak-theme.browser.mjs").is_file());
+    assert!(
+        first
+            .join("scripts/test-keycloak-theme-patches.sh")
+            .is_file()
+    );
+    assert!(
+        first
+            .join("scripts/tests/keycloak_accessibility.test.mjs")
+            .is_file()
+    );
+    assert!(!first_tree.keys().any(|path| {
+        path.starts_with("keycloak/themes")
+            && path.extension().is_some_and(|extension| extension == "ftl")
+    }));
     assert!(first.join("scripts/keycloak_policy.py").is_file());
     assert!(first.join("scripts/reconcile_keycloak.py").is_file());
-    assert!(fs::read_to_string(first.join("compose.yaml"))?.contains("keycloak-data:"));
+    let compose = fs::read_to_string(first.join("compose.yaml"))?;
+    assert!(compose.contains("keycloak-data:"));
+    assert!(compose.contains("./keycloak/themes:/opt/keycloak/themes:ro"));
+    assert!(compose.contains("KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.7.0"));
+    let reconcile = fs::read_to_string(first.join("keycloak/reconcile.json"))?;
+    assert!(reconcile.contains("\"loginTheme\""));
     Ok(())
 }
 

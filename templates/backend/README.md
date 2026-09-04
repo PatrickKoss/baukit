@@ -31,6 +31,26 @@ Every generated API route requires a bearer token. `GET /me` also maps the token
 
 `make dev` starts Keycloak, validates the declared development policy, and reconciles the retained Keycloak volume. Run `make db-up` separately when the API needs PostgreSQL. Sign in as `test` / `development-password`; the imported realm contains the confidential backend client{% if context.web %}, a PKCE-only web client{% endif %}{% if context.mobile %}, and a PKCE-only mobile client{% endif %}. The checked-in credentials are development-only. Existing generated realms used the shorter `password` credential. The reconciler leaves that existing password unchanged unless you request a reset.
 
+The development realm selects the unbranded `baukit-accessible` login theme. Compose mounts `keycloak/themes` read-only at `/opt/keycloak/themes`. The theme inherits `keycloak.v2` and adds one script. It does not copy Keycloak FreeMarker templates. The script adds required-field semantics, linked live errors, and deliberate error focus to the inherited login and registration forms. Registration remains disabled by default. Set `registrationAllowed` to `true` in `keycloak/realm.json` when the product needs self-registration, then run `make dev` to reconcile the retained realm.
+
+Products can select `baukit-accessible` directly or add a product theme under `keycloak/themes/PRODUCT/login` with `parent=baukit-accessible`. Put product CSS in `resources/css`, translated message overrides in `messages`, and list the CSS in the child `theme.properties`. A child that adds its own `scripts` property must also list `js/accessibility.js`, which Keycloak resolves through the parent. The generated `baukit-accessible-test` child is a neutral fixture that proves CSS, message, script, and parent lookup. Do not use that fixture as a product theme.
+
+Restart Keycloak after editing a mounted theme so cached resources and theme properties cannot hide a change. Production deployments must package the theme in the pinned Keycloak image as described by the Baukit Operator base. A ConfigMap or development bind mount is not the production mechanism.
+
+The compatibility contract covers Keycloak `26.7.0` and `26.7.1`. It depends on `#kc-form-login`, `#kc-register-form`, standard control IDs, `input-error-{name}`, and the PatternFly 5 or 6 required-marker and form-group classes inherited from `keycloak.v2`. Before changing the Keycloak patch or minor version, inspect those contracts and rerun the browser matrix. Run the fake-DOM gate with `make keycloak-theme-test`.{% if context.web %} Run the pinned real-browser matrix with credentials for the disposable generated realm:
+
+```sh
+KEYCLOAK_ADMIN_USERNAME=admin \
+KEYCLOAK_ADMIN_PASSWORD=admin \
+KEYCLOAK_TEST_USERNAME=test \
+KEYCLOAK_TEST_PASSWORD=development-password \
+make keycloak-theme-browser-test
+```
+
+{% endif %}
+
+For an existing generated product, regenerate or copy the `keycloak/themes` tree, add the read-only Compose mount, add `loginTheme` to `keycloak/realm.json` and `keycloak/reconcile.json`, then run `make dev`. A product with an existing copied theme can instead change its parent to `baukit-accessible`, keep only product CSS and messages, and delete copied upstream templates after this browser matrix passes.
+
 `keycloak/realm-policy.json` declares the environment class and the accepted password, TLS, brute-force, PKCE, direct-grant, and redirect bounds. Run `make keycloak-policy` after editing the realm. `keycloak/reconcile.json` selects the realm fields, public clients, users, origins, and redirects that `make keycloak-reconcile` may repair. The reconciler merges active URLs and leaves unselected live fields intact. It creates a missing selected user with the checked-in development credential, but it does not reset an existing password unless you pass `--reset-password USERNAME` to `scripts/reconcile_keycloak.py`.
 
 If the configured development administrator no longer authenticates, the reconciler creates a random temporary recovery administrator while Keycloak is stopped, repairs the configured administrator, and removes the temporary account. It also attempts that cleanup when reconciliation is interrupted or fails. The script does not print administrator passwords, user credentials, access tokens, or Keycloak response bodies.

@@ -6,6 +6,7 @@
     "sslRequired",
     "registrationAllowed",
     "loginWithEmailAllowed",
+    "loginTheme",
     "passwordPolicy",
     "bruteForceProtected"
   ],

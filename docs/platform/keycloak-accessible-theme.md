@@ -215,3 +215,11 @@ The Baukit asset must never embed:
 Only neutral accessibility behavior and test-only neutral fixtures belong in
 Baukit. Product CSS, message choices, and realm identity remain overlays owned
 by each product.
+
+## Outcome
+
+The implementation proof succeeded without copied FreeMarker templates. The generated OIDC fixture now includes `baukit-accessible`, a script-only `keycloak.v2` child, and `baukit-accessible-test`, a neutral child used only to verify inheritance. The realm selects the base theme and the reconciler owns that field. Compose mounts the complete theme tree read-only.
+
+The fake-DOM suite covers client error creation and recovery, server field and global errors, registration discovery, native invalid events, idempotence, hidden controls, autocomplete preservation, and unrelated pages. The generated Playwright suite passed against the exact `quay.io/keycloak/keycloak:26.7.0` and `quay.io/keycloak/keycloak:26.7.1` images. Both patches are supported.
+
+The tested inherited contracts are `#kc-form-login`, `#kc-register-form`, standard control IDs, `input-error-{name}`, and the PatternFly 5 or 6 form-group and required-marker classes. Keycloak `login.ftl`, `login-username.ftl`, `login-password.ftl`, and `register.ftl` remain inherited. Any Keycloak upgrade must inspect these contracts and rerun both exact-image browser suites before support changes.

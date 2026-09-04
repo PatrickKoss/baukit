@@ -90,6 +90,7 @@ class RealmReconcilerTests(unittest.TestCase):
             "sslRequired": "none",
             "registrationAllowed": False,
             "loginWithEmailAllowed": True,
+            "loginTheme": "baukit-accessible",
             "passwordPolicy": "length(12) and notUsername and notEmail and maxLength(128)",
             "bruteForceProtected": True,
             "clients": [
@@ -121,6 +122,7 @@ class RealmReconcilerTests(unittest.TestCase):
             "realmFields": [
                 "displayName",
                 "sslRequired",
+                "loginTheme",
                 "passwordPolicy",
                 "bruteForceProtected",
             ],
@@ -156,13 +158,19 @@ class RealmReconcilerTests(unittest.TestCase):
             }
         )
         api = FakeApi(
-            {"realm": "fixture", "displayName": "Old", "productOwned": "preserved"},
+            {
+                "realm": "fixture",
+                "displayName": "Old",
+                "loginTheme": "keycloak",
+                "productOwned": "preserved",
+            },
             {"client-1": stale_client},
         )
         reconcile_keycloak.RealmReconciler(api).reconcile(
             self.desired, self.config, set()
         )
         self.assertEqual(api.realm_value["displayName"], "Fixture development")
+        self.assertEqual(api.realm_value["loginTheme"], "baukit-accessible")
         self.assertEqual(api.realm_value["productOwned"], "preserved")
         self.assertIn("http://localhost:4173/*", api.clients["client-1"]["redirectUris"])
         self.assertIn("http://localhost:6173/*", api.clients["client-1"]["redirectUris"])

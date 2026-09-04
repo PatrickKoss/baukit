@@ -16,7 +16,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
 
 {% if context.auth_oidc %}  keycloak:
-    image: quay.io/keycloak/keycloak:26.7.0
+    image: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.7.0}
     command: start-dev --import-realm
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
@@ -38,6 +38,7 @@ services:
       start_period: 10s
     volumes:
       - ./keycloak/realm.json:/opt/keycloak/data/import/{{ context.app_name }}-realm.json:ro
+      - ./keycloak/themes:/opt/keycloak/themes:ro
       - keycloak-data:/opt/keycloak/data
 
 {% endif %}

@@ -34,6 +34,31 @@ The operator runs Keycloak with its production start command. This base is not
 expected to become Ready until the overlay supplies database credentials,
 hostname, and TLS.
 
+## Accessible login theme packaging
+
+The generated development bind mount is not suitable for this Operator base. Build an immutable Keycloak image that copies `keycloak/themes/baukit-accessible` into `/opt/keycloak/themes/baukit-accessible`, then patch `spec.image` to the image digest. A product child belongs in the same image under `/opt/keycloak/themes/PRODUCT`. Keep the base theme unchanged and put product CSS and message bundles in that child.
+
+Use the same Keycloak `26.7.1` base image as this Operator pin. A minimal image recipe is:
+
+```Dockerfile
+FROM quay.io/keycloak/keycloak:26.7.1
+COPY --chown=keycloak:keycloak keycloak/themes/baukit-accessible /opt/keycloak/themes/baukit-accessible
+COPY --chown=keycloak:keycloak keycloak/themes/PRODUCT /opt/keycloak/themes/PRODUCT
+```
+
+Build and publish that image through the product's release pipeline, resolve its digest, and patch the private overlay:
+
+```yaml
+apiVersion: k8s.keycloak.org/v2beta1
+kind: Keycloak
+metadata:
+  name: keycloak
+spec:
+  image: registry.example.invalid/keycloak-product@sha256:DIGEST_REQUIRED
+```
+
+Run the Baukit theme browser suite against the final image before rollout. After the new pods are Ready, apply an ordered realm migration that sets `loginTheme` to `baukit-accessible` or the product child. Rollback restores the previous image digest and previous realm setting. Do not package the theme through a mutable tag, writable persistent volume, or ad hoc ConfigMap mount. Every Keycloak patch or minor upgrade requires an inherited-markup review and the full browser suite.
+
 ## Realm as code
 
 Use exactly one realm per product. Copy `realm-import.example.yaml` into the
