@@ -49,11 +49,11 @@ Batches group items that can run in parallel with disjoint file ownership. Each 
 ### Wave 5
 
 - [x] 22. Tombstone horizon and full-resync contract plus conformance callbacks (batch 5)
-- [ ] 23. Durable-job ownership design note (batch 6)
+- [x] 23. Durable-job ownership design note (batch 6)
 - [x] 24. Provider credential-probe contract in `baukit-integrations` (batch 5)
-- [ ] 25. Import-envelope conformance (batch 6)
-- [ ] 26. Inbox and webhook reliability recipes and helpers (batch 6)
-- [ ] 27. Raw OpenAPI mirrors decision note (batch 6)
+- [~] 25. Import-envelope conformance (batch 6)
+- [~] 26. Inbox and webhook reliability recipes and helpers (batch 6)
+- [x] 27. Raw OpenAPI mirrors decision note (batch 6)
 - [ ] 28. Live-row cap PostgreSQL recipe and concurrency helpers (batch 6)
 
 ### Wave 6 studies
@@ -98,6 +98,8 @@ Filled in as items complete. Each line names the product file to delete once the
 - Item 20, Tiefgang, Leitbild, Eigenruhe: delete `mcp/src/auth.ts` in each product once their MCP servers construct `DeviceFlowClient` with product policy and presentation callbacks; keep only configuration and presentation tests.
 - Item 22, Tiefgang: remove the horizon and reset cases from `mobile/src/sync/engine.test.ts` and `mobile/src/db/repository-contract.ts` and enable the `fullResync` conformance group. Eigenruhe: add `horizon_revision` to `resync_required`, make row clearing and cursor zero one transaction, then enable the same group.
 - Item 24, Tiefgang: delete `backend/crates/tiefgang-bin/src/adapters/integrations/fake.rs`; remove `TokenProviderConnector` and `TokenProviderError` from `tiefgang-ports/src/integrations.rs`, `ProviderAccount` from `tiefgang-domain/src/integrations.rs`, and the error-code mapping in `tiefgang-services/src/integrations/mod.rs`; implement `CredentialProbe` in the GitHub and Toggl adapters and run `check_credential_probe_conformance`.
+- Item 23, Tiefgang: erasure in `backend/crates/tiefgang-postgres/src/erasure.rs` checks top-level payload keys while webhook jobs store the subject at `event.user_id`; that is a product privacy bug to fix now, independent of `owner_key`. Eigenruhe: replace the hard-coded zero background-job count in `backend/crates/eigenruhe-postgres/src/profile.rs` once owner-scoped jobs exist.
+- Item 27, Tiefgang: `extension/scripts/copy-openapi.mjs`, `extension/scripts/check-openapi.mjs`, the MCP copy line in `scripts/openapi-client.sh`, and the equality checks in `scripts/quality-gate.sh` and `extension/test/contracts.test.ts` stay until `openapi.mirrors` ships.
 
 ### Log
 
