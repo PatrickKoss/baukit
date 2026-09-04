@@ -4,6 +4,12 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Add a scripted credential-probe HTTP server and a provider-neutral
+  conformance suite for health mapping, retry hints, timeouts, invalid data,
+  and response bounds.
+
 ### Changed
 
 - Reuse the production resource-budget measurements from `baukit-core` while

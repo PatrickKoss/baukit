@@ -33,6 +33,7 @@
 mod api_token;
 mod auth;
 mod connector;
+mod credential_probe;
 mod erasure;
 #[cfg(test)]
 mod fixture_tests;
@@ -55,6 +56,11 @@ pub use baukit_openapi::{
 pub use connector::{
     FAKE_SIGNATURE_HEADER, FakeConnector, FakeConnectorResponse, FakeConnectorScenario,
     UnknownScenario,
+};
+pub use credential_probe::{
+    CredentialProbeConformanceCases, CredentialProbeConformanceError, ScriptedCredentialProbeHttp,
+    ScriptedCredentialProbeResponse, assert_credential_probe_conformance,
+    check_credential_probe_conformance,
 };
 pub use erasure::{
     CleanupKind, ErasureConformanceError, OwnedResourceCheck, ProductProfileErasureAdapter,

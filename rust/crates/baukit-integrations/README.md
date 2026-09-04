@@ -1,8 +1,8 @@
 # baukit-integrations
 
-`baukit-integrations` is the port a product implements once per external
-provider it imports from. It carries no HTTP client, no database, and no
-provider adapter, so depending on it does not pull in a driver you never call.
+`baukit-integrations` contains two small provider ports: paged imports and
+credential probes. It carries no HTTP client, database, or provider adapter, so
+depending on it does not pull in a driver you never call.
 
 The crate is opt-in. It is not part of the generated backend template and is not
 wired into `baukit_config::BaukitConfig`.
@@ -142,11 +142,52 @@ assert!(ConnectionHealth::after_failure(RetryClass::Revoked).needs_owner_action(
 failure state and `failed` to record a code and the next retry time. It
 serializes as snake case, so it can go straight into a status response.
 
+## Credential probes
+
+Credential checks are not import jobs. Implement `CredentialProbe` on the
+product adapter that calls the provider account endpoint:
+
+```rust,ignore
+use baukit_integrations::{CredentialProbe, CredentialProbeFuture};
+
+struct ProductCredentialProbe;
+
+impl CredentialProbe for ProductCredentialProbe {
+    fn probe<'a>(&'a self, credential: &'a [u8]) -> CredentialProbeFuture<'a> {
+        Box::pin(async move {
+            // Build provider headers, call the product endpoint, enforce the
+            // response limit, parse the provider body, and return Baukit types.
+            todo!()
+        })
+    }
+}
+```
+
+A successful check returns `CredentialProbeSuccess` with an
+`ExternalAccountId`. Baukit does not parse that identifier. Its `Debug` output
+is redacted, it has no `Display` implementation, and it is limited to 1,024
+bytes. Call `as_str` only when passing it to product-owned persistence or an
+account model.
+
+Failures use `CredentialProbeError`: `Revoked`, `MissingScope`, `RateLimited`,
+`Timeout`, `Unavailable`, or `InvalidData`. `health()` maps them to the existing
+connection health states. A valid `Retry-After` value stays on `RateLimited`.
+Use `baukit_http::retry_after_from_headers` to parse delta seconds and HTTP
+dates without copying header logic.
+
+Set a finite client timeout and stop response reads at
+`MAX_CREDENTIAL_PROBE_RESPONSE_BYTES`. Reject a larger response as
+`InvalidData`, even if its prefix contains valid JSON. Discard provider response
+text after classification. `CredentialProbeError` contains no dynamic string,
+so public errors and outcome logs cannot accidentally include a token or
+provider body.
+
 ## What stays in your product
 
 Per-provider persistence, token exchange and refresh, the provider-specific
-token, request, and error types, cursor formats, and dedupe heuristics. Deciding
-that two providers reported the same measurement is a judgement about your data.
+token, request and error types, endpoints, headers, required scopes, response
+parsing, account models, cursor formats, and dedupe heuristics. Deciding that
+two providers reported the same measurement is a judgement about your data.
 
 The reasoning is in
 [ADR 0002](../../../docs/adr/0002-integration-connector-contract.md).
@@ -165,3 +206,19 @@ let connector = FakeConnector::new("strava", FakeConnectorScenario::RateLimited)
 assert!(connector.fetch_page(&job, None).await.is_err()); // first attempt
 assert!(connector.fetch_page(&job, None).await.is_ok());  // retry succeeds
 ```
+
+For credential adapters, use
+`baukit_test::check_credential_probe_conformance`. It starts a scripted loopback
+HTTP server and runs healthy, revoked, missing-scope, rate-limit, timeout,
+unavailable, malformed-data, and oversized-body cases. The product supplies the
+raw responses, which keeps its scope headers and JSON shape out of Baukit.
+
+## Migration
+
+This release does not change `IntegrationConnector`, `ConnectorError`, or the
+existing health types. Existing import adapters continue to compile. A product
+with a local token-check trait can implement `CredentialProbe`, replace its
+account string with `ExternalAccountId` at the boundary, and translate its six
+local failures one at a time. Keep product error codes and connection-status
+models by mapping `CredentialProbeError::code()` and `health()` in the service
+layer.

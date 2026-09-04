@@ -21,6 +21,8 @@ opted into:
 - `check_update_at_capacity` and `check_soft_delete_capacity_reuse`: live-row caps allow updates and
   release capacity after soft deletion.
 - `check_ingress_reason_code_parity`: every named write path returns the same stable reason code.
+- `check_credential_probe_conformance`: a product provider adapter maps raw HTTP responses to the
+  shared credential outcomes, preserves `Retry-After`, bounds response reads, and times out.
 
 A contract stated only in a document decays. Someone renames a metric, someone adds a route without
 auth, someone changes an error envelope, and nothing fails until an alert stops firing months later.
@@ -64,6 +66,13 @@ tests that exercise personal access tokens. Call `fail_with` with `ApiTokenStore
 
 `FakeConnector` plays back scripted outbound-integration scenarios, including signature headers, for
 testing retry and failure handling without a real upstream.
+
+`ScriptedCredentialProbeHttp` is the lower-level fake for provider credential checks. It returns
+queued status, header, body, or pending responses and records only a call count. It never retains
+request headers, paths, bodies, or credentials. Pass product-authored responses to
+`CredentialProbeConformanceCases`, then use `check_credential_probe_conformance` with a closure that
+builds the product adapter against the supplied loopback origin. Baukit does not need a provider name
+or a branch for provider-specific scope and response rules.
 
 ## Resource limits
 

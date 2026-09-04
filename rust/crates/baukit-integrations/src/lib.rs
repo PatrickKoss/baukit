@@ -1,14 +1,19 @@
-//! Provider-neutral contract for importing records from external providers.
+//! Provider-neutral contracts for external providers.
 //!
 //! The crate is a port and nothing else. It carries no HTTP client, no
 //! database, and no provider adapter, so a product can name the connector shape
 //! without inheriting a driver it never calls.
 //!
-//! [`IntegrationConnector`] is the whole seam. An implementation fetches one
+//! [`IntegrationConnector`] is the paged-import seam. An implementation fetches one
 //! cursor-paged [`ConnectorPage`] of records for a leased job, verifies webhook
 //! deliveries, and reports failures as a [`ConnectorError`]. Everything a
 //! provider knows stays inside the implementation: OAuth, scopes, response
 //! models, cursor encoding, and which record duplicates which.
+//!
+//! [`CredentialProbe`] is separate from import jobs. It checks a credential,
+//! returns a redacted [`ExternalAccountId`], and maps failures to six fixed
+//! outcomes with [`CredentialProbeError`]. The product still owns its endpoint,
+//! headers, required scopes, and response parser.
 //!
 //! # One retry vocabulary
 //!
@@ -36,15 +41,22 @@
 //!
 //! # Testing
 //!
-//! `baukit_test::FakeConnector` scripts the failure modes worth testing:
-//! healthy, rate limited, unavailable, timeout, revoked, and exhausted.
+//! `baukit_test::FakeConnector` scripts paged-import failures.
+//! `baukit_test::check_credential_probe_conformance` runs a product credential
+//! adapter against raw responses from a loopback HTTP server.
 
 #![deny(missing_docs)]
 
+mod credential_probe;
 mod health;
 mod port;
 
 pub use baukit_http::RetryClass;
+pub use credential_probe::{
+    CredentialProbe, CredentialProbeError, CredentialProbeFuture, CredentialProbeResult,
+    CredentialProbeSuccess, ExternalAccountId, InvalidExternalAccountId,
+    MAX_CREDENTIAL_PROBE_RESPONSE_BYTES, MAX_EXTERNAL_ACCOUNT_ID_BYTES,
+};
 pub use health::{ConnectionHealth, ConnectionStatus};
 pub use port::{
     ClaimedConnectorJob, ConnectorError, ConnectorFuture, ConnectorPage, IntegrationConnector,

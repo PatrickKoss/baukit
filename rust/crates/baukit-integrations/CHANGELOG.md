@@ -4,6 +4,11 @@ All notable changes to `baukit-integrations` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Add the `CredentialProbe` port with a bounded, redacted external account ID
+  and six provider-neutral failure outcomes that preserve `Retry-After`.
+
 ## [0.2.1] - 2026-09-03
 
 ## [0.2.0] - 2026-09-03

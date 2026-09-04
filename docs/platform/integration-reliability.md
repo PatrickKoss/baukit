@@ -23,7 +23,45 @@ Do not infer success from a completed HTTP exchange. Validate the provider respo
 
 Keeping credentials out of logs is easier when they are not lying around as plain `String` values in the first place. Store provider tokens, API keys, and webhook secrets through `baukit-credential-vault`. Its `CredentialSecrets` zeroizes plaintext on drop and implements neither `Debug` nor `Display`, so a stray `{:?}` cannot print one, and `CredentialCipher` encrypts each field under a versioned AES-256-GCM keyring bound to the credential scope and the field name. The keyring comes from `<APP>__CREDENTIAL_VAULT__KEYRING` and rotates without a data migration. The storage adapter stays product-local behind the crate's `CredentialVault` port, because the table shape and the ownership join are product decisions.
 
-## 2. Durable retries with `baukit-jobs`
+## 2. Credential probes
+
+Credential validation is separate from paged import work. A product adapter
+implements `baukit_integrations::CredentialProbe` and maps its provider to this
+closed set:
+
+| Probe result | Connection health | Retry |
+|---|---|---|
+| valid credential and opaque account ID | `healthy` | none |
+| revoked credential | `needs_reconnect` | no |
+| missing required scope | `needs_reconnect` | no |
+| rate limited | `degraded` | provider `Retry-After`, when valid |
+| timeout | `degraded` | product backoff |
+| unavailable | `degraded` | product backoff |
+| invalid or oversized data | `failed` | no |
+
+The adapter owns the endpoint, authorization header, required scopes, accepted
+statuses, response parser, and product account model. Baukit carries the account
+ID without interpreting it. Do not log it or use it as a metric label.
+
+Set a finite request timeout. Read no more than
+`MAX_CREDENTIAL_PROBE_RESPONSE_BYTES`, including chunked responses whose
+`Content-Length` is absent or false. Map a body over the limit to `InvalidData`
+and discard it. Parse `Retry-After` with `baukit_http` and keep the returned
+duration on `CredentialProbeError::RateLimited`. Public errors and logs may use
+only `CredentialProbeError::code()`, never the credential, provider response,
+request URL, or parser error.
+
+Run `baukit_test::check_credential_probe_conformance` for every adapter. The
+product supplies raw success, missing-scope, and malformed responses to the
+scripted HTTP server. This is where provider-specific scope headers and JSON
+remain. The shared runner checks the outcomes without a provider switch.
+
+Migration is additive. Existing `IntegrationConnector` implementations and
+import jobs do not change. Replace a product token-check port only after its
+adapter passes the shared suite, then retain existing API codes by mapping the
+new error code in the product service.
+
+## 3. Durable retries with `baukit-jobs`
 
 Use `NewJob` with an explicit `max_attempts`, a static `job_type`, and an idempotency key representing the intended effect. Product `JobHandler` implementations return:
 
@@ -51,7 +89,7 @@ Terminal work stays in the existing `failed` lifecycle state. `Job.failure_reaso
 
 Query pending and failed work in product operations surfaces so retry schedules, attempt counts, last safe diagnostics, and terminal reasons are inspectable. Cancellation, timeout, and lease recovery must not bypass the attempt cap.
 
-## 3. Atomic writes and accepted webhooks
+## 4. Atomic writes and accepted webhooks
 
 When a domain mutation and its durable consequence use one PostgreSQL database, begin a product transaction, write the domain/inbox record, call `PostgresJobStore::enqueue_in_transaction`, and commit once. When a handler writes its result in PostgreSQL, write the result and call `PostgresJobStore::complete_in_transaction` last in the same transaction.
 
@@ -73,13 +111,13 @@ For webhooks:
 
 If enqueue uses another system or can fail independently, the accepted inbox must be the durable source. A bounded drainer/reconciler claims accepted-but-not-enqueued rows, retries transfer idempotently, and exposes age, attempts, and terminal state. An in-memory handoff after returning success can silently lose accepted delivery and is forbidden.
 
-## 4. Batches and client queues
+## 5. Batches and client queues
 
 Prefer one external consequence per durable job. When a provider requires batching, record an outcome for each item and retry only retryable items; a single malformed or revoked item must not discard successful siblings or cause the whole batch to appear successful.
 
 Client delivery queues need both size and attempt bounds. Persist an idempotency key, next attempt, attempt count, and inspectable terminal code. Define overflow and discard behavior explicitly. “Delivered” or “synced” is false while hidden pending or terminal items remain.
 
-## 5. Stable failures and localized recovery
+## 6. Stable failures and localized recovery
 
 Map provider/transport failures to stable snake_case machine codes at the product boundary, for example `provider_rate_limited`, `provider_unavailable`, `provider_revoked`, or `delivery_exhausted`. APIs return those codes with safe structured details. Web and mobile map `code + details` to localized copy and recovery actions; they never display `last_error` or an exception string.
 
@@ -100,7 +138,7 @@ with `withConnectionStates` when a query or local cache changes. The method retu
 the definitions and their registration order remain unchanged. A provider missing from the state
 collection is `disconnected` with no actions. Do not add provider branches to the shared package.
 
-## 6. Deterministic fakes and acceptance checks
+## 7. Deterministic fakes and acceptance checks
 
 Provide deterministic adapters for `healthy`, `rate_limited`, `unavailable`, `timeout`, `revoked`, and `exhausted`. Prefer fixed clocks, explicit barriers, and manually released futures over sleep-sensitive races.
 
@@ -116,9 +154,14 @@ Acceptance must prove:
 - client queue overflow, retries, and terminal items are bounded and visible; and
 - no fake, log, metric, or public error leaks a credential or dynamic provider message.
 
+Credential-probe acceptance adds healthy account identity, revoked, missing
+scope, rate limited with and without `Retry-After`, timeout, unavailable,
+malformed data, and an oversized response. Run the same conformance function
+for each provider adapter. Only the raw scripted responses should differ.
+
 Run unit tests plus PostgreSQL integration tests with Docker-gated ignored tests enabled. Exercise worker telemetry conformance and generated worker fixtures whenever shared APIs or templates change.
 
-## 7. Telemetry bounds and adoption
+## 8. Telemetry bounds and adoption
 
 Reuse Baukit's `worker_job_runs_total`, `worker_job_duration_seconds`, and `worker_queue_oldest_age_seconds`. Additional product metrics must be registered and use bounded code-defined labels such as provider, operation, job, and outcome enums. Never use secrets, user/connection IDs, URLs, payload fields, exception text, request IDs, or other dynamic strings as labels.
 
