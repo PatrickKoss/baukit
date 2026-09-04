@@ -11,9 +11,36 @@ as `ORDERS__RATE_LIMIT__REDIS_URL` and
 `ORDERS__RATE_LIMIT__IDENTITY__REQUESTS_PER_PERIOD`.
 
 The middleware reads an already verified `baukit_auth::Principal` from request
-extensions. Compose authentication outside the rate-limit layer when identity
-limiting is enabled. Client IP resolution trusts only the configured number of
-rightmost proxy hops and otherwise falls back to Axum `ConnectInfo<SocketAddr>`.
+extensions. Use `baukit_auth::establish_principal` as the outer layer when
+identity limiting is enabled:
+
+```rust
+use axum::{Router, middleware, routing::get};
+use baukit_auth::{AuthState, IdentityVerifier, establish_principal};
+use baukit_ratelimit::{InMemoryRateLimitStore, RateLimitOptions, layers};
+
+# fn example(verifier: impl IdentityVerifier + 'static) {
+let auth = AuthState::new(verifier);
+let app = layers(
+    Router::new().route("/", get(|| async { "ok" })),
+    InMemoryRateLimitStore::default(),
+    RateLimitOptions::default(),
+)
+.layer(middleware::from_fn_with_state(auth, establish_principal));
+# let _ = app;
+# }
+```
+
+Axum runs the last added layer first. A valid credential therefore selects the
+identity bucket. A missing credential uses only the IP bucket. A presented bad
+credential returns an authentication response before either bucket is consumed.
+Client IP resolution trusts only the configured number of rightmost proxy hops
+and otherwise falls back to Axum `ConnectInfo<SocketAddr>`.
+
+`RedisRateLimitStore::connect_if_enabled` returns `None` without parsing the URL
+or opening a connection when both scopes are disabled. This lets deployments
+turn request limiting off without setting a placeholder Redis URL. An enabled
+scope still requires a valid, reachable Redis URL.
 
 ## Redis connection modes
 
@@ -48,6 +75,13 @@ resolved connection and refresh state.
 Store failures are fail-open by default and can be configured fail-closed. All
 decisions record `http_rate_limit_decisions_total` with only `scope` and
 `outcome` labels.
+
+## Migration
+
+Existing `layers` calls keep their behavior. Replace product-owned bearer
+middleware with `baukit_auth::establish_principal` and place it outside
+`baukit_ratelimit::layers`. Startup code that conditionally connects Redis can
+replace its scope checks with `RedisRateLimitStore::connect_if_enabled`.
 
 ## Fixed-window amount budgets
 

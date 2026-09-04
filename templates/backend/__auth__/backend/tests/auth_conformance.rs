@@ -3,9 +3,11 @@ use std::{error::Error, sync::Arc, time::Duration};
 use axum::{
     body::{Body, to_bytes},
     http::{Method, Request, StatusCode, header},
+    middleware,
 };
 use baukit_auth::{AuthState, OidcConfig, OidcVerifier};
 use baukit_config::HttpConfig;
+use baukit_ratelimit::{InMemoryRateLimitStore, Quota, RateLimitOptions};
 use serde_json::Value;
 use tower::ServiceExt as _;
 
@@ -148,6 +150,54 @@ async fn protected_route_conforms_and_maps_subject_to_internal_user() -> Result<
         Err(baukit_test::JwtFixtureError::RefreshRejected { ref code })
             if code == "invalid_grant"
     ));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn authentication_runs_before_identity_rate_limiting() -> Result<(), Box<dyn Error>> {
+    let issuer = baukit_test::MockOidcServer::start().await?;
+    let verifier = OidcVerifier::discover(
+        OidcConfig::new(issuer.issuer(), AUDIENCE)?.with_clock_skew(Duration::ZERO),
+    )
+    .await?;
+    let auth = AuthState::new(verifier);
+    let app = router(
+        ApiState {
+            items: ItemService::new(Arc::new(InMemoryItemRepository::new())),
+            users: UserService::new(Arc::new(InMemoryUserRepository::new())),
+            auth: auth.clone(),
+        },
+        &HttpConfig::default(),
+    )?;
+    let mut options = RateLimitOptions::default();
+    options.identity.quota = Quota::new(1, Duration::from_secs(60), 0)?;
+    options.ip.enabled = false;
+    let app = baukit_ratelimit::layers(app, InMemoryRateLimitStore::default(), options).layer(
+        middleware::from_fn_with_state(auth, baukit_auth::establish_principal),
+    );
+    let alice = issuer.mint(&issuer.claims("alice", AUDIENCE, Duration::from_secs(60))?)?;
+    let bob = issuer.mint(&issuer.claims("bob", AUDIENCE, Duration::from_secs(60))?)?;
+
+    for (token, expected) in [
+        (&alice, StatusCode::OK),
+        (&alice, StatusCode::TOO_MANY_REQUESTS),
+        (&bob, StatusCode::OK),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/me")
+                    .header(
+                        header::AUTHORIZATION,
+                        baukit_test::authorization_header(token)?,
+                    )
+                    .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(response.status(), expected);
+    }
 
     Ok(())
 }

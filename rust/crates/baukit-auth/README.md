@@ -24,6 +24,34 @@ let _app: Router = Router::new().route("/me", get(me)).with_state(auth);
 Any state implementing `FromRef<AuthState>` lets handlers take `Principal` as an extractor. An
 unauthenticated request never reaches the handler body.
 
+## Authentication before request middleware
+
+Use `establish_principal` when middleware needs the identity before route extractors run. It verifies
+a presented bearer credential and stores `Principal` in request extensions. The route extractor then
+reuses that value without a second verification.
+
+```rust
+use axum::{Router, middleware, routing::get};
+use baukit_auth::{AuthState, IdentityVerifier, Principal, establish_principal};
+
+# fn example(verifier: impl IdentityVerifier + 'static) {
+let auth = AuthState::new(verifier);
+let app: Router = Router::new()
+    .route("/me", get(|principal: Principal| async move {
+        principal.subject().to_owned()
+    }))
+    .with_state(auth.clone())
+    .layer(middleware::from_fn_with_state(auth, establish_principal));
+# let _ = app;
+# }
+```
+
+The middleware lets a request with no `Authorization` header continue. This supports anonymous
+routes and an inner client-IP safety limit. If the header is present but malformed, invalid, or
+expired, the middleware returns the existing `unauthenticated` envelope and does not call inner
+middleware. The verifier can be an `OidcVerifier`, `MultiIssuerVerifier`, `ApiTokenVerifier`, or any
+product adapter that implements `IdentityVerifier`.
+
 ## Only the claims you configured
 
 `OidcVerifier::discover` finds the issuer's JWKS endpoint through standard discovery and validates
@@ -113,6 +141,14 @@ encoded policy strings such as `limit_exceeded:api_tokens_active:10` with an
 `ApiTokenError::PolicyRejected`, then read `code()` and `detail()` instead of parsing a storage error
 string. Existing malformed, unknown, hash-mismatched, revoked, and expired credential results do not
 change.
+
+## Migrating principal-caching middleware
+
+Replace product middleware that calls `Principal::from_request_parts` with
+`middleware::from_fn_with_state(auth, establish_principal)`. Keep the `Principal` extractor on
+protected handlers. It now reads the principal established by the middleware and does not verify the
+credential again. Requests without a credential still reach anonymous routes. Requests with a bad
+credential now stop at the authentication middleware, before an inner anonymous rate-limit bucket.
 
 ## Scope
 

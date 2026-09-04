@@ -1,9 +1,10 @@
 //! Provider-neutral OIDC access-token verification for Baukit services.
 //!
 //! [`OidcVerifier`] discovers an issuer's JWKS endpoint, validates signed JWTs,
-//! and maps only configured identity fields into [`Principal`]. Axum handlers
-//! can extract `Principal` when their state implements `FromRef` for
-//! [`AuthState`]. Provider-specific claims remain private to the verifier.
+//! and maps only configured identity fields into [`Principal`].
+//! [`establish_principal`] verifies a presented bearer credential before inner
+//! middleware runs. Axum handlers can then extract `Principal` without a second
+//! verification. Provider-specific claims remain private to the verifier.
 //!
 //! ```no_run
 //! use axum::{Router, routing::get};
@@ -80,7 +81,7 @@ pub use api_token::{
     ApiTokenStoreError, ApiTokenStoreFuture, ApiTokenVerifier, DEFAULT_API_TOKEN_MARKER,
     IssuedApiToken, NewApiToken, StoredApiToken, hash_api_token,
 };
-pub use axum_integration::{AuthRejection, AuthState};
+pub use axum_integration::{AuthRejection, AuthState, establish_principal};
 pub use baukit_openapi::{BEARER_AUTH_SCHEME, OpenApiMetadata};
 pub use config::{OidcConfig, OidcConfigError, PrincipalClaimMapping, SigningAlgorithm};
 pub use verifier::{

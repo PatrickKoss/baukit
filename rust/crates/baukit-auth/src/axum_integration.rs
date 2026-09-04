@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{FromRef, FromRequestParts},
+    extract::{FromRef, FromRequestParts, Request, State},
     http::{header, request::Parts},
+    middleware::Next,
     response::{IntoResponse, Response},
 };
 
@@ -33,6 +34,33 @@ impl AuthState {
 impl std::fmt::Debug for AuthState {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.debug_struct("AuthState").finish_non_exhaustive()
+    }
+}
+
+/// Verifies a presented bearer credential and caches its [`Principal`].
+///
+/// Requests without an `Authorization` header continue without a principal so
+/// anonymous routes and client-IP safety limits can handle them. A malformed,
+/// invalid, or expired credential is rejected before inner middleware runs.
+/// Place this middleware outside middleware that reads `Principal` from request
+/// extensions.
+pub async fn establish_principal(
+    State(auth): State<AuthState>,
+    mut request: Request,
+    next: Next,
+) -> Response {
+    if request.headers().get(header::AUTHORIZATION).is_none() {
+        return next.run(request).await;
+    }
+    let Some(token) = bearer_token(request.headers()) else {
+        return AuthRejection::InvalidToken.into_response();
+    };
+    match auth.verifier.verify(token).await {
+        Ok(principal) => {
+            request.extensions_mut().insert(principal);
+            next.run(request).await
+        }
+        Err(error) => log_verification_failure(error).into_response(),
     }
 }
 
@@ -98,7 +126,7 @@ where
         if let Some(principal) = parts.extensions.get::<Principal>() {
             return Ok(principal.clone());
         }
-        let token = bearer_token(parts).ok_or(AuthRejection::Unauthenticated)?;
+        let token = bearer_token(&parts.headers).ok_or(AuthRejection::Unauthenticated)?;
         let principal = AuthState::from_ref(state)
             .verifier
             .verify(token)
@@ -109,8 +137,8 @@ where
     }
 }
 
-fn bearer_token(parts: &Parts) -> Option<&str> {
-    let value = parts.headers.get(header::AUTHORIZATION)?.to_str().ok()?;
+fn bearer_token(headers: &axum::http::HeaderMap) -> Option<&str> {
+    let value = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
     let token = value.strip_prefix("Bearer ")?;
     (!token.is_empty() && !token.contains(char::is_whitespace)).then_some(token)
 }
@@ -136,6 +164,7 @@ mod tests {
         Router,
         body::{Body, to_bytes},
         http::{Request, StatusCode},
+        middleware,
         routing::get,
     };
     use serde_json::Value;
@@ -143,7 +172,22 @@ mod tests {
 
     use super::*;
 
-    struct AcceptFixture;
+    #[derive(Clone)]
+    struct AcceptFixture {
+        calls: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl AcceptFixture {
+        fn new() -> Self {
+            Self {
+                calls: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            }
+        }
+
+        fn calls(&self) -> usize {
+            self.calls.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
 
     impl IdentityVerifier for AcceptFixture {
         fn verify<'a>(
@@ -151,6 +195,7 @@ mod tests {
             token: &'a str,
         ) -> Pin<Box<dyn Future<Output = Result<Principal, VerificationError>> + Send + 'a>>
         {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Box::pin(ready(match token {
                 "valid" => Ok(Principal::new("fixture")),
                 "expired" => Err(VerificationError::Expired),
@@ -165,9 +210,10 @@ mod tests {
 
     #[tokio::test]
     async fn extractor_accepts_valid_bearer_token() {
+        let verifier = AcceptFixture::new();
         let response = Router::new()
             .route("/", get(handler))
-            .with_state(AuthState::new(AcceptFixture))
+            .with_state(AuthState::new(verifier))
             .oneshot(
                 Request::builder()
                     .uri("/")
@@ -182,9 +228,10 @@ mod tests {
 
     #[tokio::test]
     async fn extractor_uses_standard_unauthenticated_envelope() {
+        let verifier = AcceptFixture::new();
         let response = Router::new()
             .route("/", get(handler))
-            .with_state(AuthState::new(AcceptFixture))
+            .with_state(AuthState::new(verifier))
             .oneshot(
                 Request::builder()
                     .uri("/")
@@ -218,7 +265,7 @@ mod tests {
         ] {
             let response = Router::new()
                 .route("/", get(handler))
-                .with_state(AuthState::new(AcceptFixture))
+                .with_state(AuthState::new(AcceptFixture::new()))
                 .oneshot(
                     Request::builder()
                         .uri("/")
@@ -238,6 +285,95 @@ mod tests {
             .expect("JSON response");
             assert_eq!(json["error"]["code"], "unauthenticated");
         }
+    }
+
+    #[tokio::test]
+    async fn middleware_allows_missing_credentials_without_a_principal() {
+        async fn anonymous(principal: Option<axum::Extension<Principal>>) -> StatusCode {
+            if principal.is_none() {
+                StatusCode::NO_CONTENT
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
+        }
+
+        let app = Router::new()
+            .route("/", get(anonymous))
+            .layer(middleware::from_fn_with_state(
+                AuthState::new(AcceptFixture::new()),
+                establish_principal,
+            ));
+        let response = app
+            .oneshot(Request::new(Body::empty()))
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
+    async fn middleware_rejects_malformed_invalid_and_expired_credentials() {
+        for (authorization, challenge) in [
+            (
+                "Basic opaque",
+                "Bearer error=\"invalid_token\", hint=\"invalid\"",
+            ),
+            (
+                "Bearer invalid",
+                "Bearer error=\"invalid_token\", hint=\"invalid\"",
+            ),
+            (
+                "Bearer expired",
+                "Bearer error=\"invalid_token\", hint=\"expired\"",
+            ),
+        ] {
+            let app = Router::new()
+                .route("/", get(|| async { StatusCode::NO_CONTENT }))
+                .layer(middleware::from_fn_with_state(
+                    AuthState::new(AcceptFixture::new()),
+                    establish_principal,
+                ));
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .header(header::AUTHORIZATION, authorization)
+                        .body(Body::empty())
+                        .expect("request"),
+                )
+                .await
+                .expect("response");
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+            assert_eq!(response.headers()[header::WWW_AUTHENTICATE], challenge);
+            let json: Value = serde_json::from_slice(
+                &to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .expect("response body"),
+            )
+            .expect("JSON response");
+            assert_eq!(json["error"]["code"], "unauthenticated");
+        }
+    }
+
+    #[tokio::test]
+    async fn extractor_reuses_the_middleware_principal() {
+        let verifier = AcceptFixture::new();
+        let app = Router::new()
+            .route("/", get(handler))
+            .with_state(AuthState::new(verifier.clone()))
+            .layer(middleware::from_fn_with_state(
+                AuthState::new(verifier.clone()),
+                establish_principal,
+            ));
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .header(header::AUTHORIZATION, "Bearer valid")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(verifier.calls(), 1);
     }
 
     #[test]

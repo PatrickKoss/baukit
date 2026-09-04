@@ -674,7 +674,7 @@ mod tests {
     use chrono::TimeZone as _;
 
     use super::*;
-    use crate::AuthState;
+    use crate::{AuthState, establish_principal};
 
     #[derive(Default)]
     struct MemoryStore {
@@ -1316,11 +1316,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_principal_extractor_accepts_an_api_token_and_rejects_a_revoked_one() {
+    async fn principal_middleware_accepts_oidc_and_api_token_verifiers() {
         use axum::{
             Router,
             body::Body,
             http::{Request, StatusCode, header},
+            middleware,
             routing::get,
         };
         use tower::ServiceExt as _;
@@ -1347,9 +1348,11 @@ mod tests {
             .await
             .expect("revoke token");
 
+        let auth = AuthState::new(ApiTokenVerifier::new(service, fallback.clone()));
         let router = Router::new()
             .route("/", get(handler))
-            .with_state(AuthState::new(ApiTokenVerifier::new(service, fallback)));
+            .with_state(auth.clone())
+            .layer(middleware::from_fn_with_state(auth, establish_principal));
         let request = |secret: &str| {
             Request::builder()
                 .uri("/")
@@ -1364,6 +1367,17 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(accepted.status(), StatusCode::OK);
+
+        let oidc = router
+            .clone()
+            .oneshot(request("eyJhbGciOiJIUzI1NiJ9.e30.signature"))
+            .await
+            .expect("response");
+        assert_eq!(oidc.status(), StatusCode::OK);
+        assert_eq!(
+            fallback.seen.lock().expect("seen lock").as_slice(),
+            ["eyJhbGciOiJIUzI1NiJ9.e30.signature"]
+        );
 
         let rejected = router
             .oneshot(request(&revoked.secret))

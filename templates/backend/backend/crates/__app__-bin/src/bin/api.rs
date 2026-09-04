@@ -1,9 +1,11 @@
 use std::{env, error::Error, net::SocketAddr, sync::Arc, time::Duration};
 
-{% if context.auth_oidc %}use baukit_auth::{AuthState, OidcConfig, OidcVerifier};
+{% if context.auth_oidc %}use axum::middleware;
+use baukit_auth::{AuthState, OidcConfig, OidcVerifier};
 {% endif %}use baukit_config::{BaukitConfig, ConfigLoader, Environment};
 use baukit_ops::{PoolMetricsSampler, TrafficGate, spawn_pool_metrics_sampler};
-use baukit_runtime::{ProcessKind, ServiceInfo, ShutdownToken, build_info, serve_listener_pair};
+{% if context.auth_oidc %}use baukit_ratelimit::{RateLimitOptions, RedisRateLimitStore};
+{% endif %}use baukit_runtime::{ProcessKind, ServiceInfo, ShutdownToken, build_info, serve_listener_pair};
 use baukit_telemetry::{TelemetryBuilder, tracing};
 
 use {{ context.app_crate }}_api::{ApiState, router};
@@ -105,12 +107,24 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         ApiState {
             items: item_service.clone(),
 {% if context.auth_oidc %}            users: user_service,
-            auth,
+            auth: auth.clone(),
 {% endif %}        },
         &config.http,
     )?;
-
-    let shutdown = ShutdownToken::new(config.shutdown.drain_timeout);
+{% if context.auth_oidc %}    let rate_limit_options = RateLimitOptions::from_config(&config.rate_limit)?;
+    let rate_limit_store = RedisRateLimitStore::connect_if_enabled(&rate_limit_options).await?;
+    let api = if let Some(store) = rate_limit_store {
+        baukit_ratelimit::layers(api, store, rate_limit_options)
+    } else {
+        api
+    };
+    // Axum runs the last added layer first. Authentication establishes Principal
+    // before the inner rate limiter chooses an identity or IP bucket.
+    let api = api.layer(middleware::from_fn_with_state(
+        auth,
+        baukit_auth::establish_principal,
+    ));
+{% endif %}    let shutdown = ShutdownToken::new(config.shutdown.drain_timeout);
     let traffic_gate = TrafficGate::new();
     shutdown.on_drain({
         let traffic_gate = traffic_gate.clone();

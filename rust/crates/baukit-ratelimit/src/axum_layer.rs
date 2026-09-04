@@ -224,18 +224,75 @@ pub fn resolve_client_ip(
 
 #[cfg(test)]
 mod tests {
-    use std::{future::Future, pin::Pin, time::Duration};
+    use std::{collections::BTreeMap, future::Future, pin::Pin, sync::Mutex, time::Duration};
 
     use axum::{
         body::{Body, to_bytes},
-        http::{Request, StatusCode},
+        http::{Request, StatusCode, header},
+        middleware,
         routing::get,
+    };
+    use baukit_auth::{
+        AuthState, IdentityVerifier, Principal, VerificationError, establish_principal,
     };
     use serde_json::Value;
     use tower::ServiceExt as _;
 
     use super::*;
     use crate::{InMemoryRateLimitStore, RateLimitStoreError};
+
+    #[derive(Clone, Default)]
+    struct RecordingStore {
+        counts: Arc<Mutex<BTreeMap<String, u64>>>,
+    }
+
+    impl RecordingStore {
+        fn counts(&self) -> BTreeMap<String, u64> {
+            self.counts.lock().expect("counts lock").clone()
+        }
+    }
+
+    impl RateLimitStore for RecordingStore {
+        fn check_and_consume<'a>(
+            &'a self,
+            key: &'a str,
+            quota: Quota,
+        ) -> Pin<Box<dyn Future<Output = Result<RateLimitDecision, RateLimitStoreError>> + Send + 'a>>
+        {
+            let consumed = {
+                let mut counts = self.counts.lock().expect("counts lock");
+                let count = counts.entry(key.to_owned()).or_default();
+                *count += 1;
+                *count
+            };
+            Box::pin(async move {
+                if consumed <= quota.capacity() {
+                    Ok(RateLimitDecision::allowed(quota.capacity() - consumed))
+                } else {
+                    Ok(RateLimitDecision::limited(0, quota.period()))
+                }
+            })
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    struct SubjectVerifier;
+
+    impl IdentityVerifier for SubjectVerifier {
+        fn verify<'a>(
+            &'a self,
+            token: &'a str,
+        ) -> Pin<Box<dyn Future<Output = Result<Principal, VerificationError>> + Send + 'a>>
+        {
+            Box::pin(async move {
+                match token {
+                    "alice" | "bob" => Ok(Principal::new(token)),
+                    "expired" => Err(VerificationError::Expired),
+                    _ => Err(VerificationError::InvalidSignature),
+                }
+            })
+        }
+    }
 
     #[test]
     fn xff_resolution_honors_trusted_hop_count() {
@@ -262,6 +319,94 @@ mod tests {
             resolve_client_ip(&headers, peer, 1),
             Some("10.0.0.5".parse().expect("IP"))
         );
+    }
+
+    #[tokio::test]
+    async fn middleware_principals_use_separate_identity_buckets() {
+        let store = RecordingStore::default();
+        let mut options = RateLimitOptions::default();
+        options.identity.quota = Quota::new(1, Duration::from_secs(60), 0).expect("quota");
+        options.ip.enabled = false;
+        let auth = AuthState::new(SubjectVerifier);
+        let app = layers(
+            Router::new().route("/", get(|_principal: Principal| async { "ok" })),
+            store.clone(),
+            options,
+        )
+        .with_state(auth.clone())
+        .layer(middleware::from_fn_with_state(auth, establish_principal));
+
+        assert_eq!(
+            app.clone()
+                .oneshot(authenticated_request("alice"))
+                .await
+                .expect("response")
+                .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            app.clone()
+                .oneshot(authenticated_request("alice"))
+                .await
+                .expect("response")
+                .status(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
+        assert_eq!(
+            app.oneshot(authenticated_request("bob"))
+                .await
+                .expect("response")
+                .status(),
+            StatusCode::OK
+        );
+        assert_eq!(store.counts()["rl:id:alice"], 2);
+        assert_eq!(store.counts()["rl:id:bob"], 1);
+    }
+
+    #[tokio::test]
+    async fn anonymous_requests_consume_only_the_ip_bucket() {
+        let store = RecordingStore::default();
+        let app = layers(
+            Router::new().route("/", get(|| async { "anonymous" })),
+            store.clone(),
+            RateLimitOptions::default(),
+        )
+        .layer(middleware::from_fn_with_state(
+            AuthState::new(SubjectVerifier),
+            establish_principal,
+        ));
+
+        let response = app.oneshot(request_with_peer()).await.expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            store.counts(),
+            BTreeMap::from([("rl:ip:192.0.2.10".to_owned(), 1)])
+        );
+    }
+
+    #[tokio::test]
+    async fn rejected_credentials_do_not_consume_anonymous_buckets() {
+        for token in ["invalid", "expired"] {
+            let store = RecordingStore::default();
+            let app = layers(
+                Router::new().route("/", get(|| async { "unreachable" })),
+                store.clone(),
+                RateLimitOptions::default(),
+            )
+            .layer(middleware::from_fn_with_state(
+                AuthState::new(SubjectVerifier),
+                establish_principal,
+            ));
+
+            let response = app
+                .oneshot(authenticated_request(token))
+                .await
+                .expect("response");
+
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+            assert!(store.counts().is_empty());
+        }
     }
 
     #[tokio::test]
@@ -332,6 +477,18 @@ mod tests {
     fn request_with_peer() -> Request<Body> {
         let mut request = Request::builder()
             .uri("/")
+            .body(Body::empty())
+            .expect("request");
+        request.extensions_mut().insert(ConnectInfo(
+            "192.0.2.10:1234".parse::<SocketAddr>().expect("peer"),
+        ));
+        request
+    }
+
+    fn authenticated_request(token: &str) -> Request<Body> {
+        let mut request = Request::builder()
+            .uri("/")
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
             .body(Body::empty())
             .expect("request");
         request.extensions_mut().insert(ConnectInfo(

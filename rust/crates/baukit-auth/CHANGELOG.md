@@ -8,6 +8,10 @@ All notable changes to `baukit-auth` are documented here.
 
 - Add validated `ApiTokenPolicyRejection` codes with at most eight numeric
   details so adapters can return safe policy decisions.
+- Add `establish_principal` for Axum compositions that need a verified
+  `Principal` before rate limiting or other request middleware. Missing
+  credentials continue without a principal; presented invalid credentials use
+  the existing authentication envelope.
 
 ### Changed
 
@@ -22,6 +26,9 @@ All notable changes to `baukit-auth` are documented here.
   provider errors with `ApiTokenStoreError::internal`. Replace encoded policy
   strings with `ApiTokenPolicyRejection` and update API mappings to inspect its
   code and numeric details.
+- Replace product-owned principal-caching middleware with
+  `middleware::from_fn_with_state(auth, establish_principal)`. Protected route
+  extractors remain unchanged and reuse the cached principal.
 
 ## [0.2.1] - 2026-09-03
 

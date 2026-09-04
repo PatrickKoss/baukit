@@ -11,6 +11,7 @@ workspace = true
 [dependencies]
 axum.workspace = true
 {% if context.auth_oidc %}baukit-auth.workspace = true
+baukit-ratelimit.workspace = true
 {% endif %}baukit-config.workspace = true
 baukit-openapi.workspace = true
 baukit-ops = { workspace = true, features = ["sqlx-postgres"] }

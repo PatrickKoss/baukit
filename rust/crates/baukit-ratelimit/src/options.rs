@@ -1,6 +1,8 @@
 use std::{fmt, net::IpAddr};
 
-use baukit_config::{RateLimitConfig, RateLimitFailMode, RateLimitScopeConfig, Validate as _};
+use baukit_config::{
+    RateLimitConfig, RateLimitFailMode, RateLimitScopeConfig, Validate as _, ValidationErrors,
+};
 
 use crate::{Quota, QuotaError};
 
@@ -31,9 +33,7 @@ pub struct RateLimitOptions {
 impl RateLimitOptions {
     /// Converts the shared application configuration into validated runtime options.
     pub fn from_config(config: &RateLimitConfig) -> Result<Self, RateLimitOptionsError> {
-        config
-            .validate()
-            .map_err(RateLimitOptionsError::Configuration)?;
+        validate_config(config)?;
         Ok(Self {
             redis_url: config.redis_url.expose().clone(),
             identity: scope_options(&config.identity)?,
@@ -48,6 +48,12 @@ impl RateLimitOptions {
     #[must_use]
     pub fn redis_url(&self) -> &str {
         &self.redis_url
+    }
+
+    /// Returns whether either request scope needs a store.
+    #[must_use]
+    pub const fn is_enabled(&self) -> bool {
+        self.identity.enabled || self.ip.enabled
     }
 
     /// Returns the configured key prefix.
@@ -120,6 +126,27 @@ fn scope_options(config: &RateLimitScopeConfig) -> Result<RateLimitScopeOptions,
     })
 }
 
+fn validate_config(config: &RateLimitConfig) -> Result<(), RateLimitOptionsError> {
+    let Err(errors) = config.validate() else {
+        return Ok(());
+    };
+    if config.identity.enabled || config.ip.enabled {
+        return Err(RateLimitOptionsError::Configuration(errors));
+    }
+    let errors = errors
+        .into_errors()
+        .into_iter()
+        .filter(|error| error.path() != "redis_url")
+        .collect::<Vec<_>>();
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(RateLimitOptionsError::Configuration(ValidationErrors::new(
+            errors,
+        )))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -159,5 +186,18 @@ mod tests {
             options.ip_key(Some("2001:db8::1".parse().expect("IP"))),
             "rl:ip:2001:db8::1"
         );
+    }
+
+    #[test]
+    fn disabled_scopes_do_not_require_a_redis_url() {
+        let mut config = RateLimitConfig::default();
+        config.identity.enabled = false;
+        config.ip.enabled = false;
+        config.redis_url = Secret::new(String::new());
+
+        let options = RateLimitOptions::from_config(&config).expect("disabled options");
+
+        assert!(!options.is_enabled());
+        assert!(options.redis_url().is_empty());
     }
 }

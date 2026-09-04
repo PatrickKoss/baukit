@@ -7,8 +7,8 @@
 //! [`AmountBudget`] handles callers that consume a variable number of units.
 //!
 //! Authenticated limiting reads a verified [`baukit_auth::Principal`] from
-//! request extensions. Place middleware that establishes the principal outside
-//! this layer so it is available before the request is consumed.
+//! request extensions. Place [`baukit_auth::establish_principal`] outside this
+//! layer so the principal is available before the request is consumed.
 
 #![deny(missing_docs)]
 

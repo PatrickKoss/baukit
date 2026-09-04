@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 {% endif %}use baukit_config::HttpConfig;
 use baukit_http::{
     ApiError, ApiJson, ApiPath, ErrorBody, ErrorEnvelope, HttpOptions, HttpOptionsError,
+    JsonRejectionCodes,
 };
 use baukit_openapi::OpenApiMetadata;
 use serde::{Deserialize, Serialize};
@@ -41,7 +42,7 @@ pub struct ApiState {
 {% endif %}        .with_state(state);
     Ok(baukit_http::finalize(
         router,
-        HttpOptions::from_config(config)?,
+        HttpOptions::from_config(config)?.with_json_rejection_codes(JsonRejectionCodes::default()),
     ))
 }
 

@@ -11,8 +11,8 @@ use redis::{
 use tokio::sync::{Mutex, RwLock};
 
 use crate::{
-    AmountBudgetStore, AmountBudgetStoreDecision, Quota, RateLimitDecision, RateLimitStore,
-    RateLimitStoreError,
+    AmountBudgetStore, AmountBudgetStoreDecision, Quota, RateLimitDecision, RateLimitOptions,
+    RateLimitStore, RateLimitStoreError,
 };
 
 const TOKEN_BUCKET_SCRIPT: &str = r#"
@@ -110,6 +110,19 @@ struct SentinelTarget {
 }
 
 impl RedisRateLimitStore {
+    /// Connects only when at least one request-limit scope is enabled.
+    ///
+    /// Fully disabled request limiting returns `None` without parsing the Redis
+    /// URL or opening a connection.
+    pub async fn connect_if_enabled(
+        options: &RateLimitOptions,
+    ) -> Result<Option<Self>, RateLimitStoreError> {
+        if !options.is_enabled() {
+            return Ok(None);
+        }
+        Self::connect(options.redis_url()).await.map(Some)
+    }
+
     /// Connects to the Redis target selected by `redis_url`.
     ///
     /// `redis://` retains the direct reconnecting connection-manager mode.
@@ -626,7 +639,24 @@ fn system_time_millis_ceil(time: SystemTime) -> Result<i64, RateLimitStoreError>
 
 #[cfg(test)]
 mod tests {
+    use baukit_config::{RateLimitConfig, Secret};
+
     use super::*;
+
+    #[tokio::test]
+    async fn disabled_scopes_skip_redis_url_parsing_and_connection() {
+        let mut config = RateLimitConfig::default();
+        config.identity.enabled = false;
+        config.ip.enabled = false;
+        config.redis_url = Secret::new("not a Redis URL".to_owned());
+        let options = RateLimitOptions::from_config(&config).expect("disabled options");
+
+        let store = RedisRateLimitStore::connect_if_enabled(&options)
+            .await
+            .expect("disabled limiter");
+
+        assert!(store.is_none());
+    }
 
     #[test]
     fn parses_multi_host_sentinel_url() -> Result<(), RateLimitStoreError> {
