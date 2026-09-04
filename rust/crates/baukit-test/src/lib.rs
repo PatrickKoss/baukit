@@ -66,6 +66,11 @@ pub use erasure::{
     CleanupKind, ErasureConformanceError, OwnedResourceCheck, ProductProfileErasureAdapter,
     check_product_profile_erasure_conformance,
 };
+pub use inbox::{
+    InboxConformanceCases, InboxConformanceError, InboxDelivery, InboxDisposition, InboxFault,
+    InboxFuture, InboxReceipt, InboxScope, InboxState, PostgresInboxPort,
+    assert_postgres_inbox_conformance, check_postgres_inbox_conformance,
+};
 pub use jwt::{
     JwtClaims, JwtFixtureError, MockOidcServer, MockOidcSession, authorization_header, hs256_token,
     rs256_token, rs256_token_with_key_id, unsigned_token,
@@ -96,6 +101,11 @@ pub use redis::{
     start_redis_sentinel,
 };
 pub use tracing::init_test_tracing;
+pub use webhook::{
+    MAX_SCRIPTED_WEBHOOK_BODY_BYTES, ReceivedWebhookRequest, ScriptedWebhookReceiver,
+    ScriptedWebhookResponse, sign_webhook_hmac_sha256, verify_webhook_hmac_sha256,
+    webhook_signing_input,
+};
 
 // Compiles the README's examples so they cannot drift from the API.
 #[doc = include_str!("../README.md")]
