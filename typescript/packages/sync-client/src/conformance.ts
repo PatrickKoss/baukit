@@ -33,9 +33,19 @@ export interface SyncConformancePullPage<TChange, TCursor> {
   hasMore: boolean;
 }
 
-export interface SyncConformancePushResult<TPending> {
+export interface SyncConformancePushResult<TPending, TRemoteChange = never> {
   acknowledged: readonly TPending[];
   rejected: readonly SyncConformanceRejection[];
+  rejectedRows?: readonly TRemoteChange[];
+}
+
+export interface SyncConformanceSubmittedBatchOutcome<
+  TPending,
+  TPushResponse,
+  TRemoteChange,
+> extends SyncConformancePushResult<TPending, TRemoteChange> {
+  submitted: readonly TPending[];
+  response: TPushResponse;
 }
 
 export interface SyncConformancePendingState {
@@ -68,6 +78,7 @@ export interface SyncConformanceAdapter<
   outbox: {
     enqueue(client: TClient, change: SyncConformanceChange): Promise<void> | void;
     listPending(client: TClient): Promise<readonly TPending[]> | readonly TPending[];
+    pendingId?(pending: TPending): string;
     markAcknowledged(client: TClient, pending: readonly TPending[]): Promise<void> | void;
     recordRejected(
       client: TClient,
@@ -90,13 +101,19 @@ export interface SyncConformanceAdapter<
     readPendingState(
       client: TClient,
     ): Promise<SyncConformancePendingState> | SyncConformancePendingState;
+    applySubmittedBatchOutcome?(
+      client: TClient,
+      outcome: SyncConformanceSubmittedBatchOutcome<TPending, TPushResponse, TRemoteChange>,
+    ): Promise<void> | void;
   };
   wire: {
     encodePush(pending: readonly TPending[]): Promise<TPushRequest> | TPushRequest;
     decodePush(
       response: TPushResponse,
       submitted: readonly TPending[],
-    ): Promise<SyncConformancePushResult<TPending>> | SyncConformancePushResult<TPending>;
+    ):
+      | Promise<SyncConformancePushResult<TPending, TRemoteChange>>
+      | SyncConformancePushResult<TPending, TRemoteChange>;
     decodePull(
       response: TPullResponse,
     ):
@@ -256,14 +273,33 @@ export function createSyncConformanceTests<
     assert(reported.pending === actual.length > 0, 'reported pending flag differs from the outbox');
   }
 
-  async function push(client: TClient, server: TServer): Promise<void> {
+  async function submit(client: TClient, server: TServer) {
     const submitted = await pending(client);
-    if (submitted.length === 0) return;
+    assert(submitted.length > 0, 'cannot submit an empty pending batch');
     const request = await adapter.wire.encodePush(submitted);
     const response = await adapter.server.acceptPush(server, request);
     const outcome = await adapter.wire.decodePush(response, submitted);
-    await adapter.outbox.markAcknowledged(client, outcome.acknowledged);
-    await adapter.outbox.recordRejected(client, outcome.rejected);
+    return { submitted, response, outcome };
+  }
+
+  async function applySubmittedBatchOutcome(
+    client: TClient,
+    submission: Awaited<ReturnType<typeof submit>>,
+  ): Promise<void> {
+    if (adapter.local.applySubmittedBatchOutcome === undefined) {
+      fail('adapter must implement local.applySubmittedBatchOutcome for submitted outcomes');
+    }
+    await adapter.local.applySubmittedBatchOutcome(client, {
+      submitted: submission.submitted,
+      response: submission.response,
+      ...submission.outcome,
+    });
+  }
+
+  async function push(client: TClient, server: TServer): Promise<void> {
+    const submitted = await pending(client);
+    if (submitted.length === 0) return;
+    await applySubmittedBatchOutcome(client, await submit(client, server));
   }
 
   async function pullPage(
@@ -390,6 +426,95 @@ export function createSyncConformanceTests<
           await adapter.server.omitNextPushOutcome(server);
           await expectFailure(() => push(clientA, server), 'partial push outcomes were accepted');
           await assertPendingState(clientA, 2);
+        }),
+    },
+    {
+      name: 'an older accepted submission settles only its exact pending rows',
+      run: () =>
+        inScenario(async ({ clientA, server }) => {
+          await adapter.outbox.enqueue(clientA, change('change-overlap-a', 'overlap', 10, 'A'));
+          const submissionA = await submit(clientA, server);
+          await adapter.outbox.enqueue(clientA, change('change-overlap-b', 'overlap', 30, 'B'));
+          await submit(clientA, server);
+
+          await applySubmittedBatchOutcome(clientA, submissionA);
+
+          const remaining = await pending(clientA);
+          assert(remaining.length === 1, 'accepted submission removed a newer pending row');
+          if (adapter.outbox.pendingId === undefined) {
+            fail('adapter must implement outbox.pendingId for overlapping outcomes');
+          }
+          assert(
+            remaining[0] !== undefined &&
+              adapter.outbox.pendingId(remaining[0]) === 'change-overlap-b',
+            'accepted submission settled the wrong pending ID',
+          );
+          const rows = await adapter.local.snapshot(clientA);
+          const visible = rows.find(
+            (row) => row.entityType === 'record' && row.entityId === 'overlap',
+          );
+          assert(visible?.value === 'B', 'accepted submission replaced the newer local value');
+          await assertPendingState(clientA, 1);
+        }),
+    },
+    {
+      name: 'an older rejected submission cannot replace a newer pending value',
+      run: () =>
+        inScenario(async ({ clientA, server }) => {
+          await adapter.server.seed(server, change('seed-overlap', 'overlap', 20, 'server'));
+          await adapter.outbox.enqueue(clientA, change('change-overlap-a', 'overlap', 10, 'A'));
+          const submissionA = await submit(clientA, server);
+          await adapter.outbox.enqueue(clientA, change('change-overlap-b', 'overlap', 30, 'B'));
+          await submit(clientA, server);
+
+          await applySubmittedBatchOutcome(clientA, submissionA);
+
+          const remaining = await pending(clientA);
+          assert(remaining.length === 1, 'rejected submission removed a newer pending row');
+          if (adapter.outbox.pendingId === undefined) {
+            fail('adapter must implement outbox.pendingId for overlapping outcomes');
+          }
+          assert(
+            remaining[0] !== undefined &&
+              adapter.outbox.pendingId(remaining[0]) === 'change-overlap-b',
+            'rejected submission settled the wrong pending ID',
+          );
+          const rows = await adapter.local.snapshot(clientA);
+          const visible = rows.find(
+            (row) => row.entityType === 'record' && row.entityId === 'overlap',
+          );
+          assert(visible?.value === 'B', 'rejected server row replaced the newer local value');
+          assert(
+            (await adapter.outbox.listRejected(clientA)).length === 1,
+            'rejected submission did not record its rejection',
+          );
+          await assertPendingState(clientA, 1);
+        }),
+    },
+    {
+      name: 'a stale pull commits its cursor without replacing a pending local value',
+      run: () =>
+        inScenario(async ({ clientA, server }) => {
+          await adapter.server.seed(server, change('seed-stale-pull', 'stale-pull', 20, 'server'));
+          await adapter.outbox.enqueue(
+            clientA,
+            change('change-stale-pull', 'stale-pull', 20, 'local'),
+          );
+          const cursorBefore = await adapter.local.readCursor(clientA);
+
+          await pullPage(clientA, server);
+
+          const cursorAfter = await adapter.local.readCursor(clientA);
+          assert(
+            adapter.wire.compareCursors(cursorAfter, cursorBefore) > 0,
+            'stale pull did not commit its cursor',
+          );
+          const rows = await adapter.local.snapshot(clientA);
+          const visible = rows.find(
+            (row) => row.entityType === 'record' && row.entityId === 'stale-pull',
+          );
+          assert(visible?.value === 'local', 'stale pull replaced the pending local value');
+          await assertPendingState(clientA, 1);
         }),
     },
     {

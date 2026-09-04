@@ -1,4 +1,4 @@
-import { describe, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { createSyncConformanceTests } from '@baukit/sync-client/conformance';
 
 import {
@@ -43,6 +43,7 @@ interface FakePushOutcome {
   entityId: string;
   status: 'accepted' | 'rejected';
   reason?: string;
+  serverRow?: SyncConformanceRow;
 }
 
 interface FakePushResponse {
@@ -118,6 +119,7 @@ function applyServerChange(server: FakeServer, change: SyncConformanceChange): F
       entityId: change.entityId,
       status: 'rejected',
       reason: 'superseded',
+      serverRow: clone(existing.row),
     };
   }
   if (change.dependsOn !== undefined && !server.rows.has(key(change.dependsOn))) {
@@ -151,6 +153,7 @@ const adapter: SyncConformanceAdapter<
       applyLocalChange(client.rows, rowFromChange(change));
     },
     listPending: (client) => clone(client.outbox),
+    pendingId: (pending) => pending.changeId,
     markAcknowledged(client, pending) {
       const acknowledged = new Set(pending.map(({ changeId }) => changeId));
       client.outbox = client.outbox.filter(({ changeId }) => !acknowledged.has(changeId));
@@ -166,7 +169,10 @@ const adapter: SyncConformanceAdapter<
       const staged = new Map([...client.rows].map(([rowKey, row]) => [rowKey, clone(row)]));
       let applied = 0;
       for (const row of page.changes) {
-        applyLocalChange(staged, row);
+        const hasPending = client.outbox.some(
+          (pending) => pending.entityType === row.entityType && pending.entityId === row.entityId,
+        );
+        if (!hasPending) applyLocalChange(staged, row);
         applied += 1;
         if (applied === options?.failAfterChanges) {
           throw new Error('injected local transaction failure');
@@ -180,6 +186,21 @@ const adapter: SyncConformanceAdapter<
       pending: client.outbox.length > 0,
       pendingCount: client.outbox.length,
     }),
+    applySubmittedBatchOutcome(client, outcome) {
+      const acknowledged = new Set(outcome.acknowledged.map(({ changeId }) => changeId));
+      const outbox = client.outbox.filter(({ changeId }) => !acknowledged.has(changeId));
+      const rejected = [...client.rejected, ...clone(outcome.rejected)];
+      const rows = new Map([...client.rows].map(([rowKey, row]) => [rowKey, clone(row)]));
+      for (const row of outcome.rejectedRows ?? []) {
+        const hasPending = outbox.some(
+          (pending) => pending.entityType === row.entityType && pending.entityId === row.entityId,
+        );
+        if (!hasPending) applyLocalChange(rows, row);
+      }
+      client.outbox = outbox;
+      client.rejected = rejected;
+      client.rows = rows;
+    },
   },
   wire: {
     encodePush: (pending) => ({ changes: dependencyOrder(pending) }),
@@ -197,6 +218,11 @@ const adapter: SyncConformanceAdapter<
             entityId: outcome.entityId,
             reason: outcome.reason ?? 'rejected',
           })),
+        rejectedRows: response.outcomes.flatMap((outcome) =>
+          outcome.status === 'rejected' && outcome.serverRow !== undefined
+            ? [clone(outcome.serverRow)]
+            : [],
+        ),
       };
     },
     decodePull: (response) => clone(response),
@@ -255,4 +281,25 @@ describe('sync conformance harness', () => {
   for (const testCase of createSyncConformanceTests(adapter)) {
     it(testCase.name, () => testCase.run());
   }
+
+  it('keeps the legacy settlement callbacks available during migration', async () => {
+    const scenario = await adapter.createScenario();
+    const [client] = scenario.clients;
+    const pending: SyncConformanceChange = {
+      changeId: 'legacy-change',
+      entityType: 'record',
+      entityId: 'legacy',
+      operation: 'upsert',
+      value: 'legacy',
+      logicalTime: 1,
+    };
+    await adapter.outbox.enqueue(client, pending);
+    await adapter.outbox.markAcknowledged(client, [pending]);
+    await adapter.outbox.recordRejected(client, [
+      { entityType: 'record', entityId: 'legacy', reason: 'legacy' },
+    ]);
+
+    expect(await adapter.outbox.listPending(client)).toEqual([]);
+    expect(await adapter.outbox.listRejected(client)).toHaveLength(1);
+  });
 });

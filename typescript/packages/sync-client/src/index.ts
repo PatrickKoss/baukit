@@ -22,6 +22,7 @@ export { SyncScheduler } from './scheduler.js';
 export type {
   SyncSchedulerEnvironment,
   SyncSchedulerOptions,
+  SyncSchedulerRecoverySignal,
   SyncSchedulerTimer,
 } from './scheduler.js';
 export {

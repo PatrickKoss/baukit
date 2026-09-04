@@ -30,6 +30,10 @@
       "types": "./dist/expo.d.ts",
       "import": "./dist/expo.js"
     },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js"
+    },
     "./conformance": {
       "types": "./dist/conformance.d.ts",
       "import": "./dist/conformance.js"

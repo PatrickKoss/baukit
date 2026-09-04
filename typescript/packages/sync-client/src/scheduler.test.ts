@@ -128,6 +128,40 @@ describe('SyncScheduler', () => {
     expect(run).not.toHaveBeenCalled();
   });
 
+  it('reports recovery signals before triggering a scheduler run', async () => {
+    const environment = fakeEnvironment(false);
+    const calls: string[] = [];
+    const scheduler = new SyncScheduler(
+      () => {
+        calls.push('run');
+        return Promise.resolve();
+      },
+      environment,
+      { onRecoverySignal: (signal) => calls.push(signal) },
+    );
+    scheduler.start();
+
+    environment.setActive(true);
+    await scheduler.trigger();
+    environment.goOnline();
+    await scheduler.trigger();
+
+    expect(calls).toEqual(['active', 'run', 'online', 'run']);
+  });
+
+  it('reports an online recovery signal while backgrounded without starting a run', async () => {
+    const environment = fakeEnvironment(false);
+    const onRecoverySignal = vi.fn();
+    const run = vi.fn(() => Promise.resolve());
+    new SyncScheduler(run, environment, { onRecoverySignal }).start();
+
+    environment.goOnline();
+    await Promise.resolve();
+
+    expect(onRecoverySignal).toHaveBeenCalledWith('online');
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it('runs on every interval tick', async () => {
     const environment = fakeEnvironment();
     const run = vi.fn(async () => Promise.resolve());

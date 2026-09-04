@@ -19,7 +19,10 @@ export type SyncSchedulerTimer = { readonly __syncSchedulerTimer?: never } & obj
 export interface SyncSchedulerOptions {
   intervalMs?: number;
   onError?: (error: unknown) => void;
+  onRecoverySignal?: (signal: SyncSchedulerRecoverySignal) => void;
 }
+
+export type SyncSchedulerRecoverySignal = 'active' | 'online';
 
 const DEFAULT_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -37,6 +40,7 @@ function noop(): void {
 export class SyncScheduler {
   private readonly intervalMs: number;
   private readonly onError: (error: unknown) => void;
+  private readonly onRecoverySignal: (signal: SyncSchedulerRecoverySignal) => void;
   private active = false;
   private started = false;
   private inFlight: Promise<void> | null = null;
@@ -51,6 +55,7 @@ export class SyncScheduler {
   ) {
     this.intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
     this.onError = options.onError ?? noop;
+    this.onRecoverySignal = options.onRecoverySignal ?? noop;
   }
 
   start(): void {
@@ -64,10 +69,12 @@ export class SyncScheduler {
         this.active = active;
         this.refreshInterval();
         if (active) {
+          this.onRecoverySignal('active');
           void this.trigger();
         }
       }),
       this.environment.subscribeOnline(() => {
+        this.onRecoverySignal('online');
         if (this.active) {
           void this.trigger();
         }

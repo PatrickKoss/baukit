@@ -2,6 +2,7 @@ import {
   createSyncConformanceTests,
   type SyncConformanceAdapter,
   type SyncConformanceChange,
+  type SyncConformanceSubmittedBatchOutcome,
 } from '@baukit/sync-client/conformance';
 
 declare const adapter: SyncConformanceAdapter<
@@ -16,6 +17,9 @@ declare const adapter: SyncConformanceAdapter<
 >;
 
 const tests = createSyncConformanceTests(adapter);
+declare const outcome: SyncConformanceSubmittedBatchOutcome<object, object, object>;
+const legacyAcknowledge = adapter.outbox.markAcknowledged;
+const legacyRejection = adapter.outbox.recordRejected;
 const fixture: SyncConformanceChange = {
   changeId: 'change-1',
   entityType: 'record',
@@ -27,3 +31,6 @@ const fixture: SyncConformanceChange = {
 
 void tests;
 void fixture;
+void outcome;
+void legacyAcknowledge;
+void legacyRejection;

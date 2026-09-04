@@ -20,8 +20,12 @@ an old local database.
 
 Derive the pending count from durable outbox rows. Do not clear a row after sending it or receiving
 an HTTP success. Decode the full response and validate one outcome per submitted entity first.
-Then acknowledge accepted and terminally rejected rows, and retain actionable rejections for the
-repair UI. Network, server, cancellation, and local-apply failures leave uncertain work pending.
+Then pass the exact submitted rows, raw response, decoded outcome, and rejected server rows to
+`local.applySubmittedBatchOutcome`. Settle them in one storage transaction. Delete only pending
+IDs covered by that submission, retain actionable rejections for the repair UI, and keep any newer
+pending row for the same entity visible. Network, server, cancellation, and local-apply failures
+leave uncertain work pending. Keep accepted-revision stamping product-owned and never let an older
+stamp replace a newer local payload.
 
 ## Guard pull progress
 
@@ -47,6 +51,12 @@ Import `createSyncConformanceTests` from `@baukit/sync-client/conformance`. Impl
 with the product's real outbox operations, transaction and cursor code, pending-state reader, and
 wire codecs. Supply a deterministic fake server with paged pulls and the requested fault controls.
 Create two fresh clients in the same identity partition for every case.
+
+Return authoritative rejected rows from `wire.decodePush`. The atomic submitted-batch callback
+must handle accepted and rejected late responses. The pull callback must skip an older or equal
+remote row while a local write is pending, but it still commits the page cursor atomically. Map
+`outbox.pendingId` to the store's stable pending-row identity so the suite can check which row
+survived.
 
 Register each returned `{ name, run }` case with Vitest or Jest. Do not copy the cases into the
 product. Run the full product format, typecheck, lint, unit, and integration gates after the

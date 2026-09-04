@@ -39,13 +39,16 @@ Expose machine-readable failure metadata separately from activity. The shared fa
 
 Classify each submitted mutation as `accepted`, `actionable-rejection`, or `superseded`. A superseded last-writer-wins outcome is benign only when the authoritative snapshot has already converged locally and no repair remains. Every other rejection is actionable unless the product proves another terminal, non-actionable classification.
 
-Never display “synced” while unsent changes or actionable rejections remain. A completed HTTP request is not by itself a successful sync.
+Never display "synced" while unsent changes or actionable rejections remain. A completed HTTP request is not by itself a successful sync.
 
 ## 3. Time and failure semantics
 
 - Record `lastAttemptAt` for the latest started or completed attempt and `lastSuccessAt` only when the product's success predicate is satisfied. Do not overwrite the latter on failure or partial acceptance.
 - On network failure, keep committed local data and pending mutations. Explain retryability without exposing raw transport errors.
 - A retry, timeout, cancellation, or process restart must not convert an unknown outcome into success. Reconcile or replay according to the product protocol.
+- Apply a decoded push outcome in one local transaction. Settle only the pending IDs captured for
+  that submission. A later local write to the same entity remains pending and visible when an
+  older accepted or rejected response arrives.
 - Reset readiness and sync state when the authenticated local-data partition changes.
 
 `lastSyncAt` is a deprecated compatibility field for one release cycle. It always equals
@@ -73,7 +76,9 @@ underneath its own engine:
   readiness helpers. `rankPushBatch` orders and coalesces product-owned entities. Pull-page and
   push-outcome validators reject payloads that could skip work or loop without progress. The
   `@baukit/sync-client/conformance` entry runs the shared failure and convergence cases against
-  product callbacks without choosing the product's protocol.
+  product callbacks without choosing the product's protocol. The
+  `@baukit/sync-client/browser` entry supplies visibility, online-event, and timer wiring without
+  reading browser globals during module evaluation.
 - `baukit-sync` on the server: `next_revision`, which bumps a per-owner counter inside the
   caller's transaction so an allocation rolls back with its row write, plus the syncable-table
   column convention (`id`, `owner_id`, `updated_at`, `deleted_at`, `revision`, and an
@@ -88,7 +93,9 @@ Register every case returned by `createSyncConformanceTests` in the product's no
 suite. Build an isolated scenario for each case with two local clients and one fake server. Supply
 these callbacks:
 
-- outbox enqueue, pending listing, acknowledgement, and actionable-rejection storage;
+- outbox enqueue and pending listing;
+- atomic submitted-batch outcome application, including exact pending IDs, decoded rejected server
+  rows, actionable-rejection storage, and product-owned accepted-revision stamping;
 - local cursor reads, full snapshots including tombstones, pending-state reads, and atomic page
   application with injected failure;
 - push encoding, push-outcome decoding, pull-page decoding, and cursor comparison; and
@@ -100,6 +107,12 @@ wire codecs, outbox operations, transaction code, cursor store, and pending-stat
 the production sync path. Keep the fake deterministic. An injected local failure after one staged
 row must roll back the whole page and its cursor.
 
+The submitted-batch callback must use one storage transaction. An older response may settle only
+the pending IDs captured before the request. It must not delete a later pending row or replace that
+row's visible payload. Products choose their revision type and conflict algorithm. If a product
+stamps an accepted server revision onto local metadata, the stamp must not overwrite the payload
+of a newer local write.
+
 Partition each scenario by the same stable identity key used in production. A client wired to one
 partition must never read another partition's outbox, cursor, rejection log, or local rows.
 
@@ -107,7 +120,7 @@ partition must never read another partition's outbox, cursor, rejection log, or 
 
 - A cold start never flashes a settled empty state before hydration/pull is known.
 - Cached data remains visible with an offline explanation when the initial network request fails.
-- Unsent mutations produce `pending`; actionable rejections produce `attention`; neither path displays “synced.”
+- Unsent mutations produce `pending`; actionable rejections produce `attention`; neither path displays "synced."
 - A superseded mutation becomes non-actionable only after the authoritative state is present locally.
 - `lastAttemptAt` advances on a failed run while `lastSuccessAt` remains unchanged.
 - Network errors preserve local records and outbox rows.
@@ -116,6 +129,10 @@ partition must never read another partition's outbox, cursor, rejection log, or 
   offline state.
 - A successful push response has an outcome for every submitted entity before any outcome is
   acknowledged.
+- Late accepted and rejected responses settle only their submitted pending IDs. A newer local write
+  to the same entity stays pending and visible.
+- An older or equal pulled revision cannot replace a pending local row, but the page and cursor
+  still commit together.
 - A pull cursor never regresses, and `has_more` requires cursor progress.
 - The stored pull cursor changes only after the local transaction succeeds.
 - Every product sync suite passes all cases from `createSyncConformanceTests` against its own

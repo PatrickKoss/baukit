@@ -10,7 +10,8 @@ must.
 The root entry has no runtime dependencies and no React. Timers, foreground state, connectivity,
 and `fetch` all arrive by injection, so the same code runs under Node, a browser, and React Native.
 The optional `@baukit/sync-client/expo` entry imports `react-native` and `expo-network`; neither is
-loaded by the root entry.
+loaded by the root entry. The `@baukit/sync-client/browser` entry reads browser globals only when
+`createBrowserSyncEnvironment` is called, so importing it under Node is safe.
 
 ## Scheduler
 
@@ -33,6 +34,43 @@ interval while backgrounded and ignores connectivity events there.
 
 A failing run reaches `onError` and does not stop scheduling. Backoff between attempts belongs to
 the product's engine, inside `run()`, where it can see which failures are retryable.
+
+If the engine waits inside its own retry delay, pass `onRecoverySignal` to the scheduler and wake
+that delay there. The scheduler calls it with `active` before a foreground-triggered run and with
+`online` before an online-triggered run. Online recovery is reported even while the scheduler is
+backgrounded, although the scheduler still waits for foreground before starting another run.
+Retry wake-up belongs in this scheduler option, not in a decorated environment, because the
+environment does not know whether an engine has a retry delay.
+
+```ts
+const scheduler = new SyncScheduler(() => engine.retryNow(), environment, {
+  onRecoverySignal: () => engine.wakeRetryDelay(),
+});
+```
+
+### Browser environment
+
+Browser products can import an environment that maps document visibility, online events, and
+intervals to the scheduler contract:
+
+```ts
+import { SyncScheduler } from '@baukit/sync-client';
+import { createBrowserSyncEnvironment } from '@baukit/sync-client/browser';
+
+const scheduler = new SyncScheduler(
+  () => engine.retryNow(),
+  createBrowserSyncEnvironment(),
+  { onRecoverySignal: () => engine.wakeRetryDelay() },
+);
+```
+
+`isActive` is true only while `document.visibilityState` is `visible`. A visibility change reports
+the new active state, and an `online` event reports a connectivity wake signal. Each returned
+cleanup function may be called more than once and removes its listener once.
+
+Tests and non-browser hosts can inject `{ document, window, timers }`. Calling the factory without
+injections outside a browser throws a specific missing-document or missing-window error. Importing
+the entry never reads either global. The browser entry has no React, Dexie, or sync-engine import.
 
 ### Expo environment
 
@@ -241,15 +279,36 @@ describe('product sync contract', () => {
 ```
 
 The adapter supplies two isolated clients and one fake server per case. It also supplies callbacks
-for outbox enqueue, listing, acknowledgement, and rejection storage; atomic pull application and
-cursor storage; pending-state reporting; wire encoding and decoding; and fake-server push, pull,
-seeding, snapshots, and fault injection. Canonical fixture changes contain opaque entity names,
-values, logical times, dependencies, and tombstones. The adapter maps them to the product's schema
-and payloads.
+for outbox enqueue, listing, and stable pending IDs; atomic submitted-batch settlement; atomic pull
+application and cursor storage; pending-state reporting; wire encoding and decoding; and
+fake-server push, pull, seeding, snapshots, and fault injection. Canonical fixture changes contain
+opaque entity names, values, logical times, dependencies, and tombstones. The adapter maps them to
+the product's schema and payloads.
 
 The cases cover replay, transaction rollback, paged cursor progress, stalled and regressing
-cursors, complete push outcomes, pending state after network, server, and local failures,
-actionable rejections, dependency-safe push order, and two-client convergence with a tombstone.
-`wire.decodePush` must call `validatePushOutcomeCoverage` before returning acknowledged rows. The
-local apply callback must commit the page and cursor in one transaction. Its injected failure must
-roll both back.
+cursors, complete push outcomes, late accepted and rejected responses, stale pulls over pending
+writes, pending state after failures, dependency-safe push order, and two-client convergence with
+a tombstone. `wire.decodePush` must call `validatePushOutcomeCoverage` before returning
+acknowledged rows. It returns decoded `rejectedRows` when a rejection contains an authoritative
+server row.
+
+`local.applySubmittedBatchOutcome` receives the exact `submitted` rows, the raw push `response`,
+the decoded acknowledged rows and rejections, and any decoded rejected server rows. In one storage
+transaction it must settle only pending IDs covered by that submission, record actionable
+rejections, apply safe rejected rows, and perform any accepted-revision stamping. A newer pending
+row for the same entity blocks an older response from replacing its local payload. Revision
+stamping is product policy. The harness does not require last-writer-wins or a particular revision
+type, but a stamp from an older submission must not replace the payload of a newer local write.
+
+The pull callback must keep a pending local row when an older or equal remote revision arrives,
+while committing the page cursor in the same transaction. Its injected failure must roll back both
+the staged row and cursor.
+
+### Conformance adapter migration
+
+Existing adapter objects still type-check because `applySubmittedBatchOutcome` and `pendingId` are
+optional, and the old `markAcknowledged` and `recordRejected` callbacks remain in the interface.
+The expanded suite stops with a conformance error until the two new callbacks are present.
+Implement atomic settlement with the same transaction used by the production sync path, return
+rejected server rows from `decodePush`, then remove split settlement calls from the product engine.
+Do not emulate the new callback by calling the two old callbacks in sequence.
