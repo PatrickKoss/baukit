@@ -1,8 +1,10 @@
 use std::{collections::HashSet, error::Error, path::PathBuf, sync::Arc, time::Duration};
 
 use baukit_jobs::{
-    FailureDisposition, JobFailureReason, JobStatus, JobStore as _, NewJob,
-    POSTGRES_MIGRATION_0002_SQL, POSTGRES_MIGRATION_SQL, PostgresJobStore,
+    FailureDisposition, FixedUtcInterval, JobFailureReason, JobStatus, JobStore as _,
+    MAX_TERMINAL_JOB_CLEANUP_BATCH_SIZE, NewJob, POSTGRES_MIGRATION_0002_SQL,
+    POSTGRES_MIGRATION_SQL, PostgresJobStore, StoreError, TerminalJobCleanupOutcome,
+    TerminalJobCutoffs,
 };
 use chrono::{TimeDelta, Utc};
 use serde_json::json;
@@ -358,6 +360,263 @@ async fn postgres_readiness_executes_the_claim_query_shape() -> Result<(), Box<d
 
 #[tokio::test]
 #[ignore = "requires Docker; mandatory in the full local gate"]
+async fn postgres_terminal_cleanup_uses_independent_cutoffs_and_preserves_active_jobs()
+-> Result<(), Box<dyn Error>> {
+    let (fixture, pool, store) = fixture().await?;
+    let now = Utc::now();
+    let old = now - TimeDelta::days(10);
+    let recent = now - TimeDelta::days(1);
+
+    let old_succeeded =
+        terminal_job(&store, &pool, "cleanup.succeeded.old", "succeeded", old).await?;
+    let recent_succeeded = terminal_job(
+        &store,
+        &pool,
+        "cleanup.succeeded.recent",
+        "succeeded",
+        recent,
+    )
+    .await?;
+    let old_cancelled =
+        terminal_job(&store, &pool, "cleanup.cancelled.old", "cancelled", old).await?;
+    let recent_cancelled = terminal_job(
+        &store,
+        &pool,
+        "cleanup.cancelled.recent",
+        "cancelled",
+        recent,
+    )
+    .await?;
+    let old_failed = terminal_job(&store, &pool, "cleanup.failed.old", "failed", old).await?;
+    let recent_failed =
+        terminal_job(&store, &pool, "cleanup.failed.recent", "failed", recent).await?;
+
+    let pending = store
+        .enqueue(NewJob::new("cleanup.pending", json!({}), 3))
+        .await?
+        .job;
+    let mut expired_job = NewJob::new("cleanup.running", json!({}), 3);
+    expired_job.created_at = old;
+    expired_job.run_after = old;
+    let running = store.enqueue(expired_job).await?.job;
+    store
+        .claim("cleanup-worker", old, Duration::from_secs(1))
+        .await?
+        .expect("running job claimed");
+
+    let outcome = store
+        .cleanup_terminal_jobs(
+            TerminalJobCutoffs {
+                succeeded_before: now - TimeDelta::days(5),
+                cancelled_before: now - TimeDelta::days(3),
+                failed_before: now - TimeDelta::days(7),
+            },
+            10,
+        )
+        .await?;
+
+    assert_eq!(
+        outcome,
+        TerminalJobCleanupOutcome {
+            succeeded: 1,
+            cancelled: 1,
+            failed: 1,
+        }
+    );
+    assert_eq!(outcome.total(), 3);
+    for deleted in [old_succeeded, old_cancelled, old_failed] {
+        assert!(!job_exists(&pool, deleted).await?);
+    }
+    for surviving in [
+        recent_succeeded,
+        recent_cancelled,
+        recent_failed,
+        pending.id,
+        running.id,
+    ] {
+        assert!(job_exists(&pool, surviving).await?);
+    }
+    assert_eq!(status(&pool, pending.id).await?, "pending");
+    assert_eq!(status(&pool, running.id).await?, "running");
+
+    pool.close().await;
+    drop(fixture);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn postgres_terminal_cleanup_is_one_bounded_batch_and_repeated_calls_converge()
+-> Result<(), Box<dyn Error>> {
+    let (fixture, pool, store) = fixture().await?;
+    let now = Utc::now();
+    for sequence in 0..5 {
+        terminal_job(
+            &store,
+            &pool,
+            &format!("cleanup.batch.{sequence}"),
+            "succeeded",
+            now - TimeDelta::days(1),
+        )
+        .await?;
+    }
+    let cutoffs = TerminalJobCutoffs {
+        succeeded_before: now,
+        cancelled_before: now,
+        failed_before: now,
+    };
+
+    let first = store.cleanup_terminal_jobs(cutoffs, 2).await?;
+    let second = store.cleanup_terminal_jobs(cutoffs, 2).await?;
+    let third = store.cleanup_terminal_jobs(cutoffs, 2).await?;
+    let empty = store.cleanup_terminal_jobs(cutoffs, 2).await?;
+
+    assert_eq!([first.total(), second.total(), third.total()], [2, 2, 1]);
+    assert_eq!(empty, TerminalJobCleanupOutcome::default());
+    let remaining: i64 = sqlx::query_scalar("SELECT count(*) FROM job_outbox")
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(remaining, 0, "returned counts match committed deletes");
+    assert!(matches!(
+        store.cleanup_terminal_jobs(cutoffs, 0).await,
+        Err(StoreError::InvalidInput(_))
+    ));
+    assert!(matches!(
+        store
+            .cleanup_terminal_jobs(cutoffs, MAX_TERMINAL_JOB_CLEANUP_BATCH_SIZE + 1)
+            .await,
+        Err(StoreError::InvalidInput(_))
+    ));
+
+    pool.close().await;
+    drop(fixture);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn postgres_terminal_cleanup_skips_concurrent_claim_and_completion()
+-> Result<(), Box<dyn Error>> {
+    let (fixture, pool, store) = fixture().await?;
+    let now = Utc::now();
+    let pending = store
+        .enqueue(NewJob::new("cleanup.concurrent-claim", json!({}), 3))
+        .await?
+        .job;
+    let claim_now = Utc::now();
+    let mut claim_transaction = pool.begin().await?;
+    sqlx::query(
+        "UPDATE job_outbox SET status = 'running', attempts = 1, locked_by = 'claim-worker', locked_until = $2, updated_at = $3 WHERE id = $1",
+    )
+    .bind(pending.id)
+    .bind(claim_now + TimeDelta::minutes(1))
+    .bind(claim_now)
+    .execute(&mut *claim_transaction)
+    .await?;
+
+    let cutoffs = TerminalJobCutoffs {
+        succeeded_before: now + TimeDelta::days(1),
+        cancelled_before: now + TimeDelta::days(1),
+        failed_before: now + TimeDelta::days(1),
+    };
+    assert_eq!(
+        store.cleanup_terminal_jobs(cutoffs, 10).await?,
+        TerminalJobCleanupOutcome::default()
+    );
+    claim_transaction.commit().await?;
+    assert_eq!(status(&pool, pending.id).await?, "running");
+
+    let completing = store
+        .enqueue(NewJob::new("cleanup.concurrent-completion", json!({}), 3))
+        .await?
+        .job;
+    let completion_now = Utc::now();
+    store
+        .claim("complete-worker", completion_now, Duration::from_secs(60))
+        .await?
+        .expect("job claimed for completion");
+    let mut completion_transaction = pool.begin().await?;
+    assert!(
+        store
+            .complete_in_transaction(
+                &mut completion_transaction,
+                completing.id,
+                "complete-worker",
+                completion_now,
+            )
+            .await?
+    );
+    assert_eq!(
+        store.cleanup_terminal_jobs(cutoffs, 10).await?,
+        TerminalJobCleanupOutcome::default()
+    );
+    completion_transaction.commit().await?;
+    assert_eq!(status(&pool, completing.id).await?, "succeeded");
+
+    pool.close().await;
+    drop(fixture);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn postgres_recurring_slot_enqueue_is_restart_safe_and_failure_keeps_current_running()
+-> Result<(), Box<dyn Error>> {
+    let (fixture, pool, store) = fixture().await?;
+    let now = Utc::now();
+    let interval = FixedUtcInterval::new(Duration::from_secs(60 * 60))?;
+    let current_slot = interval.slot_at(now)?;
+    let next_slot = interval.next_slot(current_slot, now)?;
+    let current = store
+        .enqueue(
+            NewJob::new(
+                "recurring.test",
+                json!({"slot": current_slot.starts_at()}),
+                3,
+            )
+            .run_after(current_slot.starts_at())
+            .idempotency_key(current_slot.identifier()),
+        )
+        .await?
+        .job;
+    let claim_now = Utc::now();
+    store
+        .claim("recurring-worker", claim_now, Duration::from_secs(60))
+        .await?
+        .expect("current recurring job claimed");
+
+    let next_job = || {
+        NewJob::new("recurring.test", json!({"slot": next_slot.starts_at()}), 3)
+            .run_after(next_slot.starts_at())
+            .idempotency_key(next_slot.identifier())
+    };
+    assert!(store.enqueue(next_job()).await?.created);
+    assert!(
+        !store.enqueue(next_job()).await?.created,
+        "duplicate delivery or restart reuses the next slot"
+    );
+
+    let enqueue_error = store
+        .enqueue(
+            NewJob::new("recurring.invalid", json!({}), 0)
+                .run_after(next_slot.starts_at())
+                .idempotency_key(next_slot.identifier()),
+        )
+        .await;
+    assert!(matches!(enqueue_error, Err(StoreError::InvalidInput(_))));
+    assert_eq!(
+        status(&pool, current.id).await?,
+        "running",
+        "the handler must return an error after next-slot enqueue fails"
+    );
+
+    pool.close().await;
+    drop(fixture);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
 async fn postgres_v051_schema_upgrades_to_failure_reasons() -> Result<(), Box<dyn Error>> {
     let fixture = baukit_test::start_postgres().await?;
     let pool = PgPool::connect(fixture.connection_url()).await?;
@@ -433,6 +692,37 @@ async fn status(pool: &PgPool, job_id: uuid::Uuid) -> Result<String, sqlx::Error
 
 async fn failure_reason(pool: &PgPool, job_id: uuid::Uuid) -> Result<Option<String>, sqlx::Error> {
     sqlx::query_scalar("SELECT failure_reason FROM job_outbox WHERE id = $1")
+        .bind(job_id)
+        .fetch_one(pool)
+        .await
+}
+
+async fn terminal_job(
+    store: &PostgresJobStore,
+    pool: &PgPool,
+    job_type: &str,
+    terminal_status: &str,
+    updated_at: chrono::DateTime<Utc>,
+) -> Result<uuid::Uuid, Box<dyn Error>> {
+    let mut new_job = NewJob::new(job_type, json!({}), 3);
+    new_job.created_at = updated_at;
+    new_job.run_after = updated_at;
+    let job = store.enqueue(new_job).await?.job;
+    let failure_reason = (terminal_status == "failed").then_some("permanent");
+    sqlx::query(
+        "UPDATE job_outbox SET status = $2, failure_reason = $3, updated_at = $4 WHERE id = $1",
+    )
+    .bind(job.id)
+    .bind(terminal_status)
+    .bind(failure_reason)
+    .bind(updated_at)
+    .execute(pool)
+    .await?;
+    Ok(job.id)
+}
+
+async fn job_exists(pool: &PgPool, job_id: uuid::Uuid) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM job_outbox WHERE id = $1)")
         .bind(job_id)
         .fetch_one(pool)
         .await

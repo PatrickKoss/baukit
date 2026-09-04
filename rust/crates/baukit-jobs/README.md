@@ -39,6 +39,10 @@ ALTER TABLE job_outbox
 The backfill classifies a legacy failed row as `attempts_exhausted` when
 `attempts >= max_attempts`; all other legacy failed rows become `permanent`.
 
+The terminal cleanup and fixed UTC slot APIs added after 0.2.1 need no schema
+migration. Cleanup is a `PostgresJobStore` method, so custom `JobStore`
+implementations also need no code change.
+
 Use `PostgresJobStore::enqueue_in_transaction` to commit a domain mutation and
 its outbox row atomically. If a job's product-side result is stored in the same
 PostgreSQL database, use `complete_in_transaction` after writing the result so
@@ -55,6 +59,44 @@ or `JobError::retryable_after`. The last form preserves a provider's
 job's `max_attempts` remains authoritative. Terminal jobs keep status `failed`
 and expose `failure_reason` as `permanent` or `attempts_exhausted` alongside
 the bounded diagnostic `last_error`.
+
+## Terminal-job cleanup
+
+Call `PostgresJobStore::cleanup_terminal_jobs` with separate `updated_at`
+cutoffs for succeeded, cancelled, and failed jobs. The batch size must be from
+1 through `MAX_TERMINAL_JOB_CLEANUP_BATCH_SIZE`. One call deletes at most that
+many rows in total and returns committed counts for each terminal status.
+
+Cleanup never selects pending or running jobs. This includes a running job with
+an expired lease. Rows locked by another transaction are skipped, so one
+maintenance pass does not wait for a claim or completion transaction. The
+application owns cutoff durations, call frequency, shutdown handling, metrics,
+and cleanup for product tables. Repeat bounded calls if a maintenance window
+should drain the backlog.
+
+## Fixed recurring UTC slots
+
+`FixedUtcInterval` calculates whole-second UTC slots anchored at the Unix
+epoch. `slot_at` returns the slot containing a timestamp. `next_slot` accepts
+the current job's slot and the handler's observed clock time, then returns the
+first boundary after both. A job delayed from 12:00 until 12:47 on an hourly
+interval schedules 13:00, not 13:47. If several slots were missed, the helper
+skips them. If the clock moves backward, it still advances beyond the current
+job's slot.
+
+Use `FixedUtcSlot::identifier` as the job's idempotency key and
+`FixedUtcSlot::starts_at` as `run_after`. Enqueue the next slot before reporting
+the current handler as successful. When the handler writes product data in
+PostgreSQL, put those writes, `enqueue_in_transaction`, and
+`complete_in_transaction` in one transaction. Commit it, call
+`JobCancellation::mark_completed_in_transaction`, and then return success.
+An enqueue error must leave the current attempt unsuccessful so the worker can
+retry it. Duplicate delivery and process restart calculate the same identifier,
+and the existing enqueue contract returns the first row.
+
+The application still owns the interval, initial seed, job type, payload,
+catch-up policy, and decision to stop recurring work. `FixedUtcInterval` does
+not parse cron expressions or run a scheduler.
 
 ## Runtime and operations
 

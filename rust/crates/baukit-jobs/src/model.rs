@@ -131,3 +131,36 @@ pub enum FailureDisposition {
     /// The job moved to terminal failure.
     Failed,
 }
+
+/// Per-status timestamps used to select terminal jobs for cleanup.
+///
+/// Cleanup deletes jobs whose `updated_at` is earlier than the cutoff for
+/// their status. Each cutoff is independent.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TerminalJobCutoffs {
+    /// Delete succeeded jobs older than this timestamp.
+    pub succeeded_before: DateTime<Utc>,
+    /// Delete cancelled jobs older than this timestamp.
+    pub cancelled_before: DateTime<Utc>,
+    /// Delete failed jobs older than this timestamp.
+    pub failed_before: DateTime<Utc>,
+}
+
+/// Counts returned after one terminal-job cleanup batch commits.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct TerminalJobCleanupOutcome {
+    /// Succeeded jobs deleted by the batch.
+    pub succeeded: u64,
+    /// Cancelled jobs deleted by the batch.
+    pub cancelled: u64,
+    /// Failed jobs deleted by the batch.
+    pub failed: u64,
+}
+
+impl TerminalJobCleanupOutcome {
+    /// Returns the total number of rows deleted by the batch.
+    #[must_use]
+    pub const fn total(self) -> u64 {
+        self.succeeded + self.cancelled + self.failed
+    }
+}

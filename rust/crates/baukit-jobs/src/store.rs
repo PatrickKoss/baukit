@@ -6,13 +6,16 @@ use uuid::Uuid;
 
 use crate::{
     ClaimedJob, EnqueueOutcome, FailureDisposition, Job, JobFailureReason, JobStatus, NewJob,
-    StoreError,
+    StoreError, TerminalJobCleanupOutcome, TerminalJobCutoffs,
 };
 
 const MAX_JOB_TYPE_LENGTH: usize = 200;
 const MAX_WORKER_ID_LENGTH: usize = 300;
 const MAX_IDEMPOTENCY_KEY_LENGTH: usize = 500;
 const MAX_ERROR_LENGTH: usize = 10_000;
+
+/// Largest terminal-job cleanup batch accepted by [`PostgresJobStore`].
+pub const MAX_TERMINAL_JOB_CLEANUP_BATCH_SIZE: u32 = 10_000;
 
 /// A boxed future returned by [`JobStore`] ports.
 pub type StoreFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -132,6 +135,50 @@ impl PostgresJobStore {
             now,
         )
         .await
+    }
+
+    /// Deletes at most one batch of terminal jobs.
+    ///
+    /// A row is eligible when its status is `succeeded`, `cancelled`, or
+    /// `failed` and its `updated_at` is earlier than that status's cutoff.
+    /// Pending and running jobs are never eligible, including running jobs
+    /// whose lease has expired. Concurrently locked rows are skipped.
+    pub async fn cleanup_terminal_jobs(
+        &self,
+        cutoffs: TerminalJobCutoffs,
+        batch_size: u32,
+    ) -> Result<TerminalJobCleanupOutcome, StoreError> {
+        if batch_size == 0 || batch_size > MAX_TERMINAL_JOB_CLEANUP_BATCH_SIZE {
+            return Err(StoreError::InvalidInput(format!(
+                "terminal-job cleanup batch size must be between 1 and {MAX_TERMINAL_JOB_CLEANUP_BATCH_SIZE}"
+            )));
+        }
+
+        let deleted_statuses: Vec<String> = sqlx::query_scalar(
+            "WITH candidates AS (SELECT id FROM job_outbox WHERE (status = 'succeeded' AND updated_at < $1) OR (status = 'cancelled' AND updated_at < $2) OR (status = 'failed' AND updated_at < $3) ORDER BY updated_at, id FOR UPDATE SKIP LOCKED LIMIT $4) DELETE FROM job_outbox AS job USING candidates WHERE job.id = candidates.id RETURNING job.status",
+        )
+        .bind(cutoffs.succeeded_before)
+        .bind(cutoffs.cancelled_before)
+        .bind(cutoffs.failed_before)
+        .bind(i64::from(batch_size))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(StoreError::database)?;
+
+        let mut outcome = TerminalJobCleanupOutcome::default();
+        for status in deleted_statuses {
+            match status.as_str() {
+                "succeeded" => outcome.succeeded += 1,
+                "cancelled" => outcome.cancelled += 1,
+                "failed" => outcome.failed += 1,
+                value => {
+                    return Err(StoreError::InvalidData(format!(
+                        "terminal-job cleanup returned status `{value}`"
+                    )));
+                }
+            }
+        }
+        Ok(outcome)
     }
 }
 
