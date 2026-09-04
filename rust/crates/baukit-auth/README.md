@@ -85,6 +85,35 @@ Storage sits behind the `ApiTokenStore` port. The row shape and the ownership jo
 product's schema, and a crate that invented its own table would force a second migration path on every
 consumer.
 
+Every store operation returns `ApiTokenStoreError`. Use `ApiTokenStoreError::internal(error)` for SQL,
+network, and provider failures. The typed error retains its diagnostic string for internal handling,
+but `ApiTokenError::Storage` displays only `"API token storage failed"`.
+
+A product policy can return structured public data without putting arbitrary text in an API response:
+
+```rust
+use baukit_auth::{ApiTokenPolicyRejection, ApiTokenStoreError};
+
+let rejection = ApiTokenPolicyRejection::new("api_tokens_active_limit_exceeded")?
+    .with_detail("maximum", 10)?;
+let store_error = ApiTokenStoreError::PolicyRejected(rejection);
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Policy codes and detail names are snake_case identifiers of at most 64 ASCII characters. Each
+rejection contains at most eight `u32` details. `ApiTokenService` returns these as
+`ApiTokenError::PolicyRejected`; all other adapter failures become `ApiTokenError::Storage`.
+
+## Migrating store adapters
+
+This release changes every `ApiTokenStore` result error from `String` to `ApiTokenStoreError`.
+Replace `map_err(|error| error.to_string())` with `map_err(ApiTokenStoreError::internal)`. Replace
+encoded policy strings such as `limit_exceeded:api_tokens_active:10` with an
+`ApiTokenPolicyRejection` code and numeric details. API code should match
+`ApiTokenError::PolicyRejected`, then read `code()` and `detail()` instead of parsing a storage error
+string. Existing malformed, unknown, hash-mismatched, revoked, and expired credential results do not
+change.
+
 ## Scope
 
 The crate verifies credentials. It does not authorize: roles, permissions, and ownership checks belong

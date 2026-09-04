@@ -38,7 +38,9 @@
 //! row shape and the ownership join belong to the product's schema. Wrapping
 //! the OIDC verifier in [`ApiTokenVerifier`] makes one bearer header serve both
 //! credential kinds. The [`Principal`] extractor exposes verified token
-//! metadata through [`Principal::api_token`].
+//! metadata through [`Principal::api_token`]. Adapters return
+//! [`ApiTokenStoreError`], which separates private internal failures from safe
+//! structured [`ApiTokenPolicyRejection`] values.
 //!
 //! ```
 //! use std::sync::Arc;
@@ -73,9 +75,10 @@ mod config;
 mod verifier;
 
 pub use api_token::{
-    ApiToken, ApiTokenError, ApiTokenFormat, ApiTokenFormatError, ApiTokenRecord, ApiTokenService,
-    ApiTokenStore, ApiTokenStoreFuture, ApiTokenVerifier, DEFAULT_API_TOKEN_MARKER, IssuedApiToken,
-    NewApiToken, StoredApiToken, hash_api_token,
+    ApiToken, ApiTokenError, ApiTokenFormat, ApiTokenFormatError, ApiTokenPolicyRejection,
+    ApiTokenPolicyRejectionError, ApiTokenRecord, ApiTokenService, ApiTokenStore,
+    ApiTokenStoreError, ApiTokenStoreFuture, ApiTokenVerifier, DEFAULT_API_TOKEN_MARKER,
+    IssuedApiToken, NewApiToken, StoredApiToken, hash_api_token,
 };
 pub use axum_integration::{AuthRejection, AuthState};
 pub use baukit_openapi::{BEARER_AUTH_SCHEME, OpenApiMetadata};

@@ -1,4 +1,4 @@
-use std::{fmt, future::Future, pin::Pin, sync::Arc};
+use std::{collections::BTreeMap, fmt, future::Future, pin::Pin, sync::Arc};
 
 use chrono::{DateTime, Utc};
 use ring::{
@@ -16,6 +16,9 @@ pub const DEFAULT_API_TOKEN_MARKER: &str = "bk_";
 const SECRET_LENGTH: usize = 32;
 const DISPLAY_PREFIX_LENGTH: usize = 8;
 const MAX_NAME_LENGTH: usize = 100;
+const MAX_POLICY_CODE_LENGTH: usize = 64;
+const MAX_POLICY_DETAIL_COUNT: usize = 8;
+const MAX_POLICY_DETAIL_NAME_LENGTH: usize = 64;
 const BASE62: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
 /// Boxed future returned by [`ApiTokenStore`] operations.
@@ -124,6 +127,107 @@ pub struct StoredApiToken {
     pub secret_hash: Vec<u8>,
 }
 
+/// A policy decision that an adapter may safely pass to product API code.
+///
+/// Codes and detail names are bounded snake_case identifiers. Detail values
+/// are `u32`, so a rejection cannot carry SQL text, provider messages, or an
+/// unbounded payload into a response.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ApiTokenPolicyRejection {
+    code: String,
+    details: BTreeMap<String, u32>,
+}
+
+impl ApiTokenPolicyRejection {
+    /// Creates a rejection with no numeric details.
+    ///
+    /// The code must be a non-empty snake_case identifier of at most 64 ASCII
+    /// characters.
+    pub fn new(code: impl Into<String>) -> Result<Self, ApiTokenPolicyRejectionError> {
+        let code = code.into();
+        if !is_valid_policy_identifier(&code, MAX_POLICY_CODE_LENGTH) {
+            return Err(ApiTokenPolicyRejectionError::InvalidCode);
+        }
+        Ok(Self {
+            code,
+            details: BTreeMap::new(),
+        })
+    }
+
+    /// Adds or replaces one bounded numeric detail.
+    ///
+    /// The name follows the same snake_case rules as the code. A rejection can
+    /// hold at most eight distinct details.
+    pub fn with_detail(
+        mut self,
+        name: impl Into<String>,
+        value: u32,
+    ) -> Result<Self, ApiTokenPolicyRejectionError> {
+        let name = name.into();
+        if !is_valid_policy_identifier(&name, MAX_POLICY_DETAIL_NAME_LENGTH) {
+            return Err(ApiTokenPolicyRejectionError::InvalidDetailName);
+        }
+        if !self.details.contains_key(&name) && self.details.len() == MAX_POLICY_DETAIL_COUNT {
+            return Err(ApiTokenPolicyRejectionError::TooManyDetails);
+        }
+        self.details.insert(name, value);
+        Ok(self)
+    }
+
+    /// Returns the stable product-owned rejection code.
+    #[must_use]
+    pub fn code(&self) -> &str {
+        &self.code
+    }
+
+    /// Returns the safe numeric details ordered by name.
+    #[must_use]
+    pub fn details(&self) -> &BTreeMap<String, u32> {
+        &self.details
+    }
+
+    /// Returns one numeric detail by name.
+    #[must_use]
+    pub fn detail(&self, name: &str) -> Option<u32> {
+        self.details.get(name).copied()
+    }
+}
+
+/// Failure raised while constructing a safe policy rejection.
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum ApiTokenPolicyRejectionError {
+    /// The policy code was empty, too long, or not snake_case.
+    #[error("API token policy code must be bounded snake_case")]
+    InvalidCode,
+    /// A numeric detail name was empty, too long, or not snake_case.
+    #[error("API token policy detail name must be bounded snake_case")]
+    InvalidDetailName,
+    /// More than eight distinct numeric details were added.
+    #[error("API token policy rejection cannot contain more than eight details")]
+    TooManyDetails,
+}
+
+/// Failure returned by a product's [`ApiTokenStore`] adapter.
+///
+/// `Internal` retains a diagnostic string for internal logs, but its display
+/// text is generic. `PolicyRejected` contains only validated public data.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum ApiTokenStoreError {
+    /// The adapter could not complete the operation.
+    #[error("API token store failed")]
+    Internal(String),
+    /// Product policy rejected the operation with safe structured details.
+    #[error("API token store policy rejected the operation")]
+    PolicyRejected(ApiTokenPolicyRejection),
+}
+
+impl ApiTokenStoreError {
+    /// Wraps private adapter diagnostics without adding them to display text.
+    pub fn internal(error: impl fmt::Display) -> Self {
+        Self::Internal(error.to_string())
+    }
+}
+
 /// Storage-neutral port for personal access tokens.
 ///
 /// Baukit owns secret generation, hashing, and expiry checks. The row shape,
@@ -132,7 +236,10 @@ pub struct StoredApiToken {
 /// secret and must look tokens up by hash only.
 pub trait ApiTokenStore: Send + Sync {
     /// Persists one newly issued token and returns its stored form.
-    fn create(&self, record: ApiTokenRecord) -> ApiTokenStoreFuture<'_, Result<ApiToken, String>>;
+    fn create(
+        &self,
+        record: ApiTokenRecord,
+    ) -> ApiTokenStoreFuture<'_, Result<ApiToken, ApiTokenStoreError>>;
 
     /// Returns the token whose stored hash equals `secret_hash`, if any.
     ///
@@ -143,14 +250,14 @@ pub trait ApiTokenStore: Send + Sync {
     fn find_by_hash<'a>(
         &'a self,
         secret_hash: &'a [u8],
-    ) -> ApiTokenStoreFuture<'a, Result<Option<StoredApiToken>, String>>;
+    ) -> ApiTokenStoreFuture<'a, Result<Option<StoredApiToken>, ApiTokenStoreError>>;
 
     /// Records that a token authenticated a request at `used_at`.
     fn touch_last_used(
         &self,
         token_id: Uuid,
         used_at: DateTime<Utc>,
-    ) -> ApiTokenStoreFuture<'_, Result<(), String>>;
+    ) -> ApiTokenStoreFuture<'_, Result<(), ApiTokenStoreError>>;
 
     /// Revokes one token owned by `owner_id`.
     ///
@@ -161,13 +268,13 @@ pub trait ApiTokenStore: Send + Sync {
         owner_id: Uuid,
         token_id: Uuid,
         revoked_at: DateTime<Utc>,
-    ) -> ApiTokenStoreFuture<'_, Result<bool, String>>;
+    ) -> ApiTokenStoreFuture<'_, Result<bool, ApiTokenStoreError>>;
 
     /// Lists the tokens belonging to one owner, newest first.
     fn list_for_owner(
         &self,
         owner_id: Uuid,
-    ) -> ApiTokenStoreFuture<'_, Result<Vec<ApiToken>, String>>;
+    ) -> ApiTokenStoreFuture<'_, Result<Vec<ApiToken>, ApiTokenStoreError>>;
 }
 
 /// Failure raised while issuing, listing, revoking, or verifying a token.
@@ -192,9 +299,33 @@ pub enum ApiTokenError {
     /// The presented token exists but its expiry has passed.
     #[error("API token has expired")]
     Expired,
-    /// The backing store rejected or could not complete the operation.
-    #[error("API token storage failed: {0}")]
-    Storage(String),
+    /// Product policy rejected the operation with safe structured details.
+    #[error("API token operation was rejected by policy")]
+    PolicyRejected(ApiTokenPolicyRejection),
+    /// The backing store could not complete the operation.
+    ///
+    /// The source retains private diagnostics, but this error's display text
+    /// never includes them.
+    #[error("API token storage failed")]
+    Storage(#[source] ApiTokenStoreError),
+}
+
+fn map_store_error(error: ApiTokenStoreError) -> ApiTokenError {
+    match error {
+        ApiTokenStoreError::PolicyRejected(rejection) => ApiTokenError::PolicyRejected(rejection),
+        error @ ApiTokenStoreError::Internal(_) => ApiTokenError::Storage(error),
+    }
+}
+
+fn is_valid_policy_identifier(value: &str, maximum_length: usize) -> bool {
+    !value.is_empty()
+        && value.len() <= maximum_length
+        && !value.starts_with('_')
+        && !value.ends_with('_')
+        && !value.contains("__")
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
 }
 
 /// Presentation format of a personal access token.
@@ -271,7 +402,9 @@ impl ApiTokenFormat {
         let mut buffer = [0_u8; SECRET_LENGTH];
         while secret.len() < self.marker.len() + SECRET_LENGTH {
             random.fill(&mut buffer).map_err(|_| {
-                ApiTokenError::Storage("system randomness is unavailable".to_owned())
+                ApiTokenError::Storage(ApiTokenStoreError::internal(
+                    "system randomness is unavailable",
+                ))
             })?;
             for byte in buffer {
                 if byte < LIMIT && secret.len() < self.marker.len() + SECRET_LENGTH {
@@ -402,7 +535,7 @@ impl ApiTokenService {
                 expires_at: request.expires_at,
             })
             .await
-            .map_err(ApiTokenError::Storage)?;
+            .map_err(map_store_error)?;
         Ok(IssuedApiToken { token, secret })
     }
 
@@ -411,7 +544,7 @@ impl ApiTokenService {
         self.store
             .list_for_owner(owner_id)
             .await
-            .map_err(ApiTokenError::Storage)
+            .map_err(map_store_error)
     }
 
     /// Revokes one token owned by `owner_id`.
@@ -430,7 +563,7 @@ impl ApiTokenService {
             .store
             .revoke(owner_id, token_id, now)
             .await
-            .map_err(ApiTokenError::Storage)?;
+            .map_err(map_store_error)?;
         if revoked {
             Ok(())
         } else {
@@ -462,7 +595,7 @@ impl ApiTokenService {
             .store
             .find_by_hash(&presented_hash)
             .await
-            .map_err(ApiTokenError::Storage)?
+            .map_err(map_store_error)?
             .ok_or(ApiTokenError::Invalid)?;
         if !digests_are_equal(&stored.secret_hash, &presented_hash) {
             return Err(ApiTokenError::Invalid);
@@ -477,7 +610,7 @@ impl ApiTokenService {
         self.store
             .touch_last_used(token.id, now)
             .await
-            .map_err(ApiTokenError::Storage)?;
+            .map_err(map_store_error)?;
         Ok(token)
     }
 }
@@ -548,13 +681,17 @@ mod tests {
         tokens: Mutex<HashMap<Uuid, ApiToken>>,
         hashes: Mutex<HashMap<Vec<u8>, Uuid>>,
         touched: Mutex<Vec<(Uuid, DateTime<Utc>)>>,
+        failure: Mutex<Option<ApiTokenStoreError>>,
     }
 
     impl ApiTokenStore for MemoryStore {
         fn create(
             &self,
             record: ApiTokenRecord,
-        ) -> ApiTokenStoreFuture<'_, Result<ApiToken, String>> {
+        ) -> ApiTokenStoreFuture<'_, Result<ApiToken, ApiTokenStoreError>> {
+            if let Some(error) = self.failure.lock().expect("failure lock").clone() {
+                return Box::pin(std::future::ready(Err(error)));
+            }
             let token = ApiToken {
                 id: record.id,
                 owner_id: record.owner_id,
@@ -579,7 +716,10 @@ mod tests {
         fn find_by_hash<'a>(
             &'a self,
             secret_hash: &'a [u8],
-        ) -> ApiTokenStoreFuture<'a, Result<Option<StoredApiToken>, String>> {
+        ) -> ApiTokenStoreFuture<'a, Result<Option<StoredApiToken>, ApiTokenStoreError>> {
+            if let Some(error) = self.failure.lock().expect("failure lock").clone() {
+                return Box::pin(std::future::ready(Err(error)));
+            }
             let found = self
                 .hashes
                 .lock()
@@ -597,7 +737,10 @@ mod tests {
             &self,
             token_id: Uuid,
             used_at: DateTime<Utc>,
-        ) -> ApiTokenStoreFuture<'_, Result<(), String>> {
+        ) -> ApiTokenStoreFuture<'_, Result<(), ApiTokenStoreError>> {
+            if let Some(error) = self.failure.lock().expect("failure lock").clone() {
+                return Box::pin(std::future::ready(Err(error)));
+            }
             self.touched
                 .lock()
                 .expect("touched lock")
@@ -613,7 +756,10 @@ mod tests {
             owner_id: Uuid,
             token_id: Uuid,
             revoked_at: DateTime<Utc>,
-        ) -> ApiTokenStoreFuture<'_, Result<bool, String>> {
+        ) -> ApiTokenStoreFuture<'_, Result<bool, ApiTokenStoreError>> {
+            if let Some(error) = self.failure.lock().expect("failure lock").clone() {
+                return Box::pin(std::future::ready(Err(error)));
+            }
             let mut tokens = self.tokens.lock().expect("token lock");
             let revoked = tokens
                 .get_mut(&token_id)
@@ -628,7 +774,10 @@ mod tests {
         fn list_for_owner(
             &self,
             owner_id: Uuid,
-        ) -> ApiTokenStoreFuture<'_, Result<Vec<ApiToken>, String>> {
+        ) -> ApiTokenStoreFuture<'_, Result<Vec<ApiToken>, ApiTokenStoreError>> {
+            if let Some(error) = self.failure.lock().expect("failure lock").clone() {
+                return Box::pin(std::future::ready(Err(error)));
+            }
             let mut owned: Vec<ApiToken> = self
                 .tokens
                 .lock()
@@ -652,6 +801,98 @@ mod tests {
         let store = Arc::new(MemoryStore::default());
         let service = ApiTokenService::new(store.clone());
         (store, service)
+    }
+
+    #[test]
+    fn policy_rejections_accept_only_bounded_snake_case_data() {
+        let rejection = ApiTokenPolicyRejection::new("api_tokens_active_limit_exceeded")
+            .expect("valid code")
+            .with_detail("maximum", 10)
+            .expect("valid detail");
+        assert_eq!(rejection.code(), "api_tokens_active_limit_exceeded");
+        assert_eq!(rejection.detail("maximum"), Some(10));
+        assert_eq!(rejection.details().len(), 1);
+
+        for code in [
+            "",
+            "_leading",
+            "trailing_",
+            "double__separator",
+            "Uppercase",
+            "sql error: SELECT secret_hash",
+        ] {
+            assert_eq!(
+                ApiTokenPolicyRejection::new(code),
+                Err(ApiTokenPolicyRejectionError::InvalidCode)
+            );
+        }
+        assert_eq!(
+            ApiTokenPolicyRejection::new("a".repeat(MAX_POLICY_CODE_LENGTH + 1)),
+            Err(ApiTokenPolicyRejectionError::InvalidCode)
+        );
+
+        let mut full = ApiTokenPolicyRejection::new("limit_exceeded").expect("valid code");
+        for index in 0..MAX_POLICY_DETAIL_COUNT {
+            full = full
+                .with_detail(format!("detail_{index}"), index as u32)
+                .expect("detail within limit");
+        }
+        assert_eq!(
+            full.with_detail("one_too_many", 9),
+            Err(ApiTokenPolicyRejectionError::TooManyDetails)
+        );
+    }
+
+    #[tokio::test]
+    async fn structured_active_token_limit_reaches_the_service_caller() {
+        let (store, service) = service();
+        let rejection = ApiTokenPolicyRejection::new("api_tokens_active_limit_exceeded")
+            .expect("valid code")
+            .with_detail("maximum", 10)
+            .expect("valid detail");
+        *store.failure.lock().expect("failure lock") =
+            Some(ApiTokenStoreError::PolicyRejected(rejection.clone()));
+
+        let error = service
+            .issue_at(Uuid::now_v7(), NewApiToken::new("Over limit"), instant())
+            .await
+            .expect_err("policy must reject creation");
+
+        assert!(matches!(
+            error,
+            ApiTokenError::PolicyRejected(actual) if actual == rejection
+        ));
+    }
+
+    #[tokio::test]
+    async fn internal_store_detail_is_absent_from_public_error_text() {
+        use axum::{body::to_bytes, http::StatusCode, response::IntoResponse as _};
+
+        let (store, service) = service();
+        let private_detail =
+            "duplicate key value violates api_tokens_token_hash_key: secret_hash=abc123";
+        *store.failure.lock().expect("failure lock") =
+            Some(ApiTokenStoreError::internal(private_detail));
+
+        let error = service
+            .list_for_owner(Uuid::now_v7())
+            .await
+            .expect_err("store must fail");
+
+        assert_eq!(error.to_string(), "API token storage failed");
+        assert!(!error.to_string().contains(private_detail));
+        assert!(matches!(
+            &error,
+            ApiTokenError::Storage(ApiTokenStoreError::Internal(detail))
+                if detail == private_detail
+        ));
+
+        let response = baukit_http::ApiError::internal(error).into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("read response body");
+        assert!(!String::from_utf8_lossy(&body).contains(private_detail));
     }
 
     #[tokio::test]
@@ -737,7 +978,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn verification_rejects_wrong_malformed_and_unmarked_secrets() {
+    async fn malformed_unknown_and_unmarked_credentials_are_invalid() {
         let (store, service) = service();
         let issued = service
             .issue_at(Uuid::now_v7(), NewApiToken::new("Automation"), instant())
@@ -931,14 +1172,15 @@ mod tests {
             fn create(
                 &self,
                 _record: ApiTokenRecord,
-            ) -> ApiTokenStoreFuture<'_, Result<ApiToken, String>> {
+            ) -> ApiTokenStoreFuture<'_, Result<ApiToken, ApiTokenStoreError>> {
                 unreachable!("not used")
             }
 
             fn find_by_hash<'a>(
                 &'a self,
                 _secret_hash: &'a [u8],
-            ) -> ApiTokenStoreFuture<'a, Result<Option<StoredApiToken>, String>> {
+            ) -> ApiTokenStoreFuture<'a, Result<Option<StoredApiToken>, ApiTokenStoreError>>
+            {
                 Box::pin(std::future::ready(Ok(Some(StoredApiToken {
                     token: ApiToken {
                         id: Uuid::now_v7(),
@@ -958,7 +1200,7 @@ mod tests {
                 &self,
                 _token_id: Uuid,
                 _used_at: DateTime<Utc>,
-            ) -> ApiTokenStoreFuture<'_, Result<(), String>> {
+            ) -> ApiTokenStoreFuture<'_, Result<(), ApiTokenStoreError>> {
                 unreachable!("not used")
             }
 
@@ -967,14 +1209,14 @@ mod tests {
                 _owner_id: Uuid,
                 _token_id: Uuid,
                 _revoked_at: DateTime<Utc>,
-            ) -> ApiTokenStoreFuture<'_, Result<bool, String>> {
+            ) -> ApiTokenStoreFuture<'_, Result<bool, ApiTokenStoreError>> {
                 unreachable!("not used")
             }
 
             fn list_for_owner(
                 &self,
                 _owner_id: Uuid,
-            ) -> ApiTokenStoreFuture<'_, Result<Vec<ApiToken>, String>> {
+            ) -> ApiTokenStoreFuture<'_, Result<Vec<ApiToken>, ApiTokenStoreError>> {
                 unreachable!("not used")
             }
         }

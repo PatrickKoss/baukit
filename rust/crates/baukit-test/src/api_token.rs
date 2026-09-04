@@ -5,7 +5,8 @@ use std::{
 };
 
 use baukit_auth::{
-    ApiToken, ApiTokenRecord, ApiTokenService, ApiTokenStore, ApiTokenStoreFuture, StoredApiToken,
+    ApiToken, ApiTokenRecord, ApiTokenService, ApiTokenStore, ApiTokenStoreError,
+    ApiTokenStoreFuture, StoredApiToken,
 };
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
@@ -42,7 +43,7 @@ pub struct InMemoryApiTokenStore {
 struct StoreState {
     tokens: HashMap<Uuid, ApiToken>,
     hashes: HashMap<Vec<u8>, Uuid>,
-    failure: Option<String>,
+    failure: Option<ApiTokenStoreError>,
 }
 
 impl InMemoryApiTokenStore {
@@ -60,12 +61,11 @@ impl InMemoryApiTokenStore {
         (store, service)
     }
 
-    /// Makes every later operation fail with `message`.
+    /// Makes every later operation fail with a typed store error.
     ///
-    /// Use it to check that a product surfaces storage failures instead of
-    /// treating them as an invalid token.
-    pub fn fail_with(&self, message: impl Into<String>) {
-        self.lock().failure = Some(message.into());
+    /// Use it to script either an internal failure or a safe policy rejection.
+    pub fn fail_with(&self, error: ApiTokenStoreError) {
+        self.lock().failure = Some(error);
     }
 
     /// Returns how many tokens the store currently holds.
@@ -96,7 +96,10 @@ impl InMemoryApiTokenStore {
 }
 
 impl ApiTokenStore for InMemoryApiTokenStore {
-    fn create(&self, record: ApiTokenRecord) -> ApiTokenStoreFuture<'_, Result<ApiToken, String>> {
+    fn create(
+        &self,
+        record: ApiTokenRecord,
+    ) -> ApiTokenStoreFuture<'_, Result<ApiToken, ApiTokenStoreError>> {
         let mut state = self.lock();
         if let Some(failure) = state.failure.clone() {
             return Box::pin(ready(Err(failure)));
@@ -119,7 +122,7 @@ impl ApiTokenStore for InMemoryApiTokenStore {
     fn find_by_hash<'a>(
         &'a self,
         secret_hash: &'a [u8],
-    ) -> ApiTokenStoreFuture<'a, Result<Option<StoredApiToken>, String>> {
+    ) -> ApiTokenStoreFuture<'a, Result<Option<StoredApiToken>, ApiTokenStoreError>> {
         let state = self.lock();
         if let Some(failure) = state.failure.clone() {
             return Box::pin(ready(Err(failure)));
@@ -140,7 +143,7 @@ impl ApiTokenStore for InMemoryApiTokenStore {
         &self,
         token_id: Uuid,
         used_at: DateTime<Utc>,
-    ) -> ApiTokenStoreFuture<'_, Result<(), String>> {
+    ) -> ApiTokenStoreFuture<'_, Result<(), ApiTokenStoreError>> {
         let mut state = self.lock();
         if let Some(failure) = state.failure.clone() {
             return Box::pin(ready(Err(failure)));
@@ -156,7 +159,7 @@ impl ApiTokenStore for InMemoryApiTokenStore {
         owner_id: Uuid,
         token_id: Uuid,
         revoked_at: DateTime<Utc>,
-    ) -> ApiTokenStoreFuture<'_, Result<bool, String>> {
+    ) -> ApiTokenStoreFuture<'_, Result<bool, ApiTokenStoreError>> {
         let mut state = self.lock();
         if let Some(failure) = state.failure.clone() {
             return Box::pin(ready(Err(failure)));
@@ -175,7 +178,7 @@ impl ApiTokenStore for InMemoryApiTokenStore {
     fn list_for_owner(
         &self,
         owner_id: Uuid,
-    ) -> ApiTokenStoreFuture<'_, Result<Vec<ApiToken>, String>> {
+    ) -> ApiTokenStoreFuture<'_, Result<Vec<ApiToken>, ApiTokenStoreError>> {
         let state = self.lock();
         if let Some(failure) = state.failure.clone() {
             return Box::pin(ready(Err(failure)));
@@ -188,5 +191,48 @@ impl ApiTokenStore for InMemoryApiTokenStore {
             .collect();
         owned.sort_by_key(|token| std::cmp::Reverse(token.created_at));
         Box::pin(ready(Ok(owned)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use baukit_auth::{ApiTokenError, ApiTokenPolicyRejection, NewApiToken};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn store_scripts_internal_failures() {
+        let (store, service) = InMemoryApiTokenStore::with_service();
+        store.fail_with(ApiTokenStoreError::internal(
+            "SELECT token_hash FROM api_tokens failed",
+        ));
+
+        let error = service
+            .list_for_owner(Uuid::now_v7())
+            .await
+            .expect_err("scripted operation must fail");
+
+        assert_eq!(error.to_string(), "API token storage failed");
+        assert!(matches!(error, ApiTokenError::Storage(_)));
+    }
+
+    #[tokio::test]
+    async fn store_scripts_policy_rejections() {
+        let (store, service) = InMemoryApiTokenStore::with_service();
+        let rejection = ApiTokenPolicyRejection::new("api_tokens_active_limit_exceeded")
+            .expect("valid code")
+            .with_detail("maximum", 10)
+            .expect("valid detail");
+        store.fail_with(ApiTokenStoreError::PolicyRejected(rejection.clone()));
+
+        let error = service
+            .issue(Uuid::now_v7(), NewApiToken::new("Over limit"))
+            .await
+            .expect_err("scripted operation must fail");
+
+        assert!(matches!(
+            error,
+            ApiTokenError::PolicyRejected(actual) if actual == rejection
+        ));
     }
 }
