@@ -60,10 +60,10 @@ Batches group items that can run in parallel with disjoint file ownership. Each 
 
 Each study ends in one written decision under `docs/studies/`.
 
-- [~] 29. Revisioned write queue and durable form drafts (batch 7)
-- [~] 30. Offline asset management (batch 7)
-- [ ] 31. Expo UI and headless accessibility behavior (batch 7)
-- [ ] 32. Notifications and timeline playback (batch 7)
+- [x] 29. Revisioned write queue and durable form drafts (batch 7)
+- [x] 30. Offline asset management (batch 7)
+- [~] 31. Expo UI and headless accessibility behavior (batch 7)
+- [~] 32. Notifications and timeline playback (batch 7)
 - [ ] 33. Calendar export (batch 7)
 - [ ] 34. Release, GitOps, and migration compatibility (batch 7)
 - [ ] 35. Browser identity composition (batch 7)
@@ -102,6 +102,7 @@ Filled in as items complete. Each line names the product file to delete once the
 - Item 27, Tiefgang: `extension/scripts/copy-openapi.mjs`, `extension/scripts/check-openapi.mjs`, the MCP copy line in `scripts/openapi-client.sh`, and the equality checks in `scripts/quality-gate.sh` and `extension/test/contracts.test.ts` stay until `openapi.mirrors` ships.
 - Item 25, Eigenruhe: replace the local import preparation, allowlist, preview, and atomic commit code with `@baukit/data-contracts/import-envelope` and run the fixture-backed conformance cases against its adapter; Tiefgang: same for its partial import once it adopts the envelope.
 - Item 18, Leitbild: delete `keycloak/themes/leitbild/login/login.ftl` and `keycloak/themes/leitbild/login/resources/js/required-validation.js`. Tiefgang: delete `keycloak/themes/tiefgang/login/login.ftl`, `resources/js/required-validation.js`, and `required-validation.test.mjs`; both keep CSS, messages, preferences script, and product theme properties as children of `baukit-accessible`.
+- Item 29 (decision: implement, not yet built): after the helpers ship, Leitbild deletes `mobile/src/autosave.ts` and its test and shrinks the web autosave to a React wrapper; Redemut removes `FormDraftController` from `web/src/form-draft.tsx`. Item 30 (deferred): Eigenruhe first unifies its manifest schema and adds runtime hash verification, paused and corrupt states, cleanup planning, and identity fencing in `mobile/src/downloads/`.
 
 ### Log
 
