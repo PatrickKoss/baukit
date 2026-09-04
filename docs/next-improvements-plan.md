@@ -1,6 +1,6 @@
 # Baukit next improvements implementation plan
 
-**Status:** In execution since 2026-09-04. Claude orchestrates; codex agents (gpt-5.6-sol, high) implement and verify. Progress lives in the execution tracker below. Commits go straight to `main`; no pull requests, and the release is prepared locally for manual publishing.
+**Status:** Complete. Shipped as v0.3.0 on 2026-09-04. Claude orchestrates; codex agents (gpt-5.6-sol, high) implement and verify. Progress lives in the execution tracker below. Commits go straight to `main`; no pull requests, and the release is prepared locally for manual publishing.
 
 **Prepared:** 2026-09-04
 
@@ -134,6 +134,7 @@ Filled in as items complete. Each line names the product file to delete once the
 - 2026-09-04: Items 21, 26, 28 committed (93b7d17, cbb21a5, d8d9362). Every implementation item is now in Baukit; studies 31 to 36 are in flight, then the final verification pass and release preparation.
 - 2026-09-04: Batch 7 done. Studies 29 to 36 committed (a58ff3d, 5df8f27, cb871dc, and the calendar/release study commit). All eight decided on recipes, contracts, or deferral; none added runtime code. The study agent for items 33 and 34 saw the `oidc` snapshot tree drift on the generated `ci.yml` and `CHANGELOG.md`, which the final verification pass re-blesses together with the compose mount and `__pycache__` fixes.
 - 2026-09-04: Final verification done (aadd1b3). It fixed the PostgreSQL 18 compose mount, made template embedding and snapshot blessing skip Python caches, taught the strict quality gate to run before a project's first commit, and re-blessed all eight trees. `scripts/release-train.sh minor` prepared 0.3.0. Changesets computed a major bump because `@changesets/assemble-release-plan` promotes peer dependents of `@baukit/analytics-core` and `@baukit/data-contracts` and the fixed group spreads it; the train script normalizes the private 0.x line back to 0.3.0, so the config stays as is. Compatibility matrix rows moved to 0.3.0 with new Keycloak and MCP rows. The post-train `make ci` failed only in the `@baukit/pwa-web` pack test on this host, where `npm_execpath` is the standalone pnpm ELF binary that node cannot load; fixed to execute it directly. Nothing was published; publishing and the tag push are the manual steps above.
+- 2026-09-04: v0.3.0 published manually. Tag `v0.3.0` (51054e6) is on origin, all 18 `@baukit/*` packages are on npm at 0.3.0, and all 16 crates are on crates.io at 0.3.0. Plan complete; what remains is product-side adoption from the follow-ups list above.
 
 ## Purpose
 
