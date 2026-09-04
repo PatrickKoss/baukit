@@ -66,8 +66,8 @@ Each study ends in one written decision under `docs/studies/`.
 - [x] 32. Notifications and timeline playback (batch 7)
 - [~] 33. Calendar export (batch 7)
 - [~] 34. Release, GitOps, and migration compatibility (batch 7)
-- [~] 35. Browser identity composition (batch 7)
-- [~] 36. Other deferred contracts review (batch 7)
+- [x] 35. Browser identity composition (batch 7)
+- [x] 36. Other deferred contracts review (batch 7)
 
 ### Release
 
@@ -108,6 +108,8 @@ Filled in as items complete. Each line names the product file to delete once the
 - Item 28, Eigenruhe: replace the unprotected count operations in `row_caps.rs` with one documented enforcement method, implement `PostgresLiveRowCapAdapter`, and delete `assert_practice_cap` plus the duplicated update and tombstone-release blocks in `backend/tests/postgres_integration.rs`.
 - Item 31 (decision: implement `useRovingMenu` in `@baukit/a11y-core`, not yet built): Tiefgang and Eigenruhe delete the index, ref, and key-handling blocks in `mobile/src/components/context-menu.tsx`; Redemut deletes the DOM query and `moveFocus` logic in `packages/ui/src/context-menu.tsx`. Fitness Tracker must be inspected before any rendered Expo package.
 - Item 32 (decision: implement `@baukit/notifications-core` and an Expo adapter, not yet built; timeline deferred): Eigenruhe deletes `mobile/src/features/reminders/schedule.ts`, `port.ts`, and most of `expo-adapter.ts`; Redemut deletes the civil-date loop in `mobile/src/reminders.ts` and the cancel-all block in `mobile/src/notification-adapter.ts`.
+- Item 35 (decision: contract plus recipes, no popup coordinator until the correlation, mismatch, timeout, callback-failure, and cleanup cases have executable tests): after a tested coordinator ships, Redemut deletes `web/src/auth-popup-protocol.ts` and the `PopupOidcClient` and `waitForPopupCompletion` blocks in `web/src/auth.ts`. Callback pages, account routes, token handlers, and storage composition stay product-owned.
+- Item 36 (decision: keep the catch-all rows deferred): SQLite migration conformance and MCP execution helpers may each get a focused study; sync coordinators stay local with only repeated invariants in conformance; the generated distroless Dockerfile already covers minimal runtime images. Nothing to delete in any product.
 
 ### Log
 
