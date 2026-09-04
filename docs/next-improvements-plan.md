@@ -54,7 +54,7 @@ Batches group items that can run in parallel with disjoint file ownership. Each 
 - [x] 25. Import-envelope conformance (batch 6)
 - [x] 26. Inbox and webhook reliability recipes and helpers (batch 6)
 - [x] 27. Raw OpenAPI mirrors decision note (batch 6)
-- [~] 28. Live-row cap PostgreSQL recipe and concurrency helpers (batch 6)
+- [x] 28. Live-row cap PostgreSQL recipe and concurrency helpers (batch 6)
 
 ### Wave 6 studies
 
@@ -105,6 +105,7 @@ Filled in as items complete. Each line names the product file to delete once the
 - Item 29 (decision: implement, not yet built): after the helpers ship, Leitbild deletes `mobile/src/autosave.ts` and its test and shrinks the web autosave to a React wrapper; Redemut removes `FormDraftController` from `web/src/form-draft.tsx`. Item 30 (deferred): Eigenruhe first unifies its manifest schema and adds runtime hash verification, paused and corrupt states, cleanup planning, and identity fencing in `mobile/src/downloads/`.
 - Item 26, Tiefgang: remove the inbox replay assertions from `backend/tests/postgres_integration.rs`, the multi-target delivery loop in `backend/crates/tiefgang-worker/src/lib.rs`, and the duplicate signature helper in `backend/tests/worker_integration.rs`; run `check_postgres_inbox_conformance` and the scripted webhook receiver instead.
 - Item 21, Tiefgang, Leitbild, Eigenruhe: delete `mcp/src/index.ts` and `mcp/src/server.ts` after adopting the generated bootstrap; keep tool and route code. With `node-oidc` each also deletes `mcp/src/auth.ts` (same file as item 20).
+- Item 28, Eigenruhe: replace the unprotected count operations in `row_caps.rs` with one documented enforcement method, implement `PostgresLiveRowCapAdapter`, and delete `assert_practice_cap` plus the duplicated update and tombstone-release blocks in `backend/tests/postgres_integration.rs`.
 
 ### Log
 
@@ -115,6 +116,7 @@ Filled in as items complete. Each line names the product file to delete once the
 - 2026-09-04: Batch 4 items 7b, 14+15, 16+17 committed (69ddb55, f4eac43, c150ee1). Found while testing item 17: the generated `compose.yaml` mounts PostgreSQL 18 at `/var/lib/postgresql/data`, which the image rejects on a fresh volume; fix it in the final verification pass. `make dev` in OIDC projects starts Keycloak only until that is fixed.
 - 2026-09-04: Item 20 committed (38e3201); batch 4 complete. Its Node-typed tests leaked Node types into the shared test lint program and broke the sync-client Expo file, fixed in 93e0c33 by linting auth-node tests through their own tsconfig. Batch 5 items 22 and 24 committed (9b92f9f and the credential-probe commit); item 18 still running; item 21 started after item 20 landed.
 - 2026-09-04: Items 18, 23, 25, 27 committed (70b65e2, 29c7382, 40882f6). Python tests run inside `templates/` leave `__pycache__` directories that the generator rejects as non-UTF-8 template files; the final verification pass should make the generator and snapshot blessing skip `__pycache__` and `*.pyc` instead of relying on `PYTHONDONTWRITEBYTECODE`. Batch 7 studies started with items 29+30 while items 21, 26, 28 finish.
+- 2026-09-04: Items 21, 26, 28 committed (93b7d17, cbb21a5, d8d9362). Every implementation item is now in Baukit; studies 31 to 36 are in flight, then the final verification pass and release preparation.
 
 ## Purpose
 
