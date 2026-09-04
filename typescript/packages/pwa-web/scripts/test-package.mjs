@@ -11,7 +11,9 @@ const outputDirectory = await mkdtemp(join(tmpdir(), 'baukit-pwa-web-pack-'));
 try {
   const pnpmCli = process.env['npm_execpath'];
   assert.ok(pnpmCli, 'npm_execpath is required to test the pnpm package');
-  execFileSync(process.execPath, [pnpmCli, 'pack', '--pack-destination', outputDirectory], {
+  const isScript = /\.[cm]?js$/.test(pnpmCli);
+  const [command, prefix] = isScript ? [process.execPath, [pnpmCli]] : [pnpmCli, []];
+  execFileSync(command, [...prefix, 'pack', '--pack-destination', outputDirectory], {
     cwd: packageRoot,
     stdio: 'pipe',
   });
