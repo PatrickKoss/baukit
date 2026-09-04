@@ -2,6 +2,8 @@ import {
   createSyncConformanceTests,
   type SyncConformanceAdapter,
   type SyncConformanceChange,
+  type SyncConformanceFullResyncCallbacks,
+  type SyncConformanceStaleCursor,
   type SyncConformanceSubmittedBatchOutcome,
 } from '@baukit/sync-client/conformance';
 
@@ -18,6 +20,8 @@ declare const adapter: SyncConformanceAdapter<
 
 const tests = createSyncConformanceTests(adapter);
 declare const outcome: SyncConformanceSubmittedBatchOutcome<object, object, object>;
+declare const fullResync: SyncConformanceFullResyncCallbacks<object, object, number>;
+declare const staleCursor: SyncConformanceStaleCursor<number>;
 const legacyAcknowledge = adapter.outbox.markAcknowledged;
 const legacyRejection = adapter.outbox.recordRejected;
 const fixture: SyncConformanceChange = {
@@ -32,5 +36,7 @@ const fixture: SyncConformanceChange = {
 void tests;
 void fixture;
 void outcome;
+void fullResync;
+void staleCursor;
 void legacyAcknowledge;
 void legacyRejection;

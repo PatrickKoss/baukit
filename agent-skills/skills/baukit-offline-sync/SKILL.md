@@ -45,12 +45,34 @@ Order referenced records before dependent records in each push batch. If a requi
 rejected, keep its parent incomplete or hold the parent back according to product policy. Do not
 hide the rejection or report the group as synced.
 
+## Handle finite tombstone retention
+
+If the server purges tombstones, keep a monotonic purge horizon for each stable owner. Accept cursor
+zero as a full-rebuild request. Return `resync_required` with `details.horizon_revision` when a
+nonzero cursor is below the horizon. Use HTTP 409 for this response. Do not include owner identity,
+table names, or deleted row data in that error.
+
+Ask a product hook whether reset is safe before changing local state. A deferred reset changes
+nothing and does not count as sync success. When safe, use one local transaction to clear
+server-backed rows and store cursor zero. Preserve pending mutations, explicit rejection records,
+and the local rows needed to send or repair them. Clear child rows before parents when the schema
+requires it, and include pull-only rows in the reset.
+
+After reset, reconcile pending work and pull from cursor zero. Keep a newer pending local edit over
+the rebuilt snapshot. If that cursor-zero request also returns `resync_required`, stop with a
+payload-compatibility failure. Never reset or retry in a loop.
+
 ## Wire the conformance harness
 
 Import `createSyncConformanceTests` from `@baukit/sync-client/conformance`. Implement its adapter
 with the product's real outbox operations, transaction and cursor code, pending-state reader, and
 wire codecs. Supply a deterministic fake server with paged pulls and the requested fault controls.
 Create two fresh clients in the same identity partition for every case.
+
+For finite tombstone retention, also implement the optional `fullResync` callbacks. Map the wire
+error with `decodeStaleCursor`, route `isResetSafe` through the product policy, and make `reset`
+exercise the production transaction. The fake server must support `purgeTombstones` and one
+`rejectNextZeroCursor` fault. Omit `fullResync` for products that retain tombstones indefinitely.
 
 Return authoritative rejected rows from `wire.decodePush`. The atomic submitted-batch callback
 must handle accepted and rejected late responses. The pull callback must skip an older or equal

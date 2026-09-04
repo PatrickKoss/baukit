@@ -17,6 +17,8 @@ interface FakeClient {
   cursor: number;
   outbox: SyncConformanceChange[];
   rejected: SyncConformanceRejection[];
+  resetCount: number;
+  resetSafe: boolean;
   rows: Map<string, SyncConformanceRow>;
 }
 
@@ -30,6 +32,8 @@ interface FakeServer {
   nextPullFault: SyncConformancePullFault | null;
   nextPushFailure: SyncConformancePushFailure | null;
   omitOutcome: boolean;
+  purgeHorizon: number;
+  rejectNextZeroHorizon: number | null;
   revision: number;
   rows: Map<string, FakeServerRow>;
 }
@@ -52,6 +56,12 @@ interface FakePushResponse {
 
 type FakePullResponse = SyncConformancePullPage<SyncConformanceRow, number>;
 
+class FakeStaleCursorError extends Error {
+  constructor(readonly horizon: number) {
+    super('resync_required');
+  }
+}
+
 function key(value: { entityType: string; entityId: string }): string {
   return `${value.entityType}:${value.entityId}`;
 }
@@ -61,7 +71,14 @@ function clone<T>(value: T): T {
 }
 
 function createClient(): FakeClient {
-  return { cursor: 0, outbox: [], rejected: [], rows: new Map() };
+  return {
+    cursor: 0,
+    outbox: [],
+    rejected: [],
+    resetCount: 0,
+    resetSafe: true,
+    rows: new Map(),
+  };
 }
 
 function createServer(): FakeServer {
@@ -70,6 +87,8 @@ function createServer(): FakeServer {
     nextPullFault: null,
     nextPushFailure: null,
     omitOutcome: false,
+    purgeHorizon: 0,
+    rejectNextZeroHorizon: null,
     revision: 0,
     rows: new Map(),
   };
@@ -242,6 +261,14 @@ const adapter: SyncConformanceAdapter<
       return Promise.resolve({ outcomes: clone(outcomes) });
     },
     servePull(server, cursor, pageSize) {
+      if (cursor === 0 && server.rejectNextZeroHorizon !== null) {
+        const horizon = server.rejectNextZeroHorizon;
+        server.rejectNextZeroHorizon = null;
+        throw new FakeStaleCursorError(horizon);
+      }
+      if (cursor > 0 && cursor < server.purgeHorizon) {
+        throw new FakeStaleCursorError(server.purgeHorizon);
+      }
       const fault = server.nextPullFault;
       server.nextPullFault = null;
       if (fault === 'stall') {
@@ -254,10 +281,11 @@ const adapter: SyncConformanceAdapter<
         .filter(({ revision }) => revision > cursor)
         .sort((left, right) => left.revision - right.revision);
       const selected = available.slice(0, pageSize);
+      const hasMore = available.length > selected.length;
       return Promise.resolve({
         changes: clone(selected.map(({ row }) => row)),
-        nextCursor: selected.at(-1)?.revision ?? cursor,
-        hasMore: available.length > selected.length,
+        nextCursor: hasMore ? (selected.at(-1)?.revision ?? cursor) : server.revision,
+        hasMore,
       });
     },
     seed(server, change) {
@@ -275,12 +303,64 @@ const adapter: SyncConformanceAdapter<
       server.nextPullFault = fault;
     },
   },
+  fullResync: {
+    zeroCursor: 0,
+    decodeStaleCursor(error) {
+      return error instanceof FakeStaleCursorError
+        ? { code: 'resync_required', horizon: error.horizon }
+        : null;
+    },
+    isResetSafe: (client) => client.resetSafe,
+    setResetSafe(client, safe) {
+      client.resetSafe = safe;
+    },
+    reset(client, _stale, options) {
+      client.resetCount += 1;
+      const preserved = new Set([
+        ...client.outbox.map((pending) => key(pending)),
+        ...client.rejected.map((rejected) => key(rejected)),
+      ]);
+      const rows = new Map([...client.rows].map(([rowKey, row]) => [rowKey, clone(row)]));
+      let removed = 0;
+      for (const rowKey of rows.keys()) {
+        if (preserved.has(rowKey)) continue;
+        rows.delete(rowKey);
+        removed += 1;
+        if (removed === options?.failAfterRows) {
+          throw new Error('injected full-resync reset failure');
+        }
+      }
+      client.rows = rows;
+      client.cursor = 0;
+    },
+    readResetCount: (client) => client.resetCount,
+    purgeTombstones(server, rows) {
+      for (const row of rows) {
+        server.revision += 1;
+        server.rows.delete(key(row));
+        server.purgeHorizon = Math.max(server.purgeHorizon, server.revision);
+      }
+      return server.purgeHorizon;
+    },
+    rejectNextZeroCursor(server, horizon) {
+      server.rejectNextZeroHorizon = horizon;
+    },
+  },
 };
 
 describe('sync conformance harness', () => {
   for (const testCase of createSyncConformanceTests(adapter)) {
     it(testCase.name, () => testCase.run());
   }
+
+  it('keeps the full-resync callbacks optional for existing adapters', async () => {
+    const existingAdapter = { ...adapter };
+    delete existingAdapter.fullResync;
+    const existingCases = createSyncConformanceTests(existingAdapter);
+
+    expect(existingCases).toHaveLength(14);
+    for (const testCase of existingCases) await testCase.run();
+  });
 
   it('keeps the legacy settlement callbacks available during migration', async () => {
     const scenario = await adapter.createScenario();

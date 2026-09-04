@@ -57,13 +57,72 @@ Never display "synced" while unsent changes or actionable rejections remain. A c
 When importing one old `lastSyncAt` value, use it as both timestamps because the old model cannot
 recover the attempt time independently.
 
-## 4. Compound changes
+## 4. Tombstone horizons and full rebuilds
+
+A server that purges tombstones must keep one purge horizon for each stable data owner. The
+horizon is the greatest revision of any tombstone purged for that owner. Advancing it and deleting
+the covered tombstones must commit atomically under the same owner serialization used for revision
+allocation. A later purge may keep or raise the horizon, never lower it. Retention periods, tables,
+foreign-key order, and owner keys remain product policy.
+
+For a pull cursor `c` and owner horizon `h`:
+
+- `c = 0` is an explicit full-rebuild request and the server must accept it;
+- `0 < c < h` is stale because at least one deletion can no longer be replayed;
+- `c = h` and `c > h` remain valid incremental requests; and
+- deletion that is not part of sync history, such as age-based removal of pull-only telemetry, does
+  not move the horizon.
+
+A stale request returns HTTP 409 with this stable error data:
+
+```json
+{
+  "error": {
+    "code": "resync_required",
+    "details": {
+      "horizon_revision": 42
+    }
+  }
+}
+```
+
+`horizon_revision` uses the same validated cursor representation as the pull endpoint. The client
+must reject a missing, malformed, or non-advancing horizon as `payload_compatibility`. Human text,
+owner identifiers, table names, and deleted row data do not belong in this response.
+
+The client asks a product hook whether a disruptive reset is safe. The hook may defer while an
+interactive operation, unsaved workflow, or other product-owned critical section is active. A
+deferred reset leaves rows, cursor, pending mutations, and rejection records unchanged. The client
+must not record sync success while it waits.
+
+When the hook permits reset, one local transaction must:
+
+1. remove server-backed rows that have no pending mutation or explicit rejection;
+2. preserve durable pending mutations and their visible local rows;
+3. preserve explicit rejection records and the rows needed to repair them; and
+4. set the pull cursor to zero.
+
+The deletion order must satisfy the product schema. Child rows may need removal before parents.
+Pull-only rows are server-backed and must be cleared even though they never enter the outbox. A
+failure after any staged deletion rolls back every row change and the cursor update.
+
+After reset, the client reconciles retained mutations and requests a complete snapshot with cursor
+zero. It may push pending mutations before that pull or overlay them during page application. In
+both cases, a pulled row must not replace a newer pending local edit. Pull pages and their cursors
+still commit atomically under the rules in section 3.
+
+A second `resync_required` response to the immediate cursor-zero request violates the server
+contract. Stop the run after that response. Do not reset again or loop. Keep pending mutations and
+rejection records, leave the cursor at zero, and report a `payload_compatibility` failure for product
+recovery.
+
+## 5. Compound changes
 
 Represent required parent/child writes as a dependency group, or stage the parent as incomplete until every required child is accepted. A parent must not appear complete while a required child is pending or rejected.
 
 Repair and discard are explicit product-owned actions. The product defines edit routes, safe deletion scope, cascade rules, authorization, and copy; Baukit does not invent repair semantics or a universal sync engine.
 
-## 5. Shared primitives
+## 6. Shared primitives
 
 Baukit still does not standardize revisions, conflict algorithms, transport payloads, storage
 engines, or repair workflows. It does ship the two mechanisms every product was rebuilding
@@ -87,7 +146,7 @@ underneath its own engine:
 Both are mechanism, not protocol. Entity names, dependency order, endpoint paths, payload shapes,
 and conflict rules remain product-owned.
 
-## 6. Product conformance gate
+## 7. Product conformance gate
 
 Register every case returned by `createSyncConformanceTests` in the product's normal Vitest or Jest
 suite. Build an isolated scenario for each case with two local clients and one fake server. Supply
@@ -101,6 +160,12 @@ these callbacks:
 - push encoding, push-outcome decoding, pull-page decoding, and cursor comparison; and
 - fake-server push, paged pull, seeding, snapshots, incomplete outcomes, cursor faults, and network
   and server failures.
+
+Products with finite tombstone retention also supply the optional full-resync callbacks. They map
+the product's stale-cursor error onto `SyncConformanceStaleCursor`, expose cursor zero, run the
+product safety hook and atomic reset, and let the fake server purge named fixture rows or reject one
+cursor-zero request. Products without finite retention omit these callbacks and keep the existing
+case set.
 
 Map the harness fixtures to product entities and payloads at the adapter boundary. Use the same
 wire codecs, outbox operations, transaction code, cursor store, and pending-state derivation as
@@ -116,7 +181,7 @@ of a newer local write.
 Partition each scenario by the same stable identity key used in production. A client wired to one
 partition must never read another partition's outbox, cursor, rejection log, or local rows.
 
-## 7. Acceptance checks
+## 8. Acceptance checks
 
 - A cold start never flashes a settled empty state before hydration/pull is known.
 - Cached data remains visible with an offline explanation when the initial network request fails.
@@ -135,6 +200,13 @@ partition must never read another partition's outbox, cursor, rejection log, or 
   still commit together.
 - A pull cursor never regresses, and `has_more` requires cursor progress.
 - The stored pull cursor changes only after the local transaction succeeds.
+- A per-owner purge horizon never regresses. Cursor zero bypasses it, while a stale nonzero cursor
+  returns `resync_required` with `details.horizon_revision`.
+- An unsafe reset is deferred without changing local state or recording success.
+- A reset clears parent, child, and pull-only server rows in one transaction with cursor zero. It
+  preserves pending edits, explicit rejection records, and the rows needed to resolve them.
+- A failed reset commits neither row deletion nor cursor zero.
+- A second stale-cursor response immediately after reset stops the run without another reset.
 - Every product sync suite passes all cases from `createSyncConformanceTests` against its own
   adapters and fake server.
 - A parent with a rejected required child remains incomplete; repair can converge the whole group and discard follows product-defined atomic/cascade rules.

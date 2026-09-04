@@ -99,11 +99,9 @@ intervals to the scheduler contract:
 import { SyncScheduler } from '@baukit/sync-client';
 import { createBrowserSyncEnvironment } from '@baukit/sync-client/browser';
 
-const scheduler = new SyncScheduler(
-  () => engine.retryNow(),
-  createBrowserSyncEnvironment(),
-  { onRecoverySignal: () => engine.wakeRetryDelay() },
-);
+const scheduler = new SyncScheduler(() => engine.retryNow(), createBrowserSyncEnvironment(), {
+  onRecoverySignal: () => engine.wakeRetryDelay(),
+});
 ```
 
 `isActive` is true only while `document.visibilityState` is `visible`. A visibility change reports
@@ -330,9 +328,11 @@ the product's schema and payloads.
 The cases cover replay, transaction rollback, paged cursor progress, stalled and regressing
 cursors, complete push outcomes, late accepted and rejected responses, stale pulls over pending
 writes, pending state after failures, dependency-safe push order, and two-client convergence with
-a tombstone. `wire.decodePush` must call `validatePushOutcomeCoverage` before returning
-acknowledged rows. It returns decoded `rejectedRows` when a rejection contains an authoritative
-server row.
+a tombstone. When `fullResync` is present, five more cases cover monotonic purge horizons, cursor
+zero, parent and child cleanup, pull-only rows, pending edits, rejection records, reset rollback,
+reset deferral, and the repeated-stale stop condition. `wire.decodePush` must call
+`validatePushOutcomeCoverage` before returning acknowledged rows. It returns decoded
+`rejectedRows` when a rejection contains an authoritative server row.
 
 `local.applySubmittedBatchOutcome` receives the exact `submitted` rows, the raw push `response`,
 the decoded acknowledged rows and rejections, and any decoded rejected server rows. In one storage
@@ -345,6 +345,39 @@ type, but a stamp from an older submission must not replace the payload of a new
 The pull callback must keep a pending local row when an older or equal remote revision arrives,
 while committing the page cursor in the same transaction. Its injected failure must roll back both
 the staged row and cursor.
+
+### Tombstone-horizon conformance
+
+Adapters for products with finite tombstone retention set the optional `fullResync` field. Products
+without it receive the original case set and need no adapter change.
+
+`zeroCursor` is the product's explicit full-rebuild cursor. `decodeStaleCursor` maps the product's
+wire error onto `{ code: 'resync_required', horizon }`. The product response must keep the code and
+horizon field stable. For the HTTP 409 envelope, the source value is
+`error.details.horizon_revision`.
+
+`isResetSafe` is the production policy hook. `setResetSafe` lets the isolated test client enter a
+safe or unsafe state. `reset` clears server-backed rows and writes `zeroCursor` in one transaction,
+while keeping pending mutations, rejection records, and their repairable rows. It must honor
+`failAfterRows` inside that transaction so the rollback case can inspect the unchanged database.
+`readResetCount` lets the suite prove that an immediate second stale response does not start a
+loop.
+
+The fake-server callbacks stay test-only. `purgeTombstones` removes the requested fixture rows and
+returns the owner's current horizon. `rejectNextZeroCursor` injects a protocol violation for the
+stop-condition case. Entity registration, deletion SQL, retention periods, and foreign-key order
+remain in the product.
+
+After reset, the suite submits retained pending work and pulls from zero. The full snapshot must
+not overwrite a newer pending edit. It must remove server-backed parent, child, and pull-only rows
+whose tombstones are no longer available.
+
+### Tombstone-horizon migration
+
+Existing adapters can omit `fullResync`; their types and cases are unchanged. A product that
+enables finite tombstone retention should add the callbacks as one unit. Keep its current cursor
+type and HTTP envelope, decode the horizon into `SyncConformanceStaleCursor`, and replace any split
+"clear rows, then set cursor" path with one local transaction before enabling these cases.
 
 ### Conformance adapter migration
 
