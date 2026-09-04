@@ -59,7 +59,8 @@ cargo test --manifest-path rust/Cargo.toml -- --include-ignored
 so the whole verification path runs in a test without a live identity provider. `hs256_token`,
 `rs256_token`, `rs256_token_with_key_id`, and `unsigned_token` build tokens from `JwtClaims`, including
 the malformed ones you need for negative cases. `InMemoryApiTokenStore` implements `ApiTokenStore` for
-tests that exercise personal access tokens.
+tests that exercise personal access tokens. Call `fail_with` with `ApiTokenStoreError::Internal` or
+`ApiTokenStoreError::PolicyRejected` to test both failure paths without a database adapter.
 
 `FakeConnector` plays back scripted outbound-integration scenarios, including signature headers, for
 testing retry and failure handling without a real upstream.
@@ -71,13 +72,14 @@ Use `check_limit_boundaries` with a payload builder and the product validator:
 
 ```rust
 # tokio_test_block(async {
-use baukit_test::{check_limit_boundaries, trimmed_text_length};
+use baukit_core::limits::trimmed_unicode_scalar_count;
+use baukit_test::check_limit_boundaries;
 
 check_limit_boundaries(
     120,
     |length| "é".repeat(length),
     |text| async move {
-        if trimmed_text_length(&text) <= 120 {
+        if trimmed_unicode_scalar_count(&text) <= 120 {
             Ok(())
         } else {
             Err("text_too_long")
@@ -95,8 +97,9 @@ check_limit_boundaries(
 # }
 ```
 
-`trimmed_text_length` counts Unicode scalar values after trimming. `compact_document_bytes` measures
-the UTF-8 bytes produced by compact JSON serialization.
+Production code should import measurements and checks from `baukit_core::limits`. The
+`trimmed_text_length` and `compact_document_bytes` names remain as compatibility aliases in
+`baukit-test`, but both now call the `baukit-core` implementation.
 
 Implement `LiveRowLimitAdapter` around a fresh owner or parent fixture. Run
 `check_update_at_capacity` and `check_soft_delete_capacity_reuse` separately because each helper fills

@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "text": [
+    {
+      "name": "ASCII with surrounding spaces",
+      "value": "  plain text  ",
+      "trimmed_unicode_scalars": 10
+    },
+    {
+      "name": "composed accented scalar",
+      "value": "é",
+      "trimmed_unicode_scalars": 1
+    },
+    {
+      "name": "decomposed accented scalar",
+      "value": "é",
+      "trimmed_unicode_scalars": 2
+    },
+    {
+      "name": "emoji joined family sequence",
+      "value": "👩‍👩‍👧‍👦",
+      "trimmed_unicode_scalars": 7
+    },
+    {
+      "name": "Unicode whitespace at both ends",
+      "value": " middle　",
+      "trimmed_unicode_scalars": 6
+    }
+  ],
+  "json": [
+    {
+      "name": "empty object",
+      "value": {},
+      "compact": "{}",
+      "utf8_bytes": 2
+    },
+    {
+      "name": "compact object",
+      "value": { "active": true, "name": "test" },
+      "compact": "{\"active\":true,\"name\":\"test\"}",
+      "utf8_bytes": 29
+    },
+    {
+      "name": "array values",
+      "value": [1, "é", null, false],
+      "compact": "[1,\"é\",null,false]",
+      "utf8_bytes": 19
+    },
+    {
+      "name": "escaped string",
+      "value": { "value": "line\n\"quoted\"\\end" },
+      "compact": "{\"value\":\"line\\n\\\"quoted\\\"\\\\end\"}",
+      "utf8_bytes": 33
+    },
+    {
+      "name": "multibyte string",
+      "value": { "value": "é界😀" },
+      "compact": "{\"value\":\"é界😀\"}",
+      "utf8_bytes": 21
+    },
+    {
+      "name": "nested object and array",
+      "value": { "items": [{ "count": 2 }, { "count": 3 }] },
+      "compact": "{\"items\":[{\"count\":2},{\"count\":3}]}",
+      "utf8_bytes": 35
+    }
+  ],
+  "bytes": [
+    { "name": "empty bytes", "value": [], "bytes": 0 },
+    { "name": "arbitrary bytes", "value": [0, 1, 127, 128, 255], "bytes": 5 }
+  ],
+  "collections": [
+    { "name": "empty collection", "value": [], "elements": 0 },
+    { "name": "mixed JSON collection", "value": [null, true, "é", 4], "elements": 4 }
+  ]
+}

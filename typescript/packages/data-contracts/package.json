@@ -1,7 +1,7 @@
 {
   "name": "@baukit/data-contracts",
   "version": "0.2.1",
-  "description": "Provider-neutral asynchronous storage contracts plus executable adapter conformance tests.",
+  "description": "Runtime-neutral data contracts, measurement helpers, and executable adapter conformance tests.",
   "license": "MIT",
   "author": "Patrick Koss",
   "homepage": "https://github.com/PatrickKoss/baukit#readme",
@@ -25,6 +25,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./limits": {
+      "types": "./dist/limits.d.ts",
+      "import": "./dist/limits.js"
     },
     "./vitest": {
       "types": "./dist/vitest.d.ts",

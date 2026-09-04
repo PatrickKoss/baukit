@@ -1,12 +1,14 @@
 //! Dependency-light shared vocabulary for Baukit crates and services.
 //!
-//! This crate is the canonical home for process identity and configuration
-//! vocabulary shared across crate boundaries. It deliberately contains no
-//! telemetry exporters, async runtime, HTTP framework, or operational routing,
-//! so configuration-only consumers do not inherit those dependency graphs.
-//! Higher-level Baukit crates re-export these types from their established APIs.
+//! This crate is the canonical home for dependency-light process vocabulary and
+//! runtime-neutral measurements shared across crate boundaries. It deliberately
+//! contains no telemetry exporters, async runtime, HTTP framework, operational
+//! routing, or product policy. Higher-level Baukit crates re-export established
+//! compatibility types from their own APIs.
 
 #![deny(missing_docs)]
+
+pub mod limits;
 
 use std::{fmt, str::FromStr};
 

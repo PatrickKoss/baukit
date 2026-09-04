@@ -1,8 +1,8 @@
 # baukit-core
 
 `baukit-core` holds the handful of types that more than one Baukit crate needs to agree on:
-deployment environment, log format, process kind, service identity, and build info. It depends on
-`serde` and `thiserror` and nothing else.
+deployment environment, log format, process kind, service identity, build info, and resource-budget
+measurements. It depends on `serde`, `serde_json`, and `thiserror` and nothing else.
 
 ## Why this crate exists at all
 
@@ -58,8 +58,37 @@ deriving the name from a shared type is what keeps them from disagreeing. `Proce
 used to compile the process; `baukit-runtime`'s `build_info!` macro fills it from the binary crate's
 own Cargo metadata.
 
+## Resource-budget measurements
+
+The `limits` module measures trimmed Unicode scalar values, compact JSON UTF-8 bytes, byte slices,
+and collection slices. A check returns the measured and allowed values. Products map
+`LimitExceeded` into their own error code and keep the limit itself in product configuration.
+
+```rust
+use baukit_core::limits::{check_compact_json_utf8_bytes, check_trimmed_unicode_scalars};
+use serde_json::json;
+
+let text = check_trimmed_unicode_scalars("  e\u{301}  ", 2)?;
+assert_eq!(text.measured(), 2);
+
+let document = check_compact_json_utf8_bytes(&json!({"value": "é"}), 14)?;
+assert_eq!(document.allowed(), 14);
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Trimming uses Rust's Unicode whitespace definition. It does not normalize text, so `é` is one
+scalar and `e` followed by a combining acute accent is two. Compact JSON uses `serde_json` without
+pretty printing.
+
+### Migration from `baukit-test`
+
+Production code should replace `baukit_test::trimmed_text_length` with
+`baukit_core::limits::trimmed_unicode_scalar_count`, and replace
+`baukit_test::compact_document_bytes` with `baukit_core::limits::compact_json_utf8_bytes`. The old
+`baukit-test` names remain available and delegate to these functions.
+
 ## Scope
 
-No exporters, no async runtime, no HTTP framework, no operational routing. A type earns a place here
-only when two crates would otherwise define it twice. Everything else belongs in the crate that owns
-the behavior.
+No exporters, no async runtime, no HTTP framework, no operational routing, and no product limit
+policy. A type or function earns a place here only when two crates would otherwise define it twice.
+Everything else belongs in the crate that owns the behavior.

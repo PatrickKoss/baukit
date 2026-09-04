@@ -23,6 +23,7 @@ sqlx-postgres = ["dep:sqlx"]
 axum.workspace = true
 base64.workspace = true
 baukit-auth.workspace = true
+baukit-core.workspace = true
 baukit-http.workspace = true
 baukit-integrations.workspace = true
 baukit-openapi.workspace = true

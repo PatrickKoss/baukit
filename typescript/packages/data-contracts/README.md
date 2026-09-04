@@ -1,6 +1,6 @@
 # `@baukit/data-contracts`
 
-Provider-neutral, asynchronous storage contracts plus executable adapter conformance tests.
+Runtime-neutral data contracts, measurement helpers, and executable adapter conformance tests.
 
 The package defines JSON key/value storage, ID-ordered record storage with bounded keyset pagination, atomic transaction callbacks, and schema metadata/migration conventions. It deliberately contains no product entities and no Expo SQLite, Dexie, or Node database adapters.
 
@@ -25,6 +25,34 @@ with `StorageError.code === "storage_closed"`. Quota failures use
 
 The older `StorageTransaction` and `Transaction` interfaces remain available
 for adapters that implement only the original surface.
+
+## Resource-budget measurements
+
+Import production measurements from the `/limits` subpath. Checks return the measured and allowed
+values, or throw `LimitExceededError` with those same fields. Products choose each allowed value and
+map the error into their own reason code.
+
+```ts
+import {
+  checkCompactJsonUtf8Bytes,
+  checkTrimmedUnicodeScalars,
+} from '@baukit/data-contracts/limits';
+
+checkTrimmedUnicodeScalars('  e\u0301  ', 2);
+checkCompactJsonUtf8Bytes({ value: 'é' }, 14);
+```
+
+Text measurement trims Unicode `White_Space` scalars at both ends. It does not normalize text.
+Compact JSON measurement accepts null, booleans, finite numbers, scalar-only strings, dense arrays,
+and plain objects. Plain objects may use enumerable own string keys. Non-enumerable properties are
+ignored. Symbol keys, accessors, custom prototypes, circular references, unsupported values,
+non-finite numbers, and unpaired surrogates throw `ResourceMeasurementError`. The compact encoder
+uses `JSON.stringify` property order, though property order cannot change the measured byte count.
+
+Existing product helpers can migrate one call at a time. Replace `codePointLength(value.trim())`
+with `trimmedUnicodeScalarCount(value)`, and replace a `JSON.stringify` plus `TextEncoder` byte count
+with `compactJsonUtf8Bytes(value)`. Unlike raw `JSON.stringify`, the helper rejects values that JSON
+would omit or replace with `null`.
 
 ## Authenticated partitions
 

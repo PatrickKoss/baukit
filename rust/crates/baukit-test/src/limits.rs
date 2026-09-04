@@ -1,6 +1,9 @@
 use std::{collections::BTreeSet, fmt, future::Future, pin::Pin};
 
-use serde::Serialize;
+pub use baukit_core::limits::{
+    compact_json_utf8_bytes as compact_document_bytes,
+    trimmed_unicode_scalar_count as trimmed_text_length,
+};
 
 type IngressFuture<'a, Output> = Pin<Box<dyn Future<Output = Output> + 'a>>;
 
@@ -62,17 +65,6 @@ impl fmt::Display for LimitsConformanceError {
 }
 
 impl std::error::Error for LimitsConformanceError {}
-
-/// Counts Unicode scalar values after trimming leading and trailing whitespace.
-#[must_use]
-pub fn trimmed_text_length(text: &str) -> usize {
-    text.trim().chars().count()
-}
-
-/// Returns the UTF-8 byte length of a document's compact JSON encoding.
-pub fn compact_document_bytes(document: &impl Serialize) -> Result<usize, serde_json::Error> {
-    serde_json::to_vec(document).map(|encoded| encoded.len())
-}
 
 /// Checks payloads built at `limit - 1`, `limit`, and `limit + 1`.
 ///
@@ -383,6 +375,7 @@ fn failure<Output>(message: impl Into<String>) -> Result<Output, LimitsConforman
 
 #[cfg(test)]
 mod tests {
+    use baukit_core::limits::{compact_json_utf8_bytes, trimmed_unicode_scalar_count};
     use serde_json::json;
 
     use super::*;
@@ -452,6 +445,20 @@ mod tests {
         assert_eq!(
             compact_document_bytes(&json!({"value": "é"})).expect("document should serialize"),
             r#"{"value":"é"}"#.len()
+        );
+    }
+
+    #[test]
+    fn compatibility_names_call_the_production_measurements() {
+        let document = json!({"value": "é"});
+
+        assert_eq!(
+            trimmed_text_length("  e\u{301}  "),
+            trimmed_unicode_scalar_count("  e\u{301}  ")
+        );
+        assert_eq!(
+            compact_document_bytes(&document).expect("compatibility alias should encode"),
+            compact_json_utf8_bytes(&document).expect("production helper should encode")
         );
     }
 

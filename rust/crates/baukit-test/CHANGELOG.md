@@ -4,6 +4,13 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Reuse the production resource-budget measurements from `baukit-core` while
+  keeping the existing test-helper names available.
+- Let `InMemoryApiTokenStore::fail_with` script typed internal failures and
+  policy rejections after the `ApiTokenStore` error contract changed.
+
 ## [0.2.1] - 2026-09-03
 
 ## [0.2.0] - 2026-09-03

@@ -2,7 +2,7 @@
 //!
 //! The crate provides Docker-backed PostgreSQL, direct Redis, and Redis Sentinel
 //! fixtures, compact test tracing, Prometheus contract checks, in-process or network
-//! operations-endpoint checks, OpenAPI drift assertions, resource-limit checks,
+//! operations-endpoint checks, OpenAPI drift assertions, resource-limit conformance checks,
 //! and a mock OIDC/JWKS issuer with JWT fixtures.
 //!
 //! # Telemetry tests

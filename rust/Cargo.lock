@@ -459,6 +459,7 @@ dependencies = [
  "axum",
  "base64",
  "baukit-auth",
+ "baukit-core",
  "baukit-http",
  "baukit-integrations",
  "baukit-openapi",
