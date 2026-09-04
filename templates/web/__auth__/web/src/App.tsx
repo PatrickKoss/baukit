@@ -131,6 +131,11 @@ export function App() {
 
   return (
     <main className="shell">
+      <nav className="primary-navigation" data-testid="primary-navigation" aria-label="Primary">
+        <a href="/" aria-label="Home" aria-current="page">
+          <span aria-hidden="true">H</span>
+        </a>
+      </nav>
       <p className="eyebrow">BAUKIT WEB</p>
       <h1>{{ context.app_name }}</h1>
       <p className="lede">A Vite app using Baukit OIDC discovery and authorization code + PKCE.</p>

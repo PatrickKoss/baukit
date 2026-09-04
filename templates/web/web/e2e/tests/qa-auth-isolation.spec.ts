@@ -12,10 +12,7 @@ import { openRoute, stubApi } from './qa';
 test.describe('auth isolation', () => {
   const [owner, other] = qaConfig.accounts;
 
-  test.skip(
-    owner === undefined || other === undefined,
-    'Isolation needs two configured accounts.',
-  );
+  test.skip(owner === undefined || other === undefined, 'Isolation needs two configured accounts.');
 
   for (const route of qaConfig.protectedRoutes) {
     test(`${route.name} keeps records isolated across an A to B to A switch`, async ({
@@ -27,7 +24,7 @@ test.describe('auth isolation', () => {
       }
 
       await stubApi(page, owner.apiStubs);
-      await openRoute(page, route.path);
+      await openRoute(page, route.path, route.authenticated);
       await expect(page.getByText(owner.privateText, { exact: false }).first()).toBeVisible();
 
       await context.clearCookies();

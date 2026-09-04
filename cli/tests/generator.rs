@@ -161,6 +161,60 @@ fn web_generation_matches_golden_tree_and_is_deterministic() -> anyhow::Result<(
 }
 
 #[test]
+fn generated_browser_qa_configures_authenticated_and_unauthenticated_cases() -> anyhow::Result<()> {
+    let unauthenticated_parent = tempfile::tempdir()?;
+    let unauthenticated = generate_new(&frontend_options(
+        unauthenticated_parent.path(),
+        "qa-public",
+        false,
+        true,
+    ))?;
+    let authenticated_parent = tempfile::tempdir()?;
+    let mut authenticated_options = options(authenticated_parent.path(), "qa-private");
+    authenticated_options.mobile = true;
+    authenticated_options.web = true;
+    authenticated_options.auth = Some(AuthProvider::Oidc);
+    let authenticated = generate_new(&authenticated_options)?;
+
+    let public_config = fs::read_to_string(unauthenticated.join("web/e2e/qa.config.ts"))?;
+    assert!(public_config.contains("heading: /^qa-public$/u"));
+    assert!(public_config.contains("fields: ["));
+    assert!(public_config.contains("invalidField: 'Example name'"));
+    assert!(public_config.contains("recoveryRole: 'button'"));
+    assert!(public_config.contains("recoveryRole: 'link'"));
+    assert!(public_config.contains("apiStubs: ITEM_API_STUBS"));
+    assert!(!public_config.contains("authenticated: true"));
+    assert!(!public_config.contains("qa-public:oidc:tokens"));
+
+    let private_config = fs::read_to_string(authenticated.join("web/e2e/qa.config.ts"))?;
+    assert!(private_config.contains("authenticated: true"));
+    assert!(private_config.contains("qa-private:oidc:tokens"));
+    assert!(private_config.contains("subject: 'qa-owner'"));
+    assert!(private_config.contains("subject: 'qa-other'"));
+
+    let keyboard = fs::read_to_string(authenticated.join("web/e2e/tests/qa-keyboard.spec.ts"))?;
+    assert!(keyboard.contains("'inert' in HTMLElement.prototype"));
+    assert!(keyboard.contains("MAX_FOCUS_SEARCH_PRESSES"));
+    assert!(keyboard.contains("focus path:"));
+    assert!(keyboard.contains("exact: true"));
+    let route_state =
+        fs::read_to_string(authenticated.join("web/e2e/tests/qa-route-state.spec.ts"))?;
+    assert!(route_state.contains("withholds its settled state until the first load resolves"));
+    let isolation =
+        fs::read_to_string(authenticated.join("web/e2e/tests/qa-auth-isolation.spec.ts"))?;
+    assert!(isolation.contains("Isolation needs two configured accounts."));
+    let geometry = fs::read_to_string(authenticated.join("web/e2e/tests/geometry.ts"))?;
+    assert!(geometry.contains("largest elements"));
+    let console = fs::read_to_string(authenticated.join("web/e2e/tests/console-warnings.ts"))?;
+    assert!(console.contains("Service Worker registration blocked by Playwright"));
+    let playwright = fs::read_to_string(authenticated.join("web/e2e/playwright.config.ts"))?;
+    assert!(playwright.contains("fileURLToPath(new URL('..', import.meta.url))"));
+    assert!(playwright.contains("cwd: webRoot"));
+
+    Ok(())
+}
+
+#[test]
 fn combined_generation_matches_golden_tree_and_records_capabilities() -> anyhow::Result<()> {
     let first_parent = tempfile::tempdir()?;
     let second_parent = tempfile::tempdir()?;

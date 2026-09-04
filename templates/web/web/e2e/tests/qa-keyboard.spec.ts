@@ -9,6 +9,8 @@ import {
   stubApi,
 } from './qa';
 
+const MAX_FOCUS_SEARCH_PRESSES = 80;
+
 test.describe('keyboard', () => {
   test.beforeEach(async ({ page }) => {
     await stubApi(page, qaConfig.apiStubs);
@@ -16,8 +18,9 @@ test.describe('keyboard', () => {
 
   for (const overlay of qaConfig.overlays) {
     test(`${overlay.name} takes focus, traps Tab, and restores the trigger`, async ({ page }) => {
-      await openRoute(page, overlay.path);
-      const trigger = page.getByRole('button', { name: overlay.trigger });
+      await stubApi(page, overlay.apiStubs ?? []);
+      await openRoute(page, overlay.path, overlay.authenticated);
+      const trigger = page.getByRole('button', { name: overlay.trigger, exact: true }).first();
       await trigger.focus();
       await expect(trigger).toBeFocused();
       await page.keyboard.press('Enter');
@@ -25,10 +28,13 @@ test.describe('keyboard', () => {
       const dialog = page.getByRole('dialog', { name: overlay.dialog });
       await expect(dialog).toBeVisible();
       await expect(dialog).toHaveAttribute('aria-modal', 'true');
-      await expect(page.getByLabel(overlay.initialFocus)).toBeFocused();
-      await expect
-        .poll(() => trigger.evaluate((element) => Boolean(element.closest('[inert]'))))
-        .toBe(true);
+      await expect(dialog.getByLabel(overlay.initialFocus, { exact: true })).toBeFocused();
+      const inertIsSupported = await page.evaluate(() => 'inert' in HTMLElement.prototype);
+      if (inertIsSupported) {
+        await expect
+          .poll(() => trigger.evaluate((element) => Boolean(element.closest('[inert]'))))
+          .toBe(true);
+      }
 
       await resetFocusToBody(page);
       await expectFocusStaysInside(page, dialog, 6);
@@ -43,7 +49,8 @@ test.describe('keyboard', () => {
     test(`${route.name} never lands keyboard focus on hidden or inert content`, async ({
       page,
     }) => {
-      await openRoute(page, route.path);
+      await stubApi(page, route.apiStubs ?? []);
+      await openRoute(page, route.path, route.authenticated);
       await expect(page.getByRole('heading', { name: route.heading, level: 1 })).toBeVisible();
 
       const focusableCount = await page.evaluate(() => {
@@ -90,8 +97,12 @@ test.describe('keyboard', () => {
     test(`${route.name} shows a distinct visible focus ring for keyboard focus`, async ({
       page,
     }) => {
-      await openRoute(page, route.path);
-      const control = page.getByRole('button', { name: route.focusRingControl });
+      await stubApi(page, route.apiStubs ?? []);
+      await openRoute(page, route.path, route.authenticated);
+      const control = page.getByRole(route.focusRingRole ?? 'button', {
+        name: route.focusRingControl,
+        exact: true,
+      });
       await expect(control).toBeVisible();
 
       await control.click();
@@ -101,11 +112,25 @@ test.describe('keyboard', () => {
       // poll would restart from the body each attempt and never arrive.
       await resetFocusToBody(page);
       let reached = false;
-      for (let press = 0; press < 30 && !reached; press += 1) {
+      const focusPath: string[] = [];
+      for (let press = 0; press < MAX_FOCUS_SEARCH_PRESSES && !reached; press += 1) {
         await page.keyboard.press('Tab');
+        focusPath.push(
+          await page.evaluate(() => {
+            const active = document.activeElement;
+            if (!(active instanceof HTMLElement)) return 'no active HTML element';
+            const id = active.id.length === 0 ? '' : `#${active.id}`;
+            const classes = [...active.classList].map((name) => `.${name}`).join('');
+            const role = active.getAttribute('role');
+            return `${active.tagName.toLowerCase()}${id}${classes}${role === null ? '' : `[role=${role}]`}`;
+          }),
+        );
         reached = await control.evaluate((element) => element === document.activeElement);
       }
-      expect(reached, 'keyboard focus never reached the first control').toBe(true);
+      expect(
+        reached,
+        `keyboard focus did not reach the configured control within ${String(MAX_FOCUS_SEARCH_PRESSES)} Tab presses; focus path: ${focusPath.join(' -> ')}`,
+      ).toBe(true);
       const keyboardFocus = await computedFocusVisual(control);
 
       expect(keyboardFocus).not.toEqual(mouseFocus);

@@ -14,7 +14,7 @@ test.describe('auth expiry', () => {
       page,
     }) => {
       await stubApi(page, qaConfig.apiStubs);
-      await openRoute(page, route.path);
+      await openRoute(page, route.path, route.authenticated);
       await expect(page.getByText(route.privateText, { exact: false }).first()).toBeVisible();
 
       await expireSession(page, route.api);
@@ -25,8 +25,9 @@ test.describe('auth expiry', () => {
     });
 
     test(`${route.name} recovers once the session is valid again`, async ({ page }) => {
+      await stubApi(page, qaConfig.apiStubs);
       await expireSession(page, route.api);
-      await openRoute(page, route.path);
+      await openRoute(page, route.path, route.authenticated);
       await expect(page.getByText(route.expiredMessage, { exact: false }).first()).toBeVisible();
 
       await page.unroute(route.api);

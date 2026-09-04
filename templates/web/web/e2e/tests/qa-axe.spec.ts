@@ -9,10 +9,9 @@ test.describe('axe', () => {
   });
 
   for (const route of qaConfig.routes) {
-    test(`${route.name} has no serious or critical axe violations`, async ({
-      page,
-    }, testInfo) => {
-      await openRoute(page, route.path);
+    test(`${route.name} has no serious or critical axe violations`, async ({ page }, testInfo) => {
+      await stubApi(page, route.apiStubs ?? []);
+      await openRoute(page, route.path, route.authenticated);
       await expect(page.getByRole('heading', { name: route.heading, level: 1 })).toBeVisible();
       await expectNoBlockingAxeViolations(page, testInfo, route.name);
     });
@@ -22,7 +21,8 @@ test.describe('axe', () => {
     test(`${overlay.name} has no serious or critical axe violations`, async ({
       page,
     }, testInfo) => {
-      await openRoute(page, overlay.path);
+      await stubApi(page, overlay.apiStubs ?? []);
+      await openRoute(page, overlay.path, overlay.authenticated);
       await page.getByRole('button', { name: overlay.trigger }).click();
       await expect(page.getByRole('dialog', { name: overlay.dialog })).toBeVisible();
       await expectNoBlockingAxeViolations(page, testInfo, overlay.name);
@@ -33,7 +33,8 @@ test.describe('axe', () => {
     test(`${routeState.name} has no serious or critical axe violations`, async ({
       page,
     }, testInfo) => {
-      await openRoute(page, routeState.path);
+      await stubApi(page, routeState.apiStubs ?? []);
+      await openRoute(page, routeState.path, routeState.authenticated);
       await expect(page.getByRole('heading', { name: routeState.heading })).toBeVisible();
       await expectNoBlockingAxeViolations(page, testInfo, routeState.name);
     });

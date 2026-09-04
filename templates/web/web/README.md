@@ -61,14 +61,18 @@ The Vitest acceptance tests cover keyboard focus wrapping and visibility, modal 
 
 `pnpm test:e2e` builds the app, serves it with `vite preview`, and runs the `qa-*` Playwright specs against Chromium and WebKit at desktop and mobile viewports. The specs stub every API path themselves, so the gate needs no backend, database, or identity provider.
 
-`e2e/qa.config.ts` is the only file a product edits. It lists routes, overlays, submit targets, deep links that must land in a route state, protected routes, geometry selectors, and API stubs. Each spec reads that file. Add screens and selectors there instead of editing a spec.
+`e2e/qa.config.ts` is the only file a product edits. It lists routes, overlays, submit targets, deep links that must land in a route state, protected routes, geometry selectors, authentication state, and API stubs. Cases can add their own stubs, mark an authenticated load, use a regular expression for a heading, select a control role, override the screen selector, or opt out of the scroll check. Each spec reads that file. Add product routes and selectors there instead of editing a spec.
+
+Submit targets accept `fields` plus `invalidField`, so the failed-submit check fills every required field, clears the named field, and confirms that all values survive validation. `recoveryRole` accepts `button` or `link`. Existing single-field submit entries with `field` and `value`, and route-state entries without `recoveryRole`, remain supported.
+
+When updating QA files generated before this template version, replace `field` and `value` with a `fields` array and set `invalidField`. Add `authentication.localStorage` before marking any case `authenticated`; the gate throws a setup error if authenticated state is missing. Keep credentials out of this hermetic fixture. Use synthetic, non-production tokens and stub every identity API call.
 
 | Spec                 | What it proves                                                                                                                       |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `qa-axe`             | No serious or critical axe violations on any route, overlay, or route state                                                          |
 | `qa-keyboard`        | Modal focus entry, Tab containment, Escape, focus restoration, no tab stop on inert or hidden content, a distinct visible focus ring |
 | `qa-overlay-dismiss` | Every overlay closes without committing, by Escape, by its dismiss control, and by an outside click when one is configured           |
-| `qa-submit-guards`   | A double activation produces one result; a failed submit keeps input and focuses the invalid field                                   |
+| `qa-submit-guards`   | A double activation produces one result; a failed submit keeps every input and focuses the configured invalid field                  |
 | `qa-route-state`     | A deep link that cannot resolve renders a contextual state with a recovery control, never a blank page                               |
 | `qa-auth-expiry`     | An expired session removes private data and says so, and recovers when the session is valid again                                    |
 | `qa-auth-isolation`  | An account switch never leaks one account's records into another's view                                                              |

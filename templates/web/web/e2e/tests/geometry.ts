@@ -42,13 +42,33 @@ export async function setAuditViewport(
 }
 
 export async function expectNoHorizontalDocumentOverflow(page: Page): Promise<void> {
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-      ),
-    )
-    .toBeLessThanOrEqual(0);
+  const layout = await page.evaluate(() => {
+    const viewportWidth = document.documentElement.clientWidth;
+    const overflow = document.documentElement.scrollWidth - viewportWidth;
+    const largestElements = Array.from(document.querySelectorAll<HTMLElement>('body *'))
+      .map((element) => {
+        const rectangle = element.getBoundingClientRect();
+        const leftOverflow = Math.max(0, -rectangle.left);
+        const rightOverflow = Math.max(0, rectangle.right - viewportWidth);
+        const id = element.id.length === 0 ? '' : `#${element.id}`;
+        const classes = [...element.classList].map((name) => `.${name}`).join('');
+        return {
+          element: `${element.tagName.toLowerCase()}${id}${classes}`,
+          overflow: Math.max(leftOverflow, rightOverflow),
+          width: rectangle.width,
+        };
+      })
+      .filter(({ width }) => width > 0)
+      .sort((left, right) => right.overflow - left.overflow || right.width - left.width)
+      .slice(0, 10);
+
+    return { largestElements, overflow, viewportWidth };
+  });
+
+  expect(
+    layout.overflow,
+    `viewport width ${String(layout.viewportWidth)}; largest elements ${JSON.stringify(layout.largestElements)}`,
+  ).toBeLessThanOrEqual(0);
 }
 
 export async function expectRectanglesDoNotIntersect(

@@ -17,3 +17,11 @@ The generated target also includes local interaction references: a same-tick mut
 The Baukit packages come from {{ context.baukit_typescript_dependency_description }} and the generated lockfile makes the first install reproducible. The app runs without a globally installed Baukit CLI.
 
 Run `corepack pnpm@11.18.0 build`, `corepack pnpm@11.18.0 lint`, and `corepack pnpm@11.18.0 test` before shipping.
+
+## Browser quality gate
+
+Run `corepack pnpm@11.18.0 test:e2e` after installing Chromium and WebKit with `corepack pnpm@11.18.0 exec playwright install --with-deps chromium webkit`. The generated QA configuration uses a synthetic OIDC token and stubs `/me` and `/items`; it does not contact Keycloak or the backend. Routes, overlays, submit targets, route states, and protected routes are marked authenticated so both identity startup and user-scoped rendering run in the browser gate.
+
+Products configure browser cases in `e2e/qa.config.ts`. Per-case API stubs override the global fixtures. Route headings may be strings or regular expressions. Focus checks accept a control role and use exact accessible names. Routes may set their own screen selector or skip a scroll check. Submit targets list all required fields and name the field that must fail validation. Route-state recovery may be a button or link.
+
+For QA files generated before this template version, `field` and `value` still work for one-field submit targets, and a missing `recoveryRole` still means `button`. Migrate new or edited forms to `fields` and `invalidField`. Keep the synthetic local-storage token and identity responses separate from development and production credentials.

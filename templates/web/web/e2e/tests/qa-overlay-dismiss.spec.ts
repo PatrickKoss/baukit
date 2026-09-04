@@ -16,7 +16,8 @@ test.describe('overlay dismissal', () => {
 
   for (const overlay of qaConfig.overlays) {
     test(`${overlay.name} closes on Escape without committing`, async ({ page }) => {
-      await openRoute(page, overlay.path);
+      await stubApi(page, overlay.apiStubs ?? []);
+      await openRoute(page, overlay.path, overlay.authenticated);
       const trigger = page.getByRole('button', { name: overlay.trigger });
       await trigger.click();
 
@@ -28,7 +29,8 @@ test.describe('overlay dismissal', () => {
     });
 
     test(`${overlay.name} closes through its dismiss control`, async ({ page }) => {
-      await openRoute(page, overlay.path);
+      await stubApi(page, overlay.apiStubs ?? []);
+      await openRoute(page, overlay.path, overlay.authenticated);
       const trigger = page.getByRole('button', { name: overlay.trigger });
       await trigger.click();
 
@@ -42,7 +44,8 @@ test.describe('overlay dismissal', () => {
     if (overlay.scrimTestId !== undefined) {
       const scrimTestId = overlay.scrimTestId;
       test(`${overlay.name} closes on an outside click`, async ({ page }) => {
-        await openRoute(page, overlay.path);
+        await stubApi(page, overlay.apiStubs ?? []);
+        await openRoute(page, overlay.path, overlay.authenticated);
         const trigger = page.getByRole('button', { name: overlay.trigger });
         await trigger.click();
 

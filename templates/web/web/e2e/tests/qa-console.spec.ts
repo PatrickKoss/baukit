@@ -21,8 +21,9 @@ for (const route of qaConfig.routes) {
   test(`${route.name} emits no unexpected console warnings`, async ({ page }, testInfo) => {
     const unexpected = collectUnexpectedConsoleWarnings(page);
     await stubApi(page, qaConfig.apiStubs);
+    await stubApi(page, route.apiStubs ?? []);
 
-    await openRoute(page, route.path);
+    await openRoute(page, route.path, route.authenticated);
     await expect(page.getByRole('heading', { name: route.heading, level: 1 })).toBeVisible();
 
     await testInfo.attach('console-warnings', {

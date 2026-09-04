@@ -59,26 +59,35 @@ export function AccessibleDialog({
 export function AccessibleDialogExample() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
-  const [error, setError] = useState<string>();
+  const [note, setNote] = useState('');
+  const [nameError, setNameError] = useState<string>();
+  const [noteError, setNoteError] = useState<string>();
   const [saved, setSaved] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const noteRef = useRef<HTMLInputElement>(null);
   const runMutation = useSingleFlight();
 
   function close(): void {
     setOpen(false);
-    setError(undefined);
+    setNameError(undefined);
+    setNoteError(undefined);
     setSaved(false);
   }
 
   function submit(event: { preventDefault: () => void }): void {
     event.preventDefault();
     void runMutation(() => {
-      if (name.trim().length === 0) {
-        setError('Enter a name for this example.');
-        focusFirstInvalid([{ invalid: true, element: inputRef.current }]);
+      const nextNameError = name.trim().length === 0 ? 'Enter a name for this example.' : undefined;
+      const nextNoteError = note.trim().length === 0 ? 'Enter a note for this example.' : undefined;
+      setNameError(nextNameError);
+      setNoteError(nextNoteError);
+      if (nextNameError !== undefined || nextNoteError !== undefined) {
+        focusFirstInvalid([
+          { invalid: nextNameError !== undefined, element: inputRef.current },
+          { invalid: nextNoteError !== undefined, element: noteRef.current },
+        ]);
         return Promise.resolve();
       }
-      setError(undefined);
       setSaved(true);
       return Promise.resolve();
     });
@@ -117,14 +126,32 @@ export function AccessibleDialogExample() {
             }}
             {...validationAccessibilityProps({
               describedBy: 'dialog-name-help',
-              error,
+              error: nameError,
               errorId: 'dialog-name-error',
             })}
           />
           <p className="field-help" id="dialog-name-help">
             Validation keeps its help and error linked to this field.
           </p>
-          <ValidationError error={error} id="dialog-name-error" />
+          <ValidationError error={nameError} id="dialog-name-error" />
+          <label htmlFor="dialog-note">Example note</label>
+          <input
+            id="dialog-note"
+            ref={noteRef}
+            value={note}
+            onChange={(event) => {
+              setNote(event.currentTarget.value);
+            }}
+            {...validationAccessibilityProps({
+              describedBy: 'dialog-note-help',
+              error: noteError,
+              errorId: 'dialog-note-error',
+            })}
+          />
+          <p className="field-help" id="dialog-note-help">
+            Submit guards must retain every entered field after another field fails validation.
+          </p>
+          <ValidationError error={noteError} id="dialog-note-error" />
           {saved ? (
             <p className="success" aria-live="polite" role="status">
               Saved once.

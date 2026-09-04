@@ -17,11 +17,14 @@ test.describe('route state', () => {
     test(`${routeState.name} renders a contextual state with a recovery action`, async ({
       page,
     }) => {
-      await openRoute(page, routeState.path);
+      await stubApi(page, routeState.apiStubs ?? []);
+      await openRoute(page, routeState.path, routeState.authenticated);
 
       const heading = page.getByRole('heading', { name: routeState.heading });
       await expect(heading).toBeVisible();
-      const recovery = page.getByRole('button', { name: routeState.recovery });
+      const recovery = page.getByRole(routeState.recoveryRole ?? 'button', {
+        name: routeState.recovery,
+      });
       await expect(recovery).toBeVisible();
       await expect(page.getByText('Loading', { exact: false })).toHaveCount(0);
     });
@@ -35,7 +38,8 @@ test.describe('route state', () => {
       const gate = new Promise<void>((resolve) => {
         release = resolve;
       });
-      for (const stub of qaConfig.apiStubs) {
+      const delayedStubs = route.apiStubs ?? qaConfig.apiStubs;
+      for (const stub of delayedStubs) {
         await page.unroute(stub.url);
         await page.route(stub.url, async (routeCall) => {
           await gate;
@@ -47,7 +51,7 @@ test.describe('route state', () => {
         });
       }
 
-      const navigation = page.goto(route.path);
+      const navigation = openRoute(page, route.path, route.authenticated);
       await expect(page.getByRole('heading', { name: route.heading, level: 1 })).toBeVisible();
       await expect(page.getByText('Loading', { exact: false }).first()).toBeVisible();
 

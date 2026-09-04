@@ -18,9 +18,10 @@ test.describe('scroll', () => {
     await stubApi(page, qaConfig.apiStubs);
   });
 
-  for (const route of qaConfig.routes) {
+  for (const route of qaConfig.routes.filter(({ checkScroll }) => checkScroll !== false)) {
     test(`${route.name} reaches its last content at every viewport`, async ({ page }) => {
-      await openRoute(page, route.path);
+      await stubApi(page, route.apiStubs ?? []);
+      await openRoute(page, route.path, route.authenticated);
       await expect(page.getByRole('heading', { name: route.heading, level: 1 })).toBeVisible();
 
       for (const [index, viewport] of VIEWPORTS.entries()) {
@@ -33,8 +34,8 @@ test.describe('scroll', () => {
             ).toBeVisible();
           }
 
-          const screen = page.locator(qaConfig.screenSelector).first();
-          const last = screen.locator('> *').last();
+          const screen = page.locator(route.screenSelector ?? qaConfig.screenSelector).first();
+          const last = screen.locator('> :visible').last();
           await expect(async () => {
             await last.scrollIntoViewIfNeeded();
             await expect(last).toBeInViewport();
@@ -50,8 +51,9 @@ test.describe('scroll', () => {
       );
 
       await page.setViewportSize({ width: 1440, height: 900 });
-      await openRoute(page, route.path);
-      const screen = page.locator(qaConfig.screenSelector).first();
+      await stubApi(page, route.apiStubs ?? []);
+      await openRoute(page, route.path, route.authenticated);
+      const screen = page.locator(route.screenSelector ?? qaConfig.screenSelector).first();
       await expect(screen).toBeVisible();
 
       const scroller = await scrollingAncestorBox(screen);
@@ -64,13 +66,8 @@ test.describe('scroll', () => {
       // The screen must sit inside the scroller and stay horizontally centred
       // in it, so no content is clipped and no scrollbar is stranded.
       expect(screenBox.x).toBeGreaterThanOrEqual(scroller.x - 1);
-      expect(screenBox.x + screenBox.width).toBeLessThanOrEqual(
-        scroller.x + scroller.width + 1,
-      );
-      expect(screenBox.x + screenBox.width / 2).toBeCloseTo(
-        scroller.x + scroller.width / 2,
-        0,
-      );
+      expect(screenBox.x + screenBox.width).toBeLessThanOrEqual(scroller.x + scroller.width + 1);
+      expect(screenBox.x + screenBox.width / 2).toBeCloseTo(scroller.x + scroller.width / 2, 0);
     });
   }
 });

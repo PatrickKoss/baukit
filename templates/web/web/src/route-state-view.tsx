@@ -33,7 +33,18 @@ export function DetailRouteStateView<T>({
     >
       <h2>{content[0]}</h2>
       <p className={state.status === 'error' ? 'error' : 'muted'}>{content[1]}</p>
-      {state.status === 'loading' ? null : (
+      {state.status === 'loading' ? null : state.status === 'not-found' ? (
+        <a
+          className="action secondary"
+          href="/"
+          onClick={(event) => {
+            event.preventDefault();
+            onExit();
+          }}
+        >
+          Back to items
+        </a>
+      ) : (
         <button className="action secondary" type="button" onClick={onExit}>
           Back to items
         </button>

@@ -1,7 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
+import { fileURLToPath } from 'node:url';
 
 const port = Number(process.env['E2E_WEB_PORT'] ?? '4173');
 const baseURL = `http://127.0.0.1:${String(port)}`;
+const webRoot = fileURLToPath(new URL('..', import.meta.url));
 
 /**
  * The gate is hermetic: Playwright builds and serves the app itself and the
@@ -40,7 +42,8 @@ export default defineConfig({
     { name: 'mobile-safari', use: { ...devices['iPhone 14'] } },
   ],
   webServer: {
-    command: `pnpm --dir .. exec vite preview --port ${String(port)} --strictPort`,
+    command: `pnpm exec vite preview --port ${String(port)} --strictPort`,
+    cwd: webRoot,
     url: baseURL,
     reuseExistingServer: process.env['CI'] === undefined,
     timeout: 120_000,

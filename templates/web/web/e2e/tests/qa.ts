@@ -1,7 +1,7 @@
 import { expect, type Locator, type Page, type TestInfo } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
-import type { QaApiStub } from '../qa.config';
+import { qaConfig, type QaApiStub, type QaSubmitField, type QaSubmitTarget } from '../qa.config';
 
 /** Serves every configured API path from a fixture, so no backend is required. */
 export async function stubApi(page: Page, stubs: readonly QaApiStub[]): Promise<void> {
@@ -28,8 +28,27 @@ export async function expireSession(page: Page, url: string): Promise<void> {
   });
 }
 
-export async function openRoute(page: Page, path: string): Promise<void> {
+export async function openRoute(page: Page, path: string, authenticated = false): Promise<void> {
+  if (authenticated) {
+    const authentication = qaConfig.authentication;
+    if (authentication === undefined) {
+      throw new Error('This QA case requires authentication, but no authentication state exists.');
+    }
+    await page.addInitScript((entries) => {
+      for (const entry of entries) {
+        localStorage.setItem(entry.key, entry.value);
+      }
+    }, authentication.localStorage);
+  }
   await page.goto(path);
+}
+
+export function submitFields(target: QaSubmitTarget): readonly QaSubmitField[] {
+  return 'fields' in target ? target.fields : [{ field: target.field, value: target.value }];
+}
+
+export function invalidSubmitField(target: QaSubmitTarget): string {
+  return 'invalidField' in target ? target.invalidField : target.field;
 }
 
 /**
@@ -56,7 +75,11 @@ export async function expectNoBlockingAxeViolations(
       blocking.map(({ help, id, nodes }) => ({
         help,
         id,
-        nodes: nodes.map(({ failureSummary, html, target }) => ({ failureSummary, html, target })),
+        nodes: nodes.map(({ failureSummary, html, target }) => ({
+          failureSummary,
+          html,
+          target,
+        })),
       })),
       `${screen} has serious or critical axe violations`,
     )
@@ -81,10 +104,9 @@ export async function expectFocusStaysInside(
   for (let press = 0; press < presses; press += 1) {
     await page.keyboard.press('Tab');
     await expect
-      .poll(
-        () => container.evaluate((element) => element.contains(document.activeElement)),
-        { message: `Tab press ${String(press + 1)} escaped the container` },
-      )
+      .poll(() => container.evaluate((element) => element.contains(document.activeElement)), {
+        message: `Tab press ${String(press + 1)} escaped the container`,
+      })
       .toBe(true);
   }
 }

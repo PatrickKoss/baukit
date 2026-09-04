@@ -1,3 +1,5 @@
+import type { Page } from '@playwright/test';
+
 /**
  * Product-owned input for the shared `qa-*` specs. Each spec iterates over this
  * file and nothing else, so a product changes its browser quality gate by
@@ -17,7 +19,7 @@ export interface QaRoute {
   /** Path relative to the served app root. */
   readonly path: string;
   /** Accessible name of the level-1 heading the route must render. */
-  readonly heading: string;
+  readonly heading: string | RegExp;
   /**
    * Accessible name of a control on this route that is inert when activated:
    * it must not navigate, open an overlay, or submit. The focus-ring check
@@ -25,6 +27,11 @@ export interface QaRoute {
    * move focus somewhere the test can never return from.
    */
   readonly focusRingControl: string;
+  readonly focusRingRole?: Parameters<Page['getByRole']>[0];
+  readonly authenticated?: boolean;
+  readonly apiStubs?: readonly QaApiStub[];
+  readonly checkScroll?: boolean;
+  readonly screenSelector?: string;
 }
 
 export interface QaOverlay {
@@ -39,6 +46,8 @@ export interface QaOverlay {
   readonly initialFocus: string;
   /** Accessible name of the control that closes it without committing. */
   readonly dismiss: string;
+  readonly authenticated?: boolean;
+  readonly apiStubs?: readonly QaApiStub[];
   /**
    * `data-testid` of the scrim, when an outside click is a supported dismissal.
    * Leave unset for an overlay that deliberately requires an explicit choice.
@@ -46,19 +55,36 @@ export interface QaOverlay {
   readonly scrimTestId?: string;
 }
 
-export interface QaSubmitTarget {
+interface QaSubmitTargetBase {
   readonly name: string;
   readonly path: string;
   /** Accessible name of the control that opens the form, when it is not inline. */
   readonly open?: string;
-  /** Accessible name of a required field, and a value that satisfies it. */
-  readonly field: string;
-  readonly value: string;
   /** Accessible name of the submit control. */
   readonly submit: string;
   /** Text that must appear exactly once after any number of submit activations. */
   readonly result: string;
+  readonly authenticated?: boolean;
+  readonly apiStubs?: readonly QaApiStub[];
 }
+
+export interface QaSubmitField {
+  readonly field: string;
+  readonly value: string;
+}
+
+interface QaMultipleSubmitFields {
+  readonly fields: readonly QaSubmitField[];
+  readonly invalidField: string;
+}
+
+interface QaLegacySubmitField {
+  readonly field: string;
+  readonly value: string;
+}
+
+export type QaSubmitTarget = QaSubmitTargetBase &
+  (QaMultipleSubmitFields | QaLegacySubmitField);
 
 export interface QaRouteState {
   readonly name: string;
@@ -68,6 +94,9 @@ export interface QaRouteState {
   readonly heading: string;
   /** Accessible name of the control that leaves the state. */
   readonly recovery: string;
+  readonly recoveryRole?: 'button' | 'link';
+  readonly authenticated?: boolean;
+  readonly apiStubs?: readonly QaApiStub[];
 }
 
 export interface QaProtectedRoute {
@@ -79,6 +108,16 @@ export interface QaProtectedRoute {
   readonly expiredMessage: string;
   /** Text that must not survive on screen once the session is gone. */
   readonly privateText: string;
+  readonly authenticated?: boolean;
+}
+
+export interface QaStorageEntry {
+  readonly key: string;
+  readonly value: string;
+}
+
+export interface QaAuthentication {
+  readonly localStorage: readonly QaStorageEntry[];
 }
 
 export interface QaConfig {
@@ -100,6 +139,8 @@ export interface QaConfig {
   readonly apiStubs: readonly QaApiStub[];
   /** Two accounts' worth of stub data, to prove one never leaks into the other. */
   readonly accounts: readonly QaAccount[];
+  /** Browser state installed before a case marked `authenticated` opens. */
+  readonly authentication?: QaAuthentication;
 }
 
 export interface QaGeometry {
@@ -126,13 +167,22 @@ const OWNER_ITEMS = [
 
 const OTHER_ITEMS = [{ id: '9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a', name: 'Other item' }];
 
+const ITEM_API_STUBS: readonly QaApiStub[] = [
+  { url: '**/items', status: 200, body: OWNER_ITEMS },
+];
+
 export const qaConfig: QaConfig = {
   routes: [
     {
       name: 'home',
       path: '/',
-      heading: '{{ context.app_name }}',
+      heading: /^{{ context.app_name }}$/u,
       focusRingControl: 'Deny analytics',
+      focusRingRole: 'button',
+      screenSelector: '.shell',
+      apiStubs: ITEM_API_STUBS,
+{% if context.auth_oidc %}      authenticated: true,
+{% endif %}
     },
   ],
   overlays: [
@@ -143,6 +193,9 @@ export const qaConfig: QaConfig = {
       dialog: 'Accessible dialog example',
       initialFocus: 'Example name',
       dismiss: 'Cancel',
+      apiStubs: ITEM_API_STUBS,
+{% if context.auth_oidc %}      authenticated: true,
+{% endif %}
     },
   ],
   submits: [
@@ -150,10 +203,16 @@ export const qaConfig: QaConfig = {
       name: 'dialog-example',
       path: '/',
       open: 'Open dialog example',
-      field: 'Example name',
-      value: 'Guarded example',
+      fields: [
+        { field: 'Example name', value: 'Guarded example' },
+        { field: 'Example note', value: 'Retained after validation.' },
+      ],
+      invalidField: 'Example name',
       submit: 'Save example',
       result: 'Saved once.',
+      apiStubs: ITEM_API_STUBS,
+{% if context.auth_oidc %}      authenticated: true,
+{% endif %}
     },
   ],
   routeStates: [
@@ -162,12 +221,20 @@ export const qaConfig: QaConfig = {
       path: '/?item=not-a-uuid',
       heading: 'Invalid link',
       recovery: 'Back to items',
+      recoveryRole: 'button',
+      apiStubs: ITEM_API_STUBS,
+{% if context.auth_oidc %}      authenticated: true,
+{% endif %}
     },
     {
       name: 'missing-detail',
       path: '/?item=00000000-0000-4000-8000-000000000000',
       heading: 'Detail not found',
       recovery: 'Back to items',
+      recoveryRole: 'link',
+      apiStubs: ITEM_API_STUBS,
+{% if context.auth_oidc %}      authenticated: true,
+{% endif %}
     },
   ],
   protectedRoutes: [
@@ -175,19 +242,37 @@ export const qaConfig: QaConfig = {
       name: 'items',
       path: '/',
       api: '**/items',
-      expiredMessage: 'HTTP 401',
+{% if context.auth_oidc %}      expiredMessage: 'Sign in to open your local data partition.',
+{% else %}      expiredMessage: 'HTTP 401',
+{% endif %}
       privateText: 'Owner item',
+{% if context.auth_oidc %}      authenticated: true,
+{% endif %}
     },
   ],
   accounts: [
     {
       name: 'owner',
-      apiStubs: [{ url: '**/items', status: 200, body: OWNER_ITEMS }],
+      apiStubs: [
+        { url: '**/items', status: 200, body: OWNER_ITEMS },
+{% if context.auth_oidc %}        {
+          url: '**/me',
+          status: 200,
+          body: { id: '00000000-0000-4000-8000-000000000001', subject: 'qa-owner' },
+        },
+{% endif %}      ],
       privateText: 'Owner item',
     },
     {
       name: 'other',
-      apiStubs: [{ url: '**/items', status: 200, body: OTHER_ITEMS }],
+      apiStubs: [
+        { url: '**/items', status: 200, body: OTHER_ITEMS },
+{% if context.auth_oidc %}        {
+          url: '**/me',
+          status: 200,
+          body: { id: '00000000-0000-4000-8000-000000000002', subject: 'qa-other' },
+        },
+{% endif %}      ],
       privateText: 'Other item',
     },
   ],
@@ -200,5 +285,23 @@ export const qaConfig: QaConfig = {
     interactiveTargetSelector: 'a, button, input',
     minimumTargetSize: 44,
   },
-  apiStubs: [{ url: '**/items', status: 200, body: OWNER_ITEMS }],
-};
+  apiStubs: [
+    ...ITEM_API_STUBS,
+{% if context.auth_oidc %}    {
+      url: '**/me',
+      status: 200,
+      body: { id: '00000000-0000-4000-8000-000000000001', subject: 'qa-owner' },
+    },
+{% endif %}  ],
+{% if context.auth_oidc %}  authentication: {
+    localStorage: [
+      {
+        key: '{{ context.app_name }}:oidc:tokens',
+        value: JSON.stringify({
+          accessToken: 'qa-access-token',
+          expiresAt: Date.now() + 60 * 60 * 1000,
+        }),
+      },
+    ],
+  },
+{% endif %}};

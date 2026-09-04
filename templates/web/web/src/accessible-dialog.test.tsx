@@ -51,10 +51,16 @@ describe('AccessibleDialogExample', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save example' }));
 
     const input = screen.getByRole('textbox', { name: 'Example name' });
-    const alert = screen.getByRole('alert');
+    const note = screen.getByRole('textbox', { name: 'Example note' });
+    const alerts = screen.getAllByRole('alert');
     expect(input.getAttribute('aria-invalid')).toBe('true');
     expect(input.getAttribute('aria-describedby')).toBe('dialog-name-help dialog-name-error');
-    expect(alert.textContent).toBe('Enter a name for this example.');
+    expect(note.getAttribute('aria-invalid')).toBe('true');
+    expect(note.getAttribute('aria-describedby')).toBe('dialog-note-help dialog-note-error');
+    expect(alerts.map((alert) => alert.textContent)).toEqual([
+      'Enter a name for this example.',
+      'Enter a note for this example.',
+    ]);
     expect(document.activeElement).toBe(input);
   });
 });

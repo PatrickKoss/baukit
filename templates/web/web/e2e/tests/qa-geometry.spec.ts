@@ -22,13 +22,19 @@ test.describe('geometry', () => {
 
   for (const route of qaConfig.routes) {
     test(`${route.name} clears fixed navigation at breakpoint boundaries`, async ({ page }) => {
-      await openRoute(page, route.path);
-      await expect(page.getByRole('heading', { name: route.heading, level: 1 })).toBeVisible();
+      await stubApi(page, route.apiStubs ?? []);
+      await openRoute(page, route.path, route.authenticated);
+      const heading = page.getByRole('heading', { name: route.heading, level: 1 });
+      await expect(heading).toBeVisible();
 
       for (const viewport of BREAKPOINT_AUDIT_VIEWPORTS) {
         await test.step(viewport.name, async () => {
           await setAuditViewport(page, viewport);
           await expectNoHorizontalDocumentOverflow(page);
+          await expectInsideScrollContainer(
+            heading,
+            page.locator(route.screenSelector ?? qaConfig.screenSelector),
+          );
           await expectRectanglesDoNotIntersect(
             page.locator(qaConfig.geometry.overlapTargetSelector),
             page.locator(qaConfig.geometry.fixedNavigationSelector),
