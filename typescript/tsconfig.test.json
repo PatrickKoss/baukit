@@ -6,5 +6,6 @@
     "declarationMap": false,
     "sourceMap": false
   },
-  "include": ["packages/*/src/**/*.test.ts"]
+  "include": ["packages/*/src/**/*.test.ts"],
+  "exclude": ["packages/auth-node/**"]
 }
