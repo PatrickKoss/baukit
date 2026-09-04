@@ -17,7 +17,7 @@ Batches group items that can run in parallel with disjoint file ownership. Each 
 - [x] 1. JSON rejection classes in `baukit-http` (batch 1)
 - [x] 2. Typed `ApiTokenStoreError` in `baukit-auth` and `baukit-test` (batch 1)
 - [x] 3. Principal-establishing middleware, authentication before rate limiting (batch 2)
-- [~] 4. Named authenticated route-group limits (batch 3, after 3)
+- [x] 4. Named authenticated route-group limits (batch 3, after 3)
 - [x] 5. Bounded terminal-job cleanup in `baukit-jobs` (batch 1)
 - [x] 6. Fixed recurring-slot helpers in `baukit-jobs` (batch 1)
 - [x] 7. Production resource-budget measurements, Rust and TypeScript, shared fixtures (batch 1)
@@ -27,23 +27,23 @@ Batches group items that can run in parallel with disjoint file ownership. Each 
 - [x] 8. Overlapping sync-response conformance (batch 2)
 - [x] 9. `@baukit/sync-client/browser` scheduler environment (batch 2)
 - [x] 10. Serialized preference updates (batch 2)
-- [~] 11. Cross-runtime hybrid logical clock (batch 3)
+- [x] 11. Cross-runtime hybrid logical clock (batch 3)
 - [x] 12. Supported PWA worker artifact (batch 2)
 
 ### Wave 3
 
-- [~] 13. Browser QA configuration backport (batch 3)
-- [ ] 14. `.env` reconciliation script (batch 4)
-- [ ] 15. Local Markdown link check in the strict profile (batch 4)
-- [ ] 16. Parameterized Keycloak realm policy validation (batch 4)
-- [ ] 17. Idempotent development-realm reconciler (batch 4, after 16)
+- [x] 13. Browser QA configuration backport (batch 3)
+- [~] 14. `.env` reconciliation script (batch 4)
+- [~] 15. Local Markdown link check in the strict profile (batch 4)
+- [~] 16. Parameterized Keycloak realm policy validation (batch 4)
+- [~] 17. Idempotent development-realm reconciler (batch 4, after 16)
 - [ ] 18. Script-only accessible Keycloak theme (batch 5)
-- [~] 19. Localization and identity helpers: catalog segments, request locale extractor, identity hints, UUIDv7 study (batch 3)
+- [x] 19. Localization and identity helpers: catalog segments, request locale extractor, identity hints, UUIDv7 study (batch 3)
 
 ### Wave 4
 
-- [ ] 20. `@baukit/auth-node` device-flow package (batch 4)
-- [ ] 7b. Templates adopt the production measurements (backend domain `limits.rs`, web and mobile `limits.ts`) (batch 4, follow-up from item 7)
+- [~] 20. `@baukit/auth-node` device-flow package (batch 4)
+- [~] 7b. Templates adopt the production measurements (backend domain `limits.rs`, web and mobile `limits.ts`) (batch 4, follow-up from item 7)
 - [ ] 21. Opt-in MCP capability and generator (batch 5)
 
 ### Wave 5
@@ -88,12 +88,17 @@ Filled in as items complete. Each line names the product file to delete once the
 - Item 10, Redemut: delete `SerializedRedemutPreferenceController` from `packages/preferences/src/index.ts` and its queue tests.
 - Item 12, Eigenruhe: delete the regular-expression transforms in `mobile/scripts/build-sw.mjs` and copy `@baukit/pwa-web/worker` instead.
 - Item 7, Eigenruhe: delete the measurement bodies in `backend/crates/eigenruhe-domain/src/limits.rs`, `mobile/src/limits.ts`, and `mcp/src/limits.ts`; keep policy parsing and reason codes.
+- Item 4, Eigenruhe: delete `route_group`, `enforce_route_group`, the header helpers, and the `ApiRateLimitStore` delegation in `backend/crates/eigenruhe-api/src/rate_limit.rs`, the group composition in `eigenruhe-api/src/lib.rs`, and the `api_rate_limit_store` helper in `eigenruhe-bin/src/bin/api.rs`; use `RouteGroupLimit` layers and `SharedRateLimitStore`.
+- Item 11, Redemut: delete `backend/crates/redemut-services/src/hlc.rs`, `packages/sync/src/hlc.ts`, their tests, and `testdata/hlc-vectors/vectors.json`; use `baukit_sync::hlc`, `@baukit/sync-client/hlc`, and `fixtures/hlc/vectors-v1.json`.
+- Item 13, Leitbild: delete the copied shared-harness files under `web/e2e/tests/` (`geometry.ts`, `qa.ts`, and the `qa-*.spec.ts` files); keep the product `qa.config.ts`, API-token tests, critical-path tests, and product regressions.
+- Item 19, Redemut: delete `packages/localization/src/catalog-segment.ts`. Leitbild: delete `backend/crates/leitbild-api/src/locale.rs`, `web/src/identity.ts`, and `mobile/src/identity.ts`. UUIDv7: pin `uuid` to `14.0.2` in products that need it; Expo passes `Crypto.getRandomBytes(16)` as `random`.
 
 ### Log
 
 - 2026-09-04: Tracker added. Batch plan fixed: batch 1 = items 1, 2, 5+6, 7; batch 2 = items 3, 8+9, 10, 12; batch 3 = items 4, 11, 13, 19; batch 4 = items 14+15, 16+17, 20; batch 5 = items 18, 21, 22, 24; batch 6 = items 23+27, 25, 26, 28; batch 7 = studies 29 to 36; then release preparation.
 - 2026-09-04: Batch 1 done. Items 1, 2, 5, 6, 7 committed (8eae0aa, 32baa8b, 7f13c71, 5472d3d). Evidence records live under `docs/evidence/`. Templates were kept out of batch 1; the backend template opts into classified JSON rejections in batch 2 (item 3 task) and the limits examples adopt the production measurements in batch 4 (item 7b). Note for later: `bless_snapshots` must run from `cli/` because it writes paths relative to the crate directory.
 - 2026-09-04: Batch 2 done. Items 3, 8, 9, 10, 12 committed (191db25, 4d1f0d3, ca98c4e, and the auth/ratelimit commit). TypeScript package changelogs are generated by Changesets, so hand-written `[Unreleased]` sections were dropped and only changesets are kept. The item 3 template pulls `baukit-ratelimit` through a Jinja string parse of the manifest; item 4 replaces that with a CLI dependency-builder change. Snapshots are re-blessed by the batch 3 template agents.
+- 2026-09-04: Batch 3 done. Items 4, 11, 13, 19 committed (763f197, 9f0dc94, and the two commits after them). The UUIDv7 study found `uuid` 14.0.2 portable, so no Baukit helper was added. The CLI has no changelog; template-only changes are recorded in `docs/evidence/` and the template READMEs. Batch 4 started: items 14+15, 16+17, 20, 7b.
 
 ## Purpose
 
