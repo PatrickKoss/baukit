@@ -21,6 +21,48 @@ let _app: Router = Router::new().route("/me", get(me)).with_state(auth);
 # }
 ```
 
+## Clerk and WorkOS
+
+The provider adapters apply the token rules that a generic OIDC verifier cannot
+infer. They still use the same local JWKS cache and return the same `Principal`.
+No provider secret or vendor SDK is needed for request verification.
+
+Clerk session tokens use the instance Frontend API URL as their issuer and may
+omit `aud`. Pass every web origin that can obtain a session token. If the token
+contains `azp`, `ClerkVerifier` requires an exact allowlist match. It also maps
+the Clerk v2 active organization from `o.id`.
+
+```rust,no_run
+use baukit_auth::{AuthState, ClerkVerifier};
+
+# fn example() -> Result<(), Box<dyn std::error::Error>> {
+let verifier = ClerkVerifier::new(
+    "https://example.clerk.accounts.dev",
+    ["https://app.example.com", "http://localhost:5173"],
+)?;
+let _auth = AuthState::new(verifier);
+# Ok(())
+# }
+```
+
+WorkOS AuthKit session tokens also omit `aud`. `WorkOsVerifier` binds them to
+one Application through the signed `client_id` claim and maps `org_id`.
+
+```rust,no_run
+use baukit_auth::{AuthState, WorkOsVerifier};
+
+# fn example() -> Result<(), Box<dyn std::error::Error>> {
+let verifier = WorkOsVerifier::new("client_01ABCDEF")?;
+let _auth = AuthState::new(verifier);
+# Ok(())
+# }
+```
+
+Use `WorkOsVerifier::with_issuer` with a custom AuthKit domain. Both adapters
+also have `from_jwks_uri` constructors for WorkOS Emulate, private JWKS
+proxies, and deterministic tests. Keycloak and other standard OIDC issuers
+continue to use `OidcVerifier::discover`.
+
 Any state implementing `FromRef<AuthState>` lets handlers take `Principal` as an extractor. An
 unauthenticated request never reaches the handler body.
 
@@ -57,6 +99,32 @@ product adapter that implements `IdentityVerifier`.
 `OidcVerifier::discover` finds the issuer's JWKS endpoint through standard discovery and validates
 signatures, issuer, audience, and expiry. It then maps only the fields named in
 `PrincipalClaimMapping` into `Principal`.
+
+Map the provider's OAuth client claim when a route needs a client allowlist:
+
+```rust
+use baukit_auth::{OidcConfig, Principal, PrincipalClaimMapping};
+
+# fn example() -> Result<(), Box<dyn std::error::Error>> {
+let config = OidcConfig::new("https://identity.example.com", "orders-api")?
+    .with_principal_claims(PrincipalClaimMapping::new().client_id_claim("azp"));
+# let _ = config;
+# Ok(())
+# }
+fn permits_app_client(principal: &Principal) -> bool {
+    principal.issuer().is_some()
+        && principal.api_token().is_none()
+        && principal.client_id() == Some("orders-mobile")
+}
+```
+
+The verifier reads the configured claim only after signature, issuer, audience,
+expiry and not-before checks pass. An absent or null claim yields `None`; an
+empty string or another JSON type fails with `InvalidPrincipalContext`. Values
+are preserved exactly, without trimming or case conversion. Unconfigured
+claims remain private. API-token and internal principals have no client ID.
+Client IDs identify OAuth clients, not users or organizations. A client
+allowlist does not prove that a public client is running an unmodified app.
 
 Handing the raw claim set to product code is how a service quietly becomes Keycloak-only. Someone
 reads `realm_access.roles` in a handler because it is right there, and swapping the identity provider

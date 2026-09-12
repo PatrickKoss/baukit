@@ -1,6 +1,6 @@
 [package]
 name = "baukit-auth"
-description = "Provider-neutral OIDC verification, personal access tokens, and Axum principal extraction for Baukit services."
+description = "OIDC, Clerk, and WorkOS token verification, personal access tokens, and Axum principal extraction for Baukit services."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

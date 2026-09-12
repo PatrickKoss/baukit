@@ -14,7 +14,8 @@ use serde_json::Value;
 use thiserror::Error;
 use tokio::sync::Mutex;
 
-use crate::{ApiToken, OidcConfig, SigningAlgorithm};
+use crate::config::ClaimPath;
+use crate::{ApiToken, OidcConfig, SigningAlgorithm, config::TokenProfile};
 
 const UNKNOWN_KEY_TTL: std::time::Duration = std::time::Duration::from_secs(30);
 const MAX_UNKNOWN_KEYS: usize = 128;
@@ -30,11 +31,12 @@ pub struct Principal {
     issuer: Option<String>,
     organization: Option<String>,
     tenant: Option<String>,
+    client_id: Option<String>,
     api_token: Option<ApiToken>,
 }
 
 impl Principal {
-    /// Creates an internal principal without organization or tenant context.
+    /// Creates an internal principal without organization, tenant, or OAuth client context.
     #[must_use]
     pub fn new(subject: impl Into<String>) -> Self {
         Self {
@@ -42,6 +44,7 @@ impl Principal {
             issuer: None,
             organization: None,
             tenant: None,
+            client_id: None,
             api_token: None,
         }
     }
@@ -52,6 +55,7 @@ impl Principal {
             issuer: None,
             organization: None,
             tenant: None,
+            client_id: None,
             api_token: Some(api_token),
         }
     }
@@ -96,6 +100,16 @@ impl Principal {
     #[must_use]
     pub fn tenant(&self) -> Option<&str> {
         self.tenant.as_deref()
+    }
+
+    /// Returns the OAuth client identity from a configured, verified provider claim.
+    ///
+    /// Unconfigured or absent claims, API tokens, and internal principals return
+    /// `None`. Products must apply their own client allowlist before granting
+    /// client-restricted access. The client ID is not a user or tenant identity.
+    #[must_use]
+    pub fn client_id(&self) -> Option<&str> {
+        self.client_id.as_deref()
     }
 
     /// Returns the stored token metadata when an API token was verified.
@@ -690,18 +704,14 @@ impl JwtClaims {
     fn validate(self, config: &OidcConfig) -> Result<Principal, VerificationError> {
         let subject = self
             .sub
+            .as_deref()
             .filter(|subject| !subject.is_empty())
+            .map(str::to_owned)
             .ok_or(VerificationError::MissingSubject)?;
         if self.iss.as_deref() != Some(config.issuer.as_str()) {
             return Err(VerificationError::WrongIssuer);
         }
-        let audience = self.aud.ok_or(VerificationError::WrongAudience)?;
-        if !audience
-            .values()
-            .any(|audience| config.audiences.contains(audience))
-        {
-            return Err(VerificationError::WrongAudience);
-        }
+        validate_token_profile(&self, config)?;
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|_| VerificationError::Clock)?
@@ -717,15 +727,52 @@ impl JwtClaims {
         {
             return Err(VerificationError::NotYetValid);
         }
-        let organization = mapped_claim(&self.extra, config.claim_mapping.organization.as_deref())?;
-        let tenant = mapped_claim(&self.extra, config.claim_mapping.tenant.as_deref())?;
+        let organization = mapped_claim(&self.extra, config.claim_mapping.organization.as_ref())?;
+        let tenant = mapped_claim(&self.extra, config.claim_mapping.tenant.as_ref())?;
+        let client_id = mapped_claim(&self.extra, config.claim_mapping.client_id.as_ref())?;
         Ok(Principal {
             subject,
             issuer: Some(config.issuer().to_owned()),
             organization,
             tenant,
+            client_id,
             api_token: None,
         })
+    }
+}
+
+fn validate_token_profile(
+    claims: &JwtClaims,
+    config: &OidcConfig,
+) -> Result<(), VerificationError> {
+    match &config.token_profile {
+        TokenProfile::Oidc => {
+            let audience = claims
+                .aud
+                .as_ref()
+                .ok_or(VerificationError::WrongAudience)?;
+            if audience
+                .values()
+                .any(|audience| config.audiences.contains(audience))
+            {
+                Ok(())
+            } else {
+                Err(VerificationError::WrongAudience)
+            }
+        }
+        TokenProfile::Clerk { authorized_parties } => match claims.extra.get("azp") {
+            None | Some(Value::Null) => Ok(()),
+            Some(Value::String(value)) if authorized_parties.contains(value) => Ok(()),
+            Some(Value::String(_)) => Err(VerificationError::WrongAuthorizedParty),
+            Some(_) => Err(VerificationError::InvalidPrincipalContext),
+        },
+        TokenProfile::WorkOs { client_id } => match claims.extra.get("client_id") {
+            Some(Value::String(value)) if value == client_id => Ok(()),
+            Some(Value::String(_)) | None | Some(Value::Null) => {
+                Err(VerificationError::WrongClientId)
+            }
+            Some(_) => Err(VerificationError::InvalidPrincipalContext),
+        },
     }
 }
 
@@ -747,12 +794,24 @@ impl Audience {
 
 fn mapped_claim(
     claims: &BTreeMap<String, Value>,
-    claim_name: Option<&str>,
+    claim_path: Option<&ClaimPath>,
 ) -> Result<Option<String>, VerificationError> {
-    let Some(claim_name) = claim_name else {
+    let Some(claim_path) = claim_path else {
         return Ok(None);
     };
-    match claims.get(claim_name) {
+    let mut segments = claim_path.segments().iter();
+    let Some(first) = segments.next() else {
+        return Ok(None);
+    };
+    let mut value = claims.get(first);
+    for segment in segments {
+        value = match value {
+            None | Some(Value::Null) => return Ok(None),
+            Some(Value::Object(object)) => object.get(segment),
+            Some(_) => return Err(VerificationError::InvalidPrincipalContext),
+        };
+    }
+    match value {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(value)) if !value.is_empty() => Ok(Some(value.clone())),
         Some(_) => Err(VerificationError::InvalidPrincipalContext),
@@ -850,6 +909,12 @@ pub enum VerificationError {
     /// No token audience matched configuration.
     #[error("access token audience is invalid")]
     WrongAudience,
+    /// A Clerk token's authorized party was outside the configured allowlist.
+    #[error("access token authorized party is invalid")]
+    WrongAuthorizedParty,
+    /// A WorkOS token did not name the configured application client.
+    #[error("access token client ID is invalid")]
+    WrongClientId,
     /// The required expiry claim was absent.
     #[error("access token expiry is missing")]
     MissingExpiry,
@@ -892,6 +957,7 @@ mod tests {
         assert_eq!(principal.issuer(), None);
         assert_eq!(principal.organization(), Some("org"));
         assert_eq!(principal.tenant(), Some("tenant"));
+        assert_eq!(principal.client_id(), None);
         assert_eq!(principal.api_token(), None);
     }
 

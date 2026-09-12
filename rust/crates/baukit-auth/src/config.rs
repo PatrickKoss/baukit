@@ -3,6 +3,34 @@ use std::{collections::BTreeSet, time::Duration};
 use reqwest::Url;
 use thiserror::Error;
 
+#[derive(Clone, Debug)]
+pub(crate) enum TokenProfile {
+    Oidc,
+    Clerk {
+        authorized_parties: BTreeSet<String>,
+    },
+    WorkOs {
+        client_id: String,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ClaimPath(Vec<String>);
+
+impl ClaimPath {
+    fn top_level(claim: impl Into<String>) -> Self {
+        Self(vec![claim.into()])
+    }
+
+    fn nested(claim: impl Into<String>, member: impl Into<String>) -> Self {
+        Self(vec![claim.into(), member.into()])
+    }
+
+    pub(crate) fn segments(&self) -> &[String] {
+        &self.0
+    }
+}
+
 /// JWT signing algorithms that can be explicitly allowed by a verifier.
 ///
 /// Symmetric algorithms are intentionally unsupported because OIDC verification
@@ -63,8 +91,9 @@ impl SigningAlgorithm {
 /// Configuration that maps provider claims onto Baukit's stable principal fields.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct PrincipalClaimMapping {
-    pub(crate) organization: Option<String>,
-    pub(crate) tenant: Option<String>,
+    pub(crate) organization: Option<ClaimPath>,
+    pub(crate) tenant: Option<ClaimPath>,
+    pub(crate) client_id: Option<ClaimPath>,
 }
 
 impl PrincipalClaimMapping {
@@ -74,21 +103,47 @@ impl PrincipalClaimMapping {
         Self {
             organization: None,
             tenant: None,
+            client_id: None,
         }
     }
 
     /// Maps a top-level provider claim into [`Principal::organization`](crate::Principal::organization).
     #[must_use]
     pub fn organization_claim(mut self, claim: impl Into<String>) -> Self {
-        self.organization = Some(claim.into());
+        self.organization = Some(ClaimPath::top_level(claim));
         self
     }
 
     /// Maps a top-level provider claim into [`Principal::tenant`](crate::Principal::tenant).
     #[must_use]
     pub fn tenant_claim(mut self, claim: impl Into<String>) -> Self {
-        self.tenant = Some(claim.into());
+        self.tenant = Some(ClaimPath::top_level(claim));
         self
+    }
+
+    /// Maps a verified top-level provider claim into [`Principal::client_id`](crate::Principal::client_id).
+    ///
+    /// For example, Keycloak uses `azp`. No client claim is mapped by default.
+    #[must_use]
+    pub fn client_id_claim(mut self, claim: impl Into<String>) -> Self {
+        self.client_id = Some(ClaimPath::top_level(claim));
+        self
+    }
+
+    pub(crate) fn clerk() -> Self {
+        Self {
+            organization: Some(ClaimPath::nested("o", "id")),
+            tenant: None,
+            client_id: None,
+        }
+    }
+
+    pub(crate) fn workos() -> Self {
+        Self {
+            organization: Some(ClaimPath::top_level("org_id")),
+            tenant: None,
+            client_id: Some(ClaimPath::top_level("client_id")),
+        }
     }
 }
 
@@ -102,6 +157,7 @@ pub struct OidcConfig {
     pub(crate) request_timeout: Duration,
     pub(crate) clock_skew: Duration,
     pub(crate) claim_mapping: PrincipalClaimMapping,
+    pub(crate) token_profile: TokenProfile,
 }
 
 impl OidcConfig {
@@ -121,6 +177,46 @@ impl OidcConfig {
             request_timeout: Duration::from_secs(5),
             clock_skew: Duration::from_secs(60),
             claim_mapping: PrincipalClaimMapping::new(),
+            token_profile: TokenProfile::Oidc,
+        })
+    }
+
+    pub(crate) fn clerk<I, T>(
+        issuer: impl AsRef<str>,
+        authorized_parties: I,
+    ) -> Result<Self, OidcConfigError>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<String>,
+    {
+        let authorized_parties = nonempty_values("authorized party", authorized_parties)?;
+        Ok(Self {
+            issuer: normalized_issuer(issuer.as_ref())?,
+            audiences: BTreeSet::new(),
+            algorithms: BTreeSet::from([SigningAlgorithm::Rs256]),
+            cache_ttl: Duration::from_secs(300),
+            request_timeout: Duration::from_secs(5),
+            clock_skew: Duration::from_secs(5),
+            claim_mapping: PrincipalClaimMapping::clerk(),
+            token_profile: TokenProfile::Clerk { authorized_parties },
+        })
+    }
+
+    pub(crate) fn workos(
+        issuer: impl AsRef<str>,
+        client_id: impl Into<String>,
+    ) -> Result<Self, OidcConfigError> {
+        let client_id = client_id.into();
+        validate_nonempty("client ID", &client_id)?;
+        Ok(Self {
+            issuer: normalized_issuer(issuer.as_ref())?,
+            audiences: BTreeSet::new(),
+            algorithms: BTreeSet::from([SigningAlgorithm::Rs256]),
+            cache_ttl: Duration::from_secs(300),
+            request_timeout: Duration::from_secs(5),
+            clock_skew: Duration::from_secs(60),
+            claim_mapping: PrincipalClaimMapping::workos(),
+            token_profile: TokenProfile::WorkOs { client_id },
         })
     }
 
@@ -197,7 +293,7 @@ impl OidcConfig {
         self
     }
 
-    /// Configures optional organization and tenant claim mappings.
+    /// Configures optional organization, tenant, and OAuth client claim mappings.
     #[must_use]
     pub fn with_principal_claims(mut self, mapping: PrincipalClaimMapping) -> Self {
         self.claim_mapping = mapping;
@@ -239,6 +335,19 @@ fn validate_nonempty(name: &'static str, value: &str) -> Result<(), OidcConfigEr
         Err(OidcConfigError::EmptyValue(name))
     } else {
         Ok(())
+    }
+}
+
+fn nonempty_values<I, T>(name: &'static str, values: I) -> Result<BTreeSet<String>, OidcConfigError>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<String>,
+{
+    let values = values.into_iter().map(Into::into).collect::<BTreeSet<_>>();
+    if values.is_empty() || values.iter().any(String::is_empty) {
+        Err(OidcConfigError::EmptyValue(name))
+    } else {
+        Ok(values)
     }
 }
 

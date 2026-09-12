@@ -4,6 +4,18 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Add `ClerkVerifier` and `WorkOsVerifier` provider adapters. Clerk verification
+  checks an `azp` allowlist and maps the v2 `o.id` organization. WorkOS
+  verification requires the configured Application `client_id` and maps
+  `org_id`. Both accept provider session tokens without an `aud` claim and
+  support explicit JWKS endpoints for tests, proxies, and WorkOS Emulate.
+- Add optional `Principal::client_id()` and
+  `PrincipalClaimMapping::client_id_claim()` for client-restricted product
+  policies. The verifier maps only the configured claim after token checks.
+  Missing client identity stays `None`; malformed mapped claims fail verification.
+
 ## [0.3.0] - 2026-09-04
 
 ### Added

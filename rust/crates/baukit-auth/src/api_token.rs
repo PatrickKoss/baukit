@@ -1284,6 +1284,7 @@ mod tests {
         assert_eq!(principal.subject(), owner_id.to_string());
         assert!(principal.issuer().is_none());
         assert_eq!(principal.api_token(), Some(&issued.token));
+        assert_eq!(principal.client_id(), None);
 
         assert!(matches!(
             verifier.verify("bk_malformed").await,

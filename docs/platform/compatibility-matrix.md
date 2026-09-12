@@ -43,7 +43,7 @@ verified).
 | Logging | tracing + tracing-subscriber | latest compatible | |
 | Configuration | config + dotenvy | chosen loader (analysis §4.1) | Figment is not supported by the shared kit |
 | Outbound HTTP | reqwest | latest, rustls | |
-| Auth | jsonwebtoken + JWKS | latest | Keycloak default; Clerk/WorkOS adapters. `ApiTokenStore` returns `ApiTokenStoreError` since 0.3.0. |
+| Auth | ring + JWKS | latest | Keycloak OIDC default; Clerk session-token adapter with `azp` validation; WorkOS AuthKit adapter bound to `client_id`. `ApiTokenStore` returns `ApiTokenStoreError` since 0.3.0. |
 | Development identity provider | Keycloak | 26.7.0 | Generated `compose.yaml` image; `make dev` reconciles the development realm from `realm-policy.json`. |
 | Integration tests | testcontainers | latest | `baukit-test` pins `postgres:18-alpine`; templates and smoke deploys use the same image |
 | Sync revisions | `baukit-sync` | 0.3.0 | Per-owner revision allocation, locking revision reads, the syncable-table column convention, and a `user_id` to `owner_id` migration; SQLx 0.9, PostgreSQL. |
