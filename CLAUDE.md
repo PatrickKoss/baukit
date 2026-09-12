@@ -55,6 +55,10 @@ Docker is available locally — never skip Docker-gated (`#[ignore]`) tests; run
 `cargo test --manifest-path rust/Cargo.toml -- --include-ignored` when your
 change touches anything they cover.
 
+On a new Linux workstation, run `make ts-browser-deps` once to install the
+Playwright browsers and their OS packages. `make ts-browser-test` installs only
+the browser binaries, so routine checks do not run the system package manager.
+
 ### Golden snapshot trees
 
 `cli/tests/snapshots/*.tree` pins a SHA-256 per generated file. Any template or
