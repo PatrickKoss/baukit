@@ -4,6 +4,8 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-12
+
 ### Added
 
 - Add `ClerkVerifier` and `WorkOsVerifier` provider adapters. Clerk verification

@@ -1,5 +1,11 @@
 # @baukit/sync-client
 
+## 0.4.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.4.0 train.
+
 ## 0.3.0
 
 ### Minor Changes

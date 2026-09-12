@@ -5,25 +5,21 @@
 
 This table records what the shared baseline is **tested against**. Renovate keeps individual products moving; baukit guarantees compatibility only with the versions listed here. Version cells reflect the review-time state of the three projects and must be re-verified against the lockfiles when the baukit repository is created.
 
-Last verified release train: `v0.3.0` (typed `ApiTokenStore` errors and policy
-rejections in `baukit-auth`, the opt-in MCP capability with a generated stdio
-package, Keycloak development-realm reconciliation and the accessible child
-theme, `@baukit/auth-node` device authorization, a hybrid logical clock and
-tombstone-horizon conformance in `@baukit/sync-client`, the bounded import
-envelope in `@baukit/data-contracts`, credential probes, inbox and webhook
-fakes, and live row caps in `baukit-test`, and the strict quality profile with
-env reconciliation and Markdown link checks; backend, web, mobile, combined,
-authenticated, MCP, and strict generated fixtures, native Android compile, real
+Last verified release train: `v0.4.0` (Clerk and WorkOS token verifiers,
+verified OAuth client identity, generated Android and iOS QA targets, and
+Maestro mobile flows; backend, web, mobile, combined, authenticated, MCP, and
+strict generated fixtures, native Android compile and release testing, real
 Expo SQLite conformance, browser Dexie conformance, Docker-backed integration
 tests, the MSRV check, and the complete local CI-equivalent gates were
-verified).
+verified). The iOS simulator gate requires macOS and remains a release-host
+check rather than a Linux result.
 
 ## Toolchain
 
 | Tool | Tested baseline | Notes |
 |---|---|---|
 | Rust | 1.95.0 MSRV | CI-enforced with Rust 1.95; train cut on stable 1.97.1 |
-| Node | 24 (v24.19.0 test host) | pinned via `mise.toml`, `typescript/.nvmrc`, and package engines |
+| Node | 24 (v24.20.0 test host) | pinned via `mise.toml`, `typescript/.nvmrc`, and package engines |
 | Java | Temurin 21 (21.0.12.1 test host) | pinned via `mise.toml`; used by Android builds |
 | Swift | 6.3.3 | pinned via `mise.toml`; compiler version checked on Linux |
 | xtool | 1.17.0 | pinned via `mise.toml`; version checked on Linux, without a Darwin SDK or simulator |
@@ -46,14 +42,14 @@ verified).
 | Auth | ring + JWKS | latest | Keycloak OIDC default; Clerk session-token adapter with `azp` validation; WorkOS AuthKit adapter bound to `client_id`. `ApiTokenStore` returns `ApiTokenStoreError` since 0.3.0. |
 | Development identity provider | Keycloak | 26.7.0 | Generated `compose.yaml` image; `make dev` reconciles the development realm from `realm-policy.json`. |
 | Integration tests | testcontainers | latest | `baukit-test` pins `postgres:18-alpine`; templates and smoke deploys use the same image |
-| Sync revisions | `baukit-sync` | 0.3.0 | Per-owner revision allocation, locking revision reads, the syncable-table column convention, and a `user_id` to `owner_id` migration; SQLx 0.9, PostgreSQL. |
-| Provider connectors | `baukit-integrations` | 0.3.0 | Contract-only connector port, cursor-paged pages, and `baukit-http` retry classes; no SQLx, no HTTP client. |
+| Sync revisions | `baukit-sync` | 0.4.0 | Per-owner revision allocation, locking revision reads, the syncable-table column convention, and a `user_id` to `owner_id` migration; SQLx 0.9, PostgreSQL. |
+| Provider connectors | `baukit-integrations` | 0.4.0 | Contract-only connector port, cursor-paged pages, and `baukit-http` retry classes; no SQLx, no HTTP client. |
 
 ## Cross-runtime contracts
 
 | Responsibility | Rust and TypeScript packages | Tested baseline | Notes |
 |---|---|---|---|
-| Suite event envelope | `baukit-events` and `@baukit/events` | 0.3.0 | Version 1 envelope, stable validation codes, seven-day replay boundary, and one fixture corpus exercised in both languages. |
+| Suite event envelope | `baukit-events` and `@baukit/events` | 0.4.0 | Version 1 envelope, stable validation codes, seven-day replay boundary, and one fixture corpus exercised in both languages. |
 
 ## Frontend (TypeScript)
 
@@ -64,13 +60,13 @@ verified).
 | Remote state | TanStack Query | 5 | |
 | Web routing | TanStack Router | current v1 | re-verify TanStack Start status separately |
 | Local state | Zustand | 5 | |
-| Accessibility behavior | `@baukit/a11y-core` | 0.3.0 | Overlay focus, inert, announcements, reduced motion. React peer range is `^19.2.0`; React Native is optional, and a plain web app imports `@baukit/a11y-core/web` instead. |
-| Localization behavior | `@baukit/localization-core` | 0.3.0 | Locale resolution, catalog key comparison, stable-code localization, and timezone-safe civil-date arithmetic. |
-| Preference behavior | `@baukit/preferences-core` | 0.3.0 | Identity guard and repository store, with `null` repository records treated as missing. |
-| Node device authentication | `@baukit/auth-node` | 0.3.0 | Node 24 OIDC device authorization with S256 PKCE, bounded responses and timeouts, refresh rotation, and a locked local profile cache. Plain HTTP requires an explicit loopback-only development policy. |
-| Provider registry | `@baukit/integrations-client` | 0.3.0 | Typed product connectors, stable registration order, and immutable connection-state overlays. |
-| Client sync primitives | `@baukit/sync-client` | 0.3.0 | Scheduler, request-function and HTTP transports, status store, push-batch ranking, a persisted hybrid logical clock, and tombstone-horizon conformance. The optional `@baukit/sync-client/expo` entry uses Expo Network 57.0.1 and React Native 0.86.2; the root entry has no runtime dependencies and no React. |
-| PWA cache strategy | `@baukit/pwa-web` | 0.3.0 | ESM and CJS builds, request classification, `navigationFallback`, and strategy execution for a product-owned service worker; no dependencies and no service-worker globals. |
+| Accessibility behavior | `@baukit/a11y-core` | 0.4.0 | Overlay focus, inert, announcements, reduced motion. React peer range is `^19.2.0`; React Native is optional, and a plain web app imports `@baukit/a11y-core/web` instead. |
+| Localization behavior | `@baukit/localization-core` | 0.4.0 | Locale resolution, catalog key comparison, stable-code localization, and timezone-safe civil-date arithmetic. |
+| Preference behavior | `@baukit/preferences-core` | 0.4.0 | Identity guard and repository store, with `null` repository records treated as missing. |
+| Node device authentication | `@baukit/auth-node` | 0.4.0 | Node 24 OIDC device authorization with S256 PKCE, bounded responses and timeouts, refresh rotation, and a locked local profile cache. Plain HTTP requires an explicit loopback-only development policy. |
+| Provider registry | `@baukit/integrations-client` | 0.4.0 | Typed product connectors, stable registration order, and immutable connection-state overlays. |
+| Client sync primitives | `@baukit/sync-client` | 0.4.0 | Scheduler, request-function and HTTP transports, status store, push-batch ranking, a persisted hybrid logical clock, and tombstone-horizon conformance. The optional `@baukit/sync-client/expo` entry uses Expo Network 57.0.1 and React Native 0.86.2; the root entry has no runtime dependencies and no React. |
+| PWA cache strategy | `@baukit/pwa-web` | 0.4.0 | ESM and CJS builds, request classification, `navigationFallback`, and strategy execution for a product-owned service worker; no dependencies and no service-worker globals. |
 | MCP server | `@modelcontextprotocol/sdk` + zod | 1.30.0 + 4.4.3 | Opt-in `--mcp` generated stdio package; bearer tokens from `@baukit/auth-node` or a caller-supplied provider. |
 | Web build | Vite | 8.2.1 | |
 | Styling | Tailwind CSS | 4 | |

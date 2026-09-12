@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-12
+
 ## [0.3.0] - 2026-09-04
 
 ### Added
