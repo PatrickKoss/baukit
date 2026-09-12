@@ -1,0 +1,30 @@
+appId: ${APP_ID}
+---
+- launchApp:
+    clearState: true
+{% if context.auth_oidc %}- extendedWaitUntil:
+    visible: Sign in with local Keycloak
+    timeout: 30000
+- tapOn: Sign in with local Keycloak
+- extendedWaitUntil:
+    visible: Username or email
+    timeout: 30000
+- tapOn:
+    id: username
+- inputText: test
+- tapOn:
+    id: password
+- inputText: development-password
+- hideKeyboard
+- tapOn:
+    id: kc-login
+{% endif %}- extendedWaitUntil:
+    visible: {{ context.app_name }}
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: Analytics privacy
+    direction: DOWN
+    timeout: 30000
+- tapOn: Allow
+- assertVisible: "Current consent: granted.*"

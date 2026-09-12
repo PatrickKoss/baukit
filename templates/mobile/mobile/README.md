@@ -48,7 +48,27 @@ Before claiming native accessibility, follow the VoiceOver and TalkBack release 
 
 ## Native smoke guidance
 
-The generated native workflow clean-prebuilds and compiles Android for relevant mobile/configuration changes. Its scheduled/manual iOS layer requires a macOS runner; Maestro is opt-in and runs only product-owned `.maestro/` critical paths.
+The generated native workflow clean-prebuilds and compiles Android for relevant mobile/configuration changes. Its scheduled/manual iOS layer requires a macOS runner. The local QA targets go further: they start disposable services, build a release app with an embedded JavaScript bundle, install it in a dedicated emulator or simulator, and run `mobile/.maestro/`.
+
+From a combined product's repository root, use:
+
+```sh
+make qa-android          # keep Android open for exploratory testing
+make e2e-android-live   # run Maestro against that open emulator
+make qa-android-down
+
+make qa-ios              # macOS only; keep Simulator open
+make e2e-ios-live       # run Maestro against that open simulator
+make qa-ios-down
+```
+
+`make e2e-android` and `make e2e-ios` perform setup, run Maestro, and clean up in one command. `make qa-setup`, `make e2e-mobile`, and `make e2e-mobile-live` remain Android aliases. A mobile-only product has the same targets under `make -C mobile`.
+
+Android setup supports Linux and Intel or Apple silicon macOS. It installs Android API 36 command-line tools, chooses the host's emulator architecture, and creates the persistent `{{ context.app_name }}-qa` AVD. iOS setup requires macOS, Xcode with an iOS Simulator runtime, CocoaPods, and Node.js with Corepack. Both paths require Maestro for the `e2e-*` targets. The first build downloads dependencies and takes longer than later runs.
+
+QA state and logs live under `mobile/.qa/`. Android build output lives under `mobile/android/`; iOS build output lives under `mobile/ios-build/`. Generated native projects and QA output are ignored by Git. The local services use PostgreSQL on `15432`, Redis on `16379`, the API on `18080`, its operations listener on `19090`, and Keycloak on `18081` when OIDC is enabled. Override them with the matching `BAUKIT_QA_*_PORT` variables if a port is occupied. The QA compose project has its own volumes, so `qa-down` does not remove normal development data.
+
+The generated smoke flow signs in with the local test account when OIDC is enabled, reaches the main screen, and persists analytics consent. Extend `.maestro/` with the product's critical workflows. Keep selectors stable and store only test credentials there.
 
 For device smoke testing, open a custom-scheme deep link from a terminated app and verify valid, invalid, and unauthenticated route outcomes. With the software keyboard visible, check that focused controls remain visible, dismissal preserves input, and content and overlays respect top and bottom safe-area insets. Exact routes, OAuth callback URLs, screen wrappers, credentials, and journeys remain product-owned.
 
@@ -62,4 +82,4 @@ pnpm lint
 pnpm test
 ```
 
-Native compilation is intentionally outside the lightweight fixture check. CI installs dependencies, runs TypeScript with `--noEmit`, lints, and executes the Jest Expo suite. `jest.config.cjs` maps Baukit's ESM package exports to their built files and transforms them, so the SQLite adapter remains consumable under Jest 29. Use EAS or local Expo native tooling for release builds.
+Native compilation is intentionally outside the lightweight fixture check. CI installs dependencies, runs TypeScript with `--noEmit`, lints, and executes the Jest Expo suite. `jest.config.cjs` maps Baukit's ESM package exports to their built files and transforms them, so the SQLite adapter remains consumable under Jest 29. Use the local QA targets for emulator behavior and the generated native workflow for clean compile evidence.

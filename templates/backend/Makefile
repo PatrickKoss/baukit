@@ -1,4 +1,4 @@
-.PHONY: setup preflight fmt lint test test-scripts check{% if context.web %} check-web{% endif %}{% if context.mobile %} check-mobile{% endif %} lockfiles run{% if context.worker %} run-worker{% endif %} migrate openapi openapi-client db-up db-down{% if context.auth_oidc %} dev keycloak-policy keycloak-reconcile keycloak-test keycloak-theme-test{% if context.web %} keycloak-theme-browser-test{% endif %}{% endif %}
+.PHONY: setup preflight fmt lint test test-scripts check{% if context.web %} check-web{% endif %}{% if context.mobile %} check-mobile qa-setup qa-android-setup qa-ios-setup qa-android-build qa-ios-build qa-android qa-ios e2e-mobile e2e-mobile-live e2e-android e2e-android-live e2e-ios e2e-ios-live qa-android-down qa-ios-down qa-down{% endif %} lockfiles run{% if context.worker %} run-worker{% endif %} migrate openapi openapi-client db-up db-down{% if context.auth_oidc %} dev keycloak-policy keycloak-reconcile keycloak-test keycloak-theme-test{% if context.web %} keycloak-theme-browser-test{% endif %}{% endif %}
 
 BACKEND_MANIFEST := backend/Cargo.toml
 PLAYWRIGHT_BROWSERS_PATH := $(abspath web/node_modules/.cache/playwright-browsers)
@@ -39,6 +39,60 @@ test-scripts:
 	cd mobile && corepack pnpm@11.18.0 exec tsc --noEmit
 	cd mobile && corepack pnpm@11.18.0 lint
 	cd mobile && corepack pnpm@11.18.0 test
+
+qa-setup: qa-android-setup
+
+qa-android-setup:
+	bash mobile/scripts/qa/android-sdk.sh
+
+qa-ios-setup:
+	bash mobile/scripts/qa/ios-simulator.sh prepare
+
+qa-android-build: qa-android-setup
+	bash mobile/scripts/qa/build-android.sh
+
+qa-ios-build: qa-ios-setup
+	bash mobile/scripts/qa/build-ios.sh
+
+qa-android: qa-android-setup
+	bash mobile/scripts/qa/android-env.sh start
+
+qa-ios: qa-ios-setup
+	bash mobile/scripts/qa/ios-env.sh start
+
+e2e-android-live:
+	bash mobile/scripts/qa/run-maestro.sh android
+
+e2e-ios-live:
+	bash mobile/scripts/qa/run-maestro.sh ios
+
+e2e-mobile-live: e2e-android-live
+
+e2e-android:
+	@set -eu; \
+		cleanup() { $(MAKE) --no-print-directory qa-android-down; }; \
+		trap cleanup EXIT INT TERM; \
+		$(MAKE) --no-print-directory qa-android; \
+		$(MAKE) --no-print-directory e2e-android-live
+
+e2e-ios:
+	@set -eu; \
+		cleanup() { $(MAKE) --no-print-directory qa-ios-down; }; \
+		trap cleanup EXIT INT TERM; \
+		$(MAKE) --no-print-directory qa-ios; \
+		$(MAKE) --no-print-directory e2e-ios-live
+
+e2e-mobile: e2e-android
+
+qa-android-down:
+	bash mobile/scripts/qa/android-env.sh stop
+
+qa-ios-down:
+	bash mobile/scripts/qa/ios-env.sh stop
+
+qa-down:
+	@bash mobile/scripts/qa/android-env.sh stop
+	@bash mobile/scripts/qa/ios-env.sh stop
 
 {% endif %}run: preflight
 	{% if context.port_offset > 0 %}{{ context.app_env }}__HTTP__PORT={{ context.api_host_port }} {{ context.app_env }}__OPS__PORT={{ context.ops_host_port }} {% endif %}cargo run --manifest-path $(BACKEND_MANIFEST) -p {{ context.app_name }}-bin --bin api

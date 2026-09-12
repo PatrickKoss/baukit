@@ -1,5 +1,11 @@
 node_modules/
 .expo/
+android/
+ios/
+ios-build/
+.qa/
+maestro-debug/
+maestro-debug-ios/
 dist/
 coverage/
 *.tsbuildinfo

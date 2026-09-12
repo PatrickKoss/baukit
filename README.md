@@ -109,7 +109,7 @@ Nothing here depends on the CLI, and no crate drags in the rest. Take the error 
 | [`baukit-http`](rust/crates/baukit-http) | Axum middleware, the error envelope, keyset pagination, upstream retry classification, CORS |
 | [`baukit-ops`](rust/crates/baukit-ops) | Separate liveness, readiness, metrics, and build-info endpoints |
 | [`baukit-telemetry`](rust/crates/baukit-telemetry) | Structured logs, OpenTelemetry traces, Prometheus metrics from one builder |
-| [`baukit-auth`](rust/crates/baukit-auth) | OIDC verification, personal access tokens, Axum principal extraction |
+| [`baukit-auth`](rust/crates/baukit-auth) | OIDC, Clerk, and WorkOS verification; personal access tokens; Axum principal extraction |
 | [`baukit-jobs`](rust/crates/baukit-jobs) | Durable PostgreSQL outbox and supervised workers |
 | [`baukit-openapi`](rust/crates/baukit-openapi) | Utoipa metadata, deterministic schema output, drift checks |
 | [`baukit-ratelimit`](rust/crates/baukit-ratelimit) | Redis token buckets keyed by identity or client IP |

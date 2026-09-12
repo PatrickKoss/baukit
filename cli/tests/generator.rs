@@ -159,6 +159,61 @@ fn mobile_generation_matches_golden_tree_and_is_deterministic() -> anyhow::Resul
 }
 
 #[test]
+fn generated_native_qa_targets_are_platform_specific_and_shell_valid() -> anyhow::Result<()> {
+    let mobile_parent = tempfile::tempdir()?;
+    let mobile = generate_new(&frontend_options(
+        mobile_parent.path(),
+        "qa-mobile",
+        true,
+        false,
+    ))?;
+    let makefile = fs::read_to_string(mobile.join("mobile/Makefile"))?;
+    assert!(makefile.contains("qa-android:"));
+    assert!(makefile.contains("qa-ios:"));
+    assert!(makefile.contains("e2e-android:"));
+    assert!(makefile.contains("e2e-ios:"));
+    assert!(mobile.join("mobile/.maestro/smoke.yaml").is_file());
+    let app_config = fs::read_to_string(mobile.join("mobile/app.config.ts"))?;
+    assert!(app_config.contains("with-qa-local-network.cjs"));
+    assert!(
+        mobile
+            .join("mobile/plugins/with-qa-local-network.cjs")
+            .is_file()
+    );
+
+    let combined_parent = tempfile::tempdir()?;
+    let mut combined_options = options(combined_parent.path(), "qa-native");
+    combined_options.mobile = true;
+    combined_options.auth = Some(AuthProvider::Oidc);
+    let combined = generate_new(&combined_options)?;
+    let root_makefile = fs::read_to_string(combined.join("Makefile"))?;
+    assert!(root_makefile.contains("qa-android:"));
+    assert!(root_makefile.contains("qa-ios:"));
+    let smoke = fs::read_to_string(combined.join("mobile/.maestro/smoke.yaml"))?;
+    assert!(smoke.contains("appId: ${APP_ID}"));
+    assert!(smoke.contains("Sign in with local Keycloak"));
+    assert!(smoke.contains("development-password"));
+    let compose = fs::read_to_string(combined.join("mobile/scripts/qa/docker-compose.qa.yml"))?;
+    assert!(compose.contains("BAUKIT_QA_POSTGRES_PORT"));
+    assert!(compose.contains("BAUKIT_QA_REDIS_PORT"));
+    assert!(compose.contains("BAUKIT_QA_KEYCLOAK_PORT"));
+
+    for entry in fs::read_dir(combined.join("mobile/scripts/qa"))? {
+        let path = entry?.path();
+        if path.extension().is_some_and(|extension| extension == "sh") {
+            let output = Command::new("bash").args(["-n"]).arg(&path).output()?;
+            assert!(
+                output.status.success(),
+                "{} is not valid bash:\n{}",
+                path.display(),
+                String::from_utf8_lossy(&output.stderr),
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn web_generation_matches_golden_tree_and_is_deterministic() -> anyhow::Result<()> {
     assert_deterministic_snapshot(
         |parent| frontend_options(parent, "snapshot-app", false, true),

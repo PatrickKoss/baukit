@@ -1,6 +1,7 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
 
 const configuredApiUrl: unknown = process.env['EXPO_PUBLIC_API_URL'];
+const isQaBuild = process.env['BAUKIT_QA_BUILD'] === '1';
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
@@ -10,8 +11,15 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   version: '0.1.0',
   orientation: 'portrait',
   userInterfaceStyle: 'automatic',
+  plugins: [
+    ...(config.plugins ?? []),
+    ...(isQaBuild ? ['./plugins/with-qa-local-network.cjs'] : []),
+  ],
   extra: {
-    apiBaseUrl: typeof configuredApiUrl === 'string' ? configuredApiUrl : 'http://localhost:{{ context.api_host_port }}',
+    apiBaseUrl:
+      typeof configuredApiUrl === 'string'
+        ? configuredApiUrl
+        : 'http://localhost:{{ context.api_host_port }}',
   },
   ios: {
     bundleIdentifier: 'dev.baukit.{{ context.app_name }}',

@@ -73,7 +73,7 @@ jobs:
       - name: Clean Expo prebuild
         run: |
           set -o pipefail
-          CI=1 corepack pnpm@11.18.0 exec expo prebuild --clean --platform android 2>&1 | tee native-prebuild.log
+          CI=1 ./node_modules/.bin/expo prebuild --clean --platform android --no-install 2>&1 | tee native-prebuild.log
       - name: Compile Android debug binary
         run: |
           set -o pipefail
@@ -110,7 +110,8 @@ jobs:
         run: |
           corepack enable
           corepack pnpm@11.18.0 install --frozen-lockfile
-          CI=1 corepack pnpm@11.18.0 exec expo prebuild --clean --platform ios
+          CI=1 ./node_modules/.bin/expo prebuild --clean --platform ios --no-install
+          cd ios && pod install
       - name: Compile for iOS Simulator
         run: |
           set -euo pipefail

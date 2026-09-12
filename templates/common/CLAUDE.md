@@ -59,6 +59,8 @@ If `capabilities.pwa` becomes true, provide `web`'s `build:sw:check` command and
 
 {% endif %}{% if context.mobile %}Run Expo Doctor after changing Expo packages or app configuration. Changes to native dependencies, config plugins, or `mobile/app.config.ts` require the iOS bundle check and Android `assembleDebug`.
 
+Use `make qa-android` or `make qa-ios` to open an isolated release build for exploratory testing. Run the matching `e2e-*-live` target against an open device, or use `make e2e-android` and `make e2e-ios` for a disposable Maestro run. iOS requires macOS and Xcode. Mobile-only products expose these targets through `make -C mobile`.
+
 {% endif %}{% if context.mcp %}The MCP package keeps read and write tools in separate registries. Each tool needs complete annotations and a matching entry in `mcp/src/tool-routes.ts`. Run the OpenAPI and generated-doc checks after changing a registry or route. Keep stdout for protocol messages and send outcome-only logs to stderr.
 
 {% endif %}## Boundaries

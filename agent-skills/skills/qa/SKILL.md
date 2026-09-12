@@ -19,6 +19,8 @@ Do not stop after the first defect. Work around isolated failures when safe so t
 4. Note the commit or version, runtime, browser or device, viewport, enabled flags, accounts, and test-data volume.
 5. Use existing browser automation and accessibility tools when available. Preserve screenshots, traces, console output, requests, and relevant data records as evidence.
 
+For a native Android or iOS audit, read [references/native-mobile.md](references/native-mobile.md) before starting an emulator or simulator.
+
 Do not change product behavior to make a test pass. Temporary test users, records, seeds, or scripts are allowed when they stay inside the test environment. Keep a record of what was created. Do not claim coverage for a state that was inferred from source code or could not be exercised.
 
 If part of the application cannot run, document the exact blocker and continue with every area that remains testable.
