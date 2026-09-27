@@ -53,6 +53,65 @@ host ports and hand back a container that lives until the value drops, so tests 
 without fighting over ports. The Sentinel fixture builds a real master/replica/sentinel topology on
 its own network, which is the only way to test failover behavior honestly.
 
+### PostgreSQL options
+
+`PostgresTestOptions` builds the same container with three extra choices. `with_image` swaps the
+image, for example `timescale/timescaledb` at `latest-pg17`. `with_app_role` creates a login role
+without superuser or `BYPASSRLS` before migrations run, so row-level security policies apply to the
+connection the product's code uses. `with_migrations` applies SQLx migrations as the `postgres`
+superuser.
+
+```rust,no_run
+# async fn example() -> Result<(), Box<dyn std::error::Error>> {
+use baukit_test::{PostgresAppRole, PostgresTestOptions};
+
+let postgres = PostgresTestOptions::new()
+    .with_image("postgres", "17-alpine")
+    .with_app_role(PostgresAppRole::new("app_user", "app-secret")?)
+    .with_migrations("migrations")
+    .start()
+    .await?;
+let database = postgres.create_database().await?;
+let admin = sqlx::PgPool::connect(database.connection_url()).await?;
+let app = sqlx::PgPool::connect(database.app_connection_url().expect("app role is set")).await?;
+# let _ = (admin, app);
+database.drop_database().await?;
+# Ok(())
+# }
+```
+
+The app role gets `USAGE` on schema `public` and default `SELECT`, `INSERT`, `UPDATE`, and `DELETE`
+on tables and `USAGE, SELECT` on sequences that the migrations create. A migration can still revoke
+or narrow those grants. The role name must match `[a-z_][a-z0-9_]*`, and the password may use only
+URL-unreserved characters because it ends up in the connection URL. When the role already exists,
+Baukit leaves its password alone and fails with `PostgresTestError::InvalidAppRole` if the role is a
+superuser or bypasses row-level security.
+
+`create_database` gives one test its own database on a shared container, named
+`baukit_test_<uuid>`, with the same grants and migrations. `drop_database` drops it with
+`WITH (FORCE)` and reports errors; dropping the value without calling it runs the same statement on
+a helper thread and ignores failures.
+
+`PostgresTestDatabases` does the same against a server the test does not start, such as a
+`DATABASE_URL` in CI. Pass it a URL for a role that can create databases and roles. Every database
+it creates is dropped when its `PostgresTestDatabase` drops, so a shared server does not collect
+test databases.
+
+```rust,no_run
+# async fn example() -> Result<(), Box<dyn std::error::Error>> {
+use baukit_test::PostgresTestDatabases;
+
+let admin_url = std::env::var("DATABASE_URL")?;
+let database = PostgresTestDatabases::new(admin_url)
+    .with_migrations("migrations")
+    .create()
+    .await?;
+let pool = sqlx::PgPool::connect(database.connection_url()).await?;
+# let _ = pool;
+# Ok(())
+# }
+```
+
 These need a running Docker daemon. Mark tests that use them `#[ignore]` and run them explicitly:
 
 ```bash

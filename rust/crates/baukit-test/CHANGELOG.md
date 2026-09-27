@@ -4,6 +4,23 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Add `PostgresTestOptions` to start the PostgreSQL fixture with another image
+  and tag, a login app role without superuser or `BYPASSRLS`, and migrations.
+  `start_postgres` and `start_postgres_with_migrations` keep their signatures
+  and now delegate to it.
+- Add `PostgresTestContainer::create_database` and `PostgresTestDatabases` for
+  one database per test on a shared container or on an external server such as
+  `DATABASE_URL`. Each `PostgresTestDatabase` drops its database when it drops.
+
+### Changed
+
+- Break: `PostgresTestError` gains `InvalidAppRole`, `InvalidConnectionUrl`,
+  and `Setup` variants. Exhaustive matches on it must handle them.
+- With `sqlx-postgres`, the container fixture now waits until PostgreSQL
+  accepts a connection before it returns.
+
 ## [0.4.0] - 2026-09-12
 
 ## [0.3.0] - 2026-09-04

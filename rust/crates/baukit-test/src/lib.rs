@@ -44,6 +44,8 @@ mod live_row_cap;
 mod metrics;
 mod ops;
 mod postgres;
+#[cfg(feature = "sqlx-postgres")]
+mod postgres_database;
 mod redis;
 mod tracing;
 mod webhook;
@@ -102,7 +104,9 @@ pub use ops::{
 pub use postgres::{
     ForeignKeyDeleteMismatch, audit_user_root_foreign_keys, start_postgres_with_migrations,
 };
-pub use postgres::{PostgresTestContainer, PostgresTestError, start_postgres};
+pub use postgres::{PostgresTestContainer, PostgresTestError, PostgresTestOptions, start_postgres};
+#[cfg(feature = "sqlx-postgres")]
+pub use postgres_database::{PostgresAppRole, PostgresTestDatabase, PostgresTestDatabases};
 pub use redis::{
     RedisSentinelTestContainer, RedisTestContainer, RedisTestError, start_redis,
     start_redis_sentinel,
