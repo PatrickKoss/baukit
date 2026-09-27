@@ -6,5 +6,6 @@ export * from './use-focus-trap.js';
 export * from './use-inert.js';
 export * from './use-overlay-a11y.js';
 export * from './use-reduced-motion.js';
+export * from './use-roving-menu.js';
 export * from './use-roving-radio-group.js';
 export * from './use-single-flight.js';
