@@ -165,6 +165,7 @@ async fn rename_sql_upgrades_the_old_counter_shape() -> Result<(), Box<dyn Error
     let (fixture, pool) = fixture().await?;
     sqlx::raw_sql(
         "DROP TABLE product_records;
+         DROP TABLE sync_purge_horizons;
          DROP TABLE sync_revisions;
          CREATE TABLE users (id UUID PRIMARY KEY);
          CREATE TABLE sync_revisions (

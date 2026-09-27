@@ -1,6 +1,6 @@
 [package]
 name = "baukit-sync"
-description = "Revision allocation and hybrid logical clocks for Baukit sync implementations."
+description = "Revision allocation, tombstone purge horizons, and hybrid logical clocks for Baukit sync implementations."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -15,13 +15,21 @@ readme = "README.md"
 [lints]
 workspace = true
 
+[features]
+sqlx-postgres = ["dep:chrono", "dep:sqlx", "dep:uuid"]
+
 [dependencies]
+chrono = { workspace = true, optional = true }
 serde.workspace = true
-sqlx.workspace = true
+sqlx = { workspace = true, optional = true }
 thiserror.workspace = true
-uuid.workspace = true
+uuid = { workspace = true, optional = true }
 
 [dev-dependencies]
+axum.workspace = true
+baukit-http = { path = "../baukit-http" }
+baukit-jobs = { path = "../baukit-jobs" }
+baukit-sync = { path = ".", features = ["sqlx-postgres"] }
 baukit-test = { path = "../baukit-test", features = ["sqlx-postgres"] }
 chrono.workspace = true
 serde_json.workspace = true

@@ -36,7 +36,8 @@ holds it keeps it forever, and the deletion silently never propagates.
 ## Allocating a revision
 
 `baukit_sync::next_revision` bumps the owner's counter inside the transaction you pass it, so the
-allocation commits or rolls back with the row write:
+allocation commits or rolls back with the row write. It needs the `sqlx-postgres` feature:
+`baukit-sync = { version = "...", features = ["sqlx-postgres"] }`.
 
 ```rust,ignore
 let mut transaction = pool.begin().await?;
@@ -65,9 +66,18 @@ If an existing counter table still uses `user_id`, copy baukit-sync's
 the foreign key and its delete action, renames the conventional constraint, and adds the
 `last_revision >= 0` check.
 
+## Purging old tombstones
+
+Tombstones can be purged once every client has had time to pull them. Copy
+`rust/crates/baukit-sync/migrations/0002_baukit_sync_purge_horizons.sql` after the counter
+migration, list each syncable table as a `baukit_sync::purge::TombstoneTable` with children before
+parents, and run `purge_tombstones` from a recurring job. Start every pull transaction with
+`guard_pull_cursor` and read the rows in that same transaction. The `baukit-sync` README has the
+full example and the 409 `resync_required` mapping.
+
 ## What stays yours
 
-Baukit provides the counter and this convention, nothing else. Endpoint shapes, payloads,
+Baukit provides the counter, the purge helper, and this convention, nothing else. Endpoint shapes, payloads,
 conflict resolution, batching, and the pull cursor protocol are all product decisions. See
 `docs/platform/offline-readiness-contract.md` in the baukit repository for what a product may
 claim to the user about sync state.

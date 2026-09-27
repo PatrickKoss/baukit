@@ -141,7 +141,11 @@ underneath its own engine:
 - `baukit-sync` on the server: `next_revision`, which bumps a per-owner counter inside the
   caller's transaction so an allocation rolls back with its row write, plus the syncable-table
   column convention (`id`, `owner_id`, `updated_at`, `deleted_at`, `revision`, and an
-  `(owner_id, revision)` index) shipped as reference migration SQL.
+  `(owner_id, revision)` index) shipped as reference migration SQL. Its `sqlx-postgres` feature
+  adds the section 4 server side: `purge_tombstones` deletes caller-listed tombstones in bounded
+  batches and raises `sync_purge_horizons` in the same transaction, and `guard_pull_cursor` rejects
+  a stale cursor inside the pull transaction. `baukit-test` checks a product's purge and pull with
+  `check_purge_horizon_conformance`.
 
 Both are mechanism, not protocol. Entity names, dependency order, endpoint paths, payload shapes,
 and conflict rules remain product-owned.

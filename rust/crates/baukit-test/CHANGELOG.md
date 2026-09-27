@@ -17,6 +17,10 @@ All notable changes to `baukit-test` are documented here.
   `MockOidcServer::mint_with_key_id` to sign with the active key under an
   unpublished `kid`. Document the existing `jwks_request_count` and
   `set_jwks_delay` for JWKS cache tests.
+- Add `check_purge_horizon_conformance` and `assert_purge_horizon_conformance` with the
+  `PurgeHorizonAdapter` trait, `PurgeHorizonPull`, and `PullPause`. The check covers horizon
+  monotonicity, batch limits, a purge racing an open pull, cursors at and below the horizon, owner
+  isolation, and erasure.
 
 ### Changed
 
