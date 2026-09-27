@@ -22,6 +22,11 @@ All notable changes to `baukit-test` are documented here.
   monotonicity, batch limits, a purge racing an open pull, cursors at and below the horizon, owner
   isolation, and erasure.
 - Re-export `assert_openapi_camel_case` and `check_openapi_camel_case` from `baukit-openapi`.
+- Add `assert_response_matches_openapi` and `check_response_matches_openapi` with
+  `ObservedResponse` and `OpenApiResponseError`. They check a real response's status, media type,
+  and JSON body against its operation in a serialized OpenAPI 3.1 document, using JSON Schema
+  2020-12 with format validation. The crate now depends on `jsonschema` 0.58.1 without default
+  features.
 
 ### Changed
 

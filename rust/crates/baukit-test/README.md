@@ -17,6 +17,8 @@ opted into:
 - `assert_auth_router_conformance`: protected routes reject missing, malformed, and expired tokens.
 - `assert_openapi_no_drift`: the committed schema matches the code.
 - `assert_openapi_camel_case`: every property and path or query parameter name is camelCase.
+- `assert_response_matches_openapi`: a real response has a documented status, media type, and a
+  body that validates against the documented schema.
 - `check_product_profile_erasure_conformance`: a user-deletion path actually removes what it claims.
 - `check_limit_boundaries`: a validator accepts `limit - 1` and `limit`, then rejects `limit + 1`.
 - `check_update_at_capacity` and `check_soft_delete_capacity_reuse`: live-row caps allow updates and
@@ -40,6 +42,53 @@ when a product wants a different report.
 `audit_user_root_foreign_keys` walks the schema for foreign keys to the user root and reports mismatched
 delete actions, which catches the table someone added without `ON DELETE CASCADE` before a deletion
 request silently leaves rows behind.
+
+## OpenAPI responses
+
+`assert_response_matches_openapi` checks one response a test received against the operation it
+answers in the serialized document. Pass the documented path template, not the request URL:
+
+```rust
+use baukit_test::{ObservedResponse, assert_response_matches_openapi};
+use serde_json::json;
+
+let document = json!({
+    "openapi": "3.1.0",
+    "paths": {"/items/{id}": {"get": {"responses": {"200": {
+        "description": "Item",
+        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Item"}}}
+    }}}}},
+    "components": {"schemas": {"Item": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {"id": {"type": "string", "format": "uuid"}}
+    }}}
+});
+let body = br#"{"id":"0190a6d8-8f43-7c1e-9b35-3f9d7c1b2a10"}"#;
+
+assert_response_matches_openapi(
+    &document,
+    &ObservedResponse {
+        method: "GET",
+        path: "/items/{id}",
+        status: 200,
+        content_type: Some("application/json; charset=utf-8"),
+        body,
+    },
+);
+```
+
+The status matches an exact code, then its class such as `4XX`, then `default`. Response `$ref`s
+resolve inside the document. A body must be present exactly when the response documents content,
+and it needs a `Content-Type`. The media type matches exactly, then `type/*`, then `*/*`. Bodies of
+`application/json` and `+json` media types validate as JSON Schema 2020-12 against the document's
+`components`, with `format` checked, so a malformed UUID or date-time fails. Other media types,
+such as a PDF, only have to be documented. `check_response_matches_openapi` returns an
+`OpenApiResponseError` instead of panicking; a schema violation lists every failing value with its
+JSON pointer.
+
+Build the document with `serde_json::to_value(openapi_document())` or read the committed
+`openapi.json`, so the test checks the same document clients see.
 
 ## Container fixtures
 
