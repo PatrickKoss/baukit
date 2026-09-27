@@ -21,6 +21,14 @@ All notable changes to `baukit-http` are documented here.
   `ensure_current_revision` builds the 412 from an expected and a current revision.
   `RevisionOutOfRange` converts into a 500. Shared vectors live in
   `fixtures/etag-preconditions/vectors-v1.json`.
+- `Idempotency-Key` parsing. `IdempotencyKeyRule::new(min, max)` and `try_new` set per-route
+  bounds up to `MAX_IDEMPOTENCY_KEY_BYTES` (255) over visible ASCII, and `required` or `optional`
+  read the header from a `HeaderMap`. `IdempotencyKey` hides its value from `Debug`.
+  `InvalidIdempotencyKey` names each rejected form: repeated header, empty, invalid character, too
+  short, and too long. `IdempotencyError` converts into `ApiError` as 400
+  `idempotency_key_required`, 400 `invalid_idempotency_key` with `details.reason`, 409
+  `idempotency_key_reused`, or 409 `idempotency_key_in_progress`. `IDEMPOTENCY_KEY` and the four
+  code constants are exported.
 
 ### Changed
 
@@ -33,6 +41,7 @@ All notable changes to `baukit-http` are documented here.
   behavior.
 - Breaking: the default CORS exposed set now also contains `ETag` and `Location`, and the default
   allowed request headers now contain `If-Match`.
+- Breaking: the default allowed request headers now contain `Idempotency-Key`.
 - The `HttpOptionsError::InvalidHeaderName` message now reads `invalid CORS header name`, because
   it covers exposed headers too.
 - `baukit-http` depends on `baukit-core` with the `pagination` feature and no longer depends on
@@ -66,6 +75,11 @@ All notable changes to `baukit-http` are documented here.
 - Replace product `If-Match` parsers and ETag formatters with `RevisionEtag`, keeping the product's
   prefix. Clients see 400 `invalid_if_match`, 412 `precondition_failed`, and 428
   `precondition_required` in place of product-specific codes.
+- Remove `idempotency-key` from product `with_additional_allowed_headers` calls. Replace product
+  `Idempotency-Key` parsers with an `IdempotencyKeyRule` whose bounds keep every key clients send
+  today, and map key reuse to `IdempotencyError::Reused`. Clients see 400
+  `idempotency_key_required`, 400 `invalid_idempotency_key`, and 409 `idempotency_key_reused` in
+  place of product-specific codes.
 
 ## [0.4.0] - 2026-09-12
 

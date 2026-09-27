@@ -136,7 +136,7 @@ impl HttpOptions {
 
     /// Adds request headers to the standard CORS allowlist.
     ///
-    /// The built-in `Authorization`, `Content-Type`, `If-Match`,
+    /// The built-in `Authorization`, `Content-Type`, `If-Match`, `Idempotency-Key`,
     /// `x-request-id`, `traceparent`, and `tracestate` headers remain allowed. Duplicate header
     /// names are ignored.
     pub fn with_additional_allowed_headers<I, S>(

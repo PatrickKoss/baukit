@@ -12,6 +12,9 @@ export {
 /** The request ID header accepted and returned by `baukit-http`. */
 export const REQUEST_ID_HEADER = 'x-request-id' as const;
 
+/** The request header that carries a mutation's idempotency key. */
+export const IDEMPOTENCY_KEY_HEADER = 'idempotency-key' as const;
+
 /** An explicitly selected API environment. */
 export interface ApiEnvironmentConfig {
   readonly baseUrl: string;
@@ -40,8 +43,12 @@ export type TokenProvider = () => Promise<string | null>;
 /** Supplies a W3C `traceparent` value. No tracing provider is installed by this package. */
 export type TraceparentProvider = (request: Request) => string | null | Promise<string | null>;
 
-/** HTTP methods that may be opted into automatic retries. */
-export type RetryableMethod = 'GET' | 'HEAD' | 'OPTIONS' | 'PUT' | 'DELETE';
+/**
+ * HTTP methods that may be opted into automatic retries.
+ *
+ * `POST` and `PATCH` retry only when the request carries an `Idempotency-Key` header.
+ */
+export type RetryableMethod = 'GET' | 'HEAD' | 'OPTIONS' | 'PUT' | 'DELETE' | 'POST' | 'PATCH';
 
 /** Retry behavior for transient failures. */
 export interface RetryOptions {
@@ -291,7 +298,7 @@ export function createApiFetch(options: ApiRuntimeOptions): FetchImplementation 
         throwIfAborted(request.signal, requestId);
         if (
           replaySource !== undefined &&
-          shouldRetryResponse(request.method, response.status, retries, retry)
+          shouldRetryResponse(request, response.status, retries, retry)
         ) {
           await retryDelay(retries, retry, request.signal, requestId);
           retries += 1;
@@ -372,7 +379,7 @@ export function createApiFetch(options: ApiRuntimeOptions): FetchImplementation 
         if (
           !aborted &&
           replaySource !== undefined &&
-          shouldRetryMethod(request.method, retry) &&
+          shouldRetryMethod(request, retry) &&
           retries < retry.maxRetries
         ) {
           await retryDelay(retries, retry, request.signal, requestId);
@@ -517,8 +524,16 @@ interface NormalizedRetryOptions {
   readonly sleep: (delayMs: number, signal: AbortSignal | null) => Promise<void>;
 }
 
-const NEVER_RETRY = new Set(['POST', 'PATCH']);
-const RETRYABLE_METHODS = new Set<RetryableMethod>(['GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE']);
+const KEYED_RETRY_ONLY = new Set(['POST', 'PATCH']);
+const RETRYABLE_METHODS = new Set<string>([
+  'GET',
+  'HEAD',
+  'OPTIONS',
+  'PUT',
+  'DELETE',
+  'POST',
+  'PATCH',
+]);
 const RETRYABLE_STATUSES = new Set([502, 503, 504]);
 
 function normalizeBaseUrl(baseUrl: string): string {
@@ -578,10 +593,7 @@ function normalizeRetryOptions(options: RetryOptions | false | undefined): Norma
   assertFiniteNonNegative(maxDelayMs, 'maxDelayMs');
   const requestedMethods = options === false ? [] : (options?.methods ?? ['GET', 'HEAD']);
   const methods = new Set(
-    requestedMethods.filter(
-      (method): method is RetryableMethod =>
-        RETRYABLE_METHODS.has(method) && !NEVER_RETRY.has(method),
-    ),
+    requestedMethods.filter((method): method is RetryableMethod => RETRYABLE_METHODS.has(method)),
   );
   return {
     maxRetries,
@@ -606,18 +618,24 @@ function assertFiniteNonNegativeInteger(value: number, name: string): void {
   }
 }
 
-function shouldRetryMethod(method: string, retry: NormalizedRetryOptions): boolean {
-  return !NEVER_RETRY.has(method) && retry.methods.has(method as RetryableMethod);
+function shouldRetryMethod(request: Request, retry: NormalizedRetryOptions): boolean {
+  const method = request.method;
+  if (!retry.methods.has(method as RetryableMethod)) {
+    return false;
+  }
+  return !KEYED_RETRY_ONLY.has(method) || request.headers.has(IDEMPOTENCY_KEY_HEADER);
 }
 
 function shouldRetryResponse(
-  method: string,
+  request: Request,
   status: number,
   retries: number,
   retry: NormalizedRetryOptions,
 ): boolean {
   return (
-    retries < retry.maxRetries && shouldRetryMethod(method, retry) && RETRYABLE_STATUSES.has(status)
+    retries < retry.maxRetries &&
+    shouldRetryMethod(request, retry) &&
+    RETRYABLE_STATUSES.has(status)
   );
 }
 

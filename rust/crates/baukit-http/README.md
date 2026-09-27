@@ -31,8 +31,8 @@ names them. The default exposed set is `x-request-id`, `traceparent`, `tracestat
 `Retry-After`, `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`, `ETag`, and `Location`.
 That covers the request identity, every header `baukit-ratelimit` emits, the revision validator,
 and the address of a created resource. The default allowed request headers are `Authorization`,
-`Content-Type`, `If-Match`, `x-request-id`, `traceparent`, and `tracestate`, so a browser can send
-a conditional write. Add product headers with `with_additional_exposed_headers`:
+`Content-Type`, `If-Match`, `Idempotency-Key`, `x-request-id`, `traceparent`, and `tracestate`, so
+a browser can send a conditional or keyed write. Add product headers with `with_additional_exposed_headers`:
 
 ```rust
 use baukit_http::HttpOptions;
@@ -307,6 +307,50 @@ outside the `Revision` range converts into a 500 through `RevisionOutOfRange`.
 `baukit-openapi` documents the header parameter and the `ETag` response header with
 `document_if_match` and `document_etag`. The shared vectors live in
 `fixtures/etag-preconditions/vectors-v1.json`.
+
+## Idempotency keys
+
+A client that loses the response to a create resends it with the same `Idempotency-Key`, and the
+server replays the stored result instead of creating a second row. `IdempotencyKeyRule` parses the
+header with bounds the route chooses. Storage, the fingerprint, and the replay stay in the product;
+[replay-safe mutations](../../../docs/platform/replay-safe-mutations.md) is the protocol they
+follow.
+
+```rust
+use axum::http::{HeaderMap, StatusCode};
+use baukit_http::{ApiError, IdempotencyError, IdempotencyKeyRule};
+
+const CREATE_NOTE_KEY: IdempotencyKeyRule = IdempotencyKeyRule::new(1, 128);
+
+# enum Claim { New, Replay(StatusCode), Reused }
+# fn claim_in_transaction(_key: &str) -> Claim { Claim::New }
+async fn create_note(headers: HeaderMap) -> Result<StatusCode, ApiError> {
+    let key = CREATE_NOTE_KEY.required(&headers)?;
+    match claim_in_transaction(key.as_str()) {
+        Claim::Replay(stored_status) => Ok(stored_status),
+        Claim::Reused => Err(IdempotencyError::Reused.into()),
+        Claim::New => Ok(StatusCode::CREATED),
+    }
+}
+# let _ = create_note;
+```
+
+Each route picks `required` or `optional`. An optional route with no header returns `Ok(None)` and
+runs without a replay record. A key is one header of `min..=max` bytes of visible ASCII, and `max`
+is at most `MAX_IDEMPOTENCY_KEY_BYTES` (255). The value is opaque. Nothing is trimmed, and quotes
+are part of it. `IdempotencyKey`'s `Debug` output hides the value. `IdempotencyKeyRule::new`
+panics on bad bounds, which is a compile error in a `const`; `try_new` returns
+`InvalidIdempotencyKeyRule` instead.
+
+| Case | Status | `code` | `details` |
+| --- | --- | --- | --- |
+| Required header missing | 400 | `idempotency_key_required` | none |
+| Repeated header, empty, too short, too long, or a byte outside visible ASCII | 400 | `invalid_idempotency_key` | `reason`, one of the `InvalidIdempotencyKey::reason` values |
+| Same key and scope with a different fingerprint | 409 | `idempotency_key_reused` | none |
+| The first request with the key is still running | 409 | `idempotency_key_in_progress` | none |
+
+The product returns `IdempotencyError::Reused` or `InProgress` from its replay lookup. The
+`baukit-test` replay-safe mutation check proves that lookup against real PostgreSQL.
 
 ## Outbound retries
 

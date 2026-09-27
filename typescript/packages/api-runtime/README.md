@@ -54,7 +54,7 @@ a signed-out state after that replay also returns 401. It receives the final
 normalized error with `canRetry: false`; observer failures never replace the
 API failure.
 
-This handshake does not make arbitrary mutations safe. Replaying `POST`, `PATCH`, or any write whose outcome may already have committed still requires a product/server idempotency contract. Follow the repository's [integration reliability recipe](../../../docs/platform/integration-reliability.md), [offline replay contract](../../../docs/platform/offline-readiness-contract.md), and [add-endpoint replay/idempotency guidance](../../../agent-skills/skills/baukit-add-endpoint/SKILL.md).
+This handshake does not make arbitrary mutations safe. Replaying `POST`, `PATCH`, or any write whose outcome may already have committed requires an `Idempotency-Key` the server honors; see [idempotent mutations](#idempotent-mutations) and the [replay-safe mutations protocol](../../../docs/platform/replay-safe-mutations.md). Follow the repository's [integration reliability recipe](../../../docs/platform/integration-reliability.md), [offline replay contract](../../../docs/platform/offline-readiness-contract.md), and [add-endpoint replay/idempotency guidance](../../../agent-skills/skills/baukit-add-endpoint/SKILL.md).
 
 ## Unverified display identity hints
 
@@ -113,11 +113,52 @@ Retries use exponential backoff with full jitter, capped by `maxDelayMs`. The sa
 | `GET`, `HEAD` + network error | Retry            | `maxRetries`, delays, or disable             |
 | `GET`, `HEAD` + 502/503/504   | Retry            | `maxRetries`, delays, or disable             |
 | `OPTIONS`, `PUT`, `DELETE`    | No retry         | May be explicitly opted in through `methods` |
+| Keyed `POST`, `PATCH`         | No retry         | May be explicitly opted in through `methods` |
+| Unkeyed `POST`, `PATCH`       | Never            | No                                           |
 | Any 4xx                       | Never            | No                                           |
-| `POST`, `PATCH`               | Never            | No                                           |
 | Abort                         | Stop immediately | No                                           |
 
-Defaults are two retries, a 100 ms initial ceiling, and a 2,000 ms maximum ceiling. Use `retry: false` to disable retries.
+Defaults are two retries, a 100 ms initial ceiling, and a 2,000 ms maximum ceiling. Use `retry: false` to disable retries. A `POST` or `PATCH` counts as keyed when the request carries the `Idempotency-Key` header (`IDEMPOTENCY_KEY_HEADER`). Every attempt resends the same headers and body, so the server sees one key.
+
+## Idempotent mutations
+
+`@baukit/api-runtime/idempotency` keeps one `Idempotency-Key` per account, operation, and body until the outcome is definite or the key expires. The server half is `baukit-http`'s `IdempotencyKeyRule`, and the protocol is [replay-safe mutations](../../../docs/platform/replay-safe-mutations.md).
+
+```ts
+import { createApiFetch, IDEMPOTENCY_KEY_HEADER } from '@baukit/api-runtime';
+import { createIdempotencyKeyStore, sendIdempotentMutation } from '@baukit/api-runtime/idempotency';
+
+const keys = createIdempotencyKeyStore({ ttlMs: 12 * 60 * 60 * 1000 });
+const apiFetch = createApiFetch({
+  baseUrl: 'https://api.example.com',
+  environment: 'production',
+  retry: { methods: ['GET', 'HEAD', 'POST'] },
+});
+
+const note = { title: 'Standup' };
+await sendIdempotentMutation(
+  keys,
+  { account: 'user-1', operation: 'createNote', body: note },
+  (key) =>
+    apiFetch('/notes', {
+      method: 'POST',
+      headers: { [IDEMPOTENCY_KEY_HEADER]: key, 'content-type': 'application/json' },
+      body: JSON.stringify(note),
+    }),
+);
+```
+
+`sendIdempotentMutation` asks the store for the intent's key, calls `send`, and settles the key with the outcome. The store compares intents by canonical JSON, so member order in the body does not matter. `classifyMutationError` and `classifyMutationStatus` decide the outcome:
+
+| Result                                                                                  | Outcome              | Key     |
+| --------------------------------------------------------------------------------------- | -------------------- | ------- |
+| 2xx                                                                                     | `committed`          | Dropped |
+| Network error, abort, 408, 429, 5xx, 409 `idempotency_key_in_progress`, any other throw | `possibly-committed` | Kept    |
+| Any other 4xx                                                                           | `not-committed`      | Dropped |
+
+A kept key is reused for the same intent until `ttlMs` passes; keep `ttlMs` below the server's replay retention. After that the store mints a new key, so a request never carries a key the server may already have purged. Keys default to `crypto.randomUUID()` and live in memory, so a reload forgets them. Pass `storage`, an `IdempotencyKeyStorage` with `get`, `set`, and `delete` (sync or async), to keep keys in `sessionStorage`, AsyncStorage, or SQLite. Its slot argument is the intent's canonical JSON; store a digest of it when bodies are sensitive.
+
+`@baukit/data-contracts/revisioned-writes` decides when a document write is resent; this store decides which key it carries. A revisioned `PATCH` with `If-Match` needs no key. A keyed create sent from the queue's write callback puts any expected revision in `body`, so a resend after an unknown outcome maps to the same key.
 
 ## Tests
 

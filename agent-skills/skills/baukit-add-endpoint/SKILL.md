@@ -57,7 +57,7 @@ Before implementing, write down and test:
 3. A stable snake_case error code and structured details for each client-actionable outcome.
 4. One transaction for every compound action, including derived records and outbox rows.
 5. Same-tick duplicate activation, client retry, transport timeout, process restart, and replay behavior.
-6. An idempotency key representing the user's intent whenever one action may create multiple records. Store and check it in the same transaction as the result. Do not invent a platform-wide expiry/storage policy; that remains product-owned until a shared contract exists.
+6. An idempotency key representing the user's intent whenever one action may create multiple records. Follow `docs/platform/replay-safe-mutations.md`: parse with `baukit_http::IdempotencyKeyRule`, store the key digest, a canonical fingerprint, and the response snapshot in the same transaction as the result, give records an expiry with bounded cleanup and erasure, and prove it with `baukit_test::check_replay_safe_mutation_conformance`.
 
 Add tests at each ingress plus transaction rollback and idempotent replay tests. A UI disabled state is not a same-tick mutex and an HTTP timeout is not proof that a write failed.
 

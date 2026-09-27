@@ -22,6 +22,12 @@ All notable changes to `baukit-test` are documented here.
   monotonicity, batch limits, a purge racing an open pull, cursors at and below the horizon, owner
   isolation, and erasure.
 - Re-export `assert_openapi_camel_case` and `check_openapi_camel_case` from `baukit-openapi`.
+- Add `check_replay_safe_mutation_conformance` and `assert_replay_safe_mutation_conformance` with
+  the `ReplaySafeMutationAdapter` trait, `ReplayRequest`, `ReplayOperation`, `ReplayOutcome`,
+  `ReplaySnapshot`, `CommitCheckpoint`, `InjectedRollback`, `ReplayConformanceInputs`, and
+  `ReplayConformanceError`. The check covers a lost response, equivalent and changed input,
+  simultaneous requests with one key, owner and operation isolation, rollback before commit, a
+  crash after commit, expiry, bounded cleanup, and erasure.
 
 ### Changed
 

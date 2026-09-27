@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   ApiError,
   HttpError,
+  IDEMPOTENCY_KEY_HEADER,
   MockFetch,
   NetworkError,
   REQUEST_ID_HEADER,
@@ -329,19 +330,58 @@ describe('retry policy', () => {
   });
 
   it.each(['POST', 'PATCH'] as const)(
-    'never retries %s even when configuration is bypassed',
+    'never retries %s without an idempotency key',
     async (method) => {
       const mock = new MockFetch().enqueue(new TypeError('offline')).enqueueJson({ ok: true });
       const apiFetch = createApiFetch({
         ...baseOptions,
         fetch: mock.fetch,
-        retry: { methods: ['GET', method] as readonly ('GET' | 'POST' | 'PATCH')[] } as never,
+        retry: { baseDelayMs: 0, methods: ['GET', method] },
       });
 
       await expect(apiFetch('/write', { method })).rejects.toBeInstanceOf(NetworkError);
       expect(mock.requests).toHaveLength(1);
     },
   );
+
+  it.each(['POST', 'PATCH'] as const)(
+    'retries opted-in %s with the same idempotency key',
+    async (method) => {
+      const mock = new MockFetch()
+        .enqueue(new TypeError('offline'))
+        .enqueue(new Response(null, { status: 503 }))
+        .enqueueJson({ ok: true }, { status: 201 });
+      const apiFetch = createApiFetch({
+        ...baseOptions,
+        fetch: mock.fetch,
+        retry: { baseDelayMs: 0, methods: [method] },
+      });
+
+      await expect(
+        apiFetch('/write', {
+          body: '{"title":"standup"}',
+          headers: { [IDEMPOTENCY_KEY_HEADER]: 'key-1' },
+          method,
+        }),
+      ).resolves.toHaveProperty('status', 201);
+      expect(mock.requests.map((request) => request.headers.get(IDEMPOTENCY_KEY_HEADER))).toEqual([
+        'key-1',
+        'key-1',
+        'key-1',
+      ]);
+      await expect(mock.requests[2]?.text()).resolves.toBe('{"title":"standup"}');
+    },
+  );
+
+  it('does not retry a keyed POST unless POST is opted in', async () => {
+    const mock = new MockFetch().enqueue(new Response(null, { status: 503 })).enqueueJson({});
+    const apiFetch = createApiFetch({ ...baseOptions, fetch: mock.fetch });
+
+    await expect(
+      apiFetch('/write', { headers: { [IDEMPOTENCY_KEY_HEADER]: 'key-1' }, method: 'POST' }),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(mock.requests).toHaveLength(1);
+  });
 
   it('defaults to GET/HEAD and permits explicit idempotent-method opt-in', async () => {
     const defaultMock = new MockFetch()

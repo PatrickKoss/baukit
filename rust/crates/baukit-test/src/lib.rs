@@ -3,7 +3,7 @@
 //! The crate provides Docker-backed PostgreSQL, direct Redis, and Redis Sentinel
 //! fixtures, compact test tracing, Prometheus contract checks, in-process or network
 //! operations-endpoint checks, OpenAPI drift assertions, resource-limit conformance checks,
-//! tombstone purge-horizon conformance, and a mock OIDC/JWKS issuer with JWT fixtures.
+//! tombstone purge-horizon conformance, replay-safe mutation conformance, and a mock OIDC/JWKS issuer with JWT fixtures.
 //!
 //! # Telemetry tests
 //!
@@ -48,6 +48,7 @@ mod postgres;
 mod postgres_database;
 mod purge_horizon;
 mod redis;
+mod replay_safe_mutation;
 mod tracing;
 mod webhook;
 
@@ -116,6 +117,11 @@ pub use purge_horizon::{
 pub use redis::{
     RedisSentinelTestContainer, RedisTestContainer, RedisTestError, start_redis,
     start_redis_sentinel,
+};
+pub use replay_safe_mutation::{
+    CommitCheckpoint, InjectedRollback, ReplayConformanceError, ReplayConformanceInputs,
+    ReplayOperation, ReplayOutcome, ReplayRequest, ReplaySafeMutationAdapter, ReplaySnapshot,
+    assert_replay_safe_mutation_conformance, check_replay_safe_mutation_conformance,
 };
 pub use tracing::init_test_tracing;
 pub use webhook::{

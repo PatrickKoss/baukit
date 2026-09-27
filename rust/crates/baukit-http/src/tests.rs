@@ -865,7 +865,7 @@ async fn cors_preflight_adds_product_headers_to_the_defaults() {
                 .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
                 .header(
                     header::ACCESS_CONTROL_REQUEST_HEADERS,
-                    "accept,content-type,if-match,x-webhook-secret",
+                    "accept,content-type,idempotency-key,if-match,x-webhook-secret",
                 )
                 .body(Body::empty())
                 .expect("request"),
@@ -880,7 +880,13 @@ async fn cors_preflight_adds_product_headers_to_the_defaults() {
         .split(',')
         .map(str::trim)
         .collect::<Vec<_>>();
-    for expected in ["accept", "content-type", "if-match", "x-webhook-secret"] {
+    for expected in [
+        "accept",
+        "content-type",
+        "idempotency-key",
+        "if-match",
+        "x-webhook-secret",
+    ] {
         assert!(
             allowed.iter().any(|header| header == &expected),
             "missing {expected} from {allowed:?}"
