@@ -38,7 +38,7 @@ Waves group items with disjoint file ownership. Up to four implementation agents
 ### Wave 4: contracts that build on earlier waves
 
 - [ ] 7. Define replay-safe HTTP mutations (after 6)
-- [ ] 12. Add local notification planning and owned Expo replacement (after 11)
+- [~] 12. Add local notification planning and owned Expo replacement (after 11)
 - [~] 14. Add revisioned writes and durable drafts
 - [ ] 15. Check SQLite migration behavior and ship a Node test driver (after 1)
 
