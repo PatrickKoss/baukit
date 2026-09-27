@@ -4,6 +4,33 @@ All notable changes to `baukit-jobs` are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `JobStore::claim` takes a `job_types: &[&str]` argument after
+  `worker_id` and claims only pending rows or expired leases whose `job_type` is
+  in that set. An empty set, or a blank or overlong entry, returns
+  `StoreError::InvalidInput`. Custom stores must add the parameter and apply the
+  filter; direct callers of `PostgresJobStore::claim` must pass the types they
+  handle.
+- `WorkerRunner` passes its handler's `job_types()` to every claim. Runners with
+  disjoint handlers can share one outbox. A type that no running handler
+  declares stays pending and shows in `worker_queue_oldest_age_seconds`.
+- `JobStore::ready` on `PostgresJobStore` probes the filtered claim shape.
+
+### Added
+
+- Added `migrations/0003_baukit_jobs_claim_by_type.sql` and
+  `POSTGRES_MIGRATION_0003_SQL`, which rebuild `job_outbox_claim_idx` on
+  `(job_type, run_after, created_at, id)` for pending rows.
+
+### Migration
+
+- Add the 0003 migration after the existing baukit-jobs migrations. Without it,
+  claims stay correct but scan pending rows of other types.
+- A worker whose handler did not declare every type it expected to run now
+  leaves the undeclared types pending. Add them to `job_types()` or start a
+  runner whose handler declares them.
+
 ## [0.4.0] - 2026-09-12
 
 ## [0.3.0] - 2026-09-04

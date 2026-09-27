@@ -3,6 +3,15 @@
 The generated worker uses Baukit's `job_outbox` state machine. Applications
 choose retention periods and recurring-job intervals.
 
+## Route job types to workers
+
+`WorkerRunner` claims only rows whose `job_type` appears in its handler's
+`job_types()`. To split work across worker deployments, give each deployment a
+handler that declares a disjoint set of types and its own `WorkerConfig.queue`
+label. A job type that no running handler declares stays pending, and the
+`worker_queue_oldest_age_seconds` gauge keeps rising until a worker for that
+type starts.
+
 ## Delete old terminal jobs
 
 Build one `TerminalJobCutoffs` value from application configuration and call

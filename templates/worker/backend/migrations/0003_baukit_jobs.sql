@@ -38,7 +38,7 @@ CREATE UNIQUE INDEX job_outbox_idempotency_idx
     WHERE idempotency_key IS NOT NULL;
 
 CREATE INDEX job_outbox_claim_idx
-    ON job_outbox (run_after, created_at, id)
+    ON job_outbox (job_type, run_after, created_at, id)
     WHERE status = 'pending';
 
 CREATE INDEX job_outbox_expired_lease_idx

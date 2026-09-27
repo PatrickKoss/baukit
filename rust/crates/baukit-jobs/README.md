@@ -10,8 +10,9 @@ defines the compatibility and migration requirements for that later change.
 
 ## Migration
 
-Copy `migrations/0001_baukit_jobs.sql` and
-`migrations/0002_baukit_jobs_failure_reason.sql` into the product's own
+Copy `migrations/0001_baukit_jobs.sql`,
+`migrations/0002_baukit_jobs_failure_reason.sql`, and
+`migrations/0003_baukit_jobs_claim_by_type.sql` into the product's own
 migrations in that order. Do not point a production service at this crate
 directory and do not run schema changes during application startup. A product
 may add foreign keys or indexes in a later migration, but the lifecycle columns
@@ -42,6 +43,14 @@ ALTER TABLE job_outbox
 
 The backfill classifies a legacy failed row as `attempts_exhausted` when
 `attempts >= max_attempts`; all other legacy failed rows become `permanent`.
+
+Products that already applied 0001 and 0002 add
+`migrations/0003_baukit_jobs_claim_by_type.sql` (also available as
+`POSTGRES_MIGRATION_0003_SQL`) as a new ordered migration. It rebuilds
+`job_outbox_claim_idx` on `(job_type, run_after, created_at, id)` for pending
+rows, so a claim reads only rows of the types it asks for. The migration drops
+and recreates the index in one transaction, which blocks reads and writes on
+`job_outbox` until it commits.
 
 The terminal cleanup and fixed UTC slot APIs added after 0.2.1 need no schema
 migration. Cleanup is a `PostgresJobStore` method, so custom `JobStore`
@@ -101,6 +110,27 @@ and the existing enqueue contract returns the first row.
 The application still owns the interval, initial seed, job type, payload,
 catch-up policy, and decision to stop recurring work. `FixedUtcInterval` does
 not parse cron expressions or run a scheduler.
+
+## Claiming by job type
+
+`JobStore::claim` takes the set of job types the caller can handle and claims
+only rows whose `job_type` is in that set. `WorkerRunner` passes its handler's
+`job_types()` on every claim. Several runners with disjoint handlers can share
+one outbox without taking each other's work. An empty set is rejected with
+`StoreError::InvalidInput`, as are blank or overlong entries.
+
+A job type that no running handler declares stays `pending` with zero attempts.
+`worker_queue_oldest_age_seconds` counts pending rows of every type, so such a
+row keeps every runner's queue-age gauge rising and trips the queue-age alert.
+
+Claim recovery still runs for every type. Before selecting a row, a claim
+cancels expired leases that carry a cancellation request and fails expired
+final attempts, whatever their type. Neither transition runs a handler.
+Reclaiming an expired lease for another attempt stays limited to the requested
+types.
+
+Custom `JobStore` implementations must apply the same type filter to pending
+rows and to expired leases they reclaim.
 
 ## Runtime and operations
 
