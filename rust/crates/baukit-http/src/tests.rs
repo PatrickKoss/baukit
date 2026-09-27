@@ -822,7 +822,7 @@ async fn cors_preflight_adds_product_headers_to_the_defaults() {
                 .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
                 .header(
                     header::ACCESS_CONTROL_REQUEST_HEADERS,
-                    "accept,content-type,x-webhook-secret",
+                    "accept,content-type,if-match,x-webhook-secret",
                 )
                 .body(Body::empty())
                 .expect("request"),
@@ -837,7 +837,7 @@ async fn cors_preflight_adds_product_headers_to_the_defaults() {
         .split(',')
         .map(str::trim)
         .collect::<Vec<_>>();
-    for expected in ["accept", "content-type", "x-webhook-secret"] {
+    for expected in ["accept", "content-type", "if-match", "x-webhook-secret"] {
         assert!(
             allowed.iter().any(|header| header == &expected),
             "missing {expected} from {allowed:?}"
@@ -889,7 +889,7 @@ fn app_origin_options() -> HttpOptions {
 }
 
 #[tokio::test]
-async fn cors_exposes_request_identity_and_rate_limit_headers_by_default() {
+async fn cors_exposes_request_identity_rate_limit_and_revision_headers_by_default() {
     let response = cross_origin_get(
         app_origin_options(),
         Router::new().route("/items", get(|| async {})),
@@ -910,6 +910,8 @@ async fn cors_exposes_request_identity_and_rate_limit_headers_by_default() {
             "ratelimit-limit",
             "ratelimit-remaining",
             "ratelimit-reset",
+            "etag",
+            "location",
         ]
     );
 }

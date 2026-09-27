@@ -11,6 +11,16 @@ All notable changes to `baukit-http` are documented here.
   `HttpOptionsError::InvalidHeaderName` and duplicates are ignored.
 - `ResponseCachePolicy` and `HttpOptions::with_response_cache_policy` control the default
   `Cache-Control` header. `ResponseCachePolicy::HandlerOwned` turns the default off.
+- Strong-ETag revision preconditions. `RevisionEtag` formats `"<prefix><revision>"` ETags and
+  parses exactly one strong `If-Match` validator through `required_if_match` or
+  `optional_if_match`. `Revision` holds a revision in `0..=i64::MAX`. `InvalidIfMatch` names each
+  rejected form: repeated header, empty, non-ASCII, `*`, weak, list, malformed, prefix mismatch,
+  non-canonical revision, and out-of-range revision. `PreconditionError` converts into `ApiError`
+  as 428 `precondition_required`, 400 `invalid_if_match` with `details.reason`, or 412
+  `precondition_failed` with `details.currentRevision` when the stored revision is known.
+  `ensure_current_revision` builds the 412 from an expected and a current revision.
+  `RevisionOutOfRange` converts into a 500. Shared vectors live in
+  `fixtures/etag-preconditions/vectors-v1.json`.
 
 ### Changed
 
@@ -21,6 +31,8 @@ All notable changes to `baukit-http` are documented here.
   unless the handler or an inner layer already set `Cache-Control`. This includes error, timeout,
   panic, 404, and preflight responses. Set `ResponseCachePolicy::HandlerOwned` to keep the previous
   behavior.
+- Breaking: the default CORS exposed set now also contains `ETag` and `Location`, and the default
+  allowed request headers now contain `If-Match`.
 - The `HttpOptionsError::InvalidHeaderName` message now reads `invalid CORS header name`, because
   it covers exposed headers too.
 - `baukit-http` depends on `baukit-core` with the `pagination` feature and no longer depends on
@@ -44,6 +56,11 @@ All notable changes to `baukit-http` are documented here.
   response. Routes that need a different policy set `Cache-Control` in the handler, which wins.
 - Apply `finalize` after authentication and rate-limit layers so their rejections carry CORS
   headers.
+- Remove `etag`, `location`, and `if-match` from product `with_additional_exposed_headers` and
+  `with_additional_allowed_headers` calls; duplicates are ignored, so leaving them is harmless.
+- Replace product `If-Match` parsers and ETag formatters with `RevisionEtag`, keeping the product's
+  prefix. Clients see 400 `invalid_if_match`, 412 `precondition_failed`, and 428
+  `precondition_required` in place of product-specific codes.
 
 ## [0.4.0] - 2026-09-12
 

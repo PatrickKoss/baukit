@@ -28,9 +28,11 @@ start empty and have to be named; there is no permissive default to forget to ti
 
 Browsers hide response headers from cross-origin scripts unless `Access-Control-Expose-Headers`
 names them. The default exposed set is `x-request-id`, `traceparent`, `tracestate`,
-`Retry-After`, `RateLimit-Limit`, `RateLimit-Remaining`, and `RateLimit-Reset`, which covers the
-request identity and every header `baukit-ratelimit` emits. Add product headers with
-`with_additional_exposed_headers`:
+`Retry-After`, `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`, `ETag`, and `Location`.
+That covers the request identity, every header `baukit-ratelimit` emits, the revision validator,
+and the address of a created resource. The default allowed request headers are `Authorization`,
+`Content-Type`, `If-Match`, `x-request-id`, `traceparent`, and `tracestate`, so a browser can send
+a conditional write. Add product headers with `with_additional_exposed_headers`:
 
 ```rust
 use baukit_http::HttpOptions;
@@ -258,6 +260,52 @@ and rows inserted mid-scroll do not shift everything down by one.
 `Cursor::decode` rejects input longer than `MAX_CURSOR_BYTES` (4096) with
 `PaginationError::InvalidCursor` before it decodes anything, and `Cursor::encode` refuses to issue a
 cursor above that bound.
+
+## Revision preconditions
+
+A write that must not overwrite someone else's change carries the ETag from the last read in
+`If-Match`. `RevisionEtag` formats and parses strong ETags of the form `"<prefix><revision>"`. The
+prefix is the product's, such as `rev-` or `settings-`, and may be empty. It is compared byte for
+byte, so `REV-4` does not match `rev-`. The revision is a `Revision`, a non-negative integer up to
+`i64::MAX` in canonical decimal: `0` is valid, `01`, `+1`, and `-0` are not.
+
+```rust
+use axum::http::{HeaderMap, StatusCode, header};
+use baukit_http::{ApiError, Revision, RevisionEtag, ensure_current_revision};
+
+const PLAN_ETAG: RevisionEtag<'static> = RevisionEtag::new("rev-");
+
+async fn update_plan(headers: HeaderMap) -> Result<(StatusCode, HeaderMap), ApiError> {
+    let expected = PLAN_ETAG.required_if_match(&headers)?;
+    let stored = Revision::try_from(7_i64)?;
+    ensure_current_revision(expected, stored)?;
+    let mut response = HeaderMap::new();
+    response.insert(header::ETAG, PLAN_ETAG.header_value(Revision::try_from(8_i64)?));
+    Ok((StatusCode::OK, response))
+}
+# let _ = update_plan;
+```
+
+Each route picks `required_if_match` or `optional_if_match`. The parser accepts exactly one strong
+ETag, with surrounding spaces and tabs trimmed. Every failure is a `PreconditionError` that
+converts into `ApiError`:
+
+| Case | Status | `code` | `details` |
+| --- | --- | --- | --- |
+| Required header missing | 428 | `precondition_required` | none |
+| `*`, weak ETag, list, repeated header, non-ASCII bytes, wrong prefix, bad revision | 400 | `invalid_if_match` | `reason`, one of the `InvalidIfMatch::reason` values |
+| Revision is not the stored one | 412 | `precondition_failed` | `currentRevision` when known |
+
+The comparison against storage stays in the product, because it usually happens inside the
+update statement. `ensure_current_revision` turns a mismatch into the 412. When the store only
+reports that nothing matched, return `PreconditionError::Stale { current: None }`. A stored value
+outside the `Revision` range converts into a 500 through `RevisionOutOfRange`.
+
+`RevisionEtag::new` panics on an invalid prefix, which is a compile error in a `const`. Use
+`RevisionEtag::try_new` for a prefix built at runtime, such as one that embeds a resource ID.
+`baukit-openapi` documents the header parameter and the `ETag` response header with
+`document_if_match` and `document_etag`. The shared vectors live in
+`fixtures/etag-preconditions/vectors-v1.json`.
 
 ## Outbound retries
 

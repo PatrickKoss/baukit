@@ -136,8 +136,8 @@ impl HttpOptions {
 
     /// Adds request headers to the standard CORS allowlist.
     ///
-    /// The built-in `Authorization`, `Content-Type`, `x-request-id`,
-    /// `traceparent`, and `tracestate` headers remain allowed. Duplicate header
+    /// The built-in `Authorization`, `Content-Type`, `If-Match`,
+    /// `x-request-id`, `traceparent`, and `tracestate` headers remain allowed. Duplicate header
     /// names are ignored.
     pub fn with_additional_allowed_headers<I, S>(
         mut self,
@@ -160,8 +160,8 @@ impl HttpOptions {
     /// Adds response headers to the standard CORS exposed set.
     ///
     /// The built-in `x-request-id`, `traceparent`, `tracestate`, `Retry-After`,
-    /// `RateLimit-Limit`, `RateLimit-Remaining`, and `RateLimit-Reset` headers
-    /// remain exposed. Duplicate header names are ignored.
+    /// `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`, `ETag`, and
+    /// `Location` headers remain exposed. Duplicate header names are ignored.
     pub fn with_additional_exposed_headers<I, S>(
         mut self,
         headers: I,
