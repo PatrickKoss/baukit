@@ -1,5 +1,6 @@
 import {
   createRouteFocusController,
+  focusAccessibilityElement,
   type RouteFocusController,
   type RouteFocusTarget,
 } from '@baukit/a11y-core';
@@ -16,16 +17,29 @@ function routeFocusController(): RouteFocusController | null {
   return sharedController;
 }
 
-export function createRouteHeadingFocusEffect<T>(
+/**
+ * Web hands the heading to the DOM route focus controller. Native has no
+ * controller, so screen-reader focus moves to the heading one frame after the
+ * route gains focus.
+ */
+export function createRouteHeadingFocusEffect(
   controller: RouteFocusController | null,
-  headingRef: RefObject<T | null>,
+  headingRef: RefObject<object | null>,
   ready: boolean,
 ): (() => void) | undefined {
-  if (!ready || controller === null) return undefined;
-  return controller.enterRoute(() => headingRef.current as RouteFocusTarget | null);
+  if (!ready) return undefined;
+  if (controller !== null) {
+    return controller.enterRoute(() => headingRef.current as RouteFocusTarget | null);
+  }
+  const frame = requestAnimationFrame(() => {
+    focusAccessibilityElement(headingRef);
+  });
+  return () => {
+    cancelAnimationFrame(frame);
+  };
 }
 
-export function useRouteHeadingFocus<T>(headingRef: RefObject<T | null>, ready = true): void {
+export function useRouteHeadingFocus(headingRef: RefObject<object | null>, ready = true): void {
   useFocusEffect(
     useCallback(
       () => createRouteHeadingFocusEffect(routeFocusController(), headingRef, ready),

@@ -1,14 +1,14 @@
 import { useEffect, useRef, type RefObject } from 'react';
 import {
   AccessibilityInfo,
-  findNodeHandle,
   InteractionManager,
   Platform,
   type View,
   type ViewProps,
 } from 'react-native';
 
-import { hostElement, type HostRef } from './dom-boundary.js';
+import type { HostRef } from './dom-boundary.js';
+import { nativeNodeHandle } from './native-focus.js';
 import { useFocusTrap, type FocusTrapProps } from './use-focus-trap.js';
 import { useInert } from './use-inert.js';
 
@@ -49,16 +49,6 @@ const deferUntilInteractionsDone: DeferFocus = (task) =>
   // eslint-disable-next-line @typescript-eslint/no-deprecated
   InteractionManager.runAfterInteractions(task);
 
-function nodeHandle(ref: RefObject<View | null> | undefined): number | null {
-  const host = hostElement(ref);
-  if (host === null) return null;
-  try {
-    return findNodeHandle(host as Parameters<typeof findNodeHandle>[0]);
-  } catch {
-    return null;
-  }
-}
-
 /**
  * One contract for overlay focus on both platforms. Web traps Tab, closes on
  * Escape, and makes the background inert. Native moves accessibility focus into
@@ -81,9 +71,9 @@ export function useOverlayA11y({
   useEffect(() => {
     if (Platform.OS === 'web' || !active) return;
 
-    triggerHandleRef.current = triggerHandle ?? nodeHandle(triggerRef);
+    triggerHandleRef.current = triggerHandle ?? nativeNodeHandle(triggerRef);
     const task = deferFocus(() => {
-      const containerHandle = nodeHandle(containerRef);
+      const containerHandle = nativeNodeHandle(containerRef);
       if (containerHandle !== null) AccessibilityInfo.setAccessibilityFocus(containerHandle);
     });
 
