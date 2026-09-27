@@ -11,11 +11,12 @@ use baukit_ratelimit::{InMemoryRateLimitStore, Quota, RateLimitOptions};
 use serde_json::Value;
 use tower::ServiceExt as _;
 
-use {{ context.app_crate }}_api::{ApiState, router};
+use {{ context.app_crate }}_api::{ApiState, finalize_api, router, routes};
 use {{ context.app_crate }}_bin::{InMemoryItemRepository, InMemoryUserRepository};
 use {{ context.app_crate }}_services::{ItemService, UserService};
 
 const AUDIENCE: &str = "{{ context.app_name }}-backend";
+const WEB_ORIGIN: &str = "https://app.example.com";
 
 #[test]
 fn generated_keycloak_tools_pass_their_offline_checks() -> Result<(), Box<dyn Error>> {
@@ -189,20 +190,22 @@ async fn authentication_runs_before_identity_rate_limiting() -> Result<(), Box<d
     )
     .await?;
     let auth = AuthState::new(verifier);
-    let app = router(
-        ApiState {
-            items: ItemService::new(Arc::new(InMemoryItemRepository::new())),
-            users: UserService::new(Arc::new(InMemoryUserRepository::new())),
-            auth: auth.clone(),
-        },
-        &HttpConfig::default(),
-    )?;
+    let app = routes(ApiState {
+        items: ItemService::new(Arc::new(InMemoryItemRepository::new())),
+        users: UserService::new(Arc::new(InMemoryUserRepository::new())),
+        auth: auth.clone(),
+    });
     let mut options = RateLimitOptions::default();
     options.identity.quota = Quota::new(1, Duration::from_secs(60), 0)?;
     options.ip.enabled = false;
     let app = baukit_ratelimit::layers(app, InMemoryRateLimitStore::default(), options).layer(
         middleware::from_fn_with_state(auth, baukit_auth::establish_principal),
     );
+    let config = HttpConfig {
+        cors_allowed_origins: vec![WEB_ORIGIN.to_owned()],
+        ..HttpConfig::default()
+    };
+    let app = finalize_api(app, &config)?;
     let alice = issuer.mint(&issuer.claims("alice", AUDIENCE, Duration::from_secs(60))?)?;
     let bob = issuer.mint(&issuer.claims("bob", AUDIENCE, Duration::from_secs(60))?)?;
 
@@ -216,6 +219,7 @@ async fn authentication_runs_before_identity_rate_limiting() -> Result<(), Box<d
             .oneshot(
                 Request::builder()
                     .uri("/me")
+                    .header(header::ORIGIN, WEB_ORIGIN)
                     .header(
                         header::AUTHORIZATION,
                         baukit_test::authorization_header(token)?,
@@ -224,6 +228,19 @@ async fn authentication_runs_before_identity_rate_limiting() -> Result<(), Box<d
             )
             .await?;
         assert_eq!(response.status(), expected);
+        assert_eq!(
+            response.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN],
+            WEB_ORIGIN
+        );
+        assert_eq!(
+            response.headers()[header::CACHE_CONTROL],
+            "private, no-store"
+        );
+        if expected == StatusCode::TOO_MANY_REQUESTS {
+            let exposed = response.headers()[header::ACCESS_CONTROL_EXPOSE_HEADERS].to_str()?;
+            assert!(response.headers().contains_key(header::RETRY_AFTER));
+            assert!(exposed.split(',').any(|name| name.trim() == "retry-after"));
+        }
     }
 
     Ok(())

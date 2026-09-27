@@ -106,7 +106,7 @@ Nothing here depends on the CLI, and no crate drags in the rest. Take the error 
 |---|---|
 | [`baukit-runtime`](rust/crates/baukit-runtime) | Process lifecycle, graceful drain, supervised background tasks, listener composition |
 | [`baukit-config`](rust/crates/baukit-config) | Layered file and environment config, validation, secret wrappers that refuse to print |
-| [`baukit-http`](rust/crates/baukit-http) | Axum middleware, the error envelope, keyset pagination, upstream retry classification, CORS |
+| [`baukit-http`](rust/crates/baukit-http) | Axum middleware, the error envelope, upstream retry classification, CORS, default cache policy |
 | [`baukit-ops`](rust/crates/baukit-ops) | Separate liveness, readiness, metrics, and build-info endpoints |
 | [`baukit-telemetry`](rust/crates/baukit-telemetry) | Structured logs, OpenTelemetry traces, Prometheus metrics from one builder |
 | [`baukit-auth`](rust/crates/baukit-auth) | OIDC, Clerk, and WorkOS verification; personal access tokens; Axum principal extraction |
@@ -118,7 +118,7 @@ Nothing here depends on the CLI, and no crate drags in the rest. Take the error 
 | [`baukit-integrations`](rust/crates/baukit-integrations) | Connector contract for cursor-paged imports, verified webhooks, health |
 | [`baukit-credential-vault`](rust/crates/baukit-credential-vault) | Versioned AES-256-GCM encryption behind a storage-neutral port |
 | [`baukit-push`](rust/crates/baukit-push) | Provider-neutral push delivery with an Expo adapter |
-| [`baukit-core`](rust/crates/baukit-core) | Dependency-light vocabulary shared by the others |
+| [`baukit-core`](rust/crates/baukit-core) | Dependency-light vocabulary shared by the others, plus optional keyset pagination |
 | [`baukit-test`](rust/crates/baukit-test) | Docker PostgreSQL and Redis fixtures, a mock OIDC issuer, conformance suites |
 
 ### TypeScript

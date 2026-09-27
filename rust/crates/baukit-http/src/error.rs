@@ -6,6 +6,7 @@ use axum::{
     http::{HeaderMap, HeaderName, HeaderValue, StatusCode, header::RETRY_AFTER},
     response::{IntoResponse, Response},
 };
+use baukit_core::pagination::PaginationError;
 use serde_json::Value;
 
 use crate::{
@@ -329,6 +330,15 @@ impl From<PathRejection> for ApiError {
 impl From<QueryRejection> for ApiError {
     fn from(_rejection: QueryRejection) -> Self {
         Self::query_rejection()
+    }
+}
+
+impl From<PaginationError> for ApiError {
+    fn from(error: PaginationError) -> Self {
+        match error {
+            PaginationError::InvalidLimit => Self::validation_field("limit", error.to_string()),
+            PaginationError::InvalidCursor => Self::validation_field("cursor", error.to_string()),
+        }
     }
 }
 

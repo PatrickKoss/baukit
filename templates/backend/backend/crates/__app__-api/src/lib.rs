@@ -32,14 +32,23 @@ pub struct ApiState {
 }
 
 {% endif %}pub fn router(state: ApiState, config: &HttpConfig) -> Result<Router, HttpOptionsError> {
-    let router = Router::new()
+    finalize_api(routes(state), config)
+}
+
+pub fn routes(state: ApiState) -> Router {
+    Router::new()
         .route("/items", get(list_items).post(create_item))
         .route(
             "/items/{id}",
             get(get_item).put(update_item).delete(delete_item),
         )
 {% if context.auth_oidc %}        .route("/me", get(current_user))
-{% endif %}        .with_state(state);
+{% endif %}        .with_state(state)
+}
+
+/// Applies the Baukit HTTP layers last, so CORS, request IDs, and the cache
+/// policy also cover responses from authentication and rate-limit layers.
+pub fn finalize_api(router: Router, config: &HttpConfig) -> Result<Router, HttpOptionsError> {
     Ok(baukit_http::finalize(
         router,
         HttpOptions::from_config(config)?.with_json_rejection_codes(JsonRejectionCodes::default()),

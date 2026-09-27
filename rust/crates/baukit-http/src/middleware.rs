@@ -6,7 +6,7 @@ use axum::{
     extract::{FromRequestParts, MatchedPath, Request, State},
     http::{
         HeaderMap, HeaderName, HeaderValue, Method, StatusCode,
-        header::{AUTHORIZATION, CONTENT_TYPE},
+        header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE, RETRY_AFTER},
         request::Parts,
     },
     middleware::{self, Next},
@@ -28,13 +28,17 @@ use tracing::Instrument as _;
 use tracing_opentelemetry::OpenTelemetrySpanExt as _;
 use uuid::Uuid;
 
-use crate::{ApiError, HttpOptions};
+use crate::{ApiError, HttpOptions, ResponseCachePolicy};
 
 /// The standard request ID header.
 pub const X_REQUEST_ID: HeaderName = HeaderName::from_static("x-request-id");
 
 const TRACEPARENT: HeaderName = HeaderName::from_static("traceparent");
 const TRACESTATE: HeaderName = HeaderName::from_static("tracestate");
+const RATE_LIMIT_LIMIT: HeaderName = HeaderName::from_static("ratelimit-limit");
+const RATE_LIMIT_REMAINING: HeaderName = HeaderName::from_static("ratelimit-remaining");
+const RATE_LIMIT_RESET: HeaderName = HeaderName::from_static("ratelimit-reset");
+const PRIVATE_NO_STORE: HeaderValue = HeaderValue::from_static("private, no-store");
 const UNMATCHED_ROUTE: &str = "unmatched";
 
 /// Counter metric for completed HTTP requests, labeled `method`, `route`, and `status`.
@@ -156,18 +160,28 @@ where
 }
 
 fn cors_layer(options: &HttpOptions) -> CorsLayer {
-    let mut allowed_headers = vec![
-        AUTHORIZATION,
-        CONTENT_TYPE,
-        X_REQUEST_ID,
-        TRACEPARENT,
-        TRACESTATE,
-    ];
-    for header in &options.additional_allowed_headers {
-        if !allowed_headers.contains(header) {
-            allowed_headers.push(header.clone());
-        }
-    }
+    let allowed_headers = with_additional_headers(
+        vec![
+            AUTHORIZATION,
+            CONTENT_TYPE,
+            X_REQUEST_ID,
+            TRACEPARENT,
+            TRACESTATE,
+        ],
+        &options.additional_allowed_headers,
+    );
+    let exposed_headers = with_additional_headers(
+        vec![
+            X_REQUEST_ID,
+            TRACEPARENT,
+            TRACESTATE,
+            RETRY_AFTER,
+            RATE_LIMIT_LIMIT,
+            RATE_LIMIT_REMAINING,
+            RATE_LIMIT_RESET,
+        ],
+        &options.additional_exposed_headers,
+    );
     let mut cors = CorsLayer::new()
         .allow_methods([
             Method::GET,
@@ -179,7 +193,7 @@ fn cors_layer(options: &HttpOptions) -> CorsLayer {
             Method::OPTIONS,
         ])
         .allow_headers(allowed_headers)
-        .expose_headers([X_REQUEST_ID, TRACEPARENT, TRACESTATE]);
+        .expose_headers(exposed_headers);
     if !options.allowed_origins.is_empty() {
         cors = cors.allow_origin(AllowOrigin::list(options.allowed_origins.clone()));
     }
@@ -187,6 +201,24 @@ fn cors_layer(options: &HttpOptions) -> CorsLayer {
         cors = cors.allow_credentials(true);
     }
     cors
+}
+
+fn with_additional_headers(
+    mut defaults: Vec<HeaderName>,
+    additional: &[HeaderName],
+) -> Vec<HeaderName> {
+    for header in additional {
+        if !defaults.contains(header) {
+            defaults.push(header.clone());
+        }
+    }
+    defaults
+}
+
+fn apply_cache_policy(policy: ResponseCachePolicy, headers: &mut HeaderMap) {
+    if policy == ResponseCachePolicy::PrivateNoStore && !headers.contains_key(CACHE_CONTROL) {
+        headers.insert(CACHE_CONTROL, PRIVATE_NO_STORE);
+    }
 }
 
 async fn request_lifecycle(
@@ -279,6 +311,7 @@ async fn lifecycle_inner(options: HttpOptions, request: Request, next: Next) -> 
                 .expect("request IDs originate from a valid header or UUID"),
         );
         inject_current_trace_context(response.headers_mut());
+        apply_cache_policy(options.response_cache_policy, response.headers_mut());
         response
     }
     .instrument(span)

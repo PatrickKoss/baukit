@@ -15,7 +15,13 @@ readme = "README.md"
 [lints]
 workspace = true
 
+[features]
+pagination = ["dep:base64", "dep:ring", "dep:uuid"]
+
 [dependencies]
+base64 = { workspace = true, optional = true }
+ring = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+uuid = { workspace = true, optional = true }

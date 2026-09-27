@@ -7,6 +7,37 @@
 //! different filters. The cursor is not a secret and is not authenticated: it
 //! prevents accidental misuse and inconsistent result sets, not a determined
 //! forger who can also send an equivalent plain query.
+//!
+//! The module has no HTTP framework dependency, so domain and service crates
+//! can build pages and decode cursors directly. Enable the `pagination` feature
+//! to use it.
+//!
+//! ```rust
+//! use baukit_core::pagination::{Page, PageKey, PageParams, PaginationError};
+//! use serde::Serialize;
+//! use uuid::Uuid;
+//!
+//! #[derive(Serialize)]
+//! struct Filters<'a> {
+//!     category: Option<&'a str>,
+//! }
+//!
+//! fn first_page(rows: Vec<(String, Uuid)>) -> Result<Page<(String, Uuid)>, PaginationError> {
+//!     let params = PageParams::new(Some(2), None)?;
+//!     let filters = Filters { category: Some("books") };
+//!     Page::from_rows(rows, &params, &filters, |(name, id)| PageKey::new(name.clone(), *id))
+//! }
+//!
+//! let rows = vec![
+//!     ("a".to_owned(), Uuid::nil()),
+//!     ("b".to_owned(), Uuid::nil()),
+//!     ("c".to_owned(), Uuid::nil()),
+//! ];
+//! let page = first_page(rows)?;
+//! assert_eq!(page.items.len(), 2);
+//! assert!(page.next_cursor.is_some());
+//! # Ok::<(), PaginationError>(())
+//! ```
 
 use std::str::FromStr;
 
@@ -20,6 +51,13 @@ pub const DEFAULT_PAGE_LIMIT: i64 = 50;
 
 /// The largest page size a request may ask for.
 pub const MAX_PAGE_LIMIT: i64 = 200;
+
+/// The longest encoded cursor [`Cursor::decode`] accepts, in bytes.
+///
+/// Longer input is rejected before base64 decoding or JSON parsing, so an
+/// oversized query parameter costs no allocation. [`Cursor::encode`] refuses to
+/// issue a cursor above the same bound.
+pub const MAX_CURSOR_BYTES: usize = 4096;
 
 const CURSOR_VERSION: u8 = 1;
 const FILTER_HASH_BYTES: usize = 8;
@@ -234,15 +272,16 @@ impl Cursor {
     ///
     /// # Errors
     ///
-    /// Returns [`PaginationError::InvalidCursor`] when the input is not
-    /// base64url, is not the expected payload, carries a version this build
-    /// does not understand, or was issued for a different filter set.
+    /// Returns [`PaginationError::InvalidCursor`] when the input is longer than
+    /// [`MAX_CURSOR_BYTES`], is not base64url, is not the expected payload,
+    /// carries a version this build does not understand, or was issued for a
+    /// different filter set.
     pub fn decode<F>(encoded: &str, normalized_filters: &F) -> Result<Self, PaginationError>
     where
         F: Serialize + ?Sized,
     {
         let bytes = URL_SAFE_NO_PAD
-            .decode(encoded)
+            .decode(within_cursor_bound(encoded)?)
             .map_err(|_| PaginationError::InvalidCursor)?;
         let payload: CursorPayload =
             serde_json::from_slice(&bytes).map_err(|_| PaginationError::InvalidCursor)?;
@@ -260,10 +299,12 @@ impl Cursor {
     /// # Errors
     ///
     /// Returns [`PaginationError::InvalidCursor`] if the payload cannot be
-    /// serialized.
+    /// serialized or the encoded cursor would exceed [`MAX_CURSOR_BYTES`].
     pub fn encode(&self) -> Result<String, PaginationError> {
         let bytes = serde_json::to_vec(&self.0).map_err(|_| PaginationError::InvalidCursor)?;
-        Ok(URL_SAFE_NO_PAD.encode(bytes))
+        let encoded = URL_SAFE_NO_PAD.encode(bytes);
+        within_cursor_bound(&encoded)?;
+        Ok(encoded)
     }
 
     /// Parses the keyset position back into the ordered column type.
@@ -286,6 +327,13 @@ impl Cursor {
         let id = Uuid::parse_str(id).map_err(|_| PaginationError::InvalidCursor)?;
         Ok(PageKey { value, id })
     }
+}
+
+fn within_cursor_bound(encoded: &str) -> Result<&str, PaginationError> {
+    if encoded.len() > MAX_CURSOR_BYTES {
+        return Err(PaginationError::InvalidCursor);
+    }
+    Ok(encoded)
 }
 
 fn filter_hash<F>(normalized_filters: &F) -> Result<String, PaginationError>
@@ -314,15 +362,6 @@ pub enum PaginationError {
     /// The cursor is malformed, unsupported, or does not match the filters.
     #[error("cursor is malformed, unsupported, or does not match the request filters")]
     InvalidCursor,
-}
-
-impl From<PaginationError> for crate::ApiError {
-    fn from(error: PaginationError) -> Self {
-        match error {
-            PaginationError::InvalidLimit => Self::validation_field("limit", error.to_string()),
-            PaginationError::InvalidCursor => Self::validation_field("cursor", error.to_string()),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -566,11 +605,62 @@ mod tests {
         assert_eq!(restored, Page::new(vec![1], None));
     }
 
+    fn cursor_with_encoded_length(filters: &Filters<'_>, length: usize) -> String {
+        let empty = CursorPayload {
+            v: CURSOR_VERSION,
+            k: vec![String::new(), id(7).to_string()],
+            f: filter_hash(filters).expect("filters should hash"),
+        };
+        let base_json = serde_json::to_vec(&empty)
+            .expect("payload should serialize")
+            .len();
+        let json_len = length * 3 / 4;
+        let payload = CursorPayload {
+            k: vec!["x".repeat(json_len - base_json), id(7).to_string()],
+            ..empty
+        };
+        let encoded =
+            URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).expect("payload should serialize"));
+        assert_eq!(encoded.len(), length);
+        encoded
+    }
+
     #[test]
-    fn pagination_errors_map_to_field_level_api_errors() {
-        let limit = crate::ApiError::from(PaginationError::InvalidLimit);
-        assert_eq!(limit.code(), "validation_failed");
-        let cursor = crate::ApiError::from(PaginationError::InvalidCursor);
-        assert_eq!(cursor.code(), "validation_failed");
+    fn cursor_bound_accepts_the_limit_and_rejects_one_byte_more() {
+        let at_limit = "A".repeat(MAX_CURSOR_BYTES);
+        assert_eq!(within_cursor_bound(&at_limit), Ok(at_limit.as_str()));
+        let over = "A".repeat(MAX_CURSOR_BYTES + 1);
+        assert_eq!(
+            within_cursor_bound(&over),
+            Err(PaginationError::InvalidCursor)
+        );
+        let filters = no_filters();
+        assert_eq!(
+            Cursor::decode(&over, &filters),
+            Err(PaginationError::InvalidCursor)
+        );
+    }
+
+    #[test]
+    fn cursor_at_the_bound_decodes_and_a_longer_valid_cursor_is_rejected() {
+        let filters = no_filters();
+        let at_limit = cursor_with_encoded_length(&filters, MAX_CURSOR_BYTES);
+        assert!(Cursor::decode(&at_limit, &filters).is_ok());
+
+        // Unpadded base64 has no encoded length of 4n + 1.
+        let smallest_over = MAX_CURSOR_BYTES + 2;
+        let over = cursor_with_encoded_length(&filters, smallest_over);
+        assert_eq!(
+            Cursor::decode(&over, &filters),
+            Err(PaginationError::InvalidCursor)
+        );
+    }
+
+    #[test]
+    fn encode_refuses_a_cursor_above_the_bound() {
+        let filters = no_filters();
+        let key = PageKey::new("x".repeat(MAX_CURSOR_BYTES), id(8));
+        let cursor = Cursor::from_page_key(&key, &filters).expect("cursor builds");
+        assert_eq!(cursor.encode(), Err(PaginationError::InvalidCursor));
     }
 }

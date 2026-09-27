@@ -5,10 +5,15 @@
 //! contains no telemetry exporters, async runtime, HTTP framework, operational
 //! routing, or product policy. Higher-level Baukit crates re-export established
 //! compatibility types from their own APIs.
+//!
+//! The optional `pagination` feature adds keyset pagination types that domain
+//! crates can use without an HTTP framework.
 
 #![deny(missing_docs)]
 
 pub mod limits;
+#[cfg(feature = "pagination")]
+pub mod pagination;
 
 use std::{fmt, str::FromStr};
 

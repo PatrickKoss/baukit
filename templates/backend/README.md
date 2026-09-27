@@ -14,6 +14,8 @@ make run
 
 Migrations are never run during API startup. The public API listens on port {{ context.api_host_port }} and private health, readiness, metrics, and build endpoints listen on port {{ context.ops_host_port }} by default.
 
+`routes` in the API crate builds the product routes and `finalize_api` applies the Baukit HTTP layers. The API binary adds {% if context.auth_oidc %}authentication and rate limiting{% else %}any request middleware{% endif %} between the two, so every public response, including {% if context.auth_oidc %}401 and 429 rejections{% else %}middleware rejections{% endif %}, carries CORS headers, a request ID, and `Cache-Control: private, no-store`. Browsers can read `Retry-After` and the `RateLimit-*` headers. A handler that sets its own `Cache-Control` keeps it. The operations listener does not use these layers.
+
 `backend/Dockerfile` has separate `api`, `migrate`{% if context.worker %}, and
 `worker`{% endif %} runtime targets. Build each process from the backend context,
 for example `docker build --target api -t {{ context.app_name }}-api:local backend`.

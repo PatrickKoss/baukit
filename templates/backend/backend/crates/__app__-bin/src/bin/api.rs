@@ -10,7 +10,7 @@ use baukit_ops::{PoolMetricsSampler, TrafficGate, spawn_pool_metrics_sampler};
 {% endif %}use baukit_runtime::{ProcessKind, ServiceInfo, ShutdownToken, build_info, serve_listener_pair};
 use baukit_telemetry::{TelemetryBuilder, tracing};
 
-use {{ context.app_crate }}_api::{ApiState, router};
+use {{ context.app_crate }}_api::{ApiState, finalize_api, routes};
 {% if context.auth_oidc %}use {{ context.app_crate }}_bin::InMemoryItemRepository;
 use {{ context.app_crate }}_bin::InMemoryUserRepository;
 use {{ context.app_crate }}_bin::ProductConfig;
@@ -107,14 +107,11 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         };
     let item_service = ItemService::new(repository);
 {% endif %}
-    let api = router(
-        ApiState {
-            items: item_service.clone(),
-{% if context.auth_oidc %}            users: user_service,
-            auth: auth.clone(),
-{% endif %}        },
-        &config.http,
-    )?;
+    let api = routes(ApiState {
+        items: item_service.clone(),
+{% if context.auth_oidc %}        users: user_service,
+        auth: auth.clone(),
+{% endif %}    });
 {% if context.auth_oidc %}    let rate_limit_options = RateLimitOptions::from_config(&config.rate_limit)?;
     let rate_limit_store = RedisRateLimitStore::connect_if_enabled(&rate_limit_options).await?;
     let api = if let Some(store) = rate_limit_store {
@@ -140,7 +137,8 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         auth,
         baukit_auth::establish_principal,
     ));
-{% endif %}    let shutdown = ShutdownToken::new(config.shutdown.drain_timeout);
+{% endif %}    let api = finalize_api(api, &config.http)?;
+    let shutdown = ShutdownToken::new(config.shutdown.drain_timeout);
     let traffic_gate = TrafficGate::new();
     shutdown.on_drain({
         let traffic_gate = traffic_gate.clone();

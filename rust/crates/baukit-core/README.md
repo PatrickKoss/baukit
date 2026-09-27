@@ -2,7 +2,8 @@
 
 `baukit-core` holds the handful of types that more than one Baukit crate needs to agree on:
 deployment environment, log format, process kind, service identity, build info, and resource-budget
-measurements. It depends on `serde`, `serde_json`, and `thiserror` and nothing else.
+measurements. By default it depends on `serde`, `serde_json`, and `thiserror` and nothing else. The
+optional `pagination` feature adds keyset pagination and pulls in `base64`, `ring`, and `uuid`.
 
 ## Why this crate exists at all
 
@@ -86,6 +87,25 @@ Production code should replace `baukit_test::trimmed_text_length` with
 `baukit_core::limits::trimmed_unicode_scalar_count`, and replace
 `baukit_test::compact_document_bytes` with `baukit_core::limits::compact_json_utf8_bytes`. The old
 `baukit-test` names remain available and delegate to these functions.
+
+## Keyset pagination
+
+Enable the `pagination` feature to use `baukit_core::pagination` from domain and service crates
+without depending on Axum:
+
+```toml
+baukit-core = { version = "0.4", features = ["pagination"] }
+```
+
+`PageParams` validates `limit` and carries the still-encoded cursor. `Page::from_rows` truncates an
+over-fetched row set and issues the next `Cursor`. The cursor is base64url JSON holding a version,
+the keyset position, and a short hash of the normalized request filters, so a cursor replayed
+against other filters fails with `PaginationError::InvalidCursor`.
+
+`Cursor::decode` rejects input longer than `MAX_CURSOR_BYTES` (4096 bytes) before it base64-decodes
+or parses anything, so an oversized query parameter costs no allocation. `Cursor::encode` returns
+the same error rather than issue a cursor that `decode` would reject. `baukit-http` converts
+`PaginationError` into a field-level `validation_failed` error; its README has a handler example.
 
 ## Scope
 

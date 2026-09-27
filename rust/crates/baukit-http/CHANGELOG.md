@@ -4,6 +4,47 @@ All notable changes to `baukit-http` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- `HttpOptions::with_additional_exposed_headers` adds response headers to the CORS exposed set,
+  next to `with_additional_allowed_headers`. Invalid names return
+  `HttpOptionsError::InvalidHeaderName` and duplicates are ignored.
+- `ResponseCachePolicy` and `HttpOptions::with_response_cache_policy` control the default
+  `Cache-Control` header. `ResponseCachePolicy::HandlerOwned` turns the default off.
+
+### Changed
+
+- Breaking: the default CORS exposed set now also contains `Retry-After`, `RateLimit-Limit`,
+  `RateLimit-Remaining`, and `RateLimit-Reset`, the headers `baukit-ratelimit` emits. Browsers can
+  read them on responses that pass through `finalize` or `layers`.
+- Breaking: every response from `finalize` or `layers` gets `Cache-Control: private, no-store`
+  unless the handler or an inner layer already set `Cache-Control`. This includes error, timeout,
+  panic, 404, and preflight responses. Set `ResponseCachePolicy::HandlerOwned` to keep the previous
+  behavior.
+- The `HttpOptionsError::InvalidHeaderName` message now reads `invalid CORS header name`, because
+  it covers exposed headers too.
+- `baukit-http` depends on `baukit-core` with the `pagination` feature and no longer depends on
+  `base64` or `ring` directly.
+
+### Removed
+
+- Breaking: the `pagination` module and the root re-exports of `Cursor`, `Page`, `PageKey`,
+  `PageParams`, `PaginationError`, `DEFAULT_PAGE_LIMIT`, and `MAX_PAGE_LIMIT`. They moved to
+  `baukit_core::pagination` with no re-export at the old path. `From<PaginationError> for ApiError`
+  stays in this crate.
+
+### Migration
+
+- Add `baukit-core` with `features = ["pagination"]` to every crate that imports the pagination
+  types, and replace `baukit_http::{Cursor, Page, ...}` and `baukit_http::pagination::...` with
+  `baukit_core::pagination::...`.
+- Delete product middleware that overwrites `Access-Control-Expose-Headers` to add `Retry-After`
+  or `RateLimit-*`. Pass any other product headers to `with_additional_exposed_headers`.
+- Delete product middleware that sets `Cache-Control: private, no-store` or `no-store` on every
+  response. Routes that need a different policy set `Cache-Control` in the handler, which wins.
+- Apply `finalize` after authentication and rate-limit layers so their rejections carry CORS
+  headers.
+
 ## [0.4.0] - 2026-09-12
 
 ## [0.3.0] - 2026-09-04

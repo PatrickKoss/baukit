@@ -24,6 +24,45 @@ let app = finalize(Router::new().route("/hello", get(hello)), options);
 Defaults are a 2 MiB body limit, 1,024 concurrent requests, and a 30 second timeout. CORS origins
 start empty and have to be named; there is no permissive default to forget to tighten.
 
+## Browser-visible headers
+
+Browsers hide response headers from cross-origin scripts unless `Access-Control-Expose-Headers`
+names them. The default exposed set is `x-request-id`, `traceparent`, `tracestate`,
+`Retry-After`, `RateLimit-Limit`, `RateLimit-Remaining`, and `RateLimit-Reset`, which covers the
+request identity and every header `baukit-ratelimit` emits. Add product headers with
+`with_additional_exposed_headers`:
+
+```rust
+use baukit_http::HttpOptions;
+
+let options = HttpOptions::default()
+    .with_allowed_origins(["https://app.example.com"])?
+    .with_additional_exposed_headers(["x-next-cursor"])?;
+assert_eq!(options.additional_exposed_headers().len(), 1);
+# Ok::<(), baukit_http::HttpOptionsError>(())
+```
+
+CORS headers only reach responses produced inside `finalize`. Add authentication and rate-limit
+layers to the router before calling `finalize`, or their 401 and 429 responses reach the browser
+without CORS headers and look like network errors.
+
+## Cache policy
+
+API responses usually carry per-user data, so `finalize` adds `Cache-Control: private, no-store` to
+every response that has no `Cache-Control` header yet. A handler that sets its own value keeps it,
+which is how a public document such as an OpenAPI file opts into caching. Products that own the
+header everywhere turn the default off:
+
+```rust
+use baukit_http::{HttpOptions, ResponseCachePolicy};
+
+let options = HttpOptions::default().with_response_cache_policy(ResponseCachePolicy::HandlerOwned);
+assert_eq!(options.response_cache_policy(), ResponseCachePolicy::HandlerOwned);
+```
+
+The `baukit-ops` health, readiness, build-info, and metrics routes run on the separate operations
+listener without these layers, so the policy does not touch them.
+
 ## Errors say the same thing every time
 
 `ApiError` produces the `{ "error": { "code", "message", "request_id", "details" } }` envelope from
@@ -172,12 +211,15 @@ runtime conflict, and buckets configured in two places drift apart.
 
 ## Keyset pagination
 
-`PageParams`, `Page`, and `PageKey` implement keyset pagination with opaque cursors that are bound to
-the request filters:
+`baukit_core::pagination` owns `PageParams`, `Page`, `PageKey`, and `Cursor`, which implement keyset
+pagination with opaque cursors bound to the request filters. They live in `baukit-core` behind its
+`pagination` feature, so domain and service crates can build pages without depending on Axum.
+`baukit-http` enables that feature and converts `PaginationError` into a field-level `ApiError`:
 
 ```rust
 # use axum::extract::Query;
-# use baukit_http::{ApiError, Page, PageKey, PageParams, ResponseEnvelope};
+# use baukit_core::pagination::{Page, PageKey, PageParams};
+# use baukit_http::{ApiError, ResponseEnvelope};
 # use serde::{Deserialize, Serialize};
 # use uuid::Uuid;
 # #[derive(Deserialize)]
@@ -212,6 +254,10 @@ Binding the cursor to the filters is what makes it safe. A cursor from a `catego
 replayed against `category=tools` is rejected instead of paging through the wrong result set from a
 meaningless offset. Keyset beats `OFFSET` for the usual reason: page 500 costs the same as page 1,
 and rows inserted mid-scroll do not shift everything down by one.
+
+`Cursor::decode` rejects input longer than `MAX_CURSOR_BYTES` (4096) with
+`PaginationError::InvalidCursor` before it decodes anything, and `Cursor::encode` refuses to issue a
+cursor above that bound.
 
 ## Outbound retries
 
