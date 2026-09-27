@@ -1,0 +1,54 @@
+{
+  "name": "@baukit/notifications-core",
+  "version": "0.4.0",
+  "description": "Framework-free local notification planning: zoned occurrence resolution, horizon filtering, deterministic keep, cancel, and schedule sets, and owner-scoped replacement over a platform port.",
+  "license": "MIT",
+  "author": "Patrick Koss",
+  "homepage": "https://github.com/PatrickKoss/baukit#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PatrickKoss/baukit.git",
+    "directory": "typescript/packages/notifications-core"
+  },
+  "bugs": {
+    "url": "https://github.com/PatrickKoss/baukit/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./vitest": {
+      "types": "./dist/vitest.d.ts",
+      "import": "./dist/vitest.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "pnpm run build",
+    "test": "vitest run --config ../../vitest.config.ts",
+    "lint": "eslint src --max-warnings=0",
+    "format:check": "prettier --check src package.json tsconfig.json"
+  },
+  "devDependencies": {
+    "@baukit/localization-core": "workspace:*",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  },
+  "peerDependencies": {
+    "@baukit/localization-core": "^0.4.0"
+  }
+}

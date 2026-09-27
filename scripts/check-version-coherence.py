@@ -27,6 +27,8 @@ EXPECTED_TYPESCRIPT_PACKAGES = {
     "@baukit/events",
     "@baukit/integrations-client",
     "@baukit/localization-core",
+    "@baukit/notifications-core",
+    "@baukit/notifications-expo",
     "@baukit/preferences-core",
     "@baukit/pwa-web",
     "@baukit/sync-client",

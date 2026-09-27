@@ -17,6 +17,7 @@ ORDER=(
   pwa-web sync-client integrations-client
   analytics-posthog-native analytics-posthog-web
   data-contracts-dexie data-contracts-expo-sqlite
+  notifications-core notifications-expo
 )
 
 version=$(python3 -c "
