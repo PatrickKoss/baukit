@@ -209,3 +209,72 @@ returns.
 Solo Leveling System's `DATABASE_URL` branch never drops `sl_test_<uuid>` and
 returns the admin `database_url` instead of the per-test database URL, so those
 tests share one database while believing they are isolated.
+
+## 3. Analytics scrubber exact keys and crash events
+
+### Observed repeated glue
+
+`scrubProperties` matched blocked keys only as substrings. A short key like `ip`
+would redact `zip_code` and `description`, so products added their own exact
+matching, and crash reports went through separate scrubbers:
+
+- `/home/patrick/projects/hebkit/mobile/src/monitoring/scrub.ts` runs an exact
+  key regex (`ip`, `q`, `query`, `notes`, `remote_addr`, `x-forwarded-for`, and
+  more) before `scrubProperties`, and uses the result for Sentry too. That path
+  also sends event and trace IDs through the long-hex rule, which redacts them,
+  and `filename` through the `name` rule, which redacts stack frame files.
+- `/home/patrick/projects/tiefgang/mobile/src/monitoring/sentry.ts` has its own
+  substring regex scrubber for Sentry `beforeSend`, with no value patterns.
+
+### Baukit owner and public contract
+
+`typescript/packages/analytics-core/src/scrubber.ts`:
+
+- `ScrubberOptions.exactBlockedKeys` and `AnalyticsClientOptions.exactBlockedKeys`.
+  Keys are normalized like `blockedKeys` (lowercase, separators removed) and
+  compared by equality.
+- `DEFAULT_EXACT_BLOCKED_KEYS`: `ip`, `ip_address`, `remote_addr`,
+  `x_forwarded_for`, `x_real_ip`.
+- `scrubErrorEvent(event, options)` for crash reports. It adds
+  `ERROR_EVENT_BLOCKED_KEYS` (`headers`, `data`, `query_string`, `body`, `vars`,
+  `geo`, `env`) and keeps string values under `ERROR_EVENT_PRESERVED_KEYS`
+  (event, trace, span, and debug IDs, and frame `filename`, `abs_path`,
+  `function`, `module`). The top-level `sdk` object keeps its keys and only has
+  its values checked.
+
+### Failure behavior
+
+The scrubber never throws. Values that are not plain objects, arrays, or
+primitives still become `[redacted]`, including under preserved keys.
+
+### Privacy boundary
+
+Preserved keys keep only string values. A preserved key holding an object is
+scrubbed like any other value. OS and device `name` keys stay redacted because
+the scrubber cannot tell them apart.
+
+### Supported runtimes
+
+Unchanged: ES2022 runtimes, React Native Hermes, and Node 24.
+
+### Tests
+
+`scrubber.test.ts` covers exact keys next to longer keys that contain them, a
+Sentry-shaped event with IDs, frames, request payloads, breadcrumbs, user, sdk,
+and extra, input immutability, preserved keys holding objects, and product
+extensions. `client.test.ts` checks that the client passes `exactBlockedKeys`.
+
+### Breaks
+
+`scrubProperties` and `AnalyticsClient` now redact `ip`, `ip_address`,
+`remote_addr`, `x_forwarded_for`, and `x_real_ip` by default. Recorded in the
+changeset.
+
+### Product adoption
+
+- Hebkit: move the exact names from `EXACT_PRODUCT_KEY_PATTERN` into
+  `exactBlockedKeys`, drop `redactExactProductKeys`, and use `scrubErrorEvent`
+  in Sentry `beforeSend` instead of `scrubPii`.
+- Tiefgang: replace `scrubSentryEvent` in `mobile/src/monitoring/sentry.ts`
+  with `scrubErrorEvent(event, { blockedKeys: ['intention', 'note', 'panic',
+  'request', 'target'] })`.

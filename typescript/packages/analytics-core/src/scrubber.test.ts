@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { REDACTED_VALUE, scrubProperties } from './scrubber.js';
+import { REDACTED_VALUE, scrubErrorEvent, scrubProperties } from './scrubber.js';
 
 describe('scrubProperties', () => {
   it('redacts built-in blocked keys at every nesting level', () => {
@@ -66,5 +66,130 @@ describe('scrubProperties', () => {
       cyclic: { self: REDACTED_VALUE },
       date: REDACTED_VALUE,
     });
+  });
+
+  it('redacts exact keys without matching longer keys that contain them', () => {
+    expect(
+      scrubProperties(
+        {
+          ip: '203.0.113.7',
+          ipAddress: '203.0.113.7',
+          'X-Forwarded-For': '203.0.113.7',
+          zip_code_count: 1,
+          description_length: 12,
+          q: 'free text',
+          query_count: 2,
+        },
+        { exactBlockedKeys: ['q'] },
+      ),
+    ).toEqual({
+      ip: REDACTED_VALUE,
+      ipAddress: REDACTED_VALUE,
+      'X-Forwarded-For': REDACTED_VALUE,
+      zip_code_count: 1,
+      description_length: 12,
+      q: REDACTED_VALUE,
+      query_count: 2,
+    });
+  });
+});
+
+describe('scrubErrorEvent', () => {
+  const eventId = '0123456789abcdef0123456789abcdef';
+  const traceId = 'fedcba9876543210fedcba9876543210';
+
+  function crashEvent() {
+    return {
+      event_id: eventId,
+      message: 'Sync failed for person@example.com',
+      contexts: { trace: { trace_id: traceId, span_id: '0123456789abcdef' } },
+      exception: {
+        values: [
+          {
+            type: 'TypeError',
+            value: 'x is undefined',
+            stacktrace: {
+              frames: [
+                {
+                  filename: 'app:///index.bundle',
+                  function: 'renderScreen',
+                  lineno: 12,
+                  vars: { password: 'secret' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      request: {
+        url: 'https://api.example.test/items',
+        headers: { Authorization: 'Bearer abc' },
+        cookies: 'session=abc',
+        query_string: 'q=secret',
+        data: { note: 'free text' },
+      },
+      user: { id: 'user-1', email: 'person@example.com', ip_address: '203.0.113.7' },
+      breadcrumbs: [{ category: 'fetch', data: { url: '/items?q=secret' } }],
+      sdk: { name: 'sentry.javascript.react-native', packages: [{ name: 'npm:@sentry/core' }] },
+      extra: { accessToken: 'abc', attempt: 2 },
+    };
+  }
+
+  it('keeps crash identifiers and stack frames while redacting request payloads', () => {
+    const input = crashEvent();
+
+    expect(scrubErrorEvent(input)).toEqual({
+      event_id: eventId,
+      message: REDACTED_VALUE,
+      contexts: { trace: { trace_id: traceId, span_id: '0123456789abcdef' } },
+      exception: {
+        values: [
+          {
+            type: 'TypeError',
+            value: 'x is undefined',
+            stacktrace: {
+              frames: [
+                {
+                  filename: 'app:///index.bundle',
+                  function: 'renderScreen',
+                  lineno: 12,
+                  vars: REDACTED_VALUE,
+                },
+              ],
+            },
+          },
+        ],
+      },
+      request: {
+        url: 'https://api.example.test/items',
+        headers: REDACTED_VALUE,
+        cookies: REDACTED_VALUE,
+        query_string: REDACTED_VALUE,
+        data: REDACTED_VALUE,
+      },
+      user: { id: 'user-1', email: REDACTED_VALUE, ip_address: REDACTED_VALUE },
+      breadcrumbs: [{ category: 'fetch', data: REDACTED_VALUE }],
+      sdk: { name: 'sentry.javascript.react-native', packages: [{ name: 'npm:@sentry/core' }] },
+      extra: { accessToken: REDACTED_VALUE, attempt: 2 },
+    });
+    expect(input).toEqual(crashEvent());
+  });
+
+  it('still redacts non-string values under preserved keys', () => {
+    expect(scrubErrorEvent({ function: { password: 'secret' } })).toEqual({
+      function: { password: REDACTED_VALUE },
+    });
+  });
+
+  it('applies product key extensions', () => {
+    expect(
+      scrubErrorEvent(
+        { extra: { mealNotes: 'text', q: 'text' } },
+        {
+          blockedKeys: ['notes'],
+          exactBlockedKeys: ['q'],
+        },
+      ),
+    ).toEqual({ extra: { mealNotes: REDACTED_VALUE, q: REDACTED_VALUE } });
   });
 });

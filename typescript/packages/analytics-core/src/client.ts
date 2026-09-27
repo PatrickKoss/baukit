@@ -1,4 +1,4 @@
-import { scrubProperties } from './scrubber.js';
+import { scrubProperties, type ScrubberOptions } from './scrubber.js';
 import { InMemoryAnalyticsStorage } from './storage.js';
 import { NoopTransport } from './transports.js';
 import type {
@@ -133,7 +133,7 @@ export class AnalyticsClient<E extends AnalyticsEvent> implements AnalyticsPort<
   readonly #storage: AnalyticsStorage;
   readonly #storagePrefix: string;
   readonly #uuidFactory: () => string;
-  readonly #blockedKeys: readonly string[];
+  readonly #scrubberOptions: ScrubberOptions;
   readonly #maxQueueSize: number;
   readonly #flushBatchSize: number;
   readonly #flushIntervalMs: number;
@@ -160,7 +160,10 @@ export class AnalyticsClient<E extends AnalyticsEvent> implements AnalyticsPort<
     this.#storage = options.storage ?? new InMemoryAnalyticsStorage();
     this.#storagePrefix = options.storageKeyPrefix ?? `@baukit/analytics-core:${this.#context.app}`;
     this.#uuidFactory = options.uuidFactory ?? defaultUuidFactory;
-    this.#blockedKeys = [...(options.blockedKeys ?? [])];
+    this.#scrubberOptions = {
+      blockedKeys: [...(options.blockedKeys ?? [])],
+      exactBlockedKeys: [...(options.exactBlockedKeys ?? [])],
+    };
     this.#maxQueueSize = requireInteger(
       'maxQueueSize',
       options.maxQueueSize ?? DEFAULT_MAX_QUEUE_SIZE,
@@ -254,7 +257,7 @@ export class AnalyticsClient<E extends AnalyticsEvent> implements AnalyticsPort<
       event: {
         ...this.#context,
         name: event.name,
-        properties: scrubProperties(filtered, { blockedKeys: this.#blockedKeys }),
+        properties: scrubProperties(filtered, this.#scrubberOptions),
       },
     };
     this.#enqueue(envelope);
@@ -276,11 +279,7 @@ export class AnalyticsClient<E extends AnalyticsEvent> implements AnalyticsPort<
     this.#userId = userId;
     this.#writeStorage(this.#userIdKey, userId);
     const scrubbedTraits =
-      traits === undefined
-        ? undefined
-        : scrubProperties(traits, {
-            blockedKeys: this.#blockedKeys,
-          });
+      traits === undefined ? undefined : scrubProperties(traits, this.#scrubberOptions);
     const envelope: IdentifyEnvelope = {
       type: 'identify',
       captured_at: this.#timestamp(),
