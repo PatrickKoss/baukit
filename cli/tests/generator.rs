@@ -1440,7 +1440,7 @@ fn mcp_generation_matches_golden_tree_and_records_personal_token_auth() -> anyho
     );
     let package = fs::read_to_string(first.join("mcp/package.json"))?;
     assert!(package.contains("\"@modelcontextprotocol/sdk\": \"1.30.0\""));
-    assert!(!package.contains("@baukit/auth-node"));
+    assert!(package.contains("\"@baukit/auth-node\""));
     assert!(!first.join("mcp/openapi.json").exists());
     assert!(first.join("mcp/src/api/schema.d.ts").is_file());
     assert!(

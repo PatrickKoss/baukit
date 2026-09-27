@@ -730,7 +730,7 @@ fn dependency_context(
                 .collect::<Vec<_>>()
                 .join(",\n")
         };
-        let mcp_typescript = if mcp_authentication == Some(McpAuthentication::NodeOidc) {
+        let mcp_typescript = if mcp_authentication.is_some() {
             let auth_node = typescript_root.join("packages/auth-node/package.json");
             if !auth_node.is_file() {
                 bail!(
@@ -788,7 +788,7 @@ fn dependency_context(
             cargo,
             web_typescript: render_typescript(&web_packages),
             mobile_typescript: render_typescript(&mobile_packages),
-            mcp_typescript: if mcp_authentication == Some(McpAuthentication::NodeOidc) {
+            mcp_typescript: if mcp_authentication.is_some() {
                 format!("    \"@baukit/auth-node\": \"{version}\",\n")
             } else {
                 String::new()
@@ -1860,12 +1860,8 @@ fn validate_mcp_capability(
                 "mcp/package.json must pin `@modelcontextprotocol/sdk` to `1.30.0`".to_owned(),
             );
         }
-        let has_auth_node = source.contains("\"@baukit/auth-node\"");
-        if has_auth_node != (mcp.authentication == McpAuthentication::NodeOidc) {
-            failures.push(
-                "mcp/package.json must include `@baukit/auth-node` only for node-oidc authentication"
-                    .to_owned(),
-            );
+        if !source.contains("\"@baukit/auth-node\"") {
+            failures.push("mcp/package.json must depend on `@baukit/auth-node`".to_owned());
         }
     }
 

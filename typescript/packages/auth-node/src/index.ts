@@ -1,4 +1,10 @@
 export {
+  ApiOriginError,
+  parseApiOrigin,
+  type ApiOriginErrorReason,
+  type ApiOriginOptions,
+} from './api-origin.js';
+export {
   defaultTokenCachePath,
   NodeTokenCache,
   type CachedTokenProfile,

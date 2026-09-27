@@ -93,6 +93,35 @@ describe('stdio bootstrap', () => {
   });
 });
 
+describe('API URL', () => {
+  it('refuses a URL that is more than an origin without echoing it', async () => {
+    const child = spawn(process.execPath, ['dist/cli.js'], {
+      cwd: packageRoot,
+      env: {
+        ...process.env,
+        ['{{ context.app_env }}_API_URL']: 'https://user:private@api.example.test/v1',
+        ['{{ context.app_env }}_API_TOKEN']: 'stdio-private-token',
+{% if context.mcp_auth_caller_supplied %}        ['{{ context.app_env }}_MCP_BEARER_PROVIDER']: 'unused-provider.mjs',
+{% endif %}      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let output = '';
+    child.stdout
+      .setEncoding('utf8')
+      .on('data', (chunk: string) => (output += chunk));
+    child.stderr
+      .setEncoding('utf8')
+      .on('data', (chunk: string) => (output += chunk));
+    const exitCode = await new Promise<number | null>((resolve) =>
+      child.once('exit', resolve),
+    );
+
+    expect(exitCode).toBe(1);
+    expect(output).toContain('server outcome=failed api_url=not_an_origin');
+    expect(output).not.toContain('private');
+  });
+});
+
 describe('generated checks', () => {
   it('detects OpenAPI route drift', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'mcp-openapi-'));

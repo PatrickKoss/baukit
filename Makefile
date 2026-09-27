@@ -49,6 +49,8 @@ mcp-fixture-gate:
 	trap 'rm -rf "$$fixture_parent"' EXIT; \
 	cargo build --manifest-path $(CLI_MANIFEST) --bin baukit; \
 	cli/target/debug/baukit new fixture --backend --mcp --dir "$$fixture_parent" --baukit-path rust; \
+	corepack pnpm@11.18.0 --dir typescript install --frozen-lockfile; \
+	corepack pnpm@11.18.0 --dir typescript --filter @baukit/auth-node run build; \
 	cargo fmt --manifest-path "$$fixture_parent/fixture/backend/Cargo.toml" --all --check; \
 	cargo clippy --manifest-path "$$fixture_parent/fixture/backend/Cargo.toml" --all-targets -- -D warnings; \
 	cargo test --manifest-path "$$fixture_parent/fixture/backend/Cargo.toml"; \
