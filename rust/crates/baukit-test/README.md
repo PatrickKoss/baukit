@@ -27,6 +27,9 @@ opted into:
   shared credential outcomes, preserves `Retry-After`, bounds response reads, and times out.
 - `check_postgres_inbox_conformance`: a product inbox adapter preserves one domain effect and one
   outbox message across first delivery, replay, concurrent replay, and transaction failures.
+- `check_purge_horizon_conformance`: a product tombstone purge keeps a per-owner horizon that never
+  drops, stays within its batch limit, and rejects stale pull cursors without losing a deletion to
+  a concurrent pull.
 
 A contract stated only in a document decays. Someone renames a metric, someone adds a route without
 auth, someone changes an error envelope, and nothing fails until an alert stops firing months later.
@@ -97,6 +100,22 @@ These APIs are additive. Existing connector and credential-probe tests need no m
 adopting the inbox check must use a uniqueness constraint over owner, source, and event ID. Products
 adopting the signing helper must version their signature header and retain the previous verification
 key for their documented rotation overlap.
+
+## Purge-horizon fixtures
+
+Implement `PurgeHorizonAdapter` in a product integration test against a fresh PostgreSQL database,
+then run `check_purge_horizon_conformance`. The adapter creates owners, writes live rows and
+tombstones with a given `deleted_at`, runs one purge batch, pulls from a cursor, reads the horizon,
+and erases an owner. Its `purge_batch` returns the number of rows it removed, and `pull` returns
+`PurgeHorizonPull::ResyncRequired` for the product's 409 response.
+
+The check drains everything already expired before each case, so one database can serve every
+case. It covers horizon monotonicity, cursor zero and cursors at, above, and below the horizon,
+batch limits, owner isolation, and erasure. For the race, `pull` must call `PullPause::reached`
+after its cursor check and before it reads rows, inside the same transaction. The check purges the
+owner while the pull is paused. A pull that passed its cursor check must still return the purged
+tombstone, or the purge must wait for the pull to finish. A product that reads the horizon in one
+transaction and rows in another fails this case.
 
 ## Resource limits
 

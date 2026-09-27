@@ -4,6 +4,13 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Add `check_purge_horizon_conformance` and `assert_purge_horizon_conformance` with the
+  `PurgeHorizonAdapter` trait, `PurgeHorizonPull`, and `PullPause`. The check covers horizon
+  monotonicity, batch limits, a purge racing an open pull, cursors at and below the horizon, owner
+  isolation, and erasure.
+
 ## [0.4.0] - 2026-09-12
 
 ## [0.3.0] - 2026-09-04
