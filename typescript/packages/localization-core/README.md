@@ -58,6 +58,41 @@ addCivilDays('2026-03-07', 1); // '2026-03-08', DST does not shift a calendar da
 - `assertTimeZone(zone)` validates an IANA zone. `resolvedTimeZone()` reads the host zone; every
   other function takes the zone explicitly, so nothing silently depends on where the process runs.
 
+## Zoned local times
+
+`resolveZonedLocalTime` turns a civil date, a local time, and an IANA zone into an instant. A local
+time can fall in a gap (spring forward, so it never happens) or a fold (fall back, so it happens
+twice). The caller picks both policies; neither has a default.
+
+```ts
+import { resolveZonedLocalTime } from '@baukit/localization-core';
+
+resolveZonedLocalTime({
+  civilDate: '2026-03-29',
+  civilTime: '02:30',
+  timeZone: 'Europe/Berlin',
+  gap: 'shiftForward',
+  fold: 'earlier',
+});
+// { ok: true, epochMilliseconds: Date.parse('2026-03-29T01:30:00Z'), transition: 'gap' }
+```
+
+- `gap: 'reject'` returns `{ ok: false, code: 'nonexistent_local_time' }`. `gap: 'shiftForward'`
+  reads the time with the offset from before the gap, so 02:30 becomes 03:30 when an hour is
+  skipped. That is how RFC 5545 reads a `TZID` time.
+- `fold: 'earlier'` and `fold: 'later'` pick the first or second of the two instants.
+- `transition` is `'none'`, `'gap'`, or `'fold'` and says what the local time hit.
+- Invalid input returns `invalid_civil_date`, `invalid_civil_time` (anything but `HH:MM` or
+  `HH:MM:SS` from `00:00` to `23:59:59`), or `invalid_time_zone`. Offset strings such as `+01:00`
+  are not zones and are rejected. An unknown policy value is a programming error and throws
+  `RangeError`.
+
+The function reads zone rules through `Intl.DateTimeFormat` and nothing else, so the answer depends
+on the time-zone database of the runtime it runs in. The shared vectors in
+`fixtures/zoned-time/vectors-v1.json` cover gaps, folds, half-hour and 45-minute offsets, a skipped
+day, rule changes, and invalid input. Rust code that resolves local times should test against the
+same file.
+
 ## Boundaries
 
 The package does not include translations, product catalog IDs, persistence, React providers, Expo

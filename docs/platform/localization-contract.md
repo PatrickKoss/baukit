@@ -97,6 +97,16 @@ day. The zone is always an explicit argument; `resolvedTimeZone()` is the only
 way to read the host zone, and callers pass the result in. These functions use
 `Intl` and nothing else.
 
+`resolveZonedLocalTime({ civilDate, civilTime, timeZone, gap, fold })` goes the
+other way and turns a civil date and local time in an IANA zone into an instant.
+The gap policy (`reject` or `shiftForward`) and the fold policy (`earlier` or
+`later`) are required. It returns `{ ok: true, epochMilliseconds, transition }` or
+`{ ok: false, code }` with `invalid_civil_date`, `invalid_civil_time`,
+`invalid_time_zone`, or `nonexistent_local_time`. It also uses only `Intl`. The
+shared vectors in `fixtures/zoned-time/vectors-v1.json` are the contract for this
+function and for any Rust resolver. The [calendar export recipe](./calendar-export-recipe.md)
+says which policy pair matches how calendar clients read a `TZID` time.
+
 Do not compute a user-facing day with `Date.getDate()`, a UTC slice of an ISO
 string, or a millisecond offset. Each is wrong for at least one user: the first
 reads the host zone rather than the user's, the second shifts the day for anyone

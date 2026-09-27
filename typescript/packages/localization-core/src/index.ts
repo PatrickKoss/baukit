@@ -32,3 +32,15 @@ export {
 } from './codes.js';
 export { createDateTimeFormatter, createNumberFormatter } from './formatters.js';
 export { normalizeLocalePreference, resolveLocale, type LocalePreference } from './locale.js';
+export {
+  INVALID_CIVIL_TIME_CODE,
+  INVALID_TIME_ZONE_CODE,
+  NONEXISTENT_LOCAL_TIME_CODE,
+  resolveZonedLocalTime,
+  type FoldPolicy,
+  type GapPolicy,
+  type LocalTimeTransition,
+  type ZonedLocalTime,
+  type ZonedLocalTimeCode,
+  type ZonedLocalTimeResult,
+} from './zoned-time.js';
