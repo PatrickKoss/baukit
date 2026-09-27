@@ -6,7 +6,9 @@ use axum::{
     extract::{FromRequestParts, MatchedPath, Request, State},
     http::{
         HeaderMap, HeaderName, HeaderValue, Method, StatusCode,
-        header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE, RETRY_AFTER},
+        header::{
+            AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE, ETAG, IF_MATCH, LOCATION, RETRY_AFTER,
+        },
         request::Parts,
     },
     middleware::{self, Next},
@@ -164,6 +166,7 @@ fn cors_layer(options: &HttpOptions) -> CorsLayer {
         vec![
             AUTHORIZATION,
             CONTENT_TYPE,
+            IF_MATCH,
             X_REQUEST_ID,
             TRACEPARENT,
             TRACESTATE,
@@ -179,6 +182,8 @@ fn cors_layer(options: &HttpOptions) -> CorsLayer {
             RATE_LIMIT_LIMIT,
             RATE_LIMIT_REMAINING,
             RATE_LIMIT_RESET,
+            ETAG,
+            LOCATION,
         ],
         &options.additional_exposed_headers,
     );

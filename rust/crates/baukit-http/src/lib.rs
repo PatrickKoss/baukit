@@ -96,6 +96,7 @@ mod extract;
 mod locale;
 mod middleware;
 mod options;
+mod precondition;
 pub mod retry;
 mod routing;
 
@@ -112,6 +113,10 @@ pub use middleware::{
     inject_trace_context, layers,
 };
 pub use options::{HttpOptions, HttpOptionsError, JsonRejectionCodes, ResponseCachePolicy};
+pub use precondition::{
+    InvalidEtagPrefix, InvalidIfMatch, MAX_ETAG_PREFIX_BYTES, PreconditionError, Revision,
+    RevisionEtag, RevisionOutOfRange, ensure_current_revision,
+};
 pub use retry::{
     RetryClass, RetryHeaderOptions, classify_http_status, classify_http_status_with_options,
     classify_transport_error, retry_after_from_headers, retry_after_from_headers_at,
