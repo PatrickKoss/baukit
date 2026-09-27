@@ -6,6 +6,10 @@ This Expo SDK 57 app executes the cases from the shared
 Vitest cases because Vitest itself requires Node and cannot run inside React
 Native. It also proves database creation and reopening, namespace isolation,
 malformed-row redaction, rollback, and schema-metadata upgrades.
+Three cases issue root record, key/value, and schema-metadata calls against an
+exclusive transaction in both arrival orders, including two stores that share
+one database handle. Without the adapter's per-file operation queue they fail
+with `database is locked` or read uncommitted state.
 The native runner also opens distinct SHA-256-derived database files for an
 offline E→F→E switch and proves record/outbox isolation, close-before-open,
 memory reset, one-time legacy claiming, corrupt-registry blocking, terminal

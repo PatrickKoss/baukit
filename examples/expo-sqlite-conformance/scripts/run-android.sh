@@ -44,7 +44,7 @@ corepack pnpm --dir "$repo_dir/typescript" \
   --filter @baukit/data-contracts \
   --filter @baukit/data-contracts-expo-sqlite \
   run build
-corepack pnpm --dir "$example_dir" install --frozen-lockfile
+CI=1 corepack pnpm --dir "$example_dir" install --frozen-lockfile
 corepack pnpm --dir "$example_dir" run typecheck
 CI=1 corepack pnpm --dir "$example_dir" exec expo prebuild --clean --platform android
 
