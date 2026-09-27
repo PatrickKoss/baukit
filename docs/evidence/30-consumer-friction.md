@@ -361,3 +361,64 @@ resolution.
   `transformIgnorePatterns` covering `@baukit`.
 - Hebkit: also delete the `@baukit/*` entries from the inline
   `--moduleNameMapper` in `mobile/package.json:117`.
+
+## 5. `MockOidcServer` JWKS cache helpers
+
+### Observed repeated glue
+
+`/home/patrick/projects/hebkit/backend/tests/common/mod.rs` keeps its own
+`FakeOidc` server next to Baukit's `MockOidcServer`. It exposes a `jwks_url`, a
+JWKS request counter, `start_with_jwks_delay`, and `token_with(..., key_id)`.
+`backend/tests/auth_conformance.rs` uses them for TTL refresh, negative caching
+of an unknown `kid`, and single-flight refresh under a 75 ms JWKS delay, with a
+verifier built through `OidcVerifier::from_jwks_uri`.
+
+### Correction to the plan's premise
+
+The plan asked for a JWKS request counter and an injectable JWKS delay. Both
+already existed as `MockOidcServer::jwks_request_count` and `set_jwks_delay`
+since 0.1.0, with tests, but the README never mentioned them. What Hebkit could
+not get from Baukit was the JWKS URL for a verifier that skips discovery, and a
+token with an unpublished `kid`: Baukit's own unknown-key test used the private
+key file directly.
+
+### Baukit owner and public contract
+
+`rust/crates/baukit-test/src/jwt.rs`:
+
+- `MockOidcServer::jwks_url() -> &str`.
+- `MockOidcServer::mint_with_key_id(&claims, key_id)`: signs with the active
+  key, so the signature matches a published key while the `kid` does not.
+- The README now documents `jwks_request_count` and `set_jwks_delay` together
+  with the two additions.
+
+### Failure behavior
+
+Unchanged. `mint_with_key_id` returns `JwtFixtureError` like `mint`.
+
+### Privacy boundary
+
+Test-only fixture keys. No change.
+
+### Supported runtimes
+
+Tokio, as before.
+
+### Tests
+
+`jwt.rs` gains a TTL refresh test through `jwks_url` and `from_jwks_uri`, and a
+test that `mint_with_key_id` with the published `kid` equals `mint` before and
+after rotation. The existing single-flight and negative-cache test now uses
+`mint_with_key_id` instead of the private key.
+
+### Breaks
+
+None.
+
+### Product adoption
+
+- Hebkit: replace `FakeOidc` in `backend/tests/common/mod.rs` with
+  `MockOidcServer`. Use `jwks_url()` for `settings(...)` and
+  `from_jwks_uri`, `set_jwks_delay` after `start()` instead of
+  `start_with_jwks_delay`, and `mint_with_key_id` instead of `token_with`. Its
+  claims must use `server.issuer()`.

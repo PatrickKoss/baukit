@@ -24,6 +24,7 @@ use thiserror::Error;
 use tokio::{net::TcpListener, task::JoinHandle, time::sleep};
 
 const REALM_PATH: &str = "/realms/baukit-test";
+const JWKS_PATH: &str = "/realms/baukit-test/protocol/openid-connect/certs";
 const KEY_1_ID: &str = "baukit-test-key-1";
 const KEY_2_ID: &str = "baukit-test-key-2";
 const KEY_1_MODULUS: &str = "8XoYIfBj-BNazQ5v2ueAX9pM0_bjXiIuseeA5nDQTkKtfKjMLXxSgdGrRlyf7SyuZb48JsvJUF2O1rcvoXxIuRXGjImVbWeBlfY3f2xNuUv9g3WTnEvcTzLZCkz0CCiXdJ7ntk0DcQe4Eh3cNe0zSJ2yEOxbzzWtk9Wzh0LY7s1g_aAc0jTak0KQpflKWyRRAK-KQyZlklij0TJkhM4VyZMVL_wgrJe3DIgpzfz7SG9yfouU9ut7QITYqXUCkuYY6v2WlvJi2AFlA4daGOitmL3f2ecPRcjnoK818jo6kFlpwWXM5Lp8iv4eR9gJEt7t7QbtNG0okTpoBH7caU9eaQ";
@@ -185,6 +186,7 @@ pub fn authorization_header(token: &str) -> Result<HeaderValue, InvalidHeaderVal
 /// In-process OIDC discovery and JWKS server with a rotating RS256 signer.
 pub struct MockOidcServer {
     base_url: String,
+    jwks_url: String,
     state: MockState,
     task: JoinHandle<io::Result<()>>,
 }
@@ -196,16 +198,14 @@ impl MockOidcServer {
         let address = listener.local_addr()?;
         let base_url = format!("http://{address}");
         let issuer = format!("{base_url}{REALM_PATH}");
+        let jwks_url = format!("{base_url}{JWKS_PATH}");
         let state = MockState::new(issuer);
         let router = Router::new()
             .route(
                 &format!("{REALM_PATH}/.well-known/openid-configuration"),
                 get(discovery),
             )
-            .route(
-                &format!("{REALM_PATH}/protocol/openid-connect/certs"),
-                get(jwks),
-            )
+            .route(JWKS_PATH, get(jwks))
             .route(
                 &format!("{REALM_PATH}/protocol/openid-connect/token"),
                 post(refresh_token),
@@ -214,6 +214,7 @@ impl MockOidcServer {
         let task = tokio::spawn(async move { axum::serve(listener, router).await });
         Ok(Self {
             base_url,
+            jwks_url,
             state,
             task,
         })
@@ -229,6 +230,12 @@ impl MockOidcServer {
     #[must_use]
     pub fn base_url(&self) -> &str {
         &self.base_url
+    }
+
+    /// Returns the JWKS URL, for verifiers built without discovery.
+    #[must_use]
+    pub fn jwks_url(&self) -> &str {
+        &self.jwks_url
     }
 
     /// Builds claims with this issuer and an expiry relative to now.
@@ -249,6 +256,18 @@ impl MockOidcServer {
     /// Mints an RS256 token with the active signing key and its `kid` header.
     pub fn mint(&self, claims: &JwtClaims) -> Result<String, JwtFixtureError> {
         mint_with_active_key(&self.state, claims)
+    }
+
+    /// Mints an RS256 token with the active signing key but a caller-chosen `kid` header.
+    ///
+    /// Use a `kid` the JWKS does not publish to test unknown-key refresh and
+    /// negative caching.
+    pub fn mint_with_key_id(
+        &self,
+        claims: &JwtClaims,
+        key_id: &str,
+    ) -> Result<String, JwtFixtureError> {
+        rs256_token_with_key_id(active_key_pem(&self.state)?, Some(key_id), claims)
     }
 
     /// Creates an access/refresh token pair whose access token has the requested lifetime.
@@ -371,7 +390,8 @@ impl MockOidcServer {
         *self.state.keys.write().expect("mock JWKS lock") = vec![jwk(KEY_2_ID, KEY_2_MODULUS)];
     }
 
-    /// Delays subsequent JWKS responses to exercise verifier timeouts.
+    /// Delays subsequent JWKS responses to exercise verifier timeouts and
+    /// concurrent refreshes that must share one request.
     pub fn set_jwks_delay(&self, delay: Duration) {
         self.state.jwks_delay_millis.store(
             delay.as_millis().try_into().unwrap_or(u64::MAX),
@@ -379,7 +399,7 @@ impl MockOidcServer {
         );
     }
 
-    /// Returns how many JWKS requests the fixture has served.
+    /// Returns how many JWKS requests the fixture has received, including delayed ones.
     #[must_use]
     pub fn jwks_request_count(&self) -> usize {
         self.state.jwks_requests.load(Ordering::SeqCst)
@@ -478,7 +498,7 @@ struct TokenEndpointResponse {
 async fn discovery(State(state): State<MockState>) -> Json<Value> {
     Json(json!({
         "issuer": state.issuer,
-        "jwks_uri": format!("{}{REALM_PATH}/protocol/openid-connect/certs", origin(&state.issuer)),
+        "jwks_uri": format!("{}{JWKS_PATH}", origin(&state.issuer)),
         "authorization_endpoint": format!("{}/protocol/openid-connect/auth", state.issuer),
         "token_endpoint": format!("{}/protocol/openid-connect/token", state.issuer),
         "id_token_signing_alg_values_supported": ["RS256"]
@@ -569,9 +589,21 @@ fn mint_session_access_token(
 }
 
 fn mint_with_active_key(state: &MockState, claims: &JwtClaims) -> Result<String, JwtFixtureError> {
+    rs256_token_with_key_id(active_key_pem(state)?, Some(active_key_id(state)?), claims)
+}
+
+fn active_key_pem(state: &MockState) -> Result<&'static [u8], JwtFixtureError> {
     match state.active_key.load(Ordering::SeqCst) {
-        1 => rs256_token_with_key_id(KEY_1_PEM, Some(KEY_1_ID), claims),
-        2 => rs256_token_with_key_id(KEY_2_PEM, Some(KEY_2_ID), claims),
+        1 => Ok(KEY_1_PEM),
+        2 => Ok(KEY_2_PEM),
+        _ => Err(JwtFixtureError::InvalidActiveKey),
+    }
+}
+
+fn active_key_id(state: &MockState) -> Result<&'static str, JwtFixtureError> {
+    match state.active_key.load(Ordering::SeqCst) {
+        1 => Ok(KEY_1_ID),
+        2 => Ok(KEY_2_ID),
         _ => Err(JwtFixtureError::InvalidActiveKey),
     }
 }
@@ -726,7 +758,7 @@ mod tests {
         let verifier =
             Arc::new(OidcVerifier::discover(OidcConfig::new(server.issuer(), "api")?).await?);
         let claims = server.claims("user-123", "api", Duration::from_secs(60))?;
-        let token = rs256_token_with_key_id(KEY_1_PEM, Some("unknown-key"), &claims)?;
+        let token = server.mint_with_key_id(&claims, "unknown-key")?;
         let mut tasks = Vec::new();
         for _ in 0..16 {
             let verifier = Arc::clone(&verifier);
@@ -743,6 +775,39 @@ mod tests {
             Err(VerificationError::UnknownKeyId)
         ));
         assert_eq!(server.jwks_request_count(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn jwks_url_serves_verifiers_without_discovery_and_refreshes_after_ttl()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let server = MockOidcServer::start().await?;
+        assert!(server.jwks_url().starts_with(server.issuer()));
+        let cache_ttl = Duration::from_millis(100);
+        let config = OidcConfig::new(server.issuer(), "api")?.with_jwks_cache_ttl(cache_ttl)?;
+        let verifier = OidcVerifier::from_jwks_uri(config, server.jwks_url())?;
+        let token = server.mint(&server.claims("user-123", "api", Duration::from_secs(60))?)?;
+
+        verifier.verify(&token).await?;
+        verifier.verify(&token).await?;
+        assert_eq!(server.jwks_request_count(), 1);
+
+        sleep(cache_ttl * 2).await;
+        verifier.verify(&token).await?;
+        assert_eq!(server.jwks_request_count(), 2);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn mint_with_key_id_signs_with_the_active_key() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let server = MockOidcServer::start().await?;
+        let claims = server.claims("user-123", "api", Duration::from_secs(60))?;
+        let token = server.mint_with_key_id(&claims, KEY_1_ID)?;
+        assert_eq!(token, server.mint(&claims)?);
+        server.rotate_signing_key();
+        let rotated = server.mint_with_key_id(&claims, KEY_2_ID)?;
+        assert_eq!(rotated, server.mint(&claims)?);
         Ok(())
     }
 

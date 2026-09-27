@@ -121,7 +121,32 @@ cargo test --manifest-path rust/Cargo.toml -- --include-ignored
 ## Auth fixtures
 
 `MockOidcServer` serves discovery and JWKS documents and signs tokens the real `OidcVerifier` accepts,
-so the whole verification path runs in a test without a live identity provider. `hs256_token`,
+so the whole verification path runs in a test without a live identity provider. It also tests the
+verifier's JWKS cache. `jwks_url` feeds `OidcVerifier::from_jwks_uri` when a test skips discovery.
+`jwks_request_count` counts JWKS requests, and `set_jwks_delay` holds each response back, so a test
+can prove that concurrent refreshes share one request, that a cache TTL triggers a refetch, and that
+a timeout fires. `mint_with_key_id` signs with the active key under a `kid` the JWKS does not
+publish, for unknown-key refresh and negative caching:
+
+```rust,no_run
+# async fn example() -> Result<(), Box<dyn std::error::Error>> {
+use std::time::Duration;
+
+use baukit_auth::{OidcConfig, OidcVerifier};
+use baukit_test::MockOidcServer;
+
+let server = MockOidcServer::start().await?;
+let verifier = OidcVerifier::from_jwks_uri(OidcConfig::new(server.issuer(), "api")?, server.jwks_url())?;
+let claims = server.claims("user-123", "api", Duration::from_secs(60))?;
+let unknown = server.mint_with_key_id(&claims, "unpublished-key")?;
+assert!(verifier.verify(&unknown).await.is_err());
+assert!(verifier.verify(&unknown).await.is_err());
+assert_eq!(server.jwks_request_count(), 1);
+# Ok(())
+# }
+```
+
+`hs256_token`,
 `rs256_token`, `rs256_token_with_key_id`, and `unsigned_token` build tokens from `JwtClaims`, including
 the malformed ones you need for negative cases. `InMemoryApiTokenStore` implements `ApiTokenStore` for
 tests that exercise personal access tokens. Call `fail_with` with `ApiTokenStoreError::Internal` or

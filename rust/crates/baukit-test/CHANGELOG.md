@@ -13,6 +13,10 @@ All notable changes to `baukit-test` are documented here.
 - Add `PostgresTestContainer::create_database` and `PostgresTestDatabases` for
   one database per test on a shared container or on an external server such as
   `DATABASE_URL`. Each `PostgresTestDatabase` drops its database when it drops.
+- Add `MockOidcServer::jwks_url` for verifiers built with `from_jwks_uri`, and
+  `MockOidcServer::mint_with_key_id` to sign with the active key under an
+  unpublished `kid`. Document the existing `jwks_request_count` and
+  `set_jwks_delay` for JWKS cache tests.
 
 ### Changed
 
