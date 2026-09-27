@@ -25,6 +25,11 @@ All notable changes to `baukit-http` are documented here.
   it covers exposed headers too.
 - `baukit-http` depends on `baukit-core` with the `pagination` feature and no longer depends on
   `base64` or `ring` directly.
+- Break: the error envelope field `request_id` is now `requestId`, through the re-exported
+  `ErrorBody`. This covers every `ApiError`, extractor rejection, timeout, panic, body-limit,
+  404, and 405 response.
+- Break: the `RequestLocale` rejection detail key `accept_language` is now `acceptLanguage`.
+- Break: `Page` responses carry `nextCursor` instead of `next_cursor`, through `baukit-core`.
 
 ### Removed
 

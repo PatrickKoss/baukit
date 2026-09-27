@@ -65,7 +65,7 @@ listener without these layers, so the policy does not touch them.
 
 ## Errors say the same thing every time
 
-`ApiError` produces the `{ "error": { "code", "message", "request_id", "details" } }` envelope from
+`ApiError` produces the `{ "error": { "code", "message", "requestId", "details" } }` envelope from
 `baukit-openapi`, so the documented schema and the actual response body come from one type.
 
 Constructors cover the usual cases: `bad_request`, `validation_field`, `unauthenticated`,
@@ -229,6 +229,7 @@ pagination with opaque cursors bound to the request filters. They live in `bauki
 # #[derive(Clone, Serialize)]
 # struct Item { id: Uuid, name: String }
 # #[derive(Serialize)]
+# #[serde(rename_all = "camelCase")]
 # struct PageMeta { next_cursor: Option<String> }
 async fn list(
     Query(query): Query<ListQuery>,

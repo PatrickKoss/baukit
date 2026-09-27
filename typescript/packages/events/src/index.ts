@@ -42,19 +42,19 @@ export const EventPayloadValueSchema: z.ZodType<EventPayloadValue> = z.lazy(() =
 );
 
 export const EventPayloadSchema = z
-  .record(z.string().regex(/^[a-z][a-z0-9_]{0,63}$/u), EventPayloadValueSchema)
+  .record(z.string().regex(/^[a-z][a-zA-Z0-9]{0,63}$/u), EventPayloadValueSchema)
   .refine((payload) => Object.keys(payload).length <= MAX_EVENT_PAYLOAD_KEYS, {
     message: `payload must contain at most ${String(MAX_EVENT_PAYLOAD_KEYS)} keys`,
   });
 
 export const EventEnvelopeSchema = z
   .object({
-    event_id: eventIdSchema,
+    eventId: eventIdSchema,
     type: eventTypeSchema,
-    user_id: z.string().trim().min(1).max(255),
-    occurred_at: z.string().datetime(),
-    source_app: z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/u),
-    schema_version: z
+    userId: z.string().trim().min(1).max(255),
+    occurredAt: z.string().datetime(),
+    sourceApp: z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/u),
+    schemaVersion: z
       .number()
       .int()
       .superRefine((value, context) => {
@@ -82,7 +82,7 @@ export const INGEST_OUTCOME_STATUSES = [
 export const IngestOutcomeSchema = z
   .object({
     outcome: z.enum(INGEST_OUTCOME_STATUSES),
-    ledger_entry_id: z.string().nullable(),
+    ledgerEntryId: z.string().nullable(),
   })
   .strict();
 
@@ -93,13 +93,13 @@ export function validateEventEnvelope(
   expectedUserId: string,
   now: string,
 ): EventValidationCode | null {
-  if (envelope.schema_version !== EVENT_SCHEMA_VERSION) return 'event_schema_unsupported';
-  if (!validEventId(envelope.event_id)) return 'event_id_invalid';
+  if (envelope.schemaVersion !== EVENT_SCHEMA_VERSION) return 'event_schema_unsupported';
+  if (!validEventId(envelope.eventId)) return 'event_id_invalid';
   if (!validEventType(envelope.type)) return 'event_type_invalid';
-  if (envelope.user_id !== expectedUserId) return 'event_user_mismatch';
+  if (envelope.userId !== expectedUserId) return 'event_user_mismatch';
 
   const nowMilliseconds = parseInstant(now);
-  const occurredAtMilliseconds = parseInstant(envelope.occurred_at);
+  const occurredAtMilliseconds = parseInstant(envelope.occurredAt);
   if (nowMilliseconds - occurredAtMilliseconds > MAX_EVENT_AGE_SECONDS * 1_000) {
     return 'event_too_old';
   }

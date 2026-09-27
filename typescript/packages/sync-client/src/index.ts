@@ -8,9 +8,8 @@ export {
   SyncServerError,
   SyncTransportError,
   syncFailureFromError,
-  toSnakeCaseFailure,
 } from './error.js';
-export type { SnakeCaseSyncFailure, SyncFailure } from './error.js';
+export type { SyncFailure } from './error.js';
 export {
   compareHybridLogicalTimestamps,
   decodeHybridLogicalTimestamp,
@@ -41,18 +40,12 @@ export type {
   SyncSchedulerRecoverySignal,
   SyncSchedulerTimer,
 } from './scheduler.js';
-export {
-  deriveInitialSyncState,
-  deriveLocalStoreReadiness,
-  SyncStatusStore,
-  toSnakeCaseSnapshot,
-} from './store.js';
+export { deriveInitialSyncState, deriveLocalStoreReadiness, SyncStatusStore } from './store.js';
 export type {
   InitialPullStatus,
   InitialSyncState,
   LocalStoreReadiness,
   LocalStoreReadinessInput,
-  SnakeCaseSyncStatusSnapshot,
   SyncAttentionItem,
   SyncFailureUpdate,
   SyncStatus,

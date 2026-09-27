@@ -21,6 +21,7 @@ All notable changes to `baukit-test` are documented here.
   `PurgeHorizonAdapter` trait, `PurgeHorizonPull`, and `PullPause`. The check covers horizon
   monotonicity, batch limits, a purge racing an open pull, cursors at and below the horizon, owner
   isolation, and erasure.
+- Re-export `assert_openapi_camel_case` and `check_openapi_camel_case` from `baukit-openapi`.
 
 ### Changed
 
@@ -31,6 +32,8 @@ All notable changes to `baukit-test` are documented here.
   challenges that `baukit-auth` sends.
 - With `sqlx-postgres`, the container fixture now waits until PostgreSQL
   accepts a connection before it returns.
+- Break: `check_auth_router_conformance` expects `requestId` in the unauthenticated error
+  envelope instead of `request_id`.
 
 ## [0.4.0] - 2026-09-12
 

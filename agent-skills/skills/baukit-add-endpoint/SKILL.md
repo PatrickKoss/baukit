@@ -24,8 +24,11 @@ For a table pulled by offline clients, follow the generated product's `docs/sync
 ## Keep the HTTP contract
 
 1. Register the route and use Baukit extractors such as `ApiJson` and `ApiPath` so rejection responses use the standard envelope.
-2. Return `ApiError`; never serialize an ad hoc error body. Public codes must be stable snake_case, messages must be safe, validation details must be structured, and internal causes must stay out of responses. The envelope is `ErrorEnvelope { error: ErrorBody { code, message, request_id, details } }`.
+2. Return `ApiError`; never serialize an ad hoc error body. Public codes must be stable snake_case, messages must be safe, validation details must be structured, and internal causes must stay out of responses. The envelope serializes as `{ "error": { "code", "message", "requestId", "details" } }`.
 3. Document every success and error response with `#[utoipa::path]`. Use `ErrorEnvelope` for error bodies.
+   Give every request and response DTO `#[serde(rename_all = "camelCase")]` and name path and query
+   parameters in camelCase. The generated `openapi_drift` test fails on any other property or
+   parameter name and prints its JSON pointer.
 4. Add the handler to `ApiDoc`'s `paths(...)`; add new DTOs and error schemas to `components(schemas(...))`.
 5. Follow the contracts in the matching Baukit checkout: `docs/platform/baukit-conventions.md`, `docs/platform/telemetry-spec.md`, and `docs/platform/resource-budgets-contract.md`. Do not add endpoint-specific HTTP metrics; `baukit-http` records the standard RED metrics once.
 
@@ -38,12 +41,12 @@ return Err(ApiError::validation_field(
 ));
 
 return Err(ApiError::validation_fields([
-    ("starts_at", "must be before ends_at"),
-    ("ends_at", "must be after starts_at"),
+    ("startsAt", "must be before endsAt"),
+    ("endsAt", "must be after startsAt"),
 ]));
 ```
 
-Use `ApiError::new(...).with_details(...)` when the endpoint needs a stable product code other than `validation_failed`. Keep detail keys stable and values safe for clients.
+Use `ApiError::new(...).with_details(...)` when the endpoint needs a stable product code other than `validation_failed`. Keep detail keys stable, name fields by their camelCase wire name, and keep values safe for clients.
 
 ## Prove ingress parity and replay behavior
 

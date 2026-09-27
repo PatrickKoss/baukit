@@ -231,7 +231,7 @@ fn limited_response(quota: Quota, decision: RateLimitDecision) -> Response {
     let retry_after = duration_seconds_ceil(decision.retry_after);
     let mut response = baukit_http::ApiError::rate_limited()
         .with_details(BTreeMap::from([(
-            "retry_after".to_owned(),
+            "retryAfter".to_owned(),
             retry_after.into(),
         )]))
         .with_retry_after(retry_after)
@@ -625,7 +625,7 @@ mod tests {
         )
         .expect("JSON");
         assert_eq!(json["error"]["code"], "rate_limited");
-        assert_eq!(json["error"]["details"]["retry_after"], retry_after);
+        assert_eq!(json["error"]["details"]["retryAfter"], retry_after);
     }
 
     #[tokio::test]
@@ -730,7 +730,7 @@ mod tests {
         )
         .expect("JSON");
         assert_eq!(json["error"]["code"], "rate_limited");
-        assert_eq!(json["error"]["details"]["retry_after"], 60);
+        assert_eq!(json["error"]["details"]["retryAfter"], 60);
     }
 
     const APP_ORIGIN: &str = "https://app.example.com";

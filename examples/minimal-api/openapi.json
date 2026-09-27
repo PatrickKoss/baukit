@@ -38,7 +38,7 @@
             "description": "Safe user-facing or intentionally generic message.",
             "type": "string"
           },
-          "request_id": {
+          "requestId": {
             "description": "Request identifier shared with logs and support tooling.",
             "type": "string"
           }
@@ -46,7 +46,7 @@
         "required": [
           "code",
           "message",
-          "request_id",
+          "requestId",
           "details"
         ],
         "type": "object"

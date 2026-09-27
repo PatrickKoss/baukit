@@ -73,7 +73,7 @@ Failures use one envelope across every endpoint, with the request ID inside the 
 ```console
 $ curl -X POST localhost:8080/notes -d '{"title":"","body":"x"}' -H 'content-type: application/json'
 {"error":{"code":"validation_failed","message":"The request is invalid",
-          "request_id":"0f9bead5-9dd2-4f45-b876-0e12e9d663a3",
+          "requestId":"0f9bead5-9dd2-4f45-b876-0e12e9d663a3",
           "details":{"title":"must not be empty"}}}
 ```
 

@@ -113,7 +113,7 @@ export interface ApiErrorEnvelope<Code extends string = string> {
   readonly error: {
     readonly code: Code;
     readonly message: string;
-    readonly request_id: string;
+    readonly requestId: string;
     readonly details: Readonly<Record<string, JsonValue>>;
   };
 }
@@ -130,7 +130,7 @@ export class ApiError<Code extends string = string> extends Error {
     super(envelope.error.message);
     this.name = 'ApiError';
     this.code = envelope.error.code;
-    this.requestId = envelope.error.request_id;
+    this.requestId = envelope.error.requestId;
     this.details = envelope.error.details;
     this.status = status;
   }
@@ -197,7 +197,7 @@ export function parseApiErrorEnvelope(value: unknown, status: number): ApiError 
   if (
     typeof error['code'] !== 'string' ||
     typeof error['message'] !== 'string' ||
-    typeof error['request_id'] !== 'string' ||
+    typeof error['requestId'] !== 'string' ||
     !isJsonObject(error['details'])
   ) {
     return null;
@@ -208,7 +208,7 @@ export function parseApiErrorEnvelope(value: unknown, status: number): ApiError 
       error: {
         code: error['code'],
         message: error['message'],
-        request_id: error['request_id'],
+        requestId: error['requestId'],
         details: error['details'],
       },
     },

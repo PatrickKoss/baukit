@@ -4,6 +4,14 @@ All notable changes to `baukit-events` are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Break: `EventEnvelope` serializes camelCase field names while staying schema version 1:
+  `event_id`, `user_id`, `occurred_at`, `source_app`, and `schema_version` are now `eventId`,
+  `userId`, `occurredAt`, `sourceApp`, and `schemaVersion`. `type` and `payload` are
+  unchanged. Payload keys in the shared fixtures are camelCase.
+- Break: `IngestOutcome` serializes `ledger_entry_id` as `ledgerEntryId`.
+
 ## [0.4.0] - 2026-09-12
 
 ## [0.3.0] - 2026-09-04

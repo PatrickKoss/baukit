@@ -16,6 +16,7 @@ opted into:
 - `assert_metrics_conformance`: required metrics exist with the right names, types, and buckets.
 - `assert_auth_router_conformance`: protected routes reject missing, malformed, and expired tokens.
 - `assert_openapi_no_drift`: the committed schema matches the code.
+- `assert_openapi_camel_case`: every property and path or query parameter name is camelCase.
 - `check_product_profile_erasure_conformance`: a user-deletion path actually removes what it claims.
 - `check_limit_boundaries`: a validator accepts `limit - 1` and `limit`, then rejects `limit + 1`.
 - `check_update_at_capacity` and `check_soft_delete_capacity_reuse`: live-row caps allow updates and

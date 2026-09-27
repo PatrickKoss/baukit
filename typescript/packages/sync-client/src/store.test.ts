@@ -4,7 +4,6 @@ import {
   deriveInitialSyncState,
   deriveLocalStoreReadiness,
   SyncStatusStore,
-  toSnakeCaseSnapshot,
   type SyncAttentionItem,
 } from './store.js';
 
@@ -296,48 +295,6 @@ describe('SyncStatusStore', () => {
     unsubscribe();
     store.setIdle(firstSuccessAt);
     expect(listener).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('toSnakeCaseSnapshot', () => {
-  it('projects every status field without changing attention items', () => {
-    const store = new SyncStatusStore<{ id: string }>();
-    store.hydrate({
-      lastAttemptAt: '2026-08-22T09:02:00Z',
-      lastSuccessAt: '2026-08-22T09:00:00Z',
-      attention: [{ id: 'conflict-1' }],
-      pendingCount: 2,
-    });
-
-    expect(toSnakeCaseSnapshot(store.getSnapshot())).toEqual({
-      status: 'attention',
-      last_attempt_at: '2026-08-22T09:02:00Z',
-      last_success_at: '2026-08-22T09:00:00Z',
-      last_sync_at: '2026-08-22T09:00:00Z',
-      error: null,
-      failure: null,
-      retrying: false,
-      retry_at: null,
-      attention: [{ id: 'conflict-1' }],
-      pending_count: 2,
-      initial_pull_status: 'settled',
-      refresh_revision: 1,
-      security_block: null,
-    });
-  });
-
-  it('projects rate-limit metadata without product copy', () => {
-    const store = new SyncStatusStore();
-    store.setFailure({ kind: 'rate_limited', retryAt: '2026-08-22T10:05:00Z' }, 'product message', {
-      attemptAt: failedAttemptAt,
-    });
-
-    expect(toSnakeCaseSnapshot(store.getSnapshot())).toMatchObject({
-      error: 'product message',
-      failure: { kind: 'rate_limited', retry_at: '2026-08-22T10:05:00Z' },
-      retrying: true,
-      retry_at: '2026-08-22T10:05:00Z',
-    });
   });
 });
 

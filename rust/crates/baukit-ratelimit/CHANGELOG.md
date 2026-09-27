@@ -4,6 +4,11 @@ All notable changes to `baukit-ratelimit` are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Break: the rejection detail `retry_after` is now `retryAfter`. The `Retry-After` header is
+  unchanged.
+
 ## [0.4.0] - 2026-09-12
 
 ## [0.3.0] - 2026-09-04

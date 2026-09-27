@@ -174,7 +174,7 @@ async fn error_envelope_has_the_exact_shared_shape() {
             "error": {
                 "code": "validation_failed",
                 "message": "The request is invalid",
-                "request_id": "validation-request",
+                "requestId": "validation-request",
                 "details": {"email": ["is invalid"]}
             }
         })
@@ -226,7 +226,7 @@ async fn api_error_adds_headers_without_changing_the_envelope() {
             "error": {
                 "code": "rate_limited",
                 "message": "Too many requests",
-                "request_id": "caller-request-id",
+                "requestId": "caller-request-id",
                 "details": {}
             }
         })
@@ -268,7 +268,7 @@ async fn panic_becomes_safe_500_envelope() {
     assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     let body = response_json(response).await;
     assert_eq!(body["error"]["code"], "internal");
-    assert_eq!(body["error"]["request_id"], "panic-request");
+    assert_eq!(body["error"]["requestId"], "panic-request");
     assert!(!body.to_string().contains("sensitive"));
 }
 
@@ -300,7 +300,7 @@ async fn timeout_becomes_standard_envelope() {
             "error": {
                 "code": "request_timeout",
                 "message": "The request timed out",
-                "request_id": "timeout-request",
+                "requestId": "timeout-request",
                 "details": {}
             }
         })
@@ -333,7 +333,7 @@ async fn body_limit_becomes_standard_envelope() {
             "error": {
                 "code": "payload_too_large",
                 "message": "The request body is too large",
-                "request_id": "large-request",
+                "requestId": "large-request",
                 "details": {}
             }
         })
@@ -398,7 +398,7 @@ async fn standardized_extractors_map_json_path_and_query_rejections() {
         assert_eq!(body["error"]["code"], "validation_failed");
         assert!(body["error"]["details"].get(detail).is_some());
         assert!(
-            body["error"]["request_id"]
+            body["error"]["requestId"]
                 .as_str()
                 .is_some_and(|request_id| request_id.ends_with("-rejection"))
         );
@@ -465,6 +465,49 @@ async fn json_field_type_mismatch_has_the_data_class() {
         body["error"]["details"],
         json!({"body": "must match the request schema"})
     );
+}
+
+#[tokio::test]
+async fn camel_case_bodies_reject_snake_case_names_without_echoing_them() {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct SaveInput {
+        started_at: String,
+    }
+    async fn handler(ApiJson(input): ApiJson<SaveInput>) -> String {
+        input.started_at
+    }
+    let app = finalize(
+        Router::new().route("/save", post(handler)),
+        classified_json_options(),
+    );
+    let send = |body: &'static str| {
+        app.clone().oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/save")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body))
+                .expect("request"),
+        )
+    };
+
+    let accepted = send(r#"{"startedAt": "2026-01-01"}"#)
+        .await
+        .expect("response");
+    assert_eq!(accepted.status(), StatusCode::OK);
+
+    let rejected = send(r#"{"started_at": "2026-01-01"}"#)
+        .await
+        .expect("response");
+    assert_eq!(rejected.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body = response_json(rejected).await;
+    assert_eq!(body["error"]["code"], "validation_failed");
+    assert_eq!(
+        body["error"]["details"],
+        json!({"body": "must match the request schema"})
+    );
+    assert!(!body.to_string().contains("started_at"), "{body}");
 }
 
 #[tokio::test]
@@ -549,7 +592,7 @@ async fn classified_json_rejection_propagates_the_request_id() {
 
     assert_eq!(response.headers()[X_REQUEST_ID], "json-class-request");
     assert_eq!(
-        response_json(response).await["error"]["request_id"],
+        response_json(response).await["error"]["requestId"],
         "json-class-request"
     );
 }
@@ -777,7 +820,7 @@ async fn finalize_maps_unmatched_routes_and_methods() {
         assert_eq!(response.status(), status);
         let body = response_json(response).await;
         assert_eq!(body["error"]["code"], code);
-        assert_eq!(body["error"]["request_id"], "routing-rejection");
+        assert_eq!(body["error"]["requestId"], "routing-rejection");
     }
 }
 

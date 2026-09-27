@@ -5,7 +5,7 @@
 //! no longer replay every deletion, so the client must rebuild from cursor
 //! zero. The constants here are the stable wire signal that
 //! `@baukit/sync-client` already decodes: HTTP 409 with error code
-//! `resync_required` and the horizon in `details.horizon_revision`.
+//! `resync_required` and the horizon in `details.horizonRevision`.
 
 use thiserror::Error;
 
@@ -16,7 +16,7 @@ pub const RESYNC_REQUIRED_STATUS: u16 = 409;
 pub const RESYNC_REQUIRED_CODE: &str = "resync_required";
 
 /// Error `details` key that carries the owner's purge horizon.
-pub const HORIZON_REVISION_DETAIL: &str = "horizon_revision";
+pub const HORIZON_REVISION_DETAIL: &str = "horizonRevision";
 
 /// Cursor that requests a full rebuild. It is valid at every horizon.
 pub const FULL_RESYNC_CURSOR: i64 = 0;
@@ -99,6 +99,11 @@ mod tests {
                 horizon_revision: 2
             })
         );
+    }
+
+    #[test]
+    fn horizon_detail_uses_the_camel_case_wire_name() {
+        assert_eq!(HORIZON_REVISION_DETAIL, "horizonRevision");
     }
 
     #[test]

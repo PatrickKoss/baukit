@@ -20,6 +20,8 @@ schemas at their own ingestion boundary. Persistence, authorization, delivery, t
 retry policy stay product-owned as well.
 
 What Baukit fixes here is the envelope: the wire fields, the five validation codes, and the
-seven-day replay boundary. `baukit-events` is the Rust half of the same contract, and the fixture
+seven-day replay boundary. The fields are `eventId`, `type`, `userId`, `occurredAt`, `sourceApp`,
+`schemaVersion`, and `payload`, and `EventPayloadSchema` accepts up to 32 camelCase payload keys.
+`IngestOutcomeSchema` parses `{ outcome, ledgerEntryId }`. `baukit-events` is the Rust half of the same contract, and the fixture
 at `fixtures/events/event-envelope-v1.json` is what both sides test against, so a change to one
 without the other fails.

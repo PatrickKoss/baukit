@@ -208,8 +208,8 @@ rejection details its UI needs:
 
 ```ts
 interface ProductAttention {
-  object_entity_type: string;
-  object_entity_id: string;
+  objectEntityType: string;
+  objectEntityId: string;
   rejections: readonly Rejection[];
 }
 
@@ -217,35 +217,13 @@ const status = new SyncStatusStore<ProductAttention>();
 status.setAttention(items, pendingCount);
 ```
 
-For stores and screens that use API-style names, `toSnakeCaseSnapshot` returns a typed projection:
-
-```ts
-const snapshot = toSnakeCaseSnapshot(status.getSnapshot());
-
-snapshot.last_attempt_at;
-snapshot.last_success_at;
-snapshot.last_sync_at;
-snapshot.failure;
-snapshot.retrying;
-snapshot.retry_at;
-snapshot.pending_count;
-snapshot.initial_pull_status;
-snapshot.refresh_revision;
-snapshot.security_block;
-```
-
-`status`, `error`, and `attention` keep their names. Attention items also keep their original
-shape.
-
 ### Timestamp migration
 
-`lastSyncAt` and `last_sync_at` are deprecated compatibility fields for one release cycle. They
-are derived from `lastSuccessAt` and `last_success_at`. New code must not write or persist them as
-attempt timestamps.
+`lastSyncAt` is a deprecated compatibility field for one release cycle. It is derived from
+`lastSuccessAt`. New code must not write or persist it as an attempt timestamp.
 
-Replace `snapshot.lastSyncAt` with `snapshot.lastSuccessAt`. Replace `snapshot.last_sync_at` with
-`snapshot.last_success_at`. Persist both attempt and success timestamps, then hydrate with an
-object:
+Replace `snapshot.lastSyncAt` with `snapshot.lastSuccessAt`. Persist both attempt and success
+timestamps, then hydrate with an object:
 
 ```ts
 status.hydrate({
@@ -354,7 +332,7 @@ without it receive the original case set and need no adapter change.
 `zeroCursor` is the product's explicit full-rebuild cursor. `decodeStaleCursor` maps the product's
 wire error onto `{ code: 'resync_required', horizon }`. The product response must keep the code and
 horizon field stable. For the HTTP 409 envelope, the source value is
-`error.details.horizon_revision`.
+`error.details.horizonRevision`.
 
 `isResetSafe` is the production policy hook. `setResetSafe` lets the isolated test client enter a
 safe or unsafe state. `reset` clears server-backed rows and writes `zeroCursor` in one transaction,

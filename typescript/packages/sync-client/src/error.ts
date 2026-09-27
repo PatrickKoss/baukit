@@ -8,11 +8,6 @@ export type SyncFailure =
   | { readonly kind: 'payload_compatibility' }
   | { readonly kind: 'local_apply' };
 
-/** Snake-case projection of {@link SyncFailure}. */
-export type SnakeCaseSyncFailure =
-  | Exclude<SyncFailure, { readonly kind: 'rate_limited' }>
-  | { readonly kind: 'rate_limited'; readonly retry_at: string };
-
 /** A sync request failed. `retryable` decides whether a later attempt may win. */
 export class SyncTransportError extends Error {
   constructor(
@@ -118,10 +113,4 @@ export function syncFailureFromError(error: unknown): SyncFailure {
     return error.retryable ? { kind: 'network' } : { kind: 'server' };
   }
   return { kind: 'local_apply' };
-}
-
-export function toSnakeCaseFailure(failure: SyncFailure): SnakeCaseSyncFailure {
-  return failure.kind === 'rate_limited'
-    ? { kind: failure.kind, retry_at: failure.retryAt }
-    : failure;
 }

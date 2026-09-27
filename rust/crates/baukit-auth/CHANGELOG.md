@@ -11,6 +11,9 @@ All notable changes to `baukit-auth` are documented here.
   `Bearer error="invalid_token", error_description="expired"` and every other
   rejected token gets `error_description="invalid"`. Clients that parsed
   `hint=` must read `error_description=`.
+- Break: `ApiTokenPolicyRejection::with_detail` accepts camelCase detail names only, such as
+  `activeCount`, because they become error `details` keys. A snake_case name such as
+  `active_count` now returns `InvalidDetailName`. Codes stay snake_case.
 
 ## [0.4.0] - 2026-09-12
 

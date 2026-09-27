@@ -21,7 +21,7 @@ const rustEnvelopeSample = {
   error: {
     code: 'validation_failed',
     message: 'The request is invalid',
-    request_id: 'req-123',
+    requestId: 'req-123',
     details: {},
   },
 };
@@ -66,11 +66,11 @@ describe('Baukit error normalization', () => {
       ApiError,
     );
     expect(
-      parseApiErrorEnvelope({ error: { ...rustEnvelopeSample.error, requestId: 'wrong' } }, 400),
-    ).not.toBeNull();
+      parseApiErrorEnvelope({ error: { ...rustEnvelopeSample.error, request_id: 'wrong' } }, 400),
+    ).toMatchObject({ requestId: 'req-123' });
     expect(
       parseApiErrorEnvelope(
-        { error: { code: 'bad', message: 'Bad', requestId: 'wrong', details: {} } },
+        { error: { code: 'bad', message: 'Bad', request_id: 'snake', details: {} } },
         400,
       ),
     ).toBeNull();

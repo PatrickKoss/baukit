@@ -10,7 +10,7 @@ const unauthorized = {
   error: {
     code: 'unauthenticated',
     message: 'Authentication required',
-    request_id: 'request-1',
+    requestId: 'request-1',
     details: {},
   },
 };

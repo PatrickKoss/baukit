@@ -75,7 +75,7 @@ async fn service_contract() -> TestResult {
     assert_eq!(headers["x-request-id"], "request-validation-1");
     assert_eq!(validation["error"]["code"], "validation_failed");
     assert_eq!(validation["error"]["message"], "The request is invalid");
-    assert_eq!(validation["error"]["request_id"], "request-validation-1");
+    assert_eq!(validation["error"]["requestId"], "request-validation-1");
     assert_eq!(validation["error"]["details"]["title"], "must not be empty");
 
     let (status, _, body) = call(
@@ -99,7 +99,7 @@ async fn service_contract() -> TestResult {
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(headers["x-request-id"], "request-missing-1");
     assert_eq!(missing["error"]["code"], "not_found");
-    assert_eq!(missing["error"]["request_id"], "request-missing-1");
+    assert_eq!(missing["error"]["requestId"], "request-missing-1");
     assert_eq!(missing["error"]["details"], json!({}));
 
     let (status, _, body) = call(
@@ -108,7 +108,7 @@ async fn service_contract() -> TestResult {
     )
     .await?;
     assert_eq!(status, StatusCode::NOT_FOUND);
-    assert_eq!(json_body(&body)?["error"]["request_id"], "request-route-1");
+    assert_eq!(json_body(&body)?["error"]["requestId"], "request-route-1");
 
     let (status, _, body) = call(
         &api,
@@ -170,6 +170,11 @@ fn committed_openapi_has_no_drift() {
         &openapi_document(),
         concat!(env!("CARGO_MANIFEST_DIR"), "/openapi.json"),
     );
+}
+
+#[test]
+fn openapi_names_are_camel_case() {
+    baukit_openapi::assert_camel_case_names(&openapi_document(), &[]);
 }
 
 async fn call(

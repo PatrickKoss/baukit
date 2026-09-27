@@ -30,7 +30,7 @@ stamp replace a newer local payload.
 ## Guard pull progress
 
 Treat cursors as opaque product values and supply an explicit comparator. Reject a cursor that
-moves backwards. Reject `has_more` when the cursor did not advance. Apply a decoded page and its
+moves backwards. Reject `hasMore` when the cursor did not advance. Apply a decoded page and its
 next cursor in one local transaction. Inject a failure after at least one staged row and prove the
 transaction leaves both data and cursor unchanged.
 
@@ -48,7 +48,7 @@ hide the rejection or report the group as synced.
 ## Handle finite tombstone retention
 
 If the server purges tombstones, keep a monotonic purge horizon for each stable owner. Accept cursor
-zero as a full-rebuild request. Return `resync_required` with `details.horizon_revision` when a
+zero as a full-rebuild request. Return `resync_required` with `details.horizonRevision` when a
 nonzero cursor is below the horizon. Use HTTP 409 for this response. Do not include owner identity,
 table names, or deleted row data in that error.
 

@@ -163,8 +163,8 @@ impl IntoResponse for RequestLocaleRejection {
             Self::MalformedQuery => ("query", "must use valid percent-encoded UTF-8"),
             Self::DuplicateQueryOverride => ("locale", "must be supplied at most once"),
             Self::UnsupportedQueryLocale => ("locale", "must be a supported locale"),
-            Self::HeaderTooLong => ("accept_language", "is too long"),
-            Self::MalformedHeader => ("accept_language", "is malformed"),
+            Self::HeaderTooLong => ("acceptLanguage", "is too long"),
+            Self::MalformedHeader => ("acceptLanguage", "is malformed"),
         };
         ApiError::validation_field(field, message).into_response()
     }
@@ -628,7 +628,7 @@ mod tests {
         assert_eq!(body["error"]["code"], "validation_failed");
         assert_eq!(
             body["error"]["details"],
-            json!({"accept_language": "is malformed"})
+            json!({"acceptLanguage": "is malformed"})
         );
     }
 
