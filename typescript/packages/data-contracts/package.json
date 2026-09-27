@@ -38,6 +38,14 @@
       "types": "./dist/export.d.ts",
       "import": "./dist/export.js"
     },
+    "./revisioned-writes": {
+      "types": "./dist/revisioned-writes.d.ts",
+      "import": "./dist/revisioned-writes.js"
+    },
+    "./durable-draft": {
+      "types": "./dist/durable-draft.d.ts",
+      "import": "./dist/durable-draft.js"
+    },
     "./vitest": {
       "types": "./dist/vitest.d.ts",
       "import": "./dist/vitest.js"
