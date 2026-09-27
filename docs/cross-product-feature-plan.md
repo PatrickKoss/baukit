@@ -12,21 +12,21 @@ The completed [0.3.0 improvement plan](next-improvements-plan.md) delivered JSON
 
 Legend: `[ ]` not started, `[~]` in progress, `[x]` done in Baukit, `[-]` decided not to implement (see log). Scope decided on 2026-09-27: every item lands in Baukit first (code, tests, evidence note, changelog or changeset, template and fixture updates). Product adoption, product deletions, and product defect fixes are recorded under [product adoption follow-ups](#product-adoption-follow-ups) and happen in a later pass. Each item is committed locally on `main` after its gates pass; nothing is pushed or tagged without an explicit ask.
 
-Waves group items with disjoint file ownership. Up to four implementation agents run per wave, each in its own git worktree. Each wave ends with a merge, a snapshot re-bless when templates changed, and a CI-equivalent verification run on `main`. Evidence notes for item N live at `docs/evidence/<26+N>-<slug>.md`.
+Waves group items with disjoint file ownership. Up to four implementation agents run per wave, each in its own git worktree. Each wave ends with a merge, a snapshot re-bless when templates changed, and a CI-equivalent verification run on `main`. Evidence notes for item N live at `docs/evidence/<36+N>-<slug>.md`, after the 36 notes from the 0.3.0 plan.
 
 ### Wave 1: corrections to code products already use
 
-- [ ] 1. Serialize Expo SQLite root operations with exclusive transactions
-- [ ] 2. Close HTTP boundary gaps: exposed headers, cache policy, cursors
-- [ ] 3. Claim only jobs the worker can handle
-- [ ] 4. Remove consumer friction in tooling and test support
+- [x] 1. Serialize Expo SQLite root operations with exclusive transactions
+- [x] 2. Close HTTP boundary gaps: exposed headers, cache policy, cursors
+- [x] 3. Claim only jobs the worker can handle
+- [~] 4. Remove consumer friction in tooling and test support
 
 ### Wave 2: naming convention and independent client helpers
 
 - [ ] 5. Move HTTP APIs to camelCase (Baukit, templates, naming check)
-- [ ] 11. Resolve zoned local times and publish the calendar recipe
-- [ ] 13. Add enabled-item menu navigation
-- [ ] 20. Add a safe export encoder and share outcome
+- [~] 11. Resolve zoned local times and publish the calendar recipe
+- [~] 13. Add enabled-item menu navigation
+- [~] 20. Add a safe export encoder and share outcome
 
 ### Wave 3: server contracts
 
@@ -58,9 +58,28 @@ Waves group items with disjoint file ownership. Up to four implementation agents
 
 Filled in as items complete. Each line names the product code to delete or change once the product pins a released Baukit version.
 
+- Item 1, Eigenruhe: after its native regression passes on the release, delete `mobile/src/db/serialized-store.ts` and `serialized-store.test.ts`, return the `ExpoSqliteStore` directly in `mobile/src/local-data.ts`, and remove or rewrite the wrapper case "finishes an accepted settings mutation before a serialized store closes" in `mobile/src/db/contract-tests/persistence.test.ts`. Close `docs/tickets/baukit-sqlite-operation-serialization.md`. Keep `SerializedRecordStoreResource` in `mobile/src/record-store.ts`. Leitbild and Redemut: version bump only; no product code calls the removed per-store `initialize()`.
+- Item 2, every product: move `baukit_http::pagination` imports to `baukit_core::pagination` (enable the `pagination` feature), move rate limiters and principal establishment inside `finalize` so 401 and 429 carry CORS headers, and pass product-only exposed headers through `with_additional_exposed_headers`. Handlers that serve public content (OpenAPI documents, manifests, health) set their own `Cache-Control`.
+- Item 2, Eigenruhe: remove the expose-header overwrite and `/api/v1` no-store in `api_response_contract` and `animation_descriptor_cache_control` (`eigenruhe-api/src/lib.rs`).
+- Item 2, Hebkit: delete the second `CorsLayer` in `hebkit-api/src/adapters/http/mod.rs` and `http_policy::private_api_cache`; expose `deprecation` and `sunset`.
+- Item 2, Leitbild: delete `response_contract_headers` in `leitbild-api/src/lib.rs`; expose `content-language`, `deprecation`, `sunset`, and `link`.
+- Item 2, Redemut: delete the second `CorsLayer` and `private_cache_policy` in `redemut-api/src/lib.rs`; expose `cache-control`, `www-authenticate`, and `server-timing`. `HistoryCursor` in `redemut-services/src/lib.rs` can become `baukit_core::pagination::Cursor`.
+- Item 2, Runtime Analyzer: delete `no_store` and `expose_response_headers` in `finops-api/src/lib.rs` and the per-handler no-store copies in `routes/evidence.rs`, `audit.rs`, and `reports.rs`; expose `x-audit-id`, `www-authenticate`, `cache-control`, `x-next-cursor`, and `x-export-complete`.
+- Item 2, Schlauzug (provisional): remove the expose-header and no-store inserts in `external_http_policy` (`schlauzug-api/src/lib.rs`) and move `baukit_ratelimit::layers` and `establish_oidc` inside `finalize` in `schlauzug-bin/src/bin/api.rs`.
+- Item 2, Solo Leveling System: remove the expose-header append and no-store in `contract_response_headers` (`sl-api/src/lib.rs`), keeping the `WWW-Authenticate` realms; replace `sl-domain/src/pagination.rs` with `baukit_core::pagination`; merge the MCP router before `finalize` in `sl-bin/src/bin/api.rs`.
+- Item 2, Tiefgang: delete `response_policy` in `tiefgang-api/src/http_policy.rs` and drop the `x-ratelimit-*` names, which Baukit never emits.
+- Item 3, all products with a worker: add `baukit-jobs` migration `0003_baukit_jobs_claim_by_type.sql` (it rebuilds `job_outbox_claim_idx` inside one transaction; use `CREATE INDEX CONCURRENTLY` for a large outbox), and check that every handler's `job_types()` lists every type that worker should run, because undeclared types now stay pending.
+- Item 3, Runtime Analyzer: delete `backend/crates/finops-worker/src/queue_store.rs` and its `pub mod` line; run `PostgresJobStore` with two handler wrappers around `Dispatcher`, one declaring `ANALYSIS_TYPES` and one the rest of `JOB_TYPES`; delete `job_runs_total` and `job_duration_seconds` in `dispatcher.rs` and the assertion in `backend/tests/worker_integration.rs`; update `tests/e2e/pipeline.rs` and `tests/api_reports.rs`; drop the "no per-type routing" gap in `docs/BAUKIT_PORT_PLAN.md`. Its per-queue oldest-age gauges become one global gauge.
+- Item 3, Hebkit: pass job types to the direct `claim` calls in `backend/tests/worker_integration.rs`, `google_health.rs`, and `strava.rs`. Leitbild: add the `job_types` parameter to `FakeJobStore::claim` in `backend/tests/worker_integration.rs`.
+
 ### Log
 
 - 2026-09-27: Tracker added. Scope is Baukit only; product adoption deferred. Waves fixed as above.
+- 2026-09-27: Wave 1 started. Items 1, 2, 3, 4 run in parallel, one worktree each.
+- 2026-09-27: Item 3 merged (5e81185, c68951c; evidence renumbered to 39). `JobStore::claim` takes the handler's job types and rejects an empty set; claim recovery and the oldest-age gauge stay type-agnostic so an unhandled type trips the queue-age alert. New migration 0003 indexes `(job_type, run_after, created_at, id)`: 48 buffers instead of 3,607 against 200k unhandled rows. Disk is at 98 to 99 percent while four worktrees build; worktrees are removed right after merge.
+- 2026-09-27: Item 2 merged (9bba14a, d0a0834; evidence renumbered to 38). Breaks: rate-limit headers join the default exposed set; `Cache-Control: private, no-store` is the default (`ResponseCachePolicy::HandlerOwned` opts out); pagination types moved to `baukit_core::pagination` behind a `pagination` feature; `MAX_CURSOR_BYTES = 4096` bounds decode and encode. The backend template now runs rate limiting and principal establishment inside `finalize`, because 401 and 429 had no CORS headers before. Defects for the product list: Schlauzug has the same outside-`finalize` ordering, Solo Leveling System merges its MCP router after `finalize`, and Hebkit and Redemut stack a second `CorsLayer` that may emit duplicate `Access-Control-Allow-Origin`. Open: `cargo deny` fails on RUSTSEC-2026-0285 (rustls 0.23.43), pre-existing; fix in the wave 1 verification pass. `worker.tree` auto-merged between items 2 and 3; re-bless in the same pass.
+- 2026-09-27: Item 1 merged (14fee99, c795f17, 1587397; evidence renumbered to 37). One queue per database file, keyed by `databasePath`, covers root operations, `initialize`, `withTransaction`, and `close`; a per-handle queue would miss collisions because Expo shares native connections by path. The new Android conformance case fails on 0.4.0 with "database is locked" and passes now (26 cases, API 36 emulator). Breaks: root store constructors lose the `assertAvailable` argument and require `databasePath`; a transaction accepted before `close` now runs; a root call made inside a `withTransaction` callback on the same file now waits forever instead of failing with a lock error. That last one cannot be detected without async context and is documented in the package README. The gate script now installs with `CI=1` so it reruns without a TTY. iOS stays with the native release gate.
+- 2026-09-27: Items 11, 13, and 20 started early, in parallel with item 4, because they share no files with it. Item 5 waits for item 4, since both touch templates.
 
 ## What changed in this revision
 
