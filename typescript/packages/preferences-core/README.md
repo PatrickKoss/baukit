@@ -75,7 +75,8 @@ UI must expect committed visibility while updates are pending.
 
 Adapters implement `PreferenceStore.read` and `PreferenceStore.patch`. Import
 `describePreferenceStoreContract` from `@baukit/preferences-core/vitest` to run the shared Vitest
-contract. `InMemoryPreferenceStore` is suitable for tests and small in-process consumers.
+contract. That subpath is ESM-only and has no `default` condition, so Jest cannot resolve it.
+`InMemoryPreferenceStore` is suitable for tests and small in-process consumers.
 
 `RepositoryPreferenceStore` (or `createRepositoryPreferenceStore`) adapts a repository keyed by a
 subject id, which is how most products already store a settings row. Give it the repository, the

@@ -24,11 +24,13 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./eslint": {
       "types": "./dist/eslint.d.ts",
-      "import": "./dist/eslint.js"
+      "import": "./dist/eslint.js",
+      "default": "./dist/eslint.js"
     }
   },
   "files": [
@@ -39,7 +41,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepare": "pnpm run build",
-    "test": "vitest run --config ../../vitest.config.ts",
+    "test": "vitest run --config ../../vitest.config.ts && node ../../scripts/test-packed-exports.mjs",
     "lint": "eslint src --max-warnings=0",
     "format:check": "prettier --check src package.json tsconfig.json"
   },

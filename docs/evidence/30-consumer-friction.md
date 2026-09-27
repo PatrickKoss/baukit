@@ -278,3 +278,86 @@ changeset.
 - Tiefgang: replace `scrubSentryEvent` in `mobile/src/monitoring/sentry.ts`
   with `scrubErrorEvent(event, { blockedKeys: ['intention', 'note', 'panic',
   'request', 'target'] })`.
+
+## 4. Jest resolves `@baukit/*` without a module map
+
+### Observed repeated glue
+
+Every package export listed only `types` and `import`. Jest resolves from
+CommonJS with the `require` and `default` conditions plus its environment
+conditions, so it found no match and every mobile app kept a hand-written
+`moduleNameMapper` that points each package at `node_modules/.../dist/*.js`:
+
+- Baukit's own `templates/mobile/mobile/jest.config.cjs` (eight entries) and
+  `templates/mobile/__auth__/mobile/jest.config.cjs` (ten entries).
+- `/home/patrick/projects/eigenruhe/mobile/jest.config.cjs:45`,
+  `/home/patrick/projects/hebkit/mobile/jest.config.cjs:5`,
+  `/home/patrick/projects/leitbild/mobile/jest.config.cjs:7`,
+  `/home/patrick/projects/redemut/mobile/jest.config.cjs:5`,
+  `/home/patrick/projects/schlauzug/mobile/jest.config.cjs:7`,
+  `/home/patrick/projects/solo-leveling-system/mobile/jest.config.cjs:6`, and
+  `/home/patrick/projects/tiefgang/mobile/jest.config.cjs:9`.
+- `/home/patrick/projects/hebkit/mobile/package.json:117` repeats a larger map,
+  including `sync-client` subpaths, inline in its `test` script.
+
+Each new Baukit package or subpath broke those tests until someone extended the
+map.
+
+### Decision: `default` condition, not a Jest preset
+
+Every export except the `./vitest` subpaths now lists `default` with the same
+target as `import`. The build output is ESM, and Jest already transforms it
+because the template sets `transformIgnorePatterns: []`, so pointing `default`
+at the ESM file is enough. It also fixes any other resolver that uses CommonJS
+conditions, needs no new package, and cannot fall out of date the way a preset's
+map would when a subpath is added. A preset would have needed its own package,
+version, and a map that repeats the exports field.
+
+`@baukit/pwa-web` is unchanged: it already publishes `require` with a CommonJS
+build. The `./vitest` subpaths of `data-contracts` and `preferences-core` stay
+`import`-only because Vitest is ESM-only and must not load under Jest.
+
+### Failure behavior
+
+A Jest suite that imports a `./vitest` subpath fails resolution with
+`ERR_PACKAGE_PATH_NOT_EXPORTED` instead of failing inside Vitest.
+
+### Privacy boundary
+
+None.
+
+### Supported runtimes
+
+Jest 29 through `jest-expo`, Node 24, Vite, and Metro. Metro and Vite already
+used `import`.
+
+### Tests
+
+`typescript/scripts/test-packed-exports.mjs` runs at the end of every package's
+`test` script except `pwa-web`, which has its own packed test. It packs the
+package with pnpm, extracts the archive into a temporary `node_modules`, and
+resolves every export with Node's `require` conditions. It fails when an export
+does not resolve or points at a file missing from the archive, and it checks
+that each `--esm-only` subpath still refuses `require`. The script failed on
+`@baukit/analytics-core` before the `default` condition was added. The
+generated `--mobile` fixture and the `--auth oidc` fixture pass `tsc --noEmit`,
+lint, and Jest with the maps removed.
+
+### Template change
+
+Both mobile `jest.config.cjs` files drop `moduleNameMapper` and keep
+`transformIgnorePatterns: []`. The mobile README explains why no map is
+needed.
+
+### Breaks
+
+None for consumers. Existing maps keep working because they bypass export
+resolution.
+
+### Product adoption
+
+- Eigenruhe, Hebkit, Leitbild, Redemut, Schlauzug, Solo Leveling System, and
+  Tiefgang: delete the `@baukit/*` entries from `mobile/jest.config.cjs` and keep
+  `transformIgnorePatterns` covering `@baukit`.
+- Hebkit: also delete the `@baukit/*` entries from the inline
+  `--moduleNameMapper` in `mobile/package.json:117`.

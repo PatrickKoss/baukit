@@ -24,23 +24,28 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./hlc": {
       "types": "./dist/hlc.d.ts",
-      "import": "./dist/hlc.js"
+      "import": "./dist/hlc.js",
+      "default": "./dist/hlc.js"
     },
     "./expo": {
       "types": "./dist/expo.d.ts",
-      "import": "./dist/expo.js"
+      "import": "./dist/expo.js",
+      "default": "./dist/expo.js"
     },
     "./browser": {
       "types": "./dist/browser.d.ts",
-      "import": "./dist/browser.js"
+      "import": "./dist/browser.js",
+      "default": "./dist/browser.js"
     },
     "./conformance": {
       "types": "./dist/conformance.d.ts",
-      "import": "./dist/conformance.js"
+      "import": "./dist/conformance.js",
+      "default": "./dist/conformance.js"
     }
   },
   "files": [
@@ -51,7 +56,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepare": "pnpm run build",
-    "test": "tsc -p tsconfig.exports.json && vitest run --config ../../vitest.config.ts",
+    "test": "tsc -p tsconfig.exports.json && vitest run --config ../../vitest.config.ts && node ../../scripts/test-packed-exports.mjs",
     "lint": "eslint src --max-warnings=0",
     "format:check": "prettier --check src type-tests package.json tsconfig*.json"
   },
