@@ -11,7 +11,8 @@ product's Expo SDK decides the versions, and React Native is optional.
 
 A React Native product imports the package root and gets everything. A plain React web app imports
 `@baukit/a11y-core/web` and gets `useFocusTrap`, `useInert`, `useAriaHiddenInert`,
-`useSingleFlight`, `createRouteFocusController`, and the `dom-boundary` helpers. Nothing reachable
+`useRovingMenu`, `nextEnabledMenuIndex`, `useSingleFlight`, `createRouteFocusController`, and the
+`dom-boundary` helpers. Nothing reachable
 from that entry imports `react-native`, at runtime or in its types, so the app needs no React
 Native in its dependency tree. `react-native` is an optional peer dependency for exactly that
 reason.
@@ -65,6 +66,55 @@ empty on web and while closed. Spread `containerProps` onto the overlay containe
 overlay. `useAriaHiddenInert` covers a separate problem: routers mark inactive web scenes
 `aria-hidden`, which leaves their descendants in the keyboard focus order. Mount it once at the
 app root. Put `ARIA_HIDDEN_INERT_OPT_OUT` on an element that must stay focusable anyway.
+
+## Menus
+
+`useRovingMenu` holds the keyboard state of an action menu. It gives the menu one tab stop on an
+enabled item, moves focus with the arrow keys while skipping disabled items, wraps at both ends,
+and sends Home and End to the first and last enabled items. It renders nothing and never invokes an
+action. Escape, Tab containment, the inert background, and focus restoration stay with
+`useOverlayA11y`, so call `useRovingMenu` first and pass its `initialFocusRef` on:
+
+```tsx
+const menu = useRovingMenu({ active: visible, options: items });
+const overlay = useOverlayA11y({
+  active: visible,
+  containerRef: panelRef,
+  initialFocusRef: menu.initialFocusRef,
+  onEscape: onClose,
+  triggerRef,
+});
+
+items.map((item, index) => (
+  <Pressable key={item.id} {...menu.itemProps(index)} disabled={item.disabled} />
+));
+```
+
+`options` only needs `disabled` and `selected`, so the product's item array fits as is. The tab
+stop starts on the first selected enabled item, otherwise the first enabled item, and returns there
+each time the menu opens. `itemProps(index)` returns the `tabIndex`, `ref`, and `onKeyDown` for one
+item; `activeIndex` names the item holding the tab stop.
+
+- With no enabled item, `activeIndex` is null, every item has `tabIndex: -1`, arrow keys do
+  nothing, and `initialFocusRef.current` is null. `useOverlayA11y` then focuses the first focusable
+  element in the container, so put the close control before the items.
+- When the active item is disabled or removed while the menu is open, the tab stop moves to the
+  item now at that position if it is enabled, otherwise back to the initial item. If the removed
+  item held focus and focus fell to the document body, the hook focuses the new active item.
+- A key that comes from a host nested inside an item, such as a text field, is left alone.
+- `initialFocusRef` is one stable ref for the life of the component. The hook points it at the
+  active item in an effect, and the overlay reads it in a later effect when the menu opens, so both
+  hooks must run in the same component with `useRovingMenu` first. Do not swap it for another ref
+  while the menu is open: the web trap would re-enter and forget the trigger it restores to.
+
+`nextEnabledMenuIndex(key, currentIndex, options)` is the pure step behind the hook, for a product
+that handles keys on the menu container instead. It returns null for keys other than the arrows,
+Home, and End, and for a menu without an enabled item. It moves relative to `currentIndex` even
+when that item is disabled or gone: an index past the end moves Down to the first enabled item and
+Up to the last, and so does `-1`.
+
+Action order, closing before or after an action, async failure recovery, selection meaning, and
+copy stay with the product.
 
 ## Route focus
 

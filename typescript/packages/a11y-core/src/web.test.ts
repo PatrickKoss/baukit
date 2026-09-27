@@ -23,10 +23,12 @@ describe('the web entry point', () => {
       'focusableElements',
       'hostElement',
       'makeOutsideSiblingsInert',
+      'nextEnabledMenuIndex',
       'syncAriaHiddenInert',
       'useAriaHiddenInert',
       'useFocusTrap',
       'useInert',
+      'useRovingMenu',
       'useSingleFlight',
       'wrapFocusAtBoundary',
     ]);

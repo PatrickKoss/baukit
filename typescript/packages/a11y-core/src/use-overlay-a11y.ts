@@ -8,7 +8,7 @@ import {
   type ViewProps,
 } from 'react-native';
 
-import { hostElement } from './dom-boundary.js';
+import { hostElement, type HostRef } from './dom-boundary.js';
 import { useFocusTrap, type FocusTrapProps } from './use-focus-trap.js';
 import { useInert } from './use-inert.js';
 
@@ -25,7 +25,7 @@ export interface OverlayA11yOptions {
   deferFocus?: DeferFocus | undefined;
   /** Container whose outside siblings go inert. Defaults to `containerRef`. */
   inertContainerRef?: RefObject<View | null> | undefined;
-  initialFocusRef?: RefObject<View | null> | undefined;
+  initialFocusRef?: HostRef | undefined;
   onEscape?: (() => void) | undefined;
   /** Native tag of the opener, when the caller already resolved it. */
   triggerHandle?: number | null | undefined;
