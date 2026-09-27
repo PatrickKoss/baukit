@@ -98,7 +98,7 @@ try {
 }
 ```
 
-- `ApiError`: a valid Baukit `{ error: { code, message, request_id, details } }` envelope.
+- `ApiError`: a valid Baukit `{ error: { code, message, requestId, details } }` envelope.
 - `HttpError`: an HTTP failure with a missing or malformed envelope, including non-JSON bodies.
 - `NetworkError`: no HTTP response, such as an offline, DNS, fetch, or CORS failure. Aborts set `aborted` to `true`.
 

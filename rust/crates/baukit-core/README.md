@@ -135,7 +135,8 @@ baukit-core = { version = "0.4", features = ["pagination"] }
 `PageParams` validates `limit` and carries the still-encoded cursor. `Page::from_rows` truncates an
 over-fetched row set and issues the next `Cursor`. The cursor is base64url JSON holding a version,
 the keyset position, and a short hash of the normalized request filters, so a cursor replayed
-against other filters fails with `PaginationError::InvalidCursor`.
+against other filters fails with `PaginationError::InvalidCursor`. `Page` serializes as
+`{ "items": [...], "nextCursor": "..." }`, with `nextCursor` set to `null` on the last page.
 
 `Cursor::decode` rejects input longer than `MAX_CURSOR_BYTES` (4096 bytes) before it base64-decodes
 or parses anything, so an oversized query parameter costs no allocation. `Cursor::encode` returns

@@ -114,7 +114,7 @@ Group keys use `group:<name>:` and cannot collide with global `id:` or `ip:`
 keys. The group name is the metric `scope`; the extracted subject key is never
 a label. Rejections include `Retry-After`, `RateLimit-Limit`,
 `RateLimit-Remaining`, and `RateLimit-Reset`. The JSON error details contain the
-same whole-second `retry_after` value as the `Retry-After` header.
+same whole-second `retryAfter` value as the `Retry-After` header.
 
 Place principal-establishing middleware outside the global layer and place the
 global layer outside route groups. Axum runs the last added layer first:
@@ -163,7 +163,7 @@ Existing `layers` calls keep their behavior. Replace product-owned bearer
 middleware with `baukit_auth::establish_principal` and place it outside
 `baukit_ratelimit::layers`. Startup code that conditionally connects Redis can
 replace its scope checks with `RedisRateLimitStore::connect_if_enabled`. Rate
-limit rejections now add numeric `details.retry_after`; their status, code,
+limit rejections now add numeric `details.retryAfter`; their status, code,
 message, and headers remain unchanged. Applications can delete response
 normalizers that only copied the retry delay into the standard error body.
 

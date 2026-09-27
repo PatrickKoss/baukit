@@ -4,6 +4,14 @@ All notable changes to `baukit-integrations` are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Break: `ConnectionStatus` serializes camelCase field names: `last_success_at`,
+  `last_attempt_at`, `last_error_code`, `next_retry_at`, and `failed_attempts` are now
+  `lastSuccessAt`, `lastAttemptAt`, `lastErrorCode`, `nextRetryAt`, and `failedAttempts`.
+  `ConnectionHealth` values stay snake_case. Stored JSON written by an older release no
+  longer deserializes.
+
 ## [0.4.0] - 2026-09-12
 
 ## [0.3.0] - 2026-09-04

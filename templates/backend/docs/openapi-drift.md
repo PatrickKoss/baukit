@@ -25,6 +25,14 @@ is to make sure that file cannot lie.
 `backend/tests/openapi_drift.rs` runs the first check as a plain `cargo test`,
 so the same failure appears locally before a push.
 
+The same file also checks names. Every JSON property and every path and query
+parameter must be camelCase, such as `createdAt` or `nextCursor`. Give each
+request and response DTO `#[serde(rename_all = "camelCase")]`. A failure lists
+each offending name with its JSON pointer into the document. Enum values, error
+codes, and header names are values or HTTP names and stay as they are. When a
+standard fixes a name, such as the OAuth 2.0 `access_token`, add it to
+`STANDARD_DEFINED_NAMES` in the test instead of renaming it.
+
 ## Multiple consumers
 
 One specification usually feeds several clients: a web app, a mobile app, an MCP

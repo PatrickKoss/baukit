@@ -72,7 +72,7 @@ export interface components {
             /** @description Safe user-facing or intentionally generic message. */
             message: string;
             /** @description Request identifier shared with logs and support tooling. */
-            request_id: string;
+            requestId: string;
         };
         /**
          * @description The shared public error response envelope.

@@ -18,12 +18,13 @@ fixture corpus. Product event names and payloads do not belong in Baukit.
 ## Decision
 
 Add `baukit-events` and `@baukit/events` in the coordinated v0.1.0 train. Both
-packages define schema version 1 with `event_id`, `type`, `user_id`,
-`occurred_at`, `source_app`, `schema_version`, and an object payload.
+packages define schema version 1 with `eventId`, `type`, `userId`,
+`occurredAt`, `sourceApp`, `schemaVersion`, and an object payload whose keys
+are camelCase. The ingestion outcome is `{ outcome, ledgerEntryId }`.
 
-`event_id` is opaque text with 1 to 64 Unicode scalar values and is the
+`eventId` is opaque text with 1 to 64 Unicode scalar values and is the
 idempotency key. Event types contain exactly three lower-snake-case segments,
-each limited to 32 characters. The receiver compares `user_id` with the
+each limited to 32 characters. The receiver compares `userId` with the
 authenticated connection subject. Events more than 604800 seconds old return
 `event_too_old`; the exact seven-day boundary remains valid.
 
@@ -46,3 +47,14 @@ change a current credit balance or rule state.
 The first users keep local copies until v0.1.0 is tagged. Their upgrade
 deletes those copies and changes one dependency without changing JSON on the
 wire.
+
+## Amendment, 2026-09-27: camelCase field names
+
+The first release used snake_case field names (`event_id`, `user_id`,
+`occurred_at`, `source_app`, `schema_version`, `ledger_entry_id`) and
+lower-snake-case payload keys. Every Baukit HTTP API now uses camelCase
+property names, so the envelope and outcome switched to the names above and
+payload keys became camelCase. The envelope stays schema version 1 because no
+product had events in flight that it needed to keep: senders and receivers
+upgrade together and reset their stored event data. Event type names and
+validation codes are values, not field names, and keep their snake_case form.

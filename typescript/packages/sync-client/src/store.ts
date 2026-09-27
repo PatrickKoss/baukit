@@ -1,4 +1,4 @@
-import { toSnakeCaseFailure, type SnakeCaseSyncFailure, type SyncFailure } from './error.js';
+import type { SyncFailure } from './error.js';
 
 /** Sync activity, as named by the offline-readiness contract. */
 export type SyncStatus = 'idle' | 'syncing' | 'pending' | 'attention' | 'auth' | 'error';
@@ -51,23 +51,6 @@ export interface LocalStoreReadinessInput {
   hasData: boolean;
 }
 
-export interface SnakeCaseSyncStatusSnapshot<TAttention = SyncAttentionItem> {
-  status: SyncStatus;
-  last_attempt_at: string | null;
-  last_success_at: string | null;
-  /** @deprecated Use `last_success_at`. This field will be removed after one release cycle. */
-  last_sync_at: string | null;
-  error: string | null;
-  failure: SnakeCaseSyncFailure | null;
-  retrying: boolean;
-  retry_at: string | null;
-  attention: readonly TAttention[];
-  pending_count: number;
-  initial_pull_status: InitialPullStatus;
-  refresh_revision: number;
-  security_block: string | null;
-}
-
 export interface SyncStatusHydration<TAttention = SyncAttentionItem> {
   lastAttemptAt: string | null;
   lastSuccessAt: string | null;
@@ -103,27 +86,6 @@ function initialSnapshot<TAttention>(): SyncStatusSnapshot<TAttention> {
     initialPullStatus: 'uninitialized',
     refreshRevision: 0,
     securityBlock: null,
-  };
-}
-
-/** Projects a status snapshot onto API-style snake_case field names. */
-export function toSnakeCaseSnapshot<TAttention>(
-  snapshot: SyncStatusSnapshot<TAttention>,
-): SnakeCaseSyncStatusSnapshot<TAttention> {
-  return {
-    status: snapshot.status,
-    last_attempt_at: snapshot.lastAttemptAt,
-    last_success_at: snapshot.lastSuccessAt,
-    last_sync_at: snapshot.lastSuccessAt,
-    error: snapshot.error,
-    failure: snapshot.failure === null ? null : toSnakeCaseFailure(snapshot.failure),
-    retrying: snapshot.retrying,
-    retry_at: snapshot.retryAt,
-    attention: snapshot.attention,
-    pending_count: snapshot.pendingCount,
-    initial_pull_status: snapshot.initialPullStatus,
-    refresh_revision: snapshot.refreshRevision,
-    security_block: snapshot.securityBlock,
   };
 }
 

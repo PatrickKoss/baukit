@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 import {
   EVENT_SCHEMA_VERSION,
   EventEnvelopeSchema,
+  EventPayloadSchema,
+  IngestOutcomeSchema,
   MAX_EVENT_AGE_SECONDS,
   MAX_EVENT_ID_CHARACTERS,
   MAX_EVENT_PAYLOAD_KEYS,
@@ -73,5 +75,32 @@ describe('event envelope fixtures', () => {
     expect(result.success).toBe(false);
     if (result.success) return;
     expect(result.error.issues.map(({ message }) => message)).toContain(expectedCode);
+  });
+});
+
+describe('wire names', () => {
+  it('accepts camelCase payload keys and rejects snake_case ones', () => {
+    expect(EventPayloadSchema.safeParse({ durationMinutes: 42, workoutId: 'w-1' }).success).toBe(
+      true,
+    );
+    expect(EventPayloadSchema.safeParse({ duration_minutes: 42 }).success).toBe(false);
+    expect(EventPayloadSchema.safeParse({ DurationMinutes: 42 }).success).toBe(false);
+  });
+
+  it('parses the ingestion outcome with ledgerEntryId only', () => {
+    expect(IngestOutcomeSchema.parse({ outcome: 'granted', ledgerEntryId: 'entry-1' })).toEqual({
+      outcome: 'granted',
+      ledgerEntryId: 'entry-1',
+    });
+    expect(
+      IngestOutcomeSchema.safeParse({ outcome: 'granted', ledger_entry_id: 'entry-1' }).success,
+    ).toBe(false);
+  });
+
+  it('rejects snake_case envelope fields', () => {
+    const [canonical] = fixtures.cases;
+    if (canonical === undefined) throw new Error('fixture corpus is empty');
+    const { eventId, ...rest } = canonical.input.envelope;
+    expect(EventEnvelopeSchema.safeParse({ ...rest, event_id: eventId }).success).toBe(false);
   });
 });

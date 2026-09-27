@@ -163,8 +163,9 @@ impl<T> PageKey<T> {
 
 /// One page of items plus the cursor that fetches the following page.
 ///
-/// A `next_cursor` of `None` means the caller has reached the end.
+/// A `next_cursor` of `None` means the caller has reached the end. The wire name is `nextCursor`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Page<T> {
     /// The rows of this page, already truncated to the requested limit.
     pub items: Vec<T>,
@@ -600,7 +601,7 @@ mod tests {
     #[test]
     fn page_serializes_with_a_null_cursor_at_the_end() {
         let json = serde_json::to_value(Page::new(vec![1_u64], None)).expect("page serializes");
-        assert_eq!(json, serde_json::json!({"items": [1], "next_cursor": null}));
+        assert_eq!(json, serde_json::json!({"items": [1], "nextCursor": null}));
         let restored: Page<u64> = serde_json::from_value(json).expect("page deserializes");
         assert_eq!(restored, Page::new(vec![1], None));
     }

@@ -56,6 +56,7 @@ pub fn finalize_api(router: Router, config: &HttpConfig) -> Result<Router, HttpO
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct ItemDto {
     pub id: Uuid,
     pub name: String,
@@ -71,11 +72,13 @@ impl From<Item> for ItemDto {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct SaveItemRequest {
     pub name: String,
 }
 
 {% if context.auth_oidc %}#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct CurrentUserDto {
     pub id: Uuid,
     pub subject: String,

@@ -51,9 +51,33 @@ fn openapi_schema_is_current() {
 `write_schema` regenerates the committed file. A missing file is treated as empty, so the first
 run reports the whole document as drift rather than quietly passing.
 
+## camelCase names
+
+Every property and every path and query parameter in a Baukit API is lower camelCase: a lowercase
+ASCII letter followed by ASCII letters and digits. `check_camel_case_names` serializes the document
+and returns `SchemaError` with one `NamingViolation` per offending name, each carrying its JSON
+pointer. `assert_camel_case_names` panics with the same list:
+
+```rust,no_run
+# fn document() -> utoipa::openapi::OpenApi { unimplemented!() }
+const STANDARD_NAMES: &[&str] = &["access_token", "token_type", "expires_in"];
+
+#[test]
+fn openapi_names_are_camel_case() {
+    baukit_openapi::assert_camel_case_names(&document(), STANDARD_NAMES);
+}
+```
+
+The check skips enum and const values, defaults, examples, discriminator mappings, `x-`
+extensions, and header and cookie parameters. `additionalProperties` map keys never appear in a
+document, so they cannot fail it. The exemption list is for names a standard defines, such as the
+OAuth 2.0 token response fields, and applies wherever the name occurs. `find_naming_violations`
+runs the same walk on any `serde_json::Value`, which is how you check a committed `openapi.json`
+without generating it.
+
 ## The error envelope
 
-`ErrorEnvelope` and `ErrorBody` are the `{ "error": { "code", "message", "request_id", "details" } }`
+`ErrorEnvelope` and `ErrorBody` are the `{ "error": { "code", "message", "requestId", "details" } }`
 shape every Baukit service returns for a failure, and `ResponseEnvelope` is the success side.
 `baukit-http` re-exports both and produces them at runtime, so the documented schema and the actual
 response body come from one type rather than from a handwritten schema that drifts from the code.

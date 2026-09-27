@@ -85,6 +85,7 @@ cp "$(manifest_value openapi.schema)" "$committed_schema"
 sh scripts/openapi.sh
 diff -u "$committed_schema" "$(manifest_value openapi.schema)"
 rm "$committed_schema"
+cargo test --manifest-path backend/Cargo.toml -p {{ context.app_name }}-bin --test openapi_drift
 if [ "$has_git_history" = false ]; then
   consumer_snapshot=$(mktemp -d)
   manifest_value openapi.consumers | while IFS= read -r consumer; do

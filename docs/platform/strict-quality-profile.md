@@ -29,6 +29,8 @@ consumers = ["generated/openapi.d.ts"]
 
 List each committed OpenAPI TypeScript declaration in `openapi.consumers`. `scripts/openapi-client.sh` regenerates the entire list. The strict gate fails when a listed file is uncommitted or changes after regeneration.
 
+After the schema diff, the strict gate runs `backend/tests/openapi_drift.rs`. Besides the drift check, that test fails on any property or path or query parameter name that is not camelCase and prints the JSON pointer of each one. Names a standard defines, such as OAuth 2.0 `access_token`, go in the test's `STANDARD_DEFINED_NAMES` list.
+
 ## Local use
 
 Install the tools required by the enabled capabilities, then run:

@@ -56,7 +56,8 @@ pub use auth::{
     AuthConformanceError, assert_auth_router_conformance, check_auth_router_conformance,
 };
 pub use baukit_openapi::{
-    SchemaError as OpenApiDriftError, assert_no_drift as assert_openapi_no_drift,
+    SchemaError as OpenApiDriftError, assert_camel_case_names as assert_openapi_camel_case,
+    assert_no_drift as assert_openapi_no_drift, check_camel_case_names as check_openapi_camel_case,
     check_no_drift as check_openapi_no_drift,
 };
 pub use connector::{

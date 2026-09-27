@@ -272,7 +272,7 @@ fn pull_guard_error(error: PullGuardError) -> ApiError {
                     horizon_revision.into(),
                 )]))
         }
-        PullGuardError::Cursor(_) => ApiError::validation_field("since_revision", "must not be negative"),
+        PullGuardError::Cursor(_) => ApiError::validation_field("sinceRevision", "must not be negative"),
         other => ApiError::internal(other),
     }
 }

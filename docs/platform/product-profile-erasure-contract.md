@@ -156,7 +156,7 @@ and parsed by `@baukit/api-runtime`:
   "error": {
     "code": "product_profile_erasure_failed",
     "message": "The product profile could not be erased",
-    "request_id": "...",
+    "requestId": "...",
     "details": {}
   }
 }
@@ -175,7 +175,7 @@ The minimum stable product code set is:
 | `erasure_operation_failed` | An accepted asynchronous erasure reached a terminal failure. |
 
 Codes are stable snake_case values. `message` is safe fallback copy, `details` is
-a JSON object with safe structured values, and `request_id` connects the response
+a JSON object with safe structured values, and `requestId` connects the response
 to internal diagnostics. Clients localize `code` plus `details` and use `message`
 only as a fallback. Internal causes and processor payloads never cross the API.
 Products document these responses in OpenAPI.

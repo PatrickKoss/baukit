@@ -110,12 +110,12 @@ describe('SyncTransport', () => {
     const fetch = vi.fn<SyncFetch>(() => Promise.resolve(response(200, '{}')));
 
     await transport(fetch, { partitionHeader: 'X-Profile' }).request('/sync/pull', {
-      query: { since_revision: '12', limit: '500' },
+      query: { sinceRevision: '12', limit: '500' },
       partitionId: 'profile-9',
     });
 
     expect(fetch.mock.calls[0]?.[0]).toBe(
-      'https://api.example.test/sync/pull?since_revision=12&limit=500',
+      'https://api.example.test/sync/pull?sinceRevision=12&limit=500',
     );
     expect(fetch.mock.calls[0]?.[1]?.headers).toMatchObject({ 'X-Profile': 'profile-9' });
   });

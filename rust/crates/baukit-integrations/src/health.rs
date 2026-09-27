@@ -49,8 +49,10 @@ impl ConnectionHealth {
 ///
 /// Every field is safe to persist and to render. `last_error_code` is the
 /// [`ConnectorError::code`](crate::ConnectorError::code) of the most recent
-/// failure, never provider body text.
+/// failure, never provider body text. Field names serialize as camelCase, for
+/// example `lastErrorCode`.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ConnectionStatus {
     /// Current health.
     pub health: ConnectionHealth,
@@ -161,6 +163,22 @@ mod tests {
             Some("provider_unavailable")
         );
         assert_eq!(status.last_success_at, None);
+    }
+
+    #[test]
+    fn status_serializes_camel_case_field_names() {
+        let json = serde_json::to_value(ConnectionStatus::default()).expect("serializes");
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "health": "healthy",
+                "lastSuccessAt": null,
+                "lastAttemptAt": null,
+                "lastErrorCode": null,
+                "nextRetryAt": null,
+                "failedAttempts": 0
+            })
+        );
     }
 
     #[test]

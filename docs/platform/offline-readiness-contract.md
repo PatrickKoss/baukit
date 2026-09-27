@@ -52,8 +52,7 @@ Never display "synced" while unsent changes or actionable rejections remain. A c
 - Reset readiness and sync state when the authenticated local-data partition changes.
 
 `lastSyncAt` is a deprecated compatibility field for one release cycle. It always equals
-`lastSuccessAt`. The snake-case projection follows the same rule: `last_sync_at` equals
-`last_success_at`. Products must migrate persisted state to separate attempt and success fields.
+`lastSuccessAt`. Products must migrate persisted state to separate attempt and success fields.
 When importing one old `lastSyncAt` value, use it as both timestamps because the old model cannot
 recover the attempt time independently.
 
@@ -80,13 +79,13 @@ A stale request returns HTTP 409 with this stable error data:
   "error": {
     "code": "resync_required",
     "details": {
-      "horizon_revision": 42
+      "horizonRevision": 42
     }
   }
 }
 ```
 
-`horizon_revision` uses the same validated cursor representation as the pull endpoint. The client
+`horizonRevision` uses the same validated cursor representation as the pull endpoint. The client
 must reject a missing, malformed, or non-advancing horizon as `payload_compatibility`. Human text,
 owner identifiers, table names, and deleted row data do not belong in this response.
 
@@ -202,10 +201,10 @@ partition must never read another partition's outbox, cursor, rejection log, or 
   to the same entity stays pending and visible.
 - An older or equal pulled revision cannot replace a pending local row, but the page and cursor
   still commit together.
-- A pull cursor never regresses, and `has_more` requires cursor progress.
+- A pull cursor never regresses, and `hasMore` requires cursor progress.
 - The stored pull cursor changes only after the local transaction succeeds.
 - A per-owner purge horizon never regresses. Cursor zero bypasses it, while a stale nonzero cursor
-  returns `resync_required` with `details.horizon_revision`.
+  returns `resync_required` with `details.horizonRevision`.
 - An unsafe reset is deferred without changing local state or recording success.
 - A reset clears parent, child, and pull-only server rows in one transaction with cursor zero. It
   preserves pending edits, explicit rejection records, and the rows needed to resolve them.

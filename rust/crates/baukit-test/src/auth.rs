@@ -176,7 +176,7 @@ async fn check_response(
         "error": {
             "code": "unauthenticated",
             "message": "Authentication is required",
-            "request_id": request_id,
+            "requestId": request_id,
             "details": {}
         }
     });

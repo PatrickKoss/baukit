@@ -22,7 +22,11 @@ pub const MAX_EVENT_AGE_SECONDS: i64 = 7 * 24 * 60 * 60;
 pub const MAX_EVENT_PAYLOAD_KEYS: usize = 32;
 
 /// A product-to-product domain event.
+///
+/// Field names serialize as camelCase: `eventId`, `type`, `userId`, `occurredAt`,
+/// `sourceApp`, `schemaVersion`, and `payload`.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EventEnvelope {
     /// Opaque idempotency key chosen by the sender.
     pub event_id: String,
@@ -86,8 +90,9 @@ pub enum IngestOutcomeStatus {
     Rejected,
 }
 
-/// Stable response shape for event ingestion.
+/// Stable response shape for event ingestion: `{ "outcome", "ledgerEntryId" }`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IngestOutcome {
     /// Ingestion result class.
     pub outcome: IngestOutcomeStatus,

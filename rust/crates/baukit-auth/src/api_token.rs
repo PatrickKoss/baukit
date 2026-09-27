@@ -129,7 +129,8 @@ pub struct StoredApiToken {
 
 /// A policy decision that an adapter may safely pass to product API code.
 ///
-/// Codes and detail names are bounded snake_case identifiers. Detail values
+/// Codes are bounded snake_case identifiers and detail names are bounded
+/// camelCase identifiers, matching the wire names of the error body. Detail values
 /// are `u32`, so a rejection cannot carry SQL text, provider messages, or an
 /// unbounded payload into a response.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -156,15 +157,16 @@ impl ApiTokenPolicyRejection {
 
     /// Adds or replaces one bounded numeric detail.
     ///
-    /// The name follows the same snake_case rules as the code. A rejection can
-    /// hold at most eight distinct details.
+    /// The name is a camelCase identifier of at most 64 ASCII characters: a
+    /// lowercase letter followed by letters and digits. A rejection can hold at
+    /// most eight distinct details.
     pub fn with_detail(
         mut self,
         name: impl Into<String>,
         value: u32,
     ) -> Result<Self, ApiTokenPolicyRejectionError> {
         let name = name.into();
-        if !is_valid_policy_identifier(&name, MAX_POLICY_DETAIL_NAME_LENGTH) {
+        if !is_valid_detail_name(&name) {
             return Err(ApiTokenPolicyRejectionError::InvalidDetailName);
         }
         if !self.details.contains_key(&name) && self.details.len() == MAX_POLICY_DETAIL_COUNT {
@@ -199,8 +201,8 @@ pub enum ApiTokenPolicyRejectionError {
     /// The policy code was empty, too long, or not snake_case.
     #[error("API token policy code must be bounded snake_case")]
     InvalidCode,
-    /// A numeric detail name was empty, too long, or not snake_case.
-    #[error("API token policy detail name must be bounded snake_case")]
+    /// A numeric detail name was empty, too long, or not camelCase.
+    #[error("API token policy detail name must be bounded camelCase")]
     InvalidDetailName,
     /// More than eight distinct numeric details were added.
     #[error("API token policy rejection cannot contain more than eight details")]
@@ -326,6 +328,13 @@ fn is_valid_policy_identifier(value: &str, maximum_length: usize) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+}
+
+fn is_valid_detail_name(value: &str) -> bool {
+    let mut bytes = value.bytes();
+    value.len() <= MAX_POLICY_DETAIL_NAME_LENGTH
+        && bytes.next().is_some_and(|first| first.is_ascii_lowercase())
+        && bytes.all(|byte| byte.is_ascii_alphanumeric())
 }
 
 /// Presentation format of a personal access token.
@@ -804,7 +813,7 @@ mod tests {
     }
 
     #[test]
-    fn policy_rejections_accept_only_bounded_snake_case_data() {
+    fn policy_rejections_accept_only_bounded_identifiers() {
         let rejection = ApiTokenPolicyRejection::new("api_tokens_active_limit_exceeded")
             .expect("valid code")
             .with_detail("maximum", 10)
@@ -834,12 +843,35 @@ mod tests {
         let mut full = ApiTokenPolicyRejection::new("limit_exceeded").expect("valid code");
         for index in 0..MAX_POLICY_DETAIL_COUNT {
             full = full
-                .with_detail(format!("detail_{index}"), index as u32)
+                .with_detail(format!("detail{index}"), index as u32)
                 .expect("detail within limit");
         }
         assert_eq!(
-            full.with_detail("one_too_many", 9),
+            full.with_detail("oneTooMany", 9),
             Err(ApiTokenPolicyRejectionError::TooManyDetails)
+        );
+    }
+
+    #[test]
+    fn policy_detail_names_are_camel_case() {
+        let rejection = ApiTokenPolicyRejection::new("limit_exceeded").expect("valid code");
+        rejection
+            .clone()
+            .with_detail("activeCount", 3)
+            .expect("camelCase detail name");
+
+        for name in ["", "active_count", "ActiveCount", "1count", "active-count"] {
+            assert_eq!(
+                rejection.clone().with_detail(name, 1),
+                Err(ApiTokenPolicyRejectionError::InvalidDetailName),
+                "{name}"
+            );
+        }
+        assert_eq!(
+            rejection
+                .clone()
+                .with_detail("a".repeat(MAX_POLICY_DETAIL_NAME_LENGTH + 1), 1),
+            Err(ApiTokenPolicyRejectionError::InvalidDetailName)
         );
     }
 

@@ -20,6 +20,10 @@ All notable changes to `baukit-core` are documented here.
   `PaginationError::InvalidCursor` before decoding, and `Cursor::encode` returns the same error
   instead of issuing a longer cursor.
 
+### Changed
+
+- Break: `pagination::Page` serializes `next_cursor` as `nextCursor`.
+
 ## [0.4.0] - 2026-09-12
 
 ## [0.3.0] - 2026-09-04

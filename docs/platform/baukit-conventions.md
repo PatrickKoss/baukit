@@ -12,6 +12,24 @@
 - npm packages: `@baukit/a11y-core`, `@baukit/analytics-core`, `@baukit/analytics-posthog-web`, `@baukit/analytics-posthog-native`, `@baukit/api-runtime`, `@baukit/auth-native`, `@baukit/auth-web`, `@baukit/data-contracts`, `@baukit/data-contracts-dexie`, `@baukit/data-contracts-expo-sqlite`, `@baukit/localization-core`, `@baukit/notifications-core`, `@baukit/notifications-expo`, `@baukit/preferences-core`, `@baukit/pwa-web`, `@baukit/sync-client`, `@baukit/ui-tokens`. These names live in `package.json` from day one; while private, products consume them as git dependencies with no registry involved, so scope ownership never comes into play until the public npmjs release (see releases below).
 - CLI binary: `baukit`.
 
+## Wire names
+
+JSON property names and path and query parameter names in HTTP APIs are lower camelCase: an ASCII
+lowercase letter followed by ASCII letters and digits, such as `requestId` or `nextCursor`. Rust
+DTOs get `#[serde(rename_all = "camelCase")]`. Error `details` keys name fields by the same wire
+name.
+
+These stay as they are:
+
+- values, including error codes such as `validation_failed`, enum values, and event type names;
+- header names;
+- keys of data maps such as a `details` map of product counters;
+- names a standard defines, such as OAuth 2.0 `access_token`, which the product lists as exemptions;
+- `baukit-ops` operational responses.
+
+`baukit_openapi::check_camel_case_names` walks a generated OpenAPI document and reports each
+violation with its JSON pointer. Generated products run it in the `openapi_drift` test.
+
 ## Licensing
 
 - Everything starts private and unlicensed (proprietary by default); the licenses below are added at the go-public decision, not before.

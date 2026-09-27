@@ -5,8 +5,12 @@ between products. It owns the wire fields, five stable validation codes, and
 the seven-day replay boundary. Products still own their event names, payload
 schemas, persistence, authorization, rules, outbox, and delivery code.
 
-`event_id` is the sender's idempotency key. A receiver stores the first outcome
-for that ID and returns it on a retry. `user_id` must match the identity subject
+The envelope fields are `eventId`, `type`, `userId`, `occurredAt`, `sourceApp`,
+`schemaVersion`, and `payload`. Payload keys are camelCase too. An ingestion
+response is `{ "outcome": "granted", "ledgerEntryId": "..." }`.
+
+`eventId` is the sender's idempotency key. A receiver stores the first outcome
+for that ID and returns it on a retry. `userId` must match the identity subject
 bound to the authenticated connection. An event exactly seven days old is
 valid. An older event returns `event_too_old` and must not change current state.
 

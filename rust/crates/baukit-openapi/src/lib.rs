@@ -2,7 +2,8 @@
 //!
 //! Products continue to own paths, operations, and endpoint schemas. This crate only applies
 //! Baukit's document conventions, provides the shared error envelope schema, offers opt-in
-//! bearer authentication metadata, and manages a deterministic committed schema.
+//! bearer authentication metadata, manages a deterministic committed schema, and checks that
+//! property and parameter names are camelCase.
 //!
 //! # Example
 //!
@@ -40,8 +41,10 @@ use utoipa::ToSchema;
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::openapi::{Components, OpenApi, Server};
 
+mod naming;
 mod precondition;
 
+pub use naming::{NameKind, NamingViolation, find_naming_violations, is_camel_case};
 pub use precondition::{
     ETAG_HEADER, IF_MATCH_HEADER, INVALID_IF_MATCH_CODE, IfMatchRequirement,
     PRECONDITION_FAILED_CODE, PRECONDITION_REQUIRED_CODE, document_etag, document_if_match,
@@ -138,6 +141,7 @@ pub struct ErrorEnvelope {
 
 /// The error body nested inside [`ErrorEnvelope`].
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct ErrorBody {
     /// Stable, machine-readable error code.
     pub code: String,
@@ -234,10 +238,10 @@ impl<T, M> ResponseEnvelope<T, M> {
     }
 }
 
-/// An error produced while serializing, writing, or comparing an OpenAPI schema.
+/// An error produced while serializing, writing, comparing, or naming-checking an OpenAPI schema.
 ///
 /// Its display text includes the affected path and, for drift, the first differing line together
-/// with the CI remediation instruction.
+/// with the CI remediation instruction. A naming failure lists every violation.
 #[derive(Debug)]
 pub struct SchemaError {
     kind: SchemaErrorKind,
@@ -259,6 +263,7 @@ enum SchemaErrorKind {
         committed_line_count: usize,
         generated_line_count: usize,
     },
+    Naming(Vec<NamingViolation>),
 }
 
 impl SchemaError {
@@ -298,6 +303,16 @@ impl SchemaError {
     pub fn is_drift(&self) -> bool {
         matches!(self.kind, SchemaErrorKind::Drift { .. })
     }
+
+    /// Returns the names that failed [`check_camel_case_names`], or an empty slice for any other
+    /// error.
+    #[must_use]
+    pub fn naming_violations(&self) -> &[NamingViolation] {
+        match &self.kind {
+            SchemaErrorKind::Naming(violations) => violations,
+            _ => &[],
+        }
+    }
 }
 
 impl fmt::Display for SchemaError {
@@ -334,6 +349,16 @@ impl fmt::Display for SchemaError {
                 line_value(committed.as_deref()),
                 line_value(generated.as_deref()),
             ),
+            SchemaErrorKind::Naming(violations) => {
+                write!(
+                    formatter,
+                    "{} OpenAPI name(s) are not camelCase; rename the serde field or exempt a standard-defined name",
+                    violations.len()
+                )?;
+                violations
+                    .iter()
+                    .try_for_each(|violation| write!(formatter, "\n - {violation}"))
+            }
         }
     }
 }
@@ -343,7 +368,7 @@ impl StdError for SchemaError {
         match &self.kind {
             SchemaErrorKind::Serialize(error) => Some(error),
             SchemaErrorKind::Io { source, .. } => Some(source),
-            SchemaErrorKind::Drift { .. } => None,
+            SchemaErrorKind::Drift { .. } | SchemaErrorKind::Naming(_) => None,
         }
     }
 }
@@ -497,6 +522,35 @@ pub fn assert_no_drift(openapi: &OpenApi, committed_path: impl AsRef<Path>) {
     }
 }
 
+/// Checks that every property and parameter name in a document is camelCase.
+///
+/// See [`find_naming_violations`] for what the check covers. `exemptions` names standard-defined
+/// fields, such as OAuth 2.0 `access_token`, that keep their external spelling.
+pub fn check_camel_case_names(openapi: &OpenApi, exemptions: &[&str]) -> Result<(), SchemaError> {
+    let document = serde_json::to_value(openapi)?;
+    let violations = find_naming_violations(&document, exemptions);
+    if violations.is_empty() {
+        Ok(())
+    } else {
+        Err(SchemaError {
+            kind: SchemaErrorKind::Naming(violations),
+        })
+    }
+}
+
+/// Asserts that every property and parameter name in a document is camelCase.
+///
+/// # Panics
+///
+/// Panics with one line per violation, or with a serialization error. Use
+/// [`check_camel_case_names`] when the caller should handle the error.
+#[track_caller]
+pub fn assert_camel_case_names(openapi: &OpenApi, exemptions: &[&str]) {
+    if let Err(error) = check_camel_case_names(openapi, exemptions) {
+        panic!("{error}");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -600,7 +654,7 @@ mod tests {
                 "error": {
                     "code": "validation_failed",
                     "message": "The request is invalid",
-                    "request_id": "req-123",
+                    "requestId": "req-123",
                     "details": {}
                 }
             })
@@ -609,11 +663,13 @@ mod tests {
     }
 
     #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
+    #[serde(rename_all = "camelCase")]
     struct TimestampDto {
         observed_at: Rfc3339DateTime,
     }
 
     #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
+    #[serde(rename_all = "camelCase")]
     struct TestMeta {
         request_id: String,
     }
@@ -627,7 +683,7 @@ mod tests {
         };
 
         let json = serde_json::to_value(&dto)?;
-        assert_eq!(json["observed_at"], "2026-08-09T12:34:56.123456789+02:00");
+        assert_eq!(json["observedAt"], "2026-08-09T12:34:56.123456789+02:00");
         assert_eq!(serde_json::from_value::<TimestampDto>(json)?, dto);
 
         let schema = serde_json::to_value(Rfc3339DateTime::schema())?;

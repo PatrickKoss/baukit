@@ -207,8 +207,9 @@ let store_error = ApiTokenStoreError::PolicyRejected(rejection);
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-Policy codes and detail names are snake_case identifiers of at most 64 ASCII characters. Each
-rejection contains at most eight `u32` details. `ApiTokenService` returns these as
+Policy codes are snake_case identifiers and detail names are camelCase identifiers, such as
+`activeCount`, each of at most 64 ASCII characters. Detail names become error `details` keys, so
+they follow the wire naming rule. Each rejection contains at most eight `u32` details. `ApiTokenService` returns these as
 `ApiTokenError::PolicyRejected`; all other adapter failures become `ApiTokenError::Storage`.
 
 ## Migrating store adapters

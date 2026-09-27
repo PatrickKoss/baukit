@@ -10,7 +10,8 @@ All notable changes to `baukit-sync` are documented here.
   hybrid logical clock no longer compiles SQLx, `chrono`, or `uuid`.
 - Add `horizon::check_pull_cursor`, `PullCursorError`, and the `resync_required` wire constants
   (`RESYNC_REQUIRED_STATUS`, `RESYNC_REQUIRED_CODE`, `HORIZON_REVISION_DETAIL`,
-  `FULL_RESYNC_CURSOR`). These need no feature.
+  `FULL_RESYNC_CURSOR`). These need no feature. `HORIZON_REVISION_DETAIL` is the camelCase
+  `horizonRevision`, so the stale-cursor detail is `details.horizonRevision` on the wire.
 - Add `purge::TombstoneTable`, `purge_tombstone_batch`, `purge_tombstones`, `purge_horizon`, and
   `guard_pull_cursor`. A batch deletes at most the caller's limit of expired tombstones and raises
   each affected owner's horizon in the same transaction, never lowering it. It skips owners whose

@@ -25,7 +25,7 @@ pub enum PurgeHorizonPull {
     },
     /// The product rejected the cursor with `resync_required`.
     ResyncRequired {
-        /// The horizon carried in `details.horizon_revision`.
+        /// The horizon carried in `details.horizonRevision`.
         horizon_revision: i64,
     },
 }

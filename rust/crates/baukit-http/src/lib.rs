@@ -58,6 +58,7 @@
 //! }
 //!
 //! #[derive(Serialize)]
+//! #[serde(rename_all = "camelCase")]
 //! struct PageMeta {
 //!     next_cursor: Option<String>,
 //! }
