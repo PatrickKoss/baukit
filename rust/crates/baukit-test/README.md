@@ -153,7 +153,8 @@ assert_eq!(server.jwks_request_count(), 1);
 `hs256_token`,
 `rs256_token`, `rs256_token_with_key_id`, and `unsigned_token` build tokens from `JwtClaims`, including
 the malformed ones you need for negative cases. `InMemoryApiTokenStore` implements `ApiTokenStore` for
-tests that exercise personal access tokens. Call `fail_with` with `ApiTokenStoreError::Internal` or
+tests that exercise personal access tokens. It stores grants with the token and, like the PostgreSQL
+store, never moves `last_used_at` backwards. Call `fail_with` with `ApiTokenStoreError::Internal` or
 `ApiTokenStoreError::PolicyRejected` to test both failure paths without a database adapter.
 
 `FakeConnector` plays back scripted outbound-integration scenarios, including signature headers, for

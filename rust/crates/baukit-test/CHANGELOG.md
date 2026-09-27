@@ -25,6 +25,9 @@ All notable changes to `baukit-test` are documented here.
 
 ### Changed
 
+- `InMemoryApiTokenStore` stores `ApiTokenRecord::grants` on the token and
+  keeps the latest `last_used_at` when touches arrive out of order.
+
 - Break: `PostgresTestError` gains `InvalidAppRole`, `InvalidConnectionUrl`,
   and `Setup` variants. Exhaustive matches on it must handle them.
 - Break: `check_auth_router_conformance` now expects the
