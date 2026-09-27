@@ -72,7 +72,12 @@ async fn postgres_claim_is_concurrent_skip_locked_and_increments_attempts()
         tasks.push(tokio::spawn(async move {
             barrier.wait().await;
             store
-                .claim(&format!("worker-{worker}"), now, Duration::from_secs(30))
+                .claim(
+                    &format!("worker-{worker}"),
+                    &["batch.item"],
+                    now,
+                    Duration::from_secs(30),
+                )
                 .await
         }));
     }
@@ -109,19 +114,20 @@ async fn postgres_expired_lease_is_reclaimed_without_a_sweep_process() -> Result
     let now = Utc::now();
 
     let first = store
-        .claim("worker-a", now, Duration::from_secs(1))
+        .claim("worker-a", &["lease.test"], now, Duration::from_secs(1))
         .await?
         .expect("first claim");
     assert_eq!(first.id, job.id);
     assert!(
         store
-            .claim("worker-b", now, Duration::from_secs(10))
+            .claim("worker-b", &["lease.test"], now, Duration::from_secs(10))
             .await?
             .is_none()
     );
     let reclaimed = store
         .claim(
             "worker-b",
+            &["lease.test"],
             now + TimeDelta::seconds(2),
             Duration::from_secs(10),
         )
@@ -142,13 +148,19 @@ async fn postgres_expired_lease_is_reclaimed_without_a_sweep_process() -> Result
         .job;
     let exhausted_now = Utc::now();
     store
-        .claim("worker-c", exhausted_now, Duration::from_secs(1))
+        .claim(
+            "worker-c",
+            &["lease.exhausted"],
+            exhausted_now,
+            Duration::from_secs(1),
+        )
         .await?
         .expect("final attempt claimed");
     assert!(
         store
             .claim(
                 "worker-d",
+                &["lease.exhausted"],
                 exhausted_now + TimeDelta::seconds(2),
                 Duration::from_secs(10),
             )
@@ -186,7 +198,12 @@ async fn postgres_cancellation_covers_pending_and_running_lifecycle() -> Result<
         .job;
     let now = Utc::now();
     store
-        .claim("worker-a", now, Duration::from_secs(30))
+        .claim(
+            "worker-a",
+            &["cancel.running"],
+            now,
+            Duration::from_secs(30),
+        )
         .await?
         .expect("running job claimed");
     assert!(store.request_cancellation(running.id, now).await?);
@@ -215,7 +232,7 @@ async fn postgres_retry_is_bounded_by_attempts_and_has_terminal_failure()
         .job;
     let now = Utc::now();
     store
-        .claim("worker-a", now, Duration::from_secs(30))
+        .claim("worker-a", &["retry.test"], now, Duration::from_secs(30))
         .await?
         .expect("first attempt");
     let retry_at = now + TimeDelta::seconds(10);
@@ -227,13 +244,18 @@ async fn postgres_retry_is_bounded_by_attempts_and_has_terminal_failure()
     );
     assert!(
         store
-            .claim("worker-b", now, Duration::from_secs(30))
+            .claim("worker-b", &["retry.test"], now, Duration::from_secs(30))
             .await?
             .is_none(),
         "retry is unavailable before run_after"
     );
     let second = store
-        .claim("worker-b", retry_at, Duration::from_secs(30))
+        .claim(
+            "worker-b",
+            &["retry.test"],
+            retry_at,
+            Duration::from_secs(30),
+        )
         .await?
         .expect("second attempt");
     assert_eq!(second.attempts, 2);
@@ -269,7 +291,12 @@ async fn postgres_retry_is_bounded_by_attempts_and_has_terminal_failure()
         .job;
     let permanent_now = Utc::now();
     store
-        .claim("worker-c", permanent_now, Duration::from_secs(30))
+        .claim(
+            "worker-c",
+            &["retry.permanent"],
+            permanent_now,
+            Duration::from_secs(30),
+        )
         .await?
         .expect("permanent job claim");
     assert_eq!(
@@ -310,7 +337,7 @@ async fn postgres_completion_is_atomic_lease_owned_and_not_duplicated() -> Resul
         .job;
     let now = Utc::now();
     store
-        .claim("worker-a", now, Duration::from_secs(30))
+        .claim("worker-a", &["complete.test"], now, Duration::from_secs(30))
         .await?
         .expect("job claim");
 
@@ -400,7 +427,12 @@ async fn postgres_terminal_cleanup_uses_independent_cutoffs_and_preserves_active
     expired_job.run_after = old;
     let running = store.enqueue(expired_job).await?.job;
     store
-        .claim("cleanup-worker", old, Duration::from_secs(1))
+        .claim(
+            "cleanup-worker",
+            &["cleanup.running"],
+            old,
+            Duration::from_secs(1),
+        )
         .await?
         .expect("running job claimed");
 
@@ -532,7 +564,12 @@ async fn postgres_terminal_cleanup_skips_concurrent_claim_and_completion()
         .job;
     let completion_now = Utc::now();
     store
-        .claim("complete-worker", completion_now, Duration::from_secs(60))
+        .claim(
+            "complete-worker",
+            &["cleanup.concurrent-completion"],
+            completion_now,
+            Duration::from_secs(60),
+        )
         .await?
         .expect("job claimed for completion");
     let mut completion_transaction = pool.begin().await?;
@@ -581,7 +618,12 @@ async fn postgres_recurring_slot_enqueue_is_restart_safe_and_failure_keeps_curre
         .job;
     let claim_now = Utc::now();
     store
-        .claim("recurring-worker", claim_now, Duration::from_secs(60))
+        .claim(
+            "recurring-worker",
+            &["recurring.test"],
+            claim_now,
+            Duration::from_secs(60),
+        )
         .await?
         .expect("current recurring job claimed");
 
@@ -647,7 +689,12 @@ async fn postgres_v051_schema_upgrades_to_failure_reasons() -> Result<(), Box<dy
         .job;
     let now = Utc::now();
     store
-        .claim("upgrade-worker", now, Duration::from_secs(30))
+        .claim(
+            "upgrade-worker",
+            &["current.failure"],
+            now,
+            Duration::from_secs(30),
+        )
         .await?
         .expect("current job is claimable after the upgrade");
     assert_eq!(

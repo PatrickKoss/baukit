@@ -35,6 +35,13 @@ from the target checkout as a new product-owned migration. It adds
 value and status-consistency checks. Do not replace or edit the product's
 already-applied initial migration.
 
+When the target train ships
+`rust/crates/baukit-jobs/migrations/0003_baukit_jobs_claim_by_type.sql`, add it
+as another new product-owned migration. It rebuilds the pending claim index
+with `job_type` first. Check that every custom `JobStore` passes the new
+`job_types` claim argument through, and that each worker handler's
+`job_types()` lists every type that worker should run.
+
 ## Validate and verify
 
 Run from the product root:

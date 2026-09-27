@@ -164,6 +164,9 @@ impl WorkerRunner {
 
     /// Claims and executes jobs until process shutdown begins.
     ///
+    /// Every claim passes the handler's [`JobHandler::job_types`], so the runner
+    /// never claims a job type its handler does not declare.
+    ///
     /// New claims stop immediately after shutdown is observed. Already running
     /// attempts drain in the `JoinSet`; `TaskSupervisor` bounds that drain using
     /// the same [`ShutdownToken`] deadline.
@@ -183,6 +186,7 @@ impl WorkerRunner {
                     () = shutdown.cancelled() => None,
                     result = self.store.claim(
                         &self.config.worker_id,
+                        self.handler.job_types(),
                         now,
                         self.config.lease_duration,
                     ) => result?,
@@ -560,6 +564,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn every_claim_passes_the_handler_job_types() {
+        let store = Arc::new(FakeStore::with_jobs(1));
+        store
+            .jobs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push_front(Job {
+                job_type: "other.job".to_owned(),
+                ..fake_job(99)
+            });
+        let shutdown = ShutdownToken::new(Duration::from_secs(1));
+        let runner = WorkerRunner::new(store.clone(), Arc::new(RetryAfterHandler), test_config())
+            .expect("valid runner");
+        let task = tokio::spawn(runner.run(shutdown.clone()));
+        tokio::time::timeout(Duration::from_secs(1), store.transition.notified())
+            .await
+            .expect("handled job transition recorded");
+        shutdown.trigger();
+        task.await.expect("runner task").expect("clean shutdown");
+
+        let claims = store
+            .claimed_job_types
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        assert!(!claims.is_empty());
+        assert!(claims.iter().all(|types| types == &["test.job"]));
+        assert_eq!(store.remaining(), 1, "the undeclared job type stays queued");
+    }
+
+    #[tokio::test]
     async fn timeout_records_a_retry_and_runner_poll_honors_cancellation() {
         let timeout_store = Arc::new(FakeStore::with_jobs(1));
         let shutdown = ShutdownToken::new(Duration::from_secs(1));
@@ -661,6 +696,7 @@ mod tests {
         cancel_requested: AtomicBool,
         transition: Notify,
         recorded_retry_delay: Mutex<Option<chrono::Duration>>,
+        claimed_job_types: Mutex<Vec<Vec<String>>>,
     }
 
     impl FakeStore {
@@ -673,6 +709,7 @@ mod tests {
                 cancel_requested: AtomicBool::new(false),
                 transition: Notify::new(),
                 recorded_retry_delay: Mutex::new(None),
+                claimed_job_types: Mutex::new(Vec::new()),
             }
         }
 
@@ -696,15 +733,23 @@ mod tests {
         fn claim<'a>(
             &'a self,
             _worker_id: &'a str,
+            job_types: &'a [&'a str],
             _now: chrono::DateTime<Utc>,
             _lease_for: Duration,
         ) -> StoreFuture<'a, Result<Option<ClaimedJob>, StoreError>> {
             Box::pin(async move {
-                Ok(self
-                    .jobs
+                self.claimed_job_types
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .pop_front())
+                    .push(job_types.iter().map(|job| (*job).to_owned()).collect());
+                let mut jobs = self
+                    .jobs
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let position = jobs
+                    .iter()
+                    .position(|job| job_types.contains(&job.job_type.as_str()));
+                Ok(position.and_then(|position| jobs.remove(position)))
             })
         }
 

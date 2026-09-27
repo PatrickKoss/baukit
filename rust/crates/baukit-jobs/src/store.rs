@@ -29,10 +29,16 @@ pub trait JobStore: Send + Sync + 'static {
     /// Enqueues a job, returning the existing row for a duplicate idempotency key.
     fn enqueue(&self, job: NewJob) -> StoreFuture<'_, Result<EnqueueOutcome, StoreError>>;
 
-    /// Claims the oldest ready job and increments its attempt count atomically.
+    /// Claims the oldest ready job whose type is in `job_types` and increments
+    /// its attempt count atomically.
+    ///
+    /// Rows of other types stay untouched, so a type that no worker handles
+    /// remains pending. An empty `job_types` set is invalid input because it
+    /// can never claim a job.
     fn claim<'a>(
         &'a self,
         worker_id: &'a str,
+        job_types: &'a [&'a str],
         now: DateTime<Utc>,
         lease_for: Duration,
     ) -> StoreFuture<'a, Result<Option<ClaimedJob>, StoreError>>;
@@ -74,7 +80,8 @@ pub trait JobStore: Send + Sync + 'static {
         now: DateTime<Utc>,
     ) -> StoreFuture<'a, Result<bool, StoreError>>;
 
-    /// Returns the age of the oldest pending job, or zero for an empty queue.
+    /// Returns the age of the oldest pending job of any type, or zero for an
+    /// empty queue.
     fn oldest_pending_age(
         &self,
         now: DateTime<Utc>,
@@ -196,11 +203,13 @@ impl JobStore for PostgresJobStore {
     fn claim<'a>(
         &'a self,
         worker_id: &'a str,
+        job_types: &'a [&'a str],
         now: DateTime<Utc>,
         lease_for: Duration,
     ) -> StoreFuture<'a, Result<Option<ClaimedJob>, StoreError>> {
         Box::pin(async move {
             validate_worker_id(worker_id)?;
+            validate_job_types(job_types)?;
             if lease_for.is_zero() {
                 return Err(StoreError::InvalidInput(
                     "lease duration must be non-zero".to_owned(),
@@ -230,11 +239,12 @@ impl JobStore for PostgresJobStore {
             .map_err(StoreError::database)?;
 
             let row = sqlx::query(
-                "WITH candidate AS (SELECT id FROM job_outbox WHERE attempts < max_attempts AND cancel_requested_at IS NULL AND ((status = 'pending' AND run_after <= $1) OR (status = 'running' AND locked_until <= $1)) ORDER BY run_after, created_at, id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE job_outbox AS job SET status = 'running', attempts = job.attempts + 1, locked_by = $2, locked_until = $3, last_error = NULL, failure_reason = NULL, updated_at = $1 FROM candidate WHERE job.id = candidate.id RETURNING job.id, job.job_type, job.payload, job.status, job.attempts, job.max_attempts, job.run_after, job.locked_by, job.locked_until, job.idempotency_key, job.last_error, job.failure_reason, job.cancel_requested_at, job.created_at, job.updated_at",
+                "WITH candidate AS (SELECT id FROM job_outbox WHERE attempts < max_attempts AND cancel_requested_at IS NULL AND job_type = ANY($4) AND ((status = 'pending' AND run_after <= $1) OR (status = 'running' AND locked_until <= $1)) ORDER BY run_after, created_at, id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE job_outbox AS job SET status = 'running', attempts = job.attempts + 1, locked_by = $2, locked_until = $3, last_error = NULL, failure_reason = NULL, updated_at = $1 FROM candidate WHERE job.id = candidate.id RETURNING job.id, job.job_type, job.payload, job.status, job.attempts, job.max_attempts, job.run_after, job.locked_by, job.locked_until, job.idempotency_key, job.last_error, job.failure_reason, job.cancel_requested_at, job.created_at, job.updated_at",
             )
                 .bind(now)
                 .bind(worker_id)
                 .bind(locked_until)
+                .bind(job_types)
                 .fetch_optional(&mut *transaction)
                 .await
                 .map_err(StoreError::database)?;
@@ -368,11 +378,13 @@ impl JobStore for PostgresJobStore {
 
     fn ready(&self) -> StoreFuture<'_, Result<(), StoreError>> {
         Box::pin(async move {
+            let no_job_types: &[&str] = &[];
             let mut transaction = self.pool.begin().await.map_err(StoreError::database)?;
             sqlx::query(
-                "SELECT id FROM job_outbox WHERE attempts < max_attempts AND cancel_requested_at IS NULL AND ((status = 'pending' AND run_after <= $1) OR (status = 'running' AND locked_until <= $1)) ORDER BY run_after, created_at, id FOR UPDATE SKIP LOCKED LIMIT 0",
+                "SELECT id FROM job_outbox WHERE attempts < max_attempts AND cancel_requested_at IS NULL AND job_type = ANY($2) AND ((status = 'pending' AND run_after <= $1) OR (status = 'running' AND locked_until <= $1)) ORDER BY run_after, created_at, id FOR UPDATE SKIP LOCKED LIMIT 0",
             )
             .bind(Utc::now())
+            .bind(no_job_types)
             .fetch_all(&mut *transaction)
             .await
             .map(|_| ())
@@ -492,6 +504,17 @@ fn validate_new_job(job: &NewJob) -> Result<(), StoreError> {
     Ok(())
 }
 
+fn validate_job_types(job_types: &[&str]) -> Result<(), StoreError> {
+    if job_types.is_empty() {
+        return Err(StoreError::InvalidInput(
+            "job_types must contain at least one job type".to_owned(),
+        ));
+    }
+    job_types
+        .iter()
+        .try_for_each(|job_type| validate_text("job_type", job_type, MAX_JOB_TYPE_LENGTH))
+}
+
 fn validate_worker_id(worker_id: &str) -> Result<(), StoreError> {
     validate_text("worker_id", worker_id, MAX_WORKER_ID_LENGTH)
 }
@@ -568,6 +591,19 @@ mod tests {
         assert_eq!(job.max_attempts, 3);
         assert!(job.idempotency_key.is_none());
         assert!(job.run_after >= job.created_at);
+    }
+
+    #[test]
+    fn claim_job_types_must_be_a_non_empty_set_of_valid_identifiers() {
+        assert!(validate_job_types(&["email.send", "sms.send"]).is_ok());
+        for invalid in [&[][..], &[" "][..], &["email.send", ""][..]] {
+            assert!(matches!(
+                validate_job_types(invalid),
+                Err(StoreError::InvalidInput(_))
+            ));
+        }
+        let too_long = "x".repeat(MAX_JOB_TYPE_LENGTH + 1);
+        assert!(validate_job_types(&[too_long.as_str()]).is_err());
     }
 
     #[test]
