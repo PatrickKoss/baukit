@@ -79,6 +79,13 @@ no default list because only one product needs one.
 | `@baukit/events` | `EventPayloadSchema` keys | `/^[a-z][a-z0-9_]{0,63}$/` | `/^[a-z][a-zA-Z0-9]{0,63}$/` |
 | `@baukit/api-runtime` | `ApiErrorEnvelope`, `parseApiErrorEnvelope` | reads `request_id` | reads only `requestId` |
 | offline-readiness contract | `resync_required` detail, pull page | `horizon_revision`, `has_more` | `horizonRevision`, `hasMore` |
+| `baukit-sync` | `horizon::HORIZON_REVISION_DETAIL` | `horizon_revision` | `horizonRevision` |
+
+Item 9 landed `HORIZON_REVISION_DETAIL` while this change was open. It now
+holds `horizonRevision`, and the `baukit-sync` README example rejects a bad
+cursor under `sinceRevision`. The `sync_purge_horizons.horizon_revision` column
+and the Rust field `PullCursorError::ResyncRequired { horizon_revision }` keep
+their names because neither reaches the wire.
 
 `@baukit/sync-client` loses `toSnakeCaseSnapshot`, `toSnakeCaseFailure`,
 `SnakeCaseSyncStatusSnapshot`, and `SnakeCaseSyncFailure`. They projected the
