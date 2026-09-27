@@ -132,8 +132,8 @@ Crates must go up in dependency order, because each one's internal
 ```text
 baukit-core, baukit-events, baukit-openapi, baukit-sync, baukit-config,
 baukit-runtime, baukit-telemetry, baukit-credential-vault, baukit-http,
-baukit-jobs, baukit-ops, baukit-auth, baukit-integrations, baukit-push,
-baukit-ratelimit, baukit-test
+baukit-egress, baukit-jobs, baukit-ops, baukit-auth, baukit-integrations,
+baukit-push, baukit-ratelimit, baukit-test
 ```
 
 Several crates dev-depend on siblings for test fixtures, and those edges form a

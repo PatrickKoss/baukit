@@ -118,6 +118,7 @@ Nothing here depends on the CLI, and no crate drags in the rest. Take the error 
 | [`baukit-integrations`](rust/crates/baukit-integrations) | Connector contract for cursor-paged imports, verified webhooks, health |
 | [`baukit-credential-vault`](rust/crates/baukit-credential-vault) | Versioned AES-256-GCM encryption behind a storage-neutral port |
 | [`baukit-push`](rust/crates/baukit-push) | Provider-neutral push delivery with an Expo adapter |
+| [`baukit-egress`](rust/crates/baukit-egress) | Outbound HTTP client for user-supplied URLs that pins DNS answers to public addresses |
 | [`baukit-core`](rust/crates/baukit-core) | Dependency-light vocabulary shared by the others, plus optional keyset pagination |
 | [`baukit-test`](rust/crates/baukit-test) | Docker PostgreSQL and Redis fixtures, a mock OIDC issuer, conformance suites |
 
