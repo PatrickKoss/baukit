@@ -8,12 +8,15 @@
 //!
 //! The `export` module encodes CSV with spreadsheet formula neutralization.
 //! The optional `pagination` feature adds keyset pagination types that domain
-//! crates can use without an HTTP framework.
+//! crates can use without an HTTP framework. The optional `media-grants`
+//! feature adds HMAC-SHA256 signed media grants that an edge verifier checks.
 
 #![deny(missing_docs)]
 
 pub mod export;
 pub mod limits;
+#[cfg(feature = "media-grants")]
+pub mod media_grant;
 #[cfg(feature = "pagination")]
 pub mod pagination;
 

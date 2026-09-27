@@ -16,6 +16,7 @@ readme = "README.md"
 workspace = true
 
 [features]
+media-grants = ["dep:base64", "dep:ring", "dep:zeroize"]
 pagination = ["dep:base64", "dep:ring", "dep:uuid"]
 
 [dependencies]
@@ -25,3 +26,7 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 uuid = { workspace = true, optional = true }
+zeroize = { workspace = true, optional = true }
+
+[dev-dependencies]
+baukit-core = { path = ".", features = ["media-grants"] }
