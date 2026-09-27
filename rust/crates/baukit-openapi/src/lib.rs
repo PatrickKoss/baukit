@@ -1,9 +1,9 @@
 //! Small, product-neutral helpers for consistent OpenAPI documents.
 //!
 //! Products continue to own paths, operations, and endpoint schemas. This crate only applies
-//! Baukit's document conventions, provides the shared error envelope schema, offers opt-in
-//! bearer authentication metadata, manages a deterministic committed schema, and checks that
-//! property and parameter names are camelCase.
+//! Baukit's document conventions, provides the shared error envelope schema, documents error
+//! responses from product rules, offers opt-in bearer authentication metadata, manages a
+//! deterministic committed schema, and checks that property and parameter names are camelCase.
 //!
 //! # Example
 //!
@@ -41,9 +41,15 @@ use utoipa::ToSchema;
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::openapi::{Components, OpenApi, Server};
 
+mod error_responses;
 mod naming;
 mod precondition;
 
+pub use error_responses::{
+    ErrorResponseRules, OperationCondition, REQUEST_ID_HEADER, RETRY_AFTER_HEADER,
+    ResponseSelector, WWW_AUTHENTICATE_HEADER, request_id_header, retry_after_header,
+    www_authenticate_header,
+};
 pub use naming::{NameKind, NamingViolation, find_naming_violations, is_camel_case};
 pub use precondition::{
     ETAG_HEADER, IF_MATCH_HEADER, INVALID_IF_MATCH_CODE, IfMatchRequirement,
