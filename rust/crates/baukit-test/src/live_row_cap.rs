@@ -315,6 +315,10 @@ mod tests {
         }
     }
 
+    const fn is_racing(sequence: usize) -> bool {
+        sequence == LIMIT - 1 || sequence == LIMIT
+    }
+
     #[derive(Debug)]
     struct TestRow {
         id: i64,
@@ -348,6 +352,7 @@ mod tests {
         scope_id: i64,
         observations: Arc<Observations>,
         race_barrier: Arc<tokio::sync::Barrier>,
+        read_barrier: Arc<tokio::sync::Barrier>,
     }
 
     impl TestAdapter {
@@ -371,6 +376,12 @@ mod tests {
             .execute(&mut **transaction)
             .await?;
             Ok(TestRow { id })
+        }
+
+        async fn wait_for_racer_read(&self, sequence: usize) {
+            if is_racing(sequence) {
+                self.read_barrier.wait().await;
+            }
         }
 
         async fn pause_for_overlap(
@@ -415,7 +426,7 @@ mod tests {
 
         async fn create_serializable(&self, sequence: usize) -> Result<TestRow, TestError> {
             for attempt in 0..MAX_SERIALIZATION_ATTEMPTS {
-                match self.serializable_attempt(sequence).await {
+                match self.serializable_attempt(sequence, attempt).await {
                     Err(TestError::Database(error)) if has_database_code(&error, "40001") => {
                         self.observations
                             .serialization_failures
@@ -430,16 +441,22 @@ mod tests {
             unreachable!("the serialization attempt loop always returns")
         }
 
-        async fn serializable_attempt(&self, sequence: usize) -> Result<TestRow, TestError> {
+        async fn serializable_attempt(
+            &self,
+            sequence: usize,
+            attempt: usize,
+        ) -> Result<TestRow, TestError> {
             let mut transaction = self.pool.begin().await?;
             sqlx::query("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
                 .execute(&mut *transaction)
                 .await?;
             let count = count_rows(&mut transaction, self.strategy, self.scope_id).await?;
+            if attempt == 0 {
+                self.wait_for_racer_read(sequence).await;
+            }
             if count >= LIMIT as i64 {
                 return Err(TestError::Limit);
             }
-            Self::pause_for_overlap(&mut transaction).await?;
             let row = Self::insert(
                 &mut transaction,
                 self.strategy,
@@ -497,10 +514,10 @@ mod tests {
             .bind(LIMIT as i32)
             .fetch_optional(&mut *transaction)
             .await?;
+            self.wait_for_racer_read(sequence).await;
             let Some(slot) = slot else {
                 return Err(TestError::Limit);
             };
-            Self::pause_for_overlap(&mut transaction).await?;
             match Self::insert(
                 &mut transaction,
                 self.strategy,
@@ -530,7 +547,7 @@ mod tests {
         type Error = TestError;
 
         async fn create_row(&self, sequence: usize) -> Result<Self::Row, Self::Error> {
-            if sequence == LIMIT - 1 || sequence == LIMIT {
+            if is_racing(sequence) {
                 self.race_barrier.wait().await;
             }
             match self.strategy {
@@ -745,6 +762,7 @@ mod tests {
                     scope_id,
                     observations: observations.clone(),
                     race_barrier: Arc::new(tokio::sync::Barrier::new(2)),
+                    read_barrier: Arc::new(tokio::sync::Barrier::new(2)),
                 };
                 check_postgres_live_row_cap_conformance(
                     &adapter,
