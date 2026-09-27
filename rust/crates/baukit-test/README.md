@@ -30,6 +30,9 @@ opted into:
 - `check_purge_horizon_conformance`: a product tombstone purge keeps a per-owner horizon that never
   drops, stays within its batch limit, and rejects stale pull cursors without losing a deletion to
   a concurrent pull.
+- `check_replay_safe_mutation_conformance`: a product's keyed mutation applies its effect once,
+  replays the stored result after a lost response or a restart, rejects a reused key with other
+  input, leaves nothing after a rollback, and expires, cleans up, and erases its replay records.
 
 A contract stated only in a document decays. Someone renames a metric, someone adds a route without
 auth, someone changes an error envelope, and nothing fails until an alert stops firing months later.
@@ -200,6 +203,30 @@ after its cursor check and before it reads rows, inside the same transaction. Th
 owner while the pull is paused. A pull that passed its cursor check must still return the purged
 tombstone, or the purge must wait for the pull to finish. A product that reads the horizon in one
 transaction and rows in another fails this case.
+
+## Replay-safe mutation fixtures
+
+Implement `ReplaySafeMutationAdapter` in a product integration test against a fresh PostgreSQL
+database, with the product's real roles and row-level security, then run
+`check_replay_safe_mutation_conformance` with four JSON bodies in `ReplayConformanceInputs`. The
+protocol it checks is [replay-safe mutations](../../../docs/platform/replay-safe-mutations.md).
+
+`execute` runs one keyed request through the product's replay path and returns
+`ReplayOutcome::Applied`, `Replayed`, `Conflict`, or `InProgress`, each with the stored
+`ReplaySnapshot` where there is one. Inside the transaction, after the effect and the replay record
+are written and before `COMMIT`, it calls `CommitCheckpoint::reached`. When that returns
+`InjectedRollback`, the adapter rolls back and returns an error. The other methods count effects
+and replay records, move an owner's records past the horizon, run one cleanup batch with a limit,
+erase an owner, and drop process-local caches as a restart would.
+
+The cases are a lost response, an equivalent body with reordered members, changed input under one
+key, two simultaneous requests with one key, owner and operation isolation, a rollback before
+commit, a crash after commit, expiry, bounded cleanup, and erasure. For the race, the check pauses
+the first request at the checkpoint and sends the second. The second must replay the first
+result or report `InProgress`, and only one effect may commit. The cleanup case runs
+`purge_expired` in the product's cleanup role; a job that runs under `FORCE ROW LEVEL SECURITY`
+without a matching policy deletes nothing and fails. Violation messages name the case and never
+contain adapter errors, keys, or bodies.
 
 ## Resource limits
 
