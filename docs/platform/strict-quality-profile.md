@@ -17,6 +17,7 @@ backend_coverage_lines = 70
 critical_paths = []
 webkit_repeats = 3
 full_stack_e2e = false
+openapi_compatibility = "off"
 
 [openapi]
 schema = "backend/openapi.json"
@@ -30,6 +31,47 @@ consumers = ["generated/openapi.d.ts"]
 List each committed OpenAPI TypeScript declaration in `openapi.consumers`. `scripts/openapi-client.sh` regenerates the entire list. The strict gate fails when a listed file is uncommitted or changes after regeneration.
 
 After the schema diff, the strict gate runs `backend/tests/openapi_drift.rs`. Besides the drift check, that test fails on any property or path or query parameter name that is not camelCase and prints the JSON pointer of each one. Names a standard defines, such as OAuth 2.0 `access_token`, go in the test's `STANDARD_DEFINED_NAMES` list.
+
+## OpenAPI compatibility
+
+`quality.openapi_compatibility` compares `openapi.schema` with its copy at the base revision and lists every change that can break a client. It needs the strict profile and a backend; `baukit doctor` rejects it otherwise.
+
+| Value | Effect |
+|---|---|
+| `off` | The default. The gate skips the comparison. |
+| `report` | The gate prints each break and keeps going. Use it until the product has live clients. |
+| `enforce` | The gate fails on any break that is not accepted. |
+
+The gate runs Baukit's `scripts/check-openapi-compatibility.py` right after the drift test, with the same base revision as the migration guard. A path-sourced Baukit runs the script from that checkout. Otherwise the gate clones the Baukit tag the product was generated from, so a product needs a Baukit release that ships the script. When the base revision has no schema yet, the script prints `skipped` and passes. You can also run it directly:
+
+```sh
+python3 path/to/baukit/scripts/check-openapi-compatibility.py \
+  --base-revision origin/main --current backend/openapi.json --path-prefix /v1/
+```
+
+Each finding is one line: a rule ID, a location such as `GET /v1/items response 200 application/json $[].tags`, and a message. The rules cover removed operations, parameters, responses, and media types; changed `operationId` or security; parameters and request bodies that became required; new success statuses; and schema changes. For schemas, the script knows which side of the wire it is on. A request schema breaks when it rejects a value it used to accept: a narrower enum or constraint, a newly required property, closed `additionalProperties`, or a changed default. A response schema breaks when it may return a value an old client does not expect: a wider enum or constraint, or a property that is no longer required. Removed properties, changed types, formats, and patterns break on both sides. The script follows local `$ref`s and handles recursive schemas.
+
+### False positives
+
+The script reports a change when a client that conformed to the base document could fail or lose data against the current one. When it cannot decide, such as a reordered `oneOf`, it reports the change too. A missed break reaches clients; a false alarm costs one line in a file. Additive changes pass: new operations, optional parameters, optional request properties, new response properties, and new error statuses. Adding an enum value to a response counts as a break, because a strict client may reject it.
+
+### Accepted breaks
+
+Record an intentional break in `docs/openapi-accepted-breaks.json`. The gate passes the file to the script when it exists:
+
+```json
+{
+  "accepted": [
+    {
+      "rule": "property-removed",
+      "location": "GET /v1/items response 200 application/json $[].legacyName",
+      "reason": "No client reads legacyName; removed before launch."
+    }
+  ]
+}
+```
+
+Copy `rule` and `location` from the report. Every entry needs a non-empty reason, and an unknown rule fails the run. An entry that no longer matches prints a note, so delete it once the base revision contains the change.
 
 ## Local use
 

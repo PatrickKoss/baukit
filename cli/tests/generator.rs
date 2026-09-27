@@ -6,7 +6,8 @@ use std::{
 };
 
 use baukit_cli::{
-    AuthProvider, McpAuthentication, NewOptions, QualityProfile, doctor, generate_new,
+    AuthProvider, McpAuthentication, NewOptions, OpenApiCompatibility, QualityProfile, doctor,
+    generate_new,
 };
 use sha2::{Digest, Sha256};
 
@@ -312,6 +313,10 @@ fn combined_generation_matches_golden_tree_and_records_capabilities() -> anyhow:
     assert_eq!(manifest.quality.webkit_repeats, 3);
     assert!(manifest.quality.critical_paths.is_empty());
     assert!(!manifest.quality.full_stack_e2e);
+    assert_eq!(
+        manifest.quality.openapi_compatibility,
+        OpenApiCompatibility::Off
+    );
     assert_eq!(manifest.openapi.consumers(), ["generated/openapi.d.ts"]);
     assert!(!fs::read_to_string(first.join("baukit.toml"))?.contains("auth"));
     assert!(!first.join("scripts/quality-gate.sh").exists());
@@ -330,7 +335,7 @@ fn legacy_manifest_defaults_to_standard_quality_and_legacy_consumer() -> anyhow:
     let path = root.join("baukit.toml");
     let source = fs::read_to_string(&path)?
         .replace(
-            "[quality]\nprofile = \"standard\"\nbackend_coverage_lines = 70\ncritical_paths = []\nwebkit_repeats = 3\nfull_stack_e2e = false\n\n",
+            "[quality]\nprofile = \"standard\"\nbackend_coverage_lines = 70\ncritical_paths = []\nwebkit_repeats = 3\nfull_stack_e2e = false\nopenapi_compatibility = \"off\"\n\n",
             "",
         )
         .replace(
@@ -1303,6 +1308,29 @@ fn doctor_requires_generated_environment_and_strict_markdown_scripts() -> anyhow
             .contains("environment reconciliation file")
     );
     assert!(error.to_string().contains("Markdown link check file"));
+    Ok(())
+}
+
+#[test]
+fn doctor_limits_openapi_compatibility_to_the_strict_profile() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = generate_new(&options(parent.path(), "compatibility-app"))?;
+    let path = root.join("baukit.toml");
+    let manifest = fs::read_to_string(&path)?;
+    fs::write(
+        &path,
+        manifest.replace(
+            "openapi_compatibility = \"off\"",
+            "openapi_compatibility = \"enforce\"",
+        ),
+    )?;
+
+    let error = doctor(&root).expect_err("doctor must reject the standard profile");
+    assert!(
+        error
+            .to_string()
+            .contains("quality.openapi_compatibility requires the strict profile")
+    );
     Ok(())
 }
 

@@ -113,6 +113,8 @@ export interface operations {
             /** @description Items */
             200: {
                 headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -122,6 +124,45 @@ export interface operations {
             /** @description Authentication required */
             401: {
                 headers: {
+                    /** @description Bearer authentication challenge. */
+                    "WWW-Authenticate"?: string;
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The rate limit was exceeded; wait for Retry-After. */
+            429: {
+                headers: {
+                    /** @description Seconds to wait before retrying. */
+                    "Retry-After"?: number;
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description An internal error occurred. */
+            500: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The request deadline passed; a write may have committed. */
+            504: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -146,6 +187,8 @@ export interface operations {
             /** @description Created */
             201: {
                 headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -155,6 +198,8 @@ export interface operations {
             /** @description Invalid request */
             400: {
                 headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -164,6 +209,10 @@ export interface operations {
             /** @description Authentication required */
             401: {
                 headers: {
+                    /** @description Bearer authentication challenge. */
+                    "WWW-Authenticate"?: string;
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -173,6 +222,76 @@ export interface operations {
             /** @description Conflict */
             409: {
                 headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The request body is too large. */
+            413: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The request content type is not JSON. */
+            415: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The request body does not match the schema. */
+            422: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The rate limit was exceeded; wait for Retry-After. */
+            429: {
+                headers: {
+                    /** @description Seconds to wait before retrying. */
+                    "Retry-After"?: number;
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description An internal error occurred. */
+            500: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The request deadline passed; a write may have committed. */
+            504: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -196,15 +315,32 @@ export interface operations {
             /** @description Item */
             200: {
                 headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["ItemDto"];
                 };
             };
+            /** @description The path is invalid. */
+            400: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             /** @description Authentication required */
             401: {
                 headers: {
+                    /** @description Bearer authentication challenge. */
+                    "WWW-Authenticate"?: string;
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -214,6 +350,43 @@ export interface operations {
             /** @description Not found */
             404: {
                 headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The rate limit was exceeded; wait for Retry-After. */
+            429: {
+                headers: {
+                    /** @description Seconds to wait before retrying. */
+                    "Retry-After"?: number;
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description An internal error occurred. */
+            500: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The request deadline passed; a write may have committed. */
+            504: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -241,6 +414,8 @@ export interface operations {
             /** @description Updated */
             200: {
                 headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -250,6 +425,8 @@ export interface operations {
             /** @description Invalid request */
             400: {
                 headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -259,6 +436,10 @@ export interface operations {
             /** @description Authentication required */
             401: {
                 headers: {
+                    /** @description Bearer authentication challenge. */
+                    "WWW-Authenticate"?: string;
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -268,6 +449,76 @@ export interface operations {
             /** @description Not found */
             404: {
                 headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The request body is too large. */
+            413: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The request content type is not JSON. */
+            415: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The request body does not match the schema. */
+            422: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The rate limit was exceeded; wait for Retry-After. */
+            429: {
+                headers: {
+                    /** @description Seconds to wait before retrying. */
+                    "Retry-After"?: number;
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description An internal error occurred. */
+            500: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The request deadline passed; a write may have committed. */
+            504: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -291,13 +542,30 @@ export interface operations {
             /** @description Deleted */
             204: {
                 headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
             };
+            /** @description The path is invalid. */
+            400: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             /** @description Authentication required */
             401: {
                 headers: {
+                    /** @description Bearer authentication challenge. */
+                    "WWW-Authenticate"?: string;
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -307,6 +575,43 @@ export interface operations {
             /** @description Not found */
             404: {
                 headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The rate limit was exceeded; wait for Retry-After. */
+            429: {
+                headers: {
+                    /** @description Seconds to wait before retrying. */
+                    "Retry-After"?: number;
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description An internal error occurred. */
+            500: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The request deadline passed; a write may have committed. */
+            504: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -327,6 +632,8 @@ export interface operations {
             /** @description Current internal user */
             200: {
                 headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -336,6 +643,45 @@ export interface operations {
             /** @description Authentication required */
             401: {
                 headers: {
+                    /** @description Bearer authentication challenge. */
+                    "WWW-Authenticate"?: string;
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The rate limit was exceeded; wait for Retry-After. */
+            429: {
+                headers: {
+                    /** @description Seconds to wait before retrying. */
+                    "Retry-After"?: number;
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description An internal error occurred. */
+            500: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The request deadline passed; a write may have committed. */
+            504: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
                     [name: string]: unknown;
                 };
                 content: {
