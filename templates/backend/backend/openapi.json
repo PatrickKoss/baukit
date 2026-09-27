@@ -100,7 +100,51 @@
                 }
               }
             },
-            "description": "Items"
+            "description": "Items",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An internal error occurred.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request deadline passed; a write may have committed.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -128,7 +172,15 @@
                 }
               }
             },
-            "description": "Created"
+            "description": "Created",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "400": {
             "content": {
@@ -138,7 +190,15 @@
                 }
               }
             },
-            "description": "Invalid request"
+            "description": "Invalid request",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "409": {
             "content": {
@@ -148,7 +208,105 @@
                 }
               }
             },
-            "description": "Conflict"
+            "description": "Conflict",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request body is too large.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request content type is not JSON.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request body does not match the schema.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An internal error occurred.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request deadline passed; a write may have committed.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -173,7 +331,33 @@
         ],
         "responses": {
           "204": {
-            "description": "Deleted"
+            "description": "Deleted",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The path is invalid.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "404": {
             "content": {
@@ -183,7 +367,51 @@
                 }
               }
             },
-            "description": "Not found"
+            "description": "Not found",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An internal error occurred.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request deadline passed; a write may have committed.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -213,7 +441,33 @@
                 }
               }
             },
-            "description": "Item"
+            "description": "Item",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The path is invalid.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "404": {
             "content": {
@@ -223,7 +477,51 @@
                 }
               }
             },
-            "description": "Not found"
+            "description": "Not found",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An internal error occurred.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request deadline passed; a write may have committed.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -263,7 +561,15 @@
                 }
               }
             },
-            "description": "Updated"
+            "description": "Updated",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "400": {
             "content": {
@@ -273,7 +579,15 @@
                 }
               }
             },
-            "description": "Invalid request"
+            "description": "Invalid request",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "404": {
             "content": {
@@ -283,7 +597,105 @@
                 }
               }
             },
-            "description": "Not found"
+            "description": "Not found",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request body is too large.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request content type is not JSON.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request body does not match the schema.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An internal error occurred.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request deadline passed; a write may have committed.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         },
         "tags": [

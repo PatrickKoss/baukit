@@ -5,14 +5,19 @@ repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repository_root"
 
 manifest_value() {
-  python3 - "$1" <<'PY'
+  python3 - "$@" <<'PY'
 import sys
 import tomllib
 
 with open("baukit.toml", "rb") as source:
     value = tomllib.load(source)
-for component in sys.argv[1].split("."):
-    value = value[component]
+try:
+    for component in sys.argv[1].split("."):
+        value = value[component]
+except KeyError:
+    if len(sys.argv) < 3:
+        raise
+    value = sys.argv[2]
 if isinstance(value, bool):
     print(str(value).lower())
 elif isinstance(value, list):
@@ -27,6 +32,29 @@ if [ "$(manifest_value quality.profile)" != "strict" ]; then
   echo 'quality gate: baukit.toml does not select profile = "strict"' >&2
   exit 2
 fi
+
+temporary_paths=
+remove_temporary_paths() {
+  for temporary_path in $temporary_paths; do
+    rm -rf "$temporary_path"
+  done
+}
+trap remove_temporary_paths EXIT
+
+baukit_root=
+use_baukit_root() {
+  if [ -n "$baukit_root" ]; then
+    return
+  fi
+  if [ "$(manifest_value dependencies.baukit.source)" = "path" ]; then
+    baukit_root=$(CDPATH= cd -- "$(manifest_value dependencies.baukit.path)/.." && pwd)
+    return
+  fi
+  baukit_root=$(mktemp -d)
+  temporary_paths="$temporary_paths $baukit_root"
+  git clone --branch v{{ context.template_version }} --depth 1 \
+    https://github.com/PatrickKoss/baukit.git "$baukit_root"
+}
 
 python3 scripts/reconcile-env.test.py
 python3 scripts/check-markdown-links.test.py
@@ -86,6 +114,29 @@ sh scripts/openapi.sh
 diff -u "$committed_schema" "$(manifest_value openapi.schema)"
 rm "$committed_schema"
 cargo test --manifest-path backend/Cargo.toml -p {{ context.app_name }}-bin --test openapi_drift
+openapi_compatibility=$(manifest_value quality.openapi_compatibility off)
+case "$openapi_compatibility" in
+  off) ;;
+  report | enforce)
+    if [ "$has_git_history" = true ]; then
+      use_baukit_root
+      set -- --base-revision "$base_revision" --current "$(manifest_value openapi.schema)"
+      if [ -f docs/openapi-accepted-breaks.json ]; then
+        set -- "$@" --accepted docs/openapi-accepted-breaks.json
+      fi
+      if [ "$openapi_compatibility" = enforce ]; then
+        set -- "$@" --enforce
+      fi
+      python3 "$baukit_root/scripts/check-openapi-compatibility.py" "$@"
+    else
+      echo "quality gate: OpenAPI compatibility has no history to compare"
+    fi
+    ;;
+  *)
+    echo "quality gate: quality.openapi_compatibility must be off, report, or enforce" >&2
+    exit 2
+    ;;
+esac
 if [ "$has_git_history" = false ]; then
   consumer_snapshot=$(mktemp -d)
   manifest_value openapi.consumers | while IFS= read -r consumer; do
@@ -117,7 +168,7 @@ if [ -f backend/Dockerfile ]; then
   if [ "$(manifest_value dependencies.baukit.source)" = "path" ]; then
     baukit_path=$(manifest_value dependencies.baukit.path)
     build_context=$(mktemp -d)
-    trap 'rm -rf "$build_context"' EXIT
+    temporary_paths="$temporary_paths $build_context"
     mkdir -p "$build_context/backend" "$build_context/baukit"
     tar -C backend --exclude target -cf - . | tar -C "$build_context/backend" -xf -
     tar -C "$baukit_path" --exclude target -cf - . | tar -C "$build_context/baukit" -xf -
@@ -176,11 +227,8 @@ mobile/android/gradlew -p mobile/android --no-daemon --stacktrace assembleDebug
 {% endif %}
 
 if [ -f deploy/observability/product-metrics.txt ]; then
-  contract_checkout=$(mktemp -d)
-  trap 'rm -rf "$contract_checkout"' EXIT
-  git clone --branch v{{ context.template_version }} --depth 1 \
-    https://github.com/PatrickKoss/baukit.git "$contract_checkout"
-  python3 "$contract_checkout/deploy/observability/lint/check-metric-names.py" \
+  use_baukit_root
+  python3 "$baukit_root/deploy/observability/lint/check-metric-names.py" \
     --observability-root deploy/observability \
     --allowlist deploy/observability/product-metrics.txt
 fi

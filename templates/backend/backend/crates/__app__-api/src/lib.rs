@@ -8,7 +8,7 @@ use baukit_http::{
     ApiError, ApiJson, ApiPath, ErrorBody, ErrorEnvelope, HttpOptions, HttpOptionsError,
     JsonRejectionCodes,
 };
-use baukit_openapi::OpenApiMetadata;
+use baukit_openapi::{ErrorResponseRules, OpenApiMetadata, OperationCondition as When};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::{OpenApi, ToSchema};
@@ -263,7 +263,43 @@ pub fn openapi_document() -> utoipa::openapi::OpenApi {
     );
 {% if context.auth_oidc %}    let metadata = metadata.bearer_auth();
 {% endif %}    metadata.apply_to(&mut document);
+    error_response_rules().apply(&mut document);
     document
+}
+
+fn error_response_rules() -> ErrorResponseRules {
+    ErrorResponseRules::new()
+        .status(When::HasPathParameter, 400, "The path is invalid.")
+        .status(
+            When::HasRequestBody,
+            400,
+            "The request body is not valid JSON.",
+        )
+        .status(When::HasRequestBody, 413, "The request body is too large.")
+        .status(
+            When::HasRequestBody,
+            415,
+            "The request content type is not JSON.",
+        )
+        .status(
+            When::HasRequestBody,
+            422,
+            "The request body does not match the schema.",
+        )
+        .status(When::HasPathParameter, 404, "The resource was not found.")
+{% if context.auth_oidc %}        .status(When::Secured, 401, "A valid bearer credential is required.")
+        .status(
+            When::Always,
+            429,
+            "The rate limit was exceeded; wait for Retry-After.",
+        )
+{% endif %}        .status(When::Always, 500, "An internal error occurred.")
+        .status(
+            When::Always,
+            504,
+            "The request deadline passed; a write may have committed.",
+        )
+        .standard_headers()
 }
 
 #[derive(OpenApi)]

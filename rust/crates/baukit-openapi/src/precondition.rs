@@ -1,10 +1,8 @@
-use utoipa::ToSchema;
 use utoipa::openapi::header::{Header, HeaderBuilder};
 use utoipa::openapi::path::{Operation, Parameter, ParameterBuilder, ParameterIn};
-use utoipa::openapi::response::{Response, ResponseBuilder};
-use utoipa::openapi::{ContentBuilder, ObjectBuilder, Ref, RefOr, Required, Type};
+use utoipa::openapi::{ObjectBuilder, RefOr, Required, Type};
 
-use crate::ErrorEnvelope;
+use crate::error_responses::insert_error_response;
 
 /// The request header that carries a revision precondition.
 pub const IF_MATCH_HEADER: &str = "If-Match";
@@ -25,7 +23,6 @@ const STATUS_BAD_REQUEST: &str = "400";
 const STATUS_PRECONDITION_FAILED: &str = "412";
 const STATUS_PRECONDITION_REQUIRED: &str = "428";
 const SUCCESS_STATUS_PREFIX: char = '2';
-const JSON_CONTENT_TYPE: &str = "application/json";
 
 /// Whether a route rejects a write that omits `If-Match`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -91,18 +88,18 @@ pub fn document_if_match(operation: &mut Operation, requirement: IfMatchRequirem
     parameters.retain(|parameter| !is_if_match(parameter));
     parameters.push(if_match_parameter(requirement));
 
-    add_error_response(
+    insert_error_response(
         operation,
         STATUS_BAD_REQUEST,
         &format!("`{INVALID_IF_MATCH_CODE}`: If-Match is not one strong ETag for this resource"),
     );
-    add_error_response(
+    insert_error_response(
         operation,
         STATUS_PRECONDITION_FAILED,
         &format!("`{PRECONDITION_FAILED_CODE}`: the resource changed since it was read"),
     );
     if requirement.is_required() {
-        add_error_response(
+        insert_error_response(
             operation,
             STATUS_PRECONDITION_REQUIRED,
             &format!("`{PRECONDITION_REQUIRED_CODE}`: If-Match is required"),
@@ -129,25 +126,6 @@ pub fn document_etag(operation: &mut Operation) {
 fn is_if_match(parameter: &Parameter) -> bool {
     parameter.parameter_in == ParameterIn::Header
         && parameter.name.eq_ignore_ascii_case(IF_MATCH_HEADER)
-}
-
-fn add_error_response(operation: &mut Operation, status: &str, description: &str) {
-    operation
-        .responses
-        .responses
-        .entry(status.to_owned())
-        .or_insert_with(|| RefOr::T(error_response(description)));
-}
-
-fn error_response(description: &str) -> Response {
-    let schema = Ref::from_schema_name(<ErrorEnvelope as ToSchema>::name());
-    ResponseBuilder::new()
-        .description(description)
-        .content(
-            JSON_CONTENT_TYPE,
-            ContentBuilder::new().schema(Some(schema)).build(),
-        )
-        .build()
 }
 
 #[cfg(test)]

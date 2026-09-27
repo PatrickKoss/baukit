@@ -168,6 +168,13 @@ jobs:
       - run: python3 deploy/observability/lint/check-metric-names.py
       - run: python3 -m unittest discover -s deploy/observability/lint -p 'test_*.py'
 
+  openapi-compatibility:
+    name: OpenAPI compatibility check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
+
   cli:
     name: Baukit CLI
     runs-on: ubuntu-latest

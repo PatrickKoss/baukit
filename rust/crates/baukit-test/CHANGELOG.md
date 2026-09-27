@@ -28,6 +28,11 @@ All notable changes to `baukit-test` are documented here.
   `ReplayConformanceError`. The check covers a lost response, equivalent and changed input,
   simultaneous requests with one key, owner and operation isolation, rollback before commit, a
   crash after commit, expiry, bounded cleanup, and erasure.
+- Add `assert_response_matches_openapi` and `check_response_matches_openapi` with
+  `ObservedResponse` and `OpenApiResponseError`. They check a real response's status, media type,
+  and JSON body against its operation in a serialized OpenAPI 3.1 document, using JSON Schema
+  2020-12 with format validation. The crate now depends on `jsonschema` 0.58.1 without default
+  features.
 
 ### Changed
 

@@ -100,6 +100,8 @@ with browsers under the repository-local
 
 `make openapi` refreshes the committed backend schema. `make openapi-client` consumes that schema without rebuilding the backend or requiring `baukit` on `PATH`; it uses current Node.js LTS with corepack or npx and writes `generated/openapi.d.ts`.
 
+Handlers document only the statuses they return themselves. `error_response_rules()` in `{{ context.app_name }}-api` documents the rest from the middleware: 400, 413, 415, and 422 on operations with a JSON body, 400 and 404 on operations with a path parameter,{% if context.auth_oidc %} 401 on secured operations, 429 on every operation,{% endif %} and 500 and 504 on every operation. It also adds `X-Request-Id` to every response{% if context.auth_oidc %}, `Retry-After` to 429, and `WWW-Authenticate` to 401{% endif %}. Add a rule there when middleware starts returning a new status, then run `make openapi` and `make openapi-client`.
+
 ## Backend layout
 
 - `{{ context.app_name }}-domain`: business types and invariants; no framework dependencies.

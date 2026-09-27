@@ -273,6 +273,16 @@ pub enum QualityProfile {
     Strict,
 }
 
+/// Whether the strict gate compares the OpenAPI schema with the base revision.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OpenApiCompatibility {
+    #[default]
+    Off,
+    Report,
+    Enforce,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Manifest {
     pub schema_version: u32,
@@ -304,6 +314,8 @@ pub struct QualityManifest {
     pub webkit_repeats: u8,
     #[serde(default)]
     pub full_stack_e2e: bool,
+    #[serde(default)]
+    pub openapi_compatibility: OpenApiCompatibility,
 }
 
 impl Default for QualityManifest {
@@ -314,6 +326,7 @@ impl Default for QualityManifest {
             critical_paths: Vec::new(),
             webkit_repeats: default_webkit_repeats(),
             full_stack_e2e: false,
+            openapi_compatibility: OpenApiCompatibility::Off,
         }
     }
 }
@@ -932,6 +945,7 @@ backend_coverage_lines = {}\n\
 critical_paths = []\n\
 webkit_repeats = {}\n\
 full_stack_e2e = false\n\
+openapi_compatibility = \"off\"\n\
 \n\
 [capabilities]\n\
 backend = {}\n\
@@ -1208,6 +1222,15 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
     }
     if manifest.quality.webkit_repeats == 0 {
         failures.push("quality.webkit_repeats must be greater than zero".to_owned());
+    }
+    if manifest.quality.openapi_compatibility != OpenApiCompatibility::Off {
+        if manifest.quality.profile != QualityProfile::Strict {
+            failures.push("quality.openapi_compatibility requires the strict profile".to_owned());
+        }
+        if !manifest.capabilities.backend {
+            failures
+                .push("quality.openapi_compatibility requires the backend capability".to_owned());
+        }
     }
     if !manifest.capabilities.web && !manifest.quality.critical_paths.is_empty() {
         failures.push("quality.critical_paths requires the web capability".to_owned());

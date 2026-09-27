@@ -10,6 +10,7 @@ backend_coverage_lines = 70
 critical_paths = []
 webkit_repeats = 3
 full_stack_e2e = false
+openapi_compatibility = "off"
 
 [capabilities]
 backend = true

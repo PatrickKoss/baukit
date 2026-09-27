@@ -6,6 +6,15 @@ All notable changes to `baukit-openapi` are documented here.
 
 ### Added
 
+- `ErrorResponseRules` documents error responses and response headers from product rules. A
+  status rule pairs an `OperationCondition` (`Always`, `Secured`, `HasRequestBody`,
+  `HasPathParameter`, `UnsafeMethod`, `HasIdempotencyKey`) with a status and a description, and
+  adds a response with the shared error envelope where the operation lacks that status. A header
+  rule adds a header to the responses a `ResponseSelector` picks. `standard_headers()` adds
+  `X-Request-Id`, `Retry-After` on 429, and `WWW-Authenticate` on 401. `apply` covers every
+  operation and `apply_where` takes a path and method filter. `REQUEST_ID_HEADER`,
+  `RETRY_AFTER_HEADER`, `WWW_AUTHENTICATE_HEADER`, `request_id_header`, `retry_after_header`, and
+  `www_authenticate_header` are public.
 - `document_if_match` documents a revision precondition on an operation: a required or optional
   `If-Match` header parameter, plus 400, 412, and, when required, 428 error responses with the
   shared envelope. `document_etag` adds the `ETag` header to inline 2xx responses.

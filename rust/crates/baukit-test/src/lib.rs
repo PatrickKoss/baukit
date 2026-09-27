@@ -2,8 +2,9 @@
 //!
 //! The crate provides Docker-backed PostgreSQL, direct Redis, and Redis Sentinel
 //! fixtures, compact test tracing, Prometheus contract checks, in-process or network
-//! operations-endpoint checks, OpenAPI drift assertions, resource-limit conformance checks,
-//! tombstone purge-horizon conformance, replay-safe mutation conformance, and a mock OIDC/JWKS issuer with JWT fixtures.
+//! operations-endpoint checks, OpenAPI drift and response assertions, resource-limit
+//! conformance checks, tombstone purge-horizon conformance, replay-safe mutation conformance,
+//! and a mock OIDC/JWKS issuer with JWT fixtures.
 //!
 //! # Telemetry tests
 //!
@@ -42,6 +43,7 @@ mod jwt;
 mod limits;
 mod live_row_cap;
 mod metrics;
+mod openapi_response;
 mod ops;
 mod postgres;
 #[cfg(feature = "sqlx-postgres")]
@@ -98,6 +100,10 @@ pub use metrics::{
     MetricsConformanceError, MetricsConformanceOptions, assert_metrics_conformance,
     assert_metrics_conformance_with_options, check_metrics_conformance,
     check_metrics_conformance_with_options,
+};
+pub use openapi_response::{
+    ObservedResponse, OpenApiResponseError, assert_response_matches_openapi,
+    check_response_matches_openapi,
 };
 pub use ops::{
     OpsConformanceError, assert_ops_base_url_conformance, assert_ops_router_conformance,
