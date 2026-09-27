@@ -1,6 +1,6 @@
 [package]
 name = "baukit-push"
-description = "Provider-neutral push delivery port with an Expo ticket and receipt adapter."
+description = "Provider-neutral push delivery with an Expo ticket and receipt adapter, a device registry, and daily delivery claims."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -16,18 +16,24 @@ readme = "README.md"
 workspace = true
 
 [features]
+sqlx-postgres = ["dep:sqlx"]
 test-support = ["dep:tokio"]
 
 [dependencies]
 axum.workspace = true
 baukit-config.workspace = true
 baukit-http.workspace = true
+chrono.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sqlx = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio = { workspace = true, optional = true }
 tracing.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
+baukit-push = { path = ".", features = ["sqlx-postgres", "test-support"] }
+baukit-test = { path = "../baukit-test", features = ["sqlx-postgres"] }
 tokio.workspace = true

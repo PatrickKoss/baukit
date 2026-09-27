@@ -3,7 +3,10 @@
 `baukit-push` delivers notifications to devices through a provider-neutral
 `PushSender` port and ships one adapter for it, `ExpoPushSender`. Domain code
 builds `PushMessage` values and reads `PushOutcome` values; nothing above the
-port names Expo. Deciding *who* gets notified and *when* stays in the product.
+port names Expo. A `DeviceRegistry` port stores which tokens belong to which
+owner, and a separate `DeliveryClaimStore` keeps scheduled pushes at most once
+per owner, local date, and kind. Deciding *who* gets notified and *when*,
+the copy, quiet hours, and the channel stay in the product.
 
 The crate is opt-in. It is not part of the generated backend template and is not
 wired into `baukit_config::BaukitConfig`.
@@ -56,32 +59,108 @@ Expo's error codes map onto `PushRejection`:
 An unrecognized code keeps Expo's own string rather than being dropped, so a new
 provider code shows up in logs instead of vanishing into a generic failure.
 
-## Pruning dead tokens
+## Device registry
 
 A device token stops working once the app is uninstalled or the user turns
-notifications off. Expo reports that as `DeviceNotRegistered`. Nothing prunes
-those tokens for you, and the same failures repeat on every send until you do.
-Delete them after each batch:
+notifications off. Expo reports that as `DeviceNotRegistered`, and the same
+failure repeats on every send until the token is gone. The `DeviceRegistry`
+port owns the tokens and removes dead ones in one call after each send:
 
 ```rust
-use baukit_push::{PushMessage, PushSender};
+use baukit_push::{DeviceRegistry, PushMessage, PushSender};
+use chrono::Utc;
 
 async fn deliver(
     sender: &impl PushSender,
+    registry: &impl DeviceRegistry,
     messages: Vec<PushMessage>,
-) -> Result<Vec<String>, baukit_push::PushError> {
+) -> Result<u64, Box<dyn std::error::Error>> {
+    let sent_at = Utc::now();
     let outcomes = sender.send(messages).await?;
-    Ok(outcomes
-        .iter()
-        .filter(|outcome| outcome.is_token_dead())
-        .map(|outcome| outcome.token.clone())
-        .collect())
+    Ok(registry.invalidate_dead_tokens(&outcomes, sent_at).await?)
 }
 ```
 
-`is_token_dead` is true only for `DeviceNotRegistered`. Every other rejection
-describes the notification, not the token, so deleting on `MessageTooBig` would
-throw away a working device.
+`invalidate_dead_tokens` removes only tokens whose outcome
+`is_token_dead`, which is true only for `DeviceNotRegistered`. Every other
+rejection describes the notification, not the token, so deleting on
+`MessageTooBig` would throw away a working device. A device registered again
+after `sent_at` keeps its token, because Expo's verdict predates the new
+registration. Outcomes without a dead token cost no store round trip.
+
+| Method | Behavior |
+|---|---|
+| `register` | Inserts or refreshes the token for `registration.owner_id`. A token another owner holds moves to this owner. |
+| `rotate` | Removes the owner's previous token and registers the new one in one step. A previous token the owner does not hold is ignored, so a retry is safe. |
+| `unregister` | Removes one of the owner's tokens and returns whether it existed. |
+| `list_for_owner` | Returns the owner's devices, most recently registered first. |
+| `invalidate` | Removes the given tokens if they were last registered at or before `sent_at`. |
+| `erase_owner` | Removes every device of the owner. |
+
+Each owner keeps at most `DEFAULT_DEVICES_PER_OWNER` (10) devices unless the
+store is built with `with_devices_per_owner`. A registration over the cap
+evicts the owner's devices with the oldest `last_registered_at`, breaking ties
+on `created_at` and then on the token, and reports how many went in
+`RegistrationOutcome::evicted`. The device being registered is never evicted,
+even when its instant is older than the others. Rotating removes the
+predecessor first, so rotating at the cap evicts nothing.
+
+`DeviceToken` accepts 1 to 512 bytes of visible ASCII. Its `Debug` output is
+redacted and it has no `Display`; read it with `expose` only where it goes to
+the provider or the store. `PushValidationError` and `PushStoreError` never
+contain a token. `DeviceTimeZone` checks the shape of an IANA name only, so
+resolve it with a time zone database before registering if the product
+schedules by it. `DevicePlatform` is `Ios` or `Android`.
+
+### PostgreSQL store
+
+The `sqlx-postgres` feature adds `PostgresDeviceRegistry` over the table in
+`POSTGRES_PUSH_DEVICES_MIGRATION_SQL`, which is available without the feature.
+Copy the SQL into the product's migrations and add the owner foreign key the
+header shows, with `ON DELETE CASCADE`. Nothing migrates on startup.
+
+```toml
+[dependencies]
+baukit-push = { workspace = true, features = ["sqlx-postgres"] }
+```
+
+The token is the primary key. `register` and `rotate` run in one transaction
+under a per-owner advisory lock, so concurrent registrations cannot overshoot
+the cap. `erase_owner_push_devices` takes any `PgExecutor` and runs inside the
+product's erasure transaction when the owner row stays or no foreign key
+exists.
+
+## Daily delivery claims
+
+A scheduled sender claims a `DeliveryClaim` keyed by owner, local date, and
+`DeliveryKind` before it sends. `claim` returns `false` when another worker
+already holds it. If the whole send fails, `release` the claim so a later run
+can try again. Event-driven senders do not need claims, which is why this is a
+separate `DeliveryClaimStore` port with its own table.
+
+```rust,ignore
+let claim = DeliveryClaim::new(owner_id, local_date, DeliveryKind::new("daily_reminder")?);
+if !claims.claim(claim.clone(), Utc::now()).await? {
+    return Ok(());
+}
+let sent_at = Utc::now();
+match sender.send(messages).await {
+    Ok(outcomes) => {
+        registry.invalidate_dead_tokens(&outcomes, sent_at).await?;
+    }
+    Err(error) => {
+        claims.release(claim).await?;
+        return Err(error.into());
+    }
+}
+```
+
+A `DeliveryKind` is 1 to 64 bytes of `[a-z0-9_.-]` starting with a letter or
+digit. With `sqlx-postgres`, `PostgresDeliveryClaimStore` uses the table in
+`POSTGRES_PUSH_DELIVERY_CLAIMS_MIGRATION_SQL`. `erase_owner_delivery_claims`
+removes one owner's claims, and `purge_delivery_claims` deletes one bounded
+batch of claims for local dates before a cutoff; call it until it returns less
+than the batch size.
 
 ## Retries
 
@@ -144,7 +223,8 @@ redacts it.
 ## Testing
 
 Enable the `test-support` feature for `FakePushSender`, an in-memory recording
-sender:
+sender, and for `MemoryDeviceRegistry` and `MemoryDeliveryClaimStore`, which
+follow the PostgreSQL adapters' cap, move, eviction, and invalidation rules:
 
 ```toml
 [dev-dependencies]

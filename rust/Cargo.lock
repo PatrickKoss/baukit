@@ -388,12 +388,17 @@ dependencies = [
  "axum",
  "baukit-config",
  "baukit-http",
+ "baukit-push",
+ "baukit-test",
+ "chrono",
  "reqwest",
  "serde",
  "serde_json",
+ "sqlx",
  "thiserror",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

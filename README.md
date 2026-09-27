@@ -117,7 +117,7 @@ Nothing here depends on the CLI, and no crate drags in the rest. Take the error 
 | [`baukit-events`](rust/crates/baukit-events) | Versioned event envelope with stable validation codes |
 | [`baukit-integrations`](rust/crates/baukit-integrations) | Connector contract for cursor-paged imports, verified webhooks, health |
 | [`baukit-credential-vault`](rust/crates/baukit-credential-vault) | Versioned AES-256-GCM encryption behind a storage-neutral port |
-| [`baukit-push`](rust/crates/baukit-push) | Provider-neutral push delivery with an Expo adapter |
+| [`baukit-push`](rust/crates/baukit-push) | Provider-neutral push delivery with an Expo adapter, a device registry, and daily delivery claims |
 | [`baukit-core`](rust/crates/baukit-core) | Dependency-light vocabulary shared by the others, plus optional keyset pagination |
 | [`baukit-test`](rust/crates/baukit-test) | Docker PostgreSQL and Redis fixtures, a mock OIDC issuer, conformance suites |
 
