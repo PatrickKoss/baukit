@@ -299,6 +299,14 @@ describe('NativeOidcClient', () => {
     expect(test.client.session()?.expiresAt).toBe(61_000);
   });
 
+  it('forwards the state decoration to the browser flow', async () => {
+    const test = makeHarness();
+
+    await test.client.signIn({ stateDecoration: ['ap1', 'd'] });
+
+    expect(test.browser.authorizationRequests[0]?.stateDecoration).toEqual(['ap1', 'd']);
+  });
+
   it('shares one refresh across proactive and forced concurrent callers', async () => {
     let resolveRefresh: ((response: Response) => void) | undefined;
     let refreshCalls = 0;

@@ -1,3 +1,11 @@
+export {
+  AUTHORIZATION_STATE_ENTROPY_BYTES,
+  appearanceStateDecoration,
+  decoratedAuthorizationState,
+  type AppearanceMode,
+  type AppearanceState,
+} from './authorization-state.js';
+
 export type OidcErrorCode =
   | 'authorization_failed'
   | 'callback_state_mismatch'
@@ -79,6 +87,11 @@ export interface OidcSession {
   readonly expiresAt: number;
 }
 
+export interface SignInOptions {
+  /** Forwarded to the browser flow, for example `appearanceStateDecoration({ mode: 'dark' })`. */
+  readonly stateDecoration?: readonly string[];
+}
+
 export type SignInResult =
   | { readonly status: 'success'; readonly subject: string }
   | { readonly status: 'cancelled'; readonly reason: 'cancel' | 'dismiss' };
@@ -107,6 +120,8 @@ export interface AuthorizationRequest {
   readonly redirectUri: string;
   readonly scopes: readonly string[];
   readonly prompt?: 'login';
+  /** Segments a decorating browser flow puts in front of its random state. Other flows ignore them. */
+  readonly stateDecoration?: readonly string[];
 }
 
 export type AuthorizationResult =
@@ -228,7 +243,7 @@ export class NativeOidcClient {
     return this.metadataPromise;
   }
 
-  public async signIn(): Promise<SignInResult> {
+  public async signIn(options: SignInOptions = {}): Promise<SignInResult> {
     await this.initialize();
     const metadata = await this.discover();
     const forceLogin = await this.readForceLogin();
@@ -240,6 +255,9 @@ export class NativeOidcClient {
         redirectUri: this.config.redirectUri,
         scopes: this.config.scopes,
         ...(forceLogin ? { prompt: 'login' as const } : {}),
+        ...(options.stateDecoration === undefined
+          ? {}
+          : { stateDecoration: options.stateDecoration }),
       });
     } catch {
       throw new OidcError('authorization_failed');

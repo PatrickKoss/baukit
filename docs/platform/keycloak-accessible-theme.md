@@ -223,3 +223,25 @@ The implementation proof succeeded without copied FreeMarker templates. The gene
 The fake-DOM suite covers client error creation and recovery, server field and global errors, registration discovery, native invalid events, idempotence, hidden controls, autocomplete preservation, and unrelated pages. The generated Playwright suite passed against the exact `quay.io/keycloak/keycloak:26.7.0` and `quay.io/keycloak/keycloak:26.7.1` images. Both patches are supported.
 
 The tested inherited contracts are `#kc-form-login`, `#kc-register-form`, standard control IDs, `input-error-{name}`, and the PatternFly 5 or 6 form-group and required-marker classes. Keycloak `login.ftl`, `login-username.ftl`, `login-password.ftl`, and `register.ftl` remain inherited. Any Keycloak upgrade must inspect these contracts and rerun both exact-image browser suites before support changes.
+
+## Appearance hint
+
+`baukit-accessible` also loads `js/theme-preferences.js`. It decodes an
+appearance hint that `@baukit/auth-native` puts in the OAuth `state`:
+`ap1.<d|l|s>[.<PRIMARY>.<SECONDARY>].<nonce>`, where the nonce is at least 64
+lowercase hex characters. The script reads `state` from the authorization URL,
+or `st` from the base64url `client_data` parameter that Keycloak adds after a
+form post. Any other state leaves the page unchanged.
+
+For `d` or `l` the script sets `data-baukit-theme` on the root element and pins
+the `pf-v5-theme-dark` class. `keycloak.v2` toggles that class from
+`prefers-color-scheme` in its own module script whenever the realm's dark mode is
+on, so the script watches the class list and restores the requested mode. For
+`s` it leaves Keycloak's handling alone. Colors become `--baukit-auth-primary`,
+`--baukit-auth-secondary`, and `--baukit-auth-on-primary`, the last one picked
+for contrast against the primary color. The base theme does not use them. A
+product child's CSS can.
+
+The hint carries no user data. The provider and its access logs see the whole
+state, so products must not add anything else to it.
+

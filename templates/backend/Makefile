@@ -22,7 +22,7 @@ test: preflight
 test-scripts:
 	python3 scripts/reconcile-env.test.py
 {% if context.auth_oidc %}	python3 -m unittest discover -s scripts/tests
-	node --test scripts/tests/keycloak_accessibility.test.mjs
+	node --test scripts/tests/keycloak_accessibility.test.mjs scripts/tests/keycloak_theme_preferences.test.mjs
 {% endif %}
 {% if context.quality_strict %}	python3 scripts/check-markdown-links.test.py
 
@@ -120,7 +120,7 @@ keycloak-test:
 	python3 -m unittest discover -s scripts/tests
 
 keycloak-theme-test:
-	node --test scripts/tests/keycloak_accessibility.test.mjs
+	node --test scripts/tests/keycloak_accessibility.test.mjs scripts/tests/keycloak_theme_preferences.test.mjs
 
 {% if context.web %}keycloak-theme-browser-test: keycloak-theme-test
 	cd web && corepack pnpm@11.18.0 install --frozen-lockfile

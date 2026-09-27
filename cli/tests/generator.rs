@@ -731,6 +731,11 @@ fn oidc_generation_is_deterministic_and_records_the_optional_capability() -> any
     );
     assert!(
         first
+            .join("keycloak/themes/baukit-accessible/login/resources/js/theme-preferences.js")
+            .is_file()
+    );
+    assert!(
+        first
             .join("keycloak/themes/baukit-accessible-test/login/theme.properties")
             .is_file()
     );
@@ -753,6 +758,11 @@ fn oidc_generation_is_deterministic_and_records_the_optional_capability() -> any
     assert!(
         first
             .join("scripts/tests/keycloak_accessibility.test.mjs")
+            .is_file()
+    );
+    assert!(
+        first
+            .join("scripts/tests/keycloak_theme_preferences.test.mjs")
             .is_file()
     );
     assert!(!first_tree.keys().any(|path| {
