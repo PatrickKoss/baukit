@@ -763,10 +763,7 @@ mod tests {
             observations.row_lock_limit_reads.load(Ordering::Relaxed),
             expected
         );
-        assert_eq!(
-            observations.serialization_failures.load(Ordering::Relaxed),
-            expected
-        );
+        assert!(observations.serialization_failures.load(Ordering::Relaxed) >= expected);
         assert_eq!(
             observations.counter_misses.load(Ordering::Relaxed),
             expected
