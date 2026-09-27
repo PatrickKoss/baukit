@@ -1,133 +1,69 @@
 import limitsFixture from '../../limits.json';
-import { ResourceMeasurementError } from '@baukit/data-contracts/limits';
-
-jest.mock(
-  '@baukit/data-contracts/limits',
-  () =>
-    jest.requireActual<typeof import('@baukit/data-contracts/limits')>(
-      '../node_modules/@baukit/data-contracts/dist/limits.js',
-    ),
-  { virtual: true },
-);
+import {
+  LimitError,
+  LimitsPolicyError,
+  ResourceMeasurementError,
+  parseLimitsPolicy,
+} from '@baukit/data-contracts/limits';
 
 import {
   LIMITS_POLICY,
-  LimitError,
-  LimitsPolicyError,
+  LIMITS_POLICY_SCHEMA,
   checkBatch,
   checkBody,
   checkCollection,
   checkJsonDocument,
   checkRows,
   checkText,
-  parseLimitsPolicy,
+  type LimitReason,
 } from './limits';
 
-describe('shared limits policy', () => {
+describe('limits policy call site', () => {
   it('loads the product-root fixture', () => {
     expect(LIMITS_POLICY).toEqual(limitsFixture);
   });
 
-  it('rejects unknown versions, fields, and zero values', () => {
-    expect(() => parseLimitsPolicy({ ...limitsFixture, version: 2 })).toThrow(LimitsPolicyError);
-    expect(() => parseLimitsPolicy({ ...limitsFixture, extra: 1 })).toThrow(LimitsPolicyError);
-    expect(() => parseLimitsPolicy({ ...limitsFixture, text: { max_characters: 0 } })).toThrow(
-      LimitsPolicyError,
-    );
+  it('parses the fixture against the template schema', () => {
+    const parse = (value: unknown) => parseLimitsPolicy(value, LIMITS_POLICY_SCHEMA);
+    expect(() => parse({ ...limitsFixture, version: 2 })).toThrow(LimitsPolicyError);
+    expect(() => parse({ ...limitsFixture, extra: 1 })).toThrow(LimitsPolicyError);
   });
 
-  it('rejects malformed policy objects and sections', () => {
-    expect(() => parseLimitsPolicy(null)).toThrow(LimitsPolicyError);
-    expect(() => parseLimitsPolicy([])).toThrow(LimitsPolicyError);
-    expect(() => parseLimitsPolicy({ ...limitsFixture, $comment: 1 })).toThrow(LimitsPolicyError);
-    expect(() => parseLimitsPolicy({ ...limitsFixture, text: null })).toThrow(LimitsPolicyError);
-    expect(() => {
-      parseLimitsPolicy({ ...limitsFixture, text: { max_characters: 1.5 } });
-    }).toThrow(LimitsPolicyError);
-  });
-
-  it('accepts boundaries and reports every stable reason code', () => {
+  it('reports every stable reason code', () => {
     expect(() => {
       checkText('title', 'é'.repeat(LIMITS_POLICY.text.max_characters));
     }).not.toThrow();
-    expectReason(
-      () => {
-        checkText('title', 'é'.repeat(LIMITS_POLICY.text.max_characters + 1));
-      },
-      'text_too_long',
-      'title',
-    );
-    expectReason(
-      () => {
-        checkJsonDocument('metadata', {
-          value: 'x'.repeat(LIMITS_POLICY.document.max_bytes),
-        });
-      },
-      'jsonb_too_large',
-      'metadata',
-    );
-    expectReason(
-      () => {
-        checkCollection('entries', LIMITS_POLICY.collection.max_elements + 1);
-      },
-      'too_many_elements',
-      'entries',
-    );
-    expectReason(
-      () => {
-        checkRows('records', LIMITS_POLICY.rows.max_count + 1);
-      },
-      'too_many_rows',
-      'records',
-    );
-    expectReason(
-      () => {
-        checkBody('request', LIMITS_POLICY.body.max_bytes + 1);
-      },
-      'body_too_large',
-      'request',
-    );
-    expectReason(
-      () => {
-        checkBatch('changes', LIMITS_POLICY.batch.max_items + 1);
-      },
-      'batch_too_large',
-      'changes',
-    );
+    expectReason(() => {
+      checkText('title', 'é'.repeat(LIMITS_POLICY.text.max_characters + 1));
+    }, 'text_too_long');
+    expectReason(() => {
+      checkJsonDocument('title', { value: 'x'.repeat(LIMITS_POLICY.document.max_bytes) });
+    }, 'jsonb_too_large');
+    expectReason(() => {
+      checkCollection('title', LIMITS_POLICY.collection.max_elements + 1);
+    }, 'too_many_elements');
+    expectReason(() => {
+      checkRows('title', LIMITS_POLICY.rows.max_count + 1);
+    }, 'too_many_rows');
+    expectReason(() => {
+      checkBody('title', LIMITS_POLICY.body.max_bytes + 1);
+    }, 'body_too_large');
+    expectReason(() => {
+      checkBatch('title', LIMITS_POLICY.batch.max_items + 1);
+    }, 'batch_too_large');
   });
 
-  it('rejects invalid counts instead of treating them as within policy', () => {
+  it('rejects invalid counts and passes measurement failures through', () => {
     expect(() => {
       checkRows('records', -1);
     }).toThrow(RangeError);
     expect(() => {
-      checkBody('request', Number.NaN);
-    }).toThrow(RangeError);
-  });
-
-  it('counts UTF-8 bytes at every encoding width', () => {
-    expect(() => {
-      checkJsonDocument('metadata', 'a¢€𐍈');
-    }).not.toThrow();
-  });
-
-  it('passes production measurement failures through without product content', () => {
-    expect(() => {
       checkText('title', '\ud800');
-    }).toThrow(ResourceMeasurementError);
-    expect(() => {
-      checkJsonDocument('metadata', Number.NaN);
     }).toThrow(ResourceMeasurementError);
   });
 });
 
-function expectReason(action: () => void, reason: LimitError['reason'], field: string): void {
-  try {
-    action();
-    throw new Error('expected a limit error');
-  } catch (error) {
-    expect(error).toBeInstanceOf(LimitError);
-    expect(error).toMatchObject({ reason, field });
-    expect((error as Error).message).toBe(`Limit exceeded for ${field}: ${reason}`);
-  }
+function expectReason(action: () => void, reason: LimitReason): void {
+  expect(action).toThrow(LimitError);
+  expect(action).toThrow(`Limit exceeded for title: ${reason}`);
 }

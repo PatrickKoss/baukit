@@ -43,7 +43,9 @@ Rust applications use `baukit_core::limits`. TypeScript applications use
 `@baukit/data-contracts/limits`. Both implementations measure trimmed Unicode scalars, compact JSON
 UTF-8 bytes, raw bytes, and collection elements. The matching checks accept an allowed amount. A
 passing check returns `measured` and `allowed`. A failed check returns or throws an error containing
-the same two values. An allowed amount of zero is valid.
+the same two values. An allowed amount of zero is valid. TypeScript products parse their limits
+policy file with `parseLimitsPolicy` and map a failed check to a product reason code with
+`enforceLimit`, which throws `LimitError`.
 
 Text measurement removes Unicode `White_Space` values only at the beginning and end. It does not
 normalize text. Composed `é` counts as one scalar. `e` followed by a combining acute accent counts as

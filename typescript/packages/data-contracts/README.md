@@ -54,6 +54,32 @@ with `trimmedUnicodeScalarCount(value)`, and replace a `JSON.stringify` plus `Te
 with `compactJsonUtf8Bytes(value)`. Unlike raw `JSON.stringify`, the helper rejects values that JSON
 would omit or replace with `null`.
 
+### Limits policy files
+
+`parseLimitsPolicy(value, schema)` validates a product's limits policy file, such as the
+`limits.json` the templates generate. The schema names the supported version and the keys of each
+section. The parser requires a string `$comment`, the exact version, the exact section and key sets,
+and positive safe integers. Keys listed in `allowZero` as `section.key` also accept zero. Any other
+shape throws `LimitsPolicyError`, whose message names the failing path but never a value. Pass the
+schema `as const` so the result type has one `number` property per declared key.
+
+`enforceLimit(field, reason, check)` runs one check and turns `LimitExceededError` into
+`LimitError`, which carries `reason`, `field`, `measured`, and `allowed`. Other errors pass through.
+
+```ts
+import { checkTrimmedUnicodeScalars, enforceLimit, parseLimitsPolicy } from '@baukit/data-contracts/limits';
+
+const schema = { version: 1, sections: { text: ['max_characters'] } } as const;
+const policy = parseLimitsPolicy(limitsJson, schema);
+
+enforceLimit('title', 'text_too_long', () =>
+  checkTrimmedUnicodeScalars(title, policy.text.max_characters),
+);
+```
+
+Cross-field rules, such as one limit that must not exceed another, stay in product code after the
+parse.
+
 ## Import envelopes
 
 The `/import-envelope` subpath separates import safety from a product's file format. The product
