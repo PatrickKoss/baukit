@@ -422,3 +422,65 @@ None.
   `from_jwks_uri`, `set_jwks_delay` after `start()` instead of
   `start_with_jwks_delay`, and `mint_with_key_id` instead of `token_with`. Its
   claims must use `server.issuer()`.
+
+## 6. Bearer challenges use `error_description`
+
+### Observed repeated glue
+
+`AuthRejection` answered a rejected token with
+`Bearer error="invalid_token", hint="expired"` or `hint="invalid"`. RFC 6750
+defines `error_description` for this and has no `hint` parameter.
+`/home/patrick/projects/hebkit/backend/crates/hebkit-api/src/adapters/http/error.rs:553-567`
+rebuilds the challenge itself to send `error_description="expired"` and
+`error_description="invalid"`.
+
+### Baukit owner and public contract
+
+`rust/crates/baukit-auth/src/axum_integration.rs` sends:
+
+- `Bearer error="invalid_token", error_description="expired"` for
+  `AuthRejection::ExpiredToken`.
+- `Bearer error="invalid_token", error_description="invalid"` for
+  `AuthRejection::InvalidToken`, which covers every other verification failure.
+- A bare `Bearer` challenge for a request without credentials, as before.
+
+The values match Hebkit's, so its clients need no change. Both headers are
+static strings, so no claim value, issuer, or verifier error text can reach
+them.
+
+### Failure behavior
+
+Unchanged status and body: `401` with the `unauthenticated` envelope.
+
+### Privacy boundary
+
+The header carries one of two fixed words. The README states this.
+
+### Supported runtimes
+
+Any HTTP client. No Baukit TypeScript package parsed `hint`.
+
+### Tests
+
+The existing challenge tests in `axum_integration.rs` and `api_token.rs`, the
+`check_auth_router_conformance` check in `baukit-test`, and the generated
+`backend/tests/auth_conformance.rs` now pin the new header. The `--auth oidc`
+fixture backend passes fmt, clippy, and all tests including ignored ones.
+
+### Template change
+
+`templates/backend/__auth__/backend/tests/auth_conformance.rs` expects the new
+header.
+
+### Breaks
+
+- `baukit-auth`: the `hint` parameter is gone. A client that read it must read
+  `error_description`.
+- `baukit-test`: `check_auth_router_conformance` fails a router that still sends
+  `hint`.
+
+### Product adoption
+
+- Hebkit: drop the hand-built challenge in
+  `backend/crates/hebkit-api/src/adapters/http/error.rs:553-567` and return
+  `AuthRejection` instead.

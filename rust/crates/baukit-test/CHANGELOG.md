@@ -22,6 +22,9 @@ All notable changes to `baukit-test` are documented here.
 
 - Break: `PostgresTestError` gains `InvalidAppRole`, `InvalidConnectionUrl`,
   and `Setup` variants. Exhaustive matches on it must handle them.
+- Break: `check_auth_router_conformance` now expects the
+  `error_description="expired"` and `error_description="invalid"` bearer
+  challenges that `baukit-auth` sends.
 - With `sqlx-postgres`, the container fixture now waits until PostgreSQL
   accepts a connection before it returns.
 

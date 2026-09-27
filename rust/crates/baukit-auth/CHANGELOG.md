@@ -4,6 +4,14 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Break: `AuthRejection` challenges use the RFC 6750 `error_description`
+  parameter instead of the nonstandard `hint`. Expired tokens now get
+  `Bearer error="invalid_token", error_description="expired"` and every other
+  rejected token gets `error_description="invalid"`. Clients that parsed
+  `hint=` must read `error_description=`.
+
 ## [0.4.0] - 2026-09-12
 
 ### Added
