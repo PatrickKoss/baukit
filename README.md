@@ -136,6 +136,7 @@ Nothing here depends on the CLI, and no crate drags in the rest. Take the error 
 | [`@baukit/a11y-core`](typescript/packages/a11y-core) | Focus traps, inert backgrounds, announcements, reduced motion, on both web and native |
 | [`@baukit/analytics-core`](typescript/packages/analytics-core) | Typed events with consent and privacy controls, PostHog transports for [web](typescript/packages/analytics-posthog-web) and [native](typescript/packages/analytics-posthog-native) |
 | [`@baukit/localization-core`](typescript/packages/localization-core) | Locale resolution, formatting policy, timezone-safe civil-date math |
+| [`@baukit/notifications-core`](typescript/packages/notifications-core) · [`-expo`](typescript/packages/notifications-expo) | Local notification planning across DST and time zones, and replacement that touches only the requests one namespace owns |
 | [`@baukit/preferences-core`](typescript/packages/preferences-core) | Identity-guarded preference controller |
 | [`@baukit/pwa-web`](typescript/packages/pwa-web) | Request classification and cache strategies for a service worker you own |
 | [`@baukit/events`](typescript/packages/events) | Zod schemas for the same envelope `baukit-events` speaks |

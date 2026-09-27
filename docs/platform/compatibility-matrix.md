@@ -62,6 +62,8 @@ check rather than a Linux result.
 | Local state | Zustand | 5 | |
 | Accessibility behavior | `@baukit/a11y-core` | 0.4.0 | Overlay focus, inert, announcements, reduced motion. React peer range is `^19.2.0`; React Native is optional, and a plain web app imports `@baukit/a11y-core/web` instead. |
 | Localization behavior | `@baukit/localization-core` | 0.4.0 | Locale resolution, catalog key comparison, stable-code localization, timezone-safe civil-date arithmetic, and local-time resolution with required gap and fold policies. |
+| Local notification planning | `@baukit/notifications-core` | 0.4.0 | Zoned occurrence resolution through `resolveZonedLocalTime`, horizon filtering, deterministic keep, cancel, and schedule sets, and owner-scoped replacement over a platform port. No dependencies besides `@baukit/localization-core`. |
+| Local notification delivery | `@baukit/notifications-expo` / `expo-notifications` | 0.4.0 / 57.0.13 | Optional adapter. Imports only types from `expo-notifications`; the product passes the module in. DATE triggers, per-item results, no cancel-all. |
 | Preference behavior | `@baukit/preferences-core` | 0.4.0 | Identity guard and repository store, with `null` repository records treated as missing. |
 | Node device authentication | `@baukit/auth-node` | 0.4.0 | Node 24 OIDC device authorization with S256 PKCE, bounded responses and timeouts, refresh rotation, and a locked local profile cache. Plain HTTP requires an explicit loopback-only development policy. |
 | Provider registry | `@baukit/integrations-client` | 0.4.0 | Typed product connectors, stable registration order, and immutable connection-state overlays. |
