@@ -733,6 +733,97 @@ mod tests {
         assert_eq!(json["error"]["details"]["retry_after"], 60);
     }
 
+    const APP_ORIGIN: &str = "https://app.example.com";
+
+    fn cross_origin_request(method: Method) -> Request<Body> {
+        let mut request = Request::builder()
+            .method(method)
+            .uri("/")
+            .header(header::ORIGIN, APP_ORIGIN)
+            .header(header::ACCESS_CONTROL_REQUEST_METHOD, "GET")
+            .body(Body::empty())
+            .expect("request");
+        request.extensions_mut().insert(ConnectInfo(
+            "192.0.2.10:1234".parse::<SocketAddr>().expect("peer"),
+        ));
+        request
+    }
+
+    fn exposed_headers(response: &Response) -> Vec<String> {
+        response
+            .headers()
+            .get_all(header::ACCESS_CONTROL_EXPOSE_HEADERS)
+            .iter()
+            .flat_map(|value| value.to_str().expect("exposed headers").split(','))
+            .map(|name| name.trim().to_ascii_lowercase())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn browsers_can_read_rate_limit_headers_through_the_http_layers() {
+        let mut options = RateLimitOptions::default();
+        options.identity.enabled = false;
+        options.ip.quota = Quota::new(1, Duration::from_secs(60), 0).expect("quota");
+        let limited = layers(
+            Router::new().route("/", get(|| async { "ok" })),
+            InMemoryRateLimitStore::default(),
+            options,
+        );
+        let http_options = baukit_http::HttpOptions::default()
+            .with_allowed_origins([APP_ORIGIN])
+            .expect("valid origin");
+        let app = baukit_http::finalize(limited, http_options);
+
+        let preflight = app
+            .clone()
+            .oneshot(cross_origin_request(Method::OPTIONS))
+            .await
+            .expect("preflight");
+        assert_eq!(preflight.status(), StatusCode::OK);
+        assert_eq!(
+            preflight.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN],
+            APP_ORIGIN
+        );
+        assert!(!preflight.headers().contains_key(RATE_LIMIT_LIMIT));
+
+        let first = app
+            .clone()
+            .oneshot(cross_origin_request(Method::GET))
+            .await
+            .expect("response");
+        assert_eq!(first.status(), StatusCode::OK);
+
+        let rejected = app
+            .oneshot(cross_origin_request(Method::GET))
+            .await
+            .expect("response");
+        assert_eq!(rejected.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            rejected.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN],
+            APP_ORIGIN
+        );
+        assert_eq!(
+            rejected.headers()[header::CACHE_CONTROL],
+            "private, no-store"
+        );
+        let exposed = exposed_headers(&rejected);
+        for emitted in [
+            RETRY_AFTER,
+            RATE_LIMIT_LIMIT,
+            RATE_LIMIT_REMAINING,
+            RATE_LIMIT_RESET,
+        ] {
+            assert!(
+                rejected.headers().contains_key(&emitted),
+                "missing emitted {emitted}"
+            );
+            assert!(
+                exposed.iter().any(|name| name == emitted.as_str()),
+                "{emitted} is not exposed in {exposed:?}"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn store_errors_fail_open_or_closed() {
         let mut open = RateLimitOptions::default();

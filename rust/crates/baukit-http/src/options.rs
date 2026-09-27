@@ -76,6 +76,17 @@ impl Default for JsonRejectionCodes {
     }
 }
 
+/// Whether the HTTP layers add a default `Cache-Control` header to responses.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ResponseCachePolicy {
+    /// Adds `Cache-Control: private, no-store` to every response that does not
+    /// already carry a `Cache-Control` header.
+    #[default]
+    PrivateNoStore,
+    /// Leaves `Cache-Control` entirely to handlers and outer layers.
+    HandlerOwned,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) enum JsonRejectionMode {
     Legacy(String),
@@ -99,6 +110,8 @@ pub struct HttpOptions {
     pub allow_credentials: bool,
     pub(crate) allowed_origins: Vec<HeaderValue>,
     pub(crate) additional_allowed_headers: Vec<HeaderName>,
+    pub(crate) additional_exposed_headers: Vec<HeaderName>,
+    pub(crate) response_cache_policy: ResponseCachePolicy,
     pub(crate) json_rejection_mode: JsonRejectionMode,
 }
 
@@ -134,14 +147,7 @@ impl HttpOptions {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        for header in headers {
-            let header = header.as_ref();
-            let parsed = HeaderName::from_bytes(header.as_bytes())
-                .map_err(|_| HttpOptionsError::InvalidHeaderName(header.to_owned()))?;
-            if !self.additional_allowed_headers.contains(&parsed) {
-                self.additional_allowed_headers.push(parsed);
-            }
-        }
+        extend_header_names(&mut self.additional_allowed_headers, headers)?;
         Ok(self)
     }
 
@@ -149,6 +155,44 @@ impl HttpOptions {
     #[must_use]
     pub fn additional_allowed_headers(&self) -> &[HeaderName] {
         &self.additional_allowed_headers
+    }
+
+    /// Adds response headers to the standard CORS exposed set.
+    ///
+    /// The built-in `x-request-id`, `traceparent`, `tracestate`, `Retry-After`,
+    /// `RateLimit-Limit`, `RateLimit-Remaining`, and `RateLimit-Reset` headers
+    /// remain exposed. Duplicate header names are ignored.
+    pub fn with_additional_exposed_headers<I, S>(
+        mut self,
+        headers: I,
+    ) -> Result<Self, HttpOptionsError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        extend_header_names(&mut self.additional_exposed_headers, headers)?;
+        Ok(self)
+    }
+
+    /// Returns the response headers added to the standard CORS exposed set.
+    #[must_use]
+    pub fn additional_exposed_headers(&self) -> &[HeaderName] {
+        &self.additional_exposed_headers
+    }
+
+    /// Replaces the response cache policy.
+    ///
+    /// The default is [`ResponseCachePolicy::PrivateNoStore`].
+    #[must_use]
+    pub const fn with_response_cache_policy(mut self, policy: ResponseCachePolicy) -> Self {
+        self.response_cache_policy = policy;
+        self
+    }
+
+    /// Returns the response cache policy.
+    #[must_use]
+    pub const fn response_cache_policy(&self) -> ResponseCachePolicy {
+        self.response_cache_policy
     }
 
     /// Overrides the error code returned when [`crate::ApiJson`] rejects a body.
@@ -208,6 +252,8 @@ impl HttpOptions {
             allow_credentials: false,
             allowed_origins: parse_origins(&config.cors_allowed_origins)?,
             additional_allowed_headers: Vec::new(),
+            additional_exposed_headers: Vec::new(),
+            response_cache_policy: ResponseCachePolicy::default(),
             json_rejection_mode: JsonRejectionMode::Legacy("validation_failed".to_owned()),
         }
         .validate()
@@ -236,6 +282,8 @@ impl Default for HttpOptions {
             allow_credentials: false,
             allowed_origins: Vec::new(),
             additional_allowed_headers: Vec::new(),
+            additional_exposed_headers: Vec::new(),
+            response_cache_policy: ResponseCachePolicy::default(),
             json_rejection_mode: JsonRejectionMode::Legacy("validation_failed".to_owned()),
         }
     }
@@ -248,7 +296,7 @@ pub enum HttpOptionsError {
     InvalidOrigin(String),
     /// Wildcard CORS origins are deliberately unsupported.
     WildcardOrigin,
-    /// A requested CORS header name is invalid.
+    /// A CORS allowed or exposed header name is invalid.
     InvalidHeaderName(String),
     /// The JSON rejection code is not a snake_case identifier.
     InvalidJsonRejectionCode(String),
@@ -268,7 +316,7 @@ impl fmt::Display for HttpOptionsError {
                 "wildcard CORS origins are unsupported; provide explicit allowed origins",
             ),
             Self::InvalidHeaderName(name) => {
-                write!(formatter, "invalid CORS request header name `{name}`")
+                write!(formatter, "invalid CORS header name `{name}`")
             }
             Self::InvalidJsonRejectionCode(code) => write!(
                 formatter,
@@ -299,6 +347,25 @@ where
                 .map_err(|_| HttpOptionsError::InvalidOrigin(origin.to_owned()))
         })
         .collect()
+}
+
+fn extend_header_names<I, S>(
+    names: &mut Vec<HeaderName>,
+    headers: I,
+) -> Result<(), HttpOptionsError>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    for header in headers {
+        let header = header.as_ref();
+        let parsed = HeaderName::from_bytes(header.as_bytes())
+            .map_err(|_| HttpOptionsError::InvalidHeaderName(header.to_owned()))?;
+        if !names.contains(&parsed) {
+            names.push(parsed);
+        }
+    }
+    Ok(())
 }
 
 fn valid_json_rejection_code(code: String) -> Result<String, HttpOptionsError> {

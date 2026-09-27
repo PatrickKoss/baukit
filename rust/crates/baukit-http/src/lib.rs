@@ -24,15 +24,18 @@
 //! # Ok::<(), baukit_http::HttpOptionsError>(())
 //! ```
 //!
-//! [`pagination`] adds keyset pagination whose opaque cursors are bound to the
-//! request filters, and [`classify_http_status`] turns an upstream response into
-//! a [`RetryClass`] so outbound clients share one retry policy.
+//! [`classify_http_status`] turns an upstream response into a [`RetryClass`] so
+//! outbound clients share one retry policy.
 //!
 //! # Paginated handler
 //!
+//! Keyset pagination lives in `baukit_core::pagination` so domain crates can
+//! use it without Axum. `PaginationError` converts into [`ApiError`].
+//!
 //! ```rust
 //! use axum::extract::Query;
-//! use baukit_http::{ApiError, Page, PageKey, PageParams, ResponseEnvelope};
+//! use baukit_core::pagination::{Page, PageKey, PageParams};
+//! use baukit_http::{ApiError, ResponseEnvelope};
 //! use serde::{Deserialize, Serialize};
 //! use uuid::Uuid;
 //!
@@ -93,7 +96,6 @@ mod extract;
 mod locale;
 mod middleware;
 mod options;
-pub mod pagination;
 pub mod retry;
 mod routing;
 
@@ -109,10 +111,7 @@ pub use middleware::{
     RequestId, X_REQUEST_ID, extract_trace_context, inject_current_trace_context,
     inject_trace_context, layers,
 };
-pub use options::{HttpOptions, HttpOptionsError, JsonRejectionCodes};
-pub use pagination::{
-    Cursor, DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT, Page, PageKey, PageParams, PaginationError,
-};
+pub use options::{HttpOptions, HttpOptionsError, JsonRejectionCodes, ResponseCachePolicy};
 pub use retry::{
     RetryClass, RetryHeaderOptions, classify_http_status, classify_http_status_with_options,
     classify_transport_error, retry_after_from_headers, retry_after_from_headers_at,

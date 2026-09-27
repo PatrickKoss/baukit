@@ -859,6 +859,161 @@ fn additional_cors_headers_are_validated_and_deduplicated() {
     );
 }
 
+fn exposed_headers(response: &axum::response::Response) -> Vec<String> {
+    response
+        .headers()
+        .get_all(header::ACCESS_CONTROL_EXPOSE_HEADERS)
+        .iter()
+        .flat_map(|value| value.to_str().expect("exposed headers").split(','))
+        .map(|name| name.trim().to_ascii_lowercase())
+        .collect()
+}
+
+async fn cross_origin_get(options: HttpOptions, router: Router) -> axum::response::Response {
+    layers(router, options)
+        .oneshot(
+            Request::builder()
+                .uri("/items")
+                .header(header::ORIGIN, "https://app.example.com")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response")
+}
+
+fn app_origin_options() -> HttpOptions {
+    HttpOptions::default()
+        .with_allowed_origins(["https://app.example.com"])
+        .expect("valid origin")
+}
+
+#[tokio::test]
+async fn cors_exposes_request_identity_and_rate_limit_headers_by_default() {
+    let response = cross_origin_get(
+        app_origin_options(),
+        Router::new().route("/items", get(|| async {})),
+    )
+    .await;
+
+    assert_eq!(
+        response.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN],
+        "https://app.example.com"
+    );
+    assert_eq!(
+        exposed_headers(&response),
+        [
+            "x-request-id",
+            "traceparent",
+            "tracestate",
+            "retry-after",
+            "ratelimit-limit",
+            "ratelimit-remaining",
+            "ratelimit-reset",
+        ]
+    );
+}
+
+#[tokio::test]
+async fn cors_exposes_product_headers_after_the_defaults() {
+    let options = app_origin_options()
+        .with_additional_exposed_headers(["X-Next-Cursor", "retry-after"])
+        .expect("valid response headers");
+    let response = cross_origin_get(options, Router::new().route("/items", get(|| async {}))).await;
+
+    let exposed = exposed_headers(&response);
+    assert_eq!(exposed.last().map(String::as_str), Some("x-next-cursor"));
+    assert_eq!(
+        exposed.iter().filter(|name| *name == "retry-after").count(),
+        1
+    );
+}
+
+#[test]
+fn additional_exposed_headers_are_validated_and_deduplicated() {
+    let options = HttpOptions::default()
+        .with_additional_exposed_headers(["X-Next-Cursor", "x-next-cursor"])
+        .expect("valid headers");
+    assert_eq!(options.additional_exposed_headers().len(), 1);
+    assert_eq!(
+        HttpOptions::default()
+            .with_additional_exposed_headers(["not a header"])
+            .expect_err("invalid header"),
+        HttpOptionsError::InvalidHeaderName("not a header".to_owned())
+    );
+}
+
+#[tokio::test]
+async fn responses_default_to_private_no_store() {
+    let router = Router::new().route(
+        "/items",
+        get(|| async { ApiError::not_found("Item not found") }),
+    );
+    let response = cross_origin_get(HttpOptions::default(), router).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        response.headers()[header::CACHE_CONTROL],
+        "private, no-store"
+    );
+
+    let unmatched = crate::finalize(Router::new(), HttpOptions::default())
+        .oneshot(
+            Request::builder()
+                .uri("/missing")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(
+        unmatched.headers()[header::CACHE_CONTROL],
+        "private, no-store"
+    );
+}
+
+#[tokio::test]
+async fn handler_cache_control_wins_over_the_default_policy() {
+    let router = Router::new().route(
+        "/items",
+        get(|| async { ([(header::CACHE_CONTROL, "public, max-age=300")], "cached") }),
+    );
+    let response = cross_origin_get(HttpOptions::default(), router).await;
+    let values = response
+        .headers()
+        .get_all(header::CACHE_CONTROL)
+        .iter()
+        .collect::<Vec<_>>();
+    assert_eq!(values, ["public, max-age=300"]);
+}
+
+#[tokio::test]
+async fn handler_owned_cache_policy_adds_no_cache_control() {
+    let options =
+        HttpOptions::default().with_response_cache_policy(ResponseCachePolicy::HandlerOwned);
+    assert_eq!(
+        options.response_cache_policy(),
+        ResponseCachePolicy::HandlerOwned
+    );
+    let response = cross_origin_get(options, Router::new().route("/items", get(|| async {}))).await;
+    assert!(!response.headers().contains_key(header::CACHE_CONTROL));
+}
+
+#[tokio::test]
+async fn pagination_errors_map_to_field_level_api_errors() {
+    use baukit_core::pagination::PaginationError;
+
+    for (error, field) in [
+        (PaginationError::InvalidLimit, "limit"),
+        (PaginationError::InvalidCursor, "cursor"),
+    ] {
+        let api_error = ApiError::from(error);
+        assert_eq!(api_error.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(api_error.code(), "validation_failed");
+        let body = response_json(api_error.into_response()).await;
+        assert_eq!(body["error"]["details"][field], json!(error.to_string()));
+    }
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn metrics_use_bounded_template_labels_and_raw_status() {
     let recorder = DebuggingRecorder::new();

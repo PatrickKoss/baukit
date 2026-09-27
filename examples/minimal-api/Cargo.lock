@@ -153,9 +153,12 @@ dependencies = [
 name = "baukit-core"
 version = "0.4.0"
 dependencies = [
+ "base64",
+ "ring",
  "serde",
  "serde_json",
  "thiserror",
+ "uuid",
 ]
 
 [[package]]
@@ -163,12 +166,11 @@ name = "baukit-http"
 version = "0.4.0"
 dependencies = [
  "axum",
- "base64",
  "baukit-config",
+ "baukit-core",
  "baukit-openapi",
  "metrics",
  "opentelemetry",
- "ring",
  "serde",
  "serde_html_form",
  "serde_json",

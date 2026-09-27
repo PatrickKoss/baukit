@@ -123,6 +123,35 @@ global layer outside route groups. Axum runs the last added layer first:
 establish principal -> global identity/IP limit -> authenticated group -> route
 ```
 
+Apply `baukit_http::finalize` after all of these layers so it runs first. Its CORS
+layer then covers rate-limit rejections, and `baukit-http` exposes
+`Retry-After`, `RateLimit-Limit`, `RateLimit-Remaining`, and `RateLimit-Reset`
+to browsers by default. A limiter added outside `finalize` returns a 429 without
+CORS headers, which a browser reports as a network error:
+
+```rust
+use axum::{Router, middleware, routing::get};
+use baukit_auth::{AuthState, IdentityVerifier, establish_principal};
+use baukit_http::{HttpOptions, finalize};
+use baukit_ratelimit::{InMemoryRateLimitStore, RateLimitOptions, layers};
+
+# fn example(verifier: impl IdentityVerifier + 'static) -> Result<(), baukit_http::HttpOptionsError> {
+let auth = AuthState::new(verifier);
+let limited = layers(
+    Router::new().route("/", get(|| async { "ok" })),
+    InMemoryRateLimitStore::default(),
+    RateLimitOptions::default(),
+)
+.layer(middleware::from_fn_with_state(auth, establish_principal));
+let app = finalize(
+    limited,
+    HttpOptions::default().with_allowed_origins(["https://app.example.com"])?,
+);
+# let _: Router = app;
+# Ok(())
+# }
+```
+
 `SharedRateLimitStore` wraps any adapter that implements `RateLimitStore` and
 `AmountBudgetStore`. Use it when startup selects between the Redis and in-memory
 adapters and both request limits and fixed-window amount budgets need the same
