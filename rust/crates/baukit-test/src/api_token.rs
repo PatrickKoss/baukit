@@ -109,6 +109,7 @@ impl ApiTokenStore for InMemoryApiTokenStore {
             owner_id: record.owner_id,
             name: record.name,
             display_prefix: record.display_prefix,
+            grants: record.grants,
             created_at: record.created_at,
             expires_at: record.expires_at,
             last_used_at: None,
@@ -149,7 +150,7 @@ impl ApiTokenStore for InMemoryApiTokenStore {
             return Box::pin(ready(Err(failure)));
         }
         if let Some(token) = state.tokens.get_mut(&token_id) {
-            token.last_used_at = Some(used_at);
+            token.last_used_at = token.last_used_at.max(Some(used_at));
         }
         Box::pin(ready(Ok(())))
     }

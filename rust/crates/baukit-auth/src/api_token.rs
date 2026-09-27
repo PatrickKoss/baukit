@@ -1,4 +1,10 @@
-use std::{collections::BTreeMap, fmt, future::Future, pin::Pin, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+};
 
 use chrono::{DateTime, Utc};
 use ring::{
@@ -16,6 +22,10 @@ pub const DEFAULT_API_TOKEN_MARKER: &str = "bk_";
 const SECRET_LENGTH: usize = 32;
 const DISPLAY_PREFIX_LENGTH: usize = 8;
 const MAX_NAME_LENGTH: usize = 100;
+/// Most grants one API token may carry.
+pub const MAX_API_TOKEN_GRANTS: usize = 64;
+/// Longest grant, in bytes.
+pub const MAX_API_TOKEN_GRANT_LENGTH: usize = 128;
 const MAX_POLICY_CODE_LENGTH: usize = 64;
 const MAX_POLICY_DETAIL_COUNT: usize = 8;
 const MAX_POLICY_DETAIL_NAME_LENGTH: usize = 64;
@@ -39,6 +49,8 @@ pub struct ApiToken {
     pub name: String,
     /// Leading characters of the presented token, safe to display.
     pub display_prefix: String,
+    /// Opaque product-defined permissions stored with the token.
+    pub grants: BTreeSet<String>,
     /// When the token was issued.
     pub created_at: DateTime<Utc>,
     /// When the token stops being accepted, if it expires at all.
@@ -76,16 +88,33 @@ pub struct NewApiToken {
     pub name: String,
     /// Optional expiry, which must be in the future.
     pub expires_at: Option<DateTime<Utc>>,
+    /// Opaque product-defined permissions, stored in the same write as the token.
+    ///
+    /// Each grant is an RFC 6749 scope token of at most 128 bytes, and a token
+    /// carries at most 64. Baukit never interprets them.
+    pub grants: BTreeSet<String>,
 }
 
 impl NewApiToken {
-    /// Creates a request for a token that never expires.
+    /// Creates a request for a token that never expires and carries no grants.
     #[must_use]
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
             expires_at: None,
+            grants: BTreeSet::new(),
         }
+    }
+
+    /// Adds grants to the token being created.
+    #[must_use]
+    pub fn with_grants<I, T>(mut self, grants: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<String>,
+    {
+        self.grants.extend(grants.into_iter().map(Into::into));
+        self
     }
 
     /// Sets the expiry of the token being created.
@@ -99,7 +128,8 @@ impl NewApiToken {
 /// Row an adapter must persist for a newly issued token.
 ///
 /// `secret_hash` is a SHA-256 digest of the presented token. Store it as
-/// opaque bytes and index it; the plaintext is never written.
+/// opaque bytes and index it; the plaintext is never written. Persist `grants`
+/// in the same write, so a token never exists without its grants.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ApiTokenRecord {
     /// Stable identifier of the token row.
@@ -112,6 +142,8 @@ pub struct ApiTokenRecord {
     pub secret_hash: Vec<u8>,
     /// Leading characters of the presented token, safe to display.
     pub display_prefix: String,
+    /// Validated grants to store in the same write as the digest.
+    pub grants: BTreeSet<String>,
     /// When the token was issued.
     pub created_at: DateTime<Utc>,
     /// When the token stops being accepted, if it expires at all.
@@ -230,10 +262,11 @@ impl ApiTokenStoreError {
 
 /// Storage-neutral port for personal access tokens.
 ///
-/// Baukit owns secret generation, hashing, and expiry checks. The row shape,
-/// the ownership join, and the retention rules stay product-local, so the
-/// adapter lives in the product. An adapter must never persist the plaintext
-/// secret and must look tokens up by hash only.
+/// Baukit owns secret generation, hashing, and expiry checks. The optional
+/// `sqlx-postgres` feature provides a PostgreSQL adapter; the ownership join
+/// and retention rules stay with the product. An adapter must never persist
+/// the plaintext secret, must look tokens up by hash only, and must store a
+/// record's grants in the same write as its digest.
 pub trait ApiTokenStore: Send + Sync {
     /// Persists one newly issued token and returns its stored form.
     fn create(
@@ -253,6 +286,9 @@ pub trait ApiTokenStore: Send + Sync {
     ) -> ApiTokenStoreFuture<'a, Result<Option<StoredApiToken>, ApiTokenStoreError>>;
 
     /// Records that a token authenticated a request at `used_at`.
+    ///
+    /// Concurrent requests may call this out of order. An adapter should keep
+    /// the latest instant rather than the last write.
     fn touch_last_used(
         &self,
         token_id: Uuid,
@@ -286,6 +322,9 @@ pub enum ApiTokenError {
     /// The requested expiry was not in the future.
     #[error("API token expiry must be in the future")]
     InvalidExpiry,
+    /// A grant was not a bounded RFC 6749 scope token, or there were too many.
+    #[error("API token grants must be at most 64 scope tokens of at most 128 bytes")]
+    InvalidGrants,
     /// No token with that id belongs to the owner.
     #[error("API token was not found")]
     NotFound,
@@ -315,6 +354,21 @@ fn map_store_error(error: ApiTokenStoreError) -> ApiTokenError {
         ApiTokenStoreError::PolicyRejected(rejection) => ApiTokenError::PolicyRejected(rejection),
         error @ ApiTokenStoreError::Internal(_) => ApiTokenError::Storage(error),
     }
+}
+
+fn validate_grants(grants: &BTreeSet<String>) -> Result<(), ApiTokenError> {
+    if grants.len() > MAX_API_TOKEN_GRANTS || !grants.iter().all(|grant| is_valid_grant(grant)) {
+        return Err(ApiTokenError::InvalidGrants);
+    }
+    Ok(())
+}
+
+fn is_valid_grant(grant: &str) -> bool {
+    !grant.is_empty()
+        && grant.len() <= MAX_API_TOKEN_GRANT_LENGTH
+        && grant
+            .bytes()
+            .all(|byte| matches!(byte, 0x21 | 0x23..=0x5B | 0x5D..=0x7E))
 }
 
 fn is_valid_policy_identifier(value: &str, maximum_length: usize) -> bool {
@@ -521,6 +575,7 @@ impl ApiTokenService {
         if request.expires_at.is_some_and(|expiry| expiry <= now) {
             return Err(ApiTokenError::InvalidExpiry);
         }
+        validate_grants(&request.grants)?;
 
         let secret = self.format.generate(&self.random)?;
         let token = self
@@ -531,6 +586,7 @@ impl ApiTokenService {
                 name: name.to_owned(),
                 secret_hash: hash_api_token(&secret),
                 display_prefix: self.format.display_prefix(&secret).to_owned(),
+                grants: request.grants,
                 created_at: now,
                 expires_at: request.expires_at,
             })
@@ -697,6 +753,7 @@ mod tests {
                 owner_id: record.owner_id,
                 name: record.name,
                 display_prefix: record.display_prefix,
+                grants: record.grants,
                 created_at: record.created_at,
                 expires_at: record.expires_at,
                 last_used_at: None,
@@ -930,6 +987,62 @@ mod tests {
             .expect("issue second");
 
         assert_ne!(first.secret, second.secret);
+    }
+
+    #[tokio::test]
+    async fn grants_reach_the_store_and_the_verified_principal() {
+        let (_store, service) = service();
+        let issued = service
+            .issue_at(
+                Uuid::now_v7(),
+                NewApiToken::new("Scoped").with_grants(["records:read", "records:write"]),
+                instant(),
+            )
+            .await
+            .expect("issue token");
+        let expected = BTreeSet::from(["records:read".to_owned(), "records:write".to_owned()]);
+        assert_eq!(issued.token.grants, expected);
+
+        let verified = service
+            .verify_at(&issued.secret, instant())
+            .await
+            .expect("verify token");
+        let principal = Principal::from_api_token(verified);
+        assert_eq!(principal.grants(), Some(&expected));
+        assert!(principal.scopes().is_empty());
+    }
+
+    #[tokio::test]
+    async fn malformed_or_excess_grants_are_rejected_before_storage() {
+        let (store, service) = service();
+        let too_many = (0..=MAX_API_TOKEN_GRANTS).map(|index| format!("grant_{index}"));
+        let invalid_requests = [
+            NewApiToken::new("Empty").with_grants([""]),
+            NewApiToken::new("Space").with_grants(["records read"]),
+            NewApiToken::new("Quote").with_grants(["records\"read"]),
+            NewApiToken::new("Backslash").with_grants(["records\\read"]),
+            NewApiToken::new("Unicode").with_grants(["récords"]),
+            NewApiToken::new("Long").with_grants(["g".repeat(MAX_API_TOKEN_GRANT_LENGTH + 1)]),
+            NewApiToken::new("Many").with_grants(too_many),
+        ];
+        for request in invalid_requests {
+            let error = service
+                .issue_at(Uuid::now_v7(), request, instant())
+                .await
+                .expect_err("grants must be rejected");
+            assert!(matches!(error, ApiTokenError::InvalidGrants));
+        }
+        assert!(store.tokens.lock().expect("token lock").is_empty());
+
+        let boundary = (0..MAX_API_TOKEN_GRANTS).map(|index| format!("grant_{index}"));
+        service
+            .issue_at(
+                Uuid::now_v7(),
+                NewApiToken::new("Boundary").with_grants(boundary),
+                instant(),
+            )
+            .await
+            .expect("the maximum grant count is accepted");
     }
 
     #[tokio::test]
@@ -1187,6 +1300,7 @@ mod tests {
                         owner_id: Uuid::now_v7(),
                         name: "Mismatched".to_owned(),
                         display_prefix: "bk_012345".to_owned(),
+                        grants: BTreeSet::new(),
                         created_at: instant(),
                         expires_at: None,
                         last_used_at: None,

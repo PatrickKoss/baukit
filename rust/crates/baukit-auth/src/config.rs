@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, time::Duration};
+use std::{borrow::Cow, collections::BTreeSet, time::Duration};
 
 use reqwest::Url;
 use thiserror::Error;
@@ -88,22 +88,37 @@ impl SigningAlgorithm {
     }
 }
 
+const DEFAULT_SCOPE_CLAIM: &str = "scope";
+
 /// Configuration that maps provider claims onto Baukit's stable principal fields.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+///
+/// The RFC 9068 `scope` claim is mapped into [`Principal::scopes`](crate::Principal::scopes)
+/// by default. Every other claim stays private until configured here.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PrincipalClaimMapping {
     pub(crate) organization: Option<ClaimPath>,
     pub(crate) tenant: Option<ClaimPath>,
     pub(crate) client_id: Option<ClaimPath>,
+    pub(crate) scope: Cow<'static, str>,
+    pub(crate) profile: BTreeSet<String>,
+}
+
+impl Default for PrincipalClaimMapping {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PrincipalClaimMapping {
-    /// Creates a mapping with only the standard `sub` identity claim.
+    /// Creates a mapping with the standard `sub` identity and `scope` claims.
     #[must_use]
     pub const fn new() -> Self {
         Self {
             organization: None,
             tenant: None,
             client_id: None,
+            scope: Cow::Borrowed(DEFAULT_SCOPE_CLAIM),
+            profile: BTreeSet::new(),
         }
     }
 
@@ -130,19 +145,43 @@ impl PrincipalClaimMapping {
         self
     }
 
+    /// Reads [`Principal::scopes`](crate::Principal::scopes) from another top-level claim.
+    ///
+    /// RFC 9068 access tokens carry `scope` as a space-delimited string. Some
+    /// providers emit an array of strings under another name, such as `scp`.
+    /// Both shapes are accepted.
+    #[must_use]
+    pub fn scope_claim(mut self, claim: impl Into<String>) -> Self {
+        self.scope = Cow::Owned(claim.into());
+        self
+    }
+
+    /// Adds verified top-level claims to [`Principal::profile_claims`](crate::Principal::profile_claims).
+    ///
+    /// Only string and boolean values are copied, for example `email`,
+    /// `email_verified`, `name`, and `picture`. Unselected claims stay private.
+    #[must_use]
+    pub fn profile_claims<I, T>(mut self, claims: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<String>,
+    {
+        self.profile.extend(claims.into_iter().map(Into::into));
+        self
+    }
+
     pub(crate) fn clerk() -> Self {
         Self {
             organization: Some(ClaimPath::nested("o", "id")),
-            tenant: None,
-            client_id: None,
+            ..Self::new()
         }
     }
 
     pub(crate) fn workos() -> Self {
         Self {
             organization: Some(ClaimPath::top_level("org_id")),
-            tenant: None,
             client_id: Some(ClaimPath::top_level("client_id")),
+            ..Self::new()
         }
     }
 }
@@ -293,10 +332,19 @@ impl OidcConfig {
         self
     }
 
-    /// Configures optional organization, tenant, and OAuth client claim mappings.
+    /// Configures optional organization, tenant, OAuth client, scope, and profile claim mappings.
     #[must_use]
     pub fn with_principal_claims(mut self, mapping: PrincipalClaimMapping) -> Self {
         self.claim_mapping = mapping;
+        self
+    }
+
+    pub(crate) fn with_profile_claims<I, T>(mut self, claims: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<String>,
+    {
+        self.claim_mapping = self.claim_mapping.profile_claims(claims);
         self
     }
 

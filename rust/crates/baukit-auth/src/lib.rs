@@ -37,11 +37,14 @@
 //! marker plus 32 base62 characters, stores only its SHA-256 digest, and
 //! verifies presented tokens in constant time against that digest.
 //!
-//! Storage stays product-local behind the [`ApiTokenStore`] port, because the
-//! row shape and the ownership join belong to the product's schema. Wrapping
-//! the OIDC verifier in [`ApiTokenVerifier`] makes one bearer header serve both
-//! credential kinds. The [`Principal`] extractor exposes verified token
-//! metadata through [`Principal::api_token`]. Adapters return
+//! Storage sits behind the [`ApiTokenStore`] port. The optional
+//! `sqlx-postgres` feature adds a PostgreSQL adapter and a reference migration,
+//! [`POSTGRES_API_TOKENS_MIGRATION_SQL`]; the product still owns the ownership
+//! join. Tokens can carry opaque product-defined grants, stored in the same
+//! write as the digest. Wrapping the OIDC verifier in [`ApiTokenVerifier`]
+//! makes one bearer header serve both credential kinds. The [`Principal`]
+//! extractor exposes verified token metadata through [`Principal::api_token`]
+//! and the grants through [`Principal::grants`]. Adapters return
 //! [`ApiTokenStoreError`], which separates private internal failures from safe
 //! structured [`ApiTokenPolicyRejection`] values.
 //!
@@ -75,6 +78,8 @@
 mod api_token;
 mod axum_integration;
 mod config;
+#[cfg(feature = "sqlx-postgres")]
+mod postgres;
 mod providers;
 mod verifier;
 
@@ -82,16 +87,27 @@ pub use api_token::{
     ApiToken, ApiTokenError, ApiTokenFormat, ApiTokenFormatError, ApiTokenPolicyRejection,
     ApiTokenPolicyRejectionError, ApiTokenRecord, ApiTokenService, ApiTokenStore,
     ApiTokenStoreError, ApiTokenStoreFuture, ApiTokenVerifier, DEFAULT_API_TOKEN_MARKER,
-    IssuedApiToken, NewApiToken, StoredApiToken, hash_api_token,
+    IssuedApiToken, MAX_API_TOKEN_GRANT_LENGTH, MAX_API_TOKEN_GRANTS, NewApiToken, StoredApiToken,
+    hash_api_token,
 };
 pub use axum_integration::{AuthRejection, AuthState, establish_principal};
 pub use baukit_openapi::{BEARER_AUTH_SCHEME, OpenApiMetadata};
 pub use config::{OidcConfig, OidcConfigError, PrincipalClaimMapping, SigningAlgorithm};
+#[cfg(feature = "sqlx-postgres")]
+pub use postgres::{PostgresApiTokenStore, erase_owner_api_tokens, purge_inactive_api_tokens};
 pub use providers::{ClerkVerifier, ProviderVerifierError, WorkOsVerifier};
 pub use verifier::{
-    IdentityVerifier, MultiIssuerError, MultiIssuerVerifier, OidcVerifier, Principal,
-    VerificationError,
+    IdentityVerifier, IssuerVerifier, MultiIssuerError, MultiIssuerVerifier, OidcVerifier,
+    Principal, ProfileClaim, VerificationError,
 };
+
+/// Reference PostgreSQL schema for the `sqlx-postgres` feature's `PostgresApiTokenStore`.
+///
+/// Copy this SQL into a product migration; do not execute it dynamically during
+/// application startup. Then add the product's owner foreign key with
+/// `ON DELETE CASCADE`, as the file's header describes.
+pub const POSTGRES_API_TOKENS_MIGRATION_SQL: &str =
+    include_str!("../migrations/0001_baukit_auth_api_tokens.sql");
 
 // Compiles the README's examples so they cannot drift from the API.
 #[doc = include_str!("../README.md")]

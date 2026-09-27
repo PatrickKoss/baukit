@@ -63,6 +63,43 @@ also have `from_jwks_uri` constructors for WorkOS Emulate, private JWKS
 proxies, and deterministic tests. Keycloak and other standard OIDC issuers
 continue to use `OidcVerifier::discover`.
 
+Neither adapter checks `aud` by default, because neither provider puts one in
+its session tokens. When a Clerk JWT template or a WorkOS configuration adds an
+audience the product relies on, say so with `with_audiences`. The adapter then
+rejects a token whose `aud` is missing or names none of them with
+`WrongAudience`. `with_profile_claims` copies named profile claims, described
+below.
+
+```rust,no_run
+use baukit_auth::{
+    ClerkVerifier, IssuerVerifier, MultiIssuerVerifier, OidcConfig, OidcVerifier, WorkOsVerifier,
+};
+
+# async fn example() -> Result<(), Box<dyn std::error::Error>> {
+let clerk = ClerkVerifier::new("https://example.clerk.accounts.dev", ["https://app.example.com"])?
+    .with_audiences(["orders-api"])?
+    .with_profile_claims(["email", "email_verified"]);
+let workos = WorkOsVerifier::new("client_01ABCDEF")?;
+let keycloak = OidcVerifier::discover(OidcConfig::keycloak(
+    "https://identity.example.com",
+    "products",
+    "orders-api",
+)?)
+.await?;
+
+let _verifier = MultiIssuerVerifier::from_verifiers([
+    IssuerVerifier::from(keycloak),
+    clerk.into(),
+    workos.into(),
+])?;
+# Ok(())
+# }
+```
+
+`MultiIssuerVerifier::from_verifiers` routes on the token's unverified `iss` to
+exactly one configured verifier, which then runs its own provider checks. Two
+verifiers with the same issuer fail with `MultiIssuerError::DuplicateIssuer`.
+
 Any state implementing `FromRef<AuthState>` lets handlers take `Principal` as an extractor. An
 unauthenticated request never reaches the handler body.
 
@@ -137,6 +174,39 @@ claims remain private. API-token and internal principals have no client ID.
 Client IDs identify OAuth clients, not users or organizations. A client
 allowlist does not prove that a public client is running an unmodified app.
 
+### Scopes and profile claims
+
+`Principal::scopes` holds the verified OAuth scopes. The verifier reads the RFC 9068 `scope` claim by
+default and splits it on whitespace. `PrincipalClaimMapping::scope_claim("scp")` reads another
+top-level claim instead, and an array of strings works as well as a space-delimited string. A missing
+or null claim gives an empty set. Any other shape fails with `InvalidPrincipalContext`, so a malformed
+scope claim cannot quietly become "no scopes".
+
+`PrincipalClaimMapping::profile_claims` names the profile claims a product wants, such as `email`,
+`email_verified`, `name`, or `picture`. `Principal::profile_claim` returns each one as
+`ProfileClaim::String` or `ProfileClaim::Bool`. A selected claim with another JSON type is left out
+instead of failing the login, which also means a string `"true"` in `email_verified` never reads as
+verified.
+
+```rust
+use baukit_auth::{OidcConfig, Principal, PrincipalClaimMapping, ProfileClaim};
+
+# fn example() -> Result<(), Box<dyn std::error::Error>> {
+let config = OidcConfig::new("https://identity.example.com", "orders-api")?.with_principal_claims(
+    PrincipalClaimMapping::new().profile_claims(["email", "email_verified"]),
+);
+# let _ = config;
+# Ok(())
+# }
+fn verified_email(principal: &Principal) -> Option<&str> {
+    let verified = principal.profile_claim("email_verified").and_then(ProfileClaim::as_bool);
+    if verified != Some(true) {
+        return None;
+    }
+    principal.profile_claim("email").and_then(ProfileClaim::as_str)
+}
+```
+
 Handing the raw claim set to product code is how a service quietly becomes Keycloak-only. Someone
 reads `realm_access.roles` in a handler because it is right there, and swapping the identity provider
 becomes a migration instead of a config change. Narrowing at the boundary keeps that decision explicit
@@ -188,9 +258,80 @@ secret scanning works at all.
 handlers stay unaware of which one arrived. Verified token metadata is available through
 `Principal::api_token`.
 
-Storage sits behind the `ApiTokenStore` port. The row shape and the ownership join belong to the
-product's schema, and a crate that invented its own table would force a second migration path on every
-consumer.
+A token can carry grants: opaque permission strings the product defines and checks.
+`NewApiToken::with_grants` sets them at issue time, and `Principal::grants` returns them after
+verification. It returns `None` for OIDC and internal principals, so "no grants" and "not an API
+token" stay distinct. Each grant is an RFC 6749 scope token of at most 128 bytes, and a token carries
+at most 64. Anything else fails with `ApiTokenError::InvalidGrants` before the store is called. Baukit
+never interprets a grant, so the names, and any mapping from OIDC scopes to grants, stay in the
+product.
+
+```rust
+use baukit_auth::{ApiTokenService, NewApiToken, Principal};
+use uuid::Uuid;
+
+# async fn example(tokens: ApiTokenService, owner_id: Uuid) -> Result<(), Box<dyn std::error::Error>> {
+let issued = tokens
+    .issue(owner_id, NewApiToken::new("Nightly export").with_grants(["records:read"]))
+    .await?;
+# let _ = issued;
+# Ok(())
+# }
+fn can_read(principal: &Principal) -> bool {
+    principal.grants().is_some_and(|grants| grants.contains("records:read"))
+}
+```
+
+Storage sits behind the `ApiTokenStore` port. An adapter must write a record's grants in the same
+write as its digest, so a token never exists without them.
+
+## PostgreSQL token store
+
+The `sqlx-postgres` feature adds `PostgresApiTokenStore`. Copy `POSTGRES_API_TOKENS_MIGRATION_SQL`
+(`migrations/0001_baukit_auth_api_tokens.sql`) into the product's own migrations; the crate never
+migrates on startup. The migration creates `api_tokens` with a SHA-256 `token_hash`, a display
+`token_prefix`, `grants TEXT[]`, and the expiry, last-use, and revocation timestamps. Baukit cannot
+name the product's owner table, so the product adds the foreign key itself:
+
+```sql
+ALTER TABLE api_tokens
+    ADD CONSTRAINT api_tokens_owner_fk
+    FOREIGN KEY (owner_id) REFERENCES users (id) ON DELETE CASCADE;
+```
+
+A product that wants the database to reject unknown grants adds its own `CHECK` on `grants`.
+
+```rust,no_run
+# #[cfg(feature = "sqlx-postgres")]
+# async fn example(pool: sqlx::PgPool) -> Result<(), Box<dyn std::error::Error>> {
+use std::{num::NonZeroU32, sync::Arc};
+
+use baukit_auth::{ApiTokenPolicyRejection, ApiTokenService, PostgresApiTokenStore};
+
+let limit = ApiTokenPolicyRejection::new("api_tokens_active_limit")?.with_detail("maximum", 10)?;
+let store = PostgresApiTokenStore::new(pool)
+    .with_active_token_limit(NonZeroU32::new(10).ok_or("zero limit")?, limit);
+let _tokens = ApiTokenService::new(Arc::new(store));
+# Ok(())
+# }
+```
+
+The store keeps four promises:
+
+- Grants go into the same `INSERT` as the digest. A grant that fails a product `CHECK` leaves no token
+  behind.
+- With `with_active_token_limit`, the count and the insert run in one transaction under a per-owner
+  advisory lock. Concurrent issues cannot overshoot, and tokens that are revoked or expired at the new
+  token's `created_at` do not count. Over the limit, `create` returns the configured rejection and
+  writes nothing.
+- `touch_last_used` only moves `last_used_at` forward, so concurrent requests keep the latest instant.
+- `revoke` matches the owner and an unrevoked row, so revoking someone else's token looks like a
+  missing one.
+
+`erase_owner_api_tokens` deletes one owner's tokens inside the product's erasure transaction when no
+cascading foreign key does it. `purge_inactive_api_tokens` deletes one batch of tokens revoked or
+expired before a cutoff and skips rows another writer holds; call it until it returns less than the
+batch size.
 
 Every store operation returns `ApiTokenStoreError`. Use `ApiTokenStoreError::internal(error)` for SQL,
 network, and provider failures. The typed error retains its diagnostic string for internal handling,
@@ -232,6 +373,8 @@ credential now stop at the authentication middleware, before an inner anonymous 
 ## Scope
 
 The crate verifies credentials. It does not authorize: roles, permissions, and ownership checks belong
-to the product, which is the only place that knows what its resources are. It runs no migrations and
-stores nothing. `baukit-test` ships an `InMemoryApiTokenStore` and a `MockOidcServer` so services can
-test the whole path without a live provider.
+to the product, which is the only place that knows what its resources are. Scopes and grants arrive
+verified, but deciding what they allow is still the product's job. The only storage it ships is the
+optional PostgreSQL token store, and it runs no migrations. `baukit-test` ships an
+`InMemoryApiTokenStore` and a `MockOidcServer` so services can test the whole path without a live
+provider.

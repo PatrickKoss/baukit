@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, btree_map::Entry},
+    collections::{BTreeMap, BTreeSet, btree_map::Entry},
     future::Future,
     pin::Pin,
     sync::Arc,
@@ -15,7 +15,9 @@ use thiserror::Error;
 use tokio::sync::Mutex;
 
 use crate::config::ClaimPath;
-use crate::{ApiToken, OidcConfig, SigningAlgorithm, config::TokenProfile};
+use crate::{
+    ApiToken, ClerkVerifier, OidcConfig, SigningAlgorithm, WorkOsVerifier, config::TokenProfile,
+};
 
 const UNKNOWN_KEY_TTL: std::time::Duration = std::time::Duration::from_secs(30);
 const MAX_UNKNOWN_KEYS: usize = 128;
@@ -32,7 +34,39 @@ pub struct Principal {
     organization: Option<String>,
     tenant: Option<String>,
     client_id: Option<String>,
+    scopes: BTreeSet<String>,
+    profile_claims: BTreeMap<String, ProfileClaim>,
     api_token: Option<ApiToken>,
+}
+
+/// One verified profile claim selected with
+/// [`PrincipalClaimMapping::profile_claims`](crate::PrincipalClaimMapping::profile_claims).
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum ProfileClaim {
+    /// A string claim such as `email` or `name`.
+    String(String),
+    /// A boolean claim such as `email_verified`.
+    Bool(bool),
+}
+
+impl ProfileClaim {
+    /// Returns the value when the claim is a string.
+    #[must_use]
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            Self::String(value) => Some(value),
+            Self::Bool(_) => None,
+        }
+    }
+
+    /// Returns the value when the claim is a boolean.
+    #[must_use]
+    pub const fn as_bool(&self) -> Option<bool> {
+        match self {
+            Self::Bool(value) => Some(*value),
+            Self::String(_) => None,
+        }
+    }
 }
 
 impl Principal {
@@ -45,18 +79,17 @@ impl Principal {
             organization: None,
             tenant: None,
             client_id: None,
+            scopes: BTreeSet::new(),
+            profile_claims: BTreeMap::new(),
             api_token: None,
         }
     }
 
     pub(crate) fn from_api_token(api_token: ApiToken) -> Self {
+        let subject = api_token.owner_id.to_string();
         Self {
-            subject: api_token.owner_id.to_string(),
-            issuer: None,
-            organization: None,
-            tenant: None,
-            client_id: None,
             api_token: Some(api_token),
+            ..Self::new(subject)
         }
     }
 
@@ -112,6 +145,36 @@ impl Principal {
         self.client_id.as_deref()
     }
 
+    /// Returns the verified OAuth scopes of an OIDC principal.
+    ///
+    /// The set comes from the configured scope claim, `scope` by default. It is
+    /// empty for API tokens, internal principals, and tokens without the claim.
+    #[must_use]
+    pub const fn scopes(&self) -> &BTreeSet<String> {
+        &self.scopes
+    }
+
+    /// Returns the stored grants when an API token was verified.
+    ///
+    /// OIDC principals and internal principals return `None`, so a caller can
+    /// tell "no grants" apart from "not an API token".
+    #[must_use]
+    pub fn grants(&self) -> Option<&BTreeSet<String>> {
+        self.api_token.as_ref().map(|token| &token.grants)
+    }
+
+    /// Returns the verified profile claims selected by the verifier's configuration.
+    #[must_use]
+    pub const fn profile_claims(&self) -> &BTreeMap<String, ProfileClaim> {
+        &self.profile_claims
+    }
+
+    /// Returns one selected profile claim when the token carried it.
+    #[must_use]
+    pub fn profile_claim(&self, name: &str) -> Option<&ProfileClaim> {
+        self.profile_claims.get(name)
+    }
+
     /// Returns the stored token metadata when an API token was verified.
     ///
     /// OIDC principals and internal principals created with [`Principal::new`]
@@ -150,7 +213,76 @@ pub struct MultiIssuerVerifier {
     verifiers: Arc<BTreeMap<String, OidcVerifier>>,
 }
 
+/// One already-constructed verifier that [`MultiIssuerVerifier::from_verifiers`] can route to.
+#[derive(Clone, Debug)]
+pub enum IssuerVerifier {
+    /// A generic OIDC issuer.
+    Oidc(OidcVerifier),
+    /// A Clerk instance, keeping its authorized-party checks.
+    Clerk(ClerkVerifier),
+    /// A WorkOS AuthKit issuer, keeping its client ID check.
+    WorkOs(WorkOsVerifier),
+}
+
+impl IssuerVerifier {
+    fn into_oidc(self) -> OidcVerifier {
+        match self {
+            Self::Oidc(verifier) => verifier,
+            Self::Clerk(verifier) => verifier.into_oidc(),
+            Self::WorkOs(verifier) => verifier.into_oidc(),
+        }
+    }
+}
+
+impl From<OidcVerifier> for IssuerVerifier {
+    fn from(verifier: OidcVerifier) -> Self {
+        Self::Oidc(verifier)
+    }
+}
+
+impl From<ClerkVerifier> for IssuerVerifier {
+    fn from(verifier: ClerkVerifier) -> Self {
+        Self::Clerk(verifier)
+    }
+}
+
+impl From<WorkOsVerifier> for IssuerVerifier {
+    fn from(verifier: WorkOsVerifier) -> Self {
+        Self::WorkOs(verifier)
+    }
+}
+
 impl MultiIssuerVerifier {
+    /// Routes between already-constructed OIDC, Clerk, and WorkOS verifiers.
+    ///
+    /// Each verifier keeps its own provider checks. At least one verifier is
+    /// required, and no two may share an issuer.
+    pub fn from_verifiers<I, V>(verifiers: I) -> Result<Self, MultiIssuerError>
+    where
+        I: IntoIterator<Item = V>,
+        V: Into<IssuerVerifier>,
+    {
+        let mut by_issuer = BTreeMap::new();
+        for verifier in verifiers {
+            let verifier = verifier.into().into_oidc();
+            let issuer = verifier.issuer().to_owned();
+            match by_issuer.entry(issuer) {
+                Entry::Vacant(entry) => {
+                    entry.insert(verifier);
+                }
+                Entry::Occupied(entry) => {
+                    return Err(MultiIssuerError::DuplicateIssuer(entry.key().clone()));
+                }
+            }
+        }
+        if by_issuer.is_empty() {
+            return Err(MultiIssuerError::NoIssuers);
+        }
+        Ok(Self {
+            verifiers: Arc::new(by_issuer),
+        })
+    }
+
     /// Discovers every configured issuer and constructs an allowlisted verifier.
     ///
     /// At least one unique issuer must be supplied. Discovery is completed for
@@ -367,6 +499,27 @@ impl OidcVerifier {
                 cache: Mutex::new(JwksCache::default()),
             }),
         })
+    }
+
+    /// Returns the exact issuer this verifier accepts.
+    #[must_use]
+    pub fn issuer(&self) -> &str {
+        self.inner.config.issuer()
+    }
+
+    pub(crate) fn config(&self) -> &OidcConfig {
+        &self.inner.config
+    }
+
+    pub(crate) fn with_config(&self, config: OidcConfig) -> Self {
+        Self {
+            inner: Arc::new(VerifierInner {
+                config,
+                client: self.inner.client.clone(),
+                jwks_uri: self.inner.jwks_uri.clone(),
+                cache: Mutex::new(JwksCache::default()),
+            }),
+        }
     }
 
     /// Verifies one access token using the configured issuer, audience, and algorithms.
@@ -730,12 +883,16 @@ impl JwtClaims {
         let organization = mapped_claim(&self.extra, config.claim_mapping.organization.as_ref())?;
         let tenant = mapped_claim(&self.extra, config.claim_mapping.tenant.as_ref())?;
         let client_id = mapped_claim(&self.extra, config.claim_mapping.client_id.as_ref())?;
+        let scopes = scope_claim(self.extra.get(config.claim_mapping.scope.as_ref()))?;
+        let profile_claims = selected_profile_claims(&self.extra, &config.claim_mapping.profile);
         Ok(Principal {
             subject,
             issuer: Some(config.issuer().to_owned()),
             organization,
             tenant,
             client_id,
+            scopes,
+            profile_claims,
             api_token: None,
         })
     }
@@ -745,21 +902,11 @@ fn validate_token_profile(
     claims: &JwtClaims,
     config: &OidcConfig,
 ) -> Result<(), VerificationError> {
+    if !config.audiences.is_empty() {
+        validate_audience(claims, config)?;
+    }
     match &config.token_profile {
-        TokenProfile::Oidc => {
-            let audience = claims
-                .aud
-                .as_ref()
-                .ok_or(VerificationError::WrongAudience)?;
-            if audience
-                .values()
-                .any(|audience| config.audiences.contains(audience))
-            {
-                Ok(())
-            } else {
-                Err(VerificationError::WrongAudience)
-            }
-        }
+        TokenProfile::Oidc => Ok(()),
         TokenProfile::Clerk { authorized_parties } => match claims.extra.get("azp") {
             None | Some(Value::Null) => Ok(()),
             Some(Value::String(value)) if authorized_parties.contains(value) => Ok(()),
@@ -774,6 +921,55 @@ fn validate_token_profile(
             Some(_) => Err(VerificationError::InvalidPrincipalContext),
         },
     }
+}
+
+fn validate_audience(claims: &JwtClaims, config: &OidcConfig) -> Result<(), VerificationError> {
+    let audience = claims
+        .aud
+        .as_ref()
+        .ok_or(VerificationError::WrongAudience)?;
+    if audience
+        .values()
+        .any(|audience| config.audiences.contains(audience))
+    {
+        Ok(())
+    } else {
+        Err(VerificationError::WrongAudience)
+    }
+}
+
+fn scope_claim(value: Option<&Value>) -> Result<BTreeSet<String>, VerificationError> {
+    match value {
+        None | Some(Value::Null) => Ok(BTreeSet::new()),
+        Some(Value::String(scopes)) => {
+            Ok(scopes.split_ascii_whitespace().map(str::to_owned).collect())
+        }
+        Some(Value::Array(scopes)) => scopes
+            .iter()
+            .map(|scope| match scope {
+                Value::String(scope) if !scope.is_empty() => Ok(scope.clone()),
+                _ => Err(VerificationError::InvalidPrincipalContext),
+            })
+            .collect(),
+        Some(_) => Err(VerificationError::InvalidPrincipalContext),
+    }
+}
+
+fn selected_profile_claims(
+    claims: &BTreeMap<String, Value>,
+    selected: &BTreeSet<String>,
+) -> BTreeMap<String, ProfileClaim> {
+    selected
+        .iter()
+        .filter_map(|name| {
+            let claim = match claims.get(name)? {
+                Value::String(value) => ProfileClaim::String(value.clone()),
+                Value::Bool(value) => ProfileClaim::Bool(*value),
+                _ => return None,
+            };
+            Some((name.clone(), claim))
+        })
+        .collect()
 }
 
 #[derive(Deserialize)]
@@ -927,7 +1123,8 @@ pub enum VerificationError {
     /// The system clock is before the Unix epoch.
     #[error("system clock is invalid")]
     Clock,
-    /// A configured principal-context claim was not a non-empty string.
+    /// A configured principal-context claim was not a non-empty string, or the
+    /// scope claim was neither a string nor an array of non-empty strings.
     #[error("principal context claim has an invalid shape")]
     InvalidPrincipalContext,
 }
@@ -958,7 +1155,65 @@ mod tests {
         assert_eq!(principal.organization(), Some("org"));
         assert_eq!(principal.tenant(), Some("tenant"));
         assert_eq!(principal.client_id(), None);
+        assert!(principal.scopes().is_empty());
+        assert_eq!(principal.grants(), None);
+        assert!(principal.profile_claims().is_empty());
         assert_eq!(principal.api_token(), None);
+    }
+
+    #[test]
+    fn scope_claims_accept_strings_and_string_arrays() {
+        let expected = BTreeSet::from(["read".to_owned(), "write".to_owned()]);
+        assert_eq!(
+            scope_claim(Some(&Value::from(" read  write read "))).ok(),
+            Some(expected.clone())
+        );
+        assert_eq!(
+            scope_claim(Some(&serde_json::json!(["read", "write"]))).ok(),
+            Some(expected)
+        );
+        assert_eq!(scope_claim(None).ok(), Some(BTreeSet::new()));
+        assert_eq!(scope_claim(Some(&Value::Null)).ok(), Some(BTreeSet::new()));
+        for invalid in [
+            serde_json::json!(42),
+            serde_json::json!(["read", 1]),
+            serde_json::json!([""]),
+            serde_json::json!({"read": true}),
+        ] {
+            assert!(matches!(
+                scope_claim(Some(&invalid)),
+                Err(VerificationError::InvalidPrincipalContext)
+            ));
+        }
+    }
+
+    #[test]
+    fn profile_claims_copy_only_selected_strings_and_booleans() {
+        let claims = BTreeMap::from([
+            ("email".to_owned(), Value::from("ada@example.com")),
+            ("email_verified".to_owned(), Value::from(true)),
+            ("preferred_username".to_owned(), Value::from(42)),
+            ("phone_number".to_owned(), Value::from("+100")),
+        ]);
+        let selected = BTreeSet::from([
+            "email".to_owned(),
+            "email_verified".to_owned(),
+            "preferred_username".to_owned(),
+            "name".to_owned(),
+        ]);
+        let profile = selected_profile_claims(&claims, &selected);
+        assert_eq!(
+            profile,
+            BTreeMap::from([
+                (
+                    "email".to_owned(),
+                    ProfileClaim::String("ada@example.com".to_owned())
+                ),
+                ("email_verified".to_owned(), ProfileClaim::Bool(true)),
+            ])
+        );
+        assert_eq!(profile["email"].as_str(), Some("ada@example.com"));
+        assert_eq!(profile["email_verified"].as_bool(), Some(true));
     }
 
     #[test]

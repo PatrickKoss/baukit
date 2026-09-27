@@ -12,9 +12,10 @@ const WORKOS_JWKS_BASE: &str = "https://api.workos.com/sso/jwks/";
 
 /// Clerk session-token verification with authorized-party checks.
 ///
-/// Clerk session tokens do not require an `aud` claim. When `azp` is present,
-/// this adapter requires an exact match in the configured allowlist. Clerk's
-/// version 2 active organization claim is mapped from `o.id`.
+/// Clerk session tokens do not require an `aud` claim, so this adapter checks
+/// none unless [`ClerkVerifier::with_audiences`] configures one. When `azp` is
+/// present, this adapter requires an exact match in the configured allowlist.
+/// Clerk's version 2 active organization claim is mapped from `o.id`.
 #[derive(Clone, Debug)]
 pub struct ClerkVerifier {
     inner: OidcVerifier,
@@ -60,9 +61,46 @@ impl ClerkVerifier {
         })
     }
 
+    /// Also requires the token's `aud` claim to contain one of `audiences`.
+    ///
+    /// Use this when Clerk JWT templates add an audience the product must check.
+    pub fn with_audiences<I, T>(self, audiences: I) -> Result<Self, ProviderVerifierError>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<String>,
+    {
+        let config = self.inner.config().clone().with_audiences(audiences)?;
+        Ok(Self {
+            inner: self.inner.with_config(config),
+        })
+    }
+
+    /// Copies the named top-level string or boolean claims into [`Principal::profile_claims`].
+    #[must_use]
+    pub fn with_profile_claims<I, T>(self, claims: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<String>,
+    {
+        let config = self.inner.config().clone().with_profile_claims(claims);
+        Self {
+            inner: self.inner.with_config(config),
+        }
+    }
+
+    /// Returns the Clerk issuer this verifier accepts.
+    #[must_use]
+    pub fn issuer(&self) -> &str {
+        self.inner.issuer()
+    }
+
     /// Verifies one Clerk session token.
     pub async fn verify(&self, token: &str) -> Result<Principal, VerificationError> {
         self.inner.verify(token).await
+    }
+
+    pub(crate) fn into_oidc(self) -> OidcVerifier {
+        self.inner
     }
 }
 
@@ -77,9 +115,10 @@ impl IdentityVerifier for ClerkVerifier {
 
 /// WorkOS AuthKit session-token verification bound to one application client.
 ///
-/// AuthKit session tokens do not require an `aud` claim. This adapter instead
-/// requires the token's `client_id` claim to match the configured application
-/// and maps `org_id` into [`Principal::organization`].
+/// AuthKit session tokens do not require an `aud` claim, so this adapter checks
+/// none unless [`WorkOsVerifier::with_audiences`] configures one. It requires
+/// the token's `client_id` claim to match the configured application and maps
+/// `org_id` into [`Principal::organization`].
 #[derive(Clone, Debug)]
 pub struct WorkOsVerifier {
     inner: OidcVerifier,
@@ -115,9 +154,44 @@ impl WorkOsVerifier {
         })
     }
 
+    /// Also requires the token's `aud` claim to contain one of `audiences`.
+    pub fn with_audiences<I, T>(self, audiences: I) -> Result<Self, ProviderVerifierError>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<String>,
+    {
+        let config = self.inner.config().clone().with_audiences(audiences)?;
+        Ok(Self {
+            inner: self.inner.with_config(config),
+        })
+    }
+
+    /// Copies the named top-level string or boolean claims into [`Principal::profile_claims`].
+    #[must_use]
+    pub fn with_profile_claims<I, T>(self, claims: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<String>,
+    {
+        let config = self.inner.config().clone().with_profile_claims(claims);
+        Self {
+            inner: self.inner.with_config(config),
+        }
+    }
+
+    /// Returns the AuthKit issuer this verifier accepts.
+    #[must_use]
+    pub fn issuer(&self) -> &str {
+        self.inner.issuer()
+    }
+
     /// Verifies one WorkOS AuthKit session token.
     pub async fn verify(&self, token: &str) -> Result<Principal, VerificationError> {
         self.inner.verify(token).await
+    }
+
+    pub(crate) fn into_oidc(self) -> OidcVerifier {
+        self.inner
     }
 }
 
