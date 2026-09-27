@@ -60,6 +60,31 @@ response body come from one type rather than from a handwritten schema that drif
 
 `Rfc3339DateTime` is the timestamp wrapper used in those payloads.
 
+## Revision preconditions
+
+`document_if_match` and `document_etag` document the `baukit-http` revision precondition on an
+operation the product already generated, so the `If-Match` parameter and the `ETag` header are not
+written by hand in every route:
+
+```rust
+use baukit_openapi::{IfMatchRequirement, document_etag, document_if_match};
+use utoipa::openapi::path::Operation;
+
+let mut operation = Operation::new();
+document_if_match(&mut operation, IfMatchRequirement::Required);
+document_etag(&mut operation);
+assert!(operation.responses.responses.contains_key("428"));
+```
+
+`document_if_match` replaces any `If-Match` header parameter, whatever its case, with a string
+parameter whose description names the three error codes. It adds 400 `invalid_if_match` and 412
+`precondition_failed` responses, plus 428 `precondition_required` when the header is required.
+Each uses the shared error envelope. A response the operation already documents stays as it is.
+`document_etag` adds the `ETag` header to every inline 2xx response and skips `$ref` responses.
+`if_match_parameter` and `etag_header` return the two pieces for products that assemble operations
+themselves. The error codes are exported as `PRECONDITION_REQUIRED_CODE`,
+`PRECONDITION_FAILED_CODE`, and `INVALID_IF_MATCH_CODE`, and `baukit-http` uses the same constants.
+
 ## Scope
 
 No routing, no handlers, no client generation. The crate applies conventions to a document somebody

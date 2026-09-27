@@ -40,6 +40,14 @@ use utoipa::ToSchema;
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::openapi::{Components, OpenApi, Server};
 
+mod precondition;
+
+pub use precondition::{
+    ETAG_HEADER, IF_MATCH_HEADER, INVALID_IF_MATCH_CODE, IfMatchRequirement,
+    PRECONDITION_FAILED_CODE, PRECONDITION_REQUIRED_CODE, document_etag, document_if_match,
+    etag_header, if_match_parameter,
+};
+
 /// The component name used for Baukit's standard HTTP bearer JWT security scheme.
 pub const BEARER_AUTH_SCHEME: &str = "bearerAuth";
 
