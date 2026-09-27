@@ -396,6 +396,36 @@ async function testChildOverlay(page) {
   console.log("PASS child overlay with internationalization");
 }
 
+async function assertPinnedDarkAppearance(page) {
+  await page.waitForLoadState("load");
+  assert.deepEqual(
+    await page.evaluate(() => ({
+      dark: document.documentElement.classList.contains("pf-v5-theme-dark"),
+      theme: document.documentElement.dataset.baukitTheme,
+      primary: getComputedStyle(document.documentElement)
+        .getPropertyValue("--baukit-auth-primary")
+        .trim(),
+    })),
+    { dark: true, theme: "dark", primary: "#1E1B4B" },
+  );
+}
+
+async function testAppearanceState(page) {
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.context().clearCookies();
+  const url = new URL(authorizationUrl());
+  url.searchParams.set("state", `ap1.d.1E1B4B.FFE066.${"ab".repeat(32)}`);
+  await page.goto(url.href);
+  await page.locator("#kc-form-login").waitFor();
+  await assertPinnedDarkAppearance(page);
+  await page.locator("#username").fill(testUsername);
+  await page.locator("#password").fill("wrong-password");
+  await page.locator("#kc-login").click();
+  await page.waitForURL(/client_data=/u);
+  await assertPinnedDarkAppearance(page);
+  console.log("PASS appearance state");
+}
+
 await authenticateAdministrator();
 const originalRealm = await realm();
 assert.equal(originalRealm.loginTheme, "baukit-accessible");
@@ -408,6 +438,7 @@ try {
     testEmptyRegistration,
     testConditionalWebAuthn,
     (page) => testUsernameHidden(page, originalRealm.browserFlow),
+    testAppearanceState,
     testChildOverlay,
   ]) {
     const page = await browser.newPage();

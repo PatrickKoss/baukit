@@ -51,6 +51,21 @@ All issuer, device, token, and verification URLs require HTTPS. Local developmen
 
 Discovery and token bodies are limited to 64 KiB by default. Errors contain a stable code, an allowlisted message, an optional HTTP status, and no provider body. The client does not log.
 
+## API origins
+
+`parseApiOrigin(value, { allowLoopbackHttp, label })` checks a configured API base URL, such as an MCP server's `PRODUCT_API_URL`, with the same scheme rule as the endpoint policy. It trims whitespace, accepts one trailing slash, and returns `url.origin`.
+
+```ts
+import { parseApiOrigin } from '@baukit/auth-node';
+
+const apiUrl = parseApiOrigin(process.env['PRODUCT_API_URL'] ?? 'http://localhost:8080', {
+  allowLoopbackHttp: process.env['NODE_ENV'] !== 'production',
+  label: 'PRODUCT_API_URL',
+});
+```
+
+It throws `ApiOriginError`, a `TypeError`, with a `reason` of `invalid_url`, `insecure_scheme`, or `not_an_origin`. Credentials, a path, a query, or a fragment count as `not_an_origin`. `allowLoopbackHttp` defaults to false. The message names the label and the broken rule, never the value, so it is safe to log.
+
 ## Cache contract
 
 The JSON cache holds named profiles under one namespace. `defaultTokenCachePath(namespace)` resolves to `$XDG_CONFIG_HOME/<namespace>/tokens.json`, or `~/.config/<namespace>/tokens.json` when `XDG_CONFIG_HOME` is unset.

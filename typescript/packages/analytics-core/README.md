@@ -122,6 +122,10 @@ between known users is rejected; call `reset()` first. The alias guard is persis
 most one alias command for an anonymous identity, including across client reconstruction. Traits
 are scrubbed with the same blocked-key and sensitive-value rules as event properties.
 
+`AnalyticsClient` stores the consent state, anonymous UUID, known user UUID, and alias guard under
+`storageKeyPrefix`. `analyticsStorageKeys(prefix)` returns those four keys, so a persistent storage
+adapter can list the ones it keeps.
+
 ## Scrubbing
 
 The default key blocklist is `email`, `name`, `token`, `password`, `authorization`, `cookie`,

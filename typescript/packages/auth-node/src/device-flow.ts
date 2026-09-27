@@ -2,6 +2,7 @@
 
 import { createHash, randomBytes } from 'node:crypto';
 
+import { isAllowedWebScheme } from './api-origin.js';
 import { NodeTokenCache, type CachedTokenProfile, type NodeTokenCacheOptions } from './cache.js';
 import { AuthNodeError } from './errors.js';
 
@@ -665,10 +666,9 @@ function normalizeWebUrl(value: string, allowLoopbackHttp: boolean, label: strin
 }
 
 function validateWebUrl(value: string, allowLoopbackHttp: boolean): void {
-  const url = parseUrl(value, 'provider');
-  if (url.protocol === 'https:') return;
-  if (url.protocol === 'http:' && allowLoopbackHttp && isLoopback(url.hostname)) return;
-  throw new AuthNodeError('endpoint_policy_violation');
+  if (!isAllowedWebScheme(parseUrl(value, 'provider'), allowLoopbackHttp)) {
+    throw new AuthNodeError('endpoint_policy_violation');
+  }
 }
 
 function parseUrl(value: string, source: 'config' | 'provider'): URL {
@@ -678,11 +678,6 @@ function parseUrl(value: string, source: 'config' | 'provider'): URL {
     if (source === 'config') throw new TypeError('OIDC URL is invalid.');
     throw new AuthNodeError('endpoint_policy_violation');
   }
-}
-
-function isLoopback(hostname: string): boolean {
-  const host = hostname.replace(/^\[|\]$/gu, '').toLowerCase();
-  return host === 'localhost' || host === '::1' || /^127(?:\.\d{1,3}){3}$/u.test(host);
 }
 
 function normalizeScopes(scopes: readonly string[] | undefined): readonly string[] {

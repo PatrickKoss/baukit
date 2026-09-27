@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { ApiOriginError, parseApiOrigin } from '@baukit/auth-node';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { pathToFileURL } from 'node:url';
 {% if context.mcp_auth_node_oidc %}import { nodeOidcProvider } from './auth.js';
@@ -39,7 +40,10 @@ export async function main(
 
   const configuredApiUrl = process.env['{{ context.app_env }}_API_URL']?.trim();
   const defaultApiUrl = 'http://localhost:{{ context.api_host_port }}';
-  const apiUrl = (configuredApiUrl || defaultApiUrl).replace(/\/$/u, '');
+  const apiUrl = parseApiOrigin(configuredApiUrl || defaultApiUrl, {
+    allowLoopbackHttp: process.env['NODE_ENV'] !== 'production',
+    label: '{{ context.app_env }}_API_URL',
+  });
 {% if context.mcp_auth_node_oidc %}  const bearerToken = oidc.bearerToken;
 {% elif context.mcp_auth_caller_supplied %}  const providerModule = process.env['{{ context.app_env }}_MCP_BEARER_PROVIDER']?.trim();
   if (!providerModule) throw new Error('Bearer provider module is required.');
@@ -69,8 +73,10 @@ export async function main(
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  main().catch(() => {
-    process.stderr.write('server outcome=failed\n');
+  main().catch((cause: unknown) => {
+    const reason =
+      cause instanceof ApiOriginError ? ` api_url=${cause.reason}` : '';
+    process.stderr.write(`server outcome=failed${reason}\n`);
     process.exitCode = 1;
   });
 }

@@ -736,6 +736,11 @@ fn oidc_generation_is_deterministic_and_records_the_optional_capability() -> any
     );
     assert!(
         first
+            .join("keycloak/themes/baukit-accessible/login/resources/js/theme-preferences.js")
+            .is_file()
+    );
+    assert!(
+        first
             .join("keycloak/themes/baukit-accessible-test/login/theme.properties")
             .is_file()
     );
@@ -758,6 +763,11 @@ fn oidc_generation_is_deterministic_and_records_the_optional_capability() -> any
     assert!(
         first
             .join("scripts/tests/keycloak_accessibility.test.mjs")
+            .is_file()
+    );
+    assert!(
+        first
+            .join("scripts/tests/keycloak_theme_preferences.test.mjs")
             .is_file()
     );
     assert!(!first_tree.keys().any(|path| {
@@ -1458,7 +1468,7 @@ fn mcp_generation_matches_golden_tree_and_records_personal_token_auth() -> anyho
     );
     let package = fs::read_to_string(first.join("mcp/package.json"))?;
     assert!(package.contains("\"@modelcontextprotocol/sdk\": \"1.30.0\""));
-    assert!(!package.contains("@baukit/auth-node"));
+    assert!(package.contains("\"@baukit/auth-node\""));
     assert!(!first.join("mcp/openapi.json").exists());
     assert!(first.join("mcp/src/api/schema.d.ts").is_file());
     assert!(

@@ -39,6 +39,40 @@ Universal Expo products can pass a `storage` port to
 localStorage adapter or a product-owned compatibility/migration wrapper while
 retaining the standard Expo browser flow.
 
+## Themed login pages
+
+A login theme can match the app's appearance when the app tells it the theme
+through the OAuth `state`. Pass the segments to `signIn` and give the Expo flow
+an entropy source:
+
+```ts
+import { appearanceStateDecoration } from '@baukit/auth-native';
+import { createExpoOidcClient } from '@baukit/auth-native/expo';
+import * as Crypto from 'expo-crypto';
+
+const auth = createExpoOidcClient(config, {
+  randomBytes: (size) => Crypto.getRandomBytesAsync(size),
+});
+
+await auth.signIn({ stateDecoration: appearanceStateDecoration({ mode: 'dark' }) });
+```
+
+The state becomes `ap1.d.<64 hex characters>`, or
+`ap1.d.<PRIMARY>.<SECONDARY>.<nonce>` when you pass both `#RRGGBB` colors.
+`decoratedAuthorizationState` needs at least 32 random bytes and accepts only
+ASCII letters and digits per segment. The nonce keeps the state unguessable, and
+the client still compares the returned state with the one it sent.
+
+Decoration never blocks sign-in. Without `randomBytes`, or when the entropy
+source throws or a segment is malformed, the flow uses AuthSession's own state
+and the login page shows its default theme. `createExpoBrowserFlow` is the same
+flow on its own, for products that build their `NativeOidcEnvironment` by hand.
+Other `BrowserFlowPort` implementations may ignore `stateDecoration`.
+
+The state travels in the authorization URL, so the provider and its access logs
+see it. Put appearance hints there, never user data. The Keycloak theme from the
+`baukit` CLI's OIDC template decodes the `ap1` format.
+
 ## Boundaries
 
 The package owns the native OIDC flow, session storage, and refresh. It ships no screens, no

@@ -82,6 +82,131 @@ export function checkCollection(value: readonly unknown[], allowed: number): Lim
   return checkMeasurement(collectionLength(value), allowed);
 }
 
+export interface LimitsPolicySchema {
+  readonly version: number;
+  readonly sections: Readonly<Record<string, readonly string[]>>;
+  readonly allowZero?: readonly string[];
+}
+
+export type LimitsPolicy<Schema extends LimitsPolicySchema> = {
+  readonly $comment: string;
+  readonly version: number;
+} & {
+  readonly [Section in keyof Schema['sections']]: Readonly<
+    Record<Schema['sections'][Section][number], number>
+  >;
+};
+
+export class LimitsPolicyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LimitsPolicyError';
+  }
+}
+
+export class LimitError<Reason extends string = string> extends Error implements LimitMeasurement {
+  readonly reason: Reason;
+  readonly field: string;
+  readonly measured: number;
+  readonly allowed: number;
+
+  constructor(reason: Reason, field: string, measurement: LimitMeasurement) {
+    super(`Limit exceeded for ${field}: ${reason}`);
+    this.name = 'LimitError';
+    this.reason = reason;
+    this.field = field;
+    this.measured = measurement.measured;
+    this.allowed = measurement.allowed;
+  }
+}
+
+const POLICY_ROOT = 'limits';
+const RESERVED_POLICY_KEYS: readonly string[] = ['$comment', 'version'];
+
+export function parseLimitsPolicy<const Schema extends LimitsPolicySchema>(
+  value: unknown,
+  schema: Schema,
+): LimitsPolicy<Schema> {
+  assertPolicySchema(schema);
+  const policy = expectPolicyObject(value, POLICY_ROOT);
+  expectExactKeys(policy, [...RESERVED_POLICY_KEYS, ...Object.keys(schema.sections)], POLICY_ROOT);
+  if (typeof policy['$comment'] !== 'string') {
+    throw new LimitsPolicyError(`${POLICY_ROOT}.$comment must be a string`);
+  }
+  if (policy['version'] !== schema.version) {
+    throw new LimitsPolicyError(`Unsupported limits policy version ${String(policy['version'])}`);
+  }
+  const allowZero = new Set(schema.allowZero ?? []);
+  for (const [section, keys] of Object.entries(schema.sections)) {
+    checkPolicySection(policy, section, keys, allowZero);
+  }
+  return policy as LimitsPolicy<Schema>;
+}
+
+export function enforceLimit(
+  field: string,
+  reason: string,
+  check: () => LimitMeasurement,
+): LimitMeasurement {
+  try {
+    return check();
+  } catch (error) {
+    if (error instanceof LimitExceededError) throw new LimitError(reason, field, error);
+    throw error;
+  }
+}
+
+function assertPolicySchema(schema: LimitsPolicySchema): void {
+  const known = new Set<string>();
+  for (const [section, keys] of Object.entries(schema.sections)) {
+    if (RESERVED_POLICY_KEYS.includes(section)) {
+      throw new TypeError(`Limits policy section ${section} is reserved`);
+    }
+    for (const key of keys) known.add(`${section}.${key}`);
+  }
+  for (const path of schema.allowZero ?? []) {
+    if (!known.has(path)) throw new TypeError(`Limits policy allowZero names unknown ${path}`);
+  }
+}
+
+function checkPolicySection(
+  policy: Record<string, unknown>,
+  section: string,
+  keys: readonly string[],
+  allowZero: ReadonlySet<string>,
+): void {
+  const path = `${POLICY_ROOT}.${section}`;
+  const values = expectPolicyObject(policy[section], path);
+  expectExactKeys(values, keys, path);
+  for (const key of keys) {
+    const minimum = allowZero.has(`${section}.${key}`) ? 0 : 1;
+    const limit = values[key];
+    if (typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < minimum) {
+      const expected = minimum === 0 ? 'a non-negative integer' : 'a positive integer';
+      throw new LimitsPolicyError(`${path}.${key} must be ${expected}`);
+    }
+  }
+}
+
+function expectPolicyObject(value: unknown, path: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new LimitsPolicyError(`${path} must be an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function expectExactKeys(
+  value: Record<string, unknown>,
+  expected: readonly string[],
+  path: string,
+): void {
+  const actual = Object.keys(value).sort();
+  const wanted = [...expected].sort();
+  if (actual.length !== wanted.length || actual.some((key, index) => key !== wanted[index])) {
+    throw new LimitsPolicyError(`${path} has unknown or missing fields`);
+  }
+}
+
 function unicodeScalars(value: string): number[] {
   const scalars: number[] = [];
   for (let index = 0; index < value.length; index += 1) {

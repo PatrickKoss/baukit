@@ -52,6 +52,34 @@ The adapter exports a minimal structural `PostHogNativeClient` interface for moc
 while its initializer options compile against `posthog-react-native`'s published types. This keeps
 unit tests runnable without installing or booting a React Native runtime.
 
+## Persisted identity storage
+
+`AnalyticsClient` reads storage synchronously, while React Native storage is asynchronous. The
+`/storage` subpath bridges the two. `HydratedAnalyticsStorage.load` reads the listed keys once,
+serves later reads from memory, and writes those keys through without waiting. Other keys stay in
+memory. The subpath does not import `posthog-react-native`, so apps with another transport can use
+it without the SDK.
+
+```ts
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AnalyticsClient, analyticsStorageKeys } from '@baukit/analytics-core';
+import { HydratedAnalyticsStorage } from '@baukit/analytics-posthog-native/storage';
+
+const keys = analyticsStorageKeys(storageKeyPrefix);
+const storage = await HydratedAnalyticsStorage.load({
+  persistence: AsyncStorage,
+  persistentKeys: [keys.anonymousId, keys.userId, keys.aliasedUserId],
+});
+const analytics = new AnalyticsClient({ context, allowlist, storage, storageKeyPrefix });
+```
+
+Include `keys.consent` only when analytics consent has no other durable home. A key that fails to
+read starts absent, and the other keys still load. A failed write keeps the in-memory value and is
+not reported. The storage holds only what the client writes: the consent state and pseudonymous
+UUIDs.
+
+`posthog-react-native` is an optional peer. Install it only when you use the transport.
+
 ## Mapping
 
 - `capture` flattens the core-stamped context and already-scrubbed event properties, preserving the

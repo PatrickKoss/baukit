@@ -62,6 +62,8 @@ mcp-fixture-gate:
 	trap 'rm -rf "$$fixture_parent"' EXIT; \
 	cargo build --manifest-path $(CLI_MANIFEST) --bin baukit; \
 	cli/target/debug/baukit new fixture --backend --mcp --dir "$$fixture_parent" --baukit-path rust; \
+	corepack pnpm@11.18.0 --dir typescript install --frozen-lockfile; \
+	corepack pnpm@11.18.0 --dir typescript --filter @baukit/auth-node run build; \
 	cargo fmt --manifest-path "$$fixture_parent/fixture/backend/Cargo.toml" --all --check; \
 	cargo clippy --manifest-path "$$fixture_parent/fixture/backend/Cargo.toml" --all-targets -- -D warnings; \
 	cargo test --manifest-path "$$fixture_parent/fixture/backend/Cargo.toml"; \
@@ -85,7 +87,7 @@ native-android-gate: android-sdk-setup
 	@fixture_parent="$$(mktemp -d)"; \
 	trap 'rm -rf "$$fixture_parent"' EXIT; \
 	corepack pnpm@11.18.0 --dir $(TS_DIR) install --frozen-lockfile --ignore-scripts; \
-	corepack pnpm@11.18.0 --dir $(TS_DIR) --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/api-runtime --filter @baukit/data-contracts --filter @baukit/data-contracts-expo-sqlite --filter @baukit/localization-core --filter @baukit/ui-tokens run build; \
+	corepack pnpm@11.18.0 --dir $(TS_DIR) --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/data-contracts --filter @baukit/data-contracts-expo-sqlite --filter @baukit/localization-core --filter @baukit/ui-tokens run build; \
 	cargo build --manifest-path $(CLI_MANIFEST) --bin baukit; \
 	cli/target/debug/baukit new fixture --mobile --dir "$$fixture_parent" --baukit-path rust; \
 	corepack pnpm@11.18.0 --dir "$$fixture_parent/fixture/mobile" install --frozen-lockfile; \

@@ -16,6 +16,10 @@ corepack pnpm@11.18.0 docs:check
 
 Run `node dist/cli.js --help` for command help. When the server runs, stdout contains MCP messages only. Startup, shutdown, and tool outcomes go to stderr without arguments, response bodies, or credentials.
 
+## API URL
+
+`{{ context.app_env }}_API_URL` defaults to `http://localhost:{{ context.api_host_port }}`. `parseApiOrigin` from `@baukit/auth-node` accepts only an origin. A trailing slash is fine, but credentials, a path, a query, or a fragment stop startup. Plain HTTP works only for `localhost`, `127.0.0.0/8`, and `::1`, and not at all when `NODE_ENV=production`. A rejected value logs `server outcome=failed api_url=<reason>` to stderr without the value itself. Put API path prefixes in the tool routes, not in this variable.
+
 ## Authentication
 
 {% if context.mcp_auth_node_oidc %}This fixture uses `@baukit/auth-node`. Set `{{ context.app_env }}_OIDC_ISSUER` and `{{ context.app_env }}_OIDC_CLIENT_ID`, then run `node dist/cli.js login`. The optional `{{ context.app_env }}_API_TOKEN` environment variable takes precedence over the cached profile. Run `node dist/cli.js logout` to remove that profile.

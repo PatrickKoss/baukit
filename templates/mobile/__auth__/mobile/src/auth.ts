@@ -9,7 +9,9 @@ import {
 } from 'react';
 import Constants from 'expo-constants';
 import * as AuthSession from 'expo-auth-session';
+import * as Crypto from 'expo-crypto';
 import {
+  appearanceStateDecoration,
   safeAuthErrorMessage,
   type OidcSession,
   type SignInResult,
@@ -17,6 +19,7 @@ import {
 } from '@baukit/auth-native';
 import { completeExpoAuthSession, createExpoOidcClient } from '@baukit/auth-native/expo';
 
+import type { ThemePreference } from './app-preferences';
 import { signInFeedback } from './auth-feedback';
 
 completeExpoAuthSession();
@@ -34,14 +37,17 @@ const redirectUri = AuthSession.makeRedirectUri({
   path: 'oauth',
 });
 
-export const authClient = createExpoOidcClient({
-  issuer,
-  clientId,
-  redirectUri,
-  scopes: ['openid', 'profile', 'email'],
-  offlineAccess: true,
-  storageKeyPrefix: '{{ context.app_name }}:oidc',
-});
+export const authClient = createExpoOidcClient(
+  {
+    issuer,
+    clientId,
+    redirectUri,
+    scopes: ['openid', 'profile', 'email'],
+    offlineAccess: true,
+    storageKeyPrefix: '{{ context.app_name }}:oidc',
+  },
+  { randomBytes: (size) => Crypto.getRandomBytesAsync(size) },
+);
 
 export interface OidcAuth {
   readonly accessToken?: string;
@@ -50,7 +56,8 @@ export interface OidcAuth {
   readonly error?: string;
   readonly announcement?: string;
   readonly sessionExpired: boolean;
-  readonly signIn: () => Promise<SignInResult | undefined>;
+  /** Passes the app's theme to the login page so it opens in the same mode. */
+  readonly signIn: (appearance?: ThemePreference) => Promise<SignInResult | undefined>;
   readonly signOut: () => Promise<SignOutResult | undefined>;
 }
 
@@ -125,19 +132,26 @@ function useOidcAuthState(): OidcAuth {
     };
   }, [session]);
 
-  const signIn = useCallback(async (): Promise<SignInResult | undefined> => {
-    setError(undefined);
-    setAnnouncement(undefined);
-    setSessionExpired(false);
-    try {
-      const result = await authClient.signIn();
-      setAnnouncement(signInFeedback(result));
-      return result;
-    } catch (cause) {
-      setError(safeAuthErrorMessage(cause));
-      return undefined;
-    }
-  }, []);
+  const signIn = useCallback(
+    async (appearance?: ThemePreference): Promise<SignInResult | undefined> => {
+      setError(undefined);
+      setAnnouncement(undefined);
+      setSessionExpired(false);
+      try {
+        const result = await authClient.signIn(
+          appearance === undefined
+            ? {}
+            : { stateDecoration: appearanceStateDecoration({ mode: appearance }) },
+        );
+        setAnnouncement(signInFeedback(result));
+        return result;
+      } catch (cause) {
+        setError(safeAuthErrorMessage(cause));
+        return undefined;
+      }
+    },
+    [],
+  );
 
   const signOut = useCallback(async (): Promise<SignOutResult | undefined> => {
     setError(undefined);

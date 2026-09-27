@@ -139,6 +139,21 @@ The controller waits for the destination target to mount and retries on animatio
 moves focus to another reachable element, and it never focuses a target below `inert`,
 `aria-hidden="true"`, or `hidden`.
 
+React Native has no document, so the controller does not apply there. To move VoiceOver or
+TalkBack to a destination heading, call `focusAccessibilityElement(headingRef)` from the root
+entry once the heading has laid out, for example one animation frame after the route gains focus.
+On native it resolves the view tag and calls `AccessibilityInfo.setAccessibilityFocus`. On web it
+focuses the element with `preventScroll`. It returns false when the ref is empty, the view is
+unmounted, or the web element cannot take focus.
+
+```ts
+import { focusAccessibilityElement } from '@baukit/a11y-core';
+
+const frame = requestAnimationFrame(() => {
+  focusAccessibilityElement(headingRef);
+});
+```
+
 ## The React Native to DOM boundary
 
 React Native Web renders a `View` as a DOM element, but the `View` type never says so. Every

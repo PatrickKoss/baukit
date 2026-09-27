@@ -26,6 +26,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./storage": {
+      "types": "./dist/storage.d.ts",
+      "import": "./dist/storage.js",
+      "default": "./dist/storage.js"
     }
   },
   "files": [
@@ -48,5 +53,10 @@
   "peerDependencies": {
     "@baukit/analytics-core": "^0.4.0",
     "posthog-react-native": "^4.62.0"
+  },
+  "peerDependenciesMeta": {
+    "posthog-react-native": {
+      "optional": true
+    }
   }
 }

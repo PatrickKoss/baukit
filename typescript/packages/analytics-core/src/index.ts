@@ -9,7 +9,11 @@ export {
   scrubProperties,
   type ScrubberOptions,
 } from './scrubber.js';
-export { InMemoryAnalyticsStorage } from './storage.js';
+export {
+  analyticsStorageKeys,
+  InMemoryAnalyticsStorage,
+  type AnalyticsStorageKeys,
+} from './storage.js';
 export { InMemoryTransport, NoopTransport } from './transports.js';
 export type {
   AliasEnvelope,

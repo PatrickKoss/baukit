@@ -1,5 +1,6 @@
 export * from './announce.js';
 export * from './dom-boundary.js';
+export { focusAccessibilityElement } from './native-focus.js';
 export * from './route-focus.js';
 export * from './use-enter-to-next.js';
 export * from './use-focus-trap.js';

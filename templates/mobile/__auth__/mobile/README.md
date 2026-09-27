@@ -14,7 +14,7 @@ Expo Router starts at `app/_layout.tsx`. That layout initializes localization an
 
 Protected API calls use the runtime's explicit one-replay 401 handshake: concurrent callers share refresh, terminal refresh rejection clears the session and announces expiry, while transient provider/network failure preserves it for a later retry. A second 401 stops. Automatic replay does not make writes idempotent; write endpoints still need a server-side idempotency contract.
 
-Local state is cleared before provider logout. If provider logout is unavailable or fails, the next sign-in forces `prompt=login`. Cancel and dismiss results are non-errors and are announced so product UI can restore focus or provide additional guidance. Physical devices must use one reachable hostname consistently for both API and issuer URLs; the composed HTTP issuer is for emulator/local development only, and production must use HTTPS.
+Local state is cleared before provider logout. If provider logout is unavailable or fails, the next sign-in forces `prompt=login`. The sign-in screen passes the current theme mode to `signIn`, which adds an `ap1` appearance hint and a random nonce from `expo-crypto` to the OAuth `state`. The generated Keycloak theme reads it and opens the login page in the same light or dark mode. If the nonce cannot be generated, sign-in continues with the default state and the page follows the system setting. Cancel and dismiss results are non-errors and are announced so product UI can restore focus or provide additional guidance. Physical devices must use one reachable hostname consistently for both API and issuer URLs; the composed HTTP issuer is for emulator/local development only, and production must use HTTPS.
 
 ## Native QA
 

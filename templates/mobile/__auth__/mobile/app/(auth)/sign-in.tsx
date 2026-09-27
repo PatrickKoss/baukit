@@ -6,7 +6,7 @@ import { useTheme, type AppTheme } from '../../src/theme';
 
 export default function SignInScreen() {
   const auth = useOidcAuth();
-  const { theme } = useTheme();
+  const { mode, theme } = useTheme();
   const styles = createStyles(theme);
   return (
     <View style={styles.safeArea}>
@@ -26,7 +26,7 @@ export default function SignInScreen() {
           <ActionButton
             disabled={!auth.ready}
             label={auth.ready ? 'Sign in with local Keycloak' : 'Preparing sign in…'}
-            onPress={() => void auth.signIn()}
+            onPress={() => void auth.signIn(mode)}
           />
         </View>
       </ScrollView>
