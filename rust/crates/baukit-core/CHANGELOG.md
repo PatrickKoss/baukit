@@ -6,6 +6,12 @@ All notable changes to `baukit-core` are documented here.
 
 ### Added
 
+- Add the `export` module with `encode_csv`, `CsvCell`, `CsvOptions`, and `CsvEncodeError`. It
+  writes RFC 4180 CSV with CRLF separators and prefixes an apostrophe to text cells that start like
+  a spreadsheet formula; `CsvOptions::without_formula_neutralization` turns that off and
+  `CsvOptions::with_byte_order_mark` adds U+FEFF. `CsvCell::Numeric` holds a JSON-grammar number
+  that is written unchanged, so `-5` stays a number. The module uses only `std` and `thiserror`, so
+  default dependencies are unchanged. It passes the same vectors as `@baukit/data-contracts/export`.
 - Add the optional `pagination` feature and the `pagination` module with `Cursor`, `Page`,
   `PageKey`, `PageParams`, `PaginationError`, `DEFAULT_PAGE_LIMIT`, and `MAX_PAGE_LIMIT`, moved
   from `baukit-http` so domain crates can use them without Axum. The feature adds `base64`,

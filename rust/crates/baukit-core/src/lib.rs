@@ -6,11 +6,13 @@
 //! routing, or product policy. Higher-level Baukit crates re-export established
 //! compatibility types from their own APIs.
 //!
+//! The `export` module encodes CSV with spreadsheet formula neutralization.
 //! The optional `pagination` feature adds keyset pagination types that domain
 //! crates can use without an HTTP framework.
 
 #![deny(missing_docs)]
 
+pub mod export;
 pub mod limits;
 #[cfg(feature = "pagination")]
 pub mod pagination;

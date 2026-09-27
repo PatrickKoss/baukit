@@ -1,8 +1,8 @@
 # baukit-core
 
 `baukit-core` holds the handful of types that more than one Baukit crate needs to agree on:
-deployment environment, log format, process kind, service identity, build info, and resource-budget
-measurements. By default it depends on `serde`, `serde_json`, and `thiserror` and nothing else. The
+deployment environment, log format, process kind, service identity, build info, resource-budget
+measurements, and a CSV export encoder. By default it depends on `serde`, `serde_json`, and `thiserror` and nothing else. The
 optional `pagination` feature adds keyset pagination and pulls in `base64`, `ring`, and `uuid`.
 
 ## Why this crate exists at all
@@ -87,6 +87,41 @@ Production code should replace `baukit_test::trimmed_text_length` with
 `baukit_core::limits::trimmed_unicode_scalar_count`, and replace
 `baukit_test::compact_document_bytes` with `baukit_core::limits::compact_json_utf8_bytes`. The old
 `baukit-test` names remain available and delegate to these functions.
+
+## CSV export
+
+`export::encode_csv` writes RFC 4180 CSV for user-facing exports. Every record ends with CRLF, and a
+cell is quoted when it contains a comma, a double quote, CR, or LF. A row holding one empty cell is
+written as `""` so a reader still sees one field.
+
+```rust
+use baukit_core::export::{CsvCell, CsvOptions, encode_csv};
+
+let rows = [
+    vec![CsvCell::from("note"), CsvCell::from("amount")],
+    vec![CsvCell::from("=HYPERLINK(\"https://example.test\")"), CsvCell::from(-5_i64)],
+];
+let csv = encode_csv(&rows, CsvOptions::new())?;
+assert_eq!(csv, "note,amount\r\n\"'=HYPERLINK(\"\"https://example.test\"\")\",-5\r\n");
+# Ok::<(), baukit_core::export::CsvEncodeError>(())
+```
+
+Formula neutralization is on by default. A text cell gets a leading apostrophe when its first
+character is `=`, `+`, `-`, `@`, tab, or CR, or when `=`, `+`, `-`, or `@` follows leading spaces,
+tabs, CR, or LF. Only these ASCII characters are checked. The apostrophe changes the value, so a
+file that your own importer reads back must either strip it or be written with
+`CsvOptions::without_formula_neutralization()`. Use the opt-out only for machine-read files that
+never open in a spreadsheet.
+
+Text that looks like a negative number, such as `"-5"`, is neutralized. Mark real numbers as
+`CsvCell::Numeric`, or convert from `i64`, `u64`, or `f64`. A numeric cell must match the JSON
+number grammar and is written unchanged; anything else, including `NaN` and infinities, fails with
+`CsvEncodeError::InvalidNumericCell` carrying the row and column index but not the value.
+`CsvOptions::with_byte_order_mark()` starts the output with U+FEFF for spreadsheet programs that
+need it to detect UTF-8.
+
+The shared vectors live in `fixtures/export-csv/csv-encoding-v1.json`; `@baukit/data-contracts`
+passes the same file.
 
 ## Keyset pagination
 
