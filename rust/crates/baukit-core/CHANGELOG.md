@@ -19,6 +19,13 @@ All notable changes to `baukit-core` are documented here.
 - Add `pagination::MAX_CURSOR_BYTES` (4096). Breaking: `Cursor::decode` rejects longer input with
   `PaginationError::InvalidCursor` before decoding, and `Cursor::encode` returns the same error
   instead of issuing a longer cursor.
+- Add the optional `media-grants` feature and the `media_grant` module with `MediaGrantKey`,
+  `MediaGrantKeyRing`, `MediaGrant`, `MediaGrantRequest`, `VerifiedMediaGrant`,
+  `MediaGrantKeyError`, `MediaGrantError`, `signing_input`, and `valid_media_path`. It signs and
+  verifies HMAC-SHA256 playback grants with a current and an optional previous key, compares
+  signatures in constant time, and redacts key material from `Debug`. The feature adds `base64`,
+  `ring`, and `zeroize`. It passes `fixtures/media-grants/vectors-v1.json` together with the njs
+  verifier in `deploy/media-grants`.
 
 ### Changed
 

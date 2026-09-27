@@ -3,7 +3,9 @@
 `baukit-core` holds the handful of types that more than one Baukit crate needs to agree on:
 deployment environment, log format, process kind, service identity, build info, resource-budget
 measurements, and a CSV export encoder. By default it depends on `serde`, `serde_json`, and `thiserror` and nothing else. The
-optional `pagination` feature adds keyset pagination and pulls in `base64`, `ring`, and `uuid`.
+optional `pagination` feature adds keyset pagination and pulls in `base64`, `ring`, and `uuid`. The
+optional `media-grants` feature adds signed media grants and pulls in `base64`, `ring`, and
+`zeroize`.
 
 ## Why this crate exists at all
 
@@ -142,6 +144,69 @@ against other filters fails with `PaginationError::InvalidCursor`. `Page` serial
 or parses anything, so an oversized query parameter costs no allocation. `Cursor::encode` returns
 the same error rather than issue a cursor that `decode` would reject. `baukit-http` converts
 `PaginationError` into a field-level `validation_failed` error; its README has a handler example.
+
+## Signed media grants
+
+Enable the `media-grants` feature to sign short-lived URLs for media that an edge proxy serves
+from object storage:
+
+```toml
+baukit-core = { version = "0.4", features = ["media-grants"] }
+```
+
+A grant is the query `expires=<unix seconds>&keyId=<id>&mode=playback&signature=<base64url>`. The
+signature is unpadded base64url of HMAC-SHA256 over `"{path}\n{expires}\nplayback\n{keyId}"`, keyed
+with the base64url-decoded secret. `media_grant::signing_input` returns those exact bytes.
+
+```rust
+use baukit_core::media_grant::{MediaGrantKey, MediaGrantKeyRing, MediaGrantRequest};
+
+let current = MediaGrantKey::from_base64url(
+    "current_2026_09",
+    "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
+)?;
+let ring = MediaGrantKeyRing::new(current, None)?;
+let now = 2_000_000_000;
+let grant = ring.sign("/media/clip.mp4", now + 300, now)?;
+assert_eq!(
+    grant.query(),
+    "expires=2000000300&keyId=current_2026_09&mode=playback\
+     &signature=mBO757nN11v6RkL2jFteEiNklevsoA7G1Rl-yHoL9gg",
+);
+
+let query = grant.query();
+let verified = ring.verify(MediaGrantRequest {
+    method: "GET",
+    path: "/media/clip.mp4",
+    query: &query,
+    now,
+})?;
+assert_eq!(verified.key_id(), "current_2026_09");
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+`MediaGrantKey::from_base64url` takes a canonical unpadded base64url secret that decodes to at
+least 32 bytes and a key ID matching `[A-Za-z0-9][A-Za-z0-9_-]*` of at most 64 bytes. Generate a
+secret with `openssl rand 32 | basenc --base64url | tr -d '='`. To rotate, deploy the new key as
+current and the old key as previous, wait out the longest grant lifetime, then drop the previous
+key. `MediaGrantKeyRing` signs with the current key and verifies grants from either.
+
+The signer issues grants at most `MAX_GRANT_LIFETIME_SECONDS` (3600) ahead. The verifier accepts an
+expiry up to 60 seconds further, so a verifier clock that lags the signer's still accepts a fresh
+grant. There is no grace after expiry: `expires <= now` fails with `expired`.
+
+Paths must already be normalized: a leading `/`, at most 512 bytes, and segments of
+`[A-Za-z0-9._-]` that do not start with `.`. Percent-encoding, empty segments, dot segments, and
+backslashes fail with `invalid_path`, so a verifier never decodes or normalizes before it checks
+the signature. Keep the product's allowlist of media paths in the proxy's routing. The query must
+hold exactly the four parameters in the order above.
+
+The verifier compares signatures with `ring::hmac::verify` in constant time. `Debug` output for
+keys, grants, and requests redacts secrets, signatures, and queries, and error messages name only
+the failed check. `MediaGrantError::code` and `MediaGrantKeyError::code` return the snake_case
+codes the edge verifier uses. `deploy/media-grants` has the njs verifier for nginx. Both pass
+`fixtures/media-grants/vectors-v1.json`, whose expected signatures come from an independent
+generator.
 
 ## Scope
 

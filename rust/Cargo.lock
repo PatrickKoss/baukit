@@ -266,11 +266,13 @@ name = "baukit-core"
 version = "0.4.0"
 dependencies = [
  "base64",
+ "baukit-core",
  "ring",
  "serde",
  "serde_json",
  "thiserror",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
