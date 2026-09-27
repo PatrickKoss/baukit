@@ -13,7 +13,7 @@ cd "$repo_root"
 ORDER=(
   baukit-core baukit-events baukit-openapi baukit-sync
   baukit-config baukit-runtime baukit-telemetry baukit-credential-vault
-  baukit-http baukit-jobs baukit-ops baukit-auth
+  baukit-http baukit-egress baukit-jobs baukit-ops baukit-auth
   baukit-integrations baukit-push baukit-ratelimit baukit-test
 )
 

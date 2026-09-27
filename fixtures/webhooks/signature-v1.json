@@ -1,0 +1,222 @@
+{
+  "version": 1,
+  "description": "Signing and verification vectors for the baukit-webhook-v1 HMAC-SHA256 signature. Secrets are UTF-8 bytes. Bodies are UTF-8 unless given as bodyHex. The signing input is 'baukit-webhook-v1\\n', the decimal timestamp, '\\n', the decimal byte length of the delivery ID, '\\n', the delivery ID, '\\n', then the raw body. The signature is 'v1=' followed by unpadded base64url of the tag. Verification tries each candidate secret and compares in constant time. Timestamp windows and delivery-ID deduplication are receiver policy and are not covered here.",
+  "signingCases": [
+    {
+      "name": "reference",
+      "secret": "current-secret",
+      "timestamp": 1800000000,
+      "deliveryId": "delivery-7",
+      "body": "{\"event\":\"created\"}",
+      "signingInputHex": "6261756b69742d776562686f6f6b2d76310a313830303030303030300a31300a64656c69766572792d370a7b226576656e74223a2263726561746564227d",
+      "signature": "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w"
+    },
+    {
+      "name": "empty-body",
+      "secret": "current-secret",
+      "timestamp": 1800000000,
+      "deliveryId": "delivery-7",
+      "body": "",
+      "signingInputHex": "6261756b69742d776562686f6f6b2d76310a313830303030303030300a31300a64656c69766572792d370a",
+      "signature": "v1=4K_Sw8cxCI-yA8t4wadYmTq7ExVF1DnJO1XioBMCRkw"
+    },
+    {
+      "name": "empty-delivery-id",
+      "secret": "current-secret",
+      "timestamp": 1800000000,
+      "deliveryId": "",
+      "body": "{\"event\":\"created\"}",
+      "signingInputHex": "6261756b69742d776562686f6f6b2d76310a313830303030303030300a300a0a7b226576656e74223a2263726561746564227d",
+      "signature": "v1=npsGYs0-leYAj99OJ63wZ7DMQL58J944II8OWTVDdFs"
+    },
+    {
+      "name": "multibyte-delivery-id",
+      "secret": "current-secret",
+      "timestamp": 1800000000,
+      "deliveryId": "lieferung-ü",
+      "body": "{\"event\":\"created\"}",
+      "signingInputHex": "6261756b69742d776562686f6f6b2d76310a313830303030303030300a31320a6c6965666572756e672dc3bc0a7b226576656e74223a2263726561746564227d",
+      "signature": "v1=SFWdMjwAYgmONE5S7233o7DXwThNmo9n5jIvkqybjrM"
+    },
+    {
+      "name": "newline-in-delivery-id",
+      "secret": "current-secret",
+      "timestamp": 1800000000,
+      "deliveryId": "a\nb",
+      "body": "c",
+      "signingInputHex": "6261756b69742d776562686f6f6b2d76310a313830303030303030300a330a610a620a63",
+      "signature": "v1=WoJNX2lLq9cR3XpHtGZzuVXYQCoM53Y3c4w1ueHzeq8"
+    },
+    {
+      "name": "newline-in-body-instead",
+      "secret": "current-secret",
+      "timestamp": 1800000000,
+      "deliveryId": "a",
+      "body": "b\nc",
+      "signingInputHex": "6261756b69742d776562686f6f6b2d76310a313830303030303030300a310a610a620a63",
+      "signature": "v1=nCOoZZo2hgDBx-QeTCR7YfD65uQJRNTFyNW-x0Tg_5U"
+    },
+    {
+      "name": "negative-timestamp",
+      "secret": "current-secret",
+      "timestamp": -1,
+      "deliveryId": "delivery-7",
+      "body": "{\"event\":\"created\"}",
+      "signingInputHex": "6261756b69742d776562686f6f6b2d76310a2d310a31300a64656c69766572792d370a7b226576656e74223a2263726561746564227d",
+      "signature": "v1=pNbN6cLaFxDINwLqZxk5MJPq5lTVeF41oFn7bUIgZSA"
+    },
+    {
+      "name": "binary-body",
+      "secret": "current-secret",
+      "timestamp": 0,
+      "deliveryId": "delivery-7",
+      "bodyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "signingInputHex": "6261756b69742d776562686f6f6b2d76310a300a31300a64656c69766572792d370a000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "signature": "v1=ggqkiQU1jngky-TToTTWGbD6v4ifAZ1OTkatygrZZC0"
+    }
+  ],
+  "verificationCases": [
+    {
+      "name": "current-key",
+      "candidateSecrets": [
+        "current-secret"
+      ],
+      "timestamp": 1800000000,
+      "deliveryId": "delivery-7",
+      "body": "{\"event\":\"created\"}",
+      "signature": "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w",
+      "expected": true
+    },
+    {
+      "name": "previous-then-current-key",
+      "candidateSecrets": [
+        "previous-secret",
+        "current-secret"
+      ],
+      "timestamp": 1800000000,
+      "deliveryId": "delivery-7",
+      "body": "{\"event\":\"created\"}",
+      "signature": "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w",
+      "expected": true
+    },
+    {
+      "name": "only-previous-key",
+      "candidateSecrets": [
+        "previous-secret"
+      ],
+      "timestamp": 1800000000,
+      "deliveryId": "delivery-7",
+      "body": "{\"event\":\"created\"}",
+      "signature": "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w",
+      "expected": false
+    },
+    {
+      "name": "no-candidates",
+      "candidateSecrets": [],
+      "timestamp": 1800000000,
+      "deliveryId": "delivery-7",
+      "body": "{\"event\":\"created\"}",
+      "signature": "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w",
+      "expected": false
+    },
+    {
+      "name": "timestamp-changed",
+      "candidateSecrets": [
+        "current-secret"
+      ],
+      "timestamp": 1800000001,
+      "deliveryId": "delivery-7",
+      "body": "{\"event\":\"created\"}",
+      "signature": "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w",
+      "expected": false
+    },
+    {
+      "name": "delivery-id-changed",
+      "candidateSecrets": [
+        "current-secret"
+      ],
+      "timestamp": 1800000000,
+      "deliveryId": "delivery-8",
+      "body": "{\"event\":\"created\"}",
+      "signature": "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w",
+      "expected": false
+    },
+    {
+      "name": "body-changed",
+      "candidateSecrets": [
+        "current-secret"
+      ],
+      "timestamp": 1800000000,
+      "deliveryId": "delivery-7",
+      "body": "{\"event\":\"created\" }",
+      "signature": "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w",
+      "expected": false
+    },
+    {
+      "name": "missing-prefix",
+      "candidateSecrets": [
+        "current-secret"
+      ],
+      "timestamp": 1800000000,
+      "deliveryId": "delivery-7",
+      "body": "{\"event\":\"created\"}",
+      "signature": "UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w",
+      "expected": false
+    },
+    {
+      "name": "uppercase-prefix",
+      "candidateSecrets": [
+        "current-secret"
+      ],
+      "timestamp": 1800000000,
+      "deliveryId": "delivery-7",
+      "body": "{\"event\":\"created\"}",
+      "signature": "V1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w",
+      "expected": false
+    },
+    {
+      "name": "padded-base64url",
+      "candidateSecrets": [
+        "current-secret"
+      ],
+      "timestamp": 1800000000,
+      "deliveryId": "delivery-7",
+      "body": "{\"event\":\"created\"}",
+      "signature": "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w=",
+      "expected": false
+    },
+    {
+      "name": "hex-encoding",
+      "candidateSecrets": [
+        "current-secret"
+      ],
+      "timestamp": 1800000000,
+      "deliveryId": "delivery-7",
+      "body": "{\"event\":\"created\"}",
+      "signature": "v1=52934974f91fd704bba7b0d8ef92fc9f3ed1cff0543c516510e5f799ae29cbbc",
+      "expected": false
+    },
+    {
+      "name": "truncated",
+      "candidateSecrets": [
+        "current-secret"
+      ],
+      "timestamp": 1800000000,
+      "deliveryId": "delivery-7",
+      "body": "{\"event\":\"created\"}",
+      "signature": "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4",
+      "expected": false
+    },
+    {
+      "name": "empty-signature",
+      "candidateSecrets": [
+        "current-secret"
+      ],
+      "timestamp": 1800000000,
+      "deliveryId": "delivery-7",
+      "body": "{\"event\":\"created\"}",
+      "signature": "",
+      "expected": false
+    }
+  ]
+}

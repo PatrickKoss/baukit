@@ -4,6 +4,7 @@ members = [
   "crates/baukit-auth",
   "crates/baukit-core",
   "crates/baukit-credential-vault",
+  "crates/baukit-egress",
   "crates/baukit-events",
   "crates/baukit-runtime",
   "crates/baukit-config",
@@ -37,6 +38,7 @@ baukit-auth = { version = "=0.4.0", path = "crates/baukit-auth" }
 baukit-config = { version = "=0.4.0", path = "crates/baukit-config" }
 baukit-core = { version = "=0.4.0", path = "crates/baukit-core" }
 baukit-credential-vault = { version = "=0.4.0", path = "crates/baukit-credential-vault" }
+baukit-egress = { version = "=0.4.0", path = "crates/baukit-egress" }
 baukit-events = { version = "=0.4.0", path = "crates/baukit-events" }
 baukit-http = { version = "=0.4.0", path = "crates/baukit-http" }
 baukit-integrations = { version = "=0.4.0", path = "crates/baukit-integrations" }
@@ -80,6 +82,7 @@ tracing = "=0.1.44"
 tracing-opentelemetry = "=0.33.0"
 tracing-subscriber = { version = "=0.3.23", features = ["env-filter", "json"] }
 time = { version = "=0.3.47", features = ["formatting", "parsing", "serde"] }
+url = "=2.5.8"
 utoipa = { version = "=5.5.0", features = ["axum_extras", "time"] }
 utoipa-axum = "=0.2.0"
 uuid = { version = "=1.24.0", features = ["v4", "v7", "serde"] }

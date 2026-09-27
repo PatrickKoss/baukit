@@ -230,7 +230,10 @@ state is discarded. Inbox values that carry product identifiers, payloads, or ou
 implement `Debug`.
 
 `sign_webhook_hmac_sha256` and `verify_webhook_hmac_sha256` use the canonical signing bytes documented
-in the integration reliability recipe. `ScriptedWebhookReceiver` records bounded requests without a
+in the integration reliability recipe. `fixtures/webhooks/signature-v1.json` publishes the signing
+bytes, signatures, and verification results for that format, including rotation, tampered fields,
+and wrong encodings, so a receiver in another language can check its verifier against the same
+cases. `ScriptedWebhookReceiver` records bounded requests without a
 `Debug` implementation and returns queued statuses in order. Use it to test successful delivery,
 `Retry-After`, permanent receiver responses, timeouts, stable request bodies, and idempotency headers.
 
