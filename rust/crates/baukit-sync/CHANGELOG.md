@@ -4,6 +4,28 @@ All notable changes to `baukit-sync` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Add the `sqlx-postgres` feature. It carries every SQLx helper, so a crate that only needs the
+  hybrid logical clock no longer compiles SQLx, `chrono`, or `uuid`.
+- Add `horizon::check_pull_cursor`, `PullCursorError`, and the `resync_required` wire constants
+  (`RESYNC_REQUIRED_STATUS`, `RESYNC_REQUIRED_CODE`, `HORIZON_REVISION_DETAIL`,
+  `FULL_RESYNC_CURSOR`). These need no feature.
+- Add `purge::TombstoneTable`, `purge_tombstone_batch`, `purge_tombstones`, `purge_horizon`, and
+  `guard_pull_cursor`. A batch deletes at most the caller's limit of expired tombstones and raises
+  each affected owner's horizon in the same transaction, never lowering it. It skips owners whose
+  revision counter row is locked instead of waiting. The pull guard locks the counter row with
+  `FOR KEY SHARE`, so a purge for that owner cannot commit while the pull transaction is open.
+- Add the reference migration `migrations/0002_baukit_sync_purge_horizons.sql` and
+  `POSTGRES_PURGE_HORIZONS_MIGRATION_SQL` for the `sync_purge_horizons` table.
+
+### Breaking
+
+- `next_revision`, `ensure_owner`, `current_revision`, and `current_revision_for_update` now need
+  `features = ["sqlx-postgres"]`. `chrono`, `sqlx`, and `uuid` are optional dependencies.
+- The purge helpers need `sync_purge_horizons`. Its foreign key references `sync_revisions`, so a
+  migration that drops `sync_revisions` must drop `sync_purge_horizons` first.
+
 ## [0.4.0] - 2026-09-12
 
 ## [0.3.0] - 2026-09-04

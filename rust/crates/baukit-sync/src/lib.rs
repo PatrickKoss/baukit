@@ -1,25 +1,38 @@
-//! Revision allocation and hybrid logical clocks for incremental sync.
+//! Revision allocation, tombstone purge horizons, and hybrid logical clocks
+//! for incremental sync.
 //!
 //! A syncable row carries a `revision` drawn from a counter that is private to
 //! its owner. A client pulls by asking for everything above the revision it
 //! last saw, so the counter must be monotonic per owner and must move in the
 //! same transaction as the row write it stamps. [`next_revision`] does exactly
-//! that. The [`hlc`] module supplies a cross-runtime logical clock for ordering
-//! writes when physical clocks stall or move backward.
+//! that. The [`purge`] module deletes old tombstones and records the per-owner
+//! purge horizon, and [`horizon`] holds the pull-cursor rule that turns a
+//! cursor below the horizon into a full-resync signal. The [`hlc`] module
+//! supplies a cross-runtime logical clock for ordering writes when physical
+//! clocks stall or move backward.
+//!
+//! # Features
+//!
+//! Without features the crate contains only [`hlc`], [`horizon`], and the
+//! reference SQL constants, and depends on no database driver. The
+//! `sqlx-postgres` feature adds the PostgreSQL revision allocator and the
+//! [`purge`] module.
 //!
 //! # What this crate is not
 //!
 //! Baukit does not standardize a sync protocol. Wire payloads, conflict
 //! resolution, batching, and the pull endpoint stay product-owned, as
-//! `docs/platform/offline-readiness-contract.md` says. This crate owns two
-//! mechanisms: revision allocation and timestamp generation. Merge rules stay
+//! `docs/platform/offline-readiness-contract.md` says. This crate owns
+//! revision allocation, tombstone purge horizons, and timestamp generation.
+//! Merge rules, retention periods, table lists, and scheduling stay
 //! product-owned.
 //!
 //! # Schema
 //!
-//! Products copy [`POSTGRES_MIGRATION_SQL`] into their own ordered migrations;
-//! the crate never runs migrations at process startup. Products whose existing
-//! counter uses `user_id` can instead copy
+//! Products copy [`POSTGRES_MIGRATION_SQL`] and
+//! [`POSTGRES_PURGE_HORIZONS_MIGRATION_SQL`] into their own ordered
+//! migrations; the crate never runs migrations at process startup. Products
+//! whose existing counter uses `user_id` can instead copy
 //! [`POSTGRES_RENAME_USER_ID_TO_OWNER_ID_SQL`]. The reference migration also
 //! documents the column convention every syncable table follows: `id`,
 //! `owner_id`, `updated_at`, `deleted_at`, `revision`, plus an `(owner_id,
@@ -32,6 +45,7 @@
 //! allocation rolls back with it and the revision is never handed out.
 //!
 //! ```no_run
+//! # #[cfg(feature = "sqlx-postgres")]
 //! # async fn example(pool: &sqlx::PgPool, owner_id: uuid::Uuid) -> Result<(), sqlx::Error> {
 //! let mut transaction = pool.begin().await?;
 //! let revision = baukit_sync::next_revision(&mut transaction, owner_id).await?;
@@ -47,16 +61,29 @@
 
 #![deny(missing_docs)]
 
-use sqlx::{Postgres, Transaction};
-use uuid::Uuid;
-
 pub mod hlc;
+pub mod horizon;
+#[cfg(feature = "sqlx-postgres")]
+pub mod purge;
+#[cfg(feature = "sqlx-postgres")]
+mod revision;
+
+#[cfg(feature = "sqlx-postgres")]
+pub use revision::{current_revision, current_revision_for_update, ensure_owner, next_revision};
 
 /// Reference PostgreSQL schema and column convention for product migrations.
 ///
 /// Copy this SQL into a product migration; do not execute it dynamically during
 /// application startup.
 pub const POSTGRES_MIGRATION_SQL: &str = include_str!("../migrations/0001_baukit_sync.sql");
+
+/// Reference PostgreSQL schema for per-owner tombstone purge horizons.
+///
+/// Copy this SQL into a product migration after [`POSTGRES_MIGRATION_SQL`].
+/// The [`purge`] module reads and writes the `sync_purge_horizons` table it
+/// creates. The table name is fixed, like `sync_revisions`.
+pub const POSTGRES_PURGE_HORIZONS_MIGRATION_SQL: &str =
+    include_str!("../migrations/0002_baukit_sync_purge_horizons.sql");
 
 /// One-shot PostgreSQL migration from `sync_revisions.user_id` to `owner_id`.
 ///
@@ -71,100 +98,7 @@ pub const POSTGRES_MIGRATION_SQL: &str = include_str!("../migrations/0001_baukit
 pub const POSTGRES_RENAME_USER_ID_TO_OWNER_ID_SQL: &str =
     include_str!("../postgres_rename_user_id_to_owner_id.sql");
 
-/// Allocates the owner's next revision inside the caller's transaction.
-///
-/// The `UPDATE ... RETURNING` takes a row lock for the duration of the
-/// transaction, so concurrent writers for one owner serialize and each sees a
-/// distinct, increasing value. Different owners touch different rows and do not
-/// block each other. A rollback discards the allocation.
-///
-/// The owner's counter row must exist; call [`ensure_owner`] once when the
-/// owner is created.
-///
-/// # Errors
-///
-/// Returns [`sqlx::Error::RowNotFound`] when the owner has no counter row, and
-/// any other database error unchanged.
-pub async fn next_revision(
-    transaction: &mut Transaction<'_, Postgres>,
-    owner_id: Uuid,
-) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar(
-        "UPDATE sync_revisions
-         SET last_revision = last_revision + 1
-         WHERE owner_id = $1
-         RETURNING last_revision",
-    )
-    .bind(owner_id)
-    .fetch_one(&mut **transaction)
-    .await
-}
-
-/// Creates the owner's revision counter if it does not exist yet.
-///
-/// Call this when the owner is created, in the same transaction. Calling it
-/// again is harmless and never resets an existing counter.
-///
-/// # Errors
-///
-/// Returns any database error unchanged.
-pub async fn ensure_owner(
-    transaction: &mut Transaction<'_, Postgres>,
-    owner_id: Uuid,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "INSERT INTO sync_revisions (owner_id)
-         VALUES ($1)
-         ON CONFLICT (owner_id) DO NOTHING",
-    )
-    .bind(owner_id)
-    .execute(&mut **transaction)
-    .await
-    .map(|_| ())
-}
-
-/// Reads the owner's current revision without allocating a new one.
-///
-/// Use this to answer "what is the newest revision a pull could return". It
-/// takes no lock, so a concurrent writer may advance the counter immediately
-/// after the read.
-///
-/// # Errors
-///
-/// Returns any database error unchanged. An owner without a counter row reads
-/// as `None`.
-pub async fn current_revision(
-    transaction: &mut Transaction<'_, Postgres>,
-    owner_id: Uuid,
-) -> Result<Option<i64>, sqlx::Error> {
-    sqlx::query_scalar("SELECT last_revision FROM sync_revisions WHERE owner_id = $1")
-        .bind(owner_id)
-        .fetch_optional(&mut **transaction)
-        .await
-}
-
-/// Reads and locks the owner's current revision without allocating a new one.
-///
-/// The row lock lasts until the caller's transaction commits or rolls back.
-/// Use this before a read-dependent write that must not race another revision
-/// allocation. [`current_revision`] remains the non-locking read for pull
-/// boundaries and status queries.
-///
-/// # Errors
-///
-/// Returns any database error unchanged. An owner without a counter row reads
-/// as `None` and no row is locked.
-pub async fn current_revision_for_update(
-    transaction: &mut Transaction<'_, Postgres>,
-    owner_id: Uuid,
-) -> Result<Option<i64>, sqlx::Error> {
-    sqlx::query_scalar("SELECT last_revision FROM sync_revisions WHERE owner_id = $1 FOR UPDATE")
-        .bind(owner_id)
-        .fetch_optional(&mut **transaction)
-        .await
-}
-
 // Compiles the README's examples so they cannot drift from the API.
 #[doc = include_str!("../README.md")]
-#[cfg(doctest)]
+#[cfg(all(doctest, feature = "sqlx-postgres"))]
 struct ReadmeDoctests;

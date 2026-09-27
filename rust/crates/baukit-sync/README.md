@@ -1,13 +1,28 @@
 # baukit-sync
 
-`baukit-sync` allocates per-owner revision numbers for incremental sync, documents the column
-convention a syncable table follows, and supplies a hybrid logical clock shared with
-`@baukit/sync-client`.
+`baukit-sync` allocates per-owner revision numbers for incremental sync, purges old tombstones
+behind a per-owner horizon, documents the column convention a syncable table follows, and supplies
+a hybrid logical clock shared with `@baukit/sync-client`.
 
 It is deliberately not a sync engine. Wire payloads, conflict resolution, batching, and the pull
 endpoint stay product-owned, as
 [the offline readiness contract](../../../docs/platform/offline-readiness-contract.md) says they
 should. The clock orders timestamps. It does not choose which record wins.
+
+## Features
+
+| Feature | Adds | Dependencies |
+|---|---|---|
+| none | `hlc`, the `horizon` cursor rule and wire constants, and the reference SQL constants | `serde`, `thiserror` |
+| `sqlx-postgres` | `next_revision`, `ensure_owner`, `current_revision`, `current_revision_for_update`, and the `purge` module | SQLx 0.9 with PostgreSQL, `chrono`, `uuid` |
+
+A backend that allocates revisions or purges tombstones enables the feature:
+
+```toml
+baukit-sync = { version = "0.4", features = ["sqlx-postgres"] }
+```
+
+A crate that only needs the clock uses the plain dependency and pulls in no database driver.
 
 ## Hybrid logical clock
 
@@ -117,6 +132,168 @@ Deleting a row outright instead of setting `deleted_at` is the bug this conventi
 prevent: the row simply stops appearing in pulls, and every client that already has it keeps it
 forever.
 
+## Tombstone purge horizons
+
+Tombstones cannot stay forever, but deleting one breaks every client whose cursor is still below
+it: that client would never learn about the deletion. The fix in
+[section 4 of the offline readiness contract](../../../docs/platform/offline-readiness-contract.md)
+is a per-owner purge horizon, the greatest revision of any tombstone purged for that owner. A pull
+cursor above zero and below the horizon gets `resync_required`, and the client rebuilds from zero.
+
+Copy [`migrations/0002_baukit_sync_purge_horizons.sql`](migrations/0002_baukit_sync_purge_horizons.sql)
+after the revision migration. It creates `sync_purge_horizons (owner_id, horizon_revision,
+updated_at)`. The table name is fixed, like `sync_revisions`. Its foreign key to `sync_revisions`
+cascades, so erasing an owner's counter also removes the horizon.
+
+### Purging
+
+The product supplies one `TombstoneTable` per syncable table. The selector binds the cutoff as `$1`
+and the batch limit as `$2`, returns `id`, `owner_id`, and `revision`, and locks its rows with
+`FOR UPDATE SKIP LOCKED`. The delete binds the selected ids as `$1`. A child table joins its parent
+for `owner_id`, and a parent selector skips rows that still have children:
+
+```rust
+use baukit_sync::purge::TombstoneTable;
+
+const LIST_ITEMS: TombstoneTable = TombstoneTable::new(
+    "list_items",
+    "SELECT item.id, list.owner_id, item.revision
+     FROM list_items item JOIN lists list ON list.id = item.list_id
+     WHERE item.deleted_at < $1
+     ORDER BY item.deleted_at, item.id LIMIT $2
+     FOR UPDATE OF item SKIP LOCKED",
+    "DELETE FROM list_items WHERE id = ANY($1)",
+);
+
+const LISTS: TombstoneTable = TombstoneTable::new(
+    "lists",
+    "SELECT list.id, list.owner_id, list.revision FROM lists list
+     WHERE list.deleted_at < $1
+       AND NOT EXISTS (SELECT 1 FROM list_items item WHERE item.list_id = list.id)
+     ORDER BY list.deleted_at, list.id LIMIT $2
+     FOR UPDATE SKIP LOCKED",
+    "DELETE FROM lists WHERE id = ANY($1)",
+);
+
+const PURGE_ORDER: [TombstoneTable; 2] = [LIST_ITEMS, LISTS];
+```
+
+`purge_tombstones(pool, &PURGE_ORDER, cutoff, limit)` drains the tables in slice order. Each batch
+is one transaction that deletes at most `limit` rows and raises each affected owner's horizon to
+the greatest revision it removed. The upsert only raises a horizon; a batch of older tombstones
+leaves it unchanged. `purge_tombstone_batch` runs one batch inside a transaction the caller owns,
+for products that want their own loop. A selector that returns more rows than the limit fails with
+`PurgeError::BatchLimitExceeded` before anything is deleted.
+
+A batch never waits for a lock. After selecting candidates it takes `FOR UPDATE SKIP LOCKED` on each
+owner's `sync_revisions` row. An owner in the middle of a write, a pull, or another purge is skipped,
+and its tombstones stay locked only until the batch commits. The next batch or the next run picks
+them up. A drain stops when a batch comes back short or deletes nothing.
+
+Retention periods, table lists, delete order, and scheduling stay in the product. A recurring purge
+fits the `baukit-jobs` fixed-slot pattern. Derive the cutoff from the slot, not the wall clock, so
+a retried attempt purges exactly what the first attempt would have:
+
+```rust,no_run
+use std::{num::NonZeroU32, time::Duration};
+
+use baukit_jobs::{FixedUtcInterval, FixedUtcSlot};
+use baukit_sync::purge::{PurgedTable, TombstoneTable, purge_tombstones};
+use chrono::{TimeDelta, Utc};
+
+const RECORDS: TombstoneTable = TombstoneTable::new(
+    "product_records",
+    "SELECT id, owner_id, revision FROM product_records
+     WHERE deleted_at < $1 ORDER BY deleted_at, id LIMIT $2
+     FOR UPDATE SKIP LOCKED",
+    "DELETE FROM product_records WHERE id = ANY($1)",
+);
+const TOMBSTONE_RETENTION: TimeDelta = TimeDelta::days(30);
+const PURGE_BATCH: NonZeroU32 = NonZeroU32::new(1_000).expect("batch size is not zero");
+const PURGE_INTERVAL: Duration = Duration::from_secs(60 * 60);
+
+async fn purge_slot(
+    pool: &sqlx::PgPool,
+    slot: FixedUtcSlot,
+) -> Result<(Vec<PurgedTable>, FixedUtcSlot), Box<dyn std::error::Error>> {
+    let cutoff = slot.starts_at() - TOMBSTONE_RETENTION;
+    let report = purge_tombstones(pool, &[RECORDS], cutoff, PURGE_BATCH).await?;
+    let next = FixedUtcInterval::new(PURGE_INTERVAL)?.next_slot(slot, Utc::now())?;
+    Ok((report, next))
+}
+```
+
+Enqueue `next` with `next.identifier()` as the idempotency key and `next.starts_at()` as
+`run_after`, as the `baukit-jobs` README describes, before completing the current job.
+
+### Guarding pulls
+
+Call `guard_pull_cursor` first in the pull transaction, then read rows in that same transaction. It
+takes `FOR KEY SHARE` on the owner's counter row, which does not block `next_revision`, but keeps a
+purge for that owner from committing until the pull ends. Without that lock a purge can commit
+between the horizon check and the row reads, and the pull silently drops a deletion.
+
+```rust
+use std::collections::BTreeMap;
+
+use axum::http::StatusCode;
+use baukit_http::ApiError;
+use baukit_sync::horizon::{HORIZON_REVISION_DETAIL, PullCursorError, RESYNC_REQUIRED_CODE};
+use baukit_sync::purge::{PullGuardError, guard_pull_cursor};
+
+async fn pull_page(
+    pool: &sqlx::PgPool,
+    owner_id: uuid::Uuid,
+    cursor: i64,
+) -> Result<Vec<i64>, ApiError> {
+    let mut transaction = pool.begin().await.map_err(ApiError::internal)?;
+    guard_pull_cursor(&mut transaction, owner_id, cursor)
+        .await
+        .map_err(pull_guard_error)?;
+    let revisions = sqlx::query_scalar(
+        "SELECT revision FROM product_records WHERE owner_id = $1 AND revision > $2
+         ORDER BY revision LIMIT 100",
+    )
+    .bind(owner_id)
+    .bind(cursor)
+    .fetch_all(&mut *transaction)
+    .await
+    .map_err(ApiError::internal)?;
+    transaction.commit().await.map_err(ApiError::internal)?;
+    Ok(revisions)
+}
+
+fn pull_guard_error(error: PullGuardError) -> ApiError {
+    match error {
+        PullGuardError::Cursor(PullCursorError::ResyncRequired { horizon_revision }) => {
+            ApiError::new(StatusCode::CONFLICT, RESYNC_REQUIRED_CODE, "Pull again from revision 0")
+                .with_details(BTreeMap::from([(
+                    HORIZON_REVISION_DETAIL.to_owned(),
+                    horizon_revision.into(),
+                )]))
+        }
+        PullGuardError::Cursor(_) => ApiError::validation_field("since_revision", "must not be negative"),
+        other => ApiError::internal(other),
+    }
+}
+```
+
+`RESYNC_REQUIRED_STATUS` is 409, the same status as `StatusCode::CONFLICT`.
+`check_pull_cursor(cursor, horizon)` is the same rule without a database, for products that load
+the horizon another way. Cursor zero is always accepted. A cursor equal to the horizon is valid,
+because that client has already seen the purged tombstone's revision.
+
+The response carries only the code and the horizon. Owner IDs, table names, and deleted row data
+stay out of it.
+
+### Conformance
+
+`baukit_test::check_purge_horizon_conformance` runs the server side of the contract against a
+product adapter: horizon monotonicity, batch bounds, a purge that races an open pull, cursors at
+and below the horizon, owner isolation, and erasure. This crate's own tests run it against the
+helpers above, and against a pull that reads the horizon outside its transaction to show that the
+race case catches it.
+
 ## Testing
 
 The integration tests need Docker and are `#[ignore]`d by default:
@@ -126,4 +303,5 @@ cargo test --manifest-path rust/Cargo.toml -p baukit-sync -- --include-ignored
 ```
 
 They cover monotonic allocation, isolation between owners, rollback returning a revision,
-concurrent writers never sharing one, and a tombstoned row pulling back in revision order.
+concurrent writers never sharing one, a tombstoned row pulling back in revision order, and the
+purge-horizon conformance, table ordering, batch limits, skipped busy owners, and the pull guard.
