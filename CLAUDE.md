@@ -18,7 +18,7 @@ rust/crates/        baukit-runtime, -config, -http, -ops, -telemetry, -openapi, 
 typescript/packages/ a11y-core, analytics-core, analytics-posthog-{web,native},
                      api-runtime, auth-{native,node,web},
                      data-contracts{,-dexie,-expo-sqlite}, localization-core,
-                     preferences-core, ui-tokens
+                     notifications-{core,expo}, preferences-core, ui-tokens
 cli/                `baukit` CLI (scaffolds products from templates/)
 templates/          project templates consumed by the CLI
 deploy/             Helm chart + observability (dashboards, alerts, recording rules)

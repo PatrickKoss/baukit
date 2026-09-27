@@ -1,0 +1,208 @@
+{
+  "version": 1,
+  "tzdata": "IANA 2026c",
+  "instantResolution": "fixtures/zoned-time/vectors-v1.json",
+  "skipReasons": ["past", "outside_horizon", "nonexistent_local_time"],
+  "cases": [
+    {
+      "name": "schedule-into-empty-set",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 3, "occurrences": [{"logicalId": "c", "civilDate": "2026-06-17", "civilTime": "21:30", "contentDigest": "v1"}, {"logicalId": "a", "civilDate": "2026-06-15", "civilTime": "09:00", "contentDigest": "v1"}, {"logicalId": "b", "civilDate": "2026-06-16", "civilTime": "09:00", "contentDigest": "v1"}], "current": []},
+      "expected": {"firstCivilDate": "2026-06-15", "lastCivilDate": "2026-06-17", "schedule": [{"logicalId": "a", "instant": "2026-06-15T07:00:00Z", "transition": "none"}, {"logicalId": "b", "instant": "2026-06-16T07:00:00Z", "transition": "none"}, {"logicalId": "c", "instant": "2026-06-17T19:30:00Z", "transition": "none"}], "keep": [], "cancel": [], "skipped": []}
+    },
+    {
+      "name": "unchanged-set-keeps-everything",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 3, "occurrences": [{"logicalId": "c", "civilDate": "2026-06-17", "civilTime": "21:30", "contentDigest": "v1"}, {"logicalId": "a", "civilDate": "2026-06-15", "civilTime": "09:00", "contentDigest": "v1"}, {"logicalId": "b", "civilDate": "2026-06-16", "civilTime": "09:00", "contentDigest": "v1"}], "current": [{"logicalId": "a", "instant": "2026-06-15T07:00:00Z", "contentDigest": "v1"}, {"logicalId": "b", "instant": "2026-06-16T07:00:00Z", "contentDigest": "v1"}, {"logicalId": "c", "instant": "2026-06-17T19:30:00Z", "contentDigest": "v1"}]},
+      "expected": {"firstCivilDate": "2026-06-15", "lastCivilDate": "2026-06-17", "schedule": [], "keep": ["a", "b", "c"], "cancel": [], "skipped": []}
+    },
+    {
+      "name": "unchanged-set-in-another-order-keeps-everything",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 3, "occurrences": [{"logicalId": "b", "civilDate": "2026-06-16", "civilTime": "09:00", "contentDigest": "v1"}, {"logicalId": "a", "civilDate": "2026-06-15", "civilTime": "09:00", "contentDigest": "v1"}, {"logicalId": "c", "civilDate": "2026-06-17", "civilTime": "21:30", "contentDigest": "v1"}], "current": [{"logicalId": "c", "instant": "2026-06-17T19:30:00Z", "contentDigest": "v1"}, {"logicalId": "b", "instant": "2026-06-16T07:00:00Z", "contentDigest": "v1"}, {"logicalId": "a", "instant": "2026-06-15T07:00:00Z", "contentDigest": "v1"}]},
+      "expected": {"firstCivilDate": "2026-06-15", "lastCivilDate": "2026-06-17", "schedule": [], "keep": ["a", "b", "c"], "cancel": [], "skipped": []}
+    },
+    {
+      "name": "moved-removed-and-added",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 3, "occurrences": [{"logicalId": "a", "civilDate": "2026-06-15", "civilTime": "09:00", "contentDigest": "v1"}, {"logicalId": "b", "civilDate": "2026-06-16", "civilTime": "10:00", "contentDigest": "v1"}, {"logicalId": "new", "civilDate": "2026-06-17", "civilTime": "09:00", "contentDigest": "v1"}], "current": [{"logicalId": "a", "instant": "2026-06-15T07:00:00Z", "contentDigest": "v1"}, {"logicalId": "b", "instant": "2026-06-16T07:00:00Z", "contentDigest": "v1"}, {"logicalId": "old", "instant": "2026-06-16T08:00:00Z", "contentDigest": "v1"}]},
+      "expected": {"firstCivilDate": "2026-06-15", "lastCivilDate": "2026-06-17", "schedule": [{"logicalId": "b", "instant": "2026-06-16T08:00:00Z", "transition": "none"}, {"logicalId": "new", "instant": "2026-06-17T07:00:00Z", "transition": "none"}], "keep": ["a"], "cancel": ["b", "old"], "skipped": []}
+    },
+    {
+      "name": "content-digest-change-replaces",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 3, "occurrences": [{"logicalId": "a", "civilDate": "2026-06-15", "civilTime": "09:00", "contentDigest": "v2"}, {"logicalId": "b", "civilDate": "2026-06-16", "civilTime": "09:00", "contentDigest": "v1"}], "current": [{"logicalId": "a", "instant": "2026-06-15T07:00:00Z", "contentDigest": "v1"}, {"logicalId": "b", "instant": "2026-06-16T07:00:00Z", "contentDigest": "v1"}]},
+      "expected": {"firstCivilDate": "2026-06-15", "lastCivilDate": "2026-06-17", "schedule": [{"logicalId": "a", "instant": "2026-06-15T07:00:00Z", "transition": "none"}], "keep": ["b"], "cancel": ["a"], "skipped": []}
+    },
+    {
+      "name": "replace-all-replaces-unchanged",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 3, "replaceAll": true, "occurrences": [{"logicalId": "a", "civilDate": "2026-06-15", "civilTime": "09:00", "contentDigest": "v1"}, {"logicalId": "b", "civilDate": "2026-06-16", "civilTime": "09:00", "contentDigest": "v1"}], "current": [{"logicalId": "a", "instant": "2026-06-15T07:00:00Z", "contentDigest": "v1"}, {"logicalId": "b", "instant": "2026-06-16T07:00:00Z", "contentDigest": "v1"}]},
+      "expected": {"firstCivilDate": "2026-06-15", "lastCivilDate": "2026-06-17", "schedule": [{"logicalId": "a", "instant": "2026-06-15T07:00:00Z", "transition": "none"}, {"logicalId": "b", "instant": "2026-06-16T07:00:00Z", "transition": "none"}], "keep": [], "cancel": ["a", "b"], "skipped": []}
+    },
+    {
+      "name": "empty-desired-set-cancels-every-owned-entry",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 3, "occurrences": [], "current": [{"logicalId": "b", "instant": "2026-06-16T07:00:00Z", "contentDigest": "v1"}, {"logicalId": "a", "instant": "2026-06-15T07:00:00Z", "contentDigest": "v1"}]},
+      "expected": {"firstCivilDate": "2026-06-15", "lastCivilDate": "2026-06-17", "schedule": [], "keep": [], "cancel": ["a", "b"], "skipped": []}
+    },
+    {
+      "name": "past-current-entry-is-cancelled",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 3, "occurrences": [{"logicalId": "a", "civilDate": "2026-06-15", "civilTime": "09:00", "contentDigest": "v1"}], "current": [{"logicalId": "fired", "instant": "2026-06-15T05:00:00Z", "contentDigest": "v1"}, {"logicalId": "a", "instant": "2026-06-15T07:00:00Z", "contentDigest": "v1"}]},
+      "expected": {"firstCivilDate": "2026-06-15", "lastCivilDate": "2026-06-17", "schedule": [], "keep": ["a"], "cancel": ["fired"], "skipped": []}
+    },
+    {
+      "name": "horizon-boundaries",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 3, "current": [], "occurrences": [{"logicalId": "at-now", "civilDate": "2026-06-15", "civilTime": "08:00", "contentDigest": "v1"}, {"logicalId": "before-now", "civilDate": "2026-06-15", "civilTime": "07:59:59", "contentDigest": "v1"}, {"logicalId": "after-now", "civilDate": "2026-06-15", "civilTime": "08:00:01", "contentDigest": "v1"}, {"logicalId": "last-second", "civilDate": "2026-06-17", "civilTime": "23:59:59", "contentDigest": "v1"}, {"logicalId": "day-after-horizon", "civilDate": "2026-06-18", "civilTime": "00:00", "contentDigest": "v1"}, {"logicalId": "yesterday", "civilDate": "2026-06-14", "civilTime": "09:00", "contentDigest": "v1"}]},
+      "expected": {"firstCivilDate": "2026-06-15", "lastCivilDate": "2026-06-17", "schedule": [{"logicalId": "after-now", "instant": "2026-06-15T06:00:01Z", "transition": "none"}, {"logicalId": "last-second", "instant": "2026-06-17T21:59:59Z", "transition": "none"}], "keep": [], "cancel": [], "skipped": [{"logicalId": "at-now", "reason": "past"}, {"logicalId": "before-now", "reason": "past"}, {"logicalId": "day-after-horizon", "reason": "outside_horizon"}, {"logicalId": "yesterday", "reason": "outside_horizon"}]}
+    },
+    {
+      "name": "horizon-of-one-day",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 1, "current": [], "occurrences": [{"logicalId": "today", "civilDate": "2026-06-15", "civilTime": "23:00", "contentDigest": "v1"}, {"logicalId": "tomorrow", "civilDate": "2026-06-16", "civilTime": "00:30", "contentDigest": "v1"}]},
+      "expected": {"firstCivilDate": "2026-06-15", "lastCivilDate": "2026-06-15", "schedule": [{"logicalId": "today", "instant": "2026-06-15T21:00:00Z", "transition": "none"}], "keep": [], "cancel": [], "skipped": [{"logicalId": "tomorrow", "reason": "outside_horizon"}]}
+    },
+    {
+      "name": "spring-forward-gap-rejected",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-03-28T12:00:00Z", "horizonDays": 2, "current": [], "occurrences": [{"logicalId": "in-gap", "civilDate": "2026-03-29", "civilTime": "02:30", "contentDigest": "v1"}, {"logicalId": "after-gap", "civilDate": "2026-03-29", "civilTime": "03:30", "contentDigest": "v1"}]},
+      "expected": {"firstCivilDate": "2026-03-28", "lastCivilDate": "2026-03-29", "schedule": [{"logicalId": "after-gap", "instant": "2026-03-29T01:30:00Z", "transition": "none"}], "keep": [], "cancel": [], "skipped": [{"logicalId": "in-gap", "reason": "nonexistent_local_time"}]}
+    },
+    {
+      "name": "spring-forward-gap-shifted-forward",
+      "input": {"timeZone": "Europe/Berlin", "gap": "shiftForward", "fold": "earlier", "now": "2026-03-28T12:00:00Z", "horizonDays": 2, "current": [], "occurrences": [{"logicalId": "in-gap", "civilDate": "2026-03-29", "civilTime": "02:30", "contentDigest": "v1"}, {"logicalId": "after-gap", "civilDate": "2026-03-29", "civilTime": "03:30", "contentDigest": "v1"}]},
+      "expected": {"firstCivilDate": "2026-03-28", "lastCivilDate": "2026-03-29", "schedule": [{"logicalId": "after-gap", "instant": "2026-03-29T01:30:00Z", "transition": "none"}, {"logicalId": "in-gap", "instant": "2026-03-29T01:30:00Z", "transition": "gap"}], "keep": [], "cancel": [], "skipped": []}
+    },
+    {
+      "name": "fall-back-fold-earlier",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-10-24T12:00:00Z", "horizonDays": 2, "current": [], "occurrences": [{"logicalId": "in-fold", "civilDate": "2026-10-25", "civilTime": "02:30", "contentDigest": "v1"}]},
+      "expected": {"firstCivilDate": "2026-10-24", "lastCivilDate": "2026-10-25", "schedule": [{"logicalId": "in-fold", "instant": "2026-10-25T00:30:00Z", "transition": "fold"}], "keep": [], "cancel": [], "skipped": []}
+    },
+    {
+      "name": "fall-back-fold-later",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "later", "now": "2026-10-24T12:00:00Z", "horizonDays": 2, "current": [], "occurrences": [{"logicalId": "in-fold", "civilDate": "2026-10-25", "civilTime": "02:30", "contentDigest": "v1"}]},
+      "expected": {"firstCivilDate": "2026-10-24", "lastCivilDate": "2026-10-25", "schedule": [{"logicalId": "in-fold", "instant": "2026-10-25T01:30:00Z", "transition": "fold"}], "keep": [], "cancel": [], "skipped": []}
+    },
+    {
+      "name": "fold-policy-change-moves-the-entry",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "later", "now": "2026-10-24T12:00:00Z", "horizonDays": 2, "current": [{"logicalId": "in-fold", "instant": "2026-10-25T00:30:00Z", "contentDigest": "v1"}], "occurrences": [{"logicalId": "in-fold", "civilDate": "2026-10-25", "civilTime": "02:30", "contentDigest": "v1"}]},
+      "expected": {"firstCivilDate": "2026-10-24", "lastCivilDate": "2026-10-25", "schedule": [{"logicalId": "in-fold", "instant": "2026-10-25T01:30:00Z", "transition": "fold"}], "keep": [], "cancel": ["in-fold"], "skipped": []}
+    },
+    {
+      "name": "new-york-gap-shifted-forward",
+      "input": {"timeZone": "America/New_York", "gap": "shiftForward", "fold": "later", "now": "2026-03-07T12:00:00Z", "horizonDays": 2, "current": [], "occurrences": [{"logicalId": "gap", "civilDate": "2026-03-08", "civilTime": "02:30", "contentDigest": "v1"}]},
+      "expected": {"firstCivilDate": "2026-03-07", "lastCivilDate": "2026-03-08", "schedule": [{"logicalId": "gap", "instant": "2026-03-08T07:30:00Z", "transition": "gap"}], "keep": [], "cancel": [], "skipped": []}
+    },
+    {
+      "name": "month-boundary",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-01-30T12:00:00Z", "horizonDays": 4, "current": [], "occurrences": [{"logicalId": "jan-31", "civilDate": "2026-01-31", "civilTime": "09:00", "contentDigest": "v1"}, {"logicalId": "feb-01", "civilDate": "2026-02-01", "civilTime": "09:00", "contentDigest": "v1"}, {"logicalId": "feb-02", "civilDate": "2026-02-02", "civilTime": "09:00", "contentDigest": "v1"}, {"logicalId": "feb-03", "civilDate": "2026-02-03", "civilTime": "09:00", "contentDigest": "v1"}]},
+      "expected": {"firstCivilDate": "2026-01-30", "lastCivilDate": "2026-02-02", "schedule": [{"logicalId": "jan-31", "instant": "2026-01-31T08:00:00Z", "transition": "none"}, {"logicalId": "feb-01", "instant": "2026-02-01T08:00:00Z", "transition": "none"}, {"logicalId": "feb-02", "instant": "2026-02-02T08:00:00Z", "transition": "none"}], "keep": [], "cancel": [], "skipped": [{"logicalId": "feb-03", "reason": "outside_horizon"}]}
+    },
+    {
+      "name": "leap-day",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2028-02-28T12:00:00Z", "horizonDays": 3, "current": [], "occurrences": [{"logicalId": "feb-29", "civilDate": "2028-02-29", "civilTime": "09:00", "contentDigest": "v1"}, {"logicalId": "mar-01", "civilDate": "2028-03-01", "civilTime": "09:00", "contentDigest": "v1"}]},
+      "expected": {"firstCivilDate": "2028-02-28", "lastCivilDate": "2028-03-01", "schedule": [{"logicalId": "feb-29", "instant": "2028-02-29T08:00:00Z", "transition": "none"}, {"logicalId": "mar-01", "instant": "2028-03-01T08:00:00Z", "transition": "none"}], "keep": [], "cancel": [], "skipped": []}
+    },
+    {
+      "name": "year-boundary",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-12-30T12:00:00Z", "horizonDays": 3, "current": [], "occurrences": [{"logicalId": "dec-31", "civilDate": "2026-12-31", "civilTime": "09:00", "contentDigest": "v1"}, {"logicalId": "new-year-midnight", "civilDate": "2027-01-01", "civilTime": "00:00", "contentDigest": "v1"}, {"logicalId": "jan-02", "civilDate": "2027-01-02", "civilTime": "09:00", "contentDigest": "v1"}]},
+      "expected": {"firstCivilDate": "2026-12-30", "lastCivilDate": "2027-01-01", "schedule": [{"logicalId": "dec-31", "instant": "2026-12-31T08:00:00Z", "transition": "none"}, {"logicalId": "new-year-midnight", "instant": "2026-12-31T23:00:00Z", "transition": "none"}], "keep": [], "cancel": [], "skipped": [{"logicalId": "jan-02", "reason": "outside_horizon"}]}
+    },
+    {
+      "name": "zone-today-is-already-next-year",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-12-31T23:30:00Z", "horizonDays": 2, "current": [], "occurrences": [{"logicalId": "dec-31", "civilDate": "2026-12-31", "civilTime": "23:45", "contentDigest": "v1"}, {"logicalId": "jan-01", "civilDate": "2027-01-01", "civilTime": "09:00", "contentDigest": "v1"}]},
+      "expected": {"firstCivilDate": "2027-01-01", "lastCivilDate": "2027-01-02", "schedule": [{"logicalId": "jan-01", "instant": "2027-01-01T08:00:00Z", "transition": "none"}], "keep": [], "cancel": [], "skipped": [{"logicalId": "dec-31", "reason": "outside_horizon"}]}
+    },
+    {
+      "name": "travel-to-new-york-moves-every-entry",
+      "input": {"timeZone": "America/New_York", "gap": "reject", "fold": "earlier", "now": "2026-06-15T12:00:00Z", "horizonDays": 3, "current": [{"logicalId": "a", "instant": "2026-06-16T07:00:00Z", "contentDigest": "v1"}, {"logicalId": "b", "instant": "2026-06-17T07:00:00Z", "contentDigest": "v1"}], "occurrences": [{"logicalId": "a", "civilDate": "2026-06-16", "civilTime": "09:00", "contentDigest": "v1"}, {"logicalId": "b", "civilDate": "2026-06-17", "civilTime": "09:00", "contentDigest": "v1"}]},
+      "expected": {"firstCivilDate": "2026-06-15", "lastCivilDate": "2026-06-17", "schedule": [{"logicalId": "a", "instant": "2026-06-16T13:00:00Z", "transition": "none"}, {"logicalId": "b", "instant": "2026-06-17T13:00:00Z", "transition": "none"}], "keep": [], "cancel": ["a", "b"], "skipped": []}
+    },
+    {
+      "name": "travel-within-the-same-offset-keeps-entries",
+      "input": {"timeZone": "Europe/Paris", "gap": "reject", "fold": "earlier", "now": "2026-06-15T12:00:00Z", "horizonDays": 3, "current": [{"logicalId": "a", "instant": "2026-06-16T07:00:00Z", "contentDigest": "v1"}, {"logicalId": "b", "instant": "2026-06-17T07:00:00Z", "contentDigest": "v1"}], "occurrences": [{"logicalId": "a", "civilDate": "2026-06-16", "civilTime": "09:00", "contentDigest": "v1"}, {"logicalId": "b", "civilDate": "2026-06-17", "civilTime": "09:00", "contentDigest": "v1"}]},
+      "expected": {"firstCivilDate": "2026-06-15", "lastCivilDate": "2026-06-17", "schedule": [], "keep": ["a", "b"], "cancel": [], "skipped": []}
+    },
+    {
+      "name": "travel-east-moves-today",
+      "input": {"timeZone": "Pacific/Auckland", "gap": "reject", "fold": "earlier", "now": "2026-06-15T13:00:00Z", "horizonDays": 2, "current": [{"logicalId": "jun-15", "instant": "2026-06-15T15:00:00Z", "contentDigest": "v1"}], "occurrences": [{"logicalId": "jun-15", "civilDate": "2026-06-15", "civilTime": "09:00", "contentDigest": "v1"}, {"logicalId": "jun-16", "civilDate": "2026-06-16", "civilTime": "09:00", "contentDigest": "v1"}]},
+      "expected": {"firstCivilDate": "2026-06-16", "lastCivilDate": "2026-06-17", "schedule": [{"logicalId": "jun-16", "instant": "2026-06-15T21:00:00Z", "transition": "none"}], "keep": [], "cancel": ["jun-15"], "skipped": [{"logicalId": "jun-15", "reason": "outside_horizon"}]}
+    },
+    {
+      "name": "same-instant-orders-by-logical-id",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 3, "current": [], "occurrences": [{"logicalId": "b", "civilDate": "2026-06-15", "civilTime": "09:00", "contentDigest": "v1"}, {"logicalId": "a", "civilDate": "2026-06-15", "civilTime": "09:00", "contentDigest": "v1"}]},
+      "expected": {"firstCivilDate": "2026-06-15", "lastCivilDate": "2026-06-17", "schedule": [{"logicalId": "a", "instant": "2026-06-15T07:00:00Z", "transition": "none"}, {"logicalId": "b", "instant": "2026-06-15T07:00:00Z", "transition": "none"}], "keep": [], "cancel": [], "skipped": []}
+    },
+    {
+      "name": "duplicate-desired-logical-id",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 3, "current": [], "occurrences": [{"logicalId": "a", "civilDate": "2026-06-15", "civilTime": "09:00", "contentDigest": "v1"}, {"logicalId": "a", "civilDate": "2026-06-16", "civilTime": "09:00", "contentDigest": "v1"}]},
+      "expected": {"error": {"code": "duplicate_logical_id", "logicalId": "a"}}
+    },
+    {
+      "name": "duplicate-current-logical-id",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 3, "occurrences": [], "current": [{"logicalId": "a", "instant": "2026-06-15T07:00:00Z", "contentDigest": "v1"}, {"logicalId": "a", "instant": "2026-06-16T07:00:00Z", "contentDigest": "v1"}]},
+      "expected": {"error": {"code": "duplicate_logical_id", "logicalId": "a"}}
+    },
+    {
+      "name": "invalid-time-zone-unknown",
+      "input": {"timeZone": "Mars/Olympus_Mons", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 3, "current": [], "occurrences": []},
+      "expected": {"error": {"code": "invalid_time_zone"}}
+    },
+    {
+      "name": "invalid-time-zone-offset-string",
+      "input": {"timeZone": "+01:00", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 3, "current": [], "occurrences": []},
+      "expected": {"error": {"code": "invalid_time_zone"}}
+    },
+    {
+      "name": "invalid-time-zone-empty",
+      "input": {"timeZone": "", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 3, "current": [], "occurrences": []},
+      "expected": {"error": {"code": "invalid_time_zone"}}
+    },
+    {
+      "name": "invalid-civil-date",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 3, "current": [], "occurrences": [{"logicalId": "a", "civilDate": "2026-02-29", "civilTime": "09:00", "contentDigest": "v1"}]},
+      "expected": {"error": {"code": "invalid_civil_date", "logicalId": "a"}}
+    },
+    {
+      "name": "invalid-civil-date-outside-horizon",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 3, "current": [], "occurrences": [{"logicalId": "a", "civilDate": "2027-02-30", "civilTime": "09:00", "contentDigest": "v1"}]},
+      "expected": {"error": {"code": "invalid_civil_date", "logicalId": "a"}}
+    },
+    {
+      "name": "invalid-civil-time",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 3, "current": [], "occurrences": [{"logicalId": "a", "civilDate": "2026-06-15", "civilTime": "24:00", "contentDigest": "v1"}]},
+      "expected": {"error": {"code": "invalid_civil_time", "logicalId": "a"}}
+    },
+    {
+      "name": "invalid-horizon-zero",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 0, "current": [], "occurrences": []},
+      "expected": {"error": {"code": "invalid_horizon"}}
+    },
+    {
+      "name": "invalid-horizon-fraction",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 1.5, "current": [], "occurrences": []},
+      "expected": {"error": {"code": "invalid_horizon"}}
+    },
+    {
+      "name": "invalid-clock",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "not-a-date", "horizonDays": 3, "current": [], "occurrences": []},
+      "expected": {"error": {"code": "invalid_clock"}}
+    },
+    {
+      "name": "invalid-logical-id-empty",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 3, "current": [], "occurrences": [{"logicalId": "", "civilDate": "2026-06-15", "civilTime": "09:00", "contentDigest": "v1"}]},
+      "expected": {"error": {"code": "invalid_logical_id"}}
+    },
+    {
+      "name": "invalid-logical-id-with-space",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 3, "current": [], "occurrences": [{"logicalId": "a b", "civilDate": "2026-06-15", "civilTime": "09:00", "contentDigest": "v1"}]},
+      "expected": {"error": {"code": "invalid_logical_id"}}
+    },
+    {
+      "name": "invalid-logical-id-too-long",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 3, "current": [], "occurrences": [{"logicalId": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "civilDate": "2026-06-15", "civilTime": "09:00", "contentDigest": "v1"}]},
+      "expected": {"error": {"code": "invalid_logical_id"}}
+    },
+    {
+      "name": "invalid-content-digest-empty",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 3, "current": [], "occurrences": [{"logicalId": "a", "civilDate": "2026-06-15", "civilTime": "09:00", "contentDigest": ""}]},
+      "expected": {"error": {"code": "invalid_content_digest", "logicalId": "a"}}
+    },
+    {
+      "name": "invalid-current-instant",
+      "input": {"timeZone": "Europe/Berlin", "gap": "reject", "fold": "earlier", "now": "2026-06-15T06:00:00Z", "horizonDays": 3, "occurrences": [], "current": [{"logicalId": "a", "instant": "not-a-date", "contentDigest": "v1"}]},
+      "expected": {"error": {"code": "invalid_instant", "logicalId": "a"}}
+    }
+  ]
+}
