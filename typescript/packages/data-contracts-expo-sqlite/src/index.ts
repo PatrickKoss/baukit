@@ -23,6 +23,17 @@ import {
 
 type SQLiteFileConnection = SQLiteConnection & Pick<SQLiteDatabase, 'databasePath'>;
 
+/**
+ * The part of an Expo `SQLiteDatabase` this adapter calls. `NodeSqliteDatabase` from the
+ * `./testing` entry point implements it for Node unit tests.
+ */
+export interface ExpoSqliteDatabase extends SQLiteFileConnection {
+  closeAsync(): Promise<void>;
+  withExclusiveTransactionAsync(
+    task: (transaction: SQLiteConnection) => Promise<void>,
+  ): Promise<void>;
+}
+
 const alwaysAvailable = (): void => undefined;
 
 function fileScope(database: SQLiteFileConnection, assertAvailable: () => void): StatementScope {
@@ -114,7 +125,7 @@ export class ExpoSqliteStore<T extends StoredRecord> implements TransactionalSto
   private closeResult: Promise<void> | undefined;
 
   public constructor(
-    private readonly database: SQLiteDatabase,
+    private readonly database: ExpoSqliteDatabase,
     private readonly namespace: string,
     private readonly options: ExpoSqliteStoreOptions = {},
   ) {
