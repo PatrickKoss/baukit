@@ -15,6 +15,7 @@ export default tseslint.config(
         project: [
           './packages/*/tsconfig.json',
           './packages/auth-node/tsconfig.test.json',
+          './packages/data-contracts-expo-sqlite/tsconfig.test.json',
           './tsconfig.test.json',
         ],
         tsconfigRootDir: import.meta.dirname,

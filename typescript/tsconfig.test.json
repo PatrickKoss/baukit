@@ -7,5 +7,5 @@
     "sourceMap": false
   },
   "include": ["packages/*/src/**/*.test.ts"],
-  "exclude": ["packages/auth-node/**"]
+  "exclude": ["packages/auth-node/**", "packages/data-contracts-expo-sqlite/**"]
 }
