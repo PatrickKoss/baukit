@@ -6,6 +6,9 @@ All notable changes to `baukit-test` are documented here.
 
 ### Added
 
+- Publish `fixtures/webhooks/signature-v1.json`, signing and verification vectors for the
+  `baukit-webhook-v1` HMAC-SHA256 signature. A test runs them against
+  `webhook_signing_input`, `sign_webhook_hmac_sha256`, and `verify_webhook_hmac_sha256`.
 - Add `PostgresTestOptions` to start the PostgreSQL fixture with another image
   and tag, a login app role without superuser or `BYPASSRLS`, and migrations.
   `start_postgres` and `start_postgres_with_migrations` keep their signatures
