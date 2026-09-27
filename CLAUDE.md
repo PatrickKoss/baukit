@@ -14,14 +14,20 @@ free of product-specific logic.
 ## Layout
 
 ```text
-rust/crates/        baukit-runtime, -config, -http, -ops, -telemetry, -openapi, -test
+rust/crates/        baukit-auth, -config, -core, -credential-vault, -egress, -events,
+                     -http, -integrations, -jobs, -openapi, -ops, -push, -ratelimit,
+                     -runtime, -sync, -telemetry, -test
 typescript/packages/ a11y-core, analytics-core, analytics-posthog-{web,native},
                      api-runtime, auth-{native,node,web},
-                     data-contracts{,-dexie,-expo-sqlite}, localization-core,
-                     notifications-{core,expo}, preferences-core, ui-tokens
+                     data-contracts{,-dexie,-expo-sqlite}, events,
+                     integrations-client, localization-core,
+                     notifications-{core,expo}, preferences-core, pwa-web,
+                     sync-client, ui-tokens
 cli/                `baukit` CLI (scaffolds products from templates/)
 templates/          project templates consumed by the CLI
-deploy/             Helm chart + observability (dashboards, alerts, recording rules)
+deploy/             Helm chart, observability (dashboards, alerts, recording rules),
+                    media-grants (njs edge verifier)
+fixtures/           shared cross-language test vectors
 agent-skills/       installable agent skills (make install-skills TARGET=<dir>)
 examples/           runnable examples
 ```
@@ -37,7 +43,8 @@ Before declaring any task done, run the same checks CI runs, locally.
 
 `make ci` covers most of it (fmt, clippy `-D warnings`, tests, and cargo check
 for `rust/` and `cli/`, plus pnpm build/format/lint/test/check for
-`typescript/`). CI additionally runs these — execute the ones relevant to your
+`typescript/`, the `scripts/` tests, and both media-grant vector suites; the
+njs suite needs Docker). CI additionally runs these — execute the ones relevant to your
 change:
 
 | CI job | Run locally |
