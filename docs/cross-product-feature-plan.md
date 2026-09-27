@@ -23,7 +23,7 @@ Waves group items with disjoint file ownership. Up to four implementation agents
 
 ### Wave 2: naming convention and independent client helpers
 
-- [ ] 5. Move HTTP APIs to camelCase (Baukit, templates, naming check)
+- [~] 5. Move HTTP APIs to camelCase (Baukit, templates, naming check)
 - [x] 11. Resolve zoned local times and publish the calendar recipe
 - [x] 13. Add enabled-item menu navigation
 - [x] 20. Add a safe export encoder and share outcome
