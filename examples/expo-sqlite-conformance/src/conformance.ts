@@ -72,6 +72,15 @@ function syntheticQuotaError(): Error {
   return error;
 }
 
+const TRANSACTION_HOLD_MS = 50;
+const ROOT_WRITES_BEFORE_TRANSACTION = 20;
+
+function hold(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
+
 function identityDigest(value: string): Promise<string> {
   return Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, value);
 }
@@ -459,6 +468,122 @@ export async function runConformance(): Promise<{ readonly passed: number }> {
       },
     },
     {
+      name: "real SQLite root operations called before a transaction finish first",
+      run: async () => {
+        const store = await makeStore();
+        const rootWrites = Array.from(
+          { length: ROOT_WRITES_BEFORE_TRANSACTION },
+          (_, index) =>
+            store.records.put({
+              id: `root-${String(index).padStart(2, "0")}`,
+              label: "root",
+              payload: index,
+            }),
+        );
+        const rootKeyValue = store.keyValues.set("root", "before");
+        const rootSchema = store.schemaMetadata.setSchemaMeta({
+          name: "root",
+          version: 1,
+        });
+        const observed = store.withTransaction(async (transaction) => {
+          const page = await transaction.records.list({
+            limit: ROOT_WRITES_BEFORE_TRANSACTION,
+          });
+          await transaction.keyValues.set("transaction", "after");
+          return {
+            records: page.items.length,
+            keyValue: await transaction.keyValues.get("root"),
+            schema: await transaction.schemaMetadata.getSchemaMeta(),
+          };
+        });
+        await Promise.all([...rootWrites, rootKeyValue, rootSchema]);
+        assertDeep(
+          await observed,
+          {
+            records: ROOT_WRITES_BEFORE_TRANSACTION,
+            keyValue: "before",
+            schema: { name: "root", version: 1 },
+          },
+          "transaction overlapped earlier root operations",
+        );
+      },
+    },
+    {
+      name: "real SQLite root operations called during a transaction wait for its commit",
+      run: async () => {
+        const store = await makeStore();
+        let entered: () => void = () => undefined;
+        const transactionEntered = new Promise<void>((resolve) => {
+          entered = resolve;
+        });
+        const transaction = store.withTransaction(async (context) => {
+          await context.records.put(RECORDS.first);
+          await context.keyValues.set("state", "committed");
+          await context.schemaMetadata.setSchemaMeta({
+            name: "transaction",
+            version: 2,
+          });
+          entered();
+          await hold(TRANSACTION_HOLD_MS);
+        });
+        await transactionEntered;
+        const [record, state, schema] = await Promise.all([
+          store.records.get(RECORDS.first.id),
+          store.keyValues.get("state"),
+          store.schemaMetadata.getSchemaMeta(),
+          store.records.put(RECORDS.second),
+          store.keyValues.set("root", "after"),
+        ]);
+        await transaction;
+        assertDeep(
+          { record, state, schema },
+          {
+            record: RECORDS.first,
+            state: "committed",
+            schema: { name: "transaction", version: 2 },
+          },
+          "root read overlapped an open transaction",
+        );
+        assertDeep(
+          await store.records.get(RECORDS.second.id),
+          RECORDS.second,
+          "root write after the transaction was lost",
+        );
+      },
+    },
+    {
+      name: "real SQLite stores sharing one handle do not overlap",
+      run: async () => {
+        const first = await makeStore();
+        const second = await makeStore();
+        let entered: () => void = () => undefined;
+        const transactionEntered = new Promise<void>((resolve) => {
+          entered = resolve;
+        });
+        const transaction = first.withTransaction(async (context) => {
+          await context.records.put(RECORDS.first);
+          entered();
+          await hold(TRANSACTION_HOLD_MS);
+        });
+        await transactionEntered;
+        await Promise.all([
+          second.records.put(RECORDS.second),
+          second.keyValues.set("neighbor", true),
+        ]);
+        await transaction;
+        assertDeep(
+          await first.records.get(RECORDS.first.id),
+          RECORDS.first,
+          "first namespace lost its transaction write",
+        );
+        assertDeep(
+          await second.records.get(RECORDS.second.id),
+          RECORDS.second,
+          "second namespace lost its root write",
+        );
+      },
+    },
+    {
       name: "real SQLite namespace isolation",
       run: async () => {
         const first = new ExpoSqliteStore<ContractRecord>(
@@ -782,7 +907,14 @@ export async function runConformance(): Promise<{ readonly passed: number }> {
   ];
 
   try {
-    for (const testCase of cases) await testCase.run();
+    for (const testCase of cases) {
+      try {
+        await testCase.run();
+      } catch (cause) {
+        const detail = cause instanceof Error ? cause.message : String(cause);
+        throw new Error(`${testCase.name}: ${detail}`);
+      }
+    }
   } finally {
     await database.closeAsync();
   }
