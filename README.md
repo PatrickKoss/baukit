@@ -140,6 +140,8 @@ Nothing here depends on the CLI, and no crate drags in the rest. Take the error 
 | [`@baukit/pwa-web`](typescript/packages/pwa-web) | Request classification and cache strategies for a service worker you own |
 | [`@baukit/events`](typescript/packages/events) | Zod schemas for the same envelope `baukit-events` speaks |
 
+Every package ships ES modules. Each export lists `import` and a matching `default` condition, so bundlers, Node, and Jest resolve `@baukit/*` without a module map; Jest still needs to transform them. The `./vitest` test subpaths list only `import`, because Vitest itself is ESM-only.
+
 The Rust and TypeScript halves are written against the same contracts, and in the case of the event envelope both test suites read the same `fixtures/events/event-envelope-v1.json`. Drift between the browser and the server shows up as a failing test rather than a bad payload in production.
 
 ## Why it holds up

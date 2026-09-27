@@ -314,26 +314,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # The linter and the metric vocabulary it enforces live in Baukit. A
-      # product supplies its own metric names through the shim described in
-      # docs/observability-lint.md and calls linter.main().
-      - name: Check for a product observability shim
-        id: shim
+      # product lists its own metric names in the allowlist described in
+      # docs/observability-lint.md.
+      - name: Check for a product metric allowlist
+        id: allowlist
         run: |
           set -euo pipefail
-          if [ -f scripts/observability-lint.py ]; then
+          if [ -f deploy/observability/product-metrics.txt ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "No scripts/observability-lint.py; this product declares no dashboards to lint."
+            echo "No deploy/observability/product-metrics.txt; this product declares no dashboards to lint."
             echo "See docs/observability-lint.md to wire one."
           fi
       - name: Fetch the matching Baukit observability contract
-        if: {% raw %}${{ steps.shim.outputs.present == 'true' }}{% endraw %}
+        if: {% raw %}${{ steps.allowlist.outputs.present == 'true' }}{% endraw %}
         run: |
           set -euo pipefail
           git clone --branch v{{ context.template_version }} --depth 1 \
             https://github.com/PatrickKoss/baukit.git .baukit
       - name: Lint dashboards against Baukit and product metric names
-        if: {% raw %}${{ steps.shim.outputs.present == 'true' }}{% endraw %}
-        run: python3 scripts/observability-lint.py .baukit/deploy/observability/lint/check-metric-names.py
+        if: {% raw %}${{ steps.allowlist.outputs.present == 'true' }}{% endraw %}
+        run: |
+          python3 .baukit/deploy/observability/lint/check-metric-names.py \
+            --observability-root deploy/observability \
+            --allowlist deploy/observability/product-metrics.txt
 {% endif %}

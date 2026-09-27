@@ -24,19 +24,23 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./limits": {
       "types": "./dist/limits.d.ts",
-      "import": "./dist/limits.js"
+      "import": "./dist/limits.js",
+      "default": "./dist/limits.js"
     },
     "./import-envelope": {
       "types": "./dist/import-envelope.d.ts",
-      "import": "./dist/import-envelope.js"
+      "import": "./dist/import-envelope.js",
+      "default": "./dist/import-envelope.js"
     },
     "./export": {
       "types": "./dist/export.d.ts",
-      "import": "./dist/export.js"
+      "import": "./dist/export.js",
+      "default": "./dist/export.js"
     },
     "./vitest": {
       "types": "./dist/vitest.d.ts",
@@ -51,7 +55,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepare": "pnpm run build",
-    "test": "vitest run --config ../../vitest.config.ts",
+    "test": "vitest run --config ../../vitest.config.ts && node ../../scripts/test-packed-exports.mjs --esm-only ./vitest",
     "lint": "eslint src --max-warnings=0",
     "format:check": "prettier --check src package.json tsconfig.json"
   },

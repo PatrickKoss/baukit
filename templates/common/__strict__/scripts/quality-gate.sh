@@ -174,13 +174,14 @@ CI=1 corepack pnpm@11.18.0 --dir mobile exec expo prebuild --clean --platform an
 mobile/android/gradlew -p mobile/android --no-daemon --stacktrace assembleDebug
 {% endif %}
 
-if [ -f scripts/observability-lint.py ]; then
+if [ -f deploy/observability/product-metrics.txt ]; then
   contract_checkout=$(mktemp -d)
   trap 'rm -rf "$contract_checkout"' EXIT
   git clone --branch v{{ context.template_version }} --depth 1 \
     https://github.com/PatrickKoss/baukit.git "$contract_checkout"
-  python3 scripts/observability-lint.py \
-    "$contract_checkout/deploy/observability/lint/check-metric-names.py"
+  python3 "$contract_checkout/deploy/observability/lint/check-metric-names.py" \
+    --observability-root deploy/observability \
+    --allowlist deploy/observability/product-metrics.txt
 fi
 
 if [ "$(manifest_value quality.full_stack_e2e)" = "true" ]; then

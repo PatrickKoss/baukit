@@ -130,6 +130,31 @@ keys such as `displayName` and `auth_token` are redacted. Products can add terms
 `blockedKeys`. Email-shaped strings, JWT-shaped strings, and long hex/base64-like strings become
 `"[redacted]"`. Nested arrays and plain objects are traversed without mutating the input.
 
+Short keys need exact matching, because `ip` as a substring would also redact `zip_code` and
+`description`. `DEFAULT_EXACT_BLOCKED_KEYS` redacts `ip`, `ip_address`, `remote_addr`,
+`x_forwarded_for`, and `x_real_ip` only when the normalized key equals one of them. Add product
+keys, such as `q`, through `exactBlockedKeys` on `scrubProperties` or `AnalyticsClient`.
+
+```ts
+scrubProperties(properties, { blockedKeys: ['notes'], exactBlockedKeys: ['q'] });
+```
+
+`scrubErrorEvent` applies the same rules to a crash report, for example in Sentry's `beforeSend`.
+It also redacts the keys in `ERROR_EVENT_BLOCKED_KEYS` (`headers`, `data`, `query_string`, `body`,
+`vars`, `geo`, and `env`) at any depth, which covers request payloads, breadcrumb data, and stack
+frame variables. String values under `ERROR_EVENT_PRESERVED_KEYS` stay intact, so event, trace, and
+span IDs survive the long-hex rule and stack frames keep `filename`, `abs_path`, `function`, and
+`module`. The top-level `sdk` object keeps its keys, so the SDK name stays readable. Other `name`
+keys, including OS and device names, are still redacted.
+
+```ts
+Sentry.init({
+  dsn,
+  sendDefaultPii: false,
+  beforeSend: (event) => scrubErrorEvent(event, { blockedKeys: ['notes'] }),
+});
+```
+
 The scrubber is only a last line of defense. Event properties must remain bounded metadata: never
 health or food values, conversation or prompt content, free text, precise location, credentials,
 or raw identifying URLs.

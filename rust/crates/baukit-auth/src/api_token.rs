@@ -1387,7 +1387,7 @@ mod tests {
         assert_eq!(rejected.status(), StatusCode::UNAUTHORIZED);
         assert_eq!(
             rejected.headers()[header::WWW_AUTHENTICATE],
-            "Bearer error=\"invalid_token\", hint=\"invalid\""
+            "Bearer error=\"invalid_token\", error_description=\"invalid\""
         );
     }
 

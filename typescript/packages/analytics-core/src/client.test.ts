@@ -210,6 +210,22 @@ describe('AnalyticsClient capture pipeline', () => {
     );
   });
 
+  it('passes exact blocked keys to the scrubber', async () => {
+    const transport = new InMemoryTransport<ProductEvent>();
+    const client = createClient({ transport, exactBlockedKeys: ['contact'] });
+    client.setConsent('granted');
+
+    client.capture({
+      name: 'onboarding_started',
+      properties: { source: 'invite', contact: 'front desk' },
+    });
+    await client.flush();
+
+    expect(transport.envelopes[0]).toMatchObject({
+      event: { properties: { source: 'invite', contact: '[redacted]' } },
+    });
+  });
+
   it('drops the oldest waiting command when the bounded queue overflows', async () => {
     const transport = new InMemoryTransport<ProductEvent>();
     const client = createClient({ transport, maxQueueSize: 2, flushBatchSize: 10 });

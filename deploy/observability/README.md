@@ -64,6 +64,21 @@ python3 deploy/observability/lint/check-metric-names.py
 
 The standard-library-only linter reads dashboard expressions and Prometheus rule files. It rejects metric names outside telemetry spec section 2 (apart from Prometheus's `up` and locally defined recording rules), the forbidden plural HTTP duration name, Loki selectors using `service_name`, and stored status-class matchers such as `status=~"2xx"`. CI runs the same command; adding a metric requires updating the telemetry specification first and then its single `SPEC_METRICS` list in the linter.
 
+Products run the same file from a Baukit checkout and pass their own layout and metric names:
+
+```sh
+python3 path/to/baukit/deploy/observability/lint/check-metric-names.py \
+  --observability-root deploy/observability \
+  --allowlist deploy/observability/product-metrics.txt \
+  --rules deploy/prometheus/alerts.yml
+```
+
+`--observability-root` names the directory that holds `dashboards/`, `alerts/`, and `recording-rules/`; without it the linter checks Baukit's own pack. `--allowlist` names a text file with one product metric per line. Append `histogram` to a name to also allow its `_bucket`, `_count`, and `_sum` series, and use `#` for comments. Baukit's metric names stay allowed, so the file lists only product names. `--rules` adds a rule file outside the root and can repeat. The linter exits 0 on success, 1 on lint problems, and 2 when the root is missing or the allowlist has an invalid, duplicate, or malformed entry. Its tests run with:
+
+```sh
+python3 -m unittest discover -s deploy/observability/lint -p 'test_*.py'
+```
+
 ## Live verification harness
 
 `verify/verify-observability.sh` checks a running product without embedding its build or startup logic. Its one argument is the product's normalized environment-variable prefix. Settings are then read as `<PREFIX>_VERIFY_*`, allowing the same script to be used unchanged by every product.

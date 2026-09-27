@@ -24,7 +24,8 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     }
   },
   "files": [
@@ -35,7 +36,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepare": "pnpm run build",
-    "test": "vitest run --config ../../vitest.config.ts --exclude 'src/**/*.browser.test.ts'",
+    "test": "vitest run --config ../../vitest.config.ts --exclude 'src/**/*.browser.test.ts' && node ../../scripts/test-packed-exports.mjs",
     "test:browser": "tsc -p tsconfig.browser.json && vitest run --config vitest.browser.config.ts",
     "check": "pnpm run build && pnpm run lint && pnpm run test && pnpm run format:check && pnpm run test:browser",
     "lint": "eslint src --max-warnings=0",

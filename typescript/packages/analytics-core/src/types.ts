@@ -101,6 +101,7 @@ export interface AnalyticsClientOptions<E extends AnalyticsEvent> {
   readonly storageKeyPrefix?: string;
   readonly uuidFactory?: () => string;
   readonly blockedKeys?: readonly string[];
+  readonly exactBlockedKeys?: readonly string[];
   readonly maxQueueSize?: number;
   readonly flushBatchSize?: number;
   readonly flushIntervalMs?: number;

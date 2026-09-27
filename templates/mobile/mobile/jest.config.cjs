@@ -22,16 +22,5 @@ module.exports = {
   coverageThreshold: {
     global: { branches: 70, functions: 70, lines: 70, statements: 70 },
   },
-  moduleNameMapper: {
-    '^@baukit/a11y-core$': '<rootDir>/node_modules/@baukit/a11y-core/dist/index.js',
-    '^@baukit/analytics-core$': '<rootDir>/node_modules/@baukit/analytics-core/dist/index.js',
-    '^@baukit/api-runtime$': '<rootDir>/node_modules/@baukit/api-runtime/dist/index.js',
-    '^@baukit/data-contracts$': '<rootDir>/node_modules/@baukit/data-contracts/dist/index.js',
-    '^@baukit/data-contracts-expo-sqlite$':
-      '<rootDir>/node_modules/@baukit/data-contracts-expo-sqlite/dist/index.js',
-    '^@baukit/localization-core$': '<rootDir>/node_modules/@baukit/localization-core/dist/index.js',
-    '^@baukit/preferences-core$': '<rootDir>/node_modules/@baukit/preferences-core/dist/index.js',
-    '^@baukit/ui-tokens$': '<rootDir>/node_modules/@baukit/ui-tokens/dist/index.js',
-  },
   transformIgnorePatterns: [],
 };

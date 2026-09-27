@@ -180,7 +180,7 @@ adoption or an outbox push.
 
 ## Proving an adapter
 
-Vitest helpers are isolated in a test-only subpath. Vitest is deliberately not a peer dependency, so it is never installed in Jest or production consumers. Install Vitest in an adapter project's development dependencies before importing the subpath, then register the applicable suites:
+Vitest helpers are isolated in a test-only subpath. Vitest is deliberately not a peer dependency, so it is never installed in Jest or production consumers. The subpath has no `default` export condition, so a Jest suite cannot resolve it by accident. Install Vitest in an adapter project's development dependencies before importing the subpath, then register the applicable suites:
 
 ```ts
 import {

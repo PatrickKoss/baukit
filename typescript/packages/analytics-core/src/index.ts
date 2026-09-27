@@ -1,7 +1,11 @@
 export { AnalyticsClient, followsEventNameConvention } from './client.js';
 export {
   DEFAULT_BLOCKED_KEYS,
+  DEFAULT_EXACT_BLOCKED_KEYS,
+  ERROR_EVENT_BLOCKED_KEYS,
+  ERROR_EVENT_PRESERVED_KEYS,
   REDACTED_VALUE,
+  scrubErrorEvent,
   scrubProperties,
   type ScrubberOptions,
 } from './scrubber.js';

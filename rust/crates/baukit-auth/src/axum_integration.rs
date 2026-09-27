@@ -96,21 +96,23 @@ impl IntoResponse for AuthRejection {
                 );
                 response
             }
-            Self::InvalidToken => invalid_token_response("invalid"),
-            Self::ExpiredToken => invalid_token_response("expired"),
+            Self::InvalidToken => invalid_token_response(INVALID_TOKEN_CHALLENGE),
+            Self::ExpiredToken => invalid_token_response(EXPIRED_TOKEN_CHALLENGE),
             Self::PermissionDenied => baukit_http::ApiError::permission_denied().into_response(),
         }
     }
 }
 
-fn invalid_token_response(hint: &'static str) -> Response {
+const EXPIRED_TOKEN_CHALLENGE: &str =
+    "Bearer error=\"invalid_token\", error_description=\"expired\"";
+const INVALID_TOKEN_CHALLENGE: &str =
+    "Bearer error=\"invalid_token\", error_description=\"invalid\"";
+
+fn invalid_token_response(challenge: &'static str) -> Response {
     let mut response = baukit_http::ApiError::unauthenticated().into_response();
     response.headers_mut().insert(
         header::WWW_AUTHENTICATE,
-        header::HeaderValue::from_static(match hint {
-            "expired" => "Bearer error=\"invalid_token\", hint=\"expired\"",
-            _ => "Bearer error=\"invalid_token\", hint=\"invalid\"",
-        }),
+        header::HeaderValue::from_static(challenge),
     );
     response
 }
@@ -256,11 +258,11 @@ mod tests {
         for (token, challenge) in [
             (
                 "expired",
-                "Bearer error=\"invalid_token\", hint=\"expired\"",
+                "Bearer error=\"invalid_token\", error_description=\"expired\"",
             ),
             (
                 "invalid",
-                "Bearer error=\"invalid_token\", hint=\"invalid\"",
+                "Bearer error=\"invalid_token\", error_description=\"invalid\"",
             ),
         ] {
             let response = Router::new()
@@ -315,15 +317,15 @@ mod tests {
         for (authorization, challenge) in [
             (
                 "Basic opaque",
-                "Bearer error=\"invalid_token\", hint=\"invalid\"",
+                "Bearer error=\"invalid_token\", error_description=\"invalid\"",
             ),
             (
                 "Bearer invalid",
-                "Bearer error=\"invalid_token\", hint=\"invalid\"",
+                "Bearer error=\"invalid_token\", error_description=\"invalid\"",
             ),
             (
                 "Bearer expired",
-                "Bearer error=\"invalid_token\", hint=\"expired\"",
+                "Bearer error=\"invalid_token\", error_description=\"expired\"",
             ),
         ] {
             let app = Router::new()

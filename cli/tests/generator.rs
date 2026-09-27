@@ -983,7 +983,7 @@ fn release_emission_uses_registry_versions_and_reproducibility_files() -> anyhow
     assert!(!workflow.contains("dtolnay/rust-toolchain@1."));
     assert!(workflow.contains("playwright install --with-deps"));
     assert!(workflow.contains("--project=webkit-desktop"));
-    assert!(workflow.contains("scripts/observability-lint.py"));
+    assert!(workflow.contains("--allowlist deploy/observability/product-metrics.txt"));
     assert!(workflow.contains("working-directory: web"));
     assert!(workflow.contains("working-directory: mobile"));
     Ok(())

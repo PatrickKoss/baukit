@@ -82,4 +82,4 @@ pnpm lint
 pnpm test
 ```
 
-Native compilation is intentionally outside the lightweight fixture check. CI installs dependencies, runs TypeScript with `--noEmit`, lints, and executes the Jest Expo suite. `jest.config.cjs` maps Baukit's ESM package exports to their built files and transforms them, so the SQLite adapter remains consumable under Jest 29. Use the local QA targets for emulator behavior and the generated native workflow for clean compile evidence.
+Native compilation is intentionally outside the lightweight fixture check. CI installs dependencies, runs TypeScript with `--noEmit`, lints, and executes the Jest Expo suite. Baukit packages publish a `default` export condition next to `import`, so Jest resolves `@baukit/*` without a module map. `jest.config.cjs` sets `transformIgnorePatterns: []` so Jest 29 transforms their ESM build output, including the SQLite adapter. Use the local QA targets for emulator behavior and the generated native workflow for clean compile evidence.

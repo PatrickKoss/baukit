@@ -94,6 +94,17 @@ expired, the middleware returns the existing `unauthenticated` envelope and does
 middleware. The verifier can be an `OidcVerifier`, `MultiIssuerVerifier`, `ApiTokenVerifier`, or any
 product adapter that implements `IdentityVerifier`.
 
+A rejected bearer token gets an RFC 6750 challenge with one of two fixed descriptions, so a client
+can refresh on expiry without reading the body:
+
+```text
+WWW-Authenticate: Bearer error="invalid_token", error_description="expired"
+WWW-Authenticate: Bearer error="invalid_token", error_description="invalid"
+```
+
+Every other verification failure maps to `invalid`. The header never carries claim values, the
+issuer, or the verifier's error text. A request without credentials gets a bare `Bearer` challenge.
+
 ## Only the claims you configured
 
 `OidcVerifier::discover` finds the issuer's JWKS endpoint through standard discovery and validates

@@ -8,82 +8,49 @@ supposed to exist.
 
 The linter lives in Baukit, at
 `deploy/observability/lint/check-metric-names.py`. It knows Baukit's own metric
-vocabulary. It does not know the product's, and it does not know where the
-product keeps its dashboards. A small shim supplies both and calls the linter.
+vocabulary. The product tells it where its dashboards live and which metric
+names it adds, through command-line arguments.
 
-## The shim
+## The allowlist
 
-Write `scripts/observability-lint.py`. The `observability-lint` job in
-`.github/workflows/ci.yml` looks for exactly that path: when the file is absent
-the job reports that this product declares no dashboards and passes; when it is
-present the job clones Baukit at the matching tag and runs the shim against the
-linter it finds there.
+Write `deploy/observability/product-metrics.txt`. The `observability-lint` job
+in `.github/workflows/ci.yml` looks for exactly that path: when the file is
+absent the job reports that this product declares no dashboards and passes; when
+it is present the job clones Baukit at the matching tag and runs the linter
+against `deploy/observability`.
 
-```python
-#!/usr/bin/env python3
-"""Run Baukit's observability linter with this product's metric names."""
-
-from __future__ import annotations
-
-import importlib.util
-import sys
-from pathlib import Path
-
-PRODUCT_METRICS = (
-    "{{ context.app_crate }}_items_created_total",
-    "{{ context.app_crate }}_items_request_duration_seconds",
-)
-
-PRODUCT_HISTOGRAMS = ("{{ context.app_crate }}_items_request_duration_seconds",)
-
-
-def main() -> int:
-    if len(sys.argv) != 2:
-        print(f"usage: {sys.argv[0]} /path/to/check-metric-names.py", file=sys.stderr)
-        return 2
-
-    linter_path = Path(sys.argv[1]).resolve()
-    spec = importlib.util.spec_from_file_location("baukit_observability_lint", linter_path)
-    if spec is None or spec.loader is None:
-        print(f"could not load the Baukit linter from {linter_path}", file=sys.stderr)
-        return 2
-
-    linter = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(linter)
-
-    root = Path(__file__).resolve().parents[1]
-    linter.ROOT = root
-    linter.OBSERVABILITY = root / "deploy" / "observability"
-    linter.SPEC_METRICS += PRODUCT_METRICS
-    for name in PRODUCT_HISTOGRAMS:
-        linter.HISTOGRAM_METRICS.add(name)
-    return linter.main()
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+```text
+# One product metric per line. Baukit's own metric names are always allowed.
+{{ context.app_crate }}_items_created_total
+# "histogram" also allows the _bucket, _count, and _sum series.
+{{ context.app_crate }}_items_request_duration_seconds histogram
 ```
 
-## The contract
+Keep dashboards in `deploy/observability/dashboards/*.json` and Prometheus rules
+in `deploy/observability/alerts/*.yml` or
+`deploy/observability/recording-rules/*.yml`. An empty allowlist is valid for a
+product that only charts Baukit metrics.
 
-Four module globals and one function. These are what the shim is allowed to
-touch, and what Baukit keeps stable across releases:
+## The arguments
 
-| Name | Type | Meaning |
-|---|---|---|
-| `linter.ROOT` | `Path` | Repository root the linter resolves paths against. |
-| `linter.OBSERVABILITY` | `Path` | Directory holding dashboards, alerts, and recording rules. |
-| `linter.SPEC_METRICS` | `tuple[str, ...]` | Every metric name that may be referenced. Extend with `+=`. |
-| `linter.HISTOGRAM_METRICS` | `set[str]` | Names whose `_bucket`, `_sum`, and `_count` suffixes are also valid. Extend with `.add`. |
-| `linter.main()` | `() -> int` | Runs the check and returns a process exit code. |
+| Argument | Meaning |
+|---|---|
+| `--observability-root DIR` | Directory holding `dashboards/`, `alerts/`, and `recording-rules/`. |
+| `--allowlist FILE` | Product metric names, one per line, with an optional `histogram` marker and `#` comments. |
+| `--rules FILE` | Extra rule file outside the root. Repeat for each file. |
 
-Extend the collections; never replace them. Assigning over `SPEC_METRICS` drops
-Baukit's own names and turns every platform metric into a lint failure.
+The linter exits 0 on success, 1 when an expression references an unknown
+metric or breaks a naming rule, and 2 when the root is missing or the allowlist
+has an invalid, duplicate, or malformed entry. A product with another layout
+changes the arguments in the CI job and in `scripts/quality-gate.sh` when it
+has one.
 
 Run it locally the same way CI does:
 
 ```sh
 git clone --branch v{{ context.template_version }} --depth 1 \
   https://github.com/PatrickKoss/baukit.git /tmp/baukit
-python3 scripts/observability-lint.py /tmp/baukit/deploy/observability/lint/check-metric-names.py
+python3 /tmp/baukit/deploy/observability/lint/check-metric-names.py \
+  --observability-root deploy/observability \
+  --allowlist deploy/observability/product-metrics.txt
 ```

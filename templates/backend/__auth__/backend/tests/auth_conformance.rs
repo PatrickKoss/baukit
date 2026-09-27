@@ -138,7 +138,7 @@ async fn protected_route_conforms_and_maps_subject_to_internal_user() -> Result<
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(
         response.headers()[header::WWW_AUTHENTICATE],
-        "Bearer error=\"invalid_token\", hint=\"expired\""
+        "Bearer error=\"invalid_token\", error_description=\"expired\""
     );
 
     issuer.set_refresh_delay(Duration::from_millis(20));

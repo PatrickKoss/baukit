@@ -149,9 +149,9 @@ async fn check_response(
         .get(header::WWW_AUTHENTICATE)
         .and_then(|value| value.to_str().ok())
         != Some(if case == "expired" {
-            "Bearer error=\"invalid_token\", hint=\"expired\""
+            "Bearer error=\"invalid_token\", error_description=\"expired\""
         } else {
-            "Bearer error=\"invalid_token\", hint=\"invalid\""
+            "Bearer error=\"invalid_token\", error_description=\"invalid\""
         })
     {
         violations.push(format!(

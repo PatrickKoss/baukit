@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 
@@ -31,6 +33,9 @@ SPEC_METRICS = (
 )
 
 PROMETHEUS_BUILTINS = {"up"}
+HISTOGRAM_SUFFIXES = ("_bucket", "_count", "_sum")
+HISTOGRAM_MARKER = "histogram"
+METRIC_NAME = re.compile(r"^[A-Za-z_:][A-Za-z0-9_:]*$")
 HISTOGRAM_METRICS = {
     "http_request_duration_seconds",
     "db_pool_acquire_duration_seconds",
@@ -81,8 +86,17 @@ def dashboard_expressions(path: Path) -> list[tuple[str, str]]:
             for index, child in enumerate(value):
                 visit(child, f"{location}[{index}]")
 
-    visit(document, str(path.relative_to(ROOT)))
+    visit(document, display_path(path))
     return expressions
+
+
+def display_path(path: Path) -> str:
+    """Show a path relative to Baukit or the working directory when possible."""
+    resolved = path.resolve()
+    for base in (ROOT, Path.cwd().resolve()):
+        if resolved.is_relative_to(base):
+            return str(resolved.relative_to(base))
+    return str(resolved)
 
 
 def lint_expression(
@@ -160,34 +174,104 @@ def rule_expressions(content: str) -> list[tuple[int, str]]:
     return expressions
 
 
-def main() -> int:
-    problems: list[str] = []
-    rule_paths = sorted(
-        list((OBSERVABILITY / "recording-rules").glob("*.yml"))
-        + list((OBSERVABILITY / "recording-rules").glob("*.yaml"))
-        + list((OBSERVABILITY / "alerts").glob("*.yml"))
-        + list((OBSERVABILITY / "alerts").glob("*.yaml"))
+class ConfigurationError(Exception):
+    """Invalid command-line input that prevents linting."""
+
+
+def parse_arguments(argv: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Lint dashboards, alerts, and recording rules against metric names."
     )
-    rule_documents: list[tuple[Path, str]] = []
-    local_recordings: set[str] = set()
-    for path in rule_paths:
+    parser.add_argument(
+        "--observability-root",
+        type=Path,
+        default=OBSERVABILITY,
+        metavar="DIR",
+        help="directory holding dashboards/, alerts/, and recording-rules/ "
+        "(default: Baukit's deploy/observability)",
+    )
+    parser.add_argument(
+        "--allowlist",
+        type=Path,
+        metavar="FILE",
+        help="product metric names, one per line; append 'histogram' to also allow "
+        "the _bucket, _count, and _sum series; # starts a comment",
+    )
+    parser.add_argument(
+        "--rules",
+        type=Path,
+        action="append",
+        default=[],
+        metavar="FILE",
+        help="extra Prometheus rule file outside the observability root; repeatable",
+    )
+    return parser.parse_args(list(argv))
+
+
+def read_allowlist(path: Path) -> tuple[set[str], set[str]]:
+    """Return product metric names and the subset that are histograms."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as error:
+        raise ConfigurationError(f"{path}: cannot read allowlist: {error}") from error
+
+    names: set[str] = set()
+    histograms: set[str] = set()
+    for line_number, line in enumerate(lines, start=1):
+        fields = line.split("#", 1)[0].split()
+        if not fields:
+            continue
+        location = f"{display_path(path)}:{line_number}"
+        name, kind = fields[0], fields[1:]
+        if METRIC_NAME.fullmatch(name) is None:
+            raise ConfigurationError(f"{location}: invalid metric name {name!r}")
+        if kind not in ([], [HISTOGRAM_MARKER]):
+            raise ConfigurationError(
+                f"{location}: expected a metric name and optional {HISTOGRAM_MARKER!r}"
+            )
+        if name in names:
+            raise ConfigurationError(f"{location}: duplicate metric name {name!r}")
+        names.add(name)
+        if kind:
+            histograms.add(name)
+    return names, histograms
+
+
+def rule_paths(observability: Path, extra_rules: Sequence[Path]) -> list[Path]:
+    paths = [
+        path
+        for directory in ("recording-rules", "alerts")
+        for pattern in ("*.yml", "*.yaml")
+        for path in (observability / directory).glob(pattern)
+    ]
+    return sorted(paths + list(extra_rules))
+
+
+def read_rule_documents(
+    paths: Sequence[Path], problems: list[str]
+) -> list[tuple[Path, str]]:
+    documents: list[tuple[Path, str]] = []
+    for path in paths:
         try:
-            content = path.read_text(encoding="utf-8")
+            documents.append((path, path.read_text(encoding="utf-8")))
         except OSError as error:
             problems.append(f"{path}: cannot read rule file: {error}")
-            continue
-        rule_documents.append((path, content))
-        local_recordings.update(RECORD_NAME.findall(content))
+    return documents
 
-    exposed_metrics = set(SPEC_METRICS)
-    for histogram in HISTOGRAM_METRICS:
-        exposed_metrics.update(
-            {f"{histogram}_bucket", f"{histogram}_count", f"{histogram}_sum"}
-        )
-    allowed_metrics = exposed_metrics | PROMETHEUS_BUILTINS | local_recordings
 
-    dashboard_paths = sorted((OBSERVABILITY / "dashboards").glob("*.json"))
-    for path in dashboard_paths:
+def allowed_metric_names(
+    product_metrics: set[str], product_histograms: set[str], local_recordings: set[str]
+) -> set[str]:
+    exposed_metrics = set(SPEC_METRICS) | product_metrics
+    for histogram in HISTOGRAM_METRICS | product_histograms:
+        exposed_metrics.update(f"{histogram}{suffix}" for suffix in HISTOGRAM_SUFFIXES)
+    return exposed_metrics | PROMETHEUS_BUILTINS | local_recordings
+
+
+def lint_dashboards(
+    paths: Sequence[Path], allowed_metrics: set[str], problems: list[str]
+) -> None:
+    for path in paths:
         try:
             expressions = dashboard_expressions(path)
         except ValueError as error:
@@ -196,12 +280,48 @@ def main() -> int:
         for location, expression in expressions:
             lint_expression(location, expression, allowed_metrics, problems)
 
-    for path, content in rule_documents:
-        relative_path = str(path.relative_to(ROOT))
+
+def lint_rules(
+    documents: Sequence[tuple[Path, str]], allowed_metrics: set[str], problems: list[str]
+) -> None:
+    for path, content in documents:
+        location = display_path(path)
         for line_number, expression in rule_expressions(content):
             lint_expression(
-                f"{relative_path}:{line_number}", expression, allowed_metrics, problems
+                f"{location}:{line_number}", expression, allowed_metrics, problems
             )
+
+
+def load_product_metrics(allowlist: Path | None) -> tuple[set[str], set[str]]:
+    if allowlist is None:
+        return set(), set()
+    return read_allowlist(allowlist)
+
+
+def main(argv: Sequence[str] = ()) -> int:
+    arguments = parse_arguments(argv)
+    observability = arguments.observability_root
+    try:
+        if not observability.is_dir():
+            raise ConfigurationError(f"{observability}: observability root is not a directory")
+        product_metrics, product_histograms = load_product_metrics(arguments.allowlist)
+    except ConfigurationError as error:
+        print(f"Observability metric-name lint cannot run: {error}", file=sys.stderr)
+        return 2
+
+    problems: list[str] = []
+    paths = rule_paths(observability, arguments.rules)
+    rule_documents = read_rule_documents(paths, problems)
+    local_recordings = {
+        name for _, content in rule_documents for name in RECORD_NAME.findall(content)
+    }
+    allowed_metrics = allowed_metric_names(
+        product_metrics, product_histograms, local_recordings
+    )
+
+    dashboard_paths = sorted((observability / "dashboards").glob("*.json"))
+    lint_dashboards(dashboard_paths, allowed_metrics, problems)
+    lint_rules(rule_documents, allowed_metrics, problems)
 
     if problems:
         print("Observability metric-name lint failed:", file=sys.stderr)
@@ -211,11 +331,11 @@ def main() -> int:
 
     print(
         f"Observability metric-name lint passed: "
-        f"{len(dashboard_paths)} dashboard(s), {len(rule_paths)} rule file(s), "
+        f"{len(dashboard_paths)} dashboard(s), {len(paths)} rule file(s), "
         f"{len(local_recordings)} local recording rule(s)."
     )
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

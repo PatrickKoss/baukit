@@ -37,7 +37,9 @@ Bounded aggregates and enums about these domains are allowed: `meal_logged` with
 ## 5. Scrubber (last line of defense)
 
 - Key blocklist: `email`, `name`, `token`, `password`, `authorization`, `cookie`, `phone`, `address`, plus product-specific additions.
+- Exact-key blocklist: `ip`, `ip_address`, `remote_addr`, `x_forwarded_for`, `x_real_ip`, plus product-specific additions. These keys match only when the whole normalized key is equal, so `zip_code` stays.
 - Value patterns: email addresses, JWT-shaped strings, and long hex/base64 secrets are replaced with `[redacted]`.
+- Crash reports go through `scrubErrorEvent`, which also redacts `headers`, `data`, `query_string`, `body`, `vars`, `geo`, and `env` and keeps event, trace, and span IDs and stack frame locations.
 - The scrubber runs after the typed allowlist and before transport. It is a safety net; the types are the primary control.
 - Scrubber unit tests are mandatory in `analytics-core` and in every product's event package.
 
