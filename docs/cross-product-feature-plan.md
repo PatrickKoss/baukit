@@ -44,7 +44,7 @@ Waves group items with disjoint file ownership. Up to four implementation agents
 
 ### Wave 5: narrower evidence
 
-- [ ] 16. Add a guarded outbound HTTP client, then run the webhook study
+- [~] 16. Add a guarded outbound HTTP client, then run the webhook study
 - [~] 17. Add a push device registry
 - [ ] 18. Add signed media grants
 - [ ] 19. Move copied template code into packages
@@ -111,6 +111,7 @@ Filled in as items complete. Each line names the product code to delete or chang
 - 2026-09-27: Item 17 started (evidence 53).
 - 2026-09-28: Integrated check on `240bd13` (items 1 to 6, 9, 11 to 14, 20): `make ci`, cargo deny, MSRV, metric-name lint, version coherence, all generated fixtures, and `make mcp-fixture-gate` pass. The Rust run with `--include-ignored` failed only on `live_row_cap::compares_live_row_cap_methods_on_postgres`, the third time it flaked: SERIALIZABLE isolation can abort a transaction more than once per race under load, and the test demanded exactly one abort per race. 65c899f makes it require at least one; three reruns pass, and the full Rust workspace with `--all-features --no-fail-fast --include-ignored` passes on `65c899f`, which includes item 10.
 - 2026-09-28: Item 15 merged (f57396c, 620696f; evidence 51). `@baukit/data-contracts-expo-sqlite/testing` ships `NodeSqliteDatabase` on the built-in `node:sqlite` (Expo's binding rules, a second connection for exclusive transactions, so an overlapping root write fails with "database is locked") and `createSqliteMigrationConformanceTests`, five framework-neutral cases: fresh install, upgrade keeps rows, restart re-applies nothing, a failed step rolls back fully, and a database from a newer build is refused unchanged. The package root gains the `ExpoSqliteDatabase` interface, which `ExpoSqliteStore` now accepts, a type-only widening. Decision gate met: Hebkit and Redemut share version semantics, so one API fits without switches. Copied runners in a scratch directory pass cases 1 to 4 and fail the newer-build case; without transactions they also fail rollback; a Tiefgang-shaped runner fails both. Item 15's step 4 answer: Hebkit's and Redemut's private drivers should not move onto `ExpoSqliteStore`, a JSON record store; they need a queued raw-SQL connection, deferred because it changes adapter runtime code and needs the device gate. Product defects: Hebkit and Redemut accept databases from newer builds; Redemut's foreign keys are off inside exclusive transactions; Hebkit's `withTransactionAsync` lets unrelated root statements join its transactions; Tiefgang's `migrate` lowered `user_version` from 99 to 11 without error and left `user_settings` half rebuilt after a failure. Whole-workspace TypeScript gates pass after the merge. Lockfile note: a plain `pnpm install` would re-point `expo-constants` and `@expo/env` to newer versions already in the lockfile; the frozen install is consistent.
+- 2026-09-28: Item 16 started (evidence 52).
 
 ## What changed in this revision
 
