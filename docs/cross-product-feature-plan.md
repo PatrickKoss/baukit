@@ -25,14 +25,14 @@ Waves group items with disjoint file ownership. Up to four implementation agents
 
 - [ ] 5. Move HTTP APIs to camelCase (Baukit, templates, naming check)
 - [~] 11. Resolve zoned local times and publish the calendar recipe
-- [~] 13. Add enabled-item menu navigation
+- [x] 13. Add enabled-item menu navigation
 - [~] 20. Add a safe export encoder and share outcome
 
 ### Wave 3: server contracts
 
 - [ ] 6. Add strong-ETag revision preconditions
 - [ ] 8. Add OpenAPI error responses and a compatibility check
-- [ ] 9. Add server-side tombstone purge horizons
+- [~] 9. Add server-side tombstone purge horizons
 - [ ] 10. Add a PostgreSQL API token store with grants
 
 ### Wave 4: contracts that build on earlier waves
@@ -59,6 +59,7 @@ Waves group items with disjoint file ownership. Up to four implementation agents
 Filled in as items complete. Each line names the product code to delete or change once the product pins a released Baukit version.
 
 - Item 1, Eigenruhe: after its native regression passes on the release, delete `mobile/src/db/serialized-store.ts` and `serialized-store.test.ts`, return the `ExpoSqliteStore` directly in `mobile/src/local-data.ts`, and remove or rewrite the wrapper case "finishes an accepted settings mutation before a serialized store closes" in `mobile/src/db/contract-tests/persistence.test.ts`. Close `docs/tickets/baukit-sqlite-operation-serialization.md`. Keep `SerializedRecordStoreResource` in `mobile/src/record-store.ts`. Leitbild and Redemut: version bump only; no product code calls the removed per-store `initialize()`.
+- Item 13, Eigenruhe and Tiefgang: in `mobile/src/components/context-menu.tsx` delete the enabled-index state, item refs, `activeItemIndex` handling in `closeMenu`, and `moveItemFocus`; use `useRovingMenu`, pass `menu.initialFocusRef` to `useOverlayA11y`, and spread `itemProps(index)` on each item. Tiefgang keeps its `deferFocus`. Hebkit: same removal after checking `context-menu.test.tsx`. Redemut: use `useRovingMenu` from `@baukit/a11y-core/web` or `nextEnabledMenuIndex` in `packages/ui/src/context-menu.tsx`, keeping outside-pointer dismissal. Solo Leveling System: delete the hand-rolled trap and restoration in `mobile/src/components/context-menu.tsx`, adopt `useOverlayA11y` plus `useRovingMenu`, and move `confirmation-dialog.tsx` onto `useOverlayA11y`.
 - Item 2, every product: move `baukit_http::pagination` imports to `baukit_core::pagination` (enable the `pagination` feature), move rate limiters and principal establishment inside `finalize` so 401 and 429 carry CORS headers, and pass product-only exposed headers through `with_additional_exposed_headers`. Handlers that serve public content (OpenAPI documents, manifests, health) set their own `Cache-Control`.
 - Item 2, Eigenruhe: remove the expose-header overwrite and `/api/v1` no-store in `api_response_contract` and `animation_descriptor_cache_control` (`eigenruhe-api/src/lib.rs`).
 - Item 2, Hebkit: delete the second `CorsLayer` in `hebkit-api/src/adapters/http/mod.rs` and `http_policy::private_api_cache`; expose `deprecation` and `sunset`.
@@ -80,6 +81,7 @@ Filled in as items complete. Each line names the product code to delete or chang
 - 2026-09-27: Item 2 merged (9bba14a, d0a0834; evidence renumbered to 38). Breaks: rate-limit headers join the default exposed set; `Cache-Control: private, no-store` is the default (`ResponseCachePolicy::HandlerOwned` opts out); pagination types moved to `baukit_core::pagination` behind a `pagination` feature; `MAX_CURSOR_BYTES = 4096` bounds decode and encode. The backend template now runs rate limiting and principal establishment inside `finalize`, because 401 and 429 had no CORS headers before. Defects for the product list: Schlauzug has the same outside-`finalize` ordering, Solo Leveling System merges its MCP router after `finalize`, and Hebkit and Redemut stack a second `CorsLayer` that may emit duplicate `Access-Control-Allow-Origin`. Open: `cargo deny` fails on RUSTSEC-2026-0285 (rustls 0.23.43), pre-existing; fix in the wave 1 verification pass. `worker.tree` auto-merged between items 2 and 3; re-bless in the same pass.
 - 2026-09-27: Item 1 merged (14fee99, c795f17, 1587397; evidence renumbered to 37). One queue per database file, keyed by `databasePath`, covers root operations, `initialize`, `withTransaction`, and `close`; a per-handle queue would miss collisions because Expo shares native connections by path. The new Android conformance case fails on 0.4.0 with "database is locked" and passes now (26 cases, API 36 emulator). Breaks: root store constructors lose the `assertAvailable` argument and require `databasePath`; a transaction accepted before `close` now runs; a root call made inside a `withTransaction` callback on the same file now waits forever instead of failing with a lock error. That last one cannot be detected without async context and is documented in the package README. The gate script now installs with `CI=1` so it reruns without a TTY. iOS stays with the native release gate.
 - 2026-09-27: Items 11, 13, and 20 started early, in parallel with item 4, because they share no files with it. Item 5 waits for item 4, since both touch templates.
+- 2026-09-27: Item 13 merged (868b67e, 22f97ec; evidence 49). `nextEnabledMenuIndex` and `useRovingMenu` ship from `@baukit/a11y-core` and its `/web` entry; `OverlayA11yOptions.initialFocusRef` widens to `HostRef`. Two recorded deviations from study 31: `initialFocusRef` is one stable ref (swapping refs while open made the focus trap forget the trigger), and a new option array does not reset the active index, because products rebuild it every render. `make ts-browser-test` covers only Dexie, so no real-browser menu test exists yet. Product defects found: Eigenruhe, Hebkit, and Tiefgang swap `initialFocusRef` while open and keep a stale tab stop after items change while closed; those three and Redemut skip the first enabled item when focus is off an enabled item; Solo Leveling System has no arrow keys and no `useOverlayA11y`, so its background is neither inert nor hidden.
 
 ## What changed in this revision
 
