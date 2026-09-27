@@ -1,0 +1,596 @@
+# Cross-product feature plan
+
+**Status:** Baukit implementation in progress since 2026-09-27, tracked in the [execution tracker](#execution-tracker). Product adoption is deferred to a later pass against a released Baukit version.
+
+**Survey date:** 2026-09-27, revised the same day after a second, deeper pass. Baukit baseline: `962ac00` (`v0.4.0` preparation). The eight product checkouts were inspected at Eigenruhe `e44ff88`, Hebkit `841bf5d`, Leitbild `bd38b33`, Redemut `a782538`, Runtime Analyzer `d47bfd5`, Schlauzug `fb280df`, Solo Leveling System `3461eaf`, and Tiefgang `2d37a06`. Eigenruhe's uncommitted work touches only audio playback, a confirmation dialog, and animation files, so none of the evidence below depends on it. Schlauzug has 144 dirty paths, including its idempotency, OAuth access, MCP, and OpenAPI compatibility work. Findings that rely on those files are marked provisional and need a second review after they are committed.
+
+Product source paths below are relative to `/home/patrick/projects/<project>/`. Baukit paths are relative to this repository. Line numbers were read at the revisions above; each evidence note must re-read them before implementation starts.
+
+The completed [0.3.0 improvement plan](next-improvements-plan.md) delivered JSON rejection classes, authenticated rate limits, sync race checks, a browser sync environment, serialized preferences, hybrid logical clocks, the PWA worker, Node device authorization, MCP generation, credential probes, import conformance, and several operations recipes. Its studies accepted some further work but did not build it. This plan records those accepted items alongside gaps found in the newer projects.
+
+## Execution tracker
+
+Legend: `[ ]` not started, `[~]` in progress, `[x]` done in Baukit, `[-]` decided not to implement (see log). Scope decided on 2026-09-27: every item lands in Baukit first (code, tests, evidence note, changelog or changeset, template and fixture updates). Product adoption, product deletions, and product defect fixes are recorded under [product adoption follow-ups](#product-adoption-follow-ups) and happen in a later pass. Each item is committed locally on `main` after its gates pass; nothing is pushed or tagged without an explicit ask.
+
+Waves group items with disjoint file ownership. Up to four implementation agents run per wave, each in its own git worktree. Each wave ends with a merge, a snapshot re-bless when templates changed, and a CI-equivalent verification run on `main`. Evidence notes for item N live at `docs/evidence/<26+N>-<slug>.md`.
+
+### Wave 1: corrections to code products already use
+
+- [ ] 1. Serialize Expo SQLite root operations with exclusive transactions
+- [ ] 2. Close HTTP boundary gaps: exposed headers, cache policy, cursors
+- [ ] 3. Claim only jobs the worker can handle
+- [ ] 4. Remove consumer friction in tooling and test support
+
+### Wave 2: naming convention and independent client helpers
+
+- [ ] 5. Move HTTP APIs to camelCase (Baukit, templates, naming check)
+- [ ] 11. Resolve zoned local times and publish the calendar recipe
+- [ ] 13. Add enabled-item menu navigation
+- [ ] 20. Add a safe export encoder and share outcome
+
+### Wave 3: server contracts
+
+- [ ] 6. Add strong-ETag revision preconditions
+- [ ] 8. Add OpenAPI error responses and a compatibility check
+- [ ] 9. Add server-side tombstone purge horizons
+- [ ] 10. Add a PostgreSQL API token store with grants
+
+### Wave 4: contracts that build on earlier waves
+
+- [ ] 7. Define replay-safe HTTP mutations (after 6)
+- [ ] 12. Add local notification planning and owned Expo replacement (after 11)
+- [ ] 14. Add revisioned writes and durable drafts
+- [ ] 15. Check SQLite migration behavior and ship a Node test driver (after 1)
+
+### Wave 5: narrower evidence
+
+- [ ] 16. Add a guarded outbound HTTP client, then run the webhook study
+- [ ] 17. Add a push device registry
+- [ ] 18. Add signed media grants
+- [ ] 19. Move copied template code into packages
+
+### Final verification
+
+- [ ] Full CI mirror on `main`: `make ci`, Rust tests with `--include-ignored`, generated fixture in every flavor, `make mcp-fixture-gate`, `make expo-sqlite-conformance`, `make native-android-gate`, cargo deny, MSRV check, metric-name lint, version coherence.
+- [ ] Release preparation waits for an explicit ask.
+
+### Product adoption follow-ups
+
+Filled in as items complete. Each line names the product code to delete or change once the product pins a released Baukit version.
+
+### Log
+
+- 2026-09-27: Tracker added. Scope is Baukit only; product adoption deferred. Waves fixed as above.
+
+## What changed in this revision
+
+The first draft covered seven items. The second pass read every product backend, mobile app, web app, MCP server, and script directory, and it changed the plan in five ways.
+
+1. **Baukit correctness gaps come first.** Every product overrides the CORS exposed headers because `baukit-http` hardcodes three of them, so browsers cannot read the `Retry-After` and `RateLimit-*` headers that `baukit-ratelimit` itself emits. `PostgresJobStore::claim` ignores the handler's job types. `Cursor::decode` has no input size bound. Items 2 to 4 fix these and the smaller consumer friction points before any new package.
+2. **Four new server contracts have enough adopters.** Strong-ETag revision preconditions appear in all eight products (item 6). A standard OpenAPI error-response decorator appears in eight (item 8). The server half of tombstone purge horizons is duplicated in three (item 9). A PostgreSQL API token store with scopes is duplicated in five (item 10).
+3. **Existing items had stale or incomplete evidence.** Replay-safe mutations have eight implementations, not four. Eigenruhe no longer has a raw-driver migration runner. Hebkit's `ExpoSQLiteAdapter` is its own driver, not Baukit's. Redemut's broad notification cancellation lives in `notification-adapter.ts`, not `reminders.ts`. Leitbild has a second durable-draft implementation. Details are in the affected items.
+4. **Two records became work items.** OpenAPI compatibility checks now have five committed checkers, so the two-adopter gate is met (item 8). The accepted calendar-export recipe from study 33 was never published and was missing from the first draft; it is now paired with the zoned-time conversion that the notification item needs (item 11).
+5. **The survey found product defects.** Some of them are security-relevant, such as an unguarded outbound client in Solo Leveling System and CSV formula injection in four products. They are listed in their own section so they are fixed in the products now instead of waiting for Baukit packages.
+6. **HTTP APIs move to camelCase.** This is a product decision made after the survey, not a survey finding. Every product spec uses snake_case today, and Baukit's own error envelope and page type are part of the reason. The [API naming convention](#api-naming-convention) section states the rule and item 5 plans the migration. All later items use camelCase for new wire fields.
+7. **No compatibility machinery.** No product is live, so the plan breaks contracts directly instead of adding transition windows, legacy options, or dual-read fallbacks. The [compatibility stance](#compatibility-stance) section states the rule.
+
+## Selection rule
+
+Put behavior in Baukit when a product-neutral contract can replace duplicate mechanics or when an existing Baukit adapter has a correctness gap. Keep entities, schema details, UI copy, providers, quotas, route names, and business decisions in products. A single product can justify a correction to a Baukit adapter it already uses. A new package needs two plausible adopters or a narrow conformance contract that can be tested against two independent implementations. Source files are evidence, not templates to copy wholesale.
+
+Implementation should happen in separate changes with a documented public contract, a changelog entry that names each break, package tests, a product adoption path, and the repository gates listed below. A proposal remains a study if the surveyed implementations disagree on the behavior that Baukit would have to promise.
+
+## Compatibility stance
+
+No product is live. There are no store-released mobile builds, no outside integrations, and no production data to protect. Baukit and the products may therefore break public APIs, wire formats, event contracts, and storage schemas directly.
+
+- A breaking change lands without a transition window, legacy option, dual-read fallback, or deprecation period.
+- Baukit changes land with every affected product updated in the same work item. Stale local and development data is reset rather than migrated.
+- The changelog still names every break and the product-side fix, because products upgrade Baukit on their own schedule.
+
+Revisit this stance before the first product goes live. From that point, breaking changes need the compatibility work this plan leaves out.
+
+## API naming convention
+
+Every HTTP API that Baukit generates, documents, or ships a client for uses camelCase names in its OpenAPI document. The same rule applies to the `baukit-events` envelope. The rule covers:
+
+- JSON property names in request and response bodies, including nested objects and error `details` keys that name a request field;
+- query and path parameter names;
+- multipart form field names;
+- event envelope and ingest outcome fields.
+
+The rule does not cover these, each for a stated reason:
+
+- HTTP header names, which follow HTTP conventions.
+- Enum string values, error `code` values, and event type names. Clients compare them as stable identifiers, and they are values rather than field names. They keep their current snake_case form.
+- Map keys that carry data, such as IDs in an `additionalProperties` object.
+- Fields defined by an external standard, such as `access_token`, `token_type`, and `expires_in` in OAuth 2.0 token responses, OIDC claims, and OAuth protected-resource metadata. Solo Leveling System's schema already contains `access_token`, so the check needs an exemption list from the start.
+- `baukit-ops` health, readiness, and build-info responses, which are operational endpoints rather than product API.
+
+In Rust, set `#[serde(rename_all = "camelCase")]` on HTTP request and response types and on query parameter structs in the API adapter crate. Do not rename domain or persistence types to fit the wire. `utoipa` reads the serde attributes, so the generated schema follows without separate annotations. In TypeScript, generated types and hand-written clients use the wire names directly rather than mapping them.
+
+No product follows the convention today. The counts below are distinct property names containing an underscore, out of all property names, plus snake_case query and path parameters, measured on each product's committed OpenAPI document at the survey revisions:
+
+| Product              | snake_case properties | camelCase properties | snake_case parameters |
+| -------------------- | --------------------- | -------------------- | --------------------- |
+| Eigenruhe            | 183 of 292            | 0                    | 5                     |
+| Hebkit               | 279 of 393            | 0                    | 16                    |
+| Leitbild             | 40 of 96              | 0                    | 5                     |
+| Redemut              | 75 of 256             | 64                   | 2                     |
+| Runtime Analyzer     | 209 of 289            | 0                    | 4                     |
+| Schlauzug            | 172 of 353            | 0                    | 2                     |
+| Solo Leveling System | 381 of 562            | 9                    | 46                    |
+| Tiefgang             | 116 of 191            | 0                    | 4                     |
+
+Redemut and Solo Leveling System already mix both styles. Baukit is part of the cause. `ApiError` serializes `request_id` (`rust/crates/baukit-http/src/error.rs`), `Page` serializes `next_cursor` (`rust/crates/baukit-http/src/pagination.rs:134`), `@baukit/api-runtime` types the envelope with `request_id` (`typescript/packages/api-runtime/src/index.ts:116`), and both template schemas (`templates/backend/backend/openapi.json` and `templates/backend/__auth__/backend/openapi.json`) contain `request_id` as their only snake_case property. The version 1 event envelope uses `event_id`, `user_id`, `occurred_at`, `source_app`, and `schema_version` (`rust/crates/baukit-events/src/lib.rs`, `typescript/packages/events/src/index.ts:52-57`), and its ingest outcome uses `ledger_entry_id`. Some Baukit wire types already use camelCase: the `baukit-sync` clock types (`hlc.rs:21`) and the Expo push payload (`baukit-push/src/expo.rs:32`).
+
+New wire fields in items 6 to 20 use camelCase from the start, so no new contract needs a second rename. Item 5 migrates every product before those items land, so no product carries mixed casing.
+
+## Proposed sequence
+
+| Order | Work                                                              | Decision                                     | Baukit home                                                                         |
+| ----- | ----------------------------------------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------- |
+| 1     | Serialize Expo SQLite root operations with exclusive transactions | Adapter correction                           | `@baukit/data-contracts-expo-sqlite`                                                |
+| 2     | Close HTTP boundary gaps: exposed headers, cache policy, cursors  | Crate correction                             | `baukit-http`                                                                       |
+| 3     | Claim only jobs the worker can handle                             | Crate correction                             | `baukit-jobs`                                                                       |
+| 4     | Remove consumer friction in tooling and test support              | Small corrections, one change each           | `baukit-test`, `analytics-core`, package exports, observability lint                |
+| 5     | Move HTTP APIs to camelCase                                       | Convention, Baukit change, product migration | `baukit-openapi` naming check, `baukit-http`, `@baukit/api-runtime`, templates      |
+| 6     | Add strong-ETag revision preconditions                            | New contract, eight adopters                 | `baukit-http`                                                                       |
+| 7     | Define replay-safe HTTP mutations                                 | Contract and conformance first               | `baukit-test`, optional `baukit-http` parser, `@baukit/api-runtime` key reuse       |
+| 8     | Add OpenAPI error responses and a compatibility check             | New helpers, five to eight adopters          | `baukit-openapi`, `baukit-test`, script                                             |
+| 9     | Add server-side tombstone purge horizons                          | Implement the existing contract in Rust      | `baukit-sync`, `baukit-test`                                                        |
+| 10    | Add a PostgreSQL API token store with grants                      | New optional adapter, five adopters          | `baukit-auth`                                                                       |
+| 11    | Resolve zoned local times and publish the calendar recipe         | Helper plus accepted recipe                  | `@baukit/localization-core`, platform recipe                                        |
+| 12    | Add local notification planning and owned Expo replacement        | Implement the accepted study                 | New optional `@baukit/notifications-core` and `@baukit/notifications-expo`          |
+| 13    | Add enabled-item menu navigation                                  | Implement the accepted study                 | `@baukit/a11y-core`                                                                 |
+| 14    | Add revisioned writes and durable drafts                          | Implement two separate accepted helpers      | Opt-in `@baukit/data-contracts` exports                                             |
+| 15    | Check SQLite migration behavior and ship a Node test driver       | Conformance study, then test helper          | `@baukit/data-contracts` conformance, `data-contracts-expo-sqlite/testing`          |
+| 16    | Add a guarded outbound HTTP client, then revisit webhook delivery | Egress contract first, webhook study after   | `baukit-http` egress module; documentation and `baukit-test` for webhooks           |
+| 17    | Add a push device registry                                        | New port and optional store                  | `baukit-push`                                                                       |
+| 18    | Add signed media grants                                           | New small contract, two identical copies     | Optional `baukit-http` module plus an njs verifier and shared vectors               |
+| 19    | Move copied template code into packages                           | Template and package cleanup                 | `data-contracts`, `analytics-posthog-native`, `auth-native`, `a11y-core`, templates |
+| 20    | Add a safe export encoder and share outcome                       | New helper, four adopters                    | `@baukit/data-contracts` export entry point                                         |
+
+Orders 1 to 4 correct code that products already depend on, and each is small enough to land in one change. Order 5 sets the naming convention and migrates Baukit, the templates, and all eight products before the new server contracts, so their wire fields start out camelCase everywhere. Orders 6 to 10 are server contracts with at least three adopters each; 6 and 8 are independent and can run in parallel, while 7 should follow 6 because both touch write handlers. Orders 11 to 15 are client work. Order 11 comes before 12 because notification planning needs the zoned-time resolution. Orders 16 to 20 are new packages or studies with narrower evidence. TypeScript and Rust items can run in parallel, but each lands with its own evidence note and product adoption path.
+
+## 1. Serialize Expo SQLite operations
+
+Eigenruhe recorded an Android `database is locked` failure during session startup in `docs/tickets/baukit-sqlite-operation-serialization.md`. Its tracked `mobile/src/db/serialized-store.ts:15-82` queues root record, key/value, and schema operations with transactions. Tests in `mobile/src/db/serialized-store.test.ts:19-249` cover both arrival orders, rejected operations, close, nested transaction work, and independent partitions. Baukit currently queues only calls to `withTransaction` in `typescript/packages/data-contracts-expo-sqlite/src/index.ts:274-352`. The root stores are built against the base connection at lines 293-295 and can execute during the exclusive transaction on lines 323-326. Leitbild consumes the same adapter (`mobile/src/local-data.ts:5`) and Redemut uses its `SqliteRecordStore` (`mobile/src/record-store.ts:1`); this survey found no matching failure there. This is a correction to an existing adapter, so a second reproducer is not required.
+
+Two products carry the same hazard in their own drivers, which this fix will not reach. Hebkit's `mobile/src/db/sqlite/adapters/expo-sqlite.ts:31-40` uses `withTransactionAsync` without a queue. Redemut's `packages/data/src/expo-sqlite.ts:40-76` runs root `execute` and `query` calls outside the queue that guards `withExclusiveTransactionAsync`, against a separate database file opened in `mobile/src/learning.ts:198`. Both are listed under product defects. Item 15 decides whether they should move to the Baukit adapter.
+
+**Contract.** One adapter instance accepts root operations and exclusive transactions in call order. Transaction-scoped operations run on the transaction connection and never re-enter the root queue. A rejected operation releases the queue. `close` rejects new work, waits for accepted work, closes its owned connection once, and shares one close result among concurrent callers. The queue must not encompass network or file work. Decide whether adapters that share one underlying `SQLiteDatabase` need a connection-wide queue; a per-instance queue alone cannot protect two independently constructed stores on the same connection.
+
+**Implementation steps for the later iteration:**
+
+1. Write an adapter-level concurrency regression with controllable operations for root-before-transaction, transaction-before-root, all three root store families, failure, nested context, and close. Add a real Expo SQLite Android case that reproduces the collision, then run it on iOS at the native release gate.
+2. Replace `transactionTail` with one operation queue used by the root stores, `initialize`, `withTransaction`, and `close`. Keep transaction contexts on their supplied connection. Preserve the current `StorageError` codes and `closeDatabase` option.
+3. Check the shared-connection case. Either coordinate by database identity or document and enforce one store per connection. A namespace-only queue is insufficient when namespaces use the same database object.
+4. Publish the adapter correction with a changelog entry. After a released version passes Eigenruhe's native regression, remove its `SerializedProductStore` wrapper and its wrapper-only tests. Keep product repository and sync logic local.
+
+**Acceptance:** No root call overlaps an exclusive transaction in either arrival order; one failure does not block later calls; nested transaction work terminates; close drains accepted work and rejects later calls; independent databases proceed independently; the existing Expo SQLite conformance gate and the native regression pass. Avoid turning a real lock error into a silent retry or a reported sync success.
+
+## 2. Close HTTP boundary gaps
+
+`baukit-http` builds its CORS layer in `rust/crates/baukit-http/src/middleware.rs:171-182` and exposes only `x-request-id`, `traceparent`, and `tracestate`. `HttpOptions::with_additional_allowed_headers` exists in `options.rs:129`; nothing equivalent exists for exposed headers. `baukit-ratelimit` emits `Retry-After` and `RateLimit-*`, which a browser client therefore cannot read. All eight products work around this by overwriting the response header after the Baukit layer:
+
+- Eigenruhe `backend/crates/eigenruhe-api/src/lib.rs:427`
+- Hebkit `backend/crates/hebkit-api/src/adapters/http/mod.rs:181-205`
+- Leitbild `backend/crates/leitbild-api/src/lib.rs:306-331`, which also forces `no-store`
+- Redemut `backend/crates/redemut-api/src/lib.rs:105-170`, which stacks a second `CorsLayer` and adds a private cache layer
+- Runtime Analyzer `backend/crates/finops-api/src/lib.rs:104-116`
+- Schlauzug `backend/crates/schlauzug-api/src/lib.rs:655` (provisional)
+- Solo Leveling System `backend/crates/sl-api/src/lib.rs:154-163`
+- Tiefgang `backend/crates/tiefgang-api/src/http_policy.rs:23`
+
+They add `Retry-After`, `RateLimit-*`, `ETag`, and `Location`. At least five also set `Cache-Control: private, no-store` by hand.
+
+Separately, `Cursor::decode` in `rust/crates/baukit-http/src/pagination.rs:240-247` base64-decodes and parses input of any length. Solo Leveling System's copy of the same type (`sl-domain/src/pagination.rs`, 411 lines) bounds the encoded cursor at 4096 bytes first. It copied the type because its domain crate cannot depend on `baukit-http` without pulling in Axum.
+
+**Contract.** `HttpOptions` gains a way to extend the exposed headers. The Baukit defaults include the rate-limit headers that Baukit itself emits. A default response cache policy applies `private, no-store` to API responses unless a handler already set `Cache-Control`; a product can turn it off. `Cursor::decode` rejects oversized input with the existing `PaginationError::InvalidCursor` before decoding.
+
+**Implementation steps for the later iteration:**
+
+1. Add `with_additional_exposed_headers` next to `with_additional_allowed_headers`, and add `Retry-After` plus the `RateLimit-*` names to the default exposed set. Test a browser-visible preflight and an actual response with the rate-limit layer active.
+2. Make `private, no-store` the default cache policy on `HttpOptions`. Handler-set headers win.
+3. Bound cursor input length with a documented constant and a test for the boundary and one byte over it. Move the pure cursor and page types to `baukit-core`, or behind a feature that does not require Axum, so domain crates can use them. Update the import paths in the templates and products rather than keeping a re-export.
+4. Remove the override layers from all eight products in the same work item.
+
+**Acceptance:** A browser can read `Retry-After` from a Baukit rate-limit rejection without product code; no product overwrites `Access-Control-Expose-Headers` or sets `no-store` by hand; an oversized cursor fails before allocation.
+
+## 3. Claim only jobs the worker can handle
+
+`PostgresJobStore::claim` in `rust/crates/baukit-jobs/src/store.rs:232-236` selects the oldest due row regardless of `job_type`. The runner passes `handler.job_types()` only to validation and metrics (`runner.rs:151-152`, `283-318`). Two worker deployments with different handlers that share one outbox can claim each other's jobs and fail them. Runtime Analyzer forked the claim SQL in `backend/crates/finops-worker/src/queue_store.rs:12-70` to split an analysis queue from the default one, and its `docs/BAUKIT_PORT_PLAN.md:112` notes "no per-type routing" as the reason. It also emits `job_runs_total` and `job_duration_seconds` in `finops-worker/src/dispatcher.rs:40-44,202` alongside Baukit's `worker_job_*` metrics.
+
+**Contract.** The runner claims only rows whose `job_type` is in the handler's declared set. A job type that no running worker handles stays pending and is visible through the existing oldest-age metric rather than being failed by the wrong worker. The single-worker case keeps its current behavior because its handler declares every type it enqueues.
+
+**Implementation steps for the later iteration:**
+
+1. Change `JobStore::claim` to take the job-type set, and check its index plan against a table holding many pending rows of an unhandled type. Custom stores update their signature.
+2. Make the runner pass `handler.job_types()` to every claim.
+3. Test two runners with disjoint handlers against one PostgreSQL outbox under Docker, plus lease expiry and cancellation for a filtered claim.
+4. Adopt in Runtime Analyzer and delete `queue_store.rs` and the duplicate job metrics.
+
+**Acceptance:** Two disjoint workers never claim each other's jobs; an unhandled type stays pending and shows up in the oldest-age metric; Docker-backed `baukit-jobs` tests pass with `--include-ignored`.
+
+## 4. Remove consumer friction in tooling and test support
+
+These are small corrections that products currently patch around. Each one is its own change with a test and a changelog line.
+
+| Correction                                          | Evidence                                                                                                                                                                                                                                                                                                                                                        | Change                                                                                                                                                                                                    |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Metric-name linter takes product input              | `deploy/observability/lint/check-metric-names.py:12-16` hardcodes its root and metric list. Redemut `scripts/observability-lint.py:38-50`, Eigenruhe's lint script `:128-131`, and Tiefgang `infra/observability-lint.py:48-50` patch module globals and build symlink trees. Runtime Analyzer edited its vendored copy and lists `job_duration_seconds` twice. | Add CLI arguments for the observability root and a product allowlist file. Keep Baukit's own invocation unchanged.                                                                                        |
+| PostgreSQL test container is configurable           | `rust/crates/baukit-test/src/postgres.rs:80-95` pins PostgreSQL 18 with no image override or non-superuser app role. Runtime Analyzer re-implements it for TimescaleDB (`finops-test/src/lib.rs:26-92`), Hebkit starts PostgreSQL 16 itself (`tests/common/mod.rs:186-206`), and Redemut starts PostgreSQL 17 (`tests/support/mod.rs:242-345`).                 | Add an image and tag override, an optional app role without `BYPASSRLS`, and a per-test database on a shared container. Solo Leveling System's `DATABASE_URL` variant must drop the databases it creates. |
+| Analytics scrubber supports exact keys              | `typescript/packages/analytics-core/src/scrubber.ts:31-33` matches blocked keys as substrings, so `ip` or `q` over-redacts. Hebkit uses an exact-key regex in `mobile/src/monitoring/scrub.ts:36-63`. Tiefgang's `monitoring/sentry.ts:4-26` has its own key regex for crash reports.                                                                           | Add exact-key entries next to substring entries, and a `scrubErrorEvent` helper for crash-report payloads.                                                                                                |
+| Packages resolve under Jest without a hand-kept map | The mobile template's `jest.config.cjs` and all seven mobile apps list every `@baukit/*` export by hand because packages publish only the `import` condition. Hebkit duplicates the map in `mobile/package.json:117`.                                                                                                                                           | Add a `default` condition where the build output allows it, or ship a Jest preset. Verify with a packed-package test.                                                                                     |
+| Mock OIDC server supports cache tests               | Hebkit writes its own `FakeOidc` (`backend/tests/common/mod.rs:435-567`, used in `auth_conformance.rs:187-238`) because `MockOidcServer` has no JWKS request counter or delay.                                                                                                                                                                                  | Add a request counter and an injectable JWKS delay.                                                                                                                                                       |
+| Bearer rejections carry an error description        | Hebkit sets `WWW-Authenticate` `error_description` by hand in `error.rs:553-567`.                                                                                                                                                                                                                                                                               | Add expired and invalid descriptions to `AuthRejection` without leaking claim values.                                                                                                                     |
+
+**Acceptance:** Each product workaround named above can be deleted after the release that carries the correction, and the corrected behavior has a Baukit test.
+
+## 5. Move HTTP APIs to camelCase
+
+This item applies the [API naming convention](#api-naming-convention). Under the [compatibility stance](#compatibility-stance), it is one breaking rename with no transition window. Baukit, the templates, and every product switch in a single step, and stale local data is reset.
+
+**Implementation steps for the later iteration:**
+
+1. Add a naming check to `baukit-openapi`. It walks the document and fails on every property and parameter name that is not camelCase, reporting each JSON pointer. It skips enum values, `additionalProperties` maps, and a caller-supplied exemption list for standard-defined fields. Test it against the template schemas and one product schema.
+2. Rename Baukit's wire fields in one release.
+   - HTTP types: `ApiError` emits `requestId` and `Page` emits `nextCursor`. Audit every other serde type that can reach a product response, including `ResponseEnvelope` and integration health.
+   - TypeScript client: `@baukit/api-runtime` reads only `requestId`.
+   - Event envelope: `baukit-events` and `@baukit/events` rename the version 1 envelope fields to `eventId`, `userId`, `occurredAt`, `sourceApp`, and `schemaVersion`, and the ingest outcome field to `ledgerEntryId`. The envelope stays version 1. Update [ADR 0003](adr/0003-event-envelope.md) and the shared vectors.
+   - Rejection details: JSON rejection details take their field names from serde, so they follow the renamed fields. Add a test proving that a rejection reports the camelCase wire name.
+   - Changelog: list every renamed field.
+3. Update the templates: backend request and response types, `generated/openapi.d.ts`, the web and mobile clients, and the MCP template. Turn the naming check on in the generated `openapi_drift` test and in the strict profile, so new products start compliant. Rebless the golden snapshot trees and run the generated-fixture checks in every flavor.
+4. Migrate each product in one change that covers the backend and every client in its repository: web, mobile, MCP, browser extension, CLI, agent, and Terraform provider. Enable the naming check in the same change. Products that send or receive suite events (Eigenruhe, Hebkit, and Tiefgang) switch to the renamed envelope in that change too.
+5. Reset stale data instead of migrating it:
+   - local SQLite and Dexie databases, which hold queued mutations, cached responses, and sync payloads;
+   - development PostgreSQL databases, or at least the replay tables and any JSONB columns the API returns verbatim.
+
+   Bump each local-first app's local schema version so old databases are dropped on start rather than read with the wrong names.
+
+6. Order does not matter for compatibility. Start with Leitbild, which has 40 names, to prove the naming check and the reset. Do Schlauzug once its working tree is committed.
+
+**Acceptance:**
+
+- Every product's committed OpenAPI document passes the naming check, with exemptions limited to standard-defined fields.
+- No product client reads a snake_case key.
+- Suite events round-trip between products with the camelCase version 1 envelope.
+- Baukit contains no snake_case field in any HTTP or event wire type outside the exemptions.
+
+## 6. Add strong-ETag revision preconditions
+
+All eight products encode an integer revision as an ETag and parse `If-Match`. The parsers disagree on edge cases, which is the argument for one shared implementation:
+
+- Hebkit `backend/crates/hebkit-api/src/adapters/http/preconditions.rs:5-35` requires the header (428), rejects multiple values, and rejects revision 0.
+- Eigenruhe `backend/crates/eigenruhe-api/src/freshness.rs:4-30` makes it optional, reads only the first header value, accepts revision 0, and returns a validation error instead of 412 on a malformed tag.
+- Leitbild `leitbild-api/src/journal.rs:659-684` requires it for journal writes.
+- Redemut `redemut-api/src/lib.rs:254-272` makes it optional with an unprefixed tag.
+- Tiefgang `tiefgang-api/src/mutation_headers.rs:19-52`, Solo Leveling System `sl-api/src/v1/me.rs:196-240`, and Schlauzug `schlauzug-api/src/lib.rs:1231` (provisional) are the other implementations.
+
+**Contract.** A `baukit-http` module formats a strong ETag from a caller-supplied prefix and a non-negative revision, and parses exactly one strong `If-Match` validator. It rejects `*`, weak validators, lists, repeated headers, non-ASCII values, and prefix mismatches with distinct typed errors. Routes choose required or optional. The stable mapping is 428 when a required header is missing, 412 when the revision is stale, and 400 when the header is malformed, each with a stable error code. An OpenAPI helper documents the `If-Match` parameter and the `ETag` response header. Prefixes, the choice of routes, and the stale-revision check against storage stay in products.
+
+**Implementation steps for the later iteration:**
+
+1. Write shared vectors from the eight parsers, including every case where they disagree today. Settle revision 0, whitespace, and case sensitivity of the prefix before naming the API.
+2. Implement the parser, formatter, and error type with the existing `ApiError` envelope. Add `ETag` and `Location` to the default exposed headers from item 2.
+3. Add the OpenAPI parameter and header helpers so products stop hand-writing them.
+4. Adopt in Hebkit and Eigenruhe, whose implementations are the strictest and the loosest. Record any behavior change a client can observe, such as Eigenruhe moving from a validation error to 412 or 400.
+
+**Acceptance:** One vector suite passes for the shared parser; two products delete their local parsers; clients see documented status codes; no product loses its tag prefix.
+
+## 7. Define replay-safe HTTP mutations
+
+The first draft named four implementations. There are eight, and they disagree on key grammar, scope, fingerprint, response protection, and retention:
+
+| Product              | Evidence                                                                                                                                                                                                                                                                                                          | Notable behavior                                                                                                                                                                                                                          |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Redemut              | `redemut-api/src/lib.rs:236-251`, `redemut-services/src/user_content.rs:1109-1125`, `redemut-postgres/src/lib.rs:141-232`; a second path encrypts results in `redemut-postgres/src/lib.rs:1221-1280` with `migrations/20260927000000_api_write_contract.sql:6-18`                                                 | Two replay paths in one product, one with encrypted results and a seven-day expiry                                                                                                                                                        |
+| Runtime Analyzer     | `finops-api/src/routes/common.rs:99-133`; used by `budgets.rs:104`, `policies.rs:166`, `cost_simulation.rs:73`, `reports.rs:252`, and required by `integrations.rs:150`; advisory lock near `finops-postgres/src/idempotency.rs:45`; report write and job enqueue share a transaction in `reports.rs:113`         | The canonical hash drops a product field (`idempotency.rs:28`); the table uses `FORCE ROW LEVEL SECURITY` and `maintenance_cleanup.rs:10` purges it without a tenant, which removes nothing unless the owner role bypasses RLS            |
+| Tiefgang             | `tiefgang-services/src/mutation.rs:5`, `tiefgang-postgres/src/mutation.rs:18`, `backend/migrations/20260927000019_mutation_replays.sql:1`, key grammar in `tiefgang-api/src/mutation_headers.rs:4-17`                                                                                                             | Keys are 8 to 128 characters of `[A-Za-z0-9._:-]`; the fingerprint is `serde_json::to_vec` with `expect`, which is not canonical                                                                                                          |
+| Solo Leveling System | Port in `sl-ports/src/mutation_replay.rs:4`; generic claim SQL copied into eight `sl-postgres` modules; boss-specific pending-then-finalize replay in `sl-postgres/src/narratives.rs:920-1006`; migrations `0030`, `0031`, `0034`; key grammar in `sl-api/src/v1/quests.rs:627-650`                               | Keys are 1 to 128 visible ASCII characters                                                                                                                                                                                                |
+| Leitbild             | Outcome types in `leitbild-ports/src/lib.rs:345-370`; `api_write_receipts` in `migrations/0016_api_resource_contract.sql:8`; replay inside the row-cap `FOR UPDATE` transaction in `leitbild-postgres/src/journal.rs:692-745`; client key retention in `web/src/write-intent.ts` and `mobile/src/write-intent.ts` | Two grammars in one API: `leitbild-api/src/journal.rs:425-458` returns 428 when missing, `lib.rs:461` returns 400                                                                                                                         |
+| Eigenruhe            | `eigenruhe-postgres/src/replay.rs:7-107`, `eigenruhe-api/src/replay.rs:13-38`, purge in `eigenruhe-postgres/src/retention.rs:89`                                                                                                                                                                                  | Fingerprint plus `FOR UPDATE`, seven-day expiry                                                                                                                                                                                           |
+| Hebkit               | Tables `rest_mutation_receipts`, `nutrition_mutation_receipts`, `plan_duplicate_receipts` in `hebkit-postgres/.../plans.rs:925-1104`; `handlers.rs:143`; `idempotency_key_reuse_conflict` in `error.rs:304,358,404`                                                                                               | Three receipt tables for one product                                                                                                                                                                                                      |
+| Schlauzug            | `schlauzug-services/src/idempotency.rs`, `schlauzug-postgres/src/idempotency.rs`, `migrations/0016_idempotency_replays.sql`, client `packages/game-client/src/mutation-attempt.ts`; header parsing at `schlauzug-api/src/lib.rs:1914-1960` (all provisional)                                                      | Hashed keys scoped by caller, operation, and target; AES-256-GCM responses with the scope as associated data, using `ring` directly rather than `baukit-credential-vault`; a second required `idempotency-client` header; batched pruning |
+
+No Baukit package supplies either half. Baukit jobs deduplicate queued tasks and its inbox conformance covers inbound events. `@baukit/api-runtime` retries only safe methods and has no idempotency-key support.
+
+**First deliverable.** Write a protocol note and a `baukit-test` conformance adapter before exporting a storage service. The contract must specify a caller scope, operation name, key bounds, canonical request fingerprint, durable result snapshot, retention horizon, and a distinct conflict when the same key carries different input. The mutation and replay record must commit in one transaction. Retrying after a lost response returns the original result without reapplying the effect. An expired key's behavior must be explicit. Error bodies and telemetry must not expose request bodies, owner identifiers, secrets, or saved response payloads. Decide whether stored results must be encrypted; Redemut and Schlauzug already do, and an unencrypted snapshot of a response body is a second copy of user data that account erasure must reach.
+
+**Implementation steps for the later iteration:**
+
+1. Compare the eight implementations above on key grammar, scope, fingerprint canonicalization, replayed status and body, encryption, retention, and race behavior. Recheck Schlauzug after its work is committed. Settle mandatory versus optional keys per route as a caller policy.
+2. Add conformance cases for simultaneous same-key requests, a lost response, same-key changed input, owner or tenant isolation, operation isolation, transaction rollback, expiry, cleanup under row-level security, erasure, and a crash between the product effect and response delivery. Run the cases against at least two product adapters.
+3. Add a small `baukit-http` header parser only if the products can use one grammar without changing their public protocols. The Tiefgang and Solo Leveling System grammars already conflict, so the parser may need a caller-supplied bound. Keep request normalization and operation choice injected. If the adapters converge, add an optional SQLx PostgreSQL helper in a later change; do not put product mutations behind a generic JSON handler.
+4. Add the client half to `@baukit/api-runtime`: reuse one key per account, operation, and body until a definite outcome or expiry, and classify network errors, 408, 429, and 5xx as possibly committed. Runtime Analyzer `web/src/lib/admin-actions.ts:32-70` and Schlauzug's `mutation-attempt.ts` (`retryMayHaveCommitted`) are the evidence; Leitbild's `write-intent.ts` pair is a third. Allow retrying a `POST` only when a key is attached.
+5. Adopt the shared conformance in two products, then delete only the duplicated parsing or replay mechanics that Baukit actually replaces. Solo Leveling System's eight copied claim blocks are the clearest deletion target. Keep product repositories and authorization decisions local.
+
+**Acceptance:** Concurrent retries produce one committed effect and one replayable result; changed input yields a stable conflict; rollback leaves no replay record; a lost response can be retried; retention cleanup is bounded and works under row-level security; two owners cannot retrieve one another's result; account erasure removes stored results. A passing unit test against an in-memory map is insufficient proof of the transaction boundary.
+
+## 8. Add OpenAPI error responses and a compatibility check
+
+Three OpenAPI helpers repeat across products. `baukit-openapi` currently offers metadata, serialization, drift checks, and a `ResponseEnvelope` type that no product uses.
+
+**Error-response decorator.** Eight products post-process their generated document to add the same standard responses. Each adds 400, 401, 403, 404, 409, 413, 415, 429, and 5xx entries that reference the error envelope and carry `X-Request-Id`, `Retry-After`, and `WWW-Authenticate` headers. The decisions depend on whether an operation is secured, has a body, has a path parameter, or is idempotent. Evidence: Runtime Analyzer `finops-api/src/openapi_contract.rs:341-490`, Eigenruhe `eigenruhe-api/src/lib.rs` (about lines 1030-1110), Hebkit `adapters/http/openapi_contract.rs:203-230`, Leitbild `leitbild-api/src/lib.rs` (about 565-590), Redemut `redemut-api/src/lib.rs` (about 3360-3385), Solo Leveling System `sl-api/src/lib.rs:565-590`, Tiefgang `tiefgang-api/src/contract.rs:4-211`, and Schlauzug `schlauzug-api/src/lib.rs:5440-5480` (provisional). Tiefgang's version also adds scopes, `Idempotency-Key`, `If-Match`, and `Retry-After` headers.
+
+**Compatibility check.** The first draft kept this as a record waiting for a second settled API. Five committed checkers now exist: Runtime Analyzer `scripts/check-openapi-contract.py:89` (operation IDs, schema shape, route parity, but no backward compatibility), Hebkit `scripts/check-api-compatibility.py` (run in CI), Solo Leveling System `scripts/api-compatibility.py`, Leitbild `scripts/check-api-contract.py` (a style linter), and Tiefgang `scripts/rest-contract.py`. Schlauzug's untracked `check-openapi-compatibility.py` is the most complete. It compares `/v1/` operations against a base revision and flags removed operations, changed `operationId` or security, removed responses or media types, bodies that became required, and schema narrowing.
+
+**Response validation in tests.** Solo Leveling System `scripts/api-response-validator.mjs`, Eigenruhe `validate-openapi.mjs`, Redemut `redemut-api/src/lib.rs:4048` (jsonschema), and Schlauzug `backend/tests/support/schema.rs:40` (provisional) validate real responses against the published schema.
+
+**Implementation steps for the later iteration:**
+
+1. Add a rule-driven decorator to `baukit-openapi`. The rules are data, for example "secured operations get 401 and 403"; product-specific statuses such as 412 or 422 and all descriptions stay in products. Test it against a generated fixture document and against two product documents with their local decorators removed.
+2. Separate the compatibility question from route parity and style linting. Write a Baukit-owned check that compares a document against a base revision, using Schlauzug's rule list once committed and Hebkit's CI usage as the second adopter. Define the false-positive policy and how a product records an intentional break. Under the [compatibility stance](#compatibility-stance), products run it report-only until they go live, so it shows breaks without blocking them. Ship it as a script in `scripts/` and wire it into the generated strict profile as opt-in.
+3. Add `baukit_test::assert_response_matches_openapi` for Rust integration tests. Keep TypeScript response validation out of this item until a second TypeScript runner agrees on the same checks.
+4. Adopt the decorator in Runtime Analyzer and Hebkit and the compatibility check in Hebkit and Solo Leveling System.
+
+**Acceptance:** Two products delete their decorators and keep byte-identical committed documents apart from intended changes; the compatibility check fails on each listed breaking change and passes an additive one; the generated fixture's `openapi_drift` test still passes.
+
+## 9. Add server-side tombstone purge horizons
+
+`docs/platform/offline-readiness-contract.md` section 4 and the client conformance in `typescript/packages/sync-client/src/conformance.ts:61-87` define purge horizons and full resync. `baukit-sync` has only the revision allocator and the hybrid logical clock. Three products implement the server side separately:
+
+- Eigenruhe: `eigenruhe-postgres/src/retention.rs:10-86` (table specs), `:207-280` (batched `SKIP LOCKED` delete and horizon upsert), `sync.rs:264`, and `eigenruhe-worker/src/retention.rs`.
+- Hebkit: `hebkit-postgres/.../retention.rs:14-116,148-224`, `hebkit-ports/src/sync_repository.rs:11`, and `hebkit-worker/src/retention.rs`.
+- Tiefgang: `tiefgang-postgres/src/retention.rs:354-470` and `sync.rs:2963-2972` (`guard_pull_cursor`).
+
+They already diverge on naming (`sync_purge_horizons.revision` against `sync_tombstone_horizons.horizon_revision`).
+
+**Contract.** A batched purge deletes tombstones older than a caller cutoff and raises a per-owner horizon in the same transaction, never lowering it. A pull guard rejects a cursor below the owner's horizon with the stable full-resync signal the client contract already expects. Table lists, delete order, retention periods, and scheduling stay in products.
+
+**Implementation steps for the later iteration:**
+
+1. Write a `baukit-test` conformance adapter from the client contract: horizon monotonicity, batch bounds, concurrent purge and pull, a cursor exactly at and below the horizon, owner isolation, and erasure.
+2. Add a small SQLx helper behind an optional feature in `baukit-sync`, with the horizon table name supplied by the caller or a documented default and migration. Use `FixedUtcInterval` for the recurring purge job in examples.
+3. Run the conformance against Eigenruhe and Tiefgang before exporting the helper, then adopt it in both and in Hebkit.
+
+**Acceptance:** A pull below the horizon always yields full resync; the horizon never decreases; purge batches are bounded; the Docker-backed conformance passes against two product schemas.
+
+## 10. Add a PostgreSQL API token store with grants
+
+`baukit-auth` defines personal access tokens and an `ApiTokenStore` port, but every product writes its own PostgreSQL adapter: Eigenruhe `eigenruhe-postgres/src/api_tokens.rs`, Hebkit `hebkit-postgres/.../api_tokens.rs`, Leitbild `leitbild-postgres/src/api_token.rs`, Runtime Analyzer `finops-postgres/src/agent_tokens.rs`, and Tiefgang `tiefgang-services/src/api_tokens.rs`. The same five products add scopes on top: Eigenruhe `eigenruhe-services/src/api_tokens.rs:112-130`, Hebkit `hebkit-ports/src/api_token_scopes.rs:13`, Tiefgang `tiefgang-services/src/scopes.rs:3`, Leitbild `leitbild-api/src/lib.rs:806`, and Runtime Analyzer `finops-api/src/auth/principal.rs:56-70`. Eigenruhe and Hebkit issue the token and then assign scopes in a second, non-atomic step, with revocation as the compensating action. A crash between the two leaves a live token with the wrong grants.
+
+Three products also re-decode an already verified JWT to reach claims that `Principal` does not carry. Redemut `redemut-auth/src/lib.rs:450-550` reads `aud`, `scope`, and profile claims; Schlauzug `schlauzug-oidc/src/access.rs:178-268` (provisional) maps OAuth scopes to permissions; Solo Leveling System `sl-integrations/src/oidc.rs:64-87` reads email, name, and picture. Redemut also reimplements issuer routing through `unverified_issuer` (`redemut-auth/src/lib.rs:228,456`) because `MultiIssuerVerifier` accepts only OIDC verifiers, so it cannot mix OIDC with Clerk or WorkOS.
+
+[Study 35](studies/35-browser-identity-composition.md) decided that products own scope vocabularies. That decision stands. The new argument is atomicity: Baukit can store an opaque grant set with the token without knowing what the grants mean.
+
+**Contract.** An optional SQLx feature supplies an `ApiTokenStore` implementation with a migration, storing an opaque `BTreeSet<String>` of grants in the same insert as the token digest. The verified principal exposes the granted set, and optionally a caller-selected set of verified profile claims. Grant names, route policy, and the mapping from grants to permissions stay in products.
+
+**Implementation steps for the later iteration:**
+
+1. Compare the five token schemas: digest algorithm, prefix, expiry, last-used tracking, ownership join, and revocation. Decide which columns Baukit owns and which the product joins.
+2. Implement the store with Docker-backed tests for atomic issue with grants, revocation, expiry, owner erasure, and concurrent last-used updates. Add the grant set to the principal as an additive field.
+3. Add verified scope and selected profile claims to OIDC principals, and let `MultiIssuerVerifier` hold Clerk and WorkOS verifiers. Clerk's documented choice not to require `aud` stays; products that need an audience check configure it explicitly.
+4. Adopt in Eigenruhe and Hebkit first, because they have the non-atomic issue. Then check Redemut's claim re-decoding against the new principal fields.
+
+A route credential policy layer, for PAT scopes against OIDC-only routes keyed by `MatchedPath`, has three implementations: Eigenruhe `eigenruhe-api/src/auth_policy.rs:16-114`, Hebkit `authorization.rs:7-127`, and Redemut `redemut-auth/src/lib.rs:414-507`. They disagree on RFC 6750 `insufficient_scope` against a plain 403, and two match raw path prefixes. Record that as a follow-up study once grants are on the principal. A PostgreSQL `CredentialVault` store has four copies (Eigenruhe `eigenruhe-postgres/src/credentials.rs`, Hebkit `hebkit-worker/.../crypto.rs:95-222`, Solo Leveling System `sl-postgres/src/credential_vault.rs`, Tiefgang `tiefgang-postgres/src/integrations.rs`), but ownership joins differ more. Revisit it after the token store proves the optional-adapter pattern. Runtime Analyzer's wrapper in `finops-services/src/credential_vault.rs:30-60` also suggests a missing single-secret sealing API.
+
+**Acceptance:** A token and its grants commit together or not at all; two products delete their token adapters; no product-specific grant name appears in Baukit.
+
+## 11. Resolve zoned local times and publish the calendar recipe
+
+Three products have the same `localDateTimeToInstant` signature: Eigenruhe `mobile/src/integrations/ics.ts:148`, Hebkit `mobile/src/integrations/ics.ts:154`, and Redemut `packages/domain/src/calendar-ics.ts:110`. Their DST behavior is not documented as a shared decision. The Rust side is worse. Leitbild `leitbild-services/src/reminder.rs:197-254` resolves a gap by stepping forward one minute at a time, Eigenruhe `eigenruhe-services/src/notifications.rs:681-824` uses `.single()`, and Redemut's TypeScript rejects nonexistent times. Baukit's `typescript/packages/localization-core/src/civil-date.ts` validates zones and does civil-date arithmetic, but it does not resolve a local date and time to an instant.
+
+[Study 33](studies/33-calendar-export.md) accepted a recipe for `icalendar` with `chrono-tz` and `ical-generator` with `temporal-polyfill`, including deterministic caller rules and two DST vectors. The recipe was never published. Meanwhile Eigenruhe (`ics.ts:62-235`) and Hebkit (`ics.ts:40-188`) grew near-identical hand-written ICS escaping, folding, UTC formatting, and UID helpers, and three products export to the device calendar (Eigenruhe `calendar.ts:216-315`, Hebkit `calendar.ts:339`, Redemut `mobile/src/expo-calendar-adapter.ts:17-88`).
+
+**Contract.** `@baukit/localization-core` gains a function that resolves a civil date, a local time, and an IANA zone to an instant under an explicit gap policy (reject or shift forward) and fold policy (earlier or later). No default hides the choice. The same vectors are published for Rust products to test against; a Rust helper waits until two Rust products agree on the policy.
+
+**Implementation steps for the later iteration:**
+
+1. Write vectors for spring-forward gaps, fall-back folds, zones with half-hour offsets, and a zone whose rules changed, and run them against the three TypeScript copies to document today's differences.
+2. Implement the helper on the runtimes `localization-core` already supports. Settle the time-zone data source against browser and Expo before adding a dependency, as item 12 also requires.
+3. Publish the study 33 recipe as a platform document, updated to point at the new helper and to note that the hand-written ICS helpers in Eigenruhe and Hebkit should move to the recommended library.
+4. Adopt the helper in Hebkit and Eigenruhe. Keep native calendar adapters local, as study 33 decided, until they return per-item results.
+
+**Acceptance:** The DST policy is a required argument; the three TypeScript copies are replaced in at least two products; the recipe exists under `docs/platform/`.
+
+## 12. Plan local notifications and replace only owned schedules
+
+The accepted design in [study 32](studies/32-notifications-and-timeline-playback.md) compared Eigenruhe and Redemut. Hebkit adds a third schedule in `mobile/src/features/reminders/scheduler.ts:107`, with cancellation by reminder kind in `mobile/src/features/reminders/notifications-adapter.ts:61`. Eigenruhe's occurrence calculation and owned Expo cancellation are in `mobile/src/features/reminders/schedule.ts:24` and `expo-adapter.ts:40`. Both adapters list every scheduled notification and filter by `data.kind`. Redemut calculates a 14-day horizon in `mobile/src/reminders.ts:39-44`, and its adapter calls `cancelAllScheduledNotificationsAsync` in `mobile/src/notification-adapter.ts:64` and `:111`, which cancels unrelated notifications. Baukit has civil-date arithmetic in `typescript/packages/localization-core/src/civil-date.ts` and remote push delivery in `baukit-push`; neither owns local notification reconciliation. Item 11 supplies the zoned-time resolution this item consumes.
+
+**Contract.** `@baukit/notifications-core` accepts already eligible logical occurrences, a named time zone, a caller-selected DST gap and fold policy, a clock, and a horizon. It resolves instants through item 11's helper and computes deterministic keep, cancel, and schedule sets by logical ID and instant. `@baukit/notifications-expo` owns only notifications with a validated namespace marker. It reports per-item results and never calls Expo's cancel-all operation. Product eligibility, quiet hours, copy, channels, actions, permission prompt, and deep links stay outside the packages.
+
+**Implementation steps for the later iteration:**
+
+1. Turn the study's interface sketch into shared vectors for DST gap and fold, month and year changes, travel between zones, duplicates, invalid inputs, changed content, and horizon boundaries. Reuse item 11's vectors for instant resolution.
+2. Build the pure core and fake-adapter conformance. Make reconciliation stable across repeated calls and require an explicit content digest or replace request when only notification text changes.
+3. Add the optional Expo adapter with `expo-notifications` as a peer dependency. Serialize replacements per owner and protect unrelated namespaces, including another Baukit feature namespace. Report list, cancel, schedule, permission, and platform-limit failures without returning notification content.
+4. Test the packed package and a real Expo fixture. Adopt in Eigenruhe and Hebkit first, then Redemut after its cancel-all calls are removed. Keep each product's local reminder policy and routing code.
+
+**Acceptance:** DST decisions are explicit and repeatable; one owner cannot cancel another owner's requests; a partial failure returns an incomplete outcome; a retry converges; concurrent replacements for one owner cannot restore an older schedule. iOS and Android device checks belong to the release gate for the Expo adapter.
+
+## 13. Add headless menu navigation
+
+The [accessibility study](studies/31-expo-ui-and-headless-accessibility.md) already chose `useRovingMenu` and `nextEnabledMenuIndex` for `@baukit/a11y-core`. The export is still absent from `typescript/packages/a11y-core/src/index.ts`. Eigenruhe (`mobile/src/components/context-menu.tsx:144-165`), Hebkit (`:158-178`), and Tiefgang (`:173-196`) each manage enabled indexes, focus refs, and Arrow, Home, and End keys. Redemut does the same for a DOM menu in `packages/ui/src/context-menu.tsx:93-104`. Solo Leveling System has a hand-rolled Tab and Escape focus trap in `mobile/src/components/context-menu.tsx:56`, and neither its menu nor its confirmation dialog uses `useOverlayA11y`. Baukit's existing `useRovingRadioGroup` is related but has radio selection semantics rather than menu action semantics.
+
+**Implementation steps for the later iteration:**
+
+1. Extract a pure enabled-item index function. Decide behavior for no enabled items, a removed active item, a disabled selected item, wraparound, and a nested keyboard target. Keep action invocation and menu visibility outside it.
+2. Add a hook that maps that state to keyboard and focus props using the existing React and React Native boundary conventions. Compose with `useOverlayA11y`; do not add a rendered menu component or duplicate its focus trap.
+3. Test web keyboard behavior, React Native Web, disabled-only menus, Escape/back dismissal composition, dynamic item removal, action errors, and focus restoration. Confirm the hook remains valid when a product routes away while the menu is open.
+4. Adopt in at least Eigenruhe and Tiefgang and remove their duplicated navigation blocks. Validate Hebkit, Redemut, and Solo Leveling System against the same vectors before claiming adoption there; Solo Leveling System also needs to move its overlays onto `useOverlayA11y`.
+
+**Acceptance:** A menu reaches every enabled item and no disabled item by keyboard, retains one tab stop when an enabled item exists, handles dynamic changes without a dead ref, and restores focus through the existing overlay helper. Markup, labels, icons, and menu actions remain product-owned.
+
+## 14. Add separate revisioned write and draft helpers
+
+The [write queue and draft study](studies/29-write-queue-and-form-drafts.md) accepted two framework-free exports from `@baukit/data-contracts`. Neither exists today. Leitbild's web `web/src/autosave.ts` and mobile `mobile/src/autosave.ts` serialize revision-aware saves with different conflict and coalescing behavior. Redemut's `web/src/form-draft.tsx` serializes local draft writes and its SQLite and Dexie stores live in `packages/data/src/form-draft-store.ts` and `packages/data/src/dexie/form-draft-store.ts`; `web/src/dialog-durable-write.ts` and `web/src/onboarding-draft.ts` are more draft-like writers. The first draft missed a second independent draft implementation: Leitbild `web/src/journal-drafts.ts` (402 lines) has a subject lease, a generation counter, and a `baseEtag`. That gives the draft helper two adopters with different designs to test against. Baukit's preference controller and sync scheduler solve different problems; they must not gain document-specific state.
+
+**Revisioned write queue.** Use caller-supplied scope, document key, acknowledged revision, write callback, and optional coalescer. Serialize writes, keep newer edits dirty while an older write is in flight, pause on a typed conflict, and fence completions after account or document switches. Do not retry an unknown outcome as if it failed before the server accepted it. The product maps its API result and chooses conflict resolution. Item 6's ETag helper supplies the revision on the server side.
+
+**Durable draft.** Use an existing `KeyValueStore`, a caller key encoder, and a versioned codec. Report restored, dirty, saving, failed, corrupt, and unsupported-version states. `clear` must distinguish a confirmed server submission from a failed local deletion. Product hooks own debounce, page hide, validation, schema upgrades, and recovery copy. Compare Leitbild's subject lease and base ETag against Redemut's design before fixing the state names.
+
+**Implementation steps for the later iteration:**
+
+1. Write package tests from study 29's cases before fixing the public names. Include edits during save, three queued writes, concurrent flushes, retry after a definite failure, ambiguous completion, conflict, cancellation, and scope changes.
+2. Implement the queue as an opt-in export with no React dependency. Use an injected abort signal, generation fence, and observable snapshot. Document the difference between an acknowledged revision and an unsent local value.
+3. Test draft corruption, codec upgrades, failed delete, account and document switching during reads and writes, and persistence failure. Implement the draft helper separately from the write queue.
+4. Build a non-React fixture. Adopt the queue in Leitbild web and mobile and the draft helper in Redemut and Leitbild's journal drafts. Delete the old mechanics after parity tests pass; keep thin product hooks and existing storage tables where useful.
+
+**Acceptance:** No late result crosses an identity or document boundary, no old save clears a newer dirty value, a conflict stops later writes, and draft recovery never casts unchecked JSON into a form value. A failed clear remains visible as a failed clear.
+
+## 15. Study SQLite migration conformance and ship a Node test driver
+
+The completed plan's [deferred-contract review](studies/36-other-deferred-contracts.md) found raw-driver migration runners in Redemut, Tiefgang, and Eigenruhe. The second pass changes that picture:
+
+- Eigenruhe no longer has one. `mobile/src/db/sqlite/migrations.ts` is now 20 lines built on Baukit schema metadata.
+- Tiefgang's runner (`mobile/src/db/sqlite/migrations.ts:280-352`) probes for columns instead of applying versioned steps. It runs no transaction, and it writes `user_version` at line 352 without ever reading it, so it cannot reject a future version.
+- Redemut's `runMigrations` (`packages/data/src/migrations.ts:293`) runs through its own `SqliteDriver` abstraction (`driver.ts`).
+- Hebkit applies individual migrations transactionally in `mobile/src/db/sqlite/migrations.ts:1364`. Its native path opens its own `ExpoSQLiteAdapter` (`db/sqlite/adapters/expo-sqlite.ts`, not Baukit's) in `create-persistence.native.ts:17` and reaches `migrateDatabase` through `db/sqlite/create-persistence.ts:10`, while `migrations.test.ts` exercises the runner with `BetterSQLiteAdapter` only.
+
+That leaves two comparable versioned runners, Hebkit and Redemut. Baukit's Expo SQLite conformance checks storage operations, not application migration runners.
+
+Four products also carry a Node SQLite driver for running the Expo contract in unit tests: Redemut `packages/data/src/node-sqlite.ts`, Eigenruhe `mobile/src/db/contract-tests/better-sqlite.ts`, and Hebkit and Tiefgang `mobile/src/db/sqlite/adapters/better-sqlite.ts`.
+
+**Study steps for the later iteration:**
+
+1. Compare `PRAGMA user_version` and history-table behavior, version ordering, transaction boundaries, fresh installs, upgrades, failure rollback, restart, and future-version rejection in Hebkit and Redemut. Use Tiefgang's runner as the negative case the suite must catch.
+2. Draft a driver-neutral conformance adapter and run it against both runners.
+3. Publish the Node driver as a `data-contracts-expo-sqlite/testing` entry point, so product unit tests run against the same statement surface the Expo adapter uses. This part does not wait for the migration decision.
+4. Decide whether Hebkit's and Redemut's private Expo drivers should move to the Baukit adapter once item 1 lands; both have the serialization hazard described there.
+
+Only then add a reusable migration test helper to `@baukit/data-contracts` or the testing entry point. Keep each product's SQL, schema versions, and migration execution under product control. Do not add a generic runtime runner unless its driver and version rules match two products without switches. This work is separate from item 1's adapter operation queue.
+
+**Decision gate:** A shared conformance suite must catch a partially applied migration and a future database version in both adapters. If the runners require incompatible version semantics, publish a recipe with separate test profiles rather than one misleading API.
+
+## 16. Add a guarded outbound HTTP client, then revisit webhook delivery
+
+The first draft treated destination safety as part of webhook delivery. The second pass shows the guard is needed on its own, because the same problem shows up outside webhooks.
+
+Tiefgang validates destination URLs in `backend/crates/tiefgang-services/src/webhooks.rs:150` and `tiefgang-domain/src/webhooks.rs:79-110`, and its worker resolves and pins public addresses and disables redirects in `tiefgang-worker/src/lib.rs:122-170`. Runtime Analyzer does the same for provider integrations in `finops-integrations/src/lib.rs:22-100`, with Retry-After handling, and adds timestamped HMAC v2 signing in `webhook.rs:11-60`. The two IPv6 filters already disagree: Tiefgang allows `3fff:1000::` and above, while Runtime Analyzer blocks all of `3fff::/16`. Solo Leveling System sends signed events through `sl-services/src/webhooks.rs:121-300` with a plain `reqwest::Client::default()` (`sl-notifications/src/http.rs:23`, wrapped in `sl-bin/src/bin/worker.rs:62-89`). That client follows redirects, pins nothing, and blocks no private address, and user-supplied Slack and Discord URLs (`sl-notifications/src/channels.rs:216,253`) use it too. Eigenruhe signs outbound suite events in `eigenruhe-integrations/src/hub.rs:80-160`, but only over the body, and sends the timestamp header unsigned. Hebkit sends suite events with a bearer token in `hebkit-services/src/suite_events.rs:315-370`, and Tiefgang receives them in `tiefgang-api/src/events_handlers.rs`. Baukit has a scripted receiver and signing tests in `rust/crates/baukit-test/src/webhook.rs` and a delivery recipe in [integration reliability](platform/integration-reliability.md), but no outbound runtime package.
+
+**First deliverable: guarded egress.** A `baukit-http` egress module, or a new small crate if the dependency weight argues for it, builds a client that resolves DNS, rejects any non-public answer, connects only to the pinned addresses, disables redirects and proxies, bounds timeouts and response size, and returns typed retryable and permanent errors using `classify_http_status`. The address policy is a published vector set: private, loopback, link-local, unique-local, documentation, IPv4-mapped IPv6, NAT64, mixed answers, and a DNS answer that changes between validation and connect.
+
+**Second deliverable: webhook study.** Compare subscription ownership, event identity, signature versioning (body-only against timestamped), secret rotation, retry status classes, and replay-safe receiver expectations across Tiefgang, Solo Leveling System, Runtime Analyzer, and Eigenruhe. Build a threat and failure matrix. Propose only neutral ports and conformance cases first. A runtime crate may follow if two products can adopt one transport contract without importing their event schemas or subscription tables.
+
+**Implementation steps for the later iteration:**
+
+1. Merge the Tiefgang and Runtime Analyzer address filters into one vector set and resolve their `3fff::/16` disagreement against the IANA registry.
+2. Implement the guarded client with tests that use a controllable resolver. Adopt it in Runtime Analyzer and Tiefgang, then in Solo Leveling System, where it closes an open gap.
+3. Run the webhook study against the four senders. Settle signature verification vectors and ambiguous delivery outcomes before any delivery API.
+
+**Decision gate:** The egress client must reject every unsafe vector, including a redirect to an unsafe destination and a changed DNS result, before any product adopts it. Until the webhook study's vectors pass, keep the existing product senders.
+
+## 17. Add a push device registry
+
+`baukit-push` delivers Expo push tickets and receipts but does not own device tokens. Three products keep the same registry. Eigenruhe (`eigenruhe-services/src/notifications.rs:84-316`, `eigenruhe-postgres/src/notifications.rs`, `mobile/src/features/reminders/push-token-device.ts`) and Hebkit (`hebkit-ports/src/notification_repository.rs:17-53`, `registration-adapter.ts`) register and unregister tokens, evict them after `DeviceNotRegistered`, and claim a daily delivery keyed by owner, local date, and kind. Leitbild (`leitbild-ports/src/lib.rs:276-291`, `leitbild-postgres/src/reminder.rs:152-240`, `mobile/src/push-registration.ts`) caps tokens per user with eviction but never prunes dead tokens; its worker only reads `push_tokens` (`leitbild-worker/src/lib.rs:197-209`).
+
+**Contract.** A port for register, rotate, unregister, list by owner, invalidate from a receipt, and erase with the account, plus an optional SQLx store. The delivery claim keyed by owner, local date, and kind is a separate helper so products that send only event-driven pushes do not need it. Eligibility, copy, quiet hours, and channel choice stay local.
+
+**Implementation steps for the later iteration:** Compare the three schemas and the per-user cap. Build the port with receipt-driven invalidation wired to the existing receipt handling in `baukit-push`. Add Docker-backed tests for rotation races, cap eviction, invalidation, and erasure. Adopt in Leitbild first, where it fixes dead-token growth, then Eigenruhe.
+
+**Acceptance:** A `DeviceNotRegistered` receipt removes the token in one call; the cap evicts the oldest token deterministically; account erasure removes all tokens.
+
+## 18. Add signed media grants
+
+Eigenruhe (`eigenruhe-bin/src/animation_signing.rs:162-217`, njs verifier `media/njs/animation-signing.js`, chart `deploy/animation-media/`, fixtures `content/fixtures/animation-signing.json`) and Hebkit (`hebkit-bin/src/exercise_media.rs:54-100`, `infra/exercise-media/authorize.js:21-29`, `deploy/exercise-media.yaml`) implement the same protocol. Both sign `"{path}\n{expires}\nplayback\n{key_id}"` with HMAC-SHA256, encode with URL-safe base64, require a 32-byte key, and accept current and previous keys for rotation. Both verify at an nginx njs edge in front of object storage. Two products with byte-identical signing input is the clearest extraction case in this survey.
+
+Study 36 kept "secret URL tokens" deferred for want of a second non-calendar case. This is a different mechanism: short-lived signed grants for immutable public media, not a rotating secret feed URL. It does not reopen that record.
+
+**Implementation steps for the later iteration:** Promote Eigenruhe's fixtures to shared vectors covering expiry, clock skew, key rotation, path normalization, and an encoded path traversal. Add a Rust signer and verifier behind an optional feature and a tested njs verifier artifact. Decide whether the chart template belongs in `deploy/` as an optional component or stays product-owned. Adopt in both products and delete their copies.
+
+**Acceptance:** Rust and njs pass the same vectors; rotation works with two keys live; both products delete their signing code.
+
+## 19. Move copied template code into packages
+
+Several files that the templates generate have been copied into every product, then edited in different directions. Template-generated code is harder to update than a package, so these move behind package exports and the templates shrink to a call site.
+
+- **Limits policy parser.** `parseLimitsPolicy` and `LimitError` from `templates/mobile/mobile/src/limits.ts:45` exist in Eigenruhe, Hebkit, Leitbild, Redemut, Schlauzug, and Tiefgang mobile, and Runtime Analyzer web. Move them to `@baukit/data-contracts/limits`.
+- **Hydrated analytics storage.** `HydratedAnalyticsStorage` from `templates/mobile/mobile/src/analytics.ts:14` is in every mobile product. Move it to `@baukit/analytics-posthog-native`.
+- **Route heading focus.** `mobile/src/route-heading-focus.ts` has grown from 35 template lines to 47 to 63 lines in Eigenruhe, Hebkit, Leitbild, and Redemut. Leitbild adds a native no-op, which suggests the template runs its web path on native. Hebkit also wraps `setAccessibilityFocus` in `utils/accessibility-focus.ts`, and six products call it directly. Diff the four copies, fix the template, and add a native focus helper to `@baukit/a11y-core`.
+- **Themed Expo OIDC browser flow.** Tiefgang `mobile/src/auth/themed-browser.ts:20-83` and Eigenruhe `mobile/src/auth-themed-browser.ts` are identical except for a state prefix, and both have a matching Keycloak theme decoder (`tiefgang/keycloak/themes/tiefgang/login/resources/js/theme-preferences.js`, `eigenruhe/infra/keycloak/.../theme-preferences.js`). Hebkit `auth/oidc-browser.ts` is a third `BrowserFlowPort`. Add an Expo browser flow with an optional state decorator to `@baukit/auth-native` and put the decoder in the Keycloak theme template.
+- **Keycloak end-to-end helpers.** Tiefgang `e2e/tests/helpers.ts:16-35`, Eigenruhe `e2e/tests/helpers.ts:66-84`, Hebkit `web/e2e/tests/helpers.ts:509-529,790-810`, and Redemut `web/e2e/tests/helpers.ts` provision a test user and sign in through Keycloak. The templates have nothing equivalent. Add a helper to the web template's end-to-end suite.
+- **MCP API origin validation.** Eigenruhe `mcp/src/api/origin.ts`, Hebkit `mcp/src/auth.ts:40`, and Leitbild `mcp/src/api/client.ts:170` validate the configured API origin; the MCP template does not, and `auth-node/src/device-flow.ts:669` has a similar check. Share one validator between `auth-node` and the MCP template.
+
+**Acceptance:** Each helper has package tests and a template call site; the golden snapshots and generated-fixture checks pass in all flavors; two products replace their copies per helper.
+
+## 20. Add a safe export encoder and share outcome
+
+Four TypeScript products hand-write CSV export: Eigenruhe `mobile/src/features/data-transfer/csv.ts:73`, Hebkit `mobile/src/integrations/files/csv.ts:73`, Tiefgang `mobile/src/integrations/files/csv.ts:36-47`, and Redemut's account export. None of them neutralizes cells that start with `=`, `+`, `-`, `@`, tab, or carriage return, so an exported file can run formulas when a user opens it in a spreadsheet. On the Rust side Runtime Analyzer guards against this in `finops-api/src/routes/audit.rs:82-97`, while Solo Leveling System `sl-services/src/orgs.rs:1515-1526` does not and also leaves `\r` unquoted. The share or download step is duplicated too: Eigenruhe and Hebkit `mobile/src/integrations/sharing.ts` are forked copies with a `ShareOutcome` result (`:85-160` and `:83-170`), alongside Hebkit `features/data-transfer/file-access.ts:59-75`, Eigenruhe `platform-export(.web).ts`, and Tiefgang `integrations/files/export-service.ts:85-140`.
+
+**Contract.** An export entry point in `@baukit/data-contracts`, the counterpart of the import envelope, encodes rows to RFC 4180 CSV with formula neutralization on by default and a documented opt-out. A matching Rust function lives in `baukit-core` with the same vectors. The share or download outcome type (shared, saved, cancelled, unavailable, failed) is specified with the encoder; its Expo implementation can follow as an optional subpath once two products agree on cancellation semantics.
+
+**Implementation steps for the later iteration:** Write vectors for quoting, embedded newlines, formula prefixes, Unicode, and a byte-order mark option. Implement the TypeScript and Rust encoders. Adopt in Hebkit and Tiefgang, then compare the forked share helpers before extracting the outcome type.
+
+**Acceptance:** Every formula prefix in the vectors is neutralized in both languages; two products delete their encoders.
+
+## Product defects found during the survey
+
+These are product bugs, not Baukit work. They should be fixed in the products now instead of waiting for the related Baukit item. Each one is tagged with the item that later replaces the local fix.
+
+| Product                                                    | Defect                                                                                                                                                                                                             | Related item |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------ |
+| Solo Leveling System                                       | Webhook and user-supplied Slack or Discord URLs go through an unguarded client that follows redirects and reaches private addresses (`sl-notifications/src/http.rs:23`).                                           | 16           |
+| Eigenruhe                                                  | Outbound suite-event HMAC covers only the body; the timestamp header is unsigned, so it gives no replay protection (`eigenruhe-integrations/src/hub.rs:80-89,154-156`).                                            | 16           |
+| Eigenruhe, Hebkit, Tiefgang, Redemut, Solo Leveling System | CSV exports do not neutralize formula prefixes.                                                                                                                                                                    | 20           |
+| Runtime Analyzer                                           | Idempotency cleanup runs without a tenant against a `FORCE ROW LEVEL SECURITY` table and may delete nothing (`finops-postgres/src/maintenance_cleanup.rs:10`).                                                     | 7            |
+| Tiefgang                                                   | The replay fingerprint uses non-canonical `serde_json::to_vec` with `expect` (`tiefgang-services/src/mutation.rs:7`).                                                                                              | 7            |
+| Leitbild                                                   | Push tokens are never pruned after `DeviceNotRegistered` (`leitbild-worker/src/lib.rs:197-209`).                                                                                                                   | 17           |
+| Hebkit, Redemut                                            | Private Expo SQLite drivers let root statements interleave with transactions (`hebkit/mobile/src/db/sqlite/adapters/expo-sqlite.ts:31-40`, `redemut/packages/data/src/expo-sqlite.ts:40-76`).                      | 1, 15        |
+| Tiefgang                                                   | The mobile SQLite runner never reads `user_version`, so it cannot reject a database from a newer app version (`mobile/src/db/sqlite/migrations.ts:280-352`).                                                       | 15           |
+| Eigenruhe, Hebkit                                          | API tokens and their scopes are written in two non-atomic steps.                                                                                                                                                   | 10           |
+| Solo Leveling System                                       | The AI budget is check-then-act (`sl-services/src/ai.rs:401-405`); Leitbild uses Baukit's `AmountBudget` for the same job. The mobile device ID uses `Math.random` (`mobile/src/services/token-storage.ts:78-80`). | none         |
+| Solo Leveling System                                       | Stateless HMAC OAuth state can be replayed within its TTL (`sl-services/src/integrations.rs:1040-1090`); Tiefgang stores single-use state.                                                                         | records      |
+
+## Adoption and cleanup gaps
+
+These products duplicate something Baukit already ships. The fix is adoption in the product, not a new Baukit API.
+
+- **Solo Leveling System** runs a hand-rolled worker (advisory lock in `sl-bin/src/bin/worker.rs:40,687-710`, outbox in `sl-postgres/src/user_quests.rs:779-823`, queue in `operations.rs:235-257`) while its `baukit.toml` says `worker = false`. It also keeps parallel refresh-token families, organization API keys, and a mobile token store next to Baukit personal access tokens and `@baukit/auth-native`. It has no strict gates and none of the template accessibility suites.
+- **Recurring job slots.** `FixedUtcInterval` exists in `baukit-jobs`, but Runtime Analyzer `finops-worker/src/schedule.rs:8-77` and Hebkit `hebkit-services/src/job_dispatch.rs:526-545` still compute slots and self-enqueue by hand.
+- **Redemut** duplicates `baukit_http::Cursor` in `redemut-services/src/lib.rs:876-1002`, the rate-limit decision metric and `resolve_client_ip` in `redemut-api/src/lib.rs:2976-3040`, and `SyncScheduler` backoff in `packages/sync/src/sync-engine.ts:110-160`. It re-implements `useReducedMotion` in `web/src/reduced-motion.ts`.
+- **Runtime Analyzer** duplicates `ResponseEnvelope` in `finops-api/src/routes/common.rs:71-98` and tenant-bound cursors in `admin_common.rs:60-120` (22 call sites).
+- **Schlauzug** re-implements `useReducedMotion` and `announce` (`web/src/reduced-motion.ts`, `web/src/live-announcer.tsx`, both committed). Its new MCP server does not come from the Baukit MCP template or use `@baukit/auth-node` (provisional).
+- **Hebkit** parses only delta-seconds `Retry-After` and classifies statuses itself (`hebkit-worker/src/adapters/suite_events.rs:54-59`, `hebkit-services/src/suite_events.rs:343-365`) instead of using `classify_http_status`. Its `features/nutrition/local-date.ts` is an alias shim over `localization-core`.
+- **Tiefgang**'s browser extension sets the bearer header and parses the error envelope itself (`extension/src/api/client.ts:23-45`) instead of using `@baukit/api-runtime`. Its `baukit.toml` says `pwa = false` while the app uses `pwa-web`.
+- **Leitbild** enforces row caps (`leitbild-postgres/src/journal.rs:693-745`) but does not run the `baukit-test` live-row-cap conformance that Redemut, Eigenruhe, and Hebkit run.
+- **Tooling mismatches.** Runtime Analyzer ships a separate network policy because the chart has no `networkPolicy.additionalIngress`, and `baukit doctor` requires `deploy/values.yaml` and a `/me` default in `pkce-login.py` (Runtime Analyzer `docs/CUTOVER_NOTES.md`). Both belong in a small operations follow-up, not a numbered item.
+
+Capability flags in `baukit.toml` that disagree with the code (Solo Leveling System `worker`, Tiefgang `pwa`) suggest `baukit doctor` should compare declared capabilities with detected ones.
+
+## Candidate records without package work yet
+
+These findings should not silently disappear from the backlog. They lack either a second adopter, a settled contract, or a safe implementation boundary.
+
+| Candidate                                 | Evidence and current Baukit state                                                                                                                                                                                                                                                                                                                                                           | Next decision                                                                                                                                                                                  |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PostgreSQL tenant transaction helper      | Runtime Analyzer's `backend/crates/finops-postgres/src/tenant_scoped.rs:6` sets transaction-local `app.current_tenant` before running a callback. The second pass found no row-level security migrations in the other seven products.                                                                                                                                                       | Document a product recipe now. Reconsider an optional `baukit-ops` helper after a second RLS-backed product shows the same lifecycle. Keep the GUC name and RLS schema local.                  |
+| Third-party OAuth connect and refresh     | Hebkit stores sessions in `oauth_sessions` (migration `20260827100003:132`) and re-implements the code exchange and refresh in seven adapters, for example `fitbit.rs:190-360`. Tiefgang `tiefgang-services/src/integrations/mod.rs:285-356` stores single-use state. Solo Leveling System uses stateless HMAC state. Runtime Analyzer `finops-services/src/integrations.rs:8` is a fourth. | Study the state model first; a replayable state is a defect, not a design choice. Then consider an `oauth` module in `baukit-integrations`. Provider client authentication stays in adapters.  |
+| LLM provider port                         | Leitbild `leitbild-ai/src/lib.rs:8-250` (Anthropic and OpenAI), Redemut `redemut-llm-coach/src/lib.rs:23-305` (OpenAI-compatible, already uses `classify_http_status`), Solo Leveling System `sl-ai/src/client.rs` (retry, deadline, JSON repair, cost table). Study 36 found the providers too different; there are now three.                                                             | Run a focused study on transport, retry classification, deadlines, and usage accounting only. Prompts, models, and quotas stay local. Budgets use the existing `AmountBudget`.                 |
+| Accessible accent and theme mode          | Leitbild `web/src/appearance.ts:118,211-283`, Redemut `packages/ui-tokens/src/index.ts:126-226`, Schlauzug `packages/theme-core/src/index.ts:83-181`, Solo Leveling System `packages/theme/src/tokens.ts:155`, Eigenruhe `features/gamification/colors.ts:11-18`. Five products, three different contrast adjustment strategies.                                                            | Study whether one `resolveAccessibleAccent` in `ui-tokens` can meet every product's contrast target without visible color shifts. Presets stay local.                                          |
+| Service worker update prompt              | Solo Leveling System `components/service-worker-update.web.tsx:15-91`; minimal registrations in Tiefgang, Eigenruhe, and Hebkit `pwa/register-service-worker.ts`. `pwa-web` has no client-side entry.                                                                                                                                                                                       | Add a registration and update-available helper to `pwa-web` once a second product needs the update prompt, not only registration.                                                              |
+| Remote MCP resource-server auth           | Solo Leveling System `sl-bin/src/compose/mcp.rs:40-345` (Rust) and Redemut `mcp/src/transports/http.ts:171-263` (TypeScript) publish protected-resource metadata, `WWW-Authenticate`, and an origin allowlist.                                                                                                                                                                              | Extend the [MCP capability](platform/mcp-capability.md) with an HTTP transport option once both implementations agree on the metadata and audience rules.                                      |
+| Local compose observability stack         | Redemut `deploy/observability/*`, Hebkit `infra/{otel,tempo,loki,alloy}`, Tiefgang `infra/*`, Eigenruhe `infra/otel`. Baukit ships only the Kubernetes platform stack.                                                                                                                                                                                                                      | Compare the four compose stacks and decide whether an optional template component is worth the maintenance.                                                                                    |
+| Async operation resource                  | Solo Leveling System `sl-domain/operations.rs:8`, `v1/integrations.rs:385-423`, and Eigenruhe `eigenruhe-domain/operations.rs:8`, `eigenruhe-api/src/connection_models.rs:87` return 202 with a pollable operation.                                                                                                                                                                         | Keep local until the status vocabulary and retention agree.                                                                                                                                    |
+| Handler-level limits and HTTP details     | Tiefgang checks per-class rate limits inside handlers (`tiefgang-api/src/rate_limit.rs:36-88`). Redemut builds per-route body limits (`redemut-api/src/lib.rs:274-300`). Leitbild emits `Content-Language` from `RequestLocale` (`leitbild-api/src/lib.rs:306-345`). One product each.                                                                                                      | Revisit each when a second product needs it; fold into item 2's follow-ups if one appears.                                                                                                     |
+| Email transport, request audit            | Runtime Analyzer `finops-integrations/src/resend.rs` and Solo Leveling System `sl-ports/src/email_sender.rs` (SMTP). Runtime Analyzer audits HTTP requests (`finops-api/src/audit.rs:11-75`); Solo Leveling System audits domain actions, a different contract.                                                                                                                             | Keep local.                                                                                                                                                                                    |
+| Offline asset manager                     | Eigenruhe's `mobile/src/downloads/manager.ts` is a manifest-backed downloader. The [offline asset study](studies/30-offline-asset-management.md) found no second consumer with the same lifecycle; the new projects did not supply one.                                                                                                                                                     | Keep deferred. First require runtime hash verification, explicit pause and corrupt states, cleanup planning, and identity-switch tests in the product. Seek a second adopter before a package. |
+| Release manifest validator                | The [release study](studies/34-release-gitops-and-migrations.md) accepted a read-only manifest validator based on Leitbild's release procedure (`scripts/release.sh`, `promote.sh`, `render-gitops.py`, `set-release-tag.py`). The other surveyed projects do not establish common image pin and GitOps edit rules.                                                                         | Keep the accepted design available for a separate operations iteration. Its first tool should validate and emit a patch; product repositories keep promotion and push authority.               |
+| Browser account bootstrap and popup login | The [identity study](studies/35-browser-identity-composition.md) describes Redemut's account cache and popup flow (`web/src/auth-popup-protocol.ts`) and records an unsafe undecodable-token match and uncorrelated popup completion.                                                                                                                                                       | Add state-transition vectors and correct the product behavior before promoting a coordinator. A later package needs a fresh attempt ID, exact origin and popup checks, timeout, and cleanup.   |
+| MCP execution helpers                     | The [deferred-contract review](studies/36-other-deferred-contracts.md) found similar read and write wrappers in four MCP servers.                                                                                                                                                                                                                                                           | Run a focused comparison of safe errors, request metadata, and structured output against the generated MCP capability. Keep tool bodies and recovery text local.                               |
+| Raw OpenAPI mirrors                       | Tiefgang packages byte-identical schema copies for its MCP and extension (`Makefile:281`, `extension/scripts/check-openapi.mjs`). Solo Leveling System generates one OpenAPI schema and one TypeScript declaration, without a second packaged raw-schema consumer.                                                                                                                          | Keep the second-consumer gate from [the mirror decision](platform/openapi-mirrors.md).                                                                                                         |
+
+## What the survey did not promote
+
+| Product              | Useful evidence for this plan                                                                                                      | Product code that stays local                                                                                                                           |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Eigenruhe            | Expo SQLite wrapper, ETags, replay, purge horizons, tokens, calendar, reminders, push registry, media grants, menu, offline assets | Practice programs, audio timeline and playback, content build, download policy, widget snapshots, and animation rules                                   |
+| Hebkit               | ETags, replay, purge horizons, tokens, OpenAPI checks, calendar, reminders, push registry, media grants, menu, migration runner    | Fitness format mappings, HealthKit and Health Connect writes, capability names, workout and nutrition models; its import already uses Baukit's envelope |
+| Leitbild             | Revisioned autosave, journal drafts, replay, ETags, OpenAPI linting, push registry, and another Expo SQLite adopter                | Journal and program records, conflict copy, network-first cache policy, word counts, and release promotion                                              |
+| Redemut              | Replay, ETags, local reminders, durable drafts, DOM menu, calendar, principal claims, popup evidence, and a migration runner       | Learning model, content compiler, calendar feed policy, and provider mappings                                                                           |
+| Runtime Analyzer     | Replay, job routing, guarded egress, OpenAPI decorator and checks, tenant SQL helper, and tokens                                   | FinOps formulas, agent protocol, gRPC ingest, Terraform provider, tenant schema, and provider integrations                                              |
+| Schlauzug            | Provisional replay, OpenAPI compatibility, and scope mapping                                                                       | Game modes, room protocol, WebSocket transport, balance policy, sprite format, load generators, and client models                                       |
+| Solo Leveling System | Replay, ETags, menu focus, outbound webhooks, OpenAPI checks, and remote MCP auth                                                  | Quests, progression, mana ledger, organizations, AI prompts, and integration mappings                                                                   |
+| Tiefgang             | Replay, ETags, purge horizons, tokens, guarded egress, menu focus, OpenAPI decorator, themed browser flow, and outbound webhooks   | Focus rules, XP, extension permissions, MCP tools, and provider mappings                                                                                |
+
+Account erasure, environment reconciliation, Keycloak policy, generated OpenAPI drift checks, strict quality gates, recurring job slots, and local import envelopes already have Baukit contracts or templates. Product copies of those features are adoption and cleanup work, not new package requests. The existing [next-improvements plan](next-improvements-plan.md) lists several product adoption follow-ups. Those should be checked against current code when a related item starts, because the list was written for the older release.
+
+## Delivery rules for the later iteration
+
+1. Open one evidence note for each numbered item. Record the source revisions, product code to remove, Baukit owner, proposed public types, supported runtimes, failure behavior, privacy boundary, and the breaks it makes. Recheck Schlauzug's dirty working tree before using it as contract evidence.
+2. Land the smallest public contract and conformance cases before adding a runtime dependency. Keep optional Expo, SQLx, egress, and webhook dependencies out of baseline products that do not select them. Do not introduce a product name into a Baukit crate or package. New wire fields follow the [API naming convention](#api-naming-convention).
+3. Add a README or platform-contract update, a changelog entry naming each break, and a packed or generated artifact check for every public addition. Product adoption should use a released Baukit version and delete its duplicate; a workspace path override is only a development check.
+4. Run `make ci` for each change. Run `make expo-sqlite-conformance` for items 1 and 15 and later SQLite adapter changes. Run Docker-backed ignored Rust tests with `--include-ignored` for items 3, 7, 9, 10, 16, and 17 and whenever the affected code has them. Run `make ts-browser-test` for browser storage, menu, or HTTP header work, native Android and iOS checks for Expo packages, and generated-fixture checks, including the golden snapshot trees, after CLI, template, or consumed public API changes (items 2, 5, 6, 8, and 19). Run Cargo deny after dependency changes, the Rust 1.95 check after language or standard-library changes, the metric-name linter after item 3 or 4 touches metric names, and version coherence after any version edit.
+5. Keep a reviewable result per item. Passing Baukit tests without the named product adoption and deletion leaves the extraction unfinished. The study items end with a written implement, recipe, or defer decision; they do not automatically authorize a package.
+6. Report every product defect from the list above to its product before starting the related Baukit item, so the fix does not wait on Baukit's release cadence.
