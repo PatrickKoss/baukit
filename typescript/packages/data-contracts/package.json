@@ -44,11 +44,13 @@
     },
     "./revisioned-writes": {
       "types": "./dist/revisioned-writes.d.ts",
-      "import": "./dist/revisioned-writes.js"
+      "import": "./dist/revisioned-writes.js",
+      "default": "./dist/revisioned-writes.js"
     },
     "./durable-draft": {
       "types": "./dist/durable-draft.d.ts",
-      "import": "./dist/durable-draft.js"
+      "import": "./dist/durable-draft.js",
+      "default": "./dist/durable-draft.js"
     },
     "./vitest": {
       "types": "./dist/vitest.d.ts",
