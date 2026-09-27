@@ -1,5 +1,9 @@
 import { scrubProperties, type ScrubberOptions } from './scrubber.js';
-import { InMemoryAnalyticsStorage } from './storage.js';
+import {
+  analyticsStorageKeys,
+  InMemoryAnalyticsStorage,
+  type AnalyticsStorageKeys,
+} from './storage.js';
 import { NoopTransport } from './transports.js';
 import type {
   AliasEnvelope,
@@ -131,7 +135,7 @@ export class AnalyticsClient<E extends AnalyticsEvent> implements AnalyticsPort<
   readonly #allowlist: EventAllowlist<E>;
   readonly #transport: Transport<E>;
   readonly #storage: AnalyticsStorage;
-  readonly #storagePrefix: string;
+  readonly #storageKeys: AnalyticsStorageKeys;
   readonly #uuidFactory: () => string;
   readonly #scrubberOptions: ScrubberOptions;
   readonly #maxQueueSize: number;
@@ -158,7 +162,9 @@ export class AnalyticsClient<E extends AnalyticsEvent> implements AnalyticsPort<
     this.#allowlist = options.allowlist;
     this.#transport = options.transport ?? new NoopTransport<E>();
     this.#storage = options.storage ?? new InMemoryAnalyticsStorage();
-    this.#storagePrefix = options.storageKeyPrefix ?? `@baukit/analytics-core:${this.#context.app}`;
+    this.#storageKeys = analyticsStorageKeys(
+      options.storageKeyPrefix ?? `@baukit/analytics-core:${this.#context.app}`,
+    );
     this.#uuidFactory = options.uuidFactory ?? defaultUuidFactory;
     this.#scrubberOptions = {
       blockedKeys: [...(options.blockedKeys ?? [])],
@@ -190,23 +196,23 @@ export class AnalyticsClient<E extends AnalyticsEvent> implements AnalyticsPort<
     this.#onWarning = options.onWarning ?? defaultWarning;
     this.#onTransportFailure = options.onTransportFailure;
 
-    const storedConsent = this.#readStorage(this.#consentKey);
+    const storedConsent = this.#readStorage(this.#storageKeys.consent);
     this.#consent =
       storedConsent === 'granted' || storedConsent === 'denied' || storedConsent === 'unknown'
         ? storedConsent
         : 'unknown';
 
-    const storedAnonymousId = this.#readStorage(this.#anonymousIdKey);
+    const storedAnonymousId = this.#readStorage(this.#storageKeys.anonymousId);
     this.#anonymousId =
       storedAnonymousId !== undefined && isUuid(storedAnonymousId)
         ? storedAnonymousId
         : this.#generateAnonymousId();
-    this.#writeStorage(this.#anonymousIdKey, this.#anonymousId);
+    this.#writeStorage(this.#storageKeys.anonymousId, this.#anonymousId);
 
-    const storedUserId = this.#readStorage(this.#userIdKey);
+    const storedUserId = this.#readStorage(this.#storageKeys.userId);
     this.#userId = storedUserId !== undefined && isUuid(storedUserId) ? storedUserId : undefined;
 
-    const storedAliasedUserId = this.#readStorage(this.#aliasedUserIdKey);
+    const storedAliasedUserId = this.#readStorage(this.#storageKeys.aliasedUserId);
     this.#aliasedUserId =
       storedAliasedUserId !== undefined && isUuid(storedAliasedUserId)
         ? storedAliasedUserId
@@ -277,7 +283,7 @@ export class AnalyticsClient<E extends AnalyticsEvent> implements AnalyticsPort<
     }
 
     this.#userId = userId;
-    this.#writeStorage(this.#userIdKey, userId);
+    this.#writeStorage(this.#storageKeys.userId, userId);
     const scrubbedTraits =
       traits === undefined ? undefined : scrubProperties(traits, this.#scrubberOptions);
     const envelope: IdentifyEnvelope = {
@@ -308,7 +314,7 @@ export class AnalyticsClient<E extends AnalyticsEvent> implements AnalyticsPort<
     }
 
     this.#aliasedUserId = userId;
-    this.#writeStorage(this.#aliasedUserIdKey, userId);
+    this.#writeStorage(this.#storageKeys.aliasedUserId, userId);
     const envelope: AliasEnvelope = {
       type: 'alias',
       captured_at: this.#timestamp(),
@@ -336,15 +342,15 @@ export class AnalyticsClient<E extends AnalyticsEvent> implements AnalyticsPort<
     this.#anonymousId = nextAnonymousId;
     this.#userId = undefined;
     this.#aliasedUserId = undefined;
-    this.#writeStorage(this.#anonymousIdKey, nextAnonymousId);
-    this.#removeStorage(this.#userIdKey);
-    this.#removeStorage(this.#aliasedUserIdKey);
+    this.#writeStorage(this.#storageKeys.anonymousId, nextAnonymousId);
+    this.#removeStorage(this.#storageKeys.userId);
+    this.#removeStorage(this.#storageKeys.aliasedUserId);
   }
 
   public setConsent(value: ConsentState): void {
     const transitionedToDenied = this.#consent !== 'denied' && value === 'denied';
     this.#consent = value;
-    this.#writeStorage(this.#consentKey, value);
+    this.#writeStorage(this.#storageKeys.consent, value);
     if (value !== 'granted') {
       this.#queue.length = 0;
       this.#clearFlushTimer();
@@ -377,22 +383,6 @@ export class AnalyticsClient<E extends AnalyticsEvent> implements AnalyticsPort<
     this.#clearFlushTimer();
     await this.flush();
     this.#clearFlushTimer();
-  }
-
-  get #consentKey(): string {
-    return `${this.#storagePrefix}:consent`;
-  }
-
-  get #anonymousIdKey(): string {
-    return `${this.#storagePrefix}:anonymous-id`;
-  }
-
-  get #userIdKey(): string {
-    return `${this.#storagePrefix}:user-id`;
-  }
-
-  get #aliasedUserIdKey(): string {
-    return `${this.#storagePrefix}:aliased-user-id`;
   }
 
   #allowedProperties(event: E): readonly string[] | undefined {

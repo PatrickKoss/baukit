@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AnalyticsClient, followsEventNameConvention } from './client.js';
-import { InMemoryAnalyticsStorage } from './storage.js';
+import { analyticsStorageKeys, InMemoryAnalyticsStorage } from './storage.js';
 import { InMemoryTransport, NoopTransport } from './transports.js';
 import type {
   AnalyticsClientOptions,
@@ -303,5 +303,24 @@ describe('AnalyticsClient failure semantics', () => {
     expect(followsEventNameConvention('checkout_started')).toBe(true);
     expect(followsEventNameConvention('CheckoutStarted')).toBe(false);
     expect(followsEventNameConvention('checkout_start')).toBe(false);
+  });
+});
+
+describe('analyticsStorageKeys', () => {
+  it('names every key the client persists under its prefix', () => {
+    const storage = new InMemoryAnalyticsStorage();
+    const client = createClient({ storage, storageKeyPrefix: 'app' });
+    client.setConsent('granted');
+    client.identify(USER_ID);
+    client.alias(ANONYMOUS_ID_1, USER_ID);
+
+    const keys = analyticsStorageKeys('app');
+    expect(Object.keys(storage.snapshot()).sort()).toEqual(Object.values(keys).sort());
+    expect(keys).toEqual({
+      consent: 'app:consent',
+      anonymousId: 'app:anonymous-id',
+      userId: 'app:user-id',
+      aliasedUserId: 'app:aliased-user-id',
+    });
   });
 });

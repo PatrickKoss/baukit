@@ -1,5 +1,22 @@
 import type { AnalyticsStorage } from './types.js';
 
+export interface AnalyticsStorageKeys {
+  readonly consent: string;
+  readonly anonymousId: string;
+  readonly userId: string;
+  readonly aliasedUserId: string;
+}
+
+/** Keys `AnalyticsClient` reads and writes for a `storageKeyPrefix`. */
+export function analyticsStorageKeys(prefix: string): AnalyticsStorageKeys {
+  return {
+    consent: `${prefix}:consent`,
+    anonymousId: `${prefix}:anonymous-id`,
+    userId: `${prefix}:user-id`,
+    aliasedUserId: `${prefix}:aliased-user-id`,
+  };
+}
+
 /** Small dependency-free storage useful as the default and in tests. */
 export class InMemoryAnalyticsStorage implements AnalyticsStorage {
   readonly #values = new Map<string, string>();

@@ -202,6 +202,7 @@ const EXPECTED_TYPESCRIPT_DEPENDENCIES: &[&str] = &[
 ];
 
 const EXPECTED_MOBILE_TYPESCRIPT_DEPENDENCIES: &[&str] = &[
+    "@baukit/analytics-posthog-native",
     "@baukit/data-contracts-expo-sqlite",
     "@baukit/localization-core",
     "@baukit/preferences-core",
