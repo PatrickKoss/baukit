@@ -168,6 +168,16 @@ jobs:
       - run: python3 deploy/observability/lint/check-metric-names.py
       - run: python3 -m unittest discover -s deploy/observability/lint -p 'test_*.py'
 
+  media-grants:
+    name: Media grant njs verifier
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: typescript/.nvmrc
+      - run: make media-grants-test media-grants-njs-test
+
   cli:
     name: Baukit CLI
     runs-on: ubuntu-latest

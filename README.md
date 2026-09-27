@@ -151,7 +151,7 @@ The generated product isn't a snapshot that rots. CI scaffolds a fresh one on ev
 
 The rest of the gate is similar. MSRV stays pinned at Rust 1.95 and CI checks it separately. `cargo deny` runs on advisories and licenses. A metric-name linter keeps dashboards and alerts honest. Dexie conformance runs in a real browser and the Expo SQLite adapter runs on a real Android device. Nobody skips the Docker-backed integration tests.
 
-The repo also ships a [Helm chart](deploy/chart) and [Grafana dashboards, alerts, and recording rules](deploy/observability) matched to the metric names above. The [agent skills](agent-skills/) teach Claude Code and Codex the conventions for product work. The QA audit runs as `/qa` in Claude Code or `$qa` in Codex.
+The repo also ships a [Helm chart](deploy/chart) and [Grafana dashboards, alerts, and recording rules](deploy/observability) matched to the metric names above, plus an [nginx njs verifier for signed media grants](deploy/media-grants) that checks the same vectors as `baukit-core`'s signer. The [agent skills](agent-skills/) teach Claude Code and Codex the conventions for product work. The QA audit runs as `/qa` in Claude Code or `$qa` in Codex.
 
 ## Documentation
 
