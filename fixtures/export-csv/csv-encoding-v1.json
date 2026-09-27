@@ -1,0 +1,377 @@
+{
+  "version": 1,
+  "notes": {
+    "cells": "A JSON string is a text cell, null is an empty cell, and { \"numeric\": \"-5\" } is a numeric cell.",
+    "byteOrderMark": "When options.byteOrderMark is true, the expected output is the code point byteOrderMarkCodePoint followed by csv."
+  },
+  "byteOrderMarkCodePoint": 65279,
+  "cases": [
+    {
+      "name": "no rows",
+      "rows": [],
+      "csv": ""
+    },
+    {
+      "name": "plain header and row",
+      "rows": [
+        ["id", "name"],
+        ["row-1", "Alpha"]
+      ],
+      "csv": "id,name\r\nrow-1,Alpha\r\n"
+    },
+    {
+      "name": "embedded comma",
+      "rows": [["a,b", "c"]],
+      "csv": "\"a,b\",c\r\n"
+    },
+    {
+      "name": "embedded quotes",
+      "rows": [["say \"hi\"", "\""]],
+      "csv": "\"say \"\"hi\"\"\",\"\"\"\"\r\n"
+    },
+    {
+      "name": "embedded line feed",
+      "rows": [["line 1\nline 2"]],
+      "csv": "\"line 1\nline 2\"\r\n"
+    },
+    {
+      "name": "embedded carriage return",
+      "rows": [["line 1\rline 2"]],
+      "csv": "\"line 1\rline 2\"\r\n"
+    },
+    {
+      "name": "embedded CRLF",
+      "rows": [["line 1\r\nline 2"]],
+      "csv": "\"line 1\r\nline 2\"\r\n"
+    },
+    {
+      "name": "empty and null cells",
+      "rows": [["", null, "x", ""]],
+      "csv": ",,x,\r\n"
+    },
+    {
+      "name": "row with one empty cell is quoted",
+      "rows": [[""], [null]],
+      "csv": "\"\"\r\n\"\"\r\n"
+    },
+    {
+      "name": "row without cells is an empty line",
+      "rows": [["a"], [], ["b"]],
+      "csv": "a\r\n\r\nb\r\n"
+    },
+    {
+      "name": "equals prefix",
+      "rows": [["=SUM(A1:A2)"]],
+      "csv": "'=SUM(A1:A2)\r\n"
+    },
+    {
+      "name": "plus prefix",
+      "rows": [["+1"]],
+      "csv": "'+1\r\n"
+    },
+    {
+      "name": "minus prefix on a text cell",
+      "rows": [["-5", "-cmd"]],
+      "csv": "'-5,'-cmd\r\n"
+    },
+    {
+      "name": "at prefix",
+      "rows": [["@SUM(1)"]],
+      "csv": "'@SUM(1)\r\n"
+    },
+    {
+      "name": "tab prefix",
+      "rows": [["\tcmd"]],
+      "csv": "'\tcmd\r\n"
+    },
+    {
+      "name": "carriage return prefix",
+      "rows": [["\rcmd"]],
+      "csv": "\"'\rcmd\"\r\n"
+    },
+    {
+      "name": "formula that also needs quoting",
+      "rows": [["=HYPERLINK(\"https://example.test\",\"open\")"]],
+      "csv": "\"'=HYPERLINK(\"\"https://example.test\"\",\"\"open\"\")\"\r\n"
+    },
+    {
+      "name": "formula after leading whitespace",
+      "rows": [[" =1+1", "  +1", "\n=1", "\t -1"]],
+      "csv": "' =1+1,'  +1,\"'\n=1\",'\t -1\r\n"
+    },
+    {
+      "name": "prefix characters after the first character",
+      "rows": [["a=b", "1-2", "user@example.test", "x+y"]],
+      "csv": "a=b,1-2,user@example.test,x+y\r\n"
+    },
+    {
+      "name": "leading space without a prefix",
+      "rows": [[" text", "  "]],
+      "csv": " text,  \r\n"
+    },
+    {
+      "name": "numeric cells are never neutralized",
+      "rows": [
+        [
+          {
+            "numeric": "-5"
+          },
+          {
+            "numeric": "0"
+          },
+          {
+            "numeric": "-0.25"
+          },
+          {
+            "numeric": "1.50"
+          },
+          {
+            "numeric": "1e-7"
+          },
+          {
+            "numeric": "-1.5E+3"
+          }
+        ]
+      ],
+      "csv": "-5,0,-0.25,1.50,1e-7,-1.5E+3\r\n"
+    },
+    {
+      "name": "numeric and text cells in one row",
+      "rows": [
+        ["amount", "note"],
+        [
+          {
+            "numeric": "-12.5"
+          },
+          "-12.5"
+        ]
+      ],
+      "csv": "amount,note\r\n-12.5,'-12.5\r\n"
+    },
+    {
+      "name": "Unicode text",
+      "rows": [["Grüße", "日本語", "👩‍👩‍👧‍👦", "é", "é", "a,ü"]],
+      "csv": "Grüße,日本語,👩‍👩‍👧‍👦,é,é,\"a,ü\"\r\n"
+    },
+    {
+      "name": "byte-order mark",
+      "options": {
+        "byteOrderMark": true
+      },
+      "rows": [["name"], ["Grüße"]],
+      "csv": "name\r\nGrüße\r\n"
+    },
+    {
+      "name": "byte-order mark without rows",
+      "options": {
+        "byteOrderMark": true
+      },
+      "rows": [],
+      "csv": ""
+    },
+    {
+      "name": "byte-order mark before a neutralized first cell",
+      "options": {
+        "byteOrderMark": true
+      },
+      "rows": [["=1+1"]],
+      "csv": "'=1+1\r\n"
+    },
+    {
+      "name": "formula neutralization turned off",
+      "options": {
+        "neutralizeFormulas": false
+      },
+      "rows": [["=1+1", "+1", "-5", "@x", "\tcmd", "\rcmd", "=a,b"]],
+      "csv": "=1+1,+1,-5,@x,\tcmd,\"\rcmd\",\"=a,b\"\r\n"
+    }
+  ],
+  "rejections": [
+    {
+      "name": "numeric cell with a plus sign",
+      "rows": [
+        [
+          {
+            "numeric": "+5"
+          }
+        ]
+      ],
+      "error": {
+        "code": "invalid_numeric_cell",
+        "rowIndex": 0,
+        "columnIndex": 0
+      }
+    },
+    {
+      "name": "numeric cell holding a formula",
+      "rows": [
+        ["a", "b", "c"],
+        [
+          "x",
+          "y",
+          {
+            "numeric": "=1+1"
+          }
+        ]
+      ],
+      "error": {
+        "code": "invalid_numeric_cell",
+        "rowIndex": 1,
+        "columnIndex": 2
+      }
+    },
+    {
+      "name": "numeric cell holding a formula with neutralization turned off",
+      "options": {
+        "neutralizeFormulas": false
+      },
+      "rows": [
+        [
+          {
+            "numeric": "-1+2"
+          }
+        ]
+      ],
+      "error": {
+        "code": "invalid_numeric_cell",
+        "rowIndex": 0,
+        "columnIndex": 0
+      }
+    },
+    {
+      "name": "empty numeric cell",
+      "rows": [
+        [
+          {
+            "numeric": ""
+          }
+        ]
+      ],
+      "error": {
+        "code": "invalid_numeric_cell",
+        "rowIndex": 0,
+        "columnIndex": 0
+      }
+    },
+    {
+      "name": "numeric cell with a leading space",
+      "rows": [
+        [
+          {
+            "numeric": " 5"
+          }
+        ]
+      ],
+      "error": {
+        "code": "invalid_numeric_cell",
+        "rowIndex": 0,
+        "columnIndex": 0
+      }
+    },
+    {
+      "name": "numeric cell with a leading zero",
+      "rows": [
+        [
+          {
+            "numeric": "05"
+          }
+        ]
+      ],
+      "error": {
+        "code": "invalid_numeric_cell",
+        "rowIndex": 0,
+        "columnIndex": 0
+      }
+    },
+    {
+      "name": "numeric cell with a trailing decimal point",
+      "rows": [
+        [
+          {
+            "numeric": "1."
+          }
+        ]
+      ],
+      "error": {
+        "code": "invalid_numeric_cell",
+        "rowIndex": 0,
+        "columnIndex": 0
+      }
+    },
+    {
+      "name": "numeric cell with a leading decimal point",
+      "rows": [
+        [
+          {
+            "numeric": ".5"
+          }
+        ]
+      ],
+      "error": {
+        "code": "invalid_numeric_cell",
+        "rowIndex": 0,
+        "columnIndex": 0
+      }
+    },
+    {
+      "name": "numeric cell with an empty exponent",
+      "rows": [
+        [
+          {
+            "numeric": "1e"
+          }
+        ]
+      ],
+      "error": {
+        "code": "invalid_numeric_cell",
+        "rowIndex": 0,
+        "columnIndex": 0
+      }
+    },
+    {
+      "name": "numeric cell holding NaN",
+      "rows": [
+        [
+          {
+            "numeric": "NaN"
+          }
+        ]
+      ],
+      "error": {
+        "code": "invalid_numeric_cell",
+        "rowIndex": 0,
+        "columnIndex": 0
+      }
+    },
+    {
+      "name": "numeric cell holding Infinity",
+      "rows": [
+        [
+          {
+            "numeric": "-Infinity"
+          }
+        ]
+      ],
+      "error": {
+        "code": "invalid_numeric_cell",
+        "rowIndex": 0,
+        "columnIndex": 0
+      }
+    },
+    {
+      "name": "numeric cell holding hexadecimal",
+      "rows": [
+        [
+          {
+            "numeric": "0x10"
+          }
+        ]
+      ],
+      "error": {
+        "code": "invalid_numeric_cell",
+        "rowIndex": 0,
+        "columnIndex": 0
+      }
+    }
+  ]
+}

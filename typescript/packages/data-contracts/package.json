@@ -34,6 +34,10 @@
       "types": "./dist/import-envelope.d.ts",
       "import": "./dist/import-envelope.js"
     },
+    "./export": {
+      "types": "./dist/export.d.ts",
+      "import": "./dist/export.js"
+    },
     "./vitest": {
       "types": "./dist/vitest.d.ts",
       "import": "./dist/vitest.js"

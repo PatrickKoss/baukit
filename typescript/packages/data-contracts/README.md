@@ -95,6 +95,56 @@ This API is additive. Existing import code can migrate by wrapping its current d
 planner first, then moving the write loop into `commitImportEnvelope`. It does not require a file
 format or database migration.
 
+## Exports
+
+The `/export` subpath is the counterpart of the import envelope. `encodeCsv` turns rows into an RFC
+4180 CSV string: every record ends with CRLF, and a cell is quoted when it contains a comma, a double
+quote, CR, or LF. A row holding one empty cell is written as `""` so a reader still sees one field.
+The helper has no runtime dependencies; the product writes the string to a file and shares it.
+
+```ts
+import { csvNumeric, encodeCsv } from '@baukit/data-contracts/export';
+
+const csv = encodeCsv(
+  [
+    ['note', 'amount', 'price'],
+    ['=HYPERLINK("https://example.test")', -5, csvNumeric('1.50')],
+  ],
+  { byteOrderMark: true },
+);
+```
+
+Formula neutralization is on by default. A text cell gets a leading apostrophe when its first
+character is `=`, `+`, `-`, `@`, tab, or CR, or when `=`, `+`, `-`, or `@` follows leading spaces,
+tabs, CR, or LF. Only these ASCII characters are checked. The apostrophe changes the value, so a
+file that your own importer reads back must either strip it or be written with
+`neutralizeFormulas: false`. Use the opt-out only for machine-read files that never open in a
+spreadsheet.
+
+Text that looks like a negative number, such as `'-5'`, is neutralized. Pass real numbers as a
+finite `number` or as `csvNumeric(text)` when the formatting matters, for example `'1.50'`. Numeric
+cells must match the JSON number grammar and are written unchanged. `null` is an empty cell.
+`byteOrderMark: true` starts the output with U+FEFF for spreadsheet programs that need it to detect
+UTF-8.
+
+`CsvEncodeError.code` is `invalid_numeric_cell` for a non-finite number or a numeric cell outside
+the JSON grammar, `invalid_unicode` for a string with an unpaired surrogate, or `unsupported_cell`
+for any other runtime value. The error carries `rowIndex` and `columnIndex` and never the cell
+value. `baukit_core::export::encode_csv` in Rust passes the same vectors
+(`fixtures/export-csv/csv-encoding-v1.json`).
+
+`ShareOutcome` names what happened after the product handed the file to the platform:
+
+- `shared`: a share sheet or the Web Share API accepted the file. Some native share sheets report
+  this even when the user closed them without picking a target.
+- `saved`: the file was written to a place the user can open, such as a browser download.
+- `cancelled`: the user dismissed the share or save UI and the platform said so, for example with a
+  Web Share `AbortError`.
+- `unavailable`: the runtime has no share or save mechanism, so nothing was attempted.
+- `failed`: a mechanism was attempted and reported an error other than cancellation.
+
+`SHARE_OUTCOMES` lists the same values. The package ships no Expo or browser implementation yet.
+
 ## Authenticated partitions
 
 `deriveScopedStoreName(namespace, subject)` hashes a length-delimited canonical
