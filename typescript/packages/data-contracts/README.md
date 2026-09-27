@@ -145,6 +145,136 @@ value. `baukit_core::export::encode_csv` in Rust passes the same vectors
 
 `SHARE_OUTCOMES` lists the same values. The package ships no Expo or browser implementation yet.
 
+## Revisioned writes
+
+The `/revisioned-writes` subpath sends edits of one server document one at a time, each checked
+against a revision. It has no React dependency. Wrap it in a hook with `useSyncExternalStore`: the
+snapshot object only changes when state changes.
+
+```ts
+import { createRevisionedWriteQueue } from '@baukit/data-contracts/revisioned-writes';
+
+const queue = createRevisionedWriteQueue({
+  initial: { scope: accountId, document: noteId, acknowledgedRevision: loaded.revision },
+  write: async ({ scope, document, value, expectedRevision, afterUnknownOutcome, signal }) => {
+    const response = await api.saveNote(scope, document, value, {
+      ifMatch: expectedRevision,
+      idempotencyKey: await keyFor(document, value, expectedRevision),
+      signal,
+    });
+    if (response.status === 409) {
+      return { kind: 'conflict', currentRevision: response.revision, conflict: response.body };
+    }
+    if (!response.ok) {
+      return { kind: 'rejected', error: response.problem };
+    }
+    return { kind: 'accepted', revision: response.revision };
+  },
+  signal: pageLifetime.signal,
+});
+
+queue.enqueue(editedValue);
+await queue.flush();
+```
+
+The snapshot keeps two values apart. `acknowledgedRevision` is the last revision the server
+confirmed. `unsent` is the local value no write has carried yet. A write sends the value it took
+from `unsent` with the acknowledged revision as `expectedRevision`. Edits made while that write is
+in flight go into a fresh `unsent` and the status stays `dirty`. An acknowledgement for the older
+value never marks the newer one saved. Queued edits are combined with `coalesce(older, newer)`,
+which keeps the newer value by default. Pass your own function when a write carries a patch instead
+of the whole document.
+
+`enqueue` never sends. Debounce in the product and call `flush`. Concurrent `flush` calls share one
+drain, which resolves with the snapshot once the queue is idle or paused.
+
+The write callback reports one of three outcomes:
+
+- `accepted` stores the new revision and sends the next unsent value, if any.
+- `rejected` means the server refused the write before accepting it. The value goes back into
+  `unsent`, merged with newer edits, and the status is `failed`. `flush` or `retry` sends it again.
+- `conflict` pauses the queue with the server's revision and conflict payload. Nothing more is sent
+  until the product calls `reset` with a revision it trusts. To keep the local value, `reset` to
+  the current server revision and `enqueue` the value again.
+
+A throw from the write callback, or a rejected promise, means the outcome is unknown. The server may
+have applied the write and lost the response. The queue moves to `unknown-outcome` and keeps the
+exact value and expected revision in `uncertain`, apart from newer edits. `flush` does nothing in
+that state. `retry` sends the same value and revision with `afterUnknownOutcome: true`, so the
+product can reuse its idempotency key. Otherwise read the server and call `reset`. The queue never
+treats an unknown outcome as a failure that happened before the server accepted the write.
+
+`reset(next)` is the generation fence for an account or document switch. It aborts the current
+write through the `signal` passed to the callback, drops unsent and uncertain state, and ignores
+any late result of the old generation. `cancel()` does the same and keeps the queue in `cancelled`
+until the next `reset`. Aborting the injected `signal` option calls `cancel`.
+
+Status is `cancelled`, `writing`, `failed`, `unknown-outcome`, `conflict`, `dirty`, or `idle`, in
+that order of precedence. `error` holds the `rejected` error or the thrown value.
+
+## Durable drafts
+
+The `/durable-draft` subpath keeps an unsent form value in any `KeyValueStore`, so it survives a
+reload or crash. It has no React dependency.
+
+```ts
+import { createDurableDraft, type DraftCodec } from '@baukit/data-contracts/durable-draft';
+
+const noteCodec: DraftCodec<NoteDraft> = {
+  version: 2,
+  encode: (value) => ({ body: value.body, baseRevision: value.baseRevision }),
+  decode: (value, version) => decodeNoteDraft(value, version),
+};
+
+const draft = createDurableDraft({
+  store,
+  key: (scope: { accountId: string; noteId: string }) =>
+    `note-draft:${scope.accountId}:${scope.noteId}`,
+  codec: noteCodec,
+});
+
+await draft.open({ accountId, noteId }, { body: loaded.body, baseRevision: loaded.revision });
+draft.update({ body: editedBody, baseRevision: loaded.revision });
+await draft.save();
+```
+
+Storage holds `{ version, value }`. The codec owns the value: `encode` returns JSON, and `decode`
+receives unchecked JSON plus the stored version and returns `decoded`, `corrupt`, or
+`unsupported-version`. Validate every field in `decode`. A decoded value from an older version
+counts as upgraded, so the draft opens dirty and the next `save` rewrites it. The helper returns
+`unsupported-version` without calling `decode` when the stored version is above `codec.version`,
+and `corrupt` when the envelope is malformed or `decode` throws. Keep a server base revision or ETag
+inside the value when the product needs it for a later conflict check.
+
+An open snapshot has two groups of state. `recovery` says what `open` found: `none`, `restored`,
+`corrupt`, `unsupported-version`, or `unavailable` when the read failed. `persistence` says what
+storage is doing now: `loading`, `idle`, `saving`, `clearing`, or `failed`. `dirty` is true when
+the value differs from what storage holds, and `localRevision` counts local changes. A restored
+draft can also be dirty.
+
+`open` never writes or deletes. While recovery is `corrupt` or `unsupported-version`, `save`
+resolves `blocked` so the unreadable data stays in place. Call `clear({ reason: 'discarded' })` to
+remove it.
+
+`clear` takes the reason for the deletion:
+
+- `{ reason: 'submitted', localRevision }` reports that the server confirmed the value at that local
+  revision. The snapshot shows `submission: 'confirmed'` and keeps the value visible. If the user
+  edited after that revision, the stored draft stays and `clear` resolves `newer-edits-kept`.
+- `{ reason: 'discarded' }` deletes the draft and returns the value to the one passed to `open`.
+
+A failed deletion rejects with a `DraftPersistenceError` and stays in the snapshot as
+`persistence: 'failed'`. After a submission, `submission` stays `confirmed`, so the product can tell
+"the server has it, but the local copy may come back" apart from "nothing was sent". Read, write,
+and delete failures use `DraftPersistenceError` with `code: 'draft_persistence_failed'` and an
+`operation`. The message never includes the key or the value.
+
+`open` for a new scope fences the previous one. Storage work of the old scope that had not started
+is skipped and resolves `stale`. Work that already started finishes but does not change the new
+snapshot. All storage work runs in order, so switching from A to B and back to A reads what A's last
+write left. `close()` does not save; call `save` on `pagehide` or when the app moves to the
+background.
+
 ## Authenticated partitions
 
 `deriveScopedStoreName(namespace, subject)` hashes a length-delimited canonical
