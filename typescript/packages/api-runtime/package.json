@@ -26,6 +26,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./idempotency": {
+      "types": "./dist/idempotency.d.ts",
+      "import": "./dist/idempotency.js",
+      "default": "./dist/idempotency.js"
     }
   },
   "files": [
