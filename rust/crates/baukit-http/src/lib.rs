@@ -93,6 +93,7 @@
 
 mod error;
 mod extract;
+mod idempotency;
 mod locale;
 mod middleware;
 mod options;
@@ -103,6 +104,12 @@ mod routing;
 pub use baukit_openapi::{ErrorBody, ErrorEnvelope, ResponseEnvelope, Rfc3339DateTime};
 pub use error::ApiError;
 pub use extract::{ApiJson, ApiPath, ApiQuery, Path, Query};
+pub use idempotency::{
+    IDEMPOTENCY_KEY, IDEMPOTENCY_KEY_IN_PROGRESS_CODE, IDEMPOTENCY_KEY_REQUIRED_CODE,
+    IDEMPOTENCY_KEY_REUSED_CODE, INVALID_IDEMPOTENCY_KEY_CODE, IdempotencyError, IdempotencyKey,
+    IdempotencyKeyRule, InvalidIdempotencyKey, InvalidIdempotencyKeyRule,
+    MAX_IDEMPOTENCY_KEY_BYTES,
+};
 pub use locale::{
     LocaleQueryOverride, MAX_ACCEPT_LANGUAGE_BYTES, MAX_LOCALE_QUERY_BYTES, MAX_SUPPORTED_LOCALES,
     RequestLocale, RequestLocaleConfig, RequestLocaleConfigError, RequestLocaleRejection,

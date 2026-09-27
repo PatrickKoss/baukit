@@ -30,7 +30,7 @@ use tracing::Instrument as _;
 use tracing_opentelemetry::OpenTelemetrySpanExt as _;
 use uuid::Uuid;
 
-use crate::{ApiError, HttpOptions, ResponseCachePolicy};
+use crate::{ApiError, HttpOptions, IDEMPOTENCY_KEY, ResponseCachePolicy};
 
 /// The standard request ID header.
 pub const X_REQUEST_ID: HeaderName = HeaderName::from_static("x-request-id");
@@ -167,6 +167,7 @@ fn cors_layer(options: &HttpOptions) -> CorsLayer {
             AUTHORIZATION,
             CONTENT_TYPE,
             IF_MATCH,
+            IDEMPOTENCY_KEY,
             X_REQUEST_ID,
             TRACEPARENT,
             TRACESTATE,
