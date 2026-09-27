@@ -30,7 +30,7 @@ Waves group items with disjoint file ownership. Up to four implementation agents
 
 ### Wave 3: server contracts
 
-- [ ] 6. Add strong-ETag revision preconditions
+- [~] 6. Add strong-ETag revision preconditions
 - [ ] 8. Add OpenAPI error responses and a compatibility check
 - [~] 9. Add server-side tombstone purge horizons
 - [ ] 10. Add a PostgreSQL API token store with grants
