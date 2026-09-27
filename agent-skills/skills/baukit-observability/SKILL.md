@@ -39,4 +39,4 @@ promtool check rules deploy/observability/recording-rules/*.rules.yml
 promtool check rules deploy/observability/alerts/*.rules.yml
 ```
 
-The Baukit linter rejects unknown or pluralized HTTP metrics, `service_name` Loki selectors, and stored status-class labels. Also run the product backend tests and validate the imported dashboard and rules in staging before enabling notifications.
+The Baukit linter rejects unknown or pluralized HTTP metrics, `service_name` Loki selectors, and stored status-class labels. For product dashboards, pass `--observability-root` and an `--allowlist` file of product metric names instead of editing the linter; the generated `docs/observability-lint.md` shows the call. Also run the product backend tests and validate the imported dashboard and rules in staging before enabling notifications.
