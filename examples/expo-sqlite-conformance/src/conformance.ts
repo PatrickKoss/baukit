@@ -6,7 +6,10 @@ import {
   type StoredRecord,
   recheckServerSubjectBeforeSyncAdoption,
 } from "@baukit/data-contracts";
-import { ExpoSqliteStore } from "@baukit/data-contracts-expo-sqlite";
+import {
+  ExpoSqliteConnection,
+  ExpoSqliteStore,
+} from "@baukit/data-contracts-expo-sqlite";
 import * as Crypto from "expo-crypto";
 import * as SQLite from "expo-sqlite";
 
@@ -580,6 +583,172 @@ export async function runConformance(): Promise<{ readonly passed: number }> {
           await second.records.get(RECORDS.second.id),
           RECORDS.second,
           "second namespace lost its root write",
+        );
+      },
+    },
+    {
+      name: "real SQLite raw connection keeps root statements out of another caller's transaction",
+      run: async () => {
+        const connection = new ExpoSqliteConnection(database);
+        await connection.exec("CREATE TABLE raw_events (label TEXT NOT NULL)");
+        let entered: () => void = () => undefined;
+        const transactionEntered = new Promise<void>((resolve) => {
+          entered = resolve;
+        });
+        const transaction = connection.transaction(async (context) => {
+          await context.run(
+            "INSERT INTO raw_events (label) VALUES (?)",
+            "transaction",
+          );
+          entered();
+          await hold(TRANSACTION_HOLD_MS);
+          throw new Error("roll back");
+        });
+        await transactionEntered;
+        const root = connection.run(
+          "INSERT INTO raw_events (label) VALUES (?)",
+          "root",
+        );
+        await expectReject(transaction, "rolled-back transaction");
+        await root;
+        assertDeep(
+          await connection.all("SELECT label FROM raw_events ORDER BY rowid"),
+          [{ label: "root" }],
+          "root write joined another caller's transaction",
+        );
+      },
+    },
+    {
+      name: "real SQLite raw connection enforces foreign keys inside transactions",
+      run: async () => {
+        const connection = new ExpoSqliteConnection(database);
+        await connection.exec(`CREATE TABLE raw_parents (id TEXT PRIMARY KEY NOT NULL);
+CREATE TABLE raw_children (
+  id TEXT PRIMARY KEY NOT NULL,
+  parent_id TEXT NOT NULL REFERENCES raw_parents (id) ON DELETE CASCADE
+);`);
+        await expectReject(
+          connection.transaction((context) =>
+            context.run(
+              "INSERT INTO raw_children (id, parent_id) VALUES (?, ?)",
+              "orphan",
+              "missing",
+            ),
+          ),
+          "orphan insert inside a transaction",
+        );
+        await connection.transaction(async (context) => {
+          await context.run(
+            "INSERT INTO raw_parents (id) VALUES (?)",
+            "parent",
+          );
+          await context.run(
+            "INSERT INTO raw_children (id, parent_id) VALUES (?, ?)",
+            "child",
+            "parent",
+          );
+          await context.run("DELETE FROM raw_parents WHERE id = ?", "parent");
+        });
+        assertDeep(
+          await connection.all("SELECT id FROM raw_children"),
+          [],
+          "ON DELETE CASCADE did not run inside a transaction",
+        );
+      },
+    },
+    {
+      name: "real SQLite raw connection rolls back schema changes and rejects nesting",
+      run: async () => {
+        const connection = new ExpoSqliteConnection(database);
+        await connection.exec("CREATE TABLE raw_steps (label TEXT NOT NULL)");
+        await expectReject(
+          connection.transaction(async (context) => {
+            await context.exec(
+              "ALTER TABLE raw_steps ADD COLUMN rank INTEGER NOT NULL DEFAULT 0; CREATE TABLE raw_partial (id TEXT);",
+            );
+            await context.exec("INSERT INTO raw_missing (id) VALUES ('fails')");
+          }),
+          "failing migration step",
+        );
+        assertDeep(
+          await connection.all(
+            "SELECT name FROM pragma_table_info('raw_steps') ORDER BY cid",
+          ),
+          [{ name: "label" }],
+          "a failed step left a column behind",
+        );
+        assert(
+          (await connection.get(
+            "SELECT name FROM sqlite_master WHERE name = 'raw_partial'",
+          )) === undefined,
+          "a failed step left a table behind",
+        );
+        await connection.transaction(async (context) => {
+          await context.run(
+            "INSERT INTO raw_steps (label) VALUES (?)",
+            "outer",
+          );
+          await expectReject(
+            context.transaction(() => undefined),
+            "nested transaction",
+          );
+        });
+        assertDeep(
+          await connection.all("SELECT label FROM raw_steps"),
+          [{ label: "outer" }],
+          "outer transaction lost its write after a rejected nesting",
+        );
+      },
+    },
+    {
+      name: "real SQLite raw connection and ExpoSqliteStore share one queue",
+      run: async () => {
+        const store = await makeStore();
+        const connection = new ExpoSqliteConnection(database);
+        await connection.exec("CREATE TABLE raw_shared (label TEXT NOT NULL)");
+        let storeEntered: () => void = () => undefined;
+        const storeHeld = new Promise<void>((resolve) => {
+          storeEntered = resolve;
+        });
+        const storeTransaction = store.withTransaction(async (context) => {
+          await context.records.put(RECORDS.first);
+          storeEntered();
+          await hold(TRANSACTION_HOLD_MS);
+        });
+        await storeHeld;
+        await Promise.all([
+          connection.run(
+            "INSERT INTO raw_shared (label) VALUES (?)",
+            "during store transaction",
+          ),
+          storeTransaction,
+        ]);
+        let rawEntered: () => void = () => undefined;
+        const rawHeld = new Promise<void>((resolve) => {
+          rawEntered = resolve;
+        });
+        const rawTransaction = connection.transaction(async (context) => {
+          await context.run(
+            "INSERT INTO raw_shared (label) VALUES (?)",
+            "rolled back",
+          );
+          rawEntered();
+          await hold(TRANSACTION_HOLD_MS);
+          throw new Error("roll back");
+        });
+        await rawHeld;
+        const storeWrite = store.records.put(RECORDS.second);
+        await expectReject(rawTransaction, "rolled-back raw transaction");
+        await storeWrite;
+        assertDeep(
+          await connection.all("SELECT label FROM raw_shared ORDER BY rowid"),
+          [{ label: "during store transaction" }],
+          "raw statements overlapped the store transaction",
+        );
+        assertDeep(
+          await store.records.get(RECORDS.second.id),
+          RECORDS.second,
+          "store write joined the rolled-back raw transaction",
         );
       },
     },

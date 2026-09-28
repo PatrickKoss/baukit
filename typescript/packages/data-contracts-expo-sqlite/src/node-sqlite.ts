@@ -5,7 +5,7 @@ import { DatabaseSync, type SQLInputValue, type StatementSync } from 'node:sqlit
 
 import type { SQLiteBindParams, SQLiteRunResult, SQLiteVariadicBindParams } from 'expo-sqlite';
 
-import type { ExpoSqliteDatabase } from './index.js';
+import type { ExpoSqliteDatabase } from './queued-database.js';
 
 type NamedValues = Record<string, SQLInputValue>;
 
