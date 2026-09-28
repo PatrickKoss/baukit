@@ -90,8 +90,8 @@ cargo fmt   --manifest-path .generated-fixture/fixture/backend/Cargo.toml --all 
 cargo clippy --manifest-path .generated-fixture/fixture/backend/Cargo.toml --all-targets -- -D warnings
 cargo test  --manifest-path .generated-fixture/fixture/backend/Cargo.toml
 cargo test  --manifest-path .generated-fixture/fixture/backend/Cargo.toml -p fixture-bin --test openapi_drift
-# web:    cd .generated-fixture/fixture/web    && pnpm install && pnpm build && pnpm lint && pnpm test
-# mobile: cd .generated-fixture/fixture/mobile && pnpm install && pnpm exec tsc --noEmit && pnpm lint && pnpm test
+# web:    cd .generated-fixture/fixture/web    && pnpm install && pnpm build && pnpm lint && pnpm test && pnpm run test:coverage
+# mobile: cd .generated-fixture/fixture/mobile && pnpm install && pnpm exec tsc --noEmit && pnpm lint && pnpm run test:coverage
 # MCP:    `make mcp-fixture-gate` generates `--backend --mcp`, checks the backend,
 #         then builds, lints, typechecks, tests, and runs both MCP drift checks.
 ```

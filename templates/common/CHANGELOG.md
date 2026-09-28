@@ -9,6 +9,8 @@
 {% endif %}{% if context.mobile %}- Added mobile tests for the theme mode control, record store seams, and the route heading focus hook, with `@testing-library/react-native` and `test-renderer` as dev dependencies.
 {% if context.auth_oidc %}- Changed the auth mobile app to use the base Jest config, so `test:coverage` now enforces the 70% statement, branch, function, and line floors. The app also gains the `setup` and `test:coverage` scripts that the generated CI already calls. New tests cover the OIDC auth hook, the authenticated local-data provider, and the authenticated API runtime.
 {% endif %}{% endif %}{% if context.web and context.auth_oidc %}- Added `E2E_WEB_PORT` to the web Keycloak stack test. Its global setup adds the chosen origin to the realm's web client through the admin API when the client lacks it, and `E2E_KEYCLOAK_WEB_CLIENT_ID` names that client.
+- Added auth web tests for the OIDC client wiring, the API parsers and default transport, the authenticated API runtime, and the local-data hook, so `test:coverage` passes its 70% floors.
+{% endif %}{% if context.backend and context.auth_oidc %}- Added a Redis service to `compose.yaml` on `127.0.0.1:{{ context.redis_host_port }}`. The API's rate limiter needs it at startup, and `make dev` now starts it.
 {% endif %}- Added append-only `.env` reconciliation to generated project setup. Existing local bytes and values are preserved.
 - Fixed the strict quality gate so a freshly generated project can run it before its first commit.
 - Added a dependency-free local Markdown link check to the strict quality profile.

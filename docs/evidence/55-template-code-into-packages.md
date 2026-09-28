@@ -435,3 +435,99 @@ The TypeScript package changes touch tests, dev dependencies, and scripts only, 
   passes. Same fix shape as mobile, not done here.
 - The product Compose file has no Redis, so `make run` fails for every auth product until one is
   added or the README's container is started.
+
+### F7: auth web coverage, Redis, and the fixture coverage gate
+
+F7 closes both items under "Still open" and the Baukit CI gap that let them ship.
+
+#### Auth web coverage floors
+
+The generated auth web app measured 68.75% functions and 59.18% branches against the 70% floors
+in `web/vitest.config.ts`. The auth overlay replaces `api.ts` but inherited the base
+`api.test.ts`, which only covers `listItems`. `auth.ts` and `local-data.ts` had no tests at all.
+`auth.test.ts` did test `authenticated-api.ts`, but only the replay path.
+
+New and rewritten tests under `templates/web/__auth__/web/src/`:
+
+- `api.test.ts` replaces the base file. It covers `listItems` and `currentUser` on valid and
+  malformed bodies, and the default transport through a stubbed global `fetch` with no browser
+  session.
+- `auth.test.ts` keeps the PKCE authorization URL case and adds the `authClient` wiring against a
+  mocked `OidcClient`: no client and no session without `window`, one lazily built client from the
+  local defaults, configured issuer and client ID from `VITE_OIDC_*`, and delegation of every call.
+- `authenticated-api.test.ts` takes the two replay cases from `auth.test.ts` and adds the no-session
+  case and the global `fetch` fallback.
+- `local-data.test.tsx` renders `useAuthenticatedLocalData` in jsdom: open on sign-in with the
+  registry written to `localStorage`, sign-out, terminal expiry, explicit clear, identity mismatch,
+  a corrupt registry that blocks, and a transition that settles after unmount.
+
+The tests avoid the product name, so they need no template placeholders. Generated auth coverage
+is now 91.44% statements, 83.67% branches, 90.62% functions, and 91.03% lines. No threshold changed
+and no file was excluded. The remaining gaps are inherited base files (`back-or-replace.ts`,
+`route-state.ts`, `accessible-dialog.tsx`), which the base app also leaves partly uncovered, and the
+`canRetry === false` arm in `authenticated-api.ts`, which the runtime never reaches because it does
+not call `onUnauthorized` after the one replay.
+
+#### Redis for the auth backend
+
+The auth API builds `RedisRateLimitStore::connect_if_enabled` at startup, and rate limiting is on by
+default, so the process exits with `RateLimitStoreError` without Redis. The non-auth backend has no
+rate limiter and needs no Redis. The fix follows the Keycloak service:
+
+- `compose.yaml` gains a `redis` service (`redis:8.10.0-alpine`, the image the mobile QA stack
+  already pins) under `{% if context.auth_oidc %}`, with a `redis-cli ping` healthcheck. It publishes
+  on `127.0.0.1:<redis_host_port>` only, because the development Redis has no password.
+- The CLI adds `redis_host_port` (6379 plus `--port-offset`) to the template context and to
+  `PortConfiguration`, so the collision and overflow checks cover it. `baukit doctor` checks the
+  Compose mapping for auth products, and the Makefile URL when the offset is not zero.
+- `make dev` now also runs `docker compose up -d --wait redis`. With offset 0 the
+  `redis://127.0.0.1/` default in `baukit-config` already matches the published port. With an
+  offset, `make run` passes `<APP>__RATE_LIMIT__REDIS_URL=redis://127.0.0.1:<port>/` next to the
+  existing `HTTP__PORT` and `OPS__PORT` overrides.
+- `mobile/scripts/qa/docker-compose.qa.yml` declares its Redis `ports` with `!override`. Compose
+  appends port lists across files, so without the tag an auth product's QA stack would also publish
+  6379 and collide with the development Redis. `docker compose config` shows only 16379 for both
+  the auth and the combined fixture.
+
+Production behavior is unchanged: the API still refuses to start when it cannot reach the
+configured Redis. The backend README says so, and the web auth README's stack test now runs
+`docker compose up -d --wait keycloak redis` instead of a throwaway container.
+
+Verified on the generated auth fixture: `make dev` brought Keycloak and Redis up healthy,
+`make run` started the API, `/healthz` returned 200, `/readyz` reported ready, and an
+unauthenticated `/me` returned 401 with `RateLimit-*` headers from the Redis-backed limiter. With
+Redis stopped, the same binary exited 1 with `RateLimitStoreError(Connection refused)`. All
+containers and the API were stopped afterwards.
+
+#### Baukit fixture CI
+
+Baukit's `generated-fixture` job ran `pnpm test` for web and mobile, while the generated product CI
+runs `test:coverage`. The web step now runs `pnpm test` and then `pnpm run test:coverage`. Web
+`test` also runs the service-worker script test, which `test:coverage` skips, and the Vitest suite
+takes about a second, so running it twice is cheaper than copying the script into the workflow.
+The mobile step replaces `pnpm test` with `pnpm run test:coverage`, which runs the same Jest suite
+with coverage. `CLAUDE.md` mirrors both lines.
+
+#### Breaks
+
+Template-only, listed in the generated `CHANGELOG.md` under `[Unreleased]`:
+
+- Auth products gain a `redis` Compose service on host port 6379 plus the offset, and `make dev`
+  starts it. A product that already runs something on that port must stop it or pick another
+  offset.
+- The auth web `api.test.ts` no longer comes from the base template.
+
+#### Gates
+
+- CLI `cargo fmt --check`, `clippy -D warnings`, and `cargo test -- --include-ignored`, with
+  re-blessed `auth`, `combined`, `mobile`, and `strict` snapshots. A new generator test checks that
+  `baukit doctor` rejects an auth product whose Redis mapping ignores the port offset.
+- Auth fixture (`--backend --mobile --web --auth oidc --mcp`): backend fmt, clippy, tests with
+  `--include-ignored`, and `openapi_drift`; web frozen install, build, lint, test, `test:coverage`;
+  mobile frozen install, `tsc --noEmit`, lint, test, `test:coverage`; MCP build, typecheck, lint,
+  test, `openapi:check`, `docs:check`.
+- Combined fixture (`--backend --mobile --web`): the same backend, web, and mobile gates. Web
+  coverage is 84.21% statements and 74.13% branches.
+- Web-only and mobile-only fixtures: install, build or `tsc --noEmit`, lint, test, `test:coverage`.
+- `scripts/check-version-coherence.py`.
+- The Android native gate was not run. No native dependency or app config changed.

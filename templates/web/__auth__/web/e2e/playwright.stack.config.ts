@@ -8,8 +8,8 @@ const port = Number(process.env['E2E_WEB_PORT'] ?? '5173');
 const baseURL = `http://localhost:${String(port)}`;
 
 /**
- * Runs `e2e/stack` against the composed Keycloak. Start it with
- * `docker compose up -d --wait keycloak` from the product root first.
+ * Runs `e2e/stack` against the composed Keycloak and the running API. Start
+ * them as the README's Keycloak stack test section describes.
  */
 export default defineConfig({
   testDir: './stack',

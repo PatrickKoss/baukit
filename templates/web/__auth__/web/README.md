@@ -30,14 +30,11 @@ For QA files generated before this template version, `field` and `value` still w
 
 `e2e/stack` signs a real user in through the composed Keycloak and reads their subject back from the running API. `createKeycloakTestUser` uses the Keycloak admin API to create a verified user with a random password and returns its subject. `signInWithKeycloak` waits for the Keycloak page, fills `#username` and `#password`, and submits.
 
-The API has to run with the test origin in its CORS allow-list. Its rate limiter also connects to Redis at startup, and Compose does not start one. From the product root:
+The API has to run with the test origin in its CORS allow-list, and its rate limiter needs the composed Redis. From the product root:
 
 ```sh
-docker compose up -d --wait keycloak
-docker run -d --rm --name {{ context.app_name }}-e2e-redis -p 127.0.0.1:16379:6379 redis:8.10.0-alpine
-{{ context.app_env }}__RATE_LIMIT__REDIS_URL=redis://127.0.0.1:16379/ \
-{{ context.app_env }}__HTTP__CORS_ALLOWED_ORIGINS='["http://localhost:5183"]' \
-make run
+docker compose up -d --wait keycloak redis
+{{ context.app_env }}__HTTP__CORS_ALLOWED_ORIGINS='["http://localhost:5183"]' make run
 ```
 
 Then run the specs from `web/` in a second shell:
