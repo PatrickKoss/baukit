@@ -26,6 +26,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./vectors": {
+      "types": "./dist/zoned-time-vectors.d.ts",
+      "import": "./dist/zoned-time-vectors.js",
+      "default": "./dist/zoned-time-vectors.js"
     }
   },
   "files": [

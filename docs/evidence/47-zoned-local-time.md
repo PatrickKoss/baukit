@@ -259,3 +259,37 @@ Deferred to the products, as step 4 of the item:
 
 The plan's acceptance requires the three TypeScript copies to be replaced in at least two products.
 That happens in the product adoption step, not in this change.
+
+## Follow-up (2026-09-28)
+
+The residual risk above is closed for Android. `fixtures/zoned-time/vectors-v1.json` now runs inside
+Hermes on an Android emulator, and Hermes agrees with Node on every vector: 152 of 152 checks (38
+cases times four policy pairs) passed, with the device zone at `Europe/Berlin`. No package change
+was needed, because no vector disagreed.
+
+What changed and why:
+
+- The vector runner moved out of `zoned-time.test.ts` into `src/zoned-time-vectors.ts`, exported as
+  `@baukit/localization-core/vectors` with `zonedTimeVectorChecks(fixture)` and the fixture types.
+  Each check has a `label`, an `expected` value, and an `actual()` call. The Vitest suite now runs
+  these checks with `toEqual`, and the device app runs the same checks with a canonical JSON
+  comparison, so Node and Hermes share one set of assertions instead of two copies.
+- `examples/expo-notifications-conformance` runs the checks in a debug build, where the engine is
+  Hermes; the app fails if `HermesInternal` is missing. Expected instants come from `Date.parse` in
+  the same runtime, so the app also fails if any expected instant parses to `NaN`, which would
+  otherwise compare equal on both sides.
+- `make expo-notifications-conformance` runs it, and CI has a matching job. Item 12's follow-up in
+  `48-local-notifications.md` explains why this is a second app rather than part of the SQLite
+  conformance app.
+
+Gates: `make expo-notifications-conformance` passed (vectors marker
+`{"zonedTime":152,"notificationPlan":88,"deviceZone":"Europe/Berlin"}` in both launches), the whole
+TypeScript workspace `check` (build, lint, test, format:check) passed, and localization-core runs
+265 tests.
+
+Breaks: none. The root export is unchanged; `./vectors` is a new subpath, recorded in
+`typescript/.changeset/vector-check-exports.md`.
+
+Still open: this was an Android emulator (API 36 image `baukit-api-36`), not a physical device, and
+it read the emulator image's ICU time-zone data. iOS was not run, since it needs macOS with Xcode,
+so Hermes on iOS, which reads zones through Foundation, is still unchecked.

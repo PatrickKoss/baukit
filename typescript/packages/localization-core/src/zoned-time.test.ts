@@ -8,56 +8,13 @@ import {
   resolveZonedLocalTime,
   type FoldPolicy,
   type GapPolicy,
-  type LocalTimeTransition,
   type ZonedLocalTime,
-  type ZonedLocalTimeCode,
 } from './zoned-time.js';
-
-interface ZonedTimeOutcome {
-  readonly gap: GapPolicy;
-  readonly fold: FoldPolicy;
-  readonly instant?: string;
-  readonly error?: ZonedLocalTimeCode;
-}
-
-interface ZonedTimeCase {
-  readonly name: string;
-  readonly civilDate: string;
-  readonly civilTime: string;
-  readonly timeZone: string;
-  readonly transition: LocalTimeTransition | null;
-  readonly outcomes: readonly ZonedTimeOutcome[];
-}
-
-interface ZonedTimeFixture {
-  readonly version: number;
-  readonly gapPolicies: readonly GapPolicy[];
-  readonly foldPolicies: readonly FoldPolicy[];
-  readonly cases: readonly ZonedTimeCase[];
-}
+import { zonedTimeVectorChecks, type ZonedTimeVectorFixture } from './zoned-time-vectors.js';
 
 const fixtureUrl = new URL('../../../../fixtures/zoned-time/vectors-v1.json', import.meta.url);
 const readUtf8File = readFileSync as unknown as (path: URL, encoding: 'utf8') => string;
-const fixture = JSON.parse(readUtf8File(fixtureUrl, 'utf8')) as ZonedTimeFixture;
-
-const outcomeCases = fixture.cases.flatMap((entry) =>
-  entry.outcomes.map((outcome) => ({
-    ...outcome,
-    label: `${entry.name} gap=${outcome.gap} fold=${outcome.fold}`,
-    entry,
-  })),
-);
-
-function expectedResult(entry: ZonedTimeCase, outcome: ZonedTimeOutcome): unknown {
-  if (outcome.error !== undefined) {
-    return { ok: false, code: outcome.error };
-  }
-  return {
-    ok: true,
-    epochMilliseconds: Date.parse(outcome.instant ?? ''),
-    transition: entry.transition,
-  };
-}
+const fixture = JSON.parse(readUtf8File(fixtureUrl, 'utf8')) as ZonedTimeVectorFixture;
 
 const berlinGap: ZonedLocalTime = {
   civilDate: '2026-03-29',
@@ -79,11 +36,8 @@ describe('zoned local time vectors', () => {
     }
   });
 
-  it.each(outcomeCases)('$label', ({ entry, gap, fold, ...outcome }) => {
-    const { civilDate, civilTime, timeZone } = entry;
-    expect(resolveZonedLocalTime({ civilDate, civilTime, timeZone, gap, fold })).toEqual(
-      expectedResult(entry, { gap, fold, ...outcome }),
-    );
+  it.each(zonedTimeVectorChecks(fixture))('$label', ({ actual, expected }) => {
+    expect(actual()).toEqual(expected);
   });
 });
 

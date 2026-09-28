@@ -240,3 +240,80 @@ Deferred to the products, as step 4 of the item:
 - Eigenruhe reads only `granted` and `status`, not `ios.status`. Hebkit maps provisional and
   ephemeral iOS authorization explicitly. Whether Eigenruhe skips scheduling under a provisional
   grant depends on how Expo fills `granted`, which was not checked on a device.
+
+## Follow-up (2026-09-28)
+
+Both deferred device checks ran on an Android emulator, inside Hermes, against real
+`expo-notifications` 57.0.13. Everything passed on the first run, so no package code changed. This
+was an emulator (API 36 image `baukit-api-36`), not a physical device. iOS was not run.
+
+### Structure: a second app, not a suite in the SQLite app
+
+The checks live in `examples/expo-notifications-conformance`, run by the new
+`make expo-notifications-conformance` target and the `expo-notifications-android-build` and
+`expo-notifications-android-gate` CI jobs, which copy the shape of the SQLite jobs. I chose a second
+app for four reasons:
+
+- `expo-notifications` is a native module. Adding it to the SQLite app changes that app's native
+  project and lockfile, and every notifications change would rebuild and rerun the SQLite gate.
+- The notification check needs two launches with the permission granted and then revoked. The
+  SQLite gate stays at one launch.
+- The CI path filters stay honest. The SQLite job triggers on data-contract paths, and the new job
+  on `localization-core`, `notifications-core`, `notifications-expo`, and both fixture directories.
+- Each app keeps its own small lockfile with only the packages it links.
+
+The cost is a second Gradle build per affected change. To avoid a second copy of the emulator
+script, the boot, install, Metro, launch, and marker-wait steps moved into
+`scripts/expo-android-conformance.sh`, which both apps' `run-android.sh` now source. Both CI path
+filters include it, and `CLAUDE.md` lists the new target.
+
+### Hermes vectors
+
+`fixtures/notifications/plan-vectors-v1.json` runs through `notificationPlanVectorChecks`, now in
+`src/plan-vectors.ts` and exported as `@baukit/notifications-core/vectors`. The Vitest suite runs
+the same checks: each of the 24 success cases yields the expected plan, convergence after the plan
+is applied, and independence from input order, and each of the 16 error cases yields the thrown
+`NotificationPlanError` code and logical ID. Hermes passed 88 of 88, the same checks that pass on
+Node, and no vector disagreed. The core still runs 277 tests.
+
+### Adapter on the device
+
+With `POST_NOTIFICATIONS` granted through `adb shell pm grant`, one launch checks, in order:
+
+- The adapter maps the permission to `granted`.
+- A foreign request (`foreign-request`) and one request of the prefix-sibling namespace
+  `reminders-extra` are scheduled first.
+- `replaceOwned` with `b`, `a`, `c` given out of order returns `complete` with `scheduled`
+  `[a, b, c]`. The pending list, read back through the adapter's marker decoding, holds exactly
+  those three with their instants and digests.
+- The stored trigger of `a` is `{"type":"date","value":<instant>}` (Android adds `repeats: false`
+  and `channelId: null`), and the title and product `data.route` survive next to the marker.
+- A rerun with `a` unchanged, `b` under a new digest, `c` removed, and `d` new returns `kept [a]`,
+  `cancelled [b, c]`, `scheduled [b, d]`. The foreign and sibling requests are still pending.
+- An unchanged rerun returns `kept [a, b, d]` and touches nothing.
+- `replaceOwned(owner, [])` cancels `a`, `b`, `d` and leaves only the foreign and sibling requests.
+
+Then the run script revokes the permission with `adb shell pm revoke` and sets the `user-fixed`
+flag, so the app's `requestPermissionsAsync()` answers without a prompt. Expo then reports
+`status: denied` and `canAskAgain: false`, and the adapter maps it to `denied`. With a foreign
+request and an owned request left from a granted period pending, `replaceOwned` with `a` and `b`
+returns `incomplete`, `cancelled [stale]`, nothing scheduled, and `permission_denied` for `a` and
+`b`. Only the foreign request remains. Scheduling through `expo-notifications` itself works on
+Android without the permission, so the adapter's own permission check is what stops owned requests.
+
+Gates: `make expo-notifications-conformance` passed twice (the final run on the committed code),
+`make expo-sqlite-conformance` passed with the shared script, the whole TypeScript workspace `check`
+(build, lint, test, format:check) passed, and `scripts/check-version-coherence.py` passed.
+
+Breaks: none. `./vectors` is a new subpath in both core packages
+(`typescript/.changeset/vector-check-exports.md`); the root exports and the adapter are unchanged.
+
+Local note: a host service already listened on 8081, so the local runs used `METRO_PORT=8082`,
+which the script maps to the device's fixed `localhost:8081` with `adb reverse`. A run without
+`CI=1` right after a `CI=1` install in `typescript/` stopped at pnpm's "remove modules directory"
+prompt (`ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`). CI sets `CI=true`, so only local runs see it;
+the passing runs used `CI=1`.
+
+Still open: iOS, which needs macOS with Xcode. The 64-request limit and provisional authorization
+remain unchecked on a device, and so does whether Expo fills `granted` for a provisional grant.
+A physical Android device was not used either.

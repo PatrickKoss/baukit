@@ -93,6 +93,11 @@ on the time-zone database of the runtime it runs in. The shared vectors in
 day, rule changes, and invalid input. Rust code that resolves local times should test against the
 same file.
 
+`@baukit/localization-core/vectors` exports `zonedTimeVectorChecks(fixture)`, which turns that file
+into labelled checks with an `expected` value and an `actual()` call. The package's Vitest suite
+runs them on Node, and `examples/expo-notifications-conformance` runs the same checks inside Hermes
+on an Android emulator. A product can run them in its own runtime the same way.
+
 ## Boundaries
 
 The package does not include translations, product catalog IDs, persistence, React providers, Expo

@@ -55,7 +55,8 @@ change:
 | Observability metric names | `python3 deploy/observability/lint/check-metric-names.py` (after touching deploy/observability or metric names) |
 | Dexie real-browser conformance | `make ts-browser-test` |
 | Generated mobile Android compile | `make native-android-gate` (after touching mobile templates, CLI generation, or their native dependencies) |
-| Real Expo SQLite on Android | `make expo-sqlite-conformance` (after touching data contracts or the Expo SQLite adapter) |
+| Real Expo SQLite on Android | `make expo-sqlite-conformance` (after touching data contracts, the Expo SQLite adapter, or `scripts/expo-android-conformance.sh`) |
+| Hermes vectors and expo-notifications on Android | `make expo-notifications-conformance` (after touching localization-core, the notifications packages, their fixtures, or `scripts/expo-android-conformance.sh`) |
 | Generated fixture | see below (after touching cli/, templates/, or public APIs the templates use) |
 
 Docker is available locally — never skip Docker-gated (`#[ignore]`) tests; run
