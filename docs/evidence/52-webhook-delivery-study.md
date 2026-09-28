@@ -65,8 +65,8 @@ later Baukit contract.
 | Replay of a captured request | timestamp signed | timestamp signed, but no route verifies it | nothing to check | timestamp unsigned, can be replaced | open: receiver window is receiver policy |
 | Field-boundary ambiguity in the signed input | length-prefixed | `:` separated, timestamp is digits so unambiguous | body only | body only | covered: length prefix, vector pair `newline-in-*` |
 | Duplicate delivery after a timeout | same event ID | new event ID if the body changes | no ID | event ID in body | open: stable delivery ID conformance case |
-| Retry storm from a large `Retry-After` | uncapped | clamped | ignored | uncapped | open: cap decision |
-| `425 Too Early` | permanent | own classifier | retried | permanent | open: recipe and classifier disagree |
+| Retry storm from a large `Retry-After` | uncapped | clamped | ignored | uncapped | decided: opt-in cap, 300 s in `baukit-egress` (see the guarded-egress follow-up) |
+| `425 Too Early` | permanent | own classifier | retried | permanent | decided: retryable, `classify_http_status` returns `Unavailable` |
 | Disable counts attempts, not failed jobs | counts attempts | none | counts attempts | none | recipe: count failed jobs |
 | Event dropped by a throttle | no | 5-minute throttle drops events | no | no | open: product fix |
 | `2xx` with an unreadable body | delivered | delivered | delivered | dead-lettered as `hub_response_invalid` | open decision, see below |
