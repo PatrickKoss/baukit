@@ -65,7 +65,7 @@ Decisions taken on the orchestrator's recommendation; the user can still overtur
 - [x] F2. 425 retryable, capped `Retry-After`, release-plz coverage, key ring rotation docs (items 16 and 18)
 - [~] F3. `tsconfig.test.json` type gate, mobile auth Jest coverage floors, web Keycloak stack e2e run (items 11 and 19)
 - [~] F4. Hermes vector run and notifications adapter check on the Android emulator (items 11 and 12)
-- [ ] F5. Queued raw-SQL connection in `@baukit/data-contracts-expo-sqlite` (item 15, after F4 frees the emulator)
+- [~] F5. Queued raw-SQL connection in `@baukit/data-contracts-expo-sqlite` (item 15; code now, device gate after F4 frees the emulator)
 - [ ] F6. Full CI mirror on `main` after the wave
 - Not possible here: a physical-device run and any iOS run. The emulator stands in for Android.
 
