@@ -187,9 +187,13 @@ assert_eq!(verified.key_id(), "current_2026_09");
 
 `MediaGrantKey::from_base64url` takes a canonical unpadded base64url secret that decodes to at
 least 32 bytes and a key ID matching `[A-Za-z0-9][A-Za-z0-9_-]*` of at most 64 bytes. Generate a
-secret with `openssl rand 32 | basenc --base64url | tr -d '='`. To rotate, deploy the new key as
-current and the old key as previous, wait out the longest grant lifetime, then drop the previous
-key. `MediaGrantKeyRing` signs with the current key and verifies grants from either.
+secret with `openssl rand 32 | basenc --base64url | tr -d '='`. `MediaGrantKeyRing` signs with the
+current key and verifies grants from either.
+
+Build one `MediaGrantKeyRing` at startup and share it; there is no reload API. To rotate, restart
+with the new key as current and the old key as previous. Roll the edge verifier first, so it knows
+the new key before the first grant signed with it arrives. Once the longest grant lifetime has
+passed, restart again without the previous key.
 
 The signer issues grants at most `MAX_GRANT_LIFETIME_SECONDS` (3600) ahead. The verifier accepts an
 expiry up to 60 seconds further, so a verifier clock that lags the signer's still accepts a fresh

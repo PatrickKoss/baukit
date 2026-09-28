@@ -210,6 +210,10 @@ impl fmt::Debug for MediaGrantKey {
 }
 
 /// The current signing key and, during rotation, the previous one.
+///
+/// Build one ring at startup and share it; it has no reload API. To rotate, restart with the new
+/// key as current and the old key as previous, then restart without the previous key once the
+/// longest grant lifetime has passed.
 #[derive(Clone, Debug)]
 pub struct MediaGrantKeyRing {
     current: MediaGrantKey,
