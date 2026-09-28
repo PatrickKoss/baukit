@@ -14,6 +14,14 @@
 //! [`PushDeliveryStatus::Accepted`] where it has not. Never resend on
 //! `Accepted`; the notification is in flight.
 //!
+//! # Deferred receipts
+//!
+//! An `Accepted` outcome carries the provider's [`PushTicketId`]. Record those
+//! with [`PendingReceiptStore::record_accepted`] and let the product's job
+//! runner call [`poll_pending_receipts`], which reads the receipts through the
+//! [`PushReceiptSource`] port and invalidates a `DeviceNotRegistered` token
+//! that Expo only reported after the send. The crate ships no scheduler.
+//!
 //! # Device registry
 //!
 //! A device token stops working once the app is uninstalled. Expo reports that
@@ -41,7 +49,8 @@
 //! registered. The optional `sqlx-postgres` feature adds
 //! `PostgresDeviceRegistry` over the schema in
 //! [`POSTGRES_PUSH_DEVICES_MIGRATION_SQL`]. [`DeviceToken`] redacts itself in
-//! `Debug`, and no error carries a token.
+//! `Debug`, so [`PushMessage`] and [`PushOutcome`] are safe to log, and no
+//! error carries a token.
 //!
 //! # Daily delivery claims
 //!
@@ -68,13 +77,15 @@ mod expo;
 mod fake;
 #[cfg(feature = "test-support")]
 mod memory;
+mod pending_receipt;
 mod port;
 #[cfg(feature = "sqlx-postgres")]
 mod postgres;
 mod registry;
 
 pub use config::{
-    DEFAULT_EXPO_ENDPOINT, MAX_BATCH_SIZE, PushConfig, PushOptions, PushOptionsError,
+    DEFAULT_EXPO_ENDPOINT, MAX_BATCH_SIZE, MAX_RECEIPT_BATCH_SIZE, PushConfig, PushOptions,
+    PushOptionsError,
 };
 pub use delivery_claim::{
     DeliveryClaim, DeliveryClaimStore, DeliveryKind, MAX_DELIVERY_KIND_LENGTH,
@@ -83,14 +94,19 @@ pub use expo::ExpoPushSender;
 #[cfg(feature = "test-support")]
 pub use fake::FakePushSender;
 #[cfg(feature = "test-support")]
-pub use memory::{MemoryDeliveryClaimStore, MemoryDeviceRegistry};
+pub use memory::{MemoryDeliveryClaimStore, MemoryDeviceRegistry, MemoryPendingReceiptStore};
+pub use pending_receipt::{
+    PendingReceipt, PendingReceiptStore, RECEIPT_POLL_DELAY, RECEIPT_RETENTION, ReceiptPoll,
+    ReceiptPollError, accepted_receipts, poll_pending_receipts,
+};
 pub use port::{
-    PushDeliveryStatus, PushError, PushFuture, PushMessage, PushOutcome, PushRejection, PushSender,
+    MAX_PUSH_TICKET_ID_LENGTH, PushDeliveryStatus, PushError, PushFuture, PushMessage, PushOutcome,
+    PushReceipt, PushReceiptFuture, PushReceiptSource, PushRejection, PushSender, PushTicketId,
 };
 #[cfg(feature = "sqlx-postgres")]
 pub use postgres::{
-    PostgresDeliveryClaimStore, PostgresDeviceRegistry, erase_owner_delivery_claims,
-    erase_owner_push_devices, purge_delivery_claims,
+    PostgresDeliveryClaimStore, PostgresDeviceRegistry, PostgresPendingReceiptStore,
+    erase_owner_delivery_claims, erase_owner_push_devices, purge_delivery_claims,
 };
 pub use registry::{
     DEFAULT_DEVICES_PER_OWNER, DevicePlatform, DeviceRegistration, DeviceRegistry, DeviceTimeZone,
@@ -112,6 +128,13 @@ pub const POSTGRES_PUSH_DEVICES_MIGRATION_SQL: &str =
 /// migration and add the owner foreign key the file's header describes.
 pub const POSTGRES_PUSH_DELIVERY_CLAIMS_MIGRATION_SQL: &str =
     include_str!("../migrations/0002_baukit_push_delivery_claims.sql");
+
+/// Reference PostgreSQL schema for the `sqlx-postgres` feature's `PostgresPendingReceiptStore`.
+///
+/// Only products that poll receipts after the send need it. Copy it into a
+/// product migration; it has no owner column.
+pub const POSTGRES_PUSH_PENDING_RECEIPTS_MIGRATION_SQL: &str =
+    include_str!("../migrations/0003_baukit_push_pending_receipts.sql");
 
 // Compiles the README's examples so they cannot drift from the API.
 #[doc = include_str!("../README.md")]

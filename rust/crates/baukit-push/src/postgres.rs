@@ -6,8 +6,9 @@ use uuid::Uuid;
 
 use crate::{
     DEFAULT_DEVICES_PER_OWNER, DeliveryClaim, DeliveryClaimStore, DevicePlatform,
-    DeviceRegistration, DeviceRegistry, DeviceTimeZone, DeviceToken, PushStoreError,
-    PushStoreFuture, RegisteredDevice, RegistrationOutcome,
+    DeviceRegistration, DeviceRegistry, DeviceTimeZone, DeviceToken, PendingReceipt,
+    PendingReceiptStore, PushStoreError, PushStoreFuture, PushTicketId, RegisteredDevice,
+    RegistrationOutcome,
 };
 
 const OWNER_LOCK_NAMESPACE: &str = "baukit_push.devices:";
@@ -312,6 +313,160 @@ where
     Ok(deleted)
 }
 
+/// PostgreSQL [`PendingReceiptStore`] over the table in
+/// [`POSTGRES_PUSH_PENDING_RECEIPTS_MIGRATION_SQL`](crate::POSTGRES_PUSH_PENDING_RECEIPTS_MIGRATION_SQL).
+///
+/// `take_due` moves the rows it returns to the retry instant in the same
+/// statement and skips rows another poller has locked, so concurrent pollers
+/// take disjoint batches.
+#[derive(Clone, Debug)]
+pub struct PostgresPendingReceiptStore {
+    pool: PgPool,
+}
+
+impl PostgresPendingReceiptStore {
+    /// Creates a pending receipt store on the pool.
+    #[must_use]
+    pub const fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+
+    async fn insert_receipts(
+        &self,
+        receipts: Vec<PendingReceipt>,
+        due_at: DateTime<Utc>,
+    ) -> Result<u64, PushStoreError> {
+        if receipts.is_empty() {
+            return Ok(0);
+        }
+        let inserted = sqlx::query(
+            "INSERT INTO push_pending_receipts (ticket_id, token, sent_at, due_at)
+             SELECT ticket_id, token, sent_at, $4
+             FROM UNNEST($1::text[], $2::text[], $3::timestamptz[]) AS t(ticket_id, token, sent_at)
+             ON CONFLICT (ticket_id) DO NOTHING",
+        )
+        .bind(
+            receipts
+                .iter()
+                .map(|receipt| receipt.ticket.as_str())
+                .collect::<Vec<_>>(),
+        )
+        .bind(
+            receipts
+                .iter()
+                .map(|receipt| receipt.token.expose())
+                .collect::<Vec<_>>(),
+        )
+        .bind(
+            receipts
+                .iter()
+                .map(|receipt| receipt.sent_at)
+                .collect::<Vec<_>>(),
+        )
+        .bind(due_at)
+        .execute(&self.pool)
+        .await
+        .map_err(PushStoreError::internal)?
+        .rows_affected();
+        Ok(inserted)
+    }
+
+    async fn take_due_receipts(
+        &self,
+        now: DateTime<Utc>,
+        retry_at: DateTime<Utc>,
+        limit: NonZeroU32,
+    ) -> Result<Vec<PendingReceipt>, PushStoreError> {
+        let rows = sqlx::query(
+            "UPDATE push_pending_receipts SET due_at = $2 WHERE ticket_id IN (
+                 SELECT ticket_id FROM push_pending_receipts
+                 WHERE due_at <= $1
+                 ORDER BY due_at, ticket_id
+                 LIMIT $3
+                 FOR UPDATE SKIP LOCKED
+             )
+             RETURNING ticket_id, token, sent_at",
+        )
+        .bind(now)
+        .bind(retry_at)
+        .bind(i64::from(limit.get()))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(PushStoreError::internal)?;
+        rows.iter().map(pending_receipt).collect()
+    }
+
+    async fn delete_receipts(&self, tickets: Vec<PushTicketId>) -> Result<u64, PushStoreError> {
+        if tickets.is_empty() {
+            return Ok(0);
+        }
+        let deleted = sqlx::query("DELETE FROM push_pending_receipts WHERE ticket_id = ANY($1)")
+            .bind(tickets.iter().map(PushTicketId::as_str).collect::<Vec<_>>())
+            .execute(&self.pool)
+            .await
+            .map_err(PushStoreError::internal)?
+            .rows_affected();
+        Ok(deleted)
+    }
+
+    async fn purge_receipts(
+        &self,
+        sent_before: DateTime<Utc>,
+        limit: NonZeroU32,
+    ) -> Result<u64, PushStoreError> {
+        let deleted = sqlx::query(
+            "DELETE FROM push_pending_receipts WHERE ticket_id IN (
+                 SELECT ticket_id FROM push_pending_receipts
+                 WHERE sent_at < $1
+                 ORDER BY sent_at, ticket_id
+                 LIMIT $2
+                 FOR UPDATE SKIP LOCKED
+             )",
+        )
+        .bind(sent_before)
+        .bind(i64::from(limit.get()))
+        .execute(&self.pool)
+        .await
+        .map_err(PushStoreError::internal)?
+        .rows_affected();
+        Ok(deleted)
+    }
+}
+
+impl PendingReceiptStore for PostgresPendingReceiptStore {
+    fn record(
+        &self,
+        receipts: Vec<PendingReceipt>,
+        due_at: DateTime<Utc>,
+    ) -> PushStoreFuture<'_, Result<u64, PushStoreError>> {
+        Box::pin(self.insert_receipts(receipts, due_at))
+    }
+
+    fn take_due(
+        &self,
+        now: DateTime<Utc>,
+        retry_at: DateTime<Utc>,
+        limit: NonZeroU32,
+    ) -> PushStoreFuture<'_, Result<Vec<PendingReceipt>, PushStoreError>> {
+        Box::pin(self.take_due_receipts(now, retry_at, limit))
+    }
+
+    fn delete(
+        &self,
+        tickets: Vec<PushTicketId>,
+    ) -> PushStoreFuture<'_, Result<u64, PushStoreError>> {
+        Box::pin(self.delete_receipts(tickets))
+    }
+
+    fn purge(
+        &self,
+        sent_before: DateTime<Utc>,
+        limit: NonZeroU32,
+    ) -> PushStoreFuture<'_, Result<u64, PushStoreError>> {
+        Box::pin(self.purge_receipts(sent_before, limit))
+    }
+}
+
 async fn lock_owner(connection: &mut PgConnection, owner_id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1 || $2::text, 0))")
         .bind(OWNER_LOCK_NAMESPACE)
@@ -391,6 +546,16 @@ async fn evict_over_cap(
     .await?
     .rows_affected();
     Ok(evicted)
+}
+
+fn pending_receipt(row: &PgRow) -> Result<PendingReceipt, PushStoreError> {
+    let ticket: String = row.try_get("ticket_id").map_err(PushStoreError::internal)?;
+    let token: String = row.try_get("token").map_err(PushStoreError::internal)?;
+    Ok(PendingReceipt {
+        ticket: PushTicketId::new(ticket).map_err(PushStoreError::internal)?,
+        token: DeviceToken::new(token).map_err(PushStoreError::internal)?,
+        sent_at: row.try_get("sent_at").map_err(PushStoreError::internal)?,
+    })
 }
 
 fn registered_device(row: &PgRow) -> Result<RegisteredDevice, PushStoreError> {

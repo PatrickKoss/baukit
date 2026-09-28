@@ -32,6 +32,9 @@ pub enum PushValidationError {
     /// The delivery kind is empty, too long, or has characters outside `[a-z0-9_.-]`.
     #[error("delivery kind is invalid")]
     DeliveryKind,
+    /// The provider ticket ID is empty, too long, or not printable ASCII.
+    #[error("push ticket id is invalid")]
+    TicketId,
 }
 
 /// A provider-issued device token.
@@ -301,15 +304,12 @@ pub trait DeviceRegistry: Send + Sync {
 }
 
 /// Returns the distinct tokens a send reported as dead.
-///
-/// A dead outcome whose token would not pass [`DeviceToken::new`] is skipped;
-/// no registry can hold it.
 #[must_use]
 pub fn dead_tokens(outcomes: &[PushOutcome]) -> Vec<DeviceToken> {
     let mut tokens = outcomes
         .iter()
         .filter(|outcome| outcome.is_token_dead())
-        .filter_map(|outcome| DeviceToken::new(outcome.token.as_str()).ok())
+        .map(|outcome| outcome.token.clone())
         .collect::<Vec<_>>();
     tokens.sort();
     tokens.dedup();
@@ -319,7 +319,7 @@ pub fn dead_tokens(outcomes: &[PushOutcome]) -> Vec<DeviceToken> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{PushDeliveryStatus, PushRejection};
+    use crate::{PushDeliveryStatus, PushRejection, PushTicketId};
 
     const EXPO_TOKEN: &str = "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]";
 
@@ -394,9 +394,9 @@ mod tests {
     }
 
     #[test]
-    fn only_distinct_valid_dead_tokens_are_invalidated() {
+    fn only_distinct_dead_tokens_are_invalidated() {
         let outcome = |token: &str, status| PushOutcome {
-            token: token.to_owned(),
+            token: DeviceToken::new(token).expect("valid test token"),
             status,
         };
         let dead = || PushDeliveryStatus::Rejected(PushRejection::DeviceNotRegistered);
@@ -404,9 +404,11 @@ mod tests {
             outcome("b", dead()),
             outcome("a", dead()),
             outcome("b", dead()),
-            outcome("not valid", dead()),
             outcome("c", PushDeliveryStatus::Delivered),
-            outcome("d", PushDeliveryStatus::Accepted),
+            outcome(
+                "d",
+                PushDeliveryStatus::Accepted(PushTicketId::new("ticket").expect("valid ticket")),
+            ),
             outcome(
                 "e",
                 PushDeliveryStatus::Rejected(PushRejection::MessageTooBig),

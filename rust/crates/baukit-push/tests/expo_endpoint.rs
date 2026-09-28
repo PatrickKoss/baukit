@@ -14,8 +14,9 @@ use axum::{
 };
 use baukit_http::RetryClass;
 use baukit_push::{
-    ExpoPushSender, PushDeliveryStatus, PushError, PushMessage, PushOptions, PushOptionsError,
-    PushOutcome, PushRejection, PushSender,
+    DeviceToken, ExpoPushSender, MAX_RECEIPT_BATCH_SIZE, PushDeliveryStatus, PushError,
+    PushMessage, PushOptions, PushOptionsError, PushOutcome, PushReceipt, PushReceiptSource,
+    PushRejection, PushSender, PushTicketId,
 };
 use serde_json::{Value, json};
 
@@ -60,8 +61,16 @@ fn sender(server: &FakeExpo, batch_size: usize) -> Result<ExpoPushSender, PushOp
     )
 }
 
-fn message(token: &str) -> PushMessage {
-    PushMessage::new(token, "Reminder", "Your session starts soon")
+fn token(value: &str) -> DeviceToken {
+    DeviceToken::new(value).expect("valid test token")
+}
+
+fn ticket(value: &str) -> PushTicketId {
+    PushTicketId::new(value).expect("valid test ticket")
+}
+
+fn message(value: &str) -> PushMessage {
+    PushMessage::new(token(value), "Reminder", "Your session starts soon")
         .with_data("session_id", "abc")
         .with_channel_id("reminders")
 }
@@ -69,7 +78,7 @@ fn message(token: &str) -> PushMessage {
 fn by_token(outcomes: Vec<PushOutcome>) -> HashMap<String, PushDeliveryStatus> {
     outcomes
         .into_iter()
-        .map(|outcome| (outcome.token, outcome.status))
+        .map(|outcome| (outcome.token.expose().to_owned(), outcome.status))
         .collect()
 }
 
@@ -211,7 +220,7 @@ async fn a_partial_device_not_registered_leaves_the_rest_delivered()
         .filter(|outcome| outcome.is_token_dead())
         .map(|outcome| outcome.token.clone())
         .collect::<Vec<_>>();
-    assert_eq!(dead, vec!["gone".to_owned()]);
+    assert_eq!(dead, vec![token("gone")]);
 
     let statuses = by_token(outcomes);
     assert_eq!(
@@ -406,8 +415,57 @@ async fn receipts_reporting_errors_override_accepted_tickets()
         PushDeliveryStatus::Rejected(PushRejection::MessageTooBig)
     );
     // Expo has no receipt yet. The notification is in flight, so this is
-    // deliberately neither delivered nor rejected.
-    assert_eq!(statuses["not-settled"], PushDeliveryStatus::Accepted);
+    // deliberately neither delivered nor rejected, and it carries the ticket
+    // for a later receipt poll.
+    assert_eq!(
+        statuses["not-settled"],
+        PushDeliveryStatus::Accepted(ticket("not-settled"))
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn deferred_receipts_split_at_expos_request_limit() -> Result<(), Box<dyn std::error::Error>>
+{
+    let recorded = Arc::new(RecordedRequests::default());
+    let server = start(
+        Router::new()
+            .route("/push/getReceipts", post(recorded_receipts))
+            .with_state(recorded.clone()),
+    )
+    .await;
+    let mut tickets = (0..MAX_RECEIPT_BATCH_SIZE)
+        .map(|index| ticket(&format!("ticket-{index}")))
+        .collect::<Vec<_>>();
+    tickets.push(ticket("ticket-two"));
+
+    let receipts = sender(&server, 10)?.receipts(tickets).await?;
+
+    let requests = recorded.receipts.lock().expect("receipts lock").clone();
+    assert_eq!(
+        requests.iter().map(Vec::len).collect::<Vec<_>>(),
+        [MAX_RECEIPT_BATCH_SIZE, 1]
+    );
+    assert_eq!(receipts.len(), MAX_RECEIPT_BATCH_SIZE + 1);
+    assert_eq!(receipts[&ticket("ticket-0")], PushReceipt::Delivered);
+    assert!(receipts[&ticket("ticket-two")].is_token_dead());
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_unsettled_deferred_receipt_is_absent() -> Result<(), Box<dyn std::error::Error>> {
+    async fn receipts() -> Json<Value> {
+        Json(json!({"data": {
+            "settled": {"status": "ok"},
+            "unrequested": {"status": "ok"}
+        }}))
+    }
+    let server = start(Router::new().route("/push/getReceipts", post(receipts))).await;
+    let receipts = sender(&server, 10)?
+        .receipts(vec![ticket("settled"), ticket("pending")])
+        .await?;
+    assert_eq!(receipts.len(), 1);
+    assert_eq!(receipts[&ticket("settled")], PushReceipt::Delivered);
     Ok(())
 }
 

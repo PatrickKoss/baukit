@@ -23,9 +23,11 @@ One call takes a whole batch. The adapter splits it into provider-sized chunks
 itself, so callers do not manage batching. Outcomes cover every message in the
 batch but arrive in no guaranteed order; match them to messages by token.
 
-`PushMessage` carries a token, a title, a body, an ordered `data` map delivered
-with the notification, and an optional `channel_id` that Android reads to pick a
-notification channel.
+`PushMessage` carries a `DeviceToken`, a title, a body, an ordered `data` map
+delivered with the notification, and an optional `channel_id` that Android
+reads to pick a notification channel. `PushOutcome` carries the same
+`DeviceToken`, so logging `?outcome` or `?message` prints
+`DeviceToken(<redacted>)` instead of the token.
 
 ## Two-phase Expo delivery
 
@@ -38,10 +40,11 @@ per chunk, which collapses into three delivery states:
 |---|---|
 | `Delivered` | Expo handed the notification to APNs or FCM. |
 | `Rejected(PushRejection)` | Expo refused it, at the ticket or receipt stage. |
-| `Accepted` | Expo took it and has not settled a receipt yet. |
+| `Accepted(PushTicketId)` | Expo took it and has not settled a receipt yet. |
 
 `Accepted` is neither success nor failure. The notification is in flight, so
-never resend on it.
+never resend on it. Its ticket ID is what a later receipt poll asks about; see
+[Deferred receipts](#deferred-receipts).
 
 ## Rejection vocabulary
 
@@ -162,6 +165,129 @@ removes one owner's claims, and `purge_delivery_claims` deletes one bounded
 batch of claims for local dates before a cutoff; call it until it returns less
 than the batch size.
 
+## Deferred receipts
+
+`ExpoPushSender` asks for receipts right after the send, and Expo often has
+not settled them yet. Those notifications come back as `Accepted(ticket)`. A
+`DeviceNotRegistered` that Expo settles later would otherwise go unnoticed
+until the next send to that token. Expo recommends checking receipts 15
+minutes after the send, keeps them for 24 hours, and takes at most 1000
+ticket IDs per `getReceipts` request (`MAX_RECEIPT_BATCH_SIZE`; the adapter
+splits larger lists itself).
+
+Record the accepted tickets after each send:
+
+```rust
+use baukit_push::{DeviceRegistry, PendingReceiptStore, PushMessage, PushSender};
+use chrono::Utc;
+
+async fn deliver(
+    sender: &impl PushSender,
+    registry: &impl DeviceRegistry,
+    pending: &impl PendingReceiptStore,
+    messages: Vec<PushMessage>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let sent_at = Utc::now();
+    let outcomes = sender.send(messages).await?;
+    registry.invalidate_dead_tokens(&outcomes, sent_at).await?;
+    pending.record_accepted(&outcomes, sent_at).await?;
+    Ok(())
+}
+```
+
+`record_accepted` stores ticket ID, token, and `sent_at` for every `Accepted`
+outcome, first due `RECEIPT_POLL_DELAY` (15 minutes) after the send.
+`poll_pending_receipts` then does one bounded run:
+
+1. `take_due` takes up to `limit` due tickets and makes them due again one
+   `RECEIPT_POLL_DELAY` later, so concurrent pollers take disjoint batches and
+   an unsettled ticket goes to the back of the queue.
+2. It reads their receipts through the `PushReceiptSource` port, which
+   `ExpoPushSender` implements.
+3. It passes each `DeviceNotRegistered` token to `DeviceRegistry::invalidate`
+   with the `sent_at` of its own send, so a device registered again after that
+   send keeps its token.
+4. It deletes the settled tickets. Tickets without a receipt stay for a later
+   run.
+
+The returned `ReceiptPoll` counts the tickets taken and settled and the tokens
+invalidated. Fewer taken than `limit` means nothing else is due. A failure is a
+`ReceiptPollError`; the taken tickets stay recorded and come due again.
+`purge` deletes tickets older than `RECEIPT_RETENTION` (24 hours), whose
+receipts Expo no longer has.
+
+Baukit ships no scheduler. Drive the poll from the product's job runner, for
+example a `baukit-jobs` handler that a `FixedUtcInterval` re-enqueues every few
+minutes:
+
+```rust,ignore
+use std::num::NonZeroU32;
+
+use baukit_jobs::{ClaimedJob, JobCancellation, JobError, JobFuture, JobHandler};
+use baukit_push::{
+    ExpoPushSender, PendingReceiptStore, PostgresDeviceRegistry, PostgresPendingReceiptStore,
+    RECEIPT_RETENTION, ReceiptPollError, poll_pending_receipts,
+};
+use chrono::Utc;
+
+const RECEIPT_BATCH: NonZeroU32 = NonZeroU32::new(1000).expect("not zero");
+
+struct PollPushReceipts {
+    sender: ExpoPushSender,
+    pending: PostgresPendingReceiptStore,
+    registry: PostgresDeviceRegistry,
+}
+
+impl JobHandler for PollPushReceipts {
+    fn job_types(&self) -> &'static [&'static str] {
+        &["push_receipts.poll"]
+    }
+
+    fn handle<'a>(
+        &'a self,
+        _job: &'a ClaimedJob,
+        _cancellation: JobCancellation,
+    ) -> JobFuture<'a, Result<(), JobError>> {
+        Box::pin(async move {
+            let now = Utc::now();
+            self.pending
+                .purge(now - RECEIPT_RETENTION, RECEIPT_BATCH)
+                .await
+                .map_err(|error| JobError::retryable(error.to_string()))?;
+            loop {
+                let poll = poll_pending_receipts(
+                    &self.sender,
+                    &self.pending,
+                    &self.registry,
+                    now,
+                    RECEIPT_BATCH,
+                )
+                .await
+                .map_err(job_error)?;
+                if poll.taken < u64::from(RECEIPT_BATCH.get()) {
+                    return Ok(());
+                }
+            }
+        })
+    }
+}
+
+fn job_error(error: ReceiptPollError) -> JobError {
+    match &error {
+        ReceiptPollError::Push(push) => match push.retry_after() {
+            Some(delay) => JobError::retryable_after(error.to_string(), delay),
+            None => JobError::retryable(error.to_string()),
+        },
+        ReceiptPollError::Store(_) => JobError::retryable(error.to_string()),
+    }
+}
+```
+
+The loop ends because every taken ticket moves past `now`. With
+`sqlx-postgres`, `PostgresPendingReceiptStore` uses the table in
+`POSTGRES_PUSH_PENDING_RECEIPTS_MIGRATION_SQL`. The table has no owner column;
+a row holds a token for at most the retention window until `purge` removes it.
+
 ## Retries
 
 A failure that stops the whole request is a `PushError::Transport` carrying a
@@ -223,8 +349,9 @@ redacts it.
 ## Testing
 
 Enable the `test-support` feature for `FakePushSender`, an in-memory recording
-sender, and for `MemoryDeviceRegistry` and `MemoryDeliveryClaimStore`, which
-follow the PostgreSQL adapters' cap, move, eviction, and invalidation rules:
+sender and receipt source, and for `MemoryDeviceRegistry`,
+`MemoryDeliveryClaimStore`, and `MemoryPendingReceiptStore`, which follow the
+PostgreSQL adapters' rules:
 
 ```toml
 [dev-dependencies]
@@ -232,10 +359,11 @@ baukit-push = { workspace = true, features = ["test-support"] }
 ```
 
 Every token delivers by default. Script exceptions per token with `reject` and
-`accept_without_receipt`, or fail a whole batch with `fail_with`. Read back what
-a service under test sent through `batches`, `messages`, `outcomes`, and
-`dead_tokens`. Clones share one recording, so a clone handed to a service still
-reports its sends.
+`accept_without_receipt`, settle an accepted token's later receipt with
+`settle_receipt`, or fail every send and receipt request with `fail_with`. Read
+back what a service under test sent through `batches`, `messages`, `outcomes`,
+`dead_tokens`, and `receipt_requests`. Clones share one recording, so a clone
+handed to a service still reports its sends.
 
 The fake lives here rather than in `baukit-test` because it would otherwise pull
 this opt-in crate into the dependencies of every product that uses the test kit.

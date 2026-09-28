@@ -1,8 +1,17 @@
 //! The provider-neutral push delivery port.
 
-use std::{collections::BTreeMap, pin::Pin, time::Duration};
+use std::{
+    collections::{BTreeMap, HashMap},
+    pin::Pin,
+    time::Duration,
+};
 
 use thiserror::Error;
+
+use crate::{DeviceToken, PushValidationError};
+
+/// Longest provider ticket ID accepted, in bytes.
+pub const MAX_PUSH_TICKET_ID_LENGTH: usize = 128;
 
 /// One notification addressed to a single device token.
 ///
@@ -12,7 +21,7 @@ use thiserror::Error;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PushMessage {
     /// Provider-issued device token the notification is delivered to.
-    pub token: String,
+    pub token: DeviceToken,
     /// Notification title shown on the device.
     pub title: String,
     /// Notification body shown on the device.
@@ -28,13 +37,9 @@ pub struct PushMessage {
 
 impl PushMessage {
     /// Creates a message for a token with a title and body and no extra data.
-    pub fn new(
-        token: impl Into<String>,
-        title: impl Into<String>,
-        body: impl Into<String>,
-    ) -> Self {
+    pub fn new(token: DeviceToken, title: impl Into<String>, body: impl Into<String>) -> Self {
         Self {
-            token: token.into(),
+            token,
             title: title.into(),
             body: body.into(),
             data: BTreeMap::new(),
@@ -110,7 +115,7 @@ impl PushRejection {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PushOutcome {
     /// The device token the notification was addressed to.
-    pub token: String,
+    pub token: DeviceToken,
     /// The delivery state the provider reported.
     pub status: PushDeliveryStatus,
 }
@@ -129,18 +134,79 @@ impl PushOutcome {
     }
 }
 
+/// The ID a provider issued for one accepted notification.
+///
+/// Poll the provider's receipt for it through [`PushReceiptSource`].
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PushTicketId(String);
+
+impl PushTicketId {
+    /// Validates a ticket ID: 1 to [`MAX_PUSH_TICKET_ID_LENGTH`] bytes of visible ASCII.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PushValidationError::TicketId`] for any other value.
+    pub fn new(id: impl Into<String>) -> Result<Self, PushValidationError> {
+        let id = id.into();
+        let valid = !id.is_empty()
+            && id.len() <= MAX_PUSH_TICKET_ID_LENGTH
+            && id.bytes().all(|byte| byte.is_ascii_graphic());
+        if valid {
+            Ok(Self(id))
+        } else {
+            Err(PushValidationError::TicketId)
+        }
+    }
+
+    /// Returns the ID for a provider request or a store query.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// The delivery state a provider reported for one notification.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PushDeliveryStatus {
     /// The provider took the notification but has not reported an outcome yet.
     ///
     /// Providers confirm delivery asynchronously. Treat this as neither success
-    /// nor failure and do not resend on it.
-    Accepted,
+    /// nor failure and do not resend on it. Record the ticket with
+    /// [`PendingReceiptStore::record_accepted`](crate::PendingReceiptStore::record_accepted)
+    /// to poll its receipt later.
+    Accepted(PushTicketId),
     /// The provider handed the notification to the device platform.
     Delivered,
     /// The provider refused the notification.
     Rejected(PushRejection),
+}
+
+/// The settled receipt for one accepted notification.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PushReceipt {
+    /// The provider handed the notification to the device platform.
+    Delivered,
+    /// The provider refused the notification after accepting it.
+    Rejected(PushRejection),
+}
+
+impl PushReceipt {
+    /// Returns whether the token the notification went to should be deleted.
+    ///
+    /// True only for [`PushRejection::DeviceNotRegistered`].
+    #[must_use]
+    pub const fn is_token_dead(&self) -> bool {
+        matches!(self, Self::Rejected(PushRejection::DeviceNotRegistered))
+    }
+}
+
+impl From<PushReceipt> for PushDeliveryStatus {
+    fn from(receipt: PushReceipt) -> Self {
+        match receipt {
+            PushReceipt::Delivered => Self::Delivered,
+            PushReceipt::Rejected(rejection) => Self::Rejected(rejection),
+        }
+    }
 }
 
 /// A failure that prevented the whole batch from being processed.
@@ -194,9 +260,28 @@ pub trait PushSender: Send + Sync {
     fn send<'a>(&'a self, batch: Vec<PushMessage>) -> PushFuture<'a>;
 }
 
+/// The future returned by [`PushReceiptSource::receipts`].
+pub type PushReceiptFuture<'a> = Pin<
+    Box<dyn Future<Output = Result<HashMap<PushTicketId, PushReceipt>, PushError>> + Send + 'a>,
+>;
+
+/// Outbound port for reading the receipts of accepted notifications.
+///
+/// Implementations split the IDs into provider-sized requests themselves.
+pub trait PushReceiptSource: Send + Sync {
+    /// Fetches the settled receipts for the given tickets.
+    ///
+    /// A ticket the provider has not settled yet is absent from the map.
+    fn receipts<'a>(&'a self, tickets: Vec<PushTicketId>) -> PushReceiptFuture<'a>;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn token() -> DeviceToken {
+        DeviceToken::new("t").expect("valid test token")
+    }
 
     #[test]
     fn known_provider_codes_map_onto_the_neutral_vocabulary() {
@@ -243,21 +328,31 @@ mod tests {
     #[test]
     fn only_an_unregistered_device_marks_a_token_dead() {
         let dead = PushOutcome {
-            token: "t".to_owned(),
+            token: token(),
             status: PushDeliveryStatus::Rejected(PushRejection::DeviceNotRegistered),
         };
         assert!(dead.is_token_dead());
         for status in [
-            PushDeliveryStatus::Accepted,
+            PushDeliveryStatus::Accepted(PushTicketId::new("ticket").expect("valid ticket")),
             PushDeliveryStatus::Delivered,
             PushDeliveryStatus::Rejected(PushRejection::MessageTooBig),
         ] {
             let outcome = PushOutcome {
-                token: "t".to_owned(),
+                token: token(),
                 status,
             };
             assert!(!outcome.is_token_dead());
         }
+    }
+
+    #[test]
+    fn an_outcome_never_shows_its_token_in_debug_output() {
+        let outcome = PushOutcome {
+            token: DeviceToken::new("ExponentPushToken[secret]").expect("valid token"),
+            status: PushDeliveryStatus::Delivered,
+        };
+        let message = PushMessage::new(outcome.token.clone(), "Title", "Body");
+        assert!(!format!("{outcome:?} {message:?}").contains("secret"));
     }
 
     #[test]
@@ -275,10 +370,37 @@ mod tests {
 
     #[test]
     fn a_message_builds_with_data_and_a_channel() {
-        let message = PushMessage::new("token", "Title", "Body")
+        let message = PushMessage::new(token(), "Title", "Body")
             .with_data("session_id", "abc")
             .with_channel_id("reminders");
         assert_eq!(message.data["session_id"], "abc");
         assert_eq!(message.channel_id.as_deref(), Some("reminders"));
+    }
+
+    #[test]
+    fn a_ticket_id_accepts_visible_ascii_up_to_the_limit() {
+        assert!(PushTicketId::new("019285a1-7c3e-7d2a-9f1b-3c4d5e6f7a8b").is_ok());
+        assert!(PushTicketId::new("x".repeat(MAX_PUSH_TICKET_ID_LENGTH)).is_ok());
+        for invalid in [
+            String::new(),
+            "x".repeat(MAX_PUSH_TICKET_ID_LENGTH + 1),
+            "with space".to_owned(),
+        ] {
+            assert_eq!(
+                PushTicketId::new(invalid),
+                Err(PushValidationError::TicketId)
+            );
+        }
+    }
+
+    #[test]
+    fn only_an_unregistered_device_receipt_marks_a_token_dead() {
+        assert!(PushReceipt::Rejected(PushRejection::DeviceNotRegistered).is_token_dead());
+        assert!(!PushReceipt::Rejected(PushRejection::MessageTooBig).is_token_dead());
+        assert!(!PushReceipt::Delivered.is_token_dead());
+        assert_eq!(
+            PushDeliveryStatus::from(PushReceipt::Delivered),
+            PushDeliveryStatus::Delivered
+        );
     }
 }

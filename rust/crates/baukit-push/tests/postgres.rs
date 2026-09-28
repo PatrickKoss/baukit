@@ -2,9 +2,12 @@ use std::{collections::BTreeSet, error::Error, num::NonZeroU32, path::PathBuf};
 
 use baukit_push::{
     DeliveryClaim, DeliveryClaimStore, DeliveryKind, DevicePlatform, DeviceRegistration,
-    DeviceRegistry, DeviceTimeZone, DeviceToken, MAX_DEVICE_TOKEN_LENGTH,
-    PostgresDeliveryClaimStore, PostgresDeviceRegistry, PushDeliveryStatus, PushOutcome,
-    PushRejection, erase_owner_delivery_claims, erase_owner_push_devices, purge_delivery_claims,
+    DeviceRegistry, DeviceTimeZone, DeviceToken, FakePushSender, MAX_DEVICE_TOKEN_LENGTH,
+    MAX_PUSH_TICKET_ID_LENGTH, PendingReceipt, PendingReceiptStore, PostgresDeliveryClaimStore,
+    PostgresDeviceRegistry, PostgresPendingReceiptStore, PushDeliveryStatus, PushMessage,
+    PushOutcome, PushReceipt, PushRejection, PushSender, PushTicketId, RECEIPT_POLL_DELAY,
+    RECEIPT_RETENTION, ReceiptPoll, erase_owner_delivery_claims, erase_owner_push_devices,
+    poll_pending_receipts, purge_delivery_claims,
 };
 use baukit_test::PostgresTestContainer;
 use chrono::{DateTime, NaiveDate, TimeDelta, TimeZone as _, Utc};
@@ -18,6 +21,8 @@ const CONCURRENT_REGISTRATIONS: usize = 16;
 const CONCURRENT_OWNERS: usize = 8;
 const CONCURRENT_CLAIMS: usize = 10;
 const PURGE_BATCH: NonZeroU32 = NonZeroU32::new(1).expect("one is not zero");
+const CONCURRENT_POLLERS: usize = 6;
+const POLL_LIMIT: NonZeroU32 = NonZeroU32::new(10).expect("ten is not zero");
 
 fn at(minutes: i64) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 9, 27, 12, 0, 0)
@@ -40,7 +45,7 @@ fn registration(owner_id: Uuid, value: &str, minutes: i64) -> DeviceRegistration
 
 fn dead(value: &str) -> PushOutcome {
     PushOutcome {
-        token: value.to_owned(),
+        token: token(value),
         status: PushDeliveryStatus::Rejected(PushRejection::DeviceNotRegistered),
     }
 }
@@ -311,7 +316,7 @@ async fn a_dead_token_receipt_removes_the_token_in_one_call() -> Result<(), Test
                 dead("reinstalled"),
                 dead("never-registered"),
                 PushOutcome {
-                    token: "alive".to_owned(),
+                    token: token("alive"),
                     status: PushDeliveryStatus::Rejected(PushRejection::MessageTooBig),
                 },
             ],
@@ -442,5 +447,206 @@ async fn old_claims_purge_in_bounded_batches() -> Result<(), TestError> {
             .fetch_all(&pool)
             .await?;
     assert_eq!(kept, [date(26), date(27)]);
+    Ok(())
+}
+
+fn ticket(value: &str) -> PushTicketId {
+    PushTicketId::new(value).expect("valid test ticket")
+}
+
+fn pending(ticket_id: &str, token_value: &str, sent_minutes: i64) -> PendingReceipt {
+    PendingReceipt {
+        ticket: ticket(ticket_id),
+        token: token(token_value),
+        sent_at: at(sent_minutes),
+    }
+}
+
+fn ticket_ids(receipts: &[PendingReceipt]) -> Vec<String> {
+    receipts
+        .iter()
+        .map(|receipt| receipt.ticket.as_str().to_owned())
+        .collect()
+}
+
+async fn stored_tickets(pool: &PgPool) -> Result<Vec<String>, TestError> {
+    Ok(
+        sqlx::query_scalar("SELECT ticket_id FROM push_pending_receipts ORDER BY ticket_id")
+            .fetch_all(pool)
+            .await?,
+    )
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn pending_receipts_round_trip_and_come_due_again_after_a_take() -> Result<(), TestError> {
+    let (_container, pool) = fixture().await?;
+    let store = PostgresPendingReceiptStore::new(pool.clone());
+    let longest_ticket = "t".repeat(MAX_PUSH_TICKET_ID_LENGTH);
+    let longest_token = "d".repeat(MAX_DEVICE_TOKEN_LENGTH);
+
+    let recorded = store
+        .record(
+            vec![
+                pending(&longest_ticket, &longest_token, 0),
+                pending("b", "token-b", 0),
+                pending("b", "token-b", 0),
+            ],
+            at(15),
+        )
+        .await?;
+    assert_eq!(recorded, 2);
+    assert_eq!(
+        store.record(vec![pending("b", "other", 9)], at(99)).await?,
+        0,
+        "a recorded ticket is left unchanged"
+    );
+    store
+        .record(vec![pending("c", "token-c", 5)], at(20))
+        .await?;
+
+    assert!(store.take_due(at(14), at(30), POLL_LIMIT).await?.is_empty());
+    let first = store.take_due(at(15), at(30), POLL_LIMIT).await?;
+    let mut first_ids = ticket_ids(&first);
+    first_ids.sort();
+    assert_eq!(first_ids, ["b".to_owned(), longest_ticket.clone()]);
+    let longest = first
+        .iter()
+        .find(|receipt| receipt.ticket.as_str() == longest_ticket)
+        .expect("the longest ticket was taken");
+    assert_eq!(longest.token.expose(), longest_token);
+    assert_eq!(longest.sent_at, at(0));
+
+    assert_eq!(
+        ticket_ids(&store.take_due(at(25), at(40), POLL_LIMIT).await?),
+        ["c"],
+        "taken tickets wait for their retry instant"
+    );
+    assert_eq!(store.take_due(at(30), at(45), POLL_LIMIT).await?.len(), 2);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn concurrent_pollers_take_disjoint_batches() -> Result<(), TestError> {
+    let (_container, pool) = fixture().await?;
+    let store = PostgresPendingReceiptStore::new(pool.clone());
+    let tickets = (0..CONCURRENT_POLLERS * 2)
+        .map(|index| pending(&format!("ticket-{index:02}"), &format!("token-{index}"), 0))
+        .collect::<Vec<_>>();
+    store.record(tickets, at(0)).await?;
+
+    let batch = NonZeroU32::new(2).expect("two is not zero");
+    let mut tasks = tokio::task::JoinSet::new();
+    for _ in 0..CONCURRENT_POLLERS {
+        let store = store.clone();
+        tasks.spawn(async move { store.take_due(at(1), at(30), batch).await });
+    }
+    let mut taken = Vec::new();
+    while let Some(batch) = tasks.join_next().await {
+        taken.extend(ticket_ids(&batch??));
+    }
+    let distinct = taken.iter().collect::<BTreeSet<_>>();
+    assert_eq!(distinct.len(), taken.len(), "no ticket was taken twice");
+    assert_eq!(taken.len(), CONCURRENT_POLLERS * 2);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn settled_and_expired_receipts_are_deleted() -> Result<(), TestError> {
+    let (_container, pool) = fixture().await?;
+    let store = PostgresPendingReceiptStore::new(pool.clone());
+    store
+        .record(
+            vec![
+                pending("a", "token-a", 0),
+                pending("b", "token-b", 1),
+                pending("c", "token-c", 2),
+                pending("d", "token-d", 3),
+            ],
+            at(0),
+        )
+        .await?;
+
+    assert_eq!(store.delete(vec![ticket("a"), ticket("unknown")]).await?, 1);
+    assert_eq!(store.delete(Vec::new()).await?, 0);
+
+    let mut purged = Vec::new();
+    loop {
+        let deleted = store.purge(at(3), PURGE_BATCH).await?;
+        purged.push(deleted);
+        if deleted < u64::from(PURGE_BATCH.get()) {
+            break;
+        }
+    }
+    assert_eq!(purged, [1, 1, 0]);
+    assert_eq!(stored_tickets(&pool).await?, ["d"]);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn a_deferred_poll_invalidates_a_late_dead_token() -> Result<(), TestError> {
+    let (_container, pool) = fixture().await?;
+    let registry = PostgresDeviceRegistry::new(pool.clone());
+    let pending_receipts = PostgresPendingReceiptStore::new(pool.clone());
+    let sender = FakePushSender::new();
+    let alice = owner(&pool).await?;
+    let names = ["fine", "gone", "reinstalled", "slow"];
+    for name in names {
+        registry.register(registration(alice, name, 0)).await?;
+        sender.accept_without_receipt(token(name)).await;
+    }
+
+    let sent_at = at(1);
+    let outcomes = sender
+        .send(
+            names
+                .iter()
+                .map(|name| PushMessage::new(token(name), "Reminder", "Body"))
+                .collect(),
+        )
+        .await?;
+    assert_eq!(
+        pending_receipts.record_accepted(&outcomes, sent_at).await?,
+        4
+    );
+
+    let dead = PushReceipt::Rejected(PushRejection::DeviceNotRegistered);
+    sender
+        .settle_receipt(token("fine"), PushReceipt::Delivered)
+        .await;
+    sender.settle_receipt(token("gone"), dead.clone()).await;
+    sender.settle_receipt(token("reinstalled"), dead).await;
+    registry
+        .register(registration(alice, "reinstalled", 10))
+        .await?;
+
+    let due_at = sent_at + RECEIPT_POLL_DELAY;
+    let poll =
+        poll_pending_receipts(&sender, &pending_receipts, &registry, due_at, POLL_LIMIT).await?;
+    assert_eq!(
+        poll,
+        ReceiptPoll {
+            taken: 4,
+            settled: 3,
+            invalidated: 1
+        }
+    );
+    let mut remaining = tokens(&registry, alice).await?;
+    remaining.sort();
+    assert_eq!(remaining, ["fine", "reinstalled", "slow"]);
+    assert_eq!(stored_tickets(&pool).await?.len(), 1);
+
+    let again =
+        poll_pending_receipts(&sender, &pending_receipts, &registry, due_at, POLL_LIMIT).await?;
+    assert_eq!(again.taken, 0, "the unsettled ticket waits a full delay");
+    assert_eq!(
+        pending_receipts
+            .purge(due_at + RECEIPT_RETENTION, POLL_LIMIT)
+            .await?,
+        1
+    );
     Ok(())
 }
