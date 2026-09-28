@@ -95,7 +95,7 @@ qa-down:
 	@bash mobile/scripts/qa/ios-env.sh stop
 
 {% endif %}run: preflight
-	{% if context.port_offset > 0 %}{{ context.app_env }}__HTTP__PORT={{ context.api_host_port }} {{ context.app_env }}__OPS__PORT={{ context.ops_host_port }} {% endif %}cargo run --manifest-path $(BACKEND_MANIFEST) -p {{ context.app_name }}-bin --bin api
+	{% if context.port_offset > 0 %}{{ context.app_env }}__HTTP__PORT={{ context.api_host_port }} {{ context.app_env }}__OPS__PORT={{ context.ops_host_port }} {% if context.auth_oidc %}{{ context.app_env }}__RATE_LIMIT__REDIS_URL=redis://127.0.0.1:{{ context.redis_host_port }}/ {% endif %}{% endif %}cargo run --manifest-path $(BACKEND_MANIFEST) -p {{ context.app_name }}-bin --bin api
 
 {% if context.worker %}run-worker: preflight
 	{% if context.port_offset > 0 %}{{ context.app_env }}__OPS__PORT={{ context.ops_host_port }} {% endif %}cargo run --manifest-path $(BACKEND_MANIFEST) -p {{ context.app_name }}-bin --bin worker
@@ -134,6 +134,7 @@ keycloak-reconcile: keycloak-policy
 	python3 scripts/reconcile_keycloak.py
 
 dev: keycloak-reconcile
+	docker compose up -d --wait redis
 
 {% endif %}
 db-down:

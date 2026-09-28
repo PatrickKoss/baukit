@@ -30,6 +30,7 @@ const API_HOST_PORT: u32 = 8080;
 const OPS_HOST_PORT: u32 = 9090;
 const KEYCLOAK_HOST_PORT: u32 = 8081;
 const FAKE_PROVIDER_HOST_PORT: u32 = 18081;
+const REDIS_HOST_PORT: u32 = 6379;
 const OPENAPI_TYPESCRIPT_PACKAGE: &str = "openapi-typescript@7.13.0";
 
 const EXPECTED_BACKEND_FILES: &[&str] = &[
@@ -421,6 +422,7 @@ struct TemplateContext {
     ops_host_port: u16,
     keycloak_host_port: u16,
     fake_provider_host_port: u16,
+    redis_host_port: u16,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -430,6 +432,7 @@ struct PortConfiguration {
     ops: u16,
     keycloak: u16,
     fake_provider: u16,
+    redis: u16,
 }
 
 impl PortConfiguration {
@@ -440,6 +443,7 @@ impl PortConfiguration {
             ("operations", OPS_HOST_PORT),
             ("Keycloak", KEYCLOAK_HOST_PORT),
             ("fake provider", FAKE_PROVIDER_HOST_PORT),
+            ("Redis", REDIS_HOST_PORT),
         ]
         .map(|(name, base)| {
             base.checked_add(offset)
@@ -452,12 +456,19 @@ impl PortConfiguration {
                     )
                 })
         });
-        let [postgres, api, ops, keycloak, fake_provider] = shifted
+        let [postgres, api, ops, keycloak, fake_provider, redis] = shifted
             .into_iter()
             .collect::<Result<Vec<_>>>()?
             .try_into()
-            .expect("fixed port list has five entries");
-        let ports = [postgres.1, api.1, ops.1, keycloak.1, fake_provider.1];
+            .expect("fixed port list has six entries");
+        let ports = [
+            postgres.1,
+            api.1,
+            ops.1,
+            keycloak.1,
+            fake_provider.1,
+            redis.1,
+        ];
         if ports.into_iter().collect::<BTreeSet<_>>().len() != ports.len() {
             bail!("--port-offset {offset} makes generated host ports collide");
         }
@@ -467,6 +478,7 @@ impl PortConfiguration {
             ops: ops.1,
             keycloak: keycloak.1,
             fake_provider: fake_provider.1,
+            redis: redis.1,
         })
     }
 }
@@ -537,6 +549,7 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         ops_host_port: ports.ops,
         keycloak_host_port: ports.keycloak,
         fake_provider_host_port: ports.fake_provider,
+        redis_host_port: ports.redis,
     };
     let rendered = render_product(&context, options)?;
     let mut conflicts = Vec::new();
@@ -1566,10 +1579,17 @@ fn validate_port_configuration(
                 ("deploy/values.yaml", format!("http: {}", ports.api)),
                 ("deploy/values.yaml", format!("ops: {}", ports.ops)),
             ]);
+            if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
+                expected.push((
+                    "Makefile",
+                    format!("REDIS_URL=redis://127.0.0.1:{}/", ports.redis),
+                ));
+            }
         }
         if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
             expected.extend([
                 ("compose.yaml", format!("\"{}:8080\"", ports.keycloak)),
+                ("compose.yaml", format!(":{}:6379\"", ports.redis)),
                 (
                     "scripts/pkce-login.py",
                     format!("localhost:{}/me", ports.api),
@@ -2237,6 +2257,7 @@ mod generator_tests {
             ops_host_port: 9090,
             keycloak_host_port: 8081,
             fake_provider_host_port: 18081,
+            redis_host_port: 6379,
         };
         let mut rendered = BTreeMap::new();
 

@@ -1,19 +1,53 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MockFetch } from '@baukit/api-runtime';
 import { buildAuthorizationUrl } from '@baukit/auth-web';
 
-import { createAuthenticatedApiRuntime } from './authenticated-api';
-import { authClient } from './auth';
+const oidc = vi.hoisted(() => {
+  const unsubscribe = vi.fn();
+  return {
+    constructed: [] as unknown[],
+    unsubscribe,
+    hasSession: vi.fn(() => true),
+    login: vi.fn(() => Promise.resolve()),
+    handleCallback: vi.fn(() => Promise.resolve(true)),
+    accessToken: vi.fn<
+      (options?: { readonly forceRefresh?: boolean }) => Promise<string | undefined>
+    >(() => Promise.resolve('access-token')),
+    subscribeSessionExpired: vi.fn<(listener: unknown) => () => void>(() => unsubscribe),
+    logout: vi.fn(() => Promise.resolve(true)),
+  };
+});
 
-const unauthorized = {
-  error: {
-    code: 'unauthenticated',
-    message: 'Authentication required',
-    requestId: 'request-1',
-    details: {},
-  },
-};
+vi.mock('@baukit/auth-web', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@baukit/auth-web')>();
+  class FakeOidcClient {
+    public constructor(options: unknown) {
+      oidc.constructed.push(options);
+    }
+    public hasSession = oidc.hasSession;
+    public login = oidc.login;
+    public handleCallback = oidc.handleCallback;
+    public accessToken = oidc.accessToken;
+    public subscribeSessionExpired = oidc.subscribeSessionExpired;
+    public logout = oidc.logout;
+  }
+  return { ...actual, OidcClient: FakeOidcClient };
+});
+
+async function loadAuthClient(): Promise<typeof import('./auth').authClient> {
+  vi.resetModules();
+  return (await import('./auth')).authClient;
+}
+
+beforeEach(() => {
+  oidc.constructed.length = 0;
+  vi.clearAllMocks();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
 
 describe('OIDC authorization request', () => {
   it('requires authorization code with S256 PKCE', () => {
@@ -28,7 +62,6 @@ describe('OIDC authorization request', () => {
       { state: 'state-value', challenge: 'challenge-value' },
     );
 
-    expect(authClient.hasSession()).toBe(false);
     expect(url.pathname).toBe('/authorize');
     expect(url.searchParams.get('response_type')).toBe('code');
     expect(url.searchParams.get('code_challenge_method')).toBe('S256');
@@ -36,46 +69,81 @@ describe('OIDC authorization request', () => {
     expect(url.searchParams.get('state')).toBe('state-value');
     expect(url.searchParams.get('scope')).toBe('openid profile email offline_access');
   });
+});
 
-  it('refreshes credentials and replays a 401 once', async () => {
-    const fetch = new MockFetch()
-      .enqueueJson(unauthorized, { status: 401 })
-      .enqueueJson({ id: 'user-1', subject: 'subject-1' });
-    const accessToken = vi
-      .fn()
-      .mockResolvedValueOnce('expired-token')
-      .mockResolvedValue('fresh-token');
-    const runtime = createAuthenticatedApiRuntime({
-      auth: { accessToken },
-      baseUrl: 'https://api.example.test',
-      environment: 'test',
-      fetch: fetch.fetch,
-    });
+describe('authClient without a browser window', () => {
+  it('reports no session and never builds the OIDC client', async () => {
+    const authClient = await loadAuthClient();
+    const listener = vi.fn();
 
-    await expect(runtime.fetch('/me')).resolves.toHaveProperty('status', 200);
-    expect(fetch.requests).toHaveLength(2);
-    expect(fetch.request(0).headers.get('authorization')).toBe('Bearer expired-token');
-    expect(fetch.request(1).headers.get('authorization')).toBe('Bearer fresh-token');
-    expect(accessToken).toHaveBeenNthCalledWith(2, { forceRefresh: true });
+    expect(authClient.hasSession()).toBe(false);
+    await expect(authClient.handleCallback()).resolves.toBe(false);
+    await expect(authClient.accessToken()).resolves.toBeUndefined();
+    authClient.subscribeSessionExpired(listener)();
+    await expect(authClient.logout()).resolves.toBe(false);
+    expect(oidc.constructed).toEqual([]);
+    expect(listener).not.toHaveBeenCalled();
+  });
+});
+
+describe('authClient in the browser', () => {
+  beforeEach(() => {
+    vi.stubGlobal('window', { location: { origin: 'https://app.example.test' } });
   });
 
-  it('stops after one replay when the refreshed request is also unauthorized', async () => {
-    const fetch = new MockFetch()
-      .enqueueJson(unauthorized, { status: 401 })
-      .enqueueJson(unauthorized, { status: 401 });
-    const accessToken = vi
-      .fn()
-      .mockResolvedValueOnce('expired-token')
-      .mockResolvedValue('fresh-token');
-    const runtime = createAuthenticatedApiRuntime({
-      auth: { accessToken },
-      baseUrl: 'https://api.example.test',
-      environment: 'test',
-      fetch: fetch.fetch,
-    });
+  it('builds one OIDC client from the local development defaults', async () => {
+    vi.stubEnv('VITE_OIDC_ISSUER', undefined);
+    vi.stubEnv('VITE_OIDC_CLIENT_ID', undefined);
+    const authClient = await loadAuthClient();
 
-    await expect(runtime.fetch('/me')).rejects.toMatchObject({ status: 401 });
-    expect(fetch.requests).toHaveLength(2);
-    expect(accessToken).toHaveBeenCalledTimes(3);
+    expect(authClient.hasSession()).toBe(true);
+    expect(authClient.hasSession()).toBe(true);
+
+    expect(oidc.constructed).toHaveLength(1);
+    expect(oidc.constructed[0]).toMatchObject({
+      issuer: expect.stringMatching(/^http:\/\/localhost:\d+\/realms\/[^/]+$/) as unknown,
+      clientId: expect.stringMatching(/-web$/) as unknown,
+      redirectUri: 'https://app.example.test/',
+      scopes: ['openid', 'profile', 'email'],
+      offlineAccess: true,
+      storageKeyPrefix: expect.stringMatching(/:oidc$/) as unknown,
+    });
+  });
+
+  it('uses the configured issuer and client ID', async () => {
+    vi.stubEnv('VITE_OIDC_ISSUER', 'https://login.example.test/realms/product');
+    vi.stubEnv('VITE_OIDC_CLIENT_ID', 'product-web');
+    const authClient = await loadAuthClient();
+
+    authClient.hasSession();
+
+    expect(oidc.constructed[0]).toMatchObject({
+      issuer: 'https://login.example.test/realms/product',
+      clientId: 'product-web',
+    });
+  });
+
+  it('delegates each call to the OIDC client', async () => {
+    const authClient = await loadAuthClient();
+    const listener = vi.fn();
+
+    await authClient.login();
+    await expect(authClient.handleCallback()).resolves.toBe(true);
+    await expect(authClient.accessToken({ forceRefresh: true })).resolves.toBe('access-token');
+    authClient.subscribeSessionExpired(listener)();
+    await expect(authClient.logout()).resolves.toBe(true);
+
+    expect(oidc.login).toHaveBeenCalledOnce();
+    expect(oidc.accessToken).toHaveBeenCalledWith({ forceRefresh: true });
+    expect(oidc.subscribeSessionExpired).toHaveBeenCalledWith(listener);
+    expect(oidc.unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it('asks for a cached token by default', async () => {
+    const authClient = await loadAuthClient();
+
+    await authClient.accessToken();
+
+    expect(oidc.accessToken).toHaveBeenCalledWith({});
   });
 });

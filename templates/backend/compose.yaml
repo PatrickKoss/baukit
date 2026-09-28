@@ -41,6 +41,16 @@ services:
       - ./keycloak/themes:/opt/keycloak/themes:ro
       - keycloak-data:/opt/keycloak/data
 
+  redis:
+    image: redis:8.10.0-alpine
+    ports:
+      - "127.0.0.1:{{ context.redis_host_port }}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
 {% endif %}
 
 volumes:

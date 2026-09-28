@@ -621,6 +621,11 @@ fn combined_generation_applies_port_offset_to_host_ports() -> anyhow::Result<()>
         ("baukit.toml", "port_offset = 100"),
         ("compose.yaml", "\"5532:5432\""),
         ("compose.yaml", "\"8181:8080\""),
+        ("compose.yaml", "\"127.0.0.1:6479:6379\""),
+        (
+            "Makefile",
+            "OFFSET_APP__RATE_LIMIT__REDIS_URL=redis://127.0.0.1:6479/",
+        ),
         ("deploy/values.yaml", "http: 8180"),
         ("deploy/values.yaml", "ops: 9190"),
         (
@@ -647,6 +652,7 @@ fn combined_generation_applies_port_offset_to_host_ports() -> anyhow::Result<()>
         ("README.md", "endpoints listen on port 9190"),
         ("README.md", "postgres@localhost:5532/offset_app"),
         ("README.md", "http://localhost:8181/realms/offset-app"),
+        ("README.md", "Redis on `127.0.0.1:6479`"),
         ("docs/fake-providers.md", "FAKE_PROVIDER_PORT:-18181"),
         ("scripts/pkce-login.py", "http://localhost:8180/me"),
     ];
@@ -1431,6 +1437,28 @@ fn doctor_accepts_an_env_only_api_source() -> anyhow::Result<()> {
         error
             .to_string()
             .contains("mobile/src/api.ts` does not use port offset 100")
+    );
+    Ok(())
+}
+
+#[test]
+fn doctor_rejects_an_auth_redis_port_without_the_offset() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "doctor-redis");
+    local.auth = Some(AuthProvider::Oidc);
+    local.port_offset = 100;
+    let root = generate_new(&local)?;
+    let compose = fs::read_to_string(root.join("compose.yaml"))?;
+    fs::write(
+        root.join("compose.yaml"),
+        compose.replace("127.0.0.1:6479:6379", "127.0.0.1:6379:6379"),
+    )?;
+
+    let error = doctor(&root).expect_err("doctor must find the stale Redis port");
+    assert!(
+        error
+            .to_string()
+            .contains("compose.yaml` does not use port offset 100")
     );
     Ok(())
 }

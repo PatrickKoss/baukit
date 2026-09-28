@@ -4,7 +4,7 @@ services:
       - "127.0.0.1:${BAUKIT_QA_POSTGRES_PORT:-15432}:5432"
   redis:
     image: redis:8.10.0-alpine
-    ports:
+    ports: !override
       - "127.0.0.1:${BAUKIT_QA_REDIS_PORT:-16379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
