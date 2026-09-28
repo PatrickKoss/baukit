@@ -23,6 +23,7 @@ jobs:
     outputs:
       mobile: ${{ steps.filter.outputs.mobile }}
       sqlite: ${{ steps.filter.outputs.sqlite }}
+      notifications: ${{ steps.filter.outputs.notifications }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -48,10 +49,23 @@ jobs:
               - '.github/workflows/ci.yml'
               - 'Makefile'
               - 'scripts/android-sdk-setup.sh'
+              - 'scripts/expo-android-conformance.sh'
               - 'examples/expo-sqlite-conformance/**'
               - 'typescript/pnpm-lock.yaml'
               - 'typescript/packages/data-contracts/**'
               - 'typescript/packages/data-contracts-expo-sqlite/**'
+            notifications:
+              - '.github/workflows/ci.yml'
+              - 'Makefile'
+              - 'scripts/android-sdk-setup.sh'
+              - 'scripts/expo-android-conformance.sh'
+              - 'examples/expo-notifications-conformance/**'
+              - 'fixtures/zoned-time/**'
+              - 'fixtures/notifications/**'
+              - 'typescript/pnpm-lock.yaml'
+              - 'typescript/packages/localization-core/**'
+              - 'typescript/packages/notifications-core/**'
+              - 'typescript/packages/notifications-expo/**'
 
   version-coherence:
     name: Release version coherence
@@ -494,5 +508,76 @@ jobs:
             echo "Real Expo SQLite conformance passed on Android."
           else
             echo "Relevant SQLite conformance result was $BUILD_RESULT; skipped or unavailable is not green." >&2
+            exit 1
+          fi
+
+  expo-notifications-android-build:
+    name: Expo notifications conformance on Android
+    needs: native-changes
+    if: needs.native-changes.outputs.notifications == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: typescript/.nvmrc
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Enable pinned pnpm
+        run: |
+          corepack enable
+          corepack install
+      - name: Enable KVM for the runner user
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Find pnpm store
+        id: notifications-pnpm-store
+        working-directory: typescript
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.notifications-pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-notifications-${{ hashFiles('typescript/pnpm-lock.yaml', 'examples/expo-notifications-conformance/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-notifications-
+            ${{ runner.os }}-pnpm-
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+      - name: Run Hermes vectors and real expo-notifications conformance
+        run: make expo-notifications-conformance
+      - name: Upload conformance failure diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: expo-notifications-android-failure
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            examples/expo-notifications-conformance/artifacts/
+            examples/expo-notifications-conformance/.expo/
+            examples/expo-notifications-conformance/android/app/build/reports/
+
+  expo-notifications-android-gate:
+    name: Expo notifications Android gate
+    needs: [native-changes, expo-notifications-android-build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce relevant device-conformance result
+        env:
+          NOTIFICATIONS_RELEVANT: ${{ needs.native-changes.outputs.notifications }}
+          BUILD_RESULT: ${{ needs.expo-notifications-android-build.result }}
+        run: |
+          if [[ "$NOTIFICATIONS_RELEVANT" != "true" ]]; then
+            echo "No notifications, zoned-time, or conformance paths changed; gate is not applicable."
+          elif [[ "$BUILD_RESULT" == "success" ]]; then
+            echo "Hermes vectors and expo-notifications conformance passed on Android."
+          else
+            echo "Relevant notifications conformance result was $BUILD_RESULT; skipped or unavailable is not green." >&2
             exit 1
           fi

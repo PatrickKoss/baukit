@@ -1,0 +1,29 @@
+{
+  "name": "baukit-expo-notifications-conformance",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "expo/AppEntry.js",
+  "scripts": {
+    "android": "expo run:android",
+    "prebuild:android": "expo prebuild --clean --platform android",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@baukit/localization-core": "file:../../typescript/packages/localization-core",
+    "@baukit/notifications-core": "file:../../typescript/packages/notifications-core",
+    "@baukit/notifications-expo": "file:../../typescript/packages/notifications-expo",
+    "expo": "57.0.11",
+    "expo-notifications": "57.0.13",
+    "react": "19.2.8",
+    "react-native": "0.86.2"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.18",
+    "typescript": "6.0.3"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "packageManager": "pnpm@11.18.0"
+}

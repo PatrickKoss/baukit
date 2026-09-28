@@ -16,8 +16,18 @@ import {
 
 const resolution = resolveNotificationOccurrences({
   occurrences: [
-    { logicalId: 'plan:2026-03-29', civilDate: '2026-03-29', civilTime: '02:30', contentDigest: 'v3' },
-    { logicalId: 'plan:2026-03-30', civilDate: '2026-03-30', civilTime: '02:30', contentDigest: 'v3' },
+    {
+      logicalId: 'plan:2026-03-29',
+      civilDate: '2026-03-29',
+      civilTime: '02:30',
+      contentDigest: 'v3',
+    },
+    {
+      logicalId: 'plan:2026-03-30',
+      civilDate: '2026-03-30',
+      civilTime: '02:30',
+      contentDigest: 'v3',
+    },
   ],
   timeZone: 'Europe/Berlin',
   gap: 'shiftForward',
@@ -50,6 +60,10 @@ const plan = planNotificationReplacement(current, resolution.desired);
 The same input and clock give the same result, whatever order the occurrences arrive in. The shared
 vectors in `fixtures/notifications/plan-vectors-v1.json` cover DST gaps and folds, month and year
 changes, travel between zones, duplicates, invalid input, changed content, and horizon boundaries.
+`@baukit/notifications-core/vectors` exports `notificationPlanVectorChecks(fixture)`, the checks the
+Vitest suite runs: each success case yields the expected plan, convergence once the plan is applied,
+and independence from input order. `examples/expo-notifications-conformance` runs them inside
+Hermes.
 
 ## Owned replacement
 
@@ -87,7 +101,10 @@ const outcome = await scheduler.replaceOwned({ namespace: 'reminders' }, desired
 against any platform implementation; it needs the consumer's Vitest installation.
 
 ```ts
-import { InMemoryNotificationPlatform, createOwnedNotificationScheduler } from '@baukit/notifications-core';
+import {
+  InMemoryNotificationPlatform,
+  createOwnedNotificationScheduler,
+} from '@baukit/notifications-core';
 import { describeOwnedNotificationSchedulerContract } from '@baukit/notifications-core/vitest';
 
 describeOwnedNotificationSchedulerContract<string>((options) => {
