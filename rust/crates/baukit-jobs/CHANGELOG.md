@@ -4,6 +4,8 @@ All notable changes to `baukit-jobs` are documented here.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-28
+
 ### Changed
 
 - **Breaking:** `JobStore::claim` takes a `job_types: &[&str]` argument after

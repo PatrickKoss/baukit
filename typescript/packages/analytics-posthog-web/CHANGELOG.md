@@ -1,5 +1,20 @@
 # @baukit/analytics-posthog-web
 
+## 0.5.0
+
+### Minor Changes
+
+- 8d268e1: Add a `default` export condition next to `import` on every export except the ESM-only `./vitest` subpaths. Jest and other CommonJS-condition resolvers now find `@baukit/*` without a `moduleNameMapper`. Each package's `test` script packs the package and resolves every export under `require` conditions from the archive.
+- Release the coordinated baukit 0.5.0 train.
+
+### Patch Changes
+
+- Updated dependencies [4f4a873]
+- Updated dependencies [bc05828]
+- Updated dependencies [8d268e1]
+- Updated dependencies
+  - @baukit/analytics-core@0.5.0
+
 ## 0.4.0
 
 ### Minor Changes

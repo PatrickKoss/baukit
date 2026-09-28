@@ -4,6 +4,8 @@ All notable changes to `baukit-sync` are documented here.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-28
+
 ### Added
 
 - Add the `sqlx-postgres` feature. It carries every SQLx helper, so a crate that only needs the

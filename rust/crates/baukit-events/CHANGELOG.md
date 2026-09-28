@@ -4,6 +4,8 @@ All notable changes to `baukit-events` are documented here.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-28
+
 ### Changed
 
 - Break: `EventEnvelope` serializes camelCase field names while staying schema version 1:

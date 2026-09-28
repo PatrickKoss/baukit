@@ -4,6 +4,8 @@ All notable changes to `baukit-http` are documented here.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-28
+
 ### Added
 
 - `HttpOptions::with_additional_exposed_headers` adds response headers to the CORS exposed set,

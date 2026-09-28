@@ -4,6 +4,8 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-28
+
 ### Added
 
 - Add the `sqlx-postgres` feature with `PostgresApiTokenStore`, an

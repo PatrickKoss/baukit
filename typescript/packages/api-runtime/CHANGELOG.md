@@ -1,5 +1,28 @@
 # @baukit/api-runtime
 
+## 0.5.0
+
+### Minor Changes
+
+- 4793121: Move wire names to camelCase to match the Baukit HTTP APIs.
+
+  Breaking changes:
+
+  - `@baukit/api-runtime`: `parseApiErrorEnvelope` reads only `error.requestId`. An envelope that carries `request_id` and no `requestId` is no longer an `ApiError`. `ApiErrorEnvelope.error.request_id` is now `requestId`.
+  - `@baukit/events`: `EventEnvelopeSchema` and `EventEnvelope` use `eventId`, `userId`, `occurredAt`, `sourceApp`, and `schemaVersion` instead of `event_id`, `user_id`, `occurred_at`, `source_app`, and `schema_version`, and still describe schema version 1. `IngestOutcomeSchema` uses `ledgerEntryId` instead of `ledger_entry_id`. `EventPayloadSchema` accepts camelCase keys (`/^[a-z][a-zA-Z0-9]{0,63}$/`) and rejects snake_case keys.
+  - `@baukit/sync-client`: `toSnakeCaseSnapshot`, `toSnakeCaseFailure`, `SnakeCaseSyncStatusSnapshot`, and `SnakeCaseSyncFailure` are removed. Read the camelCase `SyncStatusSnapshot` directly. The documented `resync_required` detail is `details.horizonRevision` and the pull page flag is `hasMore`.
+
+- bb0121b: Add keyed mutation support.
+
+  `/idempotency` is a new entry point, not re-exported from the package root. `createIdempotencyKeyStore` keeps one `Idempotency-Key` per account, operation, and body, compared by canonical JSON, until the outcome is definite or `ttlMs` passes. Keys default to `crypto.randomUUID()` and in-memory storage; `storage` takes an `IdempotencyKeyStorage` port to keep them across reloads. `classifyMutationStatus` and `classifyMutationError` return `committed`, `not-committed`, or `possibly-committed`. Network errors, aborts, 408, 429, 5xx, 409 `idempotency_key_in_progress`, and unknown throws are possibly committed and keep the key. `sendIdempotentMutation` gets the key, sends, and settles it. `canonicalJson` and `IDEMPOTENCY_KEY_IN_PROGRESS_CODE` are exported too.
+
+  The package root exports `IDEMPOTENCY_KEY_HEADER`. `RetryableMethod` now includes `POST` and `PATCH`, and `createApiFetch` retries them only when `retry.methods` names them and the request carries `Idempotency-Key`. Unkeyed `POST` and `PATCH` still never retry.
+
+  Break: before, `retry.methods` silently dropped `POST` and `PATCH`. A caller that already listed them now gets retries for keyed requests. Remove them from `methods` to keep the old behavior.
+
+- 8d268e1: Add a `default` export condition next to `import` on every export except the ESM-only `./vitest` subpaths. Jest and other CommonJS-condition resolvers now find `@baukit/*` without a `moduleNameMapper`. Each package's `test` script packs the package and resolves every export under `require` conditions from the archive.
+- Release the coordinated baukit 0.5.0 train.
+
 ## 0.4.0
 
 ### Minor Changes

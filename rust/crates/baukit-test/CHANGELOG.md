@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-28
+
 ### Added
 
 - Publish `fixtures/webhooks/signature-v1.json`, signing and verification vectors for the

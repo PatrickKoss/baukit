@@ -4,6 +4,8 @@ All notable changes to `baukit-egress` are documented here.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-28
+
 ### Added
 
 - First release of `baukit-egress`, a guarded outbound HTTP client for

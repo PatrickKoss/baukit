@@ -4,6 +4,8 @@ All notable changes to `baukit-core` are documented here.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-28
+
 ### Added
 
 - Add the `export` module with `encode_csv`, `CsvCell`, `CsvOptions`, and `CsvEncodeError`. It

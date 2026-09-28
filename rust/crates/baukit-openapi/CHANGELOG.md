@@ -4,6 +4,8 @@ All notable changes to `baukit-openapi` are documented here.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-28
+
 ### Added
 
 - `ErrorResponseRules` documents error responses and response headers from product rules. A
