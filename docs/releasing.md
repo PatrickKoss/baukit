@@ -13,9 +13,9 @@ bump; compatible changes normally use a patch bump.
 ## Tool ownership
 
 - `rust/release-plz.toml` defines the Rust version group, per-crate changelogs,
-  and the single `v{{ version }}` tag emitter. The sixteen library crates
+  and the single `v{{ version }}` tag emitter. The seventeen library crates
   publish to crates.io; the `baukit` CLI keeps `publish = false`.
-- Changesets records TypeScript changes. Its fixed group advances all eighteen
+- Changesets records TypeScript changes. Its fixed group advances all twenty
   packages together, creates package changelogs, and emits no package tags.
   Publishing to npm is a separate step (see below), not `changeset publish`.
 - `scripts/release-train.sh` is the cross-ecosystem coordinator. A standalone
@@ -98,7 +98,7 @@ compatibility matrix before merging the upgrade.
 
 ## Publish the TypeScript packages
 
-The eighteen `@baukit/*` packages are published to npm under the `baukit`
+The twenty `@baukit/*` packages are published to npm under the `baukit`
 organization scope, MIT licensed. Each one sets `publishConfig.access` to
 `public`; `scripts/check-version-coherence.py` fails the train if a package
 loses that setting or its licence.
@@ -121,7 +121,7 @@ and never allows reusing the version number afterwards. Run the dry run first.
 
 ## Publish the Rust crates
 
-The sixteen library crates are published to crates.io, MIT licensed. The
+The seventeen library crates are published to crates.io, MIT licensed. The
 `baukit` CLI keeps `publish = false` and stays a Git-tag install.
 `scripts/check-version-coherence.py` fails the train if a library crate regains
 that flag or the workspace loses its licence.
@@ -146,7 +146,7 @@ which makes `cargo package` strip them from the published manifest while local
 train if one regains a version or `workspace = true`.
 
 crates.io rate-limits new crate names: an initial burst, then roughly one new
-crate every ten minutes. A first release of all sixteen therefore cannot run
+crate every ten minutes. A first release of all seventeen therefore cannot run
 straight through. `scripts/publish-crates.sh` skips crates already on the
 registry and waits out a 429 instead of failing the run:
 
