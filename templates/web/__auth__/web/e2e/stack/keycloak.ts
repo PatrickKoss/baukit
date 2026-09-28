@@ -6,6 +6,7 @@ export interface KeycloakStack {
   readonly realm: string;
   readonly adminUsername: string;
   readonly adminPassword: string;
+  readonly webClientId: string;
 }
 
 export interface KeycloakTestUser {
@@ -25,6 +26,7 @@ export function keycloakStack(environment: NodeJS.ProcessEnv = process.env): Key
     realm: environment['E2E_KEYCLOAK_REALM'] ?? '{{ context.app_name }}',
     adminUsername: environment['E2E_KEYCLOAK_ADMIN_USERNAME'] ?? 'admin',
     adminPassword: environment['E2E_KEYCLOAK_ADMIN_PASSWORD'] ?? 'admin',
+    webClientId: environment['E2E_KEYCLOAK_WEB_CLIENT_ID'] ?? '{{ context.app_name }}-web',
   };
 }
 
@@ -45,6 +47,51 @@ async function adminAccessToken(request: APIRequestContext, stack: KeycloakStack
     throw new Error('Keycloak admin sign-in returned no access token.');
   }
   return body.access_token;
+}
+
+interface KeycloakClient {
+  readonly id: string;
+  readonly redirectUris?: readonly string[];
+  readonly webOrigins?: readonly string[];
+}
+
+function withEntry(entries: readonly string[] | undefined, entry: string): string[] {
+  const current = entries ?? [];
+  return current.includes(entry) ? [...current] : [...current, entry];
+}
+
+/** Adds the origin to the web client's redirects and web origins when the realm lacks it. */
+export async function allowWebOrigin(
+  request: APIRequestContext,
+  origin: string,
+  stack: KeycloakStack = keycloakStack(),
+): Promise<void> {
+  const token = await adminAccessToken(request, stack);
+  const headers = { authorization: `Bearer ${token}` };
+  const clients = `${stack.url}/admin/realms/${encodeURIComponent(stack.realm)}/clients`;
+  const lookup = await request.get(clients, { headers, params: { clientId: stack.webClientId } });
+  if (!lookup.ok()) {
+    throw new Error(`Keycloak client lookup failed with HTTP ${String(lookup.status())}.`);
+  }
+  const [client] = (await lookup.json()) as readonly (KeycloakClient & Record<string, unknown>)[];
+  if (client === undefined) {
+    throw new Error(`Keycloak realm ${stack.realm} has no ${stack.webClientId} client.`);
+  }
+  const redirectUri = `${origin}/*`;
+  if (client.redirectUris?.includes(redirectUri) && client.webOrigins?.includes(origin)) {
+    return;
+  }
+  const update = await request.put(`${clients}/${encodeURIComponent(client.id)}`, {
+    headers,
+    data: {
+      ...client,
+      redirectUris: withEntry(client.redirectUris, redirectUri),
+      webOrigins: withEntry(client.webOrigins, origin),
+    },
+  });
+  if (!update.ok()) {
+    throw new Error(`Keycloak client update failed with HTTP ${String(update.status())}.`);
+  }
 }
 
 /** Creates a verified user with a random password, so parallel tests never share an identity. */

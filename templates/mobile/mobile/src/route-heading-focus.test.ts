@@ -1,4 +1,5 @@
 import type { RouteFocusController, RouteFocusTarget } from '@baukit/a11y-core';
+import { renderHook } from '@testing-library/react-native';
 import type { RefObject } from 'react';
 
 const mockFocusAccessibilityElement = jest.fn<undefined, [unknown]>();
@@ -11,7 +12,16 @@ jest.mock('@baukit/a11y-core', () => ({
   },
 }));
 
-import { createRouteHeadingFocusEffect } from './route-heading-focus';
+jest.mock('expo-router', () => {
+  const { useEffect } = jest.requireActual<typeof import('react')>('react');
+  return {
+    useFocusEffect: (effect: () => (() => void) | undefined) => {
+      useEffect(effect, [effect]);
+    },
+  };
+});
+
+import { createRouteHeadingFocusEffect, useRouteHeadingFocus } from './route-heading-focus';
 
 describe('Expo Router route heading focus adapter', () => {
   afterEach(() => {
@@ -72,5 +82,30 @@ describe('Expo Router route heading focus adapter', () => {
     cleanup?.();
 
     expect(cancelFrame).toHaveBeenCalledWith(7);
+  });
+
+  it('focuses the native heading while the route is focused', async () => {
+    let frameCallback: FrameRequestCallback | undefined;
+    jest.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+      frameCallback = callback;
+      return 9;
+    });
+    const cancelFrame = jest.spyOn(globalThis, 'cancelAnimationFrame').mockReturnValue(undefined);
+    const headingRef = { current: {} } as RefObject<object | null>;
+
+    const { rerender, unmount } = await renderHook(
+      ({ ready }: { ready: boolean }) => {
+        useRouteHeadingFocus(headingRef, ready);
+      },
+      { initialProps: { ready: false } },
+    );
+    expect(frameCallback).toBeUndefined();
+
+    await rerender({ ready: true });
+    frameCallback?.(0);
+    expect(mockFocusAccessibilityElement).toHaveBeenCalledWith(headingRef);
+
+    await unmount();
+    expect(cancelFrame).toHaveBeenCalledWith(9);
   });
 });

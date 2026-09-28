@@ -28,4 +28,23 @@ For QA files generated before this template version, `field` and `value` still w
 
 ## Keycloak stack test
 
-`e2e/stack` signs a real user in through the composed Keycloak. `createKeycloakTestUser` uses the Keycloak admin API to create a verified user with a random password and returns its subject. `signInWithKeycloak` waits for the Keycloak page, fills `#username` and `#password`, and submits. Start Keycloak with `docker compose up -d --wait keycloak` from the product root, then run `corepack pnpm@11.18.0 exec playwright test --config e2e/playwright.stack.config.ts`. The config starts Vite on port 5173 because the realm's web client only accepts redirects there, and it reuses a dev server that already listens on that port. `E2E_KEYCLOAK_URL`, `E2E_KEYCLOAK_REALM`, `E2E_KEYCLOAK_ADMIN_USERNAME`, and `E2E_KEYCLOAK_ADMIN_PASSWORD` override the development defaults. Each run leaves its users in the realm, so point it only at a disposable development realm. The hermetic browser gate never runs these specs.
+`e2e/stack` signs a real user in through the composed Keycloak and reads their subject back from the running API. `createKeycloakTestUser` uses the Keycloak admin API to create a verified user with a random password and returns its subject. `signInWithKeycloak` waits for the Keycloak page, fills `#username` and `#password`, and submits.
+
+The API has to run with the test origin in its CORS allow-list. Its rate limiter also connects to Redis at startup, and Compose does not start one. From the product root:
+
+```sh
+docker compose up -d --wait keycloak
+docker run -d --rm --name {{ context.app_name }}-e2e-redis -p 127.0.0.1:16379:6379 redis:8.10.0-alpine
+{{ context.app_env }}__RATE_LIMIT__REDIS_URL=redis://127.0.0.1:16379/ \
+{{ context.app_env }}__HTTP__CORS_ALLOWED_ORIGINS='["http://localhost:5183"]' \
+make run
+```
+
+Then run the specs from `web/` in a second shell:
+
+```sh
+corepack pnpm@11.18.0 exec playwright install chromium
+E2E_WEB_PORT=5183 corepack pnpm@11.18.0 exec playwright test --config e2e/playwright.stack.config.ts
+```
+
+`E2E_WEB_PORT` sets the Vite port and defaults to 5173, the only origin the realm file lists. Before the specs run, global setup adds the chosen origin to the `{{ context.app_name }}-web` client's redirect URIs and web origins through the admin API if the client lacks it. The config reuses a server that already listens on the port, so pick a free port when another process holds 5173. `E2E_KEYCLOAK_URL`, `E2E_KEYCLOAK_REALM`, `E2E_KEYCLOAK_ADMIN_USERNAME`, `E2E_KEYCLOAK_ADMIN_PASSWORD`, and `E2E_KEYCLOAK_WEB_CLIENT_ID` override the development defaults. Each run leaves its users and any added origin in the realm, so point it only at a disposable development realm. The hermetic browser gate never runs these specs.
