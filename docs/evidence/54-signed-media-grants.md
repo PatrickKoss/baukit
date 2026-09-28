@@ -296,3 +296,20 @@ No existing Baukit API changes.
   three HMAC computations instead of one.
 - Neither product allows clock skew. A grant signed at the full 3600 s lifetime fails at an edge
   whose clock is one second behind the API.
+
+## Follow-up (2026-09-28)
+
+This closes the key reload decision. Products build one `MediaGrantKeyRing` at startup and share
+it. To rotate, they restart with the new key as current and the old one as previous, then restart
+again without the previous key once the longest grant lifetime has passed. There is no reload API:
+no product reloads keys today, and a restart already reloads the edge verifier's environment.
+
+The `baukit-core` README section and the `MediaGrantKeyRing` rustdoc now say so. Writing it down
+showed an ordering gap: if the backend restarts first, it signs with a key the edge does not know
+yet, and those grants fail until the edge rolls. Both the `baukit-core` README and
+`deploy/media-grants/README.md` now say to roll the edge first. No code changed.
+
+Gates: `cargo test --manifest-path rust/Cargo.toml -p baukit-core --all-features --
+--include-ignored` passes, and `cargo clippy` on the workspace with `--all-features` is clean.
+
+Breaks: none.

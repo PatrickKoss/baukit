@@ -7,7 +7,7 @@ use std::{
 };
 
 use axum::http::{HeaderMap, Method, StatusCode};
-use baukit_http::classify_http_status;
+use baukit_http::{RetryHeaderOptions, classify_http_status_with_options};
 use reqwest::{
     dns::{Addrs, Name, Resolve, Resolving},
     redirect::Policy,
@@ -200,7 +200,8 @@ impl GuardedClient {
     /// Sends `request` and reads the response body.
     ///
     /// A status outside `2xx` becomes [`EgressError::Status`], classified by
-    /// [`baukit_http::classify_http_status`] without reading its body.
+    /// [`baukit_http::classify_http_status`] without reading its body. A
+    /// `Retry-After` delay above [`EgressOptions::max_retry_after`] is clamped.
     pub async fn execute(&self, request: EgressRequest) -> Result<EgressResponse, EgressError> {
         let span = tracing::info_span!(
             target: TARGET,
@@ -240,7 +241,9 @@ impl GuardedClient {
         let status = response.status();
         let headers = response.headers().clone();
         if !status.is_success() {
-            let class = classify_http_status(status, &headers, &[]);
+            let retry_headers =
+                RetryHeaderOptions::default().with_max_retry_after(self.options.max_retry_after());
+            let class = classify_http_status_with_options(status, &headers, retry_headers);
             return Err(EgressError::Status { status, class });
         }
         let body = read_body(response, self.options.max_response_bytes()).await?;

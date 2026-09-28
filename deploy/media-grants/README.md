@@ -83,8 +83,8 @@ nginx must forward the request target unchanged; rewriting or re-encoding the pa
 raw-path check fail.
 
 To rotate keys, move the current key into the previous variables, set a new current key, and
-roll the backend and the edge. Once the longest grant lifetime has passed, clear the previous
-variables.
+roll the edge, then the backend. The edge accepts grants from both keys before the backend signs
+with the new one. Once the longest grant lifetime has passed, clear the previous variables.
 
 ## Runtimes
 

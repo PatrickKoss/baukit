@@ -250,3 +250,70 @@ None. `baukit-egress` is new, and the vectors are a new fixture.
 - Whether `baukit-http` should offer a capped `Retry-After`. Runtime Analyzer clamps to 1 to 300
   seconds; Tiefgang and the classifier do not.
 - A network-specific NAT64 prefix option on `AddressPolicy`, if a deployment needs one.
+
+## Follow-up (2026-09-28)
+
+This closes the first two open decisions above and the release config gap. The NAT64 prefix
+option stays out until a deployment needs one.
+
+### 425 is retryable
+
+`classify_http_status` now maps `425 Too Early` to `RetryClass::Unavailable`. RFC 8470 section 5.2
+lets a client retry a `425` once the request is no longer sent as early data. The egress client
+sends none: `reqwest` defaults `tls_early_data` to false and `GuardedClient` does not set it, so a
+plain retry qualifies. The integration reliability recipe already listed `425` with `408`,
+`429`, and `5xx`; the classifier now agrees with it, and the recipe's egress paragraph no longer
+warns about the mismatch. `baukit-egress` has no status
+special case of its own and follows the classifier.
+
+### Capped `Retry-After`
+
+`RetryHeaderOptions::with_max_retry_after(Duration)` clamps any parsed delay above the cap to the
+cap. It applies to vendor headers and both `Retry-After` forms. The default stays uncapped, so
+`classify_http_status` reports what the upstream said.
+
+`EgressOptions` gains `with_max_retry_after` and `max_retry_after`, 300 seconds by default, and
+`GuardedClient` classifies statuses with that cap. A zero cap returns the new
+`EgressOptionsError::ZeroRetryAfterCap`. 300 seconds matches Runtime Analyzer's upper clamp
+(`finops-integrations/src/lib.rs:109-141`), the only product that clamps today. Baukit does not
+copy its 1 second floor: a `Retry-After: 0` means retry now, and the job runner's attempt cap
+already bounds a receiver that keeps asking for that.
+
+No other Baukit crate schedules retries from an upstream response. `baukit-push` classifies Expo
+failures and hands the class to its caller. `baukit-jobs` uses the delay a handler passes to
+`JobError::retryable_after` as given; a handler that took it from `GuardedClient` already has the
+capped value, and one that parses headers itself sets the option. `@baukit/sync-client` reads
+`Retry-After` from the product's own API, not from an untrusted upstream, and is unchanged.
+
+### Release config covers every crate
+
+`rust/release-plz.toml` listed 13 of the 17 workspace crates. `baukit-auth`, `baukit-egress`,
+`baukit-jobs`, and `baukit-push` were missing, so release-plz would have left them out of the
+changelog update and the version group. All four now sit in `version_group =
+"baukit-release-train"` with `publish = false`, like the rest. `scripts/publish-crates.sh` already
+listed all 17.
+
+`scripts/check-version-coherence.py` now fails when a crate under `rust/crates/` is missing from
+`release-plz.toml`, when the file lists a crate that does not exist, or when an entry leaves the
+release train group or drops `publish = false`. `scripts/test_check_version_coherence.py` covers
+each case and runs the check against the repository's own config. A mutation that renamed the
+`baukit-push` entry made the script exit 1 with both the missing and the unknown name.
+
+### Gates
+
+- `cargo fmt --manifest-path rust/Cargo.toml --all --check`: pass.
+- `cargo clippy --manifest-path rust/Cargo.toml --workspace --all-targets --all-features -- -D warnings`:
+  pass.
+- `cargo test --manifest-path rust/Cargo.toml -p baukit-http -p baukit-egress -p baukit-core
+  -p baukit-push -p baukit-integrations --all-features -- --include-ignored`: pass, README
+  doctests included.
+- `scripts/check-version-coherence.py`: pass, 17 crates.
+- `make scripts-test`: pass, 15 tests.
+
+### Breaks
+
+- `baukit-http`: `425` is `Unavailable` instead of `Permanent`, so callers that stop on
+  `is_retryable() == false` now retry it.
+- `baukit-egress`: `425` is retryable, and `EgressError::Status` carries a `RetryAfter` of at most
+  300 seconds by default instead of the receiver's value. `EgressOptionsError` has a new variant.
+- Release tooling: the version coherence check now fails on an incomplete `release-plz.toml`.

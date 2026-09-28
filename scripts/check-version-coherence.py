@@ -11,6 +11,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+RELEASE_TRAIN_GROUP = "baukit-release-train"
 
 EXPECTED_TYPESCRIPT_PACKAGES = {
     "@baukit/a11y-core",
@@ -39,6 +40,31 @@ EXPECTED_TYPESCRIPT_PACKAGES = {
 def fail(message: str) -> None:
     print(f"version coherence error: {message}", file=sys.stderr)
     raise SystemExit(1)
+
+
+def release_plz_problems(release_plz: dict, crate_names: set[str]) -> list[str]:
+    """Returns every mismatch between release-plz packages and workspace crates."""
+    packages = release_plz.get("package", [])
+    listed = {package.get("name") for package in packages}
+    problems = [
+        f"workspace crate {name} is missing from rust/release-plz.toml"
+        for name in sorted(crate_names - listed)
+    ]
+    problems += [
+        f"rust/release-plz.toml lists {name}, which is not a workspace crate"
+        for name in sorted(listed - crate_names, key=str)
+    ]
+    for package in packages:
+        if package.get("version_group") != RELEASE_TRAIN_GROUP:
+            problems.append(
+                f"rust/release-plz.toml package {package.get('name')} must set "
+                f'version_group = "{RELEASE_TRAIN_GROUP}"'
+            )
+        if package.get("publish") is not False:
+            problems.append(
+                f"rust/release-plz.toml package {package.get('name')} must set publish = false"
+            )
+    return problems
 
 
 def main() -> None:
@@ -89,6 +115,11 @@ def main() -> None:
         if not isinstance(version, str):
             fail(f"cannot resolve the version in {path.relative_to(ROOT)}")
         crate_versions[package["name"]] = version
+
+    with (ROOT / "rust/release-plz.toml").open("rb") as config:
+        problems = release_plz_problems(tomllib.load(config), set(crate_versions))
+    if problems:
+        fail("; ".join(problems))
 
     bad_crates = {name: version for name, version in crate_versions.items() if version != rust_version}
     if bad_crates:
