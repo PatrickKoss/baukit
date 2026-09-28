@@ -306,3 +306,131 @@ changed in this item.
 - Hebkit evicts dead tokens across all owners by token while its schema allows the same token under
   several owners, so one receipt deletes every owner's row for that token.
 - Neither Eigenruhe nor Hebkit deletes old delivery claims.
+
+## Follow-up (2026-09-28)
+
+Plan follow-up F1 closes both open decisions above. The privacy boundary line about `PushMessage`
+and `PushOutcome` carrying a plain `String` no longer holds.
+
+### Token redaction
+
+`PushMessage::token` and `PushOutcome::token` are now `DeviceToken`. I kept `DeviceToken` as it
+was rather than adding a prefix form. Every other Baukit secret wrapper redacts the whole value:
+`baukit_config::Secret` prints `[redacted]`, `baukit_core::MediaGrant` prints `<redacted>` for the
+signature, `baukit_integrations::ExternalAccountId` prints `[redacted]`, and
+`baukit_http::IdempotencyKey` prints `IdempotencyKey(..)`. Only `baukit-auth`'s API tokens keep a
+prefix, and that is a stored `display_prefix` field for list views, not a `Debug` form. A device
+token prefix would also say little: every Expo token starts with `ExponentPushToken[`. So
+`?outcome` and `?message` print `DeviceToken(<redacted>)`, and there is still no `Display`.
+
+`PushMessage::new` takes a `DeviceToken`, so an invalid token now fails where the product builds
+the message instead of at the provider. `dead_tokens` no longer needs to skip invalid tokens.
+
+### Deferred receipt polling
+
+Expo's push docs (checked 2026-09-28) recommend checking receipts 15 minutes after the send, clear
+receipts after 24 hours, and reject a `getReceipts` request with more than 1000 IDs. The send
+limit of 100 per request is unchanged.
+
+The design is port-first and adds no scheduler:
+
+- `PushDeliveryStatus::Accepted` carries a `PushTicketId`, which the adapter already had and
+  threw away. A ticket ID is 1 to 128 bytes of visible ASCII; Expo's are UUIDs.
+- `PushReceiptSource::receipts(tickets)` is the receipt port. It returns settled
+  `PushReceipt::Delivered` or `PushReceipt::Rejected` per ticket and leaves unsettled tickets
+  out. `ExpoPushSender` implements it and splits requests at `MAX_RECEIPT_BATCH_SIZE` (1000). The
+  send path reuses the same function for its immediate receipt check.
+- `PendingReceiptStore` has `record(receipts, due_at)`, `take_due(now, retry_at, limit)`,
+  `delete(tickets)`, `purge(sent_before, limit)`, and the provided `record_accepted(outcomes,
+  sent_at)`, which mirrors `invalidate_dead_tokens`: it filters one send's outcomes and skips the
+  store when nothing was accepted. Tickets are first due `RECEIPT_POLL_DELAY` (15 minutes) after
+  the send.
+- `poll_pending_receipts(source, pending, registry, now, limit)` takes one due batch, fetches its
+  receipts, groups `DeviceNotRegistered` tokens by their own `sent_at` and calls `invalidate` once
+  per send, deletes the settled tickets, and returns `ReceiptPoll { taken, settled, invalidated }`.
+  Invalidation runs before deletion; a crash between them repeats an idempotent invalidation.
+  Errors are `ReceiptPollError::Store` or `ReceiptPollError::Push`.
+
+`take_due` is a take, not a read. It moves the returned tickets to `now + RECEIPT_POLL_DELAY`. A
+plain read of the oldest due rows would hand the same unsettled tickets to every run, and once
+more than `limit` of them stuck, newer tickets would starve until the purge. The move also keeps
+two pollers off the same batch and turns a crash after the take into a retry one delay later.
+
+The PostgreSQL adapter follows `purge_delivery_claims`:
+
+- `push_pending_receipts` has `ticket_id TEXT PRIMARY KEY`, `token`, `sent_at`, and `due_at`,
+  with CHECKs matching `PushTicketId` and `DeviceToken`, and indexes on `(due_at, ticket_id)` and
+  `(sent_at, ticket_id)`. The reference migration is
+  `migrations/0003_baukit_push_pending_receipts.sql`, exposed as
+  `POSTGRES_PUSH_PENDING_RECEIPTS_MIGRATION_SQL`.
+- `record` is one `INSERT ... SELECT FROM UNNEST(...) ON CONFLICT (ticket_id) DO NOTHING` and
+  returns the new rows.
+- `take_due` is `UPDATE ... SET due_at = $retry WHERE ticket_id IN (SELECT ... WHERE due_at <= $now
+  ORDER BY due_at, ticket_id LIMIT $n FOR UPDATE SKIP LOCKED) RETURNING ticket_id, token, sent_at`.
+- `delete` is `DELETE ... WHERE ticket_id = ANY($1)`. `purge` deletes one `sent_at < $cutoff`
+  batch with `FOR UPDATE SKIP LOCKED`.
+
+The table has no owner column and no foreign key to `push_devices`. A dead token may leave the
+registry while its receipt is still pending, and invalidation by `sent_at` already handles a token
+that moved or registered again. The token stays at most `RECEIPT_RETENTION` (24 hours) plus the
+purge cadence. Owner erasure does not reach it, which I accept because the row names no owner and
+the token alone cannot be joined back once the device row is gone.
+
+The README shows a `baukit-jobs` handler that purges expired tickets and then polls until a run
+takes fewer than the limit. The loop ends because each take moves its tickets past `now`.
+
+### Cases
+
+Unit, in-memory: ticket ID validation; the receipt dead-token rule; `Debug` of an outcome and a
+message never shows the token; the fake sender issues a ticket for an accepted token and answers
+receipts once one is scripted; the memory store takes due tickets oldest first, moves them back,
+ignores a re-recorded ticket, deletes, and purges; the service removes a late dead token, keeps a
+token registered again after the send, leaves an unsettled ticket for a later run, keeps every
+ticket when the receipt request fails, and records nothing for settled outcomes.
+
+Expo endpoint: an unsettled ticket comes back as `Accepted` with its ID; 1001 receipt IDs go out
+as requests of 1000 and 1; a receipt Expo has not settled, or one that was never asked for, is
+absent.
+
+Docker, in `tests/postgres.rs`:
+
+- A 128-byte ticket and a 512-byte token round-trip; a duplicate in one batch and a re-recorded
+  ticket insert nothing; nothing is taken before its due instant; taken tickets wait for their
+  retry instant.
+- Six concurrent pollers taking two each over twelve due tickets never take a ticket twice.
+- `delete` removes only known tickets; `purge` in batches of one removes the tickets sent before
+  the cutoff and stops.
+- End to end with `PostgresDeviceRegistry`, `PostgresPendingReceiptStore`, and `FakePushSender`:
+  four accepted tickets, a late `DeviceNotRegistered` removes one token, a token registered again
+  after the send survives, the unsettled ticket stays and is not taken again at the same instant,
+  and the purge removes it after the retention window.
+
+### Breaks
+
+All in `baukit-push`, listed under `## [Unreleased]` in its CHANGELOG. No product is live.
+
+- `PushMessage::token` and `PushOutcome::token` are `DeviceToken`; `PushMessage::new` takes one.
+- `PushDeliveryStatus::Accepted` is `Accepted(PushTicketId)`.
+- `PushValidationError` has a new `TicketId` variant.
+- `FakePushSender::reject` and `accept_without_receipt` take a `DeviceToken`; `dead_tokens`
+  returns `Vec<DeviceToken>`; `fail_with` also fails receipt requests.
+
+No wire field and no version changed.
+
+### Product adoption
+
+- Every product: wrap stored tokens in `DeviceToken` when building `PushMessage`, which the
+  registry's `RegisteredDevice::token` already is.
+- Products that send through Expo: copy `0003_baukit_push_pending_receipts.sql`, call
+  `record_accepted` after each send, and enqueue a recurring receipt poll job as the README shows.
+
+### Gates
+
+- `cargo test --manifest-path rust/Cargo.toml -p baukit-push --all-features -- --include-ignored`:
+  pass (43 unit, 15 Expo endpoint, 13 Docker, 6 doctests).
+- `cargo fmt --manifest-path rust/Cargo.toml --all --check`: pass.
+- `cargo clippy --manifest-path rust/Cargo.toml --workspace --all-targets --all-features -- -D warnings`
+  and the CI form without `--all-features`: pass.
+- `cargo +1.95 check --manifest-path rust/Cargo.toml --workspace --all-targets`: pass.
+- `cargo doc -p baukit-push --all-features --no-deps`: no warnings.
+- `scripts/check-version-coherence.py`: pass.
