@@ -325,6 +325,7 @@ jobs:
           pnpm build
           pnpm lint
           pnpm test
+          pnpm run test:coverage
       # Keep the fast source layer here; the path-filtered Android gate below compiles a clean fixture.
       - name: Install and verify generated mobile app without a native build
         if: matrix.mobile
@@ -333,7 +334,7 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm exec tsc --noEmit
           pnpm lint
-          pnpm test
+          pnpm run test:coverage
       - name: Install and verify generated MCP package
         if: matrix.mcp
         working-directory: .generated-fixture/fixture/mcp
