@@ -38,8 +38,8 @@ describe('typed catalog segments', () => {
     };
     expect(valid.title).toBe('Konto');
 
+    // @ts-expect-error The reference locale requires devices.
     const missingKey: LocalizedCatalogSegment<typeof english> = {
-      // @ts-expect-error The reference locale requires devices.
       title: 'Konto',
     };
     const wrongShape: LocalizedCatalogSegment<typeof english> = {

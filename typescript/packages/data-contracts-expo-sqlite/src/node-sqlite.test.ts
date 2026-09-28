@@ -91,6 +91,7 @@ describe('NodeSqliteDatabase', () => {
 
   it('binds undefined as NULL and a single blob as one value', async () => {
     const database = await openValuesTable();
+    // @ts-expect-error expo-sqlite's types forbid undefined, but untyped callers can still pass it.
     await database.runAsync('INSERT INTO value_table (value) VALUES (?)', [undefined]);
     await expect(storedValue(database)).resolves.toEqual({ value: null, kind: 'null' });
     await database.runAsync('INSERT INTO value_table (value) VALUES (?)', new Uint8Array([1, 2]));

@@ -89,8 +89,8 @@ function client(
     },
     {
       fetch: fetchImplementation,
-      now: options.now,
-      sleep: options.sleep,
+      ...(options.now === undefined ? {} : { now: options.now }),
+      ...(options.sleep === undefined ? {} : { sleep: options.sleep }),
     },
   );
 }

@@ -40,11 +40,11 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node scripts/build-worker.mjs && node --input-type=module -e \"import { writeFileSync } from 'node:fs'; writeFileSync('dist/cjs/package.json', '{\\\"type\\\":\\\"commonjs\\\"}\\\\n')\"",
     "prepare": "pnpm run build",
-    "test": "pnpm run build && vitest run --config ../../vitest.config.ts && pnpm run test:artifact && pnpm run test:package",
+    "test": "pnpm run build && tsc -p tsconfig.test.json && vitest run --config ../../vitest.config.ts && pnpm run test:artifact && pnpm run test:package",
     "test:artifact": "node scripts/test-artifact.mjs",
     "test:package": "node scripts/test-package.mjs",
     "lint": "eslint src --max-warnings=0",
-    "format:check": "prettier --check src scripts package.json tsconfig.json tsconfig.cjs.json"
+    "format:check": "prettier --check src scripts package.json tsconfig.json tsconfig.test.json tsconfig.cjs.json"
   },
   "devDependencies": {
     "rolldown": "1.2.3",

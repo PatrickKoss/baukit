@@ -287,9 +287,15 @@ describe('serialized preference controller updates', () => {
       definitions: definitions({
         mode: 'preview-with-rollback',
         onError: 'report',
-        preview: () => events.push('preview'),
-        rollback: () => events.push('rollback'),
-        afterPersistence: () => events.push('persisted'),
+        preview: () => {
+          events.push('preview');
+        },
+        rollback: () => {
+          events.push('rollback');
+        },
+        afterPersistence: () => {
+          events.push('persisted');
+        },
       }),
       store: { read: () => Promise.resolve(defaults), patch: () => write.promise },
       onVisibleChange: () => undefined,
@@ -494,9 +500,15 @@ describe('preference side effects', () => {
       definitions: definitions({
         mode: 'preview-with-rollback',
         onError: 'report',
-        preview: () => events.push('preview'),
-        rollback: () => events.push('rollback'),
-        afterPersistence: () => events.push('persisted'),
+        preview: () => {
+          events.push('preview');
+        },
+        rollback: () => {
+          events.push('rollback');
+        },
+        afterPersistence: () => {
+          events.push('persisted');
+        },
       }),
       store: {
         read: () => Promise.resolve(defaults),

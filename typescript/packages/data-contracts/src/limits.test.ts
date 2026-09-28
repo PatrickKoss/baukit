@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import fixtureCorpus from '../../../../fixtures/limits/resource-budget-measurements-v1.json';
+import fixtureCorpus from '../../../../fixtures/limits/resource-budget-measurements-v1.json' with { type: 'json' };
 
 import {
   LimitExceededError,

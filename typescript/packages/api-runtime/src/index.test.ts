@@ -97,7 +97,7 @@ describe('Baukit error normalization', () => {
 
     const textError = await normalizeResponseError(new Response('not json', { status: 502 }));
     expect(isHttpError(textError)).toBe(true);
-    expect(textError.body).toBe('not json');
+    expect(textError).toMatchObject({ body: 'not json' });
   });
 
   it('normalizes transport failures without exposing raw fetch errors', async () => {
