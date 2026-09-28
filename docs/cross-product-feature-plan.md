@@ -74,6 +74,17 @@ Decisions taken on the orchestrator's recommendation; the user can still overtur
 
 Filled in as items complete. Each line names the product code to delete or change once the product pins a released Baukit version.
 
+Adoption of 0.5.0, one branch `baukit-0.5.0` per product, merged into the product's `main` locally:
+
+- [~] Leitbild
+- [~] Hebkit
+- [~] Redemut
+- [ ] Eigenruhe
+- [ ] Tiefgang
+- [ ] Solo Leveling System
+- [ ] Runtime Analyzer
+- [ ] Schlauzug (provisional)
+
 - Item 1, Eigenruhe: after its native regression passes on the release, delete `mobile/src/db/serialized-store.ts` and `serialized-store.test.ts`, return the `ExpoSqliteStore` directly in `mobile/src/local-data.ts`, and remove or rewrite the wrapper case "finishes an accepted settings mutation before a serialized store closes" in `mobile/src/db/contract-tests/persistence.test.ts`. Close `docs/tickets/baukit-sqlite-operation-serialization.md`. Keep `SerializedRecordStoreResource` in `mobile/src/record-store.ts`. Leitbild and Redemut: version bump only; no product code calls the removed per-store `initialize()`.
 - Item 13, Eigenruhe and Tiefgang: in `mobile/src/components/context-menu.tsx` delete the enabled-index state, item refs, `activeItemIndex` handling in `closeMenu`, and `moveItemFocus`; use `useRovingMenu`, pass `menu.initialFocusRef` to `useOverlayA11y`, and spread `itemProps(index)` on each item. Tiefgang keeps its `deferFocus`. Hebkit: same removal after checking `context-menu.test.tsx`. Redemut: use `useRovingMenu` from `@baukit/a11y-core/web` or `nextEnabledMenuIndex` in `packages/ui/src/context-menu.tsx`, keeping outside-pointer dismissal. Solo Leveling System: delete the hand-rolled trap and restoration in `mobile/src/components/context-menu.tsx`, adopt `useOverlayA11y` plus `useRovingMenu`, and move `confirmation-dialog.tsx` onto `useOverlayA11y`.
 - Item 20, Hebkit: its importer reads its own CSV back, so either strip the leading `'` on import or export with `neutralizeFormulas: false`; map `canceled` in `sharing.ts` and `file-access.ts` to the `ShareOutcome` value `cancelled`. Tiefgang and Eigenruhe: replace the local encoders with `encodeCsv` and pass amounts as numbers or `csvNumeric`, or negative values get an apostrophe; move their share helpers onto `ShareOutcome`. Runtime Analyzer: `finops-api/src/routes/audit.rs` can move to `baukit_core::export::encode_csv`. Solo Leveling System: move `sl-services/src/orgs.rs` CSV writing to `encode_csv`. Redemut: account export is JSON, so only `ShareOutcome` applies.
