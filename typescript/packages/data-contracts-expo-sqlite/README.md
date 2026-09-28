@@ -61,7 +61,8 @@ Inside a `withTransaction` callback, use the context it passes in. A root call
 on any store for the same file queues behind the transaction, the transaction
 waits for that call, and neither finishes. Keep network and file work outside the
 callback, because it holds the queue for every store on that file. Raw
-statements a product runs on the handle itself bypass the queue.
+statements a product runs on the handle itself bypass the queue. Run them
+through `ExpoSqliteConnection` instead.
 
 The package's fast Vitest suite runs the shared contracts against a deterministic
 database fake and against `NodeSqliteDatabase` (see below). The
@@ -69,9 +70,62 @@ database fake and against `NodeSqliteDatabase` (see below). The
 mirrors the shared contract cases against real `expo-sqlite` on Android,
 including creation/reopening, namespace isolation, malformed data, rollback,
 schema-metadata upgrades, root-versus-transaction overlap in both arrival
-orders, and authenticated E→F→E database isolation. Products
+orders, `ExpoSqliteConnection` ordering, foreign keys, and rollback next to
+`ExpoSqliteStore`, and authenticated E→F→E database isolation. Products
 derive the database name and resolve its registry with `@baukit/data-contracts`
 before opening the Expo database. iOS is a scheduled/manual macOS gate.
+
+## Raw SQL connection
+
+`ExpoSqliteConnection` runs a product's own SQL, such as a relational schema
+and its migration runner, on the same per-file queue as the stores above.
+
+```ts
+import { ExpoSqliteConnection } from '@baukit/data-contracts-expo-sqlite';
+
+const connection = new ExpoSqliteConnection(database);
+await connection.exec('CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY, body TEXT)');
+await connection.transaction(async (transaction) => {
+  await transaction.run('INSERT INTO notes (id, body) VALUES (?, ?)', 'one', 'first');
+  return transaction.get<{ readonly body: string }>('SELECT body FROM notes WHERE id = ?', 'one');
+});
+```
+
+- `exec(source)` runs a script without parameters. `run`, `get`, and `all`
+  bind parameters as `expo-sqlite` does: variadic values, one array, or one
+  object whose keys keep their `$`, `:`, or `@` prefix. `run` resolves to
+  `{ changes, lastInsertRowId }`, `get` to the first row or `undefined`, and
+  `all` to every row.
+- Every root statement, `transaction()`, and `close()` waits its turn on the
+  queue that every store on the same database file shares. A root statement
+  that another caller issues while a transaction is open runs after that
+  transaction commits or rolls back, never inside it.
+- `transaction(work)` runs `BEGIN IMMEDIATE` on the supplied handle, commits
+  when `work` resolves, and rolls back when `work` or the commit rejects. The
+  original error reaches the caller unchanged, and the result of `work` is
+  returned.
+- The transaction context has the same statement methods. Its
+  `transaction()` always rejects with a `TypeError`: nested transactions are
+  refused, never joined. After the transaction settles, its statements reject
+  with `storage_closed`.
+- The connection runs `PRAGMA foreign_keys = ON` on the handle before its
+  first statement. Because transactions run on that handle, foreign keys and
+  `ON DELETE` actions stay enforced inside them. A step that must rebuild a
+  table can still run `PRAGMA foreign_keys = OFF` as a root statement before
+  its transaction and turn it back on afterwards.
+- `close()` rejects new calls with `storage_closed`, waits for accepted work,
+  and closes the handle only with `{ closeDatabase: true }`.
+- SQLite errors, including `database is locked`, pass through unchanged, and
+  nothing retries.
+
+The connection does not use `withExclusiveTransactionAsync`. Expo runs `BEGIN`
+on the new connection before calling the task, and SQLite ignores
+`PRAGMA foreign_keys` inside a transaction, so a second connection would leave
+foreign keys off with no way to turn them on.
+
+The same deadlock rule as `withTransaction` applies: inside `work`, use the
+transaction context. A root call on the connection or on any store for the
+same file queues behind the transaction and never finishes.
 
 ## Node tests
 
