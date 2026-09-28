@@ -223,3 +223,125 @@ fits.
   `withTransactionAsync`), and the `better-sqlite3` dev dependencies.
 - Tiefgang: `mobile/src/db/sqlite/adapters/better-sqlite.ts` after its runner becomes versioned and
   transactional, and the column-probing block in `migrate`.
+
+## Follow-up (2026-09-28)
+
+Plan item F5 ships the queued raw-SQL connection that step 4 deferred.
+
+### Source revisions
+
+- Hebkit `841bf5d`: `mobile/src/db/sqlite/adapters/expo-sqlite.ts` (`ExpoSQLiteAdapter`,
+  `SQLiteTransactionView`), `mobile/src/db/sqlite/adapter.ts` (`DatabaseAdapter`),
+  `mobile/src/db/sqlite/migrations.ts:1364-1405` (six steps set `disableForeignKeys`).
+- Redemut `a782538`: `packages/data/src/expo-sqlite.ts` (`ExpoSqliteDriver` and its local
+  `ExpoSqliteDatabase`), `packages/data/src/driver.ts` (`SqliteDriver`),
+  `packages/data/src/migrations.ts:298`.
+- `expo-sqlite` 57.0.1 `src/SQLiteDatabase.ts`: `withExclusiveTransactionAsync` runs
+  `transaction.execAsync('BEGIN')` before it calls the task; `withTransactionAsync` runs `BEGIN`
+  on the root handle with no queue.
+- Node 24.20.0 `node:sqlite` with SQLite 3.53.4.
+
+### Decision: transactions on the supplied handle, not a second connection
+
+Step 4 described the follow-up as root statements and exclusive transactions on one queue. That
+cannot keep foreign keys on. SQLite ignores `PRAGMA foreign_keys` while a transaction is open, and
+Expo's `withExclusiveTransactionAsync` has already run `BEGIN` on its new connection when the task
+starts. A scratch run on `node:sqlite` confirmed it: after `BEGIN`, `PRAGMA foreign_keys = ON`
+left `foreign_keys` at 0 and an orphan insert succeeded; with the pragma set before `BEGIN`, the
+same insert failed with `FOREIGN KEY constraint failed`. Expo's open options have no foreign-key
+switch, so a transaction connection always starts with them off.
+
+So `ExpoSqliteConnection` runs `BEGIN IMMEDIATE`, the work, and `COMMIT` on the supplied handle,
+and runs `PRAGMA foreign_keys = ON` on that handle before its first statement. The per-file queue
+from item 1 is what keeps other callers out: every root statement, transaction, and `close()` of
+the connection goes through `queueForFile(databasePath)`, which `ExpoSqliteStore` and the root
+stores also use. A root statement issued while a transaction is open waits for its commit or
+rollback, so it can no longer join it, which is Hebkit's `withTransactionAsync` defect. The
+second-connection design would have made an unqueued statement fail with `database is locked`
+instead of joining; with the handle design an unqueued statement on the same handle joins. Both are
+outside the contract, and the README tells products to route raw statements through the connection.
+
+The handle design also keeps Hebkit's six `disableForeignKeys` steps working: a root
+`PRAGMA foreign_keys = OFF` before the transaction reaches the connection the transaction runs on.
+
+Other choices:
+
+- `BEGIN IMMEDIATE` takes the write lock at the start, so a conflict with an unqueued writer on
+  another connection fails before the work runs.
+- A failed commit (for example a deferred foreign key) rolls back and rejects with the commit
+  error. When `ROLLBACK` itself fails because SQLite already rolled back, the original error wins.
+- The transaction context's `transaction()` always rejects with a `TypeError`. Both product
+  drivers join nested calls today (`SQLiteTransactionView.transaction` returns `work(this)`).
+  A root call from inside the work still deadlocks, as it does for `withTransaction`; without
+  async context the connection cannot tell it from a concurrent caller.
+- SQLite errors pass through unchanged. The store's quota normalization does not apply, because
+  a raw-SQL caller matches on SQLite messages.
+- `get` returns `undefined` for no row, like the package's stores, instead of Expo's `null`.
+
+### Shared code
+
+`src/queued-database.ts` now holds what `ExpoSqliteStore` and the connection share:
+`ExpoSqliteDatabase`, `fileScope`, `TransactionScope` (a statement scope that rejects with
+`storage_closed` once finished, formerly inside `ExpoSqliteTransaction`), and `QueuedDatabase`
+(enqueue on the file queue, `assertOpen`, one shared `close()` result, close only an owned
+handle). `ExpoSqliteStore` uses them with unchanged behavior; its existing 97 package tests pass
+unchanged.
+
+### Public types
+
+From `@baukit/data-contracts-expo-sqlite`:
+
+- `ExpoSqliteConnection(database: ExpoSqliteDatabase, options?: ExpoSqliteConnectionOptions)`:
+  `exec`, `run`, `get`, `all`, `transaction(work)`, `close()`.
+- `ExpoSqliteConnectionOptions`: `closeDatabase?: boolean`, default false.
+- `SqliteStatements`: `exec`, `run`, `get`, `all`, with `expo-sqlite`'s `SQLiteBindParams` and
+  `SQLiteVariadicBindParams` overloads and `SQLiteRunResult`.
+- `SqliteTransaction`: `SqliteStatements` plus a `transaction()` that always rejects.
+
+### Tests
+
+`src/connection.test.ts` runs on `NodeSqliteDatabase` (20 cases): binding, commit and result,
+full rollback including DDL, rollback after a failed commit, foreign keys and `ON DELETE CASCADE`
+inside a transaction, the pragma before the first statement, nested rejection, a settled context,
+call order, queue release after a failure, both arrival orders against an `ExpoSqliteStore` on
+the same file, close, and the five `createSqliteMigrationConformanceTests` cases through a history
+runner on the connection. The concurrency case runs a root write during a transaction that rolls
+back. It keeps the root row with the connection, and the same scenario on a `withTransactionAsync`
+shaped driver loses it. Removing the queue from the connection fails four cases; skipping the
+pragma fails three.
+
+The device-conformance app gains four cases on the shared handle (root write during a rolled-back
+transaction, foreign keys and cascade, DDL rollback and nested rejection, and ordering against an
+`ExpoSqliteStore` in both arrival orders). They typecheck; they were not run here.
+
+### Gates
+
+Workspace `build`, `format:check`, `lint`, `test`, and `check` in `typescript/` pass, and
+`tsc --noEmit` passes in `examples/expo-sqlite-conformance`.
+`make expo-sqlite-conformance` was not run: another task held the Android emulator. Only that gate
+confirms on real `expo-sqlite` that `BEGIN IMMEDIATE` through `execAsync` on the root handle holds
+the transaction across queued statements, that `PRAGMA foreign_keys = ON` on the handle enforces
+foreign keys and cascades inside it, and that the connection and `ExpoSqliteStore`'s exclusive
+transactions on one file do not hit `database is locked`.
+
+### Corrections to earlier text
+
+Step 4 and the plan's adoption line tell Redemut to run `PRAGMA foreign_keys = ON` inside each
+exclusive transaction, and say Hebkit would need the same. That pragma is a no-op there. Moving to
+`ExpoSqliteConnection` is the fix.
+
+### Breaks
+
+None. One behavior to know: the first statement of an `ExpoSqliteConnection` turns foreign keys
+on for its handle, so stores sharing that handle run with them on afterwards. The adapter's own
+tables have no foreign keys.
+
+### Product code a later adoption removes
+
+- Hebkit: build `ExpoSQLiteAdapter` on `ExpoSqliteConnection` (`execute` to `run`, `query` to
+  `all`), drop the `PRAGMA foreign_keys = ON` in `ExpoSQLiteAdapter.open`, and stop
+  `SQLiteTransactionView.transaction` from joining. Then run `migrateDatabase` and the
+  repository tests over `NodeSqliteDatabase` and retire `adapters/better-sqlite.ts`.
+- Redemut: build `ExpoSqliteDriver` on `ExpoSqliteConnection`, delete its local
+  `ExpoSqliteDatabase` interface and the `withExclusiveTransactionAsync` path, and drop the root
+  `PRAGMA foreign_keys = ON` in `runMigrations`, which the connection now runs.
