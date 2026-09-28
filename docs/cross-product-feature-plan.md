@@ -54,6 +54,21 @@ Waves group items with disjoint file ownership. Up to four implementation agents
 - [x] Full CI mirror on `main`: `make ci`, Rust tests with `--include-ignored`, generated fixture in every flavor, `make mcp-fixture-gate`, `make expo-sqlite-conformance`, `make native-android-gate`, cargo deny, MSRV check, metric-name lint, version coherence.
 - [ ] Release preparation waits for an explicit ask.
 
+### Follow-up wave (open decisions and deferred work)
+
+Decisions taken on the orchestrator's recommendation; the user can still overturn any of them.
+
+- Kept as built: camelCase event payload keys (item 5); 409 for key reuse, since all eight products use it and the IETF text is still a draft (item 7); snapshot encryption only when the snapshot is the sole plaintext copy of a secret (item 7); MIT-0 in `deny.toml`, which is MIT without the attribution clause (item 8); `scope` mapped by default, wrong-type profile claims omitted, scopes and grants separate, `list_for_owner` returning revoked tokens, no owner foreign key in Baukit's migration (item 10); no Rust zoned-time helper until a second Rust product agrees on the policy (item 11); no NAT64 prefix option until a deployment needs one (item 16); no nginx template, the README snippet stays (item 18).
+- Changed: 425 becomes retryable, and `Retry-After` gets an opt-in cap that the egress client sets to 300 seconds (item 16); `release-plz.toml` lists every crate and the coherence script enforces it (item 16); push tokens redact in `Debug`, and pending receipts get a persisted poll (item 17); media grant key rings are built at startup and rotated by restart, documented (item 18).
+
+- [~] F1. Push token redaction and deferred receipt polling (item 17)
+- [~] F2. 425 retryable, capped `Retry-After`, release-plz coverage, key ring rotation docs (items 16 and 18)
+- [~] F3. `tsconfig.test.json` type gate, mobile auth Jest coverage floors, web Keycloak stack e2e run (items 11 and 19)
+- [~] F4. Hermes vector run and notifications adapter check on the Android emulator (items 11 and 12)
+- [ ] F5. Queued raw-SQL connection in `@baukit/data-contracts-expo-sqlite` (item 15, after F4 frees the emulator)
+- [ ] F6. Full CI mirror on `main` after the wave
+- Not possible here: a physical-device run and any iOS run. The emulator stands in for Android.
+
 ### Product adoption follow-ups
 
 Filled in as items complete. Each line names the product code to delete or change once the product pins a released Baukit version.
