@@ -217,10 +217,13 @@ must use an allowlist or an outbound proxy that enforces them.
 
 `baukit_egress::GuardedClient` implements the address, redirect, proxy, time,
 and body rules above and keeps the URL out of its errors and telemetry. It
-classifies non-`2xx` statuses with `classify_http_status`, which treats `425`
-as permanent and returns the receiver's `Retry-After` uncapped, so cap the delay
-before scheduling. `fixtures/egress/address-policy-v1.json` pins the address
-decisions for any other runtime that filters destinations.
+classifies non-`2xx` statuses with `classify_http_status`, which retries `425`
+as `Unavailable`, and clamps the receiver's `Retry-After` to
+`EgressOptions::max_retry_after`, 300 seconds by default. A client built on
+`classify_http_status` directly gets the uncapped value and sets
+`RetryHeaderOptions::with_max_retry_after` itself.
+`fixtures/egress/address-policy-v1.json` pins the address decisions for any
+other runtime that filters destinations.
 
 `ScriptedWebhookReceiver` supplies bounded loopback requests and queued
 responses for success, rate limit, permanent failure, timeout, and retry tests.

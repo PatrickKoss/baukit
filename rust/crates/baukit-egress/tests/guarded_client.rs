@@ -11,8 +11,8 @@ use std::{
 
 use axum::http::StatusCode;
 use baukit_egress::{
-    AddressPolicy, DestinationRejection, EgressError, EgressOptions, EgressRequest, GuardedClient,
-    ResolveFuture, Resolver, StaticResolver,
+    AddressPolicy, DestinationRejection, EgressError, EgressOptions, EgressOptionsError,
+    EgressRequest, GuardedClient, ResolveFuture, Resolver, StaticResolver,
 };
 use baukit_http::RetryClass;
 use tokio::{
@@ -394,6 +394,7 @@ async fn statuses_use_the_shared_classification() {
             response("429 Too Many Requests", &[("retry-after", "7")], ""),
             RetryClass::RetryAfter(Duration::from_secs(7)),
         ),
+        (response("425 Too Early", &[], ""), RetryClass::Unavailable),
         (
             response("503 Service Unavailable", &[], ""),
             RetryClass::Unavailable,
@@ -418,6 +419,48 @@ async fn statuses_use_the_shared_classification() {
         assert_eq!(error.retry_class(), expected, "{error:?}");
         assert_eq!(error.code(), "upstream_status");
     }
+}
+
+#[tokio::test]
+async fn long_retry_after_delays_are_capped() {
+    let cases = [
+        (development(), Duration::from_secs(300)),
+        (
+            development()
+                .with_max_retry_after(Duration::from_secs(30))
+                .expect("cap is valid"),
+            Duration::from_secs(30),
+        ),
+    ];
+
+    for (options, cap) in cases {
+        let server = LocalServer::start(response(
+            "429 Too Many Requests",
+            &[("retry-after", "86400")],
+            "",
+        ))
+        .await;
+        let client = client(loopback_resolver(&["hooks.test"]), options);
+
+        let error = client
+            .execute(EgressRequest::post(server.url("hooks.test", "/deliver")))
+            .await
+            .expect_err("a 429 is an error");
+
+        assert_eq!(error.retry_class(), RetryClass::RetryAfter(cap));
+    }
+}
+
+#[test]
+fn a_zero_retry_after_cap_is_refused() {
+    assert_eq!(
+        EgressOptions::default().with_max_retry_after(Duration::ZERO),
+        Err(EgressOptionsError::ZeroRetryAfterCap)
+    );
+    assert_eq!(
+        EgressOptions::default().max_retry_after(),
+        Duration::from_secs(300)
+    );
 }
 
 #[tokio::test]

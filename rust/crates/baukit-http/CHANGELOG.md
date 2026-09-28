@@ -29,6 +29,9 @@ All notable changes to `baukit-http` are documented here.
   `idempotency_key_required`, 400 `invalid_idempotency_key` with `details.reason`, 409
   `idempotency_key_reused`, or 409 `idempotency_key_in_progress`. `IDEMPOTENCY_KEY` and the four
   code constants are exported.
+- `RetryHeaderOptions::with_max_retry_after` clamps parsed `Retry-After` and vendor delays to a
+  maximum. The default stays uncapped, so `classify_http_status` still reports what the upstream
+  sent.
 
 ### Changed
 
@@ -51,6 +54,9 @@ All notable changes to `baukit-http` are documented here.
   404, and 405 response.
 - Break: the `RequestLocale` rejection detail key `accept_language` is now `acceptLanguage`.
 - Break: `Page` responses carry `nextCursor` instead of `next_cursor`, through `baukit-core`.
+- Break: `classify_http_status` maps `425 Too Early` to `RetryClass::Unavailable` instead of
+  `Permanent`, so it is retryable. RFC 8470 section 5.2 lets a client retry once the request is no
+  longer sent as early data.
 
 ### Removed
 
@@ -80,6 +86,8 @@ All notable changes to `baukit-http` are documented here.
   today, and map key reuse to `IdempotencyError::Reused`. Clients see 400
   `idempotency_key_required`, 400 `invalid_idempotency_key`, and 409 `idempotency_key_reused` in
   place of product-specific codes.
+- Clients that stop on `RetryClass::Permanent` now retry a `425`. Clients that schedule their own
+  retries from `RetryClass::RetryAfter` should set `with_max_retry_after`.
 
 ## [0.4.0] - 2026-09-12
 

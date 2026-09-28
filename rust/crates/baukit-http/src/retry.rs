@@ -37,10 +37,15 @@ pub enum RetryClass {
 /// By default, each header value is parsed whole. Use
 /// [`RetryHeaderOptions::with_first_field`] for APIs such as Polar that return
 /// comma-separated quota windows and define the first field as the active one.
+///
+/// Parsed delays are uncapped by default, so the classifier reports what the
+/// upstream sent. A client that schedules its own retries should set
+/// [`RetryHeaderOptions::with_max_retry_after`].
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct RetryHeaderOptions<'a> {
     extra_retry_after_headers: &'a [&'a str],
     first_field: bool,
+    max_retry_after: Option<Duration>,
 }
 
 impl<'a> RetryHeaderOptions<'a> {
@@ -49,6 +54,7 @@ impl<'a> RetryHeaderOptions<'a> {
         Self {
             extra_retry_after_headers,
             first_field: false,
+            max_retry_after: None,
         }
     }
 
@@ -60,6 +66,23 @@ impl<'a> RetryHeaderOptions<'a> {
     pub const fn with_first_field(mut self) -> Self {
         self.first_field = true;
         self
+    }
+
+    /// Clamps parsed delays to `max`.
+    ///
+    /// An upstream that sends `Retry-After: 86400` then yields `max` instead of
+    /// stalling a worker for a day.
+    #[must_use]
+    pub const fn with_max_retry_after(mut self, max: Duration) -> Self {
+        self.max_retry_after = Some(max);
+        self
+    }
+
+    fn cap(self, delay: Duration) -> Duration {
+        match self.max_retry_after {
+            Some(max) => delay.min(max),
+            None => delay,
+        }
     }
 }
 
@@ -90,8 +113,11 @@ impl RetryClass {
 ///
 /// - `401` and `403` are [`RetryClass::Revoked`]; the credential needs renewing.
 /// - `408` and `504` are [`RetryClass::Timeout`].
+/// - `425` is [`RetryClass::Unavailable`]. RFC 8470 section 5.2 lets a client
+///   retry once the request is no longer sent as early data.
 /// - `429` is [`RetryClass::RetryAfter`] when a retry-after header parses, and
-///   [`RetryClass::RateLimited`] otherwise.
+///   [`RetryClass::RateLimited`] otherwise. The delay is uncapped; see
+///   [`RetryHeaderOptions::with_max_retry_after`].
 /// - Any other `5xx` is [`RetryClass::Unavailable`].
 /// - Everything else, success codes included, is [`RetryClass::Permanent`];
 ///   callers only reach this function for responses they already treat as
@@ -137,8 +163,8 @@ pub fn classify_http_status(
 /// Classifies an upstream HTTP response with configurable retry header parsing.
 ///
 /// See [`classify_http_status`] for the status mapping. The options control
-/// which vendor retry headers are checked and whether their first
-/// comma-separated field is used.
+/// which vendor retry headers are checked, whether their first
+/// comma-separated field is used, and the largest delay reported.
 pub fn classify_http_status_with_options(
     status: StatusCode,
     headers: &HeaderMap,
@@ -147,6 +173,7 @@ pub fn classify_http_status_with_options(
     match status {
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => RetryClass::Revoked,
         StatusCode::REQUEST_TIMEOUT | StatusCode::GATEWAY_TIMEOUT => RetryClass::Timeout,
+        StatusCode::TOO_EARLY => RetryClass::Unavailable,
         StatusCode::TOO_MANY_REQUESTS => retry_after_from_headers_with_options(headers, options)
             .map_or(RetryClass::RateLimited, RetryClass::RetryAfter),
         _ if status.is_server_error() => RetryClass::Unavailable,
@@ -180,6 +207,7 @@ pub fn retry_after_from_headers_at(
 /// Vendor headers are checked before `Retry-After`. Invalid names and values
 /// are skipped. The standard header always keeps its whole value so HTTP dates
 /// continue to parse when first-field handling is enabled for vendor headers.
+/// A delay above [`RetryHeaderOptions::with_max_retry_after`] is clamped.
 pub fn retry_after_from_headers_with_options_at(
     headers: &HeaderMap,
     options: RetryHeaderOptions<'_>,
@@ -199,12 +227,14 @@ pub fn retry_after_from_headers_with_options_at(
             parse_retry_after(value, now)
         });
 
-    vendor_delay.or_else(|| {
-        headers
-            .get(RETRY_AFTER)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| parse_retry_after(value, now))
-    })
+    vendor_delay
+        .or_else(|| {
+            headers
+                .get(RETRY_AFTER)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| parse_retry_after(value, now))
+        })
+        .map(|delay| options.cap(delay))
 }
 
 /// Reads the retry delay relative to the current time.
@@ -295,6 +325,66 @@ mod tests {
                 RetryClass::Timeout
             );
         }
+    }
+
+    #[test]
+    fn too_early_is_retryable() {
+        let class = classify_http_status(StatusCode::TOO_EARLY, &HeaderMap::new(), &[]);
+        assert_eq!(class, RetryClass::Unavailable);
+        assert!(class.is_retryable());
+    }
+
+    #[test]
+    fn retry_after_is_uncapped_by_default() {
+        assert_eq!(
+            classify_http_status(
+                StatusCode::TOO_MANY_REQUESTS,
+                &headers(&[("retry-after", "86400")]),
+                &[],
+            ),
+            RetryClass::RetryAfter(Duration::from_secs(86_400))
+        );
+    }
+
+    #[test]
+    fn max_retry_after_clamps_longer_delays() {
+        let options = RetryHeaderOptions::default().with_max_retry_after(Duration::from_secs(300));
+        assert_eq!(
+            classify_http_status_with_options(
+                StatusCode::TOO_MANY_REQUESTS,
+                &headers(&[("retry-after", "86400")]),
+                options,
+            ),
+            RetryClass::RetryAfter(Duration::from_secs(300))
+        );
+        assert_eq!(
+            retry_after_from_headers_with_options(&headers(&[("retry-after", "120")]), options),
+            Some(Duration::from_secs(120))
+        );
+    }
+
+    #[test]
+    fn max_retry_after_clamps_http_dates_and_vendor_headers() {
+        let now = at("Wed, 21 Oct 2026 07:28:00 GMT");
+        let cap = Duration::from_secs(60);
+        let date = headers(&[("retry-after", "Thu, 22 Oct 2026 07:28:00 GMT")]);
+        assert_eq!(
+            retry_after_from_headers_with_options_at(
+                &date,
+                RetryHeaderOptions::default().with_max_retry_after(cap),
+                now,
+            ),
+            Some(cap)
+        );
+        let vendor = headers(&[(FITBIT_RESET, "3600")]);
+        assert_eq!(
+            retry_after_from_headers_with_options_at(
+                &vendor,
+                RetryHeaderOptions::new(&[FITBIT_RESET]).with_max_retry_after(cap),
+                now,
+            ),
+            Some(cap)
+        );
     }
 
     #[test]

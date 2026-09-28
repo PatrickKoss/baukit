@@ -32,8 +32,8 @@ let response = client
 | Time | Separate bounds for the lookup, the TCP and TLS connect, and the whole request including the body. |
 | Response size | The body is read in chunks and stops at the limit, with or without `Content-Length`. |
 
-Defaults are a 3 s lookup, a 5 s connect, a 10 s request, and a 1 MiB body.
-`EgressOptions` changes them and refuses zero.
+Defaults are a 3 s lookup, a 5 s connect, a 10 s request, a 1 MiB body, and a
+300 s `Retry-After` cap. `EgressOptions` changes them and refuses zero.
 
 ## Address policy
 
@@ -90,10 +90,14 @@ example one backed by a DNS library with its own cache.
 
 `Status` uses `baukit_http::classify_http_status`. A `429` with `Retry-After`
 comes back as `RetryClass::RetryAfter` and without it as `RateLimited`. `408`
-and `504` are `Timeout`, other `5xx` are `Unavailable`, `401` and `403` are
-`Revoked`, and every other status, `3xx` included, is `Permanent`. The body of
-a non-`2xx` response is not read. The delay in `RetryAfter` is the receiver's
-value, so cap it before you schedule the next attempt.
+and `504` are `Timeout`, `425` and other `5xx` are `Unavailable`, `401` and
+`403` are `Revoked`, and every other status, `3xx` included, is `Permanent`.
+The body of a non-`2xx` response is not read.
+
+The delay in `RetryAfter` is the receiver's value, clamped to
+`EgressOptions::max_retry_after` (300 s by default). A receiver that sends
+`Retry-After: 86400` gets its next attempt after five minutes, not a day. Set
+`with_max_retry_after` to change the cap.
 
 ## Privacy
 

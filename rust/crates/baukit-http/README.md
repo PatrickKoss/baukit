@@ -360,7 +360,30 @@ it did not, `Unavailable`, `Timeout`, `Revoked` for a rejected credential, and `
 
 `Revoked` is separate from `Permanent` because the recovery differs. A revoked credential needs
 re-authorization, and retrying it burns quota against an endpoint that will keep saying no.
-`retry_after_from_headers` parses both the delay-seconds and HTTP-date forms.
+`425 Too Early` is `Unavailable`: RFC 8470 section 5.2 lets a client retry once the request is no
+longer sent as early data. `retry_after_from_headers` parses both the delay-seconds and HTTP-date
+forms.
+
+The delay is uncapped by default, so the classifier reports what the upstream sent. A worker that
+honors `Retry-After: 86400` sleeps for a day, so a client that schedules its own retries sets a
+cap. Delays above it are clamped to it:
+
+```rust
+use std::time::Duration;
+
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header::RETRY_AFTER};
+use baukit_http::{RetryClass, RetryHeaderOptions, classify_http_status_with_options};
+
+let mut headers = HeaderMap::new();
+headers.insert(RETRY_AFTER, HeaderValue::from_static("86400"));
+let options = RetryHeaderOptions::default().with_max_retry_after(Duration::from_secs(300));
+assert_eq!(
+    classify_http_status_with_options(StatusCode::TOO_MANY_REQUESTS, &headers, options),
+    RetryClass::RetryAfter(Duration::from_secs(300))
+);
+```
+
+`baukit_egress::GuardedClient` applies a 300 second cap by default.
 
 ## Scope
 

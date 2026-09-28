@@ -25,4 +25,14 @@ All notable changes to `baukit-egress` are documented here.
   `DestinationRejection` names each refused URL shape. No error carries the URL.
 - `EgressOptions` with `EgressOptionsError`: 3 s lookup, 5 s connect, 10 s
   request, and 1 MiB body by default.
+- `EgressOptions::with_max_retry_after` and `max_retry_after` cap the
+  `Retry-After` delay in `EgressError::Status` at 300 s by default. A zero cap
+  returns `EgressOptionsError::ZeroRetryAfterCap`.
 - Shared vectors in `fixtures/egress/address-policy-v1.json`.
+
+### Changed
+
+- Break: `425 Too Early` is now `RetryClass::Unavailable`, following
+  `baukit_http::classify_http_status`.
+- Break: a `Retry-After` delay above the cap is clamped instead of reported
+  as sent.
