@@ -19,7 +19,6 @@ function fakeEnvironment(initiallyActive = true): FakeEnvironment {
   const activeListeners = new Set<(next: boolean) => void>();
   const onlineListeners = new Set<() => void>();
   const timers = new Map<SyncSchedulerTimer, { callback: () => void; ms: number }>();
-  let nextHandle = 1;
   let lastMs: number | null = null;
 
   return {
@@ -33,7 +32,7 @@ function fakeEnvironment(initiallyActive = true): FakeEnvironment {
       return () => onlineListeners.delete(listener);
     },
     setInterval(callback, milliseconds) {
-      const handle = nextHandle++;
+      const handle = {};
       lastMs = milliseconds;
       timers.set(handle, { callback, ms: milliseconds });
       return handle;

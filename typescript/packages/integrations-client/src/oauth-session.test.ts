@@ -246,17 +246,20 @@ class ControlledClock implements OAuthClock {
   }
 }
 
+type CoordinatorOptions = ConstructorParameters<typeof OAuthSessionCoordinator>[0];
+
 function coordinator(
-  options: Partial<ConstructorParameters<typeof OAuthSessionCoordinator>[0]> = {},
+  options: Partial<Omit<CoordinatorOptions, 'storage' | 'clock'>> & {
+    readonly storage?: MemoryStorage;
+    readonly clock?: ControlledClock;
+  } = {},
 ) {
   const storage = options.storage ?? new MemoryStorage();
   const clock = options.clock ?? new ControlledClock();
   return {
     storage,
-    clock: clock as ControlledClock,
+    clock,
     value: new OAuthSessionCoordinator({
-      storage,
-      clock,
       timeoutMs: 1_000,
       createStateNonce: () => 'nonce-1',
       validateReturnUrl: createReturnUrlValidator({
@@ -264,6 +267,8 @@ function coordinator(
         paths: ['/oauth/callback'],
       }),
       ...options,
+      storage,
+      clock,
     }),
   };
 }

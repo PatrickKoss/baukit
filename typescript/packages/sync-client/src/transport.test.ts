@@ -16,6 +16,7 @@ import {
   parseRetryAfter,
   SyncTransport,
   validatePullPage,
+  type PullPagePosition,
   type SyncFetch,
   type SyncFetchResponse,
   type SyncPrebuiltRequest,
@@ -301,21 +302,23 @@ describe('syncFailureFromError', () => {
 
 describe('validatePullPage', () => {
   const compare = (left: number, right: number): number => left - right;
+  const validate = (current: number, page: PullPagePosition<number>) =>
+    validatePullPage(current, page, compare);
 
   it('returns a progressing page', () => {
     const page = { nextCursor: 4, hasMore: true, changes: ['row'] };
 
-    expect(validatePullPage(3, page, compare)).toBe(page);
+    expect(validate(3, page)).toBe(page);
   });
 
   it('rejects a regressing cursor', () => {
-    expect(() => validatePullPage(3, { nextCursor: 2, hasMore: false }, compare)).toThrow(
+    expect(() => validate(3, { nextCursor: 2, hasMore: false })).toThrow(
       SyncPayloadCompatibilityError,
     );
   });
 
   it('rejects hasMore without progress instead of allowing another loop', () => {
-    expect(() => validatePullPage(3, { nextCursor: 3, hasMore: true }, compare)).toThrow(
+    expect(() => validate(3, { nextCursor: 3, hasMore: true })).toThrow(
       SyncPayloadCompatibilityError,
     );
   });

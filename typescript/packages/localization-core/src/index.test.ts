@@ -172,7 +172,7 @@ describe('localized backend codes', () => {
   });
 
   it('does not resolve object-prototype properties as catalog codes', () => {
-    const resolve = createLocalizedCodeResolver({
+    const resolve = createLocalizedCodeResolver<string>({
       catalog: {},
       fallback: 'Safe API message',
     });

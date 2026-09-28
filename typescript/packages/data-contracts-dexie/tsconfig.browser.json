@@ -1,8 +1,10 @@
 {
-  "extends": "../../tsconfig.test.json",
+  "extends": "./tsconfig.test.json",
   "compilerOptions": {
     "lib": ["ES2022", "DOM"],
-    "types": ["vitest/globals"]
+    "types": ["vitest/globals"],
+    "rootDir": "."
   },
-  "include": ["src/**/*.browser.test.ts", "vitest.browser.config.ts"]
+  "include": ["src/**/*.browser.test.ts", "vitest.browser.config.ts"],
+  "exclude": ["dist"]
 }

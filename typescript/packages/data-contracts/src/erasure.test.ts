@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import deletionOutcomeFixtures from '../../../../fixtures/product-experience/deletion-outcomes.json';
+import deletionOutcomeFixtures from '../../../../fixtures/product-experience/deletion-outcomes.json' with { type: 'json' };
 
 import {
   AmbiguousProductProfileErasureError,

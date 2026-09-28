@@ -21,7 +21,7 @@ const intent: MutationIntent = {
 
 function apiError(status: number, code: string): ApiError {
   return new ApiError(
-    { error: { code, message: 'failed', request_id: 'req-1', details: {} } },
+    { error: { code, message: 'failed', requestId: 'req-1', details: {} } },
     status,
   );
 }

@@ -1,9 +1,8 @@
 import { RuleTester } from 'eslint';
-import { afterAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { configs, noRawColor, rules } from './eslint.js';
 
-RuleTester.afterAll = afterAll;
 RuleTester.describe = describe;
 RuleTester.it = it;
 RuleTester.itOnly = it.only;

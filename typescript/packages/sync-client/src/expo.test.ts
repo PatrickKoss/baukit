@@ -86,7 +86,7 @@ describe('createExpoSyncEnvironment', () => {
     await Promise.resolve();
 
     runtime.networkListener?.({ isConnected: true, isInternetReachable: false });
-    runtime.networkListener?.({ isConnected: true, isInternetReachable: undefined });
+    runtime.networkListener?.({ isConnected: true });
     runtime.networkListener?.({ isConnected: true, isInternetReachable: true });
 
     expect(listener).toHaveBeenCalledOnce();

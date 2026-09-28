@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 
-import fixtureCorpus from '../../../../fixtures/import-envelope/import-envelope-v1.json';
+import fixtureCorpus from '../../../../fixtures/import-envelope/import-envelope-v1.json' with { type: 'json' };
 
 import {
   ImportEnvelopeError,

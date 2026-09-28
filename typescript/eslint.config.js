@@ -14,9 +14,8 @@ export default tseslint.config(
       parserOptions: {
         project: [
           './packages/*/tsconfig.json',
-          './packages/auth-node/tsconfig.test.json',
-          './packages/data-contracts-expo-sqlite/tsconfig.test.json',
-          './tsconfig.test.json',
+          './packages/*/tsconfig.test.json',
+          './packages/data-contracts-dexie/tsconfig.browser.json',
         ],
         tsconfigRootDir: import.meta.dirname,
       },
