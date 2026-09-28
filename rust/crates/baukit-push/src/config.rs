@@ -12,6 +12,9 @@ pub const DEFAULT_EXPO_ENDPOINT: &str = "https://exp.host/--/api/v2/push/send";
 /// Largest batch Expo accepts in one `/push/send` request.
 pub const MAX_BATCH_SIZE: usize = 100;
 
+/// Most ticket IDs Expo accepts in one `/push/getReceipts` request.
+pub const MAX_RECEIPT_BATCH_SIZE: usize = 1000;
+
 const DEFAULT_BATCH_SIZE: usize = 100;
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(8);
 

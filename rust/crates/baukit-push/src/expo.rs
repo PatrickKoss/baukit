@@ -7,8 +7,9 @@ use baukit_http::{classify_http_status, classify_transport_error};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    PushDeliveryStatus, PushError, PushFuture, PushMessage, PushOptions, PushOptionsError,
-    PushOutcome, PushRejection, PushSender,
+    MAX_RECEIPT_BATCH_SIZE, PushDeliveryStatus, PushError, PushFuture, PushMessage, PushOptions,
+    PushOptionsError, PushOutcome, PushReceipt, PushReceiptFuture, PushReceiptSource,
+    PushRejection, PushSender, PushTicketId,
 };
 
 const OK_STATUS: &str = "ok";
@@ -20,6 +21,8 @@ const OK_STATUS: &str = "ok";
 /// `/push/getReceipts`. This adapter runs both phases per batch, so one
 /// [`PushSender::send`] call returns settled outcomes wherever Expo has them and
 /// [`PushDeliveryStatus::Accepted`] for the receipts that are not ready yet.
+/// As a [`PushReceiptSource`] it reads those receipts later, up to
+/// [`MAX_RECEIPT_BATCH_SIZE`] IDs per request.
 ///
 /// Cloning is cheap; the inner `reqwest` client shares its connection pool.
 #[derive(Clone, Debug)]
@@ -104,7 +107,7 @@ impl ExpoPushSender {
         }
 
         let mut outcomes = Vec::with_capacity(messages.len());
-        let mut pending = HashMap::new();
+        let mut pending = Vec::new();
         for (message, ticket) in messages.iter().zip(tickets) {
             match rejection(ticket.details.as_ref()) {
                 Some(rejection) => outcomes.push(PushOutcome {
@@ -112,10 +115,7 @@ impl ExpoPushSender {
                     status: PushDeliveryStatus::Rejected(rejection),
                 }),
                 None if ticket.status == OK_STATUS => {
-                    let id = ticket.id.ok_or_else(|| {
-                        PushError::InvalidResponse("accepted ticket has no id".to_owned())
-                    })?;
-                    pending.insert(id, message.token.clone());
+                    pending.push((ticket_id(ticket.id)?, message.token.clone()));
                 }
                 None => outcomes.push(PushOutcome {
                     token: message.token.clone(),
@@ -127,29 +127,42 @@ impl ExpoPushSender {
             return Ok(outcomes);
         }
 
-        let ids = pending.keys().cloned().collect::<Vec<_>>();
-        let response: ExpoReceiptResponse = self
-            .post(
-                self.options.receipts_endpoint(),
-                &serde_json::json!({ "ids": ids }),
-            )
-            .await?;
-        let receipts = response.data.unwrap_or_default();
-        outcomes.extend(pending.into_iter().map(|(id, token)| PushOutcome {
-            token,
-            status: receipts.get(&id).map_or(
-                // Expo has not settled this notification yet. Callers must not
-                // resend on it; the next receipt poll or a later batch reports
-                // the final state.
-                PushDeliveryStatus::Accepted,
-                |receipt| match rejection(receipt.details.as_ref()) {
-                    Some(rejection) => PushDeliveryStatus::Rejected(rejection),
-                    None if receipt.status == OK_STATUS => PushDeliveryStatus::Delivered,
-                    None => PushDeliveryStatus::Rejected(PushRejection::ProviderError),
-                },
-            ),
+        let ids = pending.iter().map(|(id, _)| id.clone()).collect::<Vec<_>>();
+        let mut receipts = self.fetch_receipts(&ids).await?;
+        outcomes.extend(pending.into_iter().map(|(id, token)| {
+            let status = match receipts.remove(&id) {
+                Some(receipt) => receipt.into(),
+                // Expo has not settled this notification yet. Callers must
+                // not resend on it; a deferred receipt poll reports the final
+                // state.
+                None => PushDeliveryStatus::Accepted(id),
+            };
+            PushOutcome { token, status }
         }));
         Ok(outcomes)
+    }
+
+    async fn fetch_receipts(
+        &self,
+        ids: &[PushTicketId],
+    ) -> Result<HashMap<PushTicketId, PushReceipt>, PushError> {
+        let mut settled = HashMap::new();
+        for chunk in ids.chunks(MAX_RECEIPT_BATCH_SIZE) {
+            let request = chunk.iter().map(PushTicketId::as_str).collect::<Vec<_>>();
+            let response: ExpoReceiptResponse = self
+                .post(
+                    self.options.receipts_endpoint(),
+                    &serde_json::json!({ "ids": request }),
+                )
+                .await?;
+            let mut receipts = response.data.unwrap_or_default();
+            settled.extend(chunk.iter().filter_map(|id| {
+                receipts
+                    .remove(id.as_str())
+                    .map(|receipt| (id.clone(), push_receipt(&receipt)))
+            }));
+        }
+        Ok(settled)
     }
 
     async fn post<T: serde::de::DeserializeOwned>(
@@ -185,9 +198,24 @@ fn transport_error(status: StatusCode, headers: &HeaderMap) -> PushError {
     PushError::Transport { class }
 }
 
+fn ticket_id(id: Option<String>) -> Result<PushTicketId, PushError> {
+    id.ok_or_else(|| PushError::InvalidResponse("accepted ticket has no id".to_owned()))
+        .and_then(|id| {
+            PushTicketId::new(id).map_err(|error| PushError::InvalidResponse(error.to_string()))
+        })
+}
+
+fn push_receipt(receipt: &ExpoReceipt) -> PushReceipt {
+    match rejection(receipt.details.as_ref()) {
+        Some(rejection) => PushReceipt::Rejected(rejection),
+        None if receipt.status == OK_STATUS => PushReceipt::Delivered,
+        None => PushReceipt::Rejected(PushRejection::ProviderError),
+    }
+}
+
 fn expo_message(message: &PushMessage) -> ExpoMessage<'_> {
     ExpoMessage {
-        to: &message.token,
+        to: message.token.expose(),
         title: &message.title,
         body: &message.body,
         sound: "default",
@@ -214,6 +242,12 @@ impl PushSender for ExpoPushSender {
     }
 }
 
+impl PushReceiptSource for ExpoPushSender {
+    fn receipts<'a>(&'a self, tickets: Vec<PushTicketId>) -> PushReceiptFuture<'a> {
+        Box::pin(async move { self.fetch_receipts(&tickets).await })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -223,6 +257,7 @@ mod tests {
     use super::*;
 
     fn message(token: &str) -> PushMessage {
+        let token = crate::DeviceToken::new(token).expect("valid test token");
         PushMessage::new(token, "Reminder", "Your session starts soon")
             .with_data("session_id", "abc")
     }

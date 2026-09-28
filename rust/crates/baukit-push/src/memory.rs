@@ -1,4 +1,4 @@
-//! In-memory registry and claim stores for tests, behind the `test-support` feature.
+//! In-memory registry, claim, and pending receipt stores for tests, behind the `test-support` feature.
 
 use std::{
     cmp::Reverse,
@@ -12,8 +12,8 @@ use uuid::Uuid;
 
 use crate::{
     DEFAULT_DEVICES_PER_OWNER, DeliveryClaim, DeliveryClaimStore, DeviceRegistration,
-    DeviceRegistry, DeviceToken, PushStoreError, PushStoreFuture, RegisteredDevice,
-    RegistrationOutcome,
+    DeviceRegistry, DeviceToken, PendingReceipt, PendingReceiptStore, PushStoreError,
+    PushStoreFuture, PushTicketId, RegisteredDevice, RegistrationOutcome,
 };
 
 /// [`DeviceRegistry`] held in memory with the same cap, move, and eviction
@@ -235,6 +235,120 @@ impl DeliveryClaimStore for MemoryDeliveryClaimStore {
     }
 }
 
+#[derive(Clone, Debug)]
+struct DueReceipt {
+    receipt: PendingReceipt,
+    due_at: DateTime<Utc>,
+}
+
+/// [`PendingReceiptStore`] held in memory with the PostgreSQL adapter's
+/// ordering. Clones share one set of tickets.
+#[derive(Clone, Debug, Default)]
+pub struct MemoryPendingReceiptStore {
+    receipts: Arc<Mutex<HashMap<PushTicketId, DueReceipt>>>,
+}
+
+impl MemoryPendingReceiptStore {
+    /// Creates a store with no tickets.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Returns every recorded ticket, ordered by ticket ID.
+    #[must_use]
+    pub fn pending(&self) -> Vec<PendingReceipt> {
+        let mut pending = self
+            .receipts()
+            .values()
+            .map(|due| due.receipt.clone())
+            .collect::<Vec<_>>();
+        pending.sort_by(|left, right| left.ticket.cmp(&right.ticket));
+        pending
+    }
+
+    fn receipts(&self) -> MutexGuard<'_, HashMap<PushTicketId, DueReceipt>> {
+        self.receipts.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+fn limit_len(limit: NonZeroU32) -> usize {
+    usize::try_from(limit.get()).unwrap_or(usize::MAX)
+}
+
+impl PendingReceiptStore for MemoryPendingReceiptStore {
+    fn record(
+        &self,
+        receipts: Vec<PendingReceipt>,
+        due_at: DateTime<Utc>,
+    ) -> PushStoreFuture<'_, Result<u64, PushStoreError>> {
+        let mut stored = self.receipts();
+        let before = stored.len();
+        for receipt in receipts {
+            stored
+                .entry(receipt.ticket.clone())
+                .or_insert(DueReceipt { receipt, due_at });
+        }
+        let recorded = count(stored.len() - before);
+        Box::pin(std::future::ready(Ok(recorded)))
+    }
+
+    fn take_due(
+        &self,
+        now: DateTime<Utc>,
+        retry_at: DateTime<Utc>,
+        limit: NonZeroU32,
+    ) -> PushStoreFuture<'_, Result<Vec<PendingReceipt>, PushStoreError>> {
+        let mut stored = self.receipts();
+        let mut due = stored
+            .values()
+            .filter(|due| due.due_at <= now)
+            .map(|due| (due.due_at, due.receipt.ticket.clone()))
+            .collect::<Vec<_>>();
+        due.sort();
+        let mut taken = Vec::new();
+        for (_, ticket) in due.into_iter().take(limit_len(limit)) {
+            if let Some(due) = stored.get_mut(&ticket) {
+                due.due_at = retry_at;
+                taken.push(due.receipt.clone());
+            }
+        }
+        Box::pin(std::future::ready(Ok(taken)))
+    }
+
+    fn delete(
+        &self,
+        tickets: Vec<PushTicketId>,
+    ) -> PushStoreFuture<'_, Result<u64, PushStoreError>> {
+        let mut stored = self.receipts();
+        let removed = tickets
+            .iter()
+            .filter(|ticket| stored.remove(*ticket).is_some())
+            .count();
+        Box::pin(std::future::ready(Ok(count(removed))))
+    }
+
+    fn purge(
+        &self,
+        sent_before: DateTime<Utc>,
+        limit: NonZeroU32,
+    ) -> PushStoreFuture<'_, Result<u64, PushStoreError>> {
+        let mut stored = self.receipts();
+        let mut expired = stored
+            .values()
+            .filter(|due| due.receipt.sent_at < sent_before)
+            .map(|due| (due.receipt.sent_at, due.receipt.ticket.clone()))
+            .collect::<Vec<_>>();
+        expired.sort();
+        let removed = expired
+            .into_iter()
+            .take(limit_len(limit))
+            .filter(|(_, ticket)| stored.remove(ticket).is_some())
+            .count();
+        Box::pin(std::future::ready(Ok(count(removed))))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use chrono::{NaiveDate, TimeDelta};
@@ -314,7 +428,7 @@ mod tests {
         registry.register(registration(owner, "old", 1)).await?;
         registry.register(registration(owner, "fresh", 5)).await?;
         let dead = |value: &str| PushOutcome {
-            token: value.to_owned(),
+            token: token(value),
             status: PushDeliveryStatus::Rejected(PushRejection::DeviceNotRegistered),
         };
         let removed = registry
@@ -339,6 +453,56 @@ mod tests {
         assert!(store.release(claim.clone()).await?);
         assert!(!store.is_claimed(&claim));
         assert!(store.claim(claim, at(2)).await?);
+        Ok(())
+    }
+
+    fn pending(ticket: &str, sent_minutes: i64) -> PendingReceipt {
+        PendingReceipt {
+            ticket: PushTicketId::new(ticket).expect("valid test ticket"),
+            token: token(&format!("token-{ticket}")),
+            sent_at: at(sent_minutes),
+        }
+    }
+
+    fn tickets(receipts: &[PendingReceipt]) -> Vec<&str> {
+        receipts
+            .iter()
+            .map(|receipt| receipt.ticket.as_str())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn due_tickets_are_taken_oldest_first_and_move_back() -> TestResult {
+        let store = MemoryPendingReceiptStore::new();
+        store
+            .record(vec![pending("b", 0), pending("a", 0)], at(10))
+            .await?;
+        store.record(vec![pending("c", 5)], at(15)).await?;
+        assert_eq!(store.record(vec![pending("a", 0)], at(99)).await?, 0);
+
+        assert!(store.take_due(at(9), at(30), CAP).await?.is_empty());
+        let first = store.take_due(at(20), at(30), CAP).await?;
+        assert_eq!(tickets(&first), ["a", "b"]);
+        let second = store.take_due(at(20), at(30), CAP).await?;
+        assert_eq!(tickets(&second), ["c"]);
+        let retried = store.take_due(at(30), at(45), CAP).await?;
+        assert_eq!(tickets(&retried), ["a", "b"]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn settled_and_expired_tickets_are_deleted() -> TestResult {
+        let store = MemoryPendingReceiptStore::new();
+        store
+            .record(
+                vec![pending("a", 0), pending("b", 1), pending("c", 2)],
+                at(0),
+            )
+            .await?;
+        let a = PushTicketId::new("a")?;
+        assert_eq!(store.delete(vec![a.clone(), a]).await?, 1);
+        assert_eq!(store.purge(at(2), CAP).await?, 1);
+        assert_eq!(tickets(&store.pending()), ["c"]);
         Ok(())
     }
 }
