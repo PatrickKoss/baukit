@@ -335,3 +335,103 @@ Deletion is deferred to each product's adoption pass. Per product:
   appearance case in `templates/backend/__auth__/scripts/keycloak-theme.browser.mjs`.
 - Template tests: `limits.test.ts` in mobile and web, `route-heading-focus.test.ts`, and the MCP
   `stdio.test.ts` API URL case.
+
+## Follow-up (2026-09-28)
+
+Three gaps found after the six items shipped.
+
+### Test type check
+
+`typescript/tsconfig.test.json` type-checked every package's `*.test.ts` in one program against the
+base config. It skipped `auth-node` and `data-contracts-expo-sqlite`, ignored each package's own
+`lib` and `types`, and nothing ran it. On `main` it reported about 25 errors. It was not dead,
+because ESLint's project list and the Dexie browser config used it, so it was replaced rather than
+deleted outright.
+
+Each of the 20 packages now has a `tsconfig.test.json` that extends its own `tsconfig.json` with
+`noEmit` and covers all of `src`, tests included. Every package `test` script runs
+`tsc -p tsconfig.test.json` before Vitest, so `make ts-check`, `make ts-test`, and the CI
+TypeScript job run it without changes to `turbo.json`, the Makefile, or the workflow. `events`,
+`localization-core`, `notifications-core`, and `sync-client` list `node` in `types` and gain
+`@types/node` as a dev dependency. The Dexie test config adds the DOM lib and leaves the browser
+spec to `tsconfig.browser.json`, which now extends it. ESLint resolves a file through the package
+`tsconfig.json` first, so Node types do not leak into source linting.
+
+The errors were in tests only. One was a real stale assertion: the `api-runtime` idempotency test
+built an error envelope with `request_id`, which the camelCase change renamed to `requestId`. The
+rest were JSON imports without `with { type: 'json' }`, an `@ts-expect-error` on the wrong line,
+callbacks that returned a value where `void` was expected, optional properties set to `undefined`
+under `exactOptionalPropertyTypes`, a fake timer handle typed as a number, and a dead
+`RuleTester.afterAll` assignment. The fixes use no `any` and no `@ts-ignore`. The one new
+`@ts-expect-error` in `node-sqlite.test.ts` checks that an untyped caller can still pass
+`undefined`.
+
+### Mobile auth coverage floors
+
+`templates/mobile/__auth__/mobile/jest.config.cjs` had no coverage floors. It is deleted, so the
+auth app uses the base config with 70% statement, branch, function, and line floors. The auth
+`package.json` had also drifted: it lacked `setup` and `test:coverage`, and the generated CI calls
+`test:coverage`, so an auth product's CI failed on a missing script.
+
+With the floors on, the generated auth app measured 33% statements and 37% branches. `auth.ts`,
+`local-data.ts`, `authenticated-api.ts`, and `theme-mode-control.tsx` had no tests. The base mobile
+app also missed its branch floor at 67.27%. Both mobile `package.json` templates now pin
+`@testing-library/react-native` 14.0.1 and `test-renderer` 1.2.0, the renderer that matches React
+19.2. New template tests:
+
+- Base: `theme-mode-control.test.tsx`, an app-preferences case in `record-store.test.ts`, and a
+  `useRouteHeadingFocus` hook case in `route-heading-focus.test.ts`.
+- Auth: `oidc-auth.test.tsx` (restore, discovery failure, session changes, expiry, scheduled
+  refresh, sign-in with appearance, cancel, failure, sign-out), `local-data.test.tsx` (open,
+  sign-out, expiry, identity mismatch, failed initialization, unmount), and
+  `authenticated-api.test.ts` (401 replay, second 401, no session, global fetch).
+
+Generated coverage is now 98.5% statements and 85.4% branches for auth, and 98.9% and 89.1% for
+the base app.
+
+### Web Keycloak stack test
+
+`e2e/playwright.stack.config.ts` hardcoded port 5173 and reused whatever listened there. On this
+machine a foreign process holds 5173, so the spec could not run without touching it. The config
+now reads `E2E_WEB_PORT` (default 5173). A new `e2e/stack/global-setup.ts` calls
+`allowWebOrigin` in `keycloak.ts`, which adds the origin to the web client's redirect URIs and web
+origins through the admin API when the client lacks it. `E2E_KEYCLOAK_WEB_CLIENT_ID` overrides the
+client ID.
+
+Two more things failed on the way. The spec reads the subject from `/me`, so the API must list the
+test origin in `<APP>__HTTP__CORS_ALLOWED_ORIGINS`. And the auth API's rate limiter connects to
+Redis at startup while the product Compose file has no Redis service, so `make run` exits with
+`RateLimitStoreError`. The web auth README now records the full command: Keycloak from Compose, a
+disposable Redis container, `make run` with the Redis URL and CORS origin, then
+`E2E_WEB_PORT=5183 corepack pnpm@11.18.0 exec playwright test --config e2e/playwright.stack.config.ts`.
+The spec passed twice against the generated auth fixture on port 5183 with Keycloak 26.7.0. The
+second run found the origin already registered and skipped the update.
+
+### Breaks
+
+All template-only, listed in the generated `CHANGELOG.md` under `[Unreleased]`:
+
+- Auth mobile `test:coverage` now enforces the 70% floors.
+- Generated mobile apps gain two dev dependencies.
+- The stack test's global setup changes the development realm's web client when the port is not
+  5173.
+
+The TypeScript package changes touch tests, dev dependencies, and scripts only, so no changeset.
+
+### Gates
+
+- `make ts-check` (80 of 80 tasks) and `make ts-browser-test`.
+- CLI `cargo fmt --check`, `clippy -D warnings`, and `cargo test -- --include-ignored`, with
+  re-blessed `auth`, `combined`, `mobile`, and `strict` snapshots.
+- Auth fixture (`--backend --mobile --web --auth oidc --mcp`): backend fmt and clippy; web frozen
+  install, build, lint, test; mobile frozen install, `tsc --noEmit`, lint, test, `test:coverage`.
+- Base fixture (`--backend --mobile --web`): mobile `test:coverage`.
+- The Android native gate was not run. The emulator belongs to another task, and the new
+  dependencies are Jest-only.
+
+### Still open
+
+- Auth web `test:coverage` fails its floors (functions 68.75%, branches 59.18%). The base web app
+  passes. Same fix shape as mobile, not done here.
+- The product Compose file has no Redis, so `make run` fails for every auth product until one is
+  added or the README's container is started.
