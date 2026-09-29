@@ -128,6 +128,17 @@ describe('encodeCsv', () => {
     expect(rejection([[csvNumeric('=secret()')]]).message).not.toContain('secret');
   });
 
+  it.each(['', 'a,b', 'say "null"', 'line\n', 'line\r'])(
+    'rejects the null marker %j before writing',
+    (nullMarker) => {
+      expect(() => encodeCsv([[null]], { nullMarker })).toThrow(RangeError);
+    },
+  );
+
+  it('quotes a neutralized cell that would read as the null marker', () => {
+    expect(encodeCsv([[null, '-']], { nullMarker: "'-" })).toBe(`'-,"'-"\r\n`);
+  });
+
   it('accepts any iterable of rows', () => {
     function* rows(): Generator<readonly CsvCell[]> {
       yield ['id'];

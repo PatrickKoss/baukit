@@ -78,6 +78,8 @@ impl<'a, T: Into<CsvCell<'a>>> From<Option<T>> for CsvCell<'a> {
 pub struct CsvOptions {
     neutralize_formulas: bool,
     byte_order_mark: bool,
+    quote_all_cells: bool,
+    null_marker: Option<&'static str>,
 }
 
 impl CsvOptions {
@@ -87,6 +89,8 @@ impl CsvOptions {
         Self {
             neutralize_formulas: true,
             byte_order_mark: false,
+            quote_all_cells: false,
+            null_marker: None,
         }
     }
 
@@ -103,6 +107,45 @@ impl CsvOptions {
         self.byte_order_mark = true;
         self
     }
+
+    /// Quotes every text and numeric cell. Empty cells stay unquoted, so a reader can tell them
+    /// from empty text.
+    #[must_use]
+    pub const fn with_all_cells_quoted(mut self) -> Self {
+        self.quote_all_cells = true;
+        self
+    }
+
+    /// Writes `marker` unquoted for an empty cell and quotes a text cell with the same content.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `marker` is empty or contains a double quote, comma, CR, or LF. In a `const`
+    /// item the check fails the build instead.
+    #[must_use]
+    pub const fn with_null_marker(mut self, marker: &'static str) -> Self {
+        assert!(
+            is_valid_null_marker(marker),
+            "CSV null marker must be non-empty and free of double quotes, commas, CR, and LF"
+        );
+        self.null_marker = Some(marker);
+        self
+    }
+}
+
+const fn is_valid_null_marker(marker: &str) -> bool {
+    let bytes = marker.as_bytes();
+    if bytes.is_empty() {
+        return false;
+    }
+    let mut index = 0;
+    while index < bytes.len() {
+        if matches!(bytes[index], b'"' | b',' | b'\r' | b'\n') {
+            return false;
+        }
+        index += 1;
+    }
+    true
 }
 
 impl Default for CsvOptions {
@@ -170,28 +213,19 @@ where
     Row: IntoIterator<Item = Cell>,
     Cell: Borrow<CsvCell<'a>>,
 {
-    let mut cells = row.into_iter().enumerate().peekable();
-    let Some((_, first)) = cells.next() else {
-        return Ok(());
-    };
-    if cells.peek().is_none() && is_empty(first.borrow()) {
-        output.push_str("\"\"");
-        return Ok(());
-    }
-    push_cell(output, first.borrow(), row_index, 0, options)?;
-    for (column_index, cell) in cells {
-        output.push(',');
+    let record_start = output.len();
+    let mut column_count = 0;
+    for (column_index, cell) in row.into_iter().enumerate() {
+        if column_index > 0 {
+            output.push(',');
+        }
         push_cell(output, cell.borrow(), row_index, column_index, options)?;
+        column_count += 1;
+    }
+    if column_count == 1 && output.len() == record_start {
+        output.push_str("\"\"");
     }
     Ok(())
-}
-
-fn is_empty(cell: &CsvCell<'_>) -> bool {
-    match cell {
-        CsvCell::Empty => true,
-        CsvCell::Text(text) => text.is_empty(),
-        CsvCell::Numeric(_) => false,
-    }
 }
 
 fn push_cell(
@@ -202,7 +236,7 @@ fn push_cell(
     options: CsvOptions,
 ) -> Result<(), CsvEncodeError> {
     match cell {
-        CsvCell::Empty => {}
+        CsvCell::Empty => output.push_str(options.null_marker.unwrap_or_default()),
         CsvCell::Numeric(value) => {
             if !is_json_number(value) {
                 return Err(CsvEncodeError::InvalidNumericCell {
@@ -210,16 +244,26 @@ fn push_cell(
                     column_index,
                 });
             }
-            output.push_str(value);
+            push_numeric(output, value, options);
         }
         CsvCell::Text(value) => push_text(output, value, options),
     }
     Ok(())
 }
 
+fn push_numeric(output: &mut String, value: &str, options: CsvOptions) {
+    if !options.quote_all_cells {
+        output.push_str(value);
+        return;
+    }
+    output.push('"');
+    output.push_str(value);
+    output.push('"');
+}
+
 fn push_text(output: &mut String, value: &str, options: CsvOptions) {
     let escape = options.neutralize_formulas && starts_like_formula(value);
-    if !value.contains(QUOTE_REQUIRED) {
+    if !must_quote(value, escape, options) {
         if escape {
             output.push(FORMULA_ESCAPE);
         }
@@ -232,6 +276,24 @@ fn push_text(output: &mut String, value: &str, options: CsvOptions) {
     }
     output.push_str(&value.replace('"', "\"\""));
     output.push('"');
+}
+
+fn must_quote(value: &str, escape: bool, options: CsvOptions) -> bool {
+    options.quote_all_cells
+        || value.contains(QUOTE_REQUIRED)
+        || reads_as_null_marker(value, escape, options)
+}
+
+fn reads_as_null_marker(value: &str, escape: bool, options: CsvOptions) -> bool {
+    let Some(marker) = options.null_marker else {
+        return false;
+    };
+    let unescaped = if escape {
+        marker.strip_prefix(FORMULA_ESCAPE)
+    } else {
+        Some(marker)
+    };
+    unescaped == Some(value)
 }
 
 fn starts_like_formula(value: &str) -> bool {
@@ -320,6 +382,8 @@ mod tests {
     struct FixtureOptions {
         neutralize_formulas: Option<bool>,
         byte_order_mark: Option<bool>,
+        quote_all_cells: Option<bool>,
+        null_marker: Option<String>,
     }
 
     #[derive(Debug, Deserialize)]
@@ -352,6 +416,12 @@ mod tests {
         }
         if fixture.byte_order_mark == Some(true) {
             options = options.with_byte_order_mark();
+        }
+        if fixture.quote_all_cells == Some(true) {
+            options = options.with_all_cells_quoted();
+        }
+        if let Some(marker) = &fixture.null_marker {
+            options = options.with_null_marker(String::leak(marker.clone()));
         }
         options
     }
@@ -453,6 +523,33 @@ mod tests {
                 })
             );
         }
+    }
+
+    #[test]
+    fn null_marker_is_accepted_in_a_const_item() {
+        const OPTIONS: CsvOptions = CsvOptions::new().with_null_marker("\\N");
+        let rows = [[CsvCell::Empty, CsvCell::text("\\N")]];
+        assert_eq!(
+            encode_csv(&rows, OPTIONS),
+            Ok(String::from("\\N,\"\\N\"\r\n"))
+        );
+    }
+
+    #[test]
+    fn invalid_null_markers_panic() {
+        for marker in ["", "a,b", "say \"null\"", "line\n", "line\r"] {
+            let result = std::panic::catch_unwind(|| CsvOptions::new().with_null_marker(marker));
+            assert!(result.is_err(), "{marker:?}");
+        }
+    }
+
+    #[test]
+    fn a_neutralized_cell_is_quoted_when_it_would_read_as_the_null_marker() {
+        let rows = [[CsvCell::Empty, CsvCell::text("-")]];
+        assert_eq!(
+            encode_csv(&rows, CsvOptions::new().with_null_marker("'-")),
+            Ok(String::from("'-,\"'-\"\r\n"))
+        );
     }
 
     #[test]

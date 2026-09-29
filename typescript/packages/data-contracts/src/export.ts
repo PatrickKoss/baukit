@@ -7,6 +7,13 @@ export type CsvCell = string | number | CsvNumericCell | null;
 export interface EncodeCsvOptions {
   readonly neutralizeFormulas?: boolean;
   readonly byteOrderMark?: boolean;
+  /** Quotes every text and numeric cell. Null cells stay unquoted, so a reader can tell them from empty text. */
+  readonly quoteAllCells?: boolean;
+  /**
+   * Written unquoted for a null cell; a text cell with the same content is quoted. Must be non-empty
+   * and free of double quotes, commas, CR, and LF.
+   */
+  readonly nullMarker?: string;
 }
 
 export type CsvEncodeErrorCode = 'invalid_numeric_cell' | 'invalid_unicode' | 'unsupported_cell';
@@ -44,8 +51,15 @@ const FORMULA_TRIGGERS = new Set(['=', '+', '-', '@']);
 const CONTROL_TRIGGERS = new Set(['\t', '\r']);
 
 type EncodedCell =
+  | { readonly kind: 'null' }
   | { readonly kind: 'text'; readonly value: string }
   | { readonly kind: 'numeric'; readonly value: string };
+
+interface WritePolicy {
+  readonly neutralizeFormulas: boolean;
+  readonly quoteAllCells: boolean;
+  readonly nullMarker: string | undefined;
+}
 
 export function csvNumeric(value: string): CsvNumericCell {
   return { numeric: value };
@@ -55,29 +69,39 @@ export function encodeCsv(
   rows: Iterable<readonly CsvCell[]>,
   options: EncodeCsvOptions = {},
 ): string {
-  const neutralizeFormulas = options.neutralizeFormulas ?? true;
+  const policy = writePolicy(options);
   let output = options.byteOrderMark === true ? BYTE_ORDER_MARK : '';
   let rowIndex = 0;
   for (const row of rows) {
-    output += encodeRecord(row, rowIndex, neutralizeFormulas) + RECORD_SEPARATOR;
+    output += encodeRecord(row, rowIndex, policy) + RECORD_SEPARATOR;
     rowIndex += 1;
   }
   return output;
 }
 
-function encodeRecord(row: readonly CsvCell[], rowIndex: number, neutralize: boolean): string {
-  if (row.length === 1 && isEmptyCell(row[0])) return '""';
-  return row
-    .map((cell, columnIndex) => writeCell(classifyCell(cell, rowIndex, columnIndex), neutralize))
-    .join(',');
+function writePolicy(options: EncodeCsvOptions): WritePolicy {
+  const { nullMarker } = options;
+  if (nullMarker !== undefined && (nullMarker === '' || QUOTE_REQUIRED_PATTERN.test(nullMarker))) {
+    throw new RangeError(
+      'CSV null marker must be non-empty and free of double quotes, commas, CR, and LF.',
+    );
+  }
+  return {
+    neutralizeFormulas: options.neutralizeFormulas ?? true,
+    quoteAllCells: options.quoteAllCells ?? false,
+    nullMarker,
+  };
 }
 
-function isEmptyCell(cell: CsvCell | undefined): boolean {
-  return cell === null || cell === '';
+function encodeRecord(row: readonly CsvCell[], rowIndex: number, policy: WritePolicy): string {
+  const record = row
+    .map((cell, columnIndex) => writeCell(classifyCell(cell, rowIndex, columnIndex), policy))
+    .join(',');
+  return row.length === 1 && record === '' ? '""' : record;
 }
 
 function classifyCell(cell: CsvCell, rowIndex: number, columnIndex: number): EncodedCell {
-  if (cell === null) return { kind: 'text', value: '' };
+  if (cell === null) return { kind: 'null' };
   if (typeof cell === 'string') {
     if (hasUnpairedSurrogate(cell)) {
       throw new CsvEncodeError('invalid_unicode', rowIndex, columnIndex);
@@ -114,11 +138,22 @@ function numericText(cell: unknown): string | undefined {
   return typeof numeric === 'string' ? numeric : undefined;
 }
 
-function writeCell(cell: EncodedCell, neutralize: boolean): string {
-  if (cell.kind === 'numeric') return cell.value;
+function writeCell(cell: EncodedCell, policy: WritePolicy): string {
+  if (cell.kind === 'null') return policy.nullMarker ?? '';
+  if (cell.kind === 'numeric') return policy.quoteAllCells ? quote(cell.value) : cell.value;
   const text =
-    neutralize && startsLikeFormula(cell.value) ? FORMULA_ESCAPE + cell.value : cell.value;
-  return QUOTE_REQUIRED_PATTERN.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+    policy.neutralizeFormulas && startsLikeFormula(cell.value)
+      ? FORMULA_ESCAPE + cell.value
+      : cell.value;
+  return mustQuote(text, policy) ? quote(text) : text;
+}
+
+function mustQuote(text: string, policy: WritePolicy): boolean {
+  return policy.quoteAllCells || text === policy.nullMarker || QUOTE_REQUIRED_PATTERN.test(text);
+}
+
+function quote(text: string): string {
+  return `"${text.replaceAll('"', '""')}"`;
 }
 
 function startsLikeFormula(value: string): boolean {

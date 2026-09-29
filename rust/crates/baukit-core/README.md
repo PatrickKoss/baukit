@@ -122,6 +122,12 @@ number grammar and is written unchanged; anything else, including `NaN` and infi
 `CsvOptions::with_byte_order_mark()` starts the output with U+FEFF for spreadsheet programs that
 need it to detect UTF-8.
 
+By default `CsvCell::Empty` and empty text both write an empty field. For a file your own importer
+reads back, `CsvOptions::with_all_cells_quoted()` quotes every text and numeric cell and leaves empty
+cells unquoted, and `CsvOptions::with_null_marker("\\N")` writes the marker for an empty cell and
+quotes text with the same content. The marker is a `&'static str`; an empty marker or one holding a
+double quote, comma, CR, or LF panics, and fails the build when the options are a `const` item.
+
 The shared vectors live in `fixtures/export-csv/csv-encoding-v1.json`; `@baukit/data-contracts`
 passes the same file.
 

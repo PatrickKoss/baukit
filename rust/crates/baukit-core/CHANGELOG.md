@@ -4,6 +4,14 @@ All notable changes to `baukit-core` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Add `CsvOptions::with_all_cells_quoted`, which quotes every text and numeric cell and leaves
+  empty cells unquoted, and `CsvOptions::with_null_marker`, which writes a marker such as `\N` for
+  an empty cell and quotes text with the same content. Either keeps an empty cell apart from empty
+  text, so a product's importer can read its own export back. `with_null_marker` panics on an empty
+  marker or one holding a double quote, comma, CR, or LF. The shared vectors gain five cases.
+
 ## [0.5.0] - 2026-09-28
 
 ### Added

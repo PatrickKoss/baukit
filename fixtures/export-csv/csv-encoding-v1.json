@@ -2,6 +2,7 @@
   "version": 1,
   "notes": {
     "cells": "A JSON string is a text cell, null is an empty cell, and { \"numeric\": \"-5\" } is a numeric cell.",
+    "nullMarker": "options.nullMarker is written unquoted for a null cell; a text cell with the same content is quoted.",
     "byteOrderMark": "When options.byteOrderMark is true, the expected output is the code point byteOrderMarkCodePoint followed by csv."
   },
   "byteOrderMarkCodePoint": 65279,
@@ -176,6 +177,69 @@
       },
       "rows": [["=1+1"]],
       "csv": "'=1+1\r\n"
+    },
+    {
+      "name": "every cell quoted",
+      "options": {
+        "quoteAllCells": true
+      },
+      "rows": [
+        [
+          "id",
+          "a\"b",
+          "=1",
+          {
+            "numeric": "-5"
+          },
+          "",
+          null
+        ]
+      ],
+      "csv": "\"id\",\"a\"\"b\",\"'=1\",\"-5\",\"\",\r\n"
+    },
+    {
+      "name": "one-cell rows with every cell quoted",
+      "options": {
+        "quoteAllCells": true
+      },
+      "rows": [[""], [null]],
+      "csv": "\"\"\r\n\"\"\r\n"
+    },
+    {
+      "name": "null marker",
+      "options": {
+        "nullMarker": "\\N"
+      },
+      "rows": [[null, "\\N", "", "x"]],
+      "csv": "\\N,\"\\N\",,x\r\n"
+    },
+    {
+      "name": "null marker in one-cell rows",
+      "options": {
+        "nullMarker": "\\N"
+      },
+      "rows": [[null], [""], ["\\N"]],
+      "csv": "\\N\r\n\"\"\r\n\"\\N\"\r\n"
+    },
+    {
+      "name": "null marker with every cell quoted and no neutralization",
+      "options": {
+        "quoteAllCells": true,
+        "nullMarker": "\\N",
+        "neutralizeFormulas": false
+      },
+      "rows": [
+        ["#meta", "{\"a\":1}"],
+        [
+          null,
+          "",
+          {
+            "numeric": "1"
+          },
+          "-x"
+        ]
+      ],
+      "csv": "\"#meta\",\"{\"\"a\"\":1}\"\r\n\\N,\"\",\"1\",\"-x\"\r\n"
     },
     {
       "name": "formula neutralization turned off",

@@ -153,6 +153,20 @@ cells must match the JSON number grammar and are written unchanged. `null` is an
 `byteOrderMark: true` starts the output with U+FEFF for spreadsheet programs that need it to detect
 UTF-8.
 
+By default `null` and `''` both write an empty field, so a reader cannot tell them apart. Two options
+keep them distinct for a file your own importer reads back:
+
+- `quoteAllCells: true` quotes every text and numeric cell. A null cell stays unquoted, so `''`
+  becomes `""` and `null` stays empty. A row holding only one null cell still writes `""`.
+- `nullMarker: '\\N'` writes the marker unquoted for a null cell and quotes a text cell with the same
+  content, so `"\N"` reads back as text. The marker must be non-empty and free of double quotes,
+  commas, CR, and LF; `encodeCsv` throws a `RangeError` otherwise.
+
+```ts
+encodeCsv([[null, '\\N', '', 'x']], { nullMarker: '\\N' }); // \N,"\N",,x
+encodeCsv([[null, '', -5]], { quoteAllCells: true }); // ,"","-5"
+```
+
 `CsvEncodeError.code` is `invalid_numeric_cell` for a non-finite number or a numeric cell outside
 the JSON grammar, `invalid_unicode` for a string with an unpaired surrogate, or `unsupported_cell`
 for any other runtime value. The error carries `rowIndex` and `columnIndex` and never the cell
