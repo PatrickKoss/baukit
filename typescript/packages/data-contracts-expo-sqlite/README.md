@@ -104,10 +104,20 @@ await connection.transaction(async (transaction) => {
   when `work` resolves, and rolls back when `work` or the commit rejects. The
   original error reaches the caller unchanged, and the result of `work` is
   returned.
-- The transaction context has the same statement methods. Its
-  `transaction()` always rejects with a `TypeError`: nested transactions are
-  refused, never joined. After the transaction settles, its statements reject
-  with `storage_closed`.
+- The transaction context has the same statement methods. After the
+  transaction settles, its statements reject with `storage_closed`.
+- The context's `transaction(work)` nests: it runs `SAVEPOINT` on the same
+  handle without waiting on the queue, so it never deadlocks behind the
+  transaction that holds the queue. It releases the savepoint when `work`
+  resolves and returns the result. When `work` rejects, it rolls back to the
+  savepoint, undoing only the nested statements and schema changes, and
+  rejects with the same error. The enclosing transaction rolls back too unless
+  the caller catches that error. Released nested work still rolls back when an
+  enclosing level fails. Nesting has no depth limit.
+- Only the innermost open level accepts work. While a nested transaction is
+  open, statements and `transaction()` on any enclosing context reject with a
+  `TypeError`, so run sibling nested transactions one after another, not with
+  `Promise.all`.
 - The connection runs `PRAGMA foreign_keys = ON` on the handle before its
   first statement. Because transactions run on that handle, foreign keys and
   `ON DELETE` actions stay enforced inside them. A step that must rebuild a
@@ -124,8 +134,17 @@ on the new connection before calling the task, and SQLite ignores
 foreign keys off with no way to turn them on.
 
 The same deadlock rule as `withTransaction` applies: inside `work`, use the
-transaction context. A root call on the connection or on any store for the
-same file queues behind the transaction and never finishes.
+transaction context, and nest through its `transaction()`. A root call on the
+connection or on any store for the same file queues behind the transaction and
+never finishes.
+
+A helper typed against `Pick<SqliteTransaction, 'transaction'>` accepts both
+the connection and a transaction context, so a repository method that opens
+its own transaction runs alone at the root or as a savepoint inside a caller's
+transaction.
+
+This differs from `ExpoSqliteStore.withTransaction`, whose nested calls join
+the ambient transaction as the shared storage contract requires.
 
 ## Node tests
 

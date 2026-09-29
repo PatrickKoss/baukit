@@ -657,7 +657,7 @@ CREATE TABLE raw_children (
       },
     },
     {
-      name: "real SQLite raw connection rolls back schema changes and rejects nesting",
+      name: "real SQLite raw connection rolls back schema changes",
       run: async () => {
         const connection = new ExpoSqliteConnection(database);
         await connection.exec("CREATE TABLE raw_steps (label TEXT NOT NULL)");
@@ -683,20 +683,72 @@ CREATE TABLE raw_children (
           )) === undefined,
           "a failed step left a table behind",
         );
+      },
+    },
+    {
+      name: "real SQLite raw connection nests transactions as savepoints",
+      run: async () => {
+        const connection = new ExpoSqliteConnection(database);
+        await connection.exec("CREATE TABLE raw_nested (label TEXT NOT NULL)");
+        const insert = "INSERT INTO raw_nested (label) VALUES (?)";
+        const rows = () =>
+          connection.all("SELECT label FROM raw_nested ORDER BY rowid");
+        let root: Promise<unknown> = Promise.resolve();
         await connection.transaction(async (context) => {
-          await context.run(
-            "INSERT INTO raw_steps (label) VALUES (?)",
-            "outer",
-          );
+          await context.run(insert, "outer");
+          root = connection.run(insert, "other caller");
           await expectReject(
-            context.transaction(() => undefined),
-            "nested transaction",
+            context.transaction(async (nested) => {
+              await nested.run(insert, "rolled back");
+              await nested.exec(
+                "ALTER TABLE raw_nested ADD COLUMN ghost TEXT; CREATE TABLE raw_nested_partial (id TEXT);",
+              );
+              throw new Error("inner failed");
+            }),
+            "failing nested transaction",
           );
+          let entered: () => void = () => undefined;
+          const nestedEntered = new Promise<void>((resolve) => {
+            entered = resolve;
+          });
+          const kept = context.transaction(async (nested) => {
+            await nested.transaction((inner) => inner.run(insert, "released"));
+            entered();
+            await hold(TRANSACTION_HOLD_MS);
+          });
+          await nestedEntered;
+          await expectReject(
+            context.run(insert, "outer while nested open"),
+            "outer statement while a nested transaction is open",
+          );
+          await kept;
         });
+        await root;
         assertDeep(
-          await connection.all("SELECT label FROM raw_steps"),
-          [{ label: "outer" }],
-          "outer transaction lost its write after a rejected nesting",
+          await rows(),
+          [{ label: "outer" }, { label: "released" }, { label: "other caller" }],
+          "nested transactions did not commit or roll back as savepoints",
+        );
+        assertDeep(
+          await connection.all(
+            "SELECT name FROM pragma_table_info('raw_nested') ORDER BY cid",
+          ),
+          [{ name: "label" }],
+          "a rolled-back nested transaction left a column behind",
+        );
+        await expectReject(
+          connection.transaction(async (context) => {
+            await context.transaction((nested) =>
+              nested.run(insert, "released then rolled back"),
+            );
+            throw new Error("outer failed");
+          }),
+          "failing outer transaction",
+        );
+        assertDeep(
+          (await rows()).length,
+          3,
+          "an outer rollback kept released nested work",
         );
       },
     },

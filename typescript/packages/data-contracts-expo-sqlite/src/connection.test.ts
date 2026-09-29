@@ -259,21 +259,6 @@ CREATE TABLE children (
     await expect(connection.get('PRAGMA foreign_keys')).resolves.toEqual({ foreign_keys: 1 });
   });
 
-  it('rejects a nested transaction instead of joining it', async () => {
-    const database = openDatabase();
-    const connection = new ExpoSqliteConnection(database);
-    await connection.exec(CREATE_EVENTS);
-    await connection.transaction(async (transaction) => {
-      await transaction.run(INSERT_EVENT, 'outer');
-      await expect(
-        transaction.transaction((nested) => nested.run(INSERT_EVENT, 'nested')),
-      ).rejects.toThrow(
-        'A SQLite transaction cannot start another transaction. Run the statements on the current transaction instead.',
-      );
-    });
-    await expect(labels(database)).resolves.toEqual(['outer']);
-  });
-
   it('rejects statements on a transaction after it settles', async () => {
     const connection = new ExpoSqliteConnection(openDatabase());
     await connection.exec(CREATE_EVENTS);
@@ -382,6 +367,187 @@ CREATE TABLE children (
   });
 });
 
+describe('ExpoSqliteConnection nested transactions', () => {
+  async function eventsConnection(): Promise<{
+    readonly database: NodeSqliteDatabase;
+    readonly connection: ExpoSqliteConnection;
+  }> {
+    const database = openDatabase();
+    const connection = new ExpoSqliteConnection(database);
+    await connection.exec(CREATE_EVENTS);
+    return { database, connection };
+  }
+
+  it('commits nested work with the enclosing transaction and returns its result', async () => {
+    const { database, connection } = await eventsConnection();
+    const result = await connection.transaction(async (transaction) => {
+      await transaction.run(INSERT_EVENT, 'outer');
+      const inner = await transaction.transaction(async (nested) => {
+        await nested.run(INSERT_EVENT, 'inner');
+        return nested.all<LabelRow>('SELECT label FROM events ORDER BY rowid');
+      });
+      await transaction.run(INSERT_EVENT, 'after');
+      return inner;
+    });
+    expect(result).toEqual([{ label: 'outer' }, { label: 'inner' }]);
+    await expect(labels(database)).resolves.toEqual(['outer', 'inner', 'after']);
+  });
+
+  it('rolls back only the nested work, schema changes included, when the caller catches it', async () => {
+    const { database, connection } = await eventsConnection();
+    const failure = new Error('inner failed');
+    await connection.transaction(async (transaction) => {
+      await transaction.run(INSERT_EVENT, 'outer');
+      await expect(
+        transaction.transaction(async (nested) => {
+          await nested.run(INSERT_EVENT, 'lost');
+          await nested.exec('CREATE TABLE partial (id TEXT); ALTER TABLE events ADD COLUMN x');
+          throw failure;
+        }),
+      ).rejects.toBe(failure);
+      await transaction.run(INSERT_EVENT, 'after');
+    });
+    await expect(labels(database)).resolves.toEqual(['outer', 'after']);
+    await expect(
+      connection.get("SELECT name FROM sqlite_master WHERE name = 'partial'"),
+    ).resolves.toBe(undefined);
+    await expect(connection.all("SELECT name FROM pragma_table_info('events')")).resolves.toEqual([
+      { name: 'label' },
+    ]);
+  });
+
+  it('rolls back the whole transaction when a nested failure is not caught', async () => {
+    const { database, connection } = await eventsConnection();
+    const failure = new Error('inner failed');
+    await expect(
+      connection.transaction(async (transaction) => {
+        await transaction.run(INSERT_EVENT, 'outer');
+        await transaction.transaction(async (nested) => {
+          await nested.run(INSERT_EVENT, 'inner');
+          throw failure;
+        });
+      }),
+    ).rejects.toBe(failure);
+    await expect(labels(database)).resolves.toEqual([]);
+  });
+
+  it('rolls back released nested work when the enclosing transaction fails', async () => {
+    const { database, connection } = await eventsConnection();
+    await expect(
+      connection.transaction(async (transaction) => {
+        await transaction.transaction((nested) => nested.run(INSERT_EVENT, 'released'));
+        throw new Error('outer failed');
+      }),
+    ).rejects.toThrow('outer failed');
+    await expect(labels(database)).resolves.toEqual([]);
+  });
+
+  it('nests several levels and runs sibling nested transactions one after another', async () => {
+    const { database, connection } = await eventsConnection();
+    await connection.transaction(async (transaction) => {
+      await transaction.transaction((first) => first.run(INSERT_EVENT, 'first sibling'));
+      await expect(
+        transaction.transaction(async (middle) => {
+          await middle.run(INSERT_EVENT, 'middle');
+          await middle.transaction((inner) => inner.run(INSERT_EVENT, 'innermost'));
+          throw new Error('middle failed');
+        }),
+      ).rejects.toThrow('middle failed');
+      await transaction.transaction(async (last) => {
+        await last.transaction((inner) => inner.run(INSERT_EVENT, 'last sibling'));
+      });
+    });
+    await expect(labels(database)).resolves.toEqual(['first sibling', 'last sibling']);
+  });
+
+  it('enforces foreign keys inside nested transactions', async () => {
+    const database = openDatabase();
+    const connection = new ExpoSqliteConnection(database);
+    await connection.exec(CREATE_FAMILY);
+    await connection.transaction(async (transaction) => {
+      await transaction.run('INSERT INTO parents (id) VALUES (?)', 'parent');
+      await expect(
+        transaction.transaction((nested) =>
+          nested.run('INSERT INTO children (id, parent_id) VALUES (?, ?)', 'orphan', 'none'),
+        ),
+      ).rejects.toThrow('FOREIGN KEY constraint failed');
+      await transaction.transaction((nested) =>
+        nested.run('INSERT INTO children (id, parent_id) VALUES (?, ?)', 'kid', 'parent'),
+      );
+    });
+    await expect(database.getAllAsync('SELECT id FROM children')).resolves.toEqual([{ id: 'kid' }]);
+  });
+
+  it('rejects work on an outer level while a nested transaction is open', async () => {
+    const { database, connection } = await eventsConnection();
+    await connection.transaction(async (transaction) => {
+      const entered = signal();
+      const release = signal();
+      const nested = transaction.transaction(async (inner) => {
+        await inner.run(INSERT_EVENT, 'inner');
+        entered.resolve();
+        await release.promise;
+      });
+      await entered.promise;
+      await expect(transaction.run(INSERT_EVENT, 'outer')).rejects.toThrow(TypeError);
+      await expect(transaction.transaction(() => undefined)).rejects.toThrow(
+        'A nested SQLite transaction is open. Use the nested transaction until it settles.',
+      );
+      release.resolve();
+      await nested;
+      await transaction.run(INSERT_EVENT, 'outer after');
+    });
+    await expect(labels(database)).resolves.toEqual(['inner', 'outer after']);
+  });
+
+  it('rejects statements on a nested transaction after it settles', async () => {
+    const { connection } = await eventsConnection();
+    await connection.transaction(async (transaction) => {
+      let leaked: SqliteTransaction | undefined;
+      await transaction.transaction((nested) => {
+        leaked = nested;
+      });
+      await expect(leaked?.run(INSERT_EVENT, 'late')).rejects.toMatchObject({
+        code: 'storage_closed',
+      });
+    });
+    await expect(connection.all('SELECT label FROM events')).resolves.toEqual([]);
+  });
+
+  it('does not wait on the file queue that another caller is queued on', async () => {
+    const { database, connection } = await eventsConnection();
+    let root: Promise<unknown> | undefined;
+    await connection.transaction(async (transaction) => {
+      root = connection.run(INSERT_EVENT, 'other caller');
+      await flush();
+      await transaction.transaction((nested) => nested.run(INSERT_EVENT, 'nested'));
+      await expect(labels(database)).resolves.toEqual(['nested']);
+    });
+    await root;
+    await expect(labels(database)).resolves.toEqual(['nested', 'other caller']);
+  });
+
+  it('lets a helper that opens its own transaction run at the root or inside another one', async () => {
+    const { database, connection } = await eventsConnection();
+    const record = (
+      target: Pick<SqliteTransaction, 'transaction'>,
+      label: string,
+    ): Promise<unknown> =>
+      target.transaction(async (transaction) => {
+        await transaction.run(INSERT_EVENT, label);
+        if (label.startsWith('invalid')) {
+          throw new Error(`rejected ${label}`);
+        }
+      });
+    await record(connection, 'root');
+    await connection.transaction(async (transaction) => {
+      await record(transaction, 'composed');
+      await expect(record(transaction, 'invalid composed')).rejects.toThrow('rejected');
+    });
+    await expect(labels(database)).resolves.toEqual(['root', 'composed']);
+  });
+});
+
 const HISTORY_TABLE = `CREATE TABLE IF NOT EXISTS migration_history (
   version INTEGER PRIMARY KEY NOT NULL,
   name TEXT NOT NULL
@@ -427,4 +593,62 @@ describe('createSqliteMigrationConformanceTests with a history runner on ExpoSql
   for (const testCase of createSqliteMigrationConformanceTests(connectionRunner)) {
     it(testCase.name, testCase.run);
   }
+});
+
+/**
+ * Applies every pending step inside one transaction, each in its own nested transaction. A failed
+ * step rolls back alone; the steps before it commit and the failure is rethrown.
+ */
+const savepointRunner: SqliteMigrationConformanceAdapter = {
+  migrate: async (database, steps) => {
+    const connection = new ExpoSqliteConnection(database);
+    await connection.exec(HISTORY_TABLE);
+    await assertNotNewer(connection, steps);
+    const rows = await connection.all<VersionRow>('SELECT version FROM migration_history');
+    const applied = new Set(rows.map((row) => row.version));
+    const pending = [...steps]
+      .sort((left, right) => left.version - right.version)
+      .filter((step) => !applied.has(step.version));
+    const failure = await connection.transaction(async (transaction) => {
+      for (const step of pending) {
+        try {
+          await transaction.transaction(async (nested) => {
+            await nested.exec(step.sql);
+            await nested.run(
+              'INSERT INTO migration_history (version, name) VALUES (?, ?)',
+              step.version,
+              step.name,
+            );
+          });
+        } catch (cause) {
+          return cause instanceof Error ? cause : new Error(String(cause));
+        }
+      }
+      return undefined;
+    });
+    if (failure !== undefined) {
+      throw failure;
+    }
+  },
+};
+
+describe('createSqliteMigrationConformanceTests with one savepoint per step on ExpoSqliteConnection', () => {
+  for (const testCase of createSqliteMigrationConformanceTests(savepointRunner)) {
+    it(testCase.name, testCase.run);
+  }
+
+  it('keeps the steps before a failed one', async () => {
+    const database = openDatabase();
+    const steps: SqliteMigrationStep[] = [
+      { version: 1, name: 'events', sql: CREATE_EVENTS },
+      { version: 2, name: 'broken', sql: 'CREATE TABLE partial (id TEXT); SELECT * FROM missing' },
+    ];
+    await expect(savepointRunner.migrate(database, steps)).rejects.toThrow('no such table');
+    await expect(
+      database.getAllAsync('SELECT version FROM migration_history ORDER BY version'),
+    ).resolves.toEqual([{ version: 1 }]);
+    await expect(
+      database.getAllAsync("SELECT name FROM sqlite_master WHERE name IN ('events', 'partial')"),
+    ).resolves.toEqual([{ name: 'events' }]);
+  });
 });

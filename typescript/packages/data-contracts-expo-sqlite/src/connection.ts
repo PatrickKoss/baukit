@@ -1,14 +1,29 @@
+import { StorageError } from '@baukit/data-contracts';
 import type { SQLiteBindParams, SQLiteRunResult, SQLiteVariadicBindParams } from 'expo-sqlite';
 
-import { type ExpoSqliteDatabase, QueuedDatabase, TransactionScope } from './queued-database.js';
+import { type ExpoSqliteDatabase, QueuedDatabase } from './queued-database.js';
 import type { SQLiteConnection, StatementScope } from './statements.js';
 
 type BindArguments = [SQLiteBindParams] | SQLiteVariadicBindParams;
 
 const ENFORCE_FOREIGN_KEYS = 'PRAGMA foreign_keys = ON';
-const BEGIN = 'BEGIN IMMEDIATE';
-const COMMIT = 'COMMIT';
-const ROLLBACK = 'ROLLBACK';
+const ROOT_DEPTH = 0;
+const SAVEPOINT_PREFIX = 'baukit_nested_';
+
+/** The statements that open, commit, and roll back one transaction level. */
+interface Boundary {
+  readonly begin: string;
+  readonly commit: string;
+  readonly rollback: string;
+}
+
+const ROOT_BOUNDARY: Boundary = {
+  begin: 'BEGIN IMMEDIATE',
+  commit: 'COMMIT',
+  rollback: 'ROLLBACK',
+};
+
+type TransactionWork<TResult> = (transaction: SqliteTransaction) => Promise<TResult> | TResult;
 
 /**
  * Raw SQL statements. Parameters bind as `expo-sqlite` binds them: variadic values, one array, or
@@ -26,10 +41,17 @@ export interface SqliteStatements {
   all<TRow>(source: string, ...params: SQLiteVariadicBindParams): Promise<TRow[]>;
 }
 
-/** Statements inside one open transaction. They reject once the transaction has settled. */
+/**
+ * Statements inside one open transaction. They reject with `storage_closed` once the transaction
+ * has settled, and with a `TypeError` while a nested transaction started from it is open.
+ */
 export interface SqliteTransaction extends SqliteStatements {
-  /** Always rejects: a transaction never joins or nests another one. */
-  transaction(work: (transaction: SqliteTransaction) => unknown): Promise<never>;
+  /**
+   * Runs `work` in a savepoint inside this transaction, without waiting on the file queue. The
+   * savepoint is released when `work` resolves and rolled back when it rejects; the rejection
+   * then reaches the caller, and the enclosing transaction commits only if the caller catches it.
+   */
+  transaction<TResult>(work: TransactionWork<TResult>): Promise<TResult>;
 }
 
 export interface ExpoSqliteConnectionOptions {
@@ -72,13 +94,55 @@ class ScopedStatements implements SqliteStatements {
   }
 }
 
+/** One open transaction or savepoint. Only the innermost open level accepts work. */
+class TransactionLevel implements StatementScope {
+  private active = true;
+  private nestedOpen = false;
+
+  public constructor(
+    private readonly connection: SQLiteConnection,
+    private readonly depth: number,
+  ) {}
+
+  public assertAvailable(): void {
+    if (!this.active) {
+      throw new StorageError('storage_closed', 'The transaction context is no longer active.');
+    }
+    if (this.nestedOpen) {
+      throw new TypeError(
+        'A nested SQLite transaction is open. Use the nested transaction until it settles.',
+      );
+    }
+  }
+
+  public run<TResult>(
+    statement: (connection: SQLiteConnection) => Promise<TResult>,
+  ): Promise<TResult> {
+    return statement(this.connection);
+  }
+
+  public async nest<TResult>(work: TransactionWork<TResult>): Promise<TResult> {
+    this.assertAvailable();
+    this.nestedOpen = true;
+    try {
+      return await runLevel(this.connection, this.depth + 1, work);
+    } finally {
+      this.nestedOpen = false;
+    }
+  }
+
+  public finish(): void {
+    this.active = false;
+  }
+}
+
 class ConnectionTransaction extends ScopedStatements implements SqliteTransaction {
-  public transaction(): Promise<never> {
-    return Promise.reject(
-      new TypeError(
-        'A SQLite transaction cannot start another transaction. Run the statements on the current transaction instead.',
-      ),
-    );
+  public constructor(private readonly level: TransactionLevel) {
+    super(level);
+  }
+
+  public transaction<TResult>(work: TransactionWork<TResult>): Promise<TResult> {
+    return this.level.nest(work);
   }
 }
 
@@ -128,14 +192,13 @@ export class ExpoSqliteConnection extends ScopedStatements {
 
   /**
    * Runs `work` in one transaction that commits when it resolves and rolls back when it rejects.
-   * Use only the transaction it receives: a root call on this file from inside `work` waits for
-   * the transaction, which waits for `work`, and neither finishes.
+   * Use only the transaction it receives, and nest through its `transaction()`: a root call on
+   * this file from inside `work` waits for the transaction, which waits for `work`, and neither
+   * finishes.
    */
-  public async transaction<TResult>(
-    work: (transaction: SqliteTransaction) => Promise<TResult> | TResult,
-  ): Promise<TResult> {
+  public async transaction<TResult>(work: TransactionWork<TResult>): Promise<TResult> {
     this.root.assertAvailable();
-    return this.root.run((connection) => runTransaction(connection, work));
+    return this.root.run((connection) => runLevel(connection, ROOT_DEPTH, work));
   }
 
   /** Rejects new work, waits for accepted work, and settles every caller with one result. */
@@ -144,28 +207,42 @@ export class ExpoSqliteConnection extends ScopedStatements {
   }
 }
 
-async function runTransaction<TResult>(
+function boundaryAt(depth: number): Boundary {
+  if (depth === ROOT_DEPTH) {
+    return ROOT_BOUNDARY;
+  }
+  const name = `${SAVEPOINT_PREFIX}${String(depth)}`;
+  return {
+    begin: `SAVEPOINT ${name}`,
+    commit: `RELEASE ${name}`,
+    rollback: `ROLLBACK TO ${name}; RELEASE ${name}`,
+  };
+}
+
+async function runLevel<TResult>(
   connection: SQLiteConnection,
-  work: (transaction: SqliteTransaction) => Promise<TResult> | TResult,
+  depth: number,
+  work: TransactionWork<TResult>,
 ): Promise<TResult> {
-  await connection.execAsync(BEGIN);
-  const scope = new TransactionScope(connection);
+  const boundary = boundaryAt(depth);
+  await connection.execAsync(boundary.begin);
+  const level = new TransactionLevel(connection, depth);
   try {
-    const result = await work(new ConnectionTransaction(scope));
-    await connection.execAsync(COMMIT);
+    const result = await work(new ConnectionTransaction(level));
+    await connection.execAsync(boundary.commit);
     return result;
   } catch (cause) {
-    await rollback(connection);
+    await rollback(connection, boundary);
     throw cause;
   } finally {
-    scope.finish();
+    level.finish();
   }
 }
 
 /** Keeps the original failure when SQLite has already rolled the transaction back. */
-async function rollback(connection: SQLiteConnection): Promise<void> {
+async function rollback(connection: SQLiteConnection, boundary: Boundary): Promise<void> {
   try {
-    await connection.execAsync(ROLLBACK);
+    await connection.execAsync(boundary.rollback);
   } catch {
     return;
   }

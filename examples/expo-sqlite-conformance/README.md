@@ -10,11 +10,12 @@ Three cases issue root record, key/value, and schema-metadata calls against an
 exclusive transaction in both arrival orders, including two stores that share
 one database handle. Without the adapter's per-file operation queue they fail
 with `database is locked` or read uncommitted state.
-Four cases run `ExpoSqliteConnection` on the same handle: a root write issued
+Five cases run `ExpoSqliteConnection` on the same handle: a root write issued
 during another caller's transaction stays out of it, foreign keys and
 `ON DELETE CASCADE` hold inside a transaction, a failed step rolls back its
-schema changes, a nested transaction is refused, and the connection and an
-`ExpoSqliteStore` on one file wait for each other in both arrival orders.
+schema changes, nested transactions run as savepoints without waiting on the
+file queue, and the connection and an `ExpoSqliteStore` on one file wait for
+each other in both arrival orders.
 The native runner also opens distinct SHA-256-derived database files for an
 offline E→F→E switch and proves record/outbox isolation, close-before-open,
 memory reset, one-time legacy claiming, corrupt-registry blocking, terminal
