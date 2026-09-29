@@ -211,3 +211,87 @@ change.
 - `pnpm pack` of `@baukit/data-contracts`, extracted into an empty Node 24 project, imported
   `/revisioned-writes` and `/durable-draft`, ran one write and one draft save, and confirmed the
   root does not export either helper.
+
+## Follow-up 0.5.1 (2026-09-29)
+
+### Product evidence
+
+Leitbild `5c11d34` could not move `web/src/journal-drafts.ts` (402 lines) onto
+`createDurableDraft`. The file keeps journal drafts in `sessionStorage` and needs five things the
+0.5.0 helper did not give it:
+
+- A "new entry" draft that follows the entry once the server creates it. `resolveNewEntry` at
+  `:252-278` writes the draft under the entry key, leaves a `resolved-new-entry` record under the
+  new-entry key, and tells subscribers through `subscribeNewEntryResolved` at `:286`.
+- One lease shared by every editor of a subject. `leaseIsActive` at `:89` compares a generation
+  counter that `selectSubject` and `clearSelectedSubject` bump at `:201` and `:280`, and every write
+  checks it.
+- Clearing every draft of the signed-out subject. `clearSelectedSubject` at `:198-221` walks
+  `sessionStorage` by key prefix. `local-data.ts:49` calls it on sign-out.
+- Synchronous reads. `pages/JournalEditorPages.tsx:66-67` and `:145-148` read the draft in `useState`
+  initializers.
+- An in-memory copy when `sessionStorage` throws, `volatileDrafts` at `:87`.
+
+Baukit also had no `KeyValueStore` over Web Storage, so the product would have had to write one.
+
+### Decisions
+
+- Prefix clear belongs in Baukit as `KeyValueStore.clearPrefix(prefix)`. Every adapter can do it in
+  one storage call (a Dexie key range, one SQLite `DELETE`), and a product cannot do it at all
+  through the old port without listing keys. Matching is exact by UTF-16 code unit; SQL `LIKE`
+  wildcards, case, emoji, and U+FFFF are in `describeKeyValueContract`. The SQLite adapter compares
+  UTF-8 bytes with `CAST(key AS BLOB)`, which gives the same answer for well-formed keys.
+- Web Storage belongs in Baukit as `WebStorageKeyValueStore(storage, namespace)`. It needs no
+  dependency, so the package keeps its "no database adapters" rule for everything else. The
+  namespace is required so `clear()` cannot wipe the rest of the origin.
+- Moving a draft between scopes belongs in Baukit as `DurableDraft.move(scope)`. It writes the value
+  under the new key before it deletes the old one, so a failure leaves a readable copy and the draft
+  stays on the old scope for a retry. It runs in the same queue as `save` and `clear`, so a save
+  queued behind it writes to the new key.
+- The shared lease belongs in Baukit only as a fence, the `isScopeActive(scope)` option. The helper
+  calls it when queued write or delete work starts and resolves `stale` without touching storage
+  when it returns false. The lease itself, its generation counter, and which subject is selected
+  stay in the product, because they depend on how the product signs in and out.
+- The `resolved-new-entry` pointer and its subscribers stay in the product. The pointer exists so a
+  second editor still on the new-entry route can find the created entry, which is routing, not draft
+  storage. The product writes it as its own key in the same store after `move` resolves.
+- Synchronous reads are rejected. `KeyValueStore` is asynchronous because IndexedDB and SQLite are,
+  and a synchronous path for one adapter would split the port. The product renders its loading state
+  while `persistence` is `loading`. Over Web Storage that lasts one microtask.
+- `volatileDrafts` needs no replacement. The snapshot already keeps the value in memory when a write
+  fails and reports `persistence: 'failed'`.
+- The server save queue (`queueJournalSave`) and the `beforeunload` guard
+  (`guardPendingJournalCreate`) stay in the product. The first is covered by the revisioned write
+  queue from 0.5.0; the second is page policy.
+
+### Breaks
+
+- `KeyValueStore` gains the required method `clearPrefix`. Every Baukit adapter implements it. A
+  product's own implementation must add it; Redemut's form-draft stores are the known case.
+- `DurableDraft` gains the required method `move`. Only code that implements the interface itself
+  breaks; callers of `createDurableDraft` do not.
+
+### Product adoption change
+
+- Leitbild: delete `web/src/journal-drafts.ts`. Create one durable draft per editor over
+  `new WebStorageKeyValueStore(sessionStorage, 'leitbild:journal-draft:v1:')` with keys
+  `<subject>:<route>` and `isScopeActive` reading the product's lease generation. After the server
+  creates an entry, call `clear({ reason: 'submitted', localRevision })` and then
+  `move(entryScope)`, and write the pointer key for other editors. Replace `clearSelectedSubject`
+  with `clearPrefix('<subject>:')` in `local-data.ts:49`. Change the `useState` initializers in
+  `pages/JournalEditorPages.tsx` to render from the draft snapshot. `write-intent.ts` can use the
+  same adapter with another namespace.
+- Redemut: add `clearPrefix` to `FormDraftStore` in `packages/data/src/form-draft-store.ts` and
+  `DexieFormDraftStore` in `packages/data/src/dexie/form-draft-store.ts`. Both implement
+  `KeyValueStore` and stop compiling until they do.
+- Tiefgang and Eigenruhe: no change.
+
+### Gates
+
+- `corepack pnpm --dir typescript` `build`, `format:check`, `lint`, `test`, and `check` passed.
+  data-contracts ran 280 tests, data-contracts-dexie 27, and data-contracts-expo-sqlite 121,
+  including the `node:sqlite` prefix cases.
+- `make ts-browser-test` passed, 36 tests in Chromium, now including the key-value contract over
+  real IndexedDB.
+- `make expo-sqlite-conformance` passed on the Android emulator, 32 cases including the two new
+  prefix cases.

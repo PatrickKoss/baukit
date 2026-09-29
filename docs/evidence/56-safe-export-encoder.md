@@ -192,3 +192,58 @@ root next to its own `encodeCsv` or `ShareOutcome`.
 
 The plan's acceptance says two products delete their encoders. That happens in the adoption pass,
 not in this Baukit change.
+
+## Follow-up 0.5.1 (2026-09-29)
+
+### Product evidence
+
+Hebkit `797fdff7`, `mobile/src/integrations/files/csv.ts`, could not adopt `encodeCsv`. Its format
+writes a null cell as an unquoted `\N` (`NULL` at `:22`) and quotes a literal `\N` text cell so the
+reader can tell the two apart (`quoteCell` at `:73-78`). `parseRows` at `:84` reads an unquoted
+`\N` as null and a quoted `"\N"` as text. `encodeCsv` wrote null and `''` the same way and had no
+way to quote a cell that did not need it, so a Hebkit export read back through its own importer
+turned every empty string into null or the reverse.
+
+### Decision
+
+Both options belong in Baukit because the fix is in the quoting rules, which products must not
+reimplement next to the encoder.
+
+- `nullMarker` writes null cells as an unquoted marker and quotes any text cell equal to the marker.
+  This is the PostgreSQL `COPY ... CSV` convention. With formula neutralization on, a text cell that
+  becomes the marker after the apostrophe is added is quoted too. A marker that is empty or contains
+  a comma, quote, CR, or LF is rejected with `RangeError` in TypeScript and a panic in Rust, because
+  it could not be told apart from data. The Rust builder is a `const fn`, so a bad marker in a
+  `const` item fails the build.
+- `quoteAllCells` quotes every text and number cell, matching Python's `QUOTE_ALL`. A null cell
+  stays unquoted so a marker keeps its meaning.
+- A record whose only cell encodes to nothing is still written as `""`, so a row is never a blank
+  line that readers skip. With a marker set, a one-cell null row is written as the marker instead,
+  so it no longer collides with a one-cell empty string.
+
+Hebkit's quoting of cells that start with `#` stays in the product. It guards Hebkit's own metadata
+line, not a CSV rule, and `quoteAllCells` covers it anyway.
+
+Rust `baukit_core::export::CsvOptions` gains `with_all_cells_quoted()` and
+`with_null_marker(marker)` with the same rules. Five new cases in
+`fixtures/export-csv/csv-encoding-v1.json` pin both encoders to the same bytes.
+
+### Breaks
+
+None. The defaults are unchanged, and the new fields are optional.
+
+### Product adoption change
+
+- Hebkit: replace `quoteCell` and `writeRows` in `mobile/src/integrations/files/csv.ts:73-82` with
+  `encodeCsv(rows, { nullMarker: '\\N', quoteAllCells: true, neutralizeFormulas: false })`, passing
+  null for null cells. Keep `parseRows`. If the file should stay safe to open in a spreadsheet,
+  keep neutralization on and strip the leading apostrophe in `parseRows` instead.
+- Tiefgang and Eigenruhe: unchanged from the list above; they need neither option.
+
+### Gates
+
+- `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D
+  warnings`, and `cargo test -p baukit-core --all-features -- --include-ignored` passed in `rust/`.
+- `cargo +1.95 check -p baukit-core --all-targets --all-features` passed.
+- `corepack pnpm --dir typescript` `build`, `format:check`, `lint`, `test`, and `check` passed.
+  The data-contracts suite ran 280 tests.
