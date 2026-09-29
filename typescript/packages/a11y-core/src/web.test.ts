@@ -28,6 +28,8 @@ describe('the web entry point', () => {
       'useAriaHiddenInert',
       'useFocusTrap',
       'useInert',
+      'useReducedMotion',
+      'useReducedMotionPreference',
       'useRovingMenu',
       'useSingleFlight',
       'wrapFocusAtBoundary',

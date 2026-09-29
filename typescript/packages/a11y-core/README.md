@@ -11,8 +11,8 @@ product's Expo SDK decides the versions, and React Native is optional.
 
 A React Native product imports the package root and gets everything. A plain React web app imports
 `@baukit/a11y-core/web` and gets `useFocusTrap`, `useInert`, `useAriaHiddenInert`,
-`useRovingMenu`, `nextEnabledMenuIndex`, `useSingleFlight`, `createRouteFocusController`, and the
-`dom-boundary` helpers. Nothing reachable
+`useReducedMotion`, `useReducedMotionPreference`, `useRovingMenu`, `nextEnabledMenuIndex`,
+`useSingleFlight`, `createRouteFocusController`, and the `dom-boundary` helpers. Nothing reachable
 from that entry imports `react-native`, at runtime or in its types, so the app needs no React
 Native in its dependency tree. `react-native` is an optional peer dependency for exactly that
 reason.
@@ -179,6 +179,12 @@ on both platforms. Web resolves during the first render. The native query is asy
 `resolved` starts as `false` and becomes `true` whether the query succeeds or fails. Do not start
 non-essential motion until it is `true`. `useReducedMotion` remains the boolean form for existing
 callers.
+
+The web entry exports both hooks with the same names and return shapes, built on `matchMedia` and
+`useSyncExternalStore` alone. They read the media query during the first client render and follow
+its `change` events. During server rendering and the hydration render they report
+`{ reducedMotion: false, resolved: false }`, then resolve on the client. A host without
+`matchMedia` reports no preference, resolved.
 
 `useRovingRadioGroup` gives a radio group a single tab stop and arrow-key movement between its
 options, wrapping at both ends and honoring Home and End. `radioProps(index)` returns the

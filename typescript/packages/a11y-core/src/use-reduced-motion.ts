@@ -1,32 +1,23 @@
 import { useEffect, useState } from 'react';
 import { AccessibilityInfo, Platform } from 'react-native';
 
-const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
+import { reducedMotionQuery, type ReducedMotionPreference } from './use-reduced-motion-web.js';
 
-export interface ReducedMotionPreference {
-  reducedMotion: boolean;
-  resolved: boolean;
-}
-
-function mediaQuery(): MediaQueryList | null {
-  return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-    ? window.matchMedia(REDUCED_MOTION_QUERY)
-    : null;
-}
+export type { ReducedMotionPreference };
 
 /** Tracks when the reduced-motion preference is ready and follows later changes. */
 export function useReducedMotionPreference(): ReducedMotionPreference {
   const [preference, setPreference] = useState<ReducedMotionPreference>(() => {
     const web = Platform.OS === 'web';
     return {
-      reducedMotion: web && (mediaQuery()?.matches ?? false),
+      reducedMotion: web && (reducedMotionQuery()?.matches ?? false),
       resolved: web,
     };
   });
 
   useEffect(() => {
     if (Platform.OS === 'web') {
-      const query = mediaQuery();
+      const query = reducedMotionQuery();
       if (!query) return;
       const onChange = (event: MediaQueryListEvent) => {
         setPreference({ reducedMotion: event.matches, resolved: true });

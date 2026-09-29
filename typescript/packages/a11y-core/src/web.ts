@@ -9,5 +9,10 @@ export * from './dom-boundary.js';
 export * from './route-focus.js';
 export * from './use-focus-trap.js';
 export * from './use-inert.js';
+export {
+  useReducedMotion,
+  useReducedMotionPreference,
+  type ReducedMotionPreference,
+} from './use-reduced-motion-web.js';
 export * from './use-roving-menu.js';
 export * from './use-single-flight.js';
