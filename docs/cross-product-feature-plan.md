@@ -98,7 +98,7 @@ Adoption of 0.5.0, one branch `baukit-0.5.0` per product, merged into the produc
 Adoption of 0.5.1, one branch `baukit-0.5.1` per product, closing the steps 0.5.0 left open and following the `0.5.1 P*` lines:
 
 - [ ] Leitbild
-- [ ] Hebkit
+- [x] Hebkit
 - [ ] Redemut
 
 - Item 1, Eigenruhe: after its native regression passes on the release, delete `mobile/src/db/serialized-store.ts` and `serialized-store.test.ts`, return the `ExpoSqliteStore` directly in `mobile/src/local-data.ts`, and remove or rewrite the wrapper case "finishes an accepted settings mutation before a serialized store closes" in `mobile/src/db/contract-tests/persistence.test.ts`. Close `docs/tickets/baukit-sqlite-operation-serialization.md`. Keep `SerializedRecordStoreResource` in `mobile/src/record-store.ts`. Leitbild and Redemut: version bump only; no product code calls the removed per-store `initialize()`.
@@ -193,6 +193,7 @@ Adoption of 0.5.1, one branch `baukit-0.5.1` per product, closing the steps 0.5.
 - 2026-09-29: P2 merged. `@baukit/api-runtime`: interface-typed mutation bodies via `JsonCompatible`, a product `classifyError` on the key store, `classifyMutationStatus(status, code)`, shared keys for overlapping `keyFor` calls, and `fullJitterBackoffMs` on the new `/backoff` subpath. `@baukit/a11y-core/web` exports `useReducedMotion` without React Native. `SyncScheduler` takes an optional `retry` with an injected delay. Breaks: hand-written key stores need `classifyError` and generic `keyFor`/`settle`. Workspace gates pass.
 - 2026-09-29: P1 merged. `encodeCsv` and Rust `CsvOptions` gain force-quoting and a null marker, pinned by five new shared vectors. `KeyValueStore.clearPrefix` in the in-memory, Dexie, and Expo SQLite stores; a `WebStorageKeyValueStore`; `DurableDraft.move` and `isScopeActive`. Breaks: `KeyValueStore` implementations need `clearPrefix`, and `DurableDraft` implementations need `move`. Synchronous reads stay out, since the store is async. Workspace gates, `ts-browser-test`, and the Android conformance run pass.
 - 2026-09-29: Integrated gate on `main` after P1 to P4 passed (711 Rust tests with Docker, seven fixture flavors, browser Dexie 36, Expo SQLite on Android 33 cases, notifications and Android compile gates). v0.5.1 cut; npm and crates.io publishing is run by the tag workflow or by hand.
+- 2026-09-29: Hebkit adopted 0.5.1 (`2c1c52b8..ce780c42`, merged into its `main`): nested SQLite transactions as savepoints (item 15), `encodeCsv` with a null marker and quoted cells so the importer reads its export back (item 20), claim purge through `DeliveryClaimStore` (item 17), and Keycloak users through `@baukit/auth-node/keycloak-testing` (item 19). Orchestrator gate passed except expo-doctor patch mismatches, which failed before; the agent's web e2e (413) and Maestro runs showed only the known 'Create a default plan' failure. Gap: `allowKeycloakWebOrigin` does not set `post.logout.redirect.uris`, so Hebkit keeps its client patch in `web/e2e/global-setup.ts`.
 
 ## What changed in this revision
 
