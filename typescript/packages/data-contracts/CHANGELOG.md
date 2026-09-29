@@ -1,5 +1,26 @@
 # @baukit/data-contracts
 
+## 0.5.1
+
+### Patch Changes
+
+- 06cc669: Add two `encodeCsv` options that keep a null cell apart from empty text. `quoteAllCells: true` quotes every text and numeric cell and leaves null cells unquoted. `nullMarker` writes a marker such as `\N` unquoted for a null cell and quotes a text cell with the same content; an empty marker or one holding a double quote, comma, CR, or LF throws a `RangeError`. `baukit_core::export::CsvOptions` gains `with_all_cells_quoted` and `with_null_marker`, and both pass five new shared vectors.
+
+  Default output is unchanged. No breaking changes.
+
+- d423b98: Add `DurableDraft.move(scope)`, which hands an open draft to another scope, for example from a "new" draft to the record the server created. It writes a dirty or stored value under the new key, deletes the old key, keeps the value, revision, and submission state, and sends later saves to the new key. It resolves `moved`, `blocked`, or `stale` and rejects with `DraftPersistenceError` on a storage failure, leaving the draft on the old scope.
+
+  Add the `isScopeActive` option to `createDurableDraft`. The helper calls it before every write or delete; when it returns false, `save`, `clear`, and `move` resolve `stale` without touching storage. Reads are not checked.
+
+  Breaking: the `DurableDraft` interface gains the required `move` method, so a product's own implementation of that interface must add it. Code that only calls `createDurableDraft` is unaffected.
+
+- e26045b: Add `KeyValueStore.clearPrefix(prefix)`, which deletes every key that starts with `prefix`. Matching is exact and case-sensitive, no character is a wildcard, and an empty prefix clears the store. `InMemoryKeyValueStore`, `DexieKeyValueStore` (one IndexedDB key range), and the Expo SQLite key-value store (a UTF-8 byte prefix match inside the store's namespace) implement it, and `describeKeyValueContract` checks it, including SQL `LIKE` wildcards, case, emoji, and U+FFFF. The Dexie real-browser suite now runs the key-value contract too.
+
+  Breaking: `KeyValueStore` gains a required method, so a product's own `KeyValueStore` implementation must add `clearPrefix`.
+
+- Release the coordinated baukit 0.5.1 train.
+- 403805a: Add `WebStorageKeyValueStore`, a `KeyValueStore` over `sessionStorage` or `localStorage`. It keeps every key under a required non-empty namespace, stores JSON text, rejects instead of throwing on storage failures, and maps a full storage to `StorageError` `storage_quota_exceeded`. It passes `describeKeyValueContract`. No breaking changes.
+
 ## 0.5.0
 
 ### Minor Changes

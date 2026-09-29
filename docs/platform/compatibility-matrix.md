@@ -5,18 +5,19 @@
 
 This table records what the shared baseline is **tested against**. Renovate keeps individual products moving; baukit guarantees compatibility only with the versions listed here. Version cells reflect the review-time state of the three projects and must be re-verified against the lockfiles when the baukit repository is created.
 
-Last verified release train: `v0.5.0` (the cross-product feature plan and its
-follow-up wave: `baukit-egress`, the push device registry with deferred receipt
-polling, API token grants, signed media grants, replay-safe mutations, ETag
-preconditions, purge horizons, camelCase wire names, `@baukit/notifications-core`
-and `@baukit/notifications-expo`, zoned local times, and the queued Expo SQLite
-connection; backend, web, mobile, combined, MCP, authenticated, and worker
-generated fixtures with coverage floors, native Android compile, real Expo
-SQLite conformance with 30 cases, Hermes vectors and local notifications on an
-Android emulator, browser Dexie conformance, Docker-backed integration tests
-with 707 passing, the MSRV check, and the complete local CI-equivalent gates
-were verified). The iOS simulator gate requires macOS and remains a release-host
-check rather than a Linux result.
+Last verified release train: `v0.5.1` (the fixes for gaps found while
+Leitbild, Hebkit, and Redemut adopted 0.5.0: CSV null markers and force-quoting,
+`KeyValueStore.clearPrefix`, the Web Storage key-value store, durable draft
+moves, nested Expo SQLite savepoints, product error classifiers and shared keys
+for idempotent mutations, public full-jitter backoff, web reduced motion,
+`SyncScheduler` retry, delivery claim purge, and the Keycloak test helpers in
+`@baukit/auth-node`; backend, web, mobile, combined, MCP, authenticated, and
+worker generated fixtures with coverage floors, native Android compile, real
+Expo SQLite conformance with 33 cases, Hermes vectors and local notifications
+on an Android emulator, browser Dexie conformance with 36 tests, Docker-backed
+integration tests with 711 passing, the MSRV check, and the complete local
+CI-equivalent gates were verified). The iOS simulator gate requires macOS and
+remains a release-host check rather than a Linux result.
 
 ## Toolchain
 
@@ -46,14 +47,14 @@ check rather than a Linux result.
 | Auth | ring + JWKS | latest | Keycloak OIDC default; Clerk session-token adapter with `azp` validation; WorkOS AuthKit adapter bound to `client_id`. `ApiTokenStore` returns `ApiTokenStoreError` since 0.3.0. |
 | Development identity provider | Keycloak | 26.7.0 | Generated `compose.yaml` image; `make dev` reconciles the development realm from `realm-policy.json`. |
 | Integration tests | testcontainers | latest | `baukit-test` pins `postgres:18-alpine`; templates and smoke deploys use the same image |
-| Sync revisions | `baukit-sync` | 0.5.0 | Per-owner revision allocation, locking revision reads, tombstone purge horizons with a pull-cursor guard, the syncable-table column convention, and a `user_id` to `owner_id` migration. SQLx 0.9 and PostgreSQL behind the `sqlx-postgres` feature; the hybrid logical clock needs neither. |
-| Provider connectors | `baukit-integrations` | 0.5.0 | Contract-only connector port, cursor-paged pages, and `baukit-http` retry classes; no SQLx, no HTTP client. |
+| Sync revisions | `baukit-sync` | 0.5.1 | Per-owner revision allocation, locking revision reads, tombstone purge horizons with a pull-cursor guard, the syncable-table column convention, and a `user_id` to `owner_id` migration. SQLx 0.9 and PostgreSQL behind the `sqlx-postgres` feature; the hybrid logical clock needs neither. |
+| Provider connectors | `baukit-integrations` | 0.5.1 | Contract-only connector port, cursor-paged pages, and `baukit-http` retry classes; no SQLx, no HTTP client. |
 
 ## Cross-runtime contracts
 
 | Responsibility | Rust and TypeScript packages | Tested baseline | Notes |
 |---|---|---|---|
-| Suite event envelope | `baukit-events` and `@baukit/events` | 0.5.0 | Version 1 envelope, stable validation codes, seven-day replay boundary, and one fixture corpus exercised in both languages. |
+| Suite event envelope | `baukit-events` and `@baukit/events` | 0.5.1 | Version 1 envelope, stable validation codes, seven-day replay boundary, and one fixture corpus exercised in both languages. |
 
 ## Frontend (TypeScript)
 
@@ -64,15 +65,15 @@ check rather than a Linux result.
 | Remote state | TanStack Query | 5 | |
 | Web routing | TanStack Router | current v1 | re-verify TanStack Start status separately |
 | Local state | Zustand | 5 | |
-| Accessibility behavior | `@baukit/a11y-core` | 0.5.0 | Overlay focus, inert, announcements, reduced motion. React peer range is `^19.2.0`; React Native is optional, and a plain web app imports `@baukit/a11y-core/web` instead. |
-| Localization behavior | `@baukit/localization-core` | 0.5.0 | Locale resolution, catalog key comparison, stable-code localization, timezone-safe civil-date arithmetic, and local-time resolution with required gap and fold policies. |
-| Local notification planning | `@baukit/notifications-core` | 0.5.0 | Zoned occurrence resolution through `resolveZonedLocalTime`, horizon filtering, deterministic keep, cancel, and schedule sets, and owner-scoped replacement over a platform port. No dependencies besides `@baukit/localization-core`. |
-| Local notification delivery | `@baukit/notifications-expo` / `expo-notifications` | 0.5.0 / 57.0.13 | Optional adapter. Imports only types from `expo-notifications`; the product passes the module in. DATE triggers, per-item results, no cancel-all. |
-| Preference behavior | `@baukit/preferences-core` | 0.5.0 | Identity guard and repository store, with `null` repository records treated as missing. |
-| Node device authentication | `@baukit/auth-node` | 0.5.0 | Node 24 OIDC device authorization with S256 PKCE, bounded responses and timeouts, refresh rotation, and a locked local profile cache. Plain HTTP requires an explicit loopback-only development policy. |
-| Provider registry | `@baukit/integrations-client` | 0.5.0 | Typed product connectors, stable registration order, and immutable connection-state overlays. |
-| Client sync primitives | `@baukit/sync-client` | 0.5.0 | Scheduler, request-function and HTTP transports, status store, push-batch ranking, a persisted hybrid logical clock, and tombstone-horizon conformance. The optional `@baukit/sync-client/expo` entry uses Expo Network 57.0.1 and React Native 0.86.2; the root entry has no runtime dependencies and no React. |
-| PWA cache strategy | `@baukit/pwa-web` | 0.5.0 | ESM and CJS builds, request classification, `navigationFallback`, and strategy execution for a product-owned service worker; no dependencies and no service-worker globals. |
+| Accessibility behavior | `@baukit/a11y-core` | 0.5.1 | Overlay focus, inert, announcements, reduced motion (also on the `/web` entry). React peer range is `^19.2.0`; React Native is optional, and a plain web app imports `@baukit/a11y-core/web` instead. |
+| Localization behavior | `@baukit/localization-core` | 0.5.1 | Locale resolution, catalog key comparison, stable-code localization, timezone-safe civil-date arithmetic, and local-time resolution with required gap and fold policies. |
+| Local notification planning | `@baukit/notifications-core` | 0.5.1 | Zoned occurrence resolution through `resolveZonedLocalTime`, horizon filtering, deterministic keep, cancel, and schedule sets, and owner-scoped replacement over a platform port. No dependencies besides `@baukit/localization-core`. |
+| Local notification delivery | `@baukit/notifications-expo` / `expo-notifications` | 0.5.1 / 57.0.13 | Optional adapter. Imports only types from `expo-notifications`; the product passes the module in. DATE triggers, per-item results, no cancel-all. |
+| Preference behavior | `@baukit/preferences-core` | 0.5.1 | Identity guard and repository store, with `null` repository records treated as missing. |
+| Node device authentication | `@baukit/auth-node` | 0.5.1 | Node 24 OIDC device authorization with S256 PKCE, bounded responses and timeouts, refresh rotation, and a locked local profile cache. Plain HTTP requires an explicit loopback-only development policy. The `/keycloak-testing` entry holds Keycloak e2e helpers. |
+| Provider registry | `@baukit/integrations-client` | 0.5.1 | Typed product connectors, stable registration order, and immutable connection-state overlays. |
+| Client sync primitives | `@baukit/sync-client` | 0.5.1 | Scheduler with optional retry, request-function and HTTP transports, status store, push-batch ranking, a persisted hybrid logical clock, and tombstone-horizon conformance. The optional `@baukit/sync-client/expo` entry uses Expo Network 57.0.1 and React Native 0.86.2; the root entry has no runtime dependencies and no React. |
+| PWA cache strategy | `@baukit/pwa-web` | 0.5.1 | ESM and CJS builds, request classification, `navigationFallback`, and strategy execution for a product-owned service worker; no dependencies and no service-worker globals. |
 | MCP server | `@modelcontextprotocol/sdk` + zod | 1.30.0 + 4.4.3 | Opt-in `--mcp` generated stdio package; bearer tokens from `@baukit/auth-node` or a caller-supplied provider. |
 | Web build | Vite | 8.2.1 | |
 | Styling | Tailwind CSS | 4 | |

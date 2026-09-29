@@ -1,5 +1,25 @@
 # @baukit/data-contracts-expo-sqlite
 
+## 0.5.1
+
+### Patch Changes
+
+- 89a2d0a: `SqliteTransaction.transaction(work)` now nests instead of rejecting. It runs `work` in a `SAVEPOINT` on the same handle without waiting on the per-file queue, releases it when `work` resolves, and rolls back to it when `work` rejects, so only the nested statements and schema changes are undone and the same error reaches the caller. The enclosing transaction rolls back too unless the caller catches that error. While a nested transaction is open, statements and `transaction()` on an enclosing context reject with a `TypeError`.
+
+  Break: `SqliteTransaction.transaction` changes from `(work) => Promise<never>` to `<TResult>(work: (transaction: SqliteTransaction) => Promise<TResult> | TResult) => Promise<TResult>`. Code that relied on a nested call rejecting, or that typed its forwarding method as returning `Promise<never>`, must change.
+
+- e26045b: Add `KeyValueStore.clearPrefix(prefix)`, which deletes every key that starts with `prefix`. Matching is exact and case-sensitive, no character is a wildcard, and an empty prefix clears the store. `InMemoryKeyValueStore`, `DexieKeyValueStore` (one IndexedDB key range), and the Expo SQLite key-value store (a UTF-8 byte prefix match inside the store's namespace) implement it, and `describeKeyValueContract` checks it, including SQL `LIKE` wildcards, case, emoji, and U+FFFF. The Dexie real-browser suite now runs the key-value contract too.
+
+  Breaking: `KeyValueStore` gains a required method, so a product's own `KeyValueStore` implementation must add `clearPrefix`.
+
+- Release the coordinated baukit 0.5.1 train.
+- Updated dependencies [06cc669]
+- Updated dependencies [d423b98]
+- Updated dependencies [e26045b]
+- Updated dependencies
+- Updated dependencies [403805a]
+  - @baukit/data-contracts@0.5.1
+
 ## 0.5.0
 
 ### Minor Changes

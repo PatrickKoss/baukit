@@ -4,6 +4,8 @@ All notable changes to `baukit-egress` are documented here.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-29
+
 ## [0.5.0] - 2026-09-28
 
 ### Added

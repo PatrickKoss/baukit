@@ -78,7 +78,7 @@ Leitbild, Hebkit, and Redemut kept product code where Baukit 0.5.0 fell short. T
 - [x] P2. Pluggable mutation error classification, interface-typed mutation bodies, and in-flight key dedupe (item 7); web `useReducedMotion` (item 13); `SyncScheduler` retry with backoff
 - [x] P3. Nested `ExpoSqliteConnection.transaction()` (item 15)
 - [x] P4. `DeliveryClaimStore` purge (item 17); Keycloak e2e helpers in a package (item 19)
-- [ ] Integrated gate on `main` and v0.5.1 release
+- [x] Integrated gate on `main` and v0.5.1 release
 
 ### Product adoption follow-ups
 
@@ -186,6 +186,7 @@ Adoption of 0.5.0, one branch `baukit-0.5.0` per product, merged into the produc
 - 2026-09-29: P4 merged. `DeliveryClaimStore::purge` with PostgreSQL and in-memory implementations (break: new required trait method). `@baukit/auth-node/keycloak-testing` holds the Keycloak e2e helpers; the auth web template imports them and gains `@baukit/auth-node` as a dev dependency. `baukit-push` tests with `--include-ignored`, the workspace gates, the auth fixture, and the Keycloak stack e2e pass.
 - 2026-09-29: P2 merged. `@baukit/api-runtime`: interface-typed mutation bodies via `JsonCompatible`, a product `classifyError` on the key store, `classifyMutationStatus(status, code)`, shared keys for overlapping `keyFor` calls, and `fullJitterBackoffMs` on the new `/backoff` subpath. `@baukit/a11y-core/web` exports `useReducedMotion` without React Native. `SyncScheduler` takes an optional `retry` with an injected delay. Breaks: hand-written key stores need `classifyError` and generic `keyFor`/`settle`. Workspace gates pass.
 - 2026-09-29: P1 merged. `encodeCsv` and Rust `CsvOptions` gain force-quoting and a null marker, pinned by five new shared vectors. `KeyValueStore.clearPrefix` in the in-memory, Dexie, and Expo SQLite stores; a `WebStorageKeyValueStore`; `DurableDraft.move` and `isScopeActive`. Breaks: `KeyValueStore` implementations need `clearPrefix`, and `DurableDraft` implementations need `move`. Synchronous reads stay out, since the store is async. Workspace gates, `ts-browser-test`, and the Android conformance run pass.
+- 2026-09-29: Integrated gate on `main` after P1 to P4 passed (711 Rust tests with Docker, seven fixture flavors, browser Dexie 36, Expo SQLite on Android 33 cases, notifications and Android compile gates). v0.5.1 cut; npm and crates.io publishing is run by the tag workflow or by hand.
 
 ## What changed in this revision
 

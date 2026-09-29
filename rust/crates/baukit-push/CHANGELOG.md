@@ -4,6 +4,8 @@ All notable changes to `baukit-push` are documented here.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-29
+
 ### Added
 
 - Add `DeliveryClaimStore::purge(before, limit)`, which deletes one batch of

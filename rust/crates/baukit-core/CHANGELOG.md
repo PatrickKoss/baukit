@@ -4,6 +4,8 @@ All notable changes to `baukit-core` are documented here.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-29
+
 ### Added
 
 - Add `CsvOptions::with_all_cells_quoted`, which quotes every text and numeric cell and leaves
