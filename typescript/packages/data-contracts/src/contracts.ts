@@ -12,6 +12,11 @@ export interface KeyValueStore {
   /** Deletes a key if present. Deleting a missing key is a no-op. */
   delete(key: string): Promise<void>;
   clear(): Promise<void>;
+  /**
+   * Deletes every key that starts with `prefix`, compared by UTF-16 code units and case-sensitively.
+   * No character in the prefix is a wildcard. An empty prefix clears the store.
+   */
+  clearPrefix(prefix: string): Promise<void>;
 }
 
 /** Records use an immutable string ID as their stable ordering and lookup key. */

@@ -175,6 +175,63 @@ export async function runConformance(): Promise<{ readonly passed: number }> {
       },
     },
     {
+      name: "key/value prefix clear matches the exact prefix",
+      run: async () => {
+        const store = await makeStore();
+        const cleared = [
+          "draft:a:",
+          "draft:a:1",
+          "draft:a:2",
+          "draft:a:😀",
+          "draft:a:\uffffz",
+        ];
+        const kept = [
+          "draft:ab",
+          "draft:b:1",
+          "Draft:a:3",
+          "draft:",
+          "other",
+          "draftXa:1",
+        ];
+        for (const key of [...cleared, ...kept]) {
+          await store.keyValues.set(key, key);
+        }
+        await store.keyValues.clearPrefix("draft:a:");
+        await store.keyValues.clearPrefix("d%");
+        await store.keyValues.clearPrefix("draft_");
+        await store.keyValues.clearPrefix("draft*");
+        for (const key of cleared) {
+          assert(
+            (await store.keyValues.get(key)) === undefined,
+            `prefix clear kept ${key}`,
+          );
+        }
+        for (const key of kept) {
+          assert(
+            (await store.keyValues.get(key)) === key,
+            `prefix clear removed ${key}`,
+          );
+        }
+      },
+    },
+    {
+      name: "key/value prefix clear without a match and with an empty prefix",
+      run: async () => {
+        const store = await makeStore();
+        await store.keyValues.set("kept", 1);
+        await store.keyValues.clearPrefix("missing:");
+        assert(
+          (await store.keyValues.get("kept")) === 1,
+          "unmatched prefix clear removed a key",
+        );
+        await store.keyValues.clearPrefix("");
+        assert(
+          (await store.keyValues.get("kept")) === undefined,
+          "empty prefix clear kept a key",
+        );
+      },
+    },
+    {
       name: "record CRUD and replacement",
       run: async () => {
         const store = await makeStore();

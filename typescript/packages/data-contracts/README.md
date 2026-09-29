@@ -23,6 +23,11 @@ be serialized by the adapter. After `close()` resolves, all operations reject
 with `StorageError.code === "storage_closed"`. Quota failures use
 `storage_quota_exceeded`; callers never need to parse provider error text.
 
+`KeyValueStore.clearPrefix(prefix)` deletes every key that starts with `prefix`, for example all
+drafts of one account on sign-out when keys look like `draft:<account>:<document>`. Matching is
+exact and case-sensitive by UTF-16 code units, no character is a wildcard, and an empty prefix
+clears the store. `clear()` still empties the whole store.
+
 The older `StorageTransaction` and `Transaction` interfaces remain available
 for adapters that implement only the original surface.
 

@@ -207,11 +207,9 @@ class FakeSQLiteConnection {
     } else if (source.startsWith('INSERT INTO baukit_key_values')) {
       this.state.keyValues.set(`${namespace}\0${params[1] as string}`, params[2] as string);
     } else if (source === 'DELETE FROM baukit_key_values WHERE namespace = ?') {
-      for (const key of this.state.keyValues.keys()) {
-        if (key.startsWith(`${namespace}\0`)) {
-          this.state.keyValues.delete(key);
-        }
-      }
+      this.deleteKeyValues(`${namespace}\0`);
+    } else if (source.includes('substr(CAST(key AS BLOB)')) {
+      this.deleteKeyValues(`${namespace}\0${params[2] as string}`);
     } else if (source.startsWith('DELETE FROM baukit_key_values')) {
       this.state.keyValues.delete(`${namespace}\0${params[1] as string}`);
     } else if (source.startsWith('INSERT INTO baukit_schema_metadata')) {
@@ -221,6 +219,14 @@ class FakeSQLiteConnection {
       });
     } else {
       throw new Error(`Unexpected fake SQLite statement: ${source}`);
+    }
+  }
+
+  private deleteKeyValues(prefix: string): void {
+    for (const key of [...this.state.keyValues.keys()]) {
+      if (key.startsWith(prefix)) {
+        this.state.keyValues.delete(key);
+      }
     }
   }
 

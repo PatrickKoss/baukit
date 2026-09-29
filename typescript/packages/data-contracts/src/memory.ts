@@ -150,6 +150,17 @@ export class InMemoryKeyValueStore implements KeyValueStore {
       this.state.values.clear();
     });
   }
+
+  public clearPrefix(prefix: string): Promise<void> {
+    return Promise.resolve().then(() => {
+      this.assertAvailable();
+      for (const key of [...this.state.values.keys()]) {
+        if (key.startsWith(prefix)) {
+          this.state.values.delete(key);
+        }
+      }
+    });
+  }
 }
 
 /** Dependency-free reference record adapter using ID-based keyset cursors. */

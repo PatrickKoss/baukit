@@ -66,6 +66,10 @@ class ControlledStore implements KeyValueStore {
     return this.inner.clear();
   }
 
+  clearPrefix(prefix: string): Promise<void> {
+    return this.inner.clearPrefix(prefix);
+  }
+
   async #enter(operation: Operation, key: string): Promise<void> {
     this.calls.push({ operation, key });
     const gate = this.#gates.get(operation)?.shift();

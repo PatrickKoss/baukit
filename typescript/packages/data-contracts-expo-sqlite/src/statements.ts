@@ -203,6 +203,20 @@ export class KeyValueStatements implements KeyValueStore {
       ),
     );
   }
+
+  public async clearPrefix(prefix: string): Promise<void> {
+    this.scope.assertAvailable();
+    await write(() =>
+      this.scope.run((connection) =>
+        connection.runAsync(
+          'DELETE FROM baukit_key_values WHERE namespace = ? AND substr(CAST(key AS BLOB), 1, length(CAST(? AS BLOB))) = CAST(? AS BLOB)',
+          this.namespace,
+          prefix,
+          prefix,
+        ),
+      ),
+    );
+  }
 }
 
 export class SchemaMetadataStatements implements SchemaMetadataStore {

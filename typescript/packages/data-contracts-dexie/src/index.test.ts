@@ -47,6 +47,20 @@ describeScopedPersistenceContract(() => {
 });
 
 describe('DexieStore', () => {
+  it('clears a prefix made only of the highest code unit', async () => {
+    const { keyValues } = await makeStore();
+    const max = String.fromCharCode(0xffff);
+    for (const key of [max, `${max}${max}`, `${max}a`, 'z']) {
+      await keyValues.set(key, key);
+    }
+
+    await keyValues.clearPrefix(max);
+
+    await expect(keyValues.get(`${max}a`)).resolves.toBeUndefined();
+    await expect(keyValues.get(`${max}${max}`)).resolves.toBeUndefined();
+    await expect(keyValues.get('z')).resolves.toBe('z');
+  });
+
   it('isolates separate databases', async () => {
     const first = await makeStore();
     const second = await makeStore();

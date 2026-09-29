@@ -1,5 +1,6 @@
 import type { ContractTestRecord } from '@baukit/data-contracts/vitest';
 import {
+  describeKeyValueContract,
   describeScopedPersistenceContract,
   describeTransactionalStorageContract,
 } from '@baukit/data-contracts/vitest';
@@ -21,6 +22,7 @@ afterEach(async () => {
   await Promise.all(stores.splice(0).map((store) => store.close()));
 });
 
+describeKeyValueContract(async () => (await makeStore()).keyValues);
 describeTransactionalStorageContract(makeStore);
 describeScopedPersistenceContract(() => {
   const prefix = `baukit-browser-identity-${crypto.randomUUID()}`;

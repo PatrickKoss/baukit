@@ -68,6 +68,36 @@ export function describeKeyValueContract(makeStore: ContractStoreFactory<KeyValu
       await store.clear();
       expect(await store.get('second')).toBeUndefined();
     });
+
+    it('clears only keys that start with the exact prefix', async () => {
+      const store = await makeStore();
+      const cleared = ['draft:a:', 'draft:a:1', 'draft:a:2', 'draft:a:😀', 'draft:a:\uffffz'];
+      const kept = ['draft:ab', 'draft:b:1', 'Draft:a:3', 'draft:', 'other', 'draftXa:1'];
+      for (const key of [...cleared, ...kept]) {
+        await store.set(key, key);
+      }
+
+      await store.clearPrefix('draft:a:');
+      await store.clearPrefix('d%');
+      await store.clearPrefix('draft_');
+      await store.clearPrefix('draft*');
+
+      for (const key of cleared) {
+        expect(await store.get(key), key).toBeUndefined();
+      }
+      for (const key of kept) {
+        expect(await store.get(key), key).toBe(key);
+      }
+    });
+
+    it('treats a prefix clear with no match as a no-op and an empty prefix as clear', async () => {
+      const store = await makeStore();
+      await store.set('kept', 1);
+      await expect(store.clearPrefix('missing:')).resolves.toBeUndefined();
+      expect(await store.get('kept')).toBe(1);
+      await store.clearPrefix('');
+      expect(await store.get('kept')).toBeUndefined();
+    });
   });
 }
 

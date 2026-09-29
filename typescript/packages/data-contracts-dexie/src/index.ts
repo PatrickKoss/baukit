@@ -97,6 +97,28 @@ export class DexieKeyValueStore implements KeyValueStore {
     this.assertAvailable();
     await write(() => this.table.clear());
   }
+
+  public async clearPrefix(prefix: string): Promise<void> {
+    this.assertAvailable();
+    const upper = prefixUpperBound(prefix);
+    const keys = this.table.where('key');
+    const range =
+      upper === undefined ? keys.aboveOrEqual(prefix) : keys.between(prefix, upper, true, false);
+    await write(() => range.delete().then(() => undefined));
+  }
+}
+
+const MAX_CODE_UNIT = 0xffff;
+
+/** The smallest string above every string that starts with `prefix`, by UTF-16 code units. */
+function prefixUpperBound(prefix: string): string | undefined {
+  for (let index = prefix.length - 1; index >= 0; index -= 1) {
+    const unit = prefix.charCodeAt(index);
+    if (unit < MAX_CODE_UNIT) {
+      return prefix.slice(0, index) + String.fromCharCode(unit + 1);
+    }
+  }
+  return undefined;
 }
 
 /** Dexie implementation of ID-ordered record storage. */
