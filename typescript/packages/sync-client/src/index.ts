@@ -38,6 +38,8 @@ export type {
   SyncSchedulerEnvironment,
   SyncSchedulerOptions,
   SyncSchedulerRecoverySignal,
+  SyncSchedulerRetry,
+  SyncSchedulerRetryOptions,
   SyncSchedulerTimer,
 } from './scheduler.js';
 export { deriveInitialSyncState, deriveLocalStoreReadiness, SyncStatusStore } from './store.js';

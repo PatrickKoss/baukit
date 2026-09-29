@@ -74,11 +74,50 @@ The environment reports foreground state and connectivity. The scheduler runs on
 app returns to the foreground, when connectivity returns, and on the interval. It installs no
 interval while backgrounded and ignores connectivity events there.
 
-A failing run reaches `onError` and does not stop scheduling. Backoff between attempts belongs to
-the product's engine, inside `run()`, where it can see which failures are retryable.
+A failing run reaches `onError` and does not stop scheduling. Without `retry`, the next attempt
+waits for the next trigger.
 
-If the engine waits inside its own retry delay, pass `onRecoverySignal` to the scheduler and wake
-that delay there. The scheduler calls it with `active` before a foreground-triggered run and with
+### Retry and backoff
+
+Pass `retry` to retry a failed run after a delay. The product decides which failures are worth a
+retry and how long to wait, because only it knows its error types; the scheduler owns the attempt
+count, the wait, and waking it early. `fullJitterBackoffMs` from `@baukit/api-runtime/backoff` is
+the Baukit delay policy. The root entry of this package still imports nothing, so the product
+passes the policy in:
+
+```ts
+import { fullJitterBackoffMs } from '@baukit/api-runtime/backoff';
+import { SyncRateLimitError, SyncScheduler, SyncTransportError } from '@baukit/sync-client';
+
+const scheduler = new SyncScheduler(() => engine.syncOnce(), environment, {
+  retry: {
+    maxRetries: 4,
+    delayMs: (error, retryIndex) => {
+      if (error instanceof SyncRateLimitError) return Math.max(0, Date.parse(error.retryAt) - Date.now());
+      if (error instanceof SyncTransportError && !error.retryable) return null;
+      return fullJitterBackoffMs(retryIndex, { baseDelayMs: 500, maxDelayMs: 30_000 });
+    },
+    onRetryScheduled: ({ delayMs }) => status.showRetryAt(Date.now() + delayMs),
+  },
+});
+```
+
+After a failed run the scheduler asks `delayMs(error, retryIndex)`. `null` means no retry. A number
+is the wait in milliseconds, and `onRetryScheduled` hears about it before the wait starts. The
+retry index counts from 0 and restarts after a success. After `maxRetries` retries the scheduler
+waits for the next trigger. A delay that is negative or not finite, or a `delayMs` that throws,
+reaches `onError` and ends the retries. A `maxRetries` that is not a non-negative integer throws a
+`RangeError` from the constructor.
+
+The wait is a one-shot timer built from the environment's `setInterval`, so no environment
+changes. Any trigger during the wait ends it at once and restarts the retry index at 0: a manual
+`trigger()`, the interval, returning to the foreground, or connectivity returning while in the
+foreground. A follow-up request during the wait does not end it, because the retry will send the
+same writes. `stop()` ends the wait without another run, and a wait that ends while the app is
+backgrounded runs nothing until the app returns.
+
+If the engine waits inside its own retry delay instead, pass `onRecoverySignal` to the scheduler
+and wake that delay there. The scheduler calls it with `active` before a foreground-triggered run and with
 `online` before an online-triggered run. Online recovery is reported even while the scheduler is
 backgrounded, although the scheduler still waits for foreground before starting another run.
 Retry wake-up belongs in this scheduler option, not in a decorated environment, because the
