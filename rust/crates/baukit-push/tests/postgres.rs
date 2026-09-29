@@ -435,7 +435,7 @@ async fn old_claims_purge_in_bounded_batches() -> Result<(), TestError> {
 
     let mut purged = Vec::new();
     loop {
-        let deleted = purge_delivery_claims(&pool, date(26), PURGE_BATCH).await?;
+        let deleted = claims.purge(date(26), PURGE_BATCH).await?;
         purged.push(deleted);
         if deleted < u64::from(PURGE_BATCH.get()) {
             break;
@@ -447,6 +447,14 @@ async fn old_claims_purge_in_bounded_batches() -> Result<(), TestError> {
             .fetch_all(&pool)
             .await?;
     assert_eq!(kept, [date(26), date(27)]);
+
+    let mut transaction = pool.begin().await?;
+    assert_eq!(
+        purge_delivery_claims(&mut *transaction, date(28), PURGE_BATCH).await?,
+        1
+    );
+    transaction.rollback().await?;
+    assert_eq!(claims.purge(date(28), PURGE_BATCH).await?, 1);
     Ok(())
 }
 

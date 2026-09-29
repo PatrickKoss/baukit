@@ -434,3 +434,54 @@ No wire field and no version changed.
 - `cargo +1.95 check --manifest-path rust/Cargo.toml --workspace --all-targets`: pass.
 - `cargo doc -p baukit-push --all-features --no-deps`: no warnings.
 - `scripts/check-version-coherence.py`: pass.
+
+## Follow-up 0.5.1 (2026-09-29)
+
+### Product evidence
+
+Hebkit adopted 0.5.0 at `797fdff7`. Its daily purge job calls the store port for receipts but goes
+through its own repository for claims:
+
+- `backend/crates/hebkit-ports/src/notification_repository.rs:23-28` declares
+  `NotificationRepository::purge_delivery_claims`.
+- `backend/crates/hebkit-postgres/src/adapters/postgres/notifications.rs:97-105` forwards it to
+  `baukit_push::purge_delivery_claims`.
+- `backend/crates/hebkit-services/src/notifications.rs:249-276` loops
+  `stores.receipts.purge(...)` and then `repository.purge_delivery_claims(...)`.
+- The service tests at `notifications.rs:356-362` stub the repository method with `Ok(0)`, so no
+  unit test can see a claim purged, even though the fixture already holds a
+  `MemoryDeliveryClaimStore`.
+
+### Decision
+
+Add `purge(before: NaiveDate, limit: NonZeroU32)` to `DeliveryClaimStore`, the same shape as
+`PendingReceiptStore::purge`: one batch, oldest local date first, returns the count, and the caller
+loops until the count is below the limit. `PostgresDeliveryClaimStore` runs
+`purge_delivery_claims` on its pool; `MemoryDeliveryClaimStore` sorts by local date, owner, and
+kind, matching the SQL `ORDER BY`. The free `purge_delivery_claims` stays because it takes an
+executor, which a caller needs to purge inside its own transaction, like
+`erase_owner_delivery_claims`.
+
+A default method was not possible without a pool, so `purge` is required. That breaks custom
+implementations of the trait, which is cheaper than a second purge port. No retention constant was
+added: the right horizon depends on how far back a product evaluates local dates.
+
+### Breaks
+
+- `DeliveryClaimStore` has a new required method, `purge`.
+
+### Product adoption
+
+- Hebkit: delete `NotificationRepository::purge_delivery_claims` and its PostgreSQL and test
+  implementations, and call `self.stores.claims.purge(before, STORE_BATCH)` in
+  `NotificationService::purge`.
+- Eigenruhe: when it moves weekly claims to `DeliveryClaimStore`, schedule
+  `claims.purge(...)` instead of a hand-written delete.
+
+### Gates
+
+- `cargo test --manifest-path rust/Cargo.toml -p baukit-push --all-features -- --include-ignored`:
+  pass (44 unit, 15 Expo endpoint, 13 Docker, 8 doctests).
+- `cargo fmt --manifest-path rust/Cargo.toml --all --check`: pass.
+- `cargo clippy --manifest-path rust/Cargo.toml --workspace --all-targets --all-features -- -D warnings`:
+  pass.

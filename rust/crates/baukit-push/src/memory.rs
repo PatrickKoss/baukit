@@ -7,7 +7,7 @@ use std::{
     sync::{Arc, Mutex, MutexGuard, PoisonError},
 };
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use uuid::Uuid;
 
 use crate::{
@@ -233,6 +233,28 @@ impl DeliveryClaimStore for MemoryDeliveryClaimStore {
         let removed = self.claims().remove(&claim);
         Box::pin(std::future::ready(Ok(removed)))
     }
+
+    fn purge(
+        &self,
+        before: NaiveDate,
+        limit: NonZeroU32,
+    ) -> PushStoreFuture<'_, Result<u64, PushStoreError>> {
+        let mut claims = self.claims();
+        let mut expired = claims
+            .iter()
+            .filter(|claim| claim.local_date < before)
+            .map(|claim| (claim.local_date, claim.owner_id, claim.kind.clone()))
+            .collect::<Vec<_>>();
+        expired.sort();
+        let removed = expired
+            .into_iter()
+            .take(limit_len(limit))
+            .filter(|(local_date, owner_id, kind)| {
+                claims.remove(&DeliveryClaim::new(*owner_id, *local_date, kind.clone()))
+            })
+            .count();
+        Box::pin(std::future::ready(Ok(count(removed))))
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -453,6 +475,32 @@ mod tests {
         assert!(store.release(claim.clone()).await?);
         assert!(!store.is_claimed(&claim));
         assert!(store.claim(claim, at(2)).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn claims_before_the_cutoff_purge_oldest_first_in_batches() -> TestResult {
+        let store = MemoryDeliveryClaimStore::new();
+        let owner = Uuid::now_v7();
+        let kind = DeliveryKind::new("daily_reminder")?;
+        let claim = |day| {
+            DeliveryClaim::new(
+                owner,
+                NaiveDate::from_ymd_opt(2026, 9, day).expect("valid date"),
+                kind.clone(),
+            )
+        };
+        for day in [24, 25, 26, 27] {
+            store.claim(claim(day), at(0)).await?;
+        }
+        let cutoff = claim(27).local_date;
+        let one = NonZeroU32::MIN;
+        assert_eq!(store.purge(cutoff, one).await?, 1);
+        assert!(!store.is_claimed(&claim(24)));
+        assert!(store.is_claimed(&claim(25)));
+        assert_eq!(store.purge(cutoff, CAP).await?, 2);
+        assert_eq!(store.purge(cutoff, CAP).await?, 0);
+        assert!(store.is_claimed(&claim(27)));
         Ok(())
     }
 

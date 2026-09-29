@@ -1,5 +1,7 @@
 //! At-most-once daily delivery claims for scheduled pushes.
 
+use std::num::NonZeroU32;
+
 use chrono::{DateTime, NaiveDate, Utc};
 use uuid::Uuid;
 
@@ -74,7 +76,8 @@ impl DeliveryClaim {
 /// A scheduled sender claims before it sends, so two workers evaluating the
 /// same owner never both deliver. If the whole send fails, it releases the
 /// claim and a later run may try again. Event-driven senders do not need this
-/// port.
+/// port. Claims grow by one row per owner, kind, and day, so schedule
+/// [`DeliveryClaimStore::purge`].
 pub trait DeliveryClaimStore: Send + Sync {
     /// Records the claim; returns `false` when someone already holds it.
     fn claim(
@@ -85,6 +88,16 @@ pub trait DeliveryClaimStore: Send + Sync {
 
     /// Drops a claim after a failed send; returns whether it existed.
     fn release(&self, claim: DeliveryClaim) -> PushStoreFuture<'_, Result<bool, PushStoreError>>;
+
+    /// Deletes up to `limit` claims for local dates before `before`, oldest
+    /// date first; returns how many went.
+    ///
+    /// Call it again until it returns less than `limit`.
+    fn purge(
+        &self,
+        before: NaiveDate,
+        limit: NonZeroU32,
+    ) -> PushStoreFuture<'_, Result<u64, PushStoreError>>;
 }
 
 #[cfg(test)]

@@ -244,6 +244,16 @@ impl PostgresDeliveryClaimStore {
         .rows_affected();
         Ok(deleted == 1)
     }
+
+    async fn purge_claims(
+        &self,
+        before: NaiveDate,
+        limit: NonZeroU32,
+    ) -> Result<u64, PushStoreError> {
+        purge_delivery_claims(&self.pool, before, limit)
+            .await
+            .map_err(PushStoreError::internal)
+    }
 }
 
 impl DeliveryClaimStore for PostgresDeliveryClaimStore {
@@ -257,6 +267,14 @@ impl DeliveryClaimStore for PostgresDeliveryClaimStore {
 
     fn release(&self, claim: DeliveryClaim) -> PushStoreFuture<'_, Result<bool, PushStoreError>> {
         Box::pin(self.delete_claim(claim))
+    }
+
+    fn purge(
+        &self,
+        before: NaiveDate,
+        limit: NonZeroU32,
+    ) -> PushStoreFuture<'_, Result<u64, PushStoreError>> {
+        Box::pin(self.purge_claims(before, limit))
     }
 }
 
@@ -282,6 +300,8 @@ where
 
 /// Deletes one batch of claims for local dates before `before`.
 ///
+/// [`DeliveryClaimStore::purge`] on [`PostgresDeliveryClaimStore`] runs this
+/// on its pool; call it directly to purge inside a caller's transaction.
 /// Returns the number of deleted rows. Call it again until it returns less
 /// than `limit`. Rows locked by a concurrent writer are skipped, not waited on.
 ///

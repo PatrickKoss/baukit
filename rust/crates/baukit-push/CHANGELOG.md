@@ -4,6 +4,20 @@ All notable changes to `baukit-push` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Add `DeliveryClaimStore::purge(before, limit)`, which deletes one batch of
+  claims for local dates before `before`, oldest date first, and returns how
+  many went. `PostgresDeliveryClaimStore` runs `purge_delivery_claims` on its
+  pool, and `MemoryDeliveryClaimStore` purges in the same order, so scheduled
+  purge jobs no longer need a product repository method or a store they cannot
+  fake in tests.
+
+### Breaking
+
+- `DeliveryClaimStore` has a new required method, `purge`. Custom
+  implementations must add it.
+
 ## [0.5.0] - 2026-09-28
 
 ### Added

@@ -161,9 +161,13 @@ match sender.send(messages).await {
 A `DeliveryKind` is 1 to 64 bytes of `[a-z0-9_.-]` starting with a letter or
 digit. With `sqlx-postgres`, `PostgresDeliveryClaimStore` uses the table in
 `POSTGRES_PUSH_DELIVERY_CLAIMS_MIGRATION_SQL`. `erase_owner_delivery_claims`
-removes one owner's claims, and `purge_delivery_claims` deletes one bounded
-batch of claims for local dates before a cutoff; call it until it returns less
-than the batch size.
+removes one owner's claims.
+
+Claims grow by one row per owner, kind, and day. `DeliveryClaimStore::purge`
+deletes one bounded batch of claims for local dates before a cutoff, oldest
+date first; call it until it returns less than the batch size. The memory
+store purges the same way, so a service test can check its purge job. To purge
+inside your own transaction, call `purge_delivery_claims` with the executor.
 
 ## Deferred receipts
 
