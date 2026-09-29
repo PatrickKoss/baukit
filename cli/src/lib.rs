@@ -211,6 +211,7 @@ const EXPECTED_MOBILE_TYPESCRIPT_DEPENDENCIES: &[&str] = &[
 
 const EXPECTED_MOBILE_AUTH_DEPENDENCIES: &[&str] = &["@baukit/auth-native"];
 const EXPECTED_WEB_AUTH_DEPENDENCIES: &[&str] = &["@baukit/auth-web"];
+const EXPECTED_WEB_AUTH_DEV_DEPENDENCIES: &[&str] = &["@baukit/auth-node"];
 const EXPECTED_MCP_FILES: &[&str] = &[
     "mcp/package.json",
     "mcp/README.md",
@@ -401,6 +402,7 @@ struct TemplateContext {
     template_version: String,
     baukit_dependencies: String,
     baukit_web_typescript_dependencies: String,
+    baukit_web_typescript_dev_dependencies: String,
     baukit_mobile_typescript_dependencies: String,
     baukit_mcp_typescript_dependency: String,
     baukit_manifest: String,
@@ -528,6 +530,7 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         template_version: TEMPLATE_VERSION.to_owned(),
         baukit_dependencies: dependency.cargo,
         baukit_web_typescript_dependencies: dependency.web_typescript,
+        baukit_web_typescript_dev_dependencies: dependency.web_dev_typescript,
         baukit_mobile_typescript_dependencies: dependency.mobile_typescript,
         baukit_mcp_typescript_dependency: dependency.mcp_typescript,
         baukit_manifest: dependency.manifest,
@@ -667,6 +670,7 @@ fn available_conflict_path(destination: &Path) -> Result<PathBuf> {
 struct DependencyContext {
     cargo: String,
     web_typescript: String,
+    web_dev_typescript: String,
     mobile_typescript: String,
     mcp_typescript: String,
     manifest: String,
@@ -683,6 +687,11 @@ fn dependency_context(
     mcp_authentication: Option<McpAuthentication>,
 ) -> Result<DependencyContext> {
     let web_packages = typescript_packages(false, false, web && auth_oidc);
+    let web_dev_packages: &[&str] = if web && auth_oidc {
+        EXPECTED_WEB_AUTH_DEV_DEPENDENCIES
+    } else {
+        &[]
+    };
     let mobile_packages = typescript_packages(mobile, mobile && auth_oidc, false);
     if let Some(path) = path {
         let path = path.canonicalize().with_context(|| {
@@ -725,7 +734,11 @@ fn dependency_context(
             .ok_or_else(|| anyhow!("Baukit Rust workspace has no repository parent"))?;
         let typescript_root = repository.join("typescript");
         if mobile || web {
-            for package in web_packages.iter().chain(&mobile_packages) {
+            for package in web_packages
+                .iter()
+                .chain(web_dev_packages)
+                .chain(&mobile_packages)
+            {
                 let directory = package.trim_start_matches("@baukit/");
                 if !typescript_root
                     .join("packages")
@@ -774,6 +787,7 @@ fn dependency_context(
         Ok(DependencyContext {
             cargo,
             web_typescript: render_typescript(&web_packages),
+            web_dev_typescript: render_leading_entries(&render_typescript(web_dev_packages)),
             mobile_typescript: render_typescript(&mobile_packages),
             mcp_typescript,
             manifest: format!("source = \"path\"\npath = \"{display}\""),
@@ -813,6 +827,7 @@ fn dependency_context(
         Ok(DependencyContext {
             cargo,
             web_typescript: render_typescript(&web_packages),
+            web_dev_typescript: render_leading_entries(&render_typescript(web_dev_packages)),
             mobile_typescript: render_typescript(&mobile_packages),
             mcp_typescript: if mcp_authentication.is_some() {
                 format!("    \"@baukit/auth-node\": \"{version}\",\n")
@@ -823,6 +838,14 @@ fn dependency_context(
             description: format!("crates.io version `{version}`"),
             typescript_description: format!("npm version `{version}`"),
         })
+    }
+}
+
+fn render_leading_entries(entries: &str) -> String {
+    if entries.is_empty() {
+        String::new()
+    } else {
+        format!("{entries},\n")
     }
 }
 
@@ -1393,6 +1416,7 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
         let mut dependencies = vec!["@tanstack/react-query", "vite"];
         if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
             dependencies.extend(EXPECTED_WEB_AUTH_DEPENDENCIES);
+            dependencies.extend(EXPECTED_WEB_AUTH_DEV_DEPENDENCIES);
         }
         validate_frontend_capability(
             root,
@@ -2236,6 +2260,7 @@ mod generator_tests {
             template_version: "0.0.0".to_owned(),
             baukit_dependencies: String::new(),
             baukit_web_typescript_dependencies: String::new(),
+            baukit_web_typescript_dev_dependencies: String::new(),
             baukit_mobile_typescript_dependencies: String::new(),
             baukit_mcp_typescript_dependency: String::new(),
             baukit_manifest: String::new(),

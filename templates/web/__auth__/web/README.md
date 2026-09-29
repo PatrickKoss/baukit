@@ -28,7 +28,7 @@ For QA files generated before this template version, `field` and `value` still w
 
 ## Keycloak stack test
 
-`e2e/stack` signs a real user in through the composed Keycloak and reads their subject back from the running API. `createKeycloakTestUser` uses the Keycloak admin API to create a verified user with a random password and returns its subject. `signInWithKeycloak` waits for the Keycloak page, fills `#username` and `#password`, and submits.
+`e2e/stack` signs a real user in through the composed Keycloak and reads their subject back from the running API. The helpers come from `@baukit/auth-node/keycloak-testing`, a dev dependency, and `e2e/stack/keycloak.ts` holds only this product's defaults. `createKeycloakTestUser` uses the Keycloak admin API to create a verified user with a random password and returns its subject. `signInWithKeycloak` waits for the Keycloak page, fills `#username` and `#password`, and submits. `revokeKeycloakUserSessions` ends a user's sessions for expiry tests.
 
 The API has to run with the test origin in its CORS allow-list, and its rate limiter needs the composed Redis. From the product root:
 

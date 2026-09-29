@@ -531,3 +531,85 @@ Template-only, listed in the generated `CHANGELOG.md` under `[Unreleased]`:
 - Web-only and mobile-only fixtures: install, build or `tsc --noEmit`, lint, test, `test:coverage`.
 - `scripts/check-version-coherence.py`.
 - The Android native gate was not run. No native dependency or app config changed.
+
+## Follow-up 0.5.1 (2026-09-29)
+
+### Product evidence
+
+- Hebkit at `797fdff7` kept `web/e2e/tests/helpers.ts` because Baukit shipped the helpers only in
+  the template. Its Keycloak code is `createIsolatedUser` (`:495-563`, admin token and user
+  creation with a 60-second provisioning timeout and email as the username) and
+  `revokeUserSessions` (`:787-821`, admin logout through `fetch`). The popup sign-in with label
+  selectors and the WebKit password-grant fallback are product flow.
+- Redemut copied the template helper into `web/e2e/stack/keycloak.ts`, dropped `webClientId` and
+  `allowWebOrigin`, widened `signInWithKeycloak` to take `Pick<..., 'username' | 'password'>`, and
+  added a 60-second wait for the login page. `web/e2e/tests/helpers.ts:5-10` and `fixtures.ts`
+  import it.
+- Eigenruhe `e2e/tests/helpers.ts:57-108` and Tiefgang `e2e/tests/helpers.ts:16-38` create users
+  the same way, and both global setups patch a client's redirects through the admin API.
+
+### Decision
+
+The helpers move to a Node-only subpath, `@baukit/auth-node/keycloak-testing`. `auth-node` is the
+existing Node 24 OIDC package, it already has Playwright as a dev dependency for its Keycloak
+conformance script, and a subpath avoids a new npm name, which trusted publishing cannot create.
+
+The 0.5.0 note kept this as template code because the helpers took Playwright's
+`APIRequestContext` and `Page`. The package version drops both dependencies instead:
+
+- Admin calls use `fetch`, with an injected `fetch` and a per-request timeout (default
+  `DEFAULT_KEYCLOAK_REQUEST_TIMEOUT_MS`, 30 seconds). They work in a Playwright global setup, a
+  spec, or a plain Node script, and Hebkit's `revokeUserSessions` already used `fetch`.
+- `signInWithKeycloak` takes `KeycloakLoginPage`, a structural type with `waitForURL` and
+  `locator`. A package test assigns a Playwright `Page` to it, and the generated web fixture's
+  `tsc -p e2e/tsconfig.json` passes it a real `Page`.
+
+Public API: `keycloakStack(defaults, environment)`, `createKeycloakTestUser(stack, user?,
+options?)`, `revokeKeycloakUserSessions(stack, subject, options?)`,
+`allowKeycloakWebOrigin(stack, origin, options?)`, `signInWithKeycloak(page, user, stack,
+{ timeoutMs })`, and the types `KeycloakStack`, `KeycloakStackDefaults`, `KeycloakTestUser` (now
+with `email`), `KeycloakTestUserOptions`, `KeycloakRequestOptions`, `KeycloakLoginPage`, and
+`KeycloakSignInOptions`. `keycloakStack` takes the product defaults as an argument, because a
+package cannot know the realm or port. `user` lets a realm that signs in by email pass its own
+username, email, and password.
+
+Errors name the step and the HTTP status, never a response body or the admin password. Created
+users and added origins stay in the realm, as before.
+
+Not moved: Hebkit's popup and WebKit password-grant flow, and the Eigenruhe and Tiefgang realm
+theme and mobile client redirect patches. Those depend on each product's client and screens.
+
+### Template change
+
+`web/e2e/stack/keycloak.ts` now only builds `stack` from the product defaults. `global-setup.ts`
+and `sign-in.spec.ts` import the helpers from the package, and the spec no longer uses the
+`request` fixture. The CLI renders `@baukit/auth-node` into the web `devDependencies` for web
+auth products (a `file:` path with `--baukit-path`, the release version otherwise), and
+`baukit doctor` requires it there. The web auth README and the generated `CHANGELOG.md` record the
+change.
+
+### Breaks
+
+- Template: products generated with web auth gain the `@baukit/auth-node` web dev dependency.
+  `e2e/stack/keycloak.ts` no longer exports the helpers; `createKeycloakTestUser` and
+  `signInWithKeycloak` take `stack` explicitly and `createKeycloakTestUser` takes no request
+  context. `allowWebOrigin` is now `allowKeycloakWebOrigin`.
+- `@baukit/auth-node`: additive subpath only.
+
+### Gates
+
+- `@baukit/auth-node` build, test (49 tests including 13 for the new subpath, and the packed
+  exports check for 3 subpaths), lint, and `format:check`.
+- Whole TypeScript workspace `build`, `format:check`, `lint`, `test`, and `check`: pass.
+- CLI `cargo fmt --check`, `clippy --all-targets -D warnings`, and `cargo test`; only
+  `cli/tests/snapshots/auth.tree` changed (web README, the three stack files, web
+  `package.json`, and `CHANGELOG.md`).
+- Auth fixture (`--backend --mobile --web --auth oidc --mcp`): backend fmt, clippy, tests,
+  `postgres_integration` with `--include-ignored`, and `openapi_drift`; web frozen install, build
+  (typechecks `e2e`), lint, test, `test:coverage`; `baukit doctor` reports healthy.
+- Keycloak stack e2e under the ports lock: Compose Keycloak 26.7.0 and Redis, `make run`
+  equivalent with the CORS origin, then
+  `E2E_WEB_PORT=5183 pnpm exec playwright test --config e2e/playwright.stack.config.ts` twice.
+  Both runs passed; the second found the origin already registered.
+- Mobile and MCP fixture gates were not rerun: their generated files are byte-identical, since
+  only `auth.tree` entries under `web/` and `CHANGELOG.md` changed.
