@@ -345,3 +345,111 @@ tables have no foreign keys.
 - Redemut: build `ExpoSqliteDriver` on `ExpoSqliteConnection`, delete its local
   `ExpoSqliteDatabase` interface and the `withExclusiveTransactionAsync` path, and drop the root
   `PRAGMA foreign_keys = ON` in `runMigrations`, which the connection now runs.
+
+## Follow-up 0.5.1 (2026-09-29)
+
+Hebkit's 0.5.0 adoption built `ExpoSQLiteAdapter` on `ExpoSqliteConnection` but could not do the
+"stop `SQLiteTransactionView.transaction` from joining" step, because the connection's nested
+`transaction()` always rejected. This follow-up makes it nest.
+
+### Product evidence
+
+- Hebkit `797fdff7`, `mobile/src/db/sqlite/adapters/expo-sqlite.ts:51-55`:
+  `SQLiteTransactionView.transaction` returns `work(this)`, so nested work joins the enclosing
+  transaction. A caught nested failure keeps whatever the nested work wrote before it failed.
+- Hebkit composes repositories inside one transaction. `TransactionsRepository.run`
+  (`db/sqlite/repositories.ts:2181-2195`) builds the settings, plans, nutrition-goal,
+  questionnaire, and health-metric repositories on the transaction view, and their methods open
+  their own transaction on it: `UserSettingsRepository.upsert` (`repositories.ts:2031`),
+  `PlansRepository.create`, `setDefault`, `replaceDay`, `softDelete`, and `updatePlan`
+  (`feature-repositories.ts:494,554,579,704,727`), and the nutrition goal `update`, `softDelete`,
+  and `write` (`nutrition-repositories.ts:1584,1606,1623`). Callers are
+  `features/onboarding/persistence.ts:81` and `features/nutrition/weight-adjustment-service.ts:185`,
+  both with sequential awaits.
+- `integrations/widget-snapshot.ts:446-475` wraps `transaction` on every adapter a repository is
+  built on, including a transaction view, and refreshes the widget snapshot after the outermost
+  call on that object settles. The refresh is awaited, so its reads finish before the caller's
+  next nested call.
+- Redemut `1d40e90`, `packages/data/src/expo-sqlite.ts:59-60`: `TransactionDriver.transaction()`
+  forwards to the rejecting call and is typed `Promise<never>`. Redemut does not nest today.
+
+### Decision: savepoints inside the queued transaction
+
+`SqliteTransaction.transaction(work)` runs `SAVEPOINT baukit_nested_<depth>` on the same handle,
+runs `work` with a new context, and runs `RELEASE` when it resolves. When `work` rejects it runs
+`ROLLBACK TO` and `RELEASE` for that savepoint and rejects with the same error. If the caller
+catches it, the enclosing transaction goes on without the nested writes or schema changes; if not,
+the enclosing transaction rolls back as before. Released nested work still rolls back with a
+failing enclosing level. A failed `RELEASE` is handled like a failed `COMMIT`.
+
+Reasons:
+
+- Joining, the old product behavior, keeps partial writes when a caller catches a nested failure.
+  The migration conformance run with one savepoint per step shows the difference: with joining,
+  "rolls back a failed step completely" fails because the failed step's table and column stay.
+- Rejecting, the 0.5.0 behavior, forced Hebkit to keep its own joining view and blocked the
+  adoption step.
+- Savepoints are plain SQLite, run on the handle the root transaction already holds, and work
+  inside `BEGIN IMMEDIATE`, so nothing about the queue or the pragma order changes.
+
+Invariants kept:
+
+- Per-file queue. A nested call never enters the queue. It runs on the transaction's handle while
+  the enclosing root transaction holds its queue turn, so it cannot deadlock behind itself, and a
+  root call another caller queued during the transaction still runs after the commit.
+- Foreign keys. The pragma still runs once on the handle before the first root statement, before
+  any `BEGIN IMMEDIATE`. Savepoints inherit it; a node test and the device case check an orphan
+  insert inside a savepoint fails.
+- Interleaving. SQLite savepoints are a stack, and `RELEASE` of an outer name releases every newer
+  one. Two open siblings would corrupt each other, so only the innermost open level accepts work:
+  while a nested transaction is open, statements and `transaction()` on any enclosing context
+  reject with a `TypeError`. The flag is set before the first `await`, so the rejection is
+  deterministic. I chose rejection over queueing siblings because a queue would deadlock when a
+  nested callback calls the enclosing context it captured, which rejection reports at once.
+- A root call on the connection from inside `work` still deadlocks, as before. Without async
+  context the connection cannot tell it from a concurrent caller.
+
+`ExpoSqliteStore.withTransaction` keeps joining nested calls, as the shared storage contract in
+`@baukit/data-contracts` requires. Only the raw connection nests.
+
+### Tests
+
+Node (`connection.test.ts`, on `NodeSqliteDatabase`): ten nesting cases (commit with result,
+caught failure with DDL rollback, uncaught failure, enclosing failure after release, three levels
+with siblings, foreign keys, enclosing work rejected while nested is open, settled nested context,
+no wait on a queue another caller is on, and one helper used at the root and nested), plus the
+five migration conformance cases over a runner that applies each pending step in its own
+savepoint inside one transaction, and a case that keeps the steps before a failed one. The
+package runs 132 tests. Replacing savepoints with joining fails six cases, one of them the
+conformance suite's partially applied migration check.
+
+Device (`examples/expo-sqlite-conformance`): the case that checked nested rejection now checks
+DDL rollback only, and a new case runs nested transactions on real `expo-sqlite`: a caught nested
+failure with an `ALTER TABLE`, a released savepoint inside a nested level, an enclosing statement
+rejected while a nested level is open, a root write from another caller issued during the
+transaction, and an enclosing rollback that discards released nested work.
+
+### Gates
+
+Workspace `build`, `format:check`, `lint`, `test`, and `check` in `typescript/` pass (132 tests
+in this package). `tsc --noEmit` passes in `examples/expo-sqlite-conformance`.
+`make expo-sqlite-conformance` with `METRO_PORT=8082 CI=1` under the emulator lock passed 31 cases
+on real `expo-sqlite` (30 before plus the new savepoint case).
+
+### Breaks
+
+`SqliteTransaction.transaction` changes from `(work) => Promise<never>` to
+`<TResult>(work: (transaction: SqliteTransaction) => Promise<TResult> | TResult) =>
+Promise<TResult>`, and a nested call now runs instead of rejecting. Redemut's
+`TransactionDriver.transaction(): Promise<never>` stops type-checking against the new signature.
+
+### Product code a later adoption removes
+
+- Hebkit: in `mobile/src/db/sqlite/adapters/expo-sqlite.ts`, make `SQLiteTransactionView` hold
+  its `SqliteTransaction` and implement `transaction(work)` as
+  `this.open.transaction((nested) => work(new SQLiteTransactionView(nested)))`, deleting the
+  joining `work(this)` and its comment. Nothing in the call sites above changes. The Dexie path
+  (`db/dexie/*.web.ts`) is separate and untouched.
+- Redemut: in `packages/data/src/expo-sqlite.ts`, make `TransactionDriver.transaction` forward
+  `operation` through `this.#open.transaction((open) => operation(new TransactionDriver(open)))`
+  instead of the `Promise<never>` stub.
