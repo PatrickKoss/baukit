@@ -2,7 +2,7 @@
 
 Runtime-neutral data contracts, measurement helpers, and executable adapter conformance tests.
 
-The package defines JSON key/value storage, ID-ordered record storage with bounded keyset pagination, atomic transaction callbacks, and schema metadata/migration conventions. It deliberately contains no product entities and no Expo SQLite, Dexie, or Node database adapters.
+The package defines JSON key/value storage, ID-ordered record storage with bounded keyset pagination, atomic transaction callbacks, and schema metadata/migration conventions. It deliberately contains no product entities and no Expo SQLite, Dexie, or Node database adapters. The one storage adapter it ships is `WebStorageKeyValueStore`, because Web Storage needs no dependency.
 
 ## Using the contracts
 
@@ -27,6 +27,19 @@ with `StorageError.code === "storage_closed"`. Quota failures use
 drafts of one account on sign-out when keys look like `draft:<account>:<document>`. Matching is
 exact and case-sensitive by UTF-16 code units, no character is a wildcard, and an empty prefix
 clears the store. `clear()` still empties the whole store.
+
+`WebStorageKeyValueStore` is a `KeyValueStore` over `sessionStorage` or `localStorage`. It stores
+each value as JSON text under a namespace you pass, so `clear()` and `clearPrefix()` never remove
+other keys of the origin. An empty namespace throws a `RangeError`. Storage failures reject the
+returned promise, and a full storage rejects with `StorageError.code === "storage_quota_exceeded"`.
+
+```ts
+import { WebStorageKeyValueStore } from '@baukit/data-contracts';
+
+const drafts = new WebStorageKeyValueStore(sessionStorage, 'app:drafts:v1:');
+await drafts.set('note:new', { title: '' });
+await drafts.clearPrefix('note:');
+```
 
 The older `StorageTransaction` and `Transaction` interfaces remain available
 for adapters that implement only the original surface.
