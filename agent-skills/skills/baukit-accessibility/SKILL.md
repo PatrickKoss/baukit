@@ -20,7 +20,7 @@ Use this checklist:
 - Give controls and graphics meaningful names, roles, state/value, reading order, and non-color cues. Keep real heading semantics independent of typography.
 - Meet the product target minimum: web 44 by 44 CSS pixels; native 44 by 44 points on iOS and 48 by 48 dp on Android, with separable hit areas.
 - Link form labels, help, required/invalid state, and errors. Announce the result and focus the first invalid field without erasing input.
-- Use `useReducedMotionPreference` when startup motion depends on the preference. Wait for `resolved` before starting non-essential motion because the native query is asynchronous.
+- Use `useReducedMotionPreference` when startup motion depends on the preference. Wait for `resolved` before starting non-essential motion because the native query is asynchronous. A plain React web app imports both reduced-motion hooks from `@baukit/a11y-core/web`; there `resolved` is `false` only during server rendering and hydration.
 - Announce important asynchronous outcomes once, using localized, task-specific copy.
 - Give every data graphic a structured text/table alternative with relevant values, units, range, trend, and exceptions.
 

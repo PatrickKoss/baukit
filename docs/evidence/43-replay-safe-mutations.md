@@ -381,3 +381,71 @@ code. The snapshot trees and the generated fixture are unaffected.
   a NULL response is reported as a conflict. The plan calls the fingerprint non-canonical. Every
   caller passes a `json!` value, which serializes with sorted keys, so it is canonical in practice;
   the generic `T: Serialize` signature would allow a struct in field order.
+
+## Follow-up 0.5.1 (2026-09-29)
+
+Source revisions: Baukit baseline 28db260, Leitbild 5c11d34, Redemut 1d40e90. Both products pin
+`@baukit/api-runtime` 0.5.0.
+
+### Product evidence
+
+- Redemut `web/src/content-builder-screens.tsx` imports `JsonValue` (line 2) only to write
+  `as unknown as JsonValue` for the dialog create (line 739) and the word-pack create (line 1761).
+  The bodies are the interfaces `DialogWriteBody` and `WordPackWriteBody` in
+  `packages/api-client/src/index.ts` (lines 243 and 315). An interface has no index signature, so
+  it is not assignable to `JsonValue`.
+- Redemut throws `ApiClientError` (`packages/api-client/src/index.ts:404`, with `status` and
+  `code`). Leitbild mobile throws `SafeApiError` (`mobile/src/api.ts:56`, with `status` and `code`)
+  and wraps network failures in `ConnectivityRequiredError`, a `SafeApiError` with status 0 that
+  `classifyMutationStatus` keeps possibly-committed. `classifyMutationError` knew neither class, so
+  a rejected 400 or 409 from either product also came back as possibly-committed and kept a key
+  that the product should have dropped.
+- Leitbild `web/src/write-intent.ts` before its 0.5.0 adoption (`bd38b33`) kept a `pending` map so
+  two quick taps shared one key. The adoption dropped the map, and `keyFor` reads storage, then
+  writes it, so two overlapping calls for the same intent could each mint a key. With storage that
+  drops writes, for example a full or blocked `localStorage`, the second call never sees the first
+  key.
+
+### Decisions
+
+- `MutationIntent<Body>` and `sendIdempotentMutation` take a `Body` type checked by
+  `JsonCompatible<Body>`. Interface bodies compile without a cast, and a member that JSON cannot
+  carry (a function, a `Date`, or `unknown`) still fails to compile. Optional members that are
+  `undefined` at run time are dropped from the canonical fingerprint, as `JSON.stringify` drops
+  them, and an `undefined` array item becomes `null`. I checked Redemut's two body interfaces
+  against the new signature in a scratch project: both compile with no cast.
+- The error classifier is a store option, `classifyError`, because a product creates the store once
+  (Redemut in `web/src/ready-app.tsx:46`, Leitbild in each `write-intent.ts`) and every send through
+  it should classify the same way. The product classifier runs first; `undefined` falls through to
+  `classifyMutationError`. `classifyMutationStatus(status, code)` is exported so a product
+  classifier maps its own status and code with Baukit's rules instead of copying them.
+- Key sharing for overlapping calls belongs in the key store, because the race is inside `keyFor`:
+  it is between the storage read and the storage write, and a product cannot close it from outside
+  without a second map, which is what Leitbild had before. The store keeps one pending key per
+  intent slot until `settle`, and it still honors the TTL and recovers after a failed lookup.
+  Coalescing the requests themselves stays out. The server already handles two requests with one
+  key through replay or `409 idempotency_key_in_progress`, and each caller's `send` returns its own
+  result type, so sharing one response would need a cast.
+
+### Gates
+
+TypeScript workspace, run from `typescript/`: `build`, `format:check`, `lint`, `test`, and `check`
+all passed. New tests cover canonical `undefined` handling, interface bodies with compile-time
+rejections, a product classifier, and overlapping `keyFor` calls with slow storage, dropping
+storage, TTL expiry, a failed lookup, and two sends in flight.
+
+### Breaks
+
+- `IdempotencyKeyStore` requires `classifyError`, and `keyFor` and `settle` are generic. A
+  hand-written store must add them; stores from `createIdempotencyKeyStore` already do.
+- A `sendIdempotentMutation<Result>` call that passes only an explicit `Result` type argument
+  defaults `Body` to `JsonValue`, so an interface body there still needs the second type argument
+  or no explicit arguments.
+
+### Product adoption
+
+- Redemut: delete both casts and the `JsonValue` import in `web/src/content-builder-screens.tsx`,
+  and pass `classifyError` for `ApiClientError` where `web/src/ready-app.tsx` creates the store.
+- Leitbild mobile: pass
+  `classifyError: (error) => error instanceof SafeApiError ? classifyMutationStatus(error.status, error.code) : undefined`
+  in `mobile/src/write-intent.ts`. Leitbild web gets key sharing by upgrading; nothing to delete.

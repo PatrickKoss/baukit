@@ -185,3 +185,45 @@ None. The only change to an existing export widens `OverlayA11yOptions.initialFo
 - Solo Leveling System: no arrow-key movement, and neither the menu nor the confirmation dialog uses
   `useOverlayA11y`, so the background gets no `inert` on web and no hiding props on native. The item
   action runs synchronously right after `onClose`.
+
+## Follow-up 0.5.1 (2026-09-29)
+
+Source revisions: Baukit baseline 28db260, Redemut 1d40e90. This note is the a11y-core note in
+the fix plan, so the reduced-motion follow-up lands here.
+
+### Product evidence
+
+`src/use-reduced-motion.ts` imports `AccessibilityInfo` from `react-native`, and `src/web.ts` did
+not export `useReducedMotion`. Redemut's web app therefore keeps `web/src/reduced-motion.ts`, a
+`matchMedia` hook used by `web/src/dialog-screens.tsx:53` and
+`web/src/celebrations/use-one-shot.ts:3`. Importing the root entry from a plain React web build
+would pull React Native into the bundle.
+
+### Decision
+
+`@baukit/a11y-core/web` exports `useReducedMotion`, `useReducedMotionPreference`, and the
+`ReducedMotionPreference` type from `src/use-reduced-motion-web.ts`, which imports only React. The
+hooks read `(prefers-reduced-motion: reduce)` through `useSyncExternalStore` and follow changes to
+the query. The server snapshot is `{ reduceMotion: false, resolved: false }`, so server rendering
+and hydration match. A client-only render resolves on its first render, and a hydrated one right
+after hydration. The native root hook keeps
+its asynchronous `AccessibilityInfo` query; the web hooks have the same names and return shape, so
+shared component code reads the same fields on both entries. The query string lives in the web
+file and the root hook imports it from there, so the two entries cannot drift.
+
+### Gates
+
+TypeScript workspace, run from `typescript/`: `build`, `format:check`, `lint`, `test`, and `check`
+all passed. The new test mocks `react-native` to throw on import, so it fails if the web entry
+ever reaches React Native. It covers the first client render, a change event and unsubscribe on
+unmount, a host without `matchMedia`, a stable return object, and a hydrated render that starts
+unresolved and then resolves.
+
+### Breaks
+
+None. The root entry keeps its exports and behavior.
+
+### Product adoption
+
+Redemut: delete `web/src/reduced-motion.ts` and import `useReducedMotion` from
+`@baukit/a11y-core/web` in `web/src/dialog-screens.tsx` and `web/src/celebrations/use-one-shot.ts`.
