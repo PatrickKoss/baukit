@@ -66,6 +66,38 @@ const apiUrl = parseApiOrigin(process.env['PRODUCT_API_URL'] ?? 'http://localhos
 
 It throws `ApiOriginError`, a `TypeError`, with a `reason` of `invalid_url`, `insecure_scheme`, or `not_an_origin`. Credentials, a path, a query, or a fragment count as `not_an_origin`. `allowLoopbackHttp` defaults to false. The message names the label and the broken rule, never the value, so it is safe to log.
 
+## Keycloak test helpers
+
+`@baukit/auth-node/keycloak-testing` sets up users for end-to-end tests against a disposable development Keycloak. It runs on Node 24, uses the global `fetch`, and needs no Playwright dependency.
+
+```ts
+import {
+  allowKeycloakWebOrigin,
+  createKeycloakTestUser,
+  keycloakStack,
+  signInWithKeycloak,
+} from '@baukit/auth-node/keycloak-testing';
+
+const stack = keycloakStack({
+  url: 'http://localhost:8081',
+  realm: 'notes',
+  webClientId: 'notes-web',
+});
+
+await allowKeycloakWebOrigin(stack, 'http://localhost:5183');
+const user = await createKeycloakTestUser(stack);
+await page.getByRole('button', { name: 'Sign in' }).click();
+await signInWithKeycloak(page, user, stack);
+```
+
+`keycloakStack(defaults, environment = process.env)` returns the product's defaults unless `E2E_KEYCLOAK_URL`, `E2E_KEYCLOAK_REALM`, `E2E_KEYCLOAK_ADMIN_USERNAME`, `E2E_KEYCLOAK_ADMIN_PASSWORD`, or `E2E_KEYCLOAK_WEB_CLIENT_ID` is set. The admin credentials default to `admin` and `admin`, and trailing slashes are removed from the URL.
+
+`createKeycloakTestUser(stack, user?, options?)` signs in to the master realm's `admin-cli` and creates a verified, enabled user with a permanent password. Without `user`, the username is `e2e-<uuid>` and the password is random, so parallel tests never share an identity. Pass `username`, `email`, or `password` when the realm signs in by email. It returns `{ username, password, email, subject }`; `subject` is the Keycloak user ID, which becomes the `sub` claim.
+
+`revokeKeycloakUserSessions(stack, subject)` ends every session of the user, so the app's next refresh fails. `allowKeycloakWebOrigin(stack, origin)` adds `<origin>/*` to the web client's redirect URIs and `origin` to its web origins, and does nothing when both are present. `signInWithKeycloak(page, user, stack, { timeoutMs })` waits until the page is on the Keycloak origin, fills `#username` and `#password`, and clicks `#kc-login`; those IDs do not change with the login locale. `page` is any object with Playwright's `waitForURL` and `locator`, such as a `Page` or a sign-in popup.
+
+Every admin call takes `{ fetch, timeoutMs }`; the timeout defaults to `DEFAULT_KEYCLOAK_REQUEST_TIMEOUT_MS` (30 seconds). A failure throws an `Error` that names the step and HTTP status and never includes a response body or the admin password. Created users and added origins stay in the realm, so point the helpers only at a development realm.
+
 ## Cache contract
 
 The JSON cache holds named profiles under one namespace. `defaultTokenCachePath(namespace)` resolves to `$XDG_CONFIG_HOME/<namespace>/tokens.json`, or `~/.config/<namespace>/tokens.json` when `XDG_CONFIG_HOME` is unset.

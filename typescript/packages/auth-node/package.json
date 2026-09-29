@@ -31,6 +31,11 @@
       "types": "./dist/device-flow.d.ts",
       "import": "./dist/device-flow.js",
       "default": "./dist/device-flow.js"
+    },
+    "./keycloak-testing": {
+      "types": "./dist/keycloak-testing.d.ts",
+      "import": "./dist/keycloak-testing.js",
+      "default": "./dist/keycloak-testing.js"
     }
   },
   "files": [
