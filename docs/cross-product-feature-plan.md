@@ -97,7 +97,7 @@ Adoption of 0.5.0, one branch `baukit-0.5.0` per product, merged into the produc
 
 Adoption of 0.5.1, one branch `baukit-0.5.1` per product, closing the steps 0.5.0 left open and following the `0.5.1 P*` lines:
 
-- [ ] Leitbild
+- [x] Leitbild
 - [x] Hebkit
 - [ ] Redemut
 
@@ -194,6 +194,7 @@ Adoption of 0.5.1, one branch `baukit-0.5.1` per product, closing the steps 0.5.
 - 2026-09-29: P1 merged. `encodeCsv` and Rust `CsvOptions` gain force-quoting and a null marker, pinned by five new shared vectors. `KeyValueStore.clearPrefix` in the in-memory, Dexie, and Expo SQLite stores; a `WebStorageKeyValueStore`; `DurableDraft.move` and `isScopeActive`. Breaks: `KeyValueStore` implementations need `clearPrefix`, and `DurableDraft` implementations need `move`. Synchronous reads stay out, since the store is async. Workspace gates, `ts-browser-test`, and the Android conformance run pass.
 - 2026-09-29: Integrated gate on `main` after P1 to P4 passed (711 Rust tests with Docker, seven fixture flavors, browser Dexie 36, Expo SQLite on Android 33 cases, notifications and Android compile gates). v0.5.1 cut; npm and crates.io publishing is run by the tag workflow or by hand.
 - 2026-09-29: Hebkit adopted 0.5.1 (`2c1c52b8..ce780c42`, merged into its `main`): nested SQLite transactions as savepoints (item 15), `encodeCsv` with a null marker and quoted cells so the importer reads its export back (item 20), claim purge through `DeliveryClaimStore` (item 17), and Keycloak users through `@baukit/auth-node/keycloak-testing` (item 19). Orchestrator gate passed except expo-doctor patch mismatches, which failed before; the agent's web e2e (413) and Maestro runs showed only the known 'Create a default plan' failure. Gap: `allowKeycloakWebOrigin` does not set `post.logout.redirect.uris`, so Hebkit keeps its client patch in `web/e2e/global-setup.ts`.
+- 2026-09-29: Leitbild adopted 0.5.1 (`9286c72..0e909d3`, merged into its `main`): web journal drafts run on `createDurableDraft` over `WebStorageKeyValueStore` with `move`, `isScopeActive`, and `clearPrefix` (item 14), and mobile `write-intent.ts` passes a `SafeApiError` classifier (P2). The deleted `journal-drafts.ts` (402 lines) became `journal-draft-store.ts` and `journal-save-queue.ts` (about 410 lines) holding the lease, entry pointer, shared per-route draft, and save queue, so storage moved to Baukit but product code did not shrink. Orchestrator gate passed. Known failures unchanged (Docker `limits.json`, no mobile `test:coverage`, one QA route-state spec, Maestro now stops at `"Journal" is visible` on `main` too); `web/scripts/run-e2e.sh` waits on a `/items` route the backend never serves.
 
 ## What changed in this revision
 
