@@ -3,6 +3,8 @@
 import createClient from 'openapi-fetch';
 import type { Client, ClientOptions } from 'openapi-fetch';
 
+import { fullJitterBackoffMs } from './backoff.js';
+
 export {
   unverifiedDisplayIdentityHintsFromJwt,
   type UnverifiedDisplayIdentityFallback,
@@ -645,10 +647,8 @@ async function retryDelay(
   signal: AbortSignal,
   requestId: string,
 ): Promise<void> {
-  const ceiling = Math.min(retry.maxDelayMs, retry.baseDelayMs * 2 ** retryIndex);
-  const random = Math.max(0, Math.min(1, retry.random()));
   try {
-    await retry.sleep(ceiling * random, signal);
+    await retry.sleep(fullJitterBackoffMs(retryIndex, retry), signal);
   } catch (cause) {
     throw new NetworkError('API request was aborted', requestId, cause, true);
   }

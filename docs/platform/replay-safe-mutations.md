@@ -203,6 +203,12 @@ await sendIdempotentMutation(keys, intent, (key) =>
 are possibly committed, and the store keeps the key for the next attempt. Other 4xx responses are
 not committed, and the store drops the key. A different body is a different intent and gets a new
 key. The default store lives in memory. Pass `storage` to keep keys across reloads or app restarts.
+A product whose API client throws its own error type passes `classifyError` to the store, so its
+definite rejections drop the key instead of counting as possibly committed.
+
+Two sends of one intent that overlap carry one key, because the store holds the key from the first
+`keyFor` until the intent settles. The server then replays the first result or answers
+`idempotency_key_in_progress`, and the effect happens once.
 
 `createApiFetch` retries `POST` and `PATCH` only when `retry.methods` names them and the request
 carries `Idempotency-Key`. An unkeyed `POST` never retries.

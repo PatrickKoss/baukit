@@ -204,7 +204,220 @@ describe('canonicalJson', () => {
     );
   });
 
+  it('leaves out undefined members and writes undefined array items as null', () => {
+    expect(canonicalJson({ b: undefined, a: [1, undefined] })).toBe('{"a":[1,null]}');
+  });
+
   it('rejects non-finite numbers', () => {
     expect(() => canonicalJson(Number.POSITIVE_INFINITY)).toThrow('non-finite');
+  });
+});
+
+describe('JSON-compatible bodies', () => {
+  interface ChoiceBody {
+    readonly text: string;
+    readonly audio?: string | null | undefined;
+  }
+
+  interface DraftBody {
+    readonly title: string;
+    readonly choices: readonly ChoiceBody[];
+    readonly quality: 'strong' | 'weak';
+  }
+
+  it('accepts interface bodies without an index signature', async () => {
+    const keys = store();
+    const body: DraftBody = { title: 'intro', choices: [{ text: 'hi' }], quality: 'strong' };
+    const sent: string[] = [];
+
+    await sendIdempotentMutation(keys, { account: 'a', operation: 'createDraft', body }, (key) => {
+      sent.push(key);
+      return Promise.resolve();
+    });
+
+    expect(sent).toEqual(['key-1']);
+  });
+
+  it('gives a body with undefined members the key of the body without them', async () => {
+    const keys = store();
+    const sparse: DraftBody = {
+      title: 'intro',
+      choices: [{ text: 'hi', audio: undefined }],
+      quality: 'weak',
+    };
+    const dense: DraftBody = { title: 'intro', choices: [{ text: 'hi' }], quality: 'weak' };
+
+    const first = await keys.keyFor({ account: 'a', operation: 'createDraft', body: sparse });
+
+    await expect(
+      keys.keyFor({ account: 'a', operation: 'createDraft', body: dense }),
+    ).resolves.toBe(first);
+  });
+
+  it('rejects bodies that JSON cannot carry unchanged', () => {
+    const keys = store();
+    // @ts-expect-error a Date is not a JSON value
+    void keys.keyFor({ account: 'a', operation: 'op', body: { at: new Date(0) } });
+    // @ts-expect-error a function is not a JSON value
+    void keys.keyFor({ account: 'a', operation: 'op', body: { run: () => 1 } });
+    // @ts-expect-error an unknown member is not known to be JSON
+    void keys.keyFor({ account: 'a', operation: 'op', body: { value: 1 as unknown } });
+  });
+});
+
+describe('product error classification', () => {
+  class ProductApiError extends Error {
+    constructor(
+      readonly status: number,
+      readonly code?: string,
+    ) {
+      super('product failure');
+    }
+  }
+
+  function classifyProductError(error: unknown) {
+    return error instanceof ProductApiError
+      ? classifyMutationStatus(error.status, error.code)
+      : undefined;
+  }
+
+  it('drops the key when the product classifier reports a definite rejection', async () => {
+    const keys = createIdempotencyKeyStore({
+      ttlMs: TTL_MS,
+      keyFactory: counterKeys(),
+      classifyError: classifyProductError,
+    });
+
+    await expect(
+      sendIdempotentMutation(keys, intent, () => Promise.reject(new ProductApiError(422))),
+    ).rejects.toBeInstanceOf(ProductApiError);
+
+    await expect(keys.keyFor(intent)).resolves.toBe('key-2');
+  });
+
+  it('falls back to the Baukit classifier for errors the product does not know', () => {
+    const keys = createIdempotencyKeyStore({ ttlMs: TTL_MS, classifyError: classifyProductError });
+
+    expect(keys.classifyError(new ProductApiError(409, 'idempotency_key_in_progress'))).toBe(
+      'possibly-committed',
+    );
+    expect(keys.classifyError(new ProductApiError(404))).toBe('not-committed');
+    expect(keys.classifyError(apiError(400, 'validation_failed'))).toBe('not-committed');
+    expect(keys.classifyError(new TypeError('offline'))).toBe('possibly-committed');
+  });
+
+  it('keeps the key for a product error when no classifier is set', async () => {
+    const keys = store();
+
+    await expect(
+      sendIdempotentMutation(keys, intent, () => Promise.reject(new ProductApiError(422))),
+    ).rejects.toBeInstanceOf(ProductApiError);
+
+    await expect(keys.keyFor(intent)).resolves.toBe('key-1');
+  });
+
+  it('treats the in-progress code as possibly committed', () => {
+    expect(classifyMutationStatus(409, 'idempotency_key_in_progress')).toBe('possibly-committed');
+    expect(classifyMutationStatus(409, 'idempotency_key_reused')).toBe('not-committed');
+  });
+});
+
+describe('concurrent keyFor calls', () => {
+  const droppingStorage = (): IdempotencyKeyStorage => ({
+    get: () => null,
+    set: () => undefined,
+    delete: () => undefined,
+  });
+
+  function gatedStorage(): IdempotencyKeyStorage & { open(): void } {
+    const saved = new Map<string, StoredIdempotencyKey>();
+    let opened: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      opened = resolve;
+    });
+    return {
+      async get(slot) {
+        await gate;
+        return saved.get(slot) ?? null;
+      },
+      async set(slot, value) {
+        await gate;
+        saved.set(slot, value);
+      },
+      delete(slot) {
+        saved.delete(slot);
+      },
+      open: () => {
+        opened();
+      },
+    };
+  }
+
+  it('share one key while the first lookup is still reading storage', async () => {
+    const storage = gatedStorage();
+    const keys = store(() => 0, storage);
+
+    const first = keys.keyFor(intent);
+    const second = keys.keyFor(intent);
+    storage.open();
+
+    await expect(Promise.all([first, second])).resolves.toEqual(['key-1', 'key-1']);
+  });
+
+  it('share one key when storage drops writes, until the intent settles', async () => {
+    const keys = store(() => 0, droppingStorage());
+
+    const first = await keys.keyFor(intent);
+    await expect(keys.keyFor(intent)).resolves.toBe(first);
+
+    await keys.settle(intent, 'committed');
+    await expect(keys.keyFor(intent)).resolves.not.toBe(first);
+  });
+
+  it('do not reuse a held key after its time to live', async () => {
+    let now = 0;
+    const keys = store(() => now, droppingStorage());
+
+    const first = await keys.keyFor(intent);
+    now = TTL_MS;
+
+    await expect(keys.keyFor(intent)).resolves.not.toBe(first);
+  });
+
+  it('recover when an earlier lookup failed', async () => {
+    let failNext = true;
+    const flaky: IdempotencyKeyStorage = {
+      ...droppingStorage(),
+      get: () => {
+        if (failNext) {
+          failNext = false;
+          return Promise.reject(new Error('storage offline'));
+        }
+        return null;
+      },
+    };
+    const keys = store(() => 0, flaky);
+
+    const failed = keys.keyFor(intent);
+    const next = keys.keyFor(intent);
+
+    await expect(failed).rejects.toThrow('storage offline');
+    await expect(next).resolves.toBe('key-1');
+  });
+
+  it('send two in-flight mutations for one intent with one key', async () => {
+    const keys = store();
+    const sent: string[] = [];
+    const send = (key: string) => {
+      sent.push(key);
+      return Promise.resolve();
+    };
+
+    await Promise.all([
+      sendIdempotentMutation(keys, intent, send),
+      sendIdempotentMutation(keys, intent, send),
+    ]);
+
+    expect(sent).toEqual(['key-1', 'key-1']);
   });
 });

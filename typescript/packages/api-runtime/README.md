@@ -120,6 +120,8 @@ Retries use exponential backoff with full jitter, capped by `maxDelayMs`. The sa
 
 Defaults are two retries, a 100 ms initial ceiling, and a 2,000 ms maximum ceiling. Use `retry: false` to disable retries. A `POST` or `PATCH` counts as keyed when the request carries the `Idempotency-Key` header (`IDEMPOTENCY_KEY_HEADER`). Every attempt resends the same headers and body, so the server sees one key.
 
+The delay formula is public as `fullJitterBackoffMs(retryIndex, { baseDelayMs, maxDelayMs, random })` in `@baukit/api-runtime/backoff`. It returns a delay between 0 and `min(maxDelayMs, baseDelayMs * 2 ** retryIndex)` and clamps the random sample to `[0, 1]`. That entry imports nothing, so a sync loop or job runner can share the policy without loading the fetch runtime. `@baukit/sync-client`'s scheduler takes it as its retry delay.
+
 ## Idempotent mutations
 
 `@baukit/api-runtime/idempotency` keeps one `Idempotency-Key` per account, operation, and body until the outcome is definite or the key expires. The server half is `baukit-http`'s `IdempotencyKeyRule`, and the protocol is [replay-safe mutations](../../../docs/platform/replay-safe-mutations.md).
@@ -157,6 +159,22 @@ await sendIdempotentMutation(
 | Any other 4xx                                                                           | `not-committed`      | Dropped |
 
 A kept key is reused for the same intent until `ttlMs` passes; keep `ttlMs` below the server's replay retention. After that the store mints a new key, so a request never carries a key the server may already have purged. Keys default to `crypto.randomUUID()` and live in memory, so a reload forgets them. Pass `storage`, an `IdempotencyKeyStorage` with `get`, `set`, and `delete` (sync or async), to keep keys in `sessionStorage`, AsyncStorage, or SQLite. Its slot argument is the intent's canonical JSON; store a digest of it when bodies are sensitive.
+
+Calls for the same intent share one key from the first `keyFor` until the intent settles. A double submit therefore sends two requests with one key, and the server replays the first result or answers 409 `idempotency_key_in_progress`, which keeps the key. This holds while storage is still reading and when storage drops writes, as a full `sessionStorage` does. The store does not merge the two requests into one; each caller gets its own response. A lookup that fails does not block the next one.
+
+`body` takes any value that JSON carries unchanged, checked against its own type through `JsonCompatible<Body>`. Interfaces without an index signature pass, and so do optional members typed `T | undefined`. A `Date`, a function, or an `unknown` member fails to compile. Members set to `undefined` are left out of the key, as `JSON.stringify` leaves them out of the request.
+
+The Baukit classifier knows `ApiError`, `HttpError`, and `NetworkError`. A product that throws its own API error passes `classifyError` to the store. Return an outcome for the errors the product knows and `undefined` for the rest, which falls through to `classifyMutationError`. `classifyMutationStatus(status, code)` applies the table above, including the in-progress code:
+
+```ts
+const keys = createIdempotencyKeyStore({
+  ttlMs: 12 * 60 * 60 * 1000,
+  classifyError: (error) =>
+    error instanceof ProductApiError ? classifyMutationStatus(error.status, error.code) : undefined,
+});
+```
+
+`sendIdempotentMutation` settles a failed send with `store.classifyError(error)`. Code that calls `keyFor` and `settle` directly can call the same method.
 
 `@baukit/data-contracts/revisioned-writes` decides when a document write is resent; this store decides which key it carries. A revisioned `PATCH` with `If-Match` needs no key. A keyed create sent from the queue's write callback puts any expected revision in `body`, so a resend after an unknown outcome maps to the same key.
 

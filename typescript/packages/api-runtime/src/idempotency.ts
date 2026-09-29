@@ -10,15 +10,30 @@ export const IDEMPOTENCY_KEY_IN_PROGRESS_CODE = 'idempotency_key_in_progress' as
  */
 export type MutationAttemptOutcome = 'committed' | 'not-committed' | 'possibly-committed';
 
+/**
+ * Accepts `Value` when it serializes to JSON unchanged, including interfaces that have no index
+ * signature. Object members may be `undefined`, which JSON omits.
+ */
+export type JsonCompatible<Value> = { readonly [Key in keyof Value]: JsonMember<Value[Key]> };
+
+type JsonMember<Value> = Value extends undefined | JsonValue
+  ? Value
+  : Value extends (...args: never[]) => unknown
+    ? never
+    : JsonCompatible<Value>;
+
 /** One logical write. Two intents with equal fields share a key. */
-export interface MutationIntent {
+export interface MutationIntent<Body extends JsonCompatible<Body> = JsonValue> {
   /** The signed-in account, so keys never cross an account switch. */
   readonly account: string;
   /** A stable operation name, such as `createNote`. Include the target ID when there is one. */
   readonly operation: string;
   /** The request body, plus the expected revision for conditional writes. */
-  readonly body: JsonValue;
+  readonly body: Body;
 }
+
+/** Classifies a product error, or returns `undefined` to fall back to {@link classifyMutationError}. */
+export type MutationErrorClassifier = (error: unknown) => MutationAttemptOutcome | undefined;
 
 /** A key kept for one intent. */
 export interface StoredIdempotencyKey {
@@ -48,14 +63,24 @@ export interface IdempotencyKeyStoreOptions {
   readonly keyFactory?: () => string;
   /** Key storage. Defaults to an in-memory map that a reload clears. */
   readonly storage?: IdempotencyKeyStorage;
+  /** Classifies the product's own API errors before the Baukit defaults apply. */
+  readonly classifyError?: MutationErrorClassifier;
 }
 
 /** Keeps one key per account, operation, and body until a definite outcome or expiry. */
 export interface IdempotencyKeyStore {
-  /** Returns the live key for the intent, or creates one. */
-  keyFor(intent: MutationIntent): Promise<string>;
+  /**
+   * Returns the live key for the intent, or creates one. Calls for the same intent share one key
+   * from the first call until the intent settles, even when storage is slow or drops writes.
+   */
+  keyFor<Body extends JsonCompatible<Body>>(intent: MutationIntent<Body>): Promise<string>;
   /** Drops the key after a definite outcome and keeps it while the outcome is uncertain. */
-  settle(intent: MutationIntent, outcome: MutationAttemptOutcome): Promise<void>;
+  settle<Body extends JsonCompatible<Body>>(
+    intent: MutationIntent<Body>,
+    outcome: MutationAttemptOutcome,
+  ): Promise<void>;
+  /** Classifies a failed send with the product classifier, then {@link classifyMutationError}. */
+  classifyError(error: unknown): MutationAttemptOutcome;
 }
 
 const OK_MIN = 200;
@@ -65,8 +90,14 @@ const SERVER_ERROR_MIN = 500;
 const REQUEST_TIMEOUT = 408;
 const TOO_MANY_REQUESTS = 429;
 
-/** Classifies a mutation response status. */
-export function classifyMutationStatus(status: number): MutationAttemptOutcome {
+/**
+ * Classifies a mutation response status and, when the caller has it, the error code. The code
+ * `idempotency_key_in_progress` is `possibly-committed` whatever the status.
+ */
+export function classifyMutationStatus(status: number, code?: string): MutationAttemptOutcome {
+  if (code === IDEMPOTENCY_KEY_IN_PROGRESS_CODE) {
+    return 'possibly-committed';
+  }
   if (status >= OK_MIN && status <= OK_MAX) {
     return 'committed';
   }
@@ -108,24 +139,48 @@ export function createIdempotencyKeyStore(
   const now = options.now ?? Date.now;
   const keyFactory = options.keyFactory ?? (() => globalThis.crypto.randomUUID());
   const storage = options.storage ?? memoryStorage();
+  const classifyProductError = options.classifyError ?? (() => undefined);
+  const unsettled = new Map<string, Promise<StoredIdempotencyKey>>();
+  const isLive = (stored: StoredIdempotencyKey) => now() - stored.createdAtMs < options.ttlMs;
+
+  const loadOrCreate = async (slot: string): Promise<StoredIdempotencyKey> => {
+    const stored = await storage.get(slot);
+    if (stored !== null && isLive(stored)) {
+      return stored;
+    }
+    const fresh = { key: keyFactory(), createdAtMs: now() };
+    await storage.set(slot, fresh);
+    return fresh;
+  };
+
+  const reuseOrLoad = async (
+    slot: string,
+    earlier: Promise<StoredIdempotencyKey> | undefined,
+  ): Promise<StoredIdempotencyKey> => {
+    const held = await earlier?.catch(() => undefined);
+    if (held !== undefined && isLive(held)) {
+      return held;
+    }
+    return loadOrCreate(slot);
+  };
 
   return {
     async keyFor(intent) {
       const slot = intentSlot(intent);
-      const stored = await storage.get(slot);
-      const current = now();
-      if (stored !== null && current - stored.createdAtMs < options.ttlMs) {
-        return stored.key;
-      }
-      const fresh = { key: keyFactory(), createdAtMs: current };
-      await storage.set(slot, fresh);
-      return fresh.key;
+      const pending = reuseOrLoad(slot, unsettled.get(slot));
+      unsettled.set(slot, pending);
+      return (await pending).key;
     },
     async settle(intent, outcome) {
+      const slot = intentSlot(intent);
+      unsettled.delete(slot);
       if (outcome === 'possibly-committed') {
         return;
       }
-      await storage.delete(intentSlot(intent));
+      await storage.delete(slot);
+    },
+    classifyError(error) {
+      return classifyProductError(error) ?? classifyMutationError(error);
     },
   };
 }
@@ -133,12 +188,12 @@ export function createIdempotencyKeyStore(
 /**
  * Sends one keyed mutation and settles its key.
  *
- * `send` receives the key to put in the `Idempotency-Key` header. A throw is classified with
- * {@link classifyMutationError}, settled, and rethrown.
+ * `send` receives the key to put in the `Idempotency-Key` header. A throw is classified with the
+ * store's `classifyError`, settled, and rethrown.
  */
-export async function sendIdempotentMutation<Result>(
+export async function sendIdempotentMutation<Result, Body extends JsonCompatible<Body> = JsonValue>(
   store: IdempotencyKeyStore,
-  intent: MutationIntent,
+  intent: MutationIntent<Body>,
   send: (key: string) => Promise<Result>,
 ): Promise<Result> {
   const key = await store.keyFor(intent);
@@ -146,22 +201,33 @@ export async function sendIdempotentMutation<Result>(
   try {
     result = await send(key);
   } catch (error) {
-    await store.settle(intent, classifyMutationError(error));
+    await store.settle(intent, store.classifyError(error));
     throw error;
   }
   await store.settle(intent, 'committed');
   return result;
 }
 
-/** Serializes JSON with object members sorted by key, so equal values give equal text. */
-export function canonicalJson(value: JsonValue): string {
-  if (isJsonArray(value)) {
-    return `[${value.map((item) => canonicalJson(item)).join(',')}]`;
+/**
+ * Serializes JSON with object members sorted by key, so equal values give equal text. Members
+ * whose value is `undefined` are left out, as `JSON.stringify` leaves them out.
+ */
+export function canonicalJson<Value extends JsonCompatible<Value>>(value: Value): string {
+  return canonicalText(value);
+}
+
+function canonicalText(value: unknown): string {
+  if (value === undefined) {
+    throw new Error('canonical JSON cannot encode undefined');
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalItem).join(',')}]`;
   }
   if (value !== null && typeof value === 'object') {
     const members = Object.entries(value)
+      .filter(([, member]) => member !== undefined)
       .sort(([left], [right]) => (left < right ? -1 : 1))
-      .map(([key, member]) => `${JSON.stringify(key)}:${canonicalJson(member)}`);
+      .map(([key, member]) => `${JSON.stringify(key)}:${canonicalText(member)}`);
     return `{${members.join(',')}}`;
   }
   if (typeof value === 'number' && !Number.isFinite(value)) {
@@ -170,12 +236,12 @@ export function canonicalJson(value: JsonValue): string {
   return JSON.stringify(value);
 }
 
-function isJsonArray(value: JsonValue): value is readonly JsonValue[] {
-  return Array.isArray(value);
+function canonicalItem(item: unknown): string {
+  return item === undefined ? 'null' : canonicalText(item);
 }
 
-function intentSlot(intent: MutationIntent): string {
-  return canonicalJson([intent.account, intent.operation, intent.body]);
+function intentSlot<Body extends JsonCompatible<Body>>(intent: MutationIntent<Body>): string {
+  return canonicalText([intent.account, intent.operation, intent.body]);
 }
 
 function memoryStorage(): IdempotencyKeyStorage {

@@ -27,6 +27,11 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./backoff": {
+      "types": "./dist/backoff.d.ts",
+      "import": "./dist/backoff.js",
+      "default": "./dist/backoff.js"
+    },
     "./idempotency": {
       "types": "./dist/idempotency.d.ts",
       "import": "./dist/idempotency.js",
