@@ -70,6 +70,16 @@ Decisions taken on the orchestrator's recommendation; the user can still overtur
 - [x] F6. Full CI mirror on `main` after the wave
 - Not possible here: a physical-device run and any iOS run. The emulator stands in for Android.
 
+### 0.5.1 fix wave (gaps found by the first adoptions)
+
+Leitbild, Hebkit, and Redemut kept product code where Baukit 0.5.0 fell short. This wave closes those gaps for a 0.5.1 patch release.
+
+- [ ] P1. `encodeCsv` force-quoting and a distinct null (item 20); durable draft scope moves and `KeyValueStore` prefix clear (item 14)
+- [ ] P2. Pluggable mutation error classification, interface-typed mutation bodies, and in-flight key dedupe (item 7); web `useReducedMotion` (item 13); `SyncScheduler` retry with backoff
+- [ ] P3. Nested `ExpoSqliteConnection.transaction()` (item 15)
+- [ ] P4. `DeliveryClaimStore` purge (item 17); Keycloak e2e helpers in a package (item 19)
+- [ ] Integrated gate on `main` and v0.5.1 release
+
 ### Product adoption follow-ups
 
 Filled in as items complete. Each line names the product code to delete or change once the product pins a released Baukit version.
