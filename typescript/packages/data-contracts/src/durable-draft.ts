@@ -66,15 +66,25 @@ export type DraftClearRequest =
   | { readonly reason: 'discarded' }
   | { readonly reason: 'submitted'; readonly localRevision: number };
 
-/** `stale` means the scope changed or closed before the operation started, so storage was not touched. */
+/**
+ * `stale` means the scope changed, closed, or was reported inactive by `isScopeActive` before the
+ * operation started, so storage was not touched.
+ */
 export type DraftSaveOutcome = 'saved' | 'clean' | 'blocked' | 'stale';
 export type DraftClearOutcome = 'cleared' | 'newer-edits-kept' | 'stale';
+export type DraftMoveOutcome = 'moved' | 'blocked' | 'stale';
 
 export interface DurableDraftOptions<TScope, TValue> {
   readonly store: KeyValueStore;
   /** Encodes the scope to a storage key. Include the identity and document. */
   readonly key: (scope: TScope) => string;
   readonly codec: DraftCodec<TValue>;
+  /**
+   * Called before every write or delete. Return false when this editor no longer owns the scope,
+   * for example after another editor took a lease on it; the operation then resolves `stale`.
+   * Reads are not checked. Every scope is active when omitted.
+   */
+  readonly isScopeActive?: (scope: TScope) => boolean;
 }
 
 export interface DurableDraft<TScope, TValue> {
@@ -95,13 +105,22 @@ export interface DurableDraft<TScope, TValue> {
    * `DraftPersistenceError` that stays in the snapshot.
    */
   clear(request: DraftClearRequest): Promise<DraftClearOutcome>;
+  /**
+   * Moves the open draft to another scope, for example from a "new document" scope to the document
+   * the server created. When the value is dirty or stored, it is first written under the new key,
+   * replacing what was there. The old key is then deleted in every case. Value, revision, and
+   * submission stay as they are, and later saves go to the new key. Resolves `blocked` while recovery is `corrupt` or
+   * `unsupported-version`. Rejects with `DraftPersistenceError` when storage fails; the draft then
+   * stays on the old scope and the move can be retried.
+   */
+  move(scope: TScope): Promise<DraftMoveOutcome>;
   /** Closes the scope without saving and resolves after in-flight storage work settles. */
   close(): Promise<void>;
 }
 
 interface Session<TScope, TValue> {
-  readonly scope: TScope;
-  readonly key: string;
+  scope: TScope;
+  key: string;
   readonly initial: TValue;
 }
 
@@ -160,15 +179,22 @@ function persistenceError(
   return new DraftPersistenceError(operation, { cause: normalizeStorageError(cause) });
 }
 
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+
 const CLOSED: ClosedDurableDraftSnapshot = { open: false };
 
 class DefaultDurableDraft<TScope, TValue> implements DurableDraft<TScope, TValue> {
   readonly #store: KeyValueStore;
   readonly #key: (scope: TScope) => string;
   readonly #codec: DraftCodec<TValue>;
+  readonly #isScopeActive: (scope: TScope) => boolean;
   readonly #listeners = new Set<() => void>();
   #session: Session<TScope, TValue> | null = null;
   #persistedRevision: number | null = 0;
+  /** True while the current key holds a draft this session read or wrote. */
+  #stored = false;
   #tail: Promise<unknown> = Promise.resolve();
   #snapshot: DurableDraftSnapshot<TScope, TValue> = CLOSED;
 
@@ -180,6 +206,7 @@ class DefaultDurableDraft<TScope, TValue> implements DurableDraft<TScope, TValue
     this.#store = options.store;
     this.#key = options.key;
     this.#codec = options.codec;
+    this.#isScopeActive = options.isScopeActive ?? (() => true);
   }
 
   getSnapshot(): DurableDraftSnapshot<TScope, TValue> {
@@ -198,11 +225,12 @@ class DefaultDurableDraft<TScope, TValue> implements DurableDraft<TScope, TValue
     try {
       key = this.#key(scope);
     } catch (error) {
-      return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+      return Promise.reject(asError(error));
     }
     const session: Session<TScope, TValue> = { scope, key, initial };
     this.#session = session;
     this.#persistedRevision = 0;
+    this.#stored = false;
     this.#publish({
       open: true,
       scope,
@@ -245,6 +273,20 @@ class DefaultDurableDraft<TScope, TValue> implements DurableDraft<TScope, TValue
     return this.#enqueue(() => this.#delete(session, request));
   }
 
+  move(scope: TScope): Promise<DraftMoveOutcome> {
+    const session = this.#session;
+    if (session === null) {
+      return Promise.resolve('stale');
+    }
+    let key: string;
+    try {
+      key = this.#key(scope);
+    } catch (error) {
+      return Promise.reject(asError(error));
+    }
+    return this.#enqueue(() => this.#relocate(session, scope, key));
+  }
+
   async close(): Promise<void> {
     this.#session = null;
     this.#publish(CLOSED);
@@ -270,6 +312,7 @@ class DefaultDurableDraft<TScope, TValue> implements DurableDraft<TScope, TValue
     if (current === null) {
       return;
     }
+    this.#stored = stored !== undefined;
     const loaded = decodeStored(stored, this.#codec);
     if (loaded.recovery === 'restored' && current.localRevision === 0) {
       this.#persistedRevision = loaded.upgraded ? null : 0;
@@ -283,7 +326,7 @@ class DefaultDurableDraft<TScope, TValue> implements DurableDraft<TScope, TValue
   }
 
   async #write(session: Session<TScope, TValue>): Promise<DraftSaveOutcome> {
-    const current = this.#currentFor(session);
+    const current = this.#activeFor(session);
     if (current === null) {
       return 'stale';
     }
@@ -293,18 +336,11 @@ class DefaultDurableDraft<TScope, TValue> implements DurableDraft<TScope, TValue
     if (isBlocked(current.recovery)) {
       return 'blocked';
     }
-    const { localRevision, value } = current;
-    this.#publishOpen({ persistence: 'saving', error: null });
-    try {
-      const envelope = { version: this.#codec.version, value: this.#codec.encode(value) };
-      await this.#store.set(session.key, envelope);
-    } catch (cause) {
-      const error = persistenceError('write', cause);
-      this.#publishFor(session, { persistence: 'failed', error });
-      throw error;
-    }
+    const { localRevision } = current;
+    await this.#writeValue(session, session.key, current.value);
     if (this.#currentFor(session) !== null) {
       this.#persistedRevision = localRevision;
+      this.#stored = true;
       this.#publishOpen({ persistence: 'idle', error: null });
     }
     return 'saved';
@@ -314,7 +350,7 @@ class DefaultDurableDraft<TScope, TValue> implements DurableDraft<TScope, TValue
     session: Session<TScope, TValue>,
     request: DraftClearRequest,
   ): Promise<DraftClearOutcome> {
-    const current = this.#currentFor(session);
+    const current = this.#activeFor(session);
     if (current === null) {
       return 'stale';
     }
@@ -325,21 +361,77 @@ class DefaultDurableDraft<TScope, TValue> implements DurableDraft<TScope, TValue
     }
     const { localRevision } = current;
     const submission: DraftSubmission = submitted ? 'confirmed' : current.submission;
-    this.#publishOpen({ persistence: 'clearing', error: null, submission });
-    try {
-      await this.#store.delete(session.key);
-    } catch (cause) {
-      const error = persistenceError('delete', cause);
-      this.#publishFor(session, { persistence: 'failed', error });
-      throw error;
-    }
+    await this.#deleteKey(session, session.key, { submission });
     if (this.#currentFor(session) !== null) {
       this.#applyCleared(session, localRevision, submitted);
     }
     return 'cleared';
   }
 
+  async #relocate(
+    session: Session<TScope, TValue>,
+    scope: TScope,
+    key: string,
+  ): Promise<DraftMoveOutcome> {
+    const current = this.#activeFor(session);
+    if (current === null || !this.#isScopeActive(scope)) {
+      return 'stale';
+    }
+    if (isBlocked(current.recovery)) {
+      return 'blocked';
+    }
+    if (key === session.key) {
+      session.scope = scope;
+      this.#publishOpen({ scope });
+      return 'moved';
+    }
+    const carried = current.dirty || this.#stored;
+    const { localRevision } = current;
+    if (carried) {
+      await this.#writeValue(session, key, current.value);
+    }
+    await this.#deleteKey(session, session.key, {});
+    session.scope = scope;
+    session.key = key;
+    if (this.#currentFor(session) !== null) {
+      if (carried) {
+        this.#persistedRevision = localRevision;
+      }
+      this.#stored = carried;
+      this.#publishOpen({ scope, persistence: 'idle', error: null });
+    }
+    return 'moved';
+  }
+
+  async #writeValue(session: Session<TScope, TValue>, key: string, value: TValue): Promise<void> {
+    this.#publishOpen({ persistence: 'saving', error: null });
+    try {
+      const envelope = { version: this.#codec.version, value: this.#codec.encode(value) };
+      await this.#store.set(key, envelope);
+    } catch (cause) {
+      const error = persistenceError('write', cause);
+      this.#publishFor(session, { persistence: 'failed', error });
+      throw error;
+    }
+  }
+
+  async #deleteKey(
+    session: Session<TScope, TValue>,
+    key: string,
+    changes: Partial<OpenDurableDraftSnapshot<TScope, TValue>>,
+  ): Promise<void> {
+    this.#publishFor(session, { ...changes, persistence: 'clearing', error: null });
+    try {
+      await this.#store.delete(key);
+    } catch (cause) {
+      const error = persistenceError('delete', cause);
+      this.#publishFor(session, { persistence: 'failed', error });
+      throw error;
+    }
+  }
+
   #applyCleared(session: Session<TScope, TValue>, localRevision: number, submitted: boolean): void {
+    this.#stored = false;
     const base = { recovery: 'none', persistence: 'idle', error: null } as const;
     if (submitted) {
       this.#persistedRevision = localRevision;
@@ -369,6 +461,11 @@ class DefaultDurableDraft<TScope, TValue> implements DurableDraft<TScope, TValue
 
   #currentFor(session: Session<TScope, TValue>): OpenDurableDraftSnapshot<TScope, TValue> | null {
     return session === this.#session ? this.#current() : null;
+  }
+
+  #activeFor(session: Session<TScope, TValue>): OpenDurableDraftSnapshot<TScope, TValue> | null {
+    const current = this.#currentFor(session);
+    return current !== null && this.#isScopeActive(session.scope) ? current : null;
   }
 
   #publishFor(

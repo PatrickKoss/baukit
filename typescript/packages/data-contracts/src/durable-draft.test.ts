@@ -830,6 +830,286 @@ describe('durable draft', () => {
     });
   });
 
+  describe('moving', () => {
+    const newNote: Scope = { account: 'account-a', document: 'new' };
+    const createdNote: Scope = { account: 'account-a', document: 'note-9' };
+
+    function operations(store: ControlledStore): string[] {
+      return store.calls.map((call) => `${call.operation} ${call.key}`);
+    }
+
+    it('writes a dirty value under the new key and deletes the old one', async () => {
+      const store = new ControlledStore();
+      const draft = createDraft(store);
+      await draft.open(newNote, EMPTY);
+      draft.update({ title: 'Draft', tags: [] });
+      const { localRevision } = openSnapshot(draft);
+
+      await expect(draft.move(createdNote)).resolves.toBe('moved');
+
+      expect(openSnapshot(draft)).toMatchObject({
+        scope: createdNote,
+        value: { title: 'Draft', tags: [] },
+        localRevision,
+        dirty: false,
+        persistence: 'idle',
+      });
+      expect(operations(store)).toEqual([
+        `get ${draftKey(newNote)}`,
+        `set ${draftKey(createdNote)}`,
+        `delete ${draftKey(newNote)}`,
+      ]);
+      await expect(store.inner.get(draftKey(createdNote))).resolves.toEqual({
+        version: 2,
+        value: { title: 'Draft', tags: [] },
+      });
+    });
+
+    it('carries a restored draft that has no local edits', async () => {
+      const store = new ControlledStore();
+      await store.inner.set(draftKey(newNote), { version: 2, value: { title: 'Kept', tags: [] } });
+      const draft = createDraft(store);
+      await draft.open(newNote, EMPTY);
+
+      await expect(draft.move(createdNote)).resolves.toBe('moved');
+
+      expect(openSnapshot(draft)).toMatchObject({ recovery: 'restored', dirty: false });
+      await expect(store.inner.get(draftKey(newNote))).resolves.toBeUndefined();
+      await expect(store.inner.get(draftKey(createdNote))).resolves.toEqual({
+        version: 2,
+        value: { title: 'Kept', tags: [] },
+      });
+    });
+
+    it('writes nothing new after a submitted clear', async () => {
+      const store = new ControlledStore();
+      const draft = createDraft(store);
+      await draft.open(newNote, EMPTY);
+      draft.update({ title: 'Sent', tags: [] });
+      await draft.save();
+      await draft.clear({ reason: 'submitted', localRevision: openSnapshot(draft).localRevision });
+
+      await expect(draft.move(createdNote)).resolves.toBe('moved');
+
+      expect(openSnapshot(draft)).toMatchObject({
+        scope: createdNote,
+        value: { title: 'Sent', tags: [] },
+        dirty: false,
+        submission: 'confirmed',
+      });
+      expect(operations(store).slice(3)).toEqual([`delete ${draftKey(newNote)}`]);
+      await expect(store.inner.get(draftKey(createdNote))).resolves.toBeUndefined();
+    });
+
+    it('keeps an edit made during the move dirty and saves it under the new key', async () => {
+      const store = new ControlledStore();
+      const draft = createDraft(store);
+      await draft.open(newNote, EMPTY);
+      draft.update({ title: 'First', tags: [] });
+      const gate = store.hold('set');
+
+      const moved = draft.move(createdNote);
+      await settle();
+      expect(openSnapshot(draft).persistence).toBe('saving');
+      draft.update({ title: 'Second', tags: [] });
+      gate.resolve();
+      await expect(moved).resolves.toBe('moved');
+
+      expect(openSnapshot(draft)).toMatchObject({ scope: createdNote, dirty: true });
+      await expect(draft.save()).resolves.toBe('saved');
+      await expect(store.inner.get(draftKey(createdNote))).resolves.toEqual({
+        version: 2,
+        value: { title: 'Second', tags: [] },
+      });
+      await expect(store.inner.get(draftKey(newNote))).resolves.toBeUndefined();
+    });
+
+    it('sends a save queued behind the move to the new key', async () => {
+      const store = new ControlledStore();
+      const draft = createDraft(store);
+      await draft.open(newNote, EMPTY);
+      draft.update({ title: 'First', tags: [] });
+
+      const gate = store.hold('delete');
+      const moved = draft.move(createdNote);
+      await settle();
+      draft.update({ title: 'Second', tags: [] });
+      const saved = draft.save();
+      gate.resolve();
+
+      await expect(moved).resolves.toBe('moved');
+      await expect(saved).resolves.toBe('saved');
+      expect(operations(store).slice(1)).toEqual([
+        `set ${draftKey(createdNote)}`,
+        `delete ${draftKey(newNote)}`,
+        `set ${draftKey(createdNote)}`,
+      ]);
+      await expect(store.inner.get(draftKey(createdNote))).resolves.toEqual({
+        version: 2,
+        value: { title: 'Second', tags: [] },
+      });
+    });
+
+    it('stays on the old scope when the write fails and can retry', async () => {
+      const store = new ControlledStore();
+      const draft = createDraft(store);
+      await draft.open(newNote, EMPTY);
+      draft.update({ title: 'Draft', tags: [] });
+      await draft.save();
+      store.failNext('set', new Error('offline'));
+
+      const error = await draft.move(createdNote).catch((failure: unknown) => failure);
+
+      expect(error).toBeInstanceOf(DraftPersistenceError);
+      expect(error).toMatchObject({ operation: 'write' });
+      expect(openSnapshot(draft)).toMatchObject({ scope: newNote, persistence: 'failed', error });
+      await expect(store.inner.get(draftKey(newNote))).resolves.toBeDefined();
+
+      await expect(draft.move(createdNote)).resolves.toBe('moved');
+      expect(openSnapshot(draft)).toMatchObject({
+        scope: createdNote,
+        persistence: 'idle',
+        error: null,
+      });
+    });
+
+    it('stays on the old scope when the delete fails and can retry', async () => {
+      const store = new ControlledStore();
+      const draft = createDraft(store);
+      await draft.open(newNote, EMPTY);
+      draft.update({ title: 'Draft', tags: [] });
+      store.failNext('delete', new Error('locked'));
+
+      await expect(draft.move(createdNote)).rejects.toMatchObject({ operation: 'delete' });
+      expect(openSnapshot(draft)).toMatchObject({ scope: newNote, persistence: 'failed' });
+
+      await expect(draft.move(createdNote)).resolves.toBe('moved');
+      await expect(store.inner.get(draftKey(newNote))).resolves.toBeUndefined();
+      await expect(store.inner.get(draftKey(createdNote))).resolves.toBeDefined();
+    });
+
+    it('blocks a corrupt draft without touching storage', async () => {
+      const store = new ControlledStore();
+      await store.inner.set(draftKey(newNote), 'not an envelope');
+      const draft = createDraft(store);
+      await draft.open(newNote, EMPTY);
+
+      await expect(draft.move(createdNote)).resolves.toBe('blocked');
+
+      expect(openSnapshot(draft).scope).toEqual(newNote);
+      expect(operations(store)).toEqual([`get ${draftKey(newNote)}`]);
+    });
+
+    it('only changes the scope when both scopes share a key', async () => {
+      const store = new ControlledStore();
+      const draft = createDraft(store);
+      await draft.open(newNote, EMPTY);
+      draft.update({ title: 'Draft', tags: [] });
+      const sameKey: Scope = { ...newNote };
+
+      await expect(draft.move(sameKey)).resolves.toBe('moved');
+
+      expect(openSnapshot(draft).scope).toBe(sameKey);
+      expect(openSnapshot(draft).dirty).toBe(true);
+      expect(operations(store)).toEqual([`get ${draftKey(newNote)}`]);
+    });
+
+    it('resolves stale after the scope changed and rejects when the key encoder throws', async () => {
+      const store = new ControlledStore();
+      const draft = createDurableDraft<Scope, FormValue>({
+        store,
+        key: (scope) => {
+          if (scope.document === '') {
+            throw new Error('empty document');
+          }
+          return draftKey(scope);
+        },
+        codec: codecV2,
+      });
+      await draft.open(newNote, EMPTY);
+
+      await expect(draft.move({ account: 'account-a', document: '' })).rejects.toThrow(
+        'empty document',
+      );
+      expect(openSnapshot(draft).scope).toEqual(newNote);
+
+      const moved = draft.move(createdNote);
+      const reopened = draft.open(accountB, EMPTY);
+      await expect(moved).resolves.toBe('stale');
+      await reopened;
+      await draft.close();
+      await expect(draft.move(createdNote)).resolves.toBe('stale');
+      expect(store.calls.map((call) => call.operation)).toEqual(['get', 'get']);
+    });
+  });
+
+  describe('scope fencing', () => {
+    it('resolves stale without writing or deleting while the scope is inactive', async () => {
+      const store = new ControlledStore();
+      let active = true;
+      const draft = createDurableDraft<Scope, FormValue>({
+        store,
+        key: draftKey,
+        codec: codecV2,
+        isScopeActive: () => active,
+      });
+      await draft.open(accountA, EMPTY);
+      draft.update({ title: 'A', tags: [] });
+      active = false;
+
+      await expect(draft.save()).resolves.toBe('stale');
+      await expect(draft.clear({ reason: 'discarded' })).resolves.toBe('stale');
+      await expect(draft.move(otherDocument)).resolves.toBe('stale');
+
+      expect(store.calls.map((call) => call.operation)).toEqual(['get']);
+      expect(openSnapshot(draft)).toMatchObject({
+        scope: accountA,
+        value: { title: 'A', tags: [] },
+        dirty: true,
+      });
+
+      active = true;
+      await expect(draft.save()).resolves.toBe('saved');
+    });
+
+    it('refuses a move into a scope that is not active', async () => {
+      const store = new ControlledStore();
+      const draft = createDurableDraft<Scope, FormValue>({
+        store,
+        key: draftKey,
+        codec: codecV2,
+        isScopeActive: (scope) => scope.document !== otherDocument.document,
+      });
+      await draft.open(accountA, EMPTY);
+      draft.update({ title: 'A', tags: [] });
+
+      await expect(draft.move(otherDocument)).resolves.toBe('stale');
+      expect(store.calls.map((call) => call.operation)).toEqual(['get']);
+    });
+
+    it('checks the scope when queued work starts, not when it was requested', async () => {
+      const store = new ControlledStore();
+      let active = true;
+      const draft = createDurableDraft<Scope, FormValue>({
+        store,
+        key: draftKey,
+        codec: codecV2,
+        isScopeActive: () => active,
+      });
+      const gate = store.hold('get');
+      const opened = draft.open(accountA, EMPTY);
+      await settle();
+      draft.update({ title: 'A', tags: [] });
+      const saved = draft.save();
+      active = false;
+      gate.resolve();
+      await opened;
+
+      await expect(saved).resolves.toBe('stale');
+      expect(store.calls.map((call) => call.operation)).toEqual(['get']);
+    });
+  });
+
   describe('closing', () => {
     it('closes without flushing and ignores later calls', async () => {
       const store = new ControlledStore();

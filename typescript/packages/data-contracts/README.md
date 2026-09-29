@@ -333,6 +333,41 @@ snapshot. All storage work runs in order, so switching from A to B and back to A
 write left. `close()` does not save; call `save` on `pagehide` or when the app moves to the
 background.
 
+`move(scope)` hands the open draft to another scope. The usual case is a "new note" draft whose
+server create just succeeded:
+
+```ts
+await draft.clear({ reason: 'submitted', localRevision });
+await draft.move({ accountId, noteId: created.id });
+```
+
+When the value is dirty or came from storage, `move` writes it under the new key first, replacing
+anything stored there. It then deletes the old key in every case. The value, `localRevision`, and
+`submission` stay as they were, and later saves go to the new key. A corrupt or unsupported draft
+resolves `blocked`. If the write or the delete fails, `move` rejects with a `DraftPersistenceError`,
+the draft stays on the old scope, and calling `move` again retries it. `move` does not remember where
+a draft went. If a second editor still holds the old scope, the product stores its own pointer from
+the old scope to the new one.
+
+`isScopeActive` fences writes when several editors can hold the same scope, for example two tabs
+with a shared lease. The helper calls it before every write or delete of `save`, `clear`, and
+`move`, for both scopes of a move, when the queued work starts. When it returns false the operation
+resolves `stale` and storage is not touched. Reads are not fenced.
+
+```ts
+const draft = createDurableDraft({
+  store,
+  key: noteDraftKey,
+  codec: noteCodec,
+  isScopeActive: (scope) => lease.holds(scope.accountId),
+});
+```
+
+Snapshots are read through `getSnapshot()` and `subscribe`, which suit `useSyncExternalStore`. The
+stored value itself is always read asynchronously, because `KeyValueStore` is asynchronous over
+IndexedDB and SQLite. Render the loading state while `persistence` is `loading`. With
+`WebStorageKeyValueStore` that lasts one microtask.
+
 ## Authenticated partitions
 
 `deriveScopedStoreName(namespace, subject)` hashes a length-delimited canonical
