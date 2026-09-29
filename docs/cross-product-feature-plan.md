@@ -89,11 +89,17 @@ Adoption of 0.5.0, one branch `baukit-0.5.0` per product, merged into the produc
 - [x] Leitbild
 - [x] Hebkit
 - [x] Redemut
-- [ ] Eigenruhe
+- [ ] Eigenruhe (goes straight to 0.5.1)
 - [ ] Tiefgang
 - [ ] Solo Leveling System
 - [ ] Runtime Analyzer
 - [ ] Schlauzug (provisional)
+
+Adoption of 0.5.1, one branch `baukit-0.5.1` per product, closing the steps 0.5.0 left open and following the `0.5.1 P*` lines:
+
+- [ ] Leitbild
+- [ ] Hebkit
+- [ ] Redemut
 
 - Item 1, Eigenruhe: after its native regression passes on the release, delete `mobile/src/db/serialized-store.ts` and `serialized-store.test.ts`, return the `ExpoSqliteStore` directly in `mobile/src/local-data.ts`, and remove or rewrite the wrapper case "finishes an accepted settings mutation before a serialized store closes" in `mobile/src/db/contract-tests/persistence.test.ts`. Close `docs/tickets/baukit-sqlite-operation-serialization.md`. Keep `SerializedRecordStoreResource` in `mobile/src/record-store.ts`. Leitbild and Redemut: version bump only; no product code calls the removed per-store `initialize()`.
 - Item 13, Eigenruhe and Tiefgang: in `mobile/src/components/context-menu.tsx` delete the enabled-index state, item refs, `activeItemIndex` handling in `closeMenu`, and `moveItemFocus`; use `useRovingMenu`, pass `menu.initialFocusRef` to `useOverlayA11y`, and spread `itemProps(index)` on each item. Tiefgang keeps its `deferFocus`. Hebkit: same removal after checking `context-menu.test.tsx`. Redemut: use `useRovingMenu` from `@baukit/a11y-core/web` or `nextEnabledMenuIndex` in `packages/ui/src/context-menu.tsx`, keeping outside-pointer dismissal. Solo Leveling System: delete the hand-rolled trap and restoration in `mobile/src/components/context-menu.tsx`, adopt `useOverlayA11y` plus `useRovingMenu`, and move `confirmation-dialog.tsx` onto `useOverlayA11y`.
