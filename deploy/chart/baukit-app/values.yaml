@@ -74,6 +74,7 @@ api:
   tolerations: []
   affinity: {}
   networkPolicy:
+    additionalIngress: []
     additionalEgress: []
 
 worker:
@@ -115,6 +116,7 @@ worker:
   tolerations: []
   affinity: {}
   networkPolicy:
+    additionalIngress: []
     additionalEgress: []
 
 # Optional product-scoped Redis for expendable state such as rate limiting.
@@ -273,5 +275,7 @@ networkPolicy:
     # Add a destination-unrestricted TCP/UDP port-53 rule for k3s CNIs that
     # enforce policy against the CoreDNS Service IP before DNAT.
     k3sCompatible: false
+  # Kubernetes NetworkPolicy ingress rules admitted to every process.
+  additionalIngress: []
   # Kubernetes NetworkPolicy egress rules appended after the DNS rule.
   additionalEgress: []

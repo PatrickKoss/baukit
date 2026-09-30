@@ -39,7 +39,22 @@ Only the API Service is an Ingress backend. The private ops Service exposes the 
 
 Annotation discovery is enabled on ops Services by default. Set `opsService.prometheusScrape.enabled=false` (and the worker equivalent) if the collector does not use annotations. `serviceMonitor.enabled=true` offers an alternative for Prometheus Operator installations; the template is emitted only when the cluster advertises `monitoring.coreos.com/v1/ServiceMonitor`. Those monitors attach the bounded `product`, `<product>-<process>` `service`, and `environment` discovery labels required by the shared dashboards, and honor application labels so the worker's bounded `job` dimension is not replaced by Prometheus's target job. The chart ships no CRDs.
 
-NetworkPolicy is enabled by default and selects every process in the release. It denies all ingress and egress, then allows the configured Traefik pods to the API port, configured Prometheus pods to ops ports, DNS to CoreDNS, and the release-wide `networkPolicy.additionalEgress` rules. When Redis is enabled, a separate rule permits only this release's API pods to reach Redis on TCP port `6379`; HA mode also permits API access to Sentinel on `26379` and Redis pods to communicate with each other on both ports for replication and Sentinel gossip. No other Redis ingress is admitted by the chart. Each process also has `networkPolicy.additionalEgress`; those rules select only that process, so worker Git access need not open the API. The defaults assume K3s Traefik in `kube-system`, Prometheus in `observability`, and CoreDNS in `kube-system`; products must adjust selectors and add database, OTLP, identity-provider, and external-service destinations.
+NetworkPolicy is enabled by default and selects every process in the release. It denies all ingress and egress, then allows the configured Traefik pods to the API port, configured Prometheus pods to ops ports, DNS to CoreDNS, and the release-wide `networkPolicy.additionalEgress` rules. When Redis is enabled, a separate rule permits only this release's API pods to reach Redis on TCP port `6379`; HA mode also permits API access to Sentinel on `26379` and Redis pods to communicate with each other on both ports for replication and Sentinel gossip. No other Redis ingress is admitted by the chart. Each process also has `networkPolicy.additionalEgress`; those rules select only that process, so worker Git access need not open the API.
+
+Ingress beyond Traefik and Prometheus goes in `networkPolicy.additionalIngress`, a raw NetworkPolicy ingress-rule list. The release-wide list admits its sources to every process; `api.networkPolicy.additionalIngress` and `worker.networkPolicy.additionalIngress` admit them to that process only. Each non-empty list renders its own policy, so an agent namespace reaching a gRPC listener on the API opens nothing on the worker:
+
+```yaml
+api:
+  networkPolicy:
+    additionalIngress:
+      - from:
+          - namespaceSelector:
+              matchLabels:
+                example.dev/agents: "true"
+        ports:
+          - protocol: TCP
+            port: 50051
+``` The defaults assume K3s Traefik in `kube-system`, Prometheus in `observability`, and CoreDNS in `kube-system`; products must adjust selectors and add database, OTLP, identity-provider, and external-service destinations.
 
 Most CNIs can apply the pod-selected CoreDNS rule. K3s installations may enforce policy against the DNS Service IP before destination NAT, which prevents that selector from matching. Set `networkPolicy.dns.k3sCompatible=true` to add a destination-independent rule restricted to TCP/UDP port 53. This trades destination restriction for working DNS and is intentionally opt-in.
 
@@ -80,6 +95,7 @@ The pod and container security-context maps can be replaced when an image needs 
 | `api.command` / `api.args` | `[]` / `[]` | Optional container entrypoint and arguments. |
 | `api.env` | `[]` | Raw API container environment entries; use `secretKeyRef` rather than inline secret values. |
 | `api.volumes` / `api.volumeMounts` | `[]` / `[]` | API-only pod volumes and matching container mounts. |
+| `api.networkPolicy.additionalIngress` | `[]` | Ingress rules admitted only to API pods. |
 | `api.networkPolicy.additionalEgress` | `[]` | Egress rules added only for API pods. |
 | `api.ports.http` / `api.ports.ops` | `8080` / `9090` | Public API and private operations listener ports. |
 | `api.terminationGracePeriodSeconds` | `30` | SIGTERM drain window; also injected as `SHUTDOWN__DRAIN_TIMEOUT`. |
@@ -101,6 +117,7 @@ The pod and container security-context maps can be replaced when an image needs 
 | `worker.command` / `worker.args` | `[]` / `[]` | Optional worker entrypoint and arguments. |
 | `worker.env` | `[]` | Raw worker container environment entries. |
 | `worker.volumes` / `worker.volumeMounts` | `[]` / `[]` | Worker-only pod volumes and matching mounts, such as an `emptyDir` scratch workspace. |
+| `worker.networkPolicy.additionalIngress` | `[]` | Ingress rules admitted only to worker pods. |
 | `worker.networkPolicy.additionalEgress` | `[]` | Egress rules added only for worker pods. |
 | `worker.ops.enabled` / `worker.ops.port` | `true` / `9090` | Enable the worker ops listener, probes, and private ops Service. |
 | `worker.terminationGracePeriodSeconds` | `30` | Worker SIGTERM drain window and injected shutdown timeout. |
@@ -184,6 +201,7 @@ Redis uses a fixed image-specific UID/GID security context (`999:1000`), drops a
 | `networkPolicy.dns.namespaceSelector` | `kube-system` | Namespace selector for DNS. |
 | `networkPolicy.dns.podSelector` | `k8s-app=kube-dns` | CoreDNS pod selector. |
 | `networkPolicy.dns.k3sCompatible` | `false` | Add a destination-independent TCP/UDP port-53 rule for k3s Service-IP policy enforcement. |
+| `networkPolicy.additionalIngress` | `[]` | Raw NetworkPolicy ingress-rule list admitted to every process. |
 | `networkPolicy.additionalEgress` | `[]` | Raw NetworkPolicy egress-rule list appended after TCP/UDP DNS. |
 
 ## Local validation

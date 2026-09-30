@@ -13,6 +13,14 @@ api:
     - name: api-cache
       mountPath: /var/cache/api
   networkPolicy:
+    additionalIngress:
+      - from:
+          - namespaceSelector:
+              matchLabels:
+                example.dev/agents: "true"
+        ports:
+          - protocol: TCP
+            port: 50051
     additionalEgress:
       - to:
           - ipBlock:
@@ -34,6 +42,14 @@ worker:
     - name: clone-workspaces
       mountPath: /work
   networkPolicy:
+    additionalIngress:
+      - from:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/name: webhook-relay
+        ports:
+          - protocol: TCP
+            port: 9090
     additionalEgress:
       - to:
           - ipBlock:
@@ -89,6 +105,11 @@ seed:
 networkPolicy:
   dns:
     k3sCompatible: true
+  additionalIngress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: linkerd
   additionalEgress:
     - to:
         - podSelector:
