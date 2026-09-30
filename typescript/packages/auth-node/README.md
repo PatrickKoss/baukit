@@ -70,6 +70,8 @@ It throws `ApiOriginError`, a `TypeError`, with a `reason` of `invalid_url`, `in
 
 `@baukit/auth-node/keycloak-testing` sets up users for end-to-end tests against a disposable development Keycloak. It runs on Node 24, uses the global `fetch`, and needs no Playwright dependency.
 
+The subpath ships as ESM only, like every Baukit package. Node 24 loads it from CommonJS through `require(esm)`, so a CommonJS test project needs no dynamic `import()`. TypeScript models that only with `"module": "node20"` or `"nodenext"`; under `"node16"` it reports TS1479 on the import, because `node16` describes a Node release that could not `require` ESM.
+
 ```ts
 import {
   allowKeycloakWebOrigin,
@@ -94,7 +96,7 @@ await signInWithKeycloak(page, user, stack);
 
 `createKeycloakTestUser(stack, user?, options?)` signs in to the master realm's `admin-cli` and creates a verified, enabled user with a permanent password. Without `user`, the username is `e2e-<uuid>` and the password is random, so parallel tests never share an identity. Pass `username`, `email`, or `password` when the realm signs in by email. It returns `{ username, password, email, subject }`; `subject` is the Keycloak user ID, which becomes the `sub` claim.
 
-`revokeKeycloakUserSessions(stack, subject)` ends every session of the user, so the app's next refresh fails. `allowKeycloakWebOrigin(stack, origin)` adds `<origin>/*` to the web client's redirect URIs and `origin` to its web origins, and does nothing when both are present. `signInWithKeycloak(page, user, stack, { timeoutMs })` waits until the page is on the Keycloak origin, fills `#username` and `#password`, and clicks `#kc-login`; those IDs do not change with the login locale. `page` is any object with Playwright's `waitForURL` and `locator`, such as a `Page` or a sign-in popup.
+`revokeKeycloakUserSessions(stack, subject)` ends every session of the user, so the app's next refresh fails. `allowKeycloakWebOrigin(stack, origin)` adds `<origin>/*` to the web client's redirect URIs and to its `post.logout.redirect.uris` attribute, and `origin` to its web origins. It keeps the client's other attributes, and does nothing when all three are present. A post-logout list that holds `+` already reuses the redirect URIs, so the helper leaves it alone. `signInWithKeycloak(page, user, stack, { timeoutMs })` waits until the page is on the Keycloak origin, fills `#username` and `#password`, and clicks `#kc-login`; those IDs do not change with the login locale. `page` is any object with Playwright's `waitForURL` and `locator`, such as a `Page` or a sign-in popup.
 
 Every admin call takes `{ fetch, timeoutMs }`; the timeout defaults to `DEFAULT_KEYCLOAK_REQUEST_TIMEOUT_MS` (30 seconds). A failure throws an `Error` that names the step and HTTP status and never includes a response body or the admin password. Created users and added origins stay in the realm, so point the helpers only at a development realm.
 

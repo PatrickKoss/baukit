@@ -210,10 +210,63 @@ describe('allowKeycloakWebOrigin', () => {
       clientId: 'notes-web',
       redirectUris: ['http://localhost:5173/*', 'http://localhost:5183/*'],
       webOrigins: ['http://localhost:5173', 'http://localhost:5183'],
+      attributes: { 'post.logout.redirect.uris': 'http://localhost:5183/*' },
     });
   });
 
-  it('skips the update when the client already allows the origin', async () => {
+  it('appends the post-logout redirect and keeps the other attributes', async () => {
+    const keycloak = fakeKeycloak({
+      [`POST ${TOKEN_URL}`]: adminToken,
+      [lookup]: () =>
+        Response.json([
+          {
+            id: 'client-1',
+            redirectUris: ['http://localhost:5183/*'],
+            webOrigins: ['http://localhost:5183'],
+            attributes: {
+              'pkce.code.challenge.method': 'S256',
+              'post.logout.redirect.uris': 'http://localhost:5173/*',
+            },
+          },
+        ]),
+      [`PUT ${ADMIN_URL}/clients/client-1`]: () => new Response(null, { status: 204 }),
+    });
+
+    await allowKeycloakWebOrigin(STACK, 'http://localhost:5183', { fetch: keycloak.fetch });
+
+    expect(JSON.parse(keycloak.requests.at(-1)?.body ?? '')).toMatchObject({
+      redirectUris: ['http://localhost:5183/*'],
+      webOrigins: ['http://localhost:5183'],
+      attributes: {
+        'pkce.code.challenge.method': 'S256',
+        'post.logout.redirect.uris': 'http://localhost:5173/*##http://localhost:5183/*',
+      },
+    });
+  });
+
+  it.each([
+    ['lists the origin', 'http://localhost:5173/*'],
+    ['reuses the redirect URIs', 'http://localhost:5183/*##+'],
+  ])('skips the update when the client already allows the origin and %s', async (_, uris) => {
+    const keycloak = fakeKeycloak({
+      [`POST ${TOKEN_URL}`]: adminToken,
+      [lookup]: () =>
+        Response.json([
+          {
+            id: 'client-1',
+            redirectUris: ['http://localhost:5173/*'],
+            webOrigins: ['http://localhost:5173'],
+            attributes: { 'post.logout.redirect.uris': uris },
+          },
+        ]),
+    });
+
+    await allowKeycloakWebOrigin(STACK, 'http://localhost:5173', { fetch: keycloak.fetch });
+
+    expect(keycloak.requests).toHaveLength(2);
+  });
+
+  it('updates a client that allows the origin everywhere but after logout', async () => {
     const keycloak = fakeKeycloak({
       [`POST ${TOKEN_URL}`]: adminToken,
       [lookup]: () =>
@@ -224,11 +277,29 @@ describe('allowKeycloakWebOrigin', () => {
             webOrigins: ['http://localhost:5173'],
           },
         ]),
+      [`PUT ${ADMIN_URL}/clients/client-1`]: () => new Response(null, { status: 204 }),
     });
 
     await allowKeycloakWebOrigin(STACK, 'http://localhost:5173', { fetch: keycloak.fetch });
 
-    expect(keycloak.requests).toHaveLength(2);
+    expect(JSON.parse(keycloak.requests.at(-1)?.body ?? '')).toEqual({
+      id: 'client-1',
+      redirectUris: ['http://localhost:5173/*'],
+      webOrigins: ['http://localhost:5173'],
+      attributes: { 'post.logout.redirect.uris': 'http://localhost:5173/*' },
+    });
+  });
+
+  it('rejects a failed client update', async () => {
+    const keycloak = fakeKeycloak({
+      [`POST ${TOKEN_URL}`]: adminToken,
+      [lookup]: () => Response.json([{ id: 'client-1' }]),
+      [`PUT ${ADMIN_URL}/clients/client-1`]: () => new Response(null, { status: 403 }),
+    });
+
+    await expect(
+      allowKeycloakWebOrigin(STACK, 'http://localhost:5173', { fetch: keycloak.fetch }),
+    ).rejects.toThrow('Keycloak client update failed with HTTP 403.');
   });
 
   it('rejects a realm without the web client', async () => {

@@ -129,9 +129,17 @@ interface KeycloakClient {
   readonly id: string;
   readonly redirectUris?: readonly string[];
   readonly webOrigins?: readonly string[];
+  readonly attributes?: Readonly<Record<string, string>>;
 }
 
-/** Adds the origin to the web client's redirect URIs and web origins when the client lacks it. */
+const POST_LOGOUT_REDIRECT_URIS = 'post.logout.redirect.uris';
+const POST_LOGOUT_SEPARATOR = '##';
+const SAME_AS_REDIRECT_URIS = '+';
+
+/**
+ * Adds the origin to the web client's redirect URIs, web origins, and post-logout redirect URIs
+ * when the client lacks it.
+ */
 export async function allowKeycloakWebOrigin(
   stack: KeycloakStack,
   origin: string,
@@ -147,7 +155,15 @@ export async function allowKeycloakWebOrigin(
     throw new Error(`Keycloak realm ${stack.realm} has no ${stack.webClientId} client.`);
   }
   const redirectUri = `${origin}/*`;
-  if (client.redirectUris?.includes(redirectUri) && client.webOrigins?.includes(origin)) {
+  const postLogoutRedirectUris = postLogoutEntries(client);
+  const logoutAllowed =
+    postLogoutRedirectUris.includes(SAME_AS_REDIRECT_URIS) ||
+    postLogoutRedirectUris.includes(redirectUri);
+  if (
+    client.redirectUris?.includes(redirectUri) &&
+    client.webOrigins?.includes(origin) &&
+    logoutAllowed
+  ) {
     return;
   }
   const update = await admin(`clients/${encodeURIComponent(client.id)}`, {
@@ -156,6 +172,13 @@ export async function allowKeycloakWebOrigin(
       ...client,
       redirectUris: withEntry(client.redirectUris, redirectUri),
       webOrigins: withEntry(client.webOrigins, origin),
+      attributes: {
+        ...client.attributes,
+        [POST_LOGOUT_REDIRECT_URIS]: (logoutAllowed
+          ? postLogoutRedirectUris
+          : [...postLogoutRedirectUris, redirectUri]
+        ).join(POST_LOGOUT_SEPARATOR),
+      },
     },
   });
   if (!update.ok) {
@@ -231,6 +254,11 @@ async function adminAccessToken(
     throw new Error('Keycloak admin sign-in returned no access token.');
   }
   return body.access_token;
+}
+
+function postLogoutEntries(client: KeycloakClient): string[] {
+  const value = client.attributes?.[POST_LOGOUT_REDIRECT_URIS] ?? '';
+  return value.split(POST_LOGOUT_SEPARATOR).filter((entry) => entry !== '');
 }
 
 function withEntry(entries: readonly string[] | undefined, entry: string): string[] {
