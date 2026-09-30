@@ -93,8 +93,9 @@ analytics.setConsent('denied'); // persist withdrawal and discard every unsent c
 `setConsent` is not itself an analytics event. Consent is read synchronously during construction,
 before the first capture is possible. `InMemoryAnalyticsStorage` is the dependency-free default;
 products should inject a small synchronous `AnalyticsStorage` backed by device storage. If the
-platform's native storage API is asynchronous, hydrate a synchronous application-owned cache
-before constructing the client. Storage failures fail privacy-safe: unreadable consent becomes
+platform's native storage API is asynchronous, hydrate a synchronous cache before constructing
+the client. On React Native, `HydratedAnalyticsStorage` from
+`@baukit/analytics-posthog-native/storage` is that cache; this package does not ship one. Storage failures fail privacy-safe: unreadable consent becomes
 `unknown`, and analytics methods do not throw because persistence diagnostics fail.
 
 Withdrawal clears commands that have not been handed to the transport. A batch already in flight

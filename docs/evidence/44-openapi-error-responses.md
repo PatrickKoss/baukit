@@ -171,3 +171,79 @@ The CLI has no changelog, so the template changes are recorded here and in the g
 - Solo Leveling System: replace `scripts/api-compatibility.py` with the Baukit script.
 - Redemut and Schlauzug: replace the local response validators with
   `assert_response_matches_openapi`.
+
+## Follow-up 0.5.2 (2026-09-30)
+
+### Product evidence
+
+Tiefgang's item 8 adoption skipped setting `capabilities.pwa = true`, because `baukit doctor`
+rejected `pwa` without `web` (`cli/src/lib.rs:1293-1295`) and checked the worker build only under
+`web/` (`:1429-1431`). Tiefgang at `7f0fd02` is mobile-only (`web = false`) and still ships a
+PWA:
+
+- `mobile/app.config.ts:31` exports the Expo app to static web output, and
+  `e2e/Dockerfile.web` serves `mobile/dist` behind nginx for its web e2e suite.
+- `mobile/package.json` has `build:sw`, `build:sw:check`, and `@baukit/pwa-web`, and
+  `mobile/scripts/build-sw.mjs` copies `@baukit/pwa-web/worker` to
+  `mobile/public/baukit-pwa-worker.js`.
+- `mobile/public/sw.js` loads it with `importScripts('/baukit-pwa-worker.js')`, and
+  `mobile/src/pwa/register-service-worker.ts` registers `/sw.js`.
+- Its own `scripts/quality-gate.sh:91` and `.github/workflows/ci.yml:166` already run
+  `pnpm build:sw:check` in `mobile/`.
+
+Eigenruhe at `e8d0e05` has the same layout (`web = false`, `pwa = false`,
+`mobile/scripts/build-sw.mjs` copying `@baukit/pwa-web/worker`). Evidence note 12 tested the
+artifact against that Expo layout and left "Expo PWA" as a separate CLI decision.
+
+### Decision
+
+The plan step is right; the CLI rule was too narrow. `capabilities.pwa` means the product serves
+the `@baukit/pwa-web` worker from a web build and the strict gate checks the copied artifact for
+drift. An Expo web export is such a build: Expo copies `public/` into the export as Vite does for
+the web app.
+
+`baukit doctor` now requires the web or the mobile capability for `pwa`. The worker build is
+checked in the app that serves the PWA: `web/` when the product has a web app, otherwise
+`mobile/`. The checks are the same in both places: `build:sw` and `build:sw:check` scripts, the
+`@baukit/pwa-web` dependency, and `scripts/build-sw.mjs` referencing `@baukit/pwa-web/worker`.
+A product with both apps keeps the worker in `web/`, which matches Hebkit (`web = true`,
+`pwa = true`). The strict `scripts/quality-gate.sh` of a mobile-only product calls
+`pnpm --dir mobile run build:sw:check` when `pwa` is true; products with a web app keep the web
+call. The mobile template does not ship a worker script: generated products keep `pwa = false`,
+and the mobile README describes the four pieces to add.
+
+Run against a copy of Tiefgang with `pwa = true`, the 0.5.1 CLI reports "the PWA capability
+requires the web capability"; the new CLI reports no PWA problem. Its three remaining findings,
+`Makefile`, `compose.yaml`, and `mcp/src/cli.ts` not using port offset 200, predate this change.
+
+### Template change
+
+- `templates/common/__strict__/scripts/quality-gate.sh`: the mobile block runs the mobile
+  `build:sw:check` when the product has no web app and `capabilities.pwa` is true.
+- `templates/common/CLAUDE.md`: mobile-only products get the matching instruction.
+- `templates/mobile/mobile/README.md`: new "Optional PWA worker" section.
+- `docs/platform/strict-quality-profile.md` names the app that must provide `build:sw:check`.
+
+### Breaks
+
+None for products. The doctor message for a PWA without an app changed to "the PWA capability
+requires the web or mobile capability", and PWA messages name the app directory.
+
+### Gates
+
+- CLI `cargo fmt --check`, `clippy --all-targets -D warnings`, and `cargo test` (42 generator
+  tests, 12 unit tests). New tests cover the app-directory choice, the mobile worker checks, a
+  generated mobile-only product that fails doctor until the worker build is added, and a
+  backend-only product with `pwa = true`. The strict generation test asserts which app's
+  `build:sw:check` each flavor's runner calls.
+- Snapshots re-blessed: `mobile.tree` (`CLAUDE.md`, `AGENTS.md`, `mobile/README.md`),
+  `combined.tree` and `strict.tree` (`mobile/README.md` only).
+- Generated fixture `--backend --mobile --web`: backend fmt, clippy, tests, and `openapi_drift`;
+  web install, build, lint, test, and `test:coverage`; mobile install, `tsc --noEmit`, lint, and
+  `test:coverage`: pass. A strict mobile-only product renders a runner that passes `sh -n`.
+
+### Product adoption
+
+- Tiefgang: set `pwa = true` in `baukit.toml`. `mobile/` already has everything doctor checks.
+- Eigenruhe: may set `pwa = true` in `baukit.toml` the same way; its `mobile/` build already
+  qualifies.

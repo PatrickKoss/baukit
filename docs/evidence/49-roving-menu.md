@@ -227,3 +227,48 @@ None. The root entry keeps its exports and behavior.
 
 Redemut: delete `web/src/reduced-motion.ts` and import `useReducedMotion` from
 `@baukit/a11y-core/web` in `web/src/dialog-screens.tsx` and `web/src/celebrations/use-one-shot.ts`.
+
+## Follow-up 0.5.2 (2026-09-30)
+
+### Product evidence
+
+Schlauzug at `01124c8` keeps `web/src/live-announcer.tsx` (`useLiveAnnouncer` and `LiveRegion`)
+in six screens (`run-screen.tsx`, `play-home.tsx`, `room-screen.tsx`, `about-screen.tsx`,
+`run-setup-screen.tsx`, `profile-screen.tsx`). `announce` was exported only from the
+`@baukit/a11y-core` root, and `src/announce.ts:1` imports `react-native`, so the plain React web
+app could not use it. The hook also drops routine game messages through
+`isRoutineGameAnnouncement`, which is product policy.
+
+### Decision
+
+The live-region code moves from `src/announce.ts` to `src/announce-web.ts`, which imports nothing.
+`@baukit/a11y-core/web` exports `announce(message, { assertive, liveRegionId })`,
+`AnnounceOptions`, and `DEFAULT_LIVE_REGION_ID` from it. The root `announce` keeps its name and
+options: it calls `announceForAccessibility` on iOS and Android and delegates to the web module on
+React Native Web, so the two entries cannot drift. The region is the same as before: a visually
+hidden element with `aria-atomic="true"`, `aria-live` polite or assertive, and `role` status or
+alert, created on first use or adopted when the product rendered one under the id. The text is
+cleared and a reflow forced before each message, so repeating a message is spoken again. Blank
+messages are dropped. Filtering routine messages stays in the product.
+
+### Gates
+
+- `@baukit/a11y-core` test: the web tests moved to `announce-web.test.ts`, which mocks
+  `react-native` to throw on import. `announce.test.ts` keeps the native cases and adds one for
+  React Native Web. `web.test.ts` pins the web entry's export list with `announce` and
+  `DEFAULT_LIVE_REGION_ID`.
+- Whole TypeScript workspace `build`, `format:check`, `lint`, `test`, and `check`: pass.
+- Generated fixture `--backend --mobile --web`: mobile `tsc --noEmit`, lint, and
+  `test:coverage` (35 tests, including the template's root `announce` test) and web build, lint,
+  test, and `test:coverage` pass.
+
+### Breaks
+
+None. The root entry keeps its exports and behavior.
+
+### Product adoption
+
+Schlauzug: delete `web/src/live-announcer.tsx` apart from `isRoutineGameAnnouncement` (move it
+next to the game code), remove `<LiveRegion>` and `useLiveAnnouncer` from the six screens, and call
+`announce(message, { assertive })` from `@baukit/a11y-core/web` after the routine-message check.
+Its `.visually-hidden` class is no longer needed for the region.

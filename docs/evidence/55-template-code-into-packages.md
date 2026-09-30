@@ -613,3 +613,78 @@ change.
   Both runs passed; the second found the origin already registered.
 - Mobile and MCP fixture gates were not rerun: their generated files are byte-identical, since
   only `auth.tree` entries under `web/` and `CHANGELOG.md` changed.
+
+## Follow-up 0.5.2 (2026-09-30)
+
+### Product evidence
+
+- Hebkit at `ce780c42` adopted the 0.5.1 helpers for users but kept `allowWebRedirect` in
+  `web/e2e/global-setup.ts:50-110`. It reads the `post.logout.redirect.uris` client attribute,
+  splits it on `##`, appends `<webUrl>/*`, and writes it back with the redirect URI.
+  `allowKeycloakWebOrigin` set only `redirectUris` and `webOrigins`, so sign-out to a random e2e
+  port failed without the product patch.
+- Tiefgang at `7f0fd02` imports `@baukit/auth-node/keycloak-testing` from CommonJS specs
+  (`e2e/package.json` has no `type`) and changed `e2e/tsconfig.json` from `"module": "node16"` to
+  `"node20"` in the same commit. Its Playwright run passed with that setting.
+- Tiefgang's adoption log says the plan names `analytics-core` for the hydrated analytics
+  storage. The class is `HydratedAnalyticsStorage` in
+  `typescript/packages/analytics-posthog-native/src/storage.ts`, exported from
+  `@baukit/analytics-posthog-native/storage`. The plan's item 19 text
+  (`docs/cross-product-feature-plan.md:640`) and its merge log (`:178`) name the right package;
+  the nearest `analytics-core` mention is item 4's row in the sequence table (`:276`), which is
+  about the scrubber. The plan was not edited.
+
+### Decision
+
+`allowKeycloakWebOrigin(stack, origin)` now also adds `<origin>/*` to the client's
+`post.logout.redirect.uris` attribute. Keycloak stores that list as one string joined by `##`.
+The helper keeps every other attribute and every existing entry, and skips the update when the
+redirect URI, the web origin, and a post-logout entry are all present. A `+` entry tells Keycloak
+to reuse the redirect URIs, so it counts as present. A run against Keycloak 26.7.0 with a client
+that already had one post-logout URI and a PKCE attribute stored
+`http://localhost:5173/*##http://localhost:5183/*` and kept the PKCE attribute; a second call made
+no change.
+
+The subpath stays ESM only, with no CommonJS build. Reasons:
+
+- Every Baukit npm package is `"type": "module"` and ships ESM. A CommonJS build for one subpath
+  would add a second compiler run, `.d.cts` types for the `require` condition, and a dual-package
+  copy of the module, for a test helper.
+- `@baukit/auth-node` requires Node 24, which loads ESM through `require(esm)`. Tiefgang's specs
+  already run that way. Only TypeScript disagreed: `"module": "node16"` models a Node release
+  that could not `require` ESM and reports TS1479 on the import, while `"node20"` and `"nodenext"`
+  model the runtime the package requires. A scratch CommonJS consumer confirmed TS1479 under
+  `node16` and a clean check under `node20` and `nodenext`.
+
+So Tiefgang's `"module": "node20"` is the documented setting rather than a workaround, and it
+stays. The README states the contract, and the packed-exports test now takes `--load <subpath>`
+and loads `./keycloak-testing` from the packed archive with `require`, so a change that breaks
+`require(esm)`, such as top-level `await`, fails the package test.
+
+No Baukit README or platform doc placed the hydrated storage in `analytics-core`. The
+`analytics-core` README told products to hydrate "an application-owned cache", which predates the
+class. It now names `HydratedAnalyticsStorage` from `@baukit/analytics-posthog-native/storage` and
+says `analytics-core` does not ship one.
+
+### Breaks
+
+None. `allowKeycloakWebOrigin` keeps its signature. A client that lacks only the post-logout
+entry now gets one update where 0.5.1 made none.
+
+### Gates
+
+- `@baukit/auth-node` test: 53 tests (16 for the subpath, 4 of them new), and the packed-exports
+  check with `--load ./keycloak-testing`.
+- Keycloak 26.7.0 in Docker on a random port, driven by the built helper as described above.
+- Whole TypeScript workspace `build`, `format:check`, `lint`, `test`, and `check`: pass.
+- The auth web template calls `allowKeycloakWebOrigin` with an unchanged signature and its
+  generated files are unchanged, so the auth fixture and the Keycloak stack e2e were not rerun.
+
+### Product adoption
+
+- Hebkit: delete `allowWebRedirect` and `KeycloakClientRepresentation` from
+  `web/e2e/global-setup.ts` and call
+  `allowKeycloakWebOrigin(keycloakStack({ url: keycloakUrl, realm: 'hebkit', webClientId: 'hebkit-app' }, {}), webUrl)`.
+  Pass `{}` as the environment so `E2E_KEYCLOAK_URL` cannot replace the mapped port. The helper
+  also adds the web origin, which the product patch did not.
+- Tiefgang: keep `"module": "node20"` in `e2e/tsconfig.json`; no change.
