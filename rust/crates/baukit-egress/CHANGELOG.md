@@ -4,6 +4,8 @@ All notable changes to `baukit-egress` are documented here.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-09-30
+
 ### Added
 
 - `ResponseBody` and `EgressRequest::with_response_body`. `ResponseBody::Discard`

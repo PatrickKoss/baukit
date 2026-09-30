@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-09-30
+
 ### Added
 
 - Add `assert_request_matches_openapi` and `check_request_matches_openapi` with

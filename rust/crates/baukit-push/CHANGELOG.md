@@ -4,6 +4,8 @@ All notable changes to `baukit-push` are documented here.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-09-30
+
 ### Added
 
 - Pending receipts record their owner. Migration
