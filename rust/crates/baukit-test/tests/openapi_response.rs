@@ -2,7 +2,7 @@ use axum::{body::to_bytes, http::header::CONTENT_TYPE, response::IntoResponse};
 use baukit_http::{ApiError, ErrorBody, ErrorEnvelope};
 use baukit_openapi::{ErrorResponseRules, OperationCondition};
 use baukit_test::{
-    ObservedResponse, OpenApiResponseError, assert_response_matches_openapi,
+    ObservedResponse, OpenApiContractError, assert_response_matches_openapi,
     check_response_matches_openapi,
 };
 use serde::Serialize;
@@ -155,7 +155,7 @@ fn schema_violations_name_every_failing_value() {
     )
     .expect_err("the body violates the schema");
 
-    let OpenApiResponseError::SchemaViolation {
+    let OpenApiContractError::SchemaViolation {
         location,
         violations,
     } = error
@@ -205,7 +205,7 @@ fn status_class_resolves_chained_response_references() {
     .expect_err("code is required");
     assert!(matches!(
         error,
-        OpenApiResponseError::SchemaViolation { .. }
+        OpenApiContractError::SchemaViolation { .. }
     ));
 }
 
@@ -262,19 +262,19 @@ fn body_presence_must_match_the_documented_content() {
     .expect_err("204 documents no body");
     assert!(matches!(
         error,
-        OpenApiResponseError::UndocumentedBody { .. }
+        OpenApiContractError::UndocumentedBody { .. }
     ));
 
     let error = check_response_matches_openapi(&document, &observed("/files/{id}", 200, None, b""))
         .expect_err("200 documents a body");
-    assert!(matches!(error, OpenApiResponseError::MissingBody { .. }));
+    assert!(matches!(error, OpenApiContractError::MissingBody { .. }));
 
     let error =
         check_response_matches_openapi(&document, &observed("/files/{id}", 200, None, b"%PDF"))
             .expect_err("a body needs a content type");
     assert!(matches!(
         error,
-        OpenApiResponseError::MissingContentType { .. }
+        OpenApiContractError::MissingContentType { .. }
     ));
 }
 
@@ -285,7 +285,7 @@ fn invalid_json_and_broken_references_are_reported() {
         &observed("/files/{id}", 404, Some("application/json"), b"{"),
     )
     .expect_err("the body is not JSON");
-    assert!(matches!(error, OpenApiResponseError::InvalidJson { .. }));
+    assert!(matches!(error, OpenApiContractError::InvalidJson { .. }));
 
     let mut document = fixture_document();
     document["paths"]["/files/{id}"]["get"]["responses"]["4XX"] =
@@ -297,7 +297,7 @@ fn invalid_json_and_broken_references_are_reported() {
     .expect_err("the reference loops");
     assert!(matches!(
         error,
-        OpenApiResponseError::UnresolvedReference { .. }
+        OpenApiContractError::UnresolvedReference { .. }
     ));
 }
 

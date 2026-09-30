@@ -4,7 +4,17 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Add `assert_request_matches_openapi` and `check_request_matches_openapi` with
+  `ObservedRequest`. They check a request body's media type and JSON body against the operation's
+  `requestBody`, resolving `components.requestBodies` references, and treat an empty body as
+  missing only when the request body is `required`.
+
 ### Breaking
+
+- Rename `OpenApiResponseError` to `OpenApiContractError`. Request and response checks now share
+  it, and its location names either the response status or `request`.
 
 - Remove `webhook_signing_input`, `sign_webhook_hmac_sha256`, and `verify_webhook_hmac_sha256`.
   They moved unchanged to `baukit_core::webhook_signature` (feature `webhook-signature`), so tests

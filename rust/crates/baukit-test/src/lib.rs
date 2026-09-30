@@ -102,8 +102,8 @@ pub use metrics::{
     check_metrics_conformance_with_options,
 };
 pub use openapi_response::{
-    ObservedResponse, OpenApiResponseError, assert_response_matches_openapi,
-    check_response_matches_openapi,
+    ObservedRequest, ObservedResponse, OpenApiContractError, assert_request_matches_openapi,
+    assert_response_matches_openapi, check_request_matches_openapi, check_response_matches_openapi,
 };
 pub use ops::{
     OpsConformanceError, assert_ops_base_url_conformance, assert_ops_router_conformance,

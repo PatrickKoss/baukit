@@ -172,7 +172,7 @@ The CLI has no changelog, so the template changes are recorded here and in the g
 - Redemut and Schlauzug: replace the local response validators with
   `assert_response_matches_openapi`.
 
-## Follow-up 0.5.2 (2026-09-30)
+## Follow-up 0.5.2 (2026-09-30), mobile PWA
 
 ### Product evidence
 
@@ -247,3 +247,56 @@ requires the web or mobile capability", and PWA messages name the app directory.
 - Tiefgang: set `pwa = true` in `baukit.toml`. `mobile/` already has everything doctor checks.
 - Eigenruhe: may set `pwa = true` in `baukit.toml` the same way; its `mobile/` build already
   qualifies.
+
+## Follow-up 0.5.2 (2026-09-30), request validation
+
+### Product evidence
+
+Schlauzug adopted `assert_response_matches_openapi` in 0.5.1 (`01124c8`) but kept
+`backend/tests/support/schema.rs`, an 18-line `validate_request(document, path, method, body)`.
+It reads `paths[path][method].requestBody.content["application/json"].schema`, wraps it with the
+document's `components` under the 2020-12 dialect, and asserts no errors. Two tests call it,
+`backend/tests/api_schema.rs:97` and `backend/tests/api_rooms.rs:573`. It is the same wrapper the
+response check uses, so the gap was a missing entry point and not a missing mechanism.
+
+### Decision
+
+`baukit-test` adds `ObservedRequest`, `check_request_matches_openapi`, and
+`assert_request_matches_openapi` in the existing module. The request check shares the body rules
+with the response check through one private function, so media type matching, JSON parsing,
+format validation, and violation lists behave the same in both directions.
+
+- The input is the raw body and `Content-Type`, the same shape as `ObservedResponse`. A test
+  usually has those bytes because it builds the HTTP request from them. Taking a `serde_json::Value`
+  would skip the media type check and fork the API.
+- A `requestBody` `$ref` resolves through `components.requestBodies`. The hop limit counts both
+  `components.responses` and `components.requestBodies`, so a loop still ends.
+- An empty body is missing only when the request body is `required`, as OpenAPI defines it. An
+  operation without a `requestBody` rejects any body.
+- Parameters and headers stay unchecked. No product asked for them.
+- `format` is validated, as for responses. The Schlauzug helper did not enable it, so a malformed
+  UUID in a request fixture now fails. That is the intended tightening.
+
+`OpenApiResponseError` became `OpenApiContractError`, because the variants are the same for both
+directions and a second, identical enum would only add conversions. No product names the error
+type: Schlauzug and Redemut (`redemut-api/src/lib.rs`) use only `ObservedResponse` and
+`assert_response_matches_openapi`.
+
+### Breaks
+
+- `baukit-test`: `OpenApiResponseError` is renamed to `OpenApiContractError`.
+
+### Adoption
+
+- Schlauzug: delete `backend/tests/support/schema.rs` and its `mod schema` lines in
+  `backend/tests/api_schema.rs` and `backend/tests/api_rooms.rs`. At both call sites serialize
+  the body with `serde_json::to_vec` and call `assert_request_matches_openapi` with
+  `ObservedRequest { method: "POST", path, content_type: Some("application/json"), body }`, or
+  pass the bytes the test already sends.
+
+### Gates
+
+- `cargo test --manifest-path rust/Cargo.toml -p baukit-test --all-features -- --include-ignored`:
+  pass.
+- `cargo fmt --all --check` and `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+  with the rust manifest: pass.

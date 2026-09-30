@@ -19,6 +19,8 @@ opted into:
 - `assert_openapi_camel_case`: every property and path or query parameter name is camelCase.
 - `assert_response_matches_openapi`: a real response has a documented status, media type, and a
   body that validates against the documented schema.
+- `assert_request_matches_openapi`: a request body a test sends has a documented media type and
+  validates against the operation's `requestBody` schema.
 - `check_product_profile_erasure_conformance`: a user-deletion path actually removes what it claims.
 - `check_limit_boundaries`: a validator accepts `limit - 1` and `limit`, then rejects `limit + 1`.
 - `check_update_at_capacity` and `check_soft_delete_capacity_reuse`: live-row caps allow updates and
@@ -46,7 +48,7 @@ when a product wants a different report.
 delete actions, which catches the table someone added without `ON DELETE CASCADE` before a deletion
 request silently leaves rows behind.
 
-## OpenAPI responses
+## OpenAPI requests and responses
 
 `assert_response_matches_openapi` checks one response a test received against the operation it
 answers in the serialized document. Pass the documented path template, not the request URL:
@@ -87,8 +89,43 @@ and it needs a `Content-Type`. The media type matches exactly, then `type/*`, th
 `application/json` and `+json` media types validate as JSON Schema 2020-12 against the document's
 `components`, with `format` checked, so a malformed UUID or date-time fails. Other media types,
 such as a PDF, only have to be documented. `check_response_matches_openapi` returns an
-`OpenApiResponseError` instead of panicking; a schema violation lists every failing value with its
+`OpenApiContractError` instead of panicking; a schema violation lists every failing value with its
 JSON pointer.
+
+`assert_request_matches_openapi` checks the body of a request a test sends against the
+operation's `requestBody`, before or after the service answers it:
+
+```rust
+use baukit_test::{ObservedRequest, assert_request_matches_openapi};
+use serde_json::json;
+
+let document = json!({
+    "openapi": "3.1.0",
+    "paths": {"/items": {"post": {
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {"name": {"type": "string"}}
+        }}}},
+        "responses": {"201": {"description": "Created"}}
+    }}}
+});
+
+assert_request_matches_openapi(
+    &document,
+    &ObservedRequest {
+        method: "POST",
+        path: "/items",
+        content_type: Some("application/json"),
+        body: br#"{"name":"Gear"}"#,
+    },
+);
+```
+
+A `requestBody` `$ref` resolves through `components.requestBodies`. An empty body passes unless
+the request body is `required`, and an operation without a `requestBody` rejects any body. Media
+types and JSON bodies follow the response rules above, and `check_request_matches_openapi` returns
+the same `OpenApiContractError`. Parameters and headers are not checked.
 
 Build the document with `serde_json::to_value(openapi_document())` or read the committed
 `openapi.json`, so the test checks the same document clients see.

@@ -21,9 +21,28 @@ pub struct ObservedResponse<'a> {
     pub body: &'a [u8],
 }
 
-/// Reasons a response does not match its OpenAPI operation.
+/// A request a test sent to one documented operation.
+///
+/// `path` is the documented path template, such as `/items/{id}`, not the
+/// request URL. `content_type` is the raw `Content-Type` header value.
+#[derive(Clone, Copy, Debug)]
+pub struct ObservedRequest<'a> {
+    /// HTTP method in any case.
+    pub method: &'a str,
+    /// Path template as written in the document's `paths` object.
+    pub path: &'a str,
+    /// Raw `Content-Type` header value, if the request carried one.
+    pub content_type: Option<&'a str>,
+    /// Request body bytes.
+    pub body: &'a [u8],
+}
+
+/// Reasons a request or response does not match its OpenAPI operation.
+///
+/// The location in each message names the operation and either the response
+/// status or `request`.
 #[derive(Debug, thiserror::Error)]
-pub enum OpenApiResponseError {
+pub enum OpenApiContractError {
     /// The document has no operation for the method and path template.
     #[error("{operation} is not documented")]
     UndocumentedOperation {
@@ -41,33 +60,34 @@ pub enum OpenApiResponseError {
     /// A local `$ref` does not resolve inside the document.
     #[error("{location}: reference {reference} does not resolve")]
     UnresolvedReference {
-        /// Operation and status.
+        /// Operation and status, or operation and `request`.
         location: String,
         /// The unresolved reference.
         reference: String,
     },
-    /// The response has a body but the documented response has no content.
+    /// The message has a body but the documented message has no content.
     #[error("{location}: the body is not documented")]
     UndocumentedBody {
-        /// Operation and status.
+        /// Operation and status, or operation and `request`.
         location: String,
     },
-    /// The documented response has content but the body is empty.
+    /// The documented response has content, or the documented request body
+    /// is required, but the body is empty.
     #[error("{location}: the documented body is missing")]
     MissingBody {
-        /// Operation and status.
+        /// Operation and status, or operation and `request`.
         location: String,
     },
-    /// The response has a body without a `Content-Type` header.
+    /// The message has a body without a `Content-Type` header.
     #[error("{location}: the body has no Content-Type")]
     MissingContentType {
-        /// Operation and status.
+        /// Operation and status, or operation and `request`.
         location: String,
     },
-    /// The documented response has no entry for the media type.
+    /// The documented message has no entry for the media type.
     #[error("{location}: media type {media_type} is not documented")]
     UndocumentedMediaType {
-        /// Operation and status.
+        /// Operation and status, or operation and `request`.
         location: String,
         /// Observed media type without parameters.
         media_type: String,
@@ -75,7 +95,7 @@ pub enum OpenApiResponseError {
     /// A JSON media type carried a body that is not JSON.
     #[error("{location}: the body is not valid JSON: {source}")]
     InvalidJson {
-        /// Operation, status, and media type.
+        /// Operation, status or `request`, and media type.
         location: String,
         /// The parse error.
         source: serde_json::Error,
@@ -83,7 +103,7 @@ pub enum OpenApiResponseError {
     /// The documented schema does not compile as JSON Schema 2020-12.
     #[error("{location}: the documented schema does not compile: {message}")]
     InvalidSchema {
-        /// Operation, status, and media type.
+        /// Operation, status or `request`, and media type.
         location: String,
         /// The compiler's message.
         message: String,
@@ -91,7 +111,7 @@ pub enum OpenApiResponseError {
     /// The body violates the documented schema.
     #[error("{location}: the body violates the documented schema:\n- {}", violations.join("\n- "))]
     SchemaViolation {
-        /// Operation, status, and media type.
+        /// Operation, status or `request`, and media type.
         location: String,
         /// One entry per violation, prefixed with the JSON pointer of the value.
         violations: Vec<String>,
@@ -112,41 +132,110 @@ pub enum OpenApiResponseError {
 pub fn check_response_matches_openapi(
     document: &Value,
     response: &ObservedResponse<'_>,
-) -> Result<(), OpenApiResponseError> {
+) -> Result<(), OpenApiContractError> {
     let operation = format!("{} {}", response.method.to_uppercase(), response.path);
     let documented = document["paths"][response.path][response.method.to_lowercase()]["responses"]
         .as_object()
-        .ok_or_else(|| OpenApiResponseError::UndocumentedOperation {
+        .ok_or_else(|| OpenApiContractError::UndocumentedOperation {
             operation: operation.clone(),
         })?;
     let location = format!("{operation} {}", response.status);
     let documented = select_status(documented, response.status).ok_or(
-        OpenApiResponseError::UndocumentedStatus {
+        OpenApiContractError::UndocumentedStatus {
             operation,
             status: response.status,
         },
     )?;
     let documented = resolve(document, documented, &location)?;
-    let content = documented["content"]
-        .as_object()
-        .filter(|content| !content.is_empty());
-    match (content, response.body.is_empty()) {
-        (None, true) => Ok(()),
-        (None, false) => Err(OpenApiResponseError::UndocumentedBody { location }),
-        (Some(_), true) => Err(OpenApiResponseError::MissingBody { location }),
-        (Some(content), false) => check_content(document, content, response, &location),
-    }
+    let message = ObservedBody {
+        content_type: response.content_type,
+        body: response.body,
+    };
+    check_body(document, documented, message, true, &location)
 }
 
 /// Panics when a response does not match its OpenAPI operation.
 ///
 /// # Panics
 ///
-/// Panics with the [`OpenApiResponseError`] message from
+/// Panics with the [`OpenApiContractError`] message from
 /// [`check_response_matches_openapi`].
 pub fn assert_response_matches_openapi(document: &Value, response: &ObservedResponse<'_>) {
     if let Err(error) = check_response_matches_openapi(document, response) {
         panic!("{error}");
+    }
+}
+
+/// Checks a request body against the operation it calls in an OpenAPI 3.1 document.
+///
+/// The operation's `requestBody` may be a local `$ref`. An empty body passes
+/// unless the request body is `required`. The media type matches exactly,
+/// then `type/*`, then `*/*`. Bodies of `application/json` and `+json` media
+/// types are validated as JSON Schema 2020-12 against the document's
+/// `components`, including `format`. Bodies of other media types are not
+/// validated. Parameters and headers are not checked.
+///
+/// # Errors
+///
+/// Returns the first mismatch, or every schema violation in the body.
+pub fn check_request_matches_openapi(
+    document: &Value,
+    request: &ObservedRequest<'_>,
+) -> Result<(), OpenApiContractError> {
+    let operation = format!("{} {}", request.method.to_uppercase(), request.path);
+    let documented = document["paths"][request.path][request.method.to_lowercase()]
+        .as_object()
+        .ok_or_else(|| OpenApiContractError::UndocumentedOperation {
+            operation: operation.clone(),
+        })?;
+    let location = format!("{operation} request");
+    let documented = match documented.get("requestBody") {
+        Some(request_body) => resolve(document, request_body, &location)?,
+        None => &Value::Null,
+    };
+    let required = documented["required"].as_bool().unwrap_or(false);
+    let message = ObservedBody {
+        content_type: request.content_type,
+        body: request.body,
+    };
+    check_body(document, documented, message, required, &location)
+}
+
+/// Panics when a request body does not match its OpenAPI operation.
+///
+/// # Panics
+///
+/// Panics with the [`OpenApiContractError`] message from
+/// [`check_request_matches_openapi`].
+pub fn assert_request_matches_openapi(document: &Value, request: &ObservedRequest<'_>) {
+    if let Err(error) = check_request_matches_openapi(document, request) {
+        panic!("{error}");
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ObservedBody<'a> {
+    content_type: Option<&'a str>,
+    body: &'a [u8],
+}
+
+fn check_body(
+    document: &Value,
+    documented: &Value,
+    message: ObservedBody<'_>,
+    body_required: bool,
+    location: &str,
+) -> Result<(), OpenApiContractError> {
+    let location = location.to_owned();
+    let content = documented["content"]
+        .as_object()
+        .filter(|content| !content.is_empty());
+    match (content, message.body.is_empty()) {
+        (None, true) => Ok(()),
+        (None, false) => Err(OpenApiContractError::UndocumentedBody { location }),
+        (Some(_), true) if body_required => Err(OpenApiContractError::MissingBody { location }),
+        (Some(_), true) => Ok(()),
+        (Some(content), false) => check_content(document, content, message, &location),
     }
 }
 
@@ -163,10 +252,10 @@ fn resolve<'a>(
     document: &'a Value,
     mut value: &'a Value,
     location: &str,
-) -> Result<&'a Value, OpenApiResponseError> {
+) -> Result<&'a Value, OpenApiContractError> {
     let mut hops = 0;
     while let Some(reference) = value["$ref"].as_str() {
-        let unresolved = || OpenApiResponseError::UnresolvedReference {
+        let unresolved = || OpenApiContractError::UnresolvedReference {
             location: location.to_owned(),
             reference: reference.to_owned(),
         };
@@ -183,27 +272,29 @@ fn resolve<'a>(
 }
 
 fn max_reference_hops(document: &Value) -> usize {
-    document["components"]["responses"]
-        .as_object()
-        .map_or(0, serde_json::Map::len)
+    ["responses", "requestBodies"]
+        .iter()
+        .filter_map(|section| document["components"][section].as_object())
+        .map(serde_json::Map::len)
+        .sum::<usize>()
         + 1
 }
 
 fn check_content(
     document: &Value,
     content: &serde_json::Map<String, Value>,
-    response: &ObservedResponse<'_>,
+    message: ObservedBody<'_>,
     location: &str,
-) -> Result<(), OpenApiResponseError> {
-    let media_type = response
+) -> Result<(), OpenApiContractError> {
+    let media_type = message
         .content_type
         .map(essence)
         .filter(|media_type| !media_type.is_empty())
-        .ok_or_else(|| OpenApiResponseError::MissingContentType {
+        .ok_or_else(|| OpenApiContractError::MissingContentType {
             location: location.to_owned(),
         })?;
     let media = select_media_type(content, &media_type).ok_or_else(|| {
-        OpenApiResponseError::UndocumentedMediaType {
+        OpenApiContractError::UndocumentedMediaType {
             location: location.to_owned(),
             media_type: media_type.clone(),
         }
@@ -212,8 +303,8 @@ fn check_content(
         return Ok(());
     }
     let location = format!("{location} {media_type}");
-    let body = serde_json::from_slice::<Value>(response.body).map_err(|source| {
-        OpenApiResponseError::InvalidJson {
+    let body = serde_json::from_slice::<Value>(message.body).map_err(|source| {
+        OpenApiContractError::InvalidJson {
             location: location.clone(),
             source,
         }
@@ -258,7 +349,7 @@ fn check_schema(
     schema: &Value,
     body: &Value,
     location: String,
-) -> Result<(), OpenApiResponseError> {
+) -> Result<(), OpenApiContractError> {
     let wrapper = json!({
         "$schema": JSON_SCHEMA_DIALECT,
         "components": document["components"],
@@ -267,7 +358,7 @@ fn check_schema(
     let validator = jsonschema::options()
         .should_validate_formats(true)
         .build(&wrapper)
-        .map_err(|error| OpenApiResponseError::InvalidSchema {
+        .map_err(|error| OpenApiContractError::InvalidSchema {
             location: location.clone(),
             message: error.to_string(),
         })?;
@@ -283,7 +374,7 @@ fn check_schema(
     if violations.is_empty() {
         return Ok(());
     }
-    Err(OpenApiResponseError::SchemaViolation {
+    Err(OpenApiContractError::SchemaViolation {
         location,
         violations,
     })
