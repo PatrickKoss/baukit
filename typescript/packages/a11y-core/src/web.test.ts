@@ -13,7 +13,9 @@ describe('the web entry point', () => {
   it('loads without react-native and exports the DOM behavior', () => {
     expect(Object.keys(web).sort()).toEqual([
       'ARIA_HIDDEN_INERT_OPT_OUT',
+      'DEFAULT_LIVE_REGION_ID',
       'activeFocusTarget',
+      'announce',
       'applyFocusTrapKey',
       'asFocusContainer',
       'asFocusTarget',

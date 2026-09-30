@@ -10,7 +10,7 @@ product's Expo SDK decides the versions, and React Native is optional.
 ## Two entry points
 
 A React Native product imports the package root and gets everything. A plain React web app imports
-`@baukit/a11y-core/web` and gets `useFocusTrap`, `useInert`, `useAriaHiddenInert`,
+`@baukit/a11y-core/web` and gets `announce`, `useFocusTrap`, `useInert`, `useAriaHiddenInert`,
 `useReducedMotion`, `useReducedMotionPreference`, `useRovingMenu`, `nextEnabledMenuIndex`,
 `useSingleFlight`, `createRouteFocusController`, and the `dom-boundary` helpers. Nothing reachable
 from that entry imports `react-native`, at runtime or in its types, so the app needs no React
@@ -20,8 +20,9 @@ reason.
 The DOM hooks ask whether a document exists rather than asking `Platform` which OS this is. The
 two questions have the same answer here: every branch those hooks guard reads or writes the DOM,
 React Native Web gives them a real document, and React Native has none. Hooks with a genuine
-platform split, such as `announce` and `useOverlayA11y`, keep reading `Platform` and stay behind
-the root entry.
+platform split, such as `useOverlayA11y`, keep reading `Platform` and stay behind the root entry.
+`announce` and `useReducedMotion` exist on both entries: the root version reads `Platform`, and the
+`/web` version is its DOM half.
 
 ## Overlays
 
@@ -171,6 +172,12 @@ forcing a reflow first so the same message twice is spoken twice. Blank messages
 
 The region's DOM id defaults to `baukit-announcer`. Pass `liveRegionId` to place it under a
 product-owned id, and `assertive: true` to interrupt rather than wait for a pause.
+
+`announce` from `@baukit/a11y-core/web` takes the same arguments and is the web half alone, so a
+plain React app gets the live region without React Native. It creates the region on the first
+call, or adopts an element the product already rendered under that id, and needs no component or
+provider. Filtering which messages deserve speech stays in the product: call `announce` only for
+the ones that do.
 
 ## Reduced motion, groups, and forms
 

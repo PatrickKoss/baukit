@@ -5,6 +5,7 @@
  * instead and get these exports plus the native ones.
  */
 
+export * from './announce-web.js';
 export * from './dom-boundary.js';
 export * from './route-focus.js';
 export * from './use-focus-trap.js';
