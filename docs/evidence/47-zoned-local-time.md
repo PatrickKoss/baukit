@@ -293,3 +293,41 @@ Breaks: none. The root export is unchanged; `./vectors` is a new subpath, record
 Still open: this was an Android emulator (API 36 image `baukit-api-36`), not a physical device, and
 it read the emulator image's ICU time-zone data. iOS was not run, since it needs macOS with Xcode,
 so Hermes on iOS, which reads zones through Foundation, is still unchecked.
+
+## Follow-up 0.5.2 (2026-09-30)
+
+Eigenruhe found that the recipe's TypeScript snippet writes a file without the final CRLF. Its
+export appends one itself in `mobile/src/integrations/ics.ts:96-98` (commit `e8d0e05`), with a
+comment explaining why. RFC 5545 section 3.1 ends every content line, the last one included, with
+CRLF, so the recipe was wrong.
+
+Verification against the real libraries:
+
+- `ical-generator` 11.1.1 with `temporal-polyfill` 1.0.4: `toString()` ends with
+  `\r\nEND:VCALENDAR` and no trailing CRLF, both for an empty calendar and for one with a
+  recurring `TZID` event. With `\r\n` appended the output ends with `END:VCALENDAR\r\n`, has no
+  bare LF, and its longest physical line is 74 octets.
+- Rust `icalendar` 0.17.13: `Calendar::to_string()` already ends with `END:VCALENDAR\r\n`. The Rust
+  section needs no change.
+
+What changed in [`docs/platform/calendar-export-recipe.md`](../platform/calendar-export-recipe.md):
+
+- Rule 6 says every content line ends with CRLF, names the library that omits the last one, and
+  tells products to append `\r\n`.
+- Rule 8 adds a test that the output ends with `END:VCALENDAR\r\n`.
+- The TypeScript snippet returns `` `${calendar.toString()}\r\n` ``.
+
+Baukit has no executable check of the recipe, only the smoke run recorded above, so there was no
+test to extend. Adding one would mean a new package that depends on `ical-generator`, which this
+wave does not allow.
+
+Breaks: none. The recipe is documentation.
+
+Adoption:
+
+- Eigenruhe: none required. `mobile/src/integrations/ics.ts` already appends the CRLF, which now
+  matches the recipe; its explanatory comment can go.
+- Any product that copied the earlier snippet: append `\r\n` to `calendar.toString()` and add the
+  rule 8 assertion.
+
+Gates: `make platform-validate` passed.

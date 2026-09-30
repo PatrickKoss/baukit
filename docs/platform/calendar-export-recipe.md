@@ -33,13 +33,16 @@ multi-byte text can exceed 75 octets.
    `TZID` and a typed recurrence rule. The product decides whether a first occurrence that falls in
    a gap is skipped, moved, or rejected.
 6. Content lines are limited to 75 UTF-8 octets, excluding CRLF. A continuation line starts with one
-   space or tab, and that prefix counts toward the limit.
+   space or tab, and that prefix counts toward the limit. Every content line ends with CRLF,
+   including the final `END:VCALENDAR`. `icalendar` writes that last CRLF; `ical-generator`
+   11.1.1's `toString()` omits it, so append `\r\n` yourself.
 7. In Rust, set UID and timestamp on every component. In TypeScript, pass `id`, `stamp`, Temporal
    start and end values, event-level `timezone`, and a sorted event list. Do not set a
    calendar-level `timezone` in `ical-generator`: it can format `DTSTAMP` as local time.
-8. Tests encode twice and compare complete bytes, check every physical line length in octets, and
-   assert semantic fields. Rust and TypeScript output need not match byte for byte, because the
-   libraries order properties and optional `RRULE` parts differently.
+8. Tests encode twice and compare complete bytes, check every physical line length in octets,
+   check that the output ends with `END:VCALENDAR\r\n`, and assert semantic fields. Rust and
+   TypeScript output need not match byte for byte, because the libraries order properties and
+   optional `RRULE` parts differently.
 
 ## Resolving local times
 
@@ -99,7 +102,7 @@ function encodeWeeklySession(session: Session, timeZone: string): string | null 
     summary: session.title,
     repeating: { freq: ICalEventRepeatingFreq.WEEKLY, byDay: [ICalWeekday.SU] },
   });
-  return calendar.toString();
+  return `${calendar.toString()}\r\n`;
 }
 ```
 
