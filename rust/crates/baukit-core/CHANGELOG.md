@@ -11,6 +11,12 @@ All notable changes to `baukit-core` are documented here.
   `WEBHOOK_SIGNATURE_VERSION`, and `WEBHOOK_SIGNATURE_PREFIX`. Senders and receivers now apply the
   `baukit-webhook-v1` signature at runtime instead of copying it from `baukit-test`. The feature
   adds `base64` and `ring`. `fixtures/webhooks/signature-v1.json` runs against it.
+- Add a tie-breaker type parameter to `pagination::PageKey<T, K = Uuid>` and
+  `Cursor::page_key_as::<T, K>()`. `Cursor::from_page_key` and `Page::from_rows` accept any
+  `K: Display`, so a list ordered by a composite key such as `(source, target)` or by a non-UUID
+  ID keeps the filter binding, version check, and size bound. `PageKey<T>` and
+  `Cursor::page_key::<T>()` still mean a UUID tie-breaker, and the cursor wire format is
+  unchanged.
 
 ### Changed
 

@@ -1,8 +1,8 @@
 //! Keyset pagination with opaque cursors bound to the request filters.
 //!
 //! A [`Cursor`] carries a keyset position (a sort value plus a tie-breaking
-//! [`Uuid`]) and a short hash of the normalized filters the page was produced
-//! from. [`Cursor::decode`] recomputes that hash and rejects any cursor whose
+//! key, a [`Uuid`] by default) and a short hash of the normalized filters the
+//! page was produced from. [`Cursor::decode`] recomputes that hash and rejects any cursor whose
 //! bytes were edited, whose version is unknown, or that is replayed against
 //! different filters. The cursor is not a secret and is not authenticated: it
 //! prevents accidental misuse and inconsistent result sets, not a determined
@@ -39,6 +39,7 @@
 //! # Ok::<(), PaginationError>(())
 //! ```
 
+use std::fmt::Display;
 use std::str::FromStr;
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -143,20 +144,23 @@ impl PageParams {
     }
 }
 
-/// One keyset position: the sort value plus the row ID that breaks ties.
+/// One keyset position: the sort value plus the key that breaks ties.
 ///
 /// `T` is the type of the ordered column, for example a timestamp or a name.
+/// `K` is the tie-breaker, the row's [`Uuid`] by default. A composite key
+/// such as `(source, target)` uses the first column as `value` and the
+/// second as `id`. A list ordered only by its ID uses the ID for both.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PageKey<T> {
+pub struct PageKey<T, K = Uuid> {
     /// The value of the ordered column for the last row of the page.
     pub value: T,
-    /// The ID of that row, used as a stable tie-breaker.
-    pub id: Uuid,
+    /// The tie-breaking key of that row, unique within the ordered value.
+    pub id: K,
 }
 
-impl<T> PageKey<T> {
+impl<T, K> PageKey<T, K> {
     /// Creates a keyset position.
-    pub const fn new(value: T, id: Uuid) -> Self {
+    pub const fn new(value: T, id: K) -> Self {
         Self { value, id }
     }
 }
@@ -191,21 +195,23 @@ impl<T> Page<T> {
     ///
     /// Fetch [`PageParams::fetch_limit`] rows, then hand them here. When more
     /// rows than the limit came back, the extra row is dropped and `key_of` is
-    /// called on the last kept row to build the next cursor.
+    /// called on the last kept row to build the next cursor. The tie-breaker
+    /// is stored through its `Display` form.
     ///
     /// # Errors
     ///
     /// Returns [`PaginationError::InvalidLimit`] if the limit does not fit a
     /// `usize`, or [`PaginationError::InvalidCursor`] if the filters cannot be
     /// serialized.
-    pub fn from_rows<F>(
+    pub fn from_rows<F, K>(
         mut rows: Vec<T>,
         params: &PageParams,
         normalized_filters: &F,
-        key_of: impl FnOnce(&T) -> PageKey<String>,
+        key_of: impl FnOnce(&T) -> PageKey<String, K>,
     ) -> Result<Self, PaginationError>
     where
         F: Serialize + ?Sized,
+        K: Display,
     {
         let limit = params.limit_usize()?;
         let has_more = rows.len() > limit;
@@ -239,7 +245,7 @@ struct CursorPayload {
 /// An opaque keyset cursor bound to a version and to the request filters.
 ///
 /// Encode with [`Cursor::encode`] and read the position back with
-/// [`Cursor::page_key`]. The wire form is base64url without padding and must be
+/// [`Cursor::page_key`], or [`Cursor::page_key_as`] for another tie-breaker. The wire form is base64url without padding and must be
 /// treated as opaque by clients.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Cursor(CursorPayload);
@@ -250,17 +256,19 @@ impl Cursor {
     /// `normalized_filters` must serialize deterministically. Use a struct with
     /// a fixed field order or a `BTreeMap`, and normalize values (case, default
     /// ranges) before hashing so an equivalent request keeps its cursor valid.
+    /// The tie-breaker is stored through its `Display` form.
     ///
     /// # Errors
     ///
     /// Returns [`PaginationError::InvalidCursor`] if the filters cannot be
     /// serialized to JSON.
-    pub fn from_page_key<F>(
-        key: &PageKey<String>,
+    pub fn from_page_key<F, K>(
+        key: &PageKey<String, K>,
         normalized_filters: &F,
     ) -> Result<Self, PaginationError>
     where
         F: Serialize + ?Sized,
+        K: Display,
     {
         Ok(Self(CursorPayload {
             v: CURSOR_VERSION,
@@ -318,6 +326,24 @@ impl Cursor {
     where
         T: FromStr,
     {
+        self.page_key_as::<T, Uuid>()
+    }
+
+    /// Parses the keyset position back into the ordered column type and the
+    /// tie-breaker type.
+    ///
+    /// Use this when the cursor was issued from a [`PageKey`] whose `id` is
+    /// not a [`Uuid`], for example the second column of a composite key.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PaginationError::InvalidCursor`] when the stored value does
+    /// not parse as `T` or the tie-breaker does not parse as `K`.
+    pub fn page_key_as<T, K>(&self) -> Result<PageKey<T, K>, PaginationError>
+    where
+        T: FromStr,
+        K: FromStr,
+    {
         let (value, id) = match self.0.k.as_slice() {
             [value, id] => (value, id),
             _ => return Err(PaginationError::InvalidCursor),
@@ -325,7 +351,9 @@ impl Cursor {
         let value = value
             .parse::<T>()
             .map_err(|_| PaginationError::InvalidCursor)?;
-        let id = Uuid::parse_str(id).map_err(|_| PaginationError::InvalidCursor)?;
+        let id = id
+            .parse::<K>()
+            .map_err(|_| PaginationError::InvalidCursor)?;
         Ok(PageKey { value, id })
     }
 }
@@ -390,7 +418,7 @@ mod tests {
         ])
     }
 
-    fn encode(key: &PageKey<String>, filters: &Filters<'_>) -> String {
+    fn encode<K: Display>(key: &PageKey<String, K>, filters: &Filters<'_>) -> String {
         Cursor::from_page_key(key, filters)
             .and_then(|cursor| cursor.encode())
             .expect("cursor should encode")
@@ -604,6 +632,63 @@ mod tests {
         assert_eq!(json, serde_json::json!({"items": [1], "nextCursor": null}));
         let restored: Page<u64> = serde_json::from_value(json).expect("page deserializes");
         assert_eq!(restored, Page::new(vec![1], None));
+    }
+
+    #[test]
+    fn a_composite_text_key_round_trips_and_stays_bound_to_the_filters() {
+        let tenant_a = Filters {
+            from: Some("tenant-a"),
+            to: None,
+        };
+        let tenant_b = Filters {
+            from: Some("tenant-b"),
+            to: None,
+        };
+        let key = PageKey::new("kube-system".to_owned(), "payments".to_owned());
+        let encoded = encode(&key, &tenant_a);
+
+        let decoded = Cursor::decode(&encoded, &tenant_a)
+            .and_then(|cursor| cursor.page_key_as::<String, String>())
+            .expect("cursor decodes");
+        assert_eq!(decoded, key);
+        assert_eq!(
+            Cursor::decode(&encoded, &tenant_b),
+            Err(PaginationError::InvalidCursor)
+        );
+        assert_eq!(
+            Cursor::decode(&encoded, &tenant_a).and_then(|cursor| cursor.page_key::<String>()),
+            Err(PaginationError::InvalidCursor)
+        );
+    }
+
+    #[test]
+    fn a_composite_key_of_two_long_unicode_names_fits_the_bound() {
+        const NAME_CHARS: usize = 255;
+        let filters = no_filters();
+        let name = "\u{1f600}".repeat(NAME_CHARS);
+        let key = PageKey::new(name.clone(), name);
+
+        let decoded = Cursor::decode(&encode(&key, &filters), &filters)
+            .and_then(|cursor| cursor.page_key_as::<String, String>())
+            .expect("cursor decodes");
+        assert_eq!(decoded, key);
+    }
+
+    #[test]
+    fn from_rows_issues_a_cursor_for_a_non_uuid_tie_breaker() {
+        let filters = no_filters();
+        let params = PageParams::new(Some(1), None).expect("params validate");
+        let rows = vec![("a", 7_u32), ("b", 8)];
+        let page = Page::from_rows(rows, &params, &filters, |row| {
+            PageKey::new(row.0.to_owned(), row.1)
+        })
+        .expect("page builds");
+
+        let next = page.next_cursor.expect("a second row means another page");
+        let key = Cursor::decode(&next, &filters)
+            .and_then(|cursor| cursor.page_key_as::<String, u32>())
+            .expect("next cursor decodes");
+        assert_eq!(key, PageKey::new("a".to_owned(), 7));
     }
 
     fn cursor_with_encoded_length(filters: &Filters<'_>, length: usize) -> String {

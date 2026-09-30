@@ -147,6 +147,13 @@ the keyset position, and a short hash of the normalized request filters, so a cu
 against other filters fails with `PaginationError::InvalidCursor`. `Page` serializes as
 `{ "items": [...], "nextCursor": "..." }`, with `nextCursor` set to `null` on the last page.
 
+`PageKey<T, K = Uuid>` holds the sort value and the tie-breaker. Most lists break ties on the row
+UUID and read the position back with `cursor.page_key::<T>()`. A list ordered by a composite or
+non-UUID key picks another `K`, for example `PageKey::new(source, target)` for rows ordered by two
+text columns, and reads it back with `cursor.page_key_as::<String, String>()`. The tie-breaker is
+stored through `Display` and parsed back through `FromStr`. A list ordered only by its ID passes
+the ID as both parts. Bind the tenant or other scope by putting it in the normalized filters.
+
 `Cursor::decode` rejects input longer than `MAX_CURSOR_BYTES` (4096 bytes) before it base64-decodes
 or parses anything, so an oversized query parameter costs no allocation. `Cursor::encode` returns
 the same error rather than issue a cursor that `decode` would reject. `baukit-http` converts

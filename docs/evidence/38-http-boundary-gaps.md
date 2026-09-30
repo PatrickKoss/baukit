@@ -202,3 +202,66 @@ After each product pins the release containing this item:
   layer and rely on their own `CorsLayer` (`sl-bin/src/compose/mcp.rs:331-348`).
 - Hebkit and Redemut stack a second `CorsLayer` outside Baukit's. Check that responses do not end
   up with two `Access-Control-Allow-Origin` values, which browsers reject.
+
+## Follow-up 0.5.2 (2026-09-30)
+
+### Product evidence
+
+Runtime Analyzer adopted 0.5.1 (`8a69237`) but moved no endpoint to
+`baukit_core::pagination`, because `PageKey` fixed the tie-breaker to a `Uuid` and
+`Cursor::page_key` parsed it as one. Its own cursor lives in
+`backend/crates/finops-api/src/routes/admin_common.rs` (`CursorContext`, `CursorToken`,
+`encode_cursor`, `decode_cursor`) and binds the endpoint, tenant, and cluster. The security routes
+use three key shapes (`backend/crates/finops-api/src/routes/security.rs`, `row_key`):
+
+- flows, policies, and events order by `(time, id)` with a UUID `id`, which 0.5.1 already covers;
+- the network graph orders by `(source_namespace, destination_namespace)`, two text columns
+  (`backend/crates/finops-postgres/src/security.rs`, `graph_cursor: Option<(String, String)>`);
+- the remaining lists order by the UUID `id` alone.
+
+Its test `graph_cursor_accepts_database_sized_unicode_namespaces` pages with two names of 255
+four-byte characters each. The payload is about 2.1 KB of JSON and about 2.8 KB encoded, inside
+`MAX_CURSOR_BYTES`.
+
+### Decision
+
+`PageKey` gains a tie-breaker type parameter with `Uuid` as its default, `PageKey<T, K = Uuid>`.
+`Cursor::from_page_key` and `Page::from_rows` accept any `K: Display`, and the new
+`Cursor::page_key_as::<T, K>()` parses it back through `FromStr`. `Cursor::page_key::<T>()` keeps
+its signature and delegates with `K = Uuid`, because Eigenruhe, Hebkit, and Redemut call it with
+one type argument in many places; a second required parameter would break them for no gain.
+
+The cursor payload stays `{v, k: [value, id], f}`, so the version check, the two-element check, the
+filter hash, and the size bound are unchanged, and an encoded 0.5.1 cursor still decodes. A
+two-column key covers every shape in the evidence. A list ordered only by its ID passes the ID as
+both value and tie-breaker, which costs one repeated UUID in the cursor and needs no second
+payload shape. Wider composite keys stay product-side until a product needs one.
+
+The endpoint, tenant, and cluster binding moves into the normalized filters: serialize a struct
+with those fields, and a cursor replayed on another endpoint, tenant, or cluster fails the filter
+hash. The field name `id` stays for the tie-breaker even when it holds a name, because renaming it
+would break every product that reads `key.id`.
+
+### Breaks
+
+None. `PageKey<T>` still means `PageKey<T, Uuid>`, and existing calls infer the default.
+
+### Adoption
+
+- Runtime Analyzer: replace `CursorContext`, `CursorToken`, `encode_cursor`, `decode_cursor`, and
+  the string `row_key` in `finops-api/src/routes/admin_common.rs` and
+  `finops-api/src/routes/security.rs` with `Page::from_rows` and `PageParams::decode_cursor`, using
+  a filters struct holding the endpoint, tenant, and cluster. The graph uses
+  `PageKey::new(source, target)` and `page_key_as::<String, String>()`, the timed lists
+  `PageKey::new(time, id)`, and the ID-only lists `PageKey::new(id.to_string(), id)`. Pass the
+  typed keys to `finops-postgres/src/security.rs` instead of the JSON strings it parses today. Its
+  own 8192-byte cursor bound drops to Baukit's 4096, which the graph test still fits.
+
+### Gates
+
+- `cargo test --manifest-path rust/Cargo.toml -p baukit-core --all-features -- --include-ignored`:
+  pass.
+- `cargo test --manifest-path rust/Cargo.toml -p baukit-http --all-features -- --include-ignored`:
+  pass.
+- `cargo fmt --all --check` and `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+  with the rust manifest: pass.
