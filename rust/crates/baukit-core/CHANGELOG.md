@@ -4,6 +4,12 @@ All notable changes to `baukit-core` are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- `fixtures/media-grants/vectors-v1.json` gains an `absolute-form-target` case: a path carrying a
+  scheme and host is `invalid_path`. The nginx verifier in `deploy/media-grants` now refuses a
+  request whose request line has an absolute-form target (`GET http://host/path`).
+
 ## [0.5.1] - 2026-09-29
 
 ### Added

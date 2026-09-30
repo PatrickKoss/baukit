@@ -30,6 +30,7 @@ const CACHE_CONTROL_VARIABLE = "media_grant_cache_control";
 const FORBIDDEN = 403;
 const FIRST_ERROR_STATUS = 400;
 const MILLISECONDS_PER_SECOND = 1000;
+const HTTP_VERSION_SEPARATOR = " HTTP/";
 
 function configurationError(code) {
   const error = new Error(code);
@@ -188,6 +189,17 @@ async function verifyMediaGrant(ring, request) {
   return { ok: true, keyId: key.keyId, expires: grant.expires };
 }
 
+// The raw target from the request line. nginx drops the scheme and host of an
+// absolute-form target from $request_uri, so only the line shows them.
+function requestTarget(r) {
+  const line = r.variables.request;
+  const prefix = `${r.method} `;
+  if (typeof line !== "string" || !line.startsWith(prefix)) return null;
+  const versionStart = line.indexOf(HTTP_VERSION_SEPARATOR, prefix.length);
+  if (versionStart === -1) return null;
+  return line.slice(prefix.length, versionStart);
+}
+
 function splitRequestUri(requestUri) {
   const queryStart = typeof requestUri === "string"
     ? requestUri.indexOf("?")
@@ -207,7 +219,12 @@ function nowSeconds() {
 // variables, so no log_format can print them.
 async function authorize(r) {
   try {
-    const target = splitRequestUri(r.variables.request_uri);
+    const rawTarget = requestTarget(r);
+    if (rawTarget === null || rawTarget !== r.variables.request_uri) {
+      r.return(FORBIDDEN);
+      return;
+    }
+    const target = splitRequestUri(rawTarget);
     if (target === null || target.path !== r.uri) {
       r.return(FORBIDDEN);
       return;

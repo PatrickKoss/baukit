@@ -313,3 +313,62 @@ Gates: `cargo test --manifest-path rust/Cargo.toml -p baukit-core --all-features
 --include-ignored` passes, and `cargo clippy` on the workspace with `--all-features` is clean.
 
 Breaks: none.
+
+## Follow-up 0.5.2 (2026-09-30)
+
+### Product evidence
+
+Eigenruhe adopted 0.5.1 in `88f0adb` and replaced `media/njs/animation-signing.js` with a copy of
+`media-grant.js`. The old `authorize` (`animation-signing.js:183-198` at `88f0adb^`) required the
+target between `"<method> "` and `" HTTP/"` in `$request` to equal `$request_uri`, so it refused
+absolute-form targets. The Baukit copy at `media/njs/media-grant.js:210` reads only
+`$request_uri`, so adopting Baukit dropped that check.
+
+### Decision
+
+This reverses the item 18 decision above. That decision was right that the signature still binds
+the path: nginx fills `$request_uri` with the path and query of an absolute-form target. It
+missed the host. A live run against the pinned `nginx:1.31-alpine` image, both engines, with the
+README's configuration and a fresh grant, sent the same grant three ways with `Host: media.example`:
+
+| Request target | 0.5.1 | 0.5.2 |
+|---|---|---|
+| `/media/<uuid>/v1/clip.mp4?<grant>` | 200 | 200 |
+| `http://media.example/media/<uuid>/v1/clip.mp4?<grant>` | 200 | 403 |
+| `http://other.example/media/<uuid>/v1/clip.mp4?<grant>` | 200 | 403 |
+
+nginx takes the host from an absolute-form target over the `Host` header, so a cache or proxy
+that keys on `Host` and the edge can disagree about which server answered. Browsers and players
+send origin-form to an origin server; only proxies send absolute-form. Refusing it costs nothing.
+
+`authorize` now reads the raw target from `$request` (after `"<method> "`, up to `" HTTP/"`) and
+refuses the request unless it equals `$request_uri`. A request line without an HTTP version is
+refused too. nginx builds `$request` for HTTP/2 as `"<method> <path> HTTP/2.0"`, so HTTP/2 passes;
+a handler test covers that line, but no live HTTP/2 run was made.
+
+The shared vectors gain `absolute-form-target`: the path `http://media.example/media/...` with a
+grant that is valid for the origin-form path is `invalid_path`. The Rust `MediaGrantKeyRing::verify`
+and the njs `verifyMediaGrant` already agreed on it; the case pins that a verifier fed the raw
+request-line target, as `authorize` now is, can never accept a scheme and host. The vectors now
+hold 51 `verifyCases` (SHA-256 `bee6b7c6dadae82b5448929086a8b4ce825d77fcca9699d5631c3f5a48fb4171`).
+The expected value needs no generator run: it is a grammar refusal, not a signature.
+
+### Breaks
+
+- The njs `authorize` handler refuses absolute-form targets and request lines without an HTTP
+  version. No Rust API changes.
+
+### Product adoption
+
+- Eigenruhe: copy the new `deploy/media-grants/njs/media-grant.js` over
+  `media/njs/media-grant.js`.
+- Hebkit: copy it over `infra/exercise-media/media-grant.js`, which its CI checks byte for byte
+  against the pinned Baukit version.
+
+### Gates
+
+- `make media-grants-test`: pass (19 Node tests, 3 new handler tests).
+- `make media-grants-njs-test`: pass, `media grant vectors: 73 cases passed` under both engines.
+- `cargo test --manifest-path rust/Cargo.toml -p baukit-core --all-features -- --include-ignored`:
+  pass.
+- Live smoke run above: pass on this branch, and the 0.5.1 column reproduced on `main`.

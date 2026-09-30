@@ -81,13 +81,17 @@ describe("keys", () => {
   });
 });
 
+function targetVariables(target, method = "GET") {
+  return { request: `${method} ${target} HTTP/1.1`, request_uri: target };
+}
+
 function fakeRequest(overrides) {
   const request = {
     method: "GET",
     uri: signed.path,
     status: 200,
     variables: {
-      request_uri: `${signed.path}?${signed.expected.query}`,
+      ...targetVariables(`${signed.path}?${signed.expected.query}`),
       media_grant_cache_control: "no-store",
     },
     headersOut: {},
@@ -138,9 +142,9 @@ describe("nginx adapter", () => {
   test("a grant from the previous key passes during rotation", async () => {
     const r = fakeRequest({
       uri: signedByPrevious.path,
-      variables: {
-        request_uri: `${signedByPrevious.path}?${signedByPrevious.expected.query}`,
-      },
+      variables: targetVariables(
+        `${signedByPrevious.path}?${signedByPrevious.expected.query}`,
+      ),
     });
     await grants.authorize(r);
     assert.equal(r.returned, null);
@@ -149,20 +153,53 @@ describe("nginx adapter", () => {
   test("a raw path that nginx decoded differently is refused", async () => {
     const encoded = signed.path.replace("/media/", "/%6Dedia/");
     const r = fakeRequest({
-      variables: { request_uri: `${encoded}?${signed.expected.query}` },
+      variables: targetVariables(`${encoded}?${signed.expected.query}`),
     });
     await grants.authorize(r);
     assert.equal(r.returned, 403);
   });
 
   test("a request without a query is refused", async () => {
-    const r = fakeRequest({ variables: { request_uri: signed.path } });
+    const r = fakeRequest({ variables: targetVariables(signed.path) });
+    await grants.authorize(r);
+    assert.equal(r.returned, 403);
+  });
+
+  test("an absolute-form request target is refused", async () => {
+    const target = `${signed.path}?${signed.expected.query}`;
+    const r = fakeRequest({
+      variables: {
+        request: `GET http://media.example${target} HTTP/1.1`,
+        request_uri: target,
+      },
+    });
+    await grants.authorize(r);
+    assert.equal(r.returned, 403);
+  });
+
+  test("an HTTP/2 request line passes", async () => {
+    const target = `${signed.path}?${signed.expected.query}`;
+    const r = fakeRequest({
+      variables: { request: `GET ${target} HTTP/2.0`, request_uri: target },
+    });
+    await grants.authorize(r);
+    assert.equal(r.returned, null);
+  });
+
+  test("a request line without an HTTP version is refused", async () => {
+    const target = `${signed.path}?${signed.expected.query}`;
+    const r = fakeRequest({
+      variables: { request: `GET ${target}`, request_uri: target },
+    });
     await grants.authorize(r);
     assert.equal(r.returned, 403);
   });
 
   test("a POST is refused", async () => {
-    const r = fakeRequest({ method: "POST" });
+    const r = fakeRequest({
+      method: "POST",
+      variables: targetVariables(`${signed.path}?${signed.expected.query}`, "POST"),
+    });
     await grants.authorize(r);
     assert.equal(r.returned, 403);
   });

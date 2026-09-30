@@ -13,17 +13,20 @@ media path. The signature is unpadded base64url of HMAC-SHA256 over
 In this order, each failure returning 403:
 
 1. The method is `GET` or `HEAD`.
-2. The raw path from `$request_uri` equals nginx's normalized `$uri`, so percent-encoding and dot
+2. The request line carries an origin-form target equal to `$request_uri`. An absolute-form
+   target such as `GET http://host/path` is refused: nginx drops its scheme and host from
+   `$request_uri` and picks the server block by that host instead of the `Host` header.
+3. The raw path from `$request_uri` equals nginx's normalized `$uri`, so percent-encoding and dot
    segments never reach the signature check.
-3. The path is at most 512 bytes of `/`-separated segments made of `[A-Za-z0-9._-]`, none empty
+4. The path is at most 512 bytes of `/`-separated segments made of `[A-Za-z0-9._-]`, none empty
    and none starting with `.`.
-4. The query holds exactly `expires`, `keyId`, `mode=playback`, and `signature`, in that order.
+5. The query holds exactly `expires`, `keyId`, `mode=playback`, and `signature`, in that order.
    `expires` has one to ten digits with no leading zero, and the signature is 43 canonical
    base64url characters.
-5. The grant has not expired and expires at most 3660 seconds ahead: the 3600-second signing
+6. The grant has not expired and expires at most 3660 seconds ahead: the 3600-second signing
    limit plus 60 seconds for a verifier clock that lags the signer's.
-6. `keyId` names the current or the previous key.
-7. The HMAC matches. The comparison runs over all 32 bytes without an early exit.
+7. `keyId` names the current or the previous key.
+8. The HMAC matches. The comparison runs over all 32 bytes without an early exit.
 
 On success the handler sets `$media_grant_cache_control` to
 `private, max-age=<seconds left>, must-revalidate`. The header filter copies it into
