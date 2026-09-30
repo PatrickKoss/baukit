@@ -220,7 +220,10 @@ fi
 corepack pnpm@11.18.0 --dir mobile typecheck
 corepack pnpm@11.18.0 --dir mobile lint
 corepack pnpm@11.18.0 --dir mobile run test:coverage
-CI=1 corepack pnpm@11.18.0 --dir mobile exec expo prebuild --clean --platform ios
+{% if not context.web %}if [ "$(manifest_value capabilities.pwa)" = "true" ]; then
+  corepack pnpm@11.18.0 --dir mobile run build:sw:check
+fi
+{% endif %}CI=1 corepack pnpm@11.18.0 --dir mobile exec expo prebuild --clean --platform ios
 CI=1 corepack pnpm@11.18.0 --dir mobile exec expo export --platform ios --output-dir dist/ios-check
 CI=1 corepack pnpm@11.18.0 --dir mobile exec expo prebuild --clean --platform android
 mobile/android/gradlew -p mobile/android --no-daemon --stacktrace assembleDebug

@@ -1290,8 +1290,8 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
             ));
         }
     }
-    if manifest.capabilities.pwa && !manifest.capabilities.web {
-        failures.push("the PWA capability requires the web capability".to_owned());
+    if manifest.capabilities.pwa && pwa_app_directory(&manifest.capabilities).is_none() {
+        failures.push("the PWA capability requires the web or mobile capability".to_owned());
     }
     if manifest.capabilities.mcp.is_some() && !manifest.capabilities.backend {
         failures.push("the MCP capability requires the backend capability".to_owned());
@@ -1426,9 +1426,6 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
             &mut successes,
             &mut failures,
         )?;
-        if manifest.capabilities.pwa {
-            validate_pwa_worker_build(root, &mut successes, &mut failures)?;
-        }
         if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
             for relative in EXPECTED_AUTH_WEB_FILES {
                 if !root.join(relative).is_file() {
@@ -1436,6 +1433,11 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
                 }
             }
         }
+    }
+    if manifest.capabilities.pwa
+        && let Some(app_directory) = pwa_app_directory(&manifest.capabilities)
+    {
+        validate_pwa_worker_build(root, app_directory, &mut successes, &mut failures)?;
     }
     let ssh_agent_ready = match &manifest.dependencies.baukit {
         BaukitDependency::Path { path } => {
@@ -2069,48 +2071,55 @@ fn validate_frontend_capability(
     Ok(())
 }
 
+/// The app that serves the PWA: the web app, or the Expo web export when the product has no web app.
+fn pwa_app_directory(capabilities: &Capabilities) -> Option<&'static str> {
+    if capabilities.web {
+        Some("web")
+    } else if capabilities.mobile {
+        Some("mobile")
+    } else {
+        None
+    }
+}
+
 fn validate_pwa_worker_build(
     root: &Path,
+    app_directory: &str,
     successes: &mut Vec<String>,
     failures: &mut Vec<String>,
 ) -> Result<()> {
     let initial_failure_count = failures.len();
-    let package_path = root.join("web/package.json");
+    let package_path = root.join(app_directory).join("package.json");
     if package_path.is_file() {
         let package = fs::read_to_string(&package_path)
             .with_context(|| format!("could not read {}", package_path.display()))?;
-        for (snippet, message) in [
-            (
-                "\"build:sw\"",
-                "the PWA capability requires the web `build:sw` script",
-            ),
-            (
-                "\"build:sw:check\"",
-                "the PWA capability requires the web `build:sw:check` script",
-            ),
-            (
-                "\"@baukit/pwa-web\"",
-                "the PWA capability requires the web `@baukit/pwa-web` dependency",
-            ),
+        for (snippet, requirement) in [
+            ("\"build:sw\"", "`build:sw` script"),
+            ("\"build:sw:check\"", "`build:sw:check` script"),
+            ("\"@baukit/pwa-web\"", "`@baukit/pwa-web` dependency"),
         ] {
             if !package.contains(snippet) {
-                failures.push(message.to_owned());
+                failures.push(format!(
+                    "the PWA capability requires the {app_directory} {requirement}"
+                ));
             }
         }
     }
 
-    let script_path = root.join("web/scripts/build-sw.mjs");
+    let script = format!("{app_directory}/scripts/build-sw.mjs");
+    let script_path = root.join(&script);
     if !script_path.is_file() {
-        failures.push("the PWA capability requires `web/scripts/build-sw.mjs`".to_owned());
+        failures.push(format!("the PWA capability requires `{script}`"));
     } else if !fs::read_to_string(&script_path)?.contains("@baukit/pwa-web/worker") {
-        failures.push(
-            "web/scripts/build-sw.mjs must copy the supported `@baukit/pwa-web/worker` artifact"
-                .to_owned(),
-        );
+        failures.push(format!(
+            "{script} must copy the supported `@baukit/pwa-web/worker` artifact"
+        ));
     }
 
     if failures.len() == initial_failure_count {
-        successes.push("web PWA worker build uses the supported Baukit artifact".to_owned());
+        successes.push(format!(
+            "{app_directory} PWA worker build uses the supported Baukit artifact"
+        ));
     }
     Ok(())
 }
@@ -2313,9 +2322,9 @@ mod doctor_tests {
     };
 
     use super::{
-        DoctorCommandOutput, DoctorHost, diagnose_docker, diagnose_ssh_agent,
-        has_mismatched_localhost_port, probe_git_dependency, validate_mobile_router_configuration,
-        validate_pwa_worker_build,
+        Capabilities, DoctorCommandOutput, DoctorHost, diagnose_docker, diagnose_ssh_agent,
+        has_mismatched_localhost_port, probe_git_dependency, pwa_app_directory,
+        validate_mobile_router_configuration, validate_pwa_worker_build,
     };
 
     struct ExpectedCommand {
@@ -2420,6 +2429,52 @@ mod doctor_tests {
     }
 
     #[test]
+    fn pwa_app_directory_prefers_the_web_app_and_falls_back_to_the_expo_web_export() {
+        let capabilities = |web, mobile| Capabilities {
+            backend: true,
+            worker: false,
+            mobile,
+            web,
+            pwa: true,
+            mcp: None,
+            auth: None,
+        };
+
+        assert_eq!(pwa_app_directory(&capabilities(true, true)), Some("web"));
+        assert_eq!(pwa_app_directory(&capabilities(true, false)), Some("web"));
+        assert_eq!(
+            pwa_app_directory(&capabilities(false, true)),
+            Some("mobile")
+        );
+        assert_eq!(pwa_app_directory(&capabilities(false, false)), None);
+    }
+
+    #[test]
+    fn pwa_worker_build_is_checked_in_the_expo_app_without_a_web_app() -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        fs::create_dir_all(root.path().join("mobile/scripts"))?;
+        fs::write(
+            root.path().join("mobile/package.json"),
+            r#"{ "scripts": { "build:sw": "node scripts/build-sw.mjs" } }"#,
+        )?;
+        let mut successes = Vec::new();
+        let mut failures = Vec::new();
+
+        validate_pwa_worker_build(root.path(), "mobile", &mut successes, &mut failures)?;
+
+        assert!(successes.is_empty());
+        assert_eq!(
+            failures,
+            [
+                "the PWA capability requires the mobile `build:sw:check` script",
+                "the PWA capability requires the mobile `@baukit/pwa-web` dependency",
+                "the PWA capability requires `mobile/scripts/build-sw.mjs`",
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
     fn pwa_worker_build_requires_supported_artifact_wiring() -> anyhow::Result<()> {
         let root = tempfile::tempdir()?;
         fs::create_dir_all(root.path().join("web/scripts"))?;
@@ -2440,7 +2495,7 @@ mod doctor_tests {
         let mut successes = Vec::new();
         let mut failures = Vec::new();
 
-        validate_pwa_worker_build(root.path(), &mut successes, &mut failures)?;
+        validate_pwa_worker_build(root.path(), "web", &mut successes, &mut failures)?;
 
         assert!(failures.is_empty());
         assert_eq!(
@@ -2452,7 +2507,7 @@ mod doctor_tests {
             root.path().join("web/scripts/build-sw.mjs"),
             "import.meta.resolve('@baukit/pwa-web');\n",
         )?;
-        validate_pwa_worker_build(root.path(), &mut Vec::new(), &mut failures)?;
+        validate_pwa_worker_build(root.path(), "web", &mut Vec::new(), &mut failures)?;
         assert!(
             failures
                 .iter()

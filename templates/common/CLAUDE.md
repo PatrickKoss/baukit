@@ -61,7 +61,9 @@ If `capabilities.pwa` becomes true, provide `web`'s `build:sw:check` command and
 
 Use `make qa-android` or `make qa-ios` to open an isolated release build for exploratory testing. Run the matching `e2e-*-live` target against an open device, or use `make e2e-android` and `make e2e-ios` for a disposable Maestro run. iOS requires macOS and Xcode. Mobile-only products expose these targets through `make -C mobile`.
 
-{% endif %}{% if context.mcp %}The MCP package keeps read and write tools in separate registries. Each tool needs complete annotations and a matching entry in `mcp/src/tool-routes.ts`. Run the OpenAPI and generated-doc checks after changing a registry or route. Keep stdout for protocol messages and send outcome-only logs to stderr.
+{% if not context.web %}If `capabilities.pwa` becomes true, the Expo web export serves the PWA. Provide `mobile`'s `build:sw:check` command and commit its generated service-worker output. The strict runner treats drift as a failure.
+
+{% endif %}{% endif %}{% if context.mcp %}The MCP package keeps read and write tools in separate registries. Each tool needs complete annotations and a matching entry in `mcp/src/tool-routes.ts`. Run the OpenAPI and generated-doc checks after changing a registry or route. Keep stdout for protocol messages and send outcome-only logs to stderr.
 
 {% endif %}## Boundaries
 

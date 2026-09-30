@@ -85,7 +85,7 @@ For migration checks, set `BAUKIT_BASE_REVISION` to the pull request base commit
 
 The backend coverage gate uses `cargo llvm-cov nextest --run-ignored all`. Docker must be running because generated PostgreSQL tests use `#[ignore]`. Coverage HTML and LCOV files are written under `backend/target/llvm-cov/`, and CI uploads both.
 
-Observability checks run only when `deploy/observability/product-metrics.txt` exists. A production image builds only when `backend/Dockerfile` exists. The generated web app sets `capabilities.pwa = false`. If a product adds a PWA and changes that value to true, its web package must provide `build:sw:check`; the strict runner calls it in both local and CI runs.
+Observability checks run only when `deploy/observability/product-metrics.txt` exists. A production image builds only when `backend/Dockerfile` exists. Generated products set `capabilities.pwa = false`. If a product adds a PWA and changes that value to true, the app that serves it must provide `build:sw:check`. That is the web package when the product has a web app, and otherwise the mobile package, whose Expo web export serves the worker. The strict runner calls it in both local and CI runs.
 
 ## Migration
 

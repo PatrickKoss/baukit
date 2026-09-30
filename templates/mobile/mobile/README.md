@@ -74,6 +74,17 @@ For device smoke testing, open a custom-scheme deep link from a terminated app a
 
 The Baukit packages come from {{ context.baukit_typescript_dependency_description }}. Release-generated apps pin an exact npm version; local fixtures use `file:` dependencies. The app runs directly with Expo and does not require the Baukit CLI.
 
+## Optional PWA worker
+
+The generated manifest keeps `capabilities.pwa = false`. A product without a web app can serve a PWA
+from the Expo web export. Set `capabilities.pwa = true` in the product-root `baukit.toml`, add
+`@baukit/pwa-web` and the `build:sw` and `build:sw:check` scripts to this package, and write
+`scripts/build-sw.mjs` so it copies `@baukit/pwa-web/worker` to `public/baukit-pwa-worker.js`.
+Expo copies `public/` into the web export, so a product-owned `public/sw.js` loads it with
+`importScripts('/baukit-pwa-worker.js')`. `baukit doctor` checks the scripts, the dependency, and
+the copy source, and the strict runner calls `build:sw:check`. A product that also has a web app
+keeps the worker in `web/` instead.
+
 ## Checks
 
 ```sh

@@ -382,6 +382,11 @@ fn strict_generation_is_capability_driven_and_matches_golden_tree() -> anyhow::R
         assert_eq!(runner.contains("--repeat-each"), web);
         assert_eq!(runner.contains("expo-doctor"), mobile);
         assert_eq!(runner.contains("assembleDebug"), mobile);
+        assert_eq!(runner.contains("--dir web run build:sw:check"), web);
+        assert_eq!(
+            runner.contains("--dir mobile run build:sw:check"),
+            mobile && !web
+        );
         assert_eq!(
             root.join("scripts/check-migrations-immutable.sh").is_file(),
             backend
@@ -1324,6 +1329,75 @@ fn doctor_requires_generated_environment_and_strict_markdown_scripts() -> anyhow
             .contains("environment reconciliation file")
     );
     assert!(error.to_string().contains("Markdown link check file"));
+    Ok(())
+}
+
+#[test]
+fn doctor_checks_the_pwa_worker_build_in_a_mobile_only_product() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let baukit_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust");
+    let mut mobile_only = frontend_options(parent.path(), "pwa-mobile", true, false);
+    mobile_only.baukit_path = Some(baukit_path);
+    let root = generate_new(&mobile_only)?;
+    let manifest_path = root.join("baukit.toml");
+    let manifest = fs::read_to_string(&manifest_path)?;
+    fs::write(
+        &manifest_path,
+        manifest.replace("pwa = false", "pwa = true"),
+    )?;
+
+    let error = doctor(&root).expect_err("doctor must require the Expo worker build");
+    assert!(
+        error
+            .to_string()
+            .contains("the PWA capability requires `mobile/scripts/build-sw.mjs`")
+    );
+    assert!(!error.to_string().contains("requires the web"));
+
+    let package_path = root.join("mobile/package.json");
+    let package = fs::read_to_string(&package_path)?;
+    fs::write(
+        &package_path,
+        package
+            .replacen(
+                "\"scripts\": {",
+                "\"scripts\": {\n    \"build:sw\": \"node scripts/build-sw.mjs\",\n    \"build:sw:check\": \"node scripts/build-sw.mjs --check\",",
+                1,
+            )
+            .replacen(
+                "\"dependencies\": {",
+                "\"dependencies\": {\n    \"@baukit/pwa-web\": \"0.5.1\",",
+                1,
+            ),
+    )?;
+    fs::write(
+        root.join("mobile/scripts/build-sw.mjs"),
+        "import.meta.resolve('@baukit/pwa-web/worker');\n",
+    )?;
+
+    let results = doctor(&root)?;
+    assert!(
+        results
+            .iter()
+            .any(|result| result == "mobile PWA worker build uses the supported Baukit artifact")
+    );
+    Ok(())
+}
+
+#[test]
+fn doctor_rejects_a_pwa_without_an_app() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = generate_new(&options(parent.path(), "pwa-backend"))?;
+    let path = root.join("baukit.toml");
+    let manifest = fs::read_to_string(&path)?;
+    fs::write(&path, manifest.replace("pwa = false", "pwa = true"))?;
+
+    let error = doctor(&root).expect_err("doctor must reject a PWA without an app");
+    assert!(
+        error
+            .to_string()
+            .contains("the PWA capability requires the web or mobile capability")
+    );
     Ok(())
 }
 
