@@ -184,23 +184,27 @@ Record the accepted tickets after each send:
 ```rust
 use baukit_push::{DeviceRegistry, PendingReceiptStore, PushMessage, PushSender};
 use chrono::Utc;
+use uuid::Uuid;
 
 async fn deliver(
     sender: &impl PushSender,
     registry: &impl DeviceRegistry,
     pending: &impl PendingReceiptStore,
+    owner_id: Uuid,
     messages: Vec<PushMessage>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let sent_at = Utc::now();
     let outcomes = sender.send(messages).await?;
     registry.invalidate_dead_tokens(&outcomes, sent_at).await?;
-    pending.record_accepted(&outcomes, sent_at).await?;
+    pending.record_accepted(owner_id, &outcomes, sent_at).await?;
     Ok(())
 }
 ```
 
-`record_accepted` stores ticket ID, token, and `sent_at` for every `Accepted`
-outcome, first due `RECEIPT_POLL_DELAY` (15 minutes) after the send.
+`record_accepted` stores ticket ID, owner, token, and `sent_at` for every
+`Accepted` outcome of one owner's send, first due `RECEIPT_POLL_DELAY` (15
+minutes) after the send. A product that sends to several owners in one batch
+calls `accepted_receipts` per owner and passes the result to `record`.
 `poll_pending_receipts` then does one bounded run:
 
 1. `take_due` takes up to `limit` due tickets and makes them due again one
@@ -289,8 +293,13 @@ fn job_error(error: ReceiptPollError) -> JobError {
 
 The loop ends because every taken ticket moves past `now`. With
 `sqlx-postgres`, `PostgresPendingReceiptStore` uses the table in
-`POSTGRES_PUSH_PENDING_RECEIPTS_MIGRATION_SQL`. The table has no owner column;
-a row holds a token for at most the retention window until `purge` removes it.
+`POSTGRES_PUSH_PENDING_RECEIPTS_MIGRATION_SQL` followed by
+`POSTGRES_PUSH_PENDING_RECEIPT_OWNERS_MIGRATION_SQL`, which adds the
+`owner_id` column. Add the owner foreign key the second file's header shows,
+with `ON DELETE CASCADE`, so erasing an owner deletes the device tokens their
+pending tickets hold instead of leaving them until `purge`. Without the
+foreign key, call `PendingReceiptStore::erase_owner`, or
+`erase_owner_pending_receipts` with the product's erasure transaction.
 
 ## Retries
 

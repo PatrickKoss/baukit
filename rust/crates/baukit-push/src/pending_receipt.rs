@@ -4,6 +4,7 @@ use std::{collections::BTreeMap, num::NonZeroU32};
 
 use chrono::{DateTime, TimeDelta, Utc};
 use thiserror::Error;
+use uuid::Uuid;
 
 use crate::{
     DeviceRegistry, DeviceToken, PushDeliveryStatus, PushError, PushOutcome, PushReceiptSource,
@@ -26,6 +27,8 @@ pub const RECEIPT_RETENTION: TimeDelta = TimeDelta::hours(24);
 pub struct PendingReceipt {
     /// The ticket the provider issued for the notification.
     pub ticket: PushTicketId,
+    /// The account the notification went to; erasing it removes the ticket.
+    pub owner_id: Uuid,
     /// The device token the notification went to.
     pub token: DeviceToken,
     /// The instant the send started; invalidation compares it.
@@ -73,7 +76,10 @@ pub trait PendingReceiptStore: Send + Sync {
         limit: NonZeroU32,
     ) -> PushStoreFuture<'_, Result<u64, PushStoreError>>;
 
-    /// Records every [`PushDeliveryStatus::Accepted`] outcome of one send.
+    /// Deletes every ticket of one owner; returns how many went.
+    fn erase_owner(&self, owner_id: Uuid) -> PushStoreFuture<'_, Result<u64, PushStoreError>>;
+
+    /// Records every [`PushDeliveryStatus::Accepted`] outcome of one send to `owner_id`.
     ///
     /// Call it after [`PushSender::send`](crate::PushSender::send) with the
     /// instant the send started. The tickets are first due
@@ -81,10 +87,11 @@ pub trait PendingReceiptStore: Send + Sync {
     /// no store round trip.
     fn record_accepted(
         &self,
+        owner_id: Uuid,
         outcomes: &[PushOutcome],
         sent_at: DateTime<Utc>,
     ) -> PushStoreFuture<'_, Result<u64, PushStoreError>> {
-        let receipts = accepted_receipts(outcomes, sent_at);
+        let receipts = accepted_receipts(owner_id, outcomes, sent_at);
         if receipts.is_empty() {
             return Box::pin(std::future::ready(Ok(0)));
         }
@@ -92,14 +99,19 @@ pub trait PendingReceiptStore: Send + Sync {
     }
 }
 
-/// Returns a pending receipt for each accepted outcome of one send.
+/// Returns a pending receipt for each accepted outcome of one send to `owner_id`.
 #[must_use]
-pub fn accepted_receipts(outcomes: &[PushOutcome], sent_at: DateTime<Utc>) -> Vec<PendingReceipt> {
+pub fn accepted_receipts(
+    owner_id: Uuid,
+    outcomes: &[PushOutcome],
+    sent_at: DateTime<Utc>,
+) -> Vec<PendingReceipt> {
     outcomes
         .iter()
         .filter_map(|outcome| match &outcome.status {
             PushDeliveryStatus::Accepted(ticket) => Some(PendingReceipt {
                 ticket: ticket.clone(),
+                owner_id,
                 token: outcome.token.clone(),
                 sent_at,
             }),
@@ -206,8 +218,6 @@ fn count(len: usize) -> u64 {
 
 #[cfg(all(test, feature = "test-support"))]
 mod tests {
-    use uuid::Uuid;
-
     use super::*;
     use crate::{
         DevicePlatform, DeviceRegistration, FakePushSender, MemoryDeviceRegistry,
@@ -271,7 +281,7 @@ mod tests {
                     .collect(),
             )
             .await?;
-        assert_eq!(pending.record_accepted(&outcomes, sent_at).await?, 4);
+        assert_eq!(pending.record_accepted(owner, &outcomes, sent_at).await?, 4);
         assert_eq!(
             poll_pending_receipts(&sender, &pending, &registry, at(5), LIMIT).await?,
             ReceiptPoll::default(),
@@ -324,7 +334,9 @@ mod tests {
         let outcomes = sender
             .send(vec![PushMessage::new(token("slow"), "t", "b")])
             .await?;
-        pending.record_accepted(&outcomes, at(0)).await?;
+        pending
+            .record_accepted(Uuid::now_v7(), &outcomes, at(0))
+            .await?;
 
         sender
             .fail_with(PushError::Transport {
@@ -346,8 +358,9 @@ mod tests {
             token: token("fine"),
             status: PushDeliveryStatus::Delivered,
         }];
-        assert_eq!(pending.record_accepted(&outcomes, at(0)).await?, 0);
-        assert!(accepted_receipts(&outcomes, at(0)).is_empty());
+        let owner = Uuid::now_v7();
+        assert_eq!(pending.record_accepted(owner, &outcomes, at(0)).await?, 0);
+        assert!(accepted_receipts(owner, &outcomes, at(0)).is_empty());
         Ok(())
     }
 }

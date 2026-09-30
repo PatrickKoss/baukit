@@ -6,8 +6,8 @@ use baukit_push::{
     MAX_PUSH_TICKET_ID_LENGTH, PendingReceipt, PendingReceiptStore, PostgresDeliveryClaimStore,
     PostgresDeviceRegistry, PostgresPendingReceiptStore, PushDeliveryStatus, PushMessage,
     PushOutcome, PushReceipt, PushRejection, PushSender, PushTicketId, RECEIPT_POLL_DELAY,
-    RECEIPT_RETENTION, ReceiptPoll, erase_owner_delivery_claims, erase_owner_push_devices,
-    poll_pending_receipts, purge_delivery_claims,
+    RECEIPT_RETENTION, ReceiptPoll, erase_owner_delivery_claims, erase_owner_pending_receipts,
+    erase_owner_push_devices, poll_pending_receipts, purge_delivery_claims,
 };
 use baukit_test::PostgresTestContainer;
 use chrono::{DateTime, NaiveDate, TimeDelta, TimeZone as _, Utc};
@@ -61,6 +61,9 @@ async fn fixture() -> Result<(PostgresTestContainer, PgPool), TestError> {
              FOREIGN KEY (owner_id) REFERENCES owners (id) ON DELETE CASCADE;
          ALTER TABLE push_delivery_claims
              ADD CONSTRAINT push_delivery_claims_owner_fk
+             FOREIGN KEY (owner_id) REFERENCES owners (id) ON DELETE CASCADE;
+         ALTER TABLE push_pending_receipts
+             ADD CONSTRAINT push_pending_receipts_owner_fk
              FOREIGN KEY (owner_id) REFERENCES owners (id) ON DELETE CASCADE;",
     )
     .execute(&pool)
@@ -342,10 +345,11 @@ async fn a_dead_token_receipt_removes_the_token_in_one_call() -> Result<(), Test
 
 #[tokio::test]
 #[ignore = "requires Docker; mandatory in the full local gate"]
-async fn account_erasure_removes_every_device_and_claim() -> Result<(), TestError> {
+async fn account_erasure_removes_every_device_claim_and_pending_ticket() -> Result<(), TestError> {
     let (_container, pool) = fixture().await?;
     let registry = PostgresDeviceRegistry::new(pool.clone());
     let claims = PostgresDeliveryClaimStore::new(pool.clone());
+    let receipts = PostgresPendingReceiptStore::new(pool.clone());
     let kind = DeliveryKind::new("daily_reminder")?;
     let (alice, bob, carol) = (
         owner(&pool).await?,
@@ -361,15 +365,31 @@ async fn account_erasure_removes_every_device_and_claim() -> Result<(), TestErro
         claims
             .claim(DeliveryClaim::new(owner_id, date(27), kind.clone()), at(0))
             .await?;
+        receipts
+            .record(
+                vec![pending(
+                    owner_id,
+                    &format!("{owner_id}-ticket"),
+                    &format!("{owner_id}-phone"),
+                    1,
+                )],
+                at(16),
+            )
+            .await?;
     }
 
     assert_eq!(registry.erase_owner(alice).await?, 2);
     assert!(registry.list_for_owner(alice).await?.is_empty());
+    assert_eq!(receipts.erase_owner(alice).await?, 1);
 
     let mut transaction = pool.begin().await?;
     assert_eq!(erase_owner_push_devices(&mut *transaction, bob).await?, 2);
     assert_eq!(
         erase_owner_delivery_claims(&mut *transaction, bob).await?,
+        1
+    );
+    assert_eq!(
+        erase_owner_pending_receipts(&mut *transaction, bob).await?,
         1
     );
     transaction.commit().await?;
@@ -385,6 +405,10 @@ async fn account_erasure_removes_every_device_and_claim() -> Result<(), TestErro
     assert_eq!(
         remaining_claims, 1,
         "only the port-erased owner's claim is left"
+    );
+    assert!(
+        stored_tickets(&pool).await?.is_empty(),
+        "no pending ticket outlives its owner"
     );
     Ok(())
 }
@@ -462,9 +486,15 @@ fn ticket(value: &str) -> PushTicketId {
     PushTicketId::new(value).expect("valid test ticket")
 }
 
-fn pending(ticket_id: &str, token_value: &str, sent_minutes: i64) -> PendingReceipt {
+fn pending(
+    owner_id: Uuid,
+    ticket_id: &str,
+    token_value: &str,
+    sent_minutes: i64,
+) -> PendingReceipt {
     PendingReceipt {
         ticket: ticket(ticket_id),
+        owner_id,
         token: token(token_value),
         sent_at: at(sent_minutes),
     }
@@ -490,27 +520,30 @@ async fn stored_tickets(pool: &PgPool) -> Result<Vec<String>, TestError> {
 async fn pending_receipts_round_trip_and_come_due_again_after_a_take() -> Result<(), TestError> {
     let (_container, pool) = fixture().await?;
     let store = PostgresPendingReceiptStore::new(pool.clone());
+    let alice = owner(&pool).await?;
     let longest_ticket = "t".repeat(MAX_PUSH_TICKET_ID_LENGTH);
     let longest_token = "d".repeat(MAX_DEVICE_TOKEN_LENGTH);
 
     let recorded = store
         .record(
             vec![
-                pending(&longest_ticket, &longest_token, 0),
-                pending("b", "token-b", 0),
-                pending("b", "token-b", 0),
+                pending(alice, &longest_ticket, &longest_token, 0),
+                pending(alice, "b", "token-b", 0),
+                pending(alice, "b", "token-b", 0),
             ],
             at(15),
         )
         .await?;
     assert_eq!(recorded, 2);
     assert_eq!(
-        store.record(vec![pending("b", "other", 9)], at(99)).await?,
+        store
+            .record(vec![pending(alice, "b", "other", 9)], at(99))
+            .await?,
         0,
         "a recorded ticket is left unchanged"
     );
     store
-        .record(vec![pending("c", "token-c", 5)], at(20))
+        .record(vec![pending(alice, "c", "token-c", 5)], at(20))
         .await?;
 
     assert!(store.take_due(at(14), at(30), POLL_LIMIT).await?.is_empty());
@@ -524,6 +557,7 @@ async fn pending_receipts_round_trip_and_come_due_again_after_a_take() -> Result
         .expect("the longest ticket was taken");
     assert_eq!(longest.token.expose(), longest_token);
     assert_eq!(longest.sent_at, at(0));
+    assert_eq!(longest.owner_id, alice);
 
     assert_eq!(
         ticket_ids(&store.take_due(at(25), at(40), POLL_LIMIT).await?),
@@ -539,8 +573,16 @@ async fn pending_receipts_round_trip_and_come_due_again_after_a_take() -> Result
 async fn concurrent_pollers_take_disjoint_batches() -> Result<(), TestError> {
     let (_container, pool) = fixture().await?;
     let store = PostgresPendingReceiptStore::new(pool.clone());
+    let alice = owner(&pool).await?;
     let tickets = (0..CONCURRENT_POLLERS * 2)
-        .map(|index| pending(&format!("ticket-{index:02}"), &format!("token-{index}"), 0))
+        .map(|index| {
+            pending(
+                alice,
+                &format!("ticket-{index:02}"),
+                &format!("token-{index}"),
+                0,
+            )
+        })
         .collect::<Vec<_>>();
     store.record(tickets, at(0)).await?;
 
@@ -565,13 +607,14 @@ async fn concurrent_pollers_take_disjoint_batches() -> Result<(), TestError> {
 async fn settled_and_expired_receipts_are_deleted() -> Result<(), TestError> {
     let (_container, pool) = fixture().await?;
     let store = PostgresPendingReceiptStore::new(pool.clone());
+    let alice = owner(&pool).await?;
     store
         .record(
             vec![
-                pending("a", "token-a", 0),
-                pending("b", "token-b", 1),
-                pending("c", "token-c", 2),
-                pending("d", "token-d", 3),
+                pending(alice, "a", "token-a", 0),
+                pending(alice, "b", "token-b", 1),
+                pending(alice, "c", "token-c", 2),
+                pending(alice, "d", "token-d", 3),
             ],
             at(0),
         )
@@ -617,7 +660,9 @@ async fn a_deferred_poll_invalidates_a_late_dead_token() -> Result<(), TestError
         )
         .await?;
     assert_eq!(
-        pending_receipts.record_accepted(&outcomes, sent_at).await?,
+        pending_receipts
+            .record_accepted(alice, &outcomes, sent_at)
+            .await?,
         4
     );
 

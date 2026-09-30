@@ -360,15 +360,22 @@ impl PostgresPendingReceiptStore {
             return Ok(0);
         }
         let inserted = sqlx::query(
-            "INSERT INTO push_pending_receipts (ticket_id, token, sent_at, due_at)
-             SELECT ticket_id, token, sent_at, $4
-             FROM UNNEST($1::text[], $2::text[], $3::timestamptz[]) AS t(ticket_id, token, sent_at)
+            "INSERT INTO push_pending_receipts (ticket_id, owner_id, token, sent_at, due_at)
+             SELECT ticket_id, owner_id, token, sent_at, $5
+             FROM UNNEST($1::text[], $2::uuid[], $3::text[], $4::timestamptz[])
+                 AS t(ticket_id, owner_id, token, sent_at)
              ON CONFLICT (ticket_id) DO NOTHING",
         )
         .bind(
             receipts
                 .iter()
                 .map(|receipt| receipt.ticket.as_str())
+                .collect::<Vec<_>>(),
+        )
+        .bind(
+            receipts
+                .iter()
+                .map(|receipt| receipt.owner_id)
                 .collect::<Vec<_>>(),
         )
         .bind(
@@ -405,7 +412,7 @@ impl PostgresPendingReceiptStore {
                  LIMIT $3
                  FOR UPDATE SKIP LOCKED
              )
-             RETURNING ticket_id, token, sent_at",
+             RETURNING ticket_id, owner_id, token, sent_at",
         )
         .bind(now)
         .bind(retry_at)
@@ -485,6 +492,38 @@ impl PendingReceiptStore for PostgresPendingReceiptStore {
     ) -> PushStoreFuture<'_, Result<u64, PushStoreError>> {
         Box::pin(self.purge_receipts(sent_before, limit))
     }
+
+    fn erase_owner(&self, owner_id: Uuid) -> PushStoreFuture<'_, Result<u64, PushStoreError>> {
+        Box::pin(async move {
+            erase_owner_pending_receipts(&self.pool, owner_id)
+                .await
+                .map_err(PushStoreError::internal)
+        })
+    }
+}
+
+/// Deletes every pending ticket of one owner and returns how many rows went.
+///
+/// Products whose owner foreign key uses `ON DELETE CASCADE` get this for free.
+/// Call it inside the product's erasure transaction when the owner row is kept
+/// or no foreign key exists.
+///
+/// # Errors
+///
+/// Returns any database error unchanged.
+pub async fn erase_owner_pending_receipts<'e, E>(
+    executor: E,
+    owner_id: Uuid,
+) -> Result<u64, sqlx::Error>
+where
+    E: PgExecutor<'e>,
+{
+    let deleted = sqlx::query("DELETE FROM push_pending_receipts WHERE owner_id = $1")
+        .bind(owner_id)
+        .execute(executor)
+        .await?
+        .rows_affected();
+    Ok(deleted)
 }
 
 async fn lock_owner(connection: &mut PgConnection, owner_id: Uuid) -> Result<(), sqlx::Error> {
@@ -573,6 +612,7 @@ fn pending_receipt(row: &PgRow) -> Result<PendingReceipt, PushStoreError> {
     let token: String = row.try_get("token").map_err(PushStoreError::internal)?;
     Ok(PendingReceipt {
         ticket: PushTicketId::new(ticket).map_err(PushStoreError::internal)?,
+        owner_id: row.try_get("owner_id").map_err(PushStoreError::internal)?,
         token: DeviceToken::new(token).map_err(PushStoreError::internal)?,
         sent_at: row.try_get("sent_at").map_err(PushStoreError::internal)?,
     })

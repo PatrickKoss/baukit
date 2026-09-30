@@ -106,7 +106,8 @@ pub use port::{
 #[cfg(feature = "sqlx-postgres")]
 pub use postgres::{
     PostgresDeliveryClaimStore, PostgresDeviceRegistry, PostgresPendingReceiptStore,
-    erase_owner_delivery_claims, erase_owner_push_devices, purge_delivery_claims,
+    erase_owner_delivery_claims, erase_owner_pending_receipts, erase_owner_push_devices,
+    purge_delivery_claims,
 };
 pub use registry::{
     DEFAULT_DEVICES_PER_OWNER, DevicePlatform, DeviceRegistration, DeviceRegistry, DeviceTimeZone,
@@ -132,9 +133,18 @@ pub const POSTGRES_PUSH_DELIVERY_CLAIMS_MIGRATION_SQL: &str =
 /// Reference PostgreSQL schema for the `sqlx-postgres` feature's `PostgresPendingReceiptStore`.
 ///
 /// Only products that poll receipts after the send need it. Copy it into a
-/// product migration; it has no owner column.
+/// product migration, followed by
+/// [`POSTGRES_PUSH_PENDING_RECEIPT_OWNERS_MIGRATION_SQL`].
 pub const POSTGRES_PUSH_PENDING_RECEIPTS_MIGRATION_SQL: &str =
     include_str!("../migrations/0003_baukit_push_pending_receipts.sql");
+
+/// Reference PostgreSQL migration that adds the owner to each pending ticket.
+///
+/// Apply it after [`POSTGRES_PUSH_PENDING_RECEIPTS_MIGRATION_SQL`] and add the
+/// owner foreign key the file's header describes, so erasing an owner removes
+/// the device tokens their pending tickets hold.
+pub const POSTGRES_PUSH_PENDING_RECEIPT_OWNERS_MIGRATION_SQL: &str =
+    include_str!("../migrations/0004_baukit_push_pending_receipt_owners.sql");
 
 // Compiles the README's examples so they cannot drift from the API.
 #[doc = include_str!("../README.md")]

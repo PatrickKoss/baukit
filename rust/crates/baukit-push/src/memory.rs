@@ -369,6 +369,14 @@ impl PendingReceiptStore for MemoryPendingReceiptStore {
             .count();
         Box::pin(std::future::ready(Ok(count(removed))))
     }
+
+    fn erase_owner(&self, owner_id: Uuid) -> PushStoreFuture<'_, Result<u64, PushStoreError>> {
+        let mut stored = self.receipts();
+        let before = stored.len();
+        stored.retain(|_, due| due.receipt.owner_id != owner_id);
+        let removed = count(before - stored.len());
+        Box::pin(std::future::ready(Ok(removed)))
+    }
 }
 
 #[cfg(test)]
@@ -505,8 +513,13 @@ mod tests {
     }
 
     fn pending(ticket: &str, sent_minutes: i64) -> PendingReceipt {
+        owned_pending(Uuid::nil(), ticket, sent_minutes)
+    }
+
+    fn owned_pending(owner_id: Uuid, ticket: &str, sent_minutes: i64) -> PendingReceipt {
         PendingReceipt {
             ticket: PushTicketId::new(ticket).expect("valid test ticket"),
+            owner_id,
             token: token(&format!("token-{ticket}")),
             sent_at: at(sent_minutes),
         }
@@ -551,6 +564,26 @@ mod tests {
         assert_eq!(store.delete(vec![a.clone(), a]).await?, 1);
         assert_eq!(store.purge(at(2), CAP).await?, 1);
         assert_eq!(tickets(&store.pending()), ["c"]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn erasing_an_owner_removes_only_their_tickets() -> TestResult {
+        let store = MemoryPendingReceiptStore::new();
+        let (erased, kept) = (Uuid::now_v7(), Uuid::now_v7());
+        store
+            .record(
+                vec![
+                    owned_pending(erased, "a", 0),
+                    owned_pending(kept, "b", 0),
+                    owned_pending(erased, "c", 0),
+                ],
+                at(0),
+            )
+            .await?;
+        assert_eq!(store.erase_owner(erased).await?, 2);
+        assert_eq!(store.erase_owner(erased).await?, 0);
+        assert_eq!(tickets(&store.pending()), ["b"]);
         Ok(())
     }
 }

@@ -4,6 +4,29 @@ All notable changes to `baukit-push` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Pending receipts record their owner. Migration
+  `0004_baukit_push_pending_receipt_owners.sql`
+  (`POSTGRES_PUSH_PENDING_RECEIPT_OWNERS_MIGRATION_SQL`) adds a non-null
+  `owner_id` column to `push_pending_receipts`, and its header shows the owner
+  foreign key with `ON DELETE CASCADE`. Erasing an owner now removes the device
+  tokens their pending tickets hold at once instead of up to 24 hours later.
+- Add `PendingReceiptStore::erase_owner`, implemented by
+  `PostgresPendingReceiptStore` and `MemoryPendingReceiptStore`, and
+  `erase_owner_pending_receipts`, which takes any `PgExecutor` for the
+  product's erasure transaction.
+
+### Breaking
+
+- `PendingReceipt` has a new `owner_id` field.
+- `PendingReceiptStore::record_accepted` and `accepted_receipts` take the
+  owner as their first argument.
+- `PendingReceiptStore` has a new required method, `erase_owner`. Custom
+  implementations must add it.
+- Migration `0004` deletes every pending ticket recorded before it runs. A
+  dead token among them is reported again by the next send to it.
+
 ## [0.5.1] - 2026-09-29
 
 ### Added

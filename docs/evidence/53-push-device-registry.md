@@ -485,3 +485,70 @@ added: the right horizon depends on how far back a product evaluates local dates
 - `cargo fmt --manifest-path rust/Cargo.toml --all --check`: pass.
 - `cargo clippy --manifest-path rust/Cargo.toml --workspace --all-targets --all-features -- -D warnings`:
   pass.
+
+## Follow-up 0.5.2 (2026-09-30)
+
+### Product evidence
+
+Eigenruhe (`e8d0e05`) and Hebkit (`ce780c42`) both record accepted tickets after each send and
+erase profiles by deleting the owner row:
+
+- `rust/crates/baukit-push/migrations/0003_baukit_push_pending_receipts.sql:7-10` said rows carry
+  no owner, so an owner foreign key could not reach them.
+- Eigenruhe copies that table into `backend/migrations/20260929000004_baukit_push.sql:44-60` with
+  owner foreign keys on `push_devices` and `push_delivery_claims` only. Its erasure,
+  `backend/crates/eigenruhe-postgres/src/profile.rs:113-135`, deletes the owned tables listed in
+  `eigenruhe-domain/src/profile_erasure.rs`, which cannot name `push_pending_receipts`.
+- Hebkit copies it into `backend/migrations/20260928200200_baukit_push_pending_receipts.sql`;
+  `backend/tests/profile_erasure.rs:201-210` checks devices and claims but not pending tickets.
+- Both senders call `record_accepted` with one owner's outcomes
+  (`eigenruhe-services/src/notifications.rs:405-408`, `hebkit-services/src/notifications.rs:210-215`),
+  so the owner is in hand at the call.
+
+After erasure, each pending row kept a device token until the daily purge, up to 24 hours.
+
+### Decision
+
+Store the owner with each ticket and erase by owner, the same pattern as devices and claims:
+
+- Migration `0004_baukit_push_pending_receipt_owners.sql` adds `owner_id UUID NOT NULL` and an
+  index, and its header shows the owner foreign key with `ON DELETE CASCADE`. It deletes existing
+  rows first. A backfill from `push_devices` was rejected: a product may pair the store with a
+  registry of its own and have no such table, and the rows are at most 24 hours of retries whose
+  dead tokens the next send reports again. `0003` stays unchanged because products have copied it.
+- `PendingReceipt` gets `owner_id`; `record_accepted` and `accepted_receipts` take the owner first.
+  Looking the owner up from the registry at record time would couple two ports that are separate
+  on purpose, and would miss a token that moved owner between send and record.
+- `PendingReceiptStore::erase_owner` is required, matching `DeviceRegistry::erase_owner`, so a
+  service erasing through ports needs no SQL and memory fakes see it. `erase_owner_pending_receipts`
+  takes a `PgExecutor` for the product's erasure transaction, like `erase_owner_push_devices`.
+
+### Breaks
+
+- `PendingReceipt::owner_id` is a new public field; struct literals must set it.
+- `PendingReceiptStore::record_accepted(owner_id, outcomes, sent_at)` and
+  `accepted_receipts(owner_id, outcomes, sent_at)` take the owner.
+- `PendingReceiptStore::erase_owner` is a new required method.
+- Migration `0004` deletes every pending ticket recorded before it.
+
+### Product adoption
+
+- Eigenruhe: copy `0004` into `backend/migrations/` with
+  `FOREIGN KEY (owner_id) REFERENCES user_identities (user_id) ON DELETE CASCADE`; pass
+  `owner.owner_id` to `record_accepted` in `eigenruhe-services/src/notifications.rs`; set `owner_id`
+  in the `PendingReceipt` literal in `eigenruhe-worker/src/retention.rs`; add
+  `push_pending_receipts` to `OWNED_TABLE_DELETE_ORDER` and its delete in
+  `eigenruhe-postgres/src/profile.rs`, or rely on the cascade.
+- Hebkit: copy `0004` with `FOREIGN KEY (owner_id) REFERENCES users (id) ON DELETE CASCADE`; pass
+  `owner_id` to `record_accepted` in `hebkit-services/src/notifications.rs`; set `owner_id` in the
+  test literal at `notifications.rs:623`; add a `push_pending_receipts` cascade row to
+  `backend/tests/profile_erasure.rs`.
+
+### Gates
+
+- `cargo test --manifest-path rust/Cargo.toml -p baukit-push --all-features -- --include-ignored`:
+  pass (45 unit, 15 Expo endpoint, 13 Docker, 8 doctests). The Docker erasure test covers the port
+  method, the executor function in a transaction, and the foreign-key cascade.
+- `cargo fmt --manifest-path rust/Cargo.toml --all --check`: pass.
+- `cargo clippy --manifest-path rust/Cargo.toml --workspace --all-targets --all-features -- -D warnings`:
+  pass.
