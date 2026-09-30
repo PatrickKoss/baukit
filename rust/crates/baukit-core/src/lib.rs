@@ -10,6 +10,8 @@
 //! The optional `pagination` feature adds keyset pagination types that domain
 //! crates can use without an HTTP framework. The optional `media-grants`
 //! feature adds HMAC-SHA256 signed media grants that an edge verifier checks.
+//! The optional `webhook-signature` feature adds the `baukit-webhook-v1`
+//! signature that webhook senders apply and receivers verify.
 
 #![deny(missing_docs)]
 
@@ -19,6 +21,8 @@ pub mod limits;
 pub mod media_grant;
 #[cfg(feature = "pagination")]
 pub mod pagination;
+#[cfg(feature = "webhook-signature")]
+pub mod webhook_signature;
 
 use std::{fmt, str::FromStr};
 

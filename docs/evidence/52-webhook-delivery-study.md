@@ -176,3 +176,66 @@ persistence, and a repeated delivery ID answered from the inbox without a second
 ## Breaks
 
 None. The signature vectors are a new fixture and a new test.
+
+## Follow-up 0.5.2 (2026-09-30)
+
+### Product evidence
+
+Eigenruhe adopted 0.5.1 but skipped plan item 16, because moving its hub to the `baukit-webhook-v1`
+signature meant copying the signature out of `baukit-test`, the only place it lived
+(`rust/crates/baukit-test/src/webhook.rs:53` at `1b587d1`). How the four senders sign on 2026-09-30:
+
+- Tiefgang `7f0fd02`: already v1, hand-written with the `hmac` and `sha2` crates in
+  `tiefgang-worker/src/lib.rs:180-197` (`hmac_signature`), with a test at `:395-403` that compares
+  it to `baukit_test::sign_webhook_hmac_sha256`. `tests/worker_integration.rs:8,172` verifies
+  deliveries with `baukit_test::verify_webhook_hmac_sha256`.
+- Eigenruhe `e8d0e05`: body-only `sha256=` hex in `eigenruhe-integrations/src/hub.rs:80-88`, the
+  timestamp header unsigned (`:155`).
+- Runtime Analyzer `8a69237`: its own `v2=` hex over `v2:<timestamp>:<body>` in
+  `finops-integrations/src/webhook.rs:41-54`, plus `verify_signature_v2` with a replay window at
+  `:57-94` that no route calls. Delivery goes through `GuardedClient`.
+- Solo Leveling System `5e129c6`: body-only `sha256=` hex in `sl-services/src/webhooks.rs:278-290`.
+
+### Decision
+
+The signature moved unchanged into `baukit-core` as the `webhook_signature` module behind a new
+`webhook-signature` feature: `webhook_signing_input`, `sign_webhook_hmac_sha256`,
+`verify_webhook_hmac_sha256`, `WEBHOOK_SIGNATURE_VERSION`, and `WEBHOOK_SIGNATURE_PREFIX`.
+`baukit-test` dropped its copy and re-exports nothing, so there is one implementation.
+
+The task suggested `baukit-egress`. I chose `baukit-core` because the verifier runs on the receiving
+side, which has no reason to pull `reqwest` and `rustls` through `baukit-egress`. The algorithm needs
+only `ring` and `base64`, the same pair `baukit-core` already uses for signed media grants, and the
+optional feature keeps the default build at three dependencies. A sender that uses
+`GuardedClient` adds the feature next to `baukit-egress`.
+
+No header-building signer type was added. Header names stay product configuration, as the study
+decided, and after the move each sender keeps only its header insertion (Tiefgang's
+`delivery_headers` is 12 lines). The verifier still checks no timestamp window and no delivery ID
+reuse; those remain receiver policy, as decided above.
+
+`fixtures/webhooks/signature-v1.json` did not change. Its test moved to
+`rust/crates/baukit-core/tests/webhook_signature_vectors.rs`, and the unit test with the reference
+vector moved with the code.
+
+### Adoption
+
+- Tiefgang: delete `hmac_signature` and its comparison test in `tiefgang-worker/src/lib.rs`, call
+  `baukit_core::webhook_signature::sign_webhook_hmac_sha256`, drop `hmac`, `sha2`, and `base64` from
+  `tiefgang-worker/Cargo.toml`, and import `verify_webhook_hmac_sha256` from
+  `baukit_core::webhook_signature` in `tests/worker_integration.rs`.
+- Eigenruhe: finish plan item 16 in `eigenruhe-integrations/src/hub.rs` by signing with
+  `sign_webhook_hmac_sha256(secret, timestamp, event_id, body)`, sending the event ID in a delivery
+  ID header, and dropping `hmac` and `hex` if nothing else uses them. This changes the signature its
+  receiver sees.
+- Runtime Analyzer and Solo Leveling System: optional. Moving to v1 replaces `signature_v2` and
+  `verify_signature_v2`, or the body-only HMAC, and is a receiver-visible break for each.
+
+### Gates
+
+Listed in the guarded-egress follow-up of the same date, which ran them for both changes.
+
+### Breaks
+
+- `baukit-test` no longer exports `webhook_signing_input`, `sign_webhook_hmac_sha256`, or
+  `verify_webhook_hmac_sha256`. Import them from `baukit_core::webhook_signature`.

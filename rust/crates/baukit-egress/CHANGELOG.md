@@ -4,6 +4,26 @@ All notable changes to `baukit-egress` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- `ResponseBody` and `EgressRequest::with_response_body`. `ResponseBody::Discard`
+  drops a `2xx` body unread, so a webhook receiver that answers `2xx` with a body
+  above `max_response_bytes` counts as delivered instead of failing with the
+  permanent `ResponseTooLarge`. `ResponseBody::Read` stays the default.
+- `AddressPolicy::permits_plain_http(address)`.
+- `fixtures/egress/address-policy-v1.json` gains five plain-http literal cases.
+
+### Breaking
+
+- Under `AddressPolicy::AllowLoopback`, plain `http` reaches loopback
+  addresses only. An `http` URL with a non-loopback literal, or a host name
+  with any non-loopback answer, fails with
+  `EgressError::Destination(DestinationRejection::Scheme)` before a
+  connection. Before, the policy turned off https-only for every host. Local
+  development setups that sent `http` to a non-loopback host must use `https`
+  or a loopback address.
+- `EgressRequest`'s `Debug` output adds the `response_body` field.
+
 ## [0.5.1] - 2026-09-29
 
 ## [0.5.0] - 2026-09-28

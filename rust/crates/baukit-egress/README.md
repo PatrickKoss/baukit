@@ -22,7 +22,7 @@ let response = client
 
 | Check | Behavior |
 |---|---|
-| Scheme | `https` only. `http` only under `AddressPolicy::AllowLoopback`. |
+| Scheme | `https` only. `http` only under `AddressPolicy::AllowLoopback`, and then only to loopback addresses. |
 | URL shape | No user info, no fragment, a host is required. |
 | Address literals | `https://10.0.0.1/`, `https://[::ffff:127.0.0.1]/` and `https://2130706433/` are checked before any connection. |
 | DNS answers | Every answer must pass the policy. One private answer among public ones rejects the lookup. |
@@ -30,7 +30,7 @@ let response = client
 | Redirects | Never followed. A `3xx` comes back as `EgressError::Status`. |
 | Proxies | `HTTP_PROXY`, `HTTPS_PROXY` and friends are ignored. |
 | Time | Separate bounds for the lookup, the TCP and TLS connect, and the whole request including the body. |
-| Response size | The body is read in chunks and stops at the limit, with or without `Content-Length`. |
+| Response size | The body is read in chunks and stops at the limit, with or without `Content-Length`. `ResponseBody::Discard` skips it. |
 
 Defaults are a 3 s lookup, a 5 s connect, a 10 s request, a 1 MiB body, and a
 300 s `Retry-After` cap. `EgressOptions` changes them and refuses zero.
@@ -54,12 +54,38 @@ A network-specific NAT64 prefix is not recognized. Its addresses fall outside
 `2000::/3` or look like ordinary global addresses, so run the client with a
 resolver that returns IPv4 answers on such networks.
 
-`AddressPolicy::AllowLoopback` adds loopback and plain HTTP for local
-development and tests. Never enable it in a deployed environment.
+`AddressPolicy::AllowLoopback` adds loopback, and plain HTTP to loopback, for
+local development and tests. An `http` URL whose literal or resolved answers
+include anything but loopback fails with
+`EgressError::Destination(DestinationRejection::Scheme)` before a connection,
+so a public host is still reached over `https` only.
+`AddressPolicy::permits_plain_http` answers the same question for one address.
+Never enable the policy in a deployed environment.
 
 `fixtures/egress/address-policy-v1.json` pins every decision with address,
 URL, and multi-lookup cases, including a DNS answer that changes between two
 lookups. Other runtimes that filter addresses should run the same file.
+
+## Response bodies
+
+By default `execute` reads a `2xx` body up to `EgressOptions::max_response_bytes`
+and fails with `ResponseTooLarge` above it. A webhook sender does not need the
+receiver's answer, so it drops the body unread:
+
+```rust,ignore
+use baukit_egress::{EgressRequest, ResponseBody};
+
+let request = EgressRequest::post(url)
+    .with_headers(headers)
+    .with_body(body)
+    .with_response_body(ResponseBody::Discard);
+let delivered = client.execute(request).await?;
+assert!(delivered.body().is_empty());
+```
+
+Any `2xx` then counts as delivered, whatever its size. The connection closes
+instead of returning to the pool. Non-`2xx` statuses are classified the same
+way in both modes, and their bodies are never read.
 
 ## Resolver port
 

@@ -317,3 +317,71 @@ each case and runs the check against the repository's own config. A mutation tha
 - `baukit-egress`: `425` is retryable, and `EgressError::Status` carries a `RetryAfter` of at most
   300 seconds by default instead of the receiver's value. `EgressOptionsError` has a new variant.
 - Release tooling: the version coherence check now fails on an incomplete `release-plz.toml`.
+
+## Follow-up 0.5.2 (2026-09-30)
+
+### Product evidence
+
+Tiefgang `7f0fd02` delivers webhooks through `GuardedClient` and ignores the response
+(`tiefgang-worker/src/lib.rs:86-95`), but 0.5.1 read every `2xx` body with the 1 MiB cap
+(`rust/crates/baukit-egress/src/client.rs:249` and `:335` at `1b587d1`). A receiver that answered
+`2xx` with a larger body became `ResponseTooLarge`, which is `Permanent`, so a delivered event was
+recorded as failed and counted toward the disable threshold. Runtime Analyzer `8a69237`
+(`finops-integrations/src/lib.rs:41-66`) and Solo Leveling System `5e129c6`
+(`sl-notifications/src/http.rs:49-66`) send through the same path.
+
+Tiefgang enables `AddressPolicy::AllowLoopback` from its `allow_local_http_dev` setting
+(`tiefgang-worker/src/lib.rs:37-49`), and Runtime Analyzer under `cfg!(test)`
+(`finops-integrations/src/lib.rs:24-28`). 0.5.1 built the client with `https_only(false)` under
+that policy (`client.rs:186`, `policy.rs:40`), so plain `http` reached any public host, not only
+the local receiver the setting was meant for.
+
+### Decisions
+
+`EgressRequest::with_response_body(ResponseBody)` picks the mode per request. `Read` stays the
+default and keeps the limit. `Discard` drops the `2xx` body unread and returns an empty one, so any
+`2xx` counts as delivered, which is the study's rule for webhooks. I did not add a per-request
+limit or a truncating read: no product needs part of a receiver body, the study's recipe says to
+discard it, and a caller that wants a larger limit for one destination can build a second client
+with other `EgressOptions`. Dropping the body closes the connection rather than draining it into
+the pool, which is the safe choice for a body of unknown size.
+
+Under `AllowLoopback`, plain `http` now reaches loopback only. `GuardedClient` holds two
+`reqwest` clients: an `https_only` one for every `https` URL, and, only under `AllowLoopback`, a
+plain-HTTP one whose pinned resolver also requires every answer to be loopback. Checking at the
+resolver keeps the rule pinned per connection, like the address policy, so a name cannot pass a
+separate pre-check and then resolve elsewhere. `validate_destination` applies the same rule to
+address literals. A refused plain-http destination is `Destination(Scheme)`, because the fix is to
+use `https`; an answer that fails the address policy itself stays `BlockedAddress`.
+`AddressPolicy::permits_plain_http(address)` is public so other runtimes can apply the same check.
+
+The shared vectors gain five destination cases: `http` to IPv4, IPv6, and IPv4-mapped loopback
+literals (accepted under `allowLoopback`) and to public IPv4 and IPv6 literals (refused with
+`scheme` under both policies). The fixture description names the rule. A mutation that disabled
+the resolver check made `plain_http_reaches_only_loopback_under_allow_loopback` fail.
+
+### Adoption
+
+- Tiefgang: add `.with_response_body(ResponseBody::Discard)` to the delivery request in
+  `tiefgang-worker/src/lib.rs`. Its local development receiver must listen on loopback or use
+  `https`.
+- Runtime Analyzer: add `ResponseBody::Discard` in `finops-integrations/src/lib.rs` `send` for
+  webhook and chat deliveries whose body is unused.
+- Solo Leveling System: `sl-notifications/src/http.rs` returns the body to callers; use `Discard`
+  for webhook deliveries if nothing reads it, which also retires the stored 2000-character receiver
+  body the study flagged.
+
+### Gates
+
+- `cargo fmt --manifest-path rust/Cargo.toml --all --check`: pass.
+- `cargo clippy --manifest-path rust/Cargo.toml --workspace --all-targets --all-features -- -D warnings`:
+  pass.
+- `cargo test --manifest-path rust/Cargo.toml -p baukit-core -p baukit-egress -p baukit-test
+  --all-features -- --include-ignored`: pass, README doctests included.
+
+### Breaks
+
+- `AddressPolicy::AllowLoopback` no longer sends plain `http` to a non-loopback destination. Such
+  a request fails with `EgressError::Destination(DestinationRejection::Scheme)` before a
+  connection.
+- `EgressRequest`'s `Debug` output adds `response_body`.

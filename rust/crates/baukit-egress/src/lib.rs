@@ -52,7 +52,8 @@ mod policy;
 mod resolver;
 
 pub use client::{
-    EgressClientError, EgressRequest, EgressResponse, GuardedClient, validate_destination,
+    EgressClientError, EgressRequest, EgressResponse, GuardedClient, ResponseBody,
+    validate_destination,
 };
 pub use error::{DestinationRejection, EgressError};
 pub use options::{EgressOptions, EgressOptionsError};

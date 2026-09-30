@@ -162,7 +162,8 @@ return their stored outcome on replay. A sender timeout means the receiver may
 have committed, so retrying without receiver idempotency is unsafe.
 
 Sign the raw request body with a timestamp and delivery ID. The
-`baukit_test::webhook_signing_input` format is:
+`baukit_core::webhook_signature::webhook_signing_input` format (feature
+`webhook-signature`) is:
 
 ```text
 baukit-webhook-v1\n
@@ -173,7 +174,9 @@ baukit-webhook-v1\n
 ```
 
 `sign_webhook_hmac_sha256` returns an HMAC-SHA256 value with a `v1=` prefix and
-unpadded base64url data. Send the signature version, a non-secret key ID, Unix
+unpadded base64url data, and `verify_webhook_hmac_sha256` checks it against the
+current and retained keys in constant time. Senders and receivers call these at
+runtime; `fixtures/webhooks/signature-v1.json` pins them. Send the signature version, a non-secret key ID, Unix
 timestamp, and delivery ID in separate headers. The receiver must check the
 timestamp against a bounded replay window, compare the HMAC in constant time,
 and claim the delivery ID in its inbox. Parse or re-encode JSON only after
@@ -223,12 +226,15 @@ as `Unavailable`, and clamps the receiver's `Retry-After` to
 `classify_http_status` directly gets the uncapped value and sets
 `RetryHeaderOptions::with_max_retry_after` itself.
 `fixtures/egress/address-policy-v1.json` pins the address decisions for any
-other runtime that filters destinations.
+other runtime that filters destinations. Send webhook requests with
+`EgressRequest::with_response_body(ResponseBody::Discard)`, so a receiver that
+answers `2xx` with a large body still counts as delivered. Under
+`AddressPolicy::AllowLoopback`, plain `http` reaches only loopback addresses.
 
 `ScriptedWebhookReceiver` supplies bounded loopback requests and queued
 responses for success, rate limit, permanent failure, timeout, and retry tests.
-Use the signing helpers to assert that retries keep the same body, timestamp,
-delivery ID, and signature. The fixture deliberately has no `Debug`
+Use `verify_webhook_hmac_sha256` to assert that retries keep the same body,
+timestamp, delivery ID, and signature. The fixture deliberately has no `Debug`
 implementation for captured requests.
 
 Migration from a multi-target job is additive but changes delivery behavior.

@@ -18,6 +18,7 @@ workspace = true
 [features]
 media-grants = ["dep:base64", "dep:ring", "dep:zeroize"]
 pagination = ["dep:base64", "dep:ring", "dep:uuid"]
+webhook-signature = ["dep:base64", "dep:ring"]
 
 [dependencies]
 base64 = { workspace = true, optional = true }
@@ -29,4 +30,4 @@ uuid = { workspace = true, optional = true }
 zeroize = { workspace = true, optional = true }
 
 [dev-dependencies]
-baukit-core = { path = ".", features = ["media-grants"] }
+baukit-core = { path = ".", features = ["media-grants", "webhook-signature"] }

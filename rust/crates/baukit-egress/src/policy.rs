@@ -12,7 +12,7 @@ pub enum AddressPolicy {
     /// Only globally reachable unicast addresses, over HTTPS.
     #[default]
     PublicOnly,
-    /// Public addresses plus loopback, and plain HTTP to either.
+    /// Public addresses plus loopback, and plain HTTP to loopback only.
     ///
     /// Meant for local development and tests against servers on the same
     /// host. Never enable it in a deployed environment.
@@ -35,10 +35,21 @@ impl AddressPolicy {
         !answers.is_empty() && answers.iter().all(|address| self.permits(*address))
     }
 
-    /// Returns whether plain `http` destinations are accepted.
+    /// Returns whether the policy accepts plain `http` for any destination.
+    ///
+    /// Even then, [`AddressPolicy::permits_plain_http`] limits it to loopback.
     #[must_use]
     pub const fn allows_plain_http(self) -> bool {
         matches!(self, Self::AllowLoopback)
+    }
+
+    /// Returns whether a plain `http` connection to `address` is allowed.
+    ///
+    /// Only [`AddressPolicy::AllowLoopback`] allows it, and only to a loopback
+    /// address, IPv4-mapped loopback included.
+    #[must_use]
+    pub fn permits_plain_http(self, address: IpAddr) -> bool {
+        self.allows_plain_http() && address.to_canonical().is_loopback()
     }
 }
 

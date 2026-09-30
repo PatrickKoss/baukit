@@ -132,8 +132,7 @@ pub use replay_safe_mutation::{
 pub use tracing::init_test_tracing;
 pub use webhook::{
     MAX_SCRIPTED_WEBHOOK_BODY_BYTES, ReceivedWebhookRequest, ScriptedWebhookReceiver,
-    ScriptedWebhookResponse, sign_webhook_hmac_sha256, verify_webhook_hmac_sha256,
-    webhook_signing_input,
+    ScriptedWebhookResponse,
 };
 
 // Compiles the README's examples so they cannot drift from the API.

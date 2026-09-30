@@ -12,7 +12,7 @@ use std::{
 use axum::http::StatusCode;
 use baukit_egress::{
     AddressPolicy, DestinationRejection, EgressError, EgressOptions, EgressOptionsError,
-    EgressRequest, GuardedClient, ResolveFuture, Resolver, StaticResolver,
+    EgressRequest, GuardedClient, ResolveFuture, Resolver, ResponseBody, StaticResolver,
 };
 use baukit_http::RetryClass;
 use tokio::{
@@ -25,6 +25,7 @@ use url::Url;
 const LOOPBACK: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 const METADATA: IpAddr = IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254));
 const PRIVATE: IpAddr = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
+const PUBLIC: IpAddr = IpAddr::V4(Ipv4Addr::new(93, 184, 215, 14));
 const HANG: Duration = Duration::from_secs(60);
 const SHORT: Duration = Duration::from_millis(200);
 
@@ -504,6 +505,105 @@ async fn the_response_body_limit_is_enforced() {
             }
         }
     }
+}
+
+#[tokio::test]
+async fn a_discarded_success_body_is_never_too_large() {
+    let options = development()
+        .with_max_response_bytes(16)
+        .expect("limit is valid");
+    let replies = [
+        response("200 OK", &[], &"x".repeat(1024)),
+        chunked_response(&["x".repeat(12).as_str(), "y".repeat(12).as_str()]),
+    ];
+
+    for reply in replies {
+        let server = LocalServer::start(reply).await;
+        let client = client(loopback_resolver(&["hooks.test"]), options);
+
+        let delivered = client
+            .execute(
+                EgressRequest::post(server.url("hooks.test", "/deliver"))
+                    .with_response_body(ResponseBody::Discard),
+            )
+            .await
+            .expect("a discarded body should count as delivered");
+
+        assert_eq!(delivered.status(), StatusCode::OK);
+        assert!(delivered.body().is_empty());
+        assert_eq!(server.requests().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn a_discarded_body_keeps_the_status_classification() {
+    let server = LocalServer::start(response("503 Service Unavailable", &[], "busy")).await;
+    let client = client(loopback_resolver(&["hooks.test"]), development());
+
+    let error = client
+        .execute(
+            EgressRequest::post(server.url("hooks.test", "/deliver"))
+                .with_response_body(ResponseBody::Discard),
+        )
+        .await
+        .expect_err("a 503 is not delivered");
+
+    assert!(
+        matches!(
+            error,
+            EgressError::Status {
+                status: StatusCode::SERVICE_UNAVAILABLE,
+                class: RetryClass::Unavailable
+            }
+        ),
+        "{error:?}"
+    );
+}
+
+#[tokio::test]
+async fn plain_http_reaches_only_loopback_under_allow_loopback() {
+    let server = LocalServer::start(response("200 OK", &[], "ok")).await;
+    let resolver = Arc::new(
+        StaticResolver::new()
+            .with_host("public.test", [PUBLIC])
+            .with_host("mixed.test", [LOOPBACK, PUBLIC])
+            .with_host("local.test", [LOOPBACK]),
+    );
+    let client = client(resolver, development());
+
+    for host in ["public.test", "mixed.test"] {
+        let error = client
+            .execute(EgressRequest::post(server.url(host, "/deliver")))
+            .await
+            .expect_err("plain http to a public answer should be refused");
+        assert!(
+            matches!(
+                error,
+                EgressError::Destination(DestinationRejection::Scheme)
+            ),
+            "{host}: {error:?}"
+        );
+        assert!(!error.is_retryable());
+    }
+    let literal = Url::parse("http://93.184.215.14/deliver").expect("test URL should parse");
+    let error = client
+        .execute(EgressRequest::post(literal))
+        .await
+        .expect_err("plain http to a public literal should be refused");
+    assert!(
+        matches!(
+            error,
+            EgressError::Destination(DestinationRejection::Scheme)
+        ),
+        "{error:?}"
+    );
+    assert_eq!(server.connections(), 0);
+
+    client
+        .execute(EgressRequest::post(server.url("local.test", "/deliver")))
+        .await
+        .expect("plain http to loopback is allowed");
+    assert_eq!(server.connections(), 1);
 }
 
 #[tokio::test]

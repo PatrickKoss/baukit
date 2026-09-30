@@ -5,7 +5,8 @@ deployment environment, log format, process kind, service identity, build info, 
 measurements, and a CSV export encoder. By default it depends on `serde`, `serde_json`, and `thiserror` and nothing else. The
 optional `pagination` feature adds keyset pagination and pulls in `base64`, `ring`, and `uuid`. The
 optional `media-grants` feature adds signed media grants and pulls in `base64`, `ring`, and
-`zeroize`.
+`zeroize`. The optional `webhook-signature` feature adds the `baukit-webhook-v1` signature and
+pulls in `base64` and `ring`.
 
 ## Why this crate exists at all
 
@@ -217,6 +218,43 @@ the failed check. `MediaGrantError::code` and `MediaGrantKeyError::code` return 
 codes the edge verifier uses. `deploy/media-grants` has the njs verifier for nginx. Both pass
 `fixtures/media-grants/vectors-v1.json`, whose expected signatures come from an independent
 generator.
+
+## Webhook signature
+
+Enable the `webhook-signature` feature to sign outbound webhooks and verify them on the receiving
+side:
+
+```toml
+baukit-core = { version = "0.5", features = ["webhook-signature"] }
+```
+
+`webhook_signature::sign_webhook_hmac_sha256` signs the delivery with HMAC-SHA256 over the version
+line `baukit-webhook-v1`, the Unix timestamp, the byte length of the delivery ID, the delivery ID,
+and the raw body, each field before the body ending in `\n`. It returns `v1=` followed by the
+unpadded base64url tag. `webhook_signing_input` returns the exact signed bytes.
+
+```rust
+use baukit_core::webhook_signature::{sign_webhook_hmac_sha256, verify_webhook_hmac_sha256};
+
+let body = br#"{"event":"created"}"#;
+let signature = sign_webhook_hmac_sha256(b"current-secret", 1_800_000_000, "delivery-7", body);
+assert_eq!(signature, "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w");
+assert!(verify_webhook_hmac_sha256(
+    [b"previous-secret".as_slice(), b"current-secret".as_slice()],
+    1_800_000_000,
+    "delivery-7",
+    body,
+    &signature,
+));
+```
+
+Header names stay product configuration: send the signature, the timestamp, and the delivery ID in
+separate headers. Every retry of one delivery reuses the timestamp, delivery ID, and body, so its
+signature does not change. `verify_webhook_hmac_sha256` takes the current key and any key still in
+its rotation overlap, compares in constant time, and returns `false` for a missing prefix, padding,
+hex, or a truncated tag. The timestamp window and delivery ID dedupe are receiver policy and are
+not checked here. `fixtures/webhooks/signature-v1.json` pins the signing bytes, signatures, and
+verification results for other runtimes.
 
 ## Scope
 

@@ -1,6 +1,8 @@
 //! Runs the shared vectors in `fixtures/webhooks/signature-v1.json`.
 
-use baukit_test::{sign_webhook_hmac_sha256, verify_webhook_hmac_sha256, webhook_signing_input};
+use baukit_core::webhook_signature::{
+    sign_webhook_hmac_sha256, verify_webhook_hmac_sha256, webhook_signing_input,
+};
 use serde::Deserialize;
 
 const VECTORS: &str = include_str!("../../../../fixtures/webhooks/signature-v1.json");

@@ -21,6 +21,22 @@ use crate::{
 };
 
 const TARGET: &str = "baukit_egress";
+const HTTP_SCHEME: &str = "http";
+const HTTPS_SCHEME: &str = "https";
+
+/// What [`GuardedClient::execute`] does with the body of a `2xx` response.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ResponseBody {
+    /// Read the body up to [`EgressOptions::max_response_bytes`] and fail with
+    /// [`EgressError::ResponseTooLarge`] above it.
+    #[default]
+    Read,
+    /// Drop the body unread and return an empty one.
+    ///
+    /// A webhook receiver's `2xx` then counts as delivered whatever it sends
+    /// back. The connection closes instead of returning to the pool.
+    Discard,
+}
 
 /// An outbound request for a [`GuardedClient`].
 ///
@@ -32,6 +48,7 @@ pub struct EgressRequest {
     url: Url,
     headers: HeaderMap,
     body: Vec<u8>,
+    response_body: ResponseBody,
 }
 
 impl EgressRequest {
@@ -43,6 +60,7 @@ impl EgressRequest {
             url,
             headers: HeaderMap::new(),
             body: Vec::new(),
+            response_body: ResponseBody::Read,
         }
     }
 
@@ -72,6 +90,13 @@ impl EgressRequest {
         self
     }
 
+    /// Sets what happens to the body of a `2xx` response.
+    #[must_use]
+    pub const fn with_response_body(mut self, response_body: ResponseBody) -> Self {
+        self.response_body = response_body;
+        self
+    }
+
     /// Returns the request method.
     #[must_use]
     pub const fn method(&self) -> &Method {
@@ -95,6 +120,12 @@ impl EgressRequest {
     pub fn body(&self) -> &[u8] {
         &self.body
     }
+
+    /// Returns what happens to the body of a `2xx` response.
+    #[must_use]
+    pub const fn response_body(&self) -> ResponseBody {
+        self.response_body
+    }
 }
 
 impl fmt::Debug for EgressRequest {
@@ -105,11 +136,13 @@ impl fmt::Debug for EgressRequest {
             .field("host", &self.url.host_str())
             .field("headers", &self.headers.keys().collect::<Vec<_>>())
             .field("body_len", &self.body.len())
+            .field("response_body", &self.response_body)
             .finish()
     }
 }
 
-/// A `2xx` response whose body was read within the configured limit.
+/// A `2xx` response whose body was read within the configured limit, or
+/// dropped under [`ResponseBody::Discard`].
 #[derive(Clone, Debug)]
 pub struct EgressResponse {
     status: StatusCode,
@@ -149,11 +182,13 @@ impl EgressResponse {
 /// rejects the lookup when any answer is disallowed, and connects only to the
 /// answers it checked. Redirects are never followed, proxies from the
 /// environment are ignored, and every request is bounded by the timeouts and
-/// the response body limit in [`EgressOptions`]. Cloning is cheap and shares
-/// the connection pool.
+/// the response body limit in [`EgressOptions`]. Plain `http` is sent only
+/// under [`AddressPolicy::AllowLoopback`] and only to loopback answers.
+/// Cloning is cheap and shares the connection pools.
 #[derive(Clone)]
 pub struct GuardedClient {
-    client: reqwest::Client,
+    https: reqwest::Client,
+    plain_http: Option<reqwest::Client>,
     options: EgressOptions,
 }
 
@@ -173,22 +208,17 @@ impl GuardedClient {
         resolver: Arc<dyn Resolver>,
         options: EgressOptions,
     ) -> Result<Self, EgressClientError> {
-        let pinned = PinnedResolver {
-            resolver,
-            policy: options.policy(),
-            timeout: options.resolve_timeout(),
-        };
-        let client = reqwest::Client::builder()
-            .dns_resolver(Arc::new(pinned))
-            .redirect(Policy::none())
-            .no_proxy()
-            .referer(false)
-            .https_only(!options.policy().allows_plain_http())
-            .connect_timeout(options.connect_timeout())
-            .timeout(options.request_timeout())
-            .build()
-            .map_err(EgressClientError)?;
-        Ok(Self { client, options })
+        let https = build_client(Arc::clone(&resolver), options, Transport::Https)?;
+        let plain_http = options
+            .policy()
+            .allows_plain_http()
+            .then(|| build_client(resolver, options, Transport::PlainHttp))
+            .transpose()?;
+        Ok(Self {
+            https,
+            plain_http,
+            options,
+        })
     }
 
     /// Returns the options this client was built with.
@@ -230,8 +260,8 @@ impl GuardedClient {
 
     async fn send(&self, request: EgressRequest) -> Result<EgressResponse, EgressError> {
         validate_destination(&request.url, self.options.policy())?;
-        let response = self
-            .client
+        let client = self.client_for(&request.url)?;
+        let response = client
             .request(request.method, request.url)
             .headers(request.headers)
             .body(request.body)
@@ -246,12 +276,24 @@ impl GuardedClient {
             let class = classify_http_status_with_options(status, &headers, retry_headers);
             return Err(EgressError::Status { status, class });
         }
-        let body = read_body(response, self.options.max_response_bytes()).await?;
+        let body = match request.response_body {
+            ResponseBody::Read => read_body(response, self.options.max_response_bytes()).await?,
+            ResponseBody::Discard => Vec::new(),
+        };
         Ok(EgressResponse {
             status,
             headers,
             body,
         })
+    }
+
+    fn client_for(&self, url: &Url) -> Result<&reqwest::Client, EgressError> {
+        if url.scheme() != HTTP_SCHEME {
+            return Ok(&self.https);
+        }
+        self.plain_http
+            .as_ref()
+            .ok_or(EgressError::Destination(DestinationRejection::Scheme))
     }
 }
 
@@ -260,10 +302,11 @@ impl GuardedClient {
 /// The scheme must be `https`, or `http` when the policy allows plain HTTP.
 /// The URL must have a host and no credentials or fragment. A host written as
 /// an IP address must pass the policy, so an address literal never reaches a
-/// connection. Host names are checked when they resolve.
+/// connection, and a plain `http` literal must be loopback. Host names are
+/// checked when they resolve.
 pub fn validate_destination(url: &Url, policy: AddressPolicy) -> Result<(), EgressError> {
-    let scheme_allowed =
-        url.scheme() == "https" || (url.scheme() == "http" && policy.allows_plain_http());
+    let plain_http = url.scheme() == HTTP_SCHEME;
+    let scheme_allowed = url.scheme() == HTTPS_SCHEME || (plain_http && policy.allows_plain_http());
     if !scheme_allowed {
         return Err(EgressError::Destination(DestinationRejection::Scheme));
     }
@@ -281,14 +324,47 @@ pub fn validate_destination(url: &Url, policy: AddressPolicy) -> Result<(), Egre
     };
     match literal {
         Some(address) if !policy.permits(address) => Err(EgressError::BlockedAddress),
+        Some(address) if plain_http && !policy.permits_plain_http(address) => {
+            Err(EgressError::Destination(DestinationRejection::Scheme))
+        }
         _ => Ok(()),
     }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Transport {
+    Https,
+    PlainHttp,
+}
+
+fn build_client(
+    resolver: Arc<dyn Resolver>,
+    options: EgressOptions,
+    transport: Transport,
+) -> Result<reqwest::Client, EgressClientError> {
+    let pinned = PinnedResolver {
+        resolver,
+        policy: options.policy(),
+        timeout: options.resolve_timeout(),
+        transport,
+    };
+    reqwest::Client::builder()
+        .dns_resolver(Arc::new(pinned))
+        .redirect(Policy::none())
+        .no_proxy()
+        .referer(false)
+        .https_only(transport == Transport::Https)
+        .connect_timeout(options.connect_timeout())
+        .timeout(options.request_timeout())
+        .build()
+        .map_err(EgressClientError)
 }
 
 struct PinnedResolver {
     resolver: Arc<dyn Resolver>,
     policy: AddressPolicy,
     timeout: Duration,
+    transport: Transport,
 }
 
 impl Resolve for PinnedResolver {
@@ -296,9 +372,17 @@ impl Resolve for PinnedResolver {
         let resolver = Arc::clone(&self.resolver);
         let policy = self.policy;
         let timeout = self.timeout;
+        let transport = self.transport;
         let host = name.as_str().to_owned();
         Box::pin(async move {
             let answers = resolve_destination(resolver.as_ref(), &host, policy, timeout).await?;
+            let plain_http_refused = transport == Transport::PlainHttp
+                && !answers
+                    .iter()
+                    .all(|address| policy.permits_plain_http(*address));
+            if plain_http_refused {
+                return Err(EgressError::Destination(DestinationRejection::Scheme).into());
+            }
             let addresses: Addrs = Box::new(
                 answers
                     .into_iter()
@@ -325,6 +409,9 @@ fn resolution_error(error: &(dyn StdError + 'static)) -> Option<EgressError> {
         match error.downcast_ref::<EgressError>() {
             Some(EgressError::BlockedAddress) => return Some(EgressError::BlockedAddress),
             Some(EgressError::Timeout) => return Some(EgressError::Timeout),
+            Some(EgressError::Destination(rejection)) => {
+                return Some(EgressError::Destination(*rejection));
+            }
             Some(_) => return Some(EgressError::Resolve),
             None => current = error.source(),
         }

@@ -1,4 +1,7 @@
-//! Webhook signing and scripted receiver fixtures.
+//! Scripted webhook receiver fixture.
+//!
+//! The `baukit-webhook-v1` signature itself lives in
+//! `baukit_core::webhook_signature`.
 
 use std::{
     collections::{BTreeMap, VecDeque},
@@ -15,76 +18,10 @@ use axum::{
     extract::{Request, State},
     http::{HeaderMap, Method, Response, StatusCode, Uri},
 };
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use ring::hmac;
 use tokio::{net::TcpListener, task::JoinHandle};
-
-const SIGNING_VERSION: &[u8] = b"baukit-webhook-v1\n";
-const SIGNATURE_PREFIX: &str = "v1=";
 
 /// Maximum request body retained by [`ScriptedWebhookReceiver`].
 pub const MAX_SCRIPTED_WEBHOOK_BODY_BYTES: usize = 1_048_576;
-
-/// Builds the exact bytes covered by the webhook HMAC helper.
-///
-/// The input is the fixed version line, decimal Unix timestamp, decimal byte
-/// length of the delivery ID, delivery ID, and raw request body. Each field
-/// before the raw body ends with `\n`. The length makes the two variable fields
-/// unambiguous.
-#[must_use]
-pub fn webhook_signing_input(timestamp: i64, delivery_id: &str, body: &[u8]) -> Vec<u8> {
-    let mut input = Vec::new();
-    input.extend_from_slice(SIGNING_VERSION);
-    input.extend_from_slice(timestamp.to_string().as_bytes());
-    input.push(b'\n');
-    input.extend_from_slice(delivery_id.len().to_string().as_bytes());
-    input.push(b'\n');
-    input.extend_from_slice(delivery_id.as_bytes());
-    input.push(b'\n');
-    input.extend_from_slice(body);
-    input
-}
-
-/// Signs one webhook request with HMAC-SHA256.
-///
-/// The returned header value starts with `v1=` and uses unpadded base64url.
-/// The helper does not retain the secret.
-#[must_use]
-pub fn sign_webhook_hmac_sha256(
-    secret: &[u8],
-    timestamp: i64,
-    delivery_id: &str,
-    body: &[u8],
-) -> String {
-    let key = hmac::Key::new(hmac::HMAC_SHA256, secret);
-    let tag = hmac::sign(&key, &webhook_signing_input(timestamp, delivery_id, body));
-    format!("{SIGNATURE_PREFIX}{}", URL_SAFE_NO_PAD.encode(tag.as_ref()))
-}
-
-/// Verifies a webhook signature against current and retained rotation keys.
-///
-/// Invalid encodings return `false`. Callers should use a non-secret key ID to
-/// select a bounded set of candidates, normally the current and previous key.
-#[must_use]
-pub fn verify_webhook_hmac_sha256<'a>(
-    candidate_secrets: impl IntoIterator<Item = &'a [u8]>,
-    timestamp: i64,
-    delivery_id: &str,
-    body: &[u8],
-    signature: &str,
-) -> bool {
-    let Some(encoded) = signature.strip_prefix(SIGNATURE_PREFIX) else {
-        return false;
-    };
-    let Ok(supplied) = URL_SAFE_NO_PAD.decode(encoded) else {
-        return false;
-    };
-    let input = webhook_signing_input(timestamp, delivery_id, body);
-    candidate_secrets.into_iter().any(|secret| {
-        let key = hmac::Key::new(hmac::HMAC_SHA256, secret);
-        hmac::verify(&key, &input, &supplied).is_ok()
-    })
-}
 
 /// One response queued on a [`ScriptedWebhookReceiver`].
 #[derive(Clone)]
@@ -312,36 +249,6 @@ mod tests {
     use reqwest::Client;
 
     use super::*;
-
-    #[test]
-    fn signing_input_is_stable_and_rotation_accepts_the_previous_key() {
-        let body = br#"{"event":"created"}"#;
-        let signature =
-            sign_webhook_hmac_sha256(b"current-secret", 1_800_000_000, "delivery-7", body);
-
-        assert_eq!(signature, "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w");
-        assert!(verify_webhook_hmac_sha256(
-            [b"previous-secret".as_slice(), b"current-secret".as_slice()],
-            1_800_000_000,
-            "delivery-7",
-            body,
-            &signature,
-        ));
-        assert!(!verify_webhook_hmac_sha256(
-            [b"previous-secret".as_slice()],
-            1_800_000_000,
-            "delivery-7",
-            body,
-            &signature,
-        ));
-        assert!(!verify_webhook_hmac_sha256(
-            [b"current-secret".as_slice()],
-            1_800_000_001,
-            "delivery-7",
-            body,
-            &signature,
-        ));
-    }
 
     #[tokio::test]
     async fn receiver_scripts_retry_and_captures_exact_requests()

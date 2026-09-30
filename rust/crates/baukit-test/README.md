@@ -229,17 +229,15 @@ failure. It also checks owner and source isolation and reads the outcome again a
 state is discarded. Inbox values that carry product identifiers, payloads, or outcomes do not
 implement `Debug`.
 
-`sign_webhook_hmac_sha256` and `verify_webhook_hmac_sha256` use the canonical signing bytes documented
-in the integration reliability recipe. `fixtures/webhooks/signature-v1.json` publishes the signing
-bytes, signatures, and verification results for that format, including rotation, tampered fields,
-and wrong encodings, so a receiver in another language can check its verifier against the same
-cases. `ScriptedWebhookReceiver` records bounded requests without a
+The `baukit-webhook-v1` signature lives in `baukit_core::webhook_signature` (feature
+`webhook-signature`), so senders and receivers use it at runtime and tests check against the same
+code. `ScriptedWebhookReceiver` records bounded requests without a
 `Debug` implementation and returns queued statuses in order. Use it to test successful delivery,
 `Retry-After`, permanent receiver responses, timeouts, stable request bodies, and idempotency headers.
 
 These APIs are additive. Existing connector and credential-probe tests need no migration. Products
 adopting the inbox check must use a uniqueness constraint over owner, source, and event ID. Products
-adopting the signing helper must version their signature header and retain the previous verification
+adopting the signature must version their signature header and retain the previous verification
 key for their documented rotation overlap.
 
 ## Purge-horizon fixtures

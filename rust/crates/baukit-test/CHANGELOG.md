@@ -4,6 +4,13 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+### Breaking
+
+- Remove `webhook_signing_input`, `sign_webhook_hmac_sha256`, and `verify_webhook_hmac_sha256`.
+  They moved unchanged to `baukit_core::webhook_signature` (feature `webhook-signature`), so tests
+  and production code share one implementation. Import them from there. The signature vector test
+  moved to `baukit-core`.
+
 ## [0.5.1] - 2026-09-29
 
 ## [0.5.0] - 2026-09-28

@@ -4,6 +4,14 @@ All notable changes to `baukit-core` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Add the optional `webhook-signature` feature and the `webhook_signature` module with
+  `webhook_signing_input`, `sign_webhook_hmac_sha256`, `verify_webhook_hmac_sha256`,
+  `WEBHOOK_SIGNATURE_VERSION`, and `WEBHOOK_SIGNATURE_PREFIX`. Senders and receivers now apply the
+  `baukit-webhook-v1` signature at runtime instead of copying it from `baukit-test`. The feature
+  adds `base64` and `ring`. `fixtures/webhooks/signature-v1.json` runs against it.
+
 ### Changed
 
 - `fixtures/media-grants/vectors-v1.json` gains an `absolute-form-target` case: a path carrying a
