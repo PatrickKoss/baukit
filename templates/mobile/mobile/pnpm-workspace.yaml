@@ -2,11 +2,11 @@ allowBuilds:
   unrs-resolver: true
 
 catalog:
-  expo-constants: 57.0.13
+  expo-constants: 57.0.20
 
 overrides:
   expo-constants: 'catalog:'
 
 peerDependencyRules:
   allowedVersions:
-    'eslint-plugin-react-native-a11y>eslint': '9'
+    'eslint-plugin-react-native-a11y>eslint': '10'

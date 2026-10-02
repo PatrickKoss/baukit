@@ -638,7 +638,7 @@ fn resolve_lockfiles(destination: &Path, options: &NewOptions) -> Result<()> {
             Command::new("corepack")
                 .current_dir(destination.join(capability))
                 .args([
-                    "pnpm@11.18.0",
+                    "pnpm@12.7.0",
                     "install",
                     "--lockfile-only",
                     "--ignore-scripts",
@@ -1924,9 +1924,9 @@ fn validate_mcp_capability(
     if package_path.is_file() {
         let source = fs::read_to_string(&package_path)
             .with_context(|| format!("could not read {}", package_path.display()))?;
-        if !source.contains("\"@modelcontextprotocol/sdk\": \"1.30.0\"") {
+        if !source.contains("\"@modelcontextprotocol/sdk\": \"1.31.0\"") {
             failures.push(
-                "mcp/package.json must pin `@modelcontextprotocol/sdk` to `1.30.0`".to_owned(),
+                "mcp/package.json must pin `@modelcontextprotocol/sdk` to `1.31.0`".to_owned(),
             );
         }
         if !source.contains("\"@baukit/auth-node\"") {

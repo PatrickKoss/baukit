@@ -401,7 +401,7 @@ fn strict_generation_is_capability_driven_and_matches_golden_tree() -> anyhow::R
             backend
         );
         assert_eq!(workflow.contains("playwright install --with-deps"), web);
-        assert_eq!(workflow.contains("actions/setup-java@v4"), mobile);
+        assert_eq!(workflow.contains("actions/setup-java@v6"), mobile);
     }
 
     let parent = tempfile::tempdir()?;
@@ -1569,7 +1569,7 @@ fn mcp_generation_matches_golden_tree_and_records_personal_token_auth() -> anyho
         ["generated/openapi.d.ts", "mcp/src/api/schema.d.ts"]
     );
     let package = fs::read_to_string(first.join("mcp/package.json"))?;
-    assert!(package.contains("\"@modelcontextprotocol/sdk\": \"1.30.0\""));
+    assert!(package.contains("\"@modelcontextprotocol/sdk\": \"1.31.0\""));
     assert!(package.contains("\"@baukit/auth-node\""));
     assert!(!first.join("mcp/openapi.json").exists());
     assert!(first.join("mcp/src/api/schema.d.ts").is_file());

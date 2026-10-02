@@ -13,21 +13,21 @@ sh scripts/preflight.sh
 cargo clippy --manifest-path backend/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path backend/Cargo.toml -- --include-ignored
 cargo test --manifest-path backend/Cargo.toml -p {{ context.app_name }}-bin --test openapi_drift
-{% endif %}{% if context.web %}corepack pnpm@11.18.0 --dir web install --frozen-lockfile
-corepack pnpm@11.18.0 --dir web build
-corepack pnpm@11.18.0 --dir web lint
-corepack pnpm@11.18.0 --dir web test
-{% endif %}{% if context.mobile %}corepack pnpm@11.18.0 --dir mobile install --frozen-lockfile
-corepack pnpm@11.18.0 --dir mobile typecheck
-corepack pnpm@11.18.0 --dir mobile lint
-corepack pnpm@11.18.0 --dir mobile test
-{% endif %}{% if context.mcp %}corepack pnpm@11.18.0 --dir mcp install --frozen-lockfile
-corepack pnpm@11.18.0 --dir mcp build
-corepack pnpm@11.18.0 --dir mcp typecheck
-corepack pnpm@11.18.0 --dir mcp lint
-corepack pnpm@11.18.0 --dir mcp test
-corepack pnpm@11.18.0 --dir mcp openapi:check
-corepack pnpm@11.18.0 --dir mcp docs:check
+{% endif %}{% if context.web %}corepack pnpm@12.7.0 --dir web install --frozen-lockfile
+corepack pnpm@12.7.0 --dir web build
+corepack pnpm@12.7.0 --dir web lint
+corepack pnpm@12.7.0 --dir web test
+{% endif %}{% if context.mobile %}corepack pnpm@12.7.0 --dir mobile install --frozen-lockfile
+corepack pnpm@12.7.0 --dir mobile typecheck
+corepack pnpm@12.7.0 --dir mobile lint
+corepack pnpm@12.7.0 --dir mobile test
+{% endif %}{% if context.mcp %}corepack pnpm@12.7.0 --dir mcp install --frozen-lockfile
+corepack pnpm@12.7.0 --dir mcp build
+corepack pnpm@12.7.0 --dir mcp typecheck
+corepack pnpm@12.7.0 --dir mcp lint
+corepack pnpm@12.7.0 --dir mcp test
+corepack pnpm@12.7.0 --dir mcp openapi:check
+corepack pnpm@12.7.0 --dir mcp docs:check
 {% endif %}baukit doctor
 ```
 

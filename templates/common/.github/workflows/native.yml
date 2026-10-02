@@ -46,11 +46,11 @@ jobs:
       run:
         working-directory: mobile
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
@@ -58,18 +58,19 @@ jobs:
         run: corepack enable
       - name: Find pnpm store
         id: pnpm-store
-        run: echo "path=$(corepack pnpm@11.18.0 store path --silent)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+        run: echo "path=$(corepack pnpm@12.7.0 store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
         with:
           path: {% raw %}${{ steps.pnpm-store.outputs.path }}{% endraw %}
           key: {% raw %}${{ runner.os }}-pnpm-mobile-${{ hashFiles('mobile/pnpm-lock.yaml') }}{% endraw %}
           restore-keys: |
             {% raw %}${{ runner.os }}-pnpm-mobile-{% endraw %}
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
         with:
+          cache-provider: basic
           cache-read-only: {% raw %}${{ github.ref != 'refs/heads/main' }}{% endraw %}
       - name: Install dependencies
-        run: corepack pnpm@11.18.0 install --frozen-lockfile
+        run: corepack pnpm@12.7.0 install --frozen-lockfile
       - name: Clean Expo prebuild
         run: |
           set -o pipefail
@@ -80,7 +81,7 @@ jobs:
           ./android/gradlew -p android --no-daemon --stacktrace assembleDebug 2>&1 | tee native-assemble.log
       - name: Upload native failure diagnostics
         if: {% raw %}${{ failure() }}{% endraw %}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: android-native-failure
           if-no-files-found: warn
@@ -102,14 +103,14 @@ jobs:
       run:
         working-directory: mobile
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - name: Install and prebuild
         run: |
           corepack enable
-          corepack pnpm@11.18.0 install --frozen-lockfile
+          corepack pnpm@12.7.0 install --frozen-lockfile
           CI=1 ./node_modules/.bin/expo prebuild --clean --platform ios --no-install
           cd ios && pod install
       - name: Compile for iOS Simulator
@@ -140,7 +141,7 @@ jobs:
           "$HOME/.maestro/bin/maestro" --device "$simulator" test .maestro
       - name: Upload iOS failure diagnostics
         if: {% raw %}${{ failure() }}{% endraw %}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ios-native-failure
           if-no-files-found: warn

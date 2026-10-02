@@ -12,6 +12,14 @@
 - Changed the web Keycloak stack test to import `keycloakStack`, `createKeycloakTestUser`, `signInWithKeycloak`, and `allowKeycloakWebOrigin` from `@baukit/auth-node/keycloak-testing`, now a web dev dependency. `e2e/stack/keycloak.ts` keeps only this product's defaults and exports them as `stack`; the helpers take `stack` explicitly and no longer take a Playwright request context.
 - Added auth web tests for the OIDC client wiring, the API parsers and default transport, the authenticated API runtime, and the local-data hook, so `test:coverage` passes its 70% floors.
 {% endif %}{% if context.backend and context.auth_oidc %}- Added a Redis service to `compose.yaml` on `127.0.0.1:{{ context.redis_host_port }}`. The API's rate limiter needs it at startup, and `make dev` now starts it.
+{% endif %}{% if context.mobile %}- Moved the native workflow to `gradle/actions/setup-gradle@v6` with `cache-provider: basic`, which keeps the MIT-licensed cache instead of v6's default proprietary one.
+{% endif %}{% if context.web or context.mobile %}- Moved linting to ESLint 10, `@eslint/js` 10, and `typescript-eslint` 8.71. TypeScript stays on 6.0 because `typescript-eslint` does not accept TypeScript 7 yet.
+{% endif %}{% if context.web or context.mobile or context.mcp %}- Changed `eslint.config.js` to `defineConfig` from `eslint/config`, since `tseslint.config` is deprecated, and pinned `@types/node` to 24.19 to match the Node 24 runtime.
+{% endif %}{% if context.web %}- Moved the web app to React 19.3, Vite 8.3, Vitest 5, `@vitejs/plugin-react` 6.1, Playwright 1.63, and jsdom 30.1.
+{% endif %}{% if context.mobile %}- Moved the mobile app to the current Expo SDK 57 patch releases (`expo` 57.0.26, `react-native` 0.86.3, `expo-router` 57.0.24, `jest-expo` 57.0.5), i18next 26.4, and react-i18next 17.0. `eslint-plugin-react-native-a11y` still declares ESLint 8 as its peer, so `pnpm-workspace.yaml` allows ESLint 10 for it and `@eslint/compat` wraps its rules. `test-renderer` stays on 1.2.0 because 1.3.0 needs React 19.3, which React Native 0.86 does not support.
+{% endif %}{% if context.mcp %}- Moved the MCP package from TypeScript 5.9 to 6.0 and to Vitest 5 and zod 4.6.
 {% endif %}- Added append-only `.env` reconciliation to generated project setup. Existing local bytes and values are preserved.
 - Fixed the strict quality gate so a freshly generated project can run it before its first commit.
 - Added a dependency-free local Markdown link check to the strict quality profile.
+- Changed the pinned pnpm to 12.7.0 in `packageManager`, the scripts, and CI. pnpm 12.8.0 through 12.8.2 reject a fresh lockfile under `--frozen-lockfile` when a `file:` dependency has an optional peer that the importer provides.
+- Moved the generated GitHub workflows to `actions/checkout@v7`, `actions/cache@v6`, `actions/setup-node@v7`, `actions/setup-java@v6`, `actions/upload-artifact@v7`, and `dorny/paths-filter@v4`.

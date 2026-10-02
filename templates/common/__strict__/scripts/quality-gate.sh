@@ -184,14 +184,14 @@ if [ -f backend/Dockerfile ]; then
   fi
 fi
 {% endif %}
-{% if context.web %}corepack pnpm@11.18.0 --dir web install --frozen-lockfile
-corepack pnpm@11.18.0 --dir web build
-corepack pnpm@11.18.0 --dir web lint
-corepack pnpm@11.18.0 --dir web run test:coverage
+{% if context.web %}corepack pnpm@12.7.0 --dir web install --frozen-lockfile
+corepack pnpm@12.7.0 --dir web build
+corepack pnpm@12.7.0 --dir web lint
+corepack pnpm@12.7.0 --dir web run test:coverage
 if [ "$(manifest_value capabilities.pwa)" = "true" ]; then
-  corepack pnpm@11.18.0 --dir web run build:sw:check
+  corepack pnpm@12.7.0 --dir web run build:sw:check
 fi
-corepack pnpm@11.18.0 --dir web exec playwright test \
+corepack pnpm@12.7.0 --dir web exec playwright test \
   --config e2e/playwright.config.ts \
   --project=desktop-chromium --project=mobile-chrome \
   --project=webkit-desktop --project=mobile-safari
@@ -210,22 +210,22 @@ if [ -n "$critical_paths" ]; then
   done <<EOF
 $critical_paths
 EOF
-  corepack pnpm@11.18.0 --dir web exec playwright test "$@" \
+  corepack pnpm@12.7.0 --dir web exec playwright test "$@" \
     --config e2e/playwright.config.ts --project=webkit-desktop \
     --project=mobile-safari --repeat-each "$repeats"
 fi
 {% endif %}
-{% if context.mobile %}corepack pnpm@11.18.0 --dir mobile install --frozen-lockfile
-(cd mobile && corepack pnpm@11.18.0 dlx expo-doctor)
-corepack pnpm@11.18.0 --dir mobile typecheck
-corepack pnpm@11.18.0 --dir mobile lint
-corepack pnpm@11.18.0 --dir mobile run test:coverage
+{% if context.mobile %}corepack pnpm@12.7.0 --dir mobile install --frozen-lockfile
+(cd mobile && corepack pnpm@12.7.0 dlx expo-doctor)
+corepack pnpm@12.7.0 --dir mobile typecheck
+corepack pnpm@12.7.0 --dir mobile lint
+corepack pnpm@12.7.0 --dir mobile run test:coverage
 {% if not context.web %}if [ "$(manifest_value capabilities.pwa)" = "true" ]; then
-  corepack pnpm@11.18.0 --dir mobile run build:sw:check
+  corepack pnpm@12.7.0 --dir mobile run build:sw:check
 fi
-{% endif %}CI=1 corepack pnpm@11.18.0 --dir mobile exec expo prebuild --clean --platform ios
-CI=1 corepack pnpm@11.18.0 --dir mobile exec expo export --platform ios --output-dir dist/ios-check
-CI=1 corepack pnpm@11.18.0 --dir mobile exec expo prebuild --clean --platform android
+{% endif %}CI=1 corepack pnpm@12.7.0 --dir mobile exec expo prebuild --clean --platform ios
+CI=1 corepack pnpm@12.7.0 --dir mobile exec expo export --platform ios --output-dir dist/ios-check
+CI=1 corepack pnpm@12.7.0 --dir mobile exec expo prebuild --clean --platform android
 mobile/android/gradlew -p mobile/android --no-daemon --stacktrace assembleDebug
 {% endif %}
 
