@@ -5,20 +5,17 @@
 
 This table records what the shared baseline is **tested against**. Renovate keeps individual products moving; baukit guarantees compatibility only with the versions listed here. Version cells reflect the review-time state of the three projects and must be re-verified against the lockfiles when the baukit repository is created.
 
-Last verified release train: `v0.5.2` (the fixes for gaps found while all
-eight products adopted 0.5.1: the runtime `baukit-webhook-v1` signature in
-`baukit-core`, discardable response bodies and loopback-only plain HTTP in
-`baukit-egress`, OpenAPI request validation in `baukit-test`, non-UUID
-pagination tie-breakers, owned push pending receipts, chart
-`networkPolicy.additionalIngress`, absolute-form target rejection in the njs
-media-grant verifier, the calendar recipe's final CRLF, the post-logout
-redirect in the Keycloak test helpers, web `announce`, and the PWA capability on
-mobile-only products; backend, web, mobile, combined, and MCP generated
-fixtures with coverage floors, browser Dexie conformance with 36 tests,
-Docker-backed integration tests with 727 passing, both media-grant vector
-suites, the MSRV check, and the complete local CI-equivalent gates were
-verified). The iOS simulator gate requires macOS and remains a release-host
-check rather than a Linux result.
+Last verified release train: `v0.6.0` (dependency refresh: utoipa 6,
+OpenTelemetry 0.33 with tracing-opentelemetry 0.34, reqwest 0.13, Debian 13
+backend images, ESLint 10, zod 4, Vitest 5, pnpm 12.7.0, the current Expo SDK 57
+patches, and the current GitHub Actions majors; backend, web, mobile, combined,
+and MCP generated fixtures with coverage floors, browser Dexie conformance with
+36 tests, Docker-backed integration tests with 722 passing, both media-grant
+vector suites, Expo SQLite conformance with 33 tests, Hermes vectors and
+expo-notifications on Android, the generated Android compile, the MSRV check,
+cargo deny, and the complete local CI-equivalent gates were verified locally
+because hosted runners were unavailable). The iOS simulator gate requires macOS
+and remains a release-host check rather than a Linux result.
 
 ## Toolchain
 
