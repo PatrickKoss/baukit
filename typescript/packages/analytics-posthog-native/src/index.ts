@@ -19,7 +19,7 @@ export interface PostHogNativeClient {
   reset(): unknown;
   optIn(): Promise<void> | void;
   optOut(): Promise<void> | void;
-  setPersistedProperty(key: PostHogPersistedProperty, value: unknown): void;
+  setPersistedProperty(key: `${PostHogPersistedProperty}`, value: unknown): void;
 }
 
 type GuardedPostHogNativeOption =
@@ -56,11 +56,12 @@ type ClientFactory = (
   firstEnvelope: AnalyticsEnvelope,
 ) => PostHogNativeClient | Promise<PostHogNativeClient>;
 
-const PENDING_QUEUE_KEYS = [
+const PENDING_QUEUE_KEYS: readonly `${PostHogPersistedProperty}`[] = [
   'queue',
   'ai_queue',
+  'ai_capture_queue',
   'logs_queue',
-] as readonly PostHogPersistedProperty[];
+];
 
 function requireNonEmpty(name: string, value: string): string {
   const normalized = value.trim();

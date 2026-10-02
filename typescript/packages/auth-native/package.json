@@ -46,14 +46,14 @@
     "format:check": "prettier --check src package.json tsconfig.json tsconfig.test.json"
   },
   "devDependencies": {
-    "expo-auth-session": "57.0.6",
-    "expo-secure-store": "57.0.1",
-    "expo-web-browser": "57.0.2",
+    "expo-auth-session": "57.0.13",
+    "expo-secure-store": "57.0.4",
+    "expo-web-browser": "57.0.3",
     "typescript": "6.0.3"
   },
   "peerDependencies": {
-    "expo-auth-session": "^57.0.6",
-    "expo-secure-store": "^57.0.1",
-    "expo-web-browser": "^57.0.2"
+    "expo-auth-session": "^57.0.13",
+    "expo-secure-store": "^57.0.4",
+    "expo-web-browser": "^57.0.3"
   }
 }

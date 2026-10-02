@@ -37,6 +37,6 @@ export function announce(
   if (!region) return;
   region.textContent = '';
   // Force a distinct mutation so the same message twice is spoken twice.
-  void region.offsetWidth;
+  region.getBoundingClientRect();
   region.textContent = trimmed;
 }

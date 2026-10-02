@@ -47,8 +47,8 @@
     "format:check": "prettier --check src scripts package.json tsconfig.json tsconfig.test.json tsconfig.cjs.json"
   },
   "devDependencies": {
-    "rolldown": "1.2.3",
+    "rolldown": "1.2.12",
     "typescript": "6.0.3",
-    "vitest": "4.1.10"
+    "vitest": "5.0.3"
   }
 }

@@ -43,12 +43,12 @@
   "devDependencies": {
     "@baukit/localization-core": "workspace:*",
     "@baukit/notifications-core": "workspace:*",
-    "expo-notifications": "57.0.13",
+    "expo-notifications": "57.0.21",
     "typescript": "6.0.3",
-    "vitest": "4.1.10"
+    "vitest": "5.0.3"
   },
   "peerDependencies": {
     "@baukit/notifications-core": "^0.5.2",
-    "expo-notifications": "^57.0.13"
+    "expo-notifications": "^57.0.21"
   }
 }

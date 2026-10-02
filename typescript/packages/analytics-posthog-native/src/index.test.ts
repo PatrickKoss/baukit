@@ -230,7 +230,12 @@ describe('native adapter composed with analytics core', () => {
 
     expect(clearPending).toHaveBeenCalledOnce();
     expect(posthog.optOut).toHaveBeenCalledOnce();
-    expect(posthog.setPersistedProperty).toHaveBeenCalledWith('queue', []);
+    expect(posthog.setPersistedProperty.mock.calls).toEqual([
+      ['queue', []],
+      ['ai_queue', []],
+      ['ai_capture_queue', []],
+      ['logs_queue', []],
+    ]);
   });
 
   it('drops before consent and transports only allowlisted, scrubbed properties after opt-in', async () => {

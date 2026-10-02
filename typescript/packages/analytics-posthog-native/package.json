@@ -47,12 +47,12 @@
   },
   "devDependencies": {
     "@baukit/analytics-core": "workspace:*",
-    "posthog-react-native": "4.62.0",
+    "posthog-react-native": "4.78.3",
     "typescript": "6.0.3"
   },
   "peerDependencies": {
     "@baukit/analytics-core": "^0.5.2",
-    "posthog-react-native": "^4.62.0"
+    "posthog-react-native": "^4.78.3"
   },
   "peerDependenciesMeta": {
     "posthog-react-native": {
