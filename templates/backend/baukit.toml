@@ -14,7 +14,7 @@ openapi_compatibility = "off"
 
 [capabilities]
 backend = true
-worker = {{ context.worker }}
+worker = {{ "true" if context.worker else "false" }}
 mobile = false
 web = false
 pwa = false
