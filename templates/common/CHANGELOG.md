@@ -4,6 +4,7 @@
 
 {% if context.backend %}- Changed generated API DTOs to camelCase JSON names and the error envelope to `requestId`. `backend/tests/openapi_drift.rs` now also fails on any property or path or query parameter name that is not camelCase, and the strict quality gate runs it.
 - Added error-response rules to the generated OpenAPI document. Every operation now documents the 400, {% if context.auth_oidc %}401, {% endif %}404, 413, 415, 422, {% if context.auth_oidc %}429, {% endif %}500, and 504 responses its middleware can return, with `X-Request-Id` on every response.
+- Changed `backend/Dockerfile` to build on `rust:1.99.0-trixie` and run on `gcr.io/distroless/cc-debian13:nonroot`. Builder and runtime moved to Debian 13 together, so the binaries and the runtime share one glibc.
 {% if context.quality_strict %}- Added `quality.openapi_compatibility` (`off`, `report`, or `enforce`) to the strict quality gate. It compares `backend/openapi.json` with the base revision and reads accepted breaks from `docs/openapi-accepted-breaks.json`.
 {% endif %}{% endif %}{% if context.mcp %}- Added the opt-in MCP stdio package with explicit tool registries, bearer-token providers, and OpenAPI route checks.
 {% endif %}{% if context.mobile %}- Added mobile tests for the theme mode control, record store seams, and the route heading focus hook, with `@testing-library/react-native` and `test-renderer` as dev dependencies.

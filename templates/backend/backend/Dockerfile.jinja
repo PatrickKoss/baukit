@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
-ARG RUST_IMAGE=rust:1.95.0-bookworm
-ARG RUNTIME_IMAGE=gcr.io/distroless/cc-debian12:nonroot
+ARG RUST_IMAGE=rust:1.99.0-trixie
+ARG RUNTIME_IMAGE=gcr.io/distroless/cc-debian13:nonroot
 
 FROM ${RUST_IMAGE} AS builder
 ARG BACKEND_CONTEXT=.

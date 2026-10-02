@@ -52,9 +52,9 @@ baukit-sync = { version = "=0.5.2", path = "crates/baukit-sync" }
 baukit-telemetry = { version = "=0.5.2", path = "crates/baukit-telemetry" }
 baukit-test = { version = "=0.5.2", path = "crates/baukit-test" }
 chrono = { version = "=0.4.45", features = ["serde"] }
-config = "=0.15.25"
+config = "=0.15.27"
 dotenvy = "=0.15.7"
-jsonschema = { version = "=0.58.1", default-features = false }
+jsonschema = { version = "=0.58.4", default-features = false }
 metrics = "=0.24.6"
 metrics-exporter-prometheus = "=0.18.3"
 metrics-util = "=0.20.4"
@@ -64,28 +64,28 @@ opentelemetry_sdk = "=0.32.1"
 pem = "=3.0.6"
 regex = "=1.13.1"
 reqwest = { version = "=0.12.28", default-features = false, features = ["json", "rustls-tls"] }
-redis = { version = "=1.5.0", default-features = false, features = ["connection-manager", "sentinel", "tokio-comp"] }
+redis = { version = "=1.7.1", default-features = false, features = ["connection-manager", "sentinel", "tokio-comp"] }
 ring = "=0.17.14"
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_html_form = "=0.4.1"
 serde_json = "=1.0.151"
 sqlx = { version = "=0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "chrono", "json", "uuid"] }
-tempfile = "=3.23.0"
+tempfile = "=3.27.0"
 testcontainers = "=0.27.3"
 testcontainers-modules = { version = "=0.15.0", features = ["postgres", "redis"] }
-thiserror = "2.0.20"
+thiserror = "2.0.21"
 tokio = { version = "=1.53.1", features = ["full"] }
 tokio-util = { version = "=0.7.19", features = ["rt"] }
 tower = "=0.5.3"
-tower-http = "=0.7.0"
+tower-http = "=0.7.1"
 tracing = "=0.1.44"
 tracing-opentelemetry = "=0.33.0"
 tracing-subscriber = { version = "=0.3.23", features = ["env-filter", "json"] }
-time = { version = "=0.3.47", features = ["formatting", "parsing", "serde"] }
+time = { version = "=0.3.55", features = ["formatting", "parsing", "serde"] }
 url = "=2.5.8"
 utoipa = { version = "=5.5.0", features = ["axum_extras", "time"] }
 utoipa-axum = "=0.2.0"
-uuid = { version = "=1.24.0", features = ["v4", "v7", "serde"] }
+uuid = { version = "=1.26.1", features = ["v4", "v7", "serde"] }
 zeroize = "=1.9.0"
 
 [workspace.lints.rust]

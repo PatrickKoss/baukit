@@ -29,7 +29,7 @@ migration:
     - /app/migrate
 
 worker:
-  enabled: {{ context.worker }}
+  enabled: {{ "true" if context.worker else "false" }}
 {% if context.worker %}  image:
     repository: ghcr.io/patrickkoss/{{ context.app_name }}-worker
     tag: latest
