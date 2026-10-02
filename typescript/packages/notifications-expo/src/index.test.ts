@@ -48,10 +48,10 @@ function permissionStatus(
 ): NotificationPermissionsStatus {
   return {
     granted: permission === 'granted',
-    status: permission,
+    status: permission as unknown as NotificationPermissionsStatus['status'],
     expires: 'never',
     canAskAgain: permission !== 'denied',
-  } as NotificationPermissionsStatus;
+  };
 }
 
 function asResolved<T>(action: () => T): Promise<T> {

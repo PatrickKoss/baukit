@@ -1,12 +1,13 @@
 import uiTokens from '@baukit/ui-tokens/eslint';
 import { fixupPluginRules } from '@eslint/compat';
 import eslint from '@eslint/js';
+import { defineConfig } from 'eslint/config';
 import reactHooks from 'eslint-plugin-react-hooks';
 import reactNativeA11y from 'eslint-plugin-react-native-a11y';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
-export default tseslint.config(
+export default defineConfig(
   {
     ignores: ['node_modules/**', '.expo/**', 'coverage/**'],
   },

@@ -43,13 +43,13 @@ Running `node dist/cli.js` starts `StdioServerTransport`. stdout is reserved for
 Run the package gate from `mcp/`:
 
 ```sh
-corepack pnpm@11.18.0 install --frozen-lockfile
-corepack pnpm@11.18.0 build
-corepack pnpm@11.18.0 typecheck
-corepack pnpm@11.18.0 lint
-corepack pnpm@11.18.0 test
-corepack pnpm@11.18.0 openapi:check
-corepack pnpm@11.18.0 docs:check
+corepack pnpm@12.7.0 install --frozen-lockfile
+corepack pnpm@12.7.0 build
+corepack pnpm@12.7.0 typecheck
+corepack pnpm@12.7.0 lint
+corepack pnpm@12.7.0 test
+corepack pnpm@12.7.0 openapi:check
+corepack pnpm@12.7.0 docs:check
 ```
 
 Generated CI runs this gate only when MCP is selected. `make mcp-fixture-gate` creates a backend plus MCP fixture and checks both packages.

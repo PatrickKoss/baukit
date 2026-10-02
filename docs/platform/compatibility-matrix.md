@@ -29,7 +29,7 @@ check rather than a Linux result.
 | Java | Temurin 21 (21.0.12.1 test host) | pinned via `mise.toml`; used by Android builds |
 | Swift | 6.3.3 | pinned via `mise.toml`; compiler version checked on Linux |
 | xtool | 1.17.0 | pinned via `mise.toml`; version checked on Linux, without a Darwin SDK or simulator |
-| pnpm | 11.18.0 | pinned via `packageManager` |
+| pnpm | 12.7.0 | pinned via `packageManager`; 12.8.0 to 12.8.2 reject fresh lockfiles under `--frozen-lockfile` when a `file:` dependency has an optional peer the importer provides |
 | Turbo | 2 | |
 
 ## Backend (Rust)
@@ -61,28 +61,28 @@ check rather than a Linux result.
 
 | Responsibility | Dependency | Tested baseline | Notes |
 |---|---|---|---|
-| Mobile runtime | Expo SDK | 57.0.11 (RN 0.86.2, React 19.2.8) | React/RN versions follow the Expo SDK, verified with Expo Doctor |
-| Mobile navigation | Expo Router | 57.0.15 | Generated mobile template baseline with Expo Router and `Stack.Protected` in the auth overlay; `react-native-screens` 4.26.2, `react-native-safe-area-context` 5.7.0, `react-native-reanimated` 4.5.1, `react-native-worklets` 0.10.1, and `react-native-gesture-handler` 2.32.0. |
+| Mobile runtime | Expo SDK | 57.0.26 (RN 0.86.3, React 19.2.8) | React/RN versions follow the Expo SDK, verified with Expo Doctor |
+| Mobile navigation | Expo Router | 57.0.24 | Generated mobile template baseline with Expo Router and `Stack.Protected` in the auth overlay; `react-native-screens` 4.26.2, `react-native-safe-area-context` 5.7.0, `react-native-reanimated` 4.5.1, `react-native-worklets` 0.10.1, and `react-native-gesture-handler` 2.32.0. |
 | Remote state | TanStack Query | 5 | |
 | Web routing | TanStack Router | current v1 | re-verify TanStack Start status separately |
 | Local state | Zustand | 5 | |
 | Accessibility behavior | `@baukit/a11y-core` | 0.5.2 | Overlay focus, inert, announcements and reduced motion (both also on the `/web` entry). React peer range is `^19.2.0`; React Native is optional, and a plain web app imports `@baukit/a11y-core/web` instead. |
 | Localization behavior | `@baukit/localization-core` | 0.5.2 | Locale resolution, catalog key comparison, stable-code localization, timezone-safe civil-date arithmetic, and local-time resolution with required gap and fold policies. |
 | Local notification planning | `@baukit/notifications-core` | 0.5.2 | Zoned occurrence resolution through `resolveZonedLocalTime`, horizon filtering, deterministic keep, cancel, and schedule sets, and owner-scoped replacement over a platform port. No dependencies besides `@baukit/localization-core`. |
-| Local notification delivery | `@baukit/notifications-expo` / `expo-notifications` | 0.5.2 / 57.0.13 | Optional adapter. Imports only types from `expo-notifications`; the product passes the module in. DATE triggers, per-item results, no cancel-all. |
+| Local notification delivery | `@baukit/notifications-expo` / `expo-notifications` | 0.5.2 / 57.0.21 | Optional adapter. Imports only types from `expo-notifications`; the product passes the module in. DATE triggers, per-item results, no cancel-all. |
 | Preference behavior | `@baukit/preferences-core` | 0.5.2 | Identity guard and repository store, with `null` repository records treated as missing. |
 | Node device authentication | `@baukit/auth-node` | 0.5.2 | Node 24 OIDC device authorization with S256 PKCE, bounded responses and timeouts, refresh rotation, and a locked local profile cache. Plain HTTP requires an explicit loopback-only development policy. The `/keycloak-testing` entry holds Keycloak e2e helpers. |
 | Provider registry | `@baukit/integrations-client` | 0.5.2 | Typed product connectors, stable registration order, and immutable connection-state overlays. |
-| Client sync primitives | `@baukit/sync-client` | 0.5.2 | Scheduler with optional retry, request-function and HTTP transports, status store, push-batch ranking, a persisted hybrid logical clock, and tombstone-horizon conformance. The optional `@baukit/sync-client/expo` entry uses Expo Network 57.0.1 and React Native 0.86.2; the root entry has no runtime dependencies and no React. |
+| Client sync primitives | `@baukit/sync-client` | 0.5.2 | Scheduler with optional retry, request-function and HTTP transports, status store, push-batch ranking, a persisted hybrid logical clock, and tombstone-horizon conformance. The optional `@baukit/sync-client/expo` entry uses Expo Network 57.0.2 and React Native 0.86.3; the root entry has no runtime dependencies and no React. |
 | PWA cache strategy | `@baukit/pwa-web` | 0.5.2 | ESM and CJS builds, request classification, `navigationFallback`, and strategy execution for a product-owned service worker; no dependencies and no service-worker globals. |
-| MCP server | `@modelcontextprotocol/sdk` + zod | 1.30.0 + 4.4.3 | Opt-in `--mcp` generated stdio package; bearer tokens from `@baukit/auth-node` or a caller-supplied provider. |
-| Web build | Vite | 8.2.1 | |
+| MCP server | `@modelcontextprotocol/sdk` + zod | 1.31.0 + 4.6.5 | Opt-in `--mcp` generated stdio package; bearer tokens from `@baukit/auth-node` or a caller-supplied provider. |
+| Web build | Vite | 8.3.2 | |
 | Styling | Tailwind CSS | 4 | |
-| Web persistence | `@baukit/data-contracts-dexie` / Dexie | 4.4.5 | only when offline is enabled; Chromium and WebKit conformance-tested |
-| Native scoped persistence digest | `expo-crypto` | 57.0.1 | Expo adapter injected into the identity-scoping contract |
-| Native accessibility lint | `eslint-plugin-react-native-a11y` + `@eslint/compat` | 3.5.1 + 2.1.0 | Generated mobile template lint baseline |
+| Web persistence | `@baukit/data-contracts-dexie` / Dexie | 4.4.6 | only when offline is enabled; Chromium and WebKit conformance-tested |
+| Native scoped persistence digest | `expo-crypto` | 57.0.3 | Expo adapter injected into the identity-scoping contract |
+| Native accessibility lint | `eslint-plugin-react-native-a11y` + `@eslint/compat` | 3.5.1 + 2.1.1 | Generated mobile template lint baseline on ESLint 10; the plugin declares an ESLint 8 peer, so the template allows ESLint 10 through `peerDependencyRules` |
 | Web accessibility checks | axe-core | 4.13.0 | Serious/critical jsdom scan seam; contrast remains a real-browser check |
-| Web e2e | Playwright | 1.62.1 | Chromium 151.0.7922.34 (revision 1234) and WebKit 26.5 (revision 2336) |
+| Web e2e | Playwright | 1.63.0 | Chromium 153.0.8010.12 (revision 1243) and WebKit 26.6 (revision 2359) |
 | Android native compile | Expo prebuild + Gradle | API 36, build-tools 36.0.0, Java 21 | Blocking for relevant generated-product and Baukit fixture changes |
 | Native e2e | Maestro | latest | Configurable for product-owned critical paths; scheduled/manual, not part of the universal pull-request promise |
 | iOS native compile | Xcode + iOS Simulator | macOS runner | Scheduled/manual; Linux is recorded as blocked, never as a passing skip |

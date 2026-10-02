@@ -33,7 +33,7 @@ expo_android_init() {
 # Invoked indirectly by the EXIT trap.
 # shellcheck disable=SC2329
 expo_android_cleanup() {
-  if [[ -n "$metro_pid" ]]; then kill "$metro_pid" 2>/dev/null || true; fi
+  if [[ -n "$metro_pid" ]]; then kill -- "-$metro_pid" 2>/dev/null || true; fi
   if [[ -n "$docker_emulator" ]]; then
     docker stop "$docker_emulator" >/dev/null 2>&1 || true
   else
@@ -121,7 +121,7 @@ expo_android_install() {
 }
 
 expo_android_start_metro() {
-  CI=1 corepack pnpm --dir "$example_dir" exec expo start --dev-client --port "$METRO_PORT" >"$artifacts/metro.log" 2>&1 &
+  CI=1 setsid corepack pnpm --dir "$example_dir" exec expo start --dev-client --port "$METRO_PORT" >"$artifacts/metro.log" 2>&1 &
   metro_pid=$!
   local metro_deadline=$((SECONDS + 120))
   until curl --fail --silent "http://127.0.0.1:$METRO_PORT/status" | grep -q 'packager-status:running'; do

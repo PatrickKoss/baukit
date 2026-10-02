@@ -8,14 +8,14 @@ set -eu
 fi
 {% endif %}{% if context.web %}(
   cd web
-  corepack pnpm@11.18.0 install --lockfile-only --ignore-scripts
+  corepack pnpm@12.7.0 install --lockfile-only --ignore-scripts
 )
 {% endif %}{% if context.mobile %}(
   cd mobile
-  corepack pnpm@11.18.0 install --lockfile-only --ignore-scripts
+  corepack pnpm@12.7.0 install --lockfile-only --ignore-scripts
 )
 {% endif %}{% if context.mcp %}(
   cd mcp
-  corepack pnpm@11.18.0 install --lockfile-only --ignore-scripts
+  corepack pnpm@12.7.0 install --lockfile-only --ignore-scripts
 )
 {% endif %}

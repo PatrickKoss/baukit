@@ -18,17 +18,9 @@ export type EventValidationCode = (typeof EVENT_VALIDATION_CODES)[number];
 export type EventPayloadValue =
   null | boolean | number | string | EventPayloadValue[] | { [key: string]: EventPayloadValue };
 
-const eventIdSchema = z.string().superRefine((value, context) => {
-  if (!validEventId(value)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: 'event_id_invalid' });
-  }
-});
+const eventIdSchema = z.string().refine(validEventId, 'event_id_invalid');
 
-const eventTypeSchema = z.string().superRefine((value, context) => {
-  if (!validEventType(value)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: 'event_type_invalid' });
-  }
-});
+const eventTypeSchema = z.string().refine(validEventType, 'event_type_invalid');
 
 export const EventPayloadValueSchema: z.ZodType<EventPayloadValue> = z.lazy(() =>
   z.union([
@@ -37,7 +29,7 @@ export const EventPayloadValueSchema: z.ZodType<EventPayloadValue> = z.lazy(() =
     z.number(),
     z.string(),
     z.array(EventPayloadValueSchema),
-    z.record(EventPayloadValueSchema),
+    z.record(z.string(), EventPayloadValueSchema),
   ]),
 );
 
@@ -47,27 +39,18 @@ export const EventPayloadSchema = z
     message: `payload must contain at most ${String(MAX_EVENT_PAYLOAD_KEYS)} keys`,
   });
 
-export const EventEnvelopeSchema = z
-  .object({
-    eventId: eventIdSchema,
-    type: eventTypeSchema,
-    userId: z.string().trim().min(1).max(255),
-    occurredAt: z.string().datetime(),
-    sourceApp: z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/u),
-    schemaVersion: z
-      .number()
-      .int()
-      .superRefine((value, context) => {
-        if (value !== EVENT_SCHEMA_VERSION) {
-          context.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: 'event_schema_unsupported',
-          });
-        }
-      }),
-    payload: EventPayloadSchema,
-  })
-  .strict();
+export const EventEnvelopeSchema = z.strictObject({
+  eventId: eventIdSchema,
+  type: eventTypeSchema,
+  userId: z.string().trim().min(1).max(255),
+  occurredAt: z.iso.datetime(),
+  sourceApp: z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/u),
+  schemaVersion: z
+    .number()
+    .int()
+    .refine((value): boolean => value === EVENT_SCHEMA_VERSION, 'event_schema_unsupported'),
+  payload: EventPayloadSchema,
+});
 
 export type EventEnvelope = z.infer<typeof EventEnvelopeSchema>;
 
@@ -79,12 +62,10 @@ export const INGEST_OUTCOME_STATUSES = [
   'rejected',
 ] as const;
 
-export const IngestOutcomeSchema = z
-  .object({
-    outcome: z.enum(INGEST_OUTCOME_STATUSES),
-    ledgerEntryId: z.string().nullable(),
-  })
-  .strict();
+export const IngestOutcomeSchema = z.strictObject({
+  outcome: z.enum(INGEST_OUTCOME_STATUSES),
+  ledgerEntryId: z.string().nullable(),
+});
 
 export type IngestOutcome = z.infer<typeof IngestOutcomeSchema>;
 

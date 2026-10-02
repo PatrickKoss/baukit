@@ -175,7 +175,7 @@ make toolchain          # mise: Node 24, Temurin 21, Rust 1.97.1
 mise exec -- make ci    # fmt, clippy, tests, and the TypeScript gates
 ```
 
-Corepack picks up pnpm 11.18.0 from `typescript/package.json`. Docker and the Android SDK stay system dependencies. iOS work needs xtool with a Darwin SDK you generate from a manually downloaded `Xcode.xip`, and Linux has no iOS simulator.
+Corepack picks up pnpm 12.7.0 from `typescript/package.json`. Docker and the Android SDK stay system dependencies. iOS work needs xtool with a Darwin SDK you generate from a manually downloaded `Xcode.xip`, and Linux has no iOS simulator.
 
 ## Status and license
 

@@ -130,9 +130,7 @@ describe('AnalyticsClient identity', () => {
     const client = createClient({
       transport,
       uuidFactory: () => uuidValues.shift() ?? ANONYMOUS_ID_2,
-      onWarning: (warning) => {
-        void warning;
-      },
+      onWarning: () => undefined,
     });
     client.setConsent('granted');
     const originalAnonymousId = client.anonymousId;

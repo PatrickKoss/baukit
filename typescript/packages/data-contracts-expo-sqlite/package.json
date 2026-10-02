@@ -47,12 +47,12 @@
   },
   "devDependencies": {
     "@baukit/data-contracts": "workspace:*",
-    "@types/node": "24.10.1",
-    "expo-sqlite": "57.0.1",
+    "@types/node": "24.19.0",
+    "expo-sqlite": "57.0.3",
     "typescript": "6.0.3"
   },
   "peerDependencies": {
     "@baukit/data-contracts": "^0.5.2",
-    "expo-sqlite": "^57.0.1"
+    "expo-sqlite": "^57.0.3"
   }
 }

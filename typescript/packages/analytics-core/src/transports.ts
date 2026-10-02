@@ -2,8 +2,8 @@ import type { AnalyticsEnvelope, AnalyticsEvent, Transport } from './types.js';
 
 /** A production-safe transport that intentionally discards every command. */
 export class NoopTransport<E extends AnalyticsEvent = AnalyticsEvent> implements Transport<E> {
-  public send(envelopes: readonly AnalyticsEnvelope<E>[]): void {
-    void envelopes;
+  public send(_envelopes: readonly AnalyticsEnvelope<E>[]): void {
+    // Discards every envelope.
   }
 }
 

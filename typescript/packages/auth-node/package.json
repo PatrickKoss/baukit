@@ -53,8 +53,8 @@
     "format:check": "prettier --check src scripts package.json tsconfig.json tsconfig.test.json"
   },
   "devDependencies": {
-    "@playwright/test": "1.62.1",
-    "@types/node": "24.10.1",
+    "@playwright/test": "1.63.0",
+    "@types/node": "24.19.0",
     "typescript": "6.0.3"
   }
 }

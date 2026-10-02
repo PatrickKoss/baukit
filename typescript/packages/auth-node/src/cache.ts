@@ -220,7 +220,7 @@ export class NodeTokenCache {
 
   async #releaseLock(handle: FileHandle): Promise<void> {
     const lockPath = `${this.path}.lock`;
-    let stillOwned = false;
+    let stillOwned: boolean;
     try {
       const held = await handle.stat();
       const current = await lstat(lockPath);
