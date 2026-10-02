@@ -529,6 +529,7 @@ dependencies = [
  "regex",
  "reqwest",
  "ring",
+ "rustls",
  "serde",
  "serde_html_form",
  "serde_json",

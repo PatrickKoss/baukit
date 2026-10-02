@@ -50,5 +50,6 @@ uuid.workspace = true
 baukit-telemetry = { path = "../baukit-telemetry" }
 metrics.workspace = true
 metrics-exporter-prometheus.workspace = true
+rustls = { version = "=0.23.45", default-features = false, features = ["std"] }
 tempfile.workspace = true
 utoipa.workspace = true
