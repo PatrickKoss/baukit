@@ -1715,8 +1715,15 @@ fn read_tree(root: &Path) -> anyhow::Result<BTreeMap<PathBuf, Vec<u8>>> {
 fn render_hash_snapshot(tree: &BTreeMap<PathBuf, Vec<u8>>) -> String {
     let mut snapshot = String::new();
     for (path, contents) in tree {
-        let digest = Sha256::digest(contents);
-        snapshot.push_str(&format!("{digest:x}  {}\n", path.display()));
+        let digest = sha256_hex(contents);
+        snapshot.push_str(&format!("{digest}  {}\n", path.display()));
     }
     snapshot
+}
+
+fn sha256_hex(contents: &[u8]) -> String {
+    Sha256::digest(contents)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }

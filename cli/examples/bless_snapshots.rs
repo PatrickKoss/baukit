@@ -58,13 +58,16 @@ fn is_python_cache_artifact(path: &Path) -> bool {
 fn render(tree: &BTreeMap<PathBuf, Vec<u8>>) -> String {
     let mut out = String::new();
     for (path, contents) in tree {
-        out.push_str(&format!(
-            "{:x}  {}\n",
-            Sha256::digest(contents),
-            path.display()
-        ));
+        out.push_str(&format!("{}  {}\n", sha256_hex(contents), path.display()));
     }
     out
+}
+
+fn sha256_hex(contents: &[u8]) -> String {
+    Sha256::digest(contents)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn bless(name: &str, mutate: impl FnOnce(&mut NewOptions)) {
