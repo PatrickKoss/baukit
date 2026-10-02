@@ -33,7 +33,7 @@ categories = ["web-programming", "development-tools"]
 
 [workspace.dependencies]
 axum = "=0.8.9"
-base64 = "=0.22.1"
+base64 = "=0.23.1"
 baukit-auth = { version = "=0.5.2", path = "crates/baukit-auth" }
 baukit-config = { version = "=0.5.2", path = "crates/baukit-config" }
 baukit-core = { version = "=0.5.2", path = "crates/baukit-core" }
@@ -61,7 +61,7 @@ metrics-util = "=0.20.4"
 opentelemetry = "=0.33.0"
 opentelemetry-otlp = { version = "=0.33.0", default-features = false, features = ["grpc-tonic", "trace"] }
 opentelemetry_sdk = "=0.33.0"
-pem = "=3.0.6"
+pem = "=4.0.0"
 regex = "=1.13.1"
 reqwest = { version = "=0.13.5", default-features = false, features = ["json", "rustls"] }
 redis = { version = "=1.7.1", default-features = false, features = ["connection-manager", "sentinel", "tokio-comp"] }
