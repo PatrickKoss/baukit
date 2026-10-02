@@ -26,7 +26,7 @@ baukit-telemetry = { path = "../../rust/crates/baukit-telemetry" }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
 tokio = { version = "=1.53.1", features = ["full"] }
-utoipa = "=5.5.0"
+utoipa = "=6.0.0"
 
 [dev-dependencies]
 tower = { version = "=0.5.3", features = ["util"] }

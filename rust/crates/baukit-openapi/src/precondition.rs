@@ -70,7 +70,7 @@ pub fn if_match_parameter(requirement: IfMatchRequirement) -> Parameter {
 #[must_use]
 pub fn etag_header() -> Header {
     HeaderBuilder::new()
-        .schema(ObjectBuilder::new().schema_type(Type::String))
+        .schema(Some(ObjectBuilder::new().schema_type(Type::String)))
         .description(Some(
             "Strong revision validator. Send it unchanged in If-Match to update or delete this \
              resource.",
@@ -86,7 +86,7 @@ pub fn etag_header() -> Header {
 pub fn document_if_match(operation: &mut Operation, requirement: IfMatchRequirement) {
     let parameters = operation.parameters.get_or_insert_with(Vec::new);
     parameters.retain(|parameter| !is_if_match(parameter));
-    parameters.push(if_match_parameter(requirement));
+    parameters.push(RefOr::T(if_match_parameter(requirement)));
 
     insert_error_response(
         operation,
@@ -118,14 +118,14 @@ pub fn document_etag(operation: &mut Operation) {
         if let RefOr::T(response) = response {
             response
                 .headers
-                .insert(ETAG_HEADER.to_owned(), etag_header());
+                .insert(ETAG_HEADER.to_owned(), RefOr::T(etag_header()));
         }
     }
 }
 
-fn is_if_match(parameter: &Parameter) -> bool {
-    parameter.parameter_in == ParameterIn::Header
-        && parameter.name.eq_ignore_ascii_case(IF_MATCH_HEADER)
+fn is_if_match(parameter: &RefOr<Parameter>) -> bool {
+    matches!(parameter, RefOr::T(parameter) if parameter.parameter_in == ParameterIn::Header
+        && parameter.name.eq_ignore_ascii_case(IF_MATCH_HEADER))
 }
 
 #[cfg(test)]

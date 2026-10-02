@@ -207,8 +207,8 @@ impl OperationFacts {
                 HttpMethod::Post | HttpMethod::Put | HttpMethod::Patch | HttpMethod::Delete
             ),
             has_idempotency_key: operation.parameters.iter().flatten().any(|parameter| {
-                parameter.parameter_in == ParameterIn::Header
-                    && parameter.name.eq_ignore_ascii_case(IDEMPOTENCY_KEY_HEADER)
+                matches!(parameter, RefOr::T(parameter) if parameter.parameter_in == ParameterIn::Header
+                    && parameter.name.eq_ignore_ascii_case(IDEMPOTENCY_KEY_HEADER))
             }),
         }
     }
@@ -257,7 +257,7 @@ fn insert_header(operation: &mut Operation, rule: &HeaderRule) {
         if !present {
             response
                 .headers
-                .insert(rule.name.clone(), rule.header.clone());
+                .insert(rule.name.clone(), RefOr::T(rule.header.clone()));
         }
     }
 }
@@ -293,7 +293,7 @@ fn error_response(description: &str) -> Response {
 #[must_use]
 pub fn request_id_header() -> Header {
     HeaderBuilder::new()
-        .schema(ObjectBuilder::new().schema_type(Type::String))
+        .schema(Some(ObjectBuilder::new().schema_type(Type::String)))
         .description(Some(
             "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a \
              problem.",
@@ -305,11 +305,11 @@ pub fn request_id_header() -> Header {
 #[must_use]
 pub fn retry_after_header() -> Header {
     HeaderBuilder::new()
-        .schema(
+        .schema(Some(
             ObjectBuilder::new()
                 .schema_type(Type::Integer)
                 .minimum(Some(0)),
-        )
+        ))
         .description(Some("Seconds to wait before retrying."))
         .build()
 }
@@ -318,7 +318,7 @@ pub fn retry_after_header() -> Header {
 #[must_use]
 pub fn www_authenticate_header() -> Header {
     HeaderBuilder::new()
-        .schema(ObjectBuilder::new().schema_type(Type::String))
+        .schema(Some(ObjectBuilder::new().schema_type(Type::String)))
         .description(Some("Bearer authentication challenge."))
         .build()
 }

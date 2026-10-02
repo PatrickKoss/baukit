@@ -31,7 +31,7 @@ fn described(status: u16) -> String {
 
 fn header(name: &str, schema: ObjectBuilder) -> Header {
     HeaderBuilder::new()
-        .schema(schema)
+        .schema(Some(schema))
         .description(Some(format!("{name} header")))
         .build()
 }

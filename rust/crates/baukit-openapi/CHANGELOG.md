@@ -4,6 +4,15 @@ All notable changes to `baukit-openapi` are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Breaking: moved to utoipa 6. Every public function that takes or returns a utoipa type
+  (`OpenApi`, `Operation`, `Header`, `Parameter`) now uses utoipa 6 types, so products must
+  upgrade utoipa to 6 with this release. utoipa 6 stores operation parameters and response
+  headers as `RefOr<_>`; `document_if_match`, `document_etag`, and header rules insert inline
+  values and skip `$ref` entries when they look for an existing `If-Match` or
+  `Idempotency-Key` parameter. The generated documents are unchanged.
+
 ## [0.5.2] - 2026-09-30
 
 ## [0.5.1] - 2026-09-29

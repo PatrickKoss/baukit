@@ -567,7 +567,7 @@ mod tests {
     use tempfile::tempdir;
     use utoipa::openapi::extensions::Extensions;
     use utoipa::openapi::security::{HttpAuthScheme, SecurityScheme};
-    use utoipa::openapi::{Info, OpenApi, Paths, Server};
+    use utoipa::openapi::{Info, OpenApi, Paths, RefOr, Server};
     use utoipa::{PartialSchema, ToSchema};
 
     use super::{
@@ -616,7 +616,7 @@ mod tests {
             .as_ref()
             .and_then(|components| components.security_schemes.get(BEARER_AUTH_SCHEME));
         match scheme {
-            Some(SecurityScheme::Http(http)) => {
+            Some(RefOr::T(SecurityScheme::Http(http))) => {
                 assert_eq!(http.bearer_format.as_deref(), Some("JWT"));
                 assert!(matches!(&http.scheme, HttpAuthScheme::Bearer));
             }
