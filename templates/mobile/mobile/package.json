@@ -7,8 +7,8 @@
   "scripts": {
     "setup": "sh ../scripts/setup.sh",
     "start": "pnpm run tokens && expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "tokens": "node scripts/generate-tokens.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint app app.config.ts src --max-warnings=0",
