@@ -4,6 +4,13 @@ All notable changes to `baukit-telemetry` are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Breaking: moved to OpenTelemetry 0.33 and tracing-opentelemetry 0.34. The re-exported
+  `opentelemetry` crate and `OpenTelemetrySpanExt` now come from those versions, so products
+  that name OpenTelemetry types must match them. The OTLP exporter now retries a failed export
+  up to three times with exponential backoff, which is the upstream default.
+
 ## [0.5.2] - 2026-09-30
 
 ## [0.5.1] - 2026-09-29

@@ -58,9 +58,9 @@ jsonschema = { version = "=0.58.4", default-features = false }
 metrics = "=0.24.6"
 metrics-exporter-prometheus = "=0.18.3"
 metrics-util = "=0.20.4"
-opentelemetry = "=0.32.0"
-opentelemetry-otlp = { version = "=0.32.0", default-features = false, features = ["grpc-tonic", "trace"] }
-opentelemetry_sdk = "=0.32.1"
+opentelemetry = "=0.33.0"
+opentelemetry-otlp = { version = "=0.33.0", default-features = false, features = ["grpc-tonic", "trace"] }
+opentelemetry_sdk = "=0.33.0"
 pem = "=3.0.6"
 regex = "=1.13.1"
 reqwest = { version = "=0.12.28", default-features = false, features = ["json", "rustls-tls"] }
@@ -79,7 +79,7 @@ tokio-util = { version = "=0.7.19", features = ["rt"] }
 tower = "=0.5.3"
 tower-http = "=0.7.1"
 tracing = "=0.1.44"
-tracing-opentelemetry = "=0.33.0"
+tracing-opentelemetry = "=0.34.0"
 tracing-subscriber = { version = "=0.3.23", features = ["env-filter", "json"] }
 time = { version = "=0.3.55", features = ["formatting", "parsing", "serde"] }
 url = "=2.5.8"
