@@ -4,6 +4,13 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Moved to reqwest 0.13 with its `rustls` backend. HTTPS clients now verify servers against the
+  operating system's trust store through rustls-platform-verifier instead of the bundled
+  webpki roots, so a container image needs CA certificates (distroless `cc` ships them). The
+  TLS crypto provider is aws-lc-rs instead of ring.
+
 ## [0.5.2] - 2026-09-30
 
 ## [0.5.1] - 2026-09-29
