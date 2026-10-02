@@ -25,8 +25,8 @@ jobs:
       sqlite: ${{ steps.filter.outputs.sqlite }}
       notifications: ${{ steps.filter.outputs.notifications }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -71,14 +71,14 @@ jobs:
     name: Release version coherence
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: scripts/check-version-coherence.py
 
   rustfmt:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -91,7 +91,7 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -104,7 +104,7 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -115,7 +115,7 @@ jobs:
     name: Cargo deny
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -127,7 +127,7 @@ jobs:
     name: MSRV (Rust 1.95)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.95"
@@ -141,8 +141,8 @@ jobs:
     name: TypeScript
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version-file: typescript/.nvmrc
       - name: Enable pinned pnpm
@@ -155,7 +155,7 @@ jobs:
         id: pnpm-store
         working-directory: typescript
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ runner.os }}-pnpm-${{ hashFiles('typescript/pnpm-lock.yaml') }}
@@ -179,7 +179,7 @@ jobs:
     name: Observability metric names
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: python3 deploy/observability/lint/check-metric-names.py
       - run: python3 -m unittest discover -s deploy/observability/lint -p 'test_*.py'
 
@@ -187,15 +187,15 @@ jobs:
     name: OpenAPI compatibility check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: python3 -m unittest discover -s scripts -p 'test_*.py'
 
   media-grants:
     name: Media grant njs verifier
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version-file: typescript/.nvmrc
       - run: make media-grants-test media-grants-njs-test
@@ -204,7 +204,7 @@ jobs:
     name: Baukit CLI
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -259,11 +259,11 @@ jobs:
             web: true
             mcp: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: matrix.mobile || matrix.web || matrix.mcp
         with:
           node-version-file: typescript/.nvmrc
@@ -279,7 +279,7 @@ jobs:
         id: pnpm-store
         working-directory: typescript
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         if: matrix.mobile || matrix.web || matrix.mcp
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
@@ -353,12 +353,12 @@ jobs:
     if: needs.native-changes.outputs.mobile == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: typescript/.nvmrc
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
@@ -371,15 +371,16 @@ jobs:
         id: native-pnpm-store
         working-directory: typescript
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ${{ steps.native-pnpm-store.outputs.path }}
           key: ${{ runner.os }}-pnpm-native-${{ hashFiles('typescript/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-native-
             ${{ runner.os }}-pnpm-
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
         with:
+          cache-provider: basic
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       - uses: Swatinem/rust-cache@v2
         with:
@@ -409,7 +410,7 @@ jobs:
           ./android/gradlew -p android --no-daemon --stacktrace assembleDebug 2>&1 | tee native-assemble.log
       - name: Upload native failure diagnostics
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: generated-mobile-android-failure
           if-no-files-found: warn
@@ -447,11 +448,11 @@ jobs:
     if: needs.native-changes.outputs.sqlite == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version-file: typescript/.nvmrc
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
@@ -468,21 +469,22 @@ jobs:
         id: sqlite-pnpm-store
         working-directory: typescript
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ${{ steps.sqlite-pnpm-store.outputs.path }}
           key: ${{ runner.os }}-pnpm-sqlite-${{ hashFiles('typescript/pnpm-lock.yaml', 'examples/expo-sqlite-conformance/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-sqlite-
             ${{ runner.os }}-pnpm-
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
         with:
+          cache-provider: basic
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       - name: Run real Expo SQLite conformance
         run: make expo-sqlite-conformance
       - name: Upload conformance failure diagnostics
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: expo-sqlite-android-failure
           if-no-files-found: warn
@@ -518,11 +520,11 @@ jobs:
     if: needs.native-changes.outputs.notifications == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version-file: typescript/.nvmrc
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
@@ -539,21 +541,22 @@ jobs:
         id: notifications-pnpm-store
         working-directory: typescript
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ${{ steps.notifications-pnpm-store.outputs.path }}
           key: ${{ runner.os }}-pnpm-notifications-${{ hashFiles('typescript/pnpm-lock.yaml', 'examples/expo-notifications-conformance/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-notifications-
             ${{ runner.os }}-pnpm-
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
         with:
+          cache-provider: basic
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       - name: Run Hermes vectors and real expo-notifications conformance
         run: make expo-notifications-conformance
       - name: Upload conformance failure diagnostics
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: expo-notifications-android-failure
           if-no-files-found: warn
