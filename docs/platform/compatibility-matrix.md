@@ -39,12 +39,12 @@ check rather than a Linux result.
 | Async runtime | Tokio | 1.x (latest at train cut) | |
 | HTTP | Axum | 0.8 | Tower / Tower HTTP at Axum-compatible versions |
 | Persistence | SQLx | 0.9 | PostgreSQL, `runtime-tokio`, rustls |
-| API description | Utoipa + utoipa-axum | 5 | |
-| Traces | OpenTelemetry + tracing-opentelemetry | 0.32 + matching | upgrade only as a matched set |
+| API description | Utoipa | 6 | |
+| Traces | OpenTelemetry + tracing-opentelemetry | 0.33 + 0.34 | upgrade only as a matched set |
 | Metrics | metrics + metrics-exporter-prometheus | latest compatible | one recorder per process |
 | Logging | tracing + tracing-subscriber | latest compatible | |
 | Configuration | config + dotenvy | chosen loader (analysis §4.1) | Figment is not supported by the shared kit |
-| Outbound HTTP | reqwest | latest, rustls | |
+| Outbound HTTP | reqwest | 0.13, rustls with the platform verifier | |
 | Auth | ring + JWKS | latest | Keycloak OIDC default; Clerk session-token adapter with `azp` validation; WorkOS AuthKit adapter bound to `client_id`. `ApiTokenStore` returns `ApiTokenStoreError` since 0.3.0. |
 | Development identity provider | Keycloak | 26.7.0 | Generated `compose.yaml` image; `make dev` reconciles the development realm from `realm-policy.json`. |
 | Integration tests | testcontainers | latest | `baukit-test` pins `postgres:18-alpine`; templates and smoke deploys use the same image |
