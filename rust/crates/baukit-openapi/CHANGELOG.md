@@ -4,6 +4,8 @@ All notable changes to `baukit-openapi` are documented here.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-02
+
 ### Changed
 
 - Breaking: moved to utoipa 6. Every public function that takes or returns a utoipa type

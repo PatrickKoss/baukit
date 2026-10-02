@@ -1,5 +1,12 @@
 # @baukit/events
 
+## 0.6.0
+
+### Minor Changes
+
+- be675db: `@baukit/events` now depends on zod 4.6.5 instead of zod 3. `EventEnvelopeSchema`, `EventPayloadSchema`, `EventPayloadValueSchema`, and `IngestOutcomeSchema` are zod 4 schemas, so a consumer that composes them with its own schemas or reads their issue objects needs zod 4 as well. Validation rules and the issue messages (`event_id_invalid`, `event_type_invalid`, `event_schema_unsupported`) are unchanged.
+- Release the coordinated baukit 0.6.0 train.
+
 ## 0.5.2
 
 ### Patch Changes

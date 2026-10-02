@@ -4,6 +4,8 @@ All notable changes to `baukit-telemetry` are documented here.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-02
+
 ### Changed
 
 - Breaking: moved to OpenTelemetry 0.33 and tracing-opentelemetry 0.34. The re-exported

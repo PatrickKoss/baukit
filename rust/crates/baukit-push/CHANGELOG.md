@@ -4,6 +4,8 @@ All notable changes to `baukit-push` are documented here.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-02
+
 ### Changed
 
 - Moved to reqwest 0.13 with its `rustls` backend. HTTPS clients now verify servers against the
