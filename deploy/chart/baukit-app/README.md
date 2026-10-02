@@ -54,7 +54,9 @@ api:
         ports:
           - protocol: TCP
             port: 50051
-``` The defaults assume K3s Traefik in `kube-system`, Prometheus in `observability`, and CoreDNS in `kube-system`; products must adjust selectors and add database, OTLP, identity-provider, and external-service destinations.
+```
+
+The defaults assume K3s Traefik in `kube-system`, Prometheus in `observability`, and CoreDNS in `kube-system`; products must adjust selectors and add database, OTLP, identity-provider, and external-service destinations.
 
 Most CNIs can apply the pod-selected CoreDNS rule. K3s installations may enforce policy against the DNS Service IP before destination NAT, which prevents that selector from matching. Set `networkPolicy.dns.k3sCompatible=true` to add a destination-independent rule restricted to TCP/UDP port 53. This trades destination restriction for working DNS and is intentionally opt-in.
 
