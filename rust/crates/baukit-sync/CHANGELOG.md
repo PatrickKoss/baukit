@@ -4,6 +4,11 @@ All notable changes to `baukit-sync` are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Use caret requirements for third-party Rust dependencies so products can take compatible
+  updates. Keep Baukit crate versions exact.
+
 ### Fixed
 
 - Select aws-lc-rs for sqlx TLS so rustls has one crypto provider. Products

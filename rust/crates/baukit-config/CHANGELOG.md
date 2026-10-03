@@ -4,6 +4,11 @@ All notable changes to `baukit-config` are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Use caret requirements for third-party Rust dependencies so products can take compatible
+  updates. Keep Baukit crate versions exact.
+
 ## [0.6.0] - 2026-10-02
 
 ## [0.5.2] - 2026-09-30

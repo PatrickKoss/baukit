@@ -4,6 +4,11 @@ All notable changes to `baukit-openapi` are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Use caret requirements for third-party Rust dependencies so products can take compatible
+  updates. Keep Baukit crate versions exact.
+
 ### Fixed
 
 - Correction to the 0.6.0 entry: utoipa 6 does change generated documents.

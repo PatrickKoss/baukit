@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Use caret requirements for CLI and generated backend third-party Rust dependencies. Generated Baukit dependencies stay exact.
+
 - Inject auth erasure dependencies in path and registry modes.
 - Pin generated development databases to PostgreSQL `18.6-alpine`. Keep the
   volume at `/var/lib/postgresql` for the versioned data directory and document

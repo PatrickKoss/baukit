@@ -4,6 +4,11 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Use caret requirements for third-party Rust dependencies so products can take compatible
+  updates. Keep Baukit crate versions exact.
+
 ### Added
 
 - Add a scripted identity account deleter and endpoint erasure conformance checks.

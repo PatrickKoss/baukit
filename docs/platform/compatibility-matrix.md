@@ -3,7 +3,7 @@
 **Status:** Adopted.
 **Home:** this repository; updated by the release train, not by hand-edits in products.
 
-This table records what the shared baseline is **tested against**. Renovate keeps individual products moving; baukit guarantees compatibility only with the versions listed here. Version cells reflect the review-time state of the three projects and must be re-verified against the lockfiles when the baukit repository is created.
+This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
 Last verified release train: `v0.6.0` (dependency refresh: utoipa 6,
 OpenTelemetry 0.33 with tracing-opentelemetry 0.34, reqwest 0.13, Debian 13
@@ -103,5 +103,5 @@ columns. See the [PostgreSQL 18 release notes](https://www.postgresql.org/docs/1
 ## Update rules
 
 - The matrix changes only through a release-train PR in the baukit repository that runs the full test suite (unit, conformance, generated-fixture matrix) against the new versions.
-- Renovate proposes updates into baukit; products receive them by upgrading their baukit version, not by diverging individually.
+- Renovate proposes baseline updates into baukit. Products pin Baukit crates exactly and can update third-party Rust dependencies within the declared caret ranges using their own lockfiles. Dependencies outside those ranges need a Baukit compatibility update.
 - The upgrade-sensitive sets (OpenTelemetry crates; Expo/React/React Native) are always updated as grouped PRs.

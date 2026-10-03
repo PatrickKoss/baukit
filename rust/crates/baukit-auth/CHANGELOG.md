@@ -15,6 +15,9 @@ All notable changes to `baukit-auth` are documented here.
 
 ### Changed
 
+- Use caret requirements for third-party Rust dependencies so products can take compatible
+  updates. Keep Baukit crate versions exact.
+
 - Generic OIDC access tokens with several audiences must carry a string `azp`.
   Client restrictions remain opt-in through `with_allowed_clients`, which
   requires `azp` from that list on every access token. Single-audience tokens
