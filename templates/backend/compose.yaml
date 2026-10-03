@@ -16,7 +16,7 @@ services:
       - postgres-data:/var/lib/postgresql
 
 {% if context.auth_oidc %}  keycloak:
-    image: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.7.0}
+    image: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.8.0}
     command: start-dev --import-realm
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
@@ -42,7 +42,7 @@ services:
       - keycloak-data:/opt/keycloak/data
 
   redis:
-    image: redis:8.10.0-alpine
+    image: redis:8.10.2-alpine
     ports:
       - "127.0.0.1:{{ context.redis_host_port }}:6379"
     healthcheck:

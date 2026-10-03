@@ -790,7 +790,11 @@ fn oidc_generation_is_deterministic_and_records_the_optional_capability() -> any
     let compose = fs::read_to_string(first.join("compose.yaml"))?;
     assert!(compose.contains("keycloak-data:"));
     assert!(compose.contains("./keycloak/themes:/opt/keycloak/themes:ro"));
-    assert!(compose.contains("KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.7.0"));
+    assert!(compose.contains("KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.8.0"));
+    let theme_runner = fs::read_to_string(first.join("scripts/test-keycloak-theme-patches.sh"))?;
+    assert!(theme_runner.contains("in 26.7.5 26.8.0"));
+    assert!(theme_runner.contains("127.0.0.1::8080"));
+    assert!(theme_runner.contains("compose port keycloak 8080"));
     let reconcile = fs::read_to_string(first.join("keycloak/reconcile.json"))?;
     assert!(reconcile.contains("\"loginTheme\""));
     Ok(())
@@ -1300,6 +1304,290 @@ fn doctor_validates_a_local_generated_product() -> anyhow::Result<()> {
         error
             .to_string()
             .contains("mobile/.env.example` does not use port offset 100")
+    );
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_custom_literal_ports_without_an_offset() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "custom-ports");
+    local.mobile = true;
+    local.web = true;
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    for relative in [
+        "README.md",
+        "docs/fake-providers.md",
+        "Makefile",
+        "deploy/values.yaml",
+        "mobile/.env.example",
+        "mobile/app.config.ts",
+        "mobile/src/api.ts",
+        "web/.env.example",
+        "web/src/api.ts",
+    ] {
+        let path = root.join(relative);
+        let source = fs::read_to_string(&path)?;
+        fs::write(path, source.replace("8080", "8200").replace("9090", "9200"))?;
+    }
+    let compose = root.join("compose.yaml");
+    fs::write(
+        &compose,
+        fs::read_to_string(&compose)?.replace("5432:5432", "127.0.0.1:5544:5432"),
+    )?;
+    doctor(&root)?;
+
+    let mut manifest = baukit_cli::read_manifest(&root)?;
+    manifest.port_offset = 100;
+    fs::write(root.join("baukit.toml"), toml::to_string(&manifest)?)?;
+    let error = doctor(&root).expect_err("configured offsets must reject stale ports");
+    assert!(
+        error
+            .to_string()
+            .contains("web/.env.example` does not use port offset 100")
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("mobile/.env.example` does not use port offset 100")
+    );
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_loopback_compose_ports_and_checks_configured_offsets() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "loopback-ports");
+    local.port_offset = 100;
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    let compose = root.join("compose.yaml");
+    let source = fs::read_to_string(&compose)?.replace("5532:5432", "127.0.0.1:5532:5432");
+    let source = source.replace("volumes:\n  postgres-data:", "  cache:\n    image: redis:8.10.2-alpine\n    ports:\n      - \"127.0.0.1:6379:6379\"\n\nvolumes:\n  postgres-data:");
+    fs::write(&compose, &source)?;
+    doctor(&root)?;
+    fs::write(
+        &compose,
+        source.replace("127.0.0.1:5532:5432", "127.0.0.1:5432:5432"),
+    )?;
+    let error = doctor(&root).expect_err("configured offsets must reject stale compose ports");
+    assert!(
+        error
+            .to_string()
+            .contains("compose.yaml` does not use port offset 100")
+    );
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_literal_auth_ports_without_environment_parameters() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "literal-auth-ports");
+    local.auth = Some(AuthProvider::Oidc);
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    let path = root.join("compose.yaml");
+    let source = fs::read_to_string(&path)?
+        .replace("\"5432:5432\"", "\"127.0.0.1:5432:5432\"")
+        .replace("\"8081:8080\"", "\"127.0.0.1:8081:8080\"");
+    fs::write(path, source)?;
+    doctor(&root)?;
+    let mut manifest = baukit_cli::read_manifest(&root)?;
+    manifest.port_offset = 100;
+    fs::write(root.join("baukit.toml"), toml::to_string(&manifest)?)?;
+    let error = doctor(&root).expect_err("configured offsets must reject stale Redis ports");
+    assert!(error.to_string().contains("container port 6379"));
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_loopback_api_defaults_and_rejects_a_stale_port() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = frontend_options(parent.path(), "loopback-url", false, true);
+    local.port_offset = 100;
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    let path = root.join("web/.env.example");
+    fs::write(&path, "VITE_API_URL=http://127.0.0.1:8180\n")?;
+    doctor(&root)?;
+    fs::write(&path, "VITE_API_URL=http://127.0.0.1:8080\n")?;
+    let error = doctor(&root).expect_err("configured offsets must check loopback URL ports");
+    assert!(
+        error
+            .to_string()
+            .contains("web/.env.example` does not use port offset 100")
+    );
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_compose_port_parameters_and_long_loopback_mappings() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "compose-parameters");
+    local.port_offset = 100;
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    let path = root.join("compose.yaml");
+    let source = fs::read_to_string(&path)?;
+    fs::write(
+        &path,
+        source.replace("5532:5432", "127.0.0.1:${POSTGRES_PORT:-5532}:5432"),
+    )?;
+    doctor(&root)?;
+    let long = source.replace(
+        "- \"5532:5432\"",
+        "- target: 5432\n        published: \"5532\"\n        host_ip: 127.0.0.1",
+    );
+    fs::write(
+        &path,
+        long.replace(
+            "published: \"5532\"",
+            "published: \"${POSTGRES_PORT:-5532}\"",
+        ),
+    )?;
+    doctor(&root)?;
+    let long = long.replace(
+        "volumes:\n  postgres-data:",
+        "  reporting:\n    ports:\n      - \"127.0.0.1:5544:5432\"\n\nvolumes:\n  postgres-data:",
+    );
+    fs::write(&path, &long)?;
+    doctor(&root)?;
+    fs::write(
+        &path,
+        long.replace("published: \"5532\"", "published: \"5432\""),
+    )?;
+    let error = doctor(&root).expect_err("long mappings must still honor a configured offset");
+    assert!(
+        error
+            .to_string()
+            .contains("compose.yaml` does not use port offset 100")
+    );
+    Ok(())
+}
+
+#[test]
+fn doctor_checks_pkce_ports_without_requiring_the_me_path() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "pkce-path");
+    local.auth = Some(AuthProvider::Oidc);
+    local.port_offset = 100;
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    let script = root.join("scripts/pkce-login.py");
+    let source =
+        fs::read_to_string(&script)?.replace("localhost:8180/me", "localhost:8180/account/me");
+    fs::write(&script, &source)?;
+    doctor(&root)?;
+    fs::write(
+        &script,
+        source.replace("localhost:8180/account/me", "localhost:8080/account/me"),
+    )?;
+    let error = doctor(&root).expect_err("configured offsets must reject a stale PKCE check URL");
+    assert!(
+        error
+            .to_string()
+            .contains("scripts/pkce-login.py` does not use port offset 100")
+    );
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_mcp_urls_from_the_environment_and_checks_literal_defaults() -> anyhow::Result<()>
+{
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "mcp-url");
+    local.mcp = true;
+    local.port_offset = 100;
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    let script = root.join("mcp/src/cli.ts");
+    let source = fs::read_to_string(&script)?;
+    fs::write(
+        &script,
+        source.replace("'http://localhost:8180'", "process.env.PRODUCT_API_URL"),
+    )?;
+    doctor(&root)?;
+    fs::write(&script, source.replace("localhost:8180", "localhost:8080"))?;
+    let error = doctor(&root).expect_err("configured offsets must reject a stale MCP default");
+    assert!(
+        error
+            .to_string()
+            .contains("mcp/src/cli.ts` does not use port offset 100")
+    );
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_auth_node_for_web_e2e_and_rejects_it_at_runtime() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "web-e2e");
+    local.web = true;
+    local.auth = Some(AuthProvider::Oidc);
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    doctor(&root)?;
+    let path = root.join("web/package.json");
+    let mut package: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path)?)?;
+    let dev_dependencies = package["devDependencies"]
+        .as_object_mut()
+        .expect("devDependencies");
+    let auth_node = dev_dependencies
+        .remove("@baukit/auth-node")
+        .expect("auth-node devDependency");
+    package["dependencies"]["@baukit/auth-node"] = auth_node;
+    fs::write(path, serde_json::to_string_pretty(&package)?)?;
+    let error = doctor(&root).expect_err("auth-node must not enter the browser runtime");
+    assert!(
+        error
+            .to_string()
+            .contains("only as a devDependency for Keycloak e2e")
+    );
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_root_workspaces_for_web_and_mobile_and_requires_a_workspace() -> anyhow::Result<()>
+{
+    let parent = tempfile::tempdir()?;
+    let mut local = frontend_options(parent.path(), "root-workspace", true, true);
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    doctor(&root)?;
+    fs::remove_file(root.join("web/pnpm-workspace.yaml"))?;
+    fs::remove_file(root.join("mobile/pnpm-workspace.yaml"))?;
+    fs::write(
+        root.join("pnpm-workspace.yaml"),
+        "packages:\n  - web\n  - mobile\n",
+    )?;
+    doctor(&root)?;
+    fs::remove_file(root.join("pnpm-workspace.yaml"))?;
+    let error = doctor(&root).expect_err("both apps need a pnpm workspace");
+    assert!(
+        error
+            .to_string()
+            .contains("`web/pnpm-workspace.yaml` or `pnpm-workspace.yaml`")
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("`mobile/pnpm-workspace.yaml` or `pnpm-workspace.yaml`")
+    );
+    Ok(())
+}
+
+#[test]
+fn generated_agent_guidance_is_a_regular_file() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = generate_new(&options(parent.path(), "agent-guidance"))?;
+    assert!(
+        fs::symlink_metadata(root.join("AGENTS.md"))?
+            .file_type()
+            .is_file()
+    );
+    assert_eq!(
+        fs::read(root.join("AGENTS.md"))?,
+        fs::read(root.join("CLAUDE.md"))?
     );
     Ok(())
 }

@@ -39,7 +39,7 @@ Products can select `baukit-accessible` directly or add a product theme under `k
 
 Restart Keycloak after editing a mounted theme so cached resources and theme properties cannot hide a change. Production deployments must package the theme in the pinned Keycloak image as described by the Baukit Operator base. A ConfigMap or development bind mount is not the production mechanism.
 
-The compatibility contract covers Keycloak `26.7.0` and `26.7.1`. It depends on `#kc-form-login`, `#kc-register-form`, standard control IDs, `input-error-{name}`, and the PatternFly 5 or 6 required-marker and form-group classes inherited from `keycloak.v2`. Before changing the Keycloak patch or minor version, inspect those contracts and rerun the browser matrix. Run the fake-DOM gate with `make keycloak-theme-test`.{% if context.web %} Run the pinned real-browser matrix with credentials for the disposable generated realm:
+The compatibility contract covers Keycloak `26.7.5` and `26.8.0`. The browser matrix needs Docker Compose 2.24.4 or later and uses disposable containers on Docker-assigned loopback ports. It depends on `#kc-form-login`, `#kc-register-form`, standard control IDs, `input-error-{name}`, and the PatternFly 5 or 6 required-marker and form-group classes inherited from `keycloak.v2`. Before changing the Keycloak patch or minor version, inspect those contracts and rerun the browser matrix. Run the fake-DOM gate with `make keycloak-theme-test`.{% if context.web %} Run the pinned real-browser matrix with credentials for the disposable generated realm:
 
 ```sh
 KEYCLOAK_ADMIN_USERNAME=admin \

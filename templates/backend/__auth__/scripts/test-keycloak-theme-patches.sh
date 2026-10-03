@@ -7,20 +7,35 @@ set -eu
 : "${KEYCLOAK_TEST_PASSWORD:?Set KEYCLOAK_TEST_PASSWORD for the disposable test user}"
 
 theme_project=
+theme_compose=$(mktemp)
+cat > "$theme_compose" <<'YAML'
+services:
+  keycloak:
+    ports: !override
+      - "127.0.0.1::8080"
+YAML
+
+compose() {
+  KEYCLOAK_IMAGE="$keycloak_image" docker compose \
+    -f compose.yaml -f "$theme_compose" -p "$theme_project" "$@"
+}
+
 cleanup() {
   if [ -n "$theme_project" ]; then
-    docker compose -p "$theme_project" down --volumes --remove-orphans >/dev/null 2>&1 || true
+    compose down --volumes --remove-orphans >/dev/null
+    theme_project=
   fi
 }
-trap cleanup EXIT INT TERM
+trap 'cleanup; rm -f "$theme_compose"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
-for keycloak_version in 26.7.0 26.7.1; do
-  theme_project="{{ context.app_name }}-keycloak-theme-$(printf '%s' "$keycloak_version" | tr . -)"
+for keycloak_version in 26.7.5 26.8.0; do
+  theme_project="{{ context.app_name }}-keycloak-theme-$$-$(printf '%s' "$keycloak_version" | tr . -)"
   keycloak_image="quay.io/keycloak/keycloak:$keycloak_version"
-  cleanup
-  KEYCLOAK_IMAGE="$keycloak_image" docker compose -p "$theme_project" up -d --wait keycloak
+  compose up -d --wait keycloak
 
-  keycloak_container=$(KEYCLOAK_IMAGE="$keycloak_image" docker compose -p "$theme_project" ps -q keycloak)
+  keycloak_container=$(compose ps -q keycloak)
   docker inspect "$keycloak_container" | python3 -c '
 import json
 import sys
@@ -31,12 +46,12 @@ if theme is None or theme["RW"]:
     raise SystemExit("Keycloak theme mount is missing or writable")
 '
 
-  KEYCLOAK_BASE_URL="http://127.0.0.1:{{ context.keycloak_host_port }}" \
+  keycloak_binding=$(compose port keycloak 8080)
+  KEYCLOAK_BASE_URL="http://$keycloak_binding" \
   KEYCLOAK_REALM="{{ context.app_name }}" \
   KEYCLOAK_CLIENT_ID="{{ context.app_name }}-web" \
   KEYCLOAK_REDIRECT_URI="http://localhost:5173/" \
   node scripts/keycloak-theme.browser.mjs
   printf 'PASS Keycloak %s browser suite\n' "$keycloak_version"
   cleanup
-  theme_project=
 done

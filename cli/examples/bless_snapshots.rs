@@ -76,7 +76,7 @@ fn bless(name: &str, mutate: impl FnOnce(&mut NewOptions)) {
     mutate(&mut options);
     let root = generate_new(&options).expect("generate");
     let snapshot = render(&read_tree(&root));
-    let target = Path::new("tests/snapshots").join(format!("{name}.tree"));
+    let target = snapshot_path(name);
     fs::write(&target, snapshot).expect("write");
     println!("blessed {}", target.display());
 }
@@ -107,4 +107,24 @@ fn main() {
         o.web = true;
         o.auth = Some(AuthProvider::Oidc);
     });
+}
+
+fn snapshot_path(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/snapshots")
+        .join(format!("{name}.tree"))
+}
+
+#[test]
+fn snapshot_path_uses_the_cli_manifest_directory() {
+    let target = snapshot_path("backend");
+    assert!(target.is_absolute());
+    assert_eq!(
+        target.parent(),
+        Some(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/snapshots")
+                .as_path()
+        )
+    );
 }

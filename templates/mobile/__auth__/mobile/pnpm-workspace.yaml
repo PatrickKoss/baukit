@@ -1,8 +1,15 @@
 allowBuilds:
+  core-js: false
   unrs-resolver: true
 
 catalog:
-  expo-constants: 57.0.13
+  expo-constants: 57.0.20
 
 overrides:
+  '@react-native/metro-config': 0.86.3
   expo-constants: 'catalog:'
+  react-dom: 19.2.8
+
+peerDependencyRules:
+  allowedVersions:
+    'eslint-plugin-react-native-a11y>eslint': '10'

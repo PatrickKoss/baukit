@@ -99,7 +99,6 @@ const EXPECTED_STRICT_BACKEND_FILES: &[&str] = &[
 
 const EXPECTED_MOBILE_FILES: &[&str] = &[
     "mobile/package.json",
-    "mobile/pnpm-workspace.yaml",
     "mobile/app.config.ts",
     "mobile/tsconfig.json",
     "mobile/metro.config.js",
@@ -130,7 +129,6 @@ const EXPECTED_MOBILE_FILES: &[&str] = &[
 
 const EXPECTED_WEB_FILES: &[&str] = &[
     "web/package.json",
-    "web/pnpm-workspace.yaml",
     "web/index.html",
     "web/vite.config.ts",
     "web/tsconfig.json",
@@ -1586,40 +1584,27 @@ fn validate_port_configuration(
             return Ok(());
         }
     };
+    if manifest.port_offset == 0 {
+        successes.push("no port offset is configured".to_owned());
+        return Ok(());
+    }
     let initial_failure_count = failures.len();
     let mut expected = Vec::new();
     if manifest.capabilities.backend {
+        validate_compose_ports(root, manifest, &ports, failures)?;
         expected.extend([
-            ("compose.yaml", format!("\"{}:5432\"", ports.postgres)),
-            ("README.md", format!("port {}", ports.api)),
-            ("README.md", format!("port {}", ports.ops)),
-            (
-                "docs/fake-providers.md",
-                format!("FAKE_PROVIDER_PORT:-{}", ports.fake_provider),
-            ),
+            ("Makefile", format!("HTTP__PORT={}", ports.api)),
+            ("Makefile", format!("OPS__PORT={}", ports.ops)),
+            ("deploy/values.yaml", format!("http: {}", ports.api)),
+            ("deploy/values.yaml", format!("ops: {}", ports.ops)),
         ]);
-        if manifest.port_offset > 0 {
-            expected.extend([
-                ("Makefile", format!("HTTP__PORT={}", ports.api)),
-                ("Makefile", format!("OPS__PORT={}", ports.ops)),
-                ("deploy/values.yaml", format!("http: {}", ports.api)),
-                ("deploy/values.yaml", format!("ops: {}", ports.ops)),
-            ]);
-            if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
-                expected.push((
-                    "Makefile",
-                    format!("REDIS_URL=redis://127.0.0.1:{}/", ports.redis),
-                ));
-            }
-        }
         if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
             expected.extend([
-                ("compose.yaml", format!("\"{}:8080\"", ports.keycloak)),
-                ("compose.yaml", format!(":{}:6379\"", ports.redis)),
                 (
-                    "scripts/pkce-login.py",
-                    format!("localhost:{}/me", ports.api),
+                    "Makefile",
+                    format!("REDIS_URL=redis://127.0.0.1:{}/", ports.redis),
                 ),
+                ("scripts/pkce-login.py", format!("localhost:{}", ports.api)),
                 (
                     "backend/crates/PLACEHOLDER-bin/src/lib.rs",
                     format!("localhost:{}/realms/", ports.keycloak),
@@ -1680,7 +1665,7 @@ fn validate_port_configuration(
         let source = fs::read_to_string(&path)?;
         let mismatched = if is_environment_capable_source(&relative) {
             let expected_port = localhost_port(&snippet).expect("expected snippet has a port");
-            has_mismatched_localhost_port(&source, expected_port)
+            has_mismatched_loopback_port(&source, expected_port)
         } else {
             !source.contains(&snippet)
         };
@@ -1703,8 +1688,110 @@ fn validate_port_configuration(
 fn is_environment_capable_source(relative: &str) -> bool {
     matches!(
         relative,
-        "mobile/src/api.ts" | "mobile/src/auth.ts" | "web/src/api.ts" | "web/src/auth.ts"
-    )
+        "mobile/.env.example"
+            | "web/.env.example"
+            | "mobile/src/api.ts"
+            | "mobile/src/auth.ts"
+            | "mobile/app.config.ts"
+            | "web/src/api.ts"
+            | "web/src/auth.ts"
+            | "scripts/pkce-login.py"
+            | "mcp/src/cli.ts"
+    ) || relative.ends_with("-bin/src/lib.rs")
+}
+
+#[derive(Deserialize)]
+struct ComposeFile {
+    #[serde(default)]
+    services: BTreeMap<String, ComposeService>,
+}
+
+#[derive(Deserialize)]
+struct ComposeService {
+    #[serde(default)]
+    ports: Vec<ComposePort>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ComposePort {
+    Short(String),
+    ContainerOnly(u16),
+    Long {
+        target: PublishedPort,
+        published: Option<PublishedPort>,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum PublishedPort {
+    Number(u16),
+    Text(String),
+}
+
+impl PublishedPort {
+    fn literal(&self) -> Option<u16> {
+        match self {
+            Self::Number(port) => Some(*port),
+            Self::Text(port) => port.parse().ok(),
+        }
+    }
+}
+
+impl ComposePort {
+    fn literal_mapping(&self) -> Option<(u16, u16)> {
+        match self {
+            Self::Short(mapping) => {
+                let (published, target) = mapping.rsplit_once(':')?;
+                let target = target.split('/').next()?.parse().ok()?;
+                let published = published.rsplit(':').next()?.parse().ok()?;
+                Some((target, published))
+            }
+            Self::Long { target, published } => {
+                Some((target.literal()?, published.as_ref()?.literal()?))
+            }
+            Self::ContainerOnly(_port) => None,
+        }
+    }
+}
+
+fn validate_compose_ports(
+    root: &Path,
+    manifest: &Manifest,
+    ports: &PortConfiguration,
+    failures: &mut Vec<String>,
+) -> Result<()> {
+    let path = root.join("compose.yaml");
+    if !path.is_file() {
+        return Ok(());
+    }
+    let compose: ComposeFile = serde_yaml_ng::from_str(&fs::read_to_string(&path)?)
+        .context("could not parse compose.yaml")?;
+    let mut mappings = vec![("postgres", 5432, ports.postgres)];
+    if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
+        mappings.extend([
+            ("keycloak", 8080, ports.keycloak),
+            ("redis", 6379, ports.redis),
+        ]);
+    }
+    for (service, target, expected) in mappings {
+        let Some(service) = compose.services.get(service) else {
+            continue;
+        };
+        if service
+            .ports
+            .iter()
+            .filter_map(ComposePort::literal_mapping)
+            .any(|(container, published)| container == target && published != expected)
+        {
+            failures.push(format!(
+                "generated file `compose.yaml` does not use port offset {} for container port {target}",
+                manifest.port_offset
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn localhost_port(snippet: &str) -> Option<u16> {
@@ -1717,21 +1804,19 @@ fn localhost_port(snippet: &str) -> Option<u16> {
         .ok()
 }
 
-fn has_mismatched_localhost_port(source: &str, expected_port: u16) -> bool {
-    let mut found_numeric_port = false;
-    for (index, marker) in source.match_indices("localhost:") {
-        let port = source[index + marker.len()..]
-            .chars()
-            .take_while(char::is_ascii_digit)
-            .collect::<String>();
-        if let Ok(port) = port.parse::<u16>() {
-            found_numeric_port = true;
-            if port == expected_port {
-                return false;
-            }
-        }
-    }
-    found_numeric_port
+fn has_mismatched_loopback_port(source: &str, expected_port: u16) -> bool {
+    let ports = ["localhost:", "127.0.0.1:", "[::1]:"]
+        .into_iter()
+        .flat_map(|marker| source.match_indices(marker))
+        .filter_map(|(index, marker)| {
+            source[index + marker.len()..]
+                .split(|character: char| !character.is_ascii_digit())
+                .next()?
+                .parse::<u16>()
+                .ok()
+        })
+        .collect::<Vec<_>>();
+    !ports.is_empty() && !ports.contains(&expected_port)
 }
 
 fn diagnose_ssh_agent(
@@ -2036,6 +2121,14 @@ fn sql_creates_table(source: &str, table: &str) -> bool {
     })
 }
 
+#[derive(Deserialize)]
+struct PackageDependencies {
+    #[serde(default)]
+    dependencies: BTreeMap<String, String>,
+    #[serde(default, rename = "devDependencies")]
+    dev_dependencies: BTreeMap<String, String>,
+}
+
 fn validate_frontend_capability(
     root: &Path,
     capability: &str,
@@ -2044,6 +2137,12 @@ fn validate_frontend_capability(
     successes: &mut Vec<String>,
     failures: &mut Vec<String>,
 ) -> Result<()> {
+    let nested_workspace = root.join(capability).join("pnpm-workspace.yaml");
+    if !nested_workspace.is_file() && !root.join("pnpm-workspace.yaml").is_file() {
+        failures.push(format!(
+            "missing pnpm workspace: expected `{capability}/pnpm-workspace.yaml` or `pnpm-workspace.yaml`"
+        ));
+    }
     for relative in expected_files {
         if !root.join(relative).is_file() {
             failures.push(format!("missing expected {capability} file `{relative}`"));
@@ -2054,11 +2153,20 @@ fn validate_frontend_capability(
     if package_path.is_file() {
         let package = fs::read_to_string(&package_path)
             .with_context(|| format!("could not read {}", package_path.display()))?;
+        let sections: PackageDependencies = serde_json::from_str(&package)
+            .with_context(|| format!("could not parse {}", package_path.display()))?;
+        if capability == "web" && sections.dependencies.contains_key("@baukit/auth-node") {
+            failures.push(
+                "web/package.json must use `@baukit/auth-node` only as a devDependency for Keycloak e2e".to_owned(),
+            );
+        }
         for dependency in EXPECTED_TYPESCRIPT_DEPENDENCIES
             .iter()
             .chain(target_dependencies)
         {
-            if !package.contains(&format!("\"{dependency}\"")) {
+            if !sections.dependencies.contains_key(*dependency)
+                && !sections.dev_dependencies.contains_key(*dependency)
+            {
                 failures.push(format!(
                     "{capability}/package.json is missing dependency `{dependency}`"
                 ));
@@ -2323,7 +2431,7 @@ mod doctor_tests {
 
     use super::{
         Capabilities, DoctorCommandOutput, DoctorHost, diagnose_docker, diagnose_ssh_agent,
-        has_mismatched_localhost_port, probe_git_dependency, pwa_app_directory,
+        has_mismatched_loopback_port, probe_git_dependency, pwa_app_directory,
         validate_mobile_router_configuration, validate_pwa_worker_build,
     };
 
@@ -2522,8 +2630,8 @@ mod doctor_tests {
             const issuer = "http://localhost:8081/realms/product";
             const origin = "http://localhost:5173";
         "#;
-        assert!(!has_mismatched_localhost_port(source, 8081));
-        assert!(has_mismatched_localhost_port(source, 8181));
+        assert!(!has_mismatched_loopback_port(source, 8081));
+        assert!(has_mismatched_loopback_port(source, 8181));
     }
 
     #[test]
