@@ -149,7 +149,10 @@ when adopting this template. Track external data in the deletion inventory.
 A completed inline Keycloak deletion returns 200. An unavailable provider
 returns 202 with an operation ID and Location for
 `GET /me/erasures/{operationId}`. A supervised in-process identity worker runs
-in the API, including products generated without the optional demo worker.
+in the API in both auth flavors. The optional standalone worker handles only
+item-created demo jobs. The identity runner claims only `identity.account.delete`
+jobs, so the runners do not claim each other's work. Keep the API deployed while
+identity erasures remain pending.
 It keeps retrying pending identity jobs with backoff. Alert on failed operations
 and repair their retained jobs before resetting status to pending and attempts
 to zero. Exclude failed identity jobs from general retention cleanup.

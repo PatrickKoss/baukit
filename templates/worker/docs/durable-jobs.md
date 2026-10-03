@@ -94,3 +94,11 @@ The transaction keeps the product write, next enqueue, and current completion
 together. If enqueue fails, return an error and leave the current attempt
 unfinished. Duplicate delivery and process restart reuse the same idempotency
 key, so they do not create a second next-slot row.
+{% if context.auth_oidc %}
+## Identity deletion
+
+The API runs a supervised in-process `IdentityDeletionHandler` in this flavor.
+The standalone worker handles item-created demo jobs. Each runner filters claims
+by its handler's job types. Keep the API deployed until pending identity deletion
+jobs finish. Alert on failed erasure operations and retain their jobs for repair.
+{% endif %}

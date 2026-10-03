@@ -725,10 +725,10 @@ fn oidc_generation_is_deterministic_and_records_the_optional_capability() -> any
     assert!(web_package.contains("@baukit/data-contracts"));
 
     let api = fs::read_to_string(first.join("backend/crates/snapshot-app-api/src/lib.rs"))?;
-    assert_eq!(api.matches("security((\"bearerAuth\" = []))").count(), 6);
+    assert_eq!(api.matches("security((\"bearerAuth\" = []))").count(), 8);
     assert_eq!(api.matches("_principal: Principal").count(), 5);
     let openapi = fs::read_to_string(first.join("backend/openapi.json"))?;
-    assert_eq!(openapi.matches("\"bearerAuth\": []").count(), 6);
+    assert_eq!(openapi.matches("\"bearerAuth\": []").count(), 8);
     let realm = fs::read_to_string(first.join("keycloak/realm.json"))?;
     assert!(realm.contains("\"realmRoles\": [\"offline_access\"]"));
     assert!(realm.contains("snapshot-app-mobile"));
@@ -925,6 +925,48 @@ fn generated_keycloak_policy_rejects_a_weakened_realm() -> anyhow::Result<()> {
     }
     let doctor_error = doctor(&root).expect_err("doctor must reject the weakened realm");
     assert!(doctor_error.to_string().contains("realm policy failed"));
+    Ok(())
+}
+
+#[test]
+fn oidc_dependencies_include_erasure_and_jobs_in_registry_and_path_modes() -> anyhow::Result<()> {
+    let baukit_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../rust")
+        .canonicalize()?;
+    for local_path in [false, true] {
+        for worker in [false, true] {
+            let parent = tempfile::tempdir()?;
+            let mut generated_options = options(parent.path(), "erasure-product");
+            generated_options.auth = Some(AuthProvider::Oidc);
+            generated_options.worker = worker;
+            if local_path {
+                generated_options.baukit_path = Some(baukit_path.clone());
+            }
+            let root = generate_new(&generated_options)?;
+            let cargo: toml::Value =
+                toml::from_str(&fs::read_to_string(root.join("backend/Cargo.toml"))?)?;
+            let dependencies = &cargo["workspace"]["dependencies"];
+            for name in ["baukit-auth", "baukit-erasure", "baukit-jobs"] {
+                if local_path {
+                    assert_eq!(
+                        dependencies[name]["path"].as_str(),
+                        Some(
+                            baukit_path
+                                .join("crates")
+                                .join(name)
+                                .to_str()
+                                .ok_or_else(|| anyhow::anyhow!("non-UTF-8 path"))?
+                        ),
+                    );
+                } else {
+                    assert_eq!(
+                        dependencies[name].as_str(),
+                        Some(baukit_cli::TEMPLATE_VERSION)
+                    );
+                }
+            }
+        }
+    }
     Ok(())
 }
 

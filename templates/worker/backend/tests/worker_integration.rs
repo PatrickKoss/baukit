@@ -1,13 +1,16 @@
 use std::{error::Error, path::PathBuf, sync::Arc, time::Duration};
 
-use baukit_jobs::{PostgresJobStore, WorkerConfig, WorkerRunner};
+{% if context.auth_oidc %}use baukit_config::Secret;
+use baukit_erasure::{ErasureService, ErasureState, IdentityDeletionError, PostgresErasureStore};
+{% endif %}use baukit_jobs::{PostgresJobStore, WorkerConfig, WorkerRunner};
 use baukit_ops::TrafficGate;
 use baukit_runtime::{DeploymentEnvironment, ProcessKind, ServiceInfo, ShutdownToken, build_info};
 use baukit_telemetry::TelemetryBuilder;
 
 use {{ context.app_crate }}_bin::worker_operations_router;
-use {{ context.app_crate }}_postgres::PostgresItemRepository;
-use {{ context.app_crate }}_services::ItemService;
+{% if context.auth_oidc %}use {{ context.app_crate }}_postgres::{PostgresItemRepository, PostgresProfileErasure};
+{% else %}use {{ context.app_crate }}_postgres::PostgresItemRepository;
+{% endif %}use {{ context.app_crate }}_services::ItemService;
 use {{ context.app_crate }}_worker::DemoJobHandler;
 
 #[tokio::test]
@@ -26,7 +29,28 @@ async fn durable_outbox_runs_the_generated_demo_handler() -> Result<(), Box<dyn 
     assert_eq!(status, "pending");
     assert_eq!(payload["item_id"], item.id.to_string());
 
-    let service_info = ServiceInfo::new(
+{% if context.auth_oidc %}    let fake = Arc::new(baukit_test::FakeIdentityAccountDeleter::default());
+    fake.push_outcome(Err(IdentityDeletionError::Retryable));
+    let erasure = ErasureService::new(
+        PostgresErasureStore::new(
+            pool.clone(),
+            Secret::new("worker-test-hash-key-with-at-least-32-bytes".into()),
+        )?,
+        fake.clone(),
+        "keycloak".into(),
+        Duration::from_secs(1),
+        3,
+    )?;
+    let operation = erasure
+        .erase(
+            "worker-erasure-subject",
+            "worker-erasure-key-001",
+            &PostgresProfileErasure,
+        )
+        .await?;
+    assert_eq!(operation.status, ErasureState::Pending);
+
+{% endif %}    let service_info = ServiceInfo::new(
         "{{ context.app_name }}",
         ProcessKind::Worker,
         build_info!(),
@@ -87,7 +111,23 @@ async fn durable_outbox_runs_the_generated_demo_handler() -> Result<(), Box<dyn 
         .fetch_one(&pool)
         .await?;
     assert_eq!(status, "succeeded");
-    telemetry.shutdown()?;
+{% if context.auth_oidc %}    assert_eq!(fake.calls(), ["worker-erasure-subject"]);
+    let identity_status: String = sqlx::query_scalar(
+        "SELECT status FROM job_outbox WHERE job_type = 'identity.account.delete'",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(identity_status, "pending");
+    assert_eq!(
+        erasure
+            .store()
+            .status("worker-erasure-subject", operation.operation_id)
+            .await?
+            .ok_or("erasure operation missing")?
+            .status,
+        ErasureState::Pending
+    );
+{% endif %}    telemetry.shutdown()?;
     pool.close().await;
     drop(fixture);
     Ok(())

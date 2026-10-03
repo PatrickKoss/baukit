@@ -1,3 +1,6 @@
+#[path = "support/erasure.rs"]
+mod erasure;
+
 use std::{error::Error, path::PathBuf, process::Command, sync::Arc, time::Duration};
 
 use axum::{
@@ -46,8 +49,10 @@ fn generated_keycloak_tools_pass_their_offline_checks() -> Result<(), Box<dyn Er
 }
 
 #[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
 async fn protected_route_conforms_and_maps_subject_to_internal_user() -> Result<(), Box<dyn Error>>
 {
+    let fixture = erasure::erasure_fixture().await?;
     let issuer = baukit_test::MockOidcServer::start().await?;
     let verifier = OidcVerifier::discover(
         OidcConfig::new(issuer.issuer(), AUDIENCE)?.with_clock_skew(Duration::ZERO),
@@ -59,7 +64,7 @@ async fn protected_route_conforms_and_maps_subject_to_internal_user() -> Result<
             items: ItemService::new(repository),
             users: UserService::new(Arc::new(InMemoryUserRepository::new())),
             auth: AuthState::new(verifier),
-            erasure: None,
+            erasure: fixture.erasure.clone(),
         },
         &HttpConfig::default(),
     )?;
@@ -184,7 +189,9 @@ async fn protected_route_conforms_and_maps_subject_to_internal_user() -> Result<
 }
 
 #[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
 async fn authentication_runs_before_identity_rate_limiting() -> Result<(), Box<dyn Error>> {
+    let fixture = erasure::erasure_fixture().await?;
     let issuer = baukit_test::MockOidcServer::start().await?;
     let verifier = OidcVerifier::discover(
         OidcConfig::new(issuer.issuer(), AUDIENCE)?.with_clock_skew(Duration::ZERO),
@@ -195,7 +202,7 @@ async fn authentication_runs_before_identity_rate_limiting() -> Result<(), Box<d
         items: ItemService::new(Arc::new(InMemoryItemRepository::new())),
         users: UserService::new(Arc::new(InMemoryUserRepository::new())),
         auth: auth.clone(),
-        erasure: None,
+        erasure: fixture.erasure.clone(),
     });
     let mut options = RateLimitOptions::default();
     options.identity.quota = Quota::new(1, Duration::from_secs(60), 0)?;

@@ -809,17 +809,6 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description erasure_unavailable */
-            503: {
-                headers: {
-                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
-                    "X-Request-Id"?: string;
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
             /** @description The request deadline passed; a write may have committed. */
             504: {
                 headers: {
@@ -905,17 +894,6 @@ export interface operations {
             };
             /** @description An internal error occurred. */
             500: {
-                headers: {
-                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
-                    "X-Request-Id"?: string;
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description erasure_unavailable */
-            503: {
                 headers: {
                     /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
                     "X-Request-Id"?: string;

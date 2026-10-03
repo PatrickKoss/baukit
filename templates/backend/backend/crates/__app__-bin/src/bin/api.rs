@@ -109,12 +109,12 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         items: item_service.clone(),
 {% if context.auth_oidc %}        users: user_service,
         auth: auth.clone(),
-        erasure: Some(ErasureApi {
+        erasure: ErasureApi {
             service: erasure_service,
             product: Arc::new(PostgresProfileErasure),
-        }),
+        },
 {% endif %}    };
-    let api = routes(api_state.clone());
+    let api = routes(api_state);
 {% if context.auth_oidc %}    let rate_limit_options = RateLimitOptions::from_config(&config.rate_limit)?;
     let rate_limit_store = RedisRateLimitStore::connect_if_enabled(&rate_limit_options).await?;
     let api = if let Some(store) = rate_limit_store {
@@ -134,10 +134,6 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
     } else {
         api
     };
-    let api = api.layer(middleware::from_fn_with_state(
-        api_state,
-        {{ context.app_crate }}_api::erasure_fence,
-    ));
     // Axum runs the last added layer first. Authentication establishes Principal
     // before the inner rate limiter chooses an identity or IP bucket.
     let api = api.layer(middleware::from_fn_with_state(

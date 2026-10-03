@@ -130,7 +130,7 @@
     }
   },
   "info": {
-    "description": "Generated Baukit item service. Erasure errors: erasure_idempotency_key_invalid, erasure_idempotency_conflict, erasure_operation_not_found, profile_erased, erasure_unavailable.",
+    "description": "Generated Baukit item service. Erasure errors: erasure_idempotency_key_invalid, erasure_idempotency_conflict, erasure_operation_not_found, profile_erased.",
     "license": {
       "name": ""
     },
@@ -1187,24 +1187,6 @@
               }
             }
           },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "erasure_unavailable",
-            "headers": {
-              "X-Request-Id": {
-                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
           "504": {
             "content": {
               "application/json": {
@@ -1477,24 +1459,6 @@
               }
             },
             "description": "An internal error occurred.",
-            "headers": {
-              "X-Request-Id": {
-                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "erasure_unavailable",
             "headers": {
               "X-Request-Id": {
                 "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",

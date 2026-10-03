@@ -717,9 +717,9 @@ fn dependency_context(
             "baukit-test",
         ];
         if auth_oidc {
-            names.extend(["baukit-auth", "baukit-ratelimit"]);
+            names.extend(["baukit-auth", "baukit-erasure", "baukit-ratelimit"]);
         }
-        if worker {
+        if worker || auth_oidc {
             names.push("baukit-jobs");
         }
         let cargo = names
@@ -805,9 +805,9 @@ fn dependency_context(
             "baukit-test",
         ];
         if auth_oidc {
-            names.extend(["baukit-auth", "baukit-ratelimit"]);
+            names.extend(["baukit-auth", "baukit-erasure", "baukit-ratelimit"]);
         }
-        if worker {
+        if worker || auth_oidc {
             names.push("baukit-jobs");
         }
         let cargo = names

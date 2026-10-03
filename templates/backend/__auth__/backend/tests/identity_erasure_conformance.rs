@@ -42,6 +42,7 @@ struct EndpointAdapter {
     app: Option<Router>,
     handler: Option<IdentityDeletionHandler>,
     subject: String,
+    prefix: &'static str,
 }
 impl EndpointAdapter {
     async fn request(
@@ -55,10 +56,13 @@ impl EndpointAdapter {
             .issuer
             .claims(subject, AUDIENCE, Duration::from_secs(60))?;
         let token = self.issuer.mint(&claims)?;
-        let mut request = Request::builder().method(method).uri(path).header(
-            header::AUTHORIZATION,
-            baukit_test::authorization_header(&token)?,
-        );
+        let mut request = Request::builder()
+            .method(method)
+            .uri(format!("{}{}", self.prefix, path))
+            .header(
+                header::AUTHORIZATION,
+                baukit_test::authorization_header(&token)?,
+            );
         if let Some(key) = key {
             request = request.header("Idempotency-Key", key);
         }
@@ -104,20 +108,25 @@ impl IdentityErasureAdapter for EndpointAdapter {
                 "keycloak".into(),
                 fake,
             ));
-            self.app = Some(router(
+            let app = router(
                 ApiState {
                     items: ItemService::new(Arc::new(PostgresItemRepository::new(
                         self.pool.clone(),
                     ))),
                     users,
                     auth: AuthState::new(verifier),
-                    erasure: Some(ErasureApi {
+                    erasure: ErasureApi {
                         service,
                         product: Arc::new(PostgresProfileErasure),
-                    }),
+                    },
                 },
                 &HttpConfig::default(),
-            )?);
+            )?;
+            self.app = Some(if self.prefix.is_empty() {
+                app
+            } else {
+                Router::new().nest(self.prefix, app)
+            });
             self.subject = subject.to_owned();
             Ok(())
         })
@@ -172,6 +181,8 @@ impl IdentityErasureAdapter for EndpointAdapter {
                 Arc::new(PostgresJobStore::new(self.pool.clone())),
                 Arc::new(self.handler.clone().ok_or("handler not seeded")?),
                 WorkerConfig {
+                    queue: "identity-erasure",
+                    concurrency: 1,
                     poll_interval: Duration::from_millis(10),
                     ..WorkerConfig::default()
                 },
@@ -215,11 +226,19 @@ async fn endpoint_identity_erasure_conforms() -> Result<(), TestError> {
         app: None,
         handler: None,
         subject: String::new(),
+        prefix: "",
     };
     baukit_test::check_identity_erasure_conformance(
         &mut adapter,
         "erasure-subject",
         "other-subject",
+    )
+    .await?;
+    adapter.prefix = "/api";
+    baukit_test::check_identity_erasure_conformance(
+        &mut adapter,
+        "nested-erasure-subject",
+        "nested-other-subject",
     )
     .await?;
     for key in [None, Some("short"), Some("contains a space in the key")] {
@@ -235,6 +254,30 @@ async fn endpoint_identity_erasure_conforms() -> Result<(), TestError> {
         .await?;
     assert_eq!(response.status, 401);
     assert_eq!(response.body["error"]["code"], "profile_erased");
+    let response = adapter.resolve("erasure-subject").await?;
+    assert_eq!(response.status, 401);
+    assert_eq!(response.body["error"]["code"], "profile_erased");
+    let token = adapter.issuer.mint(&adapter.issuer.claims(
+        "erasure-subject",
+        AUDIENCE,
+        Duration::from_secs(60),
+    )?)?;
+    let response = adapter
+        .app
+        .as_ref()
+        .ok_or("router not seeded")?
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/missing-route")
+                .header(
+                    header::AUTHORIZATION,
+                    baukit_test::authorization_header(&token)?,
+                )
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
     let users = UserService::new(Arc::new(PostgresUserRepository::new(
         adapter.pool.clone(),
         adapter.store.clone(),

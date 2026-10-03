@@ -6,7 +6,7 @@ use axum::{
     http::{HeaderMap, StatusCode, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{delete, get},
 };
 use baukit_auth::{AuthState, Principal};
 {% else %}use std::collections::BTreeMap;
@@ -36,7 +36,7 @@ pub struct ApiState {
     pub items: ItemService,
 {% if context.auth_oidc %}    pub users: UserService,
     pub auth: AuthState,
-    pub erasure: Option<ErasureApi>,
+    pub erasure: ErasureApi,
 {% endif %}}
 
 {% if context.auth_oidc %}#[derive(Clone)]
@@ -56,17 +56,21 @@ impl FromRef<ApiState> for AuthState {
 }
 
 pub fn routes(state: ApiState) -> Router {
-    Router::new()
+    let protected = Router::new()
         .route("/items", get(list_items).post(create_item))
         .route(
             "/items/{id}",
             get(get_item).put(update_item).delete(delete_item),
-        )
-{% if context.auth_oidc %}        .route("/me", get(current_user).delete(erase_current_user))
-        .route("/me/erasures/{operationId}", get(erasure_status))
-        .route_layer(middleware::from_fn_with_state(state.clone(), erasure_fence))
-{% endif %}        .with_state(state)
-}
+        );
+{% if context.auth_oidc %}    let protected = protected
+        .route("/me", get(current_user))
+        .route_layer(middleware::from_fn_with_state(state.clone(), erasure_fence));
+    let reconciliation = Router::new()
+        .route("/me", delete(erase_current_user))
+        .route("/me/erasures/{operationId}", get(erasure_status));
+    protected.merge(reconciliation).with_state(state)
+{% else %}    protected.with_state(state)
+{% endif %}}
 
 /// Applies the Baukit HTTP layers last, so CORS, request IDs, and the cache
 /// policy also cover responses from authentication and rate-limit layers.
@@ -136,26 +140,8 @@ pub async fn erasure_fence(
     request: Request,
     next: Next,
 ) -> Result<Response, ErasureError> {
-    let replay = request.method() == axum::http::Method::DELETE && request.uri().path() == "/me";
-    let status = request.method() == axum::http::Method::GET
-        && request.uri().path().starts_with("/me/erasures/");
-    if !replay
-        && !status
-        && let Some(erasure) = &state.erasure
-    {
-        reject_fenced_subject(erasure.service.store(), principal.subject()).await?;
-    }
+    reject_fenced_subject(state.erasure.service.store(), principal.subject()).await?;
     Ok(next.run(request).await)
-}
-
-fn durable_erasure(state: &ApiState) -> Result<&ErasureApi, ApiError> {
-    state.erasure.as_ref().ok_or_else(|| {
-        ApiError::new(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "erasure_unavailable",
-            "Durable erasure requires database configuration",
-        )
-    })
 }
 
 #[utoipa::path(
@@ -166,8 +152,7 @@ fn durable_erasure(state: &ApiState) -> Result<&ErasureApi, ApiError> {
         (status = 202, description = "Product data deleted; identity deletion queued", body = ErasureDto, headers(("Location" = String, description = "Operation status URL"))),
         (status = 400, description = "erasure_idempotency_key_invalid", body = ErrorEnvelope),
         (status = 401, description = "unauthenticated or profile_erased", body = ErrorEnvelope),
-        (status = 409, description = "erasure_idempotency_conflict", body = ErrorEnvelope),
-        (status = 503, description = "erasure_unavailable", body = ErrorEnvelope)
+        (status = 409, description = "erasure_idempotency_conflict", body = ErrorEnvelope)
     )
 )]
 async fn erase_current_user(
@@ -184,7 +169,7 @@ async fn erase_current_user(
                 "A valid Idempotency-Key is required",
             )
         })?;
-    let erasure = durable_erasure(&state)?;
+    let erasure = &state.erasure;
     let result = erasure
         .service
         .erase(principal.subject(), key.as_str(), erasure.product.as_ref())
@@ -211,8 +196,7 @@ async fn erase_current_user(
     responses(
         (status = 200, description = "Current erasure state", body = ErasureDto),
         (status = 401, description = "unauthenticated", body = ErrorEnvelope),
-        (status = 404, description = "erasure_operation_not_found", body = ErrorEnvelope),
-        (status = 503, description = "erasure_unavailable", body = ErrorEnvelope)
+        (status = 404, description = "erasure_operation_not_found", body = ErrorEnvelope)
     )
 )]
 async fn erasure_status(
@@ -220,7 +204,7 @@ async fn erasure_status(
     principal: Principal,
     ApiPath(operation): ApiPath<Uuid>,
 ) -> Result<Response, ApiError> {
-    let erasure = durable_erasure(&state)?;
+    let erasure = &state.erasure;
     match erasure
         .service
         .store()
@@ -424,7 +408,7 @@ pub fn openapi_document() -> utoipa::openapi::OpenApi {
     let metadata = OpenApiMetadata::new(
         "{{ context.app_name }} API",
         env!("CARGO_PKG_VERSION"),
-{% if context.auth_oidc %}        "Generated Baukit item service. Erasure errors: erasure_idempotency_key_invalid, erasure_idempotency_conflict, erasure_operation_not_found, profile_erased, erasure_unavailable.",
+{% if context.auth_oidc %}        "Generated Baukit item service. Erasure errors: erasure_idempotency_key_invalid, erasure_idempotency_conflict, erasure_operation_not_found, profile_erased.",
 {% else %}        "Generated Baukit item service.",
 {% endif %}    );
 {% if context.auth_oidc %}    let metadata = metadata.bearer_auth();
