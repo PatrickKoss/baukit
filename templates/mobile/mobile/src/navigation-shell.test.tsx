@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from "@testing-library/react-native";
 import { usePathname, useRouter } from "expo-router";
 import { NavigationBar, WorkspacePicker } from "./navigation-shell";
 import { lightTheme } from "./theme";
+import { blendColors } from "@baukit/ui-tokens";
 
 jest.mock("expo-router", () => ({
   usePathname: jest.fn(),
@@ -31,10 +32,15 @@ it("rotates the current compact section and keeps the profile last", async () =>
     />,
   );
   expect(screen.getByText("☷", { includeHiddenElements: true })).toHaveStyle({
-    color: lightTheme.color.onAccent,
+    color: lightTheme.color.accent,
   });
   expect(screen.getByText("⌂", { includeHiddenElements: true })).toHaveStyle({
     color: lightTheme.color.text,
+  });
+  expect(screen.getByRole("link", { name: "Workspace" })).toHaveStyle({
+    backgroundColor: blendColors(
+      lightTheme.color.accent, lightTheme.color.surface, 0.14,
+    ),
   });
   await fireEvent.press(screen.getByRole("link", { name: "Workspace" }), {
     nativeEvent: {},

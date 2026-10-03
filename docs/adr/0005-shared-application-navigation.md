@@ -38,7 +38,8 @@ have an icon left of the label. Compact rows have an icon above the label.
 A rail can collapse to icons, with accessible labels and web titles. A
 section disclosure owns an indented group immediately after its button. The
 active section starts open. Clicking a collapsed disclosure expands the rail
-and opens the group. Active parents and children have a contrasting background.
+and opens the group. Active leaves have a muted accent background with accent
+text. The parent of an active child has accent text and icon without a fill.
 
 Keep profile last, at the rail bottom or the bar end. The product supplies its
 avatar or initials and either a destination or menu entries. Compact inactive

@@ -54,6 +54,7 @@ export interface NavigationTheme {
   readonly muted: string;
   readonly activeBackground: string;
   readonly activeText: string;
+  readonly ancestorText: string;
   readonly border: string;
   readonly focus: string;
   readonly radius: number;
@@ -102,9 +103,7 @@ function FocusablePressable({
             ? selected
               ? theme.activeText
               : theme.focus
-            : selected
-              ? theme.activeBackground
-              : (unfocusedBorderColor ?? theme.background),
+            : (unfocusedBorderColor ?? 'transparent'),
         },
       ]}
     />
@@ -136,6 +135,7 @@ function follow(href: string, event: GestureResponderEvent, onNavigate: Navigate
 interface TargetProps {
   readonly label: string;
   readonly selected?: boolean;
+  readonly ancestor?: boolean;
   readonly expanded?: boolean;
   readonly controls?: string;
   readonly menu?: boolean;
@@ -152,6 +152,7 @@ interface TargetProps {
 function Target({
   label,
   selected = false,
+  ancestor = false,
   expanded,
   controls,
   menu,
@@ -168,7 +169,8 @@ function Target({
   return (
     <FocusablePressable
       theme={theme}
-      selected={selected}
+      selected={selected && !ancestor}
+      {...{ dataSet: { active: selected ? (ancestor ? 'ancestor' : 'page') : 'false' } }}
       {...roving}
       {...(href === undefined ? {} : webLink(href, selected))}
       {...(Platform.OS === 'web'
@@ -194,7 +196,7 @@ function Target({
         {
           borderRadius: theme.radius,
           gap: theme.spacing,
-          backgroundColor: selected ? theme.activeBackground : theme.background,
+          backgroundColor: selected && !ancestor ? theme.activeBackground : theme.background,
         },
       ]}
     >
@@ -203,9 +205,9 @@ function Target({
         <Text
           numberOfLines={1}
           style={{
-            color: selected ? theme.activeText : theme.text,
+            color: ancestor ? theme.ancestorText : selected ? theme.activeText : theme.text,
             fontSize: bar ? 11 : 14,
-            fontWeight: selected ? '700' : '400',
+            fontWeight: selected && !ancestor ? '700' : '400',
           }}
         >
           {label}
@@ -542,6 +544,7 @@ export function AppNavigation(props: AppNavigationProps) {
               <Target
                 label={item.label}
                 selected={active}
+                ancestor={active && !bar && !collapsed && state.active.subItem !== null}
                 theme={theme}
                 bar={bar}
                 collapsed={collapsed}

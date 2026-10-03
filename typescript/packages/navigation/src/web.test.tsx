@@ -33,7 +33,12 @@ describe('rail', () => {
     expect(screen.getByRole('link', { name: 'Home' }).getAttribute('href')).toBe('/');
     const parent = screen.getByRole('button', { name: 'Progress' });
     expect(parent.getAttribute('aria-expanded')).toBe('true');
-    expect(parent.getAttribute('data-active')).toBe('true');
+    expect(parent.getAttribute('data-active')).toBe('ancestor');
+    const activeChild = screen.getByRole('link', { name: 'History' });
+    expect(activeChild.getAttribute('data-active')).toBe('page');
+    expect(within(parent).getByText('filled')).toBeTruthy();
+    expect(within(activeChild).getByText('filled')).toBeTruthy();
+    expect(screen.getByRole('navigation').querySelectorAll('[data-active="page"]')).toHaveLength(1);
     expect(parent.nextElementSibling).toBe(screen.getByRole('group', { name: 'Progress' }));
     expect(parent.getAttribute('aria-controls')).toBe(parent.nextElementSibling?.id);
     expect(screen.getByRole('link', { name: 'History' }).getAttribute('aria-current')).toBe('page');
@@ -43,6 +48,24 @@ describe('rail', () => {
     expect(navigate).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('link', { name: 'Home' }));
     expect(navigate).toHaveBeenCalledWith('/', expect.objectContaining({ defaultPrevented: true }));
+  });
+  it('fills the active parent in a collapsed rail and its child after expanding', () => {
+    render(
+      <AppNavigation items={items} width={1024} pathname="/progress/history" defaultCollapsed />,
+    );
+    const parent = screen.getByRole('button', { name: 'Progress' });
+    expect(parent.getAttribute('data-active')).toBe('page');
+    expect(screen.queryByRole('link', { name: 'History' })).toBeNull();
+    fireEvent.click(parent);
+    expect(parent.getAttribute('data-active')).toBe('ancestor');
+    expect(screen.getByRole('link', { name: 'History' }).getAttribute('data-active')).toBe('page');
+  });
+  it('fills an active main item without children', () => {
+    render(<AppNavigation items={items} width={1024} pathname="/" />);
+    expect(screen.getByRole('link', { name: 'Home' }).getAttribute('data-active')).toBe('page');
+    expect(screen.getByRole('button', { name: 'Progress' }).hasAttribute('data-active')).toBe(
+      false,
+    );
   });
   it('expands a collapsed rail and opens the clicked group', () => {
     const changed = vi.fn();
@@ -136,6 +159,7 @@ it('rotates active compact tabs and sends inactive tabs to their root', () => {
     <AppNavigation items={items} width={1023} pathname="/progress" onNavigate={navigate} />,
   );
   fireEvent.click(screen.getByRole('link', { name: 'Progress' }));
+  expect(screen.getByRole('link', { name: 'Progress' }).getAttribute('data-active')).toBe('page');
   expect(navigate).toHaveBeenLastCalledWith('/progress/history', expect.anything());
   rerender(
     <AppNavigation items={items} width={320} pathname="/progress/history" onNavigate={navigate} />,
@@ -149,6 +173,7 @@ it.each([320, 1024])('keeps profile last at width %i', (width) => {
   render(<AppNavigation items={items} profile={profile} width={width} pathname="/profile" />);
   const links = within(screen.getByRole('navigation')).getAllByRole('link');
   expect(links.at(-1)).toBe(screen.getByRole('link', { name: 'Account' }));
+  expect(links.at(-1)?.getAttribute('data-active')).toBe('page');
   expect(links.at(-1)?.getAttribute('aria-current')).toBe('page');
 });
 it('handles profile menu focus, disabled items, actions, Escape and outside clicks', () => {

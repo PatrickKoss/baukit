@@ -53,7 +53,8 @@ of labels. Collapsed rows retain accessible names and web titles. A section
 with children is a disclosure button with `aria-expanded` and `aria-controls`.
 Its children follow it directly, indented beside a guide line. The active group
 starts open. Clicking a collapsed disclosure expands the rail and opens that
-group. Parents and children use a contrasting selected background.
+group. Active leaves use a muted accent background, accent text and a bold
+label. The parent of an active child has accent text and icon without a fill.
 
 Compact bars keep icons above short labels. An inactive tab opens its root; an
 active tab rotates to the next child and wraps. `SectionPicker` presents every
@@ -67,9 +68,12 @@ Control and persist collapse with `collapsed` and `onCollapsedChange`, or use
 width and bar height in content. Native navigation occupies its container;
 Expo Tabs must position the custom tabBar left for expanded layouts and bottom
 otherwise. Pass safe-area insets. Native `NavigationTheme` maps background,
-text, muted, activeBackground, activeText, border and focus to the corresponding
+text, muted, activeBackground, activeText, ancestorText, border and focus to the corresponding
 semantic color tokens, plus spacing and radius to compiled numeric tokens.
-Test activeText against activeBackground with ui-tokens contrast checks.
+Blend the accent over the navigation background at 14% for activeBackground.
+Use the accent for activeText and ancestorText. Check activeText against
+activeBackground and ancestorText against background in both themes with
+ui-tokens contrast helpers.
 
 The package's browser suite checks Chromium and WebKit at 320, 1023 and 1024
 pixels and heights 568 and 720. Keep product checks for actual primary actions,

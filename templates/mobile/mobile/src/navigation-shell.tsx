@@ -11,6 +11,7 @@ import {
 import type { NavigationItem, NavigationProfile } from "@baukit/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "./theme";
+import { blendColors } from "@baukit/ui-tokens";
 
 function NavigationGlyph({
   active,
@@ -22,7 +23,7 @@ function NavigationGlyph({
     <Text
       style={{
         fontSize: size,
-        color: active ? theme.color.onAccent : theme.color.text,
+        color: active ? theme.color.accent : theme.color.text,
       }}
     >
       {glyph}
@@ -56,8 +57,9 @@ function useNavigationTheme(): NavigationTheme {
     background: theme.color.surface,
     text: theme.color.text,
     muted: theme.color.muted,
-    activeBackground: theme.color.accent,
-    activeText: theme.color.onAccent,
+    activeBackground: blendColors(theme.color.accent, theme.color.surface, 0.14),
+    activeText: theme.color.accent,
+    ancestorText: theme.color.accent,
     border: theme.color.border,
     focus: theme.color.focus,
     spacing: theme.space.small,

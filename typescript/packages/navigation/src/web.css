@@ -1,3 +1,13 @@
+.bk-navigation,
+.bk-navigation-picker {
+  --bk-navigation-active-background: color-mix(
+    in srgb,
+    var(--bk-color-background-accent) 14%,
+    transparent
+  );
+  --bk-navigation-active-text: var(--bk-color-background-accent);
+  --bk-navigation-ancestor-text: var(--bk-color-background-accent);
+}
 .bk-navigation {
   --bk-navigation-rail-width: 280px;
   --bk-navigation-collapsed-width: 76px;
@@ -44,7 +54,7 @@
   gap: calc(var(--bk-space-small) * 1px);
   min-width: 44px;
   min-height: 44px;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: calc(var(--bk-radius-small) * 1px);
   padding: 8px;
   color: inherit;
@@ -57,11 +67,13 @@
   width: 100%;
   text-align: start;
 }
-.bk-navigation-item[data-active='true'] {
-  color: var(--bk-color-text-on-accent);
-  background: var(--bk-color-background-accent);
-  border-color: currentcolor;
+.bk-navigation-item[data-active='page'] {
+  color: var(--bk-navigation-active-text);
+  background: var(--bk-navigation-active-background);
   font-weight: var(--bk-typography-weight-bold);
+}
+.bk-navigation-item[data-active='ancestor'] {
+  color: var(--bk-navigation-ancestor-text);
 }
 .bk-navigation-item:focus-visible,
 .bk-navigation-toggle:focus-visible,
@@ -69,8 +81,8 @@
   outline: 3px solid var(--bk-color-focus-ring);
   outline-offset: -3px;
 }
-.bk-navigation-item[data-active='true']:focus-visible {
-  outline-color: var(--bk-color-text-on-accent);
+.bk-navigation-item[data-active='page']:focus-visible {
+  outline-color: var(--bk-navigation-active-text);
 }
 .bk-navigation-icon {
   display: flex;
@@ -141,8 +153,8 @@
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  color: var(--bk-color-text-on-accent);
-  background: var(--bk-color-background-accent);
+  color: var(--bk-navigation-active-text);
+  background: var(--bk-navigation-active-background);
 }
 .bk-navigation-avatar img {
   width: 100%;
@@ -186,7 +198,7 @@
 .bk-navigation-picker-trigger {
   width: 100%;
   justify-content: space-between;
-  border-color: var(--bk-color-border-primary);
+  border: 1px solid var(--bk-color-border-primary);
   color: var(--bk-color-text-primary);
   background: var(--bk-color-background-elevated);
 }
@@ -205,7 +217,7 @@
   width: 100%;
 }
 @media (forced-colors: active) {
-  .bk-navigation-item[data-active='true'] {
+  .bk-navigation-item[data-active='page'] {
     border: 2px solid Highlight;
   }
 }

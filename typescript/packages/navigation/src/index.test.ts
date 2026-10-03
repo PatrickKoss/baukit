@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { blendColors, contrastRatio, exampleTokens } from '@baukit/ui-tokens';
 import {
   getNavigationLayout,
   navigationReducer,
@@ -151,3 +152,14 @@ describe('validation', () => {
 it('uses the token layout helper at the rail boundary', () => {
   expect([320, 600, 1023, 1024].map(getNavigationLayout)).toEqual(['bar', 'bar', 'bar', 'rail']);
 });
+it.each(['light', 'dark'] as const)(
+  'keeps muted active text readable in the %s theme',
+  (scheme) => {
+    const accent = exampleTokens.color.background.accent[scheme];
+    const background = exampleTokens.color.background.primary[scheme];
+    expect(contrastRatio(accent, blendColors(accent, background, 0.14))).toBeGreaterThanOrEqual(
+      4.5,
+    );
+    expect(contrastRatio(accent, background)).toBeGreaterThanOrEqual(4.5);
+  },
+);

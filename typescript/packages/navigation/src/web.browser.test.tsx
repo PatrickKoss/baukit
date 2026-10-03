@@ -67,11 +67,16 @@ afterEach(async () => {
   });
   host?.remove();
   styles?.remove();
+  delete document.documentElement.dataset['theme'];
   vi.restoreAllMocks();
 });
-it.each([320, 1023, 1024].flatMap((width) => [568, 720].map((height) => ({ width, height }))))(
-  'lays out accessible navigation at $width by $height',
-  async ({ width, height }) => {
+it.each(
+  [320, 1023, 1024].flatMap((width) =>
+    [568, 720].flatMap((height) => ['light', 'dark'].map((theme) => ({ width, height, theme }))),
+  ),
+)(
+  'lays out accessible $theme navigation at $width by $height',
+  async ({ width, height, theme }) => {
     const errors: unknown[][] = [];
     vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
       errors.push(args);
@@ -82,8 +87,9 @@ it.each([320, 1023, 1024].flatMap((width) => [568, 720].map((height) => ({ width
     await page.viewport(width, height);
     document.documentElement.lang = 'en';
     document.title = 'Navigation fixture';
+    document.documentElement.dataset['theme'] = theme;
     styles = document.createElement('style');
-    styles.textContent = `${toCssVariables(exampleTokens)} ${stylesheet} body {margin:0;} *{box-sizing:border-box;}`;
+    styles.textContent = `${toCssVariables(exampleTokens)} ${stylesheet} body {margin:0;background:var(--bk-color-background-primary);color:var(--bk-color-text-primary);} *{box-sizing:border-box;}`;
     document.head.append(styles);
     host = document.createElement('div');
     document.body.append(host);
@@ -99,6 +105,19 @@ it.each([320, 1023, 1024].flatMap((width) => [568, 720].map((height) => ({ width
     const activeLink = page
       .getByRole('link', { name: width >= 1024 ? 'History' : 'Progress' })
       .element();
+    function filledRows() {
+      return Array.from(
+        navigation?.querySelectorAll<HTMLElement>('.bk-navigation-item') ?? [],
+      ).filter(
+        (item) =>
+          item.closest('[hidden]') === null &&
+          getComputedStyle(item).backgroundColor !== 'rgba(0, 0, 0, 0)',
+      );
+    }
+    expect(filledRows()).toEqual([activeLink]);
+    expect(activeLink.getAttribute('data-active')).toBe('page');
+    expect(getComputedStyle(activeLink).borderWidth).toBe('0px');
+    expect(getComputedStyle(activeLink).fontWeight).toBe('700');
     await act(async () => {
       await userEvent.tab();
       activeLink.focus();
@@ -113,6 +132,9 @@ it.each([320, 1023, 1024].flatMap((width) => [568, 720].map((height) => ({ width
       expect(navBox.width).toBe(280);
       expect(profile.bottom).toBeGreaterThan(height - 60);
       const parent = page.getByRole('button', { name: 'Progress' }).element();
+      expect(parent.getAttribute('data-active')).toBe('ancestor');
+      expect(getComputedStyle(parent).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+      expect(getComputedStyle(parent).color).toBe(getComputedStyle(activeLink).color);
       const group = parent.nextElementSibling;
       expect(group?.getAttribute('role')).toBe('group');
       const history = page.getByRole('link', { name: 'History' }).element().getBoundingClientRect();
@@ -125,6 +147,8 @@ it.each([320, 1023, 1024].flatMap((width) => [568, 720].map((height) => ({ width
         page.getByRole('button', { name: 'Primary action' }).element().getBoundingClientRect().left,
       ).toBeGreaterThanOrEqual(navigation.getBoundingClientRect().right);
       await expect.poll(() => navigation.getBoundingClientRect().width).toBe(76);
+      expect(filledRows()).toEqual([parent]);
+      expect(parent.getAttribute('data-active')).toBe('page');
       expect(page.getByRole('button', { name: 'Progress' }).element().getAttribute('title')).toBe(
         'Progress',
       );

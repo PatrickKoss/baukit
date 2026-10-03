@@ -15,8 +15,8 @@ const section: NavigationItem<NavigationIcon> = {
   href: '/progress',
   icon,
   children: [
-    { id: 'overview', label: 'Overview', href: '/progress' },
-    { id: 'history', label: 'History', href: '/progress/history' },
+    { id: 'overview', label: 'Overview', href: '/progress', icon },
+    { id: 'history', label: 'History', href: '/progress/history', icon },
   ],
 };
 const items = [{ id: 'home', label: 'Home', href: '/', icon }, section];
@@ -24,8 +24,9 @@ const theme: NavigationTheme = {
   background: '#fff',
   text: '#111',
   muted: '#595959',
-  activeBackground: '#005fcc',
-  activeText: '#fff',
+  activeBackground: '#dbe9f8',
+  activeText: '#005fcc',
+  ancestorText: '#004799',
   border: '#767676',
   focus: '#005fcc',
   radius: 4,
@@ -60,7 +61,7 @@ it('keeps keyboard focus visible on active navigation, picker and menu entries',
     backgroundColor: theme.activeBackground,
   });
   await fireEvent(active, 'blur', event());
-  expect(active).toHaveStyle({ borderColor: theme.activeBackground });
+  expect(active).toHaveStyle({ borderColor: 'transparent' });
   const picker = screen.getByRole('button', { name: 'Progress, History' });
   await fireEvent(picker, 'focus', event());
   expect(picker).toHaveStyle({ borderWidth: 3, borderColor: theme.focus });
@@ -71,7 +72,7 @@ it('keeps keyboard focus visible on active navigation, picker and menu entries',
   await fireEvent(entry, 'focus', event());
   expect(entry).toHaveStyle({ borderWidth: 3, borderColor: theme.focus });
   await fireEvent(entry, 'blur', event());
-  expect(entry).toHaveStyle({ borderColor: theme.background });
+  expect(entry).toHaveStyle({ borderColor: 'transparent' });
 });
 
 it('shows an active disclosure with its selected child directly inside its section', async () => {
@@ -94,11 +95,27 @@ it('shows an active disclosure with its selected child directly inside its secti
     selected: true,
   });
   expect(screen.getByRole('button', { name: 'Progress' })).toHaveStyle({
-    backgroundColor: theme.activeBackground,
+    backgroundColor: theme.background,
+  });
+  expect(
+    within(screen.getByRole('button', { name: 'Progress' })).getByText('Progress'),
+  ).toHaveStyle({
+    color: theme.ancestorText,
+    fontWeight: '400',
   });
   expect(screen.getByRole('link', { name: 'History' })).toHaveStyle({
     backgroundColor: theme.activeBackground,
   });
+  expect(within(screen.getByRole('link', { name: 'History' })).getByText('History')).toHaveStyle({
+    color: theme.activeText,
+    fontWeight: '700',
+  });
+  for (const target of [
+    screen.getByRole('button', { name: 'Progress' }),
+    screen.getByRole('link', { name: 'History' }),
+  ]) {
+    expect(within(target).getByText('filled', { includeHiddenElements: true })).toBeOnTheScreen();
+  }
   expect([
     within(screen.getByTestId('navigation-section-progress')).getByRole('link', {
       name: 'History',
@@ -135,6 +152,37 @@ it('expands a collapsed rail, opens its group and notifies the caller', async ()
   expect(changed).toHaveBeenLastCalledWith(true);
   expect(screen.queryByText('Progress')).toBeNull();
 });
+it('fills the active parent only while the rail is collapsed', async () => {
+  await render(
+    <AppNavigation
+      items={items}
+      width={1024}
+      pathname="/progress/history"
+      theme={theme}
+      onNavigate={jest.fn()}
+      defaultCollapsed
+    />,
+  );
+  const parent = screen.getByRole('button', { name: 'Progress' });
+  expect(parent).toHaveStyle({ backgroundColor: theme.activeBackground });
+  expect(screen.queryByRole('link', { name: 'History' })).toBeNull();
+  await fireEvent.press(parent, event());
+  expect(parent).toHaveStyle({ backgroundColor: theme.background });
+  expect(screen.getByRole('link', { name: 'History' })).toHaveStyle({
+    backgroundColor: theme.activeBackground,
+  });
+});
+it('fills an active main item without children', async () => {
+  await render(
+    <AppNavigation items={items} width={1024} pathname="/" theme={theme} onNavigate={jest.fn()} />,
+  );
+  const home = screen.getByRole('link', { name: 'Home' });
+  expect(home).toHaveStyle({ backgroundColor: theme.activeBackground, borderColor: 'transparent' });
+  expect(within(home).getByText('Home')).toHaveStyle({
+    color: theme.activeText,
+    fontWeight: '700',
+  });
+});
 it('respects controlled collapse and route changes', async () => {
   const changed = jest.fn();
   const props = { items, width: 1024, theme, onNavigate: jest.fn(), onCollapsedChange: changed };
@@ -160,6 +208,9 @@ it.each([320, 1023])(
         onNavigate={navigate}
       />,
     );
+    expect(screen.getByRole('link', { name: 'Progress' })).toHaveStyle({
+      backgroundColor: theme.activeBackground,
+    });
     await fireEvent.press(screen.getByRole('link', { name: 'Progress' }), event());
     expect(navigate).toHaveBeenLastCalledWith('/progress/history');
     await view.rerender(
@@ -191,6 +242,7 @@ it.each([320, 1024])('keeps profile last at %i', async (width) => {
   const links = screen.getAllByRole('link');
   expect(links.at(-1)).toBe(screen.getByRole('link', { name: 'Account' }));
   expect(links.at(-1)).toHaveProp('accessibilityState', { selected: true });
+  expect(links.at(-1)).toHaveStyle({ backgroundColor: theme.activeBackground });
 });
 it.each([
   { metaKey: true },

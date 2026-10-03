@@ -150,7 +150,9 @@ function Menu({
           role: 'menuitem',
           'aria-disabled': entry.disabled === true ? true : undefined,
           'data-active':
-            entry.href !== undefined && navigationMatches({ ...entry, href: entry.href }, pathname),
+            entry.href !== undefined && navigationMatches({ ...entry, href: entry.href }, pathname)
+              ? 'page'
+              : undefined,
         } as const;
         return entry.href !== undefined ? (
           <Link
@@ -252,7 +254,7 @@ function Profile({
     ...itemProps,
     className: 'bk-navigation-item',
     'aria-label': profile.label,
-    'data-active': active,
+    'data-active': active ? 'page' : undefined,
     title: collapsed ? profile.label : undefined,
   };
   return (
@@ -382,6 +384,8 @@ export function AppNavigation(props: AppNavigationProps) {
       <div className="bk-navigation-items">
         {items.map((item, index) => {
           const active = state.active.item?.id === item.id;
+          const ancestor =
+            active && layout === 'rail' && !collapsed && state.active.subItem !== null;
           const children = item.children ?? [];
           const open = !collapsed && state.openIds.includes(item.id);
           const groupId = `${id}-${String(index)}`;
@@ -398,7 +402,7 @@ export function AppNavigation(props: AppNavigationProps) {
             ...itemProps,
             className: 'bk-navigation-item',
             'aria-label': item.label,
-            'data-active': active,
+            'data-active': active ? (ancestor ? 'ancestor' : 'page') : undefined,
             title: collapsed ? item.label : undefined,
           };
           const href = layout === 'bar' && active ? nextSectionHref(item, pathname) : item.href;
@@ -447,7 +451,7 @@ export function AppNavigation(props: AppNavigationProps) {
                         className="bk-navigation-item"
                         href={child.href}
                         aria-current={selected ? 'page' : undefined}
-                        data-active={selected}
+                        data-active={selected ? 'page' : undefined}
                         onClick={(event) => {
                           follow(child.href, event, onNavigate);
                         }}
