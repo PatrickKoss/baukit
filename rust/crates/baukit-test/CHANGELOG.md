@@ -4,6 +4,13 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Disable the `ring` default in both testcontainers and testcontainers-modules
+  and select `aws-lc-rs`. Products must do the same for their container test
+  dependencies and use sqlx `tls-rustls-aws-lc-rs`. This keeps rustls client
+  and server builders from panicking when they select a crypto provider.
+
 ## [0.6.0] - 2026-10-02
 
 ## [0.5.2] - 2026-09-30

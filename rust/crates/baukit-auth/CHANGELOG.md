@@ -4,6 +4,13 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Select aws-lc-rs for sqlx TLS so rustls has one crypto provider. Products
+  must use sqlx `tls-rustls-aws-lc-rs` instead of `tls-rustls`, including dev
+  dependencies, and disable the `ring` default in testcontainers and
+  testcontainers-modules.
+
 ## [0.6.0] - 2026-10-02
 
 ### Changed

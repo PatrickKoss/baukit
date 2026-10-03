@@ -72,7 +72,7 @@ serde_json = "=1.0.151"
 sqlx = { version = "=0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "postgres", "chrono", "json", "uuid"] }
 tempfile = "=3.27.0"
 testcontainers = { version = "=0.27.3", default-features = false, features = ["aws-lc-rs"] }
-testcontainers-modules = { version = "=0.15.0", features = ["postgres", "redis"] }
+testcontainers-modules = { version = "=0.15.0", default-features = false, features = ["aws-lc-rs", "postgres", "redis"] }
 thiserror = "2.0.21"
 tokio = { version = "=1.53.1", features = ["full"] }
 tokio-util = { version = "=0.7.19", features = ["rt"] }
