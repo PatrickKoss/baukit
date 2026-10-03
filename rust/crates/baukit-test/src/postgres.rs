@@ -111,7 +111,7 @@ impl PostgresTestOptions {
         Self::default()
     }
 
-    /// Replaces the image, for example `postgres` and `18.6-bookworm`.
+    /// Replaces the image, for example `postgres` and `18.6-alpine3.23`.
     ///
     /// The image must accept the official image's `POSTGRES_USER`,
     /// `POSTGRES_PASSWORD`, and `POSTGRES_DB` variables.
@@ -366,7 +366,7 @@ mod tests {
     #[ignore = "requires a reachable Docker daemon and may pull the PostgreSQL image"]
     async fn starts_an_overridden_image_tag() -> Result<(), Box<dyn std::error::Error>> {
         let fixture = PostgresTestOptions::new()
-            .with_image("postgres", "18.6-bookworm")
+            .with_image("postgres", "18.6-alpine3.23")
             .start()
             .await?;
         let pool = sqlx::PgPool::connect(fixture.connection_url()).await?;
@@ -375,10 +375,18 @@ mod tests {
             .await?
             .try_get::<String, _>("version")?;
         assert_eq!(version, "180006");
-        let build: String = sqlx::query_scalar("SELECT version()")
-            .fetch_one(&pool)
+        let mut release = fixture
+            .container()
+            .exec(testcontainers::core::ExecCommand::new([
+                "cat",
+                "/etc/alpine-release",
+            ]))
             .await?;
-        assert!(build.contains("Debian"), "override was not used: {build}");
+        let release = String::from_utf8(release.stdout_to_vec().await?)?;
+        assert!(
+            release.starts_with("3.23."),
+            "override was not used: {release}"
+        );
         pool.close().await;
         Ok(())
     }

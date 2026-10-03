@@ -29,7 +29,7 @@ All notable changes to `baukit-test` are documented here.
 ### Changed
 
 - Pin the default PostgreSQL image to `18.6-alpine`. The image override test
-  uses `18.6-bookworm`, so all PostgreSQL fixture tests run on 18.6.
+  uses `18.6-alpine3.23`, so all PostgreSQL fixture tests run on 18.6.
 - Check the versioned data directory, enabled checksums, SCRAM password
   encryption, and SQLx migrations against PostgreSQL 18.6.
 

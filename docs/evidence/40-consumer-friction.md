@@ -181,7 +181,7 @@ variables and prints the official readiness lines.
 
 ### Tests
 
-Docker tests in `postgres.rs`: an overridden `18.6-bookworm` tag, an app role bound
+Docker tests in `postgres.rs`: an overridden `18.6-alpine3.23` tag, an app role bound
 by an RLS policy for reads and writes and reporting `rolsuper` and
 `rolbypassrls` false, two per-test databases dropped explicitly and by `Drop`
 while a pool is still open, an external-server database dropped by `Drop`, and
