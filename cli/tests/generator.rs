@@ -58,6 +58,51 @@ fn frontend_options(parent: &Path, name: &str, mobile: bool, web: bool) -> NewOp
 }
 
 #[test]
+fn longest_application_name_generates_every_capability() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let name = "a".repeat(41);
+    let mut generated = options(parent.path(), &name);
+    generated.worker = true;
+    generated.mobile = true;
+    generated.web = true;
+    generated.mcp = true;
+    generated.auth = Some(AuthProvider::Oidc);
+    let root = generate_new(&generated)?;
+    let manifest = baukit_cli::read_manifest(&root)?;
+    assert_eq!(manifest.app.name, name);
+    for path in [
+        "mcp/src/product.ts",
+        "mobile/src/product.ts",
+        "web/src/product.ts",
+    ] {
+        assert!(
+            fs::read_to_string(root.join(path))?
+                .contains(&format!("export const PRODUCT_NAME = '{name}';"))
+        );
+    }
+    assert!(
+        root.join(format!("backend/crates/{name}-worker/src/lib.rs"))
+            .is_file()
+    );
+    Ok(())
+}
+
+#[test]
+fn application_name_over_the_service_limit_is_rejected() {
+    let parent = tempfile::tempdir().expect("temporary directory");
+    let name = "a".repeat(42);
+    let error = generate_new(&options(parent.path(), &name))
+        .expect_err("a 42-character product would overflow the worker operations Service name");
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "invalid application name `{name}`; maximum length is 41 ASCII characters because generated Kubernetes Service names append `-baukit-app-worker-ops` and must fit the 63-character limit"
+        )
+    );
+    assert!(!parent.path().join(name).exists());
+}
+
+#[test]
 fn backend_generation_matches_golden_tree_and_is_deterministic() -> anyhow::Result<()> {
     let first_parent = tempfile::tempdir()?;
     let second_parent = tempfile::tempdir()?;
@@ -130,7 +175,13 @@ fn worker_generation_matches_golden_tree_and_records_capability() -> anyhow::Res
 
 #[test]
 fn generated_backend_is_rustfmt_clean_across_product_names() -> anyhow::Result<()> {
-    for name in ["aaa", "zeta", "solo-leveling-system-companion"] {
+    let maximum_name = "a".repeat(41);
+    for name in [
+        "aaa",
+        "zeta",
+        "solo-leveling-system-companion",
+        &maximum_name,
+    ] {
         let parent = tempfile::tempdir()?;
         let mut generated_options = options(parent.path(), name);
         generated_options.worker = true;
@@ -657,7 +708,7 @@ fn combined_generation_applies_port_offset_to_host_ports() -> anyhow::Result<()>
             "mobile/app.config.ts",
             "http://localhost:8181/realms/${PRODUCT_NAME}",
         ),
-        ("mobile/src/product.js", "PRODUCT_NAME = 'offset-app'"),
+        ("mobile/src/product.ts", "PRODUCT_NAME = 'offset-app'"),
         (
             "mobile/src/auth.ts",
             "http://localhost:8181/realms/${PRODUCT_NAME}",
@@ -1938,8 +1989,29 @@ fn mcp_generation_matches_golden_tree_and_records_personal_token_auth() -> anyho
 }
 
 #[test]
+fn mcp_product_constants_wrap_long_literals_in_plain_exports() -> anyhow::Result<()> {
+    let name = "a".repeat(64);
+    let prefix = name.to_ascii_uppercase();
+    let rendered = minijinja::Environment::new().render_str(
+        include_str!("../../templates/mcp/mcp/src/product.ts.jinja"),
+        minijinja::context!(context => minijinja::context!(
+            app_name => &name,
+            app_env => &prefix,
+            keycloak_host_port => 8081,
+        )),
+    )?;
+    assert_eq!(
+        rendered,
+        format!(
+            "export const PRODUCT_NAME =\n  '{name}';\nexport const ENV_PREFIX =\n  '{prefix}';\nexport const KEYCLOAK_PORT = 8081;"
+        )
+    );
+    Ok(())
+}
+
+#[test]
 fn typescript_source_is_independent_of_product_name_length() -> anyhow::Result<()> {
-    let maximum_name = "a".repeat(64);
+    let maximum_name = "a".repeat(41);
     for authentication in [
         McpAuthentication::PersonalToken,
         McpAuthentication::NodeOidc,
@@ -1976,8 +2048,7 @@ fn typescript_source_is_independent_of_product_name_length() -> anyhow::Result<(
             assert!(product.contains(&format!("export const ENV_PREFIX = '{prefix}';")));
             assert!(product.contains("export const KEYCLOAK_PORT = 8181;"));
             for flavor in ["web", "mobile"] {
-                let extension = if flavor == "mobile" { "js" } else { "ts" };
-                let path = PathBuf::from(format!("{flavor}/src/product.{extension}"));
+                let path = PathBuf::from(format!("{flavor}/src/product.ts"));
                 let product = source
                     .remove(&path)
                     .expect("frontend product constants must be generated");

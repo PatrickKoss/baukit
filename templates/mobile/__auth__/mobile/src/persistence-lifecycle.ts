@@ -3,7 +3,7 @@ import {
   type ClosableScopedPersistence,
   type ScopedPersistenceLifecycleOptions,
 } from '@baukit/data-contracts';
-import { PRODUCT_NAME } from './product.js';
+import { PRODUCT_NAME } from './product';
 
 export type ProductPersistenceLifecycleOptions<
   TPersistence extends ClosableScopedPersistence,

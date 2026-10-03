@@ -14,7 +14,7 @@ import { eraseProductProfile } from '@baukit/data-contracts';
 import { authClient } from './auth';
 import { createAppPreferenceRecordStore } from './record-store';
 
-import { PRODUCT_NAME } from './product.js';
+import { PRODUCT_NAME } from './product';
 
 async function storageKey(slot: string): Promise<string> {
   const digest = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, slot);

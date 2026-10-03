@@ -22,7 +22,7 @@ import { completeExpoAuthSession, createExpoOidcClient } from '@baukit/auth-nati
 import type { ThemePreference } from './app-preferences';
 import { signInFeedback } from './auth-feedback';
 
-import { PRODUCT_NAME } from './product.js';
+import { PRODUCT_NAME } from './product';
 
 completeExpoAuthSession();
 

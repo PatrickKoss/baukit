@@ -11,7 +11,7 @@ import { useTheme, type AppTheme } from '../../src/theme';
 import { ThemeModeControl } from '../../src/theme-mode-control';
 import type { ConsentState } from '@baukit/analytics-core';
 
-import { PRODUCT_NAME } from '../../src/product.js';
+import { PRODUCT_NAME } from '../../src/product';
 
 const routeHeadingFocusProps = Platform.OS === 'web' ? { tabIndex: -1 } : {};
 

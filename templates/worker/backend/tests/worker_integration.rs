@@ -8,7 +8,8 @@ use baukit_runtime::{DeploymentEnvironment, ProcessKind, ServiceInfo, ShutdownTo
 use baukit_telemetry::TelemetryBuilder;
 
 use {{ context.app_crate }}_bin::worker_operations_router;
-{% if context.auth_oidc %}use {{ context.app_crate }}_postgres::{PostgresItemRepository, PostgresProfileErasure};
+{% if context.auth_oidc %}use {{ context.app_crate }}_postgres::PostgresItemRepository;
+use {{ context.app_crate }}_postgres::PostgresProfileErasure;
 {% else %}use {{ context.app_crate }}_postgres::PostgresItemRepository;
 {% endif %}use {{ context.app_crate }}_services::ItemService;
 use {{ context.app_crate }}_worker::DemoJobHandler;

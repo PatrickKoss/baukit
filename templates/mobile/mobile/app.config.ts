@@ -1,6 +1,6 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
 
-import { PRODUCT_NAME } from './src/product.js';
+import { PRODUCT_NAME } from './src/product.ts';
 
 const configuredApiUrl: unknown = process.env['EXPO_PUBLIC_API_URL'];
 const isQaBuild = process.env['BAUKIT_QA_BUILD'] === '1';

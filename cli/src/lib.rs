@@ -32,6 +32,7 @@ const KEYCLOAK_HOST_PORT: u32 = 8081;
 const FAKE_PROVIDER_HOST_PORT: u32 = 18081;
 const REDIS_HOST_PORT: u32 = 6379;
 const OPENAPI_TYPESCRIPT_PACKAGE: &str = "openapi-typescript@7.13.0";
+const MAX_APPLICATION_NAME_LEN: usize = 41;
 
 const EXPECTED_BACKEND_FILES: &[&str] = &[
     "README.md",
@@ -2333,8 +2334,12 @@ fn run_checked(command: &mut Command, label: &str) -> Result<()> {
 }
 
 fn validate_name(name: &str) -> Result<()> {
+    if name.len() > MAX_APPLICATION_NAME_LEN {
+        bail!(
+            "invalid application name `{name}`; maximum length is {MAX_APPLICATION_NAME_LEN} ASCII characters because generated Kubernetes Service names append `-baukit-app-worker-ops` and must fit the 63-character limit"
+        );
+    }
     let valid = !name.is_empty()
-        && name.len() <= 64
         && name.as_bytes()[0].is_ascii_lowercase()
         && name.as_bytes()[name.len() - 1].is_ascii_alphanumeric()
         && name
@@ -2345,7 +2350,7 @@ fn validate_name(name: &str) -> Result<()> {
         Ok(())
     } else {
         bail!(
-            "invalid application name `{name}`; use 1-64 lowercase ASCII letters, digits, and single hyphens, starting with a letter"
+            "invalid application name `{name}`; use 1-{MAX_APPLICATION_NAME_LEN} lowercase ASCII letters, digits, and single hyphens, starting with a letter"
         )
     }
 }

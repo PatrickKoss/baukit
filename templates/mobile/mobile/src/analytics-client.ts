@@ -1,7 +1,7 @@
 import { AnalyticsClient, NoopTransport } from '@baukit/analytics-core';
 import type { AnalyticsStorage, EventAllowlist } from '@baukit/analytics-core';
 
-import { PRODUCT_NAME } from './product.js';
+import { PRODUCT_NAME } from './product';
 
 export interface ProductEvent {
   readonly name: 'items_viewed';

@@ -4,7 +4,7 @@ import { ActionButton } from '../../src/action-button';
 import { useOidcAuth } from '../../src/auth';
 import { useTheme, type AppTheme } from '../../src/theme';
 
-import { PRODUCT_NAME } from '../../src/product.js';
+import { PRODUCT_NAME } from '../../src/product';
 
 export default function SignInScreen() {
   const auth = useOidcAuth();

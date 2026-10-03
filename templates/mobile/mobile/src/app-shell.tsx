@@ -24,7 +24,7 @@ import {
 import { initializeI18n } from './localization/i18n';
 import { createAppPreferenceRecordStore } from './record-store';
 import { AppThemeProvider, lightTheme } from './theme';
-import { PRODUCT_NAME } from './product.js';
+import { PRODUCT_NAME } from './product';
 
 const DEVICE_PREFERENCE_SUBJECT = 'device';
 

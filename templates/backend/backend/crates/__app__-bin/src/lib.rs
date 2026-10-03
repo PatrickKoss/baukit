@@ -24,7 +24,9 @@ use {{ context.app_crate }}_services::ItemService;
 use serde::Deserialize;
 use uuid::Uuid;
 
-#[derive(Clone, Debug, Default, Deserialize)]
+{% if context.auth_oidc %}const PRODUCT: &str = "{{ context.app_name }}";
+
+{% endif %}#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
 {% if context.auth_oidc or context.worker %}pub struct ProductConfig {
 {% if context.auth_oidc %}    pub auth: AuthConfig,
@@ -64,10 +66,10 @@ pub struct AuthConfig {
 impl Default for AuthConfig {
     fn default() -> Self {
         Self {
-            issuer: "http://localhost:{{ context.keycloak_host_port }}/realms/{{ context.app_name }}".to_owned(),
-            audience: "{{ context.app_name }}-backend".to_owned(),
+            issuer: format!("http://localhost:{{ context.keycloak_host_port }}/realms/{PRODUCT}"),
+            audience: format!("{PRODUCT}-backend"),
             identity_admin_base_url: "http://localhost:{{ context.keycloak_host_port }}".to_owned(),
-            identity_admin_realm: "{{ context.app_name }}".to_owned(),
+            identity_admin_realm: PRODUCT.to_owned(),
             identity_admin_client_secret: None,
             erasure_hash_key: None,
         }

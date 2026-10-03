@@ -18,7 +18,7 @@ import { signOutWithPreferenceReset } from '../../src/preference-sign-out';
 import { useTheme, type AppTheme } from '../../src/theme';
 import { ThemeModeControl } from '../../src/theme-mode-control';
 import type { ConsentState } from '@baukit/analytics-core';
-import { PRODUCT_NAME } from '../../src/product.js';
+import { PRODUCT_NAME } from '../../src/product';
 
 export default function TodayScreen() {
   const { t } = useTranslation(['bootstrap', 'home']);
