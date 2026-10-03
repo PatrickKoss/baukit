@@ -2,6 +2,12 @@
 
 {{ context.product_description }} generated with Baukit template {{ context.template_version }}.
 
+The development database uses PostgreSQL 18.6 Alpine. Its named volume mounts
+`/var/lib/postgresql`, and the image stores data at
+`/var/lib/postgresql/18/docker`. Recreate this project's local volume when
+switching PostgreSQL major versions. New clusters keep data checksums enabled
+and use SCRAM password encryption.
+
 ## Run locally
 
 The unauthenticated API uses the in-memory repository when `{{ context.app_env }}__DATABASE__URL` is absent. To use PostgreSQL, configure the standard database section and run migrations explicitly:

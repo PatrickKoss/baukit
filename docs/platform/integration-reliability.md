@@ -144,7 +144,7 @@ Run `baukit_test::check_postgres_inbox_conformance` through a small adapter over
 the product's real PostgreSQL schema. It covers first delivery, exact replay,
 concurrent replay, rollback after inbox insertion, domain failure, outbox
 failure, owner and source isolation, and replay after process-local state is
-discarded. The Baukit suite runs the concurrent case against PostgreSQL 18 in
+discarded. The Baukit suite runs the concurrent case against PostgreSQL 18.6 in
 Docker. Product tests must do the same against their migrations.
 
 ## 5. Outbound webhook delivery

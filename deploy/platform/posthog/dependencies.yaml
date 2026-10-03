@@ -202,7 +202,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: postgres
-          image: postgres:14.1-alpine@sha256:578ca5c8452c08a4e0f5e65b55dce5e1812fe63c8fee40ea837641031598e51e
+          image: postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
           imagePullPolicy: IfNotPresent
           env:
             - name: POSTGRES_DB
@@ -215,7 +215,7 @@ spec:
                   name: posthog-secrets
                   key: postgresql-password
             - name: PGDATA
-              value: /var/lib/postgresql/data/pgdata
+              value: /var/lib/postgresql/18/docker
           ports:
             - name: postgres
               containerPort: 5432
@@ -243,7 +243,7 @@ spec:
             runAsGroup: 70
           volumeMounts:
             - name: data
-              mountPath: /var/lib/postgresql/data
+              mountPath: /var/lib/postgresql
   volumeClaimTemplates:
     - metadata:
         name: data

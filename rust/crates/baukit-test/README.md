@@ -141,7 +141,7 @@ let pool = sqlx::PgPool::connect(postgres.connection_url()).await?;
 # }
 ```
 
-`start_postgres` runs PostgreSQL 18 Alpine. It, `start_redis`, and `start_redis_sentinel` bind random
+`start_postgres` runs PostgreSQL 18.6 Alpine. It, `start_redis`, and `start_redis_sentinel` bind random
 host ports and hand back a container that lives until the value drops, so tests run in parallel
 without fighting over ports. The Sentinel fixture builds a real master/replica/sentinel topology on
 its own network, which is the only way to test failover behavior honestly.
@@ -149,7 +149,7 @@ its own network, which is the only way to test failover behavior honestly.
 ### PostgreSQL options
 
 `PostgresTestOptions` builds the same container with three extra choices. `with_image` swaps the
-image, for example `timescale/timescaledb` at `latest-pg17`. `with_app_role` creates a login role
+image, for example `postgres` at `18.6-bookworm`. `with_app_role` creates a login role
 without superuser or `BYPASSRLS` before migrations run, so row-level security policies apply to the
 connection the product's code uses. `with_migrations` applies SQLx migrations as the `postgres`
 superuser.
@@ -159,7 +159,7 @@ superuser.
 use baukit_test::{PostgresAppRole, PostgresTestOptions};
 
 let postgres = PostgresTestOptions::new()
-    .with_image("postgres", "17-alpine")
+    .with_image("postgres", "18.6-bookworm")
     .with_app_role(PostgresAppRole::new("app_user", "app-secret")?)
     .with_migrations("migrations")
     .start()

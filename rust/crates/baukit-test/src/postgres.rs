@@ -13,7 +13,7 @@ use crate::postgres_database::{PostgresAppRole, PostgresTestDatabase, PostgresTe
 use crate::{CleanupKind, OwnedResourceCheck};
 
 const POSTGRES_IMAGE_NAME: &str = "postgres";
-const POSTGRES_IMAGE_TAG: &str = "18-alpine";
+const POSTGRES_IMAGE_TAG: &str = "18.6-alpine";
 const POSTGRES_PORT: u16 = 5432;
 
 /// A running disposable PostgreSQL container and its connection URL.
@@ -79,7 +79,7 @@ impl fmt::Debug for PostgresTestContainer {
 
 /// Image, app role, and migrations for a disposable PostgreSQL container.
 ///
-/// The default is the official `postgres:18-alpine` image with only the
+/// The default is the official `postgres:18.6-alpine` image with only the
 /// `postgres` superuser, which is what [`start_postgres`] starts.
 #[derive(Clone, Debug)]
 pub struct PostgresTestOptions {
@@ -111,7 +111,7 @@ impl PostgresTestOptions {
         Self::default()
     }
 
-    /// Replaces the image, for example `timescale/timescaledb` and `latest-pg17`.
+    /// Replaces the image, for example `postgres` and `18.6-bookworm`.
     ///
     /// The image must accept the official image's `POSTGRES_USER`,
     /// `POSTGRES_PASSWORD`, and `POSTGRES_DB` variables.
@@ -218,7 +218,7 @@ pub struct ForeignKeyDeleteMismatch {
     pub declared_cleanup: CleanupKind,
 }
 
-/// Starts a disposable PostgreSQL 18 container asynchronously.
+/// Starts a disposable PostgreSQL 18.6 container asynchronously.
 ///
 /// The default Testcontainers module credentials and database are all
 /// `postgres`. Docker is contacted only when this function is called.
@@ -226,7 +226,7 @@ pub async fn start_postgres() -> Result<PostgresTestContainer, PostgresTestError
     PostgresTestOptions::new().start().await
 }
 
-/// Starts PostgreSQL 18 and applies SQLx migrations from `migrations_path`.
+/// Starts PostgreSQL 18.6 and applies SQLx migrations from `migrations_path`.
 ///
 /// This helper is available with the `sqlx-postgres` feature. Migration files
 /// use SQLx's ordinary file naming and checksum rules.
@@ -336,9 +336,22 @@ mod tests {
             .fetch_one(&pool)
             .await?
             .try_get::<String, _>("version")?;
-        assert!(
-            version.starts_with("18"),
-            "unexpected PostgreSQL version: {version}"
+        assert_eq!(version, "180006");
+        let settings = sqlx::query(
+            "SELECT current_setting('data_directory') AS data_directory, \
+             current_setting('data_checksums') AS data_checksums, \
+             current_setting('password_encryption') AS password_encryption",
+        )
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(
+            settings.try_get::<String, _>("data_directory")?,
+            "/var/lib/postgresql/18/docker"
+        );
+        assert_eq!(settings.try_get::<String, _>("data_checksums")?, "on");
+        assert_eq!(
+            settings.try_get::<String, _>("password_encryption")?,
+            "scram-sha-256"
         );
         let row = sqlx::query("SELECT to_regclass('fixture')::text AS table_name")
             .fetch_one(&pool)
@@ -353,7 +366,7 @@ mod tests {
     #[ignore = "requires a reachable Docker daemon and may pull the PostgreSQL image"]
     async fn starts_an_overridden_image_tag() -> Result<(), Box<dyn std::error::Error>> {
         let fixture = PostgresTestOptions::new()
-            .with_image("postgres", "17-alpine")
+            .with_image("postgres", "18.6-bookworm")
             .start()
             .await?;
         let pool = sqlx::PgPool::connect(fixture.connection_url()).await?;
@@ -361,7 +374,11 @@ mod tests {
             .fetch_one(&pool)
             .await?
             .try_get::<String, _>("version")?;
-        assert!(version.starts_with("17"), "unexpected version: {version}");
+        assert_eq!(version, "180006");
+        let build: String = sqlx::query_scalar("SELECT version()")
+            .fetch_one(&pool)
+            .await?;
+        assert!(build.contains("Debian"), "override was not used: {build}");
         pool.close().await;
         Ok(())
     }

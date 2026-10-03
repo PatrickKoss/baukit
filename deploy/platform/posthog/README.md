@@ -8,10 +8,12 @@ chart references it.
 The application renderer is the final published PostHog Kubernetes chart,
 `30.46.0` (PostHog `1.43.0`). PostHog ended Kubernetes support in 2023, so the
 chart is treated as a pinned renderer rather than an upgrade stream. The
-PostHog, ClickHouse 22.8.21.38, PostgreSQL 14.1, and Redis 6.2.6 (each inside
-PostHog 1.43.0's compatibility ranges),
-Redpanda, ZooKeeper, and BusyBox images
-are pinned by both version and digest. The chart's
+PostHog, ClickHouse 22.8.21.38, PostgreSQL 18.6, Redis 6.2.6, Redpanda,
+ZooKeeper, and BusyBox images are pinned by both version and digest.
+PostgreSQL follows Baukit's shared 18.6 baseline rather than the legacy chart's
+database version. Its Alpine container mounts `/var/lib/postgresql` and uses
+`PGDATA=/var/lib/postgresql/18/docker`. Recreate local PostgreSQL PVCs when
+switching major versions; old data directories cannot be reused. The chart's
 bundled PostgreSQL, Redis, Kafka, ZooKeeper, ingress controller, cert-manager,
 and observability components are disabled; small single-node dependencies live
 in this base instead. A zero-pod `posthog-pgbouncer` Service alias maps the

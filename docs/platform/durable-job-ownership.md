@@ -120,7 +120,7 @@ During adoption, Tiefgang can backfill provable legacy rows by joining `payload 
 
 ## Index measurement
 
-The index sketch was measured in `postgres:17-alpine` using the current `0001_baukit_jobs.sql` and `0002_baukit_jobs_failure_reason.sql` schemas plus the proposed column and check. The table held 1,000,000 rows, 800,000 with an owner key. There were 8,000 non-null owners with 100 rows each. Statuses per owner were 50 pending, 5 running, 35 succeeded, 5 failed, and 5 cancelled.
+The historical index sketch was measured in `postgres:17-alpine` using the current `0001_baukit_jobs.sql` and `0002_baukit_jobs_failure_reason.sql` schemas plus the proposed column and check. Baukit now tests this schema on `postgres:18.6-alpine`. The table held 1,000,000 rows, 800,000 with an owner key. There were 8,000 non-null owners with 100 rows each. Statuses per owner were 50 pending, 5 running, 35 succeeded, 5 failed, and 5 cancelled.
 
 The heap was 196 MB and the three existing indexes used 70 MB. The proposed partial index used 47,120,384 bytes, reported as 45 MB, or 58.9 bytes per indexed row. It added about 24 percent of the heap size and 67 percent of the existing index footprint. `CREATE INDEX CONCURRENTLY` took 521 ms in the local Docker run. That build time is hardware and cache dependent.
 

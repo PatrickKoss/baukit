@@ -177,7 +177,7 @@ PostgreSQL race check when migrating an existing test suite.
 
 ## Measured PostgreSQL behavior
 
-`baukit-test` runs the four methods against PostgreSQL 18 Alpine in Docker. The ignored test
+`baukit-test` runs the four methods against PostgreSQL 18.6 Alpine in Docker. The ignored test
 `live_row_cap::tests::compares_live_row_cap_methods_on_postgres` synchronizes two independent
 operations at the last slot and repeats each race 16 times.
 

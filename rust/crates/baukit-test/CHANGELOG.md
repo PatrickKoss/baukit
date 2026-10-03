@@ -26,6 +26,13 @@ All notable changes to `baukit-test` are documented here.
   dependencies and use sqlx `tls-rustls-aws-lc-rs`. This keeps rustls client
   and server builders from panicking when they select a crypto provider.
 
+### Changed
+
+- Pin the default PostgreSQL image to `18.6-alpine`. The image override test
+  uses `18.6-bookworm`, so all PostgreSQL fixture tests run on 18.6.
+- Check the versioned data directory, enabled checksums, SCRAM password
+  encryption, and SQLx migrations against PostgreSQL 18.6.
+
 ## [0.6.0] - 2026-10-02
 
 ## [0.5.2] - 2026-09-30

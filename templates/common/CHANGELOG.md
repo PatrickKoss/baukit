@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-- Generated `AGENTS.md` is a regular file, with the same guidance as `CLAUDE.md`, for Turbo workspace discovery.
+{% if context.backend %}- Pin the development database to PostgreSQL `18.6-alpine`. Mount its volume
+  at `/var/lib/postgresql` and recreate local volumes on major-version changes.
+{% endif %}- Generated `AGENTS.md` is a regular file, with the same guidance as `CLAUDE.md`, for Turbo workspace discovery.
 {% if context.mobile %}- Aligned both mobile templates on `expo-constants` 57.0.20. Pinned `react-dom` to 19.2.8 alongside mobile React and `@react-native/metro-config` to React Native 0.86.3, allowed the ESLint 10 peer for the accessibility plugin, and disabled the `core-js` postinstall through pnpm 12 `allowBuilds`.
 {% endif %}{% if context.backend and context.auth_oidc %}- Moved the development Keycloak image to 26.8.0. The theme browser matrix covers 26.7.5 and 26.8.0.
 - Moved the development Redis image to 8.10.2 Alpine.

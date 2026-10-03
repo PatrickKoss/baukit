@@ -114,6 +114,10 @@ deploy/observability/product-metrics.txt`. The generated
 
 ### Observed repeated glue
 
+The observations below record the product pins at the time of the survey.
+Baukit now defaults to `postgres:18.6-alpine`, and products should adopt
+PostgreSQL 18 instead of retaining these older overrides.
+
 `baukit_test::start_postgres` pinned `postgres:18-alpine`, connected only as the
 `postgres` superuser, and gave one database per container. Products work around
 each limit:
@@ -138,7 +142,7 @@ each limit:
 
 - `PostgresTestOptions::new()` with `with_image(name, tag)`,
   `with_app_role(PostgresAppRole)`, `with_migrations(path)`, and `start()`.
-  The default is the old `postgres:18-alpine` fixture.
+  The default is now `postgres:18.6-alpine`.
 - `PostgresAppRole::new(name, password)` validates both. The role is created
   `LOGIN NOSUPERUSER NOBYPASSRLS` before migrations, gets `USAGE` on `public`,
   and default privileges for tables and sequences that migrations create.
@@ -177,7 +181,7 @@ variables and prints the official readiness lines.
 
 ### Tests
 
-Docker tests in `postgres.rs`: an overridden `17-alpine` tag, an app role bound
+Docker tests in `postgres.rs`: an overridden `18.6-bookworm` tag, an app role bound
 by an RLS policy for reads and writes and reporting `rolsuper` and
 `rolbypassrls` false, two per-test databases dropped explicitly and by `Drop`
 while a pool is still open, an external-server database dropped by `Drop`, and
@@ -194,11 +198,11 @@ returns.
 ### Product adoption
 
 - Runtime Analyzer: replace the `GenericImage` and readiness loop in
-  `finops-test` with `PostgresTestOptions::new().with_image("timescale/timescaledb",
-  "latest-pg17").with_app_role(PostgresAppRole::new("finops_app", ...))` and use
+  `finops-test` with `PostgresTestOptions::new().with_app_role(...)` and use a
+  product-pinned PostgreSQL 18 TimescaleDB image if extensions are required. Use
   `app_connection_url()` for `app_pool`.
 - Hebkit: replace the hand-built container in `tests/common/mod.rs:186-206`
-  with `PostgresTestOptions::new().with_image("postgres", "16-alpine")`.
+  with `PostgresTestOptions::new()` and its PostgreSQL 18.6 default.
 - Redemut: replace the per-test `CREATE DATABASE` code in
   `tests/support/mod.rs:242-360` with `create_database()`.
 - Solo Leveling System: replace the `DATABASE_URL` branch with

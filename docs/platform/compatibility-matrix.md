@@ -35,7 +35,8 @@ and remains a release-host check rather than a Linux result.
 |---|---|---|---|
 | Async runtime | Tokio | 1.x (latest at train cut) | |
 | HTTP | Axum | 0.8 | Tower / Tower HTTP at Axum-compatible versions |
-| Persistence | SQLx | 0.9 | PostgreSQL, `runtime-tokio`, rustls |
+| Persistence | SQLx | 0.9 | PostgreSQL 18.6, `runtime-tokio`, rustls |
+| Database | PostgreSQL | 18.6 | Alpine in tests, generated Compose and PostHog; CNPG uses `18.6-system-trixie` for primary and restore clusters. |
 | API description | Utoipa | 6 | |
 | Traces | OpenTelemetry + tracing-opentelemetry | 0.33 + 0.34 | upgrade only as a matched set |
 | Metrics | metrics + metrics-exporter-prometheus | latest compatible | one recorder per process |
@@ -44,9 +45,24 @@ and remains a release-host check rather than a Linux result.
 | Outbound HTTP | reqwest | 0.13, rustls with the platform verifier | |
 | Auth | ring + JWKS | latest | Keycloak OIDC default; Clerk session-token adapter with `azp` validation; WorkOS AuthKit adapter bound to `client_id`. `ApiTokenStore` returns `ApiTokenStoreError` since 0.3.0. |
 | Development identity provider | Keycloak | 26.8.0 | Generated `compose.yaml` image; `make dev` reconciles the development realm from `realm-policy.json`. |
-| Integration tests | testcontainers | latest | `baukit-test` pins `postgres:18-alpine`; templates and smoke deploys use the same image |
+| Integration tests | testcontainers | latest | `baukit-test` pins `postgres:18.6-alpine`; templates and smoke deploys use the same image |
 | Sync revisions | `baukit-sync` | 0.5.2 | Per-owner revision allocation, locking revision reads, tombstone purge horizons with a pull-cursor guard, the syncable-table column convention, and a `user_id` to `owner_id` migration. SQLx 0.9 and PostgreSQL behind the `sqlx-postgres` feature; the hybrid logical clock needs neither. |
 | Provider connectors | `baukit-integrations` | 0.5.2 | Contract-only connector port, cursor-paged pages, and `baukit-http` retry classes; no SQLx, no HTTP client. |
+
+## PostgreSQL 18 storage and compatibility
+
+Docker Official Image containers mount `/var/lib/postgresql` and keep data at
+`/var/lib/postgresql/18/docker`. CNPG manages its own PVC mounts. Recreate local
+volumes and PVCs for the major-version change because no product is live.
+Existing PostgreSQL data needs dump/restore or `pg_upgrade` if it must be kept.
+See the [image storage contract](https://hub.docker.com/_/postgres#pgdata).
+
+PostgreSQL 18 enables data checksums for new clusters and deprecates MD5
+password authentication. Keep checksums enabled and use the default
+`scram-sha-256` password encryption. SQLx 0.9 migrations and role setup are
+checked against 18.6 in the Docker suites. Baukit migrations do not use implicit
+generated columns, unlogged partitioned tables, or the removed statistics
+columns. See the [PostgreSQL 18 release notes](https://www.postgresql.org/docs/18/release-18.html).
 
 ## Cross-runtime contracts
 

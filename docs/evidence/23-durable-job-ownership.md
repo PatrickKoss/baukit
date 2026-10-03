@@ -1,5 +1,8 @@
 # 23. Durable job ownership
 
+Baukit now uses PostgreSQL 18.6. The version and timings below describe the
+original measurement, which has not been repeated on 18.6.
+
 ## Source product files
 
 - `/home/patrick/projects/tiefgang/backend/crates/tiefgang-postgres/src/erasure.rs`
@@ -34,7 +37,7 @@ PostgreSQL through `PostgresJobStore`. Custom `JobStore` implementations remain 
 
 ## Index evidence
 
-PostgreSQL 17 in Docker held 1,000,000 current-schema rows, including 800,000 owner-scoped rows across 8,000 owners. The partial `(owner_key, created_at, id)` index was 47,120,384 bytes, or 58.9 bytes per owned row. An owner selector changed from a sequential scan that rejected 999,945 rows to a bitmap scan of 100 owner entries. Measured warm-cache execution changed from 54.775 ms before the index to 0.119 ms after it; the comparable terminal selector took 0.111 ms.
+The historical PostgreSQL 17 Docker measurement held 1,000,000 current-schema rows, including 800,000 owner-scoped rows across 8,000 owners. The partial `(owner_key, created_at, id)` index was 47,120,384 bytes, or 58.9 bytes per owned row. An owner selector changed from a sequential scan that rejected 999,945 rows to a bitmap scan of 100 owner entries. Measured warm-cache execution changed from 54.775 ms before the index to 0.119 ms after it; the comparable terminal selector took 0.111 ms.
 
 ## Product adoption change
 
