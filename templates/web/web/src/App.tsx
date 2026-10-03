@@ -18,7 +18,8 @@ export function App() {
   useAriaHiddenInert();
   const items = useQuery({ queryKey: ['items'], queryFn: () => listItems() });
   const [consent, setConsent] = useState<ConsentState>(analytics.consent);
-  const detailId = new URLSearchParams(window.location.search).get('item');
+  const [search, setSearch] = useState(window.location.search);
+  const detailId = new URLSearchParams(search).get('item');
   const detailState = deriveDetailRouteState({
     id: detailId,
     isValidId: (id) => ITEM_ID_PATTERN.test(id),
@@ -40,7 +41,11 @@ export function App() {
 
   return (
     <>
-      <NavigationShell />
+      <NavigationShell
+        onLocationChange={() => {
+          setSearch(window.location.search);
+        }}
+      />
       <main className="shell">
         <p className="eyebrow">BAUKIT WEB</p>
         <h1>{{ context.app_name }}</h1>

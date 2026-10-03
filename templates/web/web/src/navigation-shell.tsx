@@ -39,12 +39,18 @@ const items: readonly NavigationItem<NavigationIcon>[] = [
 
 export function NavigationShell({
   profile,
+  onLocationChange,
 }: {
   readonly profile?: NavigationProfile;
+  readonly onLocationChange?: () => void;
 }) {
   const [pathname, setPathname] = useState(
     window.location.pathname + window.location.hash,
   );
+  const locationChanged = useRef(onLocationChange);
+  useEffect(() => {
+    locationChanged.current = onLocationChange;
+  });
   const routeFocus = useRef<ReturnType<
     typeof createRouteFocusController
   > | null>(null);
@@ -53,6 +59,7 @@ export function NavigationShell({
     routeFocus.current = controller;
     const update = () => {
       setPathname(window.location.pathname + window.location.hash);
+      locationChanged.current?.();
     };
     window.addEventListener("popstate", update);
     window.addEventListener("hashchange", update);
@@ -78,6 +85,7 @@ export function NavigationShell({
   function navigate(href: string) {
     window.history.pushState(null, "", href);
     setPathname(window.location.pathname + window.location.hash);
+    onLocationChange?.();
   }
   return (
     <>

@@ -61,4 +61,27 @@ it("wires direct section selection and product-provided profile actions", () => 
   fireEvent.click(screen.getByRole("menuitem", { name: "Sign out" }));
   expect(signOut).toHaveBeenCalledOnce();
 });
+it("reports pushed and popped locations to the product", () => {
+  window.history.replaceState(null, "", "/");
+  const onLocationChange = vi.fn();
+  render(
+    <NavigationShell
+      onLocationChange={onLocationChange}
+      profile={{
+        label: "Account",
+        initials: "A",
+        menu: [{ id: "delete", label: "Delete profile", href: "/?page=delete" }],
+      }}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Account" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Delete profile" }));
+  expect(window.location.search).toBe("?page=delete");
+  expect(onLocationChange).toHaveBeenCalledOnce();
+  act(() => {
+    window.history.replaceState(null, "", "/");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  expect(onLocationChange).toHaveBeenCalledTimes(2);
+});
 {% endraw %}
