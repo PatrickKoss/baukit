@@ -36,7 +36,7 @@ and remains a release-host check rather than a Linux result.
 | Async runtime | Tokio | 1.x (latest at train cut) | |
 | HTTP | Axum | 0.8 | Tower / Tower HTTP at Axum-compatible versions |
 | Persistence | SQLx | 0.9 | PostgreSQL 18.6, `runtime-tokio`, rustls |
-| Database | PostgreSQL | 18.6 | Alpine in tests, generated Compose and PostHog; CNPG uses `18.6-system-trixie` for primary and restore clusters. |
+| Database | PostgreSQL | 18.6 | Alpine in tests and generated Compose; CNPG uses `18.6-system-trixie` for primary and restore clusters. |
 | API description | Utoipa | 6 | |
 | Traces | OpenTelemetry + tracing-opentelemetry | 0.33 + 0.34 | upgrade only as a matched set |
 | Metrics | metrics + metrics-exporter-prometheus | latest compatible | one recorder per process |
