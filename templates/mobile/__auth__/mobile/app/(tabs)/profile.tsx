@@ -1,6 +1,8 @@
 {% raw %}
 import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import { Link } from "expo-router";
+import { useTranslation } from "react-i18next";
 import { useOidcAuth } from "../../src/auth";
 import { useTheme } from "../../src/theme";
 import { ActionButton } from "../../src/action-button";
@@ -10,6 +12,7 @@ import { signOutWithPreferenceReset } from "../../src/preference-sign-out";
 export default function ProfileScreen() {
   const [error, setError] = useState<string>();
   const auth = useOidcAuth();
+  const { t } = useTranslation("home");
   const { theme } = useTheme();
   const { resetPreferenceIdentity } = useAppPreferences();
   return (
@@ -51,6 +54,13 @@ export default function ProfileScreen() {
           });
         }}
       />
+      <Link
+        href="/delete-profile"
+        accessibilityRole="link"
+        style={{ color: theme.color.text }}
+      >
+        {t("erasure.title")}
+      </Link>
     </View>
   );
 }

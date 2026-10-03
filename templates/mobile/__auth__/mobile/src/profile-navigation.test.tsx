@@ -8,6 +8,7 @@ import {
 import ProfileScreen from "../app/(tabs)/profile";
 import { useOidcAuth } from "./auth";
 import { defaultAppPreferences } from "./app-preferences";
+import { initializeI18n } from "./localization/i18n";
 
 jest.mock("./auth", () => ({ useOidcAuth: jest.fn() }));
 jest.mock("./app-shell", () => ({ useAppPreferences: jest.fn() }));
@@ -64,5 +65,13 @@ it("shows a preference reset failure and keeps the user signed in", async () => 
     await screen.findByText("Could not reset preferences."),
   ).toBeOnTheScreen();
   expect(signOut).not.toHaveBeenCalled();
+});
+
+it("links to profile deletion", async () => {
+  await initializeI18n("en");
+  await render(<ProfileScreen />);
+  expect(
+    screen.getByRole("link", { name: "Delete profile" }),
+  ).toBeOnTheScreen();
 });
 {% endraw %}

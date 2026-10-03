@@ -44,8 +44,10 @@ export function App() {
     enabled: partition !== undefined,
   });
   const [consent, setConsent] = useState<ConsentState>(analytics.consent);
-  const detailId = new URLSearchParams(window.location.search).get('item');
-  const deletingProfile = new URLSearchParams(window.location.search).get('page') === 'delete-profile';
+  const [search, setSearch] = useState(window.location.search);
+  const searchParams = new URLSearchParams(search);
+  const detailId = searchParams.get('item');
+  const deletingProfile = searchParams.get('page') === 'delete-profile';
   const detailState = deriveDetailRouteState({
     id: detailId,
     isValidId: (id) => ITEM_ID_PATTERN.test(id),
@@ -137,11 +139,19 @@ export function App() {
     <main className="shell">
 {% raw %}
       <NavigationShell
+        onLocationChange={() => {
+          setSearch(window.location.search);
+        }}
         profile={{
           label: 'Account',
           initials: 'A',
           menu: [
             { id: 'account', label: 'Profile', href: '/#identity-title' },
+            {
+              id: 'delete-profile',
+              label: deleteProfileCopy(navigator.language).title,
+              href: '/?page=delete-profile',
+            },
             {
               id: 'signout',
               label: 'Sign out',
