@@ -326,6 +326,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "baukit-erasure"
+version = "0.6.0"
+dependencies = [
+ "axum",
+ "baukit-config",
+ "baukit-http",
+ "baukit-jobs",
+ "baukit-runtime",
+ "baukit-test",
+ "chrono",
+ "reqwest",
+ "ring",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "testcontainers",
+ "thiserror",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "baukit-events"
 version = "0.6.0"
 dependencies = [
@@ -518,6 +541,7 @@ dependencies = [
  "base64 0.23.1",
  "baukit-auth",
  "baukit-core",
+ "baukit-erasure",
  "baukit-http",
  "baukit-integrations",
  "baukit-openapi",
@@ -2885,6 +2909,7 @@ dependencies = [
  "rustls-platform-verifier",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "sync_wrapper",
  "tokio",
  "tokio-rustls",

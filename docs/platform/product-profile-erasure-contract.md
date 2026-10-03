@@ -6,21 +6,18 @@
 [analytics privacy](./analytics-privacy-contract.md), and
 [`@baukit/api-runtime`](../../typescript/packages/api-runtime/README.md).
 
-Product-profile erasure removes the data owned by one user within one product. It
-is separate from deletion of the user's account at an identity provider. A
-product must state the scope in confirmation copy, progress messages, receipts,
-and completion copy. A control that leaves the identity-provider account in place
-must not claim to delete that account or all data everywhere.
+Product-profile erasure deletes the product's user data and its identity-provider
+account. `baukit-erasure` coordinates the database transaction, receipt, fence,
+and durable identity deletion. The product supplies its owned-row deletion
+callback and its inventory. The client composition remains in
+`@baukit/data-contracts`.
 
-The client-side composition lives in `@baukit/data-contracts` because it
-coordinates the identity-scoped persistence lifecycle. Products inject their
-server request, pre-server cleanup, local storage, and sign-out behavior.
-
-Identity-provider account deletion remains a product-owned provider integration.
-Baukit does not ship an account-deletion adapter. Product services should not
-branch on Keycloak, Clerk, or another provider. A product that offers both
-operations composes its provider adapter at the application boundary and
-documents whether it runs before or after product-profile erasure.
+The database transaction is the acceptance boundary. A failure before commit
+leaves both systems unchanged. After commit, the product rows are gone and the
+identity deletion is durable. A provider outage can leave identity deletion
+pending temporarily. The fence blocks old access tokens and profile recreation
+while the worker retries. Failed operations require operator repair and rerun;
+they are not instructions for the user to start another deletion.
 
 ## 1. Client operation
 
@@ -120,7 +117,7 @@ conflict.
 An asynchronous operation has an opaque erasure operation ID, receipt ID, and a
 safe status endpoint. The client persists enough non-sensitive operation state to
 resume reconciliation after a restart. Status values distinguish at least
-`pending`, `succeeded`, and `failed`. Terminal results are immutable. Status
+`pending`, `completed`, and `failed`. Completed receipts are immutable. Operators may repair failed operations and rerun their retained jobs. Status
 lookup is authorized for the same identity and must not reveal whether another
 user's receipt exists.
 
@@ -130,23 +127,82 @@ separate from `ErasureReceipt.status`, whose values are `completed` and
 
 ## 3. Product-owned HTTP responses and errors
 
-Baukit supplies the result composition and the standard error envelope, but it
-does not export an erasure endpoint, idempotency-key implementation, erasure
-status model, or the erasure-specific error codes below. Each product defines
-those pieces in its handler and OpenAPI description.
+Generated authenticated backends expose `DELETE /me` and
+`GET /me/erasures/{operationId}`. Both require the token's subject. DELETE
+requires one `Idempotency-Key` header with 16 to 128 visible ASCII characters.
+The status endpoint compares the token subject's keyed hash with the receipt;
+unknown and foreign operation IDs both return 404.
 
-An endpoint may return `204 No Content` when the authoritative database deletion
-completes during the request and no external processor work remains. A repeated
-request with the same idempotency key returns the same terminal success.
+The server executes this sequence:
 
-If object storage, analytics, exports, provider revocation, or another external
-processor must finish later, return `202 Accepted`. The response contains an
-opaque receipt ID, the erasure operation ID, its current state, and the status
-endpoint. It contains no user content. A `202` is valid only after authoritative
-database deletion has committed and every remaining processor task has been
-durably registered. The client can then erase the local partition and sign out,
-but it presents the external work as pending until the status endpoint reports a
-terminal result.
+1. Lock the idempotency key and subject. Same-subject replay returns the stored
+   receipt; another subject's reuse returns 409. A different key cannot start
+   another erasure for a fenced subject.
+2. In one PostgreSQL transaction, call the product callback to erase every owned
+   row and owned job, write a pending operation with keyed subject and key
+   hashes, insert a keyed subject fence, and enqueue `identity.account.delete`
+   through `PostgresJobStore::enqueue_in_transaction`. The job contains the raw
+   subject, provider ID and operation ID. Its idempotency key is the operation
+   ID. Any failure rolls back all four writes and the product deletion.
+3. After commit, try identity deletion once with a short timeout. A provider 404
+   succeeds. On success, update the receipt and delete the job together, then
+   return 200. On failure, return 202 and let the worker retry with backoff.
+4. The worker completes the same receipt and deletes the job in one transaction.
+   Permanent failures and exhausted attempts mark the operation failed. This
+   includes timeouts and expired final leases. Retain failed jobs for operator
+   rerun, exclude them from general retention cleanup, and alert on failed
+   operations. The fence remains active during repair.
+
+A 200 body is
+`{"status":"completed","operationId":"<uuid>","completedAt":"<RFC 3339>"}`.
+A 202 body is `{"status":"pending","operationId":"<uuid>"}` with
+`Location: /me/erasures/<operationId>`. DELETE replay keeps the operation ID.
+A pending receipt follows the operation's current state, including completion
+and its stable completion timestamp. A failed replay is 202 with status failed;
+it refers to the existing operation that operators must repair.
+
+GET returns 200 with status `pending`, `completed` or `failed`, the operation ID,
+and `completedAt` only after completion. Every ordinary authenticated request
+from a fenced subject returns 401 `profile_erased`. Status lookup and DELETE
+reconciliation are allowed without resolving a profile. Subject resolution
+checks the fence under the same transaction lock used by erasure before any
+profile insert. Checking only in HTTP middleware leaves a creation race.
+
+Fences contain only HMAC-SHA256 subject hashes. Operations contain only keyed
+hashes, timestamps and safe response bodies. Completed job rows are deleted
+immediately, so no row retains the raw subject after completion. Keycloak
+subjects are UUIDs and are not reused; fences may remain permanently.
+
+### Keycloak account deletion
+
+`KeycloakAccountDeleter` uses client credentials for the backend confidential
+client in the product realm. Grant its service account
+`realm-management/manage-users`. Keycloak has no delete-only role; this grant
+also permits other user-management operations. Reconciliation applies that role
+mapping without rotating the existing client secret.
+
+Deletion calls `DELETE {base}/admin/realms/{realm}/users/{subject}`. The OIDC
+subject is Keycloak's user ID. Deleting the account ends its sessions. The admin
+client caches tokens until shortly before expiry. Network failures, 5xx, 429 and
+token failures are retryable. A 403 from the admin deletion endpoint or a 400 is
+permanent and requires operator action.
+
+The admin client has connect and request timeouts, disables redirects and
+proxies, and requires HTTPS. An explicit local-development allowance permits
+HTTP. It has its own reqwest client because `baukit-egress` blocks private
+addresses and Keycloak is commonly in-cluster.
+
+Load the client secret and hash key through `baukit_config::Secret`. Generated
+local development uses the realm's local backend secret and a local hash key.
+Other environments require configured secrets and HTTPS. Provision at least 32
+random bytes for the hash key. Keep it stable and back it up with deployment
+secrets. Changing it without migrating existing hashes invalidates fences and
+receipt authorization. Never log credentials, tokens or subjects.
+
+The generated API runs a supervised in-process identity worker, including when
+no demo worker was requested. A separate worker can register
+`IdentityDeletionHandler` with the same store and provider ID; lease ownership
+allows both runners to share the outbox safely.
 
 Every non-success response uses the standard envelope emitted by `baukit-http`
 and parsed by `@baukit/api-runtime`:
@@ -166,7 +222,9 @@ The minimum stable product code set is:
 
 | Code | Meaning |
 | --- | --- |
-| `validation_failed` | The erasure request or idempotency key is malformed. |
+| `erasure_idempotency_key_invalid` | The required key is missing, repeated or malformed. |
+| `profile_erased` | A fenced subject cannot access product data or recreate a profile. |
+| `erasure_unavailable` | Durable erasure has no configured database. |
 | `unauthenticated` | A valid authenticated principal is required. |
 | `permission_denied` | The principal may not erase the addressed profile. |
 | `erasure_idempotency_conflict` | The key was already used for an incompatible request. |
@@ -197,7 +255,7 @@ removed:
 - push registrations and external integration credentials;
 - analytics deletion or a documented retention policy;
 - backups and the point at which natural expiry removes the data;
-- the identity-provider identity, with a clear yes or no.
+- the identity-provider account and sessions, removed by the identity deletion job.
 
 The confirmation UI and receipt use this inventory to make accurate claims.
 Asynchronous processors include their expected completion or retention period.
@@ -258,6 +316,22 @@ Conformance runs with isolated test identities and reports resource names and
 counts only. Failure output and database diagnostics must not print inserted user
 content, credentials, request bodies, or processor payloads.
 
+Products also implement `IdentityErasureAdapter` and run
+`check_identity_erasure_conformance` through their real authenticated endpoint
+and registered worker wiring. It injects one provider failure, checks that
+product rows are erased while the receipt and job remain pending, verifies
+replay and 409 conflict, rejects fenced profile resolution, runs the worker,
+and checks completed replay plus the absence of every raw-subject location.
+Use `FakeIdentityAccountDeleter` for the provider; its calls and scripted errors
+are test observations, never log fields.
+
+Analytics deletion is separate external work. Include analytics deletion or a
+documented retention policy in the inventory and follow the
+[analytics privacy contract](./analytics-privacy-contract.md). Completing the
+identity job alone does not prove that analytics, object storage or exports have
+been removed. Register those processors durably before accepting erasure, and
+make completion copy reflect their state.
+
 ## 6. Acceptance checks
 
 - Pre-server hook failure produces a warning and does not block the authoritative
@@ -269,8 +343,8 @@ content, credentials, request bodies, or processor payloads.
   its registry entry, and attempt sign-out in the required order.
 - Local deletion and sign-out failures remain distinguishable in the result.
 - Repeated requests return the same receipt and terminal result.
-- Confirmation and completion copy distinguish product-profile erasure from
-  identity-provider account deletion.
+- Confirmation copy says the identity-provider account will also be deleted.
+  Pending copy describes outstanding provider or other processor work.
 - The deletion inventory addresses all eight classes, records `not applicable`
   where needed, and the conformance graph reaches zero for every registered
   resource.
@@ -278,3 +352,21 @@ content, credentials, request bodies, or processor payloads.
   foreign keys, fail the schema audit unless their database action is
   `ON DELETE CASCADE`.
 - Tests and logs contain no user content or credentials.
+
+## 7. Adopting this in an existing product
+
+- Add `baukit-erasure` and migrate the existing receipt table to the shared
+  operation store. Preserve receipt IDs, replay responses and identity ownership
+  during migration. Apply the job failure trigger after the jobs schema.
+- Move all owned-row and owned-job deletion into `ProductErasure`. Include API
+  token deletion and every entry in the product's inventory.
+- Add fence checks to authenticated requests. Lock and check the fence inside
+  subject resolution before inserting a profile.
+- Register `IdentityDeletionHandler` with the durable worker. Alert on failed
+  operations and provide a repair-and-rerun procedure that retains their jobs.
+- Configure the confidential admin client and permanent keyed-hash secret.
+  Grant and reconcile the backend service account's `manage-users` role.
+- Expose the 200/202 DELETE receipt and subject-authorized status endpoint.
+  Keep the same idempotency key across ambiguous responses.
+- Change UI copy that says the IdP account stays. Show pending work honestly,
+  then run identity-erasure conformance through the product's actual router.

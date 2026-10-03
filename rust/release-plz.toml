@@ -98,6 +98,11 @@ name = "baukit-push"
 version_group = "baukit-release-train"
 publish = false
 
+[[package]]
+name = "baukit-erasure"
+version_group = "baukit-release-train"
+publish = false
+
 [changelog]
 protect_breaking_commits = true
 tag_pattern = "^v[0-9]+\\.[0-9]+\\.[0-9]+$"

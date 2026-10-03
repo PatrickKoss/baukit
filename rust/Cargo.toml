@@ -6,6 +6,7 @@ members = [
   "crates/baukit-credential-vault",
   "crates/baukit-egress",
   "crates/baukit-events",
+  "crates/baukit-erasure",
   "crates/baukit-runtime",
   "crates/baukit-config",
   "crates/baukit-http",
@@ -39,6 +40,7 @@ baukit-config = { version = "=0.6.0", path = "crates/baukit-config" }
 baukit-core = { version = "=0.6.0", path = "crates/baukit-core" }
 baukit-credential-vault = { version = "=0.6.0", path = "crates/baukit-credential-vault" }
 baukit-egress = { version = "=0.6.0", path = "crates/baukit-egress" }
+baukit-erasure = { version = "=0.6.0", path = "crates/baukit-erasure" }
 baukit-events = { version = "=0.6.0", path = "crates/baukit-events" }
 baukit-http = { version = "=0.6.0", path = "crates/baukit-http" }
 baukit-integrations = { version = "=0.6.0", path = "crates/baukit-integrations" }

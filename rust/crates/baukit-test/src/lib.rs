@@ -38,6 +38,8 @@ mod credential_probe;
 mod erasure;
 #[cfg(test)]
 mod fixture_tests;
+mod identity_deleter;
+mod identity_erasure;
 mod inbox;
 mod jwt;
 mod limits;
@@ -75,6 +77,11 @@ pub use credential_probe::{
 pub use erasure::{
     CleanupKind, ErasureConformanceError, OwnedResourceCheck, ProductProfileErasureAdapter,
     check_product_profile_erasure_conformance,
+};
+pub use identity_deleter::FakeIdentityAccountDeleter;
+pub use identity_erasure::{
+    IdentityErasureAdapter, IdentityErasureConformanceError, IdentityErasureResponse,
+    IdentityErasureSnapshot, check_identity_erasure_conformance,
 };
 pub use inbox::{
     InboxConformanceCases, InboxConformanceError, InboxDelivery, InboxDisposition, InboxFault,

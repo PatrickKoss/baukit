@@ -6,6 +6,7 @@ All notable changes to `baukit-test` are documented here.
 
 ### Added
 
+- Add a scripted identity account deleter and endpoint erasure conformance checks.
 - Add authorization-code and client-credentials grants to `MockOidcServer`.
   `issue_authorization_code` replaces an interactive authorize endpoint in
   tests. Codes require an S256 PKCE proof, bind the client and redirect URI,
