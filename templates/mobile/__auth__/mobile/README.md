@@ -35,3 +35,22 @@ Use `make e2e-android` or `make e2e-ios` for one disposable automated run. Mobil
 The generated `.maestro/smoke.yaml` signs in with the local test account, reaches the main screen, and persists analytics consent. Add product critical paths beside it. QA state and logs live under `.qa/`; generated native projects and build output are ignored by Git. `qa-down` removes only the QA compose project's volumes.
 
 The Baukit packages come from {{ context.baukit_typescript_dependency_description }} and the generated lockfile makes the first install reproducible. Native compilation is outside the portable CI gates; run `corepack pnpm@12.7.0 typecheck`, `corepack pnpm@12.7.0 lint`, and `corepack pnpm@12.7.0 test`.
+
+## Delete profile
+
+The Identity section links to `/delete-profile`. The screen requires a second explicit
+confirmation to delete the profile data and sign-in account. Its service uses
+`DELETE /me` and keeps the idempotency key in Expo SecureStore under a hashed account
+slot. A dropped response keeps local data and authentication for a safe retry.
+
+After a completed or pending receipt, the service erases the local account
+partition and clears authentication. A pending result explains that sign-in
+account deletion is still finishing. The screen can check the operation with
+the token captured before sign-out. A failed operation asks the user to contact
+support; it does not offer another deletion. English and German strings live
+in `src/delete-profile-copy.ts`.
+
+Navigation changes can mount `src/delete-profile-screen.tsx` through the
+existing route. Keep the route mounted after local sign-out so the pending
+result stays visible. The server must implement the profile-erasure HTTP
+contract and its identity deletion worker.

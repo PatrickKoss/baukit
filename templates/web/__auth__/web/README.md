@@ -45,3 +45,22 @@ E2E_WEB_PORT=5183 corepack pnpm@12.7.0 exec playwright test --config e2e/playwri
 ```
 
 `E2E_WEB_PORT` sets the Vite port and defaults to 5173, the only origin the realm file lists. Before the specs run, global setup adds the chosen origin to the `{{ context.app_name }}-web` client's redirect URIs and web origins through the admin API if the client lacks it. The config reuses a server that already listens on the port, so pick a free port when another process holds 5173. `E2E_KEYCLOAK_URL`, `E2E_KEYCLOAK_REALM`, `E2E_KEYCLOAK_ADMIN_USERNAME`, `E2E_KEYCLOAK_ADMIN_PASSWORD`, and `E2E_KEYCLOAK_WEB_CLIENT_ID` override the development defaults. Each run leaves its users and any added origin in the realm, so point it only at a disposable development realm. The hermetic browser gate never runs these specs.
+
+## Delete profile
+
+The Identity section links to `/?page=delete-profile`. The screen requires a second explicit
+confirmation to delete the profile data and sign-in account. Its service uses
+`DELETE /me` and keeps the idempotency key in Web Storage under a hashed account
+slot. A dropped response keeps local data and authentication for a safe retry.
+
+After a completed or pending receipt, the service erases the local account
+partition and clears authentication. A pending result explains that sign-in
+account deletion is still finishing. The screen can check the operation with
+the token captured before sign-out. A failed operation asks the user to contact
+support; it does not offer another deletion. English and German strings live
+in `src/delete-profile-copy.ts`.
+
+Navigation changes can mount `src/delete-profile-screen.tsx` through the
+existing route. Keep the route mounted after local sign-out so the pending
+result stays visible. The server must implement the profile-erasure HTTP
+contract and its identity deletion worker.

@@ -7,6 +7,7 @@ const mockOpenDatabase = jest.fn((name: string) => Promise.resolve({ name }));
 const mockStoreInitialize = jest.fn(() => Promise.resolve());
 const mockStoreClose = jest.fn(() => Promise.resolve());
 const mockStoreConstructed = jest.fn();
+const mockDeleteDatabase = jest.fn<Promise<void>, [string]>().mockResolvedValue(undefined);
 
 jest.mock('expo-secure-store', () => ({
   getItemAsync: (key: string) => Promise.resolve(mockSecureStore.get(key) ?? null),
@@ -25,6 +26,7 @@ jest.mock('expo-crypto', () => {
 });
 jest.mock('expo-sqlite', () => ({
   openDatabaseAsync: (name: string) => mockOpenDatabase(name),
+  deleteDatabaseAsync: (name: string) => mockDeleteDatabase(name),
 }));
 jest.mock('@baukit/data-contracts-expo-sqlite', () => ({
   ExpoSqliteStore: class {
@@ -132,6 +134,18 @@ describe('authenticated local data', () => {
     expect(mockStoreClose).toHaveBeenCalledTimes(1);
   });
 
+  it('deletes the closed partition database and removes its registry entry', async () => {
+    const { result } = await renderReady('subject-erase');
+    const state = result.current.state;
+    if (state.status !== 'ready') throw new Error('Expected a ready partition.');
+    await act(() => result.current.erase('subject-erase'));
+    expect(mockStoreClose).toHaveBeenCalledTimes(1);
+    expect(mockDeleteDatabase).toHaveBeenCalledWith(`${state.partition.storeName}.db`);
+    expect(result.current.state.status).toBe('signed-out');
+    const registry = [...mockSecureStore.entries()].find(([key]) => key.endsWith(':local-data-registry:v1'));
+    expect(registry?.[1]).not.toContain('subject-erase');
+  });
+
   it('blocks local data when the session expires', async () => {
     const { result, rerender } = await renderReady('subject-expired');
 
@@ -190,4 +204,12 @@ describe('authenticated local data', () => {
 
     expect(mockStoreInitialize).toHaveBeenCalledTimes(1);
   });
+});
+
+
+it('retains a different account database if the subject changes during erasure', async () => {
+  const { result } = await renderReady('subject-new-account');
+  await expect(result.current.erase('subject-old-account')).rejects.toThrow(PersistenceIdentityMismatchError);
+  expect(mockDeleteDatabase).not.toHaveBeenCalled();
+  expect(result.current.state).toMatchObject({ status: 'ready', partition: { subject: 'subject-new-account' } });
 });

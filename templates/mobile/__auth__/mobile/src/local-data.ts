@@ -40,6 +40,7 @@ function digest(value: string): Promise<string> {
 const localDataLifecycle = createProductPersistenceLifecycle<ExpoSqliteStore<Item>>({
   registry: new SecureStoreRegistry(),
   digest,
+  erase: ({ storeName }) => SQLite.deleteDatabaseAsync(`${storeName}.db`),
   open: async ({ storeName }) => {
     const database = await SQLite.openDatabaseAsync(`${storeName}.db`);
     const store = new ExpoSqliteStore<Item>(database, 'product', {
@@ -63,6 +64,7 @@ export type LocalDataState = ScopedPersistenceLifecycleState<ExpoSqliteStore<Ite
 
 export interface AuthenticatedLocalData {
   readonly state: LocalDataState;
+  readonly erase: (subject: string) => Promise<void>;
   readonly blockIdentityMismatch: (error: PersistenceIdentityMismatchError) => Promise<void>;
 }
 
@@ -130,5 +132,15 @@ function useAuthenticatedLocalDataState(
     [],
   );
 
-  return { state, blockIdentityMismatch };
+  const erase = useCallback(async (subject: string): Promise<void> => {
+    if (localDataLifecycle.current()?.subject !== subject) {
+      throw new PersistenceIdentityMismatchError();
+    }
+    if (!(await localDataLifecycle.eraseActivePartition())) {
+      throw new Error('No active local account partition to erase.');
+    }
+    setState(localDataLifecycle.state);
+  }, []);
+
+  return { state, erase, blockIdentityMismatch };
 }

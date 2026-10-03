@@ -5,6 +5,7 @@ import {
   recheckServerSubjectBeforeSyncAdoption,
 } from '@baukit/data-contracts';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'expo-router';
 
 import { ActionButton } from '../../src/action-button';
 import { loadAnalytics } from '../../src/analytics';
@@ -145,6 +146,9 @@ export default function TodayScreen() {
             }
             secondary
           />
+          <Link href="/delete-profile" accessibilityRole="link" style={styles.muted}>
+            {t('erasure.title', { ns: 'home' })}
+          </Link>
         </View>
 
         <View style={styles.card}>

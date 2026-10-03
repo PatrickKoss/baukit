@@ -17,6 +17,8 @@ import { backOrReplace, browserNavigation } from './back-or-replace';
 import { deriveDetailRouteState } from './route-state';
 import { DetailRouteStateView } from './route-state-view';
 import { useAuthenticatedLocalData } from './local-data';
+import { DeleteProfileRoute } from './delete-profile-route';
+import { deleteProfileCopy } from './delete-profile-copy';
 
 const ITEM_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -43,6 +45,7 @@ export function App() {
   });
   const [consent, setConsent] = useState<ConsentState>(analytics.consent);
   const detailId = new URLSearchParams(window.location.search).get('item');
+  const deletingProfile = new URLSearchParams(window.location.search).get('page') === 'delete-profile';
   const detailState = deriveDetailRouteState({
     id: detailId,
     isValidId: (id) => ITEM_ID_PATTERN.test(id),
@@ -154,6 +157,16 @@ export function App() {
       <h1>{{ context.app_name }}</h1>
       <p className="lede">A Vite app using Baukit OIDC discovery and authorization code + PKCE.</p>
 
+      {deletingProfile ? <DeleteProfileRoute
+        subject={user?.subject}
+        ready={partition !== undefined}
+        eraseLocalPartition={() => localData.erase(user?.subject ?? '')}
+        onSignedOut={() => {
+          setAuthenticated(false);
+          setUser(undefined);
+        }}
+      /> : null}
+
       {detailId === null ? null : (
         <DetailRouteStateView<Item>
           state={detailState}
@@ -201,6 +214,9 @@ export function App() {
             >
               Sign out
             </button>
+            <a className="action secondary" href="/?page=delete-profile">
+              {deleteProfileCopy(navigator.language).title}
+            </a>
           </>
         ) : (
           <button className="action" type="button" onClick={() => void authClient.login()}>

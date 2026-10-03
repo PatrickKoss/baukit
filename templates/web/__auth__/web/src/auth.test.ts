@@ -15,6 +15,7 @@ const oidc = vi.hoisted(() => {
     >(() => Promise.resolve('access-token')),
     subscribeSessionExpired: vi.fn<(listener: unknown) => () => void>(() => unsubscribe),
     logout: vi.fn(() => Promise.resolve(true)),
+    clearSession: vi.fn(),
   };
 });
 
@@ -30,6 +31,7 @@ vi.mock('@baukit/auth-web', async (importOriginal) => {
     public accessToken = oidc.accessToken;
     public subscribeSessionExpired = oidc.subscribeSessionExpired;
     public logout = oidc.logout;
+    public clearSession = oidc.clearSession;
   }
   return { ...actual, OidcClient: FakeOidcClient };
 });
@@ -146,4 +148,12 @@ describe('authClient in the browser', () => {
 
     expect(oidc.accessToken).toHaveBeenCalledWith({});
   });
+});
+
+it('clears local tokens for profile erasure without a logout redirect', async () => {
+  vi.stubGlobal('window', { location: { origin: 'https://app.example.test' } });
+  const auth = await loadAuthClient();
+  auth.clearSession();
+  expect(oidc.clearSession).toHaveBeenCalledOnce();
+  expect(oidc.logout).not.toHaveBeenCalled();
 });

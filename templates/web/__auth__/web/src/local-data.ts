@@ -31,6 +31,7 @@ export type LocalDataState = ScopedPersistenceLifecycleState<CachePartition>;
 export interface AuthenticatedLocalData {
   readonly state: LocalDataState;
   readonly clear: () => Promise<void>;
+  readonly erase: (subject: string) => Promise<void>;
   readonly blockIdentityMismatch: (
     error: PersistenceIdentityMismatchError,
   ) => Promise<void>;
@@ -47,6 +48,10 @@ export function useAuthenticatedLocalData(
       createProductPersistenceLifecycle<CachePartition>({
         registry: new LocalStorageRegistry(),
         open: () => Promise.resolve({ close: () => Promise.resolve() }),
+        erase: () => {
+          queryClient.clear();
+          return Promise.resolve();
+        },
         resetUserScopedState: () => {
           queryClient.clear();
           analytics.reset();
@@ -84,6 +89,16 @@ export function useAuthenticatedLocalData(
     setState(lifecycle.state);
   }, [lifecycle]);
 
+  const erase = useCallback(async (subject: string): Promise<void> => {
+    if (lifecycle.current()?.subject !== subject) {
+      throw new PersistenceIdentityMismatchError();
+    }
+    if (!(await lifecycle.eraseActivePartition())) {
+      throw new Error('No active local account partition to erase.');
+    }
+    setState(lifecycle.state);
+  }, [lifecycle]);
+
   const blockIdentityMismatch = useCallback(
     async (error: PersistenceIdentityMismatchError): Promise<void> => {
       await lifecycle.blockIdentityMismatch(error);
@@ -92,5 +107,5 @@ export function useAuthenticatedLocalData(
     [lifecycle],
   );
 
-  return { state, clear, blockIdentityMismatch };
+  return { state, clear, erase, blockIdentityMismatch };
 }

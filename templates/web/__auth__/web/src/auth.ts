@@ -33,4 +33,7 @@ export const authClient = {
     typeof window === 'undefined' ? () => undefined : client().subscribeSessionExpired(listener),
   logout: (): Promise<boolean> =>
     typeof window === 'undefined' ? Promise.resolve(false) : client().logout(),
+  clearSession: (): void => {
+    client().clearSession();
+  },
 };

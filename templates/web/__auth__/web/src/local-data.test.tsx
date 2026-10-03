@@ -94,6 +94,19 @@ describe('useAuthenticatedLocalData', () => {
     expect(result.current.state.status).toBe('signed-out');
   });
 
+  it('erases the account registry and cached data', async () => {
+    const queryClient = new QueryClient();
+    const { result } = renderLocalData({ subject: 'account-erase', sessionExpired: false }, queryClient);
+    await waitFor(() => { expect(result.current.state.status).toBe('ready'); });
+    queryClient.setQueryData(['private'], 'private content');
+    await act(() => result.current.erase('account-erase'));
+    expect(result.current.state.status).toBe('signed-out');
+    expect(queryClient.getQueryData(['private'])).toBeUndefined();
+    const registry = Object.keys(localStorage).find((key) => key.endsWith(':local-data-registry:v1'));
+    expect(registry).toBeDefined();
+    expect(localStorage.getItem(registry ?? '')).not.toContain('account-erase');
+  });
+
   it('blocks on an identity mismatch reported by the API layer', async () => {
     const { result } = renderLocalData({ subject: 'account-a', sessionExpired: false });
     await waitFor(() => {
@@ -134,4 +147,12 @@ describe('useAuthenticatedLocalData', () => {
     });
     expect(result.current.state.status).toBe('signed-out');
   });
+});
+
+
+it('retains a different account partition if the subject changes during erasure', async () => {
+  const { result } = renderLocalData({ subject: 'account-b', sessionExpired: false });
+  await waitFor(() => { expect(result.current.state.status).toBe('ready'); });
+  await expect(result.current.erase('account-a')).rejects.toThrow(PersistenceIdentityMismatchError);
+  expect(result.current.state).toMatchObject({ status: 'ready', partition: { subject: 'account-b' } });
 });
