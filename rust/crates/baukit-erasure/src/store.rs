@@ -1,4 +1,6 @@
-use crate::{ErasureFuture, IDENTITY_DELETE_JOB_TYPE, IdentityAccountDeleter};
+use crate::{
+    ErasureFuture, IDENTITY_DELETE_JOB_TYPE, IdentityAccountDeleter, IdentityDeletionError,
+};
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -71,6 +73,19 @@ pub enum ErasureError {
     /// Invalid stored response.
     #[error("invalid erasure receipt")]
     Receipt(#[from] serde_json::Error),
+}
+impl ErasureError {
+    fn class(&self) -> &'static str {
+        match self {
+            Self::InvalidKey => "invalid_key",
+            Self::Conflict => "conflict",
+            Self::ProfileErased => "profile_erased",
+            Self::Configuration => "configuration",
+            Self::Database(_) => "database",
+            Self::Jobs(_) => "job_store",
+            Self::Receipt(_) => "receipt",
+        }
+    }
 }
 impl IntoResponse for ErasureError {
     fn into_response(self) -> Response {
@@ -235,6 +250,8 @@ pub struct ErasureService {
 }
 impl ErasureService {
     /// Builds a service. Provider id must match the registered worker handler.
+    /// Keep inline_timeout short: its whole-provider-call budget includes token
+    /// acquisition and holds a pooled connection and job row lock until it ends.
     pub fn new(
         store: PostgresErasureStore,
         deleter: Arc<dyn IdentityAccountDeleter>,
@@ -315,7 +332,14 @@ impl ErasureService {
             Ok(outcome) => Ok(outcome),
             // Acceptance is already durable. The worker also reconciles a provider
             // success whose receipt update failed.
-            Err(_) => Ok(outcome),
+            Err(error) => {
+                tracing::warn!(
+                    operation_id = %outcome.operation_id,
+                    error_class = error.class(),
+                    "inline erasure reconciliation failed",
+                );
+                Ok(outcome)
+            }
         }
     }
     async fn inline(
@@ -339,10 +363,21 @@ impl ErasureService {
                 .await?
                 .unwrap_or(outcome));
         }
-        if !matches!(
-            tokio::time::timeout(self.inline_timeout, self.deleter.delete_account(subject)).await,
-            Ok(Ok(()))
-        ) {
+        let error_class =
+            match tokio::time::timeout(self.inline_timeout, self.deleter.delete_account(subject))
+                .await
+            {
+                Ok(Ok(())) => None,
+                Ok(Err(IdentityDeletionError::Retryable)) => Some("retryable"),
+                Ok(Err(IdentityDeletionError::Permanent)) => Some("permanent"),
+                Err(_) => Some("timeout"),
+            };
+        if let Some(error_class) = error_class {
+            tracing::warn!(
+                operation_id = %outcome.operation_id,
+                error_class,
+                "inline identity deletion failed",
+            );
             transaction.rollback().await?;
             return Ok(outcome);
         }

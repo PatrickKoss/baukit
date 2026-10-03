@@ -153,6 +153,21 @@ The server executes this sequence:
    rerun, exclude them from general retention cleanup, and alert on failed
    operations. The fence remains active during repair.
 
+The inline attempt locks the unclaimed job row and holds one pooled connection
+while it calls the provider. This prevents a worker from claiming the same job.
+Keep `inline_timeout` short; the template uses three seconds. The timeout covers
+the entire provider call, including token acquisition and waiting for the token
+cache, rather than giving token acquisition and deletion separate budgets.
+Inline failures log the operation ID and error class without the subject.
+Database completion failures also log their class and leave the durable job for
+worker reconciliation.
+
+Generated auth backends run a supervised identity runner inside the API in both
+flavors, with or without a separate worker. The optional worker handles the
+item-created demo jobs. Each runner claims only its handler's job types, so the
+two runners do not claim each other's jobs. Deploy the API while identity
+erasures remain pending and alert if its runner fails.
+
 A 200 body is
 `{"status":"completed","operationId":"<uuid>","completedAt":"<RFC 3339>"}`.
 A 202 body is `{"status":"pending","operationId":"<uuid>"}` with
@@ -199,11 +214,6 @@ random bytes for the hash key. Keep it stable and back it up with deployment
 secrets. Changing it without migrating existing hashes invalidates fences and
 receipt authorization. Never log credentials, tokens or subjects.
 
-The generated API runs a supervised in-process identity worker, including when
-no demo worker was requested. A separate worker can register
-`IdentityDeletionHandler` with the same store and provider ID; lease ownership
-allows both runners to share the outbox safely.
-
 Every non-success response uses the standard envelope emitted by `baukit-http`
 and parsed by `@baukit/api-runtime`:
 
@@ -224,7 +234,6 @@ The minimum stable product code set is:
 | --- | --- |
 | `erasure_idempotency_key_invalid` | The required key is missing, repeated or malformed. |
 | `profile_erased` | A fenced subject cannot access product data or recreate a profile. |
-| `erasure_unavailable` | Durable erasure has no configured database. |
 | `unauthenticated` | A valid authenticated principal is required. |
 | `permission_denied` | The principal may not erase the addressed profile. |
 | `erasure_idempotency_conflict` | The key was already used for an incompatible request. |

@@ -32,6 +32,7 @@ serde_json.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tracing.workspace = true
 url = { workspace = true, optional = true }
 uuid.workspace = true
 
@@ -39,3 +40,4 @@ uuid.workspace = true
 baukit-runtime = { path = "../baukit-runtime" }
 baukit-test = { path = "../baukit-test" }
 testcontainers.workspace = true
+tracing-subscriber.workspace = true

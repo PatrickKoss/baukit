@@ -21,6 +21,9 @@ struct Provider {
     token_statuses: Mutex<VecDeque<StatusCode>>,
     delete_statuses: Mutex<VecDeque<StatusCode>>,
     token_calls: AtomicUsize,
+    block_token: bool,
+    token_started: tokio::sync::Notify,
+    release_token: tokio::sync::Notify,
     delete_calls: AtomicUsize,
 }
 
@@ -36,6 +39,10 @@ impl Drop for Server {
 
 async fn token(State(provider): State<Arc<Provider>>) -> (StatusCode, Json<serde_json::Value>) {
     provider.token_calls.fetch_add(1, Ordering::SeqCst);
+    provider.token_started.notify_one();
+    if provider.block_token {
+        provider.release_token.notified().await;
+    }
     let status = provider
         .token_statuses
         .lock()
@@ -165,5 +172,32 @@ async fn failed_token_grant_is_retryable_and_does_not_delete() -> Result<(), Box
     adapter.delete_account("subject").await?;
     assert_eq!(provider.token_calls.load(Ordering::SeqCst), 2);
     assert_eq!(provider.delete_calls.load(Ordering::SeqCst), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn whole_call_timeout_cancels_token_acquisition_before_deletion() -> Result<(), Box<dyn Error>>
+{
+    let provider = Arc::new(Provider {
+        block_token: true,
+        ..Provider::default()
+    });
+    let server = server(provider.clone()).await?;
+    let adapter = adapter(&server)?;
+    let mut attempt = tokio::spawn(async move {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            adapter.delete_account("subject"),
+        )
+        .await
+    });
+    let result = tokio::select! {
+        () = provider.token_started.notified() => attempt.await?,
+        result = &mut attempt => panic!("attempt ended before token acquisition: {result:?}"),
+    };
+    assert!(result.is_err());
+    assert_eq!(provider.token_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(provider.delete_calls.load(Ordering::SeqCst), 0);
+    provider.release_token.notify_one();
     Ok(())
 }

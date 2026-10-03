@@ -1,3 +1,6 @@
+#[path = "support/logs.rs"]
+mod logs;
+
 use baukit_config::Secret;
 use baukit_erasure::{
     ErasureError, ErasureFuture, ErasureService, ErasureState, IdentityDeletionError,
@@ -8,6 +11,7 @@ use baukit_runtime::ShutdownToken;
 use baukit_test::{FakeIdentityAccountDeleter, PostgresTestContainer};
 use sqlx::{PgConnection, PgPool};
 use std::{error::Error, sync::Arc, time::Duration};
+use tracing::instrument::WithSubscriber as _;
 
 struct Product;
 impl ProductErasure for Product {
@@ -314,9 +318,15 @@ async fn inline_completion_database_failure_returns_durable_acceptance()
 -> Result<(), Box<dyn Error>> {
     let (_container, pool, store, fake, service) = fixture().await?;
     sqlx::raw_sql("CREATE FUNCTION reject_completion() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected receipt failure'; END; $$; CREATE TRIGGER reject_completion BEFORE UPDATE ON erasure_operations FOR EACH ROW EXECUTE FUNCTION reject_completion();").execute(&pool).await?;
+    let logs = logs::Logs::default();
     let pending = service
         .erase("alice", "inline-db-failure-01", &Product)
+        .with_subscriber(logs.subscriber())
         .await?;
+    let text = logs.text();
+    assert!(text.contains(&pending.operation_id.to_string()), "{text}");
+    assert!(text.contains("error_class=\"database\""), "{text}");
+    assert!(!text.contains("alice"), "{text}");
     assert_eq!(pending.status, ErasureState::Pending);
     assert_eq!(count(&pool, "profiles").await?, 1);
     assert_eq!(count(&pool, "job_outbox").await?, 1);
@@ -335,5 +345,81 @@ async fn inline_completion_database_failure_returns_durable_acceptance()
     .await?;
     assert_eq!(count(&pool, "job_outbox").await?, 0);
     assert_eq!(fake.calls(), ["alice", "alice"]);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn inline_failures_log_operation_and_class_without_subjects() -> Result<(), Box<dyn Error>> {
+    let (_container, _pool, _store, fake, service) = fixture().await?;
+    for (subject, key, error, class) in [
+        (
+            "alice",
+            "warn-retry-key-001",
+            IdentityDeletionError::Retryable,
+            "retryable",
+        ),
+        (
+            "bob",
+            "warn-permanent-001",
+            IdentityDeletionError::Permanent,
+            "permanent",
+        ),
+    ] {
+        fake.push_outcome(Err(error));
+        let logs = logs::Logs::default();
+        let outcome = service
+            .erase(subject, key, &Product)
+            .with_subscriber(logs.subscriber())
+            .await?;
+        assert_eq!(outcome.status, ErasureState::Pending);
+        let text = logs.text();
+        assert!(text.contains(&outcome.operation_id.to_string()), "{text}");
+        assert!(text.contains(&format!("error_class=\"{class}\"")), "{text}");
+        assert!(!text.contains(subject), "{text}");
+        assert!(!text.contains(key), "{text}");
+    }
+    Ok(())
+}
+
+struct BlockedDeleter;
+impl baukit_erasure::IdentityAccountDeleter for BlockedDeleter {
+    fn delete_account<'a>(
+        &'a self,
+        _subject: &'a str,
+    ) -> ErasureFuture<'a, Result<(), IdentityDeletionError>> {
+        Box::pin(std::future::pending())
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn inline_timeout_releases_job_lock_and_retains_durable_work() -> Result<(), Box<dyn Error>> {
+    let (_container, pool, store, _fake, _service) = fixture().await?;
+    let service = ErasureService::new(
+        store.clone(),
+        Arc::new(BlockedDeleter),
+        "test".into(),
+        Duration::from_millis(50),
+        2,
+    )?;
+    let logs = logs::Logs::default();
+    let outcome = service
+        .erase("alice", "inline-timeout-001", &Product)
+        .with_subscriber(logs.subscriber())
+        .await?;
+    assert_eq!(outcome.status, ErasureState::Pending);
+    assert!(store.is_fenced("alice").await?);
+    assert_eq!(count(&pool, "profiles").await?, 1);
+    let mut transaction = pool.begin().await?;
+    let status: String = sqlx::query_scalar("SELECT status FROM job_outbox FOR UPDATE NOWAIT")
+        .fetch_one(&mut *transaction)
+        .await?;
+    assert_eq!(status, "pending");
+    transaction.rollback().await?;
+    let text = logs.text();
+    assert!(text.contains(&outcome.operation_id.to_string()), "{text}");
+    assert!(text.contains("error_class=\"timeout\""), "{text}");
+    assert!(!text.contains("alice"), "{text}");
     Ok(())
 }

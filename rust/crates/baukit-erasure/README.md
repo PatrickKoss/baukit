@@ -4,7 +4,10 @@ Erase product rows and record identity deletion in one PostgreSQL transaction.
 `ErasureService::erase` calls the product's `ProductErasure` implementation on
 that transaction, writes a keyed receipt and fence, and enqueues
 `identity.account.delete`. After commit it tries the provider once with a bounded
-timeout. Success returns a completed receipt; failure returns durable acceptance.
+timeout. Keep `inline_timeout` short: the call holds a job row lock and one pool
+connection. Its budget includes token acquisition and deletion. Inline failure
+warnings contain the operation ID and error class without the subject.
+Success returns a completed receipt; failure returns durable acceptance.
 
 Copy `POSTGRES_MIGRATION_SQL` into product migrations after the three
 `baukit-jobs` migrations. Keep the hash key in `baukit_config::Secret<String>`.
