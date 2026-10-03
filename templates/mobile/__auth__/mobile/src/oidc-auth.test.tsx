@@ -1,5 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import type { PropsWithChildren } from 'react';
+import { createExpoOidcClient } from '@baukit/auth-native/expo';
 import {
   appearanceStateDecoration,
   OidcError,
@@ -18,12 +19,14 @@ jest.mock('@baukit/auth-native/expo', () => {
     signIn: jest.fn(),
     signOut: jest.fn(),
   };
-  return { completeExpoAuthSession: jest.fn(), createExpoOidcClient: () => client };
+  return { completeExpoAuthSession: jest.fn(), createExpoOidcClient: jest.fn(() => client) };
 });
 
 import { authClient, OidcAuthProvider, useOidcAuth } from './auth';
+import { authStorage } from './auth-storage';
 
 const client = jest.mocked(authClient);
+const clientEnvironment = jest.mocked(createExpoOidcClient).mock.calls[0]?.[1];
 const REFRESH_LEAD_MS = 30_000;
 
 function session(overrides: Partial<OidcSession> = {}): OidcSession {
@@ -72,6 +75,10 @@ afterEach(() => {
 });
 
 describe('useOidcAuth', () => {
+  it('uses the SecureStore key adapter', () => {
+    expect(clientEnvironment?.storage).toBe(authStorage);
+  });
+
   it('requires the provider', async () => {
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
 

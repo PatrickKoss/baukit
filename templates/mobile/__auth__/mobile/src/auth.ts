@@ -21,6 +21,7 @@ import { completeExpoAuthSession, createExpoOidcClient } from '@baukit/auth-nati
 
 import type { ThemePreference } from './app-preferences';
 import { signInFeedback } from './auth-feedback';
+import { authStorage } from './auth-storage';
 
 import { PRODUCT_NAME } from './product';
 
@@ -48,7 +49,10 @@ export const authClient = createExpoOidcClient(
     offlineAccess: true,
     storageKeyPrefix: `${PRODUCT_NAME}:oidc`,
   },
-  { randomBytes: (size) => Crypto.getRandomBytesAsync(size) },
+  {
+    randomBytes: (size) => Crypto.getRandomBytesAsync(size),
+    storage: authStorage,
+  },
 );
 
 export interface OidcAuth {
