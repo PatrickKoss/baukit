@@ -29,6 +29,7 @@ ring.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx = { workspace = true, optional = true }
+subtle.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true

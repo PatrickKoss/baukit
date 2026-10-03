@@ -4,6 +4,23 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Add `OidcVerifier::verify_id_token(token, expected_nonce)` to require the
+  login request's nonce on an ID token. Missing, malformed, and mismatched
+  nonces return `VerificationError::WrongNonce`.
+- Add `constant_time_eq` for secret bytes, using `subtle` 2.6.1. Unequal lengths
+  return false; equal-length inputs do not stop at a differing byte. API token
+  digest verification now uses this helper instead of a handwritten loop.
+
+### Changed
+
+- Generic OIDC tokens with several audiences must carry `azp` equal to the
+  configured client ID. Any present `azp` must be an allowed client ID.
+  `OidcConfig::new` defaults the client ID to its audience. Use `with_client_id`
+  for a separate OAuth client and `with_allowed_clients` to permit other
+  clients on single-audience tokens. Clerk and WorkOS keep their provider checks.
+
 ### Fixed
 
 - Select aws-lc-rs for sqlx TLS so rustls has one crypto provider. Products

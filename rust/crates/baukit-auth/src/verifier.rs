@@ -524,6 +524,30 @@ impl OidcVerifier {
 
     /// Verifies one access token using the configured issuer, audience, and algorithms.
     pub async fn verify(&self, token: &str) -> Result<Principal, VerificationError> {
+        self.verify_token(token, None).await
+    }
+
+    /// Verifies an ID token and requires its `nonce` to match the login request.
+    ///
+    /// The expected nonce must be non-empty. The caller owns nonce generation,
+    /// storage, and single-use login state. Signature, issuer, audience, `azp`,
+    /// expiry, and configured claim checks also apply.
+    pub async fn verify_id_token(
+        &self,
+        token: &str,
+        expected_nonce: &str,
+    ) -> Result<Principal, VerificationError> {
+        if expected_nonce.is_empty() {
+            return Err(VerificationError::WrongNonce);
+        }
+        self.verify_token(token, Some(expected_nonce)).await
+    }
+
+    async fn verify_token(
+        &self,
+        token: &str,
+        expected_nonce: Option<&str>,
+    ) -> Result<Principal, VerificationError> {
         let ParsedToken {
             header,
             claims,
@@ -539,6 +563,13 @@ impl OidcVerifier {
         let key_id = header.kid.ok_or(VerificationError::MissingKeyId)?;
         let key = self.key_for(&key_id).await?;
         key.verify(algorithm, &signing_input, &signature)?;
+        if let Some(expected_nonce) = expected_nonce {
+            match claims.extra.get("nonce") {
+                Some(Value::String(nonce))
+                    if crate::constant_time_eq(nonce.as_bytes(), expected_nonce.as_bytes()) => {}
+                _ => return Err(VerificationError::WrongNonce),
+            }
+        }
         claims.validate(&self.inner.config)
     }
 
@@ -906,7 +937,7 @@ fn validate_token_profile(
         validate_audience(claims, config)?;
     }
     match &config.token_profile {
-        TokenProfile::Oidc => Ok(()),
+        TokenProfile::Oidc => validate_oidc_authorized_party(claims, config),
         TokenProfile::Clerk { authorized_parties } => match claims.extra.get("azp") {
             None | Some(Value::Null) => Ok(()),
             Some(Value::String(value)) if authorized_parties.contains(value) => Ok(()),
@@ -920,6 +951,26 @@ fn validate_token_profile(
             }
             Some(_) => Err(VerificationError::InvalidPrincipalContext),
         },
+    }
+}
+
+fn validate_oidc_authorized_party(
+    claims: &JwtClaims,
+    config: &OidcConfig,
+) -> Result<(), VerificationError> {
+    let several_audiences = claims
+        .aud
+        .as_ref()
+        .is_some_and(|audience| audience.values().count() > 1);
+    match claims.extra.get("azp") {
+        None if !several_audiences => Ok(()),
+        Some(Value::String(client))
+            if config.allowed_clients.contains(client)
+                && (!several_audiences || client == &config.client_id) =>
+        {
+            Ok(())
+        }
+        _ => Err(VerificationError::WrongAuthorizedParty),
     }
 }
 
@@ -1105,9 +1156,12 @@ pub enum VerificationError {
     /// No token audience matched configuration.
     #[error("access token audience is invalid")]
     WrongAudience,
-    /// A Clerk token's authorized party was outside the configured allowlist.
+    /// The authorized party was missing when required or outside the allowed clients.
     #[error("access token authorized party is invalid")]
     WrongAuthorizedParty,
+    /// The ID token's nonce was missing, malformed, or did not match the login request.
+    #[error("ID token nonce is invalid")]
+    WrongNonce,
     /// A WorkOS token did not name the configured application client.
     #[error("access token client ID is invalid")]
     WrongClientId,

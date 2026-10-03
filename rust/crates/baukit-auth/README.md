@@ -379,3 +379,23 @@ verified, but deciding what they allow is still the product's job. The only stor
 optional PostgreSQL token store, and it runs no migrations. `baukit-test` ships an
 `InMemoryApiTokenStore` and a `MockOidcServer` so services can test the whole path without a live
 provider.
+
+## ID tokens and secret comparisons
+
+Configure an ID-token verifier with the OAuth client's audience. Call
+`verifier.verify_id_token(token, expected_nonce).await` with the nonce stored
+for that login request. The caller generates the nonce and consumes the login
+state once. Normal `verify` does not require a nonce on access tokens.
+
+Generic OIDC verification checks `azp` on both methods. A token with several
+audiences must name the configured client ID in `azp`. Any present `azp` must
+be allowed. The client ID defaults to the audience passed to `OidcConfig::new`.
+Use `with_client_id` when they differ, then `with_allowed_clients` if other
+clients may send single-audience tokens. Clerk and WorkOS retain their own
+provider rules.
+
+Use `baukit_auth::constant_time_eq(expected.as_bytes(), presented.as_bytes())`
+for API keys, SCIM tokens, or other secret strings. It uses `subtle` and does
+not exit on a differing byte. Input lengths remain observable; compare
+fixed-size digests if the lengths must stay private. For HMAC signatures, use
+the HMAC implementation's verification function.

@@ -81,6 +81,7 @@ mod config;
 #[cfg(feature = "sqlx-postgres")]
 mod postgres;
 mod providers;
+mod secret;
 mod verifier;
 
 pub use api_token::{
@@ -96,6 +97,7 @@ pub use config::{OidcConfig, OidcConfigError, PrincipalClaimMapping, SigningAlgo
 #[cfg(feature = "sqlx-postgres")]
 pub use postgres::{PostgresApiTokenStore, erase_owner_api_tokens, purge_inactive_api_tokens};
 pub use providers::{ClerkVerifier, ProviderVerifierError, WorkOsVerifier};
+pub use secret::constant_time_eq;
 pub use verifier::{
     IdentityVerifier, IssuerVerifier, MultiIssuerError, MultiIssuerVerifier, OidcVerifier,
     Principal, ProfileClaim, VerificationError,

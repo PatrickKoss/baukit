@@ -14,7 +14,7 @@ use ring::{
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::{IdentityVerifier, Principal, VerificationError};
+use crate::{IdentityVerifier, Principal, VerificationError, constant_time_eq};
 
 /// Marker used when a product does not choose its own.
 pub const DEFAULT_API_TOKEN_MARKER: &str = "bk_";
@@ -506,18 +506,6 @@ pub fn hash_api_token(presented: &str) -> Vec<u8> {
         .to_vec()
 }
 
-/// Compares two digests without an early exit on the first differing byte.
-fn digests_are_equal(left: &[u8], right: &[u8]) -> bool {
-    if left.len() != right.len() {
-        return false;
-    }
-    let mut difference = 0_u8;
-    for (left_byte, right_byte) in left.iter().zip(right) {
-        difference |= left_byte ^ right_byte;
-    }
-    difference == 0
-}
-
 /// Issues, lists, revokes, and verifies personal access tokens.
 ///
 /// The service is the second inbound credential kind next to OIDC JWTs. It
@@ -662,7 +650,7 @@ impl ApiTokenService {
             .await
             .map_err(map_store_error)?
             .ok_or(ApiTokenError::Invalid)?;
-        if !digests_are_equal(&stored.secret_hash, &presented_hash) {
+        if !constant_time_eq(&stored.secret_hash, &presented_hash) {
             return Err(ApiTokenError::Invalid);
         }
         let token = stored.token;

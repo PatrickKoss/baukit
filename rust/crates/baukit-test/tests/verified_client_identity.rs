@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 async fn verifier(server: &MockOidcServer) -> Result<OidcVerifier, Box<dyn Error>> {
     Ok(OidcVerifier::discover(
         OidcConfig::new(server.issuer(), "api")?
+            .with_allowed_clients(["cli", "mobile"])?
             .with_clock_skew(Duration::ZERO)
             .with_principal_claims(PrincipalClaimMapping::new().client_id_claim("azp")),
     )
@@ -18,12 +19,14 @@ async fn verifier(server: &MockOidcServer) -> Result<OidcVerifier, Box<dyn Error
 async fn maps_client_and_tenancy_fields_independently() -> Result<(), Box<dyn Error>> {
     let server = MockOidcServer::start().await?;
     let verifier = OidcVerifier::discover(
-        OidcConfig::new(server.issuer(), "api")?.with_principal_claims(
-            PrincipalClaimMapping::new()
-                .organization_claim("org_id")
-                .tenant_claim("tenant_id")
-                .client_id_claim("authorized_client"),
-        ),
+        OidcConfig::new(server.issuer(), "api")?
+            .with_client_id("unconfigured-client")?
+            .with_principal_claims(
+                PrincipalClaimMapping::new()
+                    .organization_claim("org_id")
+                    .tenant_claim("tenant_id")
+                    .client_id_claim("authorized_client"),
+            ),
     )
     .await?;
     let claims = server
@@ -43,25 +46,35 @@ async fn maps_client_and_tenancy_fields_independently() -> Result<(), Box<dyn Er
 }
 
 #[tokio::test]
-async fn missing_null_and_unconfigured_claims_have_no_client_identity() -> Result<(), Box<dyn Error>>
+async fn missing_and_unmapped_client_claims_have_no_client_identity() -> Result<(), Box<dyn Error>>
 {
     let server = MockOidcServer::start().await?;
     let verifier = verifier(&server).await?;
     let claims = server.claims("subject", "api", Duration::from_secs(300))?;
-    for claims in [claims.clone(), claims.clone().claim("azp", Value::Null)] {
-        assert!(
-            verifier
-                .verify(&server.mint(&claims)?)
-                .await?
-                .client_id()
-                .is_none()
-        );
-    }
-    let unmapped = OidcVerifier::discover(OidcConfig::new(server.issuer(), "api")?).await?;
-    for value in [json!("mobile"), json!(["mobile"])] {
-        let token = server.mint(&claims.clone().claim("azp", value))?;
-        assert!(unmapped.verify(&token).await?.client_id().is_none());
-    }
+    assert!(
+        verifier
+            .verify(&server.mint(&claims)?)
+            .await?
+            .client_id()
+            .is_none()
+    );
+    assert!(matches!(
+        verifier
+            .verify(&server.mint(&claims.clone().claim("azp", Value::Null))?)
+            .await,
+        Err(VerificationError::WrongAuthorizedParty)
+    ));
+    let unmapped = OidcVerifier::discover(
+        OidcConfig::new(server.issuer(), "api")?.with_allowed_clients(["mobile"])?,
+    )
+    .await?;
+    let token = server.mint(&claims.clone().claim("azp", "mobile"))?;
+    assert!(unmapped.verify(&token).await?.client_id().is_none());
+    let malformed = server.mint(&claims.claim("azp", json!(["mobile"])))?;
+    assert!(matches!(
+        unmapped.verify(&malformed).await,
+        Err(VerificationError::WrongAuthorizedParty)
+    ));
     Ok(())
 }
 
@@ -83,7 +96,7 @@ async fn malformed_mapped_client_claims_fail_verification() -> Result<(), Box<dy
             .claim("azp", value);
         assert!(matches!(
             verifier.verify(&server.mint(&claims)?).await,
-            Err(VerificationError::InvalidPrincipalContext)
+            Err(VerificationError::WrongAuthorizedParty)
         ));
     }
     Ok(())
