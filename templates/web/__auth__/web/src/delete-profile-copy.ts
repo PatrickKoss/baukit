@@ -10,7 +10,7 @@ export const englishErasureCopy = {
   pending:
     'Your profile data has been deleted. Your sign-in account deletion is still finishing. You are signed out. You do not need to request deletion again.',
   serverFailure:
-    'Deletion was rejected before your profile was erased. Your local data and session are still available. Try again.',
+    'This deletion request was rejected. Your local data and session are still available. Try again to check the same deletion request.',
   ambiguous:
     'The connection was lost before deletion could be confirmed. Try again to check the same deletion request safely.',
   localFailure:
@@ -42,7 +42,7 @@ export const germanErasureCopy: ErasureCopy = {
   pending:
     'Deine Profildaten wurden gelöscht. Die Löschung deines Anmeldekontos läuft noch. Du bist abgemeldet. Du musst die Löschung nicht erneut anfordern.',
   serverFailure:
-    'Die Löschung wurde abgelehnt, bevor dein Profil gelöscht wurde. Deine lokalen Daten und deine Sitzung sind noch verfügbar. Versuche es erneut.',
+    'Diese Löschanfrage wurde abgelehnt. Deine lokalen Daten und deine Sitzung sind noch verfügbar. Versuche es erneut, um dieselbe Löschanfrage zu prüfen.',
   ambiguous:
     'Die Verbindung wurde unterbrochen, bevor die Löschung bestätigt werden konnte. Versuche es erneut, um dieselbe Löschanfrage sicher zu prüfen.',
   localFailure:
