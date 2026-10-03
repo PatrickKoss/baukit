@@ -444,3 +444,22 @@ files, a write-free preview, field filtering, rollback after a halfway failure, 
 state changes after commit.
 
 Persistence adapters and product-specific migration logic belong in product or future adapter packages. The production entry point has no runtime dependencies; only the `/vitest` subpath expects the consumer's Vitest installation.
+
+## Profile erasure
+
+Call `eraseProductProfile` only after explicit user confirmation. Compose
+`eraseServerProfile` with `@baukit/api-runtime/erasure`,
+`eraseLocalPartition` with `ScopedPersistenceLifecycle.eraseActivePartition()`,
+and `signOut` with the auth client's local session cleanup.
+
+A completed or pending receipt confirms the server profile deletion committed.
+Both run local partition erasure, then sign-out. A pending receipt returns a
+`pending` result so the UI can explain that sign-in account deletion is still
+finishing. Its operation ID can be null when a server `profile_erased` fence
+confirms the commit without exposing the operation ID.
+
+A definite server failure or ambiguous outcome retains local data and the
+session. Retry an ambiguous request with the persisted idempotency key.
+Before-server hook failures remain safe diagnostic warnings. Local failures
+still attempt sign-out and report both failures; a sign-out failure stays
+visible. Neither cleanup failure should trigger a new server deletion.

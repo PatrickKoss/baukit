@@ -194,3 +194,49 @@ await runtime.fetch('/widgets');
 mock.assertRequest(0, { method: 'GET', url: 'https://api.example.test/widgets' });
 mock.assertQueueEmpty();
 ```
+
+## Profile and sign-in account deletion
+
+Import `createProfileErasureClient` from `@baukit/api-runtime/erasure`. Pass the
+account's immutable subject, an authenticated fetch, and durable
+`IdempotencyKeyStorage`. Persist keys separately from tokens. The template
+adapters hash the storage slot so it contains no raw subject.
+
+```ts
+const erasure = createProfileErasureClient({
+  account: subject,
+  fetch: runtime.fetch,
+  storage: persistedKeys,
+});
+const receipt = await erasure.erase(signal);
+if (receipt.status === 'pending' && receipt.operationId !== null) {
+  const operation = await erasure.poll(receipt.operationId, { signal });
+}
+```
+
+`erase` sends `DELETE /me` with `Idempotency-Key`. It validates the 200 completed
+and 202 pending bodies. A network drop, abort after sending, malformed success
+body, or uncertain server error throws `AmbiguousProfileErasureError`. Its code
+is compatible with `eraseProductProfile`. Keep the same key for a later retry,
+even after a reload. The client keeps committed keys too, so a failed local
+cleanup cannot accidentally create a second erasure. Durable storage should
+keep these keys for the account's deletion lifetime; it must not discard an
+uncertain key on a timer. The client releases a key on 409 `erasure_idempotency_conflict`. Other
+rejections keep it because an earlier attempt could have committed before a
+response was lost.
+
+A 401 `profile_erased` confirms that server profile erasure committed. It returns
+pending with a null operation ID because the fence does not prove the sign-in
+account is already gone. An ordinary 401 still rejects.
+
+`poll` reads `GET /me/erasures/{operationId}` immediately, then waits 500 ms,
+1 second, 2 seconds, and at most 5 seconds between reads. It stops at completed,
+failed, or eight reads and returns the last pending state at that limit.
+`maxAttempts`, `initialDelayMs`, and `maxDelayMs` can change those bounds. An abort
+cancels both the fetch and the backoff timer. A failed operation needs operator
+help; clients must not send another deletion to repair it.
+
+The auth templates capture a short-lived access token for this operation before
+clearing local authentication. Status checks use that token while the screen
+stays open, without refreshing or restoring a signed-out session. A failed
+status check does not undo deletion; the server worker continues.

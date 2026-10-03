@@ -1,7 +1,7 @@
 /** Receipt returned after the server accepts or completes product-profile erasure. */
 export type ErasureReceipt =
   | { readonly operationId: string | null; readonly status: 'completed' }
-  | { readonly operationId: string; readonly status: 'pending' };
+  | { readonly operationId: string | null; readonly status: 'pending' };
 
 /** Dependencies for the product-profile erasure sequence. */
 export interface ProductProfileErasureDependencies {
@@ -21,7 +21,7 @@ export interface ProductProfileErasureIssue {
 
 export type ProductProfileErasureResult =
   | {
-      readonly status: 'erased';
+      readonly status: 'erased' | 'pending';
       readonly receipt: ErasureReceipt;
       readonly warnings: readonly ProductProfileErasureIssue[];
     }
@@ -99,8 +99,8 @@ function validateErasureReceipt(receipt: unknown): asserts receipt is ErasureRec
   const status: unknown = Reflect.get(receipt, 'status');
   const hasOperationId = typeof operationId === 'string' && operationId.trim().length > 0;
   if (
-    (status === 'completed' && (operationId === null || hasOperationId)) ||
-    (status === 'pending' && hasOperationId)
+    (status === 'completed' || status === 'pending') &&
+    (operationId === null || hasOperationId)
   ) {
     return;
   }
@@ -158,5 +158,5 @@ export async function eraseProductProfile(
   if (signOutError !== undefined) {
     return { status: 'signout-failure', receipt, error: signOutError, warnings };
   }
-  return { status: 'erased', receipt, warnings };
+  return { status: receipt.status === 'pending' ? 'pending' : 'erased', receipt, warnings };
 }

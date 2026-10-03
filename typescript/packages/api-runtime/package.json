@@ -27,6 +27,11 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./erasure": {
+      "types": "./dist/erasure.d.ts",
+      "import": "./dist/erasure.js",
+      "default": "./dist/erasure.js"
+    },
     "./backoff": {
       "types": "./dist/backoff.d.ts",
       "import": "./dist/backoff.js",

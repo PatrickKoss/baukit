@@ -105,11 +105,12 @@ describe('product-profile erasure', () => {
     },
   );
 
-  it.each([null, '', '   '])(
+  it.each([42, '', '   '])(
     'treats a pending receipt with operation ID %j as an ambiguous response',
     async (operationId) => {
       const events: string[] = [];
-      const malformedReceipt = { operationId, status: 'pending' } as unknown as ErasureReceipt;
+      const malformedReceipt: ErasureReceipt = { operationId: 'erase-1', status: 'pending' };
+      Reflect.set(malformedReceipt, 'operationId', operationId);
 
       await expect(
         eraseProductProfile({
@@ -132,6 +133,41 @@ describe('product-profile erasure', () => {
         warnings: [],
       });
       expect(events).toEqual(['server']);
+    },
+  );
+
+  it.each(['erase-1', null])(
+    'clears local data and signs out for pending operation %j',
+    async (operationId) => {
+      const events: string[] = [];
+      const pending: ErasureReceipt = { operationId, status: 'pending' };
+      const result = await eraseProductProfile({
+        ...dependencies('success', events),
+        eraseServerProfile: () => {
+          events.push('server');
+          return Promise.resolve(pending);
+        },
+      });
+
+      expect(result).toEqual({ status: 'pending', receipt: pending, warnings: [] });
+      expect(events).toEqual(['server', 'local', 'sign-out']);
+    },
+  );
+
+  it.each(['local-failure', 'signout-failure'])(
+    'keeps %s visible after a pending receipt',
+    async (outcome) => {
+      const events: string[] = [];
+      const pending: ErasureReceipt = { operationId: 'erase-1', status: 'pending' };
+      const result = await eraseProductProfile({
+        ...dependencies(outcome, events),
+        eraseServerProfile: () => {
+          events.push('server');
+          return Promise.resolve(pending);
+        },
+      });
+      expect(result).toMatchObject({ status: outcome, receipt: pending });
+      expect(events).toEqual(['server', 'local', 'sign-out']);
     },
   );
 

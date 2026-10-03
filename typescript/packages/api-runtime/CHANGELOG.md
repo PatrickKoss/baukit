@@ -1,5 +1,9 @@
 # @baukit/api-runtime
 
+## Unreleased
+
+- Add the `/erasure` client with durable idempotency keys, typed receipts, fenced-subject handling, and bounded, abortable status polling.
+
 ## 0.6.0
 
 ### Minor Changes
