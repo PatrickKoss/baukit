@@ -310,8 +310,9 @@ when bodies are sensitive.
 
 ## Supported runtimes
 
-Rust MSRV 1.95, and the then-current `baukit-test` default `postgres:18-alpine` image in the Docker tests. The current default is `postgres:18.6-alpine`. The
-client defaults to `globalThis.crypto.randomUUID`, which Node and current browsers provide. A
+The Docker tests used Rust MSRV 1.95 and the then-current `baukit-test` default
+`postgres:18-alpine` image. The current default is `postgres:18.6-alpine`.
+The client defaults to `globalThis.crypto.randomUUID`, which Node and current browsers provide. A
 runtime without it passes `keyFactory`.
 
 ## Breaks

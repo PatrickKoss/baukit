@@ -75,7 +75,8 @@ path. Blank entries and entries over the 200-character `job_type` limit are reje
 
 ## Index plan
 
-Measured on `postgres:18-alpine`, the image `baukit-test` used at measurement time; its current pin is `18.6-alpine`, with the 0001 and 0002 schema.
+Measurements used `postgres:18-alpine` with the 0001 and 0002 schema.
+`baukit-test` now pins `postgres:18.6-alpine`.
 The table held 200,000 due pending rows of one unhandled type with older `run_after` values,
 1,000 due pending rows each of two handled types, and 50,000 succeeded rows, then `ANALYZE`.
 Plans come from `EXPLAIN (ANALYZE, BUFFERS)` on the claim candidate `SELECT`.
