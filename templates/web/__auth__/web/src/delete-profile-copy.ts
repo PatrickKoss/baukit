@@ -9,8 +9,7 @@ export const englishErasureCopy = {
   erased: 'Your profile data and sign-in account have been deleted. You are signed out.',
   pending:
     'Your profile data has been deleted. Your sign-in account deletion is still finishing. You are signed out. You do not need to request deletion again.',
-  preparationFailure:
-    'The deletion request could not be sent. Your local data and session are still available. Try again.',
+  preparationFailure: 'The deletion request could not be sent. Try again.',
   serverFailure:
     'This deletion request was rejected. Your local data and session are still available. Try again to check the same deletion request.',
   ambiguous:
@@ -45,8 +44,7 @@ export const germanErasureCopy: ErasureCopy = {
   erased: 'Deine Profildaten und dein Anmeldekonto wurden gelöscht. Du bist abgemeldet.',
   pending:
     'Deine Profildaten wurden gelöscht. Die Löschung deines Anmeldekontos läuft noch. Du bist abgemeldet. Du musst die Löschung nicht erneut anfordern.',
-  preparationFailure:
-    'Die Löschanfrage konnte nicht gesendet werden. Deine lokalen Daten und deine Sitzung sind noch verfügbar. Versuche es erneut.',
+  preparationFailure: 'Die Löschanfrage konnte nicht gesendet werden. Versuche es erneut.',
   serverFailure:
     'Diese Löschanfrage wurde abgelehnt. Deine lokalen Daten und deine Sitzung sind noch verfügbar. Versuche es erneut, um dieselbe Löschanfrage zu prüfen.',
   ambiguous:
