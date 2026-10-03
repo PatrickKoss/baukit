@@ -167,3 +167,14 @@ Call `document_if_match` before applying the rules. The precondition 400 then ke
 
 No routing, no handlers, no client generation. The crate applies conventions to a document somebody
 else generated, and it holds the error contract that HTTP and its consumers share.
+
+## Response descriptions
+
+utoipa 6 omits empty response descriptions. OpenAPI requires the field, so
+`OpenApiMetadata::apply_to` and `serialize_schema` fill empty descriptions by
+default. Call `fill_missing_response_descriptions(&mut document)` directly
+when a product serves the document through another serialization path.
+Known HTTP statuses use their reason phrase. Default, range, unknown status
+codes, and reusable responses without a status use "Response". Product
+descriptions and references stay intact. The helper also covers callbacks,
+webhooks, and reusable response and path components.

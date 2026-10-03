@@ -398,6 +398,7 @@ dependencies = [
 name = "baukit-openapi"
 version = "0.6.0"
 dependencies = [
+ "http",
  "serde",
  "serde_json",
  "tempfile",

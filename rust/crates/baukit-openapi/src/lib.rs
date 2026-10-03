@@ -44,6 +44,7 @@ use utoipa::openapi::{Components, OpenApi, Server};
 mod error_responses;
 mod naming;
 mod precondition;
+mod response_descriptions;
 
 pub use error_responses::{
     ErrorResponseRules, OperationCondition, REQUEST_ID_HEADER, RETRY_AFTER_HEADER,
@@ -56,6 +57,7 @@ pub use precondition::{
     PRECONDITION_FAILED_CODE, PRECONDITION_REQUIRED_CODE, document_etag, document_if_match,
     etag_header, if_match_parameter,
 };
+pub use response_descriptions::fill_missing_response_descriptions;
 
 /// The component name used for Baukit's standard HTTP bearer JWT security scheme.
 pub const BEARER_AUTH_SCHEME: &str = "bearerAuth";
@@ -118,6 +120,7 @@ impl OpenApiMetadata {
 
     /// Applies metadata, the server list, and any opted-in conventions to a document.
     pub fn apply_to(&self, openapi: &mut OpenApi) {
+        fill_missing_response_descriptions(openapi);
         openapi.info.title.clone_from(&self.title);
         openapi.info.version.clone_from(&self.version);
         openapi.info.description = Some(self.description.clone());
@@ -395,7 +398,10 @@ fn line_value(line: Option<&str>) -> String {
 ///
 /// Object keys are recursively sorted after Utoipa serialization. This also stabilizes extension
 /// maps whose backing collection can otherwise have nondeterministic iteration order.
+/// Missing response descriptions are filled in a copy of the document before serialization.
 pub fn serialize_schema(openapi: &OpenApi) -> Result<String, SchemaError> {
+    let mut openapi = openapi.clone();
+    fill_missing_response_descriptions(&mut openapi);
     let mut value = serde_json::to_value(openapi)?;
     sort_json_objects(&mut value);
     let mut json = serde_json::to_string_pretty(&value)?;

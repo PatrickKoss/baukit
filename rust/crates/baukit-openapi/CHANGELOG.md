@@ -4,6 +4,18 @@ All notable changes to `baukit-openapi` are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Correction to the 0.6.0 entry: utoipa 6 does change generated documents.
+  It omits empty response descriptions, although OpenAPI 3.1 requires that
+  field, and reorders `Option<T>` alternatives from `[null, $ref]` to
+  `[$ref, null]`. Products must regenerate their committed schemas.
+- Add `fill_missing_response_descriptions` to fill empty descriptions with
+  the HTTP reason phrase. Default, range, unknown status codes, and reusable
+  responses without a status use "Response". Paths, callbacks, webhooks, and
+  reusable components are covered. `OpenApiMetadata::apply_to` and
+  `serialize_schema` apply it by default and preserve product descriptions.
+
 ## [0.6.0] - 2026-10-02
 
 ### Changed

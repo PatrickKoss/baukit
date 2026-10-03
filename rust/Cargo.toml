@@ -54,6 +54,7 @@ baukit-test = { version = "=0.6.0", path = "crates/baukit-test" }
 chrono = { version = "=0.4.45", features = ["serde"] }
 config = "=0.15.27"
 dotenvy = "=0.15.7"
+http = "=1.5.0"
 jsonschema = { version = "=0.58.4", default-features = false }
 metrics = "=0.24.6"
 metrics-exporter-prometheus = "=0.18.3"
