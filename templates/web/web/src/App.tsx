@@ -4,6 +4,7 @@ import { useAriaHiddenInert } from '@baukit/a11y-core/web';
 import type { ConsentState } from '@baukit/analytics-core';
 
 import { analytics } from './analytics';
+import { NavigationShell } from './navigation-shell';
 import { AccessibleDialogExample } from './accessible-dialog';
 import { listItems, type Item } from './api';
 import { backOrReplace, browserNavigation } from './back-or-replace';
@@ -39,11 +40,7 @@ export function App() {
 
   return (
     <>
-      <nav className="primary-navigation" data-testid="primary-navigation" aria-label="Primary">
-        <a href="/" aria-label="Home" aria-current="page">
-          <span aria-hidden="true">H</span>
-        </a>
-      </nav>
+      <NavigationShell />
       <main className="shell">
         <p className="eyebrow">BAUKIT WEB</p>
         <h1>{{ context.app_name }}</h1>

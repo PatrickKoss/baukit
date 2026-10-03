@@ -197,6 +197,7 @@ const EXPECTED_TYPESCRIPT_DEPENDENCIES: &[&str] = &[
     "@baukit/analytics-core",
     "@baukit/api-runtime",
     "@baukit/data-contracts",
+    "@baukit/navigation",
     "@baukit/ui-tokens",
 ];
 

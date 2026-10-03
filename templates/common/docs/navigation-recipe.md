@@ -1,6 +1,6 @@
 # Navigation recipe
 
-Use this recipe when the product adds primary navigation or a profile menu.
+Use `@baukit/navigation` for primary navigation and section pickers. Products supply routes, icons, copy and tokens. The shared package keeps the rules below.
 
 ## Measurable rules
 
@@ -31,3 +31,46 @@ Read `{ reducedMotion, resolved }` from `useReducedMotionPreference()`. Do not s
 ## Browser evidence
 
 Test widths 320, 1023, and 1024 with short and normal heights. The generated Playwright helpers check horizontal overflow, fixed-navigation overlap, scroll-container containment, and 44-by-44 CSS-pixel targets. The console check rejects every warning outside an exact allowlist. Each allowlist entry must state why it is safe.
+
+## Shared component integration
+
+Import models from `@baukit/navigation`, DOM components from
+`@baukit/navigation/web`, and React Native components from
+`@baukit/navigation/native`. Import `@baukit/navigation/web.css` in DOM apps.
+The web entry never loads React Native. Pass `pathname` and `onNavigate` to
+connect any router. Use `renderLink` only when a router needs its Link component,
+and forward the supplied anchor and focus props.
+
+Supply unique ids, labels, hrefs and icon renderers for main items. Children
+have their own ids, labels and hrefs. Include the section root in its children
+when it belongs in the rotation. `matches` can recognize aliases or nested
+routes. Without it, a route matches its href and slash-delimited descendants.
+The longest matching child wins. A missing match selects nothing and starts
+rotation at the first child.
+
+The rail expands to 280 pixels and collapses to 76 pixels. Main icons sit left
+of labels. Collapsed rows retain accessible names and web titles. A section
+with children is a disclosure button with `aria-expanded` and `aria-controls`.
+Its children follow it directly, indented beside a guide line. The active group
+starts open. Clicking a collapsed disclosure expands the rail and opens that
+group. Parents and children use a contrasting selected background.
+
+Compact bars keep icons above short labels. An inactive tab opens its root; an
+active tab rotates to the next child and wraps. `SectionPicker` presents every
+child for direct selection through a full-width section and current-page
+trigger. Keep profile last in both layouts. A profile accepts initials, an
+optional image, and either an href or a product-provided menu. Handle async menu
+action failures in the product.
+
+Control and persist collapse with `collapsed` and `onCollapsedChange`, or use
+`defaultCollapsed` for local state. DOM navigation is fixed, so reserve rail
+width and bar height in content. Native navigation occupies its container;
+Expo Tabs must position the custom tabBar left for expanded layouts and bottom
+otherwise. Pass safe-area insets. Native `NavigationTheme` maps background,
+text, muted, activeBackground, activeText, border and focus to the corresponding
+semantic color tokens, plus spacing and radius to compiled numeric tokens.
+Test activeText against activeBackground with ui-tokens contrast checks.
+
+The package's browser suite checks Chromium and WebKit at 320, 1023 and 1024
+pixels and heights 568 and 720. Keep product checks for actual primary actions,
+scroll containers, console messages and screen-reader behavior.

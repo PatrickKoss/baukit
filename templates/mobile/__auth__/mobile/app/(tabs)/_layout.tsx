@@ -11,7 +11,11 @@ export default function TabLayout() {
   const { width } = useWindowDimensions();
   return (
     <Tabs
-      tabBar={() => <NavigationBar />}
+      tabBar={() => (
+        <NavigationBar
+          profile={{ label: "Profile", initials: "A", href: "/profile" }}
+        />
+      )}
       screenOptions={{
         headerShown: false,
         sceneStyle: { backgroundColor: theme.color.background },
@@ -21,6 +25,7 @@ export default function TabLayout() {
     >
       <Tabs.Screen name="index" options={{ title: "Today" }} />
       <Tabs.Screen name="workspace" options={{ title: "Workspace" }} />
+      <Tabs.Screen name="profile" options={{ title: "Profile" }} />
     </Tabs>
   );
 }

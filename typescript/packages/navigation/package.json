@@ -1,0 +1,93 @@
+{
+  "name": "@baukit/navigation",
+  "version": "0.6.0",
+  "description": "Shared collapsible navigation for React web and React Native products.",
+  "license": "MIT",
+  "homepage": "https://github.com/PatrickKoss/baukit#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PatrickKoss/baukit.git",
+    "directory": "typescript/packages/navigation"
+  },
+  "bugs": {
+    "url": "https://github.com/PatrickKoss/baukit/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./web": {
+      "types": "./dist/web.d.ts",
+      "import": "./dist/web.js",
+      "default": "./dist/web.js"
+    },
+    "./native": {
+      "types": "./dist/native.d.ts",
+      "import": "./dist/native.js",
+      "default": "./dist/native.js"
+    },
+    "./web.css": "./dist/web.css"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && cp src/web.css dist/web.css",
+    "prepare": "pnpm run build",
+    "test": "tsc -p tsconfig.test.json && vitest run --config vitest.config.ts --maxWorkers=4 && jest --config jest.config.cjs --maxWorkers=4 && node ../../scripts/test-packed-exports.mjs",
+    "lint": "eslint src --max-warnings=0",
+    "format:check": "prettier --check src *.json *.ts *.js *.cjs",
+    "test:browser": "vitest run --config vitest.browser.config.ts --maxWorkers=4"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/react": "16.3.3",
+    "@types/react": "19.3.0",
+    "jsdom": "30.1.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-native": "0.86.3",
+    "typescript": "6.0.3",
+    "vitest": "5.0.3",
+    "@testing-library/react-native": "14.0.1",
+    "jest": "29.7.0",
+    "@types/jest": "30.0.0",
+    "@babel/core": "7.29.7",
+    "@react-native/babel-preset": "0.86.3",
+    "@vitest/browser-playwright": "5.0.3",
+    "playwright": "1.63.0",
+    "axe-core": "4.11.0",
+    "test-renderer": "1.2.0",
+    "@types/react-dom": "19.2.3",
+    "@react-native/jest-preset": "0.86.3",
+    "@baukit/a11y-core": "workspace:*",
+    "@baukit/ui-tokens": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": "^19.2.0",
+    "react-native": "^0.86.3",
+    "react-dom": "^19.2.0",
+    "@baukit/a11y-core": "^0.6.0",
+    "@baukit/ui-tokens": "^0.6.0"
+  },
+  "peerDependenciesMeta": {
+    "react-native": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
+  }
+}

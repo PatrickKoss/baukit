@@ -10,6 +10,7 @@ import {
 
 import { AccessibleDialogExample } from './accessible-dialog';
 import { analytics } from './analytics';
+import { NavigationShell } from './navigation-shell';
 import { currentUser, listItems, type CurrentUser, type Item } from './api';
 import { authClient } from './auth';
 import { backOrReplace, browserNavigation } from './back-or-replace';
@@ -131,11 +132,24 @@ export function App() {
 
   return (
     <main className="shell">
-      <nav className="primary-navigation" data-testid="primary-navigation" aria-label="Primary">
-        <a href="/" aria-label="Home" aria-current="page">
-          <span aria-hidden="true">H</span>
-        </a>
-      </nav>
+{% raw %}
+      <NavigationShell
+        profile={{
+          label: 'Account',
+          initials: 'A',
+          menu: [
+            { id: 'account', label: 'Profile', href: '/#identity-title' },
+            {
+              id: 'signout',
+              label: 'Sign out',
+              onSelect: () => {
+                void signOut();
+              },
+            },
+          ],
+        }}
+      />
+{% endraw %}
       <p className="eyebrow">BAUKIT WEB</p>
       <h1>{{ context.app_name }}</h1>
       <p className="lede">A Vite app using Baukit OIDC discovery and authorization code + PKCE.</p>
