@@ -3,12 +3,12 @@
 This Flux-native base installs a deliberately non-HA observability stack in the
 `observability` namespace:
 
-- kube-prometheus-stack 88.2.0: Prometheus Operator, one Prometheus, one
+- kube-prometheus-stack 88.6.5: Prometheus Operator, one Prometheus, one
   Alertmanager, Grafana, kube-state-metrics, and node-exporter;
-- Loki 18.7.6 in monolithic mode with one filesystem-backed replica;
-- Tempo 2.2.3 in monolithic mode with one filesystem-backed replica and OTLP
+- Loki 18.13.7 in monolithic mode with one filesystem-backed replica;
+- Tempo 2.4.0 in monolithic mode with one filesystem-backed replica and OTLP
   gRPC/HTTP receivers;
-- Alloy 1.11.1 as a DaemonSet that sends Kubernetes pod logs to Loki; and
+- Alloy 1.13.0 as a DaemonSet that sends Kubernetes pod logs to Loki; and
 - the existing `deploy/observability` chart as dashboards, recording rules, and
   alert content.
 

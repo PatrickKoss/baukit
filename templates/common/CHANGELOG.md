@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- Install Corepack 0.36.0 before using pnpm in CI. Node 26 does not bundle Corepack.
+- Update pnpm to 12.9.1. Fresh web, mobile, and MCP lockfiles now pass frozen installation with linked Baukit packages.
+{% if context.mobile %}- Match Jest types to the Jest 29 runtime.
+{% endif %}{% if context.web or context.mobile or context.mcp %}- Update ESLint to 10.12 and Node types to 26.6.4.
+{% endif %}{% if context.web %}- Update TanStack Query to 5.104.1.
+{% endif %}{% if context.mcp %}- Update MCP SDK to 1.32.
+{% endif %}{% if context.backend %}- Update Tokio to 1.53.2 and UUID to 1.27.
+{% endif %}
 {% if context.backend %}- Pin the development database to PostgreSQL `18.6-alpine`. Mount its volume
   at `/var/lib/postgresql` and recreate local volumes on major-version changes.
 {% endif %}- Generated `AGENTS.md` is a regular file, with the same guidance as `CLAUDE.md`, for Turbo workspace discovery.

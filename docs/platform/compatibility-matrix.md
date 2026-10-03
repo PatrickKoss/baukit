@@ -17,16 +17,23 @@ cargo deny, and the complete local CI-equivalent gates were verified locally
 because hosted runners were unavailable). The iOS simulator gate requires macOS
 and remains a release-host check rather than a Linux result.
 
+The pre-0.7.0 refresh passed the complete Linux gates on 2026-10-04, including
+every generated CI flavor, Docker-backed Rust tests, browser tests, Android
+compilation, SQLite conformance, and Hermes/notifications conformance. Baukit
+versions remain 0.6.0 and Rust 1.95 remains the MSRV. Swift 6.4.0 and xtool 1.20.1
+were installed and version-checked on Linux.
+
 ## Toolchain
 
 | Tool | Tested baseline | Notes |
 |---|---|---|
-| Rust | 1.95.0 MSRV | CI-enforced with Rust 1.95; train cut on stable 1.97.1 |
-| Node | 24 (v24.20.0 test host) | pinned via `mise.toml`, `typescript/.nvmrc`, and package engines |
-| Java | Temurin 21 (21.0.12.1 test host) | pinned via `mise.toml`; used by Android builds |
-| Swift | 6.3.3 | pinned via `mise.toml`; compiler version checked on Linux |
-| xtool | 1.17.0 | pinned via `mise.toml`; version checked on Linux, without a Darwin SDK or simulator |
-| pnpm | 12.7.0 | pinned via `packageManager`; 12.8.0 to 12.8.2 reject fresh lockfiles under `--frozen-lockfile` when a `file:` dependency has an optional peer the importer provides |
+| Rust | 1.95.0 MSRV | CI-enforced with Rust 1.95; refresh uses stable 1.99.0 |
+| Node | 26.10.0 | pinned via `mise.toml` and `typescript/.nvmrc`; Node types use major 26. Package engines still accept Node 24 and later. |
+| Corepack | 0.36.0 | installed through mise locally and npm in CI; Node 26 does not bundle it |
+| Java | Temurin 21.0.12.1 | pinned via `mise.toml`; used by Android builds |
+| Swift | 6.4.0 | pinned via `mise.toml`; compiler version checked on Linux |
+| xtool | 1.20.1 | pinned via `mise.toml`; version checked on Linux, without a Darwin SDK or simulator |
+| pnpm | 12.9.1 | pinned via `packageManager`; fresh generated web, mobile, and MCP lockfiles pass `--frozen-lockfile` |
 | Turbo | 2 | |
 
 ## Backend (Rust)
@@ -45,7 +52,7 @@ and remains a release-host check rather than a Linux result.
 | Outbound HTTP | reqwest | 0.13, rustls with the platform verifier | |
 | Auth | ring + JWKS | latest | Keycloak OIDC default; Clerk session-token adapter with `azp` validation; WorkOS AuthKit adapter bound to `client_id`. `ApiTokenStore` returns `ApiTokenStoreError` since 0.3.0. |
 | Development identity provider | Keycloak | 26.8.0 | Generated `compose.yaml` image; `make dev` reconciles the development realm from `realm-policy.json`. |
-| Integration tests | testcontainers | latest | `baukit-test` pins `postgres:18.6-alpine`; templates and smoke deploys use the same image |
+| Integration tests | testcontainers + testcontainers-modules | 0.27.3 + 0.15.0 | Both crates use the same container types. `baukit-test` pins `postgres:18.6-alpine`; templates and smoke deploys use the same image. |
 | Sync revisions | `baukit-sync` | 0.5.2 | Per-owner revision allocation, locking revision reads, tombstone purge horizons with a pull-cursor guard, the syncable-table column convention, and a `user_id` to `owner_id` migration. SQLx 0.9 and PostgreSQL behind the `sqlx-postgres` feature; the hybrid logical clock needs neither. |
 | Provider connectors | `baukit-integrations` | 0.5.2 | Contract-only connector port, cursor-paged pages, and `baukit-http` retry classes; no SQLx, no HTTP client. |
 
@@ -88,7 +95,7 @@ columns. See the [PostgreSQL 18 release notes](https://www.postgresql.org/docs/1
 | Provider registry | `@baukit/integrations-client` | 0.5.2 | Typed product connectors, stable registration order, and immutable connection-state overlays. |
 | Client sync primitives | `@baukit/sync-client` | 0.5.2 | Scheduler with optional retry, request-function and HTTP transports, status store, push-batch ranking, a persisted hybrid logical clock, and tombstone-horizon conformance. The optional `@baukit/sync-client/expo` entry uses Expo Network 57.0.2 and React Native 0.86.3; the root entry has no runtime dependencies and no React. |
 | PWA cache strategy | `@baukit/pwa-web` | 0.5.2 | ESM and CJS builds, request classification, `navigationFallback`, and strategy execution for a product-owned service worker; no dependencies and no service-worker globals. |
-| MCP server | `@modelcontextprotocol/sdk` + zod | 1.31.0 + 4.6.5 | Opt-in `--mcp` generated stdio package; bearer tokens from `@baukit/auth-node` or a caller-supplied provider. |
+| MCP server | `@modelcontextprotocol/sdk` + zod | 1.32.0 + 4.6.5 | Opt-in `--mcp` generated stdio package; bearer tokens from `@baukit/auth-node` or a caller-supplied provider. |
 | Web build | Vite | 8.3.2 | |
 | Styling | Tailwind CSS | 4 | |
 | Web persistence | `@baukit/data-contracts-dexie` / Dexie | 4.4.6 | only when offline is enabled; Chromium and WebKit conformance-tested |
@@ -99,6 +106,36 @@ columns. See the [PostgreSQL 18 release notes](https://www.postgresql.org/docs/1
 | Android native compile | Expo prebuild + Gradle | API 36, build-tools 36.0.0, Java 21 | Blocking for relevant generated-product and Baukit fixture changes |
 | Native e2e | Maestro | latest | Configurable for product-owned critical paths; scheduled/manual, not part of the universal pull-request promise |
 | iOS native compile | Xcode + iOS Simulator | macOS runner | Scheduled/manual; Linux is recorded as blocked, never as a passing skip |
+
+## Dependencies kept on a compatible line
+
+The October 2026 refresh keeps Baukit package and chart versions at 0.6.0 until
+the release script cuts 0.7.0. The table records retained dependency lines and
+the available upstream releases.
+
+| Dependency | Available stable release | Reason for the current line |
+|---|---|---|
+| testcontainers | 0.28.0 | testcontainers-modules 0.15.0 requires 0.27. Both crates must use the same container types. |
+| TypeScript | 7.0.2 | typescript-eslint 8.71.0 accepts TypeScript below 6.1. |
+| Expo SDK | 57.0.26 | SDK 57 is the latest stable SDK. Its native package versions remain together. |
+| React Native | 0.87.1 | Expo SDK 57 uses 0.86.3, including the Babel and Jest presets. |
+| React on mobile | 19.3.0 | Expo SDK 57 uses 19.2.8. Web uses 19.3.0. |
+| Jest and @jest/globals | 30.5.2 | jest-expo 57 and the React Native Jest preset use Jest 29. Types use @types/jest 29.5.14. |
+| Babel | 8.0.6 | The React Native Babel preset uses Babel 7 plugins. |
+| test-renderer | 1.3.0 | Its React reconciler requires React 19.3. The Expo set uses React 19.2. |
+| AsyncStorage | 3.1.1 | The [Expo SDK 57 bundle](https://github.com/expo/expo/blob/sdk-57/packages/expo/bundledNativeModules.json) uses 2.2.0 for Expo Go. Version 3 uses a new native module. |
+| Gesture Handler | 3.3.0 | Expo SDK 57 uses 2.32.0 with its navigation packages. |
+| Reanimated / Worklets | 4.7.1 / 0.13.0 | Expo SDK 57 uses 4.5.1 / 0.10.1. Screens 4.26.2 and Safe Area Context 5.7.0 stay on the same SDK baseline. |
+| Java | Temurin 27 | Expo SDK 57 generates Gradle 9.3.1. [Java 27 requires Gradle 9.8](https://docs.gradle.org/current/userguide/compatibility.html), so Android builds use the latest Temurin 21 patch. |
+| PostgreSQL | 18.6 | PostgreSQL stays on 18.x. Version 19 is still in beta. PostHog's separate database stays on 14.1. |
+| Keycloak | 26.8.0 | This is still the latest stable release. The theme matrix covers 26.7.5 and 26.8.0. |
+| MinIO image | RELEASE.2025-10-15T17-29-55Z | Quay has no image at this tag. The local overlay keeps the available September image. |
+
+Platform chart updates stay within their current major versions. The Tempo
+chart moves to 2.4.0 and kube-prometheus-stack to 88.6.5. Tempo chart 3.1.0 and
+kube-prometheus-stack 91.9.0 need separate chart migration checks. PostHog stays
+on its last published chart, 30.46.0, and ClickHouse 22.8.21.38. Its Redis image
+moves to the latest 6.2 patch, 6.2.24.
 
 ## Update rules
 

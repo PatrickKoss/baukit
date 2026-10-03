@@ -1,7 +1,7 @@
 # Hetzner Cloud provider
 
 This optional provider base installs the Hetzner Cloud Controller Manager chart
-`1.34.0` and hcloud CSI chart `2.22.1` in `kube-system`. The CSI driver provides
+`1.38.0` and hcloud CSI chart `2.23.0` in `kube-system`. The CSI driver provides
 the default `hcloud-volumes` StorageClass with expansion, delayed binding, and a
 conservative `Retain` reclaim policy. The CCM is present for provider node
 metadata and is the integration needed if a Hetzner `LoadBalancer` Service is

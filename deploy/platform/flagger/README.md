@@ -1,6 +1,6 @@
 # Flagger progressive-delivery base
 
-This base installs Flagger 1.44.0 in `flagger-system` with the direct Traefik
+This base installs Flagger 1.45.0 in `flagger-system` with the direct Traefik
 provider, the shared kube-prometheus-stack server, and
 `baukit.dev/workload` as the only rollout selector. The Flagger chart installs
 its CRDs through Helm. Six reusable Baukit MetricTemplates live beside the

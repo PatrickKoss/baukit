@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Install Corepack 0.36.0 before using pnpm in generated CI. Node 26 does not bundle Corepack.
+
+- Refresh generated dependencies: pnpm 12.9.1, ESLint 10.12, MCP SDK 1.32, Tokio 1.53.2, and UUID 1.27. Match mobile Jest types to Jest 29. Update the MCP doctor check and GitHub Actions patch pins. Use Node 26.10 and matching Node types in generated CI.
+
 - Use caret requirements for CLI and generated backend third-party Rust dependencies. Generated Baukit dependencies stay exact.
 
 - Inject auth erasure dependencies in path and registry modes.

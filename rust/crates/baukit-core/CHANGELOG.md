@@ -6,6 +6,8 @@ All notable changes to `baukit-core` are documented here.
 
 ### Changed
 
+- Update the UUID dependency baseline to 1.27. Keep Rust 1.95 as the MSRV.
+
 - Use caret requirements for third-party Rust dependencies so products can take compatible
   updates. Keep Baukit crate versions exact.
 

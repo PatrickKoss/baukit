@@ -4,7 +4,7 @@ resources:
   - namespace.yaml
   - helmrepository.yaml
   - helmrelease.yaml
-  - plugin-barman-cloud-v0.14.0.yaml
+  - plugin-barman-cloud-v0.15.1.yaml
 patches:
   - target:
       group: apps

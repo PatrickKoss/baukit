@@ -1,5 +1,10 @@
 # @baukit/analytics-posthog-web
 
+## [Unreleased]
+
+- Verify the adapter against posthog-js 1.435.8.
+
+
 ## 0.6.0
 
 ### Minor Changes

@@ -1,4 +1,4 @@
-FROM alpine:3.24
+FROM alpine:3.24.2
 
 RUN apk add --no-cache git git-daemon python3
 RUN git config --system --add safe.directory /srv/git/baukit.git

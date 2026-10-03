@@ -47,7 +47,7 @@
   },
   "devDependencies": {
     "@baukit/data-contracts": "workspace:*",
-    "@types/node": "24.19.0",
+    "@types/node": "26.6.4",
     "expo-sqlite": "57.0.3",
     "typescript": "6.0.3"
   },

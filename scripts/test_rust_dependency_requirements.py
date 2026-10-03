@@ -15,6 +15,7 @@ def manifest_paths(root: Path) -> list[Path]:
     return [
         root / "rust/Cargo.toml",
         root / "cli/Cargo.toml",
+        *sorted(root.glob("examples/*/Cargo.toml")),
         *sorted(root.glob("rust/crates/*/Cargo.toml")),
         *sorted(root.glob("templates/backend/**/Cargo.toml*")),
     ]

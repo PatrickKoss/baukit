@@ -1,5 +1,10 @@
 # @baukit/analytics-posthog-native
 
+## [Unreleased]
+
+- Verify consent withdrawal and storage against posthog-react-native 4.78.4.
+
+
 ## 0.6.0
 
 ### Minor Changes

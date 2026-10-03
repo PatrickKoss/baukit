@@ -29,16 +29,16 @@ test-scripts:
 {% endif %}check: preflight fmt lint test test-scripts{% if context.web %} check-web{% endif %}{% if context.mobile %} check-mobile{% endif %}
 
 {% if context.web %}check-web: preflight
-	cd web && corepack pnpm@12.7.0 install --frozen-lockfile
-	cd web && corepack pnpm@12.7.0 build
-	cd web && corepack pnpm@12.7.0 lint
-	cd web && corepack pnpm@12.7.0 test
+	cd web && corepack pnpm@12.9.1 install --frozen-lockfile
+	cd web && corepack pnpm@12.9.1 build
+	cd web && corepack pnpm@12.9.1 lint
+	cd web && corepack pnpm@12.9.1 test
 
 {% endif %}{% if context.mobile %}check-mobile: preflight
-	cd mobile && corepack pnpm@12.7.0 install --frozen-lockfile
-	cd mobile && corepack pnpm@12.7.0 exec tsc --noEmit
-	cd mobile && corepack pnpm@12.7.0 lint
-	cd mobile && corepack pnpm@12.7.0 test
+	cd mobile && corepack pnpm@12.9.1 install --frozen-lockfile
+	cd mobile && corepack pnpm@12.9.1 exec tsc --noEmit
+	cd mobile && corepack pnpm@12.9.1 lint
+	cd mobile && corepack pnpm@12.9.1 test
 
 qa-setup: qa-android-setup
 
@@ -123,8 +123,8 @@ keycloak-theme-test:
 	node --test scripts/tests/keycloak_accessibility.test.mjs scripts/tests/keycloak_theme_preferences.test.mjs
 
 {% if context.web %}keycloak-theme-browser-test: keycloak-theme-test
-	cd web && corepack pnpm@12.7.0 install --frozen-lockfile
-	cd web && corepack pnpm@12.7.0 exec playwright install chromium
+	cd web && corepack pnpm@12.9.1 install --frozen-lockfile
+	cd web && corepack pnpm@12.9.1 exec playwright install chromium
 	sh scripts/test-keycloak-theme-patches.sh
 
 {% endif %}

@@ -33,8 +33,8 @@ if [[ -f "$root/mobile/.env" ]]; then
 fi
 export BAUKIT_QA_BUILD=1
 
-corepack pnpm@12.7.0 --dir "$root/mobile" install --frozen-lockfile
-corepack pnpm@12.7.0 --dir "$root/mobile" run tokens
+corepack pnpm@12.9.1 --dir "$root/mobile" install --frozen-lockfile
+corepack pnpm@12.9.1 --dir "$root/mobile" run tokens
 (cd "$root/mobile" && CI=1 ./node_modules/.bin/expo prebuild \
   --clean --platform android --no-install)
 NODE_ENV=production "$root/mobile/android/gradlew" \

@@ -1,6 +1,6 @@
 # Traefik
 
-This base installs Traefik chart `41.2.0` (Traefik `v3.7.10`) as one DaemonSet
+This base installs Traefik chart `41.6.1` (Traefik `v3.7.13`) as one DaemonSet
 pod per node in the `traefik` namespace. Container hostPorts 80 and 443 make
 the single node the edge without `hostNetwork` or a cloud LoadBalancer. The
 Service is `ClusterIP`. The API/dashboard is disabled; ping on the internal

@@ -8,7 +8,7 @@ chart references it.
 The application renderer is the final published PostHog Kubernetes chart,
 `30.46.0` (PostHog `1.43.0`). PostHog ended Kubernetes support in 2023, so the
 chart is treated as a pinned renderer rather than an upgrade stream. The
-PostHog, ClickHouse 22.8.21.38, PostgreSQL 14.1, and Redis 6.2.6 (each inside
+PostHog, ClickHouse 22.8.21.38, PostgreSQL 14.1, and Redis 6.2.24 (each inside
 PostHog 1.43.0's compatibility ranges),
 Redpanda, ZooKeeper, and BusyBox images
 are pinned by both version and digest. The chart's

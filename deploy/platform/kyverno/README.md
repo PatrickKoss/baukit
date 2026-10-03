@@ -1,6 +1,6 @@
 # Kyverno
 
-This optional base installs Kyverno chart `3.8.2` (Kyverno `v1.18.2`) in the
+This optional base installs Kyverno chart `3.9.1` (Kyverno `v1.19.1`) in the
 `kyverno` namespace with one resource-bounded replica of each controller. It
 also installs three cluster policies: require CPU/memory requests and limits,
 reject explicit `:latest` container image tags, and prevent public

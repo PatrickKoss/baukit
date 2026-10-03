@@ -42,7 +42,7 @@
   },
   "devDependencies": {
     "@baukit/analytics-core": "file:../analytics-core",
-    "posthog-js": "1.435.6",
+    "posthog-js": "1.435.8",
     "typescript": "6.0.3"
   },
   "peerDependencies": {

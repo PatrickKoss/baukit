@@ -57,6 +57,68 @@ fn frontend_options(parent: &Path, name: &str, mobile: bool, web: bool) -> NewOp
     }
 }
 
+fn verify_corepack_bootstrap(path: &Path) -> anyhow::Result<()> {
+    let workflow: serde_yaml_ng::Value = serde_yaml_ng::from_str(&fs::read_to_string(path)?)?;
+    let jobs = workflow["jobs"]
+        .as_mapping()
+        .ok_or_else(|| anyhow::anyhow!("{} has no jobs", path.display()))?;
+    let mut invocations = 0;
+    for (name, job) in jobs {
+        let Some(steps) = job["steps"].as_sequence() else {
+            continue;
+        };
+        let mut installed = false;
+        for step in steps {
+            if step["uses"]
+                .as_str()
+                .is_some_and(|action| action.starts_with("actions/setup-node@"))
+            {
+                installed = false;
+            }
+            let Some(run) = step["run"].as_str() else {
+                continue;
+            };
+            for command in run.lines().map(str::trim) {
+                if command.starts_with("npm install --global corepack@") {
+                    installed = true;
+                }
+                if command.contains("corepack ") {
+                    anyhow::ensure!(
+                        installed,
+                        "{} job {name:?} uses Corepack before installing it: {command}",
+                        path.display()
+                    );
+                    invocations += 1;
+                }
+            }
+        }
+    }
+    anyhow::ensure!(invocations > 0, "{} never uses Corepack", path.display());
+    Ok(())
+}
+
+#[test]
+fn workflow_jobs_install_corepack_before_invoking_it() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut combined = options(parent.path(), "corepack-product");
+    combined.web = true;
+    combined.mobile = true;
+    combined.mcp = true;
+    combined.auth = Some(AuthProvider::Oidc);
+    combined.quality = QualityProfile::Strict;
+    let root = generate_new(&combined)?;
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    for path in [
+        repository.join(".github/workflows/ci.yml"),
+        repository.join(".github/workflows/release.yml"),
+        root.join(".github/workflows/ci.yml"),
+        root.join(".github/workflows/native.yml"),
+    ] {
+        verify_corepack_bootstrap(&path)?;
+    }
+    Ok(())
+}
+
 #[test]
 fn longest_application_name_generates_every_capability() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
@@ -2427,7 +2489,7 @@ fn mcp_generation_matches_golden_tree_and_records_personal_token_auth() -> anyho
         ["generated/openapi.d.ts", "mcp/src/api/schema.d.ts"]
     );
     let package = fs::read_to_string(first.join("mcp/package.json"))?;
-    assert!(package.contains("\"@modelcontextprotocol/sdk\": \"1.31.0\""));
+    assert!(package.contains("\"@modelcontextprotocol/sdk\": \"1.32.0\""));
     assert!(package.contains("\"@baukit/auth-node\""));
     assert!(!first.join("mcp/openapi.json").exists());
     assert!(first.join("mcp/src/api/schema.d.ts").is_file());

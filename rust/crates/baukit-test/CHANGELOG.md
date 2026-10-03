@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+- Update the Redis and Sentinel fixture images to `8.10.2-alpine`, matching generated products. PostgreSQL remains on `18.6-alpine`.
+
 ### Changed
 
 - Use caret requirements for third-party Rust dependencies so products can take compatible

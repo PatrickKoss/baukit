@@ -60,7 +60,7 @@ if [ "$has_playwright" = "true" ]; then
   if [ ! -d "$repository_root/web/node_modules/@playwright/test" ]; then
     (
       cd "$repository_root/web"
-      corepack pnpm@12.7.0 install --frozen-lockfile
+      corepack pnpm@12.9.1 install --frozen-lockfile
     )
   fi
   if [ ! -d "$repository_root/web/node_modules/@playwright/test" ]; then
@@ -70,7 +70,7 @@ if [ "$has_playwright" = "true" ]; then
 
   check_playwright_browsers() (
     cd "$repository_root/web"
-    corepack pnpm@12.7.0 exec node -e '
+    corepack pnpm@12.9.1 exec node -e '
       const fs = require("node:fs");
       const path = require("node:path");
       const { chromium, webkit } = require("@playwright/test");
@@ -89,7 +89,7 @@ if [ "$has_playwright" = "true" ]; then
   if ! check_playwright_browsers; then
     (
       cd "$repository_root/web"
-      corepack pnpm@12.7.0 exec playwright install chromium webkit
+      corepack pnpm@12.9.1 exec playwright install chromium webkit
     )
     if ! check_playwright_browsers; then
       echo 'preflight: Playwright browser executables are missing from the repository cache.' >&2

@@ -22,8 +22,8 @@ export EXPO_PUBLIC_API_URL="http://localhost:${BAUKIT_QA_API_PORT:-18080}"
 export EXPO_PUBLIC_OIDC_CLIENT_ID="{{ context.app_name }}-mobile"
 {% endif %}
 
-corepack pnpm@12.7.0 --dir "$root/mobile" install --frozen-lockfile
-corepack pnpm@12.7.0 --dir "$root/mobile" run tokens
+corepack pnpm@12.9.1 --dir "$root/mobile" install --frozen-lockfile
+corepack pnpm@12.9.1 --dir "$root/mobile" run tokens
 (cd "$root/mobile" && CI=1 ./node_modules/.bin/expo prebuild \
   --clean --platform ios --no-install)
 (cd "$root/mobile/ios" && pod install)

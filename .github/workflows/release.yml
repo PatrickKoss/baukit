@@ -32,7 +32,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout main with release history
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
@@ -40,13 +40,14 @@ jobs:
         with:
           components: clippy,rustfmt
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7.0.0
         with:
           node-version-file: typescript/.nvmrc
 
       - name: Enable pinned pnpm
         working-directory: typescript
         run: |
+          npm install --global corepack@0.36.0
           corepack enable
           corepack install
 
@@ -75,7 +76,7 @@ jobs:
           cargo test --manifest-path examples/minimal-api/Cargo.toml
 
       - name: Open or update release-train PR
-        uses: peter-evans/create-pull-request@v8
+        uses: peter-evans/create-pull-request@v8.1.1
         with:
           base: main
           branch: release-plz-v${{ steps.train.outputs.version }}
@@ -96,19 +97,20 @@ jobs:
       contents: write
     steps:
       - name: Checkout tagged train
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7.0.0
         with:
           node-version-file: typescript/.nvmrc
 
       - name: Enable pinned pnpm
         working-directory: typescript
         run: |
+          npm install --global corepack@0.36.0
           corepack enable
           corepack install
 
@@ -153,7 +155,7 @@ jobs:
       id-token: write
     steps:
       - name: Checkout tagged train
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -162,7 +164,7 @@ jobs:
 
       - name: Mint a short-lived crates.io token
         id: auth
-        uses: rust-lang/crates-io-auth-action@v1
+        uses: rust-lang/crates-io-auth-action@v1.0.5
 
       - name: Publish crates in dependency order
         env:
@@ -180,9 +182,9 @@ jobs:
       id-token: write
     steps:
       - name: Checkout tagged train
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7.0.0
         with:
           node-version-file: typescript/.nvmrc
           registry-url: https://registry.npmjs.org
@@ -190,6 +192,7 @@ jobs:
       - name: Enable pinned pnpm
         working-directory: typescript
         run: |
+          npm install --global corepack@0.36.0
           corepack enable
           corepack install
 

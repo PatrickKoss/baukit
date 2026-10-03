@@ -6,6 +6,8 @@ All notable changes to `baukit-openapi` are documented here.
 
 ### Changed
 
+- Update the schema validation baseline to jsonschema 0.58.5.
+
 - Use caret requirements for third-party Rust dependencies so products can take compatible
   updates. Keep Baukit crate versions exact.
 

@@ -303,7 +303,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: redis
-          image: redis:6.2.6-alpine@sha256:132337b9d7744ffee4fae83f51de53c3530935ad3ba528b7110f2d805f55cbf5
+          image: redis:6.2.24-alpine@sha256:b362b5dff9d14d961dc3352db4776aba6a8c53ca2661d7c74ad2c121f82cdaea
           imagePullPolicy: IfNotPresent
           args: [redis-server, --save, "", --appendonly, "no", --maxmemory, 96mb, --maxmemory-policy, allkeys-lru]
           ports:
@@ -385,7 +385,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: zookeeper
-          image: zookeeper:3.8.4@sha256:20d3c93ebda093d0c90911493396975e0e04523af225d8053d42bab781f9ca48
+          image: zookeeper:3.9.5@sha256:e6b279d0135070507e867a3220c941fe90b791937b6d469b6929b79a5dfb01ba
           imagePullPolicy: IfNotPresent
           env:
             - name: ZOO_4LW_COMMANDS_WHITELIST
@@ -485,7 +485,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: redpanda
-          image: redpandadata/redpanda:v25.1.9@sha256:8f7e9e4c1422baaa1a5e2a6c6c668cfe05442cb3cb476542c7dff61725e6fe31
+          image: redpandadata/redpanda:v25.3.17@sha256:c96a71811ec85eee436b7471e4d2777b70ceb4d6a0bc5447094854b3150511c1
           imagePullPolicy: IfNotPresent
           args:
             - redpanda
