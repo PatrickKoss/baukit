@@ -1676,6 +1676,99 @@ fn validate_mcp_keycloak_port(
     Ok(())
 }
 
+#[derive(PartialEq)]
+enum MakefileAssignment {
+    Default,
+    Immediate,
+    Recursive,
+}
+
+fn makefile_assignment(line: &str) -> Option<(&str, MakefileAssignment, &str)> {
+    if line.starts_with('\t') {
+        return None;
+    }
+    let line = line.split('#').next()?.trim();
+    let line = line.strip_prefix("export ").unwrap_or(line).trim_start();
+    let (binding, value) = line.split_once('=')?;
+    let binding = binding.trim_end();
+    let (name, assignment) = if let Some(name) = binding.strip_suffix('?') {
+        (name, MakefileAssignment::Default)
+    } else if let Some(name) = binding.strip_suffix(':') {
+        (name, MakefileAssignment::Immediate)
+    } else {
+        (binding, MakefileAssignment::Recursive)
+    };
+    let name = name.trim();
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || "_.-".contains(character))
+    {
+        return None;
+    }
+    Some((name, assignment, value.trim()))
+}
+
+fn expand_makefile_variables(
+    source: &str,
+    variables: &BTreeMap<String, String>,
+    expanding: &mut BTreeSet<String>,
+) -> String {
+    let mut resolved = String::new();
+    let mut remaining = source;
+    while let Some((prefix, suffix)) = remaining.split_once('$') {
+        resolved.push_str(prefix);
+        if let Some(suffix) = suffix.strip_prefix('$') {
+            resolved.push_str("$$");
+            remaining = suffix;
+            continue;
+        }
+        let delimiter = match suffix.chars().next() {
+            Some('(') => ')',
+            Some('{') => '}',
+            _ => {
+                resolved.push('$');
+                remaining = suffix;
+                continue;
+            }
+        };
+        let Some((name, suffix)) = suffix[1..].split_once(delimiter) else {
+            resolved.push('$');
+            remaining = suffix;
+            break;
+        };
+        let reference_length = remaining.len() - suffix.len();
+        if let Some(value) = variables
+            .get(name)
+            .filter(|_| expanding.insert(name.to_owned()))
+        {
+            resolved.push_str(&expand_makefile_variables(value, variables, expanding));
+            expanding.remove(name);
+        } else {
+            resolved.push_str(&remaining[prefix.len()..reference_length]);
+        }
+        remaining = suffix;
+    }
+    resolved.push_str(remaining);
+    resolved
+}
+
+fn resolve_makefile_variables(source: &str) -> String {
+    let mut variables = BTreeMap::new();
+    for (name, assignment, value) in source.lines().filter_map(makefile_assignment) {
+        if assignment == MakefileAssignment::Default && variables.contains_key(name) {
+            continue;
+        }
+        let value = if assignment == MakefileAssignment::Immediate {
+            expand_makefile_variables(value, &variables, &mut BTreeSet::new())
+        } else {
+            value.to_owned()
+        };
+        variables.insert(name.to_owned(), value);
+    }
+    expand_makefile_variables(source, &variables, &mut BTreeSet::new())
+}
+
 fn validate_port_configuration(
     root: &Path,
     manifest: &Manifest,
@@ -1696,7 +1789,7 @@ fn validate_port_configuration(
     let initial_failure_count = failures.len();
     let mut expected = Vec::new();
     if manifest.capabilities.backend {
-        validate_compose_ports(root, manifest, &ports, failures)?;
+        let redis_port = validate_compose_ports(root, manifest, &ports, failures)?;
         expected.extend([
             ("Makefile", format!("HTTP__PORT={}", ports.api)),
             ("Makefile", format!("OPS__PORT={}", ports.ops)),
@@ -1707,8 +1800,9 @@ fn validate_port_configuration(
             expected.extend([
                 (
                     "Makefile",
-                    format!("REDIS_URL=redis://127.0.0.1:{}/", ports.redis),
+                    format!("REDIS_URL=redis://127.0.0.1:{redis_port}/"),
                 ),
+                ("Makefile", format!("localhost:{}/realms/", ports.keycloak)),
                 ("scripts/pkce-login.py", format!("localhost:{}", ports.api)),
                 (
                     "backend/crates/PLACEHOLDER-bin/src/lib.rs",
@@ -1796,7 +1890,14 @@ fn validate_port_configuration(
             continue;
         }
         let source = fs::read_to_string(&path)?;
-        let mismatched = if is_environment_capable_source(&relative) {
+        let source = if relative == "Makefile" {
+            resolve_makefile_variables(&source)
+        } else {
+            source
+        };
+        let mismatched = if is_environment_capable_source(&relative)
+            || (relative == "Makefile" && snippet.contains("/realms/"))
+        {
             let expected_port = localhost_port(&snippet).expect("expected snippet has a port");
             let source = source.replace("${KEYCLOAK_PORT}", &ports.keycloak.to_string());
             has_mismatched_loopback_port(&source, expected_port, snippet.contains("/realms/"))
@@ -1877,6 +1978,14 @@ impl PublishedPort {
     }
 }
 
+fn compose_parameter_default(port: &str) -> Option<u16> {
+    let parameter = port.rsplit_once("${")?.1.strip_suffix('}')?;
+    let (_, value) = parameter
+        .split_once(":-")
+        .or_else(|| parameter.split_once('-'))?;
+    value.parse().ok()
+}
+
 impl ComposePort {
     fn literal_mapping(&self) -> Option<(u16, u16)> {
         match self {
@@ -1892,6 +2001,21 @@ impl ComposePort {
             Self::ContainerOnly(_port) => None,
         }
     }
+
+    fn parameterized_default_mapping(&self) -> Option<(u16, u16)> {
+        match self {
+            Self::Short(mapping) => {
+                let (published, target) = mapping.rsplit_once(':')?;
+                let target = target.split('/').next()?.parse().ok()?;
+                Some((target, compose_parameter_default(published)?))
+            }
+            Self::Long {
+                target,
+                published: Some(PublishedPort::Text(published)),
+            } => Some((target.literal()?, compose_parameter_default(published)?)),
+            Self::Long { .. } | Self::ContainerOnly(_) => None,
+        }
+    }
 }
 
 fn validate_compose_ports(
@@ -1899,10 +2023,10 @@ fn validate_compose_ports(
     manifest: &Manifest,
     ports: &PortConfiguration,
     failures: &mut Vec<String>,
-) -> Result<()> {
+) -> Result<u16> {
     let path = root.join("compose.yaml");
     if !path.is_file() {
-        return Ok(());
+        return Ok(ports.redis);
     }
     let compose: ComposeFile = serde_yaml_ng::from_str(&fs::read_to_string(&path)?)
         .context("could not parse compose.yaml")?;
@@ -1929,7 +2053,18 @@ fn validate_compose_ports(
             ));
         }
     }
-    Ok(())
+    let redis_port = compose
+        .services
+        .get("redis")
+        .and_then(|service| {
+            service
+                .ports
+                .iter()
+                .filter_map(ComposePort::parameterized_default_mapping)
+                .find_map(|(target, published)| (target == 6379).then_some(published))
+        })
+        .unwrap_or(ports.redis);
+    Ok(redis_port)
 }
 
 fn localhost_port(snippet: &str) -> Option<u16> {
@@ -2579,7 +2714,8 @@ mod doctor_tests {
     use super::{
         Capabilities, DoctorCommandOutput, DoctorHost, diagnose_docker, diagnose_ssh_agent,
         has_mismatched_loopback_port, probe_git_dependency, pwa_app_directory,
-        validate_mobile_router_configuration, validate_pwa_worker_build,
+        resolve_makefile_variables, validate_mobile_router_configuration,
+        validate_pwa_worker_build,
     };
 
     struct ExpectedCommand {
@@ -2769,6 +2905,45 @@ mod doctor_tests {
                 .any(|failure| failure.contains("supported `@baukit/pwa-web/worker` artifact"))
         );
         Ok(())
+    }
+
+    #[test]
+    fn makefile_defaults_and_immediate_assignments_follow_definition_order() {
+        let source = r#"PORT ?= 8280 # API default
+PORT ?= 9999
+EARLY := $(PORT)
+LATE = ${PORT}
+PORT = 8281
+ALIAS = ${FORWARD}
+FORWARD = 9290
+	run api=$(EARLY) ops=${ALIAS} late=$(LATE)"#;
+        assert_eq!(
+            resolve_makefile_variables(source).lines().last(),
+            Some("\trun api=8280 ops=9290 late=8281")
+        );
+    }
+
+    #[test]
+    fn makefile_resolution_preserves_shell_expressions_and_unknown_variables() {
+        let source = r#"export PORT = 8280
+	run $$(PORT) $${PORT} $(UNKNOWN) ${UNKNOWN} $plain $(shell printf 9999) $(BROKEN"#;
+        assert_eq!(
+            resolve_makefile_variables(source).lines().last(),
+            source.lines().last()
+        );
+    }
+
+    #[test]
+    fn makefile_resolution_ignores_recipe_assignments_and_leaves_cycles_unresolved() {
+        let source = r#"FIRST = $(SECOND)
+SECOND = ${FIRST}
+PORT = 8280
+run:
+	PORT = 9999
+	run api=$(PORT) cycle=$(FIRST)"#;
+        let resolved = resolve_makefile_variables(source);
+        let command = resolved.lines().last().expect("recipe command");
+        assert!(command.starts_with("\trun api=8280 cycle=$"));
     }
 
     #[test]

@@ -1694,6 +1694,109 @@ fn doctor_accepts_variable_url_configuration_and_formatted_constants() -> anyhow
     Ok(())
 }
 
+fn variable_port_makefile(assignment: &str, braced: bool, redis_port: u16) -> String {
+    let source = format!(
+        r#"export TIEFGANG_API_PORT {assignment} 8280
+export TIEFGANG_OPS_PORT {assignment} 9290
+export TIEFGANG_KEYCLOAK_PORT {assignment} 8281
+export TIEFGANG_REDIS_PORT {assignment} {redis_port}
+
+dev-backend:
+	TIEFGANG__HTTP__PORT=$(TIEFGANG_API_PORT) \
+	TIEFGANG__OPS__PORT=$(TIEFGANG_OPS_PORT) \
+	TIEFGANG__AUTH__ISSUER=http://localhost:$(TIEFGANG_KEYCLOAK_PORT)/realms/tiefgang \
+	TIEFGANG__RATE_LIMIT__REDIS_URL=redis://127.0.0.1:$(TIEFGANG_REDIS_PORT)/ \
+	cargo run --manifest-path backend/Cargo.toml
+"#,
+    );
+    if braced {
+        source
+            .replace("$(TIEFGANG_", "${TIEFGANG_")
+            .replace(")", "}")
+    } else {
+        source
+    }
+}
+
+#[test]
+fn doctor_resolves_makefile_port_variables_and_rejects_drift() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "tiefgang");
+    local.auth = Some(AuthProvider::Oidc);
+    local.port_offset = 200;
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    let path = root.join("Makefile");
+    for assignment in ["?=", ":=", "="] {
+        for braced in [false, true] {
+            let source = variable_port_makefile(assignment, braced, 6579);
+            fs::write(&path, &source)?;
+            doctor(&root)?;
+            for port in [8280, 9290, 8281, 6579] {
+                let drifted = source.replace(
+                    &format!("{assignment} {port}"),
+                    &format!("{assignment} 9999"),
+                );
+                fs::write(&path, drifted)?;
+                let error = doctor(&root)
+                    .expect_err("doctor must check resolved Makefile defaults")
+                    .to_string();
+                assert!(
+                    error.contains("generated file `Makefile` does not use port offset 200"),
+                    "{error}"
+                );
+                assert_eq!(
+                    error.matches("generated file `Makefile`").count(),
+                    1,
+                    "{error}"
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn doctor_checks_makefile_redis_against_parameterized_compose_defaults() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "tiefgang");
+    local.auth = Some(AuthProvider::Oidc);
+    local.port_offset = 200;
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    let makefile = root.join("Makefile");
+    let compose = root.join("compose.yaml");
+    let original = fs::read_to_string(&compose)?;
+    assert!(original.contains("127.0.0.1:6579:6379"));
+    let source = variable_port_makefile("?=", false, 18312);
+    for mapping in [
+        "- \"127.0.0.1:${TIEFGANG_REDIS_PORT:-18312}:6379\"",
+        "- \"127.0.0.1:${TIEFGANG_REDIS_PORT-18312}:6379\"",
+        "- target: 6379\n        published: \"${TIEFGANG_REDIS_PORT:-18312}\"\n        host_ip: 127.0.0.1",
+    ] {
+        let configuration = original.replace("- \"127.0.0.1:6579:6379\"", mapping);
+        fs::write(&compose, &configuration)?;
+        fs::write(&makefile, &source)?;
+        doctor(&root)?;
+        fs::write(&makefile, source.replace("?= 18312", "?= 18313"))?;
+        let error = doctor(&root).expect_err("Makefile and Compose Redis defaults must agree");
+        assert!(
+            error
+                .to_string()
+                .contains("Makefile` does not use port offset 200")
+        );
+        fs::write(&makefile, &source)?;
+        fs::write(&compose, configuration.replace("18312", "18313"))?;
+        let error = doctor(&root).expect_err("a changed Compose Redis default must cause drift");
+        assert!(
+            error
+                .to_string()
+                .contains("Makefile` does not use port offset 200")
+        );
+    }
+    Ok(())
+}
+
 #[test]
 fn doctor_accepts_custom_literal_ports_without_an_offset() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
