@@ -133,10 +133,7 @@ impl RedisSentinelTestContainer {
     ) -> Result<String, RedisTestError> {
         let previous = previous_address.to_owned();
         self.poll_until(
-            move |master| {
-                sentinel_field(master, "ip").is_some_and(|ip| ip != previous)
-                    && sentinel_field(master, "flags").is_some_and(|flags| flags == "master")
-            },
+            move |master| sentinel_has_new_master(master, &previous),
             "Sentinel did not publish a promoted master",
         )
         .await?;
@@ -291,6 +288,17 @@ fn sentinel_field<'a>(reply: &'a [String], field: &str) -> Option<&'a str> {
         .map(String::as_str)
 }
 
+fn sentinel_has_new_master(reply: &[String], previous_address: &str) -> bool {
+    let (Some(ip), Some(port), Some("master")) = (
+        sentinel_field(reply, "ip"),
+        sentinel_field(reply, "port"),
+        sentinel_field(reply, "flags"),
+    ) else {
+        return false;
+    };
+    format!("{ip}:{port}") != previous_address
+}
+
 /// Starts a disposable Redis container asynchronously.
 ///
 /// Docker is contacted only when this function is called.
@@ -337,6 +345,9 @@ pub async fn start_redis_sentinel() -> Result<RedisSentinelTestContainer, RedisT
 
     let replica = Redis::default()
         .with_tag(REDIS_IMAGE_TAG)
+        .with_ready_conditions(vec![WaitFor::message_on_either_std(
+            "MASTER <-> REPLICA sync: Finished with success",
+        )])
         .with_cmd([
             "redis-server".to_owned(),
             "--save".to_owned(),
@@ -388,6 +399,31 @@ pub async fn start_redis_sentinel() -> Result<RedisSentinelTestContainer, RedisT
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failover_requires_a_different_healthy_master_address() {
+        let previous = "172.18.0.2:6379";
+        let state = |ip: &str, port: &str, flags: &str| {
+            ["ip", ip, "port", port, "flags", flags].map(str::to_owned)
+        };
+        assert!(!sentinel_has_new_master(
+            &state("172.18.0.2", "6379", "master"),
+            previous
+        ));
+        assert!(sentinel_has_new_master(
+            &state("172.18.0.3", "6379", "master"),
+            previous
+        ));
+        assert!(sentinel_has_new_master(
+            &state("172.18.0.2", "6380", "master"),
+            previous
+        ));
+        assert!(!sentinel_has_new_master(
+            &state("172.18.0.3", "6379", "master,s_down"),
+            previous
+        ));
+        assert!(!sentinel_has_new_master(&[], previous));
+    }
 
     #[tokio::test]
     #[ignore = "requires a reachable Docker daemon and may pull the Redis image"]

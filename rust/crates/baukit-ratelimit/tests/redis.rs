@@ -278,24 +278,12 @@ async fn sentinel_store_recovers_after_master_failover() -> Result<(), Box<dyn E
     // reconnects to the node that just died.
     fixture.wait_for_failover(&original_master).await?;
 
-    // The store still has to notice the new master and re-resolve, which can take a
-    // few attempts after Sentinel has already published the promotion.
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
-    loop {
-        match store
+    assert!(
+        store
             .check_and_consume("rl:test:sentinel:recovery-probe", probe_quota)
-            .await
-        {
-            Ok(decision) if decision.allowed => break,
-            Ok(_) | Err(_) if tokio::time::Instant::now() < deadline => {
-                tokio::time::sleep(Duration::from_millis(200)).await;
-            }
-            Ok(decision) => panic!("store did not admit after failover: {decision:?}"),
-            Err(error) => {
-                return Err(format!("store did not recover after failover: {error}").into());
-            }
-        }
-    }
+            .await?
+            .allowed
+    );
 
     let quota = Quota::new(1, Duration::from_secs(60), 0)?;
     let allowed = store

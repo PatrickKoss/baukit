@@ -16,6 +16,10 @@ All notable changes to `baukit-test` are documented here.
 
 ### Fixed
 
+- Wait for replica synchronization before exposing a Sentinel fixture, and
+  compare the full master address when waiting for failover. The failover
+  test now checks recovery on one store call after Sentinel publishes the
+  promotion, without retrying the assertion.
 - Disable the `ring` default in both testcontainers and testcontainers-modules
   and select `aws-lc-rs`. Products must do the same for their container test
   dependencies and use sqlx `tls-rustls-aws-lc-rs`. This keeps rustls client
