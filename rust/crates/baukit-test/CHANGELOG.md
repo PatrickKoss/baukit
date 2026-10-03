@@ -4,6 +4,16 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Add authorization-code and client-credentials grants to `MockOidcServer`.
+  `issue_authorization_code` replaces an interactive authorize endpoint in
+  tests. Codes require an S256 PKCE proof, bind the client and redirect URI,
+  expire after five minutes, and can be exchanged once. Code exchange returns
+  an access/refresh session. `register_client_credentials` registers a client
+  for HTTP Basic or form authentication and issues access tokens without
+  refresh tokens. Invalid grants and credentials return OAuth errors.
+
 ### Fixed
 
 - Disable the `ring` default in both testcontainers and testcontainers-modules

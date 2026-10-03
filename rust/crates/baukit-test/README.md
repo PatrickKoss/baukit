@@ -385,3 +385,22 @@ execution order, which is a miserable afternoon to debug from the symptom.
 
 This crate provides fixtures and contract checks. Products still decide their limits, persistence,
 error types, and policy. The helpers only check the behavior a product declares.
+
+## Mock OAuth grants
+
+`MockOidcServer` supports `refresh_token`, `authorization_code`, and
+`client_credentials` at its discovered token endpoint. It does not serve an
+interactive authorize endpoint. Use `issue_authorization_code(subject,
+client_id, redirect_uri, code_challenge)` as the test's login step. Pass the
+unpadded base64url SHA-256 challenge of a PKCE verifier, then exchange the code
+with `client_id`, `redirect_uri`, and `code_verifier`. Each code expires after
+five minutes and can be exchanged once. Failed proof or binding checks also
+consume it. The access token has the client ID as its audience and `azp`, and
+the refresh token works with `refresh_session`.
+
+Use `register_client_credentials(client_id, client_secret, audience)` to
+register a machine client. Send HTTP Basic authentication or the form's
+`client_id` and `client_secret` with `grant_type=client_credentials`. The
+response has a signed five-minute access token with the supplied audience,
+client ID as its subject, and `azp` and `client_id` claims. It has no refresh
+token. Unknown clients and incorrect secrets return `invalid_client`.
