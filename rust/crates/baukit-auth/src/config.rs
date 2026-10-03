@@ -191,8 +191,8 @@ impl PrincipalClaimMapping {
 pub struct OidcConfig {
     pub(crate) issuer: Url,
     pub(crate) audiences: BTreeSet<String>,
-    pub(crate) client_id: String,
-    pub(crate) allowed_clients: BTreeSet<String>,
+    pub(crate) client_id: Option<String>,
+    pub(crate) allowed_clients: Option<BTreeSet<String>>,
     pub(crate) algorithms: BTreeSet<SigningAlgorithm>,
     pub(crate) cache_ttl: Duration,
     pub(crate) request_timeout: Duration,
@@ -204,8 +204,8 @@ pub struct OidcConfig {
 impl OidcConfig {
     /// Creates configuration for an issuer and one required audience.
     ///
-    /// The audience is also the default client ID and sole allowed `azp` value.
-    /// Use [`Self::with_client_id`] when the OAuth client differs from the API audience.
+    /// Access tokens have no client allowlist by default. ID-token verification
+    /// requires an explicit client ID through [`Self::with_client_id`].
     pub fn new(
         issuer: impl AsRef<str>,
         audience: impl Into<String>,
@@ -215,8 +215,8 @@ impl OidcConfig {
         validate_nonempty("audience", &audience)?;
         Ok(Self {
             issuer,
-            client_id: audience.clone(),
-            allowed_clients: BTreeSet::from([audience.clone()]),
+            client_id: None,
+            allowed_clients: None,
             audiences: BTreeSet::from([audience]),
             algorithms: BTreeSet::from([SigningAlgorithm::Rs256]),
             cache_ttl: Duration::from_secs(300),
@@ -239,8 +239,8 @@ impl OidcConfig {
         Ok(Self {
             issuer: normalized_issuer(issuer.as_ref())?,
             audiences: BTreeSet::new(),
-            client_id: String::new(),
-            allowed_clients: BTreeSet::new(),
+            client_id: None,
+            allowed_clients: None,
             algorithms: BTreeSet::from([SigningAlgorithm::Rs256]),
             cache_ttl: Duration::from_secs(300),
             request_timeout: Duration::from_secs(5),
@@ -259,8 +259,8 @@ impl OidcConfig {
         Ok(Self {
             issuer: normalized_issuer(issuer.as_ref())?,
             audiences: BTreeSet::new(),
-            client_id: client_id.clone(),
-            allowed_clients: BTreeSet::from([client_id.clone()]),
+            client_id: Some(client_id.clone()),
+            allowed_clients: None,
             algorithms: BTreeSet::from([SigningAlgorithm::Rs256]),
             cache_ttl: Duration::from_secs(300),
             request_timeout: Duration::from_secs(5),
@@ -307,28 +307,28 @@ impl OidcConfig {
         Ok(self)
     }
 
-    /// Sets the OIDC client ID and resets the allowed `azp` values to that client.
+    /// Sets the OAuth client ID required for ID-token verification.
     ///
-    /// A token with several audiences must carry this exact client ID in `azp`.
+    /// ID tokens must include this client in `aud`. Several audiences require
+    /// this exact client in `azp`, as does any present `azp` on an ID token.
+    /// This does not restrict the clients allowed to send access tokens.
     pub fn with_client_id(mut self, client_id: impl Into<String>) -> Result<Self, OidcConfigError> {
         let client_id = client_id.into();
         validate_nonempty("client ID", &client_id)?;
-        self.allowed_clients = BTreeSet::from([client_id.clone()]);
-        self.client_id = client_id;
+        self.client_id = Some(client_id);
         Ok(self)
     }
 
-    /// Replaces the OIDC `azp` allowlist, retaining the configured client ID.
+    /// Requires access tokens to carry `azp` from this allowlist.
     ///
-    /// Additional clients are accepted only on tokens with a single audience.
-    /// At least one non-empty client ID is required.
+    /// At least one non-empty client ID is required. ID-token verification uses
+    /// [`Self::with_client_id`] independently of this list.
     pub fn with_allowed_clients<I, T>(mut self, clients: I) -> Result<Self, OidcConfigError>
     where
         I: IntoIterator<Item = T>,
         T: Into<String>,
     {
-        self.allowed_clients = nonempty_values("client ID", clients)?;
-        self.allowed_clients.insert(self.client_id.clone());
+        self.allowed_clients = Some(nonempty_values("client ID", clients)?);
         Ok(self)
     }
 

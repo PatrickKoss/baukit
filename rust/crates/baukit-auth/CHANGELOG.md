@@ -15,11 +15,14 @@ All notable changes to `baukit-auth` are documented here.
 
 ### Changed
 
-- Generic OIDC tokens with several audiences must carry `azp` equal to the
-  configured client ID. Any present `azp` must be an allowed client ID.
-  `OidcConfig::new` defaults the client ID to its audience. Use `with_client_id`
-  for a separate OAuth client and `with_allowed_clients` to permit other
-  clients on single-audience tokens. Clerk and WorkOS keep their provider checks.
+- Generic OIDC access tokens with several audiences must carry a string `azp`.
+  Client restrictions remain opt-in through `with_allowed_clients`, which
+  requires `azp` from that list on every access token. Single-audience tokens
+  keep their existing claim-mapping behavior without an allowlist.
+- ID-token verification requires an explicit `with_client_id` and that client
+  in `aud`. Several audiences require `azp` equal to the client, and any present
+  `azp` must equal it. The API audience does not set the ID-token client. Clerk
+  and WorkOS keep their access-token provider checks.
 
 ### Fixed
 

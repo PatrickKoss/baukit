@@ -382,17 +382,18 @@ provider.
 
 ## ID tokens and secret comparisons
 
-Configure an ID-token verifier with the OAuth client's audience. Call
+Configure an ID-token verifier with `with_client_id("orders-web")`. ID tokens
+must include that client in `aud`. Call
 `verifier.verify_id_token(token, expected_nonce).await` with the nonce stored
 for that login request. The caller generates the nonce and consumes the login
 state once. Normal `verify` does not require a nonce on access tokens.
 
-Generic OIDC verification checks `azp` on both methods. A token with several
-audiences must name the configured client ID in `azp`. Any present `azp` must
-be allowed. The client ID defaults to the audience passed to `OidcConfig::new`.
-Use `with_client_id` when they differ, then `with_allowed_clients` if other
-clients may send single-audience tokens. Clerk and WorkOS retain their own
-provider rules.
+Access-token verification has no client allowlist by default. Several audiences
+require a string `azp`. Use `with_allowed_clients(["orders-web", "orders-mobile"])`
+to require `azp` from that list on every access token. For ID tokens, several
+audiences require `azp` equal to the configured client ID, and any present `azp`
+must equal that client. The ID-token client and access-token allowlist are
+independent. Clerk and WorkOS retain their own access-token rules.
 
 Use `baukit_auth::constant_time_eq(expected.as_bytes(), presented.as_bytes())`
 for API keys, SCIM tokens, or other secret strings. It uses `subtle` and does

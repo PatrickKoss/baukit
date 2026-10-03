@@ -524,14 +524,15 @@ impl OidcVerifier {
 
     /// Verifies one access token using the configured issuer, audience, and algorithms.
     pub async fn verify(&self, token: &str) -> Result<Principal, VerificationError> {
-        self.verify_token(token, None).await
+        self.verify_token(token, TokenVerification::Access).await
     }
 
     /// Verifies an ID token and requires its `nonce` to match the login request.
     ///
-    /// The expected nonce must be non-empty. The caller owns nonce generation,
-    /// storage, and single-use login state. Signature, issuer, audience, `azp`,
-    /// expiry, and configured claim checks also apply.
+    /// Configure the OAuth client through [`OidcConfig::with_client_id`]. The
+    /// expected nonce must be non-empty. The caller owns nonce generation,
+    /// storage, and single-use login state. Signature, issuer, client audience,
+    /// `azp`, expiry, and configured claim checks also apply.
     pub async fn verify_id_token(
         &self,
         token: &str,
@@ -540,13 +541,26 @@ impl OidcVerifier {
         if expected_nonce.is_empty() {
             return Err(VerificationError::WrongNonce);
         }
-        self.verify_token(token, Some(expected_nonce)).await
+        let client_id = self
+            .inner
+            .config
+            .client_id
+            .as_deref()
+            .ok_or(VerificationError::MissingClientId)?;
+        self.verify_token(
+            token,
+            TokenVerification::Id {
+                client_id,
+                expected_nonce,
+            },
+        )
+        .await
     }
 
     async fn verify_token(
         &self,
         token: &str,
-        expected_nonce: Option<&str>,
+        verification: TokenVerification<'_>,
     ) -> Result<Principal, VerificationError> {
         let ParsedToken {
             header,
@@ -563,14 +577,14 @@ impl OidcVerifier {
         let key_id = header.kid.ok_or(VerificationError::MissingKeyId)?;
         let key = self.key_for(&key_id).await?;
         key.verify(algorithm, &signing_input, &signature)?;
-        if let Some(expected_nonce) = expected_nonce {
+        if let TokenVerification::Id { expected_nonce, .. } = verification {
             match claims.extra.get("nonce") {
                 Some(Value::String(nonce))
                     if crate::constant_time_eq(nonce.as_bytes(), expected_nonce.as_bytes()) => {}
                 _ => return Err(VerificationError::WrongNonce),
             }
         }
-        claims.validate(&self.inner.config)
+        claims.validate(&self.inner.config, verification)
     }
 
     async fn key_for(&self, key_id: &str) -> Result<Jwk, VerificationError> {
@@ -825,6 +839,15 @@ fn decode_component(value: Option<&str>) -> Result<Vec<u8>, VerificationError> {
         .map_err(|_| VerificationError::InvalidJwk)
 }
 
+#[derive(Clone, Copy)]
+enum TokenVerification<'a> {
+    Access,
+    Id {
+        client_id: &'a str,
+        expected_nonce: &'a str,
+    },
+}
+
 struct ParsedToken {
     header: JwtHeader,
     claims: JwtClaims,
@@ -885,7 +908,11 @@ struct JwtClaims {
 }
 
 impl JwtClaims {
-    fn validate(self, config: &OidcConfig) -> Result<Principal, VerificationError> {
+    fn validate(
+        self,
+        config: &OidcConfig,
+        verification: TokenVerification<'_>,
+    ) -> Result<Principal, VerificationError> {
         let subject = self
             .sub
             .as_deref()
@@ -895,7 +922,7 @@ impl JwtClaims {
         if self.iss.as_deref() != Some(config.issuer.as_str()) {
             return Err(VerificationError::WrongIssuer);
         }
-        validate_token_profile(&self, config)?;
+        validate_token_profile(&self, config, verification)?;
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|_| VerificationError::Clock)?
@@ -932,7 +959,11 @@ impl JwtClaims {
 fn validate_token_profile(
     claims: &JwtClaims,
     config: &OidcConfig,
+    verification: TokenVerification<'_>,
 ) -> Result<(), VerificationError> {
+    if let TokenVerification::Id { client_id, .. } = verification {
+        return validate_id_token_client(claims, client_id);
+    }
     if !config.audiences.is_empty() {
         validate_audience(claims, config)?;
     }
@@ -958,20 +989,41 @@ fn validate_oidc_authorized_party(
     claims: &JwtClaims,
     config: &OidcConfig,
 ) -> Result<(), VerificationError> {
-    let several_audiences = claims
-        .aud
-        .as_ref()
-        .is_some_and(|audience| audience.values().count() > 1);
+    if let Some(allowed_clients) = &config.allowed_clients {
+        return match claims.extra.get("azp") {
+            Some(Value::String(client)) if allowed_clients.contains(client) => Ok(()),
+            _ => Err(VerificationError::WrongAuthorizedParty),
+        };
+    }
+    if !has_several_audiences(claims) {
+        return Ok(());
+    }
     match claims.extra.get("azp") {
-        None if !several_audiences => Ok(()),
-        Some(Value::String(client))
-            if config.allowed_clients.contains(client)
-                && (!several_audiences || client == &config.client_id) =>
-        {
-            Ok(())
-        }
+        Some(Value::String(_)) => Ok(()),
         _ => Err(VerificationError::WrongAuthorizedParty),
     }
+}
+
+fn validate_id_token_client(claims: &JwtClaims, client_id: &str) -> Result<(), VerificationError> {
+    if !claims
+        .aud
+        .as_ref()
+        .is_some_and(|audience| audience.values().any(|value| value == client_id))
+    {
+        return Err(VerificationError::WrongAudience);
+    }
+    match claims.extra.get("azp") {
+        None if !has_several_audiences(claims) => Ok(()),
+        Some(Value::String(client)) if client == client_id => Ok(()),
+        _ => Err(VerificationError::WrongAuthorizedParty),
+    }
+}
+
+fn has_several_audiences(claims: &JwtClaims) -> bool {
+    claims
+        .aud
+        .as_ref()
+        .is_some_and(|audience| audience.values().count() > 1)
 }
 
 fn validate_audience(claims: &JwtClaims, config: &OidcConfig) -> Result<(), VerificationError> {
@@ -1162,6 +1214,9 @@ pub enum VerificationError {
     /// The ID token's nonce was missing, malformed, or did not match the login request.
     #[error("ID token nonce is invalid")]
     WrongNonce,
+    /// ID-token verification requires an explicitly configured OAuth client ID.
+    #[error("ID token verification requires a configured client ID")]
+    MissingClientId,
     /// A WorkOS token did not name the configured application client.
     #[error("access token client ID is invalid")]
     WrongClientId,
