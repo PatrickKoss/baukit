@@ -223,7 +223,6 @@ const EXPECTED_MCP_FILES: &[&str] = &[
     "mcp/src/api/schema.d.ts",
     "mcp/src/auth.ts",
     "mcp/src/cli.ts",
-    "mcp/src/product.ts",
     "mcp/src/server.ts",
     "mcp/src/tool-routes.ts",
     "mcp/src/tools/registry.ts",
@@ -1639,7 +1638,13 @@ fn validate_product_constants(
             expected.push(("ENV_PREFIX", env_prefix.as_str()));
         }
         for (name, value) in expected {
-            if source_constant(&source, name).and_then(quoted_string) != Some(value) {
+            let Some(initializer) = source_constant(&source, name) else {
+                failures.push(format!(
+                    "generated file `{relative}` does not define {name}"
+                ));
+                continue;
+            };
+            if quoted_string(initializer) != Some(value) {
                 failures.push(format!(
                     "generated file `{relative}` {name} does not match application name `{}`",
                     manifest.app.name
@@ -1665,9 +1670,13 @@ fn validate_mcp_keycloak_port(
         return Ok(());
     }
     let source = fs::read_to_string(path)?;
-    let port =
-        source_constant(&source, "KEYCLOAK_PORT").and_then(|value| value.parse::<u16>().ok());
-    if port != Some(expected_port) {
+    let Some(port) = source_constant(&source, "KEYCLOAK_PORT") else {
+        failures.push(format!(
+            "generated file `{relative}` does not define KEYCLOAK_PORT"
+        ));
+        return Ok(());
+    };
+    if port.parse::<u16>().ok() != Some(expected_port) {
         failures.push(format!(
             "generated file `{relative}` KEYCLOAK_PORT does not use port offset {}",
             manifest.port_offset

@@ -1664,6 +1664,7 @@ fn doctor_accepts_variable_url_configuration_and_formatted_constants() -> anyhow
         fs::remove_file(&path)?;
         let error = doctor(&root).expect_err("doctor must find missing product constants");
         assert!(error.to_string().contains(relative));
+        assert_eq!(error.to_string().matches(relative).count(), 1);
         fs::write(path, source)?;
     }
     for (relative, source) in [
@@ -1689,6 +1690,86 @@ fn doctor_accepts_variable_url_configuration_and_formatted_constants() -> anyhow
         ),
     ] {
         fs::write(root.join(relative), source)?;
+    }
+    doctor(&root)?;
+    Ok(())
+}
+
+#[test]
+fn doctor_distinguishes_missing_constants_from_wrong_values() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "constant-diagnostics");
+    local.mobile = true;
+    local.web = true;
+    local.mcp = true;
+    local.auth = Some(AuthProvider::Oidc);
+    local.port_offset = 100;
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    for (relative, name, correct, wrong) in [
+        (
+            "mobile/src/product.ts",
+            "PRODUCT_NAME",
+            "constant-diagnostics",
+            "wrong-product",
+        ),
+        (
+            "web/src/product.ts",
+            "PRODUCT_NAME",
+            "constant-diagnostics",
+            "wrong-product",
+        ),
+        (
+            "mcp/src/product.ts",
+            "PRODUCT_NAME",
+            "constant-diagnostics",
+            "wrong-product",
+        ),
+        (
+            "mcp/src/product.ts",
+            "ENV_PREFIX",
+            "CONSTANT_DIAGNOSTICS",
+            "WRONG_PREFIX",
+        ),
+        ("mcp/src/product.ts", "KEYCLOAK_PORT", "8181", "9999"),
+        (
+            "backend/crates/constant-diagnostics-bin/src/lib.rs",
+            "PRODUCT",
+            "constant-diagnostics",
+            "wrong-product",
+        ),
+    ] {
+        let path = root.join(relative);
+        let source = fs::read_to_string(&path)?;
+        let declaration = format!("const {name}");
+        assert!(source.contains(&declaration));
+        fs::write(
+            &path,
+            source.replace(&declaration, &format!("const RENAMED_{name}")),
+        )?;
+        let error = doctor(&root)
+            .expect_err("doctor must identify a missing constant")
+            .to_string();
+        let missing = format!("generated file `{relative}` does not define {name}");
+        assert!(error.contains(&missing), "{error}");
+        assert!(
+            !error.contains("does not match application name"),
+            "{error}"
+        );
+        fs::write(&path, source.replace(correct, wrong))?;
+        let error = doctor(&root)
+            .expect_err("doctor must identify a wrong constant value")
+            .to_string();
+        let mismatch = if name == "KEYCLOAK_PORT" {
+            format!("generated file `{relative}` {name} does not use port offset 100")
+        } else {
+            format!(
+                "generated file `{relative}` {name} does not match application name `constant-diagnostics`"
+            )
+        };
+        assert!(error.contains(&mismatch), "{error}");
+        assert!(!error.contains("does not define"), "{error}");
+        fs::write(path, source)?;
     }
     doctor(&root)?;
     Ok(())
