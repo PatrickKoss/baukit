@@ -6,6 +6,10 @@ installs the Barman Cloud CNPG-I plugin pinned to `v0.14.0`. Both controllers
 have small, bounded resources. The plugin must run in the operator namespace and
 uses cert-manager for its client and server certificates.
 
+The operator's `POSTGRES_IMAGE_NAME` pins new clusters to
+`ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie`. The reusable primary and
+restore-test manifests also set `spec.imageName` explicitly to this image.
+
 The base is intentionally cluster-wide so reusable `postgres-cluster` instances
 can live in their own namespaces. It contains no PostgreSQL clusters, object
 storage configuration, credentials, or priority class.
