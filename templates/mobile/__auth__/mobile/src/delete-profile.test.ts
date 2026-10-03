@@ -1,6 +1,10 @@
 import { MockFetch } from '@baukit/api-runtime';
 
 const mockKeys = new Map<string, string>();
+const mockRemoveKey = jest.fn((key: string) => {
+  mockKeys.delete(key);
+  return Promise.resolve();
+});
 const mockReadToken = jest.fn(() => Promise.resolve('token-before-deletion'));
 const mockClearSession = jest.fn(() => Promise.resolve());
 const mockDeletePreference = jest.fn(() => Promise.resolve());
@@ -28,10 +32,7 @@ jest.mock('expo-secure-store', () => ({
     mockKeys.set(key, value);
     return Promise.resolve();
   },
-  deleteItemAsync: (key: string) => {
-    mockKeys.delete(key);
-    return Promise.resolve();
-  },
+  deleteItemAsync: (key: string) => mockRemoveKey(key),
 }));
 jest.mock('expo-sqlite', () => ({
   openDatabaseAsync: () => Promise.resolve({ closeAsync: mockCloseDatabase }),
@@ -63,6 +64,47 @@ function dependencies(client: Awaited<ReturnType<typeof createDeleteProfileClien
 }
 
 describe('delete profile service', () => {
+  it.each([200, 202, 401])(
+    'removes the durable key after a definitive %i response',
+    async (status) => {
+      const body =
+        status === 401
+          ? {
+              error: {
+                code: 'profile_erased',
+                message: 'Erased',
+                requestId: 'request-1',
+                details: {},
+              },
+            }
+          : {
+              status: status === 200 ? 'completed' : 'pending',
+              operationId,
+              completedAt: '2026-10-03T12:00:00Z',
+            };
+      const fetch = new MockFetch().enqueueJson(body, { status });
+      globalThis.fetch = fetch.fetch;
+      const deps = dependencies(await createDeleteProfileClient('private-subject'));
+      const result = await deleteProfile(deps);
+      expect(result.status).toBe(status === 200 ? 'erased' : 'pending');
+      expect(mockKeys.size).toBe(0);
+    },
+  );
+
+  it('still erases local data and signs out if key removal fails after commit', async () => {
+    const fetch = new MockFetch().enqueueJson({ status: 'pending', operationId }, { status: 202 });
+    globalThis.fetch = fetch.fetch;
+    mockRemoveKey.mockRejectedValueOnce(new Error('Storage unavailable'));
+    const deps = dependencies(await createDeleteProfileClient('private-subject'));
+    await expect(deleteProfile(deps)).resolves.toMatchObject({
+      status: 'local-failure',
+      receipt: { status: 'pending', operationId },
+    });
+    expect(deps.eraseLocalPartition).toHaveBeenCalledTimes(1);
+    expect(mockDeletePreference).toHaveBeenCalledWith('private-subject');
+    expect(mockClearSession).toHaveBeenCalledTimes(1);
+  });
+
   it('replays after a dropped response, deletes only this account preferences and signs out', async () => {
     const fetch = new MockFetch()
       .enqueue(new TypeError('connection lost'))
@@ -87,6 +129,7 @@ describe('delete profile service', () => {
     expect(mockDeletePreference).toHaveBeenCalledWith('private-subject');
     expect(mockCloseDatabase).toHaveBeenCalledTimes(1);
     expect(mockClearSession).toHaveBeenCalledTimes(1);
+    expect(mockKeys.size).toBe(0);
   });
 
   it('signs out even if partition and preference deletion fail', async () => {

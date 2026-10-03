@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { announce, focusAccessibilityElement } from '@baukit/a11y-core';
 import type { ProductProfileErasureResult } from '@baukit/data-contracts';
+import { ApiError } from '@baukit/api-runtime';
 import type { ProfileErasureOperation } from '@baukit/api-runtime/erasure';
 
 jest.mock('@baukit/a11y-core', () => ({
@@ -156,11 +157,19 @@ describe('DeleteProfileScreen', () => {
     expect(erase).toHaveBeenCalledTimes(2);
   });
 
-  it('shows unexpected rejections as unknown outcomes', async () => {
-    await renderScreen(() => Promise.reject(new Error('secret')));
+  it('reports preparation failures as unsent and allows a retry', async () => {
+    const erase = jest
+      .fn<Promise<ProductProfileErasureResult>, []>()
+      .mockRejectedValueOnce(new Error('secret'))
+      .mockResolvedValueOnce(erased);
+    await renderScreen(erase);
     await confirm();
-    expect(await screen.findByText(copy.ambiguous)).toBeOnTheScreen();
+    expect(await screen.findByText(copy.preparationFailure)).toBeOnTheScreen();
+    expect(screen.queryByText(copy.ambiguous)).toBeNull();
     expect(screen.queryByText('secret')).toBeNull();
+    await fireEvent.press(screen.getByRole('button', { name: copy.retry }));
+    expect(await screen.findByText(copy.erased)).toBeOnTheScreen();
+    expect(erase).toHaveBeenCalledTimes(2);
   });
 
   it.each(['completed', 'failed'] as const)(
@@ -170,7 +179,6 @@ describe('DeleteProfileScreen', () => {
       const poll = jest.fn(() => Promise.resolve({ status, operationId: 'erase-1' }));
       await renderScreen(erase, poll);
       await confirm();
-      await fireEvent.press(await screen.findByRole('button', { name: copy.checkStatus }));
       expect(
         await screen.findByText(status === 'completed' ? copy.erased : copy.failed),
       ).toBeOnTheScreen();
@@ -195,13 +203,78 @@ describe('DeleteProfileScreen', () => {
       });
     const { unmount } = await renderScreen(() => Promise.resolve(pending), poll);
     await confirm();
-    await fireEvent.press(await screen.findByRole('button', { name: copy.checkStatus }));
     expect(await screen.findByText(copy.statusError)).toBeOnTheScreen();
     await fireEvent.press(screen.getByRole('button', { name: copy.checkStatus }));
     expect(signal?.aborted).toBe(false);
     await unmount();
     expect(signal?.aborted).toBe(true);
   });
+
+  it('starts a bounded round automatically and offers another round when still pending', async () => {
+    const poll = jest
+      .fn<Promise<ProfileErasureOperation>, [string, AbortSignal]>()
+      .mockResolvedValueOnce(receipt)
+      .mockResolvedValueOnce(completed);
+    await renderScreen(() => Promise.resolve(pending), poll);
+    await confirm();
+    expect(await screen.findByText(copy.pending)).toBeOnTheScreen();
+    expect(poll).toHaveBeenCalledTimes(1);
+    const button = screen.getByRole('button', { name: copy.checkStatus });
+    expect(button).toBeEnabled();
+    await fireEvent.press(button);
+    expect(await screen.findByText(copy.erased)).toBeOnTheScreen();
+    expect(poll).toHaveBeenCalledTimes(2);
+  });
+
+  it('aborts automatic polling on unmount', async () => {
+    let signal: AbortSignal | undefined;
+    const poll = jest.fn((_id: string, nextSignal: AbortSignal) => {
+      signal = nextSignal;
+      return new Promise<ProfileErasureOperation>((_resolve, reject) => {
+        nextSignal.addEventListener('abort', () => {
+          reject(new Error('aborted'));
+        });
+      });
+    });
+    const { unmount } = await renderScreen(() => Promise.resolve(pending), poll);
+    await confirm();
+    expect(await screen.findByText(copy.pending)).toBeOnTheScreen();
+    expect(poll).toHaveBeenCalledTimes(1);
+    expect(signal?.aborted).toBe(false);
+    await unmount();
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it.each(['en', 'de'])(
+    'explains expired status tokens in %s without asking for action',
+    async (language) => {
+      await initializeI18n(language);
+      const localized = language === 'de' ? germanErasureCopy : copy;
+      const poll = jest.fn(() =>
+        Promise.reject(
+          new ApiError(
+            {
+              error: {
+                code: 'unauthenticated',
+                message: 'Token expired',
+                requestId: 'request-1',
+                details: {},
+              },
+            },
+            401,
+          ),
+        ),
+      );
+      await renderScreen(() => Promise.resolve(pending), poll);
+      await fireEvent.press(screen.getByRole('button', { name: localized.continue }));
+      await fireEvent.press(screen.getByRole('button', { name: localized.confirm }));
+      expect(await screen.findByText(localized.statusExpired)).toBeOnTheScreen();
+      expect(screen.queryByText(localized.statusError)).toBeNull();
+      expect(screen.queryByRole('button', { name: localized.checkStatus })).toBeNull();
+      expect(screen.queryByRole('button', { name: localized.retry })).toBeNull();
+      expect(announce).toHaveBeenLastCalledWith(localized.statusExpired);
+    },
+  );
 
   it('renders German strings through i18next and disables deletion before identity is ready', async () => {
     await initializeI18n('de');

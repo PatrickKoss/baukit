@@ -52,12 +52,17 @@ The Identity section links to `/?page=delete-profile`. The screen requires a sec
 confirmation to delete the profile data and sign-in account. Its service uses
 `DELETE /me` and keeps the idempotency key in Web Storage under a hashed account
 slot. A dropped response keeps local data and authentication for a safe retry.
+A completed or pending receipt removes the key from device storage.
 
 After a completed or pending receipt, the service erases the local account
 partition and clears authentication. A pending result explains that sign-in
-account deletion is still finishing. The screen can check the operation with
-the token captured before sign-out. A failed operation asks the user to contact
-support; it does not offer another deletion. English and German strings live
+account deletion is still finishing. The screen automatically polls the operation
+with bounded backoff and the token captured before sign-out. Leaving the screen
+aborts polling. If the operation is still pending at the bound, the status button
+starts another round. An expired token ends polling and explains that deletion
+continues on the server without user action. A failed operation asks the user to contact
+support; it does not offer another deletion. Preparation failures explain that
+the request was not sent and offer a retry. English and German strings live
 in `src/delete-profile-copy.ts`.
 
 Navigation changes can mount `src/delete-profile-screen.tsx` through the

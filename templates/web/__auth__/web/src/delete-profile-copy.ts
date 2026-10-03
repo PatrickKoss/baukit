@@ -9,6 +9,8 @@ export const englishErasureCopy = {
   erased: 'Your profile data and sign-in account have been deleted. You are signed out.',
   pending:
     'Your profile data has been deleted. Your sign-in account deletion is still finishing. You are signed out. You do not need to request deletion again.',
+  preparationFailure:
+    'The deletion request could not be sent. Your local data and session are still available. Try again.',
   serverFailure:
     'This deletion request was rejected. Your local data and session are still available. Try again to check the same deletion request.',
   ambiguous:
@@ -21,6 +23,8 @@ export const englishErasureCopy = {
   failed:
     'Your profile data was deleted, but sign-in account deletion needs help from support. Do not request deletion again.',
   checkStatus: 'Check deletion status',
+  statusExpired:
+    'Your sign-in token has expired, so we cannot check the deletion status. Deletion continues on the server. You do not need to do anything.',
   statusError:
     'Your profile data is deleted. We could not check whether sign-in account deletion has finished. It continues on the server.',
 } as const;
@@ -41,6 +45,8 @@ export const germanErasureCopy: ErasureCopy = {
   erased: 'Deine Profildaten und dein Anmeldekonto wurden gelöscht. Du bist abgemeldet.',
   pending:
     'Deine Profildaten wurden gelöscht. Die Löschung deines Anmeldekontos läuft noch. Du bist abgemeldet. Du musst die Löschung nicht erneut anfordern.',
+  preparationFailure:
+    'Die Löschanfrage konnte nicht gesendet werden. Deine lokalen Daten und deine Sitzung sind noch verfügbar. Versuche es erneut.',
   serverFailure:
     'Diese Löschanfrage wurde abgelehnt. Deine lokalen Daten und deine Sitzung sind noch verfügbar. Versuche es erneut, um dieselbe Löschanfrage zu prüfen.',
   ambiguous:
@@ -53,6 +59,8 @@ export const germanErasureCopy: ErasureCopy = {
   failed:
     'Deine Profildaten wurden gelöscht. Für die Löschung deines Anmeldekontos ist Hilfe vom Support nötig. Fordere die Löschung nicht erneut an.',
   checkStatus: 'Löschstatus prüfen',
+  statusExpired:
+    'Dein Anmeldetoken ist abgelaufen. Deshalb können wir den Löschstatus nicht prüfen. Die Löschung läuft auf dem Server weiter. Du musst nichts tun.',
   statusError:
     'Deine Profildaten sind gelöscht. Wir konnten nicht prüfen, ob die Löschung des Anmeldekontos abgeschlossen ist. Sie läuft auf dem Server weiter.',
 };

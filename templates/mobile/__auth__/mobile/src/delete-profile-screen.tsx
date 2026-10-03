@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { announce, focusAccessibilityElement } from '@baukit/a11y-core';
 import type { ProductProfileErasureResult } from '@baukit/data-contracts';
+import { ApiError } from '@baukit/api-runtime';
 import type { ProfileErasureOperation } from '@baukit/api-runtime/erasure';
 import { useTranslation } from 'react-i18next';
 
@@ -14,7 +15,8 @@ interface DeleteProfileScreenProps {
   readonly available?: boolean;
 }
 
-type State = 'idle' | 'confirming' | 'erasing' | ProductProfileErasureResult;
+type State =
+  'idle' | 'confirming' | 'erasing' | 'preparation-failure' | ProductProfileErasureResult;
 
 export function DeleteProfileScreen({ erase, poll, available = true }: DeleteProfileScreenProps) {
   const { t } = useTranslation('home');
@@ -22,12 +24,12 @@ export function DeleteProfileScreen({ erase, poll, available = true }: DeletePro
   const styles = createStyles(theme);
   const [state, setState] = useState<State>('idle');
   const [operation, setOperation] = useState<ProfileErasureOperation>();
-  const [statusError, setStatusError] = useState(false);
-  const [checking, setChecking] = useState(false);
+  const [statusError, setStatusError] = useState<'unavailable' | 'expired' | null>(null);
+  const [pollRound, setPollRound] = useState(0);
+  const [finishedRound, setFinishedRound] = useState<number | null>(null);
   const running = useRef(false);
   const heading = useRef<Text>(null);
   const status = useRef<Text>(null);
-  const polling = useRef<AbortController | null>(null);
   const result = typeof state === 'string' ? undefined : state;
   const resultMessage =
     result === undefined
@@ -43,12 +45,19 @@ export function DeleteProfileScreen({ erase, poll, available = true }: DeletePro
           }[result.status],
         );
   let message = state === 'erasing' ? t('erasure.busy') : resultMessage;
-  if (statusError) message = t('erasure.statusError');
+  if (state === 'preparation-failure') message = t('erasure.preparationFailure');
+  if (statusError === 'unavailable') message = t('erasure.statusError');
+  if (statusError === 'expired') message = t('erasure.statusExpired');
   if (operation?.status === 'completed') message = t('erasure.erased');
   if (operation?.status === 'failed') message = t('erasure.failed');
-  const retryable = result?.status === 'server-failure' || result?.status === 'ambiguous';
+  const retryable =
+    state === 'preparation-failure' ||
+    result?.status === 'server-failure' ||
+    result?.status === 'ambiguous';
   const pendingId = result?.status === 'pending' ? result.receipt.operationId : null;
+  const checking = poll !== undefined && pendingId !== null && finishedRound !== pollRound;
   const canCheck =
+    statusError !== 'expired' &&
     poll !== undefined &&
     pendingId !== null &&
     (operation === undefined || operation.status === 'pending');
@@ -59,12 +68,30 @@ export function DeleteProfileScreen({ erase, poll, available = true }: DeletePro
     else if (state === 'confirming') announce(t('erasure.confirmation'));
   }, [message, state, t]);
 
-  useEffect(
-    () => () => {
-      polling.current?.abort();
-    },
-    [],
-  );
+  useEffect(() => {
+    if (poll === undefined || pendingId === null) return;
+    const readStatus = poll;
+    const operationId = pendingId;
+    const controller = new AbortController();
+    async function checkStatus(): Promise<void> {
+      try {
+        const next = await readStatus(operationId, controller.signal);
+        if (!controller.signal.aborted) setOperation(next);
+      } catch (cause) {
+        if (!controller.signal.aborted) {
+          setStatusError(
+            cause instanceof ApiError && cause.status === 401 ? 'expired' : 'unavailable',
+          );
+        }
+      } finally {
+        if (!controller.signal.aborted) setFinishedRound(pollRound);
+      }
+    }
+    void checkStatus();
+    return () => {
+      controller.abort();
+    };
+  }, [pendingId, poll, pollRound]);
 
   async function submit(): Promise<void> {
     if (running.current) return;
@@ -73,30 +100,9 @@ export function DeleteProfileScreen({ erase, poll, available = true }: DeletePro
     try {
       setState(await erase());
     } catch {
-      setState({
-        status: 'ambiguous',
-        error: { stage: 'server', cause: 'Error' },
-        warnings: [],
-      });
+      setState('preparation-failure');
     } finally {
       running.current = false;
-    }
-  }
-
-  async function checkStatus(): Promise<void> {
-    if (poll === undefined || pendingId === null || polling.current !== null) return;
-    const controller = new AbortController();
-    polling.current = controller;
-    setChecking(true);
-    setStatusError(false);
-    try {
-      const next = await poll(pendingId, controller.signal);
-      if (!controller.signal.aborted) setOperation(next);
-    } catch {
-      if (!controller.signal.aborted) setStatusError(true);
-    } finally {
-      polling.current = null;
-      if (!controller.signal.aborted) setChecking(false);
     }
   }
 
@@ -153,7 +159,8 @@ export function DeleteProfileScreen({ erase, poll, available = true }: DeletePro
           disabled={checking}
           label={t('erasure.checkStatus')}
           onPress={() => {
-            void checkStatus();
+            setStatusError(null);
+            setPollRound((round) => round + 1);
           }}
           secondary
         />

@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useCallback, useRef } from 'react';
 import { Stack } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type { ProfileErasureClient } from '@baukit/api-runtime/erasure';
@@ -16,6 +16,10 @@ export default function DeleteProfileRoute() {
   const localData = useAuthenticatedLocalData();
   const { resetPreferenceIdentity } = useAppPreferences();
   const client = useRef<ProfileErasureClient | null>(null);
+  const poll = useCallback((operationId: string, signal: AbortSignal) => {
+    if (client.current === null) return Promise.reject(new Error('No deletion request to check.'));
+    return client.current.poll(operationId, { signal });
+  }, []);
   return (
     <>
       <Stack.Screen options={headerOptions} />
@@ -31,11 +35,7 @@ export default function DeleteProfileRoute() {
             resetPreferenceIdentity,
           });
         }}
-        poll={(operationId, signal) => {
-          if (client.current === null)
-            return Promise.reject(new Error('No deletion request to check.'));
-          return client.current.poll(operationId, { signal });
-        }}
+        poll={poll}
       />
     </>
   );

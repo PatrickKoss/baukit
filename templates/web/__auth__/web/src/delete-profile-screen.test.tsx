@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { announce } from '@baukit/a11y-core/web';
 import type { ProductProfileErasureResult } from '@baukit/data-contracts';
+import { ApiError } from '@baukit/api-runtime';
 import type { ProfileErasureOperation } from '@baukit/api-runtime/erasure';
 
 import { deleteProfileCopy } from './delete-profile-copy';
@@ -117,7 +118,9 @@ describe('DeleteProfileScreen', () => {
       confirm();
       await screen.findByText(message);
       expect(document.activeElement).toBe(screen.getByRole('status'));
-      expect(announce).toHaveBeenLastCalledWith(message);
+      await waitFor(() => {
+        expect(announce).toHaveBeenLastCalledWith(message);
+      });
       expect(screen.queryByRole('button', { name: copy.retry }) !== null).toBe(
         result.status === 'server-failure' || result.status === 'ambiguous',
       );
@@ -140,11 +143,19 @@ describe('DeleteProfileScreen', () => {
     expect(erase).toHaveBeenCalledTimes(2);
   });
 
-  it('shows unexpected rejections as unknown outcomes', async () => {
-    render(<DeleteProfileScreen erase={() => Promise.reject(new Error('secret'))} language="en" />);
+  it('reports preparation failures as unsent and allows a retry', async () => {
+    const erase = vi
+      .fn<() => Promise<ProductProfileErasureResult>>()
+      .mockRejectedValueOnce(new Error('secret'))
+      .mockResolvedValueOnce(erased);
+    render(<DeleteProfileScreen erase={erase} language="en" />);
     confirm();
-    await screen.findByText(copy.ambiguous);
+    await screen.findByText(copy.preparationFailure);
+    expect(screen.queryByText(copy.ambiguous)).toBeNull();
     expect(screen.queryByText('secret')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: copy.retry }));
+    await screen.findByText(copy.erased);
+    expect(erase).toHaveBeenCalledTimes(2);
   });
 
   it.each(['completed', 'failed'] as const)(
@@ -154,7 +165,6 @@ describe('DeleteProfileScreen', () => {
       const poll = vi.fn(() => Promise.resolve({ status, operationId: 'erase-1' }));
       render(<DeleteProfileScreen erase={erase} poll={poll} language="en" />);
       confirm();
-      fireEvent.click(await screen.findByRole('button', { name: copy.checkStatus }));
       await screen.findByText(status === 'completed' ? copy.erased : copy.failed);
       expect(poll).toHaveBeenCalledWith('erase-1', expect.any(AbortSignal));
       expect(erase).toHaveBeenCalledOnce();
@@ -179,13 +189,93 @@ describe('DeleteProfileScreen', () => {
       <DeleteProfileScreen erase={() => Promise.resolve(pending)} poll={poll} language="en" />,
     );
     confirm();
-    fireEvent.click(await screen.findByRole('button', { name: copy.checkStatus }));
     await screen.findByText(copy.statusError);
     fireEvent.click(screen.getByRole('button', { name: copy.checkStatus }));
     expect(signal?.aborted).toBe(false);
     unmount();
     expect(signal?.aborted).toBe(true);
   });
+
+  it('starts a bounded round automatically and offers another round when still pending', async () => {
+    const poll = vi
+      .fn<(_id: string, signal: AbortSignal) => Promise<ProfileErasureOperation>>()
+      .mockResolvedValueOnce(receipt)
+      .mockResolvedValueOnce(completed);
+    render(
+      <DeleteProfileScreen erase={() => Promise.resolve(pending)} poll={poll} language="en" />,
+    );
+    confirm();
+    await screen.findByText(copy.pending);
+    expect(poll).toHaveBeenCalledOnce();
+    const button = screen.getByRole<HTMLButtonElement>('button', {
+      name: copy.checkStatus,
+    });
+    await waitFor(() => {
+      expect(button.disabled).toBe(false);
+    });
+    fireEvent.click(button);
+    await screen.findByText(copy.erased);
+    expect(poll).toHaveBeenCalledTimes(2);
+  });
+
+  it('aborts automatic polling on unmount', async () => {
+    let signal: AbortSignal | undefined;
+    const poll = vi.fn((_id: string, nextSignal: AbortSignal) => {
+      signal = nextSignal;
+      return new Promise<ProfileErasureOperation>((_resolve, reject) => {
+        nextSignal.addEventListener('abort', () => {
+          reject(new Error('aborted'));
+        });
+      });
+    });
+    const { unmount } = render(
+      <DeleteProfileScreen erase={() => Promise.resolve(pending)} poll={poll} language="en" />,
+    );
+    confirm();
+    await screen.findByText(copy.pending);
+    expect(poll).toHaveBeenCalledOnce();
+    expect(signal?.aborted).toBe(false);
+    unmount();
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it.each(['en', 'de'])(
+    'explains expired status tokens in %s without asking for action',
+    async (language) => {
+      const localized = deleteProfileCopy(language);
+      const poll = vi.fn(() =>
+        Promise.reject(
+          new ApiError(
+            {
+              error: {
+                code: 'unauthenticated',
+                message: 'Token expired',
+                requestId: 'request-1',
+                details: {},
+              },
+            },
+            401,
+          ),
+        ),
+      );
+      render(
+        <DeleteProfileScreen
+          erase={() => Promise.resolve(pending)}
+          poll={poll}
+          language={language}
+        />,
+      );
+      fireEvent.click(screen.getByRole('button', { name: localized.continue }));
+      fireEvent.click(screen.getByRole('button', { name: localized.confirm }));
+      await screen.findByText(localized.statusExpired);
+      expect(screen.queryByText(localized.statusError)).toBeNull();
+      expect(screen.queryByRole('button', { name: localized.checkStatus })).toBeNull();
+      expect(screen.queryByRole('button', { name: localized.retry })).toBeNull();
+      await waitFor(() => {
+        expect(announce).toHaveBeenLastCalledWith(localized.statusExpired);
+      });
+    },
+  );
 
   it('renders German copy and disables deletion before identity is ready', () => {
     const german = deleteProfileCopy('de-DE');

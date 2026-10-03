@@ -1,5 +1,9 @@
 import { createApiRuntime } from '@baukit/api-runtime';
-import { createProfileErasureClient, type ProfileErasureClient } from '@baukit/api-runtime/erasure';
+import {
+  createProfileErasureClient,
+  ProfileErasureKeyCleanupError,
+  type ProfileErasureClient,
+} from '@baukit/api-runtime/erasure';
 import type { IdempotencyKeyStorage, StoredIdempotencyKey } from '@baukit/api-runtime/idempotency';
 import { eraseProductProfile } from '@baukit/data-contracts';
 
@@ -62,9 +66,21 @@ export function deleteProfile(options: {
   readonly eraseLocalPartition: () => Promise<void>;
   readonly onSignedOut: () => void;
 }) {
+  let keyCleanupError: ProfileErasureKeyCleanupError | undefined;
   return eraseProductProfile({
-    eraseServerProfile: () => options.client.erase(),
-    eraseLocalPartition: options.eraseLocalPartition,
+    eraseServerProfile: async () => {
+      try {
+        return await options.client.erase();
+      } catch (cause) {
+        if (!(cause instanceof ProfileErasureKeyCleanupError)) throw cause;
+        keyCleanupError = cause;
+        return cause.receipt;
+      }
+    },
+    eraseLocalPartition: async () => {
+      await options.eraseLocalPartition();
+      if (keyCleanupError !== undefined) throw keyCleanupError;
+    },
     signOut: () => {
       authClient.clearSession();
       options.onSignedOut();

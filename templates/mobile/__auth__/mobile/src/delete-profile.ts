@@ -3,7 +3,11 @@ import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import * as SQLite from 'expo-sqlite';
 import { createApiRuntime } from '@baukit/api-runtime';
-import { createProfileErasureClient, type ProfileErasureClient } from '@baukit/api-runtime/erasure';
+import {
+  createProfileErasureClient,
+  ProfileErasureKeyCleanupError,
+  type ProfileErasureClient,
+} from '@baukit/api-runtime/erasure';
 import type { IdempotencyKeyStorage, StoredIdempotencyKey } from '@baukit/api-runtime/idempotency';
 import { eraseProductProfile } from '@baukit/data-contracts';
 
@@ -76,8 +80,17 @@ export function deleteProfile(options: {
   readonly eraseLocalPartition: () => Promise<void>;
   readonly resetPreferenceIdentity: () => Promise<void>;
 }) {
+  let keyCleanupError: ProfileErasureKeyCleanupError | undefined;
   return eraseProductProfile({
-    eraseServerProfile: () => options.client.erase(),
+    eraseServerProfile: async () => {
+      try {
+        return await options.client.erase();
+      } catch (cause) {
+        if (!(cause instanceof ProfileErasureKeyCleanupError)) throw cause;
+        keyCleanupError = cause;
+        return cause.receipt;
+      }
+    },
     eraseLocalPartition: async () => {
       const results = await Promise.allSettled([
         options.eraseLocalPartition(),
@@ -92,6 +105,7 @@ export function deleteProfile(options: {
       const failures = results.flatMap((result) =>
         result.status === 'rejected' ? [result.reason as unknown] : [],
       );
+      if (keyCleanupError !== undefined) failures.push(keyCleanupError);
       if (failures.length > 0) throw new AggregateError(failures, 'Local profile erasure failed.');
     },
     signOut: () => authClient.clearSession(),

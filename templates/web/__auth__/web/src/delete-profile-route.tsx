@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useCallback, useRef } from 'react';
 import type { ProfileErasureClient } from '@baukit/api-runtime/erasure';
 
 import { createDeleteProfileClient, deleteProfile } from './delete-profile';
@@ -16,6 +16,10 @@ export function DeleteProfileRoute({
   readonly ready: boolean;
 }) {
   const client = useRef<ProfileErasureClient | null>(null);
+  const poll = useCallback((operationId: string, signal: AbortSignal) => {
+    if (client.current === null) return Promise.reject(new Error('No deletion request to check.'));
+    return client.current.poll(operationId, { signal });
+  }, []);
   return (
     <DeleteProfileScreen
       available={subject !== undefined && ready}
@@ -28,11 +32,7 @@ export function DeleteProfileRoute({
           onSignedOut,
         });
       }}
-      poll={(operationId, signal) => {
-        if (client.current === null)
-          return Promise.reject(new Error('No deletion request to check.'));
-        return client.current.poll(operationId, { signal });
-      }}
+      poll={poll}
     />
   );
 }

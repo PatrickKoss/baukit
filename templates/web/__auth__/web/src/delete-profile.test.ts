@@ -26,6 +26,60 @@ afterEach(() => {
 });
 
 describe('delete profile service', () => {
+  it.each([200, 202, 401])(
+    'removes the durable key after a definitive %i response',
+    async (status) => {
+      const body =
+        status === 401
+          ? {
+              error: {
+                code: 'profile_erased',
+                message: 'Erased',
+                requestId: 'request-1',
+                details: {},
+              },
+            }
+          : {
+              status: status === 200 ? 'completed' : 'pending',
+              operationId,
+              completedAt: '2026-10-03T12:00:00Z',
+            };
+      const fetch = new MockFetch().enqueueJson(body, { status });
+      vi.stubGlobal('fetch', fetch.fetch);
+      const client = await createDeleteProfileClient('private-subject');
+      const result = await deleteProfile({
+        client,
+        eraseLocalPartition: () => Promise.resolve(),
+        onSignedOut: () => undefined,
+      });
+      expect(result.status).toBe(status === 200 ? 'erased' : 'pending');
+      expect(localStorage.length).toBe(0);
+    },
+  );
+
+  it('still erases local data and signs out if key removal fails after commit', async () => {
+    const fetch = new MockFetch().enqueueJson({ status: 'pending', operationId }, { status: 202 });
+    vi.stubGlobal('fetch', fetch.fetch);
+    const remove = vi.spyOn(Storage.prototype, 'removeItem').mockImplementationOnce(() => {
+      throw new Error('Storage unavailable');
+    });
+    const eraseLocalPartition = vi.fn(() => Promise.resolve());
+    const client = await createDeleteProfileClient('private-subject');
+    await expect(
+      deleteProfile({
+        client,
+        eraseLocalPartition,
+        onSignedOut: () => undefined,
+      }),
+    ).resolves.toMatchObject({
+      status: 'local-failure',
+      receipt: { status: 'pending', operationId },
+    });
+    expect(eraseLocalPartition).toHaveBeenCalledOnce();
+    expect(authClient.clearSession).toHaveBeenCalledOnce();
+    remove.mockRestore();
+  });
+
   it('reuses a durable key after a lost response and then clears local data and auth', async () => {
     const fetch = new MockFetch()
       .enqueue(new TypeError('connection lost'))
@@ -54,6 +108,7 @@ describe('delete profile service', () => {
     expect(eraseLocalPartition).toHaveBeenCalledOnce();
     expect(authClient.clearSession).toHaveBeenCalledOnce();
     expect(onSignedOut).toHaveBeenCalledOnce();
+    expect(localStorage.length).toBe(0);
   });
 
   it('checks status with the captured token after local sign-out', async () => {

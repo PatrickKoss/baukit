@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { announce } from '@baukit/a11y-core/web';
 import type { ProductProfileErasureResult } from '@baukit/data-contracts';
+import { ApiError } from '@baukit/api-runtime';
 import type { ProfileErasureOperation } from '@baukit/api-runtime/erasure';
 
 import { deleteProfileCopy } from './delete-profile-copy';
@@ -12,7 +13,8 @@ interface DeleteProfileScreenProps {
   readonly available?: boolean;
 }
 
-type State = 'idle' | 'confirming' | 'erasing' | ProductProfileErasureResult;
+type State =
+  'idle' | 'confirming' | 'erasing' | 'preparation-failure' | ProductProfileErasureResult;
 
 export function DeleteProfileScreen({
   erase,
@@ -23,13 +25,13 @@ export function DeleteProfileScreen({
   const copy = deleteProfileCopy(language);
   const [state, setState] = useState<State>('idle');
   const [operation, setOperation] = useState<ProfileErasureOperation>();
-  const [statusError, setStatusError] = useState(false);
-  const [checking, setChecking] = useState(false);
+  const [statusError, setStatusError] = useState<'unavailable' | 'expired' | null>(null);
+  const [pollRound, setPollRound] = useState(0);
+  const [finishedRound, setFinishedRound] = useState<number | null>(null);
   const running = useRef(false);
   const heading = useRef<HTMLHeadingElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
   const status = useRef<HTMLParagraphElement>(null);
-  const polling = useRef<AbortController | null>(null);
   const result = typeof state === 'string' ? undefined : state;
   const messages = {
     erased: copy.erased,
@@ -41,12 +43,19 @@ export function DeleteProfileScreen({
   };
   const resultMessage = result === undefined ? undefined : messages[result.status];
   let message = state === 'erasing' ? copy.busy : resultMessage;
-  if (statusError) message = copy.statusError;
+  if (state === 'preparation-failure') message = copy.preparationFailure;
+  if (statusError === 'unavailable') message = copy.statusError;
+  if (statusError === 'expired') message = copy.statusExpired;
   if (operation?.status === 'completed') message = copy.erased;
   if (operation?.status === 'failed') message = copy.failed;
-  const retryable = result?.status === 'server-failure' || result?.status === 'ambiguous';
+  const retryable =
+    state === 'preparation-failure' ||
+    result?.status === 'server-failure' ||
+    result?.status === 'ambiguous';
   const pendingId = result?.status === 'pending' ? result.receipt.operationId : null;
+  const checking = poll !== undefined && pendingId !== null && finishedRound !== pollRound;
   const canCheck =
+    statusError !== 'expired' &&
     poll !== undefined &&
     pendingId !== null &&
     (operation === undefined || operation.status === 'pending');
@@ -60,12 +69,30 @@ export function DeleteProfileScreen({
     }
   }, [message, state]);
 
-  useEffect(
-    () => () => {
-      polling.current?.abort();
-    },
-    [],
-  );
+  useEffect(() => {
+    if (poll === undefined || pendingId === null) return;
+    const readStatus = poll;
+    const operationId = pendingId;
+    const controller = new AbortController();
+    async function checkStatus(): Promise<void> {
+      try {
+        const next = await readStatus(operationId, controller.signal);
+        if (!controller.signal.aborted) setOperation(next);
+      } catch (cause) {
+        if (!controller.signal.aborted) {
+          setStatusError(
+            cause instanceof ApiError && cause.status === 401 ? 'expired' : 'unavailable',
+          );
+        }
+      } finally {
+        if (!controller.signal.aborted) setFinishedRound(pollRound);
+      }
+    }
+    void checkStatus();
+    return () => {
+      controller.abort();
+    };
+  }, [pendingId, poll, pollRound]);
 
   async function submit(): Promise<void> {
     if (running.current) return;
@@ -74,30 +101,9 @@ export function DeleteProfileScreen({
     try {
       setState(await erase());
     } catch {
-      setState({
-        status: 'ambiguous',
-        error: { stage: 'server', cause: 'Error' },
-        warnings: [],
-      });
+      setState('preparation-failure');
     } finally {
       running.current = false;
-    }
-  }
-
-  async function checkStatus(): Promise<void> {
-    if (poll === undefined || pendingId === null || polling.current !== null) return;
-    const controller = new AbortController();
-    polling.current = controller;
-    setChecking(true);
-    setStatusError(false);
-    try {
-      const next = await poll(pendingId, controller.signal);
-      if (!controller.signal.aborted) setOperation(next);
-    } catch {
-      if (!controller.signal.aborted) setStatusError(true);
-    } finally {
-      polling.current = null;
-      if (!controller.signal.aborted) setChecking(false);
     }
   }
 
@@ -168,7 +174,8 @@ export function DeleteProfileScreen({
           type="button"
           disabled={checking}
           onClick={() => {
-            void checkStatus();
+            setStatusError(null);
+            setPollRound((round) => round + 1);
           }}
         >
           {copy.checkStatus}
