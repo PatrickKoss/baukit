@@ -1,80 +1,19 @@
 #[path = "support/logs.rs"]
 mod logs;
+#[path = "support/postgres_fixture.rs"]
+mod postgres_fixture;
+use postgres_fixture::{Product, count, fixture};
 
-use baukit_config::Secret;
 use baukit_erasure::{
-    ErasureError, ErasureFuture, ErasureService, ErasureState, IdentityDeletionError,
-    IdentityDeletionHandler, POSTGRES_MIGRATION_SQL, PostgresErasureStore, ProductErasure,
+    ErasureError, ErasureState, IdentityDeletionError, IdentityDeletionHandler,
+    PostgresErasureStore,
 };
 use baukit_jobs::{JobStore, PostgresJobStore, WorkerConfig, WorkerRunner};
 use baukit_runtime::ShutdownToken;
-use baukit_test::{FakeIdentityAccountDeleter, PostgresTestContainer};
-use sqlx::{PgConnection, PgPool};
+use baukit_test::FakeIdentityAccountDeleter;
 use std::{error::Error, sync::Arc, time::Duration};
 use tracing::instrument::WithSubscriber as _;
 
-struct Product;
-impl ProductErasure for Product {
-    fn erase<'a>(
-        &'a self,
-        connection: &'a mut PgConnection,
-        subject: &'a str,
-    ) -> ErasureFuture<'a, Result<(), sqlx::Error>> {
-        Box::pin(async move {
-            sqlx::query("DELETE FROM profiles WHERE subject = $1")
-                .bind(subject)
-                .execute(connection)
-                .await?;
-            Ok(())
-        })
-    }
-}
-async fn fixture() -> Result<
-    (
-        PostgresTestContainer,
-        PgPool,
-        PostgresErasureStore,
-        Arc<FakeIdentityAccountDeleter>,
-        ErasureService,
-    ),
-    Box<dyn Error>,
-> {
-    let container = baukit_test::start_postgres().await?;
-    let pool = PgPool::connect(container.connection_url()).await?;
-    for migration in [
-        baukit_jobs::POSTGRES_MIGRATION_SQL,
-        baukit_jobs::POSTGRES_MIGRATION_0002_SQL,
-        baukit_jobs::POSTGRES_MIGRATION_0003_SQL,
-        POSTGRES_MIGRATION_SQL,
-        "CREATE TABLE profiles (subject TEXT PRIMARY KEY); INSERT INTO profiles VALUES ('alice'), ('bob');",
-    ] {
-        sqlx::raw_sql(migration).execute(&pool).await?;
-    }
-    let store = PostgresErasureStore::new(
-        pool.clone(),
-        Secret::new("test-key-with-at-least-32-bytes-of-entropy".into()),
-    )?;
-    let fake = Arc::new(FakeIdentityAccountDeleter::default());
-    let service = ErasureService::new(
-        store.clone(),
-        fake.clone(),
-        "test".into(),
-        Duration::from_secs(1),
-        2,
-    )?;
-    Ok((container, pool, store, fake, service))
-}
-async fn count(pool: &PgPool, table: &str) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar(match table {
-        "profiles" => "SELECT count(*) FROM profiles",
-        "erasure_operations" => "SELECT count(*) FROM erasure_operations",
-        "erasure_fences" => "SELECT count(*) FROM erasure_fences",
-        "job_outbox" => "SELECT count(*) FROM job_outbox",
-        _ => panic!("unknown test table"),
-    })
-    .fetch_one(pool)
-    .await
-}
 #[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]
 async fn atomic_rollback_after_product_callback() -> Result<(), Box<dyn Error>> {
@@ -379,47 +318,5 @@ async fn inline_failures_log_operation_and_class_without_subjects() -> Result<()
         assert!(!text.contains(subject), "{text}");
         assert!(!text.contains(key), "{text}");
     }
-    Ok(())
-}
-
-struct BlockedDeleter;
-impl baukit_erasure::IdentityAccountDeleter for BlockedDeleter {
-    fn delete_account<'a>(
-        &'a self,
-        _subject: &'a str,
-    ) -> ErasureFuture<'a, Result<(), IdentityDeletionError>> {
-        Box::pin(std::future::pending())
-    }
-}
-
-#[tokio::test]
-#[ignore = "requires Docker PostgreSQL"]
-async fn inline_timeout_releases_job_lock_and_retains_durable_work() -> Result<(), Box<dyn Error>> {
-    let (_container, pool, store, _fake, _service) = fixture().await?;
-    let service = ErasureService::new(
-        store.clone(),
-        Arc::new(BlockedDeleter),
-        "test".into(),
-        Duration::from_millis(50),
-        2,
-    )?;
-    let logs = logs::Logs::default();
-    let outcome = service
-        .erase("alice", "inline-timeout-001", &Product)
-        .with_subscriber(logs.subscriber())
-        .await?;
-    assert_eq!(outcome.status, ErasureState::Pending);
-    assert!(store.is_fenced("alice").await?);
-    assert_eq!(count(&pool, "profiles").await?, 1);
-    let mut transaction = pool.begin().await?;
-    let status: String = sqlx::query_scalar("SELECT status FROM job_outbox FOR UPDATE NOWAIT")
-        .fetch_one(&mut *transaction)
-        .await?;
-    assert_eq!(status, "pending");
-    transaction.rollback().await?;
-    let text = logs.text();
-    assert!(text.contains(&outcome.operation_id.to_string()), "{text}");
-    assert!(text.contains("error_class=\"timeout\""), "{text}");
-    assert!(!text.contains("alice"), "{text}");
     Ok(())
 }
