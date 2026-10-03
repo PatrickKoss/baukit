@@ -410,6 +410,86 @@ class CompatibilityRuleTests(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertIn("passed", stdout)
 
+    def test_reordered_nullable_reference_alternatives_pass(self) -> None:
+        for keyword in check.ALTERNATIVES:
+            with self.subTest(keyword=keyword):
+                base = copy.deepcopy(BASE)
+                parent = item_property("parent")(base)
+                parent[keyword] = parent.pop("oneOf") if keyword != "oneOf" else parent["oneOf"]
+                self.documents.write(self.documents.base, base)
+                current = copy.deepcopy(base)
+                item_property("parent")(current)[keyword].reverse()
+                self.documents.write(self.documents.current, current)
+                status, stdout, stderr = self.documents.compare("--enforce")
+                self.assertEqual(status, 0, stdout + stderr)
+                self.assertEqual(stderr, "")
+
+    def test_removed_request_alternative_is_reported_as_a_member_removal(self) -> None:
+        for keyword in check.ALTERNATIVES:
+            with self.subTest(keyword=keyword):
+                base = copy.deepcopy(BASE)
+                save_property("count")(base).clear()
+                save_property("count")(base)[keyword] = [{"type": "integer"}, {"type": "null"}]
+                self.documents.write(self.documents.base, base)
+                current = copy.deepcopy(base)
+                save_property("count")(current)[keyword].pop()
+                self.documents.write(self.documents.current, current)
+                status, _, stderr = self.documents.compare("--enforce")
+                self.assertEqual(status, 1, stderr)
+                self.assertIn(f'{keyword} member {{"type": "null"}} was removed', stderr)
+
+    def test_reordering_still_checks_changes_inside_matched_references(self) -> None:
+        base = copy.deepcopy(BASE)
+        list_items(base)["responses"]["200"]["content"][JSON]["schema"] = {
+            "oneOf": [{"type": "null"}, ref("Item")]
+        }
+        self.documents.write(self.documents.base, base)
+        current = copy.deepcopy(base)
+        list_items(current)["responses"]["200"]["content"][JSON]["schema"]["oneOf"].reverse()
+        item_property("name")(current)["maxLength"] = 200
+        self.documents.write(self.documents.current, current)
+        status, _, stderr = self.documents.compare("--enforce")
+        self.assertEqual(status, 1, stderr)
+        self.assertIn(f"constraint-widened {LIST_RESPONSE} $<oneOf 1>.name", stderr)
+        self.assertNotIn("type-changed", stderr)
+
+    def test_reordered_primitive_members_still_detect_changed_constraints(self) -> None:
+        base = copy.deepcopy(BASE)
+        save_property("count")(base).clear()
+        save_property("count")(base)["anyOf"] = [{"type": "integer", "minimum": 0}, {"type": "null"}]
+        self.documents.write(self.documents.base, base)
+        current = copy.deepcopy(base)
+        save_property("count")(current)["anyOf"] = [{"type": "null"}, {"type": "integer", "minimum": 10}]
+        self.documents.write(self.documents.current, current)
+        status, _, stderr = self.documents.compare("--enforce")
+        self.assertEqual(status, 1, stderr)
+        self.assertIn("constraint-narrowed", stderr)
+
+    def test_equal_count_replacement_reports_added_response_member(self) -> None:
+        self.documents.changed(set_value(item_property("parent"), "oneOf", [ref("Item"), {"type": "string"}]))
+        status, _, stderr = self.documents.compare("--enforce")
+        self.assertEqual(status, 1, stderr)
+        self.assertIn('oneOf member {"type": "string"} was added', stderr)
+
+    def test_structural_matching_preserves_duplicate_type_and_untyped_members(self) -> None:
+        members = [{"type": "string", "enum": ["a"]}, {"type": "string", "enum": ["b"]}, {"const": "c"}]
+        pairs, removed, added = check.match_composition_members(members, list(reversed(members)))
+        self.assertEqual([(old, new) for _, old, new in pairs], [(member, member) for member in members])
+        self.assertEqual(removed, [])
+        self.assertEqual(added, [])
+
+    def test_request_additions_and_response_removals_keep_their_compatibility_direction(self) -> None:
+        base = copy.deepcopy(BASE)
+        save_property("count")(base).clear()
+        save_property("count")(base)["anyOf"] = [{"type": "integer"}]
+        self.documents.write(self.documents.base, base)
+        current = copy.deepcopy(base)
+        save_property("count")(current)["anyOf"].append({"type": "null"})
+        item_property("parent")(current)["oneOf"] = [ref("Item")]
+        self.documents.write(self.documents.current, current)
+        status, stdout, stderr = self.documents.compare("--enforce")
+        self.assertEqual(status, 0, stdout + stderr)
+
     def test_report_only_prints_breaks_and_exits_zero(self) -> None:
         self.documents.changed(delete_key(lambda document: document["paths"]["/v1/items"], "post"))
 

@@ -381,22 +381,64 @@ class SchemaComparison:
             if base_members is None or current_members is None:
                 self.report("composition-changed", pointer, f"{keyword} was added or removed")
                 continue
-            if self.composition_count_breaks(keyword, len(base_members), len(current_members)):
-                self.report(
-                    "composition-changed",
-                    pointer,
-                    f"{keyword} went from {len(base_members)} to {len(current_members)} members",
-                )
-                continue
-            for index, (old, new) in enumerate(zip(base_members, current_members)):
+            pairs, removed, added = match_composition_members(base_members, current_members)
+            for index, old, new in pairs:
                 self.compare(old, new, f"{pointer}<{keyword} {index}>", seen)
+            for members, was_added in ((removed, False), (added, True)):
+                if not self.composition_member_breaks(keyword, was_added):
+                    continue
+                change = "added" if was_added else "removed"
+                for member in members:
+                    self.report(
+                        "composition-changed", pointer,
+                        f"{keyword} member {json.dumps(member, sort_keys=True)} was {change}",
+                    )
 
-    def composition_count_breaks(self, keyword: str, base_count: int, current_count: int) -> bool:
-        if base_count == current_count:
-            return False
-        grew = current_count > base_count
-        widens = grew if keyword in ALTERNATIVES else not grew
+    def composition_member_breaks(self, keyword: str, added: bool) -> bool:
+        widens = added if keyword in ALTERNATIVES else not added
         return widens != self.is_request
+
+
+def composition_identity(member: object) -> tuple[str, str | tuple[str, ...]] | None:
+    if target := reference(member):
+        return ("$ref", target)
+    if isinstance(member, dict):
+        member_type = member.get("type")
+        if isinstance(member_type, str):
+            return ("type", member_type)
+        if isinstance(member_type, list) and all(isinstance(value, str) for value in member_type):
+            return ("type", tuple(sorted(member_type)))
+    return None
+
+
+def match_composition_members(
+    base: list, current: list
+) -> tuple[list[tuple[int, object, object]], list, list]:
+    remaining = list(current)
+    unmatched = []
+    pairs = []
+    # Match equal members first so repeated types cannot pair the wrong branches.
+    for index, old in enumerate(base):
+        match = next((position for position, new in enumerate(remaining) if old == new), None)
+        if match is None:
+            unmatched.append((index, old))
+        else:
+            new = remaining.pop(match)
+            pairs.append((index, old, new))
+    removed = []
+    for index, old in unmatched:
+        identity = composition_identity(old)
+        match = next(
+            (position for position, new in enumerate(remaining)
+             if identity is not None and composition_identity(new) == identity),
+            None,
+        )
+        if match is None:
+            removed.append(old)
+        else:
+            new = remaining.pop(match)
+            pairs.append((index, old, new))
+    return sorted(pairs, key=lambda pair: pair[0]), removed, remaining
 
 
 def reference(node: object) -> str | None:
