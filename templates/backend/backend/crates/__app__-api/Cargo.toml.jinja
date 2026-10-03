@@ -11,6 +11,7 @@ workspace = true
 [dependencies]
 axum.workspace = true
 {% if context.auth_oidc %}baukit-auth.workspace = true
+baukit-erasure.workspace = true
 {% endif %}baukit-config.workspace = true
 baukit-http.workspace = true
 baukit-openapi.workspace = true

@@ -4,7 +4,7 @@
 
 ## Run locally
 
-The API uses the in-memory repository when `{{ context.app_env }}__DATABASE__URL` is absent. To use PostgreSQL, configure the standard database section and run migrations explicitly:
+The unauthenticated API uses the in-memory repository when `{{ context.app_env }}__DATABASE__URL` is absent. To use PostgreSQL, configure the standard database section and run migrations explicitly:
 
 ```sh
 export {{ context.app_env }}__DATABASE__URL=postgres://postgres:postgres@localhost{% if context.port_offset > 0 %}:{{ context.postgres_host_port }}{% endif %}/{{ context.app_crate }}
@@ -135,3 +135,40 @@ git push -u origin main
 For an existing or orphan-branch repository root, run `baukit new {{ context.app_name }} ... --dir . --into-existing`; existing differing files are reported as conflicts and never overwritten.
 
 Existing generated products can adopt append-only environment setup by copying `scripts/setup.sh`, `scripts/reconcile-env.py`, and its test from the current template, then replacing instructions that copy `.env.example` over `.env` with `make setup`. Existing `.env` bytes remain unchanged. The script only appends missing assignments.
+{% if context.auth_oidc %}
+
+## Profile and identity deletion
+
+The authenticated API requires PostgreSQL. `DELETE /me` requires a stable
+`Idempotency-Key` with 16 to 128 visible ASCII characters. It removes the
+`user_identities` row, fences the subject, and queues identity deletion in one
+transaction. The example items are shared resources without user ownership.
+Add every product-owned table, API token and job to `PostgresProfileErasure`
+when adopting this template. Track external data in the deletion inventory.
+
+A completed inline Keycloak deletion returns 200. An unavailable provider
+returns 202 with an operation ID and Location for
+`GET /me/erasures/{operationId}`. A supervised in-process identity worker runs
+in the API, including products generated without the optional demo worker.
+It keeps retrying pending identity jobs with backoff. Alert on failed operations
+and repair their retained jobs before resetting status to pending and attempts
+to zero. Exclude failed identity jobs from general retention cleanup.
+
+Ordinary requests from fenced subjects return 401 `profile_erased`. Status
+lookup and DELETE replay remain available to the original token's subject.
+Subject resolution checks the fence in the profile-insert transaction.
+
+Local development uses `local-backend-secret` and a local hash key. Other
+environments require `{{ context.app_env }}__AUTH__IDENTITY_ADMIN_CLIENT_SECRET`
+and `{{ context.app_env }}__AUTH__ERASURE_HASH_KEY`. Provision at least 32 random
+bytes for the hash key and keep it stable. Set
+`{{ context.app_env }}__AUTH__IDENTITY_ADMIN_BASE_URL` to the HTTPS Keycloak base
+and `{{ context.app_env }}__AUTH__IDENTITY_ADMIN_REALM` to the product realm.
+The confidential backend client's service account requires
+`realm-management/manage-users`. Keycloak has no delete-only role.
+
+Run the Docker endpoint conformance test with
+`cargo test --manifest-path backend/Cargo.toml --test identity_erasure_conformance -- --include-ignored`.
+See the Baukit product-profile erasure contract for analytics deletion and
+migration of existing product receipts.
+{% endif %}

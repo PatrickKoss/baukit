@@ -6,7 +6,7 @@ Authenticated backend generation includes a Keycloak 26.7.0 development realm, a
 
 The product owns `keycloak/realm.json`. This includes the realm name, registration setting, password rules, clients, redirect choices, and development accounts. The product also owns the limits in `keycloak/realm-policy.json` and the selections in `keycloak/reconcile.json`.
 
-Baukit owns the validation and reconciliation behavior. `scripts/keycloak_policy.py` checks the realm against an explicit `development` or `production` class. It does not infer the class from the realm name. `scripts/reconcile_keycloak.py` accepts only a development reconciliation declaration and updates only the selected realm fields, public clients, and users.
+Baukit owns the validation and reconciliation behavior. `scripts/keycloak_policy.py` checks the realm against an explicit `development` or `production` class. It does not infer the class from the realm name. `scripts/reconcile_keycloak.py` accepts only a development reconciliation declaration and updates only the selected realm fields, public clients, users, and backend service-account roles.
 
 ## Policy declaration
 
@@ -30,7 +30,8 @@ The reconciliation declaration contains:
 
 - `realmFields`, a restricted list of top-level realm settings copied from `realm.json`;
 - `clients`, the public client IDs and active origins or redirects to merge; and
-- `users`, the development usernames to create or update.
+- `users`, the development usernames to create or update; and
+- `serviceAccountRoles`, the declared realm-management roles for confidential backend clients.
 
 The reconciler retains live fields that are absent from the desired representation. It also retains existing origins and redirects when it adds an active development URL. A changed port can be supplied without editing the declaration:
 
@@ -57,3 +58,17 @@ Existing generated products can adopt this without deleting their Keycloak volum
 5. Run the reconciler once. Existing unselected realm, client, and user fields remain in place.
 
 The previous `docker compose up -d --wait postgres keycloak` command remains valid. It starts the existing realm without reconciliation. Use `make dev` when the checked-in realm or local ports changed.
+
+## Backend identity deletion
+
+Authenticated backends declare `manage-users` for the backend confidential
+client in realm-policy and reconciliation files. Fresh imports assign the role
+to its service-account user. Reconciliation adds missing role mappings to
+retained realms without changing the confidential client's secret. Policy checks
+require the declared mapping in realm JSON and a confidential service account.
+
+Keycloak has no delete-only role. Protect the backend credential as a user
+management credential. Local defaults apply only in the local environment.
+Production supplies the credential through `baukit_config::Secret` and uses
+HTTPS. See [profile erasure](./product-profile-erasure-contract.md) for the
+transaction, fence and retry rules.

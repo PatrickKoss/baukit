@@ -46,6 +46,22 @@ export interface paths {
         get: operations["current_user"];
         put?: never;
         post?: never;
+        delete: operations["erase_current_user"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/erasures/{operationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["erasure_status"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -61,6 +77,14 @@ export interface components {
             id: string;
             subject: string;
         };
+        ErasureDto: {
+            completedAt?: string | null;
+            /** Format: uuid */
+            operationId: string;
+            status: components["schemas"]["ErasureStatusDto"];
+        };
+        /** @enum {string} */
+        ErasureStatusDto: "pending" | "completed" | "failed";
         /** @description The error body nested inside [`ErrorEnvelope`]. */
         ErrorBody: {
             /** @description Stable, machine-readable error code. */
@@ -668,6 +692,230 @@ export interface operations {
             };
             /** @description An internal error occurred. */
             500: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The request deadline passed; a write may have committed. */
+            504: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    erase_current_user: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Required 16 to 128 visible ASCII characters */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Identity and product data deleted */
+            200: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErasureDto"];
+                };
+            };
+            /** @description Product data deleted; identity deletion queued */
+            202: {
+                headers: {
+                    /** @description Operation status URL */
+                    Location?: string;
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErasureDto"];
+                };
+            };
+            /** @description erasure_idempotency_key_invalid */
+            400: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description unauthenticated or profile_erased */
+            401: {
+                headers: {
+                    /** @description Bearer authentication challenge. */
+                    "WWW-Authenticate"?: string;
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description erasure_idempotency_conflict */
+            409: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The rate limit was exceeded; wait for Retry-After. */
+            429: {
+                headers: {
+                    /** @description Seconds to wait before retrying. */
+                    "Retry-After"?: number;
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description An internal error occurred. */
+            500: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description erasure_unavailable */
+            503: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The request deadline passed; a write may have committed. */
+            504: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    erasure_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current erasure state */
+            200: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErasureDto"];
+                };
+            };
+            /** @description The path is invalid. */
+            400: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description unauthenticated */
+            401: {
+                headers: {
+                    /** @description Bearer authentication challenge. */
+                    "WWW-Authenticate"?: string;
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description erasure_operation_not_found */
+            404: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The rate limit was exceeded; wait for Retry-After. */
+            429: {
+                headers: {
+                    /** @description Seconds to wait before retrying. */
+                    "Retry-After"?: number;
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description An internal error occurred. */
+            500: {
+                headers: {
+                    /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
+                    "X-Request-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description erasure_unavailable */
+            503: {
                 headers: {
                     /** @description Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem. */
                     "X-Request-Id"?: string;

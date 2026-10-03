@@ -1,5 +1,6 @@
 {
   "environmentClass": "development",
+  "serviceAccountRoles": {"{{ context.app_name }}-backend": ["manage-users"]},
   "realmFields": [
     "displayName",
     "enabled",

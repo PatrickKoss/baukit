@@ -59,6 +59,7 @@ async fn protected_route_conforms_and_maps_subject_to_internal_user() -> Result<
             items: ItemService::new(repository),
             users: UserService::new(Arc::new(InMemoryUserRepository::new())),
             auth: AuthState::new(verifier),
+            erasure: None,
         },
         &HttpConfig::default(),
     )?;
@@ -194,6 +195,7 @@ async fn authentication_runs_before_identity_rate_limiting() -> Result<(), Box<d
         items: ItemService::new(Arc::new(InMemoryItemRepository::new())),
         users: UserService::new(Arc::new(InMemoryUserRepository::new())),
         auth: auth.clone(),
+        erasure: None,
     });
     let mut options = RateLimitOptions::default();
     options.identity.quota = Quota::new(1, Duration::from_secs(60), 0)?;

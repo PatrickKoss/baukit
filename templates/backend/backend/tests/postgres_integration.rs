@@ -14,7 +14,13 @@ async fn postgres_adapter_crud() -> Result<(), Box<dyn Error>> {
     let pool = sqlx::PgPool::connect(fixture.connection_url()).await?;
     let repository = Arc::new(PostgresItemRepository::new(pool.clone()));
     let service = ItemService::new(repository.clone());
-{% if context.auth_oidc %}    let users = UserService::new(Arc::new(PostgresUserRepository::new(pool.clone())));
+{% if context.auth_oidc %}    let users = UserService::new(Arc::new(PostgresUserRepository::new(
+        pool.clone(),
+        baukit_erasure::PostgresErasureStore::new(
+            pool.clone(),
+            baukit_config::Secret::new("test-hash-key-with-at-least-32-bytes".into()),
+        )?,
+    )));
 {% endif %}
     let created = service.create("postgres item".to_owned()).await?;
     assert_eq!(service.get(created.id).await?, created);

@@ -1,9 +1,22 @@
-use std::collections::BTreeMap;
+{% if context.auth_oidc %}use std::{collections::BTreeMap, sync::Arc};
 
-{% if context.auth_oidc %}use axum::extract::FromRef;
-{% endif %}use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
-{% if context.auth_oidc %}use baukit_auth::{AuthState, Principal};
+use axum::{
+    Json, Router,
+    extract::{FromRef, Request, State},
+    http::{HeaderMap, StatusCode, header},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
+    routing::get,
+};
+use baukit_auth::{AuthState, Principal};
+{% else %}use std::collections::BTreeMap;
+
+use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
 {% endif %}use baukit_config::HttpConfig;
+{% if context.auth_oidc %}use baukit_erasure::{
+    ErasureError, ErasureOutcome, ErasureService, ProductErasure, reject_fenced_subject,
+};
+{% endif %}
 use baukit_http::{
     ApiError, ApiJson, ApiPath, ErrorBody, ErrorEnvelope, HttpOptions, HttpOptionsError,
     JsonRejectionCodes,
@@ -23,9 +36,16 @@ pub struct ApiState {
     pub items: ItemService,
 {% if context.auth_oidc %}    pub users: UserService,
     pub auth: AuthState,
+    pub erasure: Option<ErasureApi>,
 {% endif %}}
 
-{% if context.auth_oidc %}impl FromRef<ApiState> for AuthState {
+{% if context.auth_oidc %}#[derive(Clone)]
+pub struct ErasureApi {
+    pub service: ErasureService,
+    pub product: Arc<dyn ProductErasure>,
+}
+
+impl FromRef<ApiState> for AuthState {
     fn from_ref(state: &ApiState) -> Self {
         state.auth.clone()
     }
@@ -42,7 +62,9 @@ pub fn routes(state: ApiState) -> Router {
             "/items/{id}",
             get(get_item).put(update_item).delete(delete_item),
         )
-{% if context.auth_oidc %}        .route("/me", get(current_user))
+{% if context.auth_oidc %}        .route("/me", get(current_user).delete(erase_current_user))
+        .route("/me/erasures/{operationId}", get(erasure_status))
+        .route_layer(middleware::from_fn_with_state(state.clone(), erasure_fence))
 {% endif %}        .with_state(state)
 }
 
@@ -77,7 +99,145 @@ pub struct SaveItemRequest {
     pub name: String,
 }
 
-{% if context.auth_oidc %}#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+{% if context.auth_oidc %}#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ErasureStatusDto {
+    Pending,
+    Completed,
+    Failed,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ErasureDto {
+    pub status: ErasureStatusDto,
+    pub operation_id: Uuid,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<String>,
+}
+
+impl From<ErasureOutcome> for ErasureDto {
+    fn from(outcome: ErasureOutcome) -> Self {
+        Self {
+            status: match outcome.status {
+                baukit_erasure::ErasureState::Pending => ErasureStatusDto::Pending,
+                baukit_erasure::ErasureState::Completed => ErasureStatusDto::Completed,
+                baukit_erasure::ErasureState::Failed => ErasureStatusDto::Failed,
+            },
+            operation_id: outcome.operation_id,
+            completed_at: outcome.completed_at.map(|time| time.to_rfc3339()),
+        }
+    }
+}
+
+pub async fn erasure_fence(
+    State(state): State<ApiState>,
+    principal: Principal,
+    request: Request,
+    next: Next,
+) -> Result<Response, ErasureError> {
+    let replay = request.method() == axum::http::Method::DELETE && request.uri().path() == "/me";
+    let status = request.method() == axum::http::Method::GET
+        && request.uri().path().starts_with("/me/erasures/");
+    if !replay
+        && !status
+        && let Some(erasure) = &state.erasure
+    {
+        reject_fenced_subject(erasure.service.store(), principal.subject()).await?;
+    }
+    Ok(next.run(request).await)
+}
+
+fn durable_erasure(state: &ApiState) -> Result<&ErasureApi, ApiError> {
+    state.erasure.as_ref().ok_or_else(|| {
+        ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "erasure_unavailable",
+            "Durable erasure requires database configuration",
+        )
+    })
+}
+
+#[utoipa::path(
+    delete, path = "/me", security(("bearerAuth" = [])), tag = "auth",
+    params(("Idempotency-Key" = String, Header, description = "Required 16 to 128 visible ASCII characters")),
+    responses(
+        (status = 200, description = "Identity and product data deleted", body = ErasureDto),
+        (status = 202, description = "Product data deleted; identity deletion queued", body = ErasureDto, headers(("Location" = String, description = "Operation status URL"))),
+        (status = 400, description = "erasure_idempotency_key_invalid", body = ErrorEnvelope),
+        (status = 401, description = "unauthenticated or profile_erased", body = ErrorEnvelope),
+        (status = 409, description = "erasure_idempotency_conflict", body = ErrorEnvelope),
+        (status = 503, description = "erasure_unavailable", body = ErrorEnvelope)
+    )
+)]
+async fn erase_current_user(
+    State(state): State<ApiState>,
+    principal: Principal,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let key = baukit_http::IdempotencyKeyRule::new(16, 128)
+        .required(&headers)
+        .map_err(|_| {
+            ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "erasure_idempotency_key_invalid",
+                "A valid Idempotency-Key is required",
+            )
+        })?;
+    let erasure = durable_erasure(&state)?;
+    let result = erasure
+        .service
+        .erase(principal.subject(), key.as_str(), erasure.product.as_ref())
+        .await;
+    let outcome = match result {
+        Ok(outcome) => outcome,
+        Err(error) => return Ok(error.into_response()),
+    };
+    let status = outcome.status_code();
+    let location = format!("/me/erasures/{}", outcome.operation_id);
+    let mut response = (status, Json(ErasureDto::from(outcome))).into_response();
+    if status == StatusCode::ACCEPTED {
+        response.headers_mut().insert(
+            header::LOCATION,
+            location.parse().map_err(ApiError::internal)?,
+        );
+    }
+    Ok(response)
+}
+
+#[utoipa::path(
+    get, path = "/me/erasures/{operationId}", security(("bearerAuth" = [])), tag = "auth",
+    params(("operationId" = Uuid, Path)),
+    responses(
+        (status = 200, description = "Current erasure state", body = ErasureDto),
+        (status = 401, description = "unauthenticated", body = ErrorEnvelope),
+        (status = 404, description = "erasure_operation_not_found", body = ErrorEnvelope),
+        (status = 503, description = "erasure_unavailable", body = ErrorEnvelope)
+    )
+)]
+async fn erasure_status(
+    State(state): State<ApiState>,
+    principal: Principal,
+    ApiPath(operation): ApiPath<Uuid>,
+) -> Result<Response, ApiError> {
+    let erasure = durable_erasure(&state)?;
+    match erasure
+        .service
+        .store()
+        .status(principal.subject(), operation)
+        .await
+    {
+        Ok(Some(outcome)) => Ok(Json(ErasureDto::from(outcome)).into_response()),
+        Ok(None) => Err(ApiError::new(
+            StatusCode::NOT_FOUND,
+            "erasure_operation_not_found",
+            "Erasure operation not found",
+        )),
+        Err(error) => Ok(error.into_response()),
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CurrentUserDto {
     pub id: Uuid,
@@ -239,7 +399,12 @@ async fn delete_item(
 
 fn map_service_error(error: ServiceError) -> ApiError {
     match error {
-        ServiceError::NotFound => ApiError::not_found("Item not found"),
+{% if context.auth_oidc %}        ServiceError::Repository(RepositoryError::ProfileErased) => ApiError::new(
+            StatusCode::UNAUTHORIZED,
+            "profile_erased",
+            "The profile has been erased",
+        ),
+{% endif %}        ServiceError::NotFound => ApiError::not_found("Item not found"),
         ServiceError::Invalid(error) => {
             let details = BTreeMap::from([("name".to_owned(), Value::String(error.to_string()))]);
             ApiError::validation(details)
@@ -259,8 +424,9 @@ pub fn openapi_document() -> utoipa::openapi::OpenApi {
     let metadata = OpenApiMetadata::new(
         "{{ context.app_name }} API",
         env!("CARGO_PKG_VERSION"),
-        "Generated Baukit item service.",
-    );
+{% if context.auth_oidc %}        "Generated Baukit item service. Erasure errors: erasure_idempotency_key_invalid, erasure_idempotency_conflict, erasure_operation_not_found, profile_erased, erasure_unavailable.",
+{% else %}        "Generated Baukit item service.",
+{% endif %}    );
 {% if context.auth_oidc %}    let metadata = metadata.bearer_auth();
 {% endif %}    metadata.apply_to(&mut document);
     error_response_rules().apply(&mut document);
@@ -287,7 +453,11 @@ fn error_response_rules() -> ErrorResponseRules {
             "The request body does not match the schema.",
         )
         .status(When::HasPathParameter, 404, "The resource was not found.")
-{% if context.auth_oidc %}        .status(When::Secured, 401, "A valid bearer credential is required.")
+{% if context.auth_oidc %}        .status(
+            When::Secured,
+            401,
+            "A valid bearer credential is required; profile_erased rejects fenced subjects.",
+        )
         .status(
             When::Always,
             429,
@@ -304,8 +474,8 @@ fn error_response_rules() -> ErrorResponseRules {
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(list_items, get_item, create_item, update_item, delete_item{% if context.auth_oidc %}, current_user{% endif %}),
-    components(schemas(ItemDto, SaveItemRequest, ErrorEnvelope, ErrorBody{% if context.auth_oidc %}, CurrentUserDto{% endif %})),
+    paths(list_items, get_item, create_item, update_item, delete_item{% if context.auth_oidc %}, current_user, erase_current_user, erasure_status{% endif %}),
+    components(schemas(ItemDto, SaveItemRequest, ErrorEnvelope, ErrorBody{% if context.auth_oidc %}, CurrentUserDto, ErasureDto{% endif %})),
     tags(
         (name = "items", description = "Example item operations"){% if context.auth_oidc %},
         (name = "auth", description = "Protected identity example"){% endif %}

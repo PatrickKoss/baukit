@@ -96,6 +96,16 @@ def validate_policy_document(policy: dict[str, Any], environment_class: str) -> 
             isinstance(scheme, str) and scheme for scheme in schemes
         ):
             failures.append("policy redirectUris.allowedCustomSchemes must be a string array")
+    roles = policy.get("serviceAccountRoles", {})
+    if not isinstance(roles, dict) or not all(
+        isinstance(client, str)
+        and client
+        and isinstance(names, list)
+        and names
+        and all(isinstance(name, str) and name for name in names)
+        for client, names in roles.items()
+    ):
+        failures.append("policy serviceAccountRoles must map client ids to non-empty role arrays")
     return failures
 
 
@@ -200,6 +210,24 @@ def validate_realm(
             problem = validate_redirect_uri(uri, policy, environment_class)
             if problem:
                 failures.append(f"public client {label!r} redirect URI {uri!r} {problem}")
+    users = realm.get("users", [])
+    if not isinstance(users, list):
+        users = []
+    for client_id, required_roles in policy.get("serviceAccountRoles", {}).items():
+        client = next(
+            (value for value in clients if isinstance(value, dict) and value.get("clientId") == client_id),
+            {},
+        )
+        if client.get("serviceAccountsEnabled") is not True or client.get("publicClient") is not False:
+            failures.append(f"client {client_id!r} must enable a confidential service account")
+        account = next(
+            (user for user in users if isinstance(user, dict) and user.get("serviceAccountClientId") == client_id),
+            {},
+        )
+        mappings = account.get("clientRoles")
+        roles = mappings.get("realm-management", []) if isinstance(mappings, dict) else []
+        if not isinstance(roles, list) or not all(role in roles for role in required_roles):
+            failures.append(f"client {client_id!r} service account is missing required realm-management roles")
     return failures
 
 

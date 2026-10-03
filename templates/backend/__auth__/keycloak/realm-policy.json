@@ -1,5 +1,6 @@
 {
   "environmentClass": "development",
+  "serviceAccountRoles": {"{{ context.app_name }}-backend": ["manage-users"]},
   "password": {
     "minimumLength": 12,
     "maximumLength": 128,

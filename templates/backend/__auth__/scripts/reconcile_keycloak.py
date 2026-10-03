@@ -73,6 +73,16 @@ def load_reconcile_config(path: Path) -> dict[str, Any]:
                 fail(f"reconciliation client {field} must be a string array")
     if not all(isinstance(username, str) and username for username in config["users"]):
         fail("reconciliation config users must contain non-empty usernames")
+    roles = config.get("serviceAccountRoles", {})
+    if not isinstance(roles, dict) or not all(
+        isinstance(client, str)
+        and client
+        and isinstance(names, list)
+        and names
+        and all(isinstance(name, str) and name for name in names)
+        for client, names in roles.items()
+    ):
+        fail("reconciliation serviceAccountRoles must map client ids to non-empty role arrays")
     return config
 
 
@@ -148,6 +158,8 @@ def validate_inputs(
     for username in config["users"]:
         if username not in desired_users:
             fail(f"selected user {username!r} is absent from the realm file")
+    if config.get("serviceAccountRoles", {}) != policy.get("serviceAccountRoles", {}):
+        fail("reconciliation service-account roles must match policy")
     failures = keycloak_policy.validate_realm(candidate, policy, "development")
     if failures:
         fail("realm or active client URL violates policy: " + "; ".join(failures))
@@ -268,6 +280,40 @@ class KeycloakApi:
             payload=credential,
         )
 
+    def service_account(self, realm: str, client_id: str) -> dict[str, Any]:
+        response = self.request(
+            "GET",
+            f"/admin/realms/{quote(realm, safe='')}/clients/{quote(client_id, safe='')}/service-account-user",
+        )
+        if not isinstance(response, dict) or not isinstance(response.get("id"), str):
+            fail("Keycloak returned invalid service account data")
+        return response
+
+    def client_role(self, realm: str, client_id: str, role: str) -> dict[str, Any]:
+        response = self.request(
+            "GET",
+            f"/admin/realms/{quote(realm, safe='')}/clients/{quote(client_id, safe='')}/roles/{quote(role, safe='')}",
+        )
+        if not isinstance(response, dict):
+            fail("Keycloak returned invalid client role data")
+        return response
+
+    def user_client_roles(self, realm: str, user_id: str, client_id: str) -> list[dict[str, Any]]:
+        response = self.request(
+            "GET",
+            f"/admin/realms/{quote(realm, safe='')}/users/{quote(user_id, safe='')}/role-mappings/clients/{quote(client_id, safe='')}",
+        )
+        if not isinstance(response, list):
+            fail("Keycloak returned invalid service account role data")
+        return response
+
+    def add_user_client_roles(self, realm: str, user_id: str, client_id: str, roles: list[dict[str, Any]]) -> None:
+        self.request(
+            "POST",
+            f"/admin/realms/{quote(realm, safe='')}/users/{quote(user_id, safe='')}/role-mappings/clients/{quote(client_id, safe='')}",
+            payload=roles,
+        )
+
     def realm_role(self, realm: str, role_name: str) -> dict[str, Any]:
         response = self.request(
             "GET",
@@ -314,12 +360,26 @@ class RealmReconciler:
         self.reconcile_realm(realm_name, desired, config["realmFields"])
         for selection in config["clients"]:
             self.reconcile_client(realm_name, desired_clients[selection["clientId"]], selection)
+        for client_id, roles in config.get("serviceAccountRoles", {}).items():
+            self.reconcile_service_account_roles(realm_name, client_id, roles)
         for username in config["users"]:
             self.reconcile_user(
                 realm_name,
                 desired_users[username],
                 username in reset_passwords,
             )
+
+    def reconcile_service_account_roles(self, realm: str, client_id: str, roles: list[str]) -> None:
+        clients = self.api.find(realm, "clients", "clientId", client_id)
+        managers = self.api.find(realm, "clients", "clientId", "realm-management")
+        if len(clients) != 1 or len(managers) != 1:
+            fail("service account role mapping requires existing backend and realm-management clients")
+        account = self.api.service_account(realm, clients[0]["id"])
+        manager_id = managers[0]["id"]
+        existing = {role.get("name") for role in self.api.user_client_roles(realm, account["id"], manager_id)}
+        missing = [self.api.client_role(realm, manager_id, role) for role in roles if role not in existing]
+        if missing:
+            self.api.add_user_client_roles(realm, account["id"], manager_id, missing)
 
     def reconcile_realm(
         self, realm_name: str, desired: dict[str, Any], fields: list[str]

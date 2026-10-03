@@ -11,6 +11,7 @@ workspace = true
 [dependencies]
 axum.workspace = true
 {% if context.auth_oidc %}baukit-auth.workspace = true
+baukit-erasure.workspace = true
 baukit-ratelimit.workspace = true
 {% endif %}baukit-config.workspace = true
 baukit-openapi.workspace = true
@@ -22,8 +23,8 @@ baukit-telemetry.workspace = true
 {{ context.app_crate }}-ports.workspace = true
 {{ context.app_crate }}-postgres.workspace = true
 {{ context.app_crate }}-services.workspace = true
-{% if context.worker %}{{ context.app_crate }}-worker.workspace = true
-baukit-jobs.workspace = true
+{% if context.auth_oidc or context.worker %}baukit-jobs.workspace = true
+{% endif %}{% if context.worker %}{{ context.app_crate }}-worker.workspace = true
 serde_json.workspace = true
 {% endif %}sqlx.workspace = true
 serde.workspace = true
@@ -73,4 +74,9 @@ path = "../../tests/worker_integration.rs"
 [[test]]
 name = "auth_conformance"
 path = "../../tests/auth_conformance.rs"
+{% endif %}
+{% if context.auth_oidc %}
+[[test]]
+name = "identity_erasure_conformance"
+path = "../../tests/identity_erasure_conformance.rs"
 {% endif %}

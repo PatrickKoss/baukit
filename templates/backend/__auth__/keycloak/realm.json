@@ -10,6 +10,12 @@
   "bruteForceProtected": true,
   "users": [
     {
+      "username": "service-account-{{ context.app_name }}-backend",
+      "serviceAccountClientId": "{{ context.app_name }}-backend",
+      "enabled": true,
+      "clientRoles": {"realm-management": ["manage-users"]}
+    },
+    {
       "username": "test",
       "email": "test@{{ context.app_name }}.local",
       "emailVerified": true,

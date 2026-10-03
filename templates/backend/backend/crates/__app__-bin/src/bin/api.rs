@@ -3,34 +3,29 @@ use std::{env, error::Error, net::SocketAddr, sync::Arc, time::Duration};
 {% if context.auth_oidc %}use axum::{extract::Request, http::Method, middleware};
 use baukit_auth::{AuthState, OidcConfig, OidcVerifier, Principal};
 {% endif %}use baukit_config::{BaukitConfig, ConfigLoader, Environment};
-use baukit_ops::{PoolMetricsSampler, TrafficGate, spawn_pool_metrics_sampler};
+{% if context.auth_oidc %}use baukit_jobs::{PostgresJobStore, WorkerConfig, WorkerRunner};
+{% endif %}{% if not context.auth_oidc %}use baukit_ops::PoolMetricsSampler;
+{% endif %}use baukit_ops::{TrafficGate, spawn_pool_metrics_sampler};
 {% if context.auth_oidc %}use baukit_ratelimit::{
     AuthenticatedRouteGroupOptions, Quota, RateLimitOptions, RedisRateLimitStore,
 };
 {% endif %}use baukit_runtime::{ProcessKind, ServiceInfo, ShutdownToken, build_info, serve_listener_pair};
 use baukit_telemetry::{TelemetryBuilder, tracing};
 
-use {{ context.app_crate }}_api::{ApiState, finalize_api, routes};
-{% if context.auth_oidc %}use {{ context.app_crate }}_bin::InMemoryItemRepository;
-use {{ context.app_crate }}_bin::InMemoryUserRepository;
-use {{ context.app_crate }}_bin::ProductConfig;
-use {{ context.app_crate }}_bin::operations_router;
-{% else %}use {{ context.app_crate }}_bin::InMemoryItemRepository;
-use {{ context.app_crate }}_bin::ProductConfig;
-use {{ context.app_crate }}_bin::operations_router;
-{% endif %}
-{% if context.auth_oidc %}use {{ context.app_crate }}_ports::{ItemRepository, UserRepository};
-{% else %}use {{ context.app_crate }}_ports::ItemRepository;
-{% endif %}
-{% if context.auth_oidc %}use {{ context.app_crate }}_postgres::{PostgresItemRepository, PostgresUserRepository};
-{% else %}use {{ context.app_crate }}_postgres::PostgresItemRepository;
-{% endif %}
-{% if context.auth_oidc %}use {{ context.app_crate }}_services::{ItemService, UserService};
-{% else %}use {{ context.app_crate }}_services::ItemService;
-{% endif %}
 use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
 
+{% if context.auth_oidc %}use {{ context.app_crate }}_api::{ApiState, ErasureApi, finalize_api, routes};
+use {{ context.app_crate }}_bin::{ProductConfig, identity_erasure, operations_router};
+use {{ context.app_crate }}_postgres::PostgresProfileErasure;
+use {{ context.app_crate }}_postgres::{PostgresItemRepository, PostgresUserRepository};
+use {{ context.app_crate }}_services::{ItemService, UserService};
+{% else %}use {{ context.app_crate }}_api::{ApiState, finalize_api, routes};
+use {{ context.app_crate }}_bin::{InMemoryItemRepository, ProductConfig, operations_router};
+use {{ context.app_crate }}_ports::ItemRepository;
+use {{ context.app_crate }}_postgres::PostgresItemRepository;
+use {{ context.app_crate }}_services::ItemService;
+{% endif %}
 const PRODUCT: &str = "{{ context.app_name }}";
 {% if context.auth_oidc %}const ITEM_WRITE_GROUP: &str = "item_writes";
 const ITEM_WRITE_REQUESTS_PER_MINUTE: u64 = 30;
@@ -57,33 +52,36 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
     }
     let telemetry = Arc::new(telemetry_builder.init()?);
 
-{% if context.auth_oidc %}    let (item_repository, user_repository, pool_metrics): (
-        Arc<dyn ItemRepository>,
-        Arc<dyn UserRepository>,
-        Option<PoolMetricsSampler>,
-    ) = if let Some(database) = &config.database {
-        let pool = PgPoolOptions::new()
-            .max_connections(database.max_connections)
-            .min_connections(database.min_connections)
-            .acquire_timeout(database.acquire_timeout)
-            .connect(database.url.expose())
-            .await?;
-        let pool_metrics = spawn_pool_metrics_sampler(pool.clone(), Duration::from_secs(15))?;
-        (
-            Arc::new(PostgresItemRepository::new(pool.clone())),
-            Arc::new(PostgresUserRepository::new(pool)),
-            Some(pool_metrics),
-        )
-    } else {
-        tracing::warn!(message = "database is not configured; using the in-memory item adapter");
-        (
-            Arc::new(InMemoryItemRepository::new()),
-            Arc::new(InMemoryUserRepository::new()),
-            None,
-        )
-    };
-    let item_service = ItemService::new(item_repository);
-    let user_service = UserService::new(user_repository);
+{% if context.auth_oidc %}    let database = config
+        .database
+        .as_ref()
+        .ok_or("authenticated backend requires database configuration")?;
+    let pool = PgPoolOptions::new()
+        .max_connections(database.max_connections)
+        .min_connections(database.min_connections)
+        .acquire_timeout(database.acquire_timeout)
+        .connect(database.url.expose())
+        .await?;
+    let pool_metrics = Some(spawn_pool_metrics_sampler(
+        pool.clone(),
+        Duration::from_secs(15),
+    )?);
+    let (erasure_service, erasure_handler) =
+        identity_erasure(pool.clone(), &config.product.auth, config.environment)?;
+    let erasure_runner = WorkerRunner::new(
+        Arc::new(PostgresJobStore::new(pool.clone())),
+        Arc::new(erasure_handler),
+        WorkerConfig {
+            queue: "identity-erasure",
+            concurrency: 1,
+            ..WorkerConfig::default()
+        },
+    )?;
+    let item_service = ItemService::new(Arc::new(PostgresItemRepository::new(pool.clone())));
+    let user_service = UserService::new(Arc::new(PostgresUserRepository::new(
+        pool,
+        erasure_service.store().clone(),
+    )));
     let oidc = OidcConfig::new(&config.product.auth.issuer, &config.product.auth.audience)?;
     let auth = AuthState::new(OidcVerifier::discover(oidc).await?);
 {% else %}    let (repository, pool_metrics): (Arc<dyn ItemRepository>, Option<PoolMetricsSampler>) =
@@ -107,11 +105,16 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         };
     let item_service = ItemService::new(repository);
 {% endif %}
-    let api = routes(ApiState {
+    let api_state = ApiState {
         items: item_service.clone(),
 {% if context.auth_oidc %}        users: user_service,
         auth: auth.clone(),
-{% endif %}    });
+        erasure: Some(ErasureApi {
+            service: erasure_service,
+            product: Arc::new(PostgresProfileErasure),
+        }),
+{% endif %}    };
+    let api = routes(api_state.clone());
 {% if context.auth_oidc %}    let rate_limit_options = RateLimitOptions::from_config(&config.rate_limit)?;
     let rate_limit_store = RedisRateLimitStore::connect_if_enabled(&rate_limit_options).await?;
     let api = if let Some(store) = rate_limit_store {
@@ -131,6 +134,10 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
     } else {
         api
     };
+    let api = api.layer(middleware::from_fn_with_state(
+        api_state,
+        {{ context.app_crate }}_api::erasure_fence,
+    ));
     // Axum runs the last added layer first. Authentication establishes Principal
     // before the inner rate limiter chooses an identity or IP bucket.
     let api = api.layer(middleware::from_fn_with_state(
@@ -161,7 +168,15 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         operations_address = %operations_listener.local_addr()?,
     );
 
-    let signal_task = shutdown.spawn_signal_listener();
+{% if context.auth_oidc %}    let erasure_shutdown = shutdown.clone();
+    let erasure_task = tokio::spawn(async move {
+        let result = erasure_runner.run(erasure_shutdown.clone()).await;
+        if result.is_err() {
+            erasure_shutdown.trigger();
+        }
+        result
+    });
+{% endif %}    let signal_task = shutdown.spawn_signal_listener();
     let result = serve_listener_pair(
         api_listener,
         api,
@@ -175,7 +190,8 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         signal_task.abort();
     }
     let _signal_result = signal_task.await;
-    if let Some(pool_metrics) = pool_metrics {
+{% if context.auth_oidc %}    shutdown.run_during_drain(erasure_task).await???;
+{% endif %}    if let Some(pool_metrics) = pool_metrics {
         pool_metrics.shutdown().await;
     }
     let telemetry_for_shutdown = Arc::clone(&telemetry);

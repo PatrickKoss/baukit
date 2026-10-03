@@ -39,6 +39,7 @@ async fn health_and_metrics_conform_to_baukit() -> Result<(), Box<dyn Error>> {
             items: items.clone(),
 {% if context.auth_oidc %}            users,
             auth: AuthState::new(verifier),
+            erasure: None,
 {% endif %}        },
         &HttpConfig::default(),
     )?;
@@ -82,6 +83,7 @@ async fn json_rejections_keep_their_protocol_statuses() -> Result<(), Box<dyn Er
             items: ItemService::new(repository),
 {% if context.auth_oidc %}            users,
             auth: AuthState::new(verifier),
+            erasure: None,
 {% endif %}        },
         &config,
     )?;

@@ -26,7 +26,9 @@ pub trait ItemRepository: Send + Sync + 'static {
 
 {% endif %}#[derive(Debug, Error)]
 pub enum RepositoryError {
-    #[error("item already exists")]
+{% if context.auth_oidc %}    #[error("profile erased")]
+    ProfileErased,
+{% endif %}    #[error("item already exists")]
     Conflict,
     #[error("repository unavailable")]
     Unavailable(#[source] Box<dyn std::error::Error + Send + Sync>),

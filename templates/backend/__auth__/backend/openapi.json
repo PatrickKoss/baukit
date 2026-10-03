@@ -17,6 +17,36 @@
         ],
         "type": "object"
       },
+      "ErasureDto": {
+        "properties": {
+          "completedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "operationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ErasureStatusDto"
+          }
+        },
+        "required": [
+          "status",
+          "operationId"
+        ],
+        "type": "object"
+      },
+      "ErasureStatusDto": {
+        "enum": [
+          "pending",
+          "completed",
+          "failed"
+        ],
+        "type": "string"
+      },
       "ErrorBody": {
         "description": "The error body nested inside [`ErrorEnvelope`].",
         "properties": {
@@ -100,7 +130,7 @@
     }
   },
   "info": {
-    "description": "Generated Baukit item service.",
+    "description": "Generated Baukit item service. Erasure errors: erasure_idempotency_key_invalid, erasure_idempotency_conflict, erasure_operation_not_found, profile_erased, erasure_unavailable.",
     "license": {
       "name": ""
     },
@@ -998,6 +1028,211 @@
       }
     },
     "/me": {
+      "delete": {
+        "operationId": "erase_current_user",
+        "parameters": [
+          {
+            "description": "Required 16 to 128 visible ASCII characters",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErasureDto"
+                }
+              }
+            },
+            "description": "Identity and product data deleted",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErasureDto"
+                }
+              }
+            },
+            "description": "Product data deleted; identity deletion queued",
+            "headers": {
+              "Location": {
+                "description": "Operation status URL",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "erasure_idempotency_key_invalid",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated or profile_erased",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Bearer authentication challenge.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "erasure_idempotency_conflict",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The rate limit was exceeded; wait for Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying.",
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An internal error occurred.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "erasure_unavailable",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request deadline passed; a write may have committed.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "auth"
+        ]
+      },
       "get": {
         "operationId": "current_user",
         "responses": {
@@ -1077,6 +1312,189 @@
               }
             },
             "description": "An internal error occurred.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request deadline passed; a write may have committed.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/me/erasures/{operationId}": {
+      "get": {
+        "operationId": "erasure_status",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErasureDto"
+                }
+              }
+            },
+            "description": "Current erasure state",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The path is invalid.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Bearer authentication challenge.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "erasure_operation_not_found",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The rate limit was exceeded; wait for Retry-After.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying.",
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An internal error occurred.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "erasure_unavailable",
             "headers": {
               "X-Request-Id": {
                 "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",

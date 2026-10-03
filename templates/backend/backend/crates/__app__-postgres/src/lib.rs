@@ -27,11 +27,12 @@ impl PostgresItemRepository {
 #[derive(Clone)]
 pub struct PostgresUserRepository {
     pool: PgPool,
+    erasures: baukit_erasure::PostgresErasureStore,
 }
 
 impl PostgresUserRepository {
-    pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+    pub fn new(pool: PgPool, erasures: baukit_erasure::PostgresErasureStore) -> Self {
+        Self { pool, erasures }
     }
 }{% endif %}
 
@@ -170,17 +171,54 @@ impl UserRepository for PostgresUserRepository {
         subject: String,
     ) -> PortFuture<'_, Result<InternalUser, RepositoryError>> {
         Box::pin(async move {
-            sqlx::query_as::<_, (Uuid, String)>(
+            let mut transaction = self
+                .pool
+                .begin()
+                .await
+                .map_err(RepositoryError::unavailable)?;
+            self.erasures
+                .guard_subject(&mut transaction, &subject)
+                .await
+                .map_err(|error| {
+                    if matches!(error, baukit_erasure::ErasureError::ProfileErased) {
+                        RepositoryError::ProfileErased
+                    } else {
+                        RepositoryError::unavailable(error)
+                    }
+                })?;
+            let (id, subject) = sqlx::query_as::<_, (Uuid, String)>(
                 "INSERT INTO user_identities (user_id, subject) VALUES ($1, $2) \
                  ON CONFLICT (subject) DO UPDATE SET subject = EXCLUDED.subject \
                  RETURNING user_id, subject",
             )
             .bind(Uuid::now_v7())
             .bind(subject)
-            .fetch_one(&self.pool)
+            .fetch_one(&mut *transaction)
             .await
-            .map(|(id, subject)| InternalUser { id, subject })
-            .map_err(RepositoryError::unavailable)
+            .map_err(RepositoryError::unavailable)?;
+            transaction
+                .commit()
+                .await
+                .map_err(RepositoryError::unavailable)?;
+            Ok(InternalUser { id, subject })
+        })
+    }
+}{% endif %}{% if context.auth_oidc %}
+
+pub struct PostgresProfileErasure;
+
+impl baukit_erasure::ProductErasure for PostgresProfileErasure {
+    fn erase<'a>(
+        &'a self,
+        connection: &'a mut sqlx::PgConnection,
+        subject: &'a str,
+    ) -> baukit_erasure::ErasureFuture<'a, Result<(), sqlx::Error>> {
+        Box::pin(async move {
+            sqlx::query("DELETE FROM user_identities WHERE subject = $1")
+                .bind(subject)
+                .execute(connection)
+                .await?;
+            Ok(())
         })
     }
 }{% endif %}

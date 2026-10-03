@@ -50,6 +50,10 @@ impl Validate for ProductConfig {
 pub struct AuthConfig {
     pub issuer: String,
     pub audience: String,
+    pub identity_admin_base_url: String,
+    pub identity_admin_realm: String,
+    pub identity_admin_client_secret: Option<baukit_config::Secret<String>>,
+    pub erasure_hash_key: Option<baukit_config::Secret<String>>,
 }
 
 impl Default for AuthConfig {
@@ -57,6 +61,10 @@ impl Default for AuthConfig {
         Self {
             issuer: "http://localhost:{{ context.keycloak_host_port }}/realms/{{ context.app_name }}".to_owned(),
             audience: "{{ context.app_name }}-backend".to_owned(),
+            identity_admin_base_url: "http://localhost:{{ context.keycloak_host_port }}".to_owned(),
+            identity_admin_realm: "{{ context.app_name }}".to_owned(),
+            identity_admin_client_secret: None,
+            erasure_hash_key: None,
         }
     }
 }
@@ -282,4 +290,58 @@ pub fn worker_operations_router(
         .with_traffic_gate(traffic_gate)
         .into_router();
     Ok((router, readiness))
+}{% endif %}{% if context.auth_oidc %}
+
+pub fn identity_erasure(
+    pool: sqlx::PgPool,
+    auth: &AuthConfig,
+    environment: baukit_config::Environment,
+) -> Result<
+    (
+        baukit_erasure::ErasureService,
+        baukit_erasure::IdentityDeletionHandler,
+    ),
+    Box<dyn std::error::Error>,
+> {
+    let local = environment == baukit_config::Environment::Local;
+    let secret = |value: &Option<baukit_config::Secret<String>>, default: &str| {
+        value
+            .clone()
+            .or_else(|| local.then(|| baukit_config::Secret::new(default.to_owned())))
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "identity erasure secrets must be configured outside local development",
+                )
+            })
+    };
+    let deleter = Arc::new(baukit_erasure::KeycloakAccountDeleter::new(
+        baukit_erasure::KeycloakDeletionConfig {
+            base_url: auth.identity_admin_base_url.clone(),
+            realm: auth.identity_admin_realm.clone(),
+            client_id: auth.audience.clone(),
+            client_secret: secret(&auth.identity_admin_client_secret, "local-backend-secret")?,
+            allow_local_http: local,
+        },
+    )?);
+    let store = baukit_erasure::PostgresErasureStore::new(
+        pool,
+        secret(
+            &auth.erasure_hash_key,
+            "local-erasure-hash-key-not-for-production",
+        )?,
+    )?;
+    let handler = baukit_erasure::IdentityDeletionHandler::new(
+        store.clone(),
+        "keycloak".into(),
+        deleter.clone(),
+    );
+    let service = baukit_erasure::ErasureService::new(
+        store,
+        deleter,
+        "keycloak".into(),
+        std::time::Duration::from_secs(3),
+        12,
+    )?;
+    Ok((service, handler))
 }{% endif %}
