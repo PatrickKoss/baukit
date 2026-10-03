@@ -1,9 +1,3 @@
-export const {
-  name: PRODUCT_NAME,
-  envPrefix: ENV_PREFIX,
-  keycloakPort: KEYCLOAK_PORT,
-} = {
-  name: '{{ context.app_name }}',
-  envPrefix: '{{ context.app_env }}',
-  keycloakPort: {{ context.keycloak_host_port }},
-};
+export const PRODUCT_NAME = '{{ context.app_name }}';
+export const ENV_PREFIX = '{{ context.app_env }}';
+export const KEYCLOAK_PORT = {{ context.keycloak_host_port }};

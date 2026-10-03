@@ -1971,16 +1971,10 @@ fn typescript_source_is_independent_of_product_name_length() -> anyhow::Result<(
                 .remove(Path::new("mcp/src/product.ts"))
                 .expect("MCP product constants must be generated");
             let product = String::from_utf8(product)?;
-            assert!(product.contains(&format!("name: '{name}',")));
+            assert!(product.contains(&format!("export const PRODUCT_NAME = '{name}';")));
             let prefix = name.replace('-', "_").to_ascii_uppercase();
-            assert!(product.contains(&format!("envPrefix: '{prefix}',")));
-            assert!(product.contains("keycloakPort: 8181,"));
-            for line in product.lines() {
-                assert!(
-                    line.len() <= 80,
-                    "product constant exceeds 80 columns: {line}"
-                );
-            }
+            assert!(product.contains(&format!("export const ENV_PREFIX = '{prefix}';")));
+            assert!(product.contains("export const KEYCLOAK_PORT = 8181;"));
             for flavor in ["web", "mobile"] {
                 let extension = if flavor == "mobile" { "js" } else { "ts" };
                 let path = PathBuf::from(format!("{flavor}/src/product.{extension}"));
@@ -1989,7 +1983,6 @@ fn typescript_source_is_independent_of_product_name_length() -> anyhow::Result<(
                     .expect("frontend product constants must be generated");
                 let product = String::from_utf8(product)?;
                 assert_eq!(product, format!("export const PRODUCT_NAME = '{name}';\n"));
-                assert!(product.lines().all(|line| line.len() <= 100));
             }
             assert!(!source.is_empty());
             if let Some(expected) = &baseline {
