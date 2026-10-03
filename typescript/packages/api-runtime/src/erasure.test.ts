@@ -10,9 +10,12 @@ const completedAt = '2026-10-03T12:00:00Z';
 const pending = { status: 'pending', operationId };
 const completed = { status: 'completed', operationId, completedAt };
 
-function storage(): IdempotencyKeyStorage {
+function storage(): IdempotencyKeyStorage & {
+  readonly entries: ReadonlyMap<string, StoredIdempotencyKey>;
+} {
   const persisted = new Map<string, StoredIdempotencyKey>();
   return {
+    entries: persisted,
     get: (slot) => persisted.get(slot) ?? null,
     set: (slot, value) => {
       persisted.set(slot, value);
@@ -62,6 +65,7 @@ describe('profile erasure transport', () => {
       return Response.json(body, { status });
     });
     await expect(client.erase()).resolves.toEqual(body);
+    expect(persisted.entries.size).toBe(0);
     transport.assertRequest(0, { method: 'DELETE', url: 'https://api.example.test/me' });
   });
 
@@ -71,23 +75,29 @@ describe('profile erasure transport', () => {
     first.transport.enqueue(new TypeError('Connection dropped after commit'));
     await expect(first.client.erase()).rejects.toBeInstanceOf(AmbiguousProfileErasureError);
 
+    expect(persisted.entries.size).toBe(1);
     const second = setup(persisted);
     second.transport.enqueueJson(pending, { status: 202 });
     await expect(second.client.erase()).resolves.toEqual(pending);
+    expect(persisted.entries.size).toBe(0);
     expect(second.transport.request(0).headers.get('Idempotency-Key')).toBe(
       first.transport.request(0).headers.get('Idempotency-Key'),
     );
   });
 
-  it('retains a key even after a known commit so cleanup can be retried', async () => {
+  it.each([
+    [200, completed],
+    [202, pending],
+  ] as const)('preserves the committed %i receipt if key removal fails', async (status, body) => {
     const persisted = storage();
-    const first = setup(persisted);
-    first.transport.enqueueJson(completed);
-    await first.client.erase();
-    const second = setup(persisted);
-    second.transport.enqueueJson(completed);
-    await second.client.erase();
-    expect(second.transport.request(0).headers.get('Idempotency-Key')).toBe(key);
+    vi.spyOn(persisted, 'delete').mockRejectedValue(new Error('Storage unavailable'));
+    const { client, transport } = setup(persisted);
+    transport.enqueueJson(body, { status });
+    await expect(client.erase()).rejects.toMatchObject({
+      name: 'ProfileErasureKeyCleanupError',
+      receipt: body,
+    });
+    expect(persisted.entries.size).toBe(1);
   });
 
   it('reports 409 as a definite rejection and releases its key', async () => {
@@ -103,9 +113,11 @@ describe('profile erasure transport', () => {
   });
 
   it('accepts a 401 profile_erased as committed with identity deletion still unconfirmed', async () => {
-    const { client, transport } = setup();
+    const persisted = storage();
+    const { client, transport } = setup(persisted);
     transport.enqueueJson(errorBody('profile_erased'), { status: 401 });
     await expect(client.erase()).resolves.toEqual({ status: 'pending', operationId: null });
+    expect(persisted.entries.size).toBe(0);
   });
 
   it('retains the original key if a later retry is unauthorized after a lost response', async () => {

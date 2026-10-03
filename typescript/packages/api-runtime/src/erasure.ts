@@ -37,6 +37,18 @@ export interface ProfileErasureClient {
   ): Promise<ProfileErasureOperation>;
 }
 
+/** A committed receipt whose durable key could not be removed from this device. */
+export class ProfileErasureKeyCleanupError extends Error {
+  public override readonly name = 'ProfileErasureKeyCleanupError';
+
+  public constructor(
+    public readonly receipt: ProfileErasureReceipt,
+    cause: unknown,
+  ) {
+    super('The committed erasure key could not be removed.', { cause });
+  }
+}
+
 /** Compatible with the ambiguous error contract in @baukit/data-contracts. */
 export class AmbiguousProfileErasureError extends Error {
   public override readonly name = 'AmbiguousProfileErasureError';
@@ -74,6 +86,7 @@ export function createProfileErasureClient(
       if (!IDEMPOTENCY_KEY_PATTERN.test(key))
         throw new TypeError('Invalid erasure idempotency key.');
       signal?.throwIfAborted();
+      let receipt: ProfileErasureReceipt;
       try {
         const response = await options.fetch('/me', {
           method: 'DELETE',
@@ -82,17 +95,23 @@ export function createProfileErasureClient(
         });
         if (!response.ok) throw await normalizeResponseError(response);
         const value: unknown = await response.json();
-        return parseReceipt(value, response.status);
+        receipt = parseReceipt(value, response.status);
       } catch (cause) {
-        if (isErasedFence(cause)) return { status: 'pending', operationId: null };
-        if (classifyMutationError(cause) === 'not-committed') {
+        if (isErasedFence(cause)) {
+          receipt = { status: 'pending', operationId: null };
+        } else if (classifyMutationError(cause) === 'not-committed') {
           if (cause instanceof ApiError && cause.code === 'erasure_idempotency_conflict') {
             await keys.settle(intent, 'not-committed');
           }
           throw cause;
-        }
-        throw new AmbiguousProfileErasureError(cause);
+        } else throw new AmbiguousProfileErasureError(cause);
       }
+      try {
+        await keys.settle(intent, 'committed');
+      } catch (cause) {
+        throw new ProfileErasureKeyCleanupError(receipt, cause);
+      }
+      return receipt;
     },
     async poll(operationId, polling = {}) {
       if (!UUID_PATTERN.test(operationId)) throw new TypeError('Invalid erasure operation ID.');

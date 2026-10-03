@@ -218,10 +218,12 @@ if (receipt.status === 'pending' && receipt.operationId !== null) {
 and 202 pending bodies. A network drop, abort after sending, malformed success
 body, or uncertain server error throws `AmbiguousProfileErasureError`. Its code
 is compatible with `eraseProductProfile`. Keep the same key for a later retry,
-even after a reload. The client keeps committed keys too, so a failed local
-cleanup cannot accidentally create a second erasure. Durable storage should
-keep these keys for the account's deletion lifetime; it must not discard an
-uncertain key on a timer. The client releases a key on 409 `erasure_idempotency_conflict`. Other
+even after a reload. A completed or pending receipt, including 401
+`profile_erased`, settles the key as committed and removes it from durable
+storage. An uncertain key does not expire on a timer. If key removal fails,
+`ProfileErasureKeyCleanupError` carries the committed receipt so callers can
+still erase local data and sign out, then report the local cleanup failure.
+The client releases a key on 409 `erasure_idempotency_conflict`. Other
 rejections keep it because an earlier attempt could have committed before a
 response was lost.
 
