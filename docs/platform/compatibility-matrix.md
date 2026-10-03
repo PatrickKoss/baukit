@@ -43,7 +43,7 @@ and remains a release-host check rather than a Linux result.
 | Configuration | config + dotenvy | chosen loader (analysis §4.1) | Figment is not supported by the shared kit |
 | Outbound HTTP | reqwest | 0.13, rustls with the platform verifier | |
 | Auth | ring + JWKS | latest | Keycloak OIDC default; Clerk session-token adapter with `azp` validation; WorkOS AuthKit adapter bound to `client_id`. `ApiTokenStore` returns `ApiTokenStoreError` since 0.3.0. |
-| Development identity provider | Keycloak | 26.7.0 | Generated `compose.yaml` image; `make dev` reconciles the development realm from `realm-policy.json`. |
+| Development identity provider | Keycloak | 26.8.0 | Generated `compose.yaml` image; `make dev` reconciles the development realm from `realm-policy.json`. |
 | Integration tests | testcontainers | latest | `baukit-test` pins `postgres:18-alpine`; templates and smoke deploys use the same image |
 | Sync revisions | `baukit-sync` | 0.5.2 | Per-owner revision allocation, locking revision reads, tombstone purge horizons with a pull-cursor guard, the syncable-table column convention, and a `user_id` to `owner_id` migration. SQLx 0.9 and PostgreSQL behind the `sqlx-postgres` feature; the hybrid logical clock needs neither. |
 | Provider connectors | `baukit-integrations` | 0.5.2 | Contract-only connector port, cursor-paged pages, and `baukit-http` retry classes; no SQLx, no HTTP client. |

@@ -23,8 +23,8 @@ if [[ -n "$(git status --porcelain)" ]]; then
   exit 1
 fi
 
-command -v pnpm >/dev/null || {
-  echo "pnpm is required" >&2
+command -v corepack >/dev/null || {
+  echo "corepack is required" >&2
   exit 1
 }
 
@@ -79,7 +79,7 @@ fi
   echo "Release the coordinated baukit $next train."
 } > "$train_changeset"
 
-(cd typescript && pnpm version-packages)
+(cd typescript && corepack pnpm version-packages)
 
 actual_ts=$(node -p "require('./typescript/packages/analytics-core/package.json').version")
 if [[ "$actual_ts" != "$next" ]]; then

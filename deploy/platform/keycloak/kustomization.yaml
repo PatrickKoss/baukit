@@ -3,6 +3,6 @@ kind: Kustomization
 namespace: keycloak
 resources:
   - namespace.yaml
-  - vendor/keycloak-operator-26.7.1
+  - vendor/keycloak-operator-26.8.0
   - keycloak.yaml
 

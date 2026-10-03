@@ -157,7 +157,7 @@ Migration uses `helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded`
 |---|---:|---|
 | `redis.enabled` | `false` | Create non-persistent Redis for expendable product state. |
 | `redis.replicas` | `1` | `1` creates a Deployment; odd values `>= 3` create Redis + Sentinel pods in a StatefulSet. `2` and even values fail rendering. |
-| `redis.image.repository` / `tag` / `pullPolicy` | `redis` / `8.10.0-alpine` / `IfNotPresent` | Redis image settings; the default tag is an exact Redis 8 Alpine patch release. |
+| `redis.image.repository` / `tag` / `pullPolicy` | `redis` / `8.10.2-alpine` / `IfNotPresent` | Redis image settings; the default tag is an exact Redis 8 Alpine patch release. |
 | `redis.resources.requests.cpu` / `memory` | `10m` / `16Mi` | Minimal Redis resource requests for expendable rate-limit state. |
 | `redis.resources.limits.cpu` / `memory` | `100m` / `64Mi` | Redis resource limits. |
 | `redis.livenessProbe.*` | `5s` initial delay, `10s` period, `2s` timeout, `3` failures | `redis-cli ping` liveness settings. |

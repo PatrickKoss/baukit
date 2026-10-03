@@ -1,10 +1,10 @@
 # Keycloak identity base
 
 This base creates `keycloak`, installs the official namespace-scoped Keycloak
-Operator pinned to `26.7.1` without OLM, and declares one production-mode,
+Operator pinned to `26.8.0` without OLM, and declares one production-mode,
 single-instance `Keycloak` resource with bounded resources. The upstream
 namespace-scoped kustomize resources are vendored under
-`vendor/keycloak-operator-26.7.1/`; preview cluster-wide resources are not used.
+`vendor/keycloak-operator-26.8.0/`; preview cluster-wide resources are not used.
 
 The Keycloak CR expects the shared CNPG convention: database `keycloak`, owner
 `keycloak_owner`, generated service host
@@ -38,10 +38,10 @@ hostname, and TLS.
 
 The generated development bind mount is not suitable for this Operator base. Build an immutable Keycloak image that copies `keycloak/themes/baukit-accessible` into `/opt/keycloak/themes/baukit-accessible`, then patch `spec.image` to the image digest. A product child belongs in the same image under `/opt/keycloak/themes/PRODUCT`. Keep the base theme unchanged and put product CSS and message bundles in that child.
 
-Use the same Keycloak `26.7.1` base image as this Operator pin. A minimal image recipe is:
+Use the same Keycloak `26.8.0` base image as this Operator pin. A minimal image recipe is:
 
 ```Dockerfile
-FROM quay.io/keycloak/keycloak:26.7.1
+FROM quay.io/keycloak/keycloak:26.8.0
 COPY --chown=keycloak:keycloak keycloak/themes/baukit-accessible /opt/keycloak/themes/baukit-accessible
 COPY --chown=keycloak:keycloak keycloak/themes/PRODUCT /opt/keycloak/themes/PRODUCT
 ```
@@ -81,7 +81,7 @@ to Renovate. To refresh the pinned upstream directory exactly, download the six
 files from the versioned tag:
 
 ```sh
-KEYCLOAK_VERSION=26.7.1
+KEYCLOAK_VERSION=26.8.0
 for file in keycloakoidcclients.k8s.keycloak.org-v1.yml \
   keycloakrealmimports.k8s.keycloak.org-v1.yml \
   keycloaks.k8s.keycloak.org-v1.yml \
