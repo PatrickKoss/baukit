@@ -1,5 +1,6 @@
 import type { paths } from './schema.js';
 import type { BearerTokenProvider } from '../auth.js';
+import { PRODUCT_NAME } from '../product.js';
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 
@@ -65,7 +66,7 @@ export class ApiClient {
         headers: {
           accept: 'application/json',
           authorization: `Bearer ${token}`,
-          'user-agent': '{{ context.app_name }}-mcp/0.1.0',
+          'user-agent': `${PRODUCT_NAME}-mcp/0.1.0`,
         },
       });
     } catch {

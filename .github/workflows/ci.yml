@@ -225,36 +225,42 @@ jobs:
       matrix:
         include:
           - flavor: backend
+            product_name: fixture
             flags: --backend
             backend: true
             mobile: false
             web: false
             mcp: false
           - flavor: web
+            product_name: fixture
             flags: --web
             backend: false
             mobile: false
             web: true
             mcp: false
           - flavor: mobile
+            product_name: fixture
             flags: --mobile
             backend: false
             mobile: true
             web: false
             mcp: false
           - flavor: combined
+            product_name: fixture
             flags: --backend --mobile --web
             backend: true
             mobile: true
             web: true
             mcp: false
           - flavor: mcp
+            product_name: fixture
             flags: --backend --mcp
             backend: true
             mobile: false
             web: false
             mcp: true
           - flavor: auth
+            product_name: long-product-name-fixture
             flags: --backend --mobile --web --auth oidc --mcp
             backend: true
             mobile: true
@@ -302,26 +308,26 @@ jobs:
       - name: Build CLI and generate local-path fixture
         run: |
           cargo build --manifest-path cli/Cargo.toml --bin baukit
-          cli/target/debug/baukit new fixture ${{ matrix.flags }} --dir .generated-fixture --baukit-path rust
+          cli/target/debug/baukit new ${{ matrix.product_name }} ${{ matrix.flags }} --dir .generated-fixture --baukit-path rust
       - uses: Swatinem/rust-cache@v2
         if: matrix.backend
         with:
-          workspaces: .generated-fixture/fixture/backend -> target
+          workspaces: .generated-fixture/${{ matrix.product_name }}/backend -> target
           key: generated-fixture-${{ matrix.flavor }}-backend
       - name: Format generated backend
         if: matrix.backend
-        run: cargo fmt --manifest-path .generated-fixture/fixture/backend/Cargo.toml --all --check
+        run: cargo fmt --manifest-path .generated-fixture/${{ matrix.product_name }}/backend/Cargo.toml --all --check
       - name: Lint generated backend
         if: matrix.backend
-        run: cargo clippy --manifest-path .generated-fixture/fixture/backend/Cargo.toml --all-targets -- -D warnings
+        run: cargo clippy --manifest-path .generated-fixture/${{ matrix.product_name }}/backend/Cargo.toml --all-targets -- -D warnings
       - name: Test generated backend and OpenAPI drift
         if: matrix.backend
         run: |
-          cargo test --manifest-path .generated-fixture/fixture/backend/Cargo.toml
-          cargo test --manifest-path .generated-fixture/fixture/backend/Cargo.toml -p fixture-bin --test openapi_drift
+          cargo test --manifest-path .generated-fixture/${{ matrix.product_name }}/backend/Cargo.toml -- --include-ignored
+          cargo test --manifest-path .generated-fixture/${{ matrix.product_name }}/backend/Cargo.toml -p ${{ matrix.product_name }}-bin --test openapi_drift
       - name: Install and verify generated web app
         if: matrix.web
-        working-directory: .generated-fixture/fixture/web
+        working-directory: .generated-fixture/${{ matrix.product_name }}/web
         run: |
           pnpm install --frozen-lockfile
           pnpm build
@@ -331,7 +337,7 @@ jobs:
       # Keep the fast source layer here; the path-filtered Android gate below compiles a clean fixture.
       - name: Install and verify generated mobile app without a native build
         if: matrix.mobile
-        working-directory: .generated-fixture/fixture/mobile
+        working-directory: .generated-fixture/${{ matrix.product_name }}/mobile
         run: |
           pnpm install --frozen-lockfile
           pnpm exec tsc --noEmit
@@ -339,7 +345,7 @@ jobs:
           pnpm run test:coverage
       - name: Install and verify generated MCP package
         if: matrix.mcp
-        working-directory: .generated-fixture/fixture/mcp
+        working-directory: .generated-fixture/${{ matrix.product_name }}/mcp
         run: |
           pnpm install --frozen-lockfile
           pnpm build

@@ -1,6 +1,7 @@
 use std::{future::Future, pin::Pin};
 
-{% if context.auth_oidc %}use {{ context.app_crate }}_domain::{InternalUser, Item};
+{% if context.auth_oidc %}use {{ context.app_crate }}_domain::InternalUser;
+use {{ context.app_crate }}_domain::Item;
 {% else %}use {{ context.app_crate }}_domain::Item;
 {% endif %}
 use thiserror::Error;

@@ -21,7 +21,9 @@ import type { Item } from './api';
 import { loadAnalytics } from './analytics';
 import { createProductPersistenceLifecycle } from './persistence-lifecycle';
 
-const REGISTRY_KEY = '{{ context.app_name }}:local-data-registry:v1';
+import { PRODUCT_NAME } from './product.js';
+
+const REGISTRY_KEY = `${PRODUCT_NAME}:local-data-registry:v1`;
 
 class SecureStoreRegistry implements ScopedPersistenceRegistryStore {
   public read(): Promise<string | null> {

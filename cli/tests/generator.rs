@@ -129,8 +129,8 @@ fn worker_generation_matches_golden_tree_and_records_capability() -> anyhow::Res
 }
 
 #[test]
-fn generated_backend_is_rustfmt_clean_across_product_name_sort_positions() -> anyhow::Result<()> {
-    for name in ["aaa", "zeta"] {
+fn generated_backend_is_rustfmt_clean_across_product_names() -> anyhow::Result<()> {
+    for name in ["aaa", "zeta", "solo-leveling-system-companion"] {
         let parent = tempfile::tempdir()?;
         let mut generated_options = options(parent.path(), name);
         generated_options.worker = true;
@@ -242,18 +242,26 @@ fn generated_browser_qa_configures_authenticated_and_unauthenticated_cases() -> 
     let authenticated = generate_new(&authenticated_options)?;
 
     let public_config = fs::read_to_string(unauthenticated.join("web/e2e/qa.config.ts"))?;
-    assert!(public_config.contains("heading: /^qa-public$/u"));
+    assert!(public_config.contains("heading: new RegExp(`^${PRODUCT_NAME}$`, 'u')"));
+    assert!(
+        fs::read_to_string(unauthenticated.join("web/src/product.ts"))?
+            .contains("PRODUCT_NAME = 'qa-public'")
+    );
     assert!(public_config.contains("fields: ["));
     assert!(public_config.contains("invalidField: 'Example name'"));
     assert!(public_config.contains("recoveryRole: 'button'"));
     assert!(public_config.contains("recoveryRole: 'link'"));
     assert!(public_config.contains("apiStubs: ITEM_API_STUBS"));
     assert!(!public_config.contains("authenticated: true"));
-    assert!(!public_config.contains("qa-public:oidc:tokens"));
+    assert!(!public_config.contains("${PRODUCT_NAME}:oidc:tokens"));
 
     let private_config = fs::read_to_string(authenticated.join("web/e2e/qa.config.ts"))?;
     assert!(private_config.contains("authenticated: true"));
-    assert!(private_config.contains("qa-private:oidc:tokens"));
+    assert!(private_config.contains("key: `${PRODUCT_NAME}:oidc:tokens`"));
+    assert!(
+        fs::read_to_string(authenticated.join("web/src/product.ts"))?
+            .contains("PRODUCT_NAME = 'qa-private'")
+    );
     assert!(private_config.contains("subject: 'qa-owner'"));
     assert!(private_config.contains("subject: 'qa-other'"));
 
@@ -647,7 +655,17 @@ fn combined_generation_applies_port_offset_to_host_ports() -> anyhow::Result<()>
         ("mobile/app.config.ts", "http://localhost:8180"),
         (
             "mobile/app.config.ts",
-            "http://localhost:8181/realms/offset-app",
+            "http://localhost:8181/realms/${PRODUCT_NAME}",
+        ),
+        ("mobile/src/product.js", "PRODUCT_NAME = 'offset-app'"),
+        (
+            "mobile/src/auth.ts",
+            "http://localhost:8181/realms/${PRODUCT_NAME}",
+        ),
+        ("web/src/product.ts", "PRODUCT_NAME = 'offset-app'"),
+        (
+            "web/src/auth.ts",
+            "http://localhost:8181/realms/${PRODUCT_NAME}",
         ),
         ("mobile/README.md", "http://localhost:8180"),
         ("web/.env.example", "VITE_API_URL=http://localhost:8180"),
@@ -1916,6 +1934,74 @@ fn mcp_generation_matches_golden_tree_and_records_personal_token_auth() -> anyho
             .iter()
             .any(|result| result.contains("MCP package files"))
     );
+    Ok(())
+}
+
+#[test]
+fn typescript_source_is_independent_of_product_name_length() -> anyhow::Result<()> {
+    let maximum_name = "a".repeat(64);
+    for authentication in [
+        McpAuthentication::PersonalToken,
+        McpAuthentication::NodeOidc,
+        McpAuthentication::CallerSupplied,
+    ] {
+        let parent = tempfile::tempdir()?;
+        let mut baseline = None;
+        for name in ["fixture", "solo-leveling-system-companion", &maximum_name] {
+            let mut generated = options(parent.path(), name);
+            generated.mcp = true;
+            generated.web = true;
+            generated.mobile = true;
+            generated.mcp_auth = Some(authentication);
+            generated.port_offset = 100;
+            if authentication == McpAuthentication::NodeOidc {
+                generated.auth = Some(AuthProvider::Oidc);
+            }
+            let root = generate_new(&generated)?;
+            let mut source = read_tree(&root)?;
+            source.retain(|path, _| {
+                ["mcp", "web", "mobile"]
+                    .iter()
+                    .any(|flavor| path.starts_with(flavor))
+                    && path
+                        .extension()
+                        .is_some_and(|ext| ext == "ts" || ext == "tsx" || ext == "js")
+            });
+            let product = source
+                .remove(Path::new("mcp/src/product.ts"))
+                .expect("MCP product constants must be generated");
+            let product = String::from_utf8(product)?;
+            assert!(product.contains(&format!("name: '{name}',")));
+            let prefix = name.replace('-', "_").to_ascii_uppercase();
+            assert!(product.contains(&format!("envPrefix: '{prefix}',")));
+            assert!(product.contains("keycloakPort: 8181,"));
+            for line in product.lines() {
+                assert!(
+                    line.len() <= 80,
+                    "product constant exceeds 80 columns: {line}"
+                );
+            }
+            for flavor in ["web", "mobile"] {
+                let extension = if flavor == "mobile" { "js" } else { "ts" };
+                let path = PathBuf::from(format!("{flavor}/src/product.{extension}"));
+                let product = source
+                    .remove(&path)
+                    .expect("frontend product constants must be generated");
+                let product = String::from_utf8(product)?;
+                assert_eq!(product, format!("export const PRODUCT_NAME = '{name}';\n"));
+                assert!(product.lines().all(|line| line.len() <= 100));
+            }
+            assert!(!source.is_empty());
+            if let Some(expected) = &baseline {
+                assert_eq!(
+                    &source, expected,
+                    "TypeScript source changed with product name {name} and auth {authentication:?}"
+                );
+            } else {
+                baseline = Some(source);
+            }
+        }
+    }
     Ok(())
 }
 

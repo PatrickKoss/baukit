@@ -11,6 +11,8 @@ import { useTheme, type AppTheme } from '../../src/theme';
 import { ThemeModeControl } from '../../src/theme-mode-control';
 import type { ConsentState } from '@baukit/analytics-core';
 
+import { PRODUCT_NAME } from '../../src/product.js';
+
 const routeHeadingFocusProps = Platform.OS === 'web' ? { tabIndex: -1 } : {};
 
 export default function TodayScreen() {
@@ -69,7 +71,7 @@ export default function TodayScreen() {
           style={styles.title}
           {...routeHeadingFocusProps}
         >
-          {{ context.app_name }}
+          {PRODUCT_NAME}
         </Text>
         <Text style={styles.subtitle}>Items from the shared backend API</Text>
 

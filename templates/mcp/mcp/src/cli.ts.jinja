@@ -8,9 +8,10 @@ import { pathToFileURL } from 'node:url';
 {% else %}
 import { personalTokenProvider } from './auth.js';
 {% endif %}
+import { ENV_PREFIX, PRODUCT_NAME } from './product.js';
 import { createServer } from './server.js';
 
-const HELP = `Usage: {{ context.app_name }}-mcp{% if context.mcp_auth_node_oidc %} [login|logout]{% endif %}
+const HELP = `Usage: ${PRODUCT_NAME}-mcp{% if context.mcp_auth_node_oidc %} [login|logout]{% endif %}
 
 Starts an MCP server over stdio. stdout is reserved for MCP protocol messages.
 `;
@@ -38,14 +39,15 @@ export async function main(
   }
 {% endif %}  if (command !== undefined) throw new Error(`Unknown command: ${command}`);
 
-  const configuredApiUrl = process.env['{{ context.app_env }}_API_URL']?.trim();
+  const configuredApiUrl = process.env[`${ENV_PREFIX}_API_URL`]?.trim();
   const defaultApiUrl = 'http://localhost:{{ context.api_host_port }}';
   const apiUrl = parseApiOrigin(configuredApiUrl || defaultApiUrl, {
     allowLoopbackHttp: process.env['NODE_ENV'] !== 'production',
-    label: '{{ context.app_env }}_API_URL',
+    label: `${ENV_PREFIX}_API_URL`,
   });
 {% if context.mcp_auth_node_oidc %}  const bearerToken = oidc.bearerToken;
-{% elif context.mcp_auth_caller_supplied %}  const providerModule = process.env['{{ context.app_env }}_MCP_BEARER_PROVIDER']?.trim();
+{% elif context.mcp_auth_caller_supplied %}  const providerModule =
+    process.env[`${ENV_PREFIX}_MCP_BEARER_PROVIDER`]?.trim();
   if (!providerModule) throw new Error('Bearer provider module is required.');
   const bearerToken = callerSuppliedProvider(providerModule);
 {% else %}

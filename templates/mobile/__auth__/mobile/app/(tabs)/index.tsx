@@ -18,6 +18,7 @@ import { signOutWithPreferenceReset } from '../../src/preference-sign-out';
 import { useTheme, type AppTheme } from '../../src/theme';
 import { ThemeModeControl } from '../../src/theme-mode-control';
 import type { ConsentState } from '@baukit/analytics-core';
+import { PRODUCT_NAME } from '../../src/product.js';
 
 export default function TodayScreen() {
   const { t } = useTranslation(['bootstrap', 'home']);
@@ -115,7 +116,7 @@ export default function TodayScreen() {
     <View style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.page}>
         <Text style={styles.eyebrow}>BAUKIT MOBILE</Text>
-        <Text style={styles.title}>{{ context.app_name }}</Text>
+        <Text style={styles.title}>{PRODUCT_NAME}</Text>
         <Text style={styles.subtitle}>Standard OIDC discovery + authorization code PKCE</Text>
 
         <View style={styles.card}>

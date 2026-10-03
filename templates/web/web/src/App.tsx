@@ -11,6 +11,8 @@ import { backOrReplace, browserNavigation } from './back-or-replace';
 import { deriveDetailRouteState } from './route-state';
 import { DetailRouteStateView } from './route-state-view';
 
+import { PRODUCT_NAME } from './product';
+
 const ITEM_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -48,7 +50,7 @@ export function App() {
       />
       <main className="shell">
         <p className="eyebrow">BAUKIT WEB</p>
-        <h1>{{ context.app_name }}</h1>
+        <h1>{PRODUCT_NAME}</h1>
         <p className="lede">A small Vite app reading the shared backend through TanStack Query.</p>
 
         {detailId === null ? null : (

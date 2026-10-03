@@ -3,12 +3,17 @@
 {% endif %}use sqlx::PgPool;
 use uuid::Uuid;
 
-{% if context.auth_oidc %}use {{ context.app_crate }}_domain::{InternalUser, Item};
+{% if context.auth_oidc %}use {{ context.app_crate }}_domain::InternalUser;
+use {{ context.app_crate }}_domain::Item;
 {% else %}use {{ context.app_crate }}_domain::Item;
 {% endif %}
-{% if context.worker %}use {{ context.app_crate }}_domain::{ITEM_CREATED_JOB_TYPE, ItemCreatedJob};
-{% endif %}use {{ context.app_crate }}_ports::{ItemRepository, PortFuture, RepositoryError{% if context.auth_oidc %}, UserRepository{% endif %}};
-
+{% if context.worker %}use {{ context.app_crate }}_domain::ITEM_CREATED_JOB_TYPE;
+use {{ context.app_crate }}_domain::ItemCreatedJob;
+{% endif %}use {{ context.app_crate }}_ports::ItemRepository;
+use {{ context.app_crate }}_ports::PortFuture;
+use {{ context.app_crate }}_ports::RepositoryError;
+{% if context.auth_oidc %}use {{ context.app_crate }}_ports::UserRepository;
+{% endif %}
 #[derive(Clone)]
 pub struct PostgresItemRepository {
     pool: PgPool,

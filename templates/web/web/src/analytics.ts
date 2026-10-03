@@ -1,6 +1,8 @@
 import { AnalyticsClient, NoopTransport } from '@baukit/analytics-core';
 import type { AnalyticsStorage, EventAllowlist } from '@baukit/analytics-core';
 
+import { PRODUCT_NAME } from './product';
+
 export interface ProductEvent {
   readonly name: 'items_viewed';
   readonly properties: { readonly count: number };
@@ -37,7 +39,7 @@ const storage: AnalyticsStorage = {
 export const analytics = new AnalyticsClient<ProductEvent>({
   context: {
     schema_version: 1,
-    app: '{{ context.app_name }}',
+    app: PRODUCT_NAME,
     app_version: '0.1.0',
     platform: 'web',
     environment: import.meta.env.MODE,

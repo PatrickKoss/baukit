@@ -23,7 +23,7 @@ export default defineConfig(
     rules: reactNativeA11y.configs.all.rules,
   },
   {
-    files: ['**/*.{ts,tsx}'],
+    files: ['**/*.{ts,tsx,js}'],
     plugins: { '@baukit/ui-tokens': uiTokens },
     rules: {
       '@baukit/ui-tokens/no-raw-color': [

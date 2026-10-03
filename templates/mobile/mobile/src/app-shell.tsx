@@ -24,6 +24,7 @@ import {
 import { initializeI18n } from './localization/i18n';
 import { createAppPreferenceRecordStore } from './record-store';
 import { AppThemeProvider, lightTheme } from './theme';
+import { PRODUCT_NAME } from './product.js';
 
 const DEVICE_PREFERENCE_SUBJECT = 'device';
 
@@ -64,7 +65,7 @@ export function AppShell({ children, preferenceSubjectId }: AppShellProps) {
     let active = true;
     let database: SQLite.SQLiteDatabase | undefined;
     const openRecordStore = SQLite.openDatabaseAsync(
-      '{{ context.app_name }}-preferences.db',
+      `${PRODUCT_NAME}-preferences.db`,
     )
       .then(async (opened) => {
         database = opened;

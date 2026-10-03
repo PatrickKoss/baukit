@@ -9,12 +9,14 @@ import { eraseProductProfile } from '@baukit/data-contracts';
 
 import { authClient } from './auth';
 
+import { PRODUCT_NAME } from './product';
+
 async function storageKey(slot: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(slot));
   const hex = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join(
     '',
   );
-  return '{{ context.app_name }}:profile-erasure:v1:' + hex;
+  return `${PRODUCT_NAME}:profile-erasure:v1:` + hex;
 }
 
 function parseStoredKey(serialized: string | null): StoredIdempotencyKey | null {

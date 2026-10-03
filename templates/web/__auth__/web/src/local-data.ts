@@ -8,8 +8,9 @@ import {
 
 import { analytics } from './analytics';
 import { createProductPersistenceLifecycle } from './persistence-lifecycle';
+import { PRODUCT_NAME } from './product';
 
-const REGISTRY_KEY = '{{ context.app_name }}:local-data-registry:v1';
+const REGISTRY_KEY = `${PRODUCT_NAME}:local-data-registry:v1`;
 
 interface CachePartition {
   close(): Promise<void>;

@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { ENV_PREFIX, PRODUCT_NAME } from '../src/product.js';
+
 const packageRoot = fileURLToPath(new URL('..', import.meta.url));
 const temporaryDirectories: string[] = [];
 
@@ -29,8 +31,8 @@ describe('stdio bootstrap', () => {
       cwd: packageRoot,
       env: {
         ...process.env,
-        ['{{ context.app_env }}_API_TOKEN']: secret,
-{% if context.mcp_auth_caller_supplied %}        ['{{ context.app_env }}_MCP_BEARER_PROVIDER']: providerModule,
+        [`${ENV_PREFIX}_API_TOKEN`]: secret,
+{% if context.mcp_auth_caller_supplied %}        [`${ENV_PREFIX}_MCP_BEARER_PROVIDER`]: providerModule,
 {% endif %}      },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -88,7 +90,7 @@ describe('stdio bootstrap', () => {
       child.once('exit', resolve),
     );
     expect(exitCode).toBe(0);
-    expect(stdout).toContain('Usage: {{ context.app_name }}-mcp');
+    expect(stdout).toContain(`Usage: ${PRODUCT_NAME}-mcp`);
     expect(stdout).toContain('stdout is reserved for MCP protocol messages');
   });
 });
@@ -99,9 +101,9 @@ describe('API URL', () => {
       cwd: packageRoot,
       env: {
         ...process.env,
-        ['{{ context.app_env }}_API_URL']: 'https://user:private@api.example.test/v1',
-        ['{{ context.app_env }}_API_TOKEN']: 'stdio-private-token',
-{% if context.mcp_auth_caller_supplied %}        ['{{ context.app_env }}_MCP_BEARER_PROVIDER']: 'unused-provider.mjs',
+        [`${ENV_PREFIX}_API_URL`]: 'https://user:private@api.example.test/v1',
+        [`${ENV_PREFIX}_API_TOKEN`]: 'stdio-private-token',
+{% if context.mcp_auth_caller_supplied %}        [`${ENV_PREFIX}_MCP_BEARER_PROVIDER`]: 'unused-provider.mjs',
 {% endif %}      },
       stdio: ['ignore', 'pipe', 'pipe'],
     });

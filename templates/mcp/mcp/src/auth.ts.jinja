@@ -1,12 +1,15 @@
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+{% if context.mcp_auth_node_oidc %}import { ENV_PREFIX, KEYCLOAK_PORT, PRODUCT_NAME } from './product.js';
+{% else %}import { ENV_PREFIX } from './product.js';
+{% endif %}
 export type BearerTokenProvider = () => string | Promise<string>;
 
 export function personalTokenProvider(
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): BearerTokenProvider {
-  return () => environment['{{ context.app_env }}_API_TOKEN']?.trim() ?? '';
+  return () => environment[`${ENV_PREFIX}_API_TOKEN`]?.trim() ?? '';
 }
 
 export function callerSuppliedProvider(
@@ -46,17 +49,19 @@ export function nodeOidcProvider(options: NodeOidcProviderOptions = {}): {
   const client = new DeviceFlowClient(
     {
       issuer:
-        environment['{{ context.app_env }}_OIDC_ISSUER']?.trim() ??
-        'http://localhost:{{ context.keycloak_host_port }}/realms/{{ context.app_name }}',
-      clientId: environment['{{ context.app_env }}_OIDC_CLIENT_ID']?.trim() ?? '{{ context.app_name }}-mcp',
+        environment[`${ENV_PREFIX}_OIDC_ISSUER`]?.trim() ??
+        `http://localhost:${KEYCLOAK_PORT}/realms/${PRODUCT_NAME}`,
+      clientId:
+        environment[`${ENV_PREFIX}_OIDC_CLIENT_ID`]?.trim() ??
+        `${PRODUCT_NAME}-mcp`,
       scopes: ['openid', 'profile', 'offline_access'],
-      cache: { namespace: '{{ context.app_name }}-mcp' },
+      cache: { namespace: `${PRODUCT_NAME}-mcp` },
       endpointPolicy: {
         allowLoopbackHttp: environment['NODE_ENV'] !== 'production',
       },
     },
     {
-      environmentToken: () => environment['{{ context.app_env }}_API_TOKEN'],
+      environmentToken: () => environment[`${ENV_PREFIX}_API_TOKEN`],
     },
   );
   return {

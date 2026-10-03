@@ -84,16 +84,19 @@ CI scaffolds a product with the CLI and verifies the output builds clean. If
 you changed `cli/`, `templates/`, or a public API that generated code consumes:
 
 ```bash
+export CI=true CARGO_BUILD_JOBS=6 VITEST_MAX_WORKERS=4
+fixture_name=long-product-name-fixture
 cargo build --manifest-path cli/Cargo.toml --bin baukit
-cli/target/debug/baukit new fixture --backend --mobile --web --dir .generated-fixture --baukit-path rust
-cargo fmt   --manifest-path .generated-fixture/fixture/backend/Cargo.toml --all --check
-cargo clippy --manifest-path .generated-fixture/fixture/backend/Cargo.toml --all-targets -- -D warnings
-cargo test  --manifest-path .generated-fixture/fixture/backend/Cargo.toml
-cargo test  --manifest-path .generated-fixture/fixture/backend/Cargo.toml -p fixture-bin --test openapi_drift
-# web:    cd .generated-fixture/fixture/web    && pnpm install && pnpm build && pnpm lint && pnpm test && pnpm run test:coverage
-# mobile: cd .generated-fixture/fixture/mobile && pnpm install && pnpm exec tsc --noEmit && pnpm lint && pnpm run test:coverage
-# MCP:    `make mcp-fixture-gate` generates `--backend --mcp`, checks the backend,
-#         then builds, lints, typechecks, tests, and runs both MCP drift checks.
+cli/target/debug/baukit new "$fixture_name" --backend --mobile --web --mcp --auth oidc --dir .generated-fixture --baukit-path rust
+cargo fmt --manifest-path ".generated-fixture/$fixture_name/backend/Cargo.toml" --all --check
+cargo clippy --manifest-path ".generated-fixture/$fixture_name/backend/Cargo.toml" --all-targets -- -D warnings
+cargo test --manifest-path ".generated-fixture/$fixture_name/backend/Cargo.toml" -- --include-ignored
+cargo test --manifest-path ".generated-fixture/$fixture_name/backend/Cargo.toml" -p "$fixture_name-bin" --test openapi_drift
+# web:    cd ".generated-fixture/$fixture_name/web" && corepack pnpm install && corepack pnpm build && corepack pnpm lint && corepack pnpm test && corepack pnpm run test:coverage
+# mobile: cd ".generated-fixture/$fixture_name/mobile" && corepack pnpm install && corepack pnpm exec tsc --noEmit && corepack pnpm lint && corepack pnpm run test:coverage
+# MCP:    `make mcp-fixture-gate` uses `long-product-name-fixture --backend --mcp`,
+#         checks the backend, then builds, lints, typechecks, tests,
+#         and runs both MCP drift checks.
 ```
 
 (For web/mobile flavors, first build the local TS deps:

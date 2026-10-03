@@ -1,13 +1,15 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
 
+import { PRODUCT_NAME } from './src/product.js';
+
 const configuredApiUrl: unknown = process.env['EXPO_PUBLIC_API_URL'];
 const isQaBuild = process.env['BAUKIT_QA_BUILD'] === '1';
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
-  name: '{{ context.app_name }}',
-  slug: '{{ context.app_name }}',
-  scheme: '{{ context.app_name }}',
+  name: PRODUCT_NAME,
+  slug: PRODUCT_NAME,
+  scheme: PRODUCT_NAME,
   version: '0.1.0',
   orientation: 'portrait',
   userInterfaceStyle: 'automatic',
@@ -22,10 +24,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         : 'http://localhost:{{ context.api_host_port }}',
   },
   ios: {
-    bundleIdentifier: 'dev.baukit.{{ context.app_name }}',
+    bundleIdentifier: `dev.baukit.${PRODUCT_NAME}`,
     supportsTablet: true,
   },
   android: {
-    package: 'dev.baukit.{{ context.app_crate }}',
+    package: `dev.baukit.${PRODUCT_NAME.replaceAll('-', '_')}`,
   },
 });

@@ -22,6 +22,8 @@ import { completeExpoAuthSession, createExpoOidcClient } from '@baukit/auth-nati
 import type { ThemePreference } from './app-preferences';
 import { signInFeedback } from './auth-feedback';
 
+import { PRODUCT_NAME } from './product.js';
+
 completeExpoAuthSession();
 
 const configuredIssuer: unknown = Constants.expoConfig?.extra?.['oidcIssuer'];
@@ -29,11 +31,11 @@ const configuredClientId: unknown = Constants.expoConfig?.extra?.['oidcClientId'
 const issuer =
   typeof configuredIssuer === 'string'
     ? configuredIssuer
-    : 'http://localhost:{{ context.keycloak_host_port }}/realms/{{ context.app_name }}';
+    : `http://localhost:{{ context.keycloak_host_port }}/realms/${PRODUCT_NAME}`;
 const clientId =
-  typeof configuredClientId === 'string' ? configuredClientId : '{{ context.app_name }}-mobile';
+  typeof configuredClientId === 'string' ? configuredClientId : `${PRODUCT_NAME}-mobile`;
 const redirectUri = AuthSession.makeRedirectUri({
-  scheme: '{{ context.app_name }}',
+  scheme: PRODUCT_NAME,
   path: 'oauth',
 });
 
@@ -44,7 +46,7 @@ export const authClient = createExpoOidcClient(
     redirectUri,
     scopes: ['openid', 'profile', 'email'],
     offlineAccess: true,
-    storageKeyPrefix: '{{ context.app_name }}:oidc',
+    storageKeyPrefix: `${PRODUCT_NAME}:oidc`,
   },
   { randomBytes: (size) => Crypto.getRandomBytesAsync(size) },
 );

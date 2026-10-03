@@ -14,9 +14,11 @@ import { eraseProductProfile } from '@baukit/data-contracts';
 import { authClient } from './auth';
 import { createAppPreferenceRecordStore } from './record-store';
 
+import { PRODUCT_NAME } from './product.js';
+
 async function storageKey(slot: string): Promise<string> {
   const digest = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, slot);
-  return '{{ context.app_name }}.profile-erasure.v1.' + digest;
+  return `${PRODUCT_NAME}.profile-erasure.v1.` + digest;
 }
 
 function parseStoredKey(serialized: string | null): StoredIdempotencyKey | null {
@@ -65,7 +67,7 @@ export async function createDeleteProfileClient(subject: string): Promise<Profil
 }
 
 async function erasePreferences(subject: string): Promise<void> {
-  const database = await SQLite.openDatabaseAsync('{{ context.app_name }}-preferences.db');
+  const database = await SQLite.openDatabaseAsync(`${PRODUCT_NAME}-preferences.db`);
   try {
     const records = await createAppPreferenceRecordStore(database);
     await records.delete(subject);

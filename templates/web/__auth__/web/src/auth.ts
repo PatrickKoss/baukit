@@ -1,6 +1,8 @@
 import { OidcClient } from '@baukit/auth-web';
 import type { SessionExpiredEvent } from '@baukit/auth-web';
 
+import { PRODUCT_NAME } from './product';
+
 const configuredIssuer: unknown = import.meta.env['VITE_OIDC_ISSUER'];
 const configuredClientId: unknown = import.meta.env['VITE_OIDC_CLIENT_ID'];
 
@@ -11,13 +13,12 @@ function client(): OidcClient {
     issuer:
       typeof configuredIssuer === 'string'
         ? configuredIssuer
-        : 'http://localhost:{{ context.keycloak_host_port }}/realms/{{ context.app_name }}',
-    clientId:
-      typeof configuredClientId === 'string' ? configuredClientId : '{{ context.app_name }}-web',
+        : `http://localhost:{{ context.keycloak_host_port }}/realms/${PRODUCT_NAME}`,
+    clientId: typeof configuredClientId === 'string' ? configuredClientId : `${PRODUCT_NAME}-web`,
     redirectUri: `${window.location.origin}/`,
     scopes: ['openid', 'profile', 'email'],
     offlineAccess: true,
-    storageKeyPrefix: '{{ context.app_name }}:oidc',
+    storageKeyPrefix: `${PRODUCT_NAME}:oidc`,
   });
   return oidcClient;
 }

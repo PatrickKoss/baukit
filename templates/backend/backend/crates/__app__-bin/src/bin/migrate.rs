@@ -5,10 +5,11 @@ use baukit_config::{BaukitConfig, ConfigLoader, Environment};
 use {{ context.app_crate }}_bin::ProductConfig;
 
 const PRODUCT: &str = "{{ context.app_name }}";
+const ENV_PREFIX: &str = "{{ context.app_env }}";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let environment = env::var("{{ context.app_env }}_ENVIRONMENT")
+    let environment = env::var(format!("{ENV_PREFIX}_ENVIRONMENT"))
         .ok()
         .map(|value| value.parse())
         .transpose()?

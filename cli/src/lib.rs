@@ -222,6 +222,7 @@ const EXPECTED_MCP_FILES: &[&str] = &[
     "mcp/src/api/schema.d.ts",
     "mcp/src/auth.ts",
     "mcp/src/cli.ts",
+    "mcp/src/product.ts",
     "mcp/src/server.ts",
     "mcp/src/tool-routes.ts",
     "mcp/src/tools/registry.ts",

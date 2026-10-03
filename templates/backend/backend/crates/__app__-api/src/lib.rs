@@ -29,8 +29,10 @@ use uuid::Uuid;
 
 use {{ context.app_crate }}_domain::Item;
 use {{ context.app_crate }}_ports::RepositoryError;
-use {{ context.app_crate }}_services::{ItemService, ServiceError{% if context.auth_oidc %}, UserService{% endif %}};
-
+use {{ context.app_crate }}_services::ItemService;
+use {{ context.app_crate }}_services::ServiceError;
+{% if context.auth_oidc %}use {{ context.app_crate }}_services::UserService;
+{% endif %}
 #[derive(Clone)]
 pub struct ApiState {
     pub items: ItemService,

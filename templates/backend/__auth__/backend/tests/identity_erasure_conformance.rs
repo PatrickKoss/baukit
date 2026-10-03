@@ -20,11 +20,18 @@ use sqlx::PgPool;
 use tower::ServiceExt as _;
 use uuid::Uuid;
 
-use {{ context.app_crate }}_api::{ApiState, ErasureApi, router};
-use {{ context.app_crate }}_bin::{AuthConfig, identity_erasure};
+use {{ context.app_crate }}_api::ApiState;
+use {{ context.app_crate }}_api::ErasureApi;
+use {{ context.app_crate }}_api::router;
+use {{ context.app_crate }}_bin::AuthConfig;
+use {{ context.app_crate }}_bin::identity_erasure;
+use {{ context.app_crate }}_ports::RepositoryError;
+use {{ context.app_crate }}_postgres::PostgresItemRepository;
 use {{ context.app_crate }}_postgres::PostgresProfileErasure;
-use {{ context.app_crate }}_postgres::{PostgresItemRepository, PostgresUserRepository};
-use {{ context.app_crate }}_services::{ItemService, UserService};
+use {{ context.app_crate }}_postgres::PostgresUserRepository;
+use {{ context.app_crate }}_services::ItemService;
+use {{ context.app_crate }}_services::ServiceError;
+use {{ context.app_crate }}_services::UserService;
 
 const AUDIENCE: &str = "{{ context.app_name }}-backend";
 type TestError = Box<dyn Error + Send + Sync>;
@@ -284,9 +291,7 @@ async fn endpoint_identity_erasure_conforms() -> Result<(), TestError> {
     )));
     assert!(matches!(
         users.resolve_subject("erasure-subject").await,
-        Err({{ context.app_crate }}_services::ServiceError::Repository(
-            {{ context.app_crate }}_ports::RepositoryError::ProfileErased
-        ))
+        Err(ServiceError::Repository(RepositoryError::ProfileErased))
     ));
     adapter.pool.close().await;
     Ok(())

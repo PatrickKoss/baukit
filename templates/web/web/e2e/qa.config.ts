@@ -1,5 +1,7 @@
 import type { Page } from '@playwright/test';
 
+import { PRODUCT_NAME } from '../src/product';
+
 /**
  * Product-owned input for the shared `qa-*` specs. Each spec iterates over this
  * file and nothing else, so a product changes its browser quality gate by
@@ -176,7 +178,7 @@ export const qaConfig: QaConfig = {
     {
       name: 'home',
       path: '/',
-      heading: /^{{ context.app_name }}$/u,
+      heading: new RegExp(`^${PRODUCT_NAME}$`, 'u'),
       focusRingControl: 'Deny analytics',
       focusRingRole: 'button',
       screenSelector: '.shell',
@@ -296,7 +298,7 @@ export const qaConfig: QaConfig = {
 {% if context.auth_oidc %}  authentication: {
     localStorage: [
       {
-        key: '{{ context.app_name }}:oidc:tokens',
+        key: `${PRODUCT_NAME}:oidc:tokens`,
         value: JSON.stringify({
           accessToken: 'qa-access-token',
           expiresAt: Date.now() + 60 * 60 * 1000,

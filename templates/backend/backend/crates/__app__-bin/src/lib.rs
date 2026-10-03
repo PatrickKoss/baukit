@@ -11,9 +11,14 @@ use baukit_config::{Validate{% if context.auth_oidc or context.worker %}, Valida
     ServiceIdentity, TrafficGate,
 };
 
-{% if context.auth_oidc %}use {{ context.app_crate }}_domain::{InternalUser, Item};
+{% if context.auth_oidc %}use {{ context.app_crate }}_domain::InternalUser;
+use {{ context.app_crate }}_domain::Item;
 {% else %}use {{ context.app_crate }}_domain::Item;
-{% endif %}use {{ context.app_crate }}_ports::{ItemRepository, PortFuture, RepositoryError{% if context.auth_oidc %}, UserRepository{% endif %}};
+{% endif %}use {{ context.app_crate }}_ports::ItemRepository;
+use {{ context.app_crate }}_ports::PortFuture;
+use {{ context.app_crate }}_ports::RepositoryError;
+{% if context.auth_oidc %}use {{ context.app_crate }}_ports::UserRepository;
+{% endif %}
 use {{ context.app_crate }}_services::ItemService;
 
 use serde::Deserialize;

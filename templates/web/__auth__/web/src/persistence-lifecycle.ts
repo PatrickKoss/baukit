@@ -3,6 +3,7 @@ import {
   type ClosableScopedPersistence,
   type ScopedPersistenceLifecycleOptions,
 } from '@baukit/data-contracts';
+import { PRODUCT_NAME } from './product';
 
 export type ProductPersistenceLifecycleOptions<
   TPersistence extends ClosableScopedPersistence,
@@ -16,6 +17,6 @@ export function createProductPersistenceLifecycle<
 ): ScopedPersistenceLifecycle<TPersistence> {
   return new ScopedPersistenceLifecycle({
     ...options,
-    namespace: '{{ context.app_name }}',
+    namespace: PRODUCT_NAME,
   });
 }

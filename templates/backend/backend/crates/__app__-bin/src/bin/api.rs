@@ -15,24 +15,36 @@ use baukit_telemetry::{TelemetryBuilder, tracing};
 use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
 
-{% if context.auth_oidc %}use {{ context.app_crate }}_api::{ApiState, ErasureApi, finalize_api, routes};
-use {{ context.app_crate }}_bin::{ProductConfig, identity_erasure, operations_router};
+{% if context.auth_oidc %}use {{ context.app_crate }}_api::ApiState;
+use {{ context.app_crate }}_api::ErasureApi;
+use {{ context.app_crate }}_api::finalize_api;
+use {{ context.app_crate }}_api::routes;
+use {{ context.app_crate }}_bin::ProductConfig;
+use {{ context.app_crate }}_bin::identity_erasure;
+use {{ context.app_crate }}_bin::operations_router;
+use {{ context.app_crate }}_postgres::PostgresItemRepository;
 use {{ context.app_crate }}_postgres::PostgresProfileErasure;
-use {{ context.app_crate }}_postgres::{PostgresItemRepository, PostgresUserRepository};
-use {{ context.app_crate }}_services::{ItemService, UserService};
-{% else %}use {{ context.app_crate }}_api::{ApiState, finalize_api, routes};
-use {{ context.app_crate }}_bin::{InMemoryItemRepository, ProductConfig, operations_router};
+use {{ context.app_crate }}_postgres::PostgresUserRepository;
+use {{ context.app_crate }}_services::ItemService;
+use {{ context.app_crate }}_services::UserService;
+{% else %}use {{ context.app_crate }}_api::ApiState;
+use {{ context.app_crate }}_api::finalize_api;
+use {{ context.app_crate }}_api::routes;
+use {{ context.app_crate }}_bin::InMemoryItemRepository;
+use {{ context.app_crate }}_bin::ProductConfig;
+use {{ context.app_crate }}_bin::operations_router;
 use {{ context.app_crate }}_ports::ItemRepository;
 use {{ context.app_crate }}_postgres::PostgresItemRepository;
 use {{ context.app_crate }}_services::ItemService;
 {% endif %}
 const PRODUCT: &str = "{{ context.app_name }}";
+const ENV_PREFIX: &str = "{{ context.app_env }}";
 {% if context.auth_oidc %}const ITEM_WRITE_GROUP: &str = "item_writes";
 const ITEM_WRITE_REQUESTS_PER_MINUTE: u64 = 30;
 {% endif %}
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let environment = env::var("{{ context.app_env }}_ENVIRONMENT")
+    let environment = env::var(format!("{ENV_PREFIX}_ENVIRONMENT"))
         .ok()
         .map(|value| value.parse())
         .transpose()?

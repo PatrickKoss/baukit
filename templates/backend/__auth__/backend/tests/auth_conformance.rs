@@ -14,9 +14,14 @@ use baukit_ratelimit::{InMemoryRateLimitStore, Quota, RateLimitOptions};
 use serde_json::Value;
 use tower::ServiceExt as _;
 
-use {{ context.app_crate }}_api::{ApiState, finalize_api, router, routes};
-use {{ context.app_crate }}_bin::{InMemoryItemRepository, InMemoryUserRepository};
-use {{ context.app_crate }}_services::{ItemService, UserService};
+use {{ context.app_crate }}_api::ApiState;
+use {{ context.app_crate }}_api::finalize_api;
+use {{ context.app_crate }}_api::router;
+use {{ context.app_crate }}_api::routes;
+use {{ context.app_crate }}_bin::InMemoryItemRepository;
+use {{ context.app_crate }}_bin::InMemoryUserRepository;
+use {{ context.app_crate }}_services::ItemService;
+use {{ context.app_crate }}_services::UserService;
 
 const AUDIENCE: &str = "{{ context.app_name }}-backend";
 const WEB_ORIGIN: &str = "https://app.example.com";

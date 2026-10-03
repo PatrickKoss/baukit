@@ -4,6 +4,8 @@ import { ActionButton } from '../../src/action-button';
 import { useOidcAuth } from '../../src/auth';
 import { useTheme, type AppTheme } from '../../src/theme';
 
+import { PRODUCT_NAME } from '../../src/product.js';
+
 export default function SignInScreen() {
   const auth = useOidcAuth();
   const { mode, theme } = useTheme();
@@ -12,7 +14,7 @@ export default function SignInScreen() {
     <View style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.page}>
         <Text style={styles.eyebrow}>BAUKIT MOBILE</Text>
-        <Text style={styles.title}>{{ context.app_name }}</Text>
+        <Text style={styles.title}>{PRODUCT_NAME}</Text>
         <Text style={styles.subtitle}>Standard OIDC discovery + authorization code PKCE</Text>
 
         <View style={styles.card}>

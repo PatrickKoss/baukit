@@ -1,9 +1,11 @@
 use std::{error::Error, path::PathBuf, sync::Arc};
 
-{% if context.auth_oidc %}use {{ context.app_crate }}_postgres::{PostgresItemRepository, PostgresUserRepository};
+{% if context.auth_oidc %}use {{ context.app_crate }}_postgres::PostgresItemRepository;
+use {{ context.app_crate }}_postgres::PostgresUserRepository;
 {% else %}use {{ context.app_crate }}_postgres::PostgresItemRepository;
 {% endif %}
-{% if context.auth_oidc %}use {{ context.app_crate }}_services::{ItemService, UserService};
+{% if context.auth_oidc %}use {{ context.app_crate }}_services::ItemService;
+use {{ context.app_crate }}_services::UserService;
 {% else %}use {{ context.app_crate }}_services::ItemService;
 {% endif %}
 #[tokio::test]

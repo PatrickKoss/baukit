@@ -20,6 +20,8 @@ import { useAuthenticatedLocalData } from './local-data';
 import { DeleteProfileRoute } from './delete-profile-route';
 import { deleteProfileCopy } from './delete-profile-copy';
 
+import { PRODUCT_NAME } from './product';
+
 const ITEM_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -164,7 +166,7 @@ export function App() {
       />
 {% endraw %}
       <p className="eyebrow">BAUKIT WEB</p>
-      <h1>{{ context.app_name }}</h1>
+      <h1>{PRODUCT_NAME}</h1>
       <p className="lede">A Vite app using Baukit OIDC discovery and authorization code + PKCE.</p>
 
       {deletingProfile ? <DeleteProfileRoute

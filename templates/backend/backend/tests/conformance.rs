@@ -15,12 +15,18 @@ use baukit_telemetry::TelemetryBuilder;
 use serde_json::Value;
 use tower::ServiceExt as _;
 
-use {{ context.app_crate }}_api::{ApiState, router};
-use {{ context.app_crate }}_bin::{InMemoryItemRepository{% if context.auth_oidc %}, InMemoryUserRepository{% endif %}, operations_router};
-{% if context.auth_oidc %}use {{ context.app_crate }}_services::{ItemService, UserService};
+use {{ context.app_crate }}_api::ApiState;
+use {{ context.app_crate }}_api::router;
+use {{ context.app_crate }}_bin::InMemoryItemRepository;
+{% if context.auth_oidc %}use {{ context.app_crate }}_bin::InMemoryUserRepository;
+{% endif %}use {{ context.app_crate }}_bin::operations_router;
+{% if context.auth_oidc %}use {{ context.app_crate }}_services::ItemService;
+use {{ context.app_crate }}_services::UserService;
 {% else %}use {{ context.app_crate }}_services::ItemService;
 {% endif %}
-#[tokio::test]
+{% if context.auth_oidc %}const AUDIENCE: &str = "{{ context.app_name }}-backend";
+
+{% endif %}#[tokio::test]
 {% if context.auth_oidc %}#[ignore = "requires Docker PostgreSQL"]
 {% endif %}async fn health_and_metrics_conform_to_baukit() -> Result<(), Box<dyn Error>> {
     let service_info = ServiceInfo::new(
@@ -34,8 +40,7 @@ use {{ context.app_crate }}_bin::{InMemoryItemRepository{% if context.auth_oidc 
         .init()?;
     let repository = Arc::new(InMemoryItemRepository::new());
     let items = ItemService::new(repository.clone());
-{% if context.auth_oidc %}    const AUDIENCE: &str = "{{ context.app_name }}-backend";
-    let fixture = erasure::erasure_fixture().await?;
+{% if context.auth_oidc %}    let fixture = erasure::erasure_fixture().await?;
     let users = UserService::new(Arc::new(InMemoryUserRepository::new()));
     let issuer = baukit_test::MockOidcServer::start().await?;
     let verifier = OidcVerifier::discover(OidcConfig::new(issuer.issuer(), AUDIENCE)?).await?;
@@ -74,8 +79,7 @@ use {{ context.app_crate }}_bin::{InMemoryItemRepository{% if context.auth_oidc 
 {% if context.auth_oidc %}#[ignore = "requires Docker PostgreSQL"]
 {% endif %}async fn json_rejections_keep_their_protocol_statuses() -> Result<(), Box<dyn Error>> {
     let repository = Arc::new(InMemoryItemRepository::new());
-{% if context.auth_oidc %}    const AUDIENCE: &str = "{{ context.app_name }}-backend";
-    let fixture = erasure::erasure_fixture().await?;
+{% if context.auth_oidc %}    let fixture = erasure::erasure_fixture().await?;
     let users = UserService::new(Arc::new(InMemoryUserRepository::new()));
     let issuer = baukit_test::MockOidcServer::start().await?;
     let verifier = OidcVerifier::discover(OidcConfig::new(issuer.issuer(), AUDIENCE)?).await?;
