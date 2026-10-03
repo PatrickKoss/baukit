@@ -1325,6 +1325,7 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
             manifest.template_version, TEMPLATE_VERSION
         ));
     }
+    validate_product_constants(root, &manifest, &mut successes, &mut failures)?;
     validate_port_configuration(root, &manifest, &mut successes, &mut failures)?;
     if manifest.capabilities.backend {
         validate_openapi_paths(root, &manifest.openapi, &mut successes, &mut failures);
@@ -1574,6 +1575,107 @@ fn validate_keycloak_realm_tools(
     }
 }
 
+fn source_constant<'a>(source: &'a str, name: &str) -> Option<&'a str> {
+    source.split("const ").skip(1).find_map(|statement| {
+        let (binding, initializer) = statement.split_once('=')?;
+        let binding = binding.split(':').next()?.trim();
+        if binding != name {
+            return None;
+        }
+        Some(initializer.split_once(';')?.0.trim())
+    })
+}
+
+fn quoted_string(value: &str) -> Option<&str> {
+    ['\'', '"']
+        .into_iter()
+        .find_map(|quote| value.strip_prefix(quote)?.strip_suffix(quote))
+}
+
+fn validate_product_constants(
+    root: &Path,
+    manifest: &Manifest,
+    successes: &mut Vec<String>,
+    failures: &mut Vec<String>,
+) -> Result<()> {
+    let initial_failure_count = failures.len();
+    let env_prefix = manifest.app.name.replace('-', "_").to_ascii_uppercase();
+    for (relative, enabled, product_constant) in [
+        (
+            "mobile/src/product.ts",
+            manifest.capabilities.mobile,
+            "PRODUCT_NAME",
+        ),
+        (
+            "web/src/product.ts",
+            manifest.capabilities.web,
+            "PRODUCT_NAME",
+        ),
+        (
+            "mcp/src/product.ts",
+            manifest.capabilities.mcp.is_some(),
+            "PRODUCT_NAME",
+        ),
+        (
+            "backend/crates/PLACEHOLDER-bin/src/lib.rs",
+            manifest.capabilities.backend && manifest.capabilities.auth == Some(AuthProvider::Oidc),
+            "PRODUCT",
+        ),
+    ] {
+        if !enabled {
+            continue;
+        }
+        let relative = relative.replace("PLACEHOLDER", &manifest.app.name);
+        let path = root.join(&relative);
+        if !path.is_file() {
+            failures.push(format!(
+                "missing expected product constants file `{relative}`"
+            ));
+            continue;
+        }
+        let source = fs::read_to_string(path)?;
+        let mut expected = vec![(product_constant, manifest.app.name.as_str())];
+        if relative == "mcp/src/product.ts" {
+            expected.push(("ENV_PREFIX", env_prefix.as_str()));
+        }
+        for (name, value) in expected {
+            if source_constant(&source, name).and_then(quoted_string) != Some(value) {
+                failures.push(format!(
+                    "generated file `{relative}` {name} does not match application name `{}`",
+                    manifest.app.name
+                ));
+            }
+        }
+    }
+    if failures.len() == initial_failure_count {
+        successes.push("generated product constants match the manifest".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_mcp_keycloak_port(
+    root: &Path,
+    manifest: &Manifest,
+    expected_port: u16,
+    failures: &mut Vec<String>,
+) -> Result<()> {
+    let relative = "mcp/src/product.ts";
+    let path = root.join(relative);
+    if !path.is_file() {
+        return Ok(());
+    }
+    let source = fs::read_to_string(path)?;
+    let port =
+        source_constant(&source, "KEYCLOAK_PORT").and_then(|value| value.parse::<u16>().ok());
+    if port != Some(expected_port) {
+        failures.push(format!(
+            "generated file `{relative}` KEYCLOAK_PORT does not use port offset {}",
+            manifest.port_offset
+        ));
+    }
+    Ok(())
+}
+
 fn validate_port_configuration(
     root: &Path,
     manifest: &Manifest,
@@ -1612,6 +1714,10 @@ fn validate_port_configuration(
                     "backend/crates/PLACEHOLDER-bin/src/lib.rs",
                     format!("localhost:{}/realms/", ports.keycloak),
                 ),
+                (
+                    "backend/crates/PLACEHOLDER-bin/src/lib.rs",
+                    format!("localhost:{}", ports.keycloak),
+                ),
             ]);
         }
     }
@@ -1635,6 +1741,10 @@ fn validate_port_configuration(
                     "mobile/src/auth.ts",
                     format!("localhost:{}/realms/", ports.keycloak),
                 ),
+                (
+                    "mobile/src/delete-profile.ts",
+                    format!("localhost:{}", ports.api),
+                ),
             ]);
         }
     }
@@ -1653,11 +1763,31 @@ fn validate_port_configuration(
                     "web/src/auth.ts",
                     format!("localhost:{}/realms/", ports.keycloak),
                 ),
+                (
+                    "web/src/delete-profile.ts",
+                    format!("localhost:{}", ports.api),
+                ),
+                (
+                    "web/e2e/stack/keycloak.ts",
+                    format!("localhost:{}", ports.keycloak),
+                ),
             ]);
         }
     }
     if manifest.capabilities.mcp.is_some() {
         expected.push(("mcp/src/cli.ts", format!("localhost:{}", ports.api)));
+        if manifest
+            .capabilities
+            .mcp
+            .as_ref()
+            .is_some_and(|mcp| mcp.authentication == McpAuthentication::NodeOidc)
+        {
+            validate_mcp_keycloak_port(root, manifest, ports.keycloak, failures)?;
+            expected.push((
+                "mcp/src/auth.ts",
+                format!("localhost:{}/realms/", ports.keycloak),
+            ));
+        }
     }
     for (relative, snippet) in expected {
         let relative = relative.replace("PLACEHOLDER", &manifest.app.name);
@@ -1668,7 +1798,8 @@ fn validate_port_configuration(
         let source = fs::read_to_string(&path)?;
         let mismatched = if is_environment_capable_source(&relative) {
             let expected_port = localhost_port(&snippet).expect("expected snippet has a port");
-            has_mismatched_loopback_port(&source, expected_port)
+            let source = source.replace("${KEYCLOAK_PORT}", &ports.keycloak.to_string());
+            has_mismatched_loopback_port(&source, expected_port, snippet.contains("/realms/"))
         } else {
             !source.contains(&snippet)
         };
@@ -1695,11 +1826,15 @@ fn is_environment_capable_source(relative: &str) -> bool {
             | "web/.env.example"
             | "mobile/src/api.ts"
             | "mobile/src/auth.ts"
+            | "mobile/src/delete-profile.ts"
             | "mobile/app.config.ts"
             | "web/src/api.ts"
             | "web/src/auth.ts"
+            | "web/src/delete-profile.ts"
+            | "web/e2e/stack/keycloak.ts"
             | "scripts/pkce-login.py"
             | "mcp/src/cli.ts"
+            | "mcp/src/auth.ts"
     ) || relative.ends_with("-bin/src/lib.rs")
 }
 
@@ -1807,19 +1942,24 @@ fn localhost_port(snippet: &str) -> Option<u16> {
         .ok()
 }
 
-fn has_mismatched_loopback_port(source: &str, expected_port: u16) -> bool {
+fn has_mismatched_loopback_port(source: &str, expected_port: u16, issuer: bool) -> bool {
     let ports = ["localhost:", "127.0.0.1:", "[::1]:"]
         .into_iter()
         .flat_map(|marker| source.match_indices(marker))
         .filter_map(|(index, marker)| {
-            source[index + marker.len()..]
-                .split(|character: char| !character.is_ascii_digit())
-                .next()?
-                .parse::<u16>()
-                .ok()
+            let suffix = &source[index + marker.len()..];
+            let length = suffix.bytes().take_while(u8::is_ascii_digit).count();
+            if suffix[length..].starts_with("/realms/") != issuer {
+                return None;
+            }
+            suffix[..length].parse::<u16>().ok()
         })
         .collect::<Vec<_>>();
-    !ports.is_empty() && !ports.contains(&expected_port)
+    if issuer {
+        ports.iter().any(|port| *port != expected_port)
+    } else {
+        !ports.is_empty() && !ports.contains(&expected_port)
+    }
 }
 
 fn diagnose_ssh_agent(
@@ -2637,8 +2777,8 @@ mod doctor_tests {
             const issuer = "http://localhost:8081/realms/product";
             const origin = "http://localhost:5173";
         "#;
-        assert!(!has_mismatched_loopback_port(source, 8081));
-        assert!(has_mismatched_loopback_port(source, 8181));
+        assert!(!has_mismatched_loopback_port(source, 8081, true));
+        assert!(has_mismatched_loopback_port(source, 8181, true));
     }
 
     #[test]

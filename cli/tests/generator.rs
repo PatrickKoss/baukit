@@ -1423,6 +1423,278 @@ fn doctor_validates_a_local_generated_product() -> anyhow::Result<()> {
 }
 
 #[test]
+fn doctor_validates_long_name_products_of_every_flavor() -> anyhow::Result<()> {
+    for offset in [0, 100] {
+        for (backend, mobile, web, mcp, auth) in [
+            (true, false, false, None, None),
+            (false, true, false, None, None),
+            (false, false, true, None, None),
+            (true, true, true, None, None),
+            (
+                true,
+                false,
+                false,
+                Some(McpAuthentication::PersonalToken),
+                None,
+            ),
+            (
+                true,
+                false,
+                false,
+                Some(McpAuthentication::CallerSupplied),
+                None,
+            ),
+            (
+                true,
+                true,
+                true,
+                Some(McpAuthentication::NodeOidc),
+                Some(AuthProvider::Oidc),
+            ),
+        ] {
+            let parent = tempfile::tempdir()?;
+            let mut local = options(parent.path(), "long-product-name-fixture");
+            local.backend = backend;
+            local.worker = backend;
+            local.mobile = mobile;
+            local.web = web;
+            local.mcp = mcp.is_some();
+            local.mcp_auth = mcp;
+            local.auth = auth;
+            local.port_offset = offset;
+            local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+            let root = generate_new(&local)?;
+            let results = doctor(&root)?;
+            assert!(
+                results
+                    .iter()
+                    .any(|result| result.contains("product constants"))
+            );
+            assert!(
+                results
+                    .iter()
+                    .any(|result| result.contains("port offset")
+                        || result.contains("no port offset"))
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn doctor_rejects_drift_in_product_constants_and_url_defaults() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "long-product-name-fixture");
+    local.worker = true;
+    local.mobile = true;
+    local.web = true;
+    local.mcp = true;
+    local.mcp_auth = Some(McpAuthentication::NodeOidc);
+    local.auth = Some(AuthProvider::Oidc);
+    local.port_offset = 100;
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    doctor(&root)?;
+    for (relative, original, drifted, diagnostic) in [
+        (
+            "mcp/src/product.ts",
+            "KEYCLOAK_PORT = 8181",
+            "KEYCLOAK_PORT = 9999",
+            "KEYCLOAK_PORT",
+        ),
+        (
+            "mcp/src/product.ts",
+            "LONG_PRODUCT_NAME_FIXTURE",
+            "OTHER_PRODUCT",
+            "ENV_PREFIX",
+        ),
+        (
+            "mcp/src/product.ts",
+            "long-product-name-fixture",
+            "other-product",
+            "PRODUCT_NAME",
+        ),
+        (
+            "web/src/product.ts",
+            "long-product-name-fixture",
+            "other-product",
+            "PRODUCT_NAME",
+        ),
+        (
+            "mobile/src/product.ts",
+            "long-product-name-fixture",
+            "other-product",
+            "PRODUCT_NAME",
+        ),
+        (
+            "mcp/src/auth.ts",
+            "${KEYCLOAK_PORT}",
+            "9999",
+            "port offset 100",
+        ),
+        (
+            "mcp/src/cli.ts",
+            "localhost:8180",
+            "localhost:9999",
+            "port offset 100",
+        ),
+        (
+            "web/src/auth.ts",
+            "localhost:8181",
+            "localhost:9999",
+            "port offset 100",
+        ),
+        (
+            "mobile/src/auth.ts",
+            "localhost:8181",
+            "localhost:9999",
+            "port offset 100",
+        ),
+        (
+            "mobile/app.config.ts",
+            "localhost:8181",
+            "localhost:9999",
+            "port offset 100",
+        ),
+        (
+            "mobile/app.config.ts",
+            "localhost:8180",
+            "localhost:9999",
+            "port offset 100",
+        ),
+        (
+            "web/e2e/stack/keycloak.ts",
+            "localhost:8181",
+            "localhost:9999",
+            "port offset 100",
+        ),
+        (
+            "web/src/delete-profile.ts",
+            "localhost:8180",
+            "localhost:9999",
+            "port offset 100",
+        ),
+        (
+            "mobile/src/delete-profile.ts",
+            "localhost:8180",
+            "localhost:9999",
+            "port offset 100",
+        ),
+        (
+            "backend/crates/long-product-name-fixture-bin/src/lib.rs",
+            "long-product-name-fixture",
+            "other-product",
+            "PRODUCT",
+        ),
+        (
+            "backend/crates/long-product-name-fixture-bin/src/lib.rs",
+            "8181\".to_owned()",
+            "9999\".to_owned()",
+            "port offset 100",
+        ),
+        (
+            "mcp/src/product.ts",
+            "KEYCLOAK_PORT = 8181",
+            "KEYCLOAK_PORT = 99999",
+            "KEYCLOAK_PORT",
+        ),
+        (
+            "mcp/src/product.ts",
+            "KEYCLOAK_PORT = 8181",
+            "KEYCLOAK_PORT = -1",
+            "KEYCLOAK_PORT",
+        ),
+        (
+            "mcp/src/product.ts",
+            "KEYCLOAK_PORT = 8181",
+            "RENAMED_PORT = 8181",
+            "KEYCLOAK_PORT",
+        ),
+        (
+            "backend/crates/long-product-name-fixture-bin/src/lib.rs",
+            "8181/realms",
+            "9999/realms",
+            "port offset 100",
+        ),
+    ] {
+        let path = root.join(relative);
+        let source = fs::read_to_string(&path)?;
+        assert!(
+            source.contains(original),
+            "missing test mutation in {relative}"
+        );
+        fs::write(&path, source.replace(original, drifted))?;
+        let error = doctor(&root)
+            .expect_err("doctor must reject configuration drift")
+            .to_string();
+        assert!(error.contains(relative), "{error}");
+        assert!(error.contains(diagnostic), "{error}");
+        fs::write(path, source)?;
+    }
+    doctor(&root)?;
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_variable_url_configuration_and_formatted_constants() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "long-product-name-fixture");
+    local.mobile = true;
+    local.web = true;
+    local.mcp = true;
+    local.auth = Some(AuthProvider::Oidc);
+    local.port_offset = 100;
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    for relative in [
+        "mobile/src/product.ts",
+        "web/src/product.ts",
+        "mcp/src/product.ts",
+    ] {
+        let path = root.join(relative);
+        let source = fs::read_to_string(&path)?;
+        fs::write(
+            &path,
+            source.replace(
+                "export const PRODUCT_NAME = 'long-product-name-fixture';",
+                "export const PRODUCT_NAME: string =\n  \"long-product-name-fixture\";",
+            ),
+        )?;
+        doctor(&root)?;
+        fs::remove_file(&path)?;
+        let error = doctor(&root).expect_err("doctor must find missing product constants");
+        assert!(error.to_string().contains(relative));
+        fs::write(path, source)?;
+    }
+    for (relative, source) in [
+        (
+            "mobile/app.config.ts",
+            "export default { scheme: 'product', extra: { apiBaseUrl: process.env.EXPO_PUBLIC_API_URL, oidcIssuer: process.env.EXPO_PUBLIC_OIDC_ISSUER } };",
+        ),
+        (
+            "mobile/src/auth.ts",
+            "export const issuer = process.env.EXPO_PUBLIC_OIDC_ISSUER;",
+        ),
+        (
+            "web/src/auth.ts",
+            "export const issuer = import.meta.env.VITE_OIDC_ISSUER;",
+        ),
+        (
+            "web/e2e/stack/keycloak.ts",
+            "export const url = process.env.E2E_KEYCLOAK_URL;",
+        ),
+        (
+            "mcp/src/auth.ts",
+            "export const issuer = process.env.PRODUCT_OIDC_ISSUER;",
+        ),
+    ] {
+        fs::write(root.join(relative), source)?;
+    }
+    doctor(&root)?;
+    Ok(())
+}
+
+#[test]
 fn doctor_accepts_custom_literal_ports_without_an_offset() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "custom-ports");
