@@ -1,6 +1,8 @@
 # @baukit/api-runtime
 
-## Unreleased
+## [Unreleased]
+
+- Report failed erasure replays with a typed operation failure and retain the key for reconciliation after repair. Test the shared Rust wire receipts.
 
 - Remove durable erasure keys after definitive receipts. Preserve committed receipts when local key removal fails.
 

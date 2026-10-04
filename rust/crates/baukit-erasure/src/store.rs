@@ -40,12 +40,11 @@ pub struct ErasureOutcome {
     pub completed_at: Option<DateTime<Utc>>,
 }
 impl ErasureOutcome {
-    /// HTTP response code for DELETE, including reconciliation of a pending receipt.
+    /// HTTP response code for DELETE and its replay receipt.
     pub fn status_code(&self) -> StatusCode {
-        if self.status == ErasureState::Completed {
-            StatusCode::OK
-        } else {
-            StatusCode::ACCEPTED
+        match self.status {
+            ErasureState::Pending => StatusCode::ACCEPTED,
+            ErasureState::Completed | ErasureState::Failed => StatusCode::OK,
         }
     }
 }
@@ -397,6 +396,40 @@ impl ErasureService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn receipts_match_shared_wire_vectors() {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct ReceiptVector {
+            name: String,
+            http_status: u16,
+            receipt: Value,
+        }
+        #[derive(Deserialize)]
+        struct Vectors {
+            cases: Vec<ReceiptVector>,
+        }
+        let vectors: Vectors = serde_json::from_str(include_str!(
+            "../../../../fixtures/erasure/receipts-v1.json"
+        ))
+        .expect("shared erasure receipts");
+        for vector in vectors.cases {
+            let receipt: ErasureOutcome =
+                serde_json::from_value(vector.receipt.clone()).expect("receipt");
+            assert_eq!(
+                receipt.status_code().as_u16(),
+                vector.http_status,
+                "{}",
+                vector.name
+            );
+            assert_eq!(
+                serde_json::to_value(receipt).expect("receipt"),
+                vector.receipt,
+                "{}",
+                vector.name
+            );
+        }
+    }
     #[test]
     fn outcomes_use_contract_status_codes_and_camel_case() {
         let mut outcome = ErasureOutcome {

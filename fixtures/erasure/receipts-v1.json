@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "name": "pending identity deletion",
+      "httpStatus": 202,
+      "receipt": {
+        "status": "pending",
+        "operationId": "c6417b1e-4092-4ab8-8dce-e16222c160f3"
+      },
+      "clientOutcome": "receipt"
+    },
+    {
+      "name": "completed identity deletion",
+      "httpStatus": 200,
+      "receipt": {
+        "status": "completed",
+        "operationId": "c6417b1e-4092-4ab8-8dce-e16222c160f3",
+        "completedAt": "2026-10-03T12:00:00Z"
+      },
+      "clientOutcome": "receipt"
+    },
+    {
+      "name": "failed identity deletion replay",
+      "httpStatus": 200,
+      "receipt": {
+        "status": "failed",
+        "operationId": "c6417b1e-4092-4ab8-8dce-e16222c160f3"
+      },
+      "clientOutcome": "failed"
+    }
+  ]
+}

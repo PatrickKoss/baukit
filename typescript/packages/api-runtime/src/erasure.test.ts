@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import receiptVectors from '../../../../fixtures/erasure/receipts-v1.json' with { type: 'json' };
+
 import { ApiError, createApiRuntime, MockFetch } from './index.js';
 import { type IdempotencyKeyStorage, type StoredIdempotencyKey } from './idempotency.js';
 import { AmbiguousProfileErasureError, createProfileErasureClient } from './erasure.js';
@@ -52,6 +54,25 @@ afterEach(() => {
 });
 
 describe('profile erasure transport', () => {
+  it.each(receiptVectors.cases)('matches the shared $name contract', async (vector) => {
+    const persisted = storage();
+    const { client, transport } = setup(persisted);
+    transport.enqueueJson(vector.receipt, { status: vector.httpStatus });
+    if (vector.clientOutcome === 'failed') {
+      await expect(client.erase()).rejects.toMatchObject({
+        name: 'ProfileErasureOperationFailedError',
+        code: 'erasure_operation_failed',
+        operationId: vector.receipt.operationId,
+      });
+      expect(persisted.entries.size).toBe(1);
+      transport.enqueueJson(completed, { status: 200 });
+      await expect(client.erase()).resolves.toEqual(completed);
+      expect(transport.request(1).headers.get('Idempotency-Key')).toBe(key);
+    } else {
+      await expect(client.erase()).resolves.toEqual(vector.receipt);
+    }
+    expect(persisted.entries.size).toBe(0);
+  });
   it.each([
     [200, completed],
     [202, pending],
@@ -163,7 +184,7 @@ describe('profile erasure transport', () => {
     [200, { ...completed, completedAt: 'bad' }],
     [200, { ...completed, operationId: 'not-a-uuid' }],
     [200, { status: 'completed', operationId }],
-    [200, { ...pending, status: 'failed' }],
+    [202, { ...pending, status: 'failed' }],
     [204, null],
     [200, null],
   ])('keeps malformed %i replies ambiguous', async (status, body) => {

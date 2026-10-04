@@ -59,6 +59,16 @@ export class AmbiguousProfileErasureError extends Error {
   }
 }
 
+/** Product rows are erased, but the retained identity deletion job needs operator repair. */
+export class ProfileErasureOperationFailedError extends Error {
+  public override readonly name = 'ProfileErasureOperationFailedError';
+  public readonly code = 'erasure_operation_failed' as const;
+
+  public constructor(public readonly operationId: string) {
+    super('Identity deletion failed. Contact support with the erasure operation ID.');
+  }
+}
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/u;
 const IDEMPOTENCY_KEY_PATTERN = /^[\x21-\x7e]{16,128}$/u;
@@ -97,6 +107,7 @@ export function createProfileErasureClient(
         const value: unknown = await response.json();
         receipt = parseReceipt(value, response.status);
       } catch (cause) {
+        if (cause instanceof ProfileErasureOperationFailedError) throw cause;
         if (isErasedFence(cause)) {
           receipt = { status: 'pending', operationId: null };
         } else if (classifyMutationError(cause) === 'not-committed') {
@@ -165,6 +176,9 @@ function parseReceipt(value: unknown, status: number): ProfileErasureReceipt {
   }
   if (status === 200 && operation.status === 'completed' && operation.completedAt !== undefined) {
     return { ...operation, completedAt: operation.completedAt };
+  }
+  if (status === 200 && operation.status === 'failed') {
+    throw new ProfileErasureOperationFailedError(operation.operationId);
   }
   throw new TypeError('Invalid erasure receipt.');
 }

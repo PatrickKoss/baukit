@@ -203,6 +203,15 @@ async fn permanent_and_exhausted_failures_remain_rerunnable() -> Result<(), Box<
             .fetch_one(&pool)
             .await?;
         assert_eq!(state, "failed");
+        let calls_before_replay = fake.calls().len();
+        let replay = service
+            .erase("alice", "failed-worker-key-01", &Product)
+            .await?;
+        assert_eq!(replay.status, ErasureState::Failed);
+        assert_eq!(replay.operation_id, pending.operation_id);
+        assert_eq!(replay.status_code(), axum::http::StatusCode::OK);
+        assert_eq!(fake.calls().len(), calls_before_replay);
+        assert_eq!(count(&pool, "erasure_operations").await?, 1);
         if failure == IdentityDeletionError::Permanent {
             assert_eq!(fake.calls().len(), 2);
         } else {

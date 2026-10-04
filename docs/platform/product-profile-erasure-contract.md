@@ -173,8 +173,30 @@ A 200 body is
 A 202 body is `{"status":"pending","operationId":"<uuid>"}` with
 `Location: /me/erasures/<operationId>`. DELETE replay keeps the operation ID.
 A pending receipt follows the operation's current state, including completion
-and its stable completion timestamp. A failed replay is 202 with status failed;
-it refers to the existing operation that operators must repair.
+and its stable completion timestamp. A failed DELETE replay returns 200 with
+`{"status":"failed","operationId":"<uuid>"}` and no `completedAt`.
+The HTTP code confirms that the stored operation was read. Its body reports the
+failure. Only a pending operation returns 202.
+
+`createProfileErasureClient().erase()` rejects a failed receipt with
+`ProfileErasureOperationFailedError`, code `erasure_operation_failed`, and the
+existing `operationId`. This is a known failure, not an ambiguous transport
+outcome. The client keeps the durable idempotency key. Reconciliation after
+operator repair reuses that key and reads the same operation. `poll()` instead
+returns `{ status: "failed", operationId }` and stops polling.
+
+The UI must say that product rows are already erased and identity deletion
+needs support. Keep the operation ID available for support and later status
+checks. A retry may reconcile the same operation after repair; it must not
+start a new deletion or claim that the earlier transaction rolled back.
+Operators repair and rerun the retained job. The subject fence stays active.
+The local erasure helper treats this rejection as `server-failure` and preserves
+the session and local partition until the product resumes reconciliation.
+The product adapter must save the error's operation ID before passing the
+rejection to that helper, whose result contains only a bounded error class.
+
+`fixtures/erasure/receipts-v1.json` pins pending, completed and failed DELETE
+status/body pairs. Both Rust and TypeScript tests consume it.
 
 GET returns 200 with status `pending`, `completed` or `failed`, the operation ID,
 and `completedAt` only after completion. Every ordinary authenticated request
@@ -214,7 +236,7 @@ random bytes for the hash key. Keep it stable and back it up with deployment
 secrets. Changing it without migrating existing hashes invalidates fences and
 receipt authorization. Never log credentials, tokens or subjects.
 
-Every non-success response uses the standard envelope emitted by `baukit-http`
+Every HTTP error response uses the standard envelope emitted by `baukit-http`
 and parsed by `@baukit/api-runtime`:
 
 ```json
