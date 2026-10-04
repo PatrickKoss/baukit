@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
+import tempfile
 import tomllib
 import unittest
 from pathlib import Path
@@ -24,6 +26,60 @@ def package(name: str, **overrides: object) -> dict:
 
 def config(*packages: dict) -> dict:
     return {"workspace": {}, "package": list(packages)}
+
+
+class ChangesetCoverageTest(unittest.TestCase):
+    def test_one_fixed_group_covering_all_packages_passes(self) -> None:
+        self.assertEqual(check.changeset_problems({"fixed": [["@baukit/navigation"]]}, {"@baukit/navigation"}), [])
+
+    def test_a_package_missing_from_the_fixed_group_is_reported(self) -> None:
+        self.assertEqual(
+            check.changeset_problems({"fixed": [[]]}, {"@baukit/navigation"}),
+            ["TypeScript package @baukit/navigation is missing from the Changesets fixed group"],
+        )
+
+    def test_a_missing_package_directory_is_reported(self) -> None:
+        self.assertEqual(
+            check.changeset_problems({"fixed": [["@baukit/gone"]]}, set()),
+            ["Changesets fixed group lists @baukit/gone, which is not a TypeScript package"],
+        )
+
+    def test_duplicate_packages_are_reported(self) -> None:
+        self.assertEqual(
+            check.changeset_problems({"fixed": [["@baukit/navigation", "@baukit/navigation"]]}, {"@baukit/navigation"}),
+            ["Changesets fixed group contains duplicate packages"],
+        )
+
+    def test_zero_or_multiple_groups_are_reported(self) -> None:
+        for groups in ([], [["@baukit/a11y-core"], ["@baukit/navigation"]]):
+            with self.subTest(groups=groups):
+                self.assertEqual(
+                    check.changeset_problems({"fixed": groups}, {"@baukit/navigation"}),
+                    ["typescript/.changeset/config.json must define one fixed group"],
+                )
+
+
+class ReleasePackageDiscoveryTest(unittest.TestCase):
+    def test_every_package_directory_requires_a_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "typescript/packages/navigation").mkdir(parents=True)
+            with self.assertRaises(FileNotFoundError):
+                check.typescript_manifests(root)
+
+    def test_duplicate_or_unscoped_names_are_rejected(self) -> None:
+        for names, error in (
+            (["@baukit/navigation", "@baukit/navigation"], "duplicate TypeScript package name"),
+            (["navigation"], "must name an @baukit/"),
+        ):
+            with self.subTest(names=names), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                for index, name in enumerate(names):
+                    path = root / "typescript/packages" / str(index)
+                    path.mkdir(parents=True)
+                    (path / "package.json").write_text(json.dumps({"name": name}))
+                with self.assertRaisesRegex(ValueError, error):
+                    check.typescript_manifests(root)
 
 
 class ReleasePlzCoverageTest(unittest.TestCase):

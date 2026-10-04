@@ -13,7 +13,7 @@ cd "$repo_root"
 # Packages depending on another baukit package must follow it.
 ORDER=(
   a11y-core analytics-core api-runtime events localization-core
-  preferences-core ui-tokens data-contracts auth-native auth-node auth-web
+  preferences-core ui-tokens navigation data-contracts auth-native auth-node auth-web
   pwa-web sync-client integrations-client
   analytics-posthog-native analytics-posthog-web
   data-contracts-dexie data-contracts-expo-sqlite
@@ -27,7 +27,7 @@ print(json.load(open('typescript/packages/a11y-core/package.json'))['version'])
 
 already_published() {
   local name=$1
-  curl -sf "https://registry.npmjs.org/@baukit%2F${name}" \
+  curl -sf -H 'User-Agent: dependency-check' "https://registry.npmjs.org/@baukit%2F${name}" \
     | python3 -c "
 import json, sys
 try:

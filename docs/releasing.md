@@ -13,9 +13,9 @@ bump; compatible changes normally use a patch bump.
 ## Tool ownership
 
 - `rust/release-plz.toml` defines the Rust version group, per-crate changelogs,
-  and the single `v{{ version }}` tag emitter. The seventeen library crates
+  and the single `v{{ version }}` tag emitter. The eighteen library crates
   publish to crates.io; the `baukit` CLI keeps `publish = false`.
-- Changesets records TypeScript changes. Its fixed group advances all twenty
+- Changesets records TypeScript changes. Its fixed group advances all twenty-one
   packages together, creates package changelogs, and emits no package tags.
   Publishing to npm is a separate step (see below), not `changeset publish`.
 - `scripts/release-train.sh` is the cross-ecosystem coordinator. A standalone
@@ -25,6 +25,13 @@ bump; compatible changes normally use a patch bump.
   dependencies; neither is true of this monorepo. The coordinator therefore
   prepares one `release-plz-*` PR without adding a duplicate root Cargo
   workspace or a fake private registry.
+
+`scripts/release_packages.py` reads every `typescript/packages/*/package.json`
+for the train changeset and version coherence check. The coherence check requires
+the Changesets fixed group to match that inventory. Publish orders stay explicit
+in `scripts/publish-packages.sh` and `scripts/publish-crates.sh`; `make scripts-test`
+checks coverage and dependency order against the package and crate directories.
+When adding a module, update its fixed group or release-plz entry and publish order.
 
 ## Record changes
 
@@ -98,7 +105,7 @@ compatibility matrix before merging the upgrade.
 
 ## Publish the TypeScript packages
 
-The twenty `@baukit/*` packages are published to npm under the `baukit`
+The twenty-one `@baukit/*` packages publish to npm under the `baukit`
 organization scope, MIT licensed. Each one sets `publishConfig.access` to
 `public`; `scripts/check-version-coherence.py` fails the train if a package
 loses that setting or its licence.
@@ -121,7 +128,7 @@ and never allows reusing the version number afterwards. Run the dry run first.
 
 ## Publish the Rust crates
 
-The seventeen library crates are published to crates.io, MIT licensed. The
+The eighteen library crates publish to crates.io, MIT licensed. The
 `baukit` CLI keeps `publish = false` and stays a Git-tag install.
 `scripts/check-version-coherence.py` fails the train if a library crate regains
 that flag or the workspace loses its licence.
@@ -132,7 +139,7 @@ Crates must go up in dependency order, because each one's internal
 ```text
 baukit-core, baukit-events, baukit-openapi, baukit-sync, baukit-config,
 baukit-runtime, baukit-telemetry, baukit-credential-vault, baukit-http,
-baukit-egress, baukit-jobs, baukit-ops, baukit-auth, baukit-integrations,
+baukit-egress, baukit-jobs, baukit-ops, baukit-auth, baukit-erasure, baukit-integrations,
 baukit-push, baukit-ratelimit, baukit-test
 ```
 
@@ -146,7 +153,7 @@ which makes `cargo package` strip them from the published manifest while local
 train if one regains a version or `workspace = true`.
 
 crates.io rate-limits new crate names: an initial burst, then roughly one new
-crate every ten minutes. A first release of all seventeen therefore cannot run
+crate every ten minutes. A first release of all eighteen therefore cannot run
 straight through. `scripts/publish-crates.sh` skips crates already on the
 registry and waits out a 429 instead of failing the run:
 

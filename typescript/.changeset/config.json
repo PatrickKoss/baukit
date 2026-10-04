@@ -18,6 +18,7 @@
       "@baukit/events",
       "@baukit/integrations-client",
       "@baukit/localization-core",
+      "@baukit/navigation",
       "@baukit/notifications-core",
       "@baukit/notifications-expo",
       "@baukit/preferences-core",

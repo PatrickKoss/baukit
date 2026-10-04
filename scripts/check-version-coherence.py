@@ -9,37 +9,35 @@ import sys
 import tomllib
 from pathlib import Path
 
+from release_packages import typescript_manifests
+
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE_TRAIN_GROUP = "baukit-release-train"
-
-EXPECTED_TYPESCRIPT_PACKAGES = {
-    "@baukit/a11y-core",
-    "@baukit/analytics-core",
-    "@baukit/analytics-posthog-native",
-    "@baukit/analytics-posthog-web",
-    "@baukit/api-runtime",
-    "@baukit/auth-native",
-    "@baukit/auth-node",
-    "@baukit/auth-web",
-    "@baukit/data-contracts",
-    "@baukit/data-contracts-dexie",
-    "@baukit/data-contracts-expo-sqlite",
-    "@baukit/events",
-    "@baukit/integrations-client",
-    "@baukit/localization-core",
-    "@baukit/notifications-core",
-    "@baukit/notifications-expo",
-    "@baukit/preferences-core",
-    "@baukit/pwa-web",
-    "@baukit/sync-client",
-    "@baukit/ui-tokens",
-}
 
 
 def fail(message: str) -> None:
     print(f"version coherence error: {message}", file=sys.stderr)
     raise SystemExit(1)
+
+
+def changeset_problems(config: dict, package_names: set[str]) -> list[str]:
+    groups = config.get("fixed", [])
+    if len(groups) != 1:
+        return ["typescript/.changeset/config.json must define one fixed group"]
+    group = groups[0]
+    listed = set(group)
+    problems = [
+        f"TypeScript package {name} is missing from the Changesets fixed group"
+        for name in sorted(package_names - listed)
+    ]
+    problems += [
+        f"Changesets fixed group lists {name}, which is not a TypeScript package"
+        for name in sorted(listed - package_names)
+    ]
+    if len(group) != len(listed):
+        problems.append("Changesets fixed group contains duplicate packages")
+    return problems
 
 
 def release_plz_problems(release_plz: dict, crate_names: set[str]) -> list[str]:
@@ -130,45 +128,46 @@ def main() -> None:
     if cli_version != rust_version:
         fail(f"Rust is {rust_version}, but the CLI is {cli_version}")
 
+    manifests = typescript_manifests(ROOT)
+    changeset_config = json.loads((ROOT / "typescript/.changeset/config.json").read_text())
+    problems = changeset_problems(changeset_config, set(manifests))
+    if problems:
+        fail("; ".join(problems))
+
     package_versions: dict[str, str] = {}
-    for path in sorted((ROOT / "typescript/packages").glob("*/package.json")):
+    for name, path in manifests.items():
         package = json.loads(path.read_text())
-        name = package.get("name", "")
-        if name.startswith("@baukit/"):
-            if package.get("private") is not None:
-                fail(f"{name} is published publicly; drop its private flag")
-            if package.get("publishConfig", {}).get("access") != "public":
-                fail(f'{name} must set publishConfig.access to "public"')
-            if package.get("license") != "MIT":
-                fail(f"{name} must declare the MIT license")
-            package_versions[name] = package["version"]
-            for dependency_group in (
-                "dependencies",
-                "devDependencies",
-                "peerDependencies",
-                "optionalDependencies",
-            ):
-                for dependency, requirement in package.get(dependency_group, {}).items():
-                    if not dependency.startswith("@baukit/") or requirement == "workspace:*":
-                        continue
-                    if dependency_group == "devDependencies" and requirement.startswith("file:"):
-                        linked_package = (path.parent / requirement.removeprefix("file:")).resolve()
-                        linked_manifest = linked_package / "package.json"
-                        if linked_manifest.is_file():
-                            linked_name = json.loads(linked_manifest.read_text()).get("name")
-                            if linked_name == dependency:
-                                continue
-                    if requirement != f"^{rust_version}":
-                        fail(
-                            f"{name} {dependency_group} requires {dependency} "
-                            f"at {requirement!r}, expected ^{rust_version}"
-                        )
+        if package.get("private") is not None:
+            fail(f"{name} is published publicly; drop its private flag")
+        if package.get("publishConfig", {}).get("access") != "public":
+            fail(f'{name} must set publishConfig.access to "public"')
+        if package.get("license") != "MIT":
+            fail(f"{name} must declare the MIT license")
+        package_versions[name] = package["version"]
+        for dependency_group in (
+            "dependencies",
+            "devDependencies",
+            "peerDependencies",
+            "optionalDependencies",
+        ):
+            for dependency, requirement in package.get(dependency_group, {}).items():
+                if not dependency.startswith("@baukit/") or requirement == "workspace:*":
+                    continue
+                if dependency_group == "devDependencies" and requirement.startswith("file:"):
+                    linked_package = (path.parent / requirement.removeprefix("file:")).resolve()
+                    linked_manifest = linked_package / "package.json"
+                    if linked_manifest.is_file():
+                        linked_name = json.loads(linked_manifest.read_text()).get("name")
+                        if linked_name == dependency:
+                            continue
+                if requirement != f"^{rust_version}":
+                    fail(
+                        f"{name} {dependency_group} requires {dependency} "
+                        f"at {requirement!r}, expected ^{rust_version}"
+                    )
 
     if not package_versions:
         fail("no @baukit/* TypeScript packages were found")
-    missing_packages = EXPECTED_TYPESCRIPT_PACKAGES - package_versions.keys()
-    if missing_packages:
-        fail(f"missing TypeScript packages: {sorted(missing_packages)}")
     ts_versions = set(package_versions.values())
     if len(ts_versions) != 1:
         fail(f"TypeScript packages do not share one version: {package_versions}")

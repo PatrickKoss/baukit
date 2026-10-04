@@ -49,31 +49,12 @@ if [[ -e "$train_changeset" ]]; then
   exit 1
 fi
 
+packages=$(python3 scripts/release_packages.py)
 {
   echo '---'
-  for package in \
-    '@baukit/a11y-core' \
-    '@baukit/analytics-core' \
-    '@baukit/analytics-posthog-web' \
-    '@baukit/analytics-posthog-native' \
-    '@baukit/api-runtime' \
-    '@baukit/auth-native' \
-    '@baukit/auth-node' \
-    '@baukit/auth-web' \
-    '@baukit/data-contracts' \
-    '@baukit/data-contracts-dexie' \
-    '@baukit/data-contracts-expo-sqlite' \
-    '@baukit/events' \
-    '@baukit/integrations-client' \
-    '@baukit/localization-core' \
-    '@baukit/notifications-core' \
-    '@baukit/notifications-expo' \
-    '@baukit/preferences-core' \
-    '@baukit/pwa-web' \
-    '@baukit/sync-client' \
-    '@baukit/ui-tokens'; do
+  while IFS= read -r package; do
     printf "'%s': %s\n" "$package" "$bump"
-  done
+  done <<< "$packages"
   echo '---'
   echo
   echo "Release the coordinated baukit $next train."

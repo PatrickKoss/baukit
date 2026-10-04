@@ -14,13 +14,13 @@ free of product-specific logic.
 ## Layout
 
 ```text
-rust/crates/        baukit-auth, -config, -core, -credential-vault, -egress, -events,
+rust/crates/        baukit-auth, -config, -core, -credential-vault, -egress, -erasure, -events,
                      -http, -integrations, -jobs, -openapi, -ops, -push, -ratelimit,
                      -runtime, -sync, -telemetry, -test
 typescript/packages/ a11y-core, analytics-core, analytics-posthog-{web,native},
                      api-runtime, auth-{native,node,web},
                      data-contracts{,-dexie,-expo-sqlite}, events,
-                     integrations-client, localization-core,
+                     integrations-client, localization-core, navigation,
                      notifications-{core,expo}, preferences-core, pwa-web,
                      sync-client, ui-tokens
 cli/                `baukit` CLI (scaffolds products from templates/)

@@ -7,7 +7,7 @@
 
 The boring 80% of a Rust backend and its TypeScript clients, already built and already tested.
 
-*Baukit* is German for a construction kit, and that is the whole idea. Sixteen Rust crates and eighteen npm packages, each small enough to adopt on its own, plus a CLI that wires them into a working product when you want the whole thing.
+*Baukit* is German for a construction kit, and that is the whole idea. Eighteen Rust crates and twenty-one npm packages, each small enough to adopt on its own, plus a CLI that wires them into a working product when you want the whole thing.
 
 > [!WARNING]
 > **Under heavy development. Expect breaking changes.**
@@ -119,6 +119,7 @@ Nothing here depends on the CLI, and no crate drags in the rest. Take the error 
 | [`baukit-credential-vault`](rust/crates/baukit-credential-vault) | Versioned AES-256-GCM encryption behind a storage-neutral port |
 | [`baukit-push`](rust/crates/baukit-push) | Provider-neutral push delivery with an Expo adapter, a device registry, and daily delivery claims |
 | [`baukit-egress`](rust/crates/baukit-egress) | Outbound HTTP client for user-supplied URLs that pins DNS answers to public addresses |
+| [`baukit-erasure`](rust/crates/baukit-erasure) | Transactional profile erasure, keyed receipts and fences, durable identity account deletion |
 | [`baukit-core`](rust/crates/baukit-core) | Dependency-light vocabulary shared by the others, plus optional keyset pagination |
 | [`baukit-test`](rust/crates/baukit-test) | Docker PostgreSQL and Redis fixtures, a mock OIDC issuer, conformance suites |
 
@@ -135,6 +136,7 @@ Nothing here depends on the CLI, and no crate drags in the rest. Take the error 
 | [`@baukit/sync-client`](typescript/packages/sync-client) | Sync scheduling, transport, status store, push-batch ordering |
 | [`@baukit/ui-tokens`](typescript/packages/ui-tokens) | Design-token schema, contrast checker, CSS and React Native compilers, a `no-raw-color` eslint rule |
 | [`@baukit/a11y-core`](typescript/packages/a11y-core) | Focus traps, inert backgrounds, announcements, reduced motion, on both web and native |
+| [`@baukit/navigation`](typescript/packages/navigation) | Collapsible navigation for React DOM and React Native with product-owned routes and tokens |
 | [`@baukit/analytics-core`](typescript/packages/analytics-core) | Typed events with consent and privacy controls, PostHog transports for [web](typescript/packages/analytics-posthog-web) and [native](typescript/packages/analytics-posthog-native) |
 | [`@baukit/localization-core`](typescript/packages/localization-core) | Locale resolution, formatting policy, timezone-safe civil-date math |
 | [`@baukit/notifications-core`](typescript/packages/notifications-core) · [`-expo`](typescript/packages/notifications-expo) | Local notification planning across DST and time zones, and replacement that touches only the requests one namespace owns |
@@ -163,8 +165,8 @@ Contracts and recipes live in [`docs/platform/`](docs/platform): [local-data own
 Three workspaces, no root workspace, so always pass a manifest path.
 
 ```text
-rust/        16 library crates
-typescript/  18 packages, pnpm + Turborepo
+rust/        18 library crates
+typescript/  21 packages, pnpm + Turborepo
 cli/         the baukit binary
 templates/   what the CLI renders
 examples/    minimal-api, expo-sqlite-conformance
@@ -179,6 +181,6 @@ Mise installs Corepack 0.36.0 with Node. Corepack reads the pnpm 12.9.1 pin in `
 
 ## Status and license
 
-The `@baukit/*` packages are on npm and the sixteen library crates are on crates.io at `0.1.2`. The CLI installs from a Git tag. Crates, packages, and templates move together under one `vX.Y.Z` tag.
+The `@baukit/*` packages publish to npm and the eighteen library crates publish to crates.io. The CLI installs from a Git tag. Crates, packages, and templates move together under one `vX.Y.Z` tag.
 
 MIT. See [LICENSE](LICENSE).
