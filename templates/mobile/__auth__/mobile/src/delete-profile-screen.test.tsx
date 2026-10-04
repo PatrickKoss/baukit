@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { announce, focusAccessibilityElement } from '@baukit/a11y-core';
 import type { ProductProfileErasureResult } from '@baukit/data-contracts';
 import { ApiError } from '@baukit/api-runtime';
@@ -134,7 +134,9 @@ describe('DeleteProfileScreen', () => {
       await renderScreen(() => Promise.resolve(result));
       await confirm();
       expect(await screen.findByText(message)).toBeOnTheScreen();
-      expect(announce).toHaveBeenLastCalledWith(message);
+      await waitFor(() => {
+        expect(announce).toHaveBeenLastCalledWith(message);
+      });
       expect(screen.queryByRole('button', { name: copy.retry }) !== null).toBe(
         result.status === 'server-failure' || result.status === 'ambiguous',
       );
@@ -205,6 +207,9 @@ describe('DeleteProfileScreen', () => {
     await confirm();
     expect(await screen.findByText(copy.statusError)).toBeOnTheScreen();
     await fireEvent.press(screen.getByRole('button', { name: copy.checkStatus }));
+    await waitFor(() => {
+      expect(poll).toHaveBeenCalledTimes(2);
+    });
     expect(signal?.aborted).toBe(false);
     await unmount();
     expect(signal?.aborted).toBe(true);
@@ -218,9 +223,13 @@ describe('DeleteProfileScreen', () => {
     await renderScreen(() => Promise.resolve(pending), poll);
     await confirm();
     expect(await screen.findByText(copy.pending)).toBeOnTheScreen();
-    expect(poll).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(poll).toHaveBeenCalledTimes(1);
+    });
     const button = screen.getByRole('button', { name: copy.checkStatus });
-    expect(button).toBeEnabled();
+    await waitFor(() => {
+      expect(button).toBeEnabled();
+    });
     await fireEvent.press(button);
     expect(await screen.findByText(copy.erased)).toBeOnTheScreen();
     expect(poll).toHaveBeenCalledTimes(2);
@@ -239,7 +248,9 @@ describe('DeleteProfileScreen', () => {
     const { unmount } = await renderScreen(() => Promise.resolve(pending), poll);
     await confirm();
     expect(await screen.findByText(copy.pending)).toBeOnTheScreen();
-    expect(poll).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(poll).toHaveBeenCalledTimes(1);
+    });
     expect(signal?.aborted).toBe(false);
     await unmount();
     expect(signal?.aborted).toBe(true);
@@ -272,7 +283,9 @@ describe('DeleteProfileScreen', () => {
       expect(screen.queryByText(localized.statusError)).toBeNull();
       expect(screen.queryByRole('button', { name: localized.checkStatus })).toBeNull();
       expect(screen.queryByRole('button', { name: localized.retry })).toBeNull();
-      expect(announce).toHaveBeenLastCalledWith(localized.statusExpired);
+      await waitFor(() => {
+        expect(announce).toHaveBeenLastCalledWith(localized.statusExpired);
+      });
     },
   );
 

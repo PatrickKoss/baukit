@@ -117,8 +117,8 @@ describe('DeleteProfileScreen', () => {
       render(<DeleteProfileScreen erase={() => Promise.resolve(result)} language="en" />);
       confirm();
       await screen.findByText(message);
-      expect(document.activeElement).toBe(screen.getByRole('status'));
       await waitFor(() => {
+        expect(document.activeElement).toBe(screen.getByRole('status'));
         expect(announce).toHaveBeenLastCalledWith(message);
       });
       expect(screen.queryByRole('button', { name: copy.retry }) !== null).toBe(
@@ -191,6 +191,9 @@ describe('DeleteProfileScreen', () => {
     confirm();
     await screen.findByText(copy.statusError);
     fireEvent.click(screen.getByRole('button', { name: copy.checkStatus }));
+    await waitFor(() => {
+      expect(poll).toHaveBeenCalledTimes(2);
+    });
     expect(signal?.aborted).toBe(false);
     unmount();
     expect(signal?.aborted).toBe(true);
@@ -206,7 +209,9 @@ describe('DeleteProfileScreen', () => {
     );
     confirm();
     await screen.findByText(copy.pending);
-    expect(poll).toHaveBeenCalledOnce();
+    await waitFor(() => {
+      expect(poll).toHaveBeenCalledOnce();
+    });
     const button = screen.getByRole<HTMLButtonElement>('button', {
       name: copy.checkStatus,
     });
@@ -233,7 +238,9 @@ describe('DeleteProfileScreen', () => {
     );
     confirm();
     await screen.findByText(copy.pending);
-    expect(poll).toHaveBeenCalledOnce();
+    await waitFor(() => {
+      expect(poll).toHaveBeenCalledOnce();
+    });
     expect(signal?.aborted).toBe(false);
     unmount();
     expect(signal?.aborted).toBe(true);
