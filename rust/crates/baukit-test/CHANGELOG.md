@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-10-04
+
 ## [0.7.1] - 2026-10-04
 
 - Keep testcontainers 0.27 with testcontainers-modules 0.15. The 0.28 dependency graph conflicts through Bollard's exact stubs pin.

@@ -4,6 +4,14 @@
 
 - Verify consent withdrawal and storage against posthog-react-native 4.78.4.
 
+## 0.7.2
+
+### Patch Changes
+
+- Release the coordinated baukit 0.7.2 train.
+- Updated dependencies
+  - @baukit/analytics-core@0.7.2
+
 ## 0.7.1
 
 ### Patch Changes

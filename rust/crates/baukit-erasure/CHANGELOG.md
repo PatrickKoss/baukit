@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-10-04
+
 ## [0.7.1] - 2026-10-04
 
 - Return failed erasure replays as terminal 200 receipts. Keep the operation ID and failed job for repair. Share wire receipt tests with the TypeScript client.

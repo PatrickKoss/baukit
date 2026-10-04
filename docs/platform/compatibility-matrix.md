@@ -5,15 +5,17 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
-Last verified release train: `v0.7.1` (failed erasure replays return a
-receipt both clients accept, doctor checks that follow products' real layouts,
-React pinned to Expo's bundled 19.2.3, navigation focus rings and compact menus
-that stay visible, and RustFS for local object storage). The complete Linux
-gates passed locally on 2026-10-04: `make ci`, browser Dexie and navigation
-conformance, 760 Docker-backed Rust tests with none ignored, every generated
-fixture flavor, the MCP fixture gate, the generated Android compile, cargo deny
-and version coherence. The iOS simulator gate requires macOS and remains a
-release-host check rather than a Linux result.
+Last verified release train: `v0.7.2` (localized and accessible shared
+navigation with 48 dp Android targets, selection state and most-specific
+highlighting, a release train that refreshes linked example lockfiles, Android
+QA that prepares Chrome and bounds every ADB probe, the native OIDC callback
+route, and the mobile local-data key that Expo SecureStore accepts). The
+complete Linux gates passed locally on 2026-10-04: `make ci`, browser Dexie and
+navigation conformance, Docker-backed Rust tests with none ignored, every
+generated fixture flavor, the generated Android compile, a real Maestro OIDC
+flow, Expo SQLite and notifications device conformance, and version coherence.
+The iOS simulator gate requires macOS and remains a release-host check rather
+than a Linux result.
 
 ## Toolchain
 
