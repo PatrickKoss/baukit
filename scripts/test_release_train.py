@@ -178,5 +178,63 @@ class ReleaseTrainCorepackTest(unittest.TestCase):
         path.chmod(0o755)
 
 
+class ReleaseTrainFilesTest(unittest.TestCase):
+    def test_common_template_records_shipped_entries_and_pending_fixes(self):
+        source = (ROOT / "templates/common/CHANGELOG.md").read_text()
+        pending, history = source.split("## [0.7.0] - 2026-10-04", 1)
+        shipped, previous = history.split("## [0.6.0] - 2026-10-02", 1)
+        self.assertIn("React and the react-dom override", pending)
+        self.assertIn("Update pnpm to 12.9.1", shipped)
+        self.assertIn("Added `dateTimeInput`", shipped)
+        self.assertNotIn("Changed generated API DTOs", shipped)
+        self.assertIn("Changed generated API DTOs", previous)
+        self.assertIn("Added the opt-in MCP stdio package", previous)
+        self.assertNotIn("pinned pnpm to 12.7.0", source)
+
+    def test_patch_train_cuts_template_changelog_and_updates_cli_tags(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for relative in ["scripts/release-train.sh", "scripts/release_packages.py", "scripts/cli_install.py", "templates/common/CHANGELOG.md", "README.md"]:
+                destination = root / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / relative, destination)
+            files = {
+                "rust/Cargo.toml": '[workspace.package]\nversion = "0.7.0"\n',
+                "cli/Cargo.toml": '[package]\nname = "baukit-cli"\nversion = "0.7.0"\n',
+                "rust/crates/baukit-core/CHANGELOG.md": "## [Unreleased]\n\n- Pending crate fix.\n",
+                "typescript/packages/analytics-core/package.json": json.dumps({"name": "@baukit/analytics-core", "version": "0.7.1"}),
+                "deploy/chart/baukit-app/Chart.yaml": 'version: 0.7.0\nappVersion: "0.7.0"\n',
+                "deploy/observability/Chart.yaml": 'version: 0.7.0\nappVersion: "0.7.0"\n',
+                "deploy/chart/baukit-app/README.md": '  - name: baukit-app\n    version: 0.7.0\n',
+            }
+            for relative, source in files.items():
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(source)
+            (root / "typescript/.changeset").mkdir()
+            before = (root / "templates/common/CHANGELOG.md").read_text()
+            binaries = root / "bin"
+            binaries.mkdir()
+            executable = ReleaseTrainCorepackTest.executable
+            real_git = shutil.which("git")
+            self.assertIsNotNone(real_git)
+            subprocess.run([real_git, "init", "--quiet", str(root)], check=True)
+            subprocess.run([real_git, "add", "."], cwd=root, check=True)
+            executable(binaries / "git", '#!/bin/sh\ncase "$1" in\nrev-parse) printf "%s\\n" "$TEST_REPO_ROOT";;\nstatus) exit 0;;\n*) exec ' + shlex.quote(real_git) + ' "$@";;\nesac\n')
+            executable(binaries / "corepack", "#!/bin/sh\nexit 0\n")
+            executable(binaries / "cargo", "#!/bin/sh\nexit 0\n")
+            executable(binaries / "node", "#!/bin/sh\nprintf '0.7.1\\n'\n")
+            executable(root / "scripts/check-version-coherence.py", "#!/bin/sh\nexit 0\n")
+            environment = {**os.environ, "PATH": f"{binaries}:{os.environ['PATH']}", "TEST_REPO_ROOT": str(root), "RELEASE_DATE": "2026-10-05"}
+            result = subprocess.run(["bash", str(root / "scripts/release-train.sh"), "patch"], cwd=root, env=environment, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            after = (root / "templates/common/CHANGELOG.md").read_text()
+            self.assertEqual(after, before.replace("## [Unreleased]\n\n", "## [Unreleased]\n\n## [0.7.1] - 2026-10-05\n\n", 1))
+            self.assertEqual(after.count("## [0.7.0]"), 1)
+            self.assertEqual(after.count("## [0.6.0]"), 1)
+            self.assertIn("--tag v0.7.1 --locked baukit-cli", (root / "README.md").read_text())
+            self.assertEqual((root / "templates/VERSION").read_text(), "0.7.1\n")
+
+
 if __name__ == "__main__":
     unittest.main()

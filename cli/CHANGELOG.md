@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Cut release sections in the common generated changelog. Put shipped 0.7.0 and 0.6.0 entries in their dated sections and remove the superseded pnpm pin.
+
 - Install the unpublished CLI from the matching Git release tag. Check install commands and update concrete tags during release preparation.
 
 - Check MCP read and write registry exports instead of requiring the template helper module filename. Accept explicit tool-name registries used by existing products. Ignore declarations in comments and strings.
