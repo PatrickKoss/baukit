@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, within } from '@testing-library/react-native';
 import { AccessibilityInfo, Platform, Text } from 'react-native';
 import {
   AppNavigation,
@@ -527,6 +527,11 @@ it.each(['android', 'ios'] as const)(
 );
 
 it('waits for Modal presentation before moving accessibility focus', async () => {
+  const frames: FrameRequestCallback[] = [];
+  const frame = jest.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+    frames.push(callback);
+    return frames.length;
+  });
   const focus = jest.spyOn(AccessibilityInfo, 'setAccessibilityFocus').mockReturnValue(undefined);
   const handle = jest.spyOn(nativeModules, 'findNodeHandle').mockReturnValue(42);
   try {
@@ -540,6 +545,9 @@ it('waits for Modal presentation before moving accessibility focus', async () =>
       />,
     );
     await fireEvent.press(screen.getByRole('button', { name: 'Progress, History' }), event());
+    await act(() => {
+      for (const callback of frames) callback(0);
+    });
     expect(focus).not.toHaveBeenCalled();
     const modal = screen.container.queryAll(
       (node) => typeof node.props['onShow'] === 'function',
@@ -551,6 +559,7 @@ it('waits for Modal presentation before moving accessibility focus', async () =>
     await fireEvent.press(screen.getByRole('button', { name: 'Close' }), event());
     expect(focus).toHaveBeenCalledTimes(2);
   } finally {
+    frame.mockRestore();
     focus.mockRestore();
     handle.mockRestore();
   }
