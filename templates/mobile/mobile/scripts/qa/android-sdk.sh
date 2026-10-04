@@ -7,6 +7,7 @@ sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Android/Sdk}}"
 avd_home="${ANDROID_AVD_HOME:-$HOME/.android/avd}"
 avd_name="${BAUKIT_QA_ANDROID_AVD:-{{ context.app_name }}-qa}"
 api_level="${BAUKIT_QA_ANDROID_API_LEVEL:-36}"
+image_tag="${BAUKIT_QA_ANDROID_IMAGE_TAG:-google_apis}"
 command_tools_version="13114758"
 
 case "$(uname -m)" in
@@ -25,7 +26,7 @@ case "$(uname -s)" in
 esac
 
 command_tools_url="https://dl.google.com/android/repository/commandlinetools-${command_tools_platform}-${command_tools_version}_latest.zip"
-sdkmanager="$sdk_root/cmdline-tools/latest/bin/sdkmanager"
+sdkmanager="$sdk_root/cmdline-tools/$command_tools_version/bin/sdkmanager"
 
 if [[ ! -x "$sdkmanager" ]]; then
   command -v curl >/dev/null || { echo "qa: curl is required" >&2; exit 1; }
@@ -35,14 +36,14 @@ if [[ ! -x "$sdkmanager" ]]; then
   curl --fail --location --retry 3 \
     --output "$download_dir/command-line-tools.zip" "$command_tools_url"
   unzip -q "$download_dir/command-line-tools.zip" -d "$download_dir/unpacked"
-  mkdir -p "$sdk_root/cmdline-tools/latest"
-  cp -R "$download_dir/unpacked/cmdline-tools/." "$sdk_root/cmdline-tools/latest/"
+  mkdir -p "$sdk_root/cmdline-tools/$command_tools_version"
+  cp -R "$download_dir/unpacked/cmdline-tools/." "$sdk_root/cmdline-tools/$command_tools_version/"
 fi
 
 export ANDROID_HOME="$sdk_root"
 export ANDROID_SDK_ROOT="$sdk_root"
 export ANDROID_AVD_HOME="$avd_home"
-export PATH="$sdk_root/cmdline-tools/latest/bin:$sdk_root/emulator:$sdk_root/platform-tools:$PATH"
+export PATH="$sdk_root/cmdline-tools/$command_tools_version/bin:$sdk_root/emulator:$sdk_root/platform-tools:$PATH"
 
 set +o pipefail
 yes | sdkmanager --sdk_root="$sdk_root" --licenses >/dev/null
@@ -53,7 +54,7 @@ if [[ $license_status -ne 0 ]]; then
   exit "$license_status"
 fi
 
-system_image="system-images;android-${api_level};google_apis;${architecture}"
+system_image="system-images;android-${api_level};${image_tag};${architecture}"
 sdkmanager --sdk_root="$sdk_root" \
   platform-tools \
   emulator \
@@ -63,16 +64,26 @@ sdkmanager --sdk_root="$sdk_root" \
 
 mkdir -p "$avd_home"
 avd_config="$avd_home/$avd_name.avd/config.ini"
-if [[ -f "$avd_config" ]] && ! grep -Fq "$architecture" "$avd_config"; then
-  echo "qa: replacing '$avd_name' because its system image does not match $architecture"
+image_directory="system-images/android-${api_level}/${image_tag}/${architecture}/"
+if [[ -f "$avd_config" ]] && ! python3 - "$avd_config" "$image_directory" <<'PYIMAGE'
+from pathlib import Path
+import sys
+
+settings = dict(line.split("=", 1) for line in Path(sys.argv[1]).read_text().splitlines() if "=" in line)
+actual = next((value.strip() for key, value in settings.items() if key.strip() == "image.sysdir.1"), "")
+raise SystemExit(0 if actual == sys.argv[2] else 1)
+PYIMAGE
+then
+  echo "qa: replacing '$avd_name' because its system image does not match $system_image"
   avdmanager delete avd --name "$avd_name" >/dev/null
 fi
-if ! avdmanager list avd 2>/dev/null | grep -Fq "Name: $avd_name"; then
-  echo no | avdmanager create avd \
+avd_list="$(avdmanager list avd)"
+if ! grep -Fq "Name: $avd_name" <<< "$avd_list"; then
+  avdmanager create avd \
     --force \
     --name "$avd_name" \
     --package "$system_image" \
-    --device pixel_7 >/dev/null
+    --device pixel_7 >/dev/null <<< no
 fi
 
 if [[ -f "$avd_config" ]]; then

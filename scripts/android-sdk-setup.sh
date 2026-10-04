@@ -10,7 +10,7 @@ export ANDROID_AVD_HOME ANDROID_HOME ANDROID_SDK_ROOT
 
 command_tools_version="13114758"
 command_tools_url="https://dl.google.com/android/repository/commandlinetools-linux-${command_tools_version}_latest.zip"
-command_tools="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+command_tools="$ANDROID_SDK_ROOT/cmdline-tools/$command_tools_version/bin/sdkmanager"
 avd_name="${BAUKIT_ANDROID_AVD:-baukit-api-36}"
 
 if [[ ! -x "$command_tools" ]]; then
@@ -20,11 +20,11 @@ if [[ ! -x "$command_tools" ]]; then
   trap 'rm -rf "$download_dir"' EXIT
   curl --fail --location --retry 3 --output "$download_dir/command-line-tools.zip" "$command_tools_url"
   unzip -q "$download_dir/command-line-tools.zip" -d "$download_dir/unpacked"
-  mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools/latest"
-  cp -R "$download_dir/unpacked/cmdline-tools/." "$ANDROID_SDK_ROOT/cmdline-tools/latest/"
+  mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools/$command_tools_version"
+  cp -R "$download_dir/unpacked/cmdline-tools/." "$ANDROID_SDK_ROOT/cmdline-tools/$command_tools_version/"
 fi
 
-export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/emulator:$ANDROID_SDK_ROOT/platform-tools:$PATH"
+export PATH="$ANDROID_SDK_ROOT/cmdline-tools/$command_tools_version/bin:$ANDROID_SDK_ROOT/emulator:$ANDROID_SDK_ROOT/platform-tools:$PATH"
 
 # sdkmanager closes stdin after the final license; yes then exits with SIGPIPE.
 set +o pipefail
@@ -45,11 +45,11 @@ sdkmanager --sdk_root="$ANDROID_SDK_ROOT" \
 
 mkdir -p "$ANDROID_AVD_HOME"
 if [[ ! -f "$ANDROID_AVD_HOME/$avd_name.ini" ]]; then
-  echo "no" | avdmanager create avd \
+  avdmanager create avd \
     --force \
     --name "$avd_name" \
     --package "system-images;android-36;google_apis;x86_64" \
-    --device "pixel_6"
+    --device "pixel_6" <<< no
 fi
 
 if [[ ! -f "$ANDROID_AVD_HOME/$avd_name.ini" ]]; then
@@ -62,6 +62,6 @@ Android SDK is ready.
 export ANDROID_HOME="$ANDROID_HOME"
 export ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT"
 export ANDROID_AVD_HOME="$ANDROID_AVD_HOME"
-export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/emulator:$ANDROID_SDK_ROOT/platform-tools:\$PATH"
+export PATH="$ANDROID_SDK_ROOT/cmdline-tools/$command_tools_version/bin:$ANDROID_SDK_ROOT/emulator:$ANDROID_SDK_ROOT/platform-tools:\$PATH"
 AVD: $avd_name
 EOF

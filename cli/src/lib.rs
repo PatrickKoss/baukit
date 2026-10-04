@@ -1461,7 +1461,6 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
         let mut dependencies = vec!["@tanstack/react-query", "vite"];
         if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
             dependencies.extend(EXPECTED_WEB_AUTH_DEPENDENCIES);
-            dependencies.extend(EXPECTED_WEB_AUTH_DEV_DEPENDENCIES);
         }
         validate_frontend_capability(
             root,

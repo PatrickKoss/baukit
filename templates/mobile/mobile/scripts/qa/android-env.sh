@@ -18,7 +18,7 @@ serial="emulator-$emulator_port"
 
 stop_android() {
   if [[ -f "$state_dir/android-owned" && -n "$sdk_root" ]]; then
-    "$sdk_root/platform-tools/adb" -s "$serial" emu kill >/dev/null 2>&1 || true
+    python3 "$root/mobile/scripts/qa/android-adb.py" "$sdk_root/platform-tools/adb" -s "$serial" emu kill >/dev/null 2>&1 || true
   fi
   rm -f "$state_dir/android-owned" "$state_dir/android-serial"
 }
@@ -44,12 +44,15 @@ export ANDROID_SDK_ROOT="$sdk_root"
 export ANDROID_AVD_HOME="$avd_home"
 adb="$sdk_root/platform-tools/adb"
 emulator="$sdk_root/emulator/emulator"
+adb_bounded() {
+  python3 "$root/mobile/scripts/qa/android-adb.py" "$adb" "$@"
+}
 [[ -x "$adb" && -x "$emulator" ]] || {
   echo "qa: Android SDK is incomplete; run 'make qa-android-setup'" >&2
   exit 1
 }
 
-if "$adb" devices | awk 'NR > 1 {print $1}' | grep -Fxq "$serial" && [[ ! -f "$state_dir/android-owned" ]]; then
+if adb_bounded devices | awk 'NR > 1 {print $1}' | grep -Fxq "$serial" && [[ ! -f "$state_dir/android-owned" ]]; then
   echo "qa: $serial is already in use by an emulator this target did not start" >&2
   exit 1
 fi
@@ -73,15 +76,7 @@ nohup "$emulator" "${emulator_args[@]}" >"$state_dir/android-emulator.log" 2>&1 
 printf '%s\n' "$serial" > "$state_dir/android-serial"
 touch "$state_dir/android-owned"
 
-ready=0
-for _ in $(seq 1 180); do
-  if [[ "$("$adb" -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == 1 ]]; then
-    ready=1
-    break
-  fi
-  sleep 2
-done
-if [[ "$ready" != 1 ]]; then
+if ! python3 "$root/mobile/scripts/qa/android-adb.py" --wait-for-boot "$adb" "$serial"; then
   echo "qa: Android emulator timed out; see $state_dir/android-emulator.log" >&2
   exit 1
 fi

@@ -77,6 +77,7 @@ cargo llvm-cov nextest --manifest-path backend/Cargo.toml --workspace --all-targ
   --run-ignored all --test-threads 4
 cargo llvm-cov report --manifest-path backend/Cargo.toml \
   --ignore-filename-regex 'src/bin/' --html
+mkdir -p backend/target/llvm-cov
 cargo llvm-cov report --manifest-path backend/Cargo.toml \
   --ignore-filename-regex 'src/bin/' --lcov \
   --output-path backend/target/llvm-cov/lcov.info

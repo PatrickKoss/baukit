@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Stop requiring the optional web Keycloak test helper dependency in doctor. Keep its browser runtime restriction.
+- Confirm doctor accepts declared Redis ports and `/v1/me` identity checks. Confirm generated Jest types match Jest 29.
+- Test pinned Android tools, AVD image changes, bounded ADB probes, and coverage output with an external Cargo target.
+- Keep generated Expo dependency checks enabled for every package.
+
 - Return mobile OIDC callbacks to the app root. Keep other native links unchanged.
 
 - Use Chrome's Android first-run switch during OIDC QA setup.

@@ -1,7 +1,14 @@
 # Changelog
 
 ## [Unreleased]
-{% if context.web or context.mobile %}
+{% if context.quality_strict and context.backend %}
+- Create the LCOV output directory when Cargo uses an external target directory.
+{% endif %}{% if context.mobile %}
+- Pin Android command-line tools to build 13114758. Recreate an AVD when its API level, image tag, or architecture changes.
+- Bound ADB startup and shutdown probes and the emulator boot wait.
+- Remove Expo dependency check exclusions. Keep Jest and its types on major 29.
+{% if context.auth_oidc %}- Use a valid SecureStore key for the local-data registry so authenticated local data can open.
+{% endif %}{% endif %}{% if context.web or context.mobile %}
 - Pass navigation labels from English and German catalogs.
 {% if context.mobile %}- Prepare Chrome before OIDC QA flows so its first-run screen does not block sign-in.
 - Replace Android emulator config keys with spaces around `=` without leaving duplicate entries.

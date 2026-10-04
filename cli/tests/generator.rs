@@ -485,6 +485,67 @@ fn legacy_manifest_defaults_to_standard_quality_and_legacy_consumer() -> anyhow:
     Ok(())
 }
 
+#[cfg(unix)]
+#[test]
+fn strict_coverage_creates_lcov_parent_with_an_external_target() -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let parent = tempfile::tempdir()?;
+    let mut strict = options(parent.path(), "external-coverage");
+    strict.quality = QualityProfile::Strict;
+    let root = generate_new(&strict)?;
+    let runner = fs::read_to_string(root.join("scripts/quality-gate.sh"))?;
+    let start = runner
+        .find("cargo fmt --manifest-path backend/Cargo.toml")
+        .expect("backend gate");
+    let end = runner[start..]
+        .find("rust_version=")
+        .expect("coverage gate end")
+        + start;
+    let commands = format!(
+        "set -eu\nmanifest_value() {{ echo 70; }}\n{}",
+        &runner[start..end]
+    );
+    let tools = parent.path().join("tools");
+    fs::create_dir(&tools)?;
+    let cargo = tools.join("cargo");
+    fs::write(
+        &cargo,
+        r#"#!/bin/sh
+set -eu
+mkdir -p "$CARGO_TARGET_DIR/llvm-cov"
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = --output-path ]; then
+    printf 'TN:external-target\n' > "$2"
+    exit 0
+  fi
+  shift
+done
+"#,
+    )?;
+    fs::set_permissions(&cargo, fs::Permissions::from_mode(0o755))?;
+    let output = Command::new("sh")
+        .args(["-c", &commands])
+        .current_dir(&root)
+        .env(
+            "PATH",
+            format!("{}:{}", tools.display(), std::env::var("PATH")?),
+        )
+        .env("CARGO_TARGET_DIR", parent.path().join("external-target"))
+        .output()?;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("backend/target/llvm-cov/lcov.info"))?,
+        "TN:external-target\n"
+    );
+    assert!(parent.path().join("external-target/llvm-cov").is_dir());
+    Ok(())
+}
+
 #[test]
 fn strict_generation_is_capability_driven_and_matches_golden_tree() -> anyhow::Result<()> {
     let cases = [
@@ -1943,17 +2004,17 @@ fn doctor_checks_makefile_redis_against_parameterized_compose_defaults() -> anyh
     let compose = root.join("compose.yaml");
     let original = fs::read_to_string(&compose)?;
     assert!(original.contains("127.0.0.1:6579:6379"));
-    let source = variable_port_makefile("?=", false, 18312);
+    let source = variable_port_makefile("?=", false, 6389);
     for mapping in [
-        "- \"127.0.0.1:${TIEFGANG_REDIS_PORT:-18312}:6379\"",
-        "- \"127.0.0.1:${TIEFGANG_REDIS_PORT-18312}:6379\"",
-        "- target: 6379\n        published: \"${TIEFGANG_REDIS_PORT:-18312}\"\n        host_ip: 127.0.0.1",
+        "- \"127.0.0.1:${TIEFGANG_REDIS_PORT:-6389}:6379\"",
+        "- \"127.0.0.1:${TIEFGANG_REDIS_PORT-6389}:6379\"",
+        "- target: 6379\n        published: \"${TIEFGANG_REDIS_PORT:-6389}\"\n        host_ip: 127.0.0.1",
     ] {
         let configuration = original.replace("- \"127.0.0.1:6579:6379\"", mapping);
         fs::write(&compose, &configuration)?;
         fs::write(&makefile, &source)?;
         doctor(&root)?;
-        fs::write(&makefile, source.replace("?= 18312", "?= 18313"))?;
+        fs::write(&makefile, source.replace("?= 6389", "?= 6390"))?;
         let error = doctor(&root).expect_err("Makefile and Compose Redis defaults must agree");
         assert!(
             error
@@ -1961,7 +2022,7 @@ fn doctor_checks_makefile_redis_against_parameterized_compose_defaults() -> anyh
                 .contains("Makefile` does not use port offset 200")
         );
         fs::write(&makefile, &source)?;
-        fs::write(&compose, configuration.replace("18312", "18313"))?;
+        fs::write(&compose, configuration.replace("6389", "6390"))?;
         let error = doctor(&root).expect_err("a changed Compose Redis default must cause drift");
         assert!(
             error
@@ -2249,13 +2310,12 @@ fn doctor_checks_pkce_ports_without_requiring_the_me_path() -> anyhow::Result<()
     local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
     let root = generate_new(&local)?;
     let script = root.join("scripts/pkce-login.py");
-    let source =
-        fs::read_to_string(&script)?.replace("localhost:8180/me", "localhost:8180/account/me");
+    let source = fs::read_to_string(&script)?.replace("localhost:8180/me", "localhost:8180/v1/me");
     fs::write(&script, &source)?;
     doctor(&root)?;
     fs::write(
         &script,
-        source.replace("localhost:8180/account/me", "localhost:8080/account/me"),
+        source.replace("localhost:8180/v1/me", "localhost:8080/v1/me"),
     )?;
     let error = doctor(&root).expect_err("configured offsets must reject a stale PKCE check URL");
     assert!(
@@ -2289,6 +2349,29 @@ fn doctor_accepts_mcp_urls_from_the_environment_and_checks_literal_defaults() ->
             .to_string()
             .contains("mcp/src/cli.ts` does not use port offset 100")
     );
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_web_without_unused_keycloak_test_helpers() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "web-without-e2e");
+    local.web = true;
+    local.auth = Some(AuthProvider::Oidc);
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    fs::remove_dir_all(root.join("web/e2e/stack"))?;
+    let path = root.join("web/package.json");
+    let mut package: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path)?)?;
+    assert!(
+        package["devDependencies"]
+            .as_object_mut()
+            .expect("devDependencies")
+            .remove("@baukit/auth-node")
+            .is_some()
+    );
+    fs::write(path, serde_json::to_string_pretty(&package)?)?;
+    doctor(&root)?;
     Ok(())
 }
 

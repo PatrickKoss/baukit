@@ -19,7 +19,20 @@ class MobileReactVersionsTest(unittest.TestCase):
                 self.assertEqual(package["dependencies"]["expo"], published["expo"])
                 for name in ("react", "react-native"):
                     self.assertEqual(package["dependencies"][name], published["bundledNativeModules"][name])
-                self.assertNotIn("react", package["expo"]["install"]["exclude"])
+                self.assertEqual(package["expo"]["install"]["exclude"], [])
+                jest_major = package["devDependencies"]["jest"].split(".")[0]
+                self.assertEqual(package["devDependencies"]["@types/jest"].split(".")[0], jest_major)
+                self.assertEqual(package["devDependencies"]["@jest/globals"].split(".")[0], jest_major)
+                for name, expected in published["bundledNativeModules"].items():
+                    if name == "react-dom":
+                        continue
+                    actual = package["dependencies"].get(name, package["devDependencies"].get(name))
+                    if actual == "catalog:":
+                        entry = re.search(rf"^  {re.escape(name)}: (.+)$", (base / "pnpm-workspace.yaml").read_text(), re.MULTILINE)
+                        self.assertIsNotNone(entry, name)
+                        actual = entry[1]
+                    self.assertIsNotNone(actual, name)
+                    self.assertEqual(actual, expected.removeprefix("~"), name)
                 override = re.search(r"^  react-dom: (.+)$", (base / "pnpm-workspace.yaml").read_text(), re.MULTILINE)
                 self.assertIsNotNone(override)
                 self.assertEqual(override[1], published["bundledNativeModules"]["react-dom"])

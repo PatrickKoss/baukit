@@ -23,7 +23,7 @@ import { createProductPersistenceLifecycle } from './persistence-lifecycle';
 
 import { PRODUCT_NAME } from './product';
 
-const REGISTRY_KEY = `${PRODUCT_NAME}:local-data-registry:v1`;
+const REGISTRY_KEY = `${PRODUCT_NAME}.local-data-registry.v1`;
 
 class SecureStoreRegistry implements ScopedPersistenceRegistryStore {
   public read(): Promise<string | null> {

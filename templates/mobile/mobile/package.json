@@ -58,17 +58,7 @@
   },
   "expo": {
     "install": {
-      "exclude": [
-        "@types/jest",
-        "expo",
-        "expo-constants",
-        "expo-crypto",
-        "expo-linking",
-        "expo-router",
-        "expo-sqlite",
-        "jest-expo",
-        "react-native"
-      ]
+      "exclude": []
     }
   },
   "packageManager": "pnpm@12.9.1"

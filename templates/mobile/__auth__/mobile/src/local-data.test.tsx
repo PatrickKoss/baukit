@@ -2,6 +2,9 @@ import { act, render, renderHook, waitFor } from '@testing-library/react-native'
 import { PersistenceIdentityMismatchError } from '@baukit/data-contracts';
 
 const mockSecureStore = new Map<string, string>();
+function mockValidateSecureStoreKey(key: string): void {
+  if (!/^[\w.-]+$/.test(key)) throw new Error('Invalid SecureStore key');
+}
 const mockAnalyticsReset = jest.fn();
 const mockOpenDatabase = jest.fn((name: string) => Promise.resolve({ name }));
 const mockStoreInitialize = jest.fn(() => Promise.resolve());
@@ -10,8 +13,12 @@ const mockStoreConstructed = jest.fn();
 const mockDeleteDatabase = jest.fn<Promise<void>, [string]>().mockResolvedValue(undefined);
 
 jest.mock('expo-secure-store', () => ({
-  getItemAsync: (key: string) => Promise.resolve(mockSecureStore.get(key) ?? null),
+  getItemAsync: (key: string) => {
+    mockValidateSecureStoreKey(key);
+    return Promise.resolve(mockSecureStore.get(key) ?? null);
+  },
   setItemAsync: (key: string, value: string) => {
+    mockValidateSecureStoreKey(key);
     mockSecureStore.set(key, value);
     return Promise.resolve();
   },
@@ -121,6 +128,11 @@ describe('authenticated local data', () => {
       { closeDatabase: true },
     );
     expect(mockAnalyticsReset).toHaveBeenCalled();
+    const registry = [...mockSecureStore.entries()].find(([key]) =>
+      key.endsWith('.local-data-registry.v1'),
+    );
+    expect(registry).toBeDefined();
+    expect(registry?.[1]).toContain('subject-open');
   });
 
   it('closes the partition on sign-out', async () => {
@@ -142,7 +154,7 @@ describe('authenticated local data', () => {
     expect(mockStoreClose).toHaveBeenCalledTimes(1);
     expect(mockDeleteDatabase).toHaveBeenCalledWith(`${state.partition.storeName}.db`);
     expect(result.current.state.status).toBe('signed-out');
-    const registry = [...mockSecureStore.entries()].find(([key]) => key.endsWith(':local-data-registry:v1'));
+    const registry = [...mockSecureStore.entries()].find(([key]) => key.endsWith('.local-data-registry.v1'));
     expect(registry?.[1]).not.toContain('subject-erase');
   });
 
