@@ -4,6 +4,7 @@ import { qaConfig } from '../qa.config';
 import {
   computedFocusVisual,
   expectFocusStaysInside,
+  expectInitialDialogFocus,
   openRoute,
   resetFocusToBody,
   stubApi,
@@ -28,7 +29,7 @@ test.describe('keyboard', () => {
       const dialog = page.getByRole('dialog', { name: overlay.dialog });
       await expect(dialog).toBeVisible();
       await expect(dialog).toHaveAttribute('aria-modal', 'true');
-      await expect(dialog.getByLabel(overlay.initialFocus, { exact: true })).toBeFocused();
+      await expectInitialDialogFocus(dialog, overlay.initialFocus);
       const inertIsSupported = await page.evaluate(() => 'inert' in HTMLElement.prototype);
       if (inertIsSupported) {
         await expect

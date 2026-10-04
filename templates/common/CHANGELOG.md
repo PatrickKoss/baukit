@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-{% if context.mobile %}- Match React and the react-dom override to Expo 57.0.26 bundled version 19.2.3. Keep React in Expo dependency checks.
+{% if context.web %}- Check initial dialog focus by accessible name. Support labeled inputs and buttons named by visible text.
+
+{% endif %}{% if context.mobile %}- Match React and the react-dom override to Expo 57.0.26 bundled version 19.2.3. Keep React in Expo dependency checks.
 {% endif %}
 
 ## [0.7.0] - 2026-10-04

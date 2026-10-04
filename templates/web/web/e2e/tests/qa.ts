@@ -28,6 +28,10 @@ export async function expireSession(page: Page, url: string): Promise<void> {
   });
 }
 
+export async function expectInitialDialogFocus(dialog: Locator, name: string): Promise<void> {
+  await expect(dialog.locator(':focus')).toHaveAccessibleName(name);
+}
+
 export async function openRoute(page: Page, path: string, authenticated = false): Promise<void> {
   if (authenticated) {
     const authentication = qaConfig.authentication;
