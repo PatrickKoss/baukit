@@ -8,7 +8,7 @@ catalog:
 overrides:
   '@react-native/metro-config': 0.86.3
   expo-constants: 'catalog:'
-  react-dom: 19.2.8
+  react-dom: 19.2.3
 
 peerDependencyRules:
   allowedVersions:

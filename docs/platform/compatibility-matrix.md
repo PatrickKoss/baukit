@@ -74,7 +74,7 @@ columns. See the [PostgreSQL 18 release notes](https://www.postgresql.org/docs/1
 
 | Responsibility | Dependency | Tested baseline | Notes |
 |---|---|---|---|
-| Mobile runtime | Expo SDK | 57.0.26 (RN 0.86.3, React 19.2.8) | React/RN versions follow the Expo SDK, verified with Expo Doctor |
+| Mobile runtime | Expo SDK | 57.0.26 (RN 0.86.3, React 19.2.3) | React/RN versions follow the Expo SDK, verified with Expo Doctor |
 | Mobile navigation | Expo Router | 57.0.24 | Generated mobile template baseline with Expo Router and `Stack.Protected` in the auth overlay; `react-native-screens` 4.26.2, `react-native-safe-area-context` 5.7.0, `react-native-reanimated` 4.5.1, `react-native-worklets` 0.10.1, and `react-native-gesture-handler` 2.32.0. |
 | Remote state | TanStack Query | 5 | |
 | Web routing | TanStack Router | current v1 | re-verify TanStack Start status separately |
@@ -112,7 +112,7 @@ the available upstream releases.
 | TypeScript | 7.0.2 | typescript-eslint 8.71.0 accepts TypeScript below 6.1. |
 | Expo SDK | 57.0.26 | SDK 57 is the latest stable SDK. Its native package versions remain together. |
 | React Native | 0.87.1 | Expo SDK 57 uses 0.86.3, including the Babel and Jest presets. |
-| React on mobile | 19.3.0 | Expo SDK 57 uses 19.2.8. Web uses 19.3.0. |
+| React on mobile | 19.3.0 | Expo SDK 57 uses 19.2.3. Web uses 19.3.0. |
 | Jest and @jest/globals | 30.5.2 | jest-expo 57 and the React Native Jest preset use Jest 29. Types use @types/jest 29.5.14. |
 | Babel | 8.0.6 | The React Native Babel preset uses Babel 7 plugins. |
 | test-renderer | 1.3.0 | Its React reconciler requires React 19.3. The Expo set uses React 19.2. |

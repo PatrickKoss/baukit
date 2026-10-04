@@ -8,6 +8,21 @@ import {
 } from './native.js';
 import type { NavigationItem } from './index.js';
 
+// Resolve lazy native modules during setup, before Jest starts each test's timer.
+const nativeModules = jest.requireActual<typeof import('react-native')>('react-native');
+for (const name of [
+  'AccessibilityInfo',
+  'Image',
+  'Modal',
+  'Pressable',
+  'ScrollView',
+  'Text',
+  'View',
+  'useWindowDimensions',
+]) {
+  Reflect.get(nativeModules, name);
+}
+
 const icon: NavigationIcon = ({ active }) => <Text>{active ? 'filled' : 'outline'}</Text>;
 const section: NavigationItem<NavigationIcon> = {
   id: 'progress',

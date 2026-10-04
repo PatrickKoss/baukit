@@ -12,7 +12,9 @@
   - @baukit/a11y-core@0.7.0
   - @baukit/ui-tokens@0.7.0
 
-## Unreleased
+## [Unreleased]
+
+- Resolve lazy native modules during test setup so cold compilation stays outside each render test's timer.
 
 - Add shared navigation models, route matching and compact section rotation.
 - Add collapsible React DOM and React Native rails, bottom bars, profile menus

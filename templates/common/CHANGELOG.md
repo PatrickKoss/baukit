@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+{% if context.mobile %}- Match React and the react-dom override to Expo 57.0.26 bundled version 19.2.3. Keep React in Expo dependency checks.
+{% endif %}
+
 - Install Corepack 0.36.0 before using pnpm in CI. Node 26 does not bundle Corepack.
 - Update pnpm to 12.9.1. Fresh web, mobile, and MCP lockfiles now pass frozen installation with linked Baukit packages.
 {% if context.mobile %}- Match Jest types to the Jest 29 runtime.

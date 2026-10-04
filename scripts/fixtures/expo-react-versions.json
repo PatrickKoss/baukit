@@ -1,0 +1,10 @@
+{
+  "expo": "57.0.26",
+  "tarball": "https://registry.npmjs.org/expo/-/expo-57.0.26.tgz",
+  "integrity": "sha512-U1rsFwcuZNnU61Z/YLnnVC/ZqP0wpxh/rCKUMff3ot/rhLpxFY1zxEqu4vyaexyvBAB1mwpl9lA/ltcHBoQGyg==",
+  "bundledNativeModules": {
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.3"
+  }
+}

@@ -29,7 +29,7 @@
     "expo-secure-store": "57.0.4",
     "expo-web-browser": "57.0.3",
     "i18next": "26.4.2",
-    "react": "19.2.8",
+    "react": "19.2.3",
     "react-i18next": "17.0.15",
     "react-native": "0.86.3",
     "react-native-gesture-handler": "2.32.0",
@@ -70,7 +70,6 @@
         "expo-router",
         "expo-sqlite",
         "jest-expo",
-        "react",
         "react-native"
       ]
     }

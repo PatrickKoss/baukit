@@ -26,7 +26,7 @@
     "expo-router": "57.0.24",
     "expo-sqlite": "57.0.3",
     "i18next": "26.4.2",
-    "react": "19.2.8",
+    "react": "19.2.3",
     "react-i18next": "17.0.15",
     "react-native": "0.86.3",
     "react-native-gesture-handler": "2.32.0",
@@ -67,7 +67,6 @@
         "expo-router",
         "expo-sqlite",
         "jest-expo",
-        "react",
         "react-native"
       ]
     }
