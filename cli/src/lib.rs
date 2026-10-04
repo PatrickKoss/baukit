@@ -1,3 +1,5 @@
+mod identity;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     ffi::OsString,
@@ -1639,65 +1641,7 @@ fn validate_product_constants(
     successes: &mut Vec<String>,
     failures: &mut Vec<String>,
 ) -> Result<()> {
-    let initial_failure_count = failures.len();
-    let env_prefix = manifest.app.name.replace('-', "_").to_ascii_uppercase();
-    for (relative, enabled, product_constant) in [
-        (
-            "mobile/src/product.ts",
-            manifest.capabilities.mobile,
-            "PRODUCT_NAME",
-        ),
-        (
-            "web/src/product.ts",
-            manifest.capabilities.web,
-            "PRODUCT_NAME",
-        ),
-        (
-            "mcp/src/product.ts",
-            manifest.capabilities.mcp.is_some(),
-            "PRODUCT_NAME",
-        ),
-        (
-            "backend/crates/PLACEHOLDER-bin/src/lib.rs",
-            manifest.capabilities.backend && manifest.capabilities.auth == Some(AuthProvider::Oidc),
-            "PRODUCT",
-        ),
-    ] {
-        if !enabled {
-            continue;
-        }
-        let relative = relative.replace("PLACEHOLDER", &manifest.app.name);
-        let path = root.join(&relative);
-        if !path.is_file() {
-            failures.push(format!(
-                "missing expected product constants file `{relative}`"
-            ));
-            continue;
-        }
-        let source = fs::read_to_string(path)?;
-        let mut expected = vec![(product_constant, manifest.app.name.as_str())];
-        if relative == "mcp/src/product.ts" {
-            expected.push(("ENV_PREFIX", env_prefix.as_str()));
-        }
-        for (name, value) in expected {
-            let Some(initializer) = source_constant(&source, name) else {
-                failures.push(format!(
-                    "generated file `{relative}` does not define {name}"
-                ));
-                continue;
-            };
-            if quoted_string(initializer) != Some(value) {
-                failures.push(format!(
-                    "generated file `{relative}` {name} does not match application name `{}`",
-                    manifest.app.name
-                ));
-            }
-        }
-    }
-    if failures.len() == initial_failure_count {
-        successes.push("generated product constants match the manifest".to_owned());
-    }
-    Ok(())
+    identity::validate(root, manifest, successes, failures)
 }
 
 fn validate_mcp_keycloak_port(

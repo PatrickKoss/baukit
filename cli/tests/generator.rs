@@ -1530,7 +1530,7 @@ fn doctor_validates_long_name_products_of_every_flavor() -> anyhow::Result<()> {
             assert!(
                 results
                     .iter()
-                    .any(|result| result.contains("product constants"))
+                    .any(|result| result.contains("product identities"))
             );
             assert!(
                 results
@@ -1689,8 +1689,12 @@ fn doctor_rejects_drift_in_product_constants_and_url_defaults() -> anyhow::Resul
         let error = doctor(&root)
             .expect_err("doctor must reject configuration drift")
             .to_string();
-        assert!(error.contains(relative), "{error}");
         assert!(error.contains(diagnostic), "{error}");
+        if diagnostic == "PRODUCT_NAME" || diagnostic == "ENV_PREFIX" {
+            assert!(error.contains("consumed by"), "{error}");
+        } else {
+            assert!(error.contains(relative), "{error}");
+        }
         fs::write(path, source)?;
     }
     doctor(&root)?;
@@ -1725,8 +1729,10 @@ fn doctor_accepts_variable_url_configuration_and_formatted_constants() -> anyhow
         doctor(&root)?;
         fs::remove_file(&path)?;
         let error = doctor(&root).expect_err("doctor must find missing product constants");
-        assert!(error.to_string().contains(relative));
-        assert_eq!(error.to_string().matches(relative).count(), 1);
+        assert!(
+            error.to_string().contains("has no literal source"),
+            "{error}"
+        );
         fs::write(path, source)?;
     }
     for (relative, source) in [
@@ -1795,7 +1801,7 @@ fn doctor_distinguishes_missing_constants_from_wrong_values() -> anyhow::Result<
         ),
         ("mcp/src/product.ts", "KEYCLOAK_PORT", "8181", "9999"),
         (
-            "backend/crates/constant-diagnostics-bin/src/lib.rs",
+            "backend/crates/constant-diagnostics-bin/src/bin/api.rs",
             "PRODUCT",
             "constant-diagnostics",
             "wrong-product",
@@ -1812,25 +1818,40 @@ fn doctor_distinguishes_missing_constants_from_wrong_values() -> anyhow::Result<
         let error = doctor(&root)
             .expect_err("doctor must identify a missing constant")
             .to_string();
-        let missing = format!("generated file `{relative}` does not define {name}");
-        assert!(error.contains(&missing), "{error}");
+        if name == "KEYCLOAK_PORT" {
+            assert!(
+                error.contains(&format!(
+                    "generated file `{relative}` does not define {name}"
+                )),
+                "{error}"
+            );
+        } else {
+            assert!(
+                error.contains(name) && error.contains("consumed by"),
+                "{error}"
+            );
+            assert!(error.contains("has no literal source"), "{error}");
+        }
         assert!(
             !error.contains("does not match application name"),
             "{error}"
         );
         fs::write(&path, source.replace(correct, wrong))?;
         let error = doctor(&root)
-            .expect_err("doctor must identify a wrong constant value")
+            .expect_err("doctor must identify a wrong consumed identity value")
             .to_string();
-        let mismatch = if name == "KEYCLOAK_PORT" {
-            format!("generated file `{relative}` {name} does not use port offset 100")
+        if name == "KEYCLOAK_PORT" {
+            assert!(
+                error.contains(&format!(
+                    "generated file `{relative}` {name} does not use port offset 100"
+                )),
+                "{error}"
+            );
         } else {
-            format!(
-                "generated file `{relative}` {name} does not match application name `constant-diagnostics`"
-            )
-        };
-        assert!(error.contains(&mismatch), "{error}");
-        assert!(!error.contains("does not define"), "{error}");
+            assert!(error.contains("does not match application name"), "{error}");
+            assert!(error.contains(name), "{error}");
+        }
+        assert!(!error.contains("has no literal source"), "{error}");
         fs::write(path, source)?;
     }
     doctor(&root)?;
@@ -3061,4 +3082,231 @@ fn sha256_hex(contents: &[u8]) -> String {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
+}
+
+#[test]
+fn doctor_follows_relocated_identity_modules_and_binding_names() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "relocated-identity");
+    local.mobile = true;
+    local.web = true;
+    local.mcp = true;
+    local.auth = Some(AuthProvider::Oidc);
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    for component in ["mobile", "web", "mcp"] {
+        let directory = root.join(component).join("src");
+        for entry in fs::read_dir(&directory)? {
+            let path = entry?.path();
+            if !path.is_file()
+                || !matches!(
+                    path.extension().and_then(|value| value.to_str()),
+                    Some("ts" | "tsx")
+                )
+            {
+                continue;
+            }
+            let source = fs::read_to_string(&path)?;
+            fs::write(
+                &path,
+                source
+                    .replace("PRODUCT_NAME", "APPLICATION_ID")
+                    .replace("ENV_PREFIX", "CONFIG_PREFIX")
+                    .replace("./product", "./identity"),
+            )?;
+        }
+        fs::rename(directory.join("product.ts"), directory.join("identity.ts"))?;
+    }
+    let config = root.join("mobile/app.config.ts");
+    fs::write(
+        &config,
+        fs::read_to_string(&config)?
+            .replace("PRODUCT_NAME", "APPLICATION_ID")
+            .replace("./src/product", "./src/identity"),
+    )?;
+    let api = root.join("backend/crates/relocated-identity-bin/src/bin/api.rs");
+    fs::write(
+        &api,
+        fs::read_to_string(&api)?.replace("PRODUCT", "APPLICATION_ID"),
+    )?;
+    doctor(&root)?;
+    let identity = root.join("web/src/identity.ts");
+    let source = fs::read_to_string(&identity)?;
+    fs::write(
+        &identity,
+        source.replace("relocated-identity", "different-product"),
+    )?;
+    let error = doctor(&root)
+        .expect_err("a moved identity must still be checked")
+        .to_string();
+    assert!(error.contains("APPLICATION_ID"), "{error}");
+    assert!(error.contains("web/src/analytics.ts"), "{error}");
+    fs::write(&identity, source)?;
+    fs::remove_file(&identity)?;
+    let error = doctor(&root)
+        .expect_err("an unresolved consumed identity must fail")
+        .to_string();
+    assert!(error.contains("has no literal source"), "{error}");
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_product_review_identity_layouts() -> anyhow::Result<()> {
+    for (name, slug) in [
+        ("eigenruhe", "eigenruhe"),
+        ("tiefgang", "tiefgang"),
+        ("sl", "solo-leveling"),
+        ("finops", "finops"),
+    ] {
+        let parent = tempfile::tempdir()?;
+        let mut local = options(parent.path(), name);
+        local.mobile = true;
+        local.web = true;
+        local.mcp = true;
+        local.auth = (name != "sl").then_some(AuthProvider::Oidc);
+        local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+        let root = generate_new(&local)?;
+        if name == "sl" {
+            for path in ["src/bin/api.rs", "src/bin/migrate.rs"] {
+                let path = root.join("backend/crates/sl-bin").join(path);
+                fs::write(
+                    &path,
+                    fs::read_to_string(&path)?.replace("\"sl\"", "\"solo-leveling-system\""),
+                )?;
+            }
+        }
+        let mobile = root.join("mobile/app.config.ts");
+        let source = fs::read_to_string(&mobile)?;
+        fs::write(
+            &mobile,
+            source
+                .replace("import { PRODUCT_NAME } from './src/product.ts';", "")
+                .replace("PRODUCT_NAME", &format!("'{slug}'")),
+        )?;
+        let analytics = root.join("mobile/src/analytics-client.ts");
+        fs::write(
+            &analytics,
+            fs::read_to_string(&analytics)?
+                .replace(
+                    "import { PRODUCT_NAME } from './product';",
+                    &format!(
+                        "const ANALYTICS_APP = '{}';",
+                        if name == "sl" {
+                            "solo-leveling-system"
+                        } else {
+                            name
+                        }
+                    ),
+                )
+                .replace("PRODUCT_NAME", "ANALYTICS_APP"),
+        )?;
+        fs::remove_file(root.join("mobile/src/product.ts"))?;
+        let server = root.join("mcp/src/server.ts");
+        fs::write(
+            &server,
+            fs::read_to_string(&server)?
+                .replace("import { PRODUCT_NAME } from './product.js';", "")
+                .replace("`${PRODUCT_NAME}-mcp`", &format!("'{name}-mcp'")),
+        )?;
+        for filename in ["api.ts", "auth.ts", "cli.ts"] {
+            let path = root.join("mcp/src").join(filename);
+            if !path.is_file() {
+                continue;
+            }
+            let source = fs::read_to_string(&path)?;
+            let product =
+                fs::read_to_string(root.join("mcp/src/product.ts"))?.replace("export ", "");
+            let source = source
+                .lines()
+                .map(|line| {
+                    if line.contains("from './product.js'") {
+                        product.as_str()
+                    } else {
+                        line
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            fs::write(path, source)?;
+        }
+        fs::remove_file(root.join("mcp/src/product.ts"))?;
+        let library = root.join(format!("backend/crates/{name}-bin/src/lib.rs"));
+        if local.auth.is_some() {
+            let source = fs::read_to_string(&library)?;
+            fs::write(
+                &library,
+                source
+                    .replace(&format!("const PRODUCT: &str = \"{name}\";"), "")
+                    .replace("{PRODUCT}", name)
+                    .replace("PRODUCT.to_owned()", &format!("\"{name}\".to_owned()")),
+            )?;
+        }
+        let api = root.join(format!("backend/crates/{name}-bin/src/bin/api.rs"));
+        fs::write(
+            &api,
+            fs::read_to_string(&api)?.replace("PRODUCT", "APP_NAME"),
+        )?;
+        doctor(&root)?;
+        let source = fs::read_to_string(&api)?;
+        fs::write(
+            &api,
+            source.replace(
+                &format!(
+                    "const APP_NAME: &str = \"{}\";",
+                    if name == "sl" {
+                        "solo-leveling-system"
+                    } else {
+                        name
+                    }
+                ),
+                "",
+            ),
+        )?;
+        let error = doctor(&root)
+            .expect_err("removing the consumed backend identity must fail")
+            .to_string();
+        assert!(error.contains("APP_NAME"), "{error}");
+        assert!(error.contains("has no literal source"), "{error}");
+    }
+    Ok(())
+}
+
+#[test]
+fn doctor_ignores_identity_examples_in_comments_and_strings() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "identity-examples");
+    local.mobile = true;
+    local.web = true;
+    local.mcp = true;
+    local.auth = Some(AuthProvider::Oidc);
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    for (relative, examples) in [
+        (
+            "web/src/analytics.ts",
+            "const example = \"new AnalyticsClient({ app: 'wrong-product' })\";\n// new AnalyticsClient({ app: 'wrong-product' })\n",
+        ),
+        (
+            "mcp/src/server.ts",
+            "const example = \"new McpServer({ name: 'wrong-mcp' })\";\n/* new McpServer({ name: 'wrong-mcp' }) */\n",
+        ),
+        (
+            "mcp/src/cli.ts",
+            "const example = 'process.env[`${UNKNOWN}_API_URL`]';\n",
+        ),
+        (
+            "mobile/src/product.ts",
+            "const example = \"const PRODUCT_NAME = 'wrong-product';\";\n",
+        ),
+        (
+            "backend/crates/identity-examples-bin/src/bin/api.rs",
+            "const EXAMPLE: &str = \"ConfigLoader::new(UNKNOWN, environment)\";\ntype Callback = fn(&'static str);\n// ConfigLoader::new(UNKNOWN, environment)\n",
+        ),
+    ] {
+        let path = root.join(relative);
+        let original = fs::read_to_string(&path)?;
+        fs::write(&path, format!("{examples}{original}"))?;
+        doctor(&root)?;
+    }
+    Ok(())
 }

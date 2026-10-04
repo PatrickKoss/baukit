@@ -66,6 +66,20 @@ for the generated images. Doctor checks literal Compose mappings and parameter
 defaults against declarations, and checks loopback source URLs against host
 ports. Runtime environment overrides remain product-owned.
 
+Doctor checks identity where code consumes it. Analytics context names and MCP
+server names must match `app.name`. It follows local constants and relative
+named imports, including renamed bindings. Expo's slug can use a product's
+public name. Backend config consumers must agree on one namespace; authenticated
+backends use `app.name`. An unauthenticated backend can use a different config
+namespace, which its analytics context can also use. For example, SLS uses
+`sl` for packages and `solo-leveling-system` for config and analytics.
+
+A product needs a consumed identity source. Doctor accepts inline Expo config,
+MCP server metadata, and backend `ConfigLoader::new` calls. It does not require
+`src/product.ts` or a library constant named `PRODUCT`. Missing imported bindings,
+empty identities, and conflicting backend namespaces still fail. These static
+checks cover literal names and constants; compilation checks computed values.
+
 Doctor does not require the template's guidance filenames. Products can write
 API policy, fake-provider, sync-table, navigation, observability, budget, and
 local-data-retention guidance under their own names. Generated links should

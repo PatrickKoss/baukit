@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Follow consumed product identities instead of requiring product.ts or a backend library PRODUCT constant. Accept product display slugs and shared config namespaces. Keep missing bindings and identity drift detectable.
+
 - Cut release sections in the common generated changelog. Put shipped 0.7.0 and 0.6.0 entries in their dated sections and remove the superseded pnpm pin.
 
 - Install the unpublished CLI from the matching Git release tag. Check install commands and update concrete tags during release preparation.
