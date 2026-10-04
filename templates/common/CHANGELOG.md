@@ -5,7 +5,8 @@
 - Pass navigation labels from English and German catalogs.
 {% if context.mobile %}- Prepare Chrome before OIDC QA flows so its first-run screen does not block sign-in.
 - Replace Android emulator config keys with spaces around `=` without leaving duplicate entries.
-{% endif %}{% endif %}
+{% if context.auth_oidc %}- Return mobile OIDC callbacks to the app root after sign-in.
+{% endif %}{% endif %}{% endif %}
 ## [0.7.1] - 2026-10-04
 
 {% if context.web %}- Center generated web content beside the navigation rail. Keep action links at least 44 pixels high.

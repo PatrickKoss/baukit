@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Return mobile OIDC callbacks to the app root. Keep other native links unchanged.
+
 - Use Chrome's Android first-run switch during OIDC QA setup.
 
 - Localize generated navigation labels in English and German.
