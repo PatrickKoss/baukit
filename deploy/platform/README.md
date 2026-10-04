@@ -197,8 +197,8 @@ on host ports 80 and 443, installs Flux, and lets the overlay's Flux
 Kustomizations reconcile all pinned HelmReleases. The local flavor includes the
 baseline, cert-manager and a self-signed `ClusterIssuer`, Traefik, CNPG and one
 PostgreSQL cluster, the Keycloak operator and realm import, the observability
-stack, and MinIO-backed PostgreSQL backups. The hcloud base is intentionally
-omitted because Docker-hosted k3d has neither Hetzner metadata nor cloud
+stack, and RustFS for Loki logs and PostgreSQL backups. The hcloud base is
+intentionally omitted because Docker-hosted k3d has neither Hetzner metadata nor cloud
 volumes.
 
 This older, self-contained integration harness intentionally remains separate
@@ -223,11 +223,11 @@ cluster and stops the local Git HTTP process. The ignored
 the same credentials; remove that directory manually only when credential
 rotation is intended.
 
-`status` prints the generated Keycloak bootstrap, Grafana, MinIO, and fixture
+`status` prints the generated Keycloak bootstrap, Grafana, RustFS, and fixture
 OIDC credentials on demand. The state directory is mode 0700 and its
 `secrets.env` is mode 0600. No Secret manifest or credential value is stored in
 the publishable overlay. Kubernetes Secrets for PostgreSQL, Keycloak, Grafana,
-MinIO, and the initial product are generated and applied at runtime.
+RustFS, and the initial product are generated and applied at runtime.
 
 ### Integration-harness GitRepository contract
 
@@ -247,10 +247,32 @@ to catch patch and schema errors without needing the Git server or cluster.
 
 ### Backups and integration fixture
 
-MinIO runs in the `postgres` namespace with a generated root credential and a
-2 GiB local-path PVC. The bootstrap Job creates `baukit-local`, and the CNPG
-`ObjectStore` writes under `s3://baukit-local/postgres`. The monthly restore
-CronJob is enabled locally so it can be exercised immediately with:
+RustFS runs in the `postgres` namespace with a generated root credential and a
+2 GiB local-path PVC. RustFS 1.0.1 uses a multi-platform digest pin and the
+image's non-root UID 10001. The AWS CLI bootstrap Job creates `baukit-local`
+and `posthog` without replacing existing buckets. The S3 endpoint is
+`http://rustfs.postgres.svc.cluster.local:9000`, with region `us-east-1` and
+path-style addressing. The CNPG `ObjectStore` writes under
+`s3://baukit-local/postgres`; local Loki stores chunks and ruler data in
+`baukit-local`. The optional PostHog base uses `posthog` through the chart's
+external object storage values. Its bundled object store stays disabled by the
+pinned chart's default.
+
+The runtime `rustfs-root` Secrets retain `username` and `password` keys in
+`postgres` and `observability`. `postgres-backup-credentials` retains
+`ACCESS_KEY_ID` and `ACCESS_SECRET_KEY`. PostHog receives the same credentials
+in `posthog-object-storage` with the chart-required `root-user` and
+`root-password` keys. Existing secret state gains RustFS credentials on the
+next `up` without rotating the other service passwords.
+
+Recreate an existing disposable integration cluster for this storage change.
+RustFS gets a new PVC, and the local Loki overlay starts with an S3 schema.
+This harness does not migrate old object-store files or filesystem log data.
+The publishable Loki base still uses filesystem storage; persistent consumers
+must add a future schema period when moving existing logs to S3.
+
+The monthly restore CronJob is enabled locally so it can be exercised
+immediately with:
 
 ```sh
 kubectl create job --from=cronjob/postgres-restore-test \
@@ -283,9 +305,10 @@ exception once the development Docker host exposes cgroup v2.
 - If port 80 or 443 is already occupied, stop the conflicting host service
   before creating the cluster. k3d owns both mappings for the cluster's
   lifetime.
-- If MinIO bootstrap fails, inspect `job/minio-create-bucket` in `postgres` and
-  confirm the runtime `minio-root` Secret exists. The `mc` container uses a
-  writable `/tmp/.mc` configuration directory because it runs non-root.
+- If RustFS bootstrap fails, inspect `job/rustfs-create-bucket` in `postgres` and
+  confirm the runtime `rustfs-root` Secret exists. The AWS CLI container uses
+  writable `/tmp/aws-config` and `/tmp/aws-credentials` paths because it runs
+  non-root. The Job has a five-minute deadline and reports bucket errors.
 - Use `kubectl get backup,scheduledbackup -n postgres` and the restore Job logs
   for backup problems. A successful restore publishes
   `baukit_restore_test_last_success_timestamp_seconds` through the local

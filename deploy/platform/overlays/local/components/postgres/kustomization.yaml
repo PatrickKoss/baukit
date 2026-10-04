@@ -14,7 +14,21 @@ patches:
         value: s3://baukit-local/postgres
       - op: add
         path: /spec/configuration/endpointURL
-        value: http://minio.postgres.svc.cluster.local:9000
+        value: http://rustfs.postgres.svc.cluster.local:9000
+      - op: add
+        path: /spec/instanceSidecarConfiguration/env
+        value:
+          - name: AWS_DEFAULT_REGION
+            value: us-east-1
+      - op: add
+        path: /spec/configuration/data/additionalCommandArgs
+        value: ["--addressing-style=path"]
+      - op: add
+        path: /spec/configuration/wal/archiveAdditionalCommandArgs
+        value: ["--addressing-style=path"]
+      - op: add
+        path: /spec/configuration/wal/restoreAdditionalCommandArgs
+        value: ["--addressing-style=path"]
   - target:
       group: postgresql.cnpg.io
       version: v1

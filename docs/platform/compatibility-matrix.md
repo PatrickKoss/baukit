@@ -43,6 +43,7 @@ release-host check rather than a Linux result.
 | Configuration | config + dotenvy | chosen loader (analysis §4.1) | Figment is not supported by the shared kit |
 | Outbound HTTP | reqwest | 0.13, rustls with the platform verifier | |
 | Auth | ring + JWKS | latest | Keycloak OIDC default; Clerk session-token adapter with `azp` validation; WorkOS AuthKit adapter bound to `client_id`. `ApiTokenStore` returns `ApiTokenStoreError` since 0.3.0. |
+| Local object storage | RustFS | 1.0.1 | [Latest stable release](https://github.com/rustfs/rustfs/releases/tag/1.0.1), pinned by multi-platform image digest. Local Loki, PostHog and CNPG use path-style S3 with region `us-east-1`. |
 | Development identity provider | Keycloak | 26.8.0 | Generated `compose.yaml` image; `make dev` reconciles the development realm from `realm-policy.json`. |
 | Integration tests | testcontainers + testcontainers-modules | 0.27.3 + 0.15.0 | Both crates use the same container types. `baukit-test` pins `postgres:18.6-alpine`; templates and smoke deploys use the same image. |
 | Sync revisions | `baukit-sync` | 0.5.2 | Per-owner revision allocation, locking revision reads, tombstone purge horizons with a pull-cursor guard, the syncable-table column convention, and a `user_id` to `owner_id` migration. SQLx 0.9 and PostgreSQL behind the `sqlx-postgres` feature; the hybrid logical clock needs neither. |
@@ -121,7 +122,6 @@ the available upstream releases.
 | Java | Temurin 27 | Expo SDK 57 generates Gradle 9.3.1. [Java 27 requires Gradle 9.8](https://docs.gradle.org/current/userguide/compatibility.html), so Android builds use the latest Temurin 21 patch. |
 | PostgreSQL | 18.6 | PostgreSQL stays on 18.x. Version 19 is still in beta. PostHog's separate database stays on 14.1. |
 | Keycloak | 26.8.0 | This is still the latest stable release. The theme matrix covers 26.7.5 and 26.8.0. |
-| MinIO image | RELEASE.2025-10-15T17-29-55Z | Quay has no image at this tag. The local overlay keeps the available September image. |
 
 Platform chart updates stay within their current major versions. The Tempo
 chart moves to 2.4.0 and kube-prometheus-stack to 88.6.5. Tempo chart 3.1.0 and

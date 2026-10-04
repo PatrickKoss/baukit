@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: minio
+  name: rustfs
   namespace: postgres
   labels:
-    app.kubernetes.io/name: minio
+    app.kubernetes.io/name: rustfs
     app.kubernetes.io/part-of: baukit-platform
 spec:
   accessModes:
@@ -16,48 +16,50 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: minio
+  name: rustfs
   namespace: postgres
   labels:
-    app.kubernetes.io/name: minio
+    app.kubernetes.io/name: rustfs
     app.kubernetes.io/part-of: baukit-platform
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: minio
+      app.kubernetes.io/name: rustfs
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: minio
+        app.kubernetes.io/name: rustfs
         app.kubernetes.io/part-of: baukit-platform
     spec:
       securityContext:
         runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
-        fsGroup: 1000
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
       containers:
-        - name: minio
-          image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+        - name: rustfs
+          image: rustfs/rustfs:1.0.1@sha256:1803faef57627e2d9c2e7d89d655d712ddded5389040054987163043fecb6a3c
           imagePullPolicy: IfNotPresent
-          args:
-            - server
-            - /data
-            - --console-address=:9001
           env:
-            - name: MINIO_ROOT_USER
+            - name: RUSTFS_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: minio-root
+                  name: rustfs-root
                   key: username
-            - name: MINIO_ROOT_PASSWORD
+            - name: RUSTFS_SECRET_KEY
               valueFrom:
                 secretKeyRef:
-                  name: minio-root
+                  name: rustfs-root
                   key: password
+            - name: RUSTFS_REGION
+              value: us-east-1
+            - name: RUSTFS_CONSOLE_ENABLE
+              value: "true"
+            - name: RUSTFS_OBS_LOG_DIRECTORY
+              value: ""
           ports:
             - name: s3
               containerPort: 9000
@@ -65,7 +67,7 @@ spec:
               containerPort: 9001
           readinessProbe:
             httpGet:
-              path: /minio/health/ready
+              path: /health
               port: s3
             periodSeconds: 5
             timeoutSeconds: 2
@@ -87,19 +89,19 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: minio
+            claimName: rustfs
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: minio
+  name: rustfs
   namespace: postgres
   labels:
-    app.kubernetes.io/name: minio
+    app.kubernetes.io/name: rustfs
     app.kubernetes.io/part-of: baukit-platform
 spec:
   selector:
-    app.kubernetes.io/name: minio
+    app.kubernetes.io/name: rustfs
   ports:
     - name: s3
       port: 9000
@@ -111,20 +113,22 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: minio-create-bucket
+  name: rustfs-create-bucket
   namespace: postgres
   labels:
-    app.kubernetes.io/name: minio-create-bucket
+    app.kubernetes.io/name: rustfs-create-bucket
     app.kubernetes.io/part-of: baukit-platform
 spec:
   ttlSecondsAfterFinished: 86400
+  activeDeadlineSeconds: 300
+  backoffLimit: 0
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: minio-create-bucket
+        app.kubernetes.io/name: rustfs-create-bucket
         app.kubernetes.io/part-of: baukit-platform
     spec:
-      restartPolicy: OnFailure
+      restartPolicy: Never
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -132,36 +136,48 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
-        - name: mc
-          image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+        - name: aws-cli
+          image: amazon/aws-cli:2.37.8@sha256:420ab345e847291b541b45d989535f55bcff957c27fa1100fae4aa233e86398c
           imagePullPolicy: IfNotPresent
           command:
             - /bin/sh
             - -ec
           args:
             - |
-              until mc --config-dir /tmp/.mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"; do
+              aws configure set default.s3.addressing_style path
+              until curl -fsS "$AWS_ENDPOINT_URL/health" >/dev/null; do
                 sleep 2
               done
-              mc --config-dir /tmp/.mc mb --ignore-existing local/baukit-local
+              for bucket in baukit-local posthog; do
+                aws s3api head-bucket --bucket "$bucket" 2>/dev/null ||
+                  aws s3api create-bucket --bucket "$bucket"
+              done
           env:
-            - name: MINIO_ROOT_USER
+            - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
-                  name: minio-root
+                  name: rustfs-root
                   key: username
-            - name: MINIO_ROOT_PASSWORD
+            - name: AWS_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: minio-root
+                  name: rustfs-root
                   key: password
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: AWS_ENDPOINT_URL
+              value: http://rustfs:9000
+            - name: AWS_CONFIG_FILE
+              value: /tmp/aws-config
+            - name: AWS_SHARED_CREDENTIALS_FILE
+              value: /tmp/aws-credentials
           resources:
             requests:
               cpu: 10m
-              memory: 32Mi
+              memory: 128Mi
             limits:
-              cpu: 100m
-              memory: 96Mi
+              cpu: 200m
+              memory: 256Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

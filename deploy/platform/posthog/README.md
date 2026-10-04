@@ -29,7 +29,7 @@ ingestion, backed by PostgreSQL, Redis, Redpanda, ZooKeeper, and one ClickHouse
 replica. The combined plugin server is explicitly limited to one worker with
 two concurrent tasks so it does not derive 24 workers from the local node.
 Celery worker, session recording, recordings ingestion/API, feature
-flag service, Temporal, object storage, email, backups, toolbox, MinIO, and the
+flag service, Temporal, email, backups, toolbox, the bundled object store, and the
 chart's ClickHouse operator/exporter and Grafana/Loki/Prometheus stack are
 excluded. Single-node ClickHouse is managed directly like the other dependencies,
 avoiding operator/CRD lifecycle overhead. The exclusions do not participate in
@@ -43,6 +43,13 @@ become permanent cluster debris after a successful retry. Their dependency
 probe also has a bounded connection timeout so a transient PostgreSQL endpoint
 gap during an upgrade cannot hang the hook.
 
+The chart uses external S3 storage at
+`http://rustfs.postgres.svc.cluster.local:9000`, bucket `posthog`, region
+`us-east-1`. The local foundation creates the bucket. The pinned chart disables
+its bundled object store by default. PostHog 1.43.0's plugin client forces
+path-style addressing, and its Python client uses the custom endpoint with
+Boto's automatic path-style selection. Session recording remains disabled.
+
 ## Overlay contract
 
 Before composition, create `Secret/posthog-secrets` in namespace `posthog`
@@ -51,6 +58,12 @@ through the consuming cluster's SOPS flow with these keys:
 - `posthog-secret`: at least 50 random bytes, used by Django;
 - `postgresql-password`: a generated database password;
 - `clickhouse-password`: a generated ClickHouse password.
+
+Also create `Secret/posthog-object-storage` in `posthog` with `root-user` and
+`root-password` keys for RustFS. The local integration helper copies its
+RustFS credentials into that Secret. A consuming overlay must compose the
+local foundation or replace `spec.values.externalObjectStorage` with its own
+endpoint, bucket, region, and credential Secret.
 
 Patch `spec.values.siteUrl`, `web.secureCookies`, and the chart ingress values
 for the instance hostname/TLS policy. The checked-in `posthog.invalid` URL and

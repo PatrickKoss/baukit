@@ -73,10 +73,16 @@ the logs-only DaemonSet remains unchanged.
 
 ## Object-storage switch
 
-Loki and Tempo deliberately start on filesystem storage. Moving either to S3
-is an overlay operation because bucket names, endpoints, regions, and
+The publishable Loki and Tempo bases start on filesystem storage. Moving either
+to S3 is an overlay operation because bucket names, endpoints, regions, and
 credentials carry deployment identity. Supply credentials through SOPS-managed
 Secrets and environment references, never inline values.
+
+The local Loki overlay uses RustFS 1.0.1, bucket `baukit-local`, region
+`us-east-1`, and path-style addressing. Runtime credentials come from
+`rustfs-root` in `observability` through environment expansion. This schema is
+for a fresh disposable cluster. Recreate the integration harness when switching
+its storage; persistent overlays must preserve existing schema periods.
 
 For Loki, patch `loki.storage`, add the credential Secret through
 `singleBinary.extraEnvFrom`, enable environment expansion, and append a

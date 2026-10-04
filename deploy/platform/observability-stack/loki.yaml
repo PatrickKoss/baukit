@@ -102,8 +102,6 @@ spec:
       enabled: false
     test:
       enabled: false
-    minio:
-      enabled: false
     monitoring:
       serviceMonitor:
         enabled: true

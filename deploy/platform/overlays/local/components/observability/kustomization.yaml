@@ -5,3 +5,4 @@ resources:
 patches:
   - path: resources.yaml
 
+  - path: loki-storage.yaml

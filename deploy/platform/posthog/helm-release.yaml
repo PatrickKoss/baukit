@@ -24,6 +24,11 @@ spec:
       retries: 3
   values:
     cloud: local
+    env:
+      - name: AWS_REGION
+        value: us-east-1
+      - name: AWS_DEFAULT_REGION
+        value: us-east-1
     siteUrl: http://posthog.invalid
     image:
       repository: posthog/posthog
@@ -111,10 +116,11 @@ spec:
       existingSecretPasswordKey: clickhouse-password
       secure: false
       verify: false
-    minio:
-      enabled: false
-    objectStorage:
-      enabled: false
+    externalObjectStorage:
+      endpoint: http://rustfs.postgres.svc.cluster.local:9000
+      bucket: posthog
+      region: us-east-1
+      existingSecret: posthog-object-storage
     grafana:
       enabled: false
     loki:

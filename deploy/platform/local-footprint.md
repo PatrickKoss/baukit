@@ -33,16 +33,26 @@ idle period.
 | observability | Loki gateway | 1m | 31 MiB |
 | observability | Prometheus | 10m | 694 MiB |
 | observability | Tempo | 2m | 93 MiB |
-| postgres | MinIO | 1m | 113 MiB |
 | postgres | PostgreSQL plus Barman sidecar | 5m | 134 MiB |
 | postgres | restore-test Pushgateway | 0m | 20 MiB |
 | traefik | Traefik | 1m | 32 MiB |
-| **Pod total** | **29 running pods** | **63m** | **3,383 MiB (3.30 GiB)** |
+| **Pod subtotal** | **28 running pods, excludes replaced storage** | **62m** | **3,270 MiB (3.19 GiB)** |
 
-The k3d node reported **123m CPU and 6,452 MiB (6.30 GiB) memory** in total,
+The table excludes the retired object-storage pod, which used 1m CPU and
+113 MiB in the August sample. The subtotal is historical and does not include
+the replacement RustFS pod.
+
+On 2026-10-04, the isolated RustFS 1.0.1 proof cluster reported **5m CPU and
+67 MiB** for RustFS after AWS CLI object round trips, Barman WAL archive and
+restore, and a Loki chunk flush. It used the committed 50m/128Mi requests and
+400m/384Mi limits with a 2 GiB PVC. This is a component sample after test
+traffic, not a new measurement of the complete platform at idle.
+
+The August k3d node reported **123m CPU and 6,452 MiB (6.30 GiB) memory** in total,
 against 24 allocatable CPUs and 48,954,860 KiB (46.69 GiB) allocatable memory.
-The difference from the pod total includes k3s/containerd, the Kubernetes node
-processes, kernel working set, and other node-level accounting.
+That node sample includes the retired storage pod. The difference from the pod
+subtotal includes k3s/containerd, the Kubernetes node processes, kernel working
+set, and other node-level accounting.
 
 ## Testing-node sizing implication
 

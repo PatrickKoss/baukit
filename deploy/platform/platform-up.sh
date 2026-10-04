@@ -59,8 +59,8 @@ ensure_secret_state() {
       printf 'POSTGRES_PRODUCT_PASSWORD=%q\n' "$(random_value 18)"
       printf 'GRAFANA_ADMIN_USER=%q\n' admin
       printf 'GRAFANA_ADMIN_PASSWORD=%q\n' "$(random_value 18)"
-      printf 'MINIO_ROOT_USER=%q\n' "local-$(random_value 6)"
-      printf 'MINIO_ROOT_PASSWORD=%q\n' "$(random_value 18)"
+      printf 'RUSTFS_ACCESS_KEY=%q\n' "local-$(random_value 6)"
+      printf 'RUSTFS_SECRET_KEY=%q\n' "$(random_value 18)"
       printf 'FIXTURE_DB_PASSWORD=%q\n' "$(random_value 18)"
       printf 'FIXTURE_OIDC_PASSWORD=%q\n' "$(random_value 12)"
     } >"$secrets_file"
@@ -68,6 +68,14 @@ ensure_secret_state() {
   fi
   # shellcheck disable=SC1090
   source "$secrets_file"
+  if [[ -z ${RUSTFS_ACCESS_KEY:-} || -z ${RUSTFS_SECRET_KEY:-} ]]; then
+    RUSTFS_ACCESS_KEY="local-$(random_value 6)"
+    RUSTFS_SECRET_KEY=$(random_value 18)
+    {
+      printf 'RUSTFS_ACCESS_KEY=%q\n' "$RUSTFS_ACCESS_KEY"
+      printf 'RUSTFS_SECRET_KEY=%q\n' "$RUSTFS_SECRET_KEY"
+    } >>"$secrets_file"
+  fi
 }
 
 stop_git_daemon() {
@@ -141,7 +149,7 @@ apply_secret() {
 
 apply_runtime_identity() {
   local namespace
-  for namespace in postgres keycloak observability; do
+  for namespace in postgres keycloak observability posthog; do
     kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
     kubectl label namespace "$namespace" app.kubernetes.io/part-of=baukit-platform --overwrite >/dev/null
   done
@@ -151,11 +159,17 @@ apply_runtime_identity() {
     --from-literal=username=product_owner \
     --from-literal=password="$POSTGRES_PRODUCT_PASSWORD"
   apply_secret postgres postgres-backup-credentials \
-    --from-literal=ACCESS_KEY_ID="$MINIO_ROOT_USER" \
-    --from-literal=ACCESS_SECRET_KEY="$MINIO_ROOT_PASSWORD"
-  apply_secret postgres minio-root \
-    --from-literal=username="$MINIO_ROOT_USER" \
-    --from-literal=password="$MINIO_ROOT_PASSWORD"
+    --from-literal=ACCESS_KEY_ID="$RUSTFS_ACCESS_KEY" \
+    --from-literal=ACCESS_SECRET_KEY="$RUSTFS_SECRET_KEY"
+  apply_secret postgres rustfs-root \
+    --from-literal=username="$RUSTFS_ACCESS_KEY" \
+    --from-literal=password="$RUSTFS_SECRET_KEY"
+  apply_secret observability rustfs-root \
+    --from-literal=username="$RUSTFS_ACCESS_KEY" \
+    --from-literal=password="$RUSTFS_SECRET_KEY"
+  apply_secret posthog posthog-object-storage \
+    --from-literal=root-user="$RUSTFS_ACCESS_KEY" \
+    --from-literal=root-password="$RUSTFS_SECRET_KEY"
   apply_secret postgres keycloak-db-credentials \
     --type=kubernetes.io/basic-auth \
     --from-literal=username=keycloak_owner \
@@ -197,7 +211,7 @@ status() {
   printf '\nLocal credentials (stored mode 0600 in %s):\n' "$secrets_file"
   printf '  Keycloak bootstrap: %s / %s\n' "$KEYCLOAK_ADMIN_USER" "$KEYCLOAK_ADMIN_PASSWORD"
   printf '  Grafana:            %s / %s\n' "$GRAFANA_ADMIN_USER" "$GRAFANA_ADMIN_PASSWORD"
-  printf '  MinIO:              %s / %s\n' "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
+  printf '  RustFS:             %s / %s\n' "$RUSTFS_ACCESS_KEY" "$RUSTFS_SECRET_KEY"
   printf '  Fixture OIDC user:  test / %s\n' "$FIXTURE_OIDC_PASSWORD"
   printf '  Keycloak service:   http://keycloak-service.keycloak.svc.cluster.local:8080\n'
 }
@@ -256,9 +270,15 @@ down() {
   printf 'Local platform stopped. Runtime credentials remain in %s for the next idempotent up.\n' "$state_dir"
 }
 
-case ${1:-} in
-  up) up ;;
-  down) down ;;
-  status) status ;;
-  *) usage ;;
-esac
+main() {
+  case ${1:-} in
+    up) up ;;
+    down) down ;;
+    status) status ;;
+    *) usage ;;
+  esac
+}
+
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+  main "$@"
+fi
