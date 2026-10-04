@@ -310,6 +310,7 @@ fn generated_native_qa_targets_are_platform_specific_and_shell_valid() -> anyhow
     assert!(smoke.contains("appId: ${APP_ID}"));
     assert!(smoke.contains("Sign in with local Keycloak"));
     assert!(smoke.contains("development-password"));
+    assert!(smoke.contains("- scrollUntilVisible:\n    element:\n      text: Allow\n"));
     let compose = fs::read_to_string(combined.join("mobile/scripts/qa/docker-compose.qa.yml"))?;
     assert!(compose.contains("BAUKIT_QA_POSTGRES_PORT"));
     assert!(compose.contains("BAUKIT_QA_REDIS_PORT"));
