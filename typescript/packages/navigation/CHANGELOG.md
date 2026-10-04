@@ -14,6 +14,8 @@
 
 ## [Unreleased]
 
+- Draw web focus rings 2 pixels outside controls. Reserve room for rings in collapsed rails and compact bars. Bound section menus above the bottom bar and scroll long sections inside the menu.
+
 - Resolve lazy native modules during test setup so cold compilation stays outside each render test's timer.
 
 - Add shared navigation models, route matching and compact section rotation.

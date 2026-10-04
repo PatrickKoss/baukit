@@ -126,6 +126,7 @@ it.each(
     const focusedStyle = getComputedStyle(activeLink);
     expect(focusedStyle.outlineColor).not.toBe(focusedStyle.backgroundColor);
     expect(Number.parseFloat(focusedStyle.outlineWidth)).toBeGreaterThanOrEqual(3);
+    expect(Number.parseFloat(focusedStyle.outlineOffset)).toBe(2);
     const profile = page.getByRole('link', { name: 'Account' }).element().getBoundingClientRect();
     const navBox = navigation.getBoundingClientRect();
     if (width >= 1024) {
@@ -147,6 +148,20 @@ it.each(
         page.getByRole('button', { name: 'Primary action' }).element().getBoundingClientRect().left,
       ).toBeGreaterThanOrEqual(navigation.getBoundingClientRect().right);
       await expect.poll(() => navigation.getBoundingClientRect().width).toBe(76);
+      await act(async () => {
+        await userEvent.tab();
+        parent.focus();
+      });
+      expect(parent.matches(':focus-visible')).toBe(true);
+      const parentStyle = getComputedStyle(parent);
+      expect(Number.parseFloat(parentStyle.outlineOffset)).toBe(2);
+      const ringExtent = Number.parseFloat(parentStyle.outlineWidth) + 2;
+      const parentBox = parent.getBoundingClientRect();
+      const scrollBox = navigation.querySelector('.bk-navigation-items')?.getBoundingClientRect();
+      if (scrollBox === undefined) throw new Error('Navigation scroll container did not render');
+      expect(parentBox.left - ringExtent).toBeGreaterThanOrEqual(scrollBox.left);
+      expect(parentBox.right + ringExtent).toBeLessThanOrEqual(scrollBox.right);
+      expect(parentBox.top - ringExtent).toBeGreaterThanOrEqual(scrollBox.top);
       expect(filledRows()).toEqual([parent]);
       expect(parent.getAttribute('data-active')).toBe('page');
       expect(page.getByRole('button', { name: 'Progress' }).element().getAttribute('title')).toBe(
@@ -181,3 +196,91 @@ it.each(
     expect(errors).toEqual([]);
   },
 );
+
+it('keeps a long compact section menu between its picker and the bottom bar', async () => {
+  await page.viewport(320, 568);
+  const cost = {
+    id: 'cost',
+    label: 'Cost',
+    href: '/cost',
+    icon,
+    children: Array.from({ length: 14 }, (_, index) => ({
+      id: `cost-${String(index + 1)}`,
+      label: `Cost page ${String(index + 1)}`,
+      href: `/cost/${String(index + 1)}`,
+    })),
+  };
+  styles = document.createElement('style');
+  styles.textContent = `${toCssVariables(exampleTokens)} ${stylesheet} body{margin:0} *{box-sizing:border-box}`;
+  document.head.append(styles);
+  host = document.createElement('div');
+  document.body.append(host);
+  root = createRoot(host);
+  await act(() => {
+    root?.render(
+      <>
+        <AppNavigation
+          items={[cost]}
+          pathname="/cost/1"
+          profile={{ label: 'Account', initials: 'AB', href: '/profile' }}
+        />
+        <main style={{ padding: 8, paddingTop: 200 }}>
+          <SectionPicker item={cost} pathname="/cost/1" />
+        </main>
+      </>,
+    );
+    return Promise.resolve();
+  });
+  const trigger = page.getByRole('button', { name: 'Cost, Cost page 1' });
+  await act(async () => trigger.click());
+  const menu = page.getByRole('menu', { name: 'Cost' }).element();
+  const navigation = document.querySelector('.bk-navigation');
+  if (navigation === null) throw new Error('Bottom navigation did not render');
+  function expectBounds() {
+    const menuBox = menu.getBoundingClientRect();
+    expect(menuBox.top).toBeGreaterThanOrEqual(
+      trigger.element().getBoundingClientRect().bottom + 8,
+    );
+    expect(menuBox.bottom).toBeLessThanOrEqual(navigation?.getBoundingClientRect().top ?? 0);
+    expect(menu.scrollHeight).toBeGreaterThan(menu.clientHeight);
+    expect(getComputedStyle(menu).overflowY).toBe('auto');
+  }
+  expectBounds();
+  await act(async () => userEvent.keyboard('{End}'));
+  const last = page.getByRole('menuitem', { name: 'Cost page 14' }).element();
+  expect(document.activeElement).toBe(last);
+  expect(last.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+    menu.getBoundingClientRect().bottom,
+  );
+  expect(menu.scrollTop).toBeGreaterThan(0);
+  await act(async () => {
+    await page.viewport(320, 480);
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          resolve();
+        });
+      }),
+    );
+  });
+  await expect
+    .poll(() => menu.getBoundingClientRect().bottom <= navigation.getBoundingClientRect().top)
+    .toBe(true);
+  expectBounds();
+  const main = host.querySelector('main');
+  if (main === null) throw new Error('Main content did not render');
+  await act(async () => {
+    main.style.paddingTop = '240px';
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          resolve();
+        });
+      }),
+    );
+  });
+  await expect
+    .poll(() => menu.getBoundingClientRect().bottom <= navigation.getBoundingClientRect().top)
+    .toBe(true);
+  expectBounds();
+});

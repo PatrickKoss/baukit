@@ -1,6 +1,7 @@
 import {
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -81,6 +82,7 @@ interface MenuProps {
   readonly onNavigate: Navigate | undefined;
   readonly renderLink: NavigationLinkRenderer | undefined;
   readonly pathname: string;
+  readonly maxHeight?: number | undefined;
 }
 
 function Menu({
@@ -92,6 +94,7 @@ function Menu({
   onNavigate,
   renderLink,
   pathname,
+  maxHeight,
 }: MenuProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const roving = useRovingMenu({
@@ -125,6 +128,7 @@ function Menu({
   return (
     <div
       className="bk-navigation-menu"
+      style={maxHeight === undefined ? undefined : { maxHeight }}
       id={id}
       role="menu"
       aria-label={label}
@@ -485,6 +489,53 @@ export function AppNavigation(props: AppNavigationProps) {
   );
 }
 
+const SECTION_MENU_GAP = 8;
+
+function useSectionMenuHeight(open: boolean, triggerRef: RefObject<HTMLButtonElement | null>) {
+  const [height, setHeight] = useState<number>();
+  const measuredHeight = useRef<number | undefined>(undefined);
+  useLayoutEffect(() => {
+    const trigger = triggerRef.current;
+    if (!open || trigger === null) return;
+    function measure() {
+      const bar = document.querySelector<HTMLElement>(".bk-navigation[data-layout='bar']");
+      if (trigger === null) return;
+      const viewportBottom =
+        (window.visualViewport?.height ?? window.innerHeight) +
+        (window.visualViewport?.offsetTop ?? 0);
+      const bottom = Math.min(viewportBottom, bar?.getBoundingClientRect().top ?? viewportBottom);
+      const nextHeight = Math.max(
+        0,
+        bottom - trigger.getBoundingClientRect().bottom - SECTION_MENU_GAP * 2,
+      );
+      if (measuredHeight.current === nextHeight) return;
+      measuredHeight.current = nextHeight;
+      setHeight(nextHeight);
+    }
+    measure();
+    const observer = 'ResizeObserver' in window ? new ResizeObserver(measure) : undefined;
+    for (
+      let element: HTMLElement | null = trigger;
+      element !== null;
+      element = element.parentElement
+    ) {
+      observer?.observe(element);
+    }
+    const navigation = document.querySelector('.bk-navigation');
+    if (navigation !== null) observer?.observe(navigation);
+    window.addEventListener('resize', measure);
+    window.addEventListener('scroll', measure, true);
+    window.visualViewport?.addEventListener('resize', measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('scroll', measure, true);
+      window.visualViewport?.removeEventListener('resize', measure);
+    };
+  }, [open, triggerRef]);
+  return height;
+}
+
 export interface SectionPickerProps {
   readonly item: NavigationItem<NavigationIcon>;
   readonly pathname: string;
@@ -494,6 +545,7 @@ export interface SectionPickerProps {
 export function SectionPicker({ item, pathname, onNavigate, renderLink }: SectionPickerProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const maxHeight = useSectionMenuHeight(open, triggerRef);
   const id = useId();
   const active = resolveActiveNavigation([item], pathname).subItem ?? item.children?.[0];
   const entries = item.children ?? [];
@@ -522,6 +574,7 @@ export function SectionPicker({ item, pathname, onNavigate, renderLink }: Sectio
       {open ? (
         <Menu
           entries={entries}
+          maxHeight={maxHeight}
           id={id}
           label={item.label}
           triggerRef={triggerRef}

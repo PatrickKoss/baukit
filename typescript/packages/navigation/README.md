@@ -112,7 +112,10 @@ or bottom height in the content shell. `NAVIGATION_DIMENSIONS` exports those
 numbers. Match the shell's margin and width transitions to the rail, or reserve
 the expanded width. Enable transitions only for `data-motion="standard"`.
 Include the bottom safe-area inset. The section picker belongs inside
-the current section's content.
+the current section's content. The DOM picker measures the space below its
+trigger and above the compact bottom bar. Long sections scroll inside that
+space. It updates the limit when the viewport, content layout, or scroll
+position changes.
 
 Keep route-heading focus in the product. Use
 `createRouteFocusController` from `@baukit/a11y-core/web` for DOM route changes,

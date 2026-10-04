@@ -17,6 +17,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  overflow-y: auto;
 }
 
 button {
@@ -112,6 +113,11 @@ h1 {
 }
 
 .action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 44px;
+  min-inline-size: 44px;
   padding: 10px 16px;
   border: 1px solid var(--bk-color-background-accent);
   border-radius: calc(var(--bk-radius-small) * 1px);
@@ -202,20 +208,21 @@ h1 {
 @media (min-width: 1024px) {
   body:has(.bk-navigation[data-layout='rail']) {
     --app-navigation-inset: 280px;
+    margin-left: var(--app-navigation-inset);
   }
   body:has(.bk-navigation[data-collapsed='true']) {
     --app-navigation-inset: 76px;
   }
   .shell {
-    width: min(760px, calc(100% - var(--app-navigation-inset) - 32px));
-    margin-left: calc(var(--app-navigation-inset) + 16px);
+    width: min(760px, calc(100% - 32px));
+    margin-left: auto;
     padding-bottom: 64px;
   }
+  body:has(.bk-navigation[data-motion='standard']) {
+    transition: margin-left var(--bk-motion-duration-normal) var(--bk-motion-easing-standard);
+  }
   body:has(.bk-navigation[data-motion='standard']) .shell {
-    transition:
-      margin-left var(--bk-motion-duration-normal)
-        var(--bk-motion-easing-standard),
-      width var(--bk-motion-duration-normal) var(--bk-motion-easing-standard);
+    transition: width var(--bk-motion-duration-normal) var(--bk-motion-easing-standard);
   }
   .section-picker {
     display: none;
@@ -225,6 +232,7 @@ h1 {
   margin: 16px;
 }
 @media (prefers-reduced-motion: reduce) {
+  body:has(.bk-navigation[data-motion='standard']),
   body:has(.bk-navigation[data-motion='standard']) .shell {
     transition: none;
   }
