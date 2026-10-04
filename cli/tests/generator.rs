@@ -2209,6 +2209,85 @@ fn doctor_accepts_root_workspaces_for_web_and_mobile_and_requires_a_workspace() 
 }
 
 #[test]
+fn doctor_requires_root_workspace_membership_for_every_app() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "workspace-members");
+    local.mobile = true;
+    local.web = true;
+    local.mcp = true;
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    doctor(&root)?;
+    for capability in ["mobile", "web", "mcp"] {
+        fs::remove_file(root.join(capability).join("pnpm-workspace.yaml"))?;
+    }
+    for packages in [
+        "['mobile', 'web', 'mcp']",
+        "['*']",
+        "['./mobile/', '{web,mcp}']",
+        "['**/mobile', 'web', 'mcp']",
+    ] {
+        fs::write(
+            root.join("pnpm-workspace.yaml"),
+            format!("packages: {packages}\n"),
+        )?;
+        doctor(&root)?;
+    }
+    for capability in ["mobile", "web", "mcp"] {
+        for packages in [
+            format!("['*', '!{capability}']"),
+            format!(
+                "['packages/*', '{}']",
+                ["mobile", "web", "mcp"]
+                    .into_iter()
+                    .filter(|name| *name != capability)
+                    .collect::<Vec<_>>()
+                    .join("', '")
+            ),
+        ] {
+            fs::write(
+                root.join("pnpm-workspace.yaml"),
+                format!("packages: {packages}\n"),
+            )?;
+            let error = doctor(&root).expect_err("a root workspace must include each app");
+            assert!(
+                error
+                    .to_string()
+                    .contains(&format!("packages do not include `{capability}`"))
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn doctor_does_not_require_a_pnpm_workspace_for_an_npm_mcp_app() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "npm-mcp");
+    local.mcp = true;
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    let path = root.join("mcp/package.json");
+    let mut package: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path)?)?;
+    package
+        .as_object_mut()
+        .expect("package object")
+        .remove("packageManager");
+    fs::write(&path, serde_json::to_string_pretty(&package)?)?;
+    fs::remove_file(root.join("mcp/pnpm-workspace.yaml"))?;
+    fs::write(root.join("pnpm-workspace.yaml"), "packages: ['mobile']\n")?;
+    doctor(&root)?;
+    fs::write(root.join("mcp/pnpm-lock.yaml"), "lockfileVersion: '9.0'\n")?;
+    assert!(
+        doctor(&root)
+            .expect_err("an MCP pnpm lockfile selects the pnpm workspace check")
+            .to_string()
+            .contains("packages do not include `mcp`")
+    );
+    Ok(())
+}
+
+#[test]
 fn generated_agent_guidance_is_a_regular_file() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let root = generate_new(&options(parent.path(), "agent-guidance"))?;

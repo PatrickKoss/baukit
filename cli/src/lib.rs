@@ -2296,6 +2296,16 @@ fn validate_mcp_capability(
     if package_path.is_file() {
         let source = fs::read_to_string(&package_path)
             .with_context(|| format!("could not read {}", package_path.display()))?;
+        let package: PackageDependencies =
+            serde_json::from_str(&source).context("could not parse mcp/package.json")?;
+        if package
+            .package_manager
+            .as_deref()
+            .is_some_and(|manager| manager.starts_with("pnpm@"))
+            || root.join("mcp/pnpm-lock.yaml").is_file()
+        {
+            validate_pnpm_workspace(root, "mcp", failures)?;
+        }
         if !source.contains("\"@modelcontextprotocol/sdk\": \"1.32.0\"") {
             failures.push(
                 "mcp/package.json must pin `@modelcontextprotocol/sdk` to `1.32.0`".to_owned(),
@@ -2410,10 +2420,63 @@ fn sql_creates_table(source: &str, table: &str) -> bool {
 
 #[derive(Deserialize)]
 struct PackageDependencies {
+    #[serde(default, rename = "packageManager")]
+    package_manager: Option<String>,
     #[serde(default)]
     dependencies: BTreeMap<String, String>,
     #[serde(default, rename = "devDependencies")]
     dev_dependencies: BTreeMap<String, String>,
+}
+
+#[derive(Deserialize)]
+struct PnpmWorkspace {
+    #[serde(default)]
+    packages: Vec<String>,
+}
+
+fn validate_pnpm_workspace(
+    root: &Path,
+    capability: &str,
+    failures: &mut Vec<String>,
+) -> Result<()> {
+    if root.join(capability).join("pnpm-workspace.yaml").is_file() {
+        return Ok(());
+    }
+    let path = root.join("pnpm-workspace.yaml");
+    if !path.is_file() {
+        failures.push(format!(
+            "missing pnpm workspace: expected `{capability}/pnpm-workspace.yaml` or `pnpm-workspace.yaml`"
+        ));
+        return Ok(());
+    }
+    let workspace: PnpmWorkspace = serde_yaml_ng::from_str(&fs::read_to_string(path)?)
+        .context("could not parse root pnpm-workspace.yaml")?;
+    let mut included = false;
+    let mut excluded = false;
+    for package in workspace.packages {
+        let (negative, pattern) = package
+            .strip_prefix('!')
+            .map_or((false, package.as_str()), |pattern| (true, pattern));
+        let glob =
+            globset::GlobBuilder::new(pattern.trim_start_matches("./").trim_end_matches('/'))
+                .literal_separator(true)
+                .build()
+                .with_context(|| format!("invalid pnpm workspace package pattern `{package}`"))?
+                .compile_matcher();
+        if glob.is_match(capability) {
+            if negative {
+                excluded = true;
+            } else {
+                included = true;
+            }
+        }
+    }
+    if !included || excluded {
+        failures.push(format!(
+            "root pnpm-workspace.yaml packages do not include `{capability}`"
+        ));
+    }
+    Ok(())
 }
 
 fn validate_frontend_capability(
@@ -2424,12 +2487,7 @@ fn validate_frontend_capability(
     successes: &mut Vec<String>,
     failures: &mut Vec<String>,
 ) -> Result<()> {
-    let nested_workspace = root.join(capability).join("pnpm-workspace.yaml");
-    if !nested_workspace.is_file() && !root.join("pnpm-workspace.yaml").is_file() {
-        failures.push(format!(
-            "missing pnpm workspace: expected `{capability}/pnpm-workspace.yaml` or `pnpm-workspace.yaml`"
-        ));
-    }
+    validate_pnpm_workspace(root, capability, failures)?;
     for relative in expected_files {
         if !root.join(relative).is_file() {
             failures.push(format!("missing expected {capability} file `{relative}`"));

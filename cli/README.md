@@ -33,3 +33,8 @@ offset.
 remain product-owned until a second product needs them. The
 [raw OpenAPI mirror design](../docs/platform/openapi-mirrors.md) records the
 proposed manifest and strict-check behavior.
+
+Each frontend can have its own `pnpm-workspace.yaml`. A product can instead
+use one root workspace whose `packages` patterns include every enabled app
+(`mobile`, `web`, and pnpm-managed `mcp`). Doctor checks inclusions and exclusions in those
+patterns.
