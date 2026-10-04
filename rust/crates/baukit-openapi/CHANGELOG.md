@@ -4,6 +4,8 @@ All notable changes to `baukit-openapi` are documented here.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-04
+
 ### Changed
 
 - Update the schema validation baseline to jsonschema 0.58.5.

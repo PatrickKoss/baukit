@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-04
+
 - Use caret requirements for third-party Rust dependencies so products can take compatible
   updates. Keep Baukit crate versions exact.
 

@@ -4,6 +4,12 @@
 
 - Report `pending` after server profile erasure commits but sign-in account deletion is still finishing. Keep local cleanup and sign-out in the committed flow. A pending receipt may have a null operation ID when a `profile_erased` fence confirms the commit without a receipt.
 
+## 0.7.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.7.0 train.
+
 ## 0.6.0
 
 ### Minor Changes

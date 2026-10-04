@@ -1,5 +1,11 @@
 # @baukit/auth-native
 
+## 0.7.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.7.0 train.
+
 ## 0.6.0
 
 ### Minor Changes

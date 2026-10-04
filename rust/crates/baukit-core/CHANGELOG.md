@@ -4,6 +4,8 @@ All notable changes to `baukit-core` are documented here.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-04
+
 ### Changed
 
 - Update the UUID dependency baseline to 1.27. Keep Rust 1.95 as the MSRV.

@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-04
+
 - Update the Redis and Sentinel fixture images to `8.10.2-alpine`, matching generated products. PostgreSQL remains on `18.6-alpine`.
 
 ### Changed

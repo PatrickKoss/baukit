@@ -5,23 +5,15 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
-Last verified release train: `v0.6.0` (dependency refresh: utoipa 6,
-OpenTelemetry 0.33 with tracing-opentelemetry 0.34, reqwest 0.13, Debian 13
-backend images, ESLint 10, zod 4, Vitest 5, pnpm 12.7.0, the current Expo SDK 57
-patches, and the current GitHub Actions majors; backend, web, mobile, combined,
-and MCP generated fixtures with coverage floors, browser Dexie conformance with
-36 tests, Docker-backed integration tests with 722 passing, both media-grant
-vector suites, Expo SQLite conformance with 33 tests, Hermes vectors and
-expo-notifications on Android, the generated Android compile, the MSRV check,
-cargo deny, and the complete local CI-equivalent gates were verified locally
-because hosted runners were unavailable). The iOS simulator gate requires macOS
-and remains a release-host check rather than a Linux result.
-
-The pre-0.7.0 refresh passed the complete Linux gates on 2026-10-04, including
-every generated CI flavor, Docker-backed Rust tests, browser tests, Android
-compilation, SQLite conformance, and Hermes/notifications conformance. Baukit
-versions remain 0.6.0 and Rust 1.95 remains the MSRV. Swift 6.4.0 and xtool 1.20.1
-were installed and version-checked on Linux.
+Last verified release train: `v0.7.0` (profile erasure across the product
+database and the identity provider, the shared `@baukit/navigation` package,
+PostgreSQL 18.6, Swift 6.4.0 and xtool 1.20.1, and the pre-release dependency
+refresh). Hosted CI passed all 24 jobs on 2026-10-04 (run 37171500073),
+including every generated fixture flavor, the generated Android compile, Expo
+SQLite conformance, and Hermes vectors with expo-notifications on Android. The
+Docker-backed Rust tests, browser Dexie conformance, the MSRV check and cargo
+deny also passed locally. The iOS simulator gate requires macOS and remains a
+release-host check rather than a Linux result.
 
 ## Toolchain
 

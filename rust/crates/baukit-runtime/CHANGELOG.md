@@ -4,6 +4,8 @@ All notable changes to `baukit-runtime` are documented here.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-04
+
 ### Changed
 
 - Use caret requirements for third-party Rust dependencies so products can take compatible
