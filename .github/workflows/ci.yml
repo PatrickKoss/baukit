@@ -163,6 +163,8 @@ jobs:
           key: ${{ runner.os }}-pnpm-${{ hashFiles('typescript/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-
+      - name: Check example lockfiles
+        run: make example-lockfiles-check
       - name: Install TypeScript dependencies
         working-directory: typescript
         run: pnpm install --frozen-lockfile
@@ -191,6 +193,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version-file: typescript/.nvmrc
+      - name: Enable pinned pnpm for release train tests
+        run: npm install --global corepack@0.36.0
       - run: python3 -m unittest discover -s scripts -p 'test_*.py'
 
   media-grants:

@@ -1,4 +1,4 @@
-.PHONY: toolchain fmt lint test check ci platform-validate platform-up platform-down platform-nuke platform-recreate platform-status ts-install ts-build ts-fmt ts-lint ts-test ts-browser-deps ts-browser-test ts-check cli-fmt cli-lint cli-test cli-check cli-ci scripts-test mcp-fixture-gate install-skills android-sdk-setup native-android-gate expo-sqlite-conformance expo-sqlite-conformance-prepare expo-notifications-conformance expo-notifications-conformance-prepare media-grants-test media-grants-njs-test
+.PHONY: toolchain fmt lint test check ci platform-validate platform-up platform-down platform-nuke platform-recreate platform-status ts-install ts-build ts-fmt ts-lint ts-test ts-browser-deps ts-browser-test ts-check cli-fmt cli-lint cli-test cli-check cli-ci scripts-test example-lockfiles-check mcp-fixture-gate install-skills android-sdk-setup native-android-gate expo-sqlite-conformance expo-sqlite-conformance-prepare expo-notifications-conformance expo-notifications-conformance-prepare media-grants-test media-grants-njs-test
 
 RUST_MANIFEST := rust/Cargo.toml
 TS_DIR := typescript
@@ -23,7 +23,7 @@ test: ts-test
 check: ts-check
 	cargo check --manifest-path $(RUST_MANIFEST) --workspace --all-targets
 
-ci: fmt lint test check ts-check ts-browser-test cli-ci scripts-test platform-validate media-grants-test media-grants-njs-test
+ci: example-lockfiles-check fmt lint test check ts-check ts-browser-test cli-ci scripts-test platform-validate media-grants-test media-grants-njs-test
 
 media-grants-test:
 	node --test $(MEDIA_GRANTS_NJS)/media-grant.test.mjs
@@ -55,6 +55,9 @@ cli-ci: cli-fmt cli-lint cli-test cli-check
 
 scripts-test:
 	python3 -m unittest discover -s scripts -p 'test_*.py'
+
+example-lockfiles-check:
+	python3 scripts/check-example-lockfiles.py
 
 mcp-fixture-gate:
 	@set -eu; \

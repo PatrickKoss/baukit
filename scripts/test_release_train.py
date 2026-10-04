@@ -194,7 +194,7 @@ class ReleaseTrainFilesTest(unittest.TestCase):
     def test_patch_train_cuts_template_changelog_and_updates_cli_tags(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for relative in ["scripts/release-train.sh", "scripts/release_packages.py", "scripts/cli_install.py", "templates/common/CHANGELOG.md", "README.md"]:
+            for relative in ["scripts/release-train.sh", "scripts/release_packages.py", "scripts/check-example-lockfiles.py", "scripts/cli_install.py", "templates/common/CHANGELOG.md", "README.md"]:
                 destination = root / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(ROOT / relative, destination)
@@ -234,6 +234,155 @@ class ReleaseTrainFilesTest(unittest.TestCase):
             self.assertEqual(after.count("## [0.6.0]"), 1)
             self.assertIn("--tag v0.7.1 --locked baukit-cli", (root / "README.md").read_text())
             self.assertEqual((root / "templates/VERSION").read_text(), "0.7.1\n")
+
+
+class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
+    def test_patch_train_refreshes_discovered_example_lockfiles(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.prepare_repo(root)
+            environment = {**os.environ, "CI": "true", "CARGO_BUILD_JOBS": "6"}
+            self.run_command(
+                root, environment, "corepack", "pnpm", "--dir", "typescript",
+                "install", "--no-frozen-lockfile", "--ignore-scripts",
+            )
+            for example in ("examples/first", "examples/nested/second"):
+                self.run_command(
+                    root, environment, "corepack", "pnpm", "--dir", example,
+                    "install", "--lockfile-only", "--no-frozen-lockfile", "--ignore-scripts",
+                )
+            check = ["python3", "scripts/check-example-lockfiles.py"]
+            self.run_command(root, environment, *check)
+            self.run_command(root, environment, "git", "init", "--quiet")
+            self.run_command(root, environment, "git", "add", ".")
+            self.run_command(
+                root, environment, "git", "-c", "user.name=release-test", "-c",
+                "user.email=release-test@invalid", "commit", "--quiet", "-m", "test fixture",
+            )
+            unrelated = (root / "examples/unrelated/pnpm-lock.yaml").read_bytes()
+            result = self.run_command(
+                root, environment, "bash", "scripts/release-train.sh", "patch"
+            )
+            self.assertIn("Prepared v0.7.2", result.stdout)
+            for example in ("examples/first", "examples/nested/second"):
+                lockfile = root / example / "pnpm-lock.yaml"
+                self.assertIn("^0.7.2", lockfile.read_text())
+                self.assertNotIn("^0.7.1", lockfile.read_text())
+            self.assertEqual(
+                (root / "examples/unrelated/pnpm-lock.yaml").read_bytes(), unrelated
+            )
+            self.run_command(root, environment, *check)
+            adapter = root / "typescript/packages/adapter/package.json"
+            manifest = json.loads(adapter.read_text())
+            manifest["peerDependencies"]["@baukit/data-contracts"] = ">=0.7.2"
+            adapter.write_text(json.dumps(manifest))
+            stale = subprocess.run(
+                check, cwd=root, env=environment, capture_output=True, text=True
+            )
+            self.assertNotEqual(stale.returncode, 0)
+            self.assertIn("ERR_PNPM_OUTDATED_LOCKFILE", stale.stdout + stale.stderr)
+            self.run_command(root, environment, *check, "--refresh")
+            self.run_command(root, environment, *check)
+            (root / "examples/first/pnpm-lock.yaml").unlink()
+            missing = subprocess.run(
+                check, cwd=root, env=environment, capture_output=True, text=True
+            )
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertIn("Missing pnpm-lock.yaml for examples/first", missing.stderr)
+
+    @staticmethod
+    def prepare_repo(root: Path) -> None:
+        for relative in (
+            "scripts/release-train.sh", "scripts/release_packages.py",
+            "scripts/check-example-lockfiles.py", "scripts/cli_install.py",
+            "scripts/check-version-coherence.py",
+        ):
+            destination = root / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT / relative, destination)
+        workspace = json.loads((ROOT / "typescript/package.json").read_text())
+        package_manager = workspace["packageManager"]
+        changesets = workspace["devDependencies"]["@changesets/cli"]
+        files = {
+            ".gitignore": "node_modules/\n",
+            "package.json": json.dumps({"private": True, "packageManager": package_manager}),
+            "rust/Cargo.toml": (
+                '[workspace]\nmembers = ["crates/baukit-core"]\nresolver = "2"\n'
+                '[workspace.package]\nversion = "0.7.1"\nlicense = "MIT"\n'
+                '[workspace.dependencies]\n'
+            ),
+            "rust/release-plz.toml": (
+                '[[package]]\nname = "baukit-core"\n'
+                'version_group = "baukit-release-train"\npublish = false\n'
+            ),
+            "rust/crates/baukit-core/Cargo.toml": (
+                '[package]\nname = "baukit-core"\nversion.workspace = true\n'
+                'edition = "2021"\n'
+            ),
+            "rust/crates/baukit-core/src/lib.rs": "pub const NAME: &str = \"baukit-core\";\n",
+            "rust/crates/baukit-core/CHANGELOG.md": "## [Unreleased]\n\n- Pending fix.\n",
+            "cli/Cargo.toml": (
+                '[package]\nname = "baukit-cli"\nversion = "0.7.1"\nedition = "2021"\n'
+            ),
+            "cli/src/main.rs": "fn main() {}\n",
+            "templates/common/CHANGELOG.md": "## [Unreleased]\n\n- Pending fix.\n",
+            "templates/VERSION": "0.7.1\n",
+            "deploy/chart/baukit-app/Chart.yaml": 'version: 0.7.1\nappVersion: "0.7.1"\n',
+            "deploy/observability/Chart.yaml": 'version: 0.7.1\nappVersion: "0.7.1"\n',
+            "deploy/chart/baukit-app/README.md": "  - name: baukit-app\n    version: 0.7.1\n",
+            "typescript/pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n",
+            "examples/unrelated/package.json": json.dumps({
+                "name": "unrelated", "private": True, "packageManager": package_manager,
+            }),
+            "examples/unrelated/pnpm-lock.yaml": "unrelated example must stay untouched\n",
+        }
+        manifests = {
+            "analytics-core": {"name": "@baukit/analytics-core", "version": "0.7.1"},
+            "data-contracts": {"name": "@baukit/data-contracts", "version": "0.7.1"},
+            "adapter": {
+                "name": "@baukit/adapter", "version": "0.7.1",
+                "peerDependencies": {"@baukit/data-contracts": "^0.7.1"},
+            },
+        }
+        for name, manifest in manifests.items():
+            manifest.update({"license": "MIT", "publishConfig": {"access": "public"}})
+            files[f"typescript/packages/{name}/package.json"] = json.dumps(
+                manifest, indent=2
+            )
+        files["typescript/package.json"] = json.dumps({
+            "name": "release-test", "private": True, "packageManager": package_manager,
+            "scripts": {"version-packages": "changeset version"},
+            "devDependencies": {"@changesets/cli": changesets},
+        })
+        config = json.loads((ROOT / "typescript/.changeset/config.json").read_text())
+        config["fixed"] = [[manifest["name"] for manifest in manifests.values()]]
+        files["typescript/.changeset/config.json"] = json.dumps(config)
+        for example, prefix, group in (
+            ("first", "../..", "dependencies"),
+            ("nested/second", "../../..", "devDependencies"),
+        ):
+            files[f"examples/{example}/package.json"] = json.dumps({
+                "name": example.replace("/", "-"), "private": True,
+                "packageManager": package_manager,
+                group: {
+                    "@baukit/adapter": f"file:{prefix}/typescript/packages/adapter",
+                    "@baukit/data-contracts": f"file:{prefix}/typescript/packages/data-contracts",
+                },
+            })
+        for relative, contents in files.items():
+            destination = root / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(contents)
+    def run_command(
+        self, root: Path, environment: dict[str, str], *command: str
+    ) -> subprocess.CompletedProcess[str]:
+        result = subprocess.run(
+            command, cwd=root, env=environment, capture_output=True, text=True
+        )
+        self.assertEqual(
+            result.returncode, 0, f"{' '.join(command)}\n{result.stdout}{result.stderr}"
+        )
+        return result
 
 
 if __name__ == "__main__":

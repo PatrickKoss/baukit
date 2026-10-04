@@ -77,6 +77,8 @@ if [[ "$actual_ts" != "$next" ]]; then
   done
 fi
 
+python3 scripts/check-example-lockfiles.py --refresh
+
 TRAIN_VERSION="$next" perl -0pi -e \
   's{(\[workspace\.package\]\nversion = ")[^"]+(")}{$1$ENV{TRAIN_VERSION}$2}' \
   rust/Cargo.toml
