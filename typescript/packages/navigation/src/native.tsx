@@ -1,5 +1,7 @@
 import {
   useEffect,
+  useCallback,
+  useLayoutEffect,
   useId,
   useRef,
   useState,
@@ -25,6 +27,7 @@ import {
   asFocusTarget,
   hostElement,
   type RovingMenuKeyEvent,
+  type OverlayBackgroundProps,
   useAriaHiddenInert,
   useOverlayA11y,
   useReducedMotionPreference,
@@ -238,7 +241,11 @@ function Decorative({ children }: { readonly children: ReactNode }) {
   );
 }
 
+const MENU_WIDTH = 280;
+const MENU_EDGE = 8;
+
 interface MenuProps {
+  readonly renderBackground: (props: OverlayBackgroundProps) => ReactNode;
   readonly entries: readonly NavigationProfileMenuEntry[];
   readonly label: string;
   readonly closeLabel: string;
@@ -250,15 +257,8 @@ interface MenuProps {
   readonly theme: NavigationTheme;
   readonly id: string;
 }
-function deferMenuFocus(task: () => void) {
-  const frame = requestAnimationFrame(task);
-  return {
-    cancel: () => {
-      cancelAnimationFrame(frame);
-    },
-  };
-}
 function Menu({
+  renderBackground,
   entries,
   label,
   closeLabel,
@@ -273,24 +273,74 @@ function Menu({
   const activeEntry = resolveActiveMenuEntry(entries, pathname);
   const containerRef = useRef<View>(null);
   const closeRef = useRef<View>(null);
+  const pendingFocus = useRef<(() => void) | null>(null);
+  const presented = useRef(false);
+  const [webPresented, setWebPresented] = useState(false);
+  const [webPosition, setWebPosition] = useState<ViewStyle>();
+  const deferFocus = useCallback((task: () => void) => {
+    if (presented.current) task();
+    else pendingFocus.current = task;
+    return {
+      cancel: () => {
+        pendingFocus.current = null;
+        presented.current = false;
+      },
+    };
+  }, []);
   const roving = useRovingMenu({
     active: visible,
-    options: entries.map((entry) => ({ disabled: entry.disabled })),
+    options: entries.map((entry) => ({
+      disabled: entry.disabled,
+      selected: entry === activeEntry,
+    })),
   });
-  const { containerProps } = useOverlayA11y({
-    active: visible && Platform.OS !== 'web',
-    deferFocus: deferMenuFocus,
+  const { containerProps, backgroundProps } = useOverlayA11y({
+    active: visible && (Platform.OS !== 'web' || webPresented),
+    deferFocus,
     containerRef,
     triggerRef,
     initialFocusRef: roving.activeIndex === null ? closeRef : roving.initialFocusRef,
     onEscape: onClose,
   });
   const { reducedMotion, resolved } = useReducedMotionPreference();
-  const { width } = useWindowDimensions();
   const motion = !resolved ? 'unresolved' : reducedMotion ? 'reduced' : 'standard';
   useEffect(() => {
+    if (visible) return;
+    presented.current = false;
+    setWebPresented(false);
+  }, [visible]);
+  useLayoutEffect(() => {
     if (!visible || Platform.OS !== 'web') return;
-    asFocusTarget(roving.activeIndex === null ? closeRef : roving.initialFocusRef)?.focus();
+    function positionMenu() {
+      const trigger = hostElement(triggerRef);
+      if (!(trigger instanceof HTMLElement)) return;
+      const rect = trigger.getBoundingClientRect();
+      const width = Math.min(MENU_WIDTH, window.innerWidth - 2 * MENU_EDGE);
+      const below = window.innerHeight - rect.bottom;
+      const above = rect.top >= below;
+      setWebPosition({
+        position: 'absolute',
+        left: Math.max(MENU_EDGE, Math.min(rect.left, window.innerWidth - width - MENU_EDGE)),
+        width,
+        maxHeight: Math.max(
+          NAVIGATION_DIMENSIONS.target,
+          (above ? rect.top : below) - 2 * MENU_EDGE,
+        ),
+        ...(above
+          ? { bottom: window.innerHeight - rect.top + MENU_EDGE }
+          : { top: rect.bottom + MENU_EDGE }),
+      });
+    }
+    positionMenu();
+    window.addEventListener('resize', positionMenu);
+    window.addEventListener('scroll', positionMenu, true);
+    return () => {
+      window.removeEventListener('resize', positionMenu);
+      window.removeEventListener('scroll', positionMenu, true);
+    };
+  }, [visible, triggerRef]);
+  useEffect(() => {
+    if (!visible || Platform.OS !== 'web') return;
     function outside(event: PointerEvent) {
       const menu = hostElement(containerRef);
       const trigger = hostElement(triggerRef);
@@ -336,14 +386,7 @@ function Menu({
           borderColor: theme.border,
           borderRadius: theme.radius,
         },
-        Platform.OS === 'web' && {
-          position: 'absolute',
-          bottom: '100%',
-          right: 0,
-          width: Math.min(280, width - 16),
-          maxHeight: 400,
-          zIndex: 6,
-        },
+        Platform.OS === 'web' && webPosition,
       ]}
       {...{ dataSet: { motion } }}
     >
@@ -400,16 +443,34 @@ function Menu({
       </FocusablePressable>
     </View>
   );
-  if (Platform.OS === 'web') return visible ? menu : null;
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
-      <View style={styles.modal}>{menu}</View>
-    </Modal>
+    <>
+      {renderBackground(backgroundProps)}
+      <Modal
+        visible={visible}
+        transparent
+        animationType="none"
+        onRequestClose={onClose}
+        onShow={() => {
+          if (!visible) return;
+          presented.current = true;
+          const focus = pendingFocus.current;
+          pendingFocus.current = null;
+          focus?.();
+          if (Platform.OS === 'web') setWebPresented(true);
+        }}
+      >
+        <View style={styles.modal}>{menu}</View>
+      </Modal>
+    </>
   );
 }
 
 interface ProfileProps {
-  readonly closeLabel: string;
+  readonly open: boolean;
+  readonly onOpen: () => void;
+  readonly triggerRef: React.RefObject<View | null>;
+  readonly id: string;
   readonly profile: NavigationProfile;
   readonly theme: NavigationTheme;
   readonly bar: boolean;
@@ -420,7 +481,10 @@ interface ProfileProps {
 }
 function Profile({
   profile,
-  closeLabel,
+  open,
+  onOpen,
+  triggerRef,
+  id,
   theme,
   bar,
   collapsed,
@@ -428,10 +492,7 @@ function Profile({
   onNavigate,
   roving,
 }: ProfileProps) {
-  const [open, setOpen] = useState(false);
   const [failedUrl, setFailedUrl] = useState<string>();
-  const triggerRef = useRef<View>(null);
-  const id = useId();
   const active =
     profile.href !== undefined
       ? navigationMatches({ id: 'profile', label: profile.label, href: profile.href }, pathname)
@@ -451,7 +512,7 @@ function Profile({
           : { href: profile.href })}
         onPress={(event) => {
           if (profile.href !== undefined) follow(profile.href, event, onNavigate);
-          else setOpen(true);
+          else onOpen();
         }}
       >
         <Decorative>
@@ -470,22 +531,6 @@ function Profile({
           )}
         </Decorative>
       </Target>
-      {profile.menu === undefined ? null : (
-        <Menu
-          entries={profile.menu}
-          closeLabel={closeLabel}
-          pathname={pathname}
-          visible={open}
-          id={id}
-          label={profile.label}
-          triggerRef={triggerRef}
-          theme={theme}
-          onClose={() => {
-            setOpen(false);
-          }}
-          onNavigate={onNavigate}
-        />
-      )}
     </View>
   );
 }
@@ -517,6 +562,9 @@ export function AppNavigation(props: AppNavigationProps) {
     collapseLabel,
     expandLabel,
   } = props;
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileTriggerRef = useRef<View>(null);
+  const profileMenuId = useId();
   validateNavigation(items, profile);
   useAriaHiddenInert();
   const dimensions = useWindowDimensions();
@@ -538,8 +586,9 @@ export function AppNavigation(props: AppNavigationProps) {
       ...(profile === undefined ? [] : [{}]),
     ],
   });
-  return (
+  const renderBackground = (backgroundProps: OverlayBackgroundProps = {}) => (
     <View
+      {...backgroundProps}
       role="navigation"
       accessibilityLabel={label}
       testID="primary-navigation"
@@ -646,7 +695,12 @@ export function AppNavigation(props: AppNavigationProps) {
         {bar && profile !== undefined ? (
           <Profile
             profile={profile}
-            closeLabel={closeLabel}
+            open={profileOpen}
+            onOpen={() => {
+              setProfileOpen(true);
+            }}
+            triggerRef={profileTriggerRef}
+            id={profileMenuId}
             theme={theme}
             bar
             collapsed={false}
@@ -659,7 +713,12 @@ export function AppNavigation(props: AppNavigationProps) {
       {!bar && profile !== undefined ? (
         <Profile
           profile={profile}
-          closeLabel={closeLabel}
+          open={profileOpen}
+          onOpen={() => {
+            setProfileOpen(true);
+          }}
+          triggerRef={profileTriggerRef}
+          id={profileMenuId}
           theme={theme}
           bar={false}
           collapsed={collapsed}
@@ -669,6 +728,24 @@ export function AppNavigation(props: AppNavigationProps) {
         />
       ) : null}
     </View>
+  );
+  if (profile?.menu === undefined) return renderBackground();
+  return (
+    <Menu
+      renderBackground={renderBackground}
+      entries={profile.menu}
+      closeLabel={closeLabel}
+      pathname={pathname}
+      visible={profileOpen}
+      id={profileMenuId}
+      label={profile.label}
+      triggerRef={profileTriggerRef}
+      theme={theme}
+      onClose={() => {
+        setProfileOpen(false);
+      }}
+      onNavigate={onNavigate}
+    />
   );
 }
 
@@ -695,8 +772,8 @@ export function SectionPicker({
     setOpen(false);
   }, [pathname]);
   if (entries.length === 0) return null;
-  return (
-    <View role="navigation" accessibilityLabel={item.label}>
+  const renderBackground = (backgroundProps: OverlayBackgroundProps) => (
+    <View {...backgroundProps} role="navigation" accessibilityLabel={item.label}>
       <FocusablePressable
         theme={theme}
         unfocusedBorderColor={theme.border}
@@ -728,24 +805,27 @@ export function SectionPicker({
           <Text style={{ color: theme.text }}>⌄</Text>
         </Decorative>
       </FocusablePressable>
-      <Menu
-        entries={entries}
-        closeLabel={closeLabel}
-        pathname={pathname}
-        label={item.label}
-        visible={open}
-        id={id}
-        triggerRef={triggerRef}
-        theme={theme}
-        onClose={() => {
-          setOpen(false);
-        }}
-        onNavigate={(href) => {
-          announce(entries.find((entry) => entry.href === href)?.label ?? item.label);
-          onNavigate(href);
-        }}
-      />
     </View>
+  );
+  return (
+    <Menu
+      renderBackground={renderBackground}
+      entries={entries}
+      closeLabel={closeLabel}
+      pathname={pathname}
+      label={item.label}
+      visible={open}
+      id={id}
+      triggerRef={triggerRef}
+      theme={theme}
+      onClose={() => {
+        setOpen(false);
+      }}
+      onNavigate={(href) => {
+        announce(entries.find((entry) => entry.href === href)?.label ?? item.label);
+        onNavigate(href);
+      }}
+    />
   );
 }
 const styles = StyleSheet.create({

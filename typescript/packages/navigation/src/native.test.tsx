@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react-native';
-import { Platform, Text } from 'react-native';
+import { AccessibilityInfo, Platform, Text } from 'react-native';
 import {
   AppNavigation,
   SectionPicker,
@@ -525,3 +525,81 @@ it.each(['android', 'ios'] as const)(
     }
   },
 );
+
+it('waits for Modal presentation before moving accessibility focus', async () => {
+  const focus = jest.spyOn(AccessibilityInfo, 'setAccessibilityFocus').mockReturnValue(undefined);
+  const handle = jest.spyOn(nativeModules, 'findNodeHandle').mockReturnValue(42);
+  try {
+    await render(
+      <SectionPicker
+        closeLabel="Close"
+        item={section}
+        pathname="/progress/history"
+        theme={theme}
+        onNavigate={jest.fn()}
+      />,
+    );
+    await fireEvent.press(screen.getByRole('button', { name: 'Progress, History' }), event());
+    expect(focus).not.toHaveBeenCalled();
+    const modal = screen.container.queryAll(
+      (node) => typeof node.props['onShow'] === 'function',
+    )[0];
+    if (modal === undefined) throw new Error('Modal presentation callback is missing');
+    await fireEvent(modal, 'show');
+    expect(focus).toHaveBeenCalledTimes(1);
+    expect(focus).toHaveBeenCalledWith(42);
+    await fireEvent.press(screen.getByRole('button', { name: 'Close' }), event());
+    expect(focus).toHaveBeenCalledTimes(2);
+  } finally {
+    focus.mockRestore();
+    handle.mockRestore();
+  }
+});
+it('hides navigation behind the profile menu from screen readers and restores it on close', async () => {
+  await render(
+    <AppNavigation
+      {...labels}
+      items={items}
+      width={320}
+      pathname="/"
+      theme={theme}
+      onNavigate={jest.fn()}
+      profile={{
+        label: 'Account',
+        initials: 'AB',
+        menu: [{ id: 'settings', label: 'Settings', href: '/settings' }],
+      }}
+    />,
+  );
+  await fireEvent.press(screen.getByRole('button', { name: 'Account' }), event());
+  const background = screen.getByTestId('primary-navigation', { includeHiddenElements: true });
+  expect(background).toHaveProp('accessibilityElementsHidden', true);
+  expect(background).toHaveProp('importantForAccessibility', 'no-hide-descendants');
+  expect(screen.queryByRole('link', { name: 'Home' })).toBeNull();
+  expect(screen.getByRole('menuitem', { name: 'Settings' })).toBeOnTheScreen();
+  await fireEvent.press(screen.getByRole('button', { name: 'Close' }), event());
+  expect(background).not.toHaveProp('accessibilityElementsHidden', true);
+  expect(screen.getByRole('link', { name: 'Home' })).toBeOnTheScreen();
+});
+it('hides the section picker behind its modal while keeping the selected entry accessible', async () => {
+  await render(
+    <SectionPicker
+      closeLabel="Close"
+      item={section}
+      pathname="/progress/history"
+      theme={theme}
+      onNavigate={jest.fn()}
+    />,
+  );
+  await fireEvent.press(screen.getByRole('button', { name: 'Progress, History' }), event());
+  expect(screen.queryByRole('button', { name: 'Progress, History' })).toBeNull();
+  expect(
+    screen.getByRole('button', { name: 'Progress, History', includeHiddenElements: true }).parent,
+  ).toHaveProp('importantForAccessibility', 'no-hide-descendants');
+  expect(screen.getByRole('menuitem', { name: 'History', selected: true })).toHaveProp(
+    'tabIndex',
+    0,
+  );
+  await fireEvent.press(screen.getByRole('button', { name: 'Close' }), event());
+  expect(screen.getByRole('button', { name: 'Progress, History' })).toBeOnTheScreen();
+});

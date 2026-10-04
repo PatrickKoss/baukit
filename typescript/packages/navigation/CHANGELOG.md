@@ -23,6 +23,10 @@
 
 ## [Unreleased]
 
+- Present native menus in a Modal on web so compact navigation cannot clip them. Bound popups to the viewport.
+- Move native accessibility focus after Modal presentation. Hide background navigation from screen readers while the menu is open.
+- Start section picker keyboard focus on its selected child.
+
 - Require product labels for navigation, collapse, expand, and native menu Close controls. Remove English defaults.
 - Give every native target a 48 dp minimum on Android and 44 pt on iOS.
 - Expose native picker and profile menu selection state and highlight the current entry.
