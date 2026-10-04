@@ -23,6 +23,8 @@ RECONCILABLE_REALM_FIELDS = {
     "sslRequired",
     "registrationAllowed",
     "loginWithEmailAllowed",
+    "verifyEmail",
+    "resetPasswordAllowed",
     "loginTheme",
     "passwordPolicy",
     "bruteForceProtected",

@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import json
+import re
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -135,6 +138,32 @@ class RealmReconcilerTests(unittest.TestCase):
             ],
             "users": ["test"],
         }
+
+    def test_selected_email_and_password_fields_load_and_reconcile(self):
+        for field in ("verifyEmail", "resetPasswordAllowed"):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "reconcile.json"
+                path.write_text(json.dumps({**self.config, "realmFields": [field]}))
+                config = reconcile_keycloak.load_reconcile_config(path)
+                for desired_value in (True, False):
+                    api = FakeApi({"realm": "fixture", field: not desired_value})
+                    reconcile_keycloak.RealmReconciler(api).reconcile(
+                        {**self.desired, field: desired_value}, config, set()
+                    )
+                    self.assertEqual(api.realm_value[field], desired_value)
+
+    def test_template_realm_settings_are_reconcilable(self):
+        realm_source = (SCRIPT_DIRECTORY.parent / "keycloak" / "realm.json").read_text()
+        realm_fields = realm_source.split('  "users":', 1)[0]
+        fields = set(re.findall(r'^  "([^"]+)":', realm_fields, re.MULTILINE))
+        self.assertEqual(fields - {"realm"} - reconcile_keycloak.RECONCILABLE_REALM_FIELDS, set())
+
+    def test_unknown_realm_field_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "reconcile.json"
+            path.write_text(json.dumps({**self.config, "realmFields": ["smtpServer"]}))
+            with self.assertRaisesRegex(reconcile_keycloak.ReconcileError, "smtpServer"):
+                reconcile_keycloak.load_reconcile_config(path)
 
     def test_fresh_realm_creates_selected_client_and_user(self):
         api = FakeApi({"realm": "fixture"})
