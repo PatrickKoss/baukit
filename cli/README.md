@@ -66,3 +66,10 @@ PostgreSQL, Keycloak, and Redis must keep container ports 5432, 8080, and 6379
 for the generated images. Doctor checks literal Compose mappings and parameter
 defaults against declarations, and checks loopback source URLs against host
 ports. Runtime environment overrides remain product-owned.
+
+Doctor does not require the template's guidance filenames. Products can write
+API policy, fake-provider, sync-table, navigation, observability, budget, and
+local-data-retention guidance under their own names. Generated links should
+be updated when a document moves. Machine-read inputs retain their contracts:
+`mcp/docs/tools.md` for `docs:check`, the declared OpenAPI schema and consumers,
+and `docs/openapi-accepted-breaks.json` when the compatibility gate reads it.

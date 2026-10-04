@@ -45,9 +45,6 @@ const EXPECTED_BACKEND_FILES: &[&str] = &[
     ".claude/skills/baukit-backend/SKILL.md",
     "scripts/openapi.sh",
     "scripts/openapi-client.sh",
-    "docs/fake-providers.md",
-    "docs/openapi-drift.md",
-    "docs/syncable-tables.md",
     "backend/Cargo.toml",
     "backend/.dockerignore",
     "backend/Dockerfile",
@@ -73,9 +70,6 @@ const EXPECTED_COMMON_FILES: &[&str] = &[
     "CHANGELOG.md",
     ".github/workflows/ci.yml",
     "limits.json",
-    "docs/navigation-recipe.md",
-    "docs/observability-lint.md",
-    "docs/resource-budgets.md",
     "scripts/lockfiles.sh",
     "scripts/preflight.sh",
 ];
@@ -182,7 +176,6 @@ const EXPECTED_AUTH_MOBILE_FILES: &[&str] = &[
     "mobile/src/auth.test.ts",
     "mobile/src/local-data.ts",
     "mobile/src/persistence-lifecycle.ts",
-    "mobile/docs/local-data-retention.md",
 ];
 
 const EXPECTED_AUTH_WEB_FILES: &[&str] = &[
@@ -190,7 +183,6 @@ const EXPECTED_AUTH_WEB_FILES: &[&str] = &[
     "web/src/auth.test.ts",
     "web/src/local-data.ts",
     "web/src/persistence-lifecycle.ts",
-    "web/docs/local-data-retention.md",
 ];
 
 const EXPECTED_TYPESCRIPT_DEPENDENCIES: &[&str] = &[

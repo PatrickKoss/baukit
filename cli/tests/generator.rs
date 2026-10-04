@@ -2289,6 +2289,43 @@ fn doctor_accepts_auth_node_for_web_e2e_and_rejects_it_at_runtime() -> anyhow::R
 }
 
 #[test]
+fn doctor_accepts_product_guidance_names_and_keeps_machine_read_docs() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "product-docs");
+    local.auth = Some(AuthProvider::Oidc);
+    local.mobile = true;
+    local.web = true;
+    local.mcp = true;
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    for relative in [
+        "docs/fake-providers.md",
+        "docs/openapi-drift.md",
+        "docs/syncable-tables.md",
+        "docs/navigation-recipe.md",
+        "docs/observability-lint.md",
+        "docs/resource-budgets.md",
+        "mobile/docs/local-data-retention.md",
+        "web/docs/local-data-retention.md",
+    ] {
+        fs::remove_file(root.join(relative))?;
+    }
+    fs::write(
+        root.join("docs/api-contract-policy.md"),
+        "# API policy\n\nCheck generated clients against OpenAPI in CI.\n",
+    )?;
+    doctor(&root)?;
+    fs::remove_file(root.join("mcp/docs/tools.md"))?;
+    assert!(
+        doctor(&root)
+            .expect_err("MCP docs:check reads the generated tool document")
+            .to_string()
+            .contains("missing expected MCP file `mcp/docs/tools.md`")
+    );
+    Ok(())
+}
+
+#[test]
 fn doctor_requires_only_the_selected_mobile_analytics_adapter() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = frontend_options(parent.path(), "analytics-choice", true, false);
