@@ -1,15 +1,14 @@
 # Baukit CLI
 
-Install the repository checkout's pinned CLI on `PATH`:
+Install the CLI from the release tag:
 
 ```sh
-make --directory cli install
+cargo install --git https://github.com/PatrickKoss/baukit --tag v0.7.0 --locked baukit-cli
 baukit --version
 ```
 
-The equivalent direct command is `cargo install --path cli --locked`. Re-run it
-after checking out a different Baukit release so the CLI's embedded templates
-and release dependency tag stay aligned.
+The CLI is not published to crates.io. Use the tag that matches the product's
+`template_version` so its embedded templates and dependency versions agree.
 
 `baukit new NAME ...` creates a new `NAME/` directory. To scaffold an existing
 or orphan-branch repository root without overwriting differing files, use

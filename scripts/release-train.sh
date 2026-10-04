@@ -110,6 +110,8 @@ TRAIN_VERSION="$next" perl -0pi -e \
   's{(^  - name: baukit-app\n    version: ).+$}{$1.$ENV{TRAIN_VERSION}}egm' \
   deploy/chart/baukit-app/README.md
 
+python3 scripts/cli_install.py --update "$next"
+
 scripts/check-version-coherence.py
 
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then

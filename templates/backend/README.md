@@ -1,5 +1,11 @@
 # {{ context.app_name }}
 
+Install the optional Baukit CLI from the matching release tag:
+
+```sh
+cargo install --git https://github.com/PatrickKoss/baukit --tag v{{ context.template_version }} --locked baukit-cli
+```
+
 {{ context.product_description }} generated with Baukit template {{ context.template_version }}.
 
 The development database uses PostgreSQL 18.6 Alpine. Its named volume mounts

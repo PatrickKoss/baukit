@@ -16,7 +16,7 @@ Upgrade every Baukit component as one release train. Do not invent or call a `ba
 3. Install the CLI from the same target tag when necessary:
 
    ```sh
-   cargo install --git https://github.com/patrickkoss/baukit.git --tag vX.Y.Z --bin baukit baukit-cli
+   cargo install --git https://github.com/PatrickKoss/baukit --tag vX.Y.Z --locked baukit-cli
    ```
 
 ## Update the train coherently

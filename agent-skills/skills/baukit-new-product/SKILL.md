@@ -30,8 +30,7 @@ Treat the `baukit` CLI as the source of truth. Never hand-scaffold files or dire
 3. If `baukit` is absent, install it from a trusted checkout or a pinned release train:
 
    ```sh
-   cargo install --path /path/to/baukit/cli
-   cargo install --git https://github.com/patrickkoss/baukit.git --tag vX.Y.Z --bin baukit baukit-cli
+   cargo install --git https://github.com/PatrickKoss/baukit --tag vX.Y.Z --locked baukit-cli
    ```
 
 ## Generate

@@ -1,5 +1,11 @@
 # {{ context.app_name }} MCP server
 
+Install the optional Baukit CLI from the matching release tag:
+
+```sh
+cargo install --git https://github.com/PatrickKoss/baukit --tag v{{ context.template_version }} --locked baukit-cli
+```
+
 This package runs a Model Context Protocol server over stdio and calls the product API with a bearer token. It contains one read-only example tool. Replace that tool with product-owned names, descriptions, input schemas, routes, and handlers.
 
 ## Commands

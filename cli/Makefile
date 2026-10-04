@@ -6,4 +6,4 @@ check:
 	cargo test
 
 install:
-	cargo install --path . --locked
+	cargo install --git https://github.com/PatrickKoss/baukit --tag v$(shell cat ../templates/VERSION) --locked baukit-cli

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Install the unpublished CLI from the matching Git release tag. Check install commands and update concrete tags during release preparation.
+
 - Check MCP read and write registry exports instead of requiring the template helper module filename. Accept explicit tool-name registries used by existing products. Ignore declarations in comments and strings.
 
 - Stop requiring template guidance filenames. Keep machine-read files such as MCP tool docs and declared OpenAPI consumers required.
