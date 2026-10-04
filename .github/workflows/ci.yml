@@ -389,10 +389,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-native-
             ${{ runner.os }}-pnpm-
-      - uses: gradle/actions/setup-gradle@v6.4.0
-        with:
-          cache-provider: basic
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       - uses: Swatinem/rust-cache@v2.9.2
         with:
           workspaces: cli -> target
@@ -414,6 +410,10 @@ jobs:
         run: |
           set -o pipefail
           CI=1 pnpm exec expo prebuild --clean --platform android 2>&1 | tee native-prebuild.log
+      - uses: gradle/actions/setup-gradle@v6.4.0
+        with:
+          cache-provider: basic
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       - name: Compile Android debug binary
         working-directory: .generated-native-fixture/fixture/mobile
         run: |
@@ -488,11 +488,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-sqlite-
             ${{ runner.os }}-pnpm-
+      - name: Prepare Expo SQLite Android project
+        run: make expo-sqlite-conformance-prepare
       - uses: gradle/actions/setup-gradle@v6.4.0
         with:
           cache-provider: basic
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       - name: Run real Expo SQLite conformance
+        env:
+          BAUKIT_ANDROID_PHASE: run
         run: make expo-sqlite-conformance
       - name: Upload conformance failure diagnostics
         if: ${{ failure() }}
@@ -561,11 +565,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-notifications-
             ${{ runner.os }}-pnpm-
+      - name: Prepare Expo notifications Android project
+        run: make expo-notifications-conformance-prepare
       - uses: gradle/actions/setup-gradle@v6.4.0
         with:
           cache-provider: basic
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       - name: Run Hermes vectors and real expo-notifications conformance
+        env:
+          BAUKIT_ANDROID_PHASE: run
         run: make expo-notifications-conformance
       - name: Upload conformance failure diagnostics
         if: ${{ failure() }}

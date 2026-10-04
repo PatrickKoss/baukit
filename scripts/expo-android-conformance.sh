@@ -36,7 +36,7 @@ expo_android_cleanup() {
   if [[ -n "$metro_pid" ]]; then kill -- "-$metro_pid" 2>/dev/null || true; fi
   if [[ -n "$docker_emulator" ]]; then
     docker stop "$docker_emulator" >/dev/null 2>&1 || true
-  else
+  elif [[ -n "$emulator_pid" ]]; then
     adb emu kill >/dev/null 2>&1 || true
   fi
   if [[ -n "$emulator_pid" ]]; then wait "$emulator_pid" 2>/dev/null || true; fi
@@ -44,6 +44,21 @@ expo_android_cleanup() {
 
 # Arguments: the workspace packages the app links with file: dependencies.
 expo_android_prepare() {
+  case "${BAUKIT_ANDROID_PHASE:-all}" in
+    run)
+      if [[ ! -x "$example_dir/android/gradlew" ]]; then
+        echo "Prepare the Android project before running device conformance" >&2
+        return 1
+      fi
+      return 0
+      ;;
+    all|prepare) ;;
+    *)
+      echo "BAUKIT_ANDROID_PHASE must be all, prepare, or run" >&2
+      return 2
+      ;;
+  esac
+
   local filters=()
   local package
   for package in "$@"; do filters+=(--filter "$package"); done
@@ -54,6 +69,7 @@ expo_android_prepare() {
   CI=1 corepack pnpm --dir "$example_dir" install --frozen-lockfile
   corepack pnpm --dir "$example_dir" run typecheck
   CI=1 corepack pnpm --dir "$example_dir" exec expo prebuild --clean --platform android
+  if [[ "${BAUKIT_ANDROID_PHASE:-all}" == "prepare" ]]; then exit 0; fi
 }
 
 expo_android_boot() {
