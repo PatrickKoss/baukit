@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Check explicit host and container port declarations independently. Keep offset defaults for undeclared ports and reject wrong Compose targets and loopback URLs.
+
 - Let products set `capabilities.analytics = "none"` to omit the mobile PostHog adapter. Generated manifests default to `"posthog"`.
 
 - Check that a root pnpm workspace includes each mobile, web, and MCP app when it has no nested workspace.

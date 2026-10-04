@@ -47,3 +47,22 @@ when the mobile app uses `NoopTransport`. Doctor requires
 only for `"posthog"`. The web template uses `NoopTransport` and has no required
 PostHog adapter. Auth adapters follow `capabilities.auth`; the Expo SQLite
 adapter remains required by the generated mobile record store.
+
+Products with independently assigned ports can override the offset in
+`baukit.toml`. Host ports apply to local URLs and `make dev`; container ports
+apply to Compose targets and deployment values. For example:
+
+```toml
+[ports]
+api = { host = 17001, container = 8080, service = "backend" }
+ops = { host = 17002, container = 9090, service = "backend" }
+postgres = { host = 17003, container = 5432 }
+keycloak = { host = 17004, container = 8080 }
+```
+
+The other supported names are `redis` and `fake_provider`. `service` overrides
+the Compose service name. Undeclared ports retain their offset defaults.
+PostgreSQL, Keycloak, and Redis must keep container ports 5432, 8080, and 6379
+for the generated images. Doctor checks literal Compose mappings and parameter
+defaults against declarations, and checks loopback source URLs against host
+ports. Runtime environment overrides remain product-owned.

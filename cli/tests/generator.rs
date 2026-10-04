@@ -1941,6 +1941,116 @@ fn doctor_checks_makefile_redis_against_parameterized_compose_defaults() -> anyh
 }
 
 #[test]
+fn doctor_checks_independent_host_and_container_port_declarations() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "declared-ports");
+    local.auth = Some(AuthProvider::Oidc);
+    local.mobile = true;
+    local.web = true;
+    local.port_offset = 100;
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    let manifest_path = root.join("baukit.toml");
+    let manifest = fs::read_to_string(&manifest_path)?
+        + r#"
+[ports]
+api = { host = 17001, container = 8080, service = "backend" }
+ops = { host = 17002, container = 9090, service = "backend" }
+postgres = { host = 17003, container = 5432 }
+keycloak = { host = 17004, container = 8080 }
+"#;
+    fs::write(&manifest_path, &manifest)?;
+    for relative in [
+        "Makefile",
+        "mobile/.env.example",
+        "mobile/app.config.ts",
+        "mobile/src/api.ts",
+        "web/.env.example",
+        "web/src/api.ts",
+        "mobile/src/auth.ts",
+        "mobile/src/delete-profile.ts",
+        "web/src/auth.ts",
+        "web/src/delete-profile.ts",
+        "web/e2e/stack/keycloak.ts",
+        "scripts/pkce-login.py",
+        "backend/crates/declared-ports-bin/src/lib.rs",
+    ] {
+        let path = root.join(relative);
+        let source = fs::read_to_string(&path)?
+            .replace("8180", "17001")
+            .replace("9190", "17002")
+            .replace("8181", "17004");
+        fs::write(path, source)?;
+    }
+    let values_path = root.join("deploy/values.yaml");
+    fs::write(
+        &values_path,
+        fs::read_to_string(&values_path)?
+            .replace("8180", "8080")
+            .replace("9190", "9090"),
+    )?;
+    let compose_path = root.join("compose.yaml");
+    let compose = fs::read_to_string(&compose_path)?.replace("5532:5432", "17003:5432").replace("8181:8080", "17004:8080").replace("volumes:\n  postgres-data:", "  backend:\n    ports:\n      - \"17001:8080\"\n      - \"17002:9090\"\n\nvolumes:\n  postgres-data:");
+    fs::write(&compose_path, &compose)?;
+    doctor(&root)?;
+    for (source, diagnostic) in [
+        (
+            compose.replace("17003:5432", "17006:5432"),
+            "host 17003 to container 5432",
+        ),
+        (
+            compose.replace("17003:5432", "17003:5433"),
+            "host 17003 to container 5432",
+        ),
+        (
+            compose.replace("17004:8080", "17004:8181"),
+            "host 17004 to container 8080",
+        ),
+        (
+            compose.replace("17001:8080", "17001:8180"),
+            "host 17001 to container 8080",
+        ),
+        (
+            compose.replace("17003:5432", "${DB_PORT:-17006}:5432"),
+            "host 17003 to container 5432",
+        ),
+    ] {
+        fs::write(&compose_path, source)?;
+        assert!(
+            doctor(&root)
+                .expect_err("declared mappings must agree")
+                .to_string()
+                .contains(diagnostic)
+        );
+    }
+    fs::write(&compose_path, &compose)?;
+    let api_path = root.join("mobile/src/api.ts");
+    let api = fs::read_to_string(&api_path)?;
+    fs::write(
+        &api_path,
+        format!("{api}\nconst wrong = 'http://127.0.0.1:17008';\n"),
+    )?;
+    assert!(
+        doctor(&root)
+            .expect_err("a wrong loopback port must be reported even alongside the correct one")
+            .to_string()
+            .contains("mobile/src/api.ts` does not match declared ports")
+    );
+    fs::write(&api_path, api)?;
+    fs::write(
+        &manifest_path,
+        manifest.replace("container = 5432", "container = 5433"),
+    )?;
+    assert!(
+        doctor(&root)
+            .expect_err("the database image listens on 5432")
+            .to_string()
+            .contains("ports.postgres.container must be 5432")
+    );
+    Ok(())
+}
+
+#[test]
 fn doctor_accepts_custom_literal_ports_without_an_offset() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "custom-ports");

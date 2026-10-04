@@ -291,12 +291,23 @@ pub struct Manifest {
     pub template_version: String,
     #[serde(default)]
     pub port_offset: u32,
+    #[serde(default)]
+    pub ports: BTreeMap<String, PortMapping>,
     pub app: AppManifest,
     #[serde(default)]
     pub quality: QualityManifest,
     pub capabilities: Capabilities,
     pub dependencies: Dependencies,
     pub openapi: OpenApiPaths,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PortMapping {
+    pub host: u16,
+    pub container: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -447,6 +458,32 @@ struct PortConfiguration {
 }
 
 impl PortConfiguration {
+    fn from_manifest(manifest: &Manifest) -> Result<Self> {
+        let mut ports = Self::new(manifest.port_offset)?;
+        for (name, mapping) in &manifest.ports {
+            if mapping.host == 0 || mapping.container == 0 {
+                bail!("ports.{name} must use nonzero host and container ports");
+            }
+            let (host, fixed_container) = match name.as_str() {
+                "postgres" => (&mut ports.postgres, Some(5432)),
+                "api" => (&mut ports.api, None),
+                "ops" => (&mut ports.ops, None),
+                "keycloak" => (&mut ports.keycloak, Some(8080)),
+                "fake_provider" => (&mut ports.fake_provider, None),
+                "redis" => (&mut ports.redis, Some(6379)),
+                _ => bail!("unknown port declaration `ports.{name}`"),
+            };
+            if fixed_container.is_some_and(|port| port != mapping.container) {
+                bail!(
+                    "ports.{name}.container must be {} for the generated image",
+                    fixed_container.expect("fixed container port")
+                );
+            }
+            *host = mapping.host;
+        }
+        Ok(ports)
+    }
+
     fn new(offset: u32) -> Result<Self> {
         let shifted = [
             ("PostgreSQL", POSTGRES_HOST_PORT),
@@ -1691,10 +1728,11 @@ fn validate_mcp_keycloak_port(
         return Ok(());
     };
     if port.parse::<u16>().ok() != Some(expected_port) {
-        failures.push(format!(
-            "generated file `{relative}` KEYCLOAK_PORT does not use port offset {}",
-            manifest.port_offset
-        ));
+        failures.push(if manifest.ports.is_empty() {
+            format!("generated file `{relative}` KEYCLOAK_PORT does not use port offset {}", manifest.port_offset)
+        } else {
+            format!("generated file `{relative}` KEYCLOAK_PORT must match declared host port {expected_port}")
+        });
     }
     Ok(())
 }
@@ -1798,14 +1836,14 @@ fn validate_port_configuration(
     successes: &mut Vec<String>,
     failures: &mut Vec<String>,
 ) -> Result<()> {
-    let ports = match PortConfiguration::new(manifest.port_offset) {
+    let ports = match PortConfiguration::from_manifest(manifest) {
         Ok(ports) => ports,
         Err(error) => {
-            failures.push(format!("invalid port_offset: {error}"));
+            failures.push(format!("invalid port configuration: {error}"));
             return Ok(());
         }
     };
-    if manifest.port_offset == 0 {
+    if manifest.port_offset == 0 && manifest.ports.is_empty() {
         successes.push("no port offset is configured".to_owned());
         return Ok(());
     }
@@ -1816,8 +1854,26 @@ fn validate_port_configuration(
         expected.extend([
             ("Makefile", format!("HTTP__PORT={}", ports.api)),
             ("Makefile", format!("OPS__PORT={}", ports.ops)),
-            ("deploy/values.yaml", format!("http: {}", ports.api)),
-            ("deploy/values.yaml", format!("ops: {}", ports.ops)),
+            (
+                "deploy/values.yaml",
+                format!(
+                    "http: {}",
+                    manifest
+                        .ports
+                        .get("api")
+                        .map_or(ports.api, |port| port.container)
+                ),
+            ),
+            (
+                "deploy/values.yaml",
+                format!(
+                    "ops: {}",
+                    manifest
+                        .ports
+                        .get("ops")
+                        .map_or(ports.ops, |port| port.container)
+                ),
+            ),
         ]);
         if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
             expected.extend([
@@ -1923,22 +1979,43 @@ fn validate_port_configuration(
         {
             let expected_port = localhost_port(&snippet).expect("expected snippet has a port");
             let source = source.replace("${KEYCLOAK_PORT}", &ports.keycloak.to_string());
-            has_mismatched_loopback_port(&source, expected_port, snippet.contains("/realms/"))
+            let source = if relative.ends_with("-bin/src/lib.rs") && !snippet.contains("/realms/") {
+                source
+                    .split("identity_admin_base_url:")
+                    .skip(1)
+                    .filter_map(|field| field.split(',').next())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            } else {
+                source
+            };
+            if matches!(
+                relative.as_str(),
+                "mobile/src/api.ts" | "web/src/api.ts" | "mcp/src/cli.ts"
+            ) {
+                loopback_ports(&source, snippet.contains("/realms/"))
+                    .iter()
+                    .any(|port| *port != expected_port)
+            } else {
+                has_mismatched_loopback_port(&source, expected_port, snippet.contains("/realms/"))
+            }
         } else {
             !source.contains(&snippet)
         };
         if mismatched {
-            failures.push(format!(
-                "generated file `{relative}` does not use port offset {}",
-                manifest.port_offset
-            ));
+            failures.push(if manifest.ports.is_empty() {
+                format!("generated file `{relative}` does not use port offset {}", manifest.port_offset)
+            } else {
+                format!("generated file `{relative}` does not match declared ports (expected `{snippet}`)")
+            });
         }
     }
     if failures.len() == initial_failure_count {
-        successes.push(format!(
-            "generated files use port offset {}",
-            manifest.port_offset
-        ));
+        successes.push(if manifest.ports.is_empty() {
+            format!("generated files use port offset {}", manifest.port_offset)
+        } else {
+            "generated files use declared host and container ports".to_owned()
+        });
     }
     Ok(())
 }
@@ -2060,15 +2137,54 @@ fn validate_compose_ports(
             ("redis", 6379, ports.redis),
         ]);
     }
-    for (service, target, expected) in mappings {
-        let Some(service) = compose.services.get(service) else {
+    for (name, mapping) in &manifest.ports {
+        let default_service = match name.as_str() {
+            "api" | "ops" => {
+                if compose.services.contains_key("backend") {
+                    "backend"
+                } else {
+                    "api"
+                }
+            }
+            "fake_provider" => "fake-provider",
+            name => name,
+        };
+        let service_name = mapping.service.as_deref().unwrap_or(default_service);
+        let Some(service) = compose.services.get(service_name) else {
+            continue;
+        };
+        let actual = service
+            .ports
+            .iter()
+            .filter_map(|port| {
+                port.literal_mapping()
+                    .or_else(|| port.parameterized_default_mapping())
+            })
+            .collect::<Vec<_>>();
+        let expected = (mapping.container, mapping.host);
+        if !actual.contains(&expected)
+            || actual.iter().any(|port| {
+                (port.0 == mapping.container || port.1 == mapping.host) && *port != expected
+            })
+        {
+            failures.push(format!("compose.yaml service `{service_name}` must publish declared ports.{} host {} to container {}", name, mapping.host, mapping.container));
+        }
+    }
+    for (service_name, target, expected) in mappings {
+        if manifest.ports.contains_key(service_name) {
+            continue;
+        }
+        let Some(service) = compose.services.get(service_name) else {
             continue;
         };
         if service
             .ports
             .iter()
             .filter_map(ComposePort::literal_mapping)
-            .any(|(container, published)| container == target && published != expected)
+            .any(|(container, published)| {
+                (container == target && published != expected)
+                    || (published == expected && container != target)
+            })
         {
             failures.push(format!(
                 "generated file `compose.yaml` does not use port offset {} for container port {target}",
@@ -2078,7 +2194,13 @@ fn validate_compose_ports(
     }
     let redis_port = compose
         .services
-        .get("redis")
+        .get(
+            manifest
+                .ports
+                .get("redis")
+                .and_then(|mapping| mapping.service.as_deref())
+                .unwrap_or("redis"),
+        )
         .and_then(|service| {
             service
                 .ports
@@ -2100,8 +2222,8 @@ fn localhost_port(snippet: &str) -> Option<u16> {
         .ok()
 }
 
-fn has_mismatched_loopback_port(source: &str, expected_port: u16, issuer: bool) -> bool {
-    let ports = ["localhost:", "127.0.0.1:", "[::1]:"]
+fn loopback_ports(source: &str, issuer: bool) -> Vec<u16> {
+    ["localhost:", "127.0.0.1:", "[::1]:"]
         .into_iter()
         .flat_map(|marker| source.match_indices(marker))
         .filter_map(|(index, marker)| {
@@ -2112,7 +2234,11 @@ fn has_mismatched_loopback_port(source: &str, expected_port: u16, issuer: bool) 
             }
             suffix[..length].parse::<u16>().ok()
         })
-        .collect::<Vec<_>>();
+        .collect()
+}
+
+fn has_mismatched_loopback_port(source: &str, expected_port: u16, issuer: bool) -> bool {
+    let ports = loopback_ports(source, issuer);
     if issuer {
         ports.iter().any(|port| *port != expected_port)
     } else {
