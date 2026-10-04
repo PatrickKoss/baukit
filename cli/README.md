@@ -73,3 +73,10 @@ local-data-retention guidance under their own names. Generated links should
 be updated when a document moves. Machine-read inputs retain their contracts:
 `mcp/docs/tools.md` for `docs:check`, the declared OpenAPI schema and consumers,
 and `docs/openapi-accepted-breaks.json` when the compatibility gate reads it.
+
+MCP drift checks and tests read the exports in `mcp/src/tools/read.ts` and
+`write.ts`, so those files stay required. Doctor accepts exported `READ_TOOLS`
+and `WRITE_TOOLS` metadata, or `READ_TOOL_NAMES` and `WRITE_TOOL_NAMES` catalogs.
+The shared helper `mcp/src/tools/registry.ts` is a template implementation
+choice. A product can move its types and result helpers if it updates its own
+imports and keeps its tool docs, route checks, and server tests passing.

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Check MCP read and write registry exports instead of requiring the template helper module filename. Accept explicit tool-name registries used by existing products. Ignore declarations in comments and strings.
+
 - Stop requiring template guidance filenames. Keep machine-read files such as MCP tool docs and declared OpenAPI consumers required.
 
 - Check explicit host and container port declarations independently. Keep offset defaults for undeclared ports and reject wrong Compose targets and loopback URLs.

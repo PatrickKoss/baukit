@@ -2289,6 +2289,79 @@ fn doctor_accepts_auth_node_for_web_e2e_and_rejects_it_at_runtime() -> anyhow::R
 }
 
 #[test]
+fn doctor_checks_mcp_registry_exports_without_requiring_the_helper_filename() -> anyhow::Result<()>
+{
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "registry-exports");
+    local.mcp = true;
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    let helper = root.join("mcp/src/tools/registry.ts");
+    fs::rename(&helper, root.join("mcp/src/tools/api.ts"))?;
+    for relative in [
+        "mcp/src/tools/read.ts",
+        "mcp/src/tools/write.ts",
+        "mcp/src/server.ts",
+    ] {
+        let path = root.join(relative);
+        fs::write(
+            &path,
+            fs::read_to_string(&path)?.replace("registry.js", "api.js"),
+        )?;
+    }
+    doctor(&root)?;
+    for (relative, name) in [
+        ("mcp/src/tools/read.ts", "READ_TOOLS"),
+        ("mcp/src/tools/write.ts", "WRITE_TOOLS"),
+    ] {
+        let path = root.join(relative);
+        let source = fs::read_to_string(&path)?;
+        fs::write(
+            &path,
+            source.replace(&format!("export const {name}"), &format!("const {name}")),
+        )?;
+        assert!(
+            doctor(&root)
+                .expect_err("a private collection cannot declare the product registry")
+                .to_string()
+                .contains(&format!("{relative} must export an explicit tool registry"))
+        );
+        fs::write(&path, source)?;
+    }
+    for (relative, name) in [
+        ("mcp/src/tools/read.ts", "READ_TOOL_NAMES"),
+        ("mcp/src/tools/write.ts", "WRITE_TOOL_NAMES"),
+    ] {
+        fs::write(
+            root.join(relative),
+            format!("export const {name} = ['get_me'] as const;\n"),
+        )?;
+    }
+    doctor(&root)?;
+    for source in [
+        "// export const READ_TOOL_NAMES = ['get_me'];\nconst READ_TOOL_NAMES = ['get_me'];\n",
+        "/*\nexport const READ_TOOL_NAMES = ['get_me'];\n*/\n",
+        "const documentation = `\nexport const READ_TOOL_NAMES = ['get_me'];\n`;\n",
+        "const documentation = \"escaped \\\" export const READ_TOOL_NAMES = []\";\n",
+        "export const READ_TOOL_NAMES_EXTRA = ['get_me'];\n",
+    ] {
+        fs::write(root.join("mcp/src/tools/read.ts"), source)?;
+        assert!(
+            doctor(&root)
+                .expect_err("comments and documentation strings are not exports")
+                .to_string()
+                .contains("read.ts must export")
+        );
+    }
+    fs::write(
+        root.join("mcp/src/tools/read.ts"),
+        "export /* registry metadata */ const\nREAD_TOOL_NAMES = ['get_me'];\n",
+    )?;
+    doctor(&root)?;
+    Ok(())
+}
+
+#[test]
 fn doctor_accepts_product_guidance_names_and_keeps_machine_read_docs() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "product-docs");

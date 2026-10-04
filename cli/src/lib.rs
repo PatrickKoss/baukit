@@ -216,7 +216,6 @@ const EXPECTED_MCP_FILES: &[&str] = &[
     "mcp/src/cli.ts",
     "mcp/src/server.ts",
     "mcp/src/tool-routes.ts",
-    "mcp/src/tools/registry.ts",
     "mcp/src/tools/read.ts",
     "mcp/src/tools/write.ts",
     "mcp/scripts/check-openapi-allowlist.mjs",
@@ -2405,6 +2404,86 @@ fn validate_openapi_file(root: &Path, kind: &str, relative: &str, failures: &mut
     }
 }
 
+fn skip_typescript_string(chars: &mut impl Iterator<Item = char>, quote: char) {
+    let mut escaped = false;
+    for character in chars {
+        if escaped {
+            escaped = false;
+        } else if character == '\\' {
+            escaped = true;
+        } else if character == quote {
+            return;
+        }
+    }
+}
+
+fn skip_typescript_block_comment(chars: &mut std::iter::Peekable<impl Iterator<Item = char>>) {
+    while let Some(character) = chars.next() {
+        if character == '*' && chars.next_if_eq(&'/').is_some() {
+            return;
+        }
+    }
+}
+
+fn typescript_code(source: &str) -> String {
+    let mut code = String::with_capacity(source.len());
+    let mut chars = source.chars().peekable();
+    while let Some(character) = chars.next() {
+        match character {
+            '\'' | '"' | '`' => {
+                code.push(' ');
+                skip_typescript_string(&mut chars, character);
+            }
+            '/' if chars.next_if_eq(&'/').is_some() => {
+                code.push(' ');
+                chars.by_ref().find(|character| *character == '\n');
+            }
+            '/' if chars.next_if_eq(&'*').is_some() => {
+                code.push(' ');
+                skip_typescript_block_comment(&mut chars);
+            }
+            character => code.push(character),
+        }
+    }
+    code
+}
+
+fn has_typescript_registry_export(source: &str, names: &[&str]) -> bool {
+    let code = typescript_code(source);
+    let tokens = code.split_whitespace().collect::<Vec<_>>();
+    tokens.windows(3).any(|declaration| {
+        declaration[0] == "export"
+            && declaration[1] == "const"
+            && declaration[2]
+                .split([':', '='])
+                .next()
+                .is_some_and(|binding| names.contains(&binding))
+    })
+}
+
+fn validate_mcp_tool_exports(root: &Path, failures: &mut Vec<String>) -> Result<()> {
+    for (relative, names) in [
+        ("mcp/src/tools/read.ts", ["READ_TOOLS", "READ_TOOL_NAMES"]),
+        (
+            "mcp/src/tools/write.ts",
+            ["WRITE_TOOLS", "WRITE_TOOL_NAMES"],
+        ),
+    ] {
+        let path = root.join(relative);
+        if !path.is_file() {
+            continue;
+        }
+        let source = fs::read_to_string(path)?;
+        if !has_typescript_registry_export(&source, &names) {
+            failures.push(format!(
+                "{relative} must export an explicit tool registry ({})",
+                names.join(" or ")
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn validate_mcp_capability(
     root: &Path,
     openapi: &OpenApiPaths,
@@ -2413,6 +2492,7 @@ fn validate_mcp_capability(
     failures: &mut Vec<String>,
 ) -> Result<()> {
     let initial_failure_count = failures.len();
+    validate_mcp_tool_exports(root, failures)?;
     for relative in EXPECTED_MCP_FILES {
         if !root.join(relative).is_file() {
             failures.push(format!("missing expected MCP file `{relative}`"));
