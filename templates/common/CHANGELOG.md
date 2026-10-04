@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-04
+
 {% if context.web %}- Center generated web content beside the navigation rail. Keep action links at least 44 pixels high.
 - Check initial dialog focus by accessible name. Support labeled inputs and buttons named by visible text.
 

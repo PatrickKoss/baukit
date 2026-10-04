@@ -5,14 +5,14 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
-Last verified release train: `v0.7.0` (profile erasure across the product
-database and the identity provider, the shared `@baukit/navigation` package,
-PostgreSQL 18.6, Swift 6.4.0 and xtool 1.20.1, and the pre-release dependency
-refresh). Hosted CI passed all 24 jobs on 2026-10-04 (run 37171500073),
-including every generated fixture flavor, the generated Android compile, Expo
-SQLite conformance, and Hermes vectors with expo-notifications on Android. The
-Docker-backed Rust tests, browser Dexie conformance, the MSRV check and cargo
-deny also passed locally. The iOS simulator gate requires macOS and remains a
+Last verified release train: `v0.7.1` (failed erasure replays return a
+receipt both clients accept, doctor checks that follow products' real layouts,
+React pinned to Expo's bundled 19.2.3, navigation focus rings and compact menus
+that stay visible, and RustFS for local object storage). The complete Linux
+gates passed locally on 2026-10-04: `make ci`, browser Dexie and navigation
+conformance, 760 Docker-backed Rust tests with none ignored, every generated
+fixture flavor, the MCP fixture gate, the generated Android compile, cargo deny
+and version coherence. The iOS simulator gate requires macOS and remains a
 release-host check rather than a Linux result.
 
 ## Toolchain
@@ -102,9 +102,8 @@ columns. See the [PostgreSQL 18 release notes](https://www.postgresql.org/docs/1
 
 ## Dependencies kept on a compatible line
 
-The October 2026 refresh keeps Baukit package and chart versions at 0.6.0 until
-the release script cuts 0.7.0. The table records retained dependency lines and
-the available upstream releases.
+The table records retained dependency lines and the available upstream
+releases.
 
 | Dependency | Available stable release | Reason for the current line |
 |---|---|---|

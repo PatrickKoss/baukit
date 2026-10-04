@@ -1,5 +1,11 @@
 # @baukit/auth-node
 
+## 0.7.1
+
+### Patch Changes
+
+- Release the coordinated baukit 0.7.1 train.
+
 ## 0.7.0
 
 ### Minor Changes

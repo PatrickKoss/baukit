@@ -1,5 +1,13 @@
 # @baukit/notifications-core
 
+## 0.7.1
+
+### Patch Changes
+
+- Release the coordinated baukit 0.7.1 train.
+- Updated dependencies
+  - @baukit/localization-core@0.7.1
+
 ## 0.7.0
 
 ### Minor Changes
