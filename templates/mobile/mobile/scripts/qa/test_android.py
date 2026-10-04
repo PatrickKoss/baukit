@@ -70,7 +70,7 @@ if [[ "$*" == *'getprop sys.boot_completed' ]]; then echo 1; fi
         apk = self.root / "mobile/android/app/build/outputs/apk/release/app-release.apk"
         apk.parent.mkdir(parents=True)
         apk.touch()
-{% if context.auth_oidc %}        flags = '-s emulator-5556 shell echo "chrome --no-first-run --no-default-browser-check" > /data/local/tmp/chrome-command-line'
+{% if context.auth_oidc %}        flags = '-s emulator-5556 shell echo "chrome --disable-fre --no-first-run --no-default-browser-check" > /data/local/tmp/chrome-command-line'
         debug = '-s emulator-5556 shell settings put global debug_app com.android.chrome'
         stop = '-s emulator-5556 shell am force-stop com.android.chrome'
 {% endif %}        for _ in range(2):

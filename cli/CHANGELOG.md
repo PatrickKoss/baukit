@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Use Chrome's Android first-run switch during OIDC QA setup.
+
 - Localize generated navigation labels in English and German.
 - Test generated Android QA setup for Chrome first-run preparation and emulator config keys with spaces.
 - Add regression coverage for reordered nullable primitive unions and type arrays. The strict template calls the repository checker, which already compares union members by identity.
