@@ -327,6 +327,17 @@ fn generated_native_qa_targets_are_platform_specific_and_shell_valid() -> anyhow
             );
         }
     }
+    for root in [&mobile, &combined] {
+        let output = Command::new("python3")
+            .arg(root.join("mobile/scripts/qa/test_android.py"))
+            .output()?;
+        assert!(
+            output.status.success(),
+            "Generated Android QA script tests failed:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+    }
     Ok(())
 }
 

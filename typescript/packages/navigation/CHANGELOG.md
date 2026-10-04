@@ -23,6 +23,13 @@
 
 ## [Unreleased]
 
+- Require product labels for navigation, collapse, expand, and native menu Close controls. Remove English defaults.
+- Give every native target a 48 dp minimum on Android and 44 pt on iOS.
+- Expose native picker and profile menu selection state and highlight the current entry.
+- Ignore query strings and hashes when matching routes, unless an entry supplies `matches`.
+- Select one most-specific profile menu entry and accept custom `matches` callbacks.
+- Bound compact bar labels to their buttons and ellipsize long text at narrow widths.
+
 - Draw web focus rings 2 pixels outside controls. Reserve room for rings in collapsed rails and compact bars. Bound section menus above the bottom bar and scroll long sections inside the menu.
 
 - Resolve lazy native modules during test setup so cold compilation stays outside each render test's timer.

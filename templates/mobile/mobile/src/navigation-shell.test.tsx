@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from "@testing-library/react-native";
 import { usePathname, useRouter } from "expo-router";
 import { NavigationBar, WorkspacePicker } from "./navigation-shell";
 import { lightTheme } from "./theme";
+import { initializeI18n } from "./localization/i18n";
 import { blendColors } from "@baukit/ui-tokens";
 
 jest.mock("expo-router", () => ({
@@ -17,7 +18,8 @@ jest.mock("./theme", () => {
   return { ...theme, useTheme: () => ({ theme: theme.lightTheme }) };
 });
 const navigate = jest.fn();
-beforeEach(() => {
+beforeEach(async () => {
+  await initializeI18n("en");
   jest.mocked(useRouter).mockReturnValue({
     ...jest.requireActual<typeof import("expo-router")>("expo-router").router,
     navigate,
@@ -60,5 +62,24 @@ it("lets the section picker choose a page directly", async () => {
     preventDefault: jest.fn(),
   });
   expect(navigate).toHaveBeenCalledWith("/workspace/privacy");
+});
+it("renders German navigation and menu controls from the catalog", async () => {
+  await initializeI18n("de");
+  await render(
+    <>
+      <NavigationBar />
+      <WorkspacePicker />
+    </>,
+  );
+  expect(screen.getByTestId("primary-navigation")).toHaveProp(
+    "accessibilityLabel",
+    "Hauptnavigation",
+  );
+  expect(screen.getByRole("link", { name: "Heute" })).toBeOnTheScreen();
+  await fireEvent.press(
+    screen.getByRole("button", { name: "Arbeitsbereich, Einträge" }),
+  );
+  expect(screen.getByRole("menuitem", { name: "Datenschutz" })).toBeOnTheScreen();
+  expect(screen.getByRole("button", { name: "Menü schließen" })).toBeOnTheScreen();
 });
 {% endraw %}

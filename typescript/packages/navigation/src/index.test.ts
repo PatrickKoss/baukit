@@ -3,6 +3,8 @@ import { blendColors, contrastRatio, exampleTokens } from '@baukit/ui-tokens';
 import {
   getNavigationLayout,
   navigationReducer,
+  navigationMatches,
+  resolveActiveMenuEntry,
   nextSectionHref,
   resolveActiveNavigation,
   validateNavigation,
@@ -163,3 +165,55 @@ it.each(['light', 'dark'] as const)(
     expect(contrastRatio(accent, background)).toBeGreaterThanOrEqual(4.5);
   },
 );
+
+it('matches paths without query or hash and preserves explicit matchers', () => {
+  expect(
+    navigationMatches(
+      { id: 'route', label: 'Route', href: '/settings?tab=app#top' },
+      '/settings#other',
+    ),
+  ).toBe(true);
+  expect(
+    navigationMatches(
+      { id: 'route', label: 'Route', href: '/settings?tab=app' },
+      '/settings/profile?tab=data',
+    ),
+  ).toBe(true);
+  expect(navigationMatches({ id: 'route', label: 'Route', href: '/?tab=home' }, '/settings')).toBe(
+    false,
+  );
+  expect(
+    navigationMatches(
+      {
+        id: 'route',
+        label: 'Route',
+        href: '/settings',
+        matches: (path) => path === '/settings?tab=app',
+      },
+      '/settings?tab=app',
+    ),
+  ).toBe(true);
+  expect(
+    navigationMatches(
+      {
+        id: 'route',
+        label: 'Route',
+        href: '/settings',
+        matches: (path) => path === '/settings?tab=app',
+      },
+      '/settings?tab=data',
+    ),
+  ).toBe(false);
+});
+it('selects one most-specific menu route using its path length', () => {
+  const settings = { id: 'settings', label: 'App settings', href: '/settings?long=query-string' };
+  const profile = { id: 'profile', label: 'Profile and data', href: '/settings/profile' };
+  const action = { id: 'signout', label: 'Sign out', onSelect: () => undefined };
+  const entries = [settings, profile, action];
+  expect(resolveActiveMenuEntry(entries, '/settings/profile/data')).toBe(profile);
+  expect(resolveActiveMenuEntry(entries, '/settings')).toBe(settings);
+  expect(resolveActiveMenuEntry(entries, '/missing')).toBeNull();
+  const overridden = { ...profile, matches: (path: string) => path === '/account' };
+  expect(resolveActiveMenuEntry([settings, overridden], '/settings/profile')).toBe(settings);
+  expect(resolveActiveMenuEntry([settings, overridden], '/account')).toBe(overridden);
+});

@@ -10,7 +10,10 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 import { NavigationShell } from "./navigation-shell";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 it("rotates the active workspace tab and tracks browser history", () => {
   window.history.replaceState(null, "", "/");
   Object.defineProperty(window, "innerWidth", {
@@ -83,5 +86,18 @@ it("reports pushed and popped locations to the product", () => {
     window.dispatchEvent(new PopStateEvent("popstate"));
   });
   expect(onLocationChange).toHaveBeenCalledTimes(2);
+});
+it("renders German navigation labels from the catalog", () => {
+  vi.spyOn(navigator, "language", "get").mockReturnValue("de-DE");
+  window.history.replaceState(null, "", "/");
+  Object.defineProperty(window, "innerWidth", {
+    configurable: true,
+    value: 1024,
+  });
+  render(<NavigationShell />);
+  expect(screen.getByRole("navigation", { name: "Hauptnavigation" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Startseite" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Navigation einklappen" }));
+  expect(screen.getByRole("button", { name: "Navigation ausklappen" })).toBeTruthy();
 });
 {% endraw %}

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Localize generated navigation labels in English and German.
+- Test generated Android QA setup for Chrome first-run preparation and emulator config keys with spaces.
+- Add regression coverage for reordered nullable primitive unions and type arrays. The strict template calls the repository checker, which already compares union members by identity.
+- Confirm published Rust crates allow compatible third-party updates. The dependency requirement check already rejects exact third-party pins and permits exact Baukit dependencies.
+
 - Refresh all example lockfiles linked to local TypeScript packages during release preparation. Check them with frozen pnpm resolution in CI.
 
 - Follow consumed product identities instead of requiring product.ts or a backend library PRODUCT constant. Accept product display slugs and shared config namespaces. Keep missing bindings and identity drift detectable.

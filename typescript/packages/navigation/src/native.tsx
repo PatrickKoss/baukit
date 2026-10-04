@@ -36,6 +36,7 @@ import {
   navigationMatches,
   nextSectionHref,
   resolveActiveNavigation,
+  resolveActiveMenuEntry,
   validateNavigation,
   type NavigationItem,
   type NavigationProfile,
@@ -98,6 +99,14 @@ function FocusablePressable({
       style={[
         style,
         {
+          minHeight:
+            Platform.OS === 'android'
+              ? NAVIGATION_DIMENSIONS.androidTarget
+              : NAVIGATION_DIMENSIONS.target,
+          minWidth:
+            Platform.OS === 'android'
+              ? NAVIGATION_DIMENSIONS.androidTarget
+              : NAVIGATION_DIMENSIONS.target,
           borderWidth: 3,
           borderColor: focused
             ? selected
@@ -232,6 +241,8 @@ function Decorative({ children }: { readonly children: ReactNode }) {
 interface MenuProps {
   readonly entries: readonly NavigationProfileMenuEntry[];
   readonly label: string;
+  readonly closeLabel: string;
+  readonly pathname: string;
   readonly visible: boolean;
   readonly onClose: () => void;
   readonly onNavigate: Navigate;
@@ -247,7 +258,19 @@ function deferMenuFocus(task: () => void) {
     },
   };
 }
-function Menu({ entries, label, visible, onClose, onNavigate, triggerRef, theme, id }: MenuProps) {
+function Menu({
+  entries,
+  label,
+  closeLabel,
+  pathname,
+  visible,
+  onClose,
+  onNavigate,
+  triggerRef,
+  theme,
+  id,
+}: MenuProps) {
+  const activeEntry = resolveActiveMenuEntry(entries, pathname);
   const containerRef = useRef<View>(null);
   const closeRef = useRef<View>(null);
   const roving = useRovingMenu({
@@ -328,22 +351,40 @@ function Menu({ entries, label, visible, onClose, onNavigate, triggerRef, theme,
         {entries.map((entry, index) => (
           <FocusablePressable
             theme={theme}
+            selected={entry === activeEntry}
+            {...{ dataSet: { active: entry === activeEntry ? 'page' : 'false' } }}
             {...roving.itemProps(index)}
             key={entry.id}
             accessibilityRole="menuitem"
             accessibilityLabel={entry.label}
-            accessibilityState={{ disabled: entry.disabled === true }}
+            accessibilityState={{
+              disabled: entry.disabled === true,
+              selected: entry === activeEntry,
+            }}
             disabled={entry.disabled}
-            {...(entry.href === undefined ? {} : webLink(entry.href, false))}
+            {...(entry.href === undefined ? {} : webLink(entry.href, entry === activeEntry))}
             onPress={(event) => {
               if (isModifiedPress(event)) return;
               closeAndRestore();
               if (entry.href !== undefined) follow(entry.href, event, onNavigate);
               else entry.onSelect();
             }}
-            style={[styles.menuItem, { paddingHorizontal: theme.spacing }]}
+            style={[
+              styles.menuItem,
+              {
+                paddingHorizontal: theme.spacing,
+                backgroundColor: entry === activeEntry ? theme.activeBackground : theme.background,
+              },
+            ]}
           >
-            <Text style={{ color: theme.text }}>{entry.label}</Text>
+            <Text
+              style={{
+                color: entry === activeEntry ? theme.activeText : theme.text,
+                fontWeight: entry === activeEntry ? '700' : '400',
+              }}
+            >
+              {entry.label}
+            </Text>
           </FocusablePressable>
         ))}
       </ScrollView>
@@ -351,11 +392,11 @@ function Menu({ entries, label, visible, onClose, onNavigate, triggerRef, theme,
         theme={theme}
         ref={closeRef}
         accessibilityRole="button"
-        accessibilityLabel={`Close ${label}`}
+        accessibilityLabel={closeLabel}
         onPress={closeAndRestore}
         style={styles.menuItem}
       >
-        <Text style={{ color: theme.text }}>Close</Text>
+        <Text style={{ color: theme.text }}>{closeLabel}</Text>
       </FocusablePressable>
     </View>
   );
@@ -368,6 +409,7 @@ function Menu({ entries, label, visible, onClose, onNavigate, triggerRef, theme,
 }
 
 interface ProfileProps {
+  readonly closeLabel: string;
   readonly profile: NavigationProfile;
   readonly theme: NavigationTheme;
   readonly bar: boolean;
@@ -376,7 +418,16 @@ interface ProfileProps {
   readonly onNavigate: Navigate;
   readonly roving: ReturnType<ReturnType<typeof useRovingMenu>['itemProps']>;
 }
-function Profile({ profile, theme, bar, collapsed, pathname, onNavigate, roving }: ProfileProps) {
+function Profile({
+  profile,
+  closeLabel,
+  theme,
+  bar,
+  collapsed,
+  pathname,
+  onNavigate,
+  roving,
+}: ProfileProps) {
   const [open, setOpen] = useState(false);
   const [failedUrl, setFailedUrl] = useState<string>();
   const triggerRef = useRef<View>(null);
@@ -384,10 +435,7 @@ function Profile({ profile, theme, bar, collapsed, pathname, onNavigate, roving 
   const active =
     profile.href !== undefined
       ? navigationMatches({ id: 'profile', label: profile.label, href: profile.href }, pathname)
-      : profile.menu.some(
-          (entry) =>
-            entry.href !== undefined && navigationMatches({ ...entry, href: entry.href }, pathname),
-        );
+      : resolveActiveMenuEntry(profile.menu, pathname) !== null;
   return (
     <View style={bar ? styles.barSection : styles.profile} testID="navigation-profile">
       <Target
@@ -425,6 +473,8 @@ function Profile({ profile, theme, bar, collapsed, pathname, onNavigate, roving 
       {profile.menu === undefined ? null : (
         <Menu
           entries={profile.menu}
+          closeLabel={closeLabel}
+          pathname={pathname}
           visible={open}
           id={id}
           label={profile.label}
@@ -448,9 +498,10 @@ export interface AppNavigationProps extends CollapseProps {
   readonly theme: NavigationTheme;
   readonly width?: number;
   readonly insets?: NavigationInsets;
-  readonly label?: string;
-  readonly collapseLabel?: string;
-  readonly expandLabel?: string;
+  readonly label: string;
+  readonly collapseLabel: string;
+  readonly expandLabel: string;
+  readonly closeLabel: string;
   readonly style?: ViewStyle;
 }
 export function AppNavigation(props: AppNavigationProps) {
@@ -461,9 +512,10 @@ export function AppNavigation(props: AppNavigationProps) {
     onNavigate,
     theme,
     insets = {},
-    label = 'Primary',
-    collapseLabel = 'Collapse navigation',
-    expandLabel = 'Expand navigation',
+    label,
+    closeLabel,
+    collapseLabel,
+    expandLabel,
   } = props;
   validateNavigation(items, profile);
   useAriaHiddenInert();
@@ -594,6 +646,7 @@ export function AppNavigation(props: AppNavigationProps) {
         {bar && profile !== undefined ? (
           <Profile
             profile={profile}
+            closeLabel={closeLabel}
             theme={theme}
             bar
             collapsed={false}
@@ -606,6 +659,7 @@ export function AppNavigation(props: AppNavigationProps) {
       {!bar && profile !== undefined ? (
         <Profile
           profile={profile}
+          closeLabel={closeLabel}
           theme={theme}
           bar={false}
           collapsed={collapsed}
@@ -619,12 +673,19 @@ export function AppNavigation(props: AppNavigationProps) {
 }
 
 export interface SectionPickerProps {
+  readonly closeLabel: string;
   readonly item: NavigationItem<NavigationIcon>;
   readonly pathname: string;
   readonly onNavigate: Navigate;
   readonly theme: NavigationTheme;
 }
-export function SectionPicker({ item, pathname, onNavigate, theme }: SectionPickerProps) {
+export function SectionPicker({
+  item,
+  pathname,
+  onNavigate,
+  theme,
+  closeLabel,
+}: SectionPickerProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<View>(null);
   const id = useId();
@@ -669,6 +730,8 @@ export function SectionPicker({ item, pathname, onNavigate, theme }: SectionPick
       </FocusablePressable>
       <Menu
         entries={entries}
+        closeLabel={closeLabel}
+        pathname={pathname}
         label={item.label}
         visible={open}
         id={id}
@@ -687,8 +750,6 @@ export function SectionPicker({ item, pathname, onNavigate, theme }: SectionPick
 }
 const styles = StyleSheet.create({
   target: {
-    minHeight: NAVIGATION_DIMENSIONS.target,
-    minWidth: NAVIGATION_DIMENSIONS.target,
     padding: 8,
   },
   railTarget: { flexDirection: 'row', alignItems: 'center' },
@@ -717,13 +778,10 @@ const styles = StyleSheet.create({
   modal: { flex: 1, justifyContent: 'flex-end', padding: 8 },
   menu: { borderWidth: 1, padding: 8, maxHeight: '80%' },
   menuItem: {
-    minHeight: NAVIGATION_DIMENSIONS.target,
-    minWidth: NAVIGATION_DIMENSIONS.target,
     justifyContent: 'center',
     padding: 8,
   },
   picker: {
-    minHeight: NAVIGATION_DIMENSIONS.target,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

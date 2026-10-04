@@ -21,6 +21,7 @@ import {
   navigationMatches,
   nextSectionHref,
   resolveActiveNavigation,
+  resolveActiveMenuEntry,
   validateNavigation,
   type NavigationItem,
   type NavigationProfile,
@@ -96,6 +97,7 @@ function Menu({
   pathname,
   maxHeight,
 }: MenuProps) {
+  const activeEntry = resolveActiveMenuEntry(entries, pathname);
   const containerRef = useRef<HTMLDivElement>(null);
   const roving = useRovingMenu({
     active: true,
@@ -153,10 +155,7 @@ function Menu({
           className: 'bk-navigation-item',
           role: 'menuitem',
           'aria-disabled': entry.disabled === true ? true : undefined,
-          'data-active':
-            entry.href !== undefined && navigationMatches({ ...entry, href: entry.href }, pathname)
-              ? 'page'
-              : undefined,
+          'data-active': entry === activeEntry ? 'page' : undefined,
         } as const;
         return entry.href !== undefined ? (
           <Link
@@ -164,7 +163,7 @@ function Menu({
             renderLink={renderLink}
             href={entry.href}
             key={entry.id}
-            aria-current={entry.href === pathname ? 'page' : undefined}
+            aria-current={entry === activeEntry ? 'page' : undefined}
             onClick={(event) => {
               if (entry.disabled === true) {
                 event.preventDefault();
@@ -244,10 +243,7 @@ function Profile({
   const active =
     profile.href !== undefined
       ? navigationMatches({ id: 'profile', label: profile.label, href: profile.href }, pathname)
-      : profile.menu.some(
-          (entry) =>
-            entry.href !== undefined && navigationMatches({ ...entry, href: entry.href }, pathname),
-        );
+      : resolveActiveMenuEntry(profile.menu, pathname) !== null;
   const content = (
     <>
       <Avatar profile={profile} />
@@ -323,24 +319,16 @@ export interface AppNavigationProps extends CollapseProps {
   readonly pathname: string;
   readonly onNavigate?: Navigate;
   readonly renderLink?: NavigationLinkRenderer;
-  readonly label?: string;
-  readonly collapseLabel?: string;
-  readonly expandLabel?: string;
+  readonly label: string;
+  readonly collapseLabel: string;
+  readonly expandLabel: string;
   readonly width?: number;
   readonly className?: string;
 }
 
 export function AppNavigation(props: AppNavigationProps) {
-  const {
-    items,
-    pathname,
-    profile,
-    onNavigate,
-    renderLink,
-    label = 'Primary',
-    collapseLabel = 'Collapse navigation',
-    expandLabel = 'Expand navigation',
-  } = props;
+  const { items, pathname, profile, onNavigate, renderLink, label, collapseLabel, expandLabel } =
+    props;
   validateNavigation(items, profile);
   useAriaHiddenInert();
   const measuredWidth = useSyncExternalStore(subscribeWidth, viewportWidth, serverWidth);

@@ -35,7 +35,7 @@ export async function initializeI18n(rawPreference: unknown = 'system'): Promise
       initAsync: false,
       interpolation: { escapeValue: false },
       lng: locale,
-      ns: ['bootstrap', 'home'],
+      ns: ['bootstrap', 'home', 'navigation'],
       react: { useSuspense: false },
       resources: {
         de: germanCatalog,

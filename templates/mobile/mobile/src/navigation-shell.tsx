@@ -11,6 +11,7 @@ import {
 import type { NavigationItem, NavigationProfile } from "@baukit/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "./theme";
+import { useTranslation } from "react-i18next";
 import { blendColors } from "@baukit/ui-tokens";
 
 function NavigationGlyph({
@@ -36,20 +37,30 @@ const homeIcon: NavigationIcon = (state) => (
 const itemsIcon: NavigationIcon = (state) => (
   <NavigationGlyph {...state} glyph="☷" />
 );
-export const workspaceNavigation: NavigationItem<NavigationIcon> = {
-  id: "workspace",
-  label: "Workspace",
-  href: "/workspace/items",
-  icon: itemsIcon,
-  children: [
-    { id: "items", label: "Items", href: "/workspace/items" },
-    { id: "privacy", label: "Privacy", href: "/workspace/privacy" },
-  ],
-};
-const items: readonly NavigationItem<NavigationIcon>[] = [
-  { id: "home", label: "Today", href: "/", icon: homeIcon },
-  workspaceNavigation,
-];
+function useNavigationItems() {
+  const { t } = useTranslation("navigation");
+  const workspace: NavigationItem<NavigationIcon> = {
+    id: "workspace",
+    label: t("workspace"),
+    href: "/workspace/items",
+    icon: itemsIcon,
+    children: [
+      { id: "items", label: t("items"), href: "/workspace/items" },
+      { id: "privacy", label: t("privacy"), href: "/workspace/privacy" },
+    ],
+  };
+  const items: readonly NavigationItem<NavigationIcon>[] = [
+    { id: "home", label: t("today"), href: "/", icon: homeIcon },
+    workspace,
+  ];
+  const labels = {
+    label: t("primary"),
+    collapseLabel: t("collapse"),
+    expandLabel: t("expand"),
+    closeLabel: t("close"),
+  };
+  return { items, workspace, labels };
+}
 
 function useNavigationTheme(): NavigationTheme {
   const { theme } = useTheme();
@@ -71,6 +82,7 @@ export function NavigationBar({
 }: {
   readonly profile?: NavigationProfile;
 }) {
+  const { items, labels } = useNavigationItems();
   const router = useRouter();
   const pathname = usePathname();
   const theme = useNavigationTheme();
@@ -78,6 +90,7 @@ export function NavigationBar({
   const { width } = useWindowDimensions();
   return (
     <AppNavigation
+      {...labels}
       items={items}
       pathname={pathname}
       onNavigate={(href) => {
@@ -91,12 +104,14 @@ export function NavigationBar({
   );
 }
 export function WorkspacePicker() {
+  const { workspace, labels } = useNavigationItems();
   const router = useRouter();
   const pathname = usePathname();
   const theme = useNavigationTheme();
   return (
     <SectionPicker
-      item={workspaceNavigation}
+      item={workspace}
+      closeLabel={labels.closeLabel}
       pathname={pathname}
       onNavigate={(href) => {
         router.navigate(href);

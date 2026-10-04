@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react-native';
-import { Text } from 'react-native';
+import { Platform, Text } from 'react-native';
 import {
   AppNavigation,
   SectionPicker,
@@ -22,6 +22,13 @@ for (const name of [
 ]) {
   Reflect.get(nativeModules, name);
 }
+
+const labels = {
+  label: 'Primary',
+  collapseLabel: 'Collapse navigation',
+  expandLabel: 'Expand navigation',
+  closeLabel: 'Close',
+};
 
 const icon: NavigationIcon = ({ active }) => <Text>{active ? 'filled' : 'outline'}</Text>;
 const section: NavigationItem<NavigationIcon> = {
@@ -54,6 +61,7 @@ it('keeps keyboard focus visible on active navigation, picker and menu entries',
   await render(
     <>
       <AppNavigation
+        {...labels}
         items={items}
         width={1024}
         pathname="/progress/history"
@@ -61,6 +69,7 @@ it('keeps keyboard focus visible on active navigation, picker and menu entries',
         onNavigate={jest.fn()}
       />
       <SectionPicker
+        closeLabel={labels.closeLabel}
         item={section}
         pathname="/progress/history"
         theme={theme}
@@ -85,7 +94,7 @@ it('keeps keyboard focus visible on active navigation, picker and menu entries',
   await fireEvent.press(picker, event());
   const entry = screen.getByRole('menuitem', { name: 'History' });
   await fireEvent(entry, 'focus', event());
-  expect(entry).toHaveStyle({ borderWidth: 3, borderColor: theme.focus });
+  expect(entry).toHaveStyle({ borderWidth: 3, borderColor: theme.activeText });
   await fireEvent(entry, 'blur', event());
   expect(entry).toHaveStyle({ borderColor: 'transparent' });
 });
@@ -94,6 +103,7 @@ it('shows an active disclosure with its selected child directly inside its secti
   const navigate = jest.fn();
   await render(
     <AppNavigation
+      {...labels}
       items={items}
       profile={profile}
       width={1024}
@@ -146,6 +156,7 @@ it('expands a collapsed rail, opens its group and notifies the caller', async ()
   const changed = jest.fn();
   await render(
     <AppNavigation
+      {...labels}
       items={items}
       width={1024}
       pathname="/"
@@ -170,6 +181,7 @@ it('expands a collapsed rail, opens its group and notifies the caller', async ()
 it('fills the active parent only while the rail is collapsed', async () => {
   await render(
     <AppNavigation
+      {...labels}
       items={items}
       width={1024}
       pathname="/progress/history"
@@ -189,7 +201,14 @@ it('fills the active parent only while the rail is collapsed', async () => {
 });
 it('fills an active main item without children', async () => {
   await render(
-    <AppNavigation items={items} width={1024} pathname="/" theme={theme} onNavigate={jest.fn()} />,
+    <AppNavigation
+      {...labels}
+      items={items}
+      width={1024}
+      pathname="/"
+      theme={theme}
+      onNavigate={jest.fn()}
+    />,
   );
   const home = screen.getByRole('link', { name: 'Home' });
   expect(home).toHaveStyle({ backgroundColor: theme.activeBackground, borderColor: 'transparent' });
@@ -201,11 +220,13 @@ it('fills an active main item without children', async () => {
 it('respects controlled collapse and route changes', async () => {
   const changed = jest.fn();
   const props = { items, width: 1024, theme, onNavigate: jest.fn(), onCollapsedChange: changed };
-  const view = await render(<AppNavigation {...props} collapsed pathname="/" />);
+  const view = await render(<AppNavigation {...labels} {...props} collapsed pathname="/" />);
   await fireEvent.press(screen.getByRole('button', { name: 'Progress' }), event());
   expect(changed).toHaveBeenCalledWith(false);
   expect(screen.queryByText('Progress')).toBeNull();
-  await view.rerender(<AppNavigation {...props} collapsed={false} pathname="/progress/history" />);
+  await view.rerender(
+    <AppNavigation {...labels} {...props} collapsed={false} pathname="/progress/history" />,
+  );
   expect(screen.getByRole('link', { name: 'History' })).toHaveProp('accessibilityState', {
     selected: true,
   });
@@ -216,6 +237,7 @@ it.each([320, 1023])(
     const navigate = jest.fn();
     const view = await render(
       <AppNavigation
+        {...labels}
         items={items}
         width={width}
         pathname="/progress"
@@ -230,6 +252,7 @@ it.each([320, 1023])(
     expect(navigate).toHaveBeenLastCalledWith('/progress/history');
     await view.rerender(
       <AppNavigation
+        {...labels}
         items={items}
         width={width}
         pathname="/progress/history"
@@ -246,6 +269,7 @@ it.each([320, 1023])(
 it.each([320, 1024])('keeps profile last at %i', async (width) => {
   await render(
     <AppNavigation
+      {...labels}
       items={items}
       profile={profile}
       width={width}
@@ -268,7 +292,14 @@ it.each([
 ])('preserves modified web presses: %j', async (modifier) => {
   const navigate = jest.fn();
   await render(
-    <AppNavigation items={items} width={320} pathname="/" theme={theme} onNavigate={navigate} />,
+    <AppNavigation
+      {...labels}
+      items={items}
+      width={320}
+      pathname="/"
+      theme={theme}
+      onNavigate={navigate}
+    />,
   );
   const press = { nativeEvent: modifier, preventDefault: jest.fn() };
   await fireEvent.press(screen.getByRole('link', { name: 'Home' }), press);
@@ -278,6 +309,7 @@ it.each([
 it('uses roving tab stops for Arrow, Home and End', async () => {
   await render(
     <AppNavigation
+      {...labels}
       items={items}
       profile={profile}
       width={1024}
@@ -299,6 +331,7 @@ it('opens a profile menu, runs an entry and closes', async () => {
   const action = jest.fn();
   await render(
     <AppNavigation
+      {...labels}
       items={items}
       width={320}
       pathname="/"
@@ -320,7 +353,13 @@ it('opens a profile menu, runs an entry and closes', async () => {
 it('shows a full-width section picker and navigates directly to a subpage', async () => {
   const navigate = jest.fn();
   await render(
-    <SectionPicker item={section} pathname="/progress" theme={theme} onNavigate={navigate} />,
+    <SectionPicker
+      closeLabel={labels.closeLabel}
+      item={section}
+      pathname="/progress"
+      theme={theme}
+      onNavigate={navigate}
+    />,
   );
   await fireEvent.press(screen.getByRole('button', { name: 'Progress, Overview' }), event());
   await fireEvent.press(screen.getByRole('menuitem', { name: 'History' }), event());
@@ -331,6 +370,7 @@ it('skips disabled menu entries with the keyboard and dismisses with Escape', as
   const action = jest.fn();
   await render(
     <AppNavigation
+      {...labels}
       items={items}
       width={320}
       pathname="/"
@@ -364,3 +404,124 @@ it('skips disabled menu entries with the keyboard and dismisses with Escape', as
     expanded: false,
   });
 });
+
+it('marks the current section picker entry selected and highlights it', async () => {
+  await render(
+    <SectionPicker
+      closeLabel="Schließen"
+      item={section}
+      pathname="/progress/history?tab=recent"
+      theme={theme}
+      onNavigate={jest.fn()}
+    />,
+  );
+  await fireEvent.press(screen.getByRole('button', { name: 'Progress, History' }), event());
+  const current = screen.getByRole('menuitem', { name: 'History', selected: true });
+  expect(current).toHaveStyle({ backgroundColor: theme.activeBackground });
+  expect(within(current).getByText('History')).toHaveStyle({
+    color: theme.activeText,
+    fontWeight: '700',
+  });
+  expect(screen.getByRole('menuitem', { name: 'Overview' })).toHaveProp('accessibilityState', {
+    disabled: false,
+    selected: false,
+  });
+  const close = screen.getByRole('button', { name: 'Schließen' });
+  expect(within(close).getByText('Schließen')).toBeOnTheScreen();
+  await fireEvent.press(close, event());
+  expect(screen.queryByRole('menuitem')).toBeNull();
+});
+it('marks only the most-specific profile entry selected and honors custom matches', async () => {
+  const props = {
+    ...labels,
+    items,
+    width: 320,
+    theme,
+    onNavigate: jest.fn(),
+    profile: {
+      label: 'Account',
+      initials: 'AB',
+      menu: [
+        { id: 'settings', label: 'App settings', href: '/settings' },
+        {
+          id: 'profile-data',
+          label: 'Profile and data',
+          href: '/settings/profile?tab=data',
+          matches: (path: string) =>
+            path.startsWith('/alias') || path.startsWith('/settings/profile'),
+        },
+      ],
+    },
+  };
+  const { rerender } = await render(<AppNavigation {...props} pathname="/settings/profile" />);
+  await fireEvent.press(screen.getByRole('button', { name: 'Account' }), event());
+  const current = screen.getByRole('menuitem', { name: 'Profile and data', selected: true });
+  expect(current).toHaveStyle({ backgroundColor: theme.activeBackground });
+  expect(within(current).getByText('Profile and data')).toHaveStyle({
+    color: theme.activeText,
+    fontWeight: '700',
+  });
+  expect(screen.getByRole('menuitem', { name: 'App settings' })).toHaveProp('accessibilityState', {
+    disabled: false,
+    selected: false,
+  });
+  await rerender(<AppNavigation {...props} pathname="/alias" />);
+  expect(
+    screen.getByRole('menuitem', { name: 'Profile and data', selected: true }),
+  ).toBeOnTheScreen();
+});
+it.each(['android', 'ios'] as const)(
+  'sizes every %s target to its platform minimum',
+  async (platform) => {
+    const original = Platform.OS;
+    Platform.OS = platform;
+    try {
+      const minimum = platform === 'android' ? 48 : 44;
+      const props = {
+        ...labels,
+        items,
+        theme,
+        onNavigate: jest.fn(),
+        profile: {
+          label: 'Account',
+          initials: 'AB',
+          menu: [
+            { id: 'settings', label: 'Settings', href: '/settings' },
+            { id: 'action', label: 'Action', onSelect: jest.fn() },
+          ],
+        },
+      };
+      const { rerender } = await render(
+        <>
+          <AppNavigation {...props} width={1024} pathname="/progress/history" />
+          <SectionPicker
+            closeLabel={labels.closeLabel}
+            item={section}
+            pathname="/progress/history"
+            theme={theme}
+            onNavigate={jest.fn()}
+          />
+        </>,
+      );
+      function expectTargets() {
+        for (const role of ['button', 'link', 'menuitem'] as const) {
+          for (const target of screen.queryAllByRole(role))
+            expect(target).toHaveStyle({ minWidth: minimum, minHeight: minimum });
+        }
+      }
+      expectTargets();
+      await fireEvent.press(screen.getByRole('button', { name: 'Account' }), event());
+      expect(screen.getAllByRole('menuitem')).toHaveLength(2);
+      expectTargets();
+      await fireEvent.press(screen.getByRole('button', { name: labels.closeLabel }), event());
+      await fireEvent.press(screen.getByRole('button', { name: 'Progress, History' }), event());
+      expect(screen.getAllByRole('menuitem')).toHaveLength(2);
+      expectTargets();
+      await rerender(<AppNavigation {...props} width={320} pathname="/" />);
+      expect(screen.getAllByRole('link')).toHaveLength(2);
+      expectTargets();
+    } finally {
+      Platform.OS = original;
+    }
+  },
+);

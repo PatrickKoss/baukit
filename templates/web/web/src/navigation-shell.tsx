@@ -6,6 +6,8 @@ import {
   type NavigationIcon,
 } from "@baukit/navigation/web";
 import type { NavigationItem, NavigationProfile } from "@baukit/navigation";
+import { englishCatalog } from "./localization/en";
+import { germanCatalog } from "./localization/de";
 import { createRouteFocusController } from "@baukit/a11y-core/web";
 
 const homeIcon: NavigationIcon = ({ size }) => (
@@ -22,20 +24,42 @@ const itemsIcon: NavigationIcon = ({ size }) => (
     <path d="M4 5h16M4 12h16M4 19h16" stroke="currentColor" strokeWidth="2" />
   </svg>
 );
-const section: NavigationItem<NavigationIcon> = {
-  id: "workspace",
-  label: "Workspace",
-  href: "/#items-title",
-  icon: itemsIcon,
-  children: [
-    { id: "items", label: "Items", href: "/#items-title" },
-    { id: "privacy", label: "Privacy", href: "/#privacy-title" },
-  ],
-};
-const items: readonly NavigationItem<NavigationIcon>[] = [
-  { id: "home", label: "Home", href: "/", icon: homeIcon },
-  section,
-];
+function navigationItems(
+  copy: typeof englishCatalog.navigation | typeof germanCatalog.navigation,
+) {
+  const section: NavigationItem<NavigationIcon> = {
+    id: "workspace",
+    label: copy.workspace,
+    href: "/#items-title",
+    matches: (path) => path === "/#items-title" || path === "/#privacy-title",
+    icon: itemsIcon,
+    children: [
+      {
+        id: "items",
+        label: copy.items,
+        href: "/#items-title",
+        matches: (path) => path === "/#items-title",
+      },
+      {
+        id: "privacy",
+        label: copy.privacy,
+        href: "/#privacy-title",
+        matches: (path) => path === "/#privacy-title",
+      },
+    ],
+  };
+  const items: readonly NavigationItem<NavigationIcon>[] = [
+    {
+      id: "home",
+      label: copy.home,
+      href: "/",
+      icon: homeIcon,
+      matches: (path) => path === "/",
+    },
+    section,
+  ];
+  return { section, items };
+}
 
 export function NavigationShell({
   profile,
@@ -44,6 +68,11 @@ export function NavigationShell({
   readonly profile?: NavigationProfile;
   readonly onLocationChange?: () => void;
 }) {
+  const copy =
+    navigator.language.toLowerCase().split("-")[0] === "de"
+      ? germanCatalog.navigation
+      : englishCatalog.navigation;
+  const { section, items } = navigationItems(copy);
   const [pathname, setPathname] = useState(
     window.location.pathname + window.location.hash,
   );
@@ -90,6 +119,9 @@ export function NavigationShell({
   return (
     <>
       <AppNavigation
+        label={copy.primary}
+        collapseLabel={copy.collapse}
+        expandLabel={copy.expand}
         items={items}
         pathname={pathname}
         onNavigate={navigate}

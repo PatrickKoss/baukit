@@ -424,6 +424,26 @@ class CompatibilityRuleTests(unittest.TestCase):
                 self.assertEqual(status, 0, stdout + stderr)
                 self.assertEqual(stderr, "")
 
+    def test_reordered_nullable_types_and_primitive_alternatives_pass(self) -> None:
+        schemas = [
+            {"type": ["string", "null"]},
+            *({keyword: [{"type": "string"}, {"type": "null"}]} for keyword in check.ALTERNATIVES),
+        ]
+        for schema in schemas:
+            for target in (item_property("name"), save_property("name")):
+                with self.subTest(schema=schema, target=target):
+                    base = copy.deepcopy(BASE)
+                    target(base).clear()
+                    target(base).update(schema)
+                    current = copy.deepcopy(base)
+                    keyword = next(iter(schema))
+                    target(current)[keyword].reverse()
+                    self.documents.write(self.documents.base, base)
+                    self.documents.write(self.documents.current, current)
+                    status, stdout, stderr = self.documents.compare("--enforce")
+                    self.assertEqual(status, 0, stdout + stderr)
+                    self.assertEqual(stderr, "")
+
     def test_removed_request_alternative_is_reported_as_a_member_removal(self) -> None:
         for keyword in check.ALTERNATIVES:
             with self.subTest(keyword=keyword):

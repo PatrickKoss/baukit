@@ -18,7 +18,11 @@ export type NavigationProfileMenuEntry = {
   readonly label: string;
   readonly disabled?: boolean;
 } & (
-  | { readonly href: string; readonly onSelect?: never }
+  | {
+      readonly href: string;
+      readonly matches?: (pathname: string) => boolean;
+      readonly onSelect?: never;
+    }
   | { readonly onSelect: () => void; readonly href?: never }
 );
 
@@ -41,15 +45,22 @@ export const NAVIGATION_DIMENSIONS = {
   collapsedRail: 76,
   bar: 64,
   target: 44,
+  androidTarget: 48,
 } as const;
 
 export function getNavigationLayout(width: number): 'bar' | 'rail' {
   return getLayoutMode(width, { medium: 600, expanded: 1024 }) === 'expanded' ? 'rail' : 'bar';
 }
 
+function routePath(href: string): string {
+  return href.split(/[?#]/, 1)[0] ?? href;
+}
+
 export function navigationMatches(item: NavigationSubItem, pathname: string): boolean {
   if (item.matches !== undefined) return item.matches(pathname);
-  return pathname === item.href || (item.href !== '/' && pathname.startsWith(`${item.href}/`));
+  const path = routePath(pathname);
+  const href = routePath(item.href);
+  return path === href || (href !== '/' && path.startsWith(`${href}/`));
 }
 
 function bestMatch<Item extends NavigationSubItem>(
@@ -58,8 +69,18 @@ function bestMatch<Item extends NavigationSubItem>(
 ): Item | null {
   return items.reduce<Item | null>((best, item) => {
     if (!navigationMatches(item, pathname)) return best;
-    return best === null || item.href.length > best.href.length ? item : best;
+    return best === null || routePath(item.href).length > routePath(best.href).length ? item : best;
   }, null);
+}
+
+export function resolveActiveMenuEntry(
+  entries: readonly NavigationProfileMenuEntry[],
+  pathname: string,
+): NavigationProfileMenuEntry | null {
+  return bestMatch(
+    entries.filter((entry) => entry.href !== undefined),
+    pathname,
+  );
 }
 
 export function resolveActiveNavigation<Icon>(

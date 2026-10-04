@@ -91,6 +91,9 @@ fi
 "$adb" -s "$serial" shell settings put global animator_duration_scale 0
 "$adb" -s "$serial" reverse "tcp:${BAUKIT_QA_API_PORT:-18080}" "tcp:${BAUKIT_QA_API_PORT:-18080}"
 {% if context.auth_oidc %}"$adb" -s "$serial" reverse "tcp:${BAUKIT_QA_KEYCLOAK_PORT:-18081}" "tcp:${BAUKIT_QA_KEYCLOAK_PORT:-18081}"
+"$adb" -s "$serial" shell am force-stop com.android.chrome
+"$adb" -s "$serial" shell 'echo "chrome --no-first-run --no-default-browser-check" > /data/local/tmp/chrome-command-line'
+"$adb" -s "$serial" shell settings put global debug_app com.android.chrome
 {% endif %}
 if [[ "${BAUKIT_QA_SKIP_BUILD:-0}" != 1 ]]; then
   bash "$root/mobile/scripts/qa/build-android.sh"

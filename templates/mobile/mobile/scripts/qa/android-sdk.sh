@@ -84,7 +84,7 @@ path = Path(sys.argv[1])
 lines = [
     line
     for line in path.read_text().splitlines()
-    if not line.startswith(("hw.ramSize=", "hw.keyboard="))
+    if line.partition("=")[0].strip() not in {"hw.ramSize", "hw.keyboard"}
 ]
 lines.extend(("hw.ramSize=4096", "hw.keyboard=yes"))
 path.write_text("\n".join(lines) + "\n")
