@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Let products set `capabilities.analytics = "none"` to omit the mobile PostHog adapter. Generated manifests default to `"posthog"`.
+
 - Check that a root pnpm workspace includes each mobile, web, and MCP app when it has no nested workspace.
 
 - Install Corepack 0.36.0 before using pnpm in generated CI. Node 26 does not bundle Corepack.

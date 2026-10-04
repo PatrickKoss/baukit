@@ -203,7 +203,6 @@ const EXPECTED_TYPESCRIPT_DEPENDENCIES: &[&str] = &[
 ];
 
 const EXPECTED_MOBILE_TYPESCRIPT_DEPENDENCIES: &[&str] = &[
-    "@baukit/analytics-posthog-native",
     "@baukit/data-contracts-expo-sqlite",
     "@baukit/localization-core",
     "@baukit/preferences-core",
@@ -344,6 +343,8 @@ const fn default_webkit_repeats() -> u8 {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Capabilities {
+    #[serde(default)]
+    pub analytics: AnalyticsAdapter,
     pub backend: bool,
     #[serde(default)]
     pub worker: bool,
@@ -355,6 +356,14 @@ pub struct Capabilities {
     pub mcp: Option<McpCapability>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth: Option<AuthProvider>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AnalyticsAdapter {
+    Posthog,
+    #[default]
+    None,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -853,6 +862,7 @@ fn typescript_packages(mobile: bool, mobile_auth: bool, web_auth: bool) -> Vec<&
     let mut packages = EXPECTED_TYPESCRIPT_DEPENDENCIES.to_vec();
     if mobile {
         packages.extend(EXPECTED_MOBILE_TYPESCRIPT_DEPENDENCIES);
+        packages.push("@baukit/analytics-posthog-native");
     }
     if mobile_auth {
         packages.extend(EXPECTED_MOBILE_AUTH_DEPENDENCIES);
@@ -985,6 +995,7 @@ full_stack_e2e = false\n\
 openapi_compatibility = \"off\"\n\
 \n\
 [capabilities]\n\
+analytics = \"posthog\"\n\
 backend = {}\n\
 worker = {}\n\
 mobile = {}\n\
@@ -1393,6 +1404,9 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
             "react-native-worklets",
         ];
         dependencies.extend(EXPECTED_MOBILE_TYPESCRIPT_DEPENDENCIES);
+        if manifest.capabilities.analytics == AnalyticsAdapter::Posthog {
+            dependencies.push("@baukit/analytics-posthog-native");
+        }
         if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
             dependencies.extend(EXPECTED_MOBILE_AUTH_DEPENDENCIES);
         }
@@ -2889,6 +2903,7 @@ mod doctor_tests {
     #[test]
     fn pwa_app_directory_prefers_the_web_app_and_falls_back_to_the_expo_web_export() {
         let capabilities = |web, mobile| Capabilities {
+            analytics: crate::AnalyticsAdapter::Posthog,
             backend: true,
             worker: false,
             mobile,

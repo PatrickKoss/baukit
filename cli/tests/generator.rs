@@ -2179,6 +2179,41 @@ fn doctor_accepts_auth_node_for_web_e2e_and_rejects_it_at_runtime() -> anyhow::R
 }
 
 #[test]
+fn doctor_requires_only_the_selected_mobile_analytics_adapter() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = frontend_options(parent.path(), "analytics-choice", true, false);
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    let manifest = fs::read_to_string(root.join("baukit.toml"))?;
+    assert!(manifest.contains("analytics = \"posthog\""));
+    doctor(&root)?;
+    let package_path = root.join("mobile/package.json");
+    let mut package: serde_json::Value = serde_json::from_str(&fs::read_to_string(&package_path)?)?;
+    package["dependencies"]
+        .as_object_mut()
+        .expect("dependencies object")
+        .remove("@baukit/analytics-posthog-native");
+    fs::write(&package_path, serde_json::to_string_pretty(&package)?)?;
+    let error = doctor(&root).expect_err("PostHog selection must require its adapter");
+    assert!(
+        error
+            .to_string()
+            .contains("missing dependency `@baukit/analytics-posthog-native`")
+    );
+    fs::write(
+        root.join("baukit.toml"),
+        manifest.replace("analytics = \"posthog\"", "analytics = \"none\""),
+    )?;
+    doctor(&root)?;
+    fs::write(
+        root.join("baukit.toml"),
+        manifest.replace("analytics = \"posthog\"\n", ""),
+    )?;
+    doctor(&root)?;
+    Ok(())
+}
+
+#[test]
 fn doctor_accepts_root_workspaces_for_web_and_mobile_and_requires_a_workspace() -> anyhow::Result<()>
 {
     let parent = tempfile::tempdir()?;

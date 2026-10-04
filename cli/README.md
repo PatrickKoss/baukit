@@ -38,3 +38,12 @@ Each frontend can have its own `pnpm-workspace.yaml`. A product can instead
 use one root workspace whose `packages` patterns include every enabled app
 (`mobile`, `web`, and pnpm-managed `mcp`). Doctor checks inclusions and exclusions in those
 patterns.
+
+`capabilities.analytics` selects the mobile analytics adapter. It accepts
+`"posthog"` or `"none"`. Generated manifests select `"posthog"`; older
+manifests without this setting do not select an adapter. Set it to `"none"`
+when the mobile app uses `NoopTransport`. Doctor requires
+`@baukit/analytics-posthog-native`
+only for `"posthog"`. The web template uses `NoopTransport` and has no required
+PostHog adapter. Auth adapters follow `capabilities.auth`; the Expo SQLite
+adapter remains required by the generated mobile record store.
