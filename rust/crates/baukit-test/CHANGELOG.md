@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+- Keep testcontainers 0.27 with testcontainers-modules 0.15. The 0.28 dependency graph conflicts through Bollard's exact stubs pin.
+
 ## [0.7.0] - 2026-10-04
 
 - Update the Redis and Sentinel fixture images to `8.10.2-alpine`, matching generated products. PostgreSQL remains on `18.6-alpine`.
