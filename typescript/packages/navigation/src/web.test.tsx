@@ -289,21 +289,21 @@ it('keeps an all-disabled profile menu dismissible with the keyboard', () => {
 });
 
 it('marks only the most-specific profile route current with query and hash hrefs', () => {
-  render(
-    <AppNavigation
-      {...labels}
-      items={items}
-      pathname="/settings/profile?tab=data#top"
-      profile={{
-        label: 'Account',
-        initials: 'AB',
-        menu: [
-          { id: 'settings', label: 'App settings', href: '/settings?tab=app' },
-          { id: 'profile-data', label: 'Profile and data', href: '/settings/profile?tab=data#top' },
-          { id: 'account-alias', label: 'Alias', href: '/account', matches: () => false },
-        ],
-      }}
-    />,
+  const props = {
+    ...labels,
+    items,
+    profile: {
+      label: 'Account',
+      initials: 'AB',
+      menu: [
+        { id: 'settings', label: 'App settings', href: '/settings' },
+        { id: 'profile-data', label: 'Profile and data', href: '/settings/profile?tab=data#top' },
+        { id: 'account-alias', label: 'Alias', href: '/account', matches: () => false },
+      ],
+    },
+  };
+  const { rerender } = render(
+    <AppNavigation {...props} pathname="/settings/profile?tab=data#top" />,
   );
   fireEvent.click(screen.getByRole('button', { name: 'Account' }));
   const menu = screen.getByRole('menu');
@@ -315,6 +315,12 @@ it('marks only the most-specific profile route current with query and hash hrefs
   expect(screen.getByRole('menuitem', { name: 'App settings' }).hasAttribute('data-active')).toBe(
     false,
   );
+  rerender(<AppNavigation {...props} pathname="/settings/profile" />);
+  expect(menu.querySelectorAll('[data-active="page"]')).toHaveLength(1);
+  expect(menu.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
+  expect(
+    screen.getByRole('menuitem', { name: 'Profile and data' }).getAttribute('aria-current'),
+  ).toBe('page');
 });
 it('uses a profile entry matcher instead of its href', () => {
   render(
