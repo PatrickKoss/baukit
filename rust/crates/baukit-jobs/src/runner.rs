@@ -168,7 +168,9 @@ impl WorkerRunner {
     /// never claims a job type its handler does not declare.
     ///
     /// New claims stop immediately after shutdown is observed. Already running
-    /// attempts drain in the `JoinSet`; `TaskSupervisor` bounds that drain using
+    /// Claim transactions run in owned tasks. If shutdown or caller cancellation
+    /// abandons a claim, it finishes and the job recovers after lease expiry.
+    /// Running attempts drain in the `JoinSet`; `TaskSupervisor` bounds that drain using
     /// the same [`ShutdownToken`] deadline.
     pub async fn run(self, shutdown: ShutdownToken) -> Result<(), RunnerError> {
         let mut running = JoinSet::new();
@@ -182,18 +184,25 @@ impl WorkerRunner {
             let age = self.store.oldest_pending_age(now).await?;
             metrics::set_queue_age(self.config.queue, age);
             while running.len() < self.config.concurrency && !shutdown.is_cancelled() {
+                let store = Arc::clone(&self.store);
+                let worker_id = self.config.worker_id.clone();
+                let job_types = self.handler.job_types();
+                let lease_duration = self.config.lease_duration;
+                let claim = tokio::spawn(async move {
+                    store
+                        .claim(&worker_id, job_types, now, lease_duration)
+                        .await
+                });
                 let claimed = tokio::select! {
                     () = shutdown.cancelled() => None,
-                    result = self.store.claim(
-                        &self.config.worker_id,
-                        self.handler.job_types(),
-                        now,
-                        self.config.lease_duration,
-                    ) => result?,
+                    result = claim => result??,
                 };
                 let Some(job) = claimed else {
                     break;
                 };
+                if shutdown.is_cancelled() {
+                    break;
+                }
                 spawn_attempt(
                     &mut running,
                     Arc::clone(&self.store),

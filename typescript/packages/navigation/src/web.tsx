@@ -371,11 +371,14 @@ export function AppNavigation(props: AppNavigationProps) {
       ? [item, ...(item.children ?? [])]
       : [item],
   );
+  const activeId = visible.some((item) => item.id === state.active.subItem?.id)
+    ? state.active.subItem?.id
+    : state.active.item?.id;
   const roving = useRovingMenu({
     active: true,
     options: [
       ...visible.map((item) => ({
-        selected: item.id === (state.active.subItem?.id ?? state.active.item?.id),
+        selected: item.id === activeId,
       })),
       ...(profile === undefined ? [] : [{}]),
     ],

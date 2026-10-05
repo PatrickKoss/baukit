@@ -63,6 +63,10 @@ export const NAVIGATION_DIMENSIONS = {
   androidTarget: 48,
 } as const;
 
+export function getNavigationBarHeight(fontScale = 1, bottomInset = 0): number {
+  return NAVIGATION_DIMENSIONS.bar * Math.max(1, fontScale) + bottomInset;
+}
+
 export function getNavigationLayout(width: number): 'bar' | 'rail' {
   return getLayoutMode(width, { medium: 600, expanded: 1024 }) === 'expanded' ? 'rail' : 'bar';
 }

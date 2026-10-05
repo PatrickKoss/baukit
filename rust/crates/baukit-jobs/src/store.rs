@@ -95,12 +95,25 @@ pub trait JobStore: Send + Sync + 'static {
 #[derive(Clone, Debug)]
 pub struct PostgresJobStore {
     pool: PgPool,
+    retained_failed_kinds: Vec<String>,
 }
 
 impl PostgresJobStore {
     /// Creates a store using an existing product pool.
     pub const fn new(pool: PgPool) -> Self {
-        Self { pool }
+        Self {
+            pool,
+            retained_failed_kinds: Vec::new(),
+        }
+    }
+
+    /// Retains failed jobs of these kinds for inspection and repair.
+    ///
+    /// Successful and cancelled jobs of these kinds still follow their cutoffs.
+    #[must_use]
+    pub fn retain_failed_kinds(mut self, kinds: &[&str]) -> Self {
+        self.retained_failed_kinds = kinds.iter().map(|kind| (*kind).to_owned()).collect();
+        self
     }
 
     /// Returns the underlying pool for product-level transaction composition.
@@ -162,12 +175,13 @@ impl PostgresJobStore {
         }
 
         let deleted_statuses: Vec<String> = sqlx::query_scalar(
-            "WITH candidates AS (SELECT id FROM job_outbox WHERE (status = 'succeeded' AND updated_at < $1) OR (status = 'cancelled' AND updated_at < $2) OR (status = 'failed' AND updated_at < $3) ORDER BY updated_at, id FOR UPDATE SKIP LOCKED LIMIT $4) DELETE FROM job_outbox AS job USING candidates WHERE job.id = candidates.id RETURNING job.status",
+            "WITH candidates AS (SELECT id FROM job_outbox WHERE (status = 'succeeded' AND updated_at < $1) OR (status = 'cancelled' AND updated_at < $2) OR (status = 'failed' AND updated_at < $3 AND NOT (job_type = ANY($5))) ORDER BY updated_at, id FOR UPDATE SKIP LOCKED LIMIT $4) DELETE FROM job_outbox AS job USING candidates WHERE job.id = candidates.id RETURNING job.status",
         )
         .bind(cutoffs.succeeded_before)
         .bind(cutoffs.cancelled_before)
         .bind(cutoffs.failed_before)
         .bind(i64::from(batch_size))
+        .bind(&self.retained_failed_kinds)
         .fetch_all(&self.pool)
         .await
         .map_err(StoreError::database)?;
@@ -191,13 +205,14 @@ impl PostgresJobStore {
 
 impl JobStore for PostgresJobStore {
     fn enqueue(&self, job: NewJob) -> StoreFuture<'_, Result<EnqueueOutcome, StoreError>> {
-        Box::pin(async move {
+        let pool = self.pool.clone();
+        Box::pin(owned_operation(async move {
             validate_new_job(&job)?;
-            let mut transaction = self.pool.begin().await.map_err(StoreError::database)?;
+            let mut transaction = pool.begin().await.map_err(StoreError::database)?;
             let outcome = enqueue_on(&mut transaction, job).await?;
             transaction.commit().await.map_err(StoreError::database)?;
             Ok(outcome)
-        })
+        }))
     }
 
     fn claim<'a>(
@@ -207,9 +222,15 @@ impl JobStore for PostgresJobStore {
         now: DateTime<Utc>,
         lease_for: Duration,
     ) -> StoreFuture<'a, Result<Option<ClaimedJob>, StoreError>> {
-        Box::pin(async move {
-            validate_worker_id(worker_id)?;
-            validate_job_types(job_types)?;
+        let pool = self.pool.clone();
+        let worker_id = worker_id.to_owned();
+        let job_types = job_types
+            .iter()
+            .map(|kind| (*kind).to_owned())
+            .collect::<Vec<_>>();
+        Box::pin(owned_operation(async move {
+            validate_worker_id(&worker_id)?;
+            validate_job_types(&job_types.iter().map(String::as_str).collect::<Vec<_>>())?;
             if lease_for.is_zero() {
                 return Err(StoreError::InvalidInput(
                     "lease duration must be non-zero".to_owned(),
@@ -221,7 +242,7 @@ impl JobStore for PostgresJobStore {
             let locked_until = now.checked_add_signed(lease_for).ok_or_else(|| {
                 StoreError::InvalidInput("lease deadline is out of range".to_owned())
             })?;
-            let mut transaction = self.pool.begin().await.map_err(StoreError::database)?;
+            let mut transaction = pool.begin().await.map_err(StoreError::database)?;
 
             sqlx::query(
                 "UPDATE job_outbox SET status = 'cancelled', locked_by = NULL, locked_until = NULL, cancel_requested_at = NULL, updated_at = $1 WHERE status = 'running' AND locked_until <= $1 AND cancel_requested_at IS NOT NULL",
@@ -250,7 +271,7 @@ impl JobStore for PostgresJobStore {
                 .map_err(StoreError::database)?;
             transaction.commit().await.map_err(StoreError::database)?;
             row.map(row_to_job).transpose()
-        })
+        }))
     }
 
     fn complete<'a>(
@@ -377,9 +398,10 @@ impl JobStore for PostgresJobStore {
     }
 
     fn ready(&self) -> StoreFuture<'_, Result<(), StoreError>> {
-        Box::pin(async move {
+        let pool = self.pool.clone();
+        Box::pin(owned_operation(async move {
             let no_job_types: &[&str] = &[];
-            let mut transaction = self.pool.begin().await.map_err(StoreError::database)?;
+            let mut transaction = pool.begin().await.map_err(StoreError::database)?;
             sqlx::query(
                 "SELECT id FROM job_outbox WHERE attempts < max_attempts AND cancel_requested_at IS NULL AND job_type = ANY($2) AND ((status = 'pending' AND run_after <= $1) OR (status = 'running' AND locked_until <= $1)) ORDER BY run_after, created_at, id FOR UPDATE SKIP LOCKED LIMIT 0",
             )
@@ -389,8 +411,14 @@ impl JobStore for PostgresJobStore {
             .await
             .map(|_| ())
             .map_err(StoreError::database)
-        })
+        }))
     }
+}
+
+async fn owned_operation<T: Send + 'static>(
+    operation: impl Future<Output = Result<T, StoreError>> + Send + 'static,
+) -> Result<T, StoreError> {
+    tokio::spawn(operation).await.map_err(StoreError::Task)?
 }
 
 async fn enqueue_on(
@@ -581,8 +609,36 @@ impl From<sqlx::Error> for StoreError {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+    use tokio::sync::oneshot;
 
     use super::*;
+
+    #[tokio::test]
+    async fn owned_operation_finishes_after_caller_cancellation() {
+        let (started_sender, started) = oneshot::channel();
+        let (release, released) = oneshot::channel();
+        let (finished_sender, finished) = oneshot::channel();
+        let caller = tokio::spawn(owned_operation(async move {
+            started_sender.send(()).expect("caller waits for the start");
+            released
+                .await
+                .expect("operation is released after cancellation");
+            finished_sender.send(42).expect("completion is observed");
+            Ok(())
+        }));
+        started.await.expect("operation starts");
+        caller.abort();
+        assert!(
+            caller
+                .await
+                .expect_err("caller is cancelled")
+                .is_cancelled()
+        );
+        release
+            .send(())
+            .expect("owned operation survives cancellation");
+        assert_eq!(finished.await.expect("owned operation finishes"), 42);
+    }
 
     #[test]
     fn new_job_defaults_are_claimable_and_unique() {

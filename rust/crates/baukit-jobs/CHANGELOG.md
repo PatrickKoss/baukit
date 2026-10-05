@@ -4,6 +4,9 @@ All notable changes to `baukit-jobs` are documented here.
 
 ## [Unreleased]
 
+- Finish claim, enqueue, and readiness transactions in owned tasks when callers cancel. Abandoned claims recover after lease expiry.
+- Allow terminal cleanup to retain failed job kinds for repair. Generated OIDC workers retain identity deletion failures.
+
 - Use `job_kind` for worker metrics so Prometheus keeps the handler type separate from the scrape job. Update worker dashboards, recording rules, and alerts.
 
 - Remove the extra blank line at the end of the published jobs migration so copied migrations pass git diff --check.

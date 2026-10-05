@@ -721,6 +721,40 @@ async fn postgres_v051_schema_upgrades_to_failure_reasons() -> Result<(), Box<dy
     Ok(())
 }
 
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn terminal_cleanup_retains_failed_identity_deletions_only() -> Result<(), Box<dyn Error>> {
+    let (fixture, pool, store) = fixture().await?;
+    let identity_kind = "identity.account.delete";
+    let old = Utc::now() - TimeDelta::days(30);
+    let identity = terminal_job(&store, &pool, identity_kind, "failed", old).await?;
+    let ordinary = terminal_job(&store, &pool, "email.send", "failed", old).await?;
+    let successful_identity = terminal_job(&store, &pool, identity_kind, "succeeded", old).await?;
+    let now = Utc::now();
+    let result = store
+        .retain_failed_kinds(&[identity_kind])
+        .cleanup_terminal_jobs(
+            TerminalJobCutoffs {
+                succeeded_before: now,
+                cancelled_before: now,
+                failed_before: now,
+            },
+            10,
+        )
+        .await?;
+    assert_eq!(result.failed, 1);
+    assert_eq!(result.succeeded, 1);
+    assert_eq!(status(&pool, identity).await?, "failed");
+    let remaining: Vec<uuid::Uuid> = sqlx::query_scalar("SELECT id FROM job_outbox")
+        .fetch_all(&pool)
+        .await?;
+    assert!(!remaining.contains(&ordinary));
+    assert!(!remaining.contains(&successful_identity));
+    pool.close().await;
+    drop(fixture);
+    Ok(())
+}
+
 async fn fixture()
 -> Result<(baukit_test::PostgresTestContainer, PgPool, PostgresJobStore), Box<dyn Error>> {
     let migrations = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("migrations");

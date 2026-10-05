@@ -163,27 +163,6 @@ const EXPECTED_MOBILE_TYPESCRIPT_DEPENDENCIES: &[&str] = &[
 const EXPECTED_MOBILE_AUTH_DEPENDENCIES: &[&str] = &["@baukit/auth-native"];
 const EXPECTED_WEB_AUTH_DEPENDENCIES: &[&str] = &["@baukit/auth-web"];
 const EXPECTED_WEB_AUTH_DEV_DEPENDENCIES: &[&str] = &["@baukit/auth-node"];
-const EXPECTED_MCP_FILES: &[&str] = &[
-    "mcp/package.json",
-    "mcp/README.md",
-    "mcp/tsconfig.json",
-    "mcp/tsconfig.build.json",
-    "mcp/eslint.config.js",
-    "mcp/vitest.config.ts",
-    "mcp/src/api/client.ts",
-    "mcp/src/api/schema.d.ts",
-    "mcp/src/auth.ts",
-    "mcp/src/cli.ts",
-    "mcp/src/server.ts",
-    "mcp/src/tool-routes.ts",
-    "mcp/src/tools/read.ts",
-    "mcp/src/tools/write.ts",
-    "mcp/scripts/check-openapi-allowlist.mjs",
-    "mcp/scripts/generate-tool-docs.mjs",
-    "mcp/docs/tools.md",
-    "mcp/test/server.test.ts",
-    "mcp/test/stdio.test.ts",
-];
 
 #[derive(Clone, Debug)]
 pub struct NewOptions {
@@ -1352,7 +1331,7 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
             )?;
         }
         if let Some(mcp) = &manifest.capabilities.mcp {
-            validate_mcp_capability(root, &manifest.openapi, mcp, &mut successes, &mut failures)?;
+            validate_mcp_capability(root, mcp, &mut successes, &mut failures)?;
         }
         let cargo = doctor_layout::backend_manifest(root, &manifest)?;
         if cargo.is_file() {
@@ -1840,7 +1819,26 @@ fn validate_port_configuration(
         } else {
             source
         };
-        let mismatched = if relative.ends_with(".rs")
+        let mismatched = if relative == "Makefile" && snippet.starts_with("REDIS_URL=") {
+            let expected_port = loopback_ports(&snippet, false)
+                .first()
+                .copied()
+                .context("expected Redis port")?;
+            let redis_sources = source
+                .split("redis://")
+                .skip(1)
+                .map(|tail| {
+                    tail.split(|character: char| {
+                        character.is_whitespace() || matches!(character, '}' | '\'' | '"')
+                    })
+                    .next()
+                    .unwrap_or_default()
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            let actual_ports = loopback_ports(&redis_sources, false);
+            actual_ports.is_empty() || actual_ports.iter().any(|port| *port != expected_port)
+        } else if relative.ends_with(".rs")
             || is_environment_capable_source(&relative)
             || (relative == "Makefile" && snippet.contains("/realms/"))
         {
@@ -2360,25 +2358,57 @@ fn validate_mcp_tool_exports(root: &Path, failures: &mut Vec<String>) -> Result<
     Ok(())
 }
 
+fn validate_mcp_document_inputs(root: &Path, failures: &mut Vec<String>) -> Result<()> {
+    for path in doctor_layout::files(&root.join("mcp"), "mjs")? {
+        let source = fs::read_to_string(&path)?;
+        for target in source.split(['\'', '"']).filter(|value| {
+            value.starts_with("../") && value.ends_with(".md") && !value.contains('\n')
+        }) {
+            let mut input = path.parent().context("MCP script directory")?.to_path_buf();
+            for component in Path::new(target).components() {
+                match component {
+                    std::path::Component::ParentDir => {
+                        input.pop();
+                    }
+                    std::path::Component::Normal(part) => input.push(part),
+                    _ => {}
+                }
+            }
+            if input.starts_with(root) && !input.is_file() {
+                failures.push(format!(
+                    "missing MCP document input `{}`",
+                    input.strip_prefix(root)?.display()
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn validate_mcp_capability(
     root: &Path,
-    openapi: &OpenApiPaths,
     mcp: &McpCapability,
     successes: &mut Vec<String>,
     failures: &mut Vec<String>,
 ) -> Result<()> {
     let initial_failure_count = failures.len();
     validate_mcp_tool_exports(root, failures)?;
-    for relative in EXPECTED_MCP_FILES {
-        if !root.join(relative).is_file() {
-            failures.push(format!("missing expected MCP file `{relative}`"));
+    let sources = doctor_layout::files(&root.join("mcp/src"), "ts")?
+        .into_iter()
+        .filter(|path| !path.to_string_lossy().ends_with(".test.ts"))
+        .map(fs::read_to_string)
+        .collect::<std::io::Result<Vec<_>>>()?;
+    let code = typescript_code(&sources.join("\n"));
+    for (label, symbol) in [
+        ("server", "new McpServer"),
+        ("stdio transport", "new StdioServerTransport"),
+        ("tool registration", ".registerTool("),
+    ] {
+        if !code.contains(symbol) {
+            failures.push(format!("missing MCP {label} wiring (expected {symbol})"));
         }
     }
-    if !openapi.consumers().contains(&"mcp/src/api/schema.d.ts") {
-        failures.push(
-            "the MCP capability requires `mcp/src/api/schema.d.ts` in openapi.consumers".to_owned(),
-        );
-    }
+    validate_mcp_document_inputs(root, failures)?;
 
     let package_path = root.join("mcp/package.json");
     if package_path.is_file() {
@@ -2394,16 +2424,19 @@ fn validate_mcp_capability(
         {
             validate_pnpm_workspace(root, "mcp", failures)?;
         }
-        if !source.contains("\"@modelcontextprotocol/sdk\": \"1.32.0\"") {
-            failures.push(
-                "mcp/package.json must pin `@modelcontextprotocol/sdk` to `1.32.0`".to_owned(),
-            );
+        if !source.contains("\"@modelcontextprotocol/sdk\"")
+            && !source.contains("\"@modelcontextprotocol/server\"")
+        {
+            failures.push("mcp/package.json must depend on an MCP server package".to_owned());
         }
         if !source.contains("\"@baukit/auth-node\"") {
             failures.push("mcp/package.json must depend on `@baukit/auth-node`".to_owned());
         }
     }
 
+    if !package_path.is_file() {
+        failures.push("missing MCP package.json".to_owned());
+    }
     if failures.len() == initial_failure_count {
         successes.push(format!(
             "MCP package files and {:?} authentication are configured",

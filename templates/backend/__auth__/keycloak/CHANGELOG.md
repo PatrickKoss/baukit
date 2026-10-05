@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Reconcile confidential backend clients without browser redirects. Keep creation secrets and preserve rotated secrets on existing clients.
+
 - Allow development reconciliation of `verifyEmail` and `resetPasswordAllowed`.
 
 - Grant and reconcile manage-users for backend account deletion.

@@ -25,6 +25,107 @@ const UNHANDLED_AGE_SECONDS: i32 = 3_600;
 const WAIT_LIMIT: Duration = Duration::from_secs(30);
 const POLL: Duration = Duration::from_millis(10);
 
+enum ClaimCancellation {
+    AbortRunner,
+    ShutdownRunner,
+    AbortStore,
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn cancelled_claim_finishes_and_recovers_without_poisoning_the_pool()
+-> Result<(), Box<dyn Error>> {
+    let (fixture, pool, _) = fixture().await?;
+    let worker_pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(fixture.connection_url())
+        .await?;
+    let store = Arc::new(PostgresJobStore::new(worker_pool.clone()));
+    for cancellation in [
+        ClaimCancellation::AbortRunner,
+        ClaimCancellation::ShutdownRunner,
+        ClaimCancellation::AbortStore,
+    ] {
+        let job = store.enqueue(NewJob::new(ALPHA, json!({}), 3)).await?.job;
+        let mut lock = pool.begin().await?;
+        sqlx::query("LOCK TABLE job_outbox IN SHARE MODE")
+            .execute(&mut *lock)
+            .await?;
+        let shutdown = ShutdownToken::new(Duration::from_secs(5));
+        let worker = runner(
+            &store,
+            Arc::new(BlockingHandler),
+            "cancelled-worker",
+            "cancelled",
+        )?;
+        let task = match cancellation {
+            ClaimCancellation::AbortStore => {
+                let store = Arc::clone(&store);
+                tokio::spawn(async move {
+                    store
+                        .claim(
+                            "cancelled-worker",
+                            &[ALPHA],
+                            Utc::now(),
+                            Duration::from_secs(30),
+                        )
+                        .await
+                        .map(|_| ())
+                        .map_err(Into::into)
+                })
+            }
+            _ => tokio::spawn(worker.run(shutdown.clone())),
+        };
+        wait_until(|| async {
+            sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE 'UPDATE job_outbox SET status%')")
+                .fetch_one(&pool).await.expect("claim lock probe")
+        }).await;
+        if matches!(cancellation, ClaimCancellation::ShutdownRunner) {
+            shutdown.trigger();
+            task.await??;
+        } else {
+            task.abort();
+            assert!(task.await.expect_err("caller aborted").is_cancelled());
+        }
+        lock.commit().await?;
+        wait_until(|| async {
+            status_and_attempts(&pool, job.id)
+                .await
+                .expect("committed claim probe")
+                .0
+                == "running"
+        })
+        .await;
+        assert_eq!(
+            sqlx::query_scalar::<_, i32>("SELECT 42")
+                .fetch_one(&worker_pool)
+                .await?,
+            42
+        );
+        let recovery_time = Utc::now() + TimeDelta::minutes(2);
+        let recovered = store
+            .claim(
+                "recovery-worker",
+                &[ALPHA],
+                recovery_time,
+                Duration::from_secs(30),
+            )
+            .await?
+            .expect("abandoned claim recovers after lease expiry");
+        assert_eq!(recovered.id, job.id);
+        assert_eq!(recovered.attempts, 2);
+        assert!(
+            store
+                .complete(job.id, "recovery-worker", recovery_time)
+                .await?
+        );
+    }
+    worker_pool.close().await;
+    pool.close().await;
+    drop(fixture);
+    Ok(())
+}
+
 #[tokio::test]
 #[ignore = "requires Docker; mandatory in the full local gate"]
 async fn postgres_claim_returns_only_requested_job_types() -> Result<(), Box<dyn Error>> {

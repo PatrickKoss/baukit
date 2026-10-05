@@ -458,3 +458,26 @@ it.each([
   expect(screen.getByRole('link', { name: 'Account' }).textContent).toContain('Glyph at 28');
   expect(renderAvatar).toHaveBeenLastCalledWith({ active: false, size: 28 });
 });
+
+it.each([600, 1024])('enters the visible parent of a hidden active child at width %s', (width) => {
+  const insights = {
+    ...section,
+    id: 'insights',
+    label: 'Insights',
+    href: '/insights',
+    children: [{ id: 'charts', label: 'Charts', href: '/insights/charts' }],
+  };
+  render(
+    <AppNavigation
+      {...labels}
+      items={[{ id: 'home', label: 'Home', href: '/', icon }, insights]}
+      width={width}
+      pathname="/insights/charts?range=4w"
+      defaultCollapsed
+    />,
+  );
+  const parent = screen.getByRole(width === 1024 ? 'button' : 'link', { name: 'Insights' });
+  expect(parent.tabIndex).toBe(0);
+  expect(screen.getByRole('link', { name: 'Home' }).tabIndex).toBe(-1);
+  expect(screen.queryByRole('link', { name: 'Charts' })).toBeNull();
+});

@@ -81,7 +81,10 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
     let (erasure_service, erasure_handler) =
         identity_erasure(pool.clone(), &config.product.auth, config.environment)?;
     let erasure_runner = WorkerRunner::new(
-        Arc::new(PostgresJobStore::new(pool.clone())),
+        Arc::new(
+            PostgresJobStore::new(pool.clone())
+                .retain_failed_kinds(&[baukit_erasure::IDENTITY_DELETE_JOB_TYPE]),
+        ),
         Arc::new(erasure_handler),
         WorkerConfig {
             queue: "identity-erasure",

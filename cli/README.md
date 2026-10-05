@@ -84,16 +84,16 @@ checks cover literal names and constants; compilation checks computed values.
 Doctor does not require the template's guidance filenames. Products can write
 API policy, fake-provider, sync-table, navigation, observability, budget, and
 local-data-retention guidance under their own names. Generated links should
-be updated when a document moves. Machine-read inputs retain their contracts:
-`mcp/docs/tools.md` for `docs:check`, the declared OpenAPI schema and consumers,
-and `docs/openapi-accepted-breaks.json` when the compatibility gate reads it.
+be updated when a document moves. Doctor checks the declared OpenAPI schema and
+consumers. MCP can use a shared consumer outside `mcp/`. It finds server
+construction, stdio transport and tool
+registration in MCP source files, including renamed modules. Referenced tool
+documents stay required when a script reads them. Products can choose their
+build, lint, test and guidance filenames.
 
-MCP drift checks and tests read the exports in `mcp/src/tools/read.ts` and
-`write.ts`, so those files stay required. Doctor accepts exported `READ_TOOLS`
-and `WRITE_TOOLS` metadata, or `READ_TOOL_NAMES` and `WRITE_TOOL_NAMES` catalogs.
-The shared helper `mcp/src/tools/registry.ts` is a template implementation
-choice. A product can move its types and result helpers if it updates its own
-imports and keeps its tool docs, route checks, and server tests passing.
+Doctor accepts exported `READ_TOOLS` and `WRITE_TOOLS` metadata, or
+`READ_TOOL_NAMES` and `WRITE_TOOL_NAMES` catalogs in the template's registry
+modules. A product can register tools directly in its server instead.
 
 ## Doctor paths for existing products
 

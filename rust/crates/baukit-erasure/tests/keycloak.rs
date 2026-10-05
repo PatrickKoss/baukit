@@ -5,7 +5,7 @@ use baukit_erasure::{
 };
 use reqwest::{Client, StatusCode};
 use serde_json::{Value, json};
-use std::error::Error;
+use std::{error::Error, path::PathBuf, process::Command};
 use testcontainers::{
     GenericBuildableImage, ImageExt,
     core::{IntoContainerPort, WaitFor},
@@ -33,6 +33,112 @@ async fn admin(client: &Client, base: &str) -> Result<String, Box<dyn Error>> {
         .ok_or("missing admin token")?
         .into())
 }
+async fn reconcile_generated_realm(
+    client: &Client,
+    base: &str,
+    token: &str,
+) -> Result<(), Box<dyn Error>> {
+    let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../..")
+        .canonicalize()?;
+    let directory = tempfile::tempdir()?;
+    let generated = Command::new("cargo")
+        .args([
+            "run",
+            "--manifest-path",
+            repository
+                .join("cli/Cargo.toml")
+                .to_str()
+                .ok_or("CLI path")?,
+            "--bin",
+            "baukit",
+            "--",
+            "new",
+            "reconcile-fixture",
+            "--backend",
+            "--web",
+            "--auth",
+            "oidc",
+            "--dir",
+            directory.path().to_str().ok_or("fixture path")?,
+            "--baukit-path",
+            repository.join("rust").to_str().ok_or("Rust path")?,
+        ])
+        .env("CARGO_BUILD_JOBS", "6")
+        .output()?;
+    assert!(
+        generated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&generated.stderr)
+    );
+    let root = directory.path().join("reconcile-fixture");
+    let realm: Value = serde_json::from_slice(&std::fs::read(root.join("keycloak/realm.json"))?)?;
+    client
+        .post(format!("{base}/admin/realms"))
+        .bearer_auth(token)
+        .json(&realm)
+        .send()
+        .await?
+        .error_for_status()?;
+    let clients: Vec<Value> = client
+        .get(format!(
+            "{base}/admin/realms/reconcile-fixture/clients?clientId=reconcile-fixture-backend"
+        ))
+        .bearer_auth(token)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let identity = clients[0]["id"].as_str().ok_or("backend client id")?;
+    client
+        .delete(format!(
+            "{base}/admin/realms/reconcile-fixture/clients/{identity}"
+        ))
+        .bearer_auth(token)
+        .send()
+        .await?
+        .error_for_status()?;
+    for _ in 0..2 {
+        let reconciled = Command::new("python3")
+            .args(["scripts/reconcile_keycloak.py", "--keycloak-url", base])
+            .current_dir(&root)
+            .env("KC_BOOTSTRAP_ADMIN_PASSWORD", "test-admin-password")
+            .output()?;
+        assert!(
+            reconciled.status.success(),
+            "{}{}",
+            String::from_utf8_lossy(&reconciled.stdout),
+            String::from_utf8_lossy(&reconciled.stderr)
+        );
+    }
+    let token_response = client
+        .post(format!(
+            "{base}/realms/reconcile-fixture/protocol/openid-connect/token"
+        ))
+        .form(&[
+            ("grant_type", "client_credentials"),
+            ("client_id", "reconcile-fixture-backend"),
+            (
+                "client_secret",
+                realm["clients"]
+                    .as_array()
+                    .ok_or("clients")?
+                    .iter()
+                    .find(|value| value["clientId"] == "reconcile-fixture-backend")
+                    .ok_or("backend client")?["secret"]
+                    .as_str()
+                    .ok_or("creation secret")?,
+            ),
+        ])
+        .send()
+        .await?
+        .error_for_status()?;
+    let access: Value = token_response.json().await?;
+    assert!(access["access_token"].as_str().is_some());
+    Ok(())
+}
+
 #[tokio::test]
 #[ignore = "requires Docker Keycloak"]
 async fn deletes_user_treats_404_as_success_and_requires_manage_users() -> Result<(), Box<dyn Error>>
@@ -60,6 +166,7 @@ async fn deletes_user_treats_404_as_success_and_requires_manage_users() -> Resul
     );
     let client = Client::builder().no_proxy().build()?;
     let token = admin(&client, &base).await?;
+    reconcile_generated_realm(&client, &base, &token).await?;
     client.post(format!("{base}/admin/realms")).bearer_auth(&token)
         .json(&json!({"realm":"erasure", "enabled":true,
             "clients":[{"clientId":"backend", "secret":"test-secret", "publicClient":false, "serviceAccountsEnabled":true}, {"clientId":"unprivileged", "secret":"test-secret", "publicClient":false, "serviceAccountsEnabled":true}],

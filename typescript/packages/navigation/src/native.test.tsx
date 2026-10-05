@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react-n
 import { AccessibilityInfo, Platform, Text } from 'react-native';
 import {
   AppNavigation,
+  useNavigationBarHeight,
   SectionPicker,
   type NavigationIcon,
   type NavigationTheme,
@@ -780,5 +781,53 @@ it.each([
     );
     expect(screen.getByRole('link', { name: 'Account' })).toBeOnTheScreen();
     expect(renderAvatar).toHaveBeenLastCalledWith({ active: false, size: 28 });
+  },
+);
+
+function ReservedHeight() {
+  return <Text testID="reserved-height">{useNavigationBarHeight(24)}</Text>;
+}
+
+it.each([1, 2])('reserves compact navigation space at font scale %s', async (fontScale) => {
+  jest
+    .spyOn(nativeModules, 'useWindowDimensions')
+    .mockReturnValue({ width: 600, height: 800, scale: 1, fontScale });
+  await render(
+    <>
+      <ReservedHeight />
+      <AppNavigation
+        {...labels}
+        items={items}
+        pathname="/"
+        theme={theme}
+        onNavigate={jest.fn()}
+        insets={{ bottom: 24 }}
+      />
+    </>,
+  );
+  expect(screen.getByTestId('primary-navigation')).toHaveStyle({ minHeight: 64 * fontScale + 24 });
+  expect(screen.getByTestId('reserved-height').props['children']).toBe(64 * fontScale + 24);
+  jest.restoreAllMocks();
+});
+
+it.each([600, 1024])(
+  'enters a visible parent when its active child is hidden at width %s',
+  async (width) => {
+    await render(
+      <AppNavigation
+        {...labels}
+        items={items}
+        width={width}
+        defaultCollapsed
+        pathname="/progress/history?range=4w"
+        theme={theme}
+        onNavigate={jest.fn()}
+      />,
+    );
+    expect(screen.getByRole(width === 1024 ? 'button' : 'link', { name: 'Progress' })).toHaveProp(
+      'tabIndex',
+      0,
+    );
+    expect(screen.getByRole('link', { name: 'Home' })).toHaveProp('tabIndex', -1);
   },
 );

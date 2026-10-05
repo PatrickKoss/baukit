@@ -146,3 +146,15 @@ The runner emits the telemetry-spec §2.4 families. Job and queue labels come
 only from the handler and runner's static identifiers. Configure process
 telemetry with `baukit-telemetry`; it owns the real Prometheus histogram buckets
 for `worker_job_duration_seconds`.
+
+Store-owned claim, enqueue, and readiness transactions finish in owned tasks even if their
+caller is cancelled. Shutdown stops new claims and drains running attempts.
+An abandoned claim stays leased until lease expiry, then a matching worker can
+recover it. Each such claim consumes an attempt.
+
+Call `retain_failed_kinds(&["identity.account.delete"])` on every store used for
+terminal cleanup when identity deletion failures need repair. The exclusion
+applies only to failed jobs. Successful and cancelled jobs still expire.
+
+Transactions passed to `enqueue_in_transaction` and `complete_in_transaction`
+stay owned by the caller. These methods do not start a transaction.

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { checkPackedSourceMaps } from './packed-source-maps.mjs';
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
@@ -70,6 +70,31 @@ try {
     const resolved = consumerRequire.resolve(specifier(subpath));
     assert.ok(resolved.startsWith(installed + sep), `${subpath} resolved outside the package`);
     assert.ok(existsSync(resolved), `${subpath} resolves to a file missing from the archive`);
+  }
+  const cssSubpaths = subpaths.filter((subpath) => subpath.endsWith('.css'));
+  if (cssSubpaths.length > 0) {
+    const consumer = join(workDirectory, 'consumer.mts');
+    await writeFile(
+      consumer,
+      cssSubpaths.map((subpath) => `import '${specifier(subpath)}';`).join('\n'),
+    );
+    const packageRequire = createRequire(join(packageRoot, 'package.json'));
+    execFileSync(
+      process.execPath,
+      [
+        packageRequire.resolve('typescript/bin/tsc'),
+        '--noEmit',
+        '--strict',
+        '--skipLibCheck',
+        '--module',
+        'NodeNext',
+        '--moduleResolution',
+        'NodeNext',
+        '--noUncheckedSideEffectImports',
+        consumer,
+      ],
+      { stdio: 'pipe', cwd: workDirectory },
+    );
   }
   for (const subpath of loadedSubpaths) {
     assert.ok(requirable.includes(subpath), `--load ${subpath} is not a requirable export`);

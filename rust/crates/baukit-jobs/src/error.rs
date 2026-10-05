@@ -11,6 +11,9 @@ pub enum StoreError {
     /// PostgreSQL could not execute an operation.
     #[error("PostgreSQL job store operation failed: {0}")]
     Database(#[source] sqlx::Error),
+    /// An owned store operation panicked or was aborted by the runtime.
+    #[error("job store task failed: {0}")]
+    Task(#[source] tokio::task::JoinError),
     /// Stored data does not satisfy Baukit's model.
     #[error("invalid job outbox data: {0}")]
     InvalidData(String),

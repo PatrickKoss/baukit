@@ -11,12 +11,17 @@
     "passwordPolicy",
     "bruteForceProtected"
   ],
-  "clients": [{% if context.web %}
+  "clients": [
+    {
+      "clientId": "{{ context.app_name }}-backend",
+      "activeOrigins": [],
+      "activeRedirectUris": []
+    }{% if context.web %},
     {
       "clientId": "{{ context.app_name }}-web",
       "activeOrigins": ["http://localhost:5173"],
       "activeRedirectUris": ["http://localhost:5173/*"]
-    }{% if context.mobile %},{% endif %}{% endif %}{% if context.mobile %}
+    }{% endif %}{% if context.mobile %},
     {
       "clientId": "{{ context.app_name }}-mobile",
       "activeOrigins": [],

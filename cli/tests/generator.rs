@@ -2524,7 +2524,7 @@ fn doctor_accepts_product_guidance_names_and_keeps_machine_read_docs() -> anyhow
         doctor(&root)
             .expect_err("MCP docs:check reads the generated tool document")
             .to_string()
-            .contains("missing expected MCP file `mcp/docs/tools.md`")
+            .contains("missing MCP document input `mcp/docs/tools.md`")
     );
     Ok(())
 }
@@ -4280,5 +4280,158 @@ fn doctor_accepts_shared_measurements_in_product_limit_validators() -> anyhow::R
             .to_string()
             .contains("missing backend_limits wiring")
     );
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_redis_url_environment_fallback() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "redis-fallback");
+    local.auth = Some(AuthProvider::Oidc);
+    local.port_offset = 10;
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    let makefile = root.join("Makefile");
+    let original = fs::read_to_string(&makefile)?;
+    let literal = "REDIS_URL=redis://127.0.0.1:6389/";
+    assert!(original.contains(literal));
+    fs::write(
+        &makefile,
+        original.replace(literal, "REDIS_URL=$${REDIS_URL:-redis://127.0.0.1:6389/}"),
+    )?;
+    doctor(&root)?;
+    fs::write(
+        &makefile,
+        original.replace(literal, "REDIS_URL=$${REDIS_URL:-redis://127.0.0.1:6379/}"),
+    )?;
+    assert!(
+        doctor(&root)
+            .expect_err("wrong fallback port")
+            .to_string()
+            .contains("Makefile")
+    );
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_moved_mcp_sources_and_shared_schema_consumer() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "mcp-layout");
+    local.mcp = true;
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    fs::create_dir_all(root.join("generated"))?;
+    fs::rename(
+        root.join("mcp/src/api/schema.d.ts"),
+        root.join("generated/openapi.d.ts"),
+    )?;
+    let manifest = root.join("baukit.toml");
+    fs::write(
+        &manifest,
+        fs::read_to_string(&manifest)?.replace("mcp/src/api/schema.d.ts", "generated/openapi.d.ts"),
+    )?;
+    let client = root.join("mcp/src/api/client.ts");
+    fs::write(
+        &client,
+        fs::read_to_string(&client)?.replace("'./schema.js'", "'../../../generated/openapi.js'"),
+    )?;
+    fs::rename(
+        root.join("mcp/src/server.ts"),
+        root.join("mcp/src/protocol.ts"),
+    )?;
+    fs::rename(root.join("mcp/src/cli.ts"), root.join("mcp/src/main.ts"))?;
+    fs::rename(root.join("mcp/src/tools"), root.join("mcp/src/catalog"))?;
+    for relative in [
+        "mcp/README.md",
+        "mcp/tsconfig.build.json",
+        "mcp/eslint.config.js",
+        "mcp/vitest.config.ts",
+        "mcp/test/server.test.ts",
+        "mcp/test/stdio.test.ts",
+    ] {
+        fs::remove_file(root.join(relative))?;
+    }
+    for (relative, _) in read_tree(&root)? {
+        if !relative.starts_with("mcp")
+            || !matches!(
+                relative.extension().and_then(|value| value.to_str()),
+                Some("ts" | "mjs")
+            )
+        {
+            continue;
+        }
+        let path = root.join(relative);
+        let source = fs::read_to_string(&path)?;
+        fs::write(
+            &path,
+            source
+                .replace("./server.js", "./protocol.js")
+                .replace("./tools/", "./catalog/")
+                .replace("../tools/", "../catalog/"),
+        )?;
+    }
+    let package = root.join("mcp/package.json");
+    let mut settings: serde_json::Value = serde_json::from_str(&fs::read_to_string(&package)?)?;
+    settings["scripts"]["build"] =
+        serde_json::json!("tsc -p tsconfig.json --noEmit false --outDir dist");
+    settings["bin"]["mcp-layout-mcp"] = serde_json::json!("dist/main.js");
+    fs::write(&package, serde_json::to_string_pretty(&settings)?)?;
+    doctor(&root)?;
+    for (filename, symbol, label) in [
+        (
+            "mcp/src/main.ts",
+            "new StdioServerTransport",
+            "stdio transport",
+        ),
+        ("mcp/src/protocol.ts", ".registerTool(", "tool registration"),
+    ] {
+        let path = root.join(filename);
+        let original = fs::read_to_string(&path)?;
+        fs::write(&path, original.replace(symbol, "missingSymbol"))?;
+        assert!(
+            doctor(&root)
+                .expect_err("missing MCP wiring")
+                .to_string()
+                .contains(label)
+        );
+        fs::write(path, original)?;
+    }
+    let consumer = root.join("generated/openapi.d.ts");
+    let original = fs::read_to_string(&consumer)?;
+    fs::remove_file(&consumer)?;
+    assert!(
+        doctor(&root)
+            .expect_err("missing declared shared consumer")
+            .to_string()
+            .contains("generated/openapi.d.ts")
+    );
+    fs::write(consumer, original)?;
+    fs::remove_file(root.join("mcp/src/protocol.ts"))?;
+    assert!(
+        doctor(&root)
+            .expect_err("missing MCP server")
+            .to_string()
+            .contains("MCP server wiring")
+    );
+    Ok(())
+}
+
+#[test]
+fn generated_oidc_workers_retain_failed_identity_jobs() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "retained-erasure");
+    local.worker = true;
+    local.auth = Some(AuthProvider::Oidc);
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    for binary in ["api", "worker"] {
+        let source = fs::read_to_string(root.join(format!(
+            "backend/crates/retained-erasure-bin/src/bin/{binary}.rs"
+        )))?;
+        assert!(
+            source.contains("retain_failed_kinds(&[baukit_erasure::IDENTITY_DELETE_JOB_TYPE])")
+        );
+    }
+    doctor(&root)?;
     Ok(())
 }

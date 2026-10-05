@@ -416,3 +416,45 @@ it('keeps custom profile avatars decorative and preserves subtitles and menu foc
   await expect.element(trigger).toHaveFocus();
   expect(errors).toEqual([]);
 });
+
+it.each([600, 1024])('tabs into a visible Insights parent at width %s', async (width) => {
+  await page.viewport(width, 720);
+  host = document.createElement('div');
+  document.body.append(host);
+  root = createRoot(host);
+  const insights = {
+    id: 'insights',
+    label: 'Insights',
+    href: '/insights',
+    icon,
+    children: [{ id: 'charts', label: 'Charts', href: '/insights/charts' }],
+  };
+  await act(() => {
+    root?.render(
+      <>
+        <button type="button">Before navigation</button>
+        <AppNavigation
+          {...labels}
+          width={width}
+          defaultCollapsed
+          items={[{ id: 'home', label: 'Home', href: '/', icon }, insights]}
+          pathname="/insights/charts?range=4w"
+        />
+      </>,
+    );
+    return Promise.resolve();
+  });
+  page.getByRole('button', { name: 'Before navigation' }).element().focus();
+  await act(async () => {
+    await userEvent.keyboard('{Tab}');
+  });
+  if (width === 1024) {
+    await expect.element(page.getByRole('button', { name: 'Expand navigation' })).toHaveFocus();
+    await act(async () => {
+      await userEvent.keyboard('{Tab}');
+    });
+  }
+  await expect
+    .element(page.getByRole(width === 1024 ? 'button' : 'link', { name: 'Insights' }))
+    .toHaveFocus();
+});

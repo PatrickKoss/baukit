@@ -147,8 +147,6 @@ def validate_inputs(
         desired = desired_clients.get(client_id)
         if desired is None:
             fail(f"selected client {client_id!r} is absent from the realm file")
-        if desired.get("publicClient") is not True:
-            fail(f"selected client {client_id!r} is not public")
         candidate_client = candidate_clients[client_id]
         candidate_client["webOrigins"] = merge_unique(
             candidate_client.get("webOrigins"), selection["activeOrigins"]
@@ -405,7 +403,6 @@ class RealmReconciler:
         matches = self.api.find(realm_name, "clients", "clientId", client_id)
         if not matches:
             created = dict(desired)
-            created.pop("secret", None)
             created["webOrigins"] = merge_unique(
                 desired.get("webOrigins"), selection["activeOrigins"]
             )
@@ -418,6 +415,7 @@ class RealmReconciler:
         if not isinstance(identity, str):
             fail(f"Keycloak client {client_id!r} has no id")
         existing = self.api.get(realm_name, "clients", identity)
+        existing.pop("secret", None)
         merged = dict(existing)
         for key, value in desired.items():
             if key not in ("id", "secret", "webOrigins", "redirectUris"):

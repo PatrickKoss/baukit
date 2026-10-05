@@ -4,7 +4,7 @@ Use `@baukit/navigation` for primary navigation and section pickers. Products su
 
 ## Measurable rules
 
-- Give each target an effective hit area of at least 44 by 44 CSS pixels on web and 44 by 44 points on native.
+- Give each target an effective hit area of at least 44 by 44 CSS pixels on web and 44 by 44 points on iOS and 48 by 48 dp on Android.
 - Show a visible keyboard focus indicator and a separate selected state. On web, set `aria-current="page"` on the active route. On native, expose the selected state through the accessibility API.
 - Pair every icon with an accessible label. Hide decorative icons when adjacent text already supplies the label.
 - Use a compact bottom bar below 1024 CSS pixels and a wide rail at 1024 CSS pixels and above. Keep destination order and labels stable across the boundary.
@@ -78,3 +78,7 @@ ui-tokens contrast helpers.
 The package's browser suite checks Chromium and WebKit at 320, 1023 and 1024
 pixels and heights 568 and 720. Keep product checks for actual primary actions,
 scroll containers, console messages and screen-reader behavior.
+
+On native, the compact bar reserves `64 * max(1, fontScale) + bottomInset`.
+Use `useNavigationBarHeight(bottomInset)` from `@baukit/navigation/native` for
+content padding outside a navigator that measures its tab bar.

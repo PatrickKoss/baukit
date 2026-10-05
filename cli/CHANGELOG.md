@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Accept Redis URL environment fallbacks and detect MCP server, stdio and tool wiring by content. Use declared OpenAPI consumers instead of a fixed MCP schema path.
+
 - Parse balanced parentheses and angle brackets in strict Markdown link targets.
 - Stop Android QA setup before cleanup or service startup when the device probe fails or times out.
 

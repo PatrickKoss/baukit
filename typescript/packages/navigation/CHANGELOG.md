@@ -32,6 +32,10 @@
 
 ## [Unreleased]
 
+- Reserve compact native bar height for enlarged text and safe areas. Expose `getNavigationBarHeight` and `useNavigationBarHeight` for content padding.
+- Select the visible parent for keyboard entry when the active child is hidden.
+- Publish a CSS declaration so side-effect imports type-check without product declarations. Document the Android 48 dp target minimum.
+
 - Add `renderAvatar` for product profile glyphs and frames on web and native. Keep profile labels, subtitles and menu focus.
 
 - Publish the TypeScript sources referenced by JavaScript and declaration maps. Check source paths in the packed archive.

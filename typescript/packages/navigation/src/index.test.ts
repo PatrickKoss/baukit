@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { blendColors, contrastRatio, exampleTokens } from '@baukit/ui-tokens';
 import {
   getNavigationLayout,
+  getNavigationBarHeight,
   navigationReducer,
   navigationMatches,
   resolveActiveMenuEntry,
@@ -216,4 +217,10 @@ it('selects one most-specific menu route using its path length', () => {
   const overridden = { ...profile, matches: (path: string) => path === '/account' };
   expect(resolveActiveMenuEntry([settings, overridden], '/settings/profile')).toBe(settings);
   expect(resolveActiveMenuEntry([settings, overridden], '/account')).toBe(overridden);
+});
+
+it('reserves compact height for enlarged text and safe areas', () => {
+  expect(getNavigationBarHeight(1, 24)).toBe(88);
+  expect(getNavigationBarHeight(2, 24)).toBe(152);
+  expect(getNavigationBarHeight(0.8)).toBe(64);
 });

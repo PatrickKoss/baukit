@@ -30,6 +30,7 @@ class FakeApi:
         }
         self.user_roles = {identity: [] for identity in self.users}
         self.updates = []
+        self.client_updates = []
         self.password_resets = []
 
     def realm(self, realm):
@@ -64,7 +65,11 @@ class FakeApi:
 
     def update(self, realm, collection, identity, value):
         values = self.clients if collection == "clients" else self.users
-        values[identity] = copy.deepcopy(value)
+        if collection == "clients":
+            self.client_updates.append(copy.deepcopy(value))
+            values[identity].update(copy.deepcopy(value))
+        else:
+            values[identity] = copy.deepcopy(value)
         self.updates.append((f"update-{collection}", identity))
 
     def delete(self, realm, collection, identity):
@@ -174,6 +179,37 @@ class RealmReconcilerTests(unittest.TestCase):
         self.assertEqual(len(api.users), 1)
         client = next(iter(api.clients.values()))
         self.assertIn("http://localhost:6173/*", client["redirectUris"])
+
+    def test_confidential_clients_need_no_browser_urls(self):
+        policy = json.loads((TEST_DIRECTORY / "fixtures/development-policy.json").read_text())
+        realm = json.loads((TEST_DIRECTORY / "fixtures/development-realm.json").read_text())
+        for service_account in (False, True):
+            with self.subTest(service_account=service_account):
+                desired = {"clientId": "backend", "publicClient": False,
+                           "serviceAccountsEnabled": service_account,
+                           "directAccessGrantsEnabled": False, "secret": "creation-secret"}
+                candidate = {**realm, "clients": [*realm["clients"], desired], "users": []}
+                config = {**self.config, "clients": [{"clientId": "backend",
+                          "activeOrigins": [], "activeRedirectUris": []}], "users": []}
+                reconcile_keycloak.validate_inputs(candidate, policy, config)
+
+    def test_confidential_creation_keeps_secret_and_reconciliation_preserves_rotation(self):
+        desired = {"clientId": "backend", "publicClient": False,
+                   "serviceAccountsEnabled": True, "secret": "creation-secret"}
+        selection = {"clientId": "backend", "activeOrigins": [], "activeRedirectUris": []}
+        api = FakeApi({"realm": "fixture"})
+        reconciler = reconcile_keycloak.RealmReconciler(api)
+        reconciler.reconcile_client("fixture", desired, selection)
+        identity, created = next(iter(api.clients.items()))
+        self.assertEqual(created["secret"], "creation-secret")
+        created["secret"] = "rotated-secret"
+        reconciler.reconcile_client("fixture", {**desired, "name": "Updated"}, selection)
+        self.assertEqual(api.clients[identity]["name"], "Updated")
+        self.assertEqual(api.clients[identity]["secret"], "rotated-secret")
+        self.assertNotIn("secret", api.client_updates[0])
+        api.updates.clear()
+        reconciler.reconcile_client("fixture", {**desired, "name": "Updated"}, selection)
+        self.assertEqual(api.updates, [])
 
     def test_stale_volume_updates_policy_changed_port_and_missing_user(self):
         stale_client = copy.deepcopy(self.desired["clients"][0])

@@ -36,7 +36,10 @@
       "import": "./dist/native.js",
       "default": "./dist/native.js"
     },
-    "./web.css": "./dist/web.css"
+    "./web.css": {
+      "types": "./dist/web.css.d.ts",
+      "default": "./dist/web.css"
+    }
   },
   "files": [
     "dist",
@@ -45,7 +48,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && cp src/web.css dist/web.css",
+    "build": "tsc -p tsconfig.json && cp src/web.css src/web.css.d.ts dist/",
     "prepare": "pnpm run build",
     "test": "tsc -p tsconfig.test.json && vitest run --config vitest.config.ts --maxWorkers=4 && jest --config jest.config.cjs --maxWorkers=4 && node ../../scripts/test-packed-exports.mjs",
     "lint": "eslint src --max-warnings=0",

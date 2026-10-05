@@ -36,6 +36,7 @@ import {
 } from '@baukit/a11y-core';
 import {
   getNavigationLayout,
+  getNavigationBarHeight,
   NAVIGATION_DIMENSIONS,
   navigationMatches,
   nextSectionHref,
@@ -619,6 +620,11 @@ function Profile({
   );
 }
 
+export function useNavigationBarHeight(bottomInset = 0): number {
+  const { fontScale } = useWindowDimensions();
+  return getNavigationBarHeight(fontScale, bottomInset);
+}
+
 export interface AppNavigationProps extends CollapseProps {
   readonly items: readonly NavigationItem<NavigationIcon>[];
   readonly profile?: NavigationProfile;
@@ -661,11 +667,14 @@ export function AppNavigation(props: AppNavigationProps) {
       ? [item, ...(item.children ?? [])]
       : [item],
   );
+  const activeId = visible.some((item) => item.id === state.active.subItem?.id)
+    ? state.active.subItem?.id
+    : state.active.item?.id;
   const roving = useRovingMenu({
     active: true,
     options: [
       ...visible.map((item) => ({
-        selected: item.id === (state.active.subItem?.id ?? state.active.item?.id),
+        selected: item.id === activeId,
       })),
       ...(profile === undefined ? [] : [{}]),
     ],
@@ -683,6 +692,9 @@ export function AppNavigation(props: AppNavigationProps) {
           backgroundColor: theme.background,
           borderColor: theme.border,
           paddingBottom: insets.bottom ?? 0,
+          ...(bar
+            ? { minHeight: getNavigationBarHeight(dimensions.fontScale, insets.bottom) }
+            : {}),
           paddingLeft: insets.left ?? 0,
           paddingRight: insets.right ?? 0,
         },

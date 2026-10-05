@@ -101,6 +101,9 @@ The API runs a supervised in-process `IdentityDeletionHandler` in this flavor.
 The standalone worker handles item-created demo jobs. Each runner filters claims
 by its handler's job types. Keep the API deployed until pending identity deletion
 jobs finish. Alert on failed erasure operations and retain their jobs for repair.
+Generated OIDC stores use `retain_failed_kinds` with
+`baukit_erasure::IDENTITY_DELETE_JOB_TYPE`. Apply the same policy to any store
+created for maintenance. Successful and cancelled identity jobs still expire.
 {% endif %}
 Worker metrics label the handler type with `job_kind`. Prometheus uses `job`
 for the scrape target, so worker queries must group by `job_kind`.

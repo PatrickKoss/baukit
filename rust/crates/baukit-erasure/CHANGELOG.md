@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Test generated backend client recreation and reconciliation against Keycloak before account deletion.
+
 - Use aws-lc-rs for cryptographic operations instead of a second ring dependency. Keep the supported algorithms and wire formats.
 
 - Clarify that wire receipts always have an operation ID. Test missing and null IDs against the shared receipt vectors.

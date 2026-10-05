@@ -2,7 +2,11 @@
 
 ## [Unreleased]
 
-{% if context.quality_strict %}- Accept Markdown links to paths with balanced parentheses, including Expo route groups, and angle-bracket targets.
+{% if context.auth_oidc %}- Reconcile confidential backend clients without browser URLs. Preserve creation and rotated secrets.
+- Retain failed identity deletion jobs for repair when cleaning terminal jobs.
+{% endif %}{% if context.mobile %}- Reserve compact navigation height for the font scale and safe-area bottom inset.
+{% endif %}{% if context.web or context.mobile %}- Document 48 dp Android navigation targets alongside the web and iOS minimums.
+{% endif %}{% if context.quality_strict %}- Accept Markdown links to paths with balanced parentheses, including Expo route groups, and angle-bracket targets.
 {% endif %}{% if context.mobile %}- Stop Android QA setup when the device probe fails or times out.
 {% endif %}{% if context.worker %}- Use `job_kind` to query worker metrics separately from the Prometheus scrape job.
 {% endif %}{% if context.mobile and context.auth_oidc %}- Use SecureStore-safe OIDC keys without a product key rewrite.
