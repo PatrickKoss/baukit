@@ -809,6 +809,10 @@ it.each([1, 1.3, 2])('reserves compact navigation space at font scale %s', async
   expect(screen.getByTestId('primary-navigation')).toHaveStyle({ minHeight: height });
   expect(screen.getByTestId('reserved-height').props['children']).toBe(height);
   expect(screen.getByText('Home')).toHaveStyle({ lineHeight: 16 });
+  expect(screen.getByText('filled', { includeHiddenElements: true }).parent).toHaveStyle({
+    height: 24 * fontScale,
+    justifyContent: 'center',
+  });
   jest.restoreAllMocks();
 });
 

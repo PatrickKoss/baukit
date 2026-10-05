@@ -286,9 +286,16 @@ function Target({
     </FocusablePressable>
   );
 }
-function Decorative({ children }: { readonly children: ReactNode }) {
+function Decorative({
+  children,
+  style,
+}: {
+  readonly children: ReactNode;
+  readonly style?: StyleProp<ViewStyle>;
+}) {
   return (
     <View
+      style={style}
       accessible={false}
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
@@ -776,7 +783,17 @@ export function AppNavigation(props: AppNavigationProps) {
                   else follow(href, event, onNavigate);
                 }}
               >
-                <Decorative>
+                <Decorative
+                  style={
+                    bar
+                      ? {
+                          height:
+                            NAVIGATION_BAR_DIMENSIONS.icon * Math.max(1, dimensions.fontScale),
+                          justifyContent: 'center',
+                        }
+                      : undefined
+                  }
+                >
                   {item.icon({ active, size: NAVIGATION_BAR_DIMENSIONS.icon })}
                 </Decorative>
               </Target>
