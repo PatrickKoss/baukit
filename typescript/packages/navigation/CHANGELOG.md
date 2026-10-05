@@ -32,6 +32,8 @@
 
 ## [Unreleased]
 
+- Add optional profile subtitles on web and native rails and menus. Include the subtitle in the profile button label.
+- Add optional native font family, sizes, weights, line height and letter spacing. Apply them to navigation labels, menus and section pickers.
 - Present native menus in a Modal on web so compact navigation cannot clip them. Bound popups to the viewport.
 - Move native accessibility focus after Modal presentation. Hide background navigation from screen readers while the menu is open.
 - Start section picker keyboard focus on its selected child.

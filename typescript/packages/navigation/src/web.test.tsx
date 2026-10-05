@@ -362,3 +362,46 @@ it('uses product labels for the navigation and collapse controls', () => {
   fireEvent.click(screen.getByRole('button', { name: 'Einklappen' }));
   expect(screen.getByRole('button', { name: 'Ausklappen' })).toBeTruthy();
 });
+
+it.each([false, true])(
+  'includes the profile subtitle in its label when collapsed is %s',
+  (collapsed) => {
+    render(
+      <AppNavigation
+        {...labels}
+        items={items}
+        width={1024}
+        pathname="/"
+        collapsed={collapsed}
+        profile={{ label: 'Account', subtitle: 'Ada, syncing', initials: 'AD', href: '/profile' }}
+      />,
+    );
+    expect(screen.getByRole('link', { name: 'Account, Ada, syncing' }).getAttribute('href')).toBe(
+      '/profile',
+    );
+  },
+);
+
+it('renders the profile subtitle in the rail and in its menu', () => {
+  render(
+    <AppNavigation
+      {...labels}
+      items={items}
+      width={1024}
+      pathname="/"
+      profile={{
+        label: 'Account',
+        subtitle: 'Ada, synced',
+        initials: 'AD',
+        menu: [{ id: 'settings', label: 'Settings', href: '/settings' }],
+      }}
+    />,
+  );
+  const button = screen.getByRole('button', { name: 'Account, Ada, synced' });
+  expect(within(button).getByText('Ada, synced')).not.toBeNull();
+  fireEvent.click(button);
+  const menu = screen.getByRole('menu', { name: 'Account, Ada, synced' });
+  expect(within(menu).getByText('Account')).not.toBeNull();
+  expect(within(menu).getByText('Ada, synced')).not.toBeNull();
+  expect(within(menu).getByRole('menuitem', { name: 'Settings' })).not.toBeNull();
+});

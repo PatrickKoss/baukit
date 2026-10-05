@@ -136,3 +136,13 @@ Library and the React Native Jest preset, and checks the packed exports. Expo
 is not needed for these tests. `pnpm test:browser` runs Playwright through
 Vitest in Chromium and WebKit at 320, 1023 and 1024 pixels, with short and normal
 heights. It checks geometry, 44-pixel targets, browser warnings and axe.
+
+A profile can supply `subtitle` for a name or sync status. The expanded rail and
+profile menu display it below the label. The profile button includes both lines
+in its accessible label, including in collapsed and compact navigation.
+
+Native `NavigationTheme.typography` can set `fontFamily`, `fontSize`,
+`barFontSize`, `subtitleFontSize`, `fontWeight`, `activeFontWeight`, `lineHeight`
+and `letterSpacing`. Sizes and line height use React Native units. Omitted fields
+keep the default sizes and weights. The font family also applies to menu entries,
+initials and section pickers, as the web navigation inherits its CSS font family.

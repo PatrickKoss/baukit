@@ -18,6 +18,7 @@ import {
 } from '@baukit/a11y-core/web';
 import {
   getNavigationLayout,
+  getNavigationProfileLabel,
   navigationMatches,
   nextSectionHref,
   resolveActiveNavigation,
@@ -84,6 +85,7 @@ interface MenuProps {
   readonly renderLink: NavigationLinkRenderer | undefined;
   readonly pathname: string;
   readonly maxHeight?: number | undefined;
+  readonly subtitle?: string | undefined;
 }
 
 function Menu({
@@ -96,6 +98,7 @@ function Menu({
   renderLink,
   pathname,
   maxHeight,
+  subtitle,
 }: MenuProps) {
   const activeEntry = resolveActiveMenuEntry(entries, pathname);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -133,7 +136,7 @@ function Menu({
       style={maxHeight === undefined ? undefined : { maxHeight }}
       id={id}
       role="menu"
-      aria-label={label}
+      aria-label={subtitle === undefined ? label : `${label}, ${subtitle}`}
       tabIndex={-1}
       ref={containerRef}
       onKeyDown={(event) => {
@@ -149,6 +152,12 @@ function Menu({
         }
       }}
     >
+      {subtitle === undefined ? null : (
+        <div className="bk-navigation-menu-profile" aria-hidden="true">
+          <span className="bk-navigation-label">{label}</span>
+          <span className="bk-navigation-subtitle">{subtitle}</span>
+        </div>
+      )}
       {entries.map((entry, index) => {
         const props = {
           ...roving.itemProps(index),
@@ -247,15 +256,20 @@ function Profile({
   const content = (
     <>
       <Avatar profile={profile} />
-      <span className="bk-navigation-label">{profile.label}</span>
+      <span className="bk-navigation-profile-copy">
+        <span className="bk-navigation-label">{profile.label}</span>
+        {profile.subtitle === undefined ? null : (
+          <span className="bk-navigation-subtitle">{profile.subtitle}</span>
+        )}
+      </span>
     </>
   );
   const common = {
     ...itemProps,
     className: 'bk-navigation-item',
-    'aria-label': profile.label,
+    'aria-label': getNavigationProfileLabel(profile),
     'data-active': active ? 'page' : undefined,
-    title: collapsed ? profile.label : undefined,
+    title: collapsed ? getNavigationProfileLabel(profile) : undefined,
   };
   return (
     <div className="bk-navigation-profile">
@@ -300,6 +314,7 @@ function Profile({
           entries={profile.menu}
           id={id}
           label={profile.label}
+          subtitle={profile.subtitle}
           triggerRef={triggerRef}
           onClose={() => {
             setOpen(false);

@@ -336,3 +336,44 @@ it('ellipsizes long labels inside all six compact targets at 320 pixels', async 
   }
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320);
 });
+
+it('shows the subtitle in the expanded rail and menu, and keeps it accessible when collapsed', async () => {
+  await page.viewport(1024, 720);
+  styles = document.createElement('style');
+  styles.textContent = `${toCssVariables(exampleTokens)} ${stylesheet}`;
+  document.head.append(styles);
+  host = document.createElement('div');
+  document.body.append(host);
+  root = createRoot(host);
+  await act(() => {
+    root?.render(
+      <AppNavigation
+        {...labels}
+        items={items}
+        pathname="/"
+        width={1024}
+        profile={{
+          label: 'Account',
+          subtitle: 'Ada, synced',
+          initials: 'AD',
+          menu: [{ id: 'settings', label: 'Settings', href: '/settings' }],
+        }}
+      />,
+    );
+    return Promise.resolve();
+  });
+  const subtitle = page.getByText('Ada, synced', { exact: true });
+  await expect.element(subtitle).toBeVisible();
+  await userEvent.click(page.getByRole('button', { name: 'Collapse navigation' }));
+  await expect.element(subtitle).not.toBeVisible();
+  const trigger = page.getByRole('button', { name: 'Account, Ada, synced' });
+  await expect.element(trigger).toBeVisible();
+  await userEvent.click(trigger);
+  await expect
+    .element(
+      page
+        .getByRole('menu', { name: 'Account, Ada, synced' })
+        .getByText('Ada, synced', { exact: true }),
+    )
+    .toBeVisible();
+});

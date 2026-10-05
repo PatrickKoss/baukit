@@ -21,6 +21,7 @@ import {
   type GestureResponderEvent,
   type StyleProp,
   type ViewStyle,
+  type TextStyle,
 } from 'react-native';
 import {
   announce,
@@ -52,6 +53,17 @@ export interface NavigationIconState {
   readonly size: number;
 }
 export type NavigationIcon = (state: NavigationIconState) => ReactNode;
+export interface NavigationTypography {
+  readonly fontFamily?: string;
+  readonly fontSize?: number;
+  readonly barFontSize?: number;
+  readonly subtitleFontSize?: number;
+  readonly fontWeight?: TextStyle['fontWeight'];
+  readonly activeFontWeight?: TextStyle['fontWeight'];
+  readonly lineHeight?: number;
+  readonly letterSpacing?: number;
+}
+
 export interface NavigationTheme {
   readonly background: string;
   readonly text: string;
@@ -63,7 +75,21 @@ export interface NavigationTheme {
   readonly focus: string;
   readonly radius: number;
   readonly spacing: number;
+  readonly typography?: NavigationTypography;
 }
+function textStyle(theme: NavigationTheme, selected = false, bar = false): TextStyle {
+  const typography = theme.typography;
+  return {
+    fontFamily: typography?.fontFamily,
+    fontSize: bar ? (typography?.barFontSize ?? 11) : (typography?.fontSize ?? 14),
+    fontWeight: selected
+      ? (typography?.activeFontWeight ?? '700')
+      : (typography?.fontWeight ?? '400'),
+    lineHeight: typography?.lineHeight,
+    letterSpacing: typography?.letterSpacing,
+  };
+}
+
 export interface NavigationInsets {
   readonly top?: number;
   readonly bottom?: number;
@@ -146,6 +172,7 @@ function follow(href: string, event: GestureResponderEvent, onNavigate: Navigate
 
 interface TargetProps {
   readonly label: string;
+  readonly subtitle?: string | undefined;
   readonly selected?: boolean;
   readonly ancestor?: boolean;
   readonly expanded?: boolean;
@@ -163,6 +190,7 @@ interface TargetProps {
 }
 function Target({
   label,
+  subtitle,
   selected = false,
   ancestor = false,
   expanded,
@@ -192,7 +220,7 @@ function Target({
             'aria-haspopup': menu ? ('menu' as const) : undefined,
           }
         : {})}
-      accessibilityLabel={label}
+      accessibilityLabel={subtitle === undefined ? label : `${label}, ${subtitle}`}
       accessibilityRole={href === undefined ? 'button' : 'link'}
       accessibilityState={{ selected, ...(expanded === undefined ? {} : { expanded }) }}
       ref={(node) => {
@@ -214,16 +242,29 @@ function Target({
     >
       {children}
       {!collapsed ? (
-        <Text
-          numberOfLines={1}
-          style={{
-            color: ancestor ? theme.ancestorText : selected ? theme.activeText : theme.text,
-            fontSize: bar ? 11 : 14,
-            fontWeight: selected && !ancestor ? '700' : '400',
-          }}
-        >
-          {label}
-        </Text>
+        <View style={styles.labelGroup}>
+          <Text
+            numberOfLines={1}
+            style={{
+              ...textStyle(theme, selected && !ancestor, bar),
+              color: ancestor ? theme.ancestorText : selected ? theme.activeText : theme.text,
+            }}
+          >
+            {label}
+          </Text>
+          {!bar && subtitle !== undefined ? (
+            <Text
+              numberOfLines={1}
+              style={{
+                ...textStyle(theme),
+                color: theme.muted,
+                fontSize: theme.typography?.subtitleFontSize ?? 12,
+              }}
+            >
+              {subtitle}
+            </Text>
+          ) : null}
+        </View>
       ) : null}
     </FocusablePressable>
   );
@@ -245,6 +286,7 @@ const MENU_WIDTH = 280;
 const MENU_EDGE = 8;
 
 interface MenuProps {
+  readonly subtitle?: string | undefined;
   readonly renderBackground: (props: OverlayBackgroundProps) => ReactNode;
   readonly entries: readonly NavigationProfileMenuEntry[];
   readonly label: string;
@@ -258,6 +300,7 @@ interface MenuProps {
   readonly id: string;
 }
 function Menu({
+  subtitle,
   renderBackground,
   entries,
   label,
@@ -375,7 +418,7 @@ function Menu({
       }}
       ref={containerRef}
       accessibilityViewIsModal={Platform.OS !== 'web'}
-      accessibilityLabel={label}
+      accessibilityLabel={subtitle === undefined ? label : `${label}, ${subtitle}`}
       role="menu"
       nativeID={id}
       testID="navigation-menu"
@@ -390,6 +433,25 @@ function Menu({
       ]}
       {...{ dataSet: { motion } }}
     >
+      {subtitle === undefined ? null : (
+        <Decorative>
+          <View style={styles.menuProfile}>
+            <Text numberOfLines={1} style={{ ...textStyle(theme), color: theme.text }}>
+              {label}
+            </Text>
+            <Text
+              numberOfLines={1}
+              style={{
+                ...textStyle(theme),
+                color: theme.muted,
+                fontSize: theme.typography?.subtitleFontSize ?? 12,
+              }}
+            >
+              {subtitle}
+            </Text>
+          </View>
+        </Decorative>
+      )}
       <ScrollView>
         {entries.map((entry, index) => (
           <FocusablePressable
@@ -423,7 +485,7 @@ function Menu({
             <Text
               style={{
                 color: entry === activeEntry ? theme.activeText : theme.text,
-                fontWeight: entry === activeEntry ? '700' : '400',
+                ...textStyle(theme, entry === activeEntry),
               }}
             >
               {entry.label}
@@ -439,7 +501,7 @@ function Menu({
         onPress={closeAndRestore}
         style={styles.menuItem}
       >
-        <Text style={{ color: theme.text }}>{closeLabel}</Text>
+        <Text style={{ ...textStyle(theme), color: theme.text }}>{closeLabel}</Text>
       </FocusablePressable>
     </View>
   );
@@ -501,6 +563,7 @@ function Profile({
     <View style={bar ? styles.barSection : styles.profile} testID="navigation-profile">
       <Target
         label={profile.label}
+        subtitle={profile.subtitle}
         selected={active}
         theme={theme}
         bar={bar}
@@ -526,7 +589,9 @@ function Profile({
             />
           ) : (
             <View style={[styles.avatar, { backgroundColor: theme.activeBackground }]}>
-              <Text style={{ color: theme.activeText }}>{profile.initials}</Text>
+              <Text style={{ ...textStyle(theme), color: theme.activeText }}>
+                {profile.initials}
+              </Text>
             </View>
           )}
         </Decorative>
@@ -620,7 +685,7 @@ export function AppNavigation(props: AppNavigationProps) {
           }}
         >
           <Decorative>
-            <Text style={{ color: theme.text }}>{collapsed ? '›' : '‹'}</Text>
+            <Text style={{ ...textStyle(theme), color: theme.text }}>{collapsed ? '›' : '‹'}</Text>
           </Decorative>
         </Target>
       ) : null}
@@ -739,6 +804,7 @@ export function AppNavigation(props: AppNavigationProps) {
       visible={profileOpen}
       id={profileMenuId}
       label={profile.label}
+      subtitle={profile.subtitle}
       triggerRef={profileTriggerRef}
       theme={theme}
       onClose={() => {
@@ -798,11 +864,11 @@ export function SectionPicker({
         ]}
       >
         <View>
-          <Text style={{ color: theme.muted }}>{item.label}</Text>
-          <Text style={{ color: theme.text }}>{active?.label}</Text>
+          <Text style={{ ...textStyle(theme), color: theme.muted }}>{item.label}</Text>
+          <Text style={{ ...textStyle(theme), color: theme.text }}>{active?.label}</Text>
         </View>
         <Decorative>
-          <Text style={{ color: theme.text }}>⌄</Text>
+          <Text style={{ ...textStyle(theme), color: theme.text }}>⌄</Text>
         </Decorative>
       </FocusablePressable>
     </View>
@@ -829,6 +895,8 @@ export function SectionPicker({
   );
 }
 const styles = StyleSheet.create({
+  labelGroup: { minWidth: 0, flexShrink: 1 },
+  menuProfile: { padding: 8 },
   target: {
     padding: 8,
   },

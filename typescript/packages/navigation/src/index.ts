@@ -28,12 +28,19 @@ export type NavigationProfileMenuEntry = {
 
 export type NavigationProfile = {
   readonly label: string;
+  readonly subtitle?: string;
   readonly initials: string;
   readonly imageUrl?: string;
 } & (
   | { readonly href: string; readonly menu?: never }
   | { readonly menu: readonly NavigationProfileMenuEntry[]; readonly href?: never }
 );
+
+export function getNavigationProfileLabel(profile: NavigationProfile): string {
+  return profile.subtitle === undefined || profile.subtitle.trim() === ''
+    ? profile.label
+    : `${profile.label}, ${profile.subtitle}`;
+}
 
 export interface ActiveNavigation<Icon = unknown> {
   readonly item: NavigationItem<Icon> | null;

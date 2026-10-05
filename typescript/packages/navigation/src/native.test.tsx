@@ -612,3 +612,104 @@ it('hides the section picker behind its modal while keeping the selected entry a
   await fireEvent.press(screen.getByRole('button', { name: 'Close' }), event());
   expect(screen.getByRole('button', { name: 'Progress, History' })).toBeOnTheScreen();
 });
+
+it.each([false, true])(
+  'keeps the profile subtitle accessible when collapsed is %s',
+  async (collapsed) => {
+    await render(
+      <AppNavigation
+        {...labels}
+        items={items}
+        width={1024}
+        pathname="/"
+        theme={theme}
+        collapsed={collapsed}
+        onNavigate={jest.fn()}
+        profile={{ label: 'Account', subtitle: 'Ada, syncing', initials: 'AD', href: '/profile' }}
+      />,
+    );
+    expect(screen.getByRole('link', { name: 'Account, Ada, syncing' })).toBeOnTheScreen();
+    if (collapsed) expect(screen.queryByText('Ada, syncing')).toBeNull();
+    else expect(screen.getByText('Ada, syncing')).toBeOnTheScreen();
+  },
+);
+
+it('renders the profile subtitle in its menu and applies product typography', async () => {
+  const themed: NavigationTheme = {
+    ...theme,
+    typography: {
+      fontFamily: 'ProductSans',
+      fontSize: 18,
+      subtitleFontSize: 13,
+      fontWeight: '500',
+      activeFontWeight: '800',
+      lineHeight: 24,
+      letterSpacing: 0.5,
+    },
+  };
+  await render(
+    <AppNavigation
+      {...labels}
+      items={items}
+      width={1024}
+      pathname="/settings"
+      theme={themed}
+      onNavigate={jest.fn()}
+      profile={{
+        label: 'Account',
+        subtitle: 'Ada, synced',
+        initials: 'AD',
+        menu: [{ id: 'settings', label: 'Settings', href: '/settings' }],
+      }}
+    />,
+  );
+  expect(screen.getByText('Home')).toHaveStyle({
+    fontFamily: 'ProductSans',
+    fontSize: 18,
+    fontWeight: '500',
+    lineHeight: 24,
+    letterSpacing: 0.5,
+  });
+  expect(screen.getByText('Account')).toHaveStyle({ fontFamily: 'ProductSans', fontWeight: '800' });
+  expect(screen.getByText('Ada, synced')).toHaveStyle({ fontFamily: 'ProductSans', fontSize: 13 });
+  await fireEvent.press(screen.getByRole('button', { name: 'Account, Ada, synced' }), event());
+  expect(screen.getByTestId('navigation-menu')).toHaveProp(
+    'accessibilityLabel',
+    'Account, Ada, synced',
+  );
+  expect(screen.getAllByText('Ada, synced', { includeHiddenElements: true })).toHaveLength(2);
+  expect(screen.getByText('Settings')).toHaveStyle({
+    fontFamily: 'ProductSans',
+    fontSize: 18,
+    fontWeight: '800',
+  });
+  expect(screen.getByText('Close')).toHaveStyle({ fontFamily: 'ProductSans', fontWeight: '500' });
+});
+
+it('uses product typography for compact labels and section pickers', async () => {
+  const themed: NavigationTheme = {
+    ...theme,
+    typography: { fontFamily: 'ProductSans', barFontSize: 12, fontSize: 17 },
+  };
+  await render(
+    <AppNavigation
+      {...labels}
+      items={items}
+      width={320}
+      pathname="/"
+      theme={themed}
+      onNavigate={jest.fn()}
+    />,
+  );
+  expect(screen.getByText('Home')).toHaveStyle({ fontFamily: 'ProductSans', fontSize: 12 });
+  await render(
+    <SectionPicker
+      closeLabel="Close"
+      item={section}
+      pathname="/progress"
+      theme={themed}
+      onNavigate={jest.fn()}
+    />,
+  );
+  expect(screen.getByText('Overview')).toHaveStyle({ fontFamily: 'ProductSans', fontSize: 17 });
+});

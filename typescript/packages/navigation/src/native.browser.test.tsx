@@ -131,3 +131,38 @@ it('presents an unclipped section picker and focuses its selected child at 320 p
   expect(navigate).toHaveBeenCalledWith('/progress');
   await expect.element(page.getByRole('button', { name: 'Progress, History' })).toHaveFocus();
 });
+
+it('renders a compact profile subtitle in the menu and uses the supplied font family', async () => {
+  await mount(
+    <AppNavigation
+      label="Primary"
+      collapseLabel="Collapse"
+      expandLabel="Expand"
+      closeLabel="Close"
+      items={[{ id: 'home', label: 'Home', href: '/', icon }]}
+      width={320}
+      pathname="/"
+      theme={{ ...theme, typography: { fontFamily: 'monospace', fontSize: 18, barFontSize: 12 } }}
+      onNavigate={vi.fn()}
+      profile={{
+        label: 'Account',
+        subtitle: 'Ada, synced',
+        initials: 'AD',
+        menu: [{ id: 'settings', label: 'Settings', href: '/settings' }],
+      }}
+    />,
+  );
+  const trigger = page.getByRole('button', { name: 'Account, Ada, synced' });
+  await expect.element(trigger).toBeVisible();
+  await expect.element(page.getByText('Ada, synced', { exact: true })).not.toBeInTheDocument();
+  await click(trigger);
+  const menu = page.getByRole('menu', { name: 'Account, Ada, synced' });
+  await expect.element(menu.getByText('Ada, synced', { exact: true })).toBeVisible();
+  const settings = document.querySelector<HTMLElement>('[role="menuitem"]');
+  expect(settings).not.toBeNull();
+  const text = settings?.querySelector<HTMLElement>('[dir="auto"]');
+  expect(text).not.toBeNull();
+  if (text === null || text === undefined) throw new Error('Settings text is missing');
+  expect(getComputedStyle(text).fontFamily).toContain('monospace');
+  expect(getComputedStyle(text).fontSize).toBe('18px');
+});
