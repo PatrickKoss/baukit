@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Derive compact native bar height from the avatar, icon, label line height, spacing, padding and borders. Keep rendered height and reserved height aligned at normal and enlarged font scales.
+
 ## 0.7.3
 
 ### Patch Changes

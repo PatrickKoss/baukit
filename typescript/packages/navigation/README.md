@@ -125,6 +125,14 @@ trigger and above the compact bottom bar. Long sections scroll inside that
 space. It updates the limit when the viewport, content layout, or scroll
 position changes.
 
+For compact native content, `useNavigationBarHeight(bottomInset, theme)` reserves
+space using the current font scale and the bar's typography and spacing. Pass the
+same theme as `AppNavigation` when you customize it. The default height is 75 dp
+before the bottom inset. `getNavigationBarHeight(fontScale, bottomInset, metrics)`
+provides the same calculation without a hook. Its optional metrics are `spacing`,
+`fontSize` and `lineHeight`. `NAVIGATION_DIMENSIONS.nativeBar` is the default native
+height; `bar` remains the 64-pixel DOM height.
+
 Keep route-heading focus in the product. Use
 `createRouteFocusController` from `@baukit/a11y-core/web` for DOM route changes,
 and the product's screen-transition adapter on native. Navigation does not know

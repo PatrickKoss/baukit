@@ -54,18 +54,58 @@ export interface ActiveNavigation<Icon = unknown> {
   readonly subItem: NavigationSubItem<Icon> | null;
 }
 
-export const NAVIGATION_DIMENSIONS = {
+export const NAVIGATION_BAR_DIMENSIONS = {
   avatar: 28,
+  icon: 24,
+  border: 1,
+  targetBorder: 3,
+  targetPadding: 8,
+  labelFontSize: 11,
+  labelLineHeight: 16,
+  spacing: 8,
+} as const;
+
+export interface NavigationBarMetrics {
+  readonly spacing?: number;
+  readonly fontSize?: number;
+  readonly lineHeight?: number;
+}
+
+export function getNavigationBarLineHeight(metrics: NavigationBarMetrics = {}): number {
+  return (
+    metrics.lineHeight ??
+    Math.ceil(
+      (metrics.fontSize ?? NAVIGATION_BAR_DIMENSIONS.labelFontSize) *
+        (NAVIGATION_BAR_DIMENSIONS.labelLineHeight / NAVIGATION_BAR_DIMENSIONS.labelFontSize),
+    )
+  );
+}
+
+export function getNavigationBarHeight(
+  fontScale = 1,
+  bottomInset = 0,
+  metrics: NavigationBarMetrics = {},
+): number {
+  const scale = Math.max(1, fontScale);
+  return (
+    NAVIGATION_BAR_DIMENSIONS.border +
+    2 * (NAVIGATION_BAR_DIMENSIONS.targetBorder + NAVIGATION_BAR_DIMENSIONS.targetPadding) +
+    Math.max(NAVIGATION_BAR_DIMENSIONS.avatar, NAVIGATION_BAR_DIMENSIONS.icon * scale) +
+    (metrics.spacing ?? NAVIGATION_BAR_DIMENSIONS.spacing) +
+    getNavigationBarLineHeight(metrics) * scale +
+    bottomInset
+  );
+}
+
+export const NAVIGATION_DIMENSIONS = {
+  avatar: NAVIGATION_BAR_DIMENSIONS.avatar,
   rail: 280,
   collapsedRail: 76,
   bar: 64,
+  nativeBar: getNavigationBarHeight(),
   target: 44,
   androidTarget: 48,
 } as const;
-
-export function getNavigationBarHeight(fontScale = 1, bottomInset = 0): number {
-  return NAVIGATION_DIMENSIONS.bar * Math.max(1, fontScale) + bottomInset;
-}
 
 export function getNavigationLayout(width: number): 'bar' | 'rail' {
   return getLayoutMode(width, { medium: 600, expanded: 1024 }) === 'expanded' ? 'rail' : 'bar';

@@ -7,7 +7,7 @@ import {
   type NavigationIcon,
   type NavigationTheme,
 } from './native.js';
-import type { NavigationItem } from './index.js';
+import { getNavigationBarHeight, type NavigationItem } from './index.js';
 
 // Resolve lazy native modules during setup, before Jest starts each test's timer.
 const nativeModules = jest.requireActual<typeof import('react-native')>('react-native');
@@ -784,11 +784,11 @@ it.each([
   },
 );
 
-function ReservedHeight() {
-  return <Text testID="reserved-height">{useNavigationBarHeight(24)}</Text>;
+function ReservedHeight({ theme }: { readonly theme?: NavigationTheme }) {
+  return <Text testID="reserved-height">{useNavigationBarHeight(24, theme)}</Text>;
 }
 
-it.each([1, 2])('reserves compact navigation space at font scale %s', async (fontScale) => {
+it.each([1, 1.3, 2])('reserves compact navigation space at font scale %s', async (fontScale) => {
   jest
     .spyOn(nativeModules, 'useWindowDimensions')
     .mockReturnValue({ width: 600, height: 800, scale: 1, fontScale });
@@ -805,8 +805,10 @@ it.each([1, 2])('reserves compact navigation space at font scale %s', async (fon
       />
     </>,
   );
-  expect(screen.getByTestId('primary-navigation')).toHaveStyle({ minHeight: 64 * fontScale + 24 });
-  expect(screen.getByTestId('reserved-height').props['children']).toBe(64 * fontScale + 24);
+  const height = getNavigationBarHeight(fontScale, 24);
+  expect(screen.getByTestId('primary-navigation')).toHaveStyle({ minHeight: height });
+  expect(screen.getByTestId('reserved-height').props['children']).toBe(height);
+  expect(screen.getByText('Home')).toHaveStyle({ lineHeight: 16 });
   jest.restoreAllMocks();
 });
 
@@ -831,3 +833,39 @@ it.each([600, 1024])(
     expect(screen.getByRole('link', { name: 'Home' })).toHaveProp('tabIndex', -1);
   },
 );
+
+it('uses the same custom typography and spacing in the bar and height hook', async () => {
+  jest.spyOn(nativeModules, 'useWindowDimensions').mockReturnValue({
+    width: 600,
+    height: 800,
+    scale: 1,
+    fontScale: 1.3,
+  });
+  const customTheme = { ...theme, spacing: 12, typography: { barFontSize: 18, lineHeight: 30 } };
+  await render(
+    <>
+      <ReservedHeight theme={customTheme} />
+      <AppNavigation
+        {...labels}
+        items={items}
+        profile={profile}
+        pathname="/"
+        theme={customTheme}
+        onNavigate={jest.fn()}
+        insets={{ bottom: 24 }}
+      />
+    </>,
+  );
+  expect(screen.getByTestId('primary-navigation')).toHaveStyle({
+    minHeight: 129.2,
+    borderTopWidth: 1,
+  });
+  expect(screen.getByTestId('reserved-height').props['children']).toBe(129.2);
+  expect(screen.getByRole('link', { name: 'Account' })).toHaveStyle({
+    padding: 8,
+    borderWidth: 3,
+    gap: 12,
+  });
+  expect(screen.getByText('Account')).toHaveStyle({ fontSize: 18, lineHeight: 30 });
+  jest.restoreAllMocks();
+});

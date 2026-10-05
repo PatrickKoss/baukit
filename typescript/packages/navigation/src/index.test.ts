@@ -3,6 +3,7 @@ import { blendColors, contrastRatio, exampleTokens } from '@baukit/ui-tokens';
 import {
   getNavigationLayout,
   getNavigationBarHeight,
+  NAVIGATION_BAR_DIMENSIONS,
   navigationReducer,
   navigationMatches,
   resolveActiveMenuEntry,
@@ -220,7 +221,23 @@ it('selects one most-specific menu route using its path length', () => {
 });
 
 it('reserves compact height for enlarged text and safe areas', () => {
-  expect(getNavigationBarHeight(1, 24)).toBe(88);
-  expect(getNavigationBarHeight(2, 24)).toBe(152);
-  expect(getNavigationBarHeight(0.8)).toBe(64);
+  expect(getNavigationBarHeight(1, 24)).toBe(99);
+  expect(getNavigationBarHeight(1.3, 24)).toBe(107);
+  expect(getNavigationBarHeight(2, 24)).toBe(135);
+  expect(getNavigationBarHeight(0.8)).toBe(75);
+});
+
+it.each([1, 1.3, 2])('fits the profile and a full label at font scale %s', (fontScale) => {
+  const dimensions = NAVIGATION_BAR_DIMENSIONS;
+  const available =
+    getNavigationBarHeight(fontScale) -
+    dimensions.border -
+    2 * (dimensions.targetPadding + dimensions.targetBorder) -
+    dimensions.spacing;
+  expect(available).toBeGreaterThanOrEqual(dimensions.avatar + 16 * fontScale);
+  expect(available).toBeGreaterThanOrEqual((dimensions.icon + 16) * fontScale);
+});
+it('reserves the configured label size, line height and spacing', () => {
+  expect(getNavigationBarHeight(1.3, 24, { spacing: 12, fontSize: 18 })).toBeCloseTo(125.3);
+  expect(getNavigationBarHeight(1.3, 24, { spacing: 12, lineHeight: 30 })).toBe(129.2);
 });

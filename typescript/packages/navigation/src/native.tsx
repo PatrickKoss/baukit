@@ -37,6 +37,9 @@ import {
 import {
   getNavigationLayout,
   getNavigationBarHeight,
+  getNavigationBarLineHeight,
+  NAVIGATION_BAR_DIMENSIONS,
+  type NavigationBarMetrics,
   NAVIGATION_DIMENSIONS,
   navigationMatches,
   nextSectionHref,
@@ -78,15 +81,28 @@ export interface NavigationTheme {
   readonly spacing: number;
   readonly typography?: NavigationTypography;
 }
+function barMetrics(theme?: NavigationTheme): NavigationBarMetrics {
+  return {
+    ...(theme === undefined ? {} : { spacing: theme.spacing }),
+    ...(theme?.typography?.barFontSize === undefined
+      ? {}
+      : { fontSize: theme.typography.barFontSize }),
+    ...(theme?.typography?.lineHeight === undefined
+      ? {}
+      : { lineHeight: theme.typography.lineHeight }),
+  };
+}
 function textStyle(theme: NavigationTheme, selected = false, bar = false): TextStyle {
   const typography = theme.typography;
   return {
     fontFamily: typography?.fontFamily,
-    fontSize: bar ? (typography?.barFontSize ?? 11) : (typography?.fontSize ?? 14),
+    fontSize: bar
+      ? (typography?.barFontSize ?? NAVIGATION_BAR_DIMENSIONS.labelFontSize)
+      : (typography?.fontSize ?? 14),
     fontWeight: selected
       ? (typography?.activeFontWeight ?? '700')
       : (typography?.fontWeight ?? '400'),
-    lineHeight: typography?.lineHeight,
+    lineHeight: bar ? getNavigationBarLineHeight(barMetrics(theme)) : typography?.lineHeight,
     letterSpacing: typography?.letterSpacing,
   };
 }
@@ -137,7 +153,7 @@ function FocusablePressable({
             Platform.OS === 'android'
               ? NAVIGATION_DIMENSIONS.androidTarget
               : NAVIGATION_DIMENSIONS.target,
-          borderWidth: 3,
+          borderWidth: NAVIGATION_BAR_DIMENSIONS.targetBorder,
           borderColor: focused
             ? selected
               ? theme.activeText
@@ -620,9 +636,9 @@ function Profile({
   );
 }
 
-export function useNavigationBarHeight(bottomInset = 0): number {
+export function useNavigationBarHeight(bottomInset = 0, theme?: NavigationTheme): number {
   const { fontScale } = useWindowDimensions();
-  return getNavigationBarHeight(fontScale, bottomInset);
+  return getNavigationBarHeight(fontScale, bottomInset, barMetrics(theme));
 }
 
 export interface AppNavigationProps extends CollapseProps {
@@ -693,7 +709,13 @@ export function AppNavigation(props: AppNavigationProps) {
           borderColor: theme.border,
           paddingBottom: insets.bottom ?? 0,
           ...(bar
-            ? { minHeight: getNavigationBarHeight(dimensions.fontScale, insets.bottom) }
+            ? {
+                minHeight: getNavigationBarHeight(
+                  dimensions.fontScale,
+                  insets.bottom,
+                  barMetrics(theme),
+                ),
+              }
             : {}),
           paddingLeft: insets.left ?? 0,
           paddingRight: insets.right ?? 0,
@@ -754,7 +776,9 @@ export function AppNavigation(props: AppNavigationProps) {
                   else follow(href, event, onNavigate);
                 }}
               >
-                <Decorative>{item.icon({ active, size: 24 })}</Decorative>
+                <Decorative>
+                  {item.icon({ active, size: NAVIGATION_BAR_DIMENSIONS.icon })}
+                </Decorative>
               </Target>
               {!bar && open && children.length > 0 ? (
                 <View
@@ -929,15 +953,15 @@ const styles = StyleSheet.create({
   labelGroup: { minWidth: 0, flexShrink: 1 },
   menuProfile: { padding: 8 },
   target: {
-    padding: 8,
+    padding: NAVIGATION_BAR_DIMENSIONS.targetPadding,
   },
   railTarget: { flexDirection: 'row', alignItems: 'center' },
   collapsedTarget: { justifyContent: 'center' },
   barTarget: { flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1 },
   bar: {
     flexDirection: 'row',
-    minHeight: NAVIGATION_DIMENSIONS.bar,
-    borderTopWidth: 1,
+    minHeight: NAVIGATION_DIMENSIONS.nativeBar,
+    borderTopWidth: NAVIGATION_BAR_DIMENSIONS.border,
     width: '100%',
   },
   rail: { borderRightWidth: 1, height: '100%' },
