@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Follow relative imports from mobile routes when checking sign-in wiring. Bound traversal and stop import cycles.
+- Scan tracked and untracked files that Git does not ignore. Keep the filesystem scan outside Git.
+
 - Accept Redis URL environment fallbacks and detect MCP server, stdio and tool wiring by content. Use declared OpenAPI consumers instead of a fixed MCP schema path.
 
 - Parse balanced parentheses and angle brackets in strict Markdown link targets.

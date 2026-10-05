@@ -4234,6 +4234,103 @@ fn doctor_follows_route_reexports_and_reconciliation_tests() -> anyhow::Result<(
 }
 
 #[test]
+fn doctor_follows_imported_screen_wrappers() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "wrapped-route");
+    local.mobile = true;
+    local.auth = Some(AuthProvider::Oidc);
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    let route = root.join("mobile/app/(auth)/sign-in.tsx");
+    let screen = root.join("mobile/src/login-screen.tsx");
+    fs::rename(&route, &screen)?;
+    fs::write(
+        &screen,
+        fs::read_to_string(&screen)?.replace("../../src/", "./"),
+    )?;
+    fs::write(
+        root.join("mobile/src/login-wrapper.tsx"),
+        "import Screen from './login-screen';\nexport default function Wrapper() { return <Screen />; }\n",
+    )?;
+    fs::write(
+        &route,
+        "import Wrapper from '../../src/login-wrapper';\nexport default function Route() { return <Wrapper />; }\n",
+    )?;
+    doctor(&root)?;
+    fs::write(
+        &route,
+        "import Wrapper from '../../src/login-wrapper';\nexport default function Route() { return null; }\n",
+    )?;
+    let error = doctor(&root)
+        .expect_err("an unused screen import does not connect sign-in")
+        .to_string();
+    assert!(error.contains("missing mobile_sign_in wiring"), "{error}");
+    fs::write(
+        &route,
+        "import Wrapper from '../../src/login-wrapper';\nexport default function Route() { return <Wrapper />; }\n",
+    )?;
+    fs::write(
+        root.join("mobile/src/login-wrapper.tsx"),
+        "import Route from '../app/(auth)/sign-in';\nexport default function Wrapper() { return <Route />; }\n",
+    )?;
+    let error = doctor(&root)
+        .expect_err("an import cycle cannot connect the login screen")
+        .to_string();
+    assert!(error.contains("missing mobile_sign_in wiring"), "{error}");
+    Ok(())
+}
+
+#[test]
+fn doctor_ignores_archives_only_inside_git() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "archive-product");
+    local.auth = Some(AuthProvider::Oidc);
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    fs::create_dir(root.join(".upgrade"))?;
+    fs::copy(
+        root.join("scripts/keycloak_policy.py"),
+        root.join(".upgrade/keycloak_policy.py"),
+    )?;
+    fs::write(
+        root.join(".gitignore"),
+        format!(
+            "{}\n.upgrade/\n",
+            fs::read_to_string(root.join(".gitignore"))?
+        ),
+    )?;
+    let error = doctor(&root)
+        .expect_err("outside Git the filesystem walk includes archives")
+        .to_string();
+    assert!(
+        error.contains("multiple Keycloak tools `keycloak_policy.py`"),
+        "{error}"
+    );
+    for arguments in [["init", "--quiet"], ["add", "."]] {
+        assert!(
+            Command::new("git")
+                .args(arguments)
+                .current_dir(&root)
+                .status()?
+                .success()
+        );
+    }
+    doctor(&root)?;
+    fs::copy(
+        root.join("scripts/keycloak_policy.py"),
+        root.join("extra-policy.py"),
+    )?;
+    let error = doctor(&root)
+        .expect_err("untracked product files still count")
+        .to_string();
+    assert!(
+        error.contains("multiple Keycloak tools `keycloak_policy.py`"),
+        "{error}"
+    );
+    Ok(())
+}
+
+#[test]
 fn doctor_accepts_shared_measurements_in_product_limit_validators() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "measured-limits");

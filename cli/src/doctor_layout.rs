@@ -1,7 +1,8 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     fs,
     path::{Component, Path, PathBuf},
+    process::Command,
 };
 
 use anyhow::{Context, Result, bail};
@@ -111,6 +112,55 @@ pub(super) fn files(directory: &Path, extension: &str) -> Result<Vec<PathBuf>> {
     if !directory.is_dir() {
         return Ok(paths);
     }
+    let repository = Command::new("git")
+        .arg("-C")
+        .arg(directory)
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .output()?;
+    if !repository.status.success() || repository.stdout != b"true\n" {
+        walk_files(directory, extension, &mut paths)?;
+        paths.sort();
+        return Ok(paths);
+    }
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(directory)
+        .args([
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--",
+            ".",
+        ])
+        .output()?;
+    if !output.status.success() {
+        bail!(
+            "git ls-files failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    for name in output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|name| !name.is_empty())
+    {
+        let path = directory.join(std::str::from_utf8(name).context("non-UTF-8 Git path")?);
+        if path.extension().is_some_and(|value| value == extension)
+            && path
+                .symlink_metadata()
+                .is_ok_and(|metadata| metadata.is_file())
+        {
+            paths.push(path);
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    Ok(paths)
+}
+
+fn walk_files(directory: &Path, extension: &str, paths: &mut Vec<PathBuf>) -> Result<()> {
     for entry in fs::read_dir(directory)? {
         let entry = entry?;
         let path = entry.path();
@@ -128,14 +178,13 @@ pub(super) fn files(directory: &Path, extension: &str) -> Result<Vec<PathBuf>> {
                         | "coverage"
                 )
             ) {
-                paths.extend(files(&path, extension)?);
+                walk_files(&path, extension, paths)?;
             }
         } else if kind.is_file() && path.extension().is_some_and(|value| value == extension) {
             paths.push(path);
         }
     }
-    paths.sort();
-    Ok(paths)
+    Ok(())
 }
 
 pub(super) struct RustCrate {
@@ -425,25 +474,70 @@ pub(super) fn validate_backend_wiring(
     Ok(())
 }
 
-fn screen_exports(root: &Path, screens: Vec<PathBuf>) -> Result<Vec<PathBuf>> {
-    let mut pending = screens;
+fn screen_imports(source: &str) -> Vec<&str> {
+    let code = identity::identity_code(source, false);
+    let mut modules = Vec::new();
+    for keyword in ["import ", "export "] {
+        for (index, _) in code.match_indices(keyword) {
+            let statement = &source[index + keyword.len()..];
+            if statement.starts_with("type ") {
+                continue;
+            }
+            let Some((bindings, tail)) = statement.split_once(" from ") else {
+                continue;
+            };
+            if bindings.contains(';') {
+                continue;
+            }
+            let tail = tail.trim_start();
+            let Some(quote @ ('\'' | '"')) = tail.chars().next() else {
+                continue;
+            };
+            let Some((module, _)) = tail[1..].split_once(quote) else {
+                continue;
+            };
+            if !module.starts_with('.') {
+                continue;
+            }
+            let rendered = bindings.split(['{', '}', ',']).any(|binding| {
+                let Some(local) = binding.split_whitespace().last() else {
+                    return false;
+                };
+                code.match_indices(&format!("<{local}"))
+                    .any(|(index, matched)| {
+                        code[index + matched.len()..].starts_with(['>', '/', '.', ' ', '\n'])
+                    })
+            });
+            if keyword == "export " || rendered {
+                modules.push(module);
+            }
+        }
+    }
+    modules
+}
+
+fn screen_modules(root: &Path, screens: Vec<PathBuf>) -> Result<Vec<PathBuf>> {
+    const MAX_IMPORT_DEPTH: usize = 16;
+    let mut pending = screens
+        .into_iter()
+        .map(|path| (path, 0))
+        .collect::<VecDeque<_>>();
     let mut modules = BTreeSet::new();
     let root = root.canonicalize()?;
-    while let Some(path) = pending.pop() {
+    while let Some((path, depth)) = pending.pop_front() {
         let path = path.canonicalize()?;
         if !path.starts_with(&root) || !modules.insert(path.clone()) {
             continue;
         }
         let source = identity::uncommented(&fs::read_to_string(&path)?, false);
-        for statement in source.split(';') {
-            if statement.trim_start().starts_with("export ")
-                && let Some((_, module)) = statement.rsplit_once(" from ")
-                && let Some(module) = crate::quoted_string(module.trim())
-                && module.starts_with('.')
-                && let Some(imported) =
-                    identity::module_path(path.parent().context("screen has no parent")?, module)
+        if depth == MAX_IMPORT_DEPTH {
+            continue;
+        }
+        for module in screen_imports(&source) {
+            if let Some(imported) =
+                identity::module_path(path.parent().context("screen has no parent")?, module)
             {
-                pending.push(imported);
+                pending.push_back((imported, depth + 1));
             }
         }
     }
@@ -464,10 +558,13 @@ pub(super) fn validate_mobile_auth_wiring(
     });
     let screens = sources
         .iter()
-        .filter(|path| path.starts_with(root.join("mobile/app")))
+        .filter(|path| {
+            path.starts_with(root.join("mobile/app"))
+                && path.file_stem().is_none_or(|stem| stem != "_layout")
+        })
         .cloned()
         .collect::<Vec<_>>();
-    let screens = screen_exports(root, screens)?;
+    let screens = screen_modules(root, screens)?;
     for (key, candidates, names) in [
         (
             "mobile_sign_in",
@@ -738,4 +835,81 @@ pub(super) fn validate_keycloak_realm_tools(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn screen_imports_follow_rendered_bindings_and_reexports() {
+        let source = "import { LoginScreen as Screen } from './screen'\nimport unused from './unused'\nimport type { Props } from './props';\nexport { default } from './exported';\nexport default function Route() { return <Screen />; }";
+        assert_eq!(screen_imports(source), vec!["./screen", "./exported"]);
+    }
+
+    #[test]
+    fn screen_modules_resolve_directory_components() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        fs::create_dir(root.path().join("screen"))?;
+        fs::write(
+            root.path().join("route.tsx"),
+            "import Screen from './screen'; export default function Route() { return <Screen />; }",
+        )?;
+        fs::write(
+            root.path().join("screen/index.tsx"),
+            "export default function Screen() { return null; }",
+        )?;
+        let modules = screen_modules(root.path(), vec![root.path().join("route.tsx")])?;
+        assert_eq!(
+            modules,
+            vec![
+                root.path().join("route.tsx"),
+                root.path().join("screen/index.tsx")
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn screen_modules_bound_import_depth() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        for depth in 0..=17 {
+            fs::write(
+                root.path().join(format!("{depth}.tsx")),
+                format!("export {{ default }} from './{}';", depth + 1),
+            )?;
+        }
+        let modules = screen_modules(root.path(), vec![root.path().join("0.tsx")])?;
+        assert_eq!(modules.len(), 17);
+        assert!(modules.iter().any(|path| path.ends_with("16.tsx")));
+        assert!(!modules.iter().any(|path| path.ends_with("17.tsx")));
+        Ok(())
+    }
+
+    #[test]
+    fn git_files_include_tracked_ignored_files_and_scope_subdirectories() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        fs::create_dir(root.path().join("src"))?;
+        fs::write(root.path().join(".gitignore"), "*.py\n")?;
+        fs::write(root.path().join("src/tracked.py"), "")?;
+        fs::write(root.path().join("src/ignored.py"), "")?;
+        fs::write(root.path().join("outside.py"), "")?;
+        for arguments in [
+            vec!["init", "--quiet"],
+            vec!["add", "--force", "src/tracked.py"],
+        ] {
+            assert!(
+                Command::new("git")
+                    .args(arguments)
+                    .current_dir(root.path())
+                    .status()?
+                    .success()
+            );
+        }
+        assert_eq!(
+            files(&root.path().join("src"), "py")?,
+            vec![root.path().join("src/tracked.py")]
+        );
+        Ok(())
+    }
 }

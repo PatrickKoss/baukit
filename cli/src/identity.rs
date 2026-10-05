@@ -142,6 +142,7 @@ pub(super) fn module_path(directory: &Path, module: &str) -> Option<PathBuf> {
         stem.with_extension("ts"),
         stem.with_extension("tsx"),
         stem.join("index.ts"),
+        stem.join("index.tsx"),
     ]
     .into_iter()
     .find(|path| path.is_file())
