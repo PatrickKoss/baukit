@@ -191,7 +191,23 @@ class ReleaseTrainFilesTest(unittest.TestCase):
         self.assertIn("Added the opt-in MCP stdio package", previous)
         self.assertNotIn("pinned pnpm to 12.7.0", source)
 
+    def test_template_changelog_separates_072_and_073(self):
+        source = (ROOT / "templates/common/CHANGELOG.md").read_text()
+        newer, older = source.split("## [0.7.2] - 2026-10-05", 1)
+        shipped = older.split("## [0.7.1]", 1)[0]
+        self.assertIn("Reconcile confidential backend clients", newer)
+        self.assertNotIn("Scroll native smoke flows", newer)
+        self.assertIn("Scroll native smoke flows", shipped)
+        self.assertIn("Return mobile OIDC callbacks", shipped)
+        self.assertNotIn("Reconcile confidential backend clients", shipped)
+
     def test_patch_train_cuts_template_changelog_and_updates_cli_tags(self):
+        self.check_patch_train("## [Unreleased]\n\n- Pending template fix.\n", True)
+
+    def test_patch_train_rejects_uncut_template_entries(self):
+        self.check_patch_train("## [Unreleased]\n- Pending template fix.\n", False)
+
+    def check_patch_train(self, changelog: str, succeeds: bool):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for relative in ["scripts/release-train.sh", "scripts/release_packages.py", "scripts/check-example-lockfiles.py", "scripts/cli_install.py", "templates/common/CHANGELOG.md", "README.md"]:
@@ -212,6 +228,7 @@ class ReleaseTrainFilesTest(unittest.TestCase):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(source)
             (root / "typescript/.changeset").mkdir()
+            (root / "templates/common/CHANGELOG.md").write_text(changelog + "\n## [0.7.0] - 2026-10-04\n\n- Previous fix.\n\n## [0.6.0] - 2026-10-02\n")
             before = (root / "templates/common/CHANGELOG.md").read_text()
             binaries = root / "bin"
             binaries.mkdir()
@@ -227,6 +244,11 @@ class ReleaseTrainFilesTest(unittest.TestCase):
             executable(root / "scripts/check-version-coherence.py", "#!/bin/sh\nexit 0\n")
             environment = {**os.environ, "PATH": f"{binaries}:{os.environ['PATH']}", "TEST_REPO_ROOT": str(root), "RELEASE_DATE": "2026-10-05"}
             result = subprocess.run(["bash", str(root / "scripts/release-train.sh"), "patch"], cwd=root, env=environment, capture_output=True, text=True)
+            if not succeeds:
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("still has uncut Unreleased entries", result.stderr)
+                self.assertNotIn("Prepared v", result.stdout)
+                return
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             after = (root / "templates/common/CHANGELOG.md").read_text()
             self.assertEqual(after, before.replace("## [Unreleased]\n\n", "## [Unreleased]\n\n## [0.7.1] - 2026-10-05\n\n", 1))

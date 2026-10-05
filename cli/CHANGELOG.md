@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Reject release preparation when the template changelog has uncut Unreleased entries or lacks the new release heading. Restore the missing 0.7.2 template heading from release history.
+
 - Follow relative imports from mobile routes when checking sign-in wiring. Bound traversal and stop import cycles.
 - Scan tracked and untracked files that Git does not ignore. Keep the filesystem scan outside Git.
 

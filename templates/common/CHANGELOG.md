@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep the 0.7.2 changes under their release heading.
+
 ## [0.7.3] - 2026-10-05
 
 {% if context.auth_oidc %}- Reconcile confidential backend clients without browser URLs. Preserve creation and rotated secrets.
@@ -16,6 +18,8 @@
 {% endif %}{% if context.web %}- Store Playwright browsers in web/.playwright-browsers so dependency reinstalls preserve them. Exclude the cache from Docker contexts.
 - Bind the web preview server to 127.0.0.1 so Playwright readiness uses the same address.
 {% endif %}
+## [0.7.2] - 2026-10-05
+
 {% if context.quality_strict and context.backend %}
 - Create the LCOV output directory when Cargo uses an external target directory.
 {% endif %}{% if context.mobile %}

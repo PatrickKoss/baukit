@@ -99,6 +99,21 @@ for changelog in rust/crates/*/CHANGELOG.md templates/common/CHANGELOG.md; do
     "$changelog"
 done
 
+python3 - "$next" <<'PYTHON'
+from pathlib import Path
+import re
+import sys
+
+source = Path("templates/common/CHANGELOG.md").read_text()
+sections = re.split(r"^## ", source, flags=re.MULTILINE)
+unreleased = [section for section in sections if section.startswith("[Unreleased]\n")]
+heading = f"[{sys.argv[1]}] - "
+if len(unreleased) != 1 or unreleased[0].split("\n", 1)[1].strip() or not any(
+    section.startswith(heading) for section in sections
+):
+    sys.exit("templates/common/CHANGELOG.md still has uncut Unreleased entries or is missing the new release heading")
+PYTHON
+
 # The template manifest and generated baukit.toml files use the bare semantic
 # version. The corresponding immutable source version is vX.Y.Z.
 printf '%s\n' "$next" > templates/VERSION
