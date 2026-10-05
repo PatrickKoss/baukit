@@ -4306,6 +4306,25 @@ fn doctor_ignores_archives_only_inside_git() -> anyhow::Result<()> {
         error.contains("multiple Keycloak tools `keycloak_policy.py`"),
         "{error}"
     );
+    let toolchain_bin = Path::new(env!("CARGO"))
+        .parent()
+        .expect("Cargo has a toolchain directory");
+    let error = Command::new("git")
+        .env("PATH", toolchain_bin)
+        .output()
+        .expect_err("the isolated toolchain path has no Git executable");
+    assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+    let output = Command::new(env!("CARGO_BIN_EXE_baukit"))
+        .arg("doctor")
+        .current_dir(&root)
+        .env("PATH", toolchain_bin)
+        .output()?;
+    assert!(!output.status.success());
+    let error = String::from_utf8(output.stderr)?;
+    assert!(
+        error.contains("multiple Keycloak tools `keycloak_policy.py`"),
+        "{error}"
+    );
     for arguments in [["init", "--quiet"], ["add", "."]] {
         assert!(
             Command::new("git")
@@ -4316,6 +4335,17 @@ fn doctor_ignores_archives_only_inside_git() -> anyhow::Result<()> {
         );
     }
     doctor(&root)?;
+    let output = Command::new(env!("CARGO_BIN_EXE_baukit"))
+        .arg("doctor")
+        .current_dir(&root)
+        .env("PATH", toolchain_bin)
+        .output()?;
+    assert!(!output.status.success());
+    let error = String::from_utf8(output.stderr)?;
+    assert!(
+        error.contains("Git is required to scan files in a Git repository"),
+        "{error}"
+    );
     fs::copy(
         root.join("scripts/keycloak_policy.py"),
         root.join("extra-policy.py"),

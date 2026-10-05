@@ -112,12 +112,25 @@ pub(super) fn files(directory: &Path, extension: &str) -> Result<Vec<PathBuf>> {
     if !directory.is_dir() {
         return Ok(paths);
     }
-    let repository = Command::new("git")
+    let repository = match Command::new("git")
         .arg("-C")
         .arg(directory)
         .args(["rev-parse", "--is-inside-work-tree"])
-        .output()?;
-    if !repository.status.success() || repository.stdout != b"true\n" {
+        .output()
+    {
+        Ok(output) => Some(output),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            if directory
+                .ancestors()
+                .any(|parent| parent.join(".git").exists())
+            {
+                return Err(error).context("Git is required to scan files in a Git repository");
+            }
+            None
+        }
+        Err(error) => return Err(error.into()),
+    };
+    if repository.is_none_or(|output| !output.status.success() || output.stdout != b"true\n") {
         walk_files(directory, extension, &mut paths)?;
         paths.sort();
         return Ok(paths);
