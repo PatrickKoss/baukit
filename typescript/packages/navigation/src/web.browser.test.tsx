@@ -338,6 +338,13 @@ it('ellipsizes long labels inside all six compact targets at 320 pixels', async 
 });
 
 it('keeps custom profile avatars decorative and preserves subtitles and menu focus', async () => {
+  const errors: unknown[][] = [];
+  vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+    errors.push(args);
+  });
+  vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
+    errors.push(args);
+  });
   await page.viewport(1024, 720);
   styles = document.createElement('style');
   styles.textContent = `${toCssVariables(exampleTokens)} ${stylesheet}`;
@@ -375,20 +382,26 @@ it('keeps custom profile avatars decorative and preserves subtitles and menu foc
   });
   const subtitle = page.getByText('Ada, synced', { exact: true });
   await expect.element(subtitle).toBeVisible();
-  await userEvent.click(page.getByRole('button', { name: 'Collapse navigation' }));
+  await act(async () => {
+    await userEvent.click(page.getByRole('button', { name: 'Collapse navigation' }));
+  });
   await expect.element(subtitle).not.toBeVisible();
   const trigger = page.getByRole('button', { name: 'Account, Ada, synced' });
   await expect.element(trigger).toBeVisible();
   await expect.element(page.getByTestId('profile-glyph')).toBeVisible();
   await expect.element(page.getByRole('img', { name: 'Product glyph' })).not.toBeInTheDocument();
-  trigger.element().focus();
-  page.getByTestId('profile-glyph').element().focus();
+  act(() => {
+    trigger.element().focus();
+    page.getByTestId('profile-glyph').element().focus();
+  });
   await expect.element(trigger).toHaveFocus();
   const avatar = page.getByTestId('profile-glyph').element().parentElement;
   expect(avatar).not.toBeNull();
   if (avatar === null) throw new Error('Avatar wrapper is missing');
   expect(getComputedStyle(avatar).backgroundColor).toBe('rgba(0, 0, 0, 0)');
-  await userEvent.click(trigger);
+  await act(async () => {
+    await userEvent.click(trigger);
+  });
   await expect
     .element(
       page
@@ -397,6 +410,9 @@ it('keeps custom profile avatars decorative and preserves subtitles and menu foc
     )
     .toBeVisible();
   await expect.element(page.getByRole('menuitem', { name: 'Settings' })).toHaveFocus();
-  await userEvent.keyboard('{Escape}');
+  await act(async () => {
+    await userEvent.keyboard('{Escape}');
+  });
   await expect.element(trigger).toHaveFocus();
+  expect(errors).toEqual([]);
 });
