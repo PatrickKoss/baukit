@@ -3423,6 +3423,9 @@ fn doctor_ignores_identity_examples_in_comments_and_strings() -> anyhow::Result<
 
 #[test]
 fn doctor_accepts_renamed_crates_and_relocated_wiring() -> anyhow::Result<()> {
+    let roles = [
+        "domain", "ports", "services", "api", "postgres", "bin", "worker",
+    ];
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "layout-product");
     local.worker = true;
@@ -3439,18 +3442,14 @@ fn doctor_accepts_renamed_crates_and_relocated_wiring() -> anyhow::Result<()> {
             path.extension().and_then(|value| value.to_str()),
             Some("rs" | "toml")
         ) {
-            let source = fs::read_to_string(&path)?;
-            fs::write(
-                path,
-                source
-                    .replace("layout-product-", "sl-")
-                    .replace("layout_product_", "sl_"),
-            )?;
+            let mut source = fs::read_to_string(&path)?;
+            for role in roles {
+                source = source.replace(&format!("layout-product-{role}"), &format!("sl-{role}"));
+            }
+            fs::write(path, source.replace("layout_product_", "sl_"))?;
         }
     }
-    for role in [
-        "domain", "ports", "services", "api", "postgres", "bin", "worker",
-    ] {
+    for role in roles {
         fs::rename(
             root.join(format!("backend/crates/layout-product-{role}")),
             root.join(format!("backend/crates/sl-{role}")),
@@ -3473,7 +3472,7 @@ fn doctor_accepts_renamed_crates_and_relocated_wiring() -> anyhow::Result<()> {
         &lib,
         fs::read_to_string(&lib)?
             .replace("mod limits;", "mod policy;")
-            .replace("use limits::", "use policy::"),
+            .replace("limits::", "policy::"),
     )?;
     for (old, new) in [
         ("auth", "session"),
@@ -3537,13 +3536,37 @@ fn doctor_accepts_renamed_crates_and_relocated_wiring() -> anyhow::Result<()> {
                 "  createExpoOidcEnvironment({\n    randomBytes: (size) => Crypto.getRandomBytesAsync(size),\n    storage: authStorage,\n  }),",
             ),
     )?;
+    let auth_test = root.join("mobile/src/oidc-auth.test.tsx");
+    fs::write(
+        &auth_test,
+        fs::read_to_string(&auth_test)?
+            .replace(
+                "import { createExpoOidcClient } from '@baukit/auth-native/expo';",
+                "import { NativeOidcClient } from '@baukit/auth-native';",
+            )
+            .replace(
+                "jest.mock('@baukit/auth-native/expo', () => {",
+                "jest.mock('@baukit/auth-native', () => {\n  const actual = jest.requireActual<typeof import('@baukit/auth-native')>('@baukit/auth-native');",
+            )
+            .replace(
+                "return { completeExpoAuthSession: jest.fn(), createExpoOidcClient: jest.fn(() => client) };",
+                "return { ...actual, NativeOidcClient: jest.fn(() => client) };",
+            )
+            .replace(
+                "jest.mocked(createExpoOidcClient)",
+                "jest.mocked(NativeOidcClient)",
+            ),
+    )?;
     fs::create_dir(root.join("docker"))?;
     fs::rename(root.join("keycloak"), root.join("docker/keycloak"))?;
     fs::rename(
         root.join("docker/keycloak/realm.json"),
         root.join("docker/keycloak/export.json"),
     )?;
-    fs::remove_file(root.join("docker/keycloak/CHANGELOG.md"))?;
+    fs::rename(
+        root.join("docker/keycloak/CHANGELOG.md"),
+        root.join("docker/keycloak/DECISIONS.md"),
+    )?;
     fs::create_dir(root.join("tools"))?;
     fs::rename(
         root.join("scripts/pkce-login.py"),
@@ -3560,6 +3583,58 @@ fn doctor_accepts_renamed_crates_and_relocated_wiring() -> anyhow::Result<()> {
         root.join("backend/migrations"),
         root.join("database/schema"),
     )?;
+    for (relative, contents) in read_tree(&root)? {
+        let Ok(source) = String::from_utf8(contents) else {
+            continue;
+        };
+        let path = root.join(relative);
+        let mut source = source
+            .replace("/(auth)/sign-in", "/(auth)/login")
+            .replace("../../migrations", "../../../database/schema")
+            .replace("backend/migrations", "database/schema")
+            .replace("keycloak/", "docker/keycloak/")
+            .replace("docker/keycloak/realm.json", "docker/keycloak/export.json")
+            .replace(
+                "docker/keycloak/CHANGELOG.md",
+                "docker/keycloak/DECISIONS.md",
+            )
+            .replace("scripts/pkce-login.py", "tools/login.py")
+            .replace("scripts/keycloak_policy.py", "tools/keycloak_policy.py")
+            .replace(
+                "scripts/reconcile_keycloak.py",
+                "tools/reconcile_keycloak.py",
+            )
+            .replace(
+                "TEST_DIRECTORY.parent / \"keycloak_policy.py\"",
+                "TEST_DIRECTORY.parents[1] / \"tools\" / \"keycloak_policy.py\"",
+            )
+            .replace(
+                "SCRIPT_DIRECTORY = TEST_DIRECTORY.parent",
+                "SCRIPT_DIRECTORY = TEST_DIRECTORY.parents[1] / \"tools\"",
+            )
+            .replace(
+                "ROOT / \"scripts\" / \"keycloak_policy.py\"",
+                "ROOT / \"tools\" / \"keycloak_policy.py\"",
+            )
+            .replace(
+                "ROOT / \"scripts\" / \"reconcile_keycloak.py\"",
+                "ROOT / \"tools\" / \"reconcile_keycloak.py\"",
+            )
+            .replace(
+                "SCRIPT_DIRECTORY.parent / \"keycloak\"",
+                "SCRIPT_DIRECTORY.parent / \"docker\" / \"keycloak\"",
+            )
+            .replace(
+                "Path(__file__).resolve().parent.parent))",
+                "Path(__file__).resolve().parents[2] / \"tools\"))",
+            )
+            .replace("ROOT / \"keycloak\"", "ROOT / \"docker\" / \"keycloak\"")
+            .replace("/ \"realm.json\"", "/ \"export.json\"");
+        for role in roles {
+            source = source.replace(&format!("layout-product-{role}"), &format!("sl-{role}"));
+        }
+        fs::write(path, source)?;
+    }
     let manifest = root.join("baukit.toml");
     fs::write(
         &manifest,
@@ -3866,9 +3941,60 @@ fn doctor_requires_redis_only_for_redis_backed_features() -> anyhow::Result<()> 
     );
     let api = root.join("backend/crates/postgres-limits-bin/src/bin/api.rs");
     let source = fs::read_to_string(&api)?;
+    let import_start = source
+        .find("use baukit_ratelimit::{")
+        .expect("rate limit imports");
+    let import_end = source[import_start..].find("};").expect("import end") + import_start + 2;
+    let mut postgres = source.clone();
+    postgres.replace_range(import_start..import_end, "");
+    let limiter_start = postgres
+        .find("    let rate_limit_options =")
+        .expect("rate limit setup");
+    let limiter_end = postgres
+        .find("    // Axum runs")
+        .expect("authentication setup");
+    postgres.replace_range(
+        limiter_start..limiter_end,
+        "    let api = api.layer(middleware::from_fn_with_state(pool.clone(), postgres_limit));\n",
+    );
+    postgres = postgres.replace("const ITEM_WRITE_GROUP: &str = \"item_writes\";\n", "");
+    postgres = postgres.replace(
+        "PostgresUserRepository::new(\n        pool,",
+        "PostgresUserRepository::new(\n        pool.clone(),",
+    );
+    let postgres_limiter = r#"
+async fn postgres_limit(
+    axum::extract::State(pool): axum::extract::State<sqlx::PgPool>,
+    request: Request,
+    next: middleware::Next,
+) -> Result<axum::response::Response, axum::http::StatusCode> {
+    use axum::http::StatusCode;
+    if !is_item_write(&request) {
+        return Ok(next.run(request).await);
+    }
+    let principal = request.extensions().get::<Principal>().ok_or(StatusCode::UNAUTHORIZED)?;
+    let consumed: i64 = sqlx::query_scalar(
+        "INSERT INTO product_rate_limits (subject, window_start, consumed) \
+         VALUES ($1, date_trunc('minute', now()), 1) \
+         ON CONFLICT (subject, window_start) DO UPDATE \
+         SET consumed = product_rate_limits.consumed + 1 RETURNING consumed",
+    )
+    .bind(item_write_subject(principal))
+    .fetch_one(&pool)
+    .await
+    .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    let limit = i64::try_from(ITEM_WRITE_REQUESTS_PER_MINUTE)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if consumed > limit {
+        return Err(StatusCode::TOO_MANY_REQUESTS);
+    }
+    Ok(next.run(request).await)
+}
+"#;
+    fs::write(&api, format!("{postgres}{postgres_limiter}"))?;
     fs::write(
-        &api,
-        source.replace("RedisRateLimitStore", "PostgresRateLimitStore"),
+        root.join("backend/migrations/0009_product_rate_limits.sql"),
+        "CREATE TABLE product_rate_limits (subject TEXT NOT NULL, window_start TIMESTAMPTZ NOT NULL, consumed BIGINT NOT NULL, PRIMARY KEY (subject, window_start));\n",
     )?;
     doctor(&root)?;
     fs::write(api, source)?;
