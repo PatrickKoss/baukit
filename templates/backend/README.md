@@ -105,7 +105,7 @@ loaded identity. Set `BAUKIT_PREBUILT_IMAGES=true` only when the required images
 already exist and no build will fetch private dependencies. If the web product
 adds Playwright, the same script checks, installs, and runs a supplied command
 with browsers under the repository-local
-`web/node_modules/.cache/playwright-browsers` cache (for example,
+`web/.playwright-browsers` cache (for example,
 `sh scripts/preflight.sh -- corepack pnpm --dir web exec playwright test`).
 
 `.github/workflows/ci.yml` runs every generated backend{% if context.web %}, web{% endif %}{% if context.mobile %}, and mobile{% endif %} gate, including ignored Docker-backed Rust tests. `deploy/values.yaml` is the product-owned input for the shared `baukit-app` Helm chart. Matching backend workflow notes are installed for both Codex and Claude discovery paths.

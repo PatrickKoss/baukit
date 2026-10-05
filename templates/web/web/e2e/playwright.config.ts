@@ -42,7 +42,7 @@ export default defineConfig({
     { name: 'mobile-safari', use: { ...devices['iPhone 14'] } },
   ],
   webServer: {
-    command: `pnpm exec vite preview --port ${String(port)} --strictPort`,
+    command: `pnpm exec vite preview --host 127.0.0.1 --port ${String(port)} --strictPort`,
     cwd: webRoot,
     url: baseURL,
     reuseExistingServer: process.env['CI'] === undefined,

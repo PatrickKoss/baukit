@@ -65,7 +65,7 @@ if git rev-parse --verify HEAD >/dev/null 2>&1; then
 else
   has_git_history=false
 fi
-{% if context.web %}PLAYWRIGHT_BROWSERS_PATH="$repository_root/web/node_modules/.cache/playwright-browsers"
+{% if context.web %}PLAYWRIGHT_BROWSERS_PATH="$repository_root/web/.playwright-browsers"
 export PLAYWRIGHT_BROWSERS_PATH
 {% endif %}
 

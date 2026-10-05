@@ -5,6 +5,7 @@ mobile/android
 mobile/ios
 mobile/dist
 web/node_modules
+web/.playwright-browsers
 web/dist
 web/playwright-report
 web/test-results

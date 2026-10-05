@@ -1,4 +1,7 @@
+mod doctor_layout;
 mod identity;
+
+pub use doctor_layout::DoctorPaths;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -47,23 +50,6 @@ const EXPECTED_BACKEND_FILES: &[&str] = &[
     ".claude/skills/baukit-backend/SKILL.md",
     "scripts/openapi.sh",
     "scripts/openapi-client.sh",
-    "backend/Cargo.toml",
-    "backend/.dockerignore",
-    "backend/Dockerfile",
-    "backend/crates/__APP__-domain/Cargo.toml",
-    "backend/crates/__APP__-domain/src/limits.rs",
-    "backend/crates/__APP__-ports/Cargo.toml",
-    "backend/crates/__APP__-services/Cargo.toml",
-    "backend/crates/__APP__-api/Cargo.toml",
-    "backend/crates/__APP__-postgres/Cargo.toml",
-    "backend/crates/__APP__-bin/Cargo.toml",
-];
-
-const EXPECTED_WORKER_FILES: &[&str] = &[
-    "backend/crates/__APP__-worker/Cargo.toml",
-    "backend/crates/__APP__-worker/src/lib.rs",
-    "backend/crates/__APP__-bin/src/bin/worker.rs",
-    "backend/tests/worker_integration.rs",
 ];
 
 const EXPECTED_COMMON_FILES: &[&str] = &[
@@ -108,7 +94,6 @@ const EXPECTED_MOBILE_FILES: &[&str] = &[
     "mobile/src/action-button.tsx",
     "mobile/src/app-shell.tsx",
     "mobile/src/api.ts",
-    "mobile/src/analytics.ts",
     "mobile/src/back-or-replace.ts",
     "mobile/src/back-or-replace.test.ts",
     "mobile/src/localization/catalogs.test.ts",
@@ -133,7 +118,6 @@ const EXPECTED_WEB_FILES: &[&str] = &[
     "web/vitest.config.ts",
     "web/src/App.tsx",
     "web/src/api.ts",
-    "web/src/analytics.ts",
     "web/src/limits.ts",
     "web/src/limits.test.ts",
     "web/src/tokens.css",
@@ -155,31 +139,6 @@ const EXPECTED_WEB_FILES: &[&str] = &[
     "web/e2e/tests/qa-console.spec.ts",
 ];
 
-const EXPECTED_AUTH_BACKEND_FILES: &[&str] = &[
-    "keycloak/realm.json",
-    "backend/tests/auth_conformance.rs",
-    "scripts/pkce-login.py",
-];
-
-const EXPECTED_KEYCLOAK_REALM_TOOL_FILES: &[&str] = &[
-    "keycloak/CHANGELOG.md",
-    "keycloak/realm-policy.json",
-    "keycloak/reconcile.json",
-    "scripts/keycloak_policy.py",
-    "scripts/reconcile_keycloak.py",
-    "scripts/tests/test_keycloak_policy.py",
-    "scripts/tests/test_reconcile_keycloak.py",
-];
-
-const EXPECTED_AUTH_MOBILE_FILES: &[&str] = &[
-    "mobile/app/(auth)/_layout.tsx",
-    "mobile/app/(auth)/sign-in.tsx",
-    "mobile/src/auth.ts",
-    "mobile/src/auth.test.ts",
-    "mobile/src/local-data.ts",
-    "mobile/src/persistence-lifecycle.ts",
-];
-
 const EXPECTED_AUTH_WEB_FILES: &[&str] = &[
     "web/src/auth.ts",
     "web/src/auth.test.ts",
@@ -189,7 +148,6 @@ const EXPECTED_AUTH_WEB_FILES: &[&str] = &[
 
 const EXPECTED_TYPESCRIPT_DEPENDENCIES: &[&str] = &[
     "@baukit/a11y-core",
-    "@baukit/analytics-core",
     "@baukit/api-runtime",
     "@baukit/data-contracts",
     "@baukit/navigation",
@@ -292,6 +250,8 @@ pub struct Manifest {
     pub capabilities: Capabilities,
     pub dependencies: Dependencies,
     pub openapi: OpenApiPaths,
+    #[serde(default, skip_serializing_if = "DoctorPaths::is_empty")]
+    pub doctor: DoctorPaths,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -890,6 +850,7 @@ fn render_leading_entries(entries: &str) -> String {
 
 fn typescript_packages(mobile: bool, mobile_auth: bool, web_auth: bool) -> Vec<&'static str> {
     let mut packages = EXPECTED_TYPESCRIPT_DEPENDENCIES.to_vec();
+    packages.insert(1, "@baukit/analytics-core");
     if mobile {
         packages.extend(EXPECTED_MOBILE_TYPESCRIPT_DEPENDENCIES);
         packages.push("@baukit/analytics-posthog-native");
@@ -1269,6 +1230,7 @@ fn is_socket(_path: &Path) -> bool {
 
 fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
     let manifest = read_manifest(root)?;
+    doctor_layout::validate_paths(root, &manifest)?;
     let mut failures = Vec::new();
     let mut successes = Vec::new();
     for relative in EXPECTED_COMMON_FILES {
@@ -1375,28 +1337,24 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
                 failures.push(format!("missing expected backend file `{relative}`"));
             }
         }
-        validate_migrations(root, &mut successes, &mut failures)?;
+        doctor_layout::validate_backend_wiring(root, &manifest, &mut successes, &mut failures)?;
+        validate_migrations(root, &manifest, &mut successes, &mut failures)?;
         if manifest.capabilities.worker {
-            validate_jobs_migration(root, &mut successes, &mut failures)?;
-            for expected in EXPECTED_WORKER_FILES {
-                let relative = expected.replace("__APP__", &manifest.app.name);
-                if !root.join(&relative).is_file() {
-                    failures.push(format!("missing expected worker file `{relative}`"));
-                }
-            }
+            validate_jobs_migration(root, &manifest, &mut successes, &mut failures)?;
         }
         if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
-            for relative in EXPECTED_AUTH_BACKEND_FILES {
-                if !root.join(relative).is_file() {
-                    failures.push(format!("missing expected OIDC backend file `{relative}`"));
-                }
-            }
-            validate_keycloak_realm_tools(root, host, &mut successes, &mut failures);
+            doctor_layout::validate_keycloak_realm_tools(
+                root,
+                &manifest,
+                host,
+                &mut successes,
+                &mut failures,
+            )?;
         }
         if let Some(mcp) = &manifest.capabilities.mcp {
             validate_mcp_capability(root, &manifest.openapi, mcp, &mut successes, &mut failures)?;
         }
-        let cargo = root.join("backend/Cargo.toml");
+        let cargo = doctor_layout::backend_manifest(root, &manifest)?;
         if cargo.is_file() {
             let args = vec![
                 "metadata".to_owned(),
@@ -1434,6 +1392,9 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
             "react-native-worklets",
         ];
         dependencies.extend(EXPECTED_MOBILE_TYPESCRIPT_DEPENDENCIES);
+        if manifest.capabilities.analytics != AnalyticsAdapter::None {
+            dependencies.push("@baukit/analytics-core");
+        }
         if manifest.capabilities.analytics == AnalyticsAdapter::Posthog {
             dependencies.push("@baukit/analytics-posthog-native");
         }
@@ -1443,29 +1404,28 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
         validate_frontend_capability(
             root,
             "mobile",
-            EXPECTED_MOBILE_FILES,
+            &frontend_files(EXPECTED_MOBILE_FILES, "mobile", &manifest),
             &dependencies,
             &mut successes,
             &mut failures,
         )?;
         validate_mobile_router_configuration(root, &mut successes, &mut failures)?;
         if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
-            for relative in EXPECTED_AUTH_MOBILE_FILES {
-                if !root.join(relative).is_file() {
-                    failures.push(format!("missing expected OIDC mobile file `{relative}`"));
-                }
-            }
+            doctor_layout::validate_mobile_auth_wiring(root, &manifest, &mut failures)?;
         }
     }
     if manifest.capabilities.web {
         let mut dependencies = vec!["@tanstack/react-query", "vite"];
+        if manifest.capabilities.analytics != AnalyticsAdapter::None {
+            dependencies.push("@baukit/analytics-core");
+        }
         if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
             dependencies.extend(EXPECTED_WEB_AUTH_DEPENDENCIES);
         }
         validate_frontend_capability(
             root,
             "web",
-            EXPECTED_WEB_FILES,
+            &frontend_files(EXPECTED_WEB_FILES, "web", &manifest),
             &dependencies,
             &mut successes,
             &mut failures,
@@ -1571,49 +1531,6 @@ fn validate_markdown_link_check_files(
     }
     if complete {
         successes.push("strict Markdown link check scripts are present".to_owned());
-    }
-}
-
-fn validate_keycloak_realm_tools(
-    root: &Path,
-    host: &dyn DoctorHost,
-    successes: &mut Vec<String>,
-    failures: &mut Vec<String>,
-) {
-    let mut complete = true;
-    for relative in EXPECTED_KEYCLOAK_REALM_TOOL_FILES {
-        if !root.join(relative).is_file() {
-            failures.push(format!(
-                "missing expected Keycloak realm tool file `{relative}`"
-            ));
-            complete = false;
-        }
-    }
-    if !complete {
-        return;
-    }
-    for (label, arguments) in [
-        (
-            "Keycloak development realm policy",
-            vec![
-                "scripts/keycloak_policy.py".to_owned(),
-                "--environment-class".to_owned(),
-                "development".to_owned(),
-            ],
-        ),
-        (
-            "Keycloak reconciliation inputs",
-            vec![
-                "scripts/reconcile_keycloak.py".to_owned(),
-                "--check".to_owned(),
-            ],
-        ),
-    ] {
-        match host.run_command("python3", &arguments, Some(root)) {
-            Ok(output) if output.success => successes.push(format!("{label} passed")),
-            Ok(output) => failures.push(format!("{label} failed: {}", output.stderr)),
-            Err(error) => failures.push(format!("could not run {label}: {error}")),
-        }
     }
 }
 
@@ -1809,22 +1726,16 @@ fn validate_port_configuration(
                 ),
             ),
         ]);
+        if doctor_layout::uses_redis(root, manifest)? {
+            expected.push((
+                "Makefile",
+                format!("REDIS_URL=redis://127.0.0.1:{redis_port}/"),
+            ));
+        }
         if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
             expected.extend([
-                (
-                    "Makefile",
-                    format!("REDIS_URL=redis://127.0.0.1:{redis_port}/"),
-                ),
                 ("Makefile", format!("localhost:{}/realms/", ports.keycloak)),
                 ("scripts/pkce-login.py", format!("localhost:{}", ports.api)),
-                (
-                    "backend/crates/PLACEHOLDER-bin/src/lib.rs",
-                    format!("localhost:{}/realms/", ports.keycloak),
-                ),
-                (
-                    "backend/crates/PLACEHOLDER-bin/src/lib.rs",
-                    format!("localhost:{}", ports.keycloak),
-                ),
             ]);
         }
     }
@@ -1896,6 +1807,27 @@ fn validate_port_configuration(
             ));
         }
     }
+    let mut expected = expected
+        .into_iter()
+        .map(|(path, snippet)| (path.to_owned(), snippet))
+        .collect::<Vec<_>>();
+    if manifest.capabilities.backend && manifest.capabilities.auth == Some(AuthProvider::Oidc) {
+        for krate in doctor_layout::rust_crates(root, manifest)? {
+            for path in krate.sources {
+                let source = fs::read_to_string(&path)?;
+                let relative = path.strip_prefix(root)?.to_string_lossy().into_owned();
+                if source.contains("identity_admin_realm:") {
+                    expected.push((
+                        relative.clone(),
+                        format!("localhost:{}/realms/", ports.keycloak),
+                    ));
+                }
+                if source.contains("identity_admin_base_url:") {
+                    expected.push((relative, format!("localhost:{}", ports.keycloak)));
+                }
+            }
+        }
+    }
     for (relative, snippet) in expected {
         let relative = relative.replace("PLACEHOLDER", &manifest.app.name);
         let path = root.join(&relative);
@@ -1908,12 +1840,13 @@ fn validate_port_configuration(
         } else {
             source
         };
-        let mismatched = if is_environment_capable_source(&relative)
+        let mismatched = if relative.ends_with(".rs")
+            || is_environment_capable_source(&relative)
             || (relative == "Makefile" && snippet.contains("/realms/"))
         {
             let expected_port = localhost_port(&snippet).expect("expected snippet has a port");
             let source = source.replace("${KEYCLOAK_PORT}", &ports.keycloak.to_string());
-            let source = if relative.ends_with("-bin/src/lib.rs") && !snippet.contains("/realms/") {
+            let source = if relative.ends_with(".rs") && !snippet.contains("/realms/") {
                 source
                     .split("identity_admin_base_url:")
                     .skip(1)
@@ -2066,10 +1999,10 @@ fn validate_compose_ports(
         .context("could not parse compose.yaml")?;
     let mut mappings = vec![("postgres", 5432, ports.postgres)];
     if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
-        mappings.extend([
-            ("keycloak", 8080, ports.keycloak),
-            ("redis", 6379, ports.redis),
-        ]);
+        mappings.push(("keycloak", 8080, ports.keycloak));
+    }
+    if doctor_layout::uses_redis(root, manifest)? {
+        mappings.push(("redis", 6379, ports.redis));
     }
     for (name, mapping) in &manifest.ports {
         let default_service = match name.as_str() {
@@ -2482,12 +2415,16 @@ fn validate_mcp_capability(
 
 fn validate_migrations(
     root: &Path,
+    manifest: &Manifest,
     successes: &mut Vec<String>,
     failures: &mut Vec<String>,
 ) -> Result<()> {
-    let directory = root.join("backend/migrations");
+    let directory = doctor_layout::migrations(root, manifest)?;
     if !directory.is_dir() {
-        failures.push("missing backend migration directory `backend/migrations`".to_owned());
+        failures.push(format!(
+            "missing backend migration directory `{}`",
+            directory.strip_prefix(root)?.display()
+        ));
         return Ok(());
     }
     let mut migrations = Vec::new();
@@ -2513,10 +2450,11 @@ fn validate_migrations(
 
 fn validate_jobs_migration(
     root: &Path,
+    manifest: &Manifest,
     successes: &mut Vec<String>,
     failures: &mut Vec<String>,
 ) -> Result<()> {
-    let directory = root.join("backend/migrations");
+    let directory = doctor_layout::migrations(root, manifest)?;
     if !directory.is_dir() {
         return Ok(());
     }
@@ -2632,6 +2570,22 @@ fn validate_pnpm_workspace(
         ));
     }
     Ok(())
+}
+
+fn frontend_files<'a>(
+    expected: &'a [&'a str],
+    capability: &str,
+    manifest: &Manifest,
+) -> Vec<&'a str> {
+    let mut files = expected.to_vec();
+    if manifest.capabilities.analytics != AnalyticsAdapter::None {
+        files.push(if capability == "mobile" {
+            "mobile/src/analytics.ts"
+        } else {
+            "web/src/analytics.ts"
+        });
+    }
+    files
 }
 
 fn validate_frontend_capability(

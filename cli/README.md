@@ -41,9 +41,10 @@ patterns.
 `capabilities.analytics` selects the mobile analytics adapter. It accepts
 `"posthog"` or `"none"`. Generated manifests select `"posthog"`; older
 manifests without this setting do not select an adapter. Set it to `"none"`
-when the mobile app uses `NoopTransport`. Doctor requires
+when the product does not collect analytics. Doctor requires
 `@baukit/analytics-posthog-native`
-only for `"posthog"`. The web template uses `NoopTransport` and has no required
+only for `"posthog"`. With `"none"`, it requires neither analytics files nor
+`@baukit/analytics-core`. The web template uses `NoopTransport` and has no required
 PostHog adapter. Auth adapters follow `capabilities.auth`; the Expo SQLite
 adapter remains required by the generated mobile record store.
 
@@ -93,3 +94,67 @@ and `WRITE_TOOLS` metadata, or `READ_TOOL_NAMES` and `WRITE_TOOL_NAMES` catalogs
 The shared helper `mcp/src/tools/registry.ts` is a template implementation
 choice. A product can move its types and result helpers if it updates its own
 imports and keeps its tool docs, route checks, and server tests passing.
+
+## Doctor paths for existing products
+
+Doctor reads the Cargo workspace declared by the product. It scans those crates
+for limits, worker and authentication wiring, including their declared test
+and binary targets. Crate names do not need to match `app.name`. Mobile auth
+checks use source symbols, so files can move or have product-owned names.
+Doctor does not require a Keycloak guidance filename.
+
+Paths below are optional and relative to the product root. They cannot contain
+`..`. `backend_manifest` defaults to `backend/Cargo.toml`; `migrations` defaults
+to `backend/migrations`. Dockerfile and .dockerignore default to the backend
+manifest directory. Keycloak inputs and tools are discovered by their
+content. Doctor reports ambiguous inputs instead of choosing one.
+
+```toml
+[doctor]
+backend_manifest = "backend/Cargo.toml"
+backend_dockerfile = "backend/Dockerfile"
+backend_dockerignore = "backend/.dockerignore"
+migrations = "database/migrations"
+keycloak_realm = "docker/keycloak/realm-export.json"
+keycloak_policy = "docker/keycloak/realm-policy.json"
+keycloak_reconcile = "docker/keycloak/reconcile.json"
+keycloak_policy_tool = "tools/keycloak_policy.py"
+keycloak_reconcile_tool = "tools/reconcile_keycloak.py"
+
+[doctor.sources]
+backend_limits = "backend/crates/sl-domain/src/policy.rs"
+worker_entry = "backend/crates/sl-bin/src/bin/jobs.rs"
+worker_tests = "backend/crates/sl-bin/tests/jobs.rs"
+auth_tests = "backend/crates/sl-api/tests/oidc.rs"
+pkce_login = "tools/login.py"
+mobile_sign_in = "mobile/app/(auth)/login.tsx"
+mobile_auth = "mobile/src/services/session.ts"
+mobile_auth_tests = "mobile/src/services/session.test.ts"
+mobile_local_data = "mobile/src/storage/partition.ts"
+mobile_persistence = "mobile/src/storage/identity.ts"
+keycloak_policy_tests = "tools/tests/policy_test.py"
+keycloak_reconcile_tests = "tools/tests/reconcile_test.py"
+```
+
+A source override limits the check to that file. The file must still contain
+the checked wiring; an existing empty file does not pass. Without an override,
+Doctor looks for these symbols:
+
+| Source key | Required content |
+| --- | --- |
+| `backend_limits` | A shared limits check such as `check_measurement` |
+| `worker_entry` | A `main` function using `ProcessKind::Worker` |
+| `worker_tests` | `WorkerRunner` or a PostgreSQL test database fixture |
+| `auth_tests` | `check_auth_router_conformance` or `MockOidcServer` |
+| `pkce_login` | `code_challenge` and `S256` |
+| `mobile_sign_in` | `signIn`, `signInWithOidc` or `login` in an app route |
+| `mobile_auth` | `createExpoOidcClient`, `createNativeOidcClient` or `NativeOidcClient` |
+| `mobile_auth_tests` | `signIn` or `signInWithOidc` in a test |
+| `mobile_local_data` | `ScopedPersistenceRegistryStore` |
+| `mobile_persistence` | `ScopedPersistenceLifecycle` |
+| `keycloak_policy_tests` | unittest coverage of `validate_realm` |
+| `keycloak_reconcile_tests` | unittest coverage of `load_reconcile_config` |
+
+Doctor requires the local Redis URL when backend source uses a Redis-backed
+adapter. OIDC alone does not require Redis. PostgreSQL-backed rate limiting can
+omit that URL.

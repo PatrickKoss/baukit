@@ -51,7 +51,7 @@ if [ -f "$repository_root/web/package.json" ] && grep -Eq '"(@playwright/test|pl
 fi
 
 if [ "$has_playwright" = "true" ]; then
-  PLAYWRIGHT_BROWSERS_PATH="$repository_root/web/node_modules/.cache/playwright-browsers"
+  PLAYWRIGHT_BROWSERS_PATH="$repository_root/web/.playwright-browsers"
   export PLAYWRIGHT_BROWSERS_PATH
   if ! command -v corepack >/dev/null 2>&1; then
     echo 'preflight: Playwright requires current Node.js LTS with corepack.' >&2

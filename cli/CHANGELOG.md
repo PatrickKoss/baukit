@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Find backend, worker, OIDC and mobile auth wiring in declared Cargo packages and source files. Add doctor path overrides for custom layouts and discover moved Keycloak inputs.
+- Respect analytics = "none" without requiring analytics files or analytics-core.
+- Require a Redis URL only when backend source uses a Redis-backed feature.
+- Scan consumed identities in declared crates, including short names such as sl-bin.
 - Stop requiring the optional web Keycloak test helper dependency in doctor. Keep its browser runtime restriction.
 - Confirm doctor accepts declared Redis ports and `/v1/me` identity checks. Confirm generated Jest types match Jest 29.
 - Test pinned Android tools, AVD image changes, bounded ADB probes, and coverage output with an external Cargo target.

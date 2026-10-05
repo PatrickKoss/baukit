@@ -1376,7 +1376,8 @@ case "$*" in
     [ -f "$BAUKIT_TEST_PLAYWRIGHT_MARKER" ]
     ;;
   *"exec playwright install chromium webkit"*)
-    printf '%s\n' "$PLAYWRIGHT_BROWSERS_PATH" >"$BAUKIT_TEST_INSTALL_LOG"
+    printf '%s\n' "$PLAYWRIGHT_BROWSERS_PATH" >>"$BAUKIT_TEST_INSTALL_LOG"
+    mkdir -p "$PLAYWRIGHT_BROWSERS_PATH"
     : >"$BAUKIT_TEST_PLAYWRIGHT_MARKER"
     ;;
   *) exit 2 ;;
@@ -1387,7 +1388,7 @@ esac
         &fake_bin.join("record-playwright-cache"),
         "#!/bin/sh\nprintf '%s\\n' \"$PLAYWRIGHT_BROWSERS_PATH\" >\"$BAUKIT_TEST_RUN_LOG\"\n",
     )?;
-    let marker = parent.path().join("browser-installed");
+    let marker = root.join("web/.playwright-browsers/browser-installed");
     let install_log = parent.path().join("install-cache");
     let run_log = parent.path().join("run-cache");
     let path = format!(
@@ -1395,29 +1396,34 @@ esac
         fake_bin.display(),
         env::var("PATH").unwrap_or_default()
     );
-    let result = Command::new("sh")
-        .args(["scripts/preflight.sh", "--", "record-playwright-cache"])
-        .current_dir(&root)
-        .env("PATH", path)
-        .env("BAUKIT_PREBUILT_IMAGES", "true")
-        .env(
-            "BAUKIT_TEST_PLAYWRIGHT_MODULE",
-            root.join("web/node_modules/@playwright/test"),
-        )
-        .env("BAUKIT_TEST_PLAYWRIGHT_MARKER", marker)
-        .env("BAUKIT_TEST_INSTALL_LOG", &install_log)
-        .env("BAUKIT_TEST_RUN_LOG", &run_log)
-        .output()?;
-    assert!(
-        result.status.success(),
-        "{}",
-        String::from_utf8_lossy(&result.stderr)
-    );
-    let expected_cache = format!(
-        "{}\n",
-        root.join("web/node_modules/.cache/playwright-browsers")
-            .display()
-    );
+    for run in 0..2 {
+        if run == 1 {
+            fs::remove_dir_all(root.join("web/node_modules"))?;
+            assert!(
+                marker.is_file(),
+                "dependency reinstalls must preserve the browser cache"
+            );
+        }
+        let result = Command::new("sh")
+            .args(["scripts/preflight.sh", "--", "record-playwright-cache"])
+            .current_dir(&root)
+            .env("PATH", &path)
+            .env("BAUKIT_PREBUILT_IMAGES", "true")
+            .env(
+                "BAUKIT_TEST_PLAYWRIGHT_MODULE",
+                root.join("web/node_modules/@playwright/test"),
+            )
+            .env("BAUKIT_TEST_PLAYWRIGHT_MARKER", &marker)
+            .env("BAUKIT_TEST_INSTALL_LOG", &install_log)
+            .env("BAUKIT_TEST_RUN_LOG", &run_log)
+            .output()?;
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+    let expected_cache = format!("{}\n", root.join("web/.playwright-browsers").display());
     assert_eq!(fs::read_to_string(install_log)?, expected_cache);
     assert_eq!(fs::read_to_string(run_log)?, expected_cache);
     Ok(())
@@ -1830,7 +1836,16 @@ fn doctor_accepts_variable_url_configuration_and_formatted_constants() -> anyhow
             "export const issuer = process.env.PRODUCT_OIDC_ISSUER;",
         ),
     ] {
-        fs::write(root.join(relative), source)?;
+        let path = root.join(relative);
+        let source = if relative == "mobile/src/auth.ts" {
+            fs::read_to_string(&path)?.replace(
+                "http://localhost:8181/realms/long-product-name-fixture",
+                "${OIDC_ISSUER}",
+            )
+        } else {
+            source.to_owned()
+        };
+        fs::write(path, source)?;
     }
     doctor(&root)?;
     Ok(())
@@ -3403,5 +3418,476 @@ fn doctor_ignores_identity_examples_in_comments_and_strings() -> anyhow::Result<
         fs::write(&path, format!("{examples}{original}"))?;
         doctor(&root)?;
     }
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_renamed_crates_and_relocated_wiring() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "layout-product");
+    local.worker = true;
+    local.mobile = true;
+    local.auth = Some(AuthProvider::Oidc);
+    local.port_offset = 100;
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    doctor(&root)?;
+    for (relative, _) in read_tree(&root)? {
+        let relative = relative.to_str().expect("generated paths use UTF-8");
+        let path = root.join(relative);
+        if matches!(
+            path.extension().and_then(|value| value.to_str()),
+            Some("rs" | "toml")
+        ) {
+            let source = fs::read_to_string(&path)?;
+            fs::write(
+                path,
+                source
+                    .replace("layout-product-", "sl-")
+                    .replace("layout_product_", "sl_"),
+            )?;
+        }
+    }
+    for role in [
+        "domain", "ports", "services", "api", "postgres", "bin", "worker",
+    ] {
+        fs::rename(
+            root.join(format!("backend/crates/layout-product-{role}")),
+            root.join(format!("backend/crates/sl-{role}")),
+        )?;
+    }
+    let bin = root.join("backend/crates/sl-bin");
+    fs::rename(root.join("backend/tests"), bin.join("verification"))?;
+    let cargo = bin.join("Cargo.toml");
+    fs::write(
+        &cargo,
+        fs::read_to_string(&cargo)?
+            .replace("../../tests/", "verification/")
+            .replace("src/bin/worker.rs", "src/bin/jobs.rs"),
+    )?;
+    fs::rename(bin.join("src/bin/worker.rs"), bin.join("src/bin/jobs.rs"))?;
+    let domain = root.join("backend/crates/sl-domain/src");
+    fs::rename(domain.join("limits.rs"), domain.join("policy.rs"))?;
+    let lib = domain.join("lib.rs");
+    fs::write(
+        &lib,
+        fs::read_to_string(&lib)?
+            .replace("mod limits;", "mod policy;")
+            .replace("use limits::", "use policy::"),
+    )?;
+    for (old, new) in [
+        ("auth", "session"),
+        ("local-data", "partition"),
+        ("persistence-lifecycle", "identity-storage"),
+    ] {
+        fs::rename(
+            root.join(format!("mobile/src/{old}.ts")),
+            root.join(format!("mobile/src/{new}.ts")),
+        )?;
+        let test = root.join(format!("mobile/src/{old}.test.ts"));
+        if test.is_file() {
+            fs::rename(test, root.join(format!("mobile/src/{new}.test.ts")))?;
+        }
+        for (relative, _) in read_tree(&root)? {
+            let relative = relative.to_str().expect("generated paths use UTF-8");
+            if !relative.starts_with("mobile/")
+                || !matches!(
+                    Path::new(&relative)
+                        .extension()
+                        .and_then(|value| value.to_str()),
+                    Some("ts" | "tsx")
+                )
+            {
+                continue;
+            }
+            let path = root.join(relative);
+            let source = fs::read_to_string(&path)?;
+            fs::write(
+                path,
+                source
+                    .replace(&format!("/{old}'"), &format!("/{new}'"))
+                    .replace(&format!("/{old}\""), &format!("/{new}\"")),
+            )?;
+        }
+    }
+    fs::rename(
+        root.join("mobile/app/(auth)/sign-in.tsx"),
+        root.join("mobile/app/(auth)/login.tsx"),
+    )?;
+    let login = root.join("mobile/app/(auth)/login.tsx");
+    fs::write(
+        &login,
+        fs::read_to_string(&login)?
+            .replace("{ useOidcAuth }", "{ useOidcAuth, useLogin }")
+            .replace(
+                "const auth = useOidcAuth();",
+                "const auth = useOidcAuth();\n  const login = useLogin();",
+            )
+            .replace("auth.signIn(mode)", "login(mode)"),
+    )?;
+    let session = root.join("mobile/src/session.ts");
+    fs::write(
+        &session,
+        format!("{}\nexport function useLogin() {{ return useOidcAuth().signIn; }}\n", fs::read_to_string(&session)?)
+            .replace("createExpoOidcClient }", "createExpoOidcEnvironment }")
+            .replace("  appearanceStateDecoration,", "  NativeOidcClient,\n  appearanceStateDecoration,")
+            .replace("authClient = createExpoOidcClient(", "authClient = new NativeOidcClient(")
+            .replace(
+                "  {\n    randomBytes: (size) => Crypto.getRandomBytesAsync(size),\n    storage: authStorage,\n  },",
+                "  createExpoOidcEnvironment({\n    randomBytes: (size) => Crypto.getRandomBytesAsync(size),\n    storage: authStorage,\n  }),",
+            ),
+    )?;
+    fs::create_dir(root.join("docker"))?;
+    fs::rename(root.join("keycloak"), root.join("docker/keycloak"))?;
+    fs::rename(
+        root.join("docker/keycloak/realm.json"),
+        root.join("docker/keycloak/export.json"),
+    )?;
+    fs::remove_file(root.join("docker/keycloak/CHANGELOG.md"))?;
+    fs::create_dir(root.join("tools"))?;
+    fs::rename(
+        root.join("scripts/pkce-login.py"),
+        root.join("tools/login.py"),
+    )?;
+    for script in ["keycloak_policy.py", "reconcile_keycloak.py"] {
+        fs::rename(
+            root.join("scripts").join(script),
+            root.join("tools").join(script),
+        )?;
+    }
+    fs::create_dir(root.join("database"))?;
+    fs::rename(
+        root.join("backend/migrations"),
+        root.join("database/schema"),
+    )?;
+    let manifest = root.join("baukit.toml");
+    fs::write(
+        &manifest,
+        format!(
+            "{}\n[doctor]\nmigrations = \"database/schema\"\n",
+            fs::read_to_string(&manifest)?
+        ),
+    )?;
+    doctor(&root)?;
+
+    let api = bin.join("src/bin/api.rs");
+    let source = fs::read_to_string(&api)?;
+    fs::write(
+        &api,
+        source.replace("\"layout-product\"", "\"wrong-product\""),
+    )?;
+    let error = doctor(&root)
+        .expect_err("short crate names must not hide identity drift")
+        .to_string();
+    assert!(
+        error.contains("backend/crates/sl-bin/src/bin/api.rs"),
+        "{error}"
+    );
+    assert!(error.contains("does not match application name"), "{error}");
+    fs::write(api, source)?;
+    let policy = root.join("docker/keycloak/realm-policy.json");
+    fs::copy(&policy, root.join("docker/other-policy.json"))?;
+    assert!(
+        doctor(&root)
+            .expect_err("ambiguous policy needs a declaration")
+            .to_string()
+            .contains("multiple Keycloak policy files")
+    );
+    fs::write(
+        &manifest,
+        fs::read_to_string(&manifest)?.replace(
+            "[doctor]\n",
+            "[doctor]\nkeycloak_policy = \"docker/keycloak/realm-policy.json\"\n",
+        ),
+    )?;
+    doctor(&root)?;
+    fs::write(
+        &manifest,
+        fs::read_to_string(&manifest)?
+            .replace("docker/keycloak/realm-policy.json", "docker/missing.json"),
+    )?;
+    assert!(
+        doctor(&root)
+            .expect_err("declared missing files must stay findings")
+            .to_string()
+            .contains("missing Keycloak policy file `docker/missing.json`")
+    );
+    Ok(())
+}
+
+#[test]
+fn doctor_checks_declared_backend_paths_and_source_contents() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "custom-paths");
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    fs::rename(root.join("backend"), root.join("server"))?;
+    fs::create_dir(root.join("build"))?;
+    fs::rename(
+        root.join("server/Dockerfile"),
+        root.join("build/backend.Dockerfile"),
+    )?;
+    fs::rename(
+        root.join("server/.dockerignore"),
+        root.join("build/backend.dockerignore"),
+    )?;
+    let mut manifest = baukit_cli::read_manifest(&root)?;
+    manifest.openapi.schema = manifest.openapi.schema.replace("backend/", "server/");
+    manifest.doctor.backend_manifest = Some("server/Cargo.toml".to_owned());
+    manifest.doctor.backend_dockerfile = Some("build/backend.Dockerfile".to_owned());
+    manifest.doctor.backend_dockerignore = Some("build/backend.dockerignore".to_owned());
+    manifest.doctor.migrations = Some("server/migrations".to_owned());
+    let limits = "server/crates/custom-paths-domain/src/limits.rs";
+    manifest
+        .doctor
+        .sources
+        .insert("backend_limits".to_owned(), limits.to_owned());
+    let path = root.join("baukit.toml");
+    fs::write(&path, toml::to_string(&manifest)?)?;
+    doctor(&root)?;
+    let source = fs::read_to_string(root.join(limits))?;
+    fs::write(root.join(limits), "// check_measurement is not wired\n")?;
+    assert!(
+        doctor(&root)
+            .expect_err("comments do not establish wiring")
+            .to_string()
+            .contains("missing backend_limits wiring")
+    );
+    fs::write(root.join(limits), source)?;
+    for invalid in ["../Cargo.toml", "/tmp/Cargo.toml"] {
+        manifest.doctor.backend_manifest = Some(invalid.to_owned());
+        fs::write(&path, toml::to_string(&manifest)?)?;
+        assert!(
+            doctor(&root)
+                .expect_err("doctor paths stay within the product")
+                .to_string()
+                .contains("must be relative to the product root")
+        );
+    }
+    manifest.doctor.backend_manifest = Some("server/Cargo.toml".to_owned());
+    manifest
+        .doctor
+        .sources
+        .insert("limits_typo".to_owned(), limits.to_owned());
+    fs::write(&path, toml::to_string(&manifest)?)?;
+    assert!(
+        doctor(&root)
+            .expect_err("unknown source keys must not disable a check")
+            .to_string()
+            .contains("unknown doctor.sources key `limits_typo`")
+    );
+    Ok(())
+}
+
+#[test]
+fn doctor_reports_missing_wiring_instead_of_template_filenames() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "missing-wiring");
+    local.worker = true;
+    local.mobile = true;
+    local.auth = Some(AuthProvider::Oidc);
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    doctor(&root)?;
+    for (relative, finding) in [
+        (
+            "backend/Dockerfile",
+            "missing expected backend file `backend/Dockerfile`",
+        ),
+        (
+            "backend/.dockerignore",
+            "missing expected backend file `backend/.dockerignore`",
+        ),
+        (
+            "backend/crates/missing-wiring-domain/src/limits.rs",
+            "missing backend_limits wiring",
+        ),
+        (
+            "backend/crates/missing-wiring-bin/src/bin/worker.rs",
+            "missing worker_entry wiring",
+        ),
+        ("scripts/pkce-login.py", "missing pkce_login wiring"),
+        ("keycloak/realm.json", "missing Keycloak realm;"),
+        ("keycloak/realm-policy.json", "missing Keycloak policy;"),
+        (
+            "keycloak/reconcile.json",
+            "missing Keycloak reconciliation config;",
+        ),
+        (
+            "scripts/keycloak_policy.py",
+            "missing Keycloak tool `keycloak_policy.py`",
+        ),
+        (
+            "scripts/reconcile_keycloak.py",
+            "missing Keycloak tool `reconcile_keycloak.py`",
+        ),
+        (
+            "scripts/tests/test_reconcile_keycloak.py",
+            "missing keycloak_reconcile_tests wiring",
+        ),
+        (
+            "mobile/app/(auth)/sign-in.tsx",
+            "missing mobile_sign_in wiring",
+        ),
+        ("mobile/src/auth.ts", "missing mobile_auth wiring"),
+        (
+            "mobile/src/local-data.ts",
+            "missing mobile_local_data wiring",
+        ),
+        (
+            "mobile/src/persistence-lifecycle.ts",
+            "missing mobile_persistence wiring",
+        ),
+    ] {
+        let path = root.join(relative);
+        let source = fs::read_to_string(&path)?;
+        fs::remove_file(&path)?;
+        let error = doctor(&root).expect_err(finding).to_string();
+        assert!(error.contains(finding), "{relative}: {error}");
+        fs::write(path, source)?;
+    }
+    for (directory, extension, markers, finding) in [
+        (
+            "backend/tests",
+            "rs",
+            &["WorkerRunner"][..],
+            "missing worker_tests wiring",
+        ),
+        (
+            "backend/tests",
+            "rs",
+            &["MockOidcServer", "check_auth_router_conformance"][..],
+            "missing auth_tests wiring",
+        ),
+        (
+            "mobile/src",
+            "ts",
+            &["signIn", "signInWithOidc"][..],
+            "missing mobile_auth_tests wiring",
+        ),
+        (
+            "scripts/tests",
+            "py",
+            &["validate_realm"][..],
+            "missing keycloak_policy_tests wiring",
+        ),
+    ] {
+        let mut removed = Vec::new();
+        for (relative, _) in read_tree(&root)? {
+            let relative = relative.to_str().expect("generated paths use UTF-8");
+            let path = root.join(relative);
+            if !relative.starts_with(directory)
+                || !path.extension().is_some_and(|value| {
+                    value == extension || (extension == "ts" && value == "tsx")
+                })
+            {
+                continue;
+            }
+            let source = fs::read_to_string(&path)?;
+            if markers.iter().any(|marker| source.contains(marker))
+                && (extension != "ts" || relative.contains(".test."))
+            {
+                fs::remove_file(&path)?;
+                removed.push((path, source));
+            }
+        }
+        assert!(!removed.is_empty());
+        let error = doctor(&root).expect_err(finding).to_string();
+        assert!(error.contains(finding), "{error}");
+        for (path, source) in removed {
+            fs::write(path, source)?;
+        }
+    }
+    let migration = root.join("backend/migrations/0003_baukit_jobs.sql");
+    fs::remove_file(&migration)?;
+    assert!(
+        doctor(&root)
+            .expect_err("missing durable jobs schema")
+            .to_string()
+            .contains("no backend migration creates the baukit-jobs `job_outbox` table")
+    );
+    Ok(())
+}
+
+#[test]
+fn doctor_analytics_none_does_not_require_analytics_code_or_dependencies() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = frontend_options(parent.path(), "no-analytics", true, true);
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    for app in ["mobile", "web"] {
+        fs::remove_file(root.join(app).join("src/analytics.ts"))?;
+        let path = root.join(app).join("package.json");
+        let mut package: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path)?)?;
+        let dependencies = package["dependencies"]
+            .as_object_mut()
+            .expect("dependencies");
+        dependencies.remove("@baukit/analytics-core");
+        dependencies.remove("@baukit/analytics-posthog-native");
+        fs::write(path, serde_json::to_string_pretty(&package)?)?;
+    }
+    let error = doctor(&root)
+        .expect_err("selected analytics must still be checked")
+        .to_string();
+    assert!(error.contains("mobile/src/analytics.ts"), "{error}");
+    assert!(error.contains("web/src/analytics.ts"), "{error}");
+    assert!(
+        error.contains("missing dependency `@baukit/analytics-core`"),
+        "{error}"
+    );
+    let manifest = root.join("baukit.toml");
+    fs::write(
+        &manifest,
+        fs::read_to_string(&manifest)?.replace("analytics = \"posthog\"", "analytics = \"none\""),
+    )?;
+    doctor(&root)?;
+    Ok(())
+}
+
+#[test]
+fn doctor_requires_redis_only_for_redis_backed_features() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "postgres-limits");
+    local.auth = Some(AuthProvider::Oidc);
+    local.port_offset = 100;
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    let makefile = root.join("Makefile");
+    let original = fs::read_to_string(&makefile)?;
+    fs::write(
+        &makefile,
+        original.replace("REDIS_URL=redis://127.0.0.1:6479/", ""),
+    )?;
+    assert!(
+        doctor(&root)
+            .expect_err("Redis rate limiting needs a URL")
+            .to_string()
+            .contains("generated file `Makefile` does not use port offset 100")
+    );
+    let api = root.join("backend/crates/postgres-limits-bin/src/bin/api.rs");
+    let source = fs::read_to_string(&api)?;
+    fs::write(
+        &api,
+        source.replace("RedisRateLimitStore", "PostgresRateLimitStore"),
+    )?;
+    doctor(&root)?;
+    fs::write(api, source)?;
+    fs::write(&makefile, original)?;
+    doctor(&root)?;
+    Ok(())
+}
+
+#[test]
+fn generated_preview_binds_the_ipv4_readiness_address() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = generate_new(&frontend_options(
+        parent.path(),
+        "preview-host",
+        false,
+        true,
+    ))?;
+    let config = fs::read_to_string(root.join("web/e2e/playwright.config.ts"))?;
+    assert!(config.contains("http://127.0.0.1:"));
+    assert!(config.contains("vite preview --host 127.0.0.1 --port"));
     Ok(())
 }

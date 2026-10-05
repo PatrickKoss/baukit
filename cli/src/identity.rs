@@ -29,7 +29,7 @@ fn sources(directory: &Path, extension: &str, output: &mut Vec<PathBuf>) -> Resu
     Ok(())
 }
 
-fn uncommented(source: &str, rust: bool) -> String {
+pub(super) fn uncommented(source: &str, rust: bool) -> String {
     let mut result = String::new();
     let mut chars = source.chars().peekable();
     while let Some(character) = chars.next() {
@@ -65,7 +65,7 @@ fn uncommented(source: &str, rust: bool) -> String {
     result
 }
 
-fn identity_code(source: &str, rust: bool) -> String {
+pub(super) fn identity_code(source: &str, rust: bool) -> String {
     let mut code = source.as_bytes().to_vec();
     let bytes = source.as_bytes();
     let mut index = 0;
@@ -339,74 +339,76 @@ fn rust_identity(
     if !manifest.capabilities.backend {
         return Ok((0, BTreeSet::new()));
     }
-    let directory = root.join(format!("backend/crates/{}-bin/src", manifest.app.name));
-    let mut paths = Vec::new();
-    sources(&directory, "rs", &mut paths)?;
+    let crates = crate::doctor_layout::rust_crates(root, manifest)?;
     let mut names = BTreeSet::new();
     let mut count = 0;
-    for path in paths {
-        let source = fs::read_to_string(&path)?;
-        let source = uncommented(source.split("#[cfg(test)]").next().unwrap_or(&source), true);
-        if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
-            for declaration in source.split("identity_admin_realm:").skip(1) {
-                if let Some(expression) = declaration
-                    .trim()
-                    .split([',', '\n'])
-                    .next()
-                    .and_then(|value| value.strip_suffix(".to_owned()"))
-                {
-                    check_identity(
-                        root,
-                        &path,
-                        &source,
-                        expression,
-                        Some(&manifest.app.name),
-                        &BTreeSet::new(),
-                        failures,
-                    )?;
-                }
-            }
-        }
-        for (index, _) in identity_code(&source, true).match_indices("ConfigLoader::new(") {
-            let call = &source[index + "ConfigLoader::new(".len()..];
-            let Some(expression) = call.split(',').next().map(str::trim) else {
-                continue;
-            };
-            count += 1;
-            let value = quoted_string(expression)
-                .or_else(|| identity_constant(&source, expression, true).and_then(quoted_string))
-                .map(str::to_owned);
-            let value = match value {
-                Some(value) => Some(value),
-                None => {
-                    let library = directory.join("lib.rs");
-                    let library_source = if library.is_file() {
-                        uncommented(&fs::read_to_string(library)?, true)
-                    } else {
-                        String::new()
-                    };
-                    let crate_name = format!("{}_bin", manifest.app.name.replace('-', "_"));
-                    if imports_rust_binding(&source, &crate_name, expression) {
-                        identity_constant(&library_source, expression, true)
-                            .and_then(quoted_string)
-                            .map(str::to_owned)
-                    } else {
-                        None
+    for krate in crates {
+        for path in krate.sources {
+            let source = fs::read_to_string(&path)?;
+            let source = uncommented(source.split("#[cfg(test)]").next().unwrap_or(&source), true);
+            if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
+                for declaration in source.split("identity_admin_realm:").skip(1) {
+                    if let Some(expression) = declaration
+                        .trim()
+                        .split([',', '\n'])
+                        .next()
+                        .and_then(|value| value.strip_suffix(".to_owned()"))
+                    {
+                        check_identity(
+                            root,
+                            &path,
+                            &source,
+                            expression,
+                            Some(&manifest.app.name),
+                            &BTreeSet::new(),
+                            failures,
+                        )?;
                     }
                 }
-            };
-            if let Some(value) = value {
-                if manifest.capabilities.auth == Some(AuthProvider::Oidc)
-                    && value != manifest.app.name
-                {
-                    failures.push(format!("product identity `{expression}` consumed by `{}` does not match application name `{}`", path.strip_prefix(root)?.display(), manifest.app.name));
+            }
+            for (index, _) in identity_code(&source, true).match_indices("ConfigLoader::new(") {
+                let call = &source[index + "ConfigLoader::new(".len()..];
+                let Some(expression) = call.split(',').next().map(str::trim) else {
+                    continue;
+                };
+                count += 1;
+                let value = quoted_string(expression)
+                    .or_else(|| {
+                        identity_constant(&source, expression, true).and_then(quoted_string)
+                    })
+                    .map(str::to_owned);
+                let value = match value {
+                    Some(value) => Some(value),
+                    None => {
+                        let library = &krate.library;
+                        let library_source = if library.is_file() {
+                            uncommented(&fs::read_to_string(library)?, true)
+                        } else {
+                            String::new()
+                        };
+                        let crate_name = krate.name.replace('-', "_");
+                        if imports_rust_binding(&source, &crate_name, expression) {
+                            identity_constant(&library_source, expression, true)
+                                .and_then(quoted_string)
+                                .map(str::to_owned)
+                        } else {
+                            None
+                        }
+                    }
+                };
+                if let Some(value) = value {
+                    if manifest.capabilities.auth == Some(AuthProvider::Oidc)
+                        && value != manifest.app.name
+                    {
+                        failures.push(format!("product identity `{expression}` consumed by `{}` does not match application name `{}`", path.strip_prefix(root)?.display(), manifest.app.name));
+                    }
+                    names.insert(value);
+                } else {
+                    failures.push(format!(
+                        "product identity `{expression}` consumed by `{}` has no literal source",
+                        path.strip_prefix(root)?.display()
+                    ));
                 }
-                names.insert(value);
-            } else {
-                failures.push(format!(
-                    "product identity `{expression}` consumed by `{}` has no literal source",
-                    path.strip_prefix(root)?.display()
-                ));
             }
         }
     }
