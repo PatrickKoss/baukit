@@ -4,6 +4,9 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+- Use testcontainers 0.28 for Docker fixtures. Replace the modules dependency with GenericImage definitions because the latest published modules still require 0.27. Keep the PostgreSQL and Redis readiness checks.
+- Wait for both initial serializable transactions to finish in the live-row-cap race test before retrying the rejected transaction.
+
 ## [0.7.2] - 2026-10-04
 
 ## [0.7.1] - 2026-10-04

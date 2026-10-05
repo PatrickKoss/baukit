@@ -126,9 +126,9 @@ leaves everything above it alone.
 
 Baukit uses aws-lc-rs for rustls. Products must keep that provider consistent
 across normal and dev dependencies. Use sqlx `tls-rustls-aws-lc-rs`, not
-`tls-rustls`. For testcontainers and testcontainers-modules, set
-`default-features = false` and add `features = ["aws-lc-rs"]` alongside the
-container modules you need. reqwest's `rustls` feature already selects aws-lc-rs.
+`tls-rustls`. For testcontainers, set
+`default-features = false` and add `features = ["aws-lc-rs"]` for Docker fixtures.
+reqwest's `rustls` feature already selects aws-lc-rs.
 
 Check the product graph with `cargo tree -e features -i rustls`. If rustls has
 both `ring` and `aws_lc_rs` enabled, its client and server config builders can

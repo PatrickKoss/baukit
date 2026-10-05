@@ -353,6 +353,7 @@ mod tests {
         observations: Arc<Observations>,
         race_barrier: Arc<tokio::sync::Barrier>,
         read_barrier: Arc<tokio::sync::Barrier>,
+        first_attempt_finished: Arc<tokio::sync::Barrier>,
     }
 
     impl TestAdapter {
@@ -426,7 +427,12 @@ mod tests {
 
         async fn create_serializable(&self, sequence: usize) -> Result<TestRow, TestError> {
             for attempt in 0..MAX_SERIALIZATION_ATTEMPTS {
-                match self.serializable_attempt(sequence, attempt).await {
+                let result = self.serializable_attempt(sequence, attempt).await;
+                if attempt == 0 && is_racing(sequence) {
+                    // The next snapshot must include the winning transaction's commit.
+                    self.first_attempt_finished.wait().await;
+                }
+                match result {
                     Err(TestError::Database(error)) if has_database_code(&error, "40001") => {
                         self.observations
                             .serialization_failures
@@ -763,13 +769,16 @@ mod tests {
                     observations: observations.clone(),
                     race_barrier: Arc::new(tokio::sync::Barrier::new(2)),
                     read_barrier: Arc::new(tokio::sync::Barrier::new(2)),
+                    first_attempt_finished: Arc::new(tokio::sync::Barrier::new(2)),
                 };
                 check_postgres_live_row_cap_conformance(
                     &adapter,
                     LiveRowCapConformanceCases::new(LIMIT, LIMIT_CODE),
                     |error| match error {
                         TestError::Limit => Some(LIMIT_CODE),
-                        TestError::Database(_) => None,
+                        TestError::Database(error) => {
+                            panic!("{strategy:?} race {run} failed: {error}")
+                        }
                     },
                 )
                 .await?;

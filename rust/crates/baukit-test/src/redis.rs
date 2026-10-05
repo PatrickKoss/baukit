@@ -8,7 +8,7 @@ use testcontainers::{
     core::{ExecCommand, IntoContainerPort as _, WaitFor},
     runners::AsyncRunner,
 };
-use testcontainers_modules::redis::{REDIS_PORT, Redis};
+const REDIS_PORT: u16 = 6379;
 
 /// Image tag matching the Redis version pinned across the deploy surface.
 const REDIS_IMAGE_TAG: &str = "8.10.2-alpine";
@@ -34,13 +34,19 @@ const SENTINEL_READY_TIMEOUT: Duration = Duration::from_secs(90);
 /// Delay between Sentinel readiness polls.
 const SENTINEL_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
+fn redis_image() -> GenericImage {
+    GenericImage::new("redis", REDIS_IMAGE_TAG)
+        .with_exposed_port(REDIS_PORT.tcp())
+        .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
+}
+
 /// A running disposable Redis container and its connection URL.
 ///
 /// Keep this value alive for as long as Redis is in use. Dropping it invokes
 /// Testcontainers' container cleanup behavior.
 pub struct RedisTestContainer {
     connection_url: String,
-    container: ContainerAsync<Redis>,
+    container: ContainerAsync<GenericImage>,
 }
 
 impl RedisTestContainer {
@@ -52,13 +58,13 @@ impl RedisTestContainer {
 
     /// Returns the underlying Testcontainers guard for advanced test setup.
     #[must_use]
-    pub const fn container(&self) -> &ContainerAsync<Redis> {
+    pub const fn container(&self) -> &ContainerAsync<GenericImage> {
         &self.container
     }
 
     /// Splits the fixture into an owned URL and its lifetime guard.
     #[must_use]
-    pub fn into_parts(self) -> (String, ContainerAsync<Redis>) {
+    pub fn into_parts(self) -> (String, ContainerAsync<GenericImage>) {
         (self.connection_url, self.container)
     }
 }
@@ -83,8 +89,8 @@ impl fmt::Debug for RedisTestContainer {
 pub struct RedisSentinelTestContainer {
     connection_url: String,
     sentinel: ContainerAsync<GenericImage>,
-    replica: ContainerAsync<Redis>,
-    master: ContainerAsync<Redis>,
+    replica: ContainerAsync<GenericImage>,
+    master: ContainerAsync<GenericImage>,
 }
 
 impl RedisSentinelTestContainer {
@@ -236,13 +242,13 @@ impl RedisSentinelTestContainer {
 
     /// Returns the underlying master container guard.
     #[must_use]
-    pub const fn master_container(&self) -> &ContainerAsync<Redis> {
+    pub const fn master_container(&self) -> &ContainerAsync<GenericImage> {
         &self.master
     }
 
     /// Returns the underlying replica container guard.
     #[must_use]
-    pub const fn replica_container(&self) -> &ContainerAsync<Redis> {
+    pub const fn replica_container(&self) -> &ContainerAsync<GenericImage> {
         &self.replica
     }
 
@@ -303,7 +309,7 @@ fn sentinel_has_new_master(reply: &[String], previous_address: &str) -> bool {
 ///
 /// Docker is contacted only when this function is called.
 pub async fn start_redis() -> Result<RedisTestContainer, RedisTestError> {
-    let container = Redis::default().with_tag(REDIS_IMAGE_TAG).start().await?;
+    let container = redis_image().with_tag(REDIS_IMAGE_TAG).start().await?;
     let host = container.get_host().await?;
     let port = container.get_host_port_ipv4(REDIS_PORT).await?;
     let connection_url = format!("redis://{host}:{port}/");
@@ -327,7 +333,7 @@ pub async fn start_redis_sentinel() -> Result<RedisSentinelTestContainer, RedisT
         .as_nanos();
     let network = format!("baukit-redis-sentinel-{}-{suffix}", process::id());
 
-    let master = Redis::default()
+    let master = redis_image()
         .with_tag(REDIS_IMAGE_TAG)
         .with_cmd([
             "redis-server",
@@ -343,7 +349,7 @@ pub async fn start_redis_sentinel() -> Result<RedisSentinelTestContainer, RedisT
         .await?;
     let master_ip = master.get_bridge_ip_address().await?;
 
-    let replica = Redis::default()
+    let replica = redis_image()
         .with_tag(REDIS_IMAGE_TAG)
         .with_ready_conditions(vec![WaitFor::message_on_either_std(
             "MASTER <-> REPLICA sync: Finished with success",

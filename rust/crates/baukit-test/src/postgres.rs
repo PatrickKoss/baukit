@@ -4,8 +4,11 @@ use std::fmt;
 use sqlx::Row as _;
 #[cfg(feature = "sqlx-postgres")]
 use std::path::{Path, PathBuf};
-use testcontainers::{ContainerAsync, ImageExt as _, runners::AsyncRunner};
-use testcontainers_modules::postgres::Postgres;
+use testcontainers::{
+    ContainerAsync, GenericImage, ImageExt as _,
+    core::{IntoContainerPort as _, WaitFor},
+    runners::AsyncRunner,
+};
 
 #[cfg(feature = "sqlx-postgres")]
 use crate::postgres_database::{PostgresAppRole, PostgresTestDatabase, PostgresTestDatabases};
@@ -26,7 +29,7 @@ pub struct PostgresTestContainer {
     app_connection_url: Option<String>,
     #[cfg(feature = "sqlx-postgres")]
     databases: PostgresTestDatabases,
-    container: ContainerAsync<Postgres>,
+    container: ContainerAsync<GenericImage>,
 }
 
 impl PostgresTestContainer {
@@ -56,13 +59,13 @@ impl PostgresTestContainer {
 
     /// Returns the underlying Testcontainers guard for advanced test setup.
     #[must_use]
-    pub const fn container(&self) -> &ContainerAsync<Postgres> {
+    pub const fn container(&self) -> &ContainerAsync<GenericImage> {
         &self.container
     }
 
     /// Splits the fixture into an owned URL and its lifetime guard.
     #[must_use]
-    pub fn into_parts(self) -> (String, ContainerAsync<Postgres>) {
+    pub fn into_parts(self) -> (String, ContainerAsync<GenericImage>) {
         (self.connection_url, self.container)
     }
 }
@@ -143,9 +146,17 @@ impl PostgresTestOptions {
     ///
     /// Docker is contacted only when this function is called.
     pub async fn start(self) -> Result<PostgresTestContainer, PostgresTestError> {
-        let container = Postgres::default()
-            .with_name(self.image_name)
-            .with_tag(self.image_tag)
+        let container = GenericImage::new(self.image_name, self.image_tag)
+            .with_exposed_port(POSTGRES_PORT.tcp())
+            .with_wait_for(WaitFor::message_on_stderr(
+                "database system is ready to accept connections",
+            ))
+            .with_wait_for(WaitFor::message_on_stdout(
+                "database system is ready to accept connections",
+            ))
+            .with_env_var("POSTGRES_USER", "postgres")
+            .with_env_var("POSTGRES_PASSWORD", "postgres")
+            .with_env_var("POSTGRES_DB", "postgres")
             .start()
             .await?;
         let host = container.get_host().await?;
