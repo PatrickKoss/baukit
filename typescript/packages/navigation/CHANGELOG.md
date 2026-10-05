@@ -32,6 +32,8 @@
 
 ## [Unreleased]
 
+- Add `renderAvatar` for product profile glyphs and frames on web and native. Keep profile labels, subtitles and menu focus.
+
 - Publish the TypeScript sources referenced by JavaScript and declaration maps. Check source paths in the packed archive.
 
 - Add optional profile subtitles on web and native rails and menus. Include the subtitle in the profile button label.

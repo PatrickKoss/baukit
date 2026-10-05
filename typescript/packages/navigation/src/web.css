@@ -165,6 +165,10 @@
   border-radius: inherit;
   object-fit: cover;
 }
+.bk-navigation-avatar-custom {
+  border-radius: 0;
+  background: none;
+}
 .bk-navigation-menu {
   position: absolute;
   z-index: 6;

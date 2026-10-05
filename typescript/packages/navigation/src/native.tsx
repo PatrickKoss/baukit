@@ -528,6 +528,42 @@ function Menu({
   );
 }
 
+function Avatar({
+  profile,
+  active,
+  theme,
+}: {
+  readonly profile: NavigationProfile;
+  readonly active: boolean;
+  readonly theme: NavigationTheme;
+}) {
+  const [failedUrl, setFailedUrl] = useState<string>();
+  if (profile.renderAvatar !== undefined) {
+    return (
+      <Decorative>
+        {profile.renderAvatar({ active, size: NAVIGATION_DIMENSIONS.avatar })}
+      </Decorative>
+    );
+  }
+  return (
+    <Decorative>
+      {profile.imageUrl !== undefined && failedUrl !== profile.imageUrl ? (
+        <Image
+          source={{ uri: profile.imageUrl }}
+          onError={() => {
+            setFailedUrl(profile.imageUrl);
+          }}
+          style={styles.avatar}
+        />
+      ) : (
+        <View style={[styles.avatar, { backgroundColor: theme.activeBackground }]}>
+          <Text style={{ ...textStyle(theme), color: theme.activeText }}>{profile.initials}</Text>
+        </View>
+      )}
+    </Decorative>
+  );
+}
+
 interface ProfileProps {
   readonly open: boolean;
   readonly onOpen: () => void;
@@ -554,7 +590,6 @@ function Profile({
   onNavigate,
   roving,
 }: ProfileProps) {
-  const [failedUrl, setFailedUrl] = useState<string>();
   const active =
     profile.href !== undefined
       ? navigationMatches({ id: 'profile', label: profile.label, href: profile.href }, pathname)
@@ -578,23 +613,7 @@ function Profile({
           else onOpen();
         }}
       >
-        <Decorative>
-          {profile.imageUrl !== undefined && failedUrl !== profile.imageUrl ? (
-            <Image
-              source={{ uri: profile.imageUrl }}
-              onError={() => {
-                setFailedUrl(profile.imageUrl);
-              }}
-              style={styles.avatar}
-            />
-          ) : (
-            <View style={[styles.avatar, { backgroundColor: theme.activeBackground }]}>
-              <Text style={{ ...textStyle(theme), color: theme.activeText }}>
-                {profile.initials}
-              </Text>
-            </View>
-          )}
-        </Decorative>
+        <Avatar profile={profile} active={active} theme={theme} />
       </Target>
     </View>
   );
@@ -917,9 +936,9 @@ const styles = StyleSheet.create({
   children: { marginLeft: 20, paddingLeft: 8, borderLeftWidth: 1 },
   profile: { position: 'relative', marginTop: 'auto', paddingTop: 8, borderTopWidth: 1 },
   avatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: NAVIGATION_DIMENSIONS.avatar,
+    height: NAVIGATION_DIMENSIONS.avatar,
+    borderRadius: NAVIGATION_DIMENSIONS.avatar / 2,
     alignItems: 'center',
     justifyContent: 'center',
   },

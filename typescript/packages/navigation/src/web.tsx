@@ -19,6 +19,7 @@ import {
 import {
   getNavigationLayout,
   getNavigationProfileLabel,
+  NAVIGATION_DIMENSIONS,
   navigationMatches,
   nextSectionHref,
   resolveActiveNavigation,
@@ -211,8 +212,21 @@ function Menu({
   );
 }
 
-function Avatar({ profile }: { readonly profile: NavigationProfile }) {
+function Avatar({
+  profile,
+  active,
+}: {
+  readonly profile: NavigationProfile;
+  readonly active: boolean;
+}) {
   const [failedUrl, setFailedUrl] = useState<string>();
+  if (profile.renderAvatar !== undefined) {
+    return (
+      <span className="bk-navigation-avatar bk-navigation-avatar-custom" aria-hidden="true">
+        {profile.renderAvatar({ active, size: NAVIGATION_DIMENSIONS.avatar })}
+      </span>
+    );
+  }
   return (
     <span className="bk-navigation-avatar" aria-hidden="true">
       {profile.imageUrl !== undefined && failedUrl !== profile.imageUrl ? (
@@ -255,7 +269,7 @@ function Profile({
       : resolveActiveMenuEntry(profile.menu, pathname) !== null;
   const content = (
     <>
-      <Avatar profile={profile} />
+      <Avatar profile={profile} active={active} />
       <span className="bk-navigation-profile-copy">
         <span className="bk-navigation-label">{profile.label}</span>
         {profile.subtitle === undefined ? null : (

@@ -405,3 +405,56 @@ it('renders the profile subtitle in the rail and in its menu', () => {
   expect(within(menu).getByText('Ada, synced')).not.toBeNull();
   expect(within(menu).getByRole('menuitem', { name: 'Settings' })).not.toBeNull();
 });
+
+it.each([
+  { width: 320, collapsed: false },
+  { width: 1024, collapsed: false },
+  { width: 1024, collapsed: true },
+])('renders a custom profile avatar at $width px, collapsed=$collapsed', ({ width, collapsed }) => {
+  const renderAvatar = vi.fn(({ active, size }: { active: boolean; size: number }) => (
+    <span role="img" aria-label="Product glyph" data-testid="profile-glyph">
+      {active ? 'Selected glyph' : 'Glyph'} at {size}
+    </span>
+  ));
+  const { rerender } = render(
+    <AppNavigation
+      {...labels}
+      items={items}
+      width={width}
+      pathname="/settings"
+      collapsed={collapsed}
+      profile={{
+        label: 'Account',
+        subtitle: 'Ada, synced',
+        initials: 'AD',
+        imageUrl: '/avatar.png',
+        renderAvatar,
+        menu: [{ id: 'settings', label: 'Settings', href: '/settings' }],
+      }}
+    />,
+  );
+  const button = screen.getByRole('button', { name: 'Account, Ada, synced' });
+  expect(within(button).getByTestId('profile-glyph').textContent).toBe('Selected glyph at 28');
+  expect(screen.queryByRole('img', { name: 'Product glyph' })).toBeNull();
+  expect(button.querySelector('img')).toBeNull();
+  expect(renderAvatar).toHaveBeenCalledWith({ active: true, size: 28 });
+  button.focus();
+  fireEvent.click(button);
+  const menu = screen.getByRole('menu', { name: 'Account, Ada, synced' });
+  expect(within(menu).getByText('Ada, synced')).not.toBeNull();
+  expect(document.activeElement).toBe(within(menu).getByRole('menuitem', { name: 'Settings' }));
+  fireEvent.keyDown(menu, { key: 'Escape' });
+  expect(document.activeElement).toBe(button);
+  rerender(
+    <AppNavigation
+      {...labels}
+      items={items}
+      width={width}
+      pathname="/"
+      collapsed={collapsed}
+      profile={{ label: 'Account', initials: 'AD', renderAvatar, href: '/profile' }}
+    />,
+  );
+  expect(screen.getByRole('link', { name: 'Account' }).textContent).toContain('Glyph at 28');
+  expect(renderAvatar).toHaveBeenLastCalledWith({ active: false, size: 28 });
+});

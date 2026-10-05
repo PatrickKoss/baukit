@@ -337,7 +337,7 @@ it('ellipsizes long labels inside all six compact targets at 320 pixels', async 
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320);
 });
 
-it('shows the subtitle in the expanded rail and menu, and keeps it accessible when collapsed', async () => {
+it('keeps custom profile avatars decorative and preserves subtitles and menu focus', async () => {
   await page.viewport(1024, 720);
   styles = document.createElement('style');
   styles.textContent = `${toCssVariables(exampleTokens)} ${stylesheet}`;
@@ -356,6 +356,17 @@ it('shows the subtitle in the expanded rail and menu, and keeps it accessible wh
           label: 'Account',
           subtitle: 'Ada, synced',
           initials: 'AD',
+          renderAvatar: ({ size }) => (
+            <span
+              role="img"
+              aria-label="Product glyph"
+              tabIndex={0}
+              data-testid="profile-glyph"
+              style={{ width: size, height: size, border: '2px solid currentColor' }}
+            >
+              A
+            </span>
+          ),
           menu: [{ id: 'settings', label: 'Settings', href: '/settings' }],
         }}
       />,
@@ -368,6 +379,15 @@ it('shows the subtitle in the expanded rail and menu, and keeps it accessible wh
   await expect.element(subtitle).not.toBeVisible();
   const trigger = page.getByRole('button', { name: 'Account, Ada, synced' });
   await expect.element(trigger).toBeVisible();
+  await expect.element(page.getByTestId('profile-glyph')).toBeVisible();
+  await expect.element(page.getByRole('img', { name: 'Product glyph' })).not.toBeInTheDocument();
+  trigger.element().focus();
+  page.getByTestId('profile-glyph').element().focus();
+  await expect.element(trigger).toHaveFocus();
+  const avatar = page.getByTestId('profile-glyph').element().parentElement;
+  expect(avatar).not.toBeNull();
+  if (avatar === null) throw new Error('Avatar wrapper is missing');
+  expect(getComputedStyle(avatar).backgroundColor).toBe('rgba(0, 0, 0, 0)');
   await userEvent.click(trigger);
   await expect
     .element(
@@ -376,4 +396,7 @@ it('shows the subtitle in the expanded rail and menu, and keeps it accessible wh
         .getByText('Ada, synced', { exact: true }),
     )
     .toBeVisible();
+  await expect.element(page.getByRole('menuitem', { name: 'Settings' })).toHaveFocus();
+  await userEvent.keyboard('{Escape}');
+  await expect.element(trigger).toHaveFocus();
 });

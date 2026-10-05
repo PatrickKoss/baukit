@@ -713,3 +713,72 @@ it('uses product typography for compact labels and section pickers', async () =>
   );
   expect(screen.getByText('Overview')).toHaveStyle({ fontFamily: 'ProductSans', fontSize: 17 });
 });
+
+it.each([
+  { width: 320, collapsed: false },
+  { width: 1024, collapsed: false },
+  { width: 1024, collapsed: true },
+])(
+  'renders a custom profile avatar at $width px, collapsed=$collapsed',
+  async ({ width, collapsed }) => {
+    const renderAvatar = jest.fn(({ active, size }: { active: boolean; size: number }) => (
+      <Text accessibilityRole="image" accessibilityLabel="Product glyph" testID="profile-glyph">
+        {active ? 'Selected glyph' : 'Glyph'} at {size}
+      </Text>
+    ));
+    const { rerender } = await render(
+      <AppNavigation
+        {...labels}
+        items={items}
+        width={width}
+        pathname="/settings"
+        collapsed={collapsed}
+        theme={theme}
+        onNavigate={jest.fn()}
+        profile={{
+          label: 'Account',
+          subtitle: 'Ada, synced',
+          initials: 'AD',
+          imageUrl: '/avatar.png',
+          renderAvatar,
+          menu: [{ id: 'settings', label: 'Settings', href: '/settings' }],
+        }}
+      />,
+    );
+    const button = screen.getByRole('button', { name: 'Account, Ada, synced' });
+    expect(
+      within(button).getByTestId('profile-glyph', { includeHiddenElements: true }),
+    ).toHaveTextContent('Selected glyph at 28');
+    expect(screen.queryByRole('image', { name: 'Product glyph' })).toBeNull();
+    expect(screen.queryByText('AD', { includeHiddenElements: true })).toBeNull();
+    expect(renderAvatar).toHaveBeenCalledWith({ active: true, size: 28 });
+    await fireEvent(button, 'focus', event());
+    expect(button).toHaveStyle({ borderColor: theme.activeText });
+    await fireEvent.press(button, event());
+    expect(screen.getByTestId('navigation-menu')).toHaveProp(
+      'accessibilityLabel',
+      'Account, Ada, synced',
+    );
+    expect(
+      within(screen.getByTestId('navigation-menu')).getByText('Ada, synced', {
+        includeHiddenElements: true,
+      }),
+    ).toHaveTextContent('Ada, synced');
+    await fireEvent.press(screen.getByRole('button', { name: 'Close' }), event());
+    expect(screen.getByRole('button', { name: 'Account, Ada, synced' })).toBeOnTheScreen();
+    await rerender(
+      <AppNavigation
+        {...labels}
+        items={items}
+        width={width}
+        pathname="/"
+        collapsed={collapsed}
+        theme={theme}
+        onNavigate={jest.fn()}
+        profile={{ label: 'Account', initials: 'AD', renderAvatar, href: '/profile' }}
+      />,
+    );
+    expect(screen.getByRole('link', { name: 'Account' })).toBeOnTheScreen();
+    expect(renderAvatar).toHaveBeenLastCalledWith({ active: false, size: 28 });
+  },
+);

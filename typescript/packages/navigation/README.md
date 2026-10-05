@@ -8,7 +8,7 @@ Tailwind code.
 
 - `@baukit/navigation` contains the TypeScript model, validation, active-route
   resolution, section rotation, disclosure reducer and layout selection. It has
-  no React import.
+  no React runtime import.
 - `@baukit/navigation/web` contains `AppNavigation` and `SectionPicker` for DOM.
   It never imports React Native, including through `a11y-core`.
 - `@baukit/navigation/native` contains those components for React Native and
@@ -73,6 +73,11 @@ A profile accepts either `href` or a nonempty `menu`. Menu entries have unique
 ids, labels and either `href` or synchronous `onSelect`. Link entries accept `matches(pathname)`. Only the most-specific matching path is selected in a menu. A product owns async
 action errors. Start an async sign-out in `onSelect` and handle its rejection in
 the product. `imageUrl` renders an avatar, with initials after an image failure.
+`renderAvatar({ active, size })` replaces the image or initials with a product
+glyph or frame on web and native. It receives the route selection state and the
+28-unit avatar size. Return decorative content. The wrapper hides it from
+assistive technology; the profile label and subtitle still name the button.
+Web custom avatars have no default background or circular frame.
 The profile stays last in the bar and at the bottom of the rail.
 
 Active leaves use a muted accent background with an accent icon and bold label.

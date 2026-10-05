@@ -1,4 +1,5 @@
 import { getLayoutMode } from '@baukit/ui-tokens';
+import type { ReactNode } from 'react';
 
 export interface NavigationSubItem<Icon = unknown> {
   readonly id: string;
@@ -26,11 +27,17 @@ export type NavigationProfileMenuEntry = {
   | { readonly onSelect: () => void; readonly href?: never }
 );
 
+export interface NavigationAvatarState {
+  readonly active: boolean;
+  readonly size: number;
+}
+
 export type NavigationProfile = {
   readonly label: string;
   readonly subtitle?: string;
   readonly initials: string;
   readonly imageUrl?: string;
+  readonly renderAvatar?: (state: NavigationAvatarState) => ReactNode;
 } & (
   | { readonly href: string; readonly menu?: never }
   | { readonly menu: readonly NavigationProfileMenuEntry[]; readonly href?: never }
@@ -48,6 +55,7 @@ export interface ActiveNavigation<Icon = unknown> {
 }
 
 export const NAVIGATION_DIMENSIONS = {
+  avatar: 28,
   rail: 280,
   collapsedRail: 76,
   bar: 64,
