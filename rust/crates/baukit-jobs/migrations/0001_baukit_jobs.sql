@@ -46,4 +46,3 @@ CREATE INDEX job_outbox_expired_lease_idx
 
 COMMENT ON TABLE job_outbox IS
     'Durable product job outbox managed by baukit-jobs; payload data must not enter metric labels';
-
