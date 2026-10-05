@@ -1,4 +1,4 @@
-/** Receipt returned after the server accepts or completes product-profile erasure. */
+/** Server receipt or local fence confirmation. Rust wire receipts always have an operation ID. */
 export type ErasureReceipt =
   | { readonly operationId: string | null; readonly status: 'completed' }
   | { readonly operationId: string | null; readonly status: 'pending' };

@@ -33,7 +33,7 @@ pub enum ErasureState {
 pub struct ErasureOutcome {
     /// Current operation state.
     pub status: ErasureState,
-    /// Opaque operation identifier.
+    /// Opaque operation identifier, required on every wire receipt.
     pub operation_id: Uuid,
     /// Completion timestamp, present only after success.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -430,6 +430,24 @@ mod tests {
             );
         }
     }
+    #[test]
+    fn shared_wire_receipts_require_operation_ids() {
+        let vectors: Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/erasure/receipts-v1.json"
+        ))
+        .expect("shared receipts");
+        for vector in vectors["cases"].as_array().expect("receipt cases") {
+            let mut receipt = vector["receipt"].clone();
+            receipt
+                .as_object_mut()
+                .expect("receipt object")
+                .remove("operationId");
+            assert!(serde_json::from_value::<ErasureOutcome>(receipt.clone()).is_err());
+            receipt["operationId"] = Value::Null;
+            assert!(serde_json::from_value::<ErasureOutcome>(receipt).is_err());
+        }
+    }
+
     #[test]
     fn outcomes_use_contract_status_codes_and_camel_case() {
         let mut outcome = ErasureOutcome {

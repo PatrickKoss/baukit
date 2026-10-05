@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import receiptVectors from '../../../../fixtures/erasure/receipts-v1.json' with { type: 'json' };
+
 import deletionOutcomeFixtures from '../../../../fixtures/product-experience/deletion-outcomes.json' with { type: 'json' };
 
 import {
@@ -68,6 +70,35 @@ function dependencies(outcome: string, events: string[] = []): ProductProfileEra
 }
 
 describe('product-profile erasure', () => {
+  it.each(receiptVectors.cases)('handles the shared $name receipt', async (vector) => {
+    const local = vi.fn().mockResolvedValue(undefined);
+    const signOut = vi.fn().mockResolvedValue(undefined);
+    const result = await eraseProductProfile({
+      eraseServerProfile: (): Promise<ErasureReceipt> => {
+        const { status } = vector.receipt;
+        if (status !== 'pending' && status !== 'completed') {
+          return Promise.reject(new Error('Identity deletion failed'));
+        }
+        return Promise.resolve({ ...vector.receipt, status });
+      },
+      eraseLocalPartition: local,
+      signOut,
+    });
+    if (vector.clientOutcome === 'failed') {
+      expect(result.status).toBe('server-failure');
+      expect(local).not.toHaveBeenCalled();
+      expect(signOut).not.toHaveBeenCalled();
+    } else {
+      expect(result).toEqual({
+        status: vector.receipt.status === 'pending' ? 'pending' : 'erased',
+        receipt: vector.receipt,
+        warnings: [],
+      });
+      expect(local).toHaveBeenCalledTimes(1);
+      expect(signOut).toHaveBeenCalledTimes(1);
+    }
+  });
+
   it.each(fixtures)('matches the shared $name outcome fixture', async (fixture) => {
     await expect(eraseProductProfile(dependencies(fixture.name))).resolves.toEqual(fixture.result);
   });

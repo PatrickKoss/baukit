@@ -51,11 +51,15 @@ The product-owned `eraseServerProfile` adapter performs that work and returns an
 ```ts
 type ErasureReceipt =
   | { readonly operationId: string | null; readonly status: "completed" }
-  | { readonly operationId: string; readonly status: "pending" };
+  | { readonly operationId: string | null; readonly status: "pending" };
 ```
 
-An operation ID is non-empty when present, and a `pending` receipt always has
-one. The helper treats a returned receipt with an invalid status or operation ID
+An operation ID is non-empty when present. Every Rust HTTP receipt has a UUID,
+including pending receipts. The client can also return a local pending receipt
+with a null operation ID when a 401 `profile_erased` fence confirms that product
+rows are gone without supplying a receipt. This confirmation does not prove that
+identity deletion finished, and it cannot be polled without an operation ID.
+The helper treats a returned receipt with an invalid status or operation ID
 as an ambiguous, unreadable server response. It preserves local data and the
 session until the product reconciles the server outcome.
 
@@ -64,7 +68,8 @@ values:
 
 | Status | Result |
 | --- | --- |
-| `erased` | Server acceptance, local erasure, and sign-out succeeded. The result includes `receipt` and `warnings`; the receipt may be `completed` or `pending`. |
+| `erased` | The server returned a completed receipt, and local erasure and sign-out succeeded. The result includes `receipt` and `warnings`. |
+| `pending` | Product erasure is confirmed, and local erasure and sign-out succeeded. Identity deletion is still pending or its completion is unknown after a fence confirmation. The result includes `receipt` and `warnings`. |
 | `server-failure` | `eraseServerProfile` rejected with a failure that was not marked ambiguous. Local erasure and sign-out did not run. |
 | `ambiguous` | `eraseServerProfile` rejected with `AmbiguousProductProfileErasureError` or an object whose `code` is `product_profile_erasure_ambiguous`. Local erasure and sign-out did not run. |
 | `local-failure` | Server acceptance succeeded but local erasure failed. Sign-out was still attempted. The result includes `signOutError`, which is either a sign-out issue or `null`. |
@@ -123,7 +128,7 @@ user's receipt exists.
 
 Those operation-status values belong to the product's HTTP protocol. They are
 separate from `ErasureReceipt.status`, whose values are `completed` and
-`pending`, and from the five `ProductProfileErasureResult.status` values above.
+`pending`, and from the six `ProductProfileErasureResult.status` values above.
 
 ## 3. Product-owned HTTP responses and errors
 
