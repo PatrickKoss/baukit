@@ -480,7 +480,9 @@ fn screen_imports(source: &str) -> Vec<&str> {
     for keyword in ["import ", "export "] {
         for (index, _) in code.match_indices(keyword) {
             let statement = &source[index + keyword.len()..];
-            if statement.starts_with("type ") {
+            if statement.starts_with("type ")
+                || (keyword == "export " && !statement.starts_with(['{', '*']))
+            {
                 continue;
             }
             let Some((bindings, tail)) = statement.split_once(" from ") else {
@@ -845,6 +847,13 @@ mod tests {
     fn screen_imports_follow_rendered_bindings_and_reexports() {
         let source = "import { LoginScreen as Screen } from './screen'\nimport unused from './unused'\nimport type { Props } from './props';\nexport { default } from './exported';\nexport default function Route() { return <Screen />; }";
         assert_eq!(screen_imports(source), vec!["./screen", "./exported"]);
+    }
+
+    #[test]
+    fn screen_imports_ignore_unused_imports_after_a_default_export() {
+        let source =
+            "export default function Route() { return null }\nimport Screen from './unused'\n";
+        assert!(screen_imports(source).is_empty());
     }
 
     #[test]
