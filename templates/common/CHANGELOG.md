@@ -2,10 +2,10 @@
 
 ## [Unreleased]
 
-- Add expo-system-ui 57.0.4 to support automatic mobile appearance with Expo 57.
-- Store Playwright browsers in web/.playwright-browsers so dependency reinstalls preserve them. Exclude the cache from Docker contexts.
+{% if context.mobile %}- Add expo-system-ui 57.0.4 to support automatic mobile appearance with Expo 57.
+{% endif %}{% if context.web %}- Store Playwright browsers in web/.playwright-browsers so dependency reinstalls preserve them. Exclude the cache from Docker contexts.
 - Bind the web preview server to 127.0.0.1 so Playwright readiness uses the same address.
-
+{% endif %}
 {% if context.quality_strict and context.backend %}
 - Create the LCOV output directory when Cargo uses an external target directory.
 {% endif %}{% if context.mobile %}
