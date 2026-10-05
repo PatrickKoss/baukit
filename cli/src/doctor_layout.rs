@@ -520,7 +520,9 @@ fn screen_imports(source: &str) -> Vec<&str> {
                 };
                 code.match_indices(&format!("<{local}"))
                     .any(|(index, matched)| {
-                        code[index + matched.len()..].starts_with(['>', '/', '.', ' ', '\n'])
+                        code[index + matched.len()..].starts_with(|character: char| {
+                            character.is_whitespace() || matches!(character, '>' | '/' | '.')
+                        })
                     })
             });
             if keyword == "export " || rendered {
@@ -867,6 +869,16 @@ mod tests {
         let source =
             "export default function Route() { return null }\nimport Screen from './unused'\n";
         assert!(screen_imports(source).is_empty());
+    }
+
+    #[test]
+    fn screen_imports_accept_multiline_jsx() {
+        for separator in ["\n", "\r\n", "\t"] {
+            let source = format!(
+                "import Screen from './screen';\nexport default function Route() {{ return <Screen{separator}label=\"Sign in\" />; }}"
+            );
+            assert_eq!(screen_imports(&source), vec!["./screen"], "{source}");
+        }
     }
 
     #[test]
