@@ -4,6 +4,8 @@ All notable changes to `baukit-config` are documented here.
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-10-05
+
 ## [0.7.2] - 2026-10-04
 
 ## [0.7.1] - 2026-10-04

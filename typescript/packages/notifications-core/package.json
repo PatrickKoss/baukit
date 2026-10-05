@@ -1,6 +1,6 @@
 {
   "name": "@baukit/notifications-core",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "Framework-free local notification planning: zoned occurrence resolution, horizon filtering, deterministic keep, cancel, and schedule sets, and owner-scoped replacement over a platform port.",
   "license": "MIT",
   "author": "Patrick Koss",
@@ -57,6 +57,6 @@
     "vitest": "5.0.3"
   },
   "peerDependencies": {
-    "@baukit/localization-core": "^0.7.2"
+    "@baukit/localization-core": "^0.7.3"
   }
 }

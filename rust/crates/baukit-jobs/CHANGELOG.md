@@ -4,6 +4,8 @@ All notable changes to `baukit-jobs` are documented here.
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-10-05
+
 - Finish claim, enqueue, and readiness transactions in owned tasks when callers cancel. Abandoned claims recover after lease expiry.
 - Allow terminal cleanup to retain failed job kinds for repair. Generated OIDC workers retain identity deletion failures.
 

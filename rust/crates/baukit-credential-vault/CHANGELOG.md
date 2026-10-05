@@ -4,6 +4,8 @@ All notable changes to `baukit-credential-vault` are documented here.
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-10-05
+
 - Use aws-lc-rs for cryptographic operations instead of a second ring dependency. Keep the supported algorithms and wire formats.
 
 ## [0.7.2] - 2026-10-04

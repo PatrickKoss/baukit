@@ -5,17 +5,17 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
-Last verified release train: `v0.7.2` (localized and accessible shared
-navigation with 48 dp Android targets, selection state and most-specific
-highlighting, a release train that refreshes linked example lockfiles, Android
-QA that prepares Chrome and bounds every ADB probe, the native OIDC callback
-route, and the mobile local-data key that Expo SecureStore accepts). The
-complete Linux gates passed locally on 2026-10-04: `make ci`, browser Dexie and
-navigation conformance, Docker-backed Rust tests with none ignored, every
-generated fixture flavor, the generated Android compile, a real Maestro OIDC
-flow, Expo SQLite and notifications device conformance, and version coherence.
-The iOS simulator gate requires macOS and remains a release-host check rather
-than a Linux result.
+Last verified release train: `v0.7.3` (Keycloak reconciliation that keeps
+confidential service-account clients and their secrets, job claims that survive
+caller cancellation without poisoning the pool, retained identity deletion
+failures, Testcontainers 0.28, aws-lc-rs instead of ring, SecureStore-safe
+native auth keys, doctor detection of custom product layouts, navigation profile
+subtitles, avatars and font-scale height reservation, and published package
+sources). The complete Linux gates passed locally on 2026-10-05: `make ci`,
+browser Dexie and navigation conformance, Docker-backed Rust tests with none
+ignored, every generated fixture flavor, the generated Android compile, a real
+Maestro OIDC flow, and version coherence. The iOS simulator gate requires macOS
+and remains a release-host check rather than a Linux result.
 
 ## Toolchain
 
@@ -44,10 +44,10 @@ than a Linux result.
 | Logging | tracing + tracing-subscriber | latest compatible | |
 | Configuration | config + dotenvy | chosen loader (analysis §4.1) | Figment is not supported by the shared kit |
 | Outbound HTTP | reqwest | 0.13, rustls with the platform verifier | |
-| Auth | ring + JWKS | latest | Keycloak OIDC default; Clerk session-token adapter with `azp` validation; WorkOS AuthKit adapter bound to `client_id`. `ApiTokenStore` returns `ApiTokenStoreError` since 0.3.0. |
+| Auth | aws-lc-rs + JWKS | latest | Keycloak OIDC default; Clerk session-token adapter with `azp` validation; WorkOS AuthKit adapter bound to `client_id`. `ApiTokenStore` returns `ApiTokenStoreError` since 0.3.0. |
 | Local object storage | RustFS | 1.0.1 | [Latest stable release](https://github.com/rustfs/rustfs/releases/tag/1.0.1), pinned by multi-platform image digest. Local Loki, PostHog and CNPG use path-style S3 with region `us-east-1`. |
 | Development identity provider | Keycloak | 26.8.0 | Generated `compose.yaml` image; `make dev` reconciles the development realm from `realm-policy.json`. |
-| Integration tests | testcontainers + testcontainers-modules | 0.27.3 + 0.15.0 | Both crates use the same container types. `baukit-test` pins `postgres:18.6-alpine`; templates and smoke deploys use the same image. |
+| Integration tests | testcontainers | 0.28.0 | `baukit-test` uses `GenericImage` and no longer depends on testcontainers-modules, whose 0.15.0 release requires 0.27. `baukit-test` pins `postgres:18.6-alpine`; templates and smoke deploys use the same image. |
 | Sync revisions | `baukit-sync` | 0.5.2 | Per-owner revision allocation, locking revision reads, tombstone purge horizons with a pull-cursor guard, the syncable-table column convention, and a `user_id` to `owner_id` migration. SQLx 0.9 and PostgreSQL behind the `sqlx-postgres` feature; the hybrid logical clock needs neither. |
 | Provider connectors | `baukit-integrations` | 0.5.2 | Contract-only connector port, cursor-paged pages, and `baukit-http` retry classes; no SQLx, no HTTP client. |
 
@@ -109,7 +109,6 @@ releases.
 
 | Dependency | Available stable release | Reason for the current line |
 |---|---|---|
-| testcontainers | 0.28.0 | testcontainers-modules 0.15.0 requires 0.27. Both crates must use the same container types. |
 | TypeScript | 7.0.2 | typescript-eslint 8.71.0 accepts TypeScript below 6.1. |
 | Expo SDK | 57.0.26 | SDK 57 is the latest stable SDK. Its native package versions remain together. |
 | React Native | 0.87.1 | Expo SDK 57 uses 0.86.3, including the Babel and Jest presets. |

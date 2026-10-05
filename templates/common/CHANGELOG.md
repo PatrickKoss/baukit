@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-10-05
+
 {% if context.auth_oidc %}- Reconcile confidential backend clients without browser URLs. Preserve creation and rotated secrets.
 - Retain failed identity deletion jobs for repair when cleaning terminal jobs.
 {% endif %}{% if context.mobile %}- Reserve compact navigation height for the font scale and safe-area bottom inset.

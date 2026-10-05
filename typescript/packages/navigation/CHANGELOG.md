@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.3
+
+### Patch Changes
+
+- Release the coordinated baukit 0.7.3 train.
+- Updated dependencies
+  - @baukit/a11y-core@0.7.3
+  - @baukit/ui-tokens@0.7.3
+
 ## 0.7.2
 
 ### Patch Changes

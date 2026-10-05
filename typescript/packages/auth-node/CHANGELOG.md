@@ -4,6 +4,12 @@
 
 - Publish the TypeScript sources referenced by JavaScript and declaration maps. Check source paths in the packed archive.
 
+## 0.7.3
+
+### Patch Changes
+
+- Release the coordinated baukit 0.7.3 train.
+
 ## 0.7.2
 
 ### Patch Changes
