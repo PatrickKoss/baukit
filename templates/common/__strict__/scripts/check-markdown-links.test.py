@@ -80,6 +80,38 @@ class MarkdownLinkCheckTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 1)
         self.assertIn("README.md:2 -> docs/absent.md", completed.stderr)
 
+    def test_accepts_balanced_parentheses_and_angle_bracket_targets(self) -> None:
+        self.write(
+            "README.md",
+            '[route](mobile/app/(tabs)/index.tsx "Route")\n'
+            "![nested](docs/(one(two))/image.png)\n"
+            "[quoted](<docs/(route group)/guide.md> 'Guide')\n"
+            r"[escaped](mobile/app/\(tabs\)/index.tsx)" + "\n"
+            "[reference][route]\n[route]: <mobile/app/(tabs)/index.tsx>\n",
+        )
+        self.write("mobile/app/(tabs)/index.tsx", "export default function Route() {}\n")
+        self.write("docs/(one(two))/image.png", "image\n")
+        self.write("docs/(route group)/guide.md", "# Guide\n")
+        self.add_all()
+
+        completed = self.run_check()
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_reports_the_full_parenthesized_missing_target(self) -> None:
+        self.write(
+            "README.md",
+            "[missing](mobile/app/(tabs)/missing.tsx)\n"
+            "[quoted](<docs/(route group)/missing.md>)\n",
+        )
+        self.add_all()
+
+        completed = self.run_check()
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertIn("README.md:1 -> mobile/app/(tabs)/missing.tsx", completed.stderr)
+        self.assertIn("README.md:2 -> docs/(route group)/missing.md", completed.stderr)
+
     def test_ignores_untracked_markdown_and_unconfigured_roots(self) -> None:
         self.write("README.md", "[guide](docs/guide.md)\n")
         self.write("docs/guide.md", "# Guide\n")

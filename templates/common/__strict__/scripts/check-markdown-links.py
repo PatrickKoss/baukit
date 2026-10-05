@@ -8,9 +8,9 @@ from pathlib import Path
 from urllib.parse import unquote
 
 
-INLINE_LINK = re.compile(
-    r"!?\[[^\]]*\]\(\s*(<[^>\n]+>|[^\s)]+)(?:\s+[\"'(][^)\n]*[\"')])?\s*\)"
-)
+INLINE_LINK_START = re.compile(r"!?\[[^\]]*\]\(\s*")
+INLINE_LINK_END = re.compile(r'''(?:\s+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?\s*\)''')
+ANGLE_DESTINATION = re.compile(r"<[^>\n]+>")
 REFERENCE_LINK = re.compile(r"^\s{0,3}\[[^\]]+\]:\s*(<[^>\n]+>|\S+)", re.MULTILINE)
 EXTERNAL_SCHEME = re.compile(r"^[a-z][a-z\d+.-]*:", re.IGNORECASE)
 DEFAULT_ROOTS = ("README.md", "CLAUDE.md", "AGENTS.md", "docs")
@@ -44,10 +44,37 @@ def markdown_files(repository_root: Path, roots: list[str]) -> list[Path]:
     return sorted(markdown)
 
 
+def inline_destination(source: str, start: int) -> tuple[str, int] | None:
+    if source[start:start + 1] == "<":
+        match = ANGLE_DESTINATION.match(source, start)
+        return (match.group(), match.end()) if match else None
+
+    depth = 0
+    end = start
+    while end < len(source):
+        character = source[end]
+        if character == "\\" and end + 1 < len(source):
+            end += 2
+            continue
+        if character.isspace() or (character == ")" and depth == 0):
+            break
+        if character == "(":
+            depth += 1
+        elif character == ")":
+            depth -= 1
+        end += 1
+    return None if depth else (source[start:end], end)
+
+
 def link_destinations(source: str) -> list[tuple[str, int]]:
     destinations: list[tuple[str, int]] = []
-    for pattern in (INLINE_LINK, REFERENCE_LINK):
-        destinations.extend((match.group(1), match.start()) for match in pattern.finditer(source))
+    for match in INLINE_LINK_START.finditer(source):
+        parsed = inline_destination(source, match.end())
+        if parsed is not None and INLINE_LINK_END.match(source, parsed[1]):
+            destinations.append((parsed[0], match.start()))
+    destinations.extend(
+        (match.group(1), match.start()) for match in REFERENCE_LINK.finditer(source)
+    )
     return destinations
 
 
@@ -55,7 +82,7 @@ def local_destination(raw_destination: str) -> str | None:
     destination = raw_destination.strip()
     if destination.startswith("<") and destination.endswith(">"):
         destination = destination[1:-1]
-    destination = destination.replace("\\ ", " ")
+    destination = re.sub(r"\\([\\ ()])", r"\1", destination)
     if (
         not destination
         or destination.startswith("#")

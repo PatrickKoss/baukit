@@ -52,7 +52,8 @@ adb_bounded() {
   exit 1
 }
 
-if adb_bounded devices | awk 'NR > 1 {print $1}' | grep -Fxq "$serial" && [[ ! -f "$state_dir/android-owned" ]]; then
+devices="$(adb_bounded devices)"
+if printf '%s\n' "$devices" | awk 'NR > 1 {print $1}' | grep -Fxq "$serial" && [[ ! -f "$state_dir/android-owned" ]]; then
   echo "qa: $serial is already in use by an emulator this target did not start" >&2
   exit 1
 fi

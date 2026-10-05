@@ -166,6 +166,36 @@ if [[ "$*" == *'getprop sys.boot_completed' ]]; then echo 1; fi
 {% else %}            self.assertFalse(any("chrome" in event for event in events))
 {% endif %}
 
+    def test_android_setup_stops_before_cleanup_when_device_probe_fails(self) -> None:
+        self.executable(self.sdk / "emulator/emulator", 'echo emulator >> "$EVENTS"\n')
+        self.executable(self.scripts / "services.sh", 'echo services >> "$EVENTS"\n')
+        state = self.root / "mobile/.qa"
+        state.mkdir()
+        owned = state / "android-owned"
+        owned.touch()
+        apk = self.root / "mobile/android/app/build/outputs/apk/release/app-release.apk"
+        apk.parent.mkdir(parents=True)
+        apk.touch()
+        for probe, expected_status in (("exit 7", 7), ("exec sleep 60", 124)):
+            with self.subTest(probe=probe):
+                owned.touch()
+                self.events.unlink(missing_ok=True)
+                self.executable(self.sdk / "platform-tools/adb", f'''
+if [[ "$*" == devices ]]; then
+  printf 'List of devices attached\\nemulator-5556\\tdevice\\n'
+  {probe}
+fi
+if [[ "$*" == *'getprop sys.boot_completed' ]]; then echo 1; fi
+''')
+                result = subprocess.run(
+                    ["bash", str(self.scripts / "android-env.sh")],
+                    env={**self.environment, "BAUKIT_QA_ADB_TIMEOUT_SECONDS": "0.2"},
+                    capture_output=True, text=True, check=False, timeout=5,
+                )
+                self.assertEqual(result.returncode, expected_status, result.stdout + result.stderr)
+                self.assertFalse(self.events.exists())
+                self.assertTrue(owned.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

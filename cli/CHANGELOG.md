@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Parse balanced parentheses and angle brackets in strict Markdown link targets.
+- Stop Android QA setup before cleanup or service startup when the device probe fails or times out.
+
 - Accept product limit validators that use shared measurements with their own bounds and reason codes.
 
 - Follow mobile route re-exports when checking sign-in wiring. Accept reconciliation tests that exercise input validation or realm reconciliation.
