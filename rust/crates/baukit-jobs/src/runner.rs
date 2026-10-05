@@ -167,11 +167,11 @@ impl WorkerRunner {
     /// Every claim passes the handler's [`JobHandler::job_types`], so the runner
     /// never claims a job type its handler does not declare.
     ///
-    /// New claims stop immediately after shutdown is observed. Already running
-    /// Claim transactions run in owned tasks. If shutdown or caller cancellation
+    /// New claims stop immediately after shutdown is observed. Claim
+    /// transactions run in owned tasks. If shutdown or caller cancellation
     /// abandons a claim, it finishes and the job recovers after lease expiry.
-    /// Running attempts drain in the `JoinSet`; `TaskSupervisor` bounds that drain using
-    /// the same [`ShutdownToken`] deadline.
+    /// Running attempts drain in the `JoinSet`; `TaskSupervisor` bounds that
+    /// drain using the same [`ShutdownToken`] deadline.
     pub async fn run(self, shutdown: ShutdownToken) -> Result<(), RunnerError> {
         let mut running = JoinSet::new();
         loop {
