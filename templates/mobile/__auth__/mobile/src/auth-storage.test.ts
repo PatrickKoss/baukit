@@ -36,7 +36,7 @@ beforeEach(() => {
 });
 
 it.each(['session', 'force-login'])('persists and removes the OIDC %s key', async (slot) => {
-  const logicalKey = `${PRODUCT_NAME}:oidc:${slot}`;
+  const logicalKey = `${PRODUCT_NAME}.oidc.${slot}`;
   const physicalKey = `${PRODUCT_NAME}.oidc.${slot}`;
 
   await expect(authStorage.get(logicalKey)).resolves.toBeNull();

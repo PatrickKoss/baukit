@@ -112,7 +112,17 @@ def lint_expression(
     if STATUS_CLASS.search(expression):
         problems.append(f"{location}: status classes are forbidden metric label values")
 
-    for metric in sorted(metric_references(expression)):
+    references = metric_references(expression)
+    if any("worker_job_" in metric for metric in references):
+        unquoted = re.sub(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'', " ", expression)
+        for labels in re.findall(
+            r"\b(?:by|without|on|ignoring|group_left|group_right)\s*\(([^)]*)\)",
+            unquoted,
+        ):
+            if {label.strip() for label in labels.split(",")} & {"job", "exported_job"}:
+                problems.append(f"{location}: worker handler types must use job_kind, not job")
+
+    for metric in sorted(references):
         if metric not in allowed_metrics:
             problems.append(f"{location}: unknown metric {metric!r}")
 

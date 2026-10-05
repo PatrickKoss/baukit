@@ -170,7 +170,9 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build, lint, and test TypeScript packages
         working-directory: typescript
-        run: pnpm turbo build lint test
+        run: |
+          pnpm run test:source-maps
+          pnpm turbo build lint test
       - name: Test Dexie conformance in Chromium and WebKit
         working-directory: typescript
         env:
@@ -187,6 +189,7 @@ jobs:
       - uses: actions/checkout@v7.0.1
       - run: python3 deploy/observability/lint/check-metric-names.py
       - run: python3 -m unittest discover -s deploy/observability/lint -p 'test_*.py'
+      - run: deploy/observability/lint/check-rules.sh
 
   openapi-compatibility:
     name: OpenAPI compatibility check

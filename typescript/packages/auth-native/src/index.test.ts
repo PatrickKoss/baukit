@@ -10,26 +10,36 @@ import {
   type EndSessionRequest,
   type FetchPort,
   type NativeOidcEnvironment,
+  type NativeOidcConfig,
   type SecureStoragePort,
 } from './index.js';
 
 class MemoryStorage implements SecureStoragePort {
   public readonly values = new Map<string, string>();
   public readonly deletes: string[] = [];
+  public readonly reads: string[] = [];
 
   public get(key: string): Promise<string | null> {
+    this.validateKey(key);
+    this.reads.push(key);
     return Promise.resolve(this.values.get(key) ?? null);
   }
 
   public set(key: string, value: string): Promise<void> {
+    this.validateKey(key);
     this.values.set(key, value);
     return Promise.resolve();
   }
 
   public delete(key: string): Promise<void> {
+    this.validateKey(key);
     this.deletes.push(key);
     this.values.delete(key);
     return Promise.resolve();
+  }
+
+  private validateKey(key: string): void {
+    if (!/^[A-Za-z0-9._-]+$/u.test(key)) throw new Error('Invalid SecureStore key');
   }
 }
 
@@ -70,6 +80,7 @@ interface Harness {
 }
 
 interface HarnessOptions {
+  readonly config?: NativeOidcConfig;
   readonly endSessionEndpoint?: string | null;
   readonly tokenResponses?: unknown[];
   readonly userInfo?: unknown;
@@ -78,8 +89,8 @@ interface HarnessOptions {
 }
 
 const issuer = 'https://identity.example.test/tenant';
-const sessionKey = 'native-test:session';
-const forceLoginKey = 'native-test:force-login';
+const sessionKey = 'native-test.session';
+const forceLoginKey = 'native-test.force-login';
 
 function makeHarness(options: HarnessOptions = {}): Harness {
   const storage = new MemoryStorage();
@@ -124,7 +135,7 @@ function makeHarness(options: HarnessOptions = {}): Harness {
   };
   return {
     client: new NativeOidcClient(
-      {
+      options.config ?? {
         issuer: `${issuer}///`,
         clientId: 'product-mobile',
         redirectUri: 'product://oauth',
@@ -185,6 +196,74 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe('NativeOidcClient', () => {
+  it.each([
+    'app:oidc',
+    '@baukit/auth',
+    'has space',
+    ' app',
+    'app ',
+    'café',
+    'line\nbreak',
+    'slash/key',
+  ])('rejects the invalid storage prefix %j before accessing storage', (storageKeyPrefix) => {
+    expect(() =>
+      makeHarness({
+        config: { issuer, clientId: 'mobile', redirectUri: 'product://oauth', storageKeyPrefix },
+      }),
+    ).toThrow("OIDC storage key prefix must contain only ASCII letters, digits, '.', '-' and '_'.");
+  });
+
+  it('rejects an empty storage prefix', () => {
+    expect(() =>
+      makeHarness({
+        config: {
+          issuer,
+          clientId: 'mobile',
+          redirectUri: 'product://oauth',
+          storageKeyPrefix: '',
+        },
+      }),
+    ).toThrow('OIDC storage key prefix must not be empty.');
+  });
+
+  it('persists both slots with a valid custom prefix and no key adapter', async () => {
+    const test = makeHarness({
+      config: {
+        issuer,
+        clientId: 'mobile',
+        redirectUri: 'product://oauth',
+        storageKeyPrefix: 'App_1.oidc-test',
+      },
+    });
+    await test.client.signIn();
+    expect(test.storage.values.has('App_1.oidc-test.session')).toBe(true);
+    test.browser.endSessionResult = false;
+    await test.client.signOut();
+    expect(test.storage.values.get('App_1.oidc-test.force-login')).toBe('1');
+    expect(test.storage.values.has('App_1.oidc-test.session')).toBe(false);
+  });
+
+  it('encodes default prefixes without collisions or invalid SecureStore characters', async () => {
+    const keys = new Set<string>();
+    for (const [configuredIssuer, clientId] of [
+      [issuer, 'mobile:é'],
+      [issuer, 'mobile_253Aé'],
+      [issuer + '.part', 'mobile'],
+      [issuer, 'part.mobile'],
+    ] as const) {
+      const test = makeHarness({
+        config: { issuer: configuredIssuer, clientId, redirectUri: 'product://oauth' },
+      });
+      await test.client.initialize();
+      const key = test.storage.reads[0];
+      expect(key).toMatch(/^baukit\.auth-native\.[A-Za-z0-9._-]+\.session$/u);
+      expect(key).toBeDefined();
+      if (key === undefined) throw new Error('Missing session storage key');
+      keys.add(key);
+    }
+    expect(keys.size).toBe(4);
+  });
+
   it('discovers standard endpoints, exchanges PKCE, and stores the UserInfo subject', async () => {
     const test = makeHarness();
     const updates: (string | undefined)[] = [];

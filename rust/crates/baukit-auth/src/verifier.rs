@@ -6,9 +6,9 @@ use std::{
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
+use aws_lc_rs::{digest, signature};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use reqwest::{Client, StatusCode, Url};
-use ring::{digest, signature};
 use serde::Deserialize;
 use serde_json::Value;
 use thiserror::Error;

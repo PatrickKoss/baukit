@@ -124,6 +124,7 @@ ts-lint: ts-install
 	corepack pnpm --dir $(TS_DIR) run lint
 
 ts-test: ts-install
+	corepack pnpm --dir $(TS_DIR) run test:source-maps
 	corepack pnpm --dir $(TS_DIR) run test
 
 ts-browser-deps: ts-install

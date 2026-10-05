@@ -135,13 +135,13 @@ groups:
     rules:
       - alert: BaukitWorkerFailureRateHigh
         expr: |
-          sum by (product, service, environment, namespace, job) (
-            rate(worker_job_runs_total{service!="", outcome="failure"}[5m])
+          sum by (product, service, environment, namespace, job_kind) (
+            baukit:worker_job_runs:rate5m{service!="", outcome="failure"}
           )
           /
           clamp_min(
-            sum by (product, service, environment, namespace, job) (
-              rate(worker_job_runs_total{service!=""}[5m])
+            sum by (product, service, environment, namespace, job_kind) (
+              baukit:worker_job_runs:rate5m{service!=""}
             ),
             0.001
           ) > 0.1
@@ -150,20 +150,20 @@ groups:
           severity: warning
         annotations:
           summary: Worker failure rate is high
-          description: 'More than 10% of worker runs are failing for {{ $labels }}.'
+          description: 'More than 10% of worker runs are failing for job kind {{ $labels.job_kind }} in {{ $labels.service }}.'
           runbook_url: https://runbooks.example.invalid/baukit/worker-failures
 
       - alert: BaukitWorkerRetryStorm
         expr: |
-          sum by (product, service, environment, namespace, job) (
-            rate(worker_job_runs_total{service!="", outcome="retry"}[5m])
+          sum by (product, service, environment, namespace, job_kind) (
+            baukit:worker_job_runs:rate5m{service!="", outcome="retry"}
           ) > 1
         for: 10m
         labels:
           severity: warning
         annotations:
           summary: Worker retries are elevated
-          description: 'Worker retry throughput exceeds one retry per second for {{ $labels }}.'
+          description: 'Worker retry throughput exceeds one retry per second for job kind {{ $labels.job_kind }} in {{ $labels.service }}.'
           runbook_url: https://runbooks.example.invalid/baukit/worker-retry-storm
 
       - alert: BaukitWorkerQueueOldestAgeHigh

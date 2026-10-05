@@ -219,7 +219,7 @@ backslashes fail with `invalid_path`, so a verifier never decodes or normalizes 
 the signature. Keep the product's allowlist of media paths in the proxy's routing. The query must
 hold exactly the four parameters in the order above.
 
-The verifier compares signatures with `ring::hmac::verify` in constant time. `Debug` output for
+The verifier compares signatures with `aws_lc_rs::hmac::verify` in constant time. `Debug` output for
 keys, grants, and requests redacts secrets, signatures, and queries, and error messages name only
 the failed check. `MediaGrantError::code` and `MediaGrantKeyError::code` return the snake_case
 codes the edge verifier uses. `deploy/media-grants` has the njs verifier for nginx. Both pass

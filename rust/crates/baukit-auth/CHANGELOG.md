@@ -4,6 +4,8 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+- Use aws-lc-rs for cryptographic operations instead of a second ring dependency. Keep the supported algorithms and wire formats.
+
 ## [0.7.2] - 2026-10-04
 
 ## [0.7.1] - 2026-10-04

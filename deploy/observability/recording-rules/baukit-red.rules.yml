@@ -92,3 +92,11 @@ groups:
               rate(http_requests_total[6h])
             )
           ) / 0.001 or on() vector(0)
+
+  - name: baukit-worker
+    rules:
+      - record: baukit:worker_job_runs:rate5m
+        expr: |
+          sum by (product, service, environment, namespace, job_kind, outcome) (
+            rate(worker_job_runs_total[5m])
+          )

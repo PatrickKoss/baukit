@@ -4,6 +4,13 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+- Check the `job_kind` label in worker metric conformance.
+
+- Resolve foreign-key inventory names to schema-qualified tables. A same-named table in another schema still requires cascading deletion.
+- Products using testcontainers 0.28 must replace testcontainers-modules 0.15 with GenericImage because their exact Bollard stubs dependencies conflict.
+
+- Use aws-lc-rs for cryptographic operations instead of a second ring dependency. Keep the supported algorithms and wire formats.
+
 - Use testcontainers 0.28 for Docker fixtures. Replace the modules dependency with GenericImage definitions because the latest published modules still require 0.27. Keep the PostgreSQL and Redis readiness checks.
 - Wait for both initial serializable transactions to finish in the live-row-cap race test before retrying the rejected transaction.
 

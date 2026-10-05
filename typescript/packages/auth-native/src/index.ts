@@ -66,7 +66,7 @@ export interface NativeOidcConfig {
   readonly postLogoutRedirectUri?: string;
   /** Defaults to 30 seconds. */
   readonly refreshLeewaySeconds?: number;
-  /** Overrides the deterministic issuer/client-specific storage prefix. */
+  /** Overrides the issuer/client-specific prefix. Only ASCII letters, digits, '.', '-' and '_' are allowed. */
   readonly storageKeyPrefix?: string;
 }
 
@@ -205,8 +205,8 @@ export class NativeOidcClient {
   public constructor(config: NativeOidcConfig, environment: NativeOidcEnvironment) {
     this.config = normalizeConfig(config);
     this.environment = environment;
-    this.sessionStorageKey = `${this.config.storageKeyPrefix}:session`;
-    this.forceLoginStorageKey = `${this.config.storageKeyPrefix}:force-login`;
+    this.sessionStorageKey = `${this.config.storageKeyPrefix}.session`;
+    this.forceLoginStorageKey = `${this.config.storageKeyPrefix}.force-login`;
   }
 
   /** Loads secure storage once. Corrupt values are removed and treated as signed out. */
@@ -628,9 +628,15 @@ function normalizeConfig(config: NativeOidcConfig): NormalizedConfig {
     throw new RangeError('OIDC refresh leeway must be a non-negative number.');
   }
   const storageKeyPrefix =
-    config.storageKeyPrefix ?? `@baukit/auth-native:${encodeURIComponent(issuer)}:${clientId}`;
+    config.storageKeyPrefix ??
+    `baukit.auth-native.${storageKeyPart(issuer)}.${storageKeyPart(clientId)}`;
   if (storageKeyPrefix.length === 0) {
     throw new TypeError('OIDC storage key prefix must not be empty.');
+  }
+  if (!/^[A-Za-z0-9._-]+$/u.test(storageKeyPrefix)) {
+    throw new TypeError(
+      "OIDC storage key prefix must contain only ASCII letters, digits, '.', '-' and '_'.",
+    );
   }
   return {
     issuer,
@@ -644,6 +650,13 @@ function normalizeConfig(config: NativeOidcConfig): NormalizedConfig {
     refreshLeewayMs: refreshLeewaySeconds * 1000,
     storageKeyPrefix,
   };
+}
+
+function storageKeyPart(value: string): string {
+  return encodeURIComponent(value).replace(
+    /[!'()*_.~%]/gu,
+    (character) => `_${character.charCodeAt(0).toString(16)}`,
+  );
 }
 
 function normalizeScopes(scopes: readonly string[] | undefined, offlineAccess = false): string[] {

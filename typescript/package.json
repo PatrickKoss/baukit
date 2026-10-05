@@ -13,7 +13,8 @@
     "format:check": "turbo run format:check",
     "check": "turbo run build lint test format:check",
     "changeset": "changeset",
-    "version-packages": "changeset version"
+    "version-packages": "changeset version",
+    "test:source-maps": "node --test scripts/packed-source-maps.test.mjs"
   },
   "devDependencies": {
     "@changesets/cli": "3.0.3",

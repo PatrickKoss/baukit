@@ -1,6 +1,7 @@
 use crate::{
     ErasureFuture, IDENTITY_DELETE_JOB_TYPE, IdentityAccountDeleter, IdentityDeletionError,
 };
+use aws_lc_rs::hmac;
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -9,7 +10,6 @@ use baukit_config::Secret;
 use baukit_http::{ApiError, IdempotencyKeyRule};
 use baukit_jobs::{NewJob, PostgresJobStore};
 use chrono::{DateTime, Utc};
-use ring::hmac;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{PgConnection, PgPool, Postgres, Transaction};

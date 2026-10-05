@@ -102,3 +102,5 @@ The standalone worker handles item-created demo jobs. Each runner filters claims
 by its handler's job types. Keep the API deployed until pending identity deletion
 jobs finish. Alert on failed erasure operations and retain their jobs for repair.
 {% endif %}
+Worker metrics label the handler type with `job_kind`. Prometheus uses `job`
+for the scrape target, so worker queries must group by `job_kind`.

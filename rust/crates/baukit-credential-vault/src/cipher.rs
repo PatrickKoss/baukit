@@ -1,10 +1,10 @@
 use std::{collections::BTreeMap, fmt, sync::Arc};
 
-use base64::{Engine as _, engine::general_purpose::STANDARD};
-use ring::{
+use aws_lc_rs::{
     aead::{AES_256_GCM, Aad, LessSafeKey, NONCE_LEN, Nonce, UnboundKey},
     rand::{SecureRandom as _, SystemRandom},
 };
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use uuid::Uuid;
 use zeroize::Zeroize;
 

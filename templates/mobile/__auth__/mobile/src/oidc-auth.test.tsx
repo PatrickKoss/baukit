@@ -75,7 +75,7 @@ afterEach(() => {
 });
 
 describe('useOidcAuth', () => {
-  it('uses the SecureStore key adapter', () => {
+  it('uses the SecureStore storage port', () => {
     expect(clientEnvironment?.storage).toBe(authStorage);
   });
 

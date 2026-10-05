@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Publish the TypeScript sources referenced by JavaScript and declaration maps. Check source paths in the packed archive.
+
 - Report failed erasure replays with a typed operation failure and retain the key for reconciliation after repair. Test the shared Rust wire receipts.
 
 - Remove durable erasure keys after definitive receipts. Preserve committed receipts when local key removal fails.

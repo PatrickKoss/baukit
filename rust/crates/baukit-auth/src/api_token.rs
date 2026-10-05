@@ -6,11 +6,11 @@ use std::{
     sync::Arc,
 };
 
-use chrono::{DateTime, Utc};
-use ring::{
+use aws_lc_rs::{
     digest,
     rand::{SecureRandom as _, SystemRandom},
 };
+use chrono::{DateTime, Utc};
 use thiserror::Error;
 use uuid::Uuid;
 

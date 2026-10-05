@@ -7,8 +7,8 @@
 
 use std::fmt;
 
+use aws_lc_rs::hmac;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use ring::hmac;
 use thiserror::Error;
 use zeroize::Zeroizing;
 

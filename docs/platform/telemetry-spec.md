@@ -58,11 +58,11 @@ Every process emits `build_info{version, commit, rust_version} = 1` (gauge).
 
 | Metric | Type | Labels |
 |---|---|---|
-| `worker_job_runs_total` | counter | `job`, `outcome` (`success`, `failure`, `retry`) |
-| `worker_job_duration_seconds` | histogram | `job` |
+| `worker_job_runs_total` | counter | `job_kind`, `outcome` (`success`, `failure`, `retry`) |
+| `worker_job_duration_seconds` | histogram | `job_kind` |
 | `worker_queue_oldest_age_seconds` | gauge | `queue` |
 
-`job` and `queue` values are static identifiers defined in code, never derived from payload data.
+`job_kind` and `queue` values are static identifiers defined in code, never derived from payload data.
 
 ### 2.5 Label rules
 

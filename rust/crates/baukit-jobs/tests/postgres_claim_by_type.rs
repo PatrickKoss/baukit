@@ -110,7 +110,7 @@ async fn postgres_disjoint_runners_never_claim_each_others_jobs() -> Result<(), 
     );
     let rendered = metrics.render();
     assert!(
-        rendered.contains(r#"worker_job_runs_total{job="unknown",outcome="success"} 0"#),
+        rendered.contains(r#"worker_job_runs_total{job_kind="unknown",outcome="success"} 0"#),
         "no runner handled an undeclared type:\n{rendered}"
     );
     for queue in ["alpha", "beta"] {

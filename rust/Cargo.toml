@@ -33,6 +33,7 @@ keywords = ["baukit", "foundation", "axum", "telemetry"]
 categories = ["web-programming", "development-tools"]
 
 [workspace.dependencies]
+aws-lc-rs = "1.18.1"
 axum = "0.8.9"
 base64 = "0.23.1"
 baukit-auth = { version = "=0.7.2", path = "crates/baukit-auth" }
@@ -68,7 +69,6 @@ pem = "4.0.0"
 regex = "1.13.1"
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls"] }
 redis = { version = "1.7.1", default-features = false, features = ["connection-manager", "sentinel", "tokio-comp"] }
-ring = "0.17.14"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_html_form = "0.4.1"
 serde_json = "1.0.151"

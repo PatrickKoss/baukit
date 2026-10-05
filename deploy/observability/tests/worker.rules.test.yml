@@ -1,0 +1,61 @@
+rule_files:
+  - ../recording-rules/baukit-red.rules.yml
+  - ../alerts/baukit.rules.yml
+evaluation_interval: 1m
+group_eval_order:
+  - baukit-worker
+  - baukit-worker-alerts
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'worker_job_runs_total{product="fixture",service="fixture-worker",environment="test",namespace="fixture",job="scrape-worker",job_kind="healthy",outcome="success"}'
+        values: '0+12000x20'
+      - series: 'worker_job_runs_total{product="fixture",service="fixture-worker",environment="test",namespace="fixture",job="scrape-worker",job_kind="failing",outcome="failure"}'
+        values: '0+120x20'
+      - series: 'worker_job_runs_total{product="fixture",service="fixture-worker",environment="test",namespace="fixture",job="scrape-worker",job_kind="failing",outcome="retry"}'
+        values: '0+120x20'
+    promql_expr_test:
+      - expr: baukit:worker_job_runs:rate5m
+        eval_time: 20m
+        exp_samples:
+          - labels: 'baukit:worker_job_runs:rate5m{product="fixture",service="fixture-worker",environment="test",namespace="fixture",job_kind="healthy",outcome="success"}'
+            value: 200
+          - labels: 'baukit:worker_job_runs:rate5m{product="fixture",service="fixture-worker",environment="test",namespace="fixture",job_kind="failing",outcome="failure"}'
+            value: 2
+          - labels: 'baukit:worker_job_runs:rate5m{product="fixture",service="fixture-worker",environment="test",namespace="fixture",job_kind="failing",outcome="retry"}'
+            value: 2
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: BaukitWorkerFailureRateHigh
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: BaukitWorkerFailureRateHigh
+        exp_alerts:
+          - exp_labels:
+              product: fixture
+              service: fixture-worker
+              environment: test
+              namespace: fixture
+              job_kind: failing
+              severity: warning
+            exp_annotations:
+              summary: Worker failure rate is high
+              description: More than 10% of worker runs are failing for job kind failing in fixture-worker.
+              runbook_url: https://runbooks.example.invalid/baukit/worker-failures
+      - eval_time: 5m
+        alertname: BaukitWorkerRetryStorm
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: BaukitWorkerRetryStorm
+        exp_alerts:
+          - exp_labels:
+              product: fixture
+              service: fixture-worker
+              environment: test
+              namespace: fixture
+              job_kind: failing
+              severity: warning
+            exp_annotations:
+              summary: Worker retries are elevated
+              description: Worker retry throughput exceeds one retry per second for job kind failing in fixture-worker.
+              runbook_url: https://runbooks.example.invalid/baukit/worker-retry-storm

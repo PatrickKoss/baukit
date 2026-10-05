@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { checkPackedSourceMaps } from '../../../scripts/packed-source-maps.mjs';
+import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,13 +34,14 @@ try {
     'package/dist/index.js',
     'package/dist/worker.js',
     'package/package.json',
+    'package/src/index.ts',
   ]) {
     assert.ok(files.includes(required), `packed package is missing ${required}`);
   }
-  assert.equal(
-    files.some((name) => name.startsWith('package/src/')),
-    false,
-  );
+  const installed = join(outputDirectory, 'installed');
+  await mkdir(installed);
+  execFileSync('tar', ['-xzf', archive, '-C', installed, '--strip-components=1']);
+  await checkPackedSourceMaps(installed);
 
   const packedManifest = JSON.parse(
     execFileSync('tar', ['-xOzf', archive, 'package/package.json'], { encoding: 'utf8' }),

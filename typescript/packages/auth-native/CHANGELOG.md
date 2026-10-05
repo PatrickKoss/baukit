@@ -1,5 +1,11 @@
 # @baukit/auth-native
 
+## Unreleased
+
+- Publish the TypeScript sources referenced by JavaScript and declaration maps. Check source paths in the packed archive.
+
+- Use SecureStore-safe session and force-login keys. Encode default prefixes and reject invalid custom prefixes at construction. Old keys are not migrated.
+
 ## 0.7.2
 
 ### Patch Changes

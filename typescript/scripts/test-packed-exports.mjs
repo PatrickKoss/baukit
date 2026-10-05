@@ -2,6 +2,7 @@
 // CommonJS `require` conditions, the way Jest resolves `@baukit/*` imports.
 // `--load <subpath>` also loads that export with `require`, which Node 24 runs as require(esm).
 import assert from 'node:assert/strict';
+import { checkPackedSourceMaps } from './packed-source-maps.mjs';
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
@@ -55,6 +56,7 @@ function specifier(subpath) {
 
 try {
   const installed = await installPacked();
+  await checkPackedSourceMaps(installed);
   const consumerRequire = createRequire(join(workDirectory, 'consumer.cjs'));
   const subpaths = Object.keys(manifest.exports);
   for (const subpath of esmOnlySubpaths) {

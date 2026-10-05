@@ -12,15 +12,18 @@ class MemoryStorage implements SecureStoragePort {
   public readonly values = new Map<string, string>();
 
   public get(key: string): Promise<string | null> {
+    expect(key).toMatch(/^[A-Za-z0-9._-]+$/u);
     return Promise.resolve(this.values.get(key) ?? null);
   }
 
   public set(key: string, value: string): Promise<void> {
+    expect(key).toMatch(/^[A-Za-z0-9._-]+$/u);
     this.values.set(key, value);
     return Promise.resolve();
   }
 
   public delete(key: string): Promise<void> {
+    expect(key).toMatch(/^[A-Za-z0-9._-]+$/u);
     this.values.delete(key);
     return Promise.resolve();
   }
@@ -47,7 +50,7 @@ function providerMetadata(): Response {
 
 function seedExpiredSession(storage: MemoryStorage): void {
   storage.values.set(
-    'refresh-test:session',
+    'refresh-test.session',
     JSON.stringify({
       subject: 'subject-123',
       accessToken: 'expired-access',
@@ -137,7 +140,7 @@ describe('mobile OIDC integration', () => {
       status: 503,
     });
     expect(client.session()?.subject).toBe('subject-123');
-    expect(storage.values.has('refresh-test:session')).toBe(true);
+    expect(storage.values.has('refresh-test.session')).toBe(true);
   });
 
   it('makes terminal refresh rejection observable and expires the session', async () => {

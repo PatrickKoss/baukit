@@ -484,8 +484,8 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (job, outcome) (rate(worker_job_runs_total{product=~\"$product\", service=~\"$service\", environment=~\"$environment\"}[5m]))",
-          "legendFormat": "{{job}} {{outcome}}",
+          "expr": "sum by (job_kind, outcome) (rate(worker_job_runs_total{product=~\"$product\", service=~\"$service\", environment=~\"$environment\"}[5m]))",
+          "legendFormat": "{{job_kind}} {{outcome}}",
           "range": true,
           "refId": "A"
         }
@@ -531,8 +531,8 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (job, le) (rate(worker_job_duration_seconds_bucket{product=~\"$product\", service=~\"$service\", environment=~\"$environment\"}[5m])))",
-          "legendFormat": "p95 {{job}}",
+          "expr": "histogram_quantile(0.95, sum by (job_kind, le) (rate(worker_job_duration_seconds_bucket{product=~\"$product\", service=~\"$service\", environment=~\"$environment\"}[5m])))",
+          "legendFormat": "p95 {{job_kind}}",
           "range": true,
           "refId": "A"
         }

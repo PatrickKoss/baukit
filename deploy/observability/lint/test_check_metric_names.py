@@ -150,6 +150,27 @@ class ProductInvocationTests(unittest.TestCase):
                 self.assertEqual(status, 2)
                 self.assertIn(message, stderr)
 
+    def test_worker_queries_use_job_kind_with_a_scrape_job_selector(self) -> None:
+        self.product.write_allowlist("")
+        self.product.write_dashboard(
+            'sum by (job_kind, outcome) (rate(worker_job_runs_total{job="worker"}[5m]))',
+            'histogram_quantile(0.95, sum by (job_kind, le) '
+            '(rate(worker_job_duration_seconds_bucket[5m])))',
+        )
+        status, _, stderr = self.product.lint()
+        self.assertEqual(status, 0, stderr)
+
+    def test_rejects_scrape_job_as_a_worker_handler_dimension(self) -> None:
+        self.product.write_allowlist("")
+        for label in ("job", "exported_job"):
+            with self.subTest(label=label):
+                self.product.write_dashboard(
+                    f"sum by ({label}) (rate(worker_job_runs_total[5m]))"
+                )
+                status, _, stderr = self.product.lint()
+                self.assertEqual(status, 1)
+                self.assertIn("worker handler types must use job_kind", stderr)
+
     def test_rejects_a_missing_observability_root(self) -> None:
         status, _, stderr = run("--observability-root", str(self.product.root / "missing"))
 

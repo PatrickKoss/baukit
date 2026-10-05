@@ -26,7 +26,7 @@ baukit-http.workspace = true
 baukit-jobs.workspace = true
 chrono.workspace = true
 reqwest = { workspace = true, optional = true, features = ["form"] }
-ring.workspace = true
+aws-lc-rs.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true

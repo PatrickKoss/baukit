@@ -8,6 +8,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+use aws_lc_rs::{digest, hmac, rand::SystemRandom, signature};
 use axum::{
     Json, Router,
     body::Bytes,
@@ -24,7 +25,6 @@ use base64::{
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
 use baukit_auth::constant_time_eq;
-use ring::{digest, hmac, rand::SystemRandom, signature};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use thiserror::Error;
@@ -158,7 +158,7 @@ pub fn rs256_token_with_key_id(
         header["kid"] = Value::String(key_id.to_owned());
     }
     encode_token(header, claims, |message| {
-        let mut output = vec![0; key_pair.public().modulus_len()];
+        let mut output = vec![0; key_pair.public_modulus_len()];
         key_pair
             .sign(
                 &signature::RSA_PKCS1_SHA256,

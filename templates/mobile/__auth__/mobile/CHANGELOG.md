@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Use dot-separated OIDC keys directly. Remove the colon-to-dot storage rewrite.
+
 - Use a valid SecureStore key for the local-data registry so identity bootstrap can open its partition.
 
 - Wait for polling and accessibility effects in profile deletion tests.

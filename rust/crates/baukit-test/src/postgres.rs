@@ -270,9 +270,24 @@ pub async fn audit_user_root_foreign_keys(
         return Err(sqlx::Error::RowNotFound);
     }
 
+    let mut registered = std::collections::BTreeMap::new();
+    for resource in resources {
+        let table = sqlx::query_scalar::<_, String>(
+            "SELECT quote_ident(namespace.nspname) || '.' || quote_ident(table_row.relname) \
+             FROM pg_class AS table_row \
+             JOIN pg_namespace AS namespace ON namespace.oid = table_row.relnamespace \
+             WHERE table_row.oid = to_regclass($1)",
+        )
+        .bind(resource.name)
+        .fetch_optional(pool)
+        .await?;
+        if let Some(table) = table {
+            registered.insert(table, resource.cleanup);
+        }
+    }
+
     let rows = sqlx::query(
         "SELECT constraint_row.conname AS constraint_name, \
-                child.relname AS table_name, \
                 quote_ident(child_namespace.nspname) || '.' || quote_ident(child.relname) AS qualified_table, \
                 CASE constraint_row.confdeltype \
                     WHEN 'a' THEN 'NO ACTION' \
@@ -295,12 +310,11 @@ pub async fn audit_user_root_foreign_keys(
 
     let mut mismatches = Vec::new();
     for row in rows {
-        let table_name = row.try_get::<String, _>("table_name")?;
         let qualified_table = row.try_get::<String, _>("qualified_table")?;
-        let declared_cleanup = resources
-            .iter()
-            .find(|resource| resource.name == table_name || resource.name == qualified_table)
-            .map_or(CleanupKind::Cascade, |resource| resource.cleanup);
+        let declared_cleanup = registered
+            .get(&qualified_table)
+            .copied()
+            .unwrap_or(CleanupKind::Cascade);
         let actual_delete_action = row.try_get::<String, _>("delete_action")?;
         if declared_cleanup == CleanupKind::Cascade && actual_delete_action != "CASCADE" {
             mismatches.push(ForeignKeyDeleteMismatch {
@@ -597,6 +611,38 @@ mod tests {
                     .await?
                     .is_empty()
             );
+        }
+        pool.close().await;
+        Ok(())
+    }
+
+    #[cfg(feature = "sqlx-postgres")]
+    #[tokio::test]
+    #[ignore = "requires a reachable Docker daemon and may pull the PostgreSQL image"]
+    async fn audits_same_named_tables_in_different_schemas()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let fixture = start_postgres().await?;
+        let pool = sqlx::PgPool::connect(fixture.connection_url()).await?;
+        sqlx::raw_sql(
+            "CREATE TABLE public.erasure_users (id BIGINT PRIMARY KEY); \
+             CREATE SCHEMA tenant; \
+             CREATE TABLE public.records (user_id BIGINT REFERENCES public.erasure_users); \
+             CREATE TABLE tenant.records (user_id BIGINT REFERENCES public.erasure_users);",
+        )
+        .execute(&pool)
+        .await?;
+        for name in ["records", "public.records"] {
+            let registry = [OwnedResourceCheck {
+                name,
+                count_sql: "SELECT count(*) FROM public.records WHERE user_id = $1",
+                cleanup: CleanupKind::Explicit,
+            }];
+            let mismatches =
+                audit_user_root_foreign_keys(&pool, "erasure_users", &registry).await?;
+            assert_eq!(mismatches.len(), 1);
+            assert_eq!(mismatches[0].referencing_table, "tenant.records");
+            assert_eq!(mismatches[0].actual_delete_action, "NO ACTION");
+            assert_eq!(mismatches[0].declared_cleanup, CleanupKind::Cascade);
         }
         pool.close().await;
         Ok(())

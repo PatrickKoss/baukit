@@ -42,8 +42,8 @@
 use std::fmt::Display;
 use std::str::FromStr;
 
+use aws_lc_rs::digest;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use ring::digest;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

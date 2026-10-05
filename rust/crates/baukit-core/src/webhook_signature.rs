@@ -6,8 +6,8 @@
 //! current and retained rotation keys. `fixtures/webhooks/signature-v1.json`
 //! pins the signing bytes, signatures, and verification results.
 
+use aws_lc_rs::hmac;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use ring::hmac;
 
 /// The version line that starts every signing input, without its newline.
 pub const WEBHOOK_SIGNATURE_VERSION: &str = "baukit-webhook-v1";

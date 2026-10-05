@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Publish the TypeScript sources referenced by JavaScript and declaration maps. Check source paths in the packed archive.
+
 - Verify consent withdrawal and storage against posthog-react-native 4.78.4.
 
 ## 0.7.2

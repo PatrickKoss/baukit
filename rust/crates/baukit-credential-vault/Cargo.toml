@@ -18,7 +18,7 @@ workspace = true
 [dependencies]
 base64.workspace = true
 baukit-config.workspace = true
-ring.workspace = true
+aws-lc-rs.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 uuid.workspace = true

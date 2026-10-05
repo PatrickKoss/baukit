@@ -6,6 +6,29 @@ that check a service actually follows the platform's contracts.
 
 Add it under `[dev-dependencies]`. Nothing here belongs in a shipped binary.
 
+## Testcontainers compatibility
+
+Baukit uses testcontainers 0.28. testcontainers-modules 0.15 requires 0.27,
+and the two versions require different exact bollard-stubs 1.x versions.
+Products must replace testcontainers-modules with `GenericImage` to use this
+version of baukit-test. The advanced fixture guards also use `GenericImage`.
+
+```rust,no_run
+use testcontainers::{GenericImage, core::{IntoContainerPort, WaitFor}, runners::AsyncRunner};
+
+# async fn example() -> Result<(), Box<dyn std::error::Error>> {
+let container = GenericImage::new("redis", "8.10.2-alpine")
+    .with_exposed_port(6379_u16.tcp())
+    .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
+    .start()
+    .await?;
+let port = container.get_host_port_ipv4(6379).await?;
+let url = format!("redis://{}:{port}/", container.get_host().await?);
+# drop((url, container));
+# Ok(())
+# }
+```
+
 ## Conformance assertions
 
 The most useful thing in the crate is the set of checks that a service still honors a contract it

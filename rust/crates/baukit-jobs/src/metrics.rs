@@ -21,10 +21,10 @@ pub(crate) fn initialize(job_types: &'static [&'static str], queue: &'static str
 
     for job in job_types.iter().copied().chain([UNKNOWN_JOB]) {
         for outcome in OUTCOMES {
-            metrics::counter!("worker_job_runs_total", "job" => job, "outcome" => outcome)
+            metrics::counter!("worker_job_runs_total", "job_kind" => job, "outcome" => outcome)
                 .absolute(0);
         }
-        let _histogram = metrics::histogram!("worker_job_duration_seconds", "job" => job);
+        let _histogram = metrics::histogram!("worker_job_duration_seconds", "job_kind" => job);
     }
     metrics::gauge!("worker_queue_oldest_age_seconds", "queue" => queue).set(0.0);
 }
@@ -44,8 +44,10 @@ pub(crate) fn record(
         .copied()
         .find(|known| *known == job_type)
         .unwrap_or(UNKNOWN_JOB);
-    metrics::counter!("worker_job_runs_total", "job" => job, "outcome" => outcome).increment(1);
-    metrics::histogram!("worker_job_duration_seconds", "job" => job).record(duration.as_secs_f64());
+    metrics::counter!("worker_job_runs_total", "job_kind" => job, "outcome" => outcome)
+        .increment(1);
+    metrics::histogram!("worker_job_duration_seconds", "job_kind" => job)
+        .record(duration.as_secs_f64());
 }
 
 #[cfg(test)]
@@ -74,7 +76,7 @@ mod tests {
                 .map(|label| (label.key(), label.value()))
                 .collect::<Vec<_>>();
             match key.key().name() {
-                "worker_job_runs_total" if labels.contains(&("job", "sync")) => {
+                "worker_job_runs_total" if labels.contains(&("job_kind", "sync")) => {
                     assert_eq!(value, DebugValue::Counter(0));
                     assert_eq!(labels.len(), 2);
                     outcomes.extend(
@@ -84,7 +86,7 @@ mod tests {
                             .map(|(_, value)| (*value).to_owned()),
                     );
                 }
-                "worker_job_duration_seconds" if labels == [("job", "sync")] => {
+                "worker_job_duration_seconds" if labels == [("job_kind", "sync")] => {
                     assert_eq!(value, DebugValue::Histogram(Vec::new()));
                     saw_empty_histogram = true;
                 }

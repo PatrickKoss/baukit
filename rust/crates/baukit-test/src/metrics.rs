@@ -443,17 +443,17 @@ fn check_worker_metrics(samples: &[Sample], violations: &mut Vec<String>) {
     check_exact_labels(
         samples,
         WORKER_JOB_RUNS_TOTAL,
-        &["job", "outcome"],
+        &["job_kind", "outcome"],
         violations,
     );
     check_exact_labels(
         samples,
         WORKER_JOB_DURATION_BUCKET,
-        &["job", "le"],
+        &["job_kind", "le"],
         violations,
     );
     for metric in [WORKER_JOB_DURATION_SUM, WORKER_JOB_DURATION_COUNT] {
-        check_exact_labels(samples, metric, &["job"], violations);
+        check_exact_labels(samples, metric, &["job_kind"], violations);
     }
     check_exact_labels(samples, WORKER_QUEUE_OLDEST_AGE, &["queue"], violations);
 
@@ -611,12 +611,12 @@ build_info{version="1",commit="abc",rust_version="1.95"} 1
 
         let worker_exposition = r#"
 build_info{version="1",commit="abc",rust_version="1.95"} 1
-worker_job_runs_total{job="sync",outcome="success"} 1
-worker_job_runs_total{job="sync",outcome="failure"} 1
-worker_job_runs_total{job="sync",outcome="retry"} 1
-worker_job_duration_seconds_bucket{job="sync",le="1"} 1
-worker_job_duration_seconds_sum{job="sync"} 0.25
-worker_job_duration_seconds_count{job="sync"} 1
+worker_job_runs_total{job_kind="sync",outcome="success"} 1
+worker_job_runs_total{job_kind="sync",outcome="failure"} 1
+worker_job_runs_total{job_kind="sync",outcome="retry"} 1
+worker_job_duration_seconds_bucket{job_kind="sync",le="1"} 1
+worker_job_duration_seconds_sum{job_kind="sync"} 0.25
+worker_job_duration_seconds_count{job_kind="sync"} 1
 worker_queue_oldest_age_seconds{queue="default"} 0
 "#;
         check_metrics_conformance_with_options(worker_exposition, options)
@@ -627,11 +627,11 @@ worker_queue_oldest_age_seconds{queue="default"} 0
     fn worker_mode_rejects_unknown_outcomes_and_label_drift() {
         let exposition = r#"
 build_info{version="1",commit="abc",rust_version="1.95"} 1
-worker_job_runs_total{job="sync",outcome="cancelled"} 1
-worker_job_duration_seconds_bucket{job="sync",queue="default",le="1"} 1
-worker_job_duration_seconds_sum{job="sync"} 0.25
-worker_job_duration_seconds_count{job="sync"} 1
-worker_queue_oldest_age_seconds{job="sync"} 0
+worker_job_runs_total{job_kind="sync",outcome="cancelled"} 1
+worker_job_duration_seconds_bucket{job_kind="sync",queue="default",le="1"} 1
+worker_job_duration_seconds_sum{job_kind="sync"} 0.25
+worker_job_duration_seconds_count{job_kind="sync"} 1
+worker_queue_oldest_age_seconds{job_kind="sync"} 0
 "#;
         let error = check_metrics_conformance_with_options(
             exposition,

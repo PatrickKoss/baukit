@@ -4,6 +4,8 @@ All notable changes to `baukit-jobs` are documented here.
 
 ## [Unreleased]
 
+- Use `job_kind` for worker metrics so Prometheus keeps the handler type separate from the scrape job. Update worker dashboards, recording rules, and alerts.
+
 - Remove the extra blank line at the end of the published jobs migration so copied migrations pass git diff --check.
 
 ## [0.7.2] - 2026-10-04

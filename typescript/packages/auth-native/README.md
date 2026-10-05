@@ -34,6 +34,12 @@ Use `safeAuthErrorMessage(error)` at UI boundaries. Errors contain only allowlis
 
 The default Expo entry point uses `expo-auth-session`, `expo-secure-store`, and `expo-web-browser`, which are peer dependencies. For deterministic tests or another native stack, construct `NativeOidcClient` with your own `SecureStoragePort`, `BrowserFlowPort`, `fetch`, and clock.
 
+Session and force-login keys use dot separators. The default prefix encodes the
+issuer and client ID with SecureStore-safe characters. A custom `storageKeyPrefix`
+must be non-empty and contain only ASCII letters, digits, `.`, `-` and `_`.
+Construction rejects invalid prefixes before accessing storage. No key rewrite
+adapter is needed. Old keys are not migrated.
+
 Universal Expo products can pass a `storage` port to
 `createExpoOidcEnvironment` or `createExpoOidcClient`. This supports a web
 localStorage adapter or a product-owned compatibility/migration wrapper while

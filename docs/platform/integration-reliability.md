@@ -308,7 +308,7 @@ Run unit tests plus PostgreSQL integration tests with Docker-gated ignored tests
 
 ## 9. Telemetry bounds and adoption
 
-Reuse Baukit's `worker_job_runs_total`, `worker_job_duration_seconds`, and `worker_queue_oldest_age_seconds`. Additional product metrics must be registered and use bounded code-defined labels such as provider, operation, job, and outcome enums. Never use secrets, user/connection IDs, URLs, payload fields, exception text, request IDs, or other dynamic strings as labels.
+Reuse Baukit's `worker_job_runs_total`, `worker_job_duration_seconds`, and `worker_queue_oldest_age_seconds`. Additional product metrics must be registered and use bounded code-defined labels such as provider, operation, job_kind, and outcome enums. Never use secrets, user/connection IDs, URLs, payload fields, exception text, request IDs, or other dynamic strings as labels.
 
 Fitness-style worker slices should migrate onto `baukit-jobs` or a thin product adapter around it. Record real missing primitives during that adoption before extending Baukit. Provider models, OAuth behavior, webhook payloads, recipe imports, and food databases remain in their products.
 

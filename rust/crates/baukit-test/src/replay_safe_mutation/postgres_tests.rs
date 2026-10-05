@@ -1,4 +1,4 @@
-use ring::digest::{SHA256, digest};
+use aws_lc_rs::digest::{SHA256, digest};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{PgPool, Postgres, Row as _, Transaction};

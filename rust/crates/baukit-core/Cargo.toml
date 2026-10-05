@@ -16,13 +16,13 @@ readme = "README.md"
 workspace = true
 
 [features]
-media-grants = ["dep:base64", "dep:ring", "dep:zeroize"]
-pagination = ["dep:base64", "dep:ring", "dep:uuid"]
-webhook-signature = ["dep:base64", "dep:ring"]
+media-grants = ["dep:base64", "dep:aws-lc-rs", "dep:zeroize"]
+pagination = ["dep:base64", "dep:aws-lc-rs", "dep:uuid"]
+webhook-signature = ["dep:base64", "dep:aws-lc-rs"]
 
 [dependencies]
 base64 = { workspace = true, optional = true }
-ring = { workspace = true, optional = true }
+aws-lc-rs = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Use aws-lc-rs for cryptographic operations instead of a second ring dependency. Keep the supported algorithms and wire formats.
+
 - Clarify that wire receipts always have an operation ID. Test missing and null IDs against the shared receipt vectors.
 
 ## [0.7.2] - 2026-10-04

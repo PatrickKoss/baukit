@@ -32,6 +32,8 @@
 
 ## [Unreleased]
 
+- Publish the TypeScript sources referenced by JavaScript and declaration maps. Check source paths in the packed archive.
+
 - Add optional profile subtitles on web and native rails and menus. Include the subtitle in the profile button label.
 - Add optional native font family, sizes, weights, line height and letter spacing. Apply them to navigation labels, menus and section pickers.
 - Present native menus in a Modal on web so compact navigation cannot clip them. Bound popups to the viewport.

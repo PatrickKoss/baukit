@@ -47,7 +47,7 @@ export const authClient = createExpoOidcClient(
     redirectUri,
     scopes: ['openid', 'profile', 'email'],
     offlineAccess: true,
-    storageKeyPrefix: `${PRODUCT_NAME}:oidc`,
+    storageKeyPrefix: `${PRODUCT_NAME}.oidc`,
   },
   {
     randomBytes: (size) => Crypto.getRandomBytesAsync(size),

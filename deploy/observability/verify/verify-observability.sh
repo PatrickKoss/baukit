@@ -71,17 +71,7 @@ wait_for_url() {
 }
 
 python3 "$observability/lint/check-metric-names.py"
-if command -v promtool >/dev/null 2>&1; then
-    promtool check rules \
-        "$observability/recording-rules/baukit-red.rules.yml" \
-        "$observability/alerts/baukit.rules.yml"
-else
-    docker run --rm --entrypoint promtool \
-        --volume "$observability:/observability:ro" \
-        "$prometheus_image" check rules \
-        /observability/recording-rules/baukit-red.rules.yml \
-        /observability/alerts/baukit.rules.yml
-fi
+PROMETHEUS_IMAGE="$prometheus_image" "$observability/lint/check-rules.sh"
 
 wait_for_url "${api_ops_url%/}/healthz"
 wait_for_url "${api_ops_url%/}/readyz"

@@ -29,7 +29,7 @@ pub type JobFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 pub trait JobHandler: Send + Sync + 'static {
     /// Returns every supported static job identifier.
     ///
-    /// These values become the bounded `job` metric label set. They must never
+    /// These values become the bounded `job_kind` metric label set. They must never
     /// be derived from payload data or runtime configuration.
     fn job_types(&self) -> &'static [&'static str];
 

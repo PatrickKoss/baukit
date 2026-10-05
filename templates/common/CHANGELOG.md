@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-{% if context.mobile %}- Add expo-system-ui 57.0.4 to support automatic mobile appearance with Expo 57.
+{% if context.worker %}- Use `job_kind` to query worker metrics separately from the Prometheus scrape job.
+{% endif %}{% if context.mobile and context.auth_oidc %}- Use SecureStore-safe OIDC keys without a product key rewrite.
+{% endif %}{% if context.mobile %}- Add expo-system-ui 57.0.4 to support automatic mobile appearance with Expo 57.
 {% endif %}{% if context.web %}- Store Playwright browsers in web/.playwright-browsers so dependency reinstalls preserve them. Exclude the cache from Docker contexts.
 - Bind the web preview server to 127.0.0.1 so Playwright readiness uses the same address.
 {% endif %}
