@@ -3764,6 +3764,16 @@ fn doctor_reports_missing_wiring_instead_of_template_filenames() -> anyhow::Resu
     local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
     let root = generate_new(&local)?;
     doctor(&root)?;
+    let mut manifest = baukit_cli::read_manifest(&root)?;
+    manifest
+        .doctor
+        .sources
+        .insert("pkce_login".to_owned(), "scripts/pkce-login.py".to_owned());
+    manifest.doctor.sources.insert(
+        "keycloak_reconcile_tests".to_owned(),
+        "scripts/tests/test_reconcile_keycloak.py".to_owned(),
+    );
+    fs::write(root.join("baukit.toml"), toml::to_string(&manifest)?)?;
     for (relative, finding) in [
         (
             "backend/Dockerfile",
@@ -4015,5 +4025,260 @@ fn generated_preview_binds_the_ipv4_readiness_address() -> anyhow::Result<()> {
     let config = fs::read_to_string(root.join("web/e2e/playwright.config.ts"))?;
     assert!(config.contains("http://127.0.0.1:"));
     assert!(config.contains("vite preview --host 127.0.0.1 --port"));
+    Ok(())
+}
+
+#[test]
+fn doctor_resolves_crate_identity_in_library_modules() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "crate-identity");
+    local.auth = Some(AuthProvider::Oidc);
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    let library = root.join("backend/crates/crate-identity-bin/src/lib.rs");
+    let original = fs::read_to_string(&library)?;
+    fs::write(&library, format!("pub mod config;\n{original}"))?;
+    let config = library.with_file_name("config.rs");
+    for (import, binding) in [
+        ("use crate::PRODUCT;", "PRODUCT"),
+        ("", "crate::PRODUCT"),
+        ("use crate::{PRODUCT as APP};", "APP"),
+    ] {
+        fs::write(
+            &config,
+            format!(
+                "{import}\npub fn loader(environment: baukit_config::Environment) -> Result<baukit_config::ConfigLoader, baukit_config::LoadError> {{\n    baukit_config::ConfigLoader::new({binding}, environment)\n}}\n"
+            ),
+        )?;
+        doctor(&root)?;
+        fs::write(
+            &library,
+            fs::read_to_string(&library)?.replace(
+                "const PRODUCT: &str = \"crate-identity\";",
+                "const PRODUCT: &str = \"wrong-product\";",
+            ),
+        )?;
+        let error = doctor(&root)
+            .expect_err("crate references must not hide identity drift")
+            .to_string();
+        assert!(
+            error.contains("config.rs") && error.contains("does not match application name"),
+            "{error}"
+        );
+        fs::write(&library, format!("pub mod config;\n{original}"))?;
+    }
+    let binary = library
+        .parent()
+        .expect("crate source directory")
+        .join("bin/api.rs");
+    let source = fs::read_to_string(&binary)?;
+    fs::write(
+        &binary,
+        source.replace(
+            "ConfigLoader::new(PRODUCT,",
+            "ConfigLoader::new(crate::PRODUCT,",
+        ),
+    )?;
+    doctor(&root)?;
+    fs::write(
+        &binary,
+        fs::read_to_string(&binary)?.replace(
+            "const PRODUCT: &str = \"crate-identity\";",
+            "const PRODUCT: &str = \"wrong-product\";",
+        ),
+    )?;
+    let error = doctor(&root)
+        .expect_err("binary crate constants belong to the binary")
+        .to_string();
+    assert!(error.contains("api.rs"), "{error}");
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_registry_dependencies_without_a_checkout() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "registry-product");
+    local.mobile = true;
+    let root = generate_new(&local)?;
+    let manifest = baukit_cli::read_manifest(&root)?;
+    assert!(matches!(
+        manifest.dependencies.baukit,
+        baukit_cli::BaukitDependency::Registry { .. }
+    ));
+    doctor(&root)?;
+    Ok(())
+}
+
+#[test]
+fn doctor_checks_optional_pkce_tools_and_selected_realms() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "realm-product");
+    local.auth = Some(AuthProvider::Oidc);
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    fs::remove_file(root.join("scripts/pkce-login.py"))?;
+    doctor(&root)?;
+    let mut manifest = baukit_cli::read_manifest(&root)?;
+    manifest
+        .doctor
+        .sources
+        .insert("pkce_login".to_owned(), "tools/login.py".to_owned());
+    fs::write(root.join("baukit.toml"), toml::to_string(&manifest)?)?;
+    assert!(
+        doctor(&root)
+            .expect_err("declared helpers must exist")
+            .to_string()
+            .contains("missing pkce_login wiring")
+    );
+    manifest.doctor.sources.remove("pkce_login");
+    let library = root.join("backend/crates/realm-product-bin/src/lib.rs");
+    fs::write(
+        &library,
+        fs::read_to_string(&library)?.replace(
+            "identity_admin_realm: PRODUCT.to_owned()",
+            "identity_admin_realm: \"identity-realm\".to_owned()",
+        ),
+    )?;
+    fs::write(
+        &library,
+        fs::read_to_string(&library)?.replace(
+            "issuer: format!(\"http://localhost:8081/realms/{PRODUCT}\")",
+            "issuer: \"http://localhost:8081/realms/identity-realm\".to_owned()",
+        ),
+    )?;
+    for (relative, contents) in read_tree(&root)? {
+        if let Ok(source) = String::from_utf8(contents) {
+            fs::write(
+                root.join(relative),
+                source.replace("/realms/realm-product", "/realms/identity-realm"),
+            )?;
+        }
+    }
+    for name in ["realm.json", "realm-policy.json"] {
+        let path = root.join("keycloak").join(name);
+        let mut document: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path)?)?;
+        document["realm"] = serde_json::Value::String("identity-realm".to_owned());
+        fs::write(path, serde_json::to_string_pretty(&document)?)?;
+    }
+    let mut other_realm: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(root.join("keycloak/realm.json"))?)?;
+    other_realm["realm"] = serde_json::Value::String("external-sso".to_owned());
+    fs::write(
+        root.join("keycloak/other-realm.json"),
+        serde_json::to_string_pretty(&other_realm)?,
+    )?;
+    fs::write(root.join("baukit.toml"), toml::to_string(&manifest)?)?;
+    assert!(
+        doctor(&root)
+            .expect_err("ambiguous realms require a declaration")
+            .to_string()
+            .contains("multiple Keycloak realm files")
+    );
+    manifest.doctor.keycloak_realm = Some("keycloak/realm.json".to_owned());
+    fs::write(root.join("baukit.toml"), toml::to_string(&manifest)?)?;
+    doctor(&root)?;
+    fs::write(
+        &library,
+        fs::read_to_string(&library)?.replace("identity-realm", "wrong-realm"),
+    )?;
+    assert!(
+        doctor(&root)
+            .expect_err("admin realm must match the selected realm")
+            .to_string()
+            .contains("does not match selected Keycloak realm")
+    );
+    Ok(())
+}
+
+#[test]
+fn doctor_follows_route_reexports_and_reconciliation_tests() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "route-product");
+    local.mobile = true;
+    local.auth = Some(AuthProvider::Oidc);
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    let route = root.join("mobile/app/(auth)/sign-in.tsx");
+    fs::rename(&route, root.join("mobile/src/sign-in.tsx"))?;
+    let screen = root.join("mobile/src/sign-in.tsx");
+    fs::write(
+        &screen,
+        fs::read_to_string(&screen)?.replace("../../src/", "./"),
+    )?;
+    fs::write(&route, "export { default } from '../../src/sign-in';\n")?;
+    let tests = root.join("scripts/tests/test_reconcile_keycloak.py");
+    fs::write(
+        &tests,
+        fs::read_to_string(&tests)?.replace("load_reconcile_config", "load_config"),
+    )?;
+    let tool = root.join("scripts/reconcile_keycloak.py");
+    fs::write(
+        &tool,
+        format!(
+            "{}\nload_config = load_reconcile_config\n",
+            fs::read_to_string(&tool)?
+        ),
+    )?;
+    doctor(&root)?;
+    fs::write(
+        &route,
+        "export default function SignInScreen() { return null; }\n",
+    )?;
+    assert!(
+        doctor(&root)
+            .expect_err("disconnected auth code does not wire a screen")
+            .to_string()
+            .contains("missing mobile_sign_in wiring")
+    );
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_shared_measurements_in_product_limit_validators() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "measured-limits");
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    let mut manifest = baukit_cli::read_manifest(&root)?;
+    let relative = "backend/crates/measured-limits-domain/src/custom_limits.rs";
+    manifest
+        .doctor
+        .sources
+        .insert("backend_limits".to_owned(), relative.to_owned());
+    fs::write(root.join("baukit.toml"), toml::to_string(&manifest)?)?;
+    let library = root.join("backend/crates/measured-limits-domain/src/lib.rs");
+    fs::write(
+        &library,
+        format!("pub mod custom_limits;\n{}", fs::read_to_string(&library)?),
+    )?;
+    let path = root.join(relative);
+    for (parameter, measured) in [
+        (
+            "text: &str",
+            "baukit_core::limits::trimmed_unicode_scalar_count(text)",
+        ),
+        (
+            "document: &serde_json::Value",
+            "baukit_core::limits::compact_json_utf8_bytes(document).map_err(|_| \"jsonb_invalid\")?",
+        ),
+    ] {
+        fs::write(
+            &path,
+            format!(
+                "pub fn validate({parameter}, maximum: usize) -> Result<(), &'static str> {{\n    if {measured} > maximum {{ Err(\"limit_exceeded\") }} else {{ Ok(()) }}\n}}\n"
+            ),
+        )?;
+        doctor(&root)?;
+    }
+    fs::write(
+        &path,
+        "pub fn validate(text: &str, maximum: usize) -> Result<(), &'static str> {\n    if text.len() > maximum { Err(\"limit_exceeded\") } else { Ok(()) }\n}\n",
+    )?;
+    assert!(
+        doctor(&root)
+            .expect_err("text bytes do not implement the shared scalar measurement")
+            .to_string()
+            .contains("missing backend_limits wiring")
+    );
     Ok(())
 }

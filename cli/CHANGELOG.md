@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- Accept product limit validators that use shared measurements with their own bounds and reason codes.
+
+- Follow mobile route re-exports when checking sign-in wiring. Accept reconciliation tests that exercise input validation or realm reconciliation.
+
+- Resolve consumed `crate::PRODUCT` constants in library modules, including imported aliases. Keep binary crate identities separate.
+- Accept Keycloak realm names that differ from the application name. Require the optional Python PKCE helper only when its path is declared.
+- Confirm registry dependencies do not require a local Baukit path. Keep ambiguous realms and missing scoped mobile persistence as findings.
+
 - Find backend, worker, OIDC and mobile auth wiring in declared Cargo packages and source files. Add doctor path overrides for custom layouts and discover moved Keycloak inputs.
 - Respect analytics = "none" without requiring analytics files or analytics-core.
 - Require a Redis URL only when backend source uses a Redis-backed feature.

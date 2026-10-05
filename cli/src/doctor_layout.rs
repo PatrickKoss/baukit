@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Component, Path, PathBuf},
 };
@@ -368,6 +368,8 @@ pub(super) fn validate_backend_wiring(
             "check_measurement",
             "check_trimmed_unicode_scalars",
             "check_compact_json_utf8_bytes",
+            "trimmed_unicode_scalar_count",
+            "compact_json_utf8_bytes",
         ],
         true,
         failures,
@@ -402,28 +404,50 @@ pub(super) fn validate_backend_wiring(
             true,
             failures,
         )?;
-        let scripts = files(root, "py")?;
-        let paths = if let Some(relative) = manifest.doctor.sources.get("pkce_login") {
-            vec![product_path(root, relative)?]
-        } else {
-            scripts
-        };
-        let mut found = false;
-        for path in paths {
-            if path.is_file() {
+        if let Some(relative) = manifest.doctor.sources.get("pkce_login") {
+            let path = product_path(root, relative)?;
+            let found = if path.is_file() {
                 let source = fs::read_to_string(path)?;
-                found |= source.contains("code_challenge") && source.contains("S256");
+                source.contains("code_challenge") && source.contains("S256")
+            } else {
+                false
+            };
+            if !found {
+                failures.push(
+                    "missing pkce_login wiring (expected code_challenge and S256)".to_owned(),
+                );
             }
-        }
-        if !found {
-            failures
-                .push("missing pkce_login wiring (expected code_challenge and S256)".to_owned());
         }
     }
     if initial == failures.len() {
         successes.push("backend wiring is present in declared Cargo packages".to_owned());
     }
     Ok(())
+}
+
+fn screen_exports(root: &Path, screens: Vec<PathBuf>) -> Result<Vec<PathBuf>> {
+    let mut pending = screens;
+    let mut modules = BTreeSet::new();
+    let root = root.canonicalize()?;
+    while let Some(path) = pending.pop() {
+        let path = path.canonicalize()?;
+        if !path.starts_with(&root) || !modules.insert(path.clone()) {
+            continue;
+        }
+        let source = identity::uncommented(&fs::read_to_string(&path)?, false);
+        for statement in source.split(';') {
+            if statement.trim_start().starts_with("export ")
+                && let Some((_, module)) = statement.rsplit_once(" from ")
+                && let Some(module) = crate::quoted_string(module.trim())
+                && module.starts_with('.')
+                && let Some(imported) =
+                    identity::module_path(path.parent().context("screen has no parent")?, module)
+            {
+                pending.push(imported);
+            }
+        }
+    }
+    Ok(modules.into_iter().collect())
 }
 
 pub(super) fn validate_mobile_auth_wiring(
@@ -443,6 +467,7 @@ pub(super) fn validate_mobile_auth_wiring(
         .filter(|path| path.starts_with(root.join("mobile/app")))
         .cloned()
         .collect::<Vec<_>>();
+    let screens = screen_exports(root, screens)?;
     for (key, candidates, names) in [
         (
             "mobile_sign_in",
@@ -633,9 +658,16 @@ pub(super) fn validate_keycloak_realm_tools(
         "reconcile_keycloak.py",
         failures,
     )?;
-    for (key, marker) in [
-        ("keycloak_policy_tests", "validate_realm"),
-        ("keycloak_reconcile_tests", "load_reconcile_config"),
+    for (key, markers) in [
+        ("keycloak_policy_tests", &["validate_realm"][..]),
+        (
+            "keycloak_reconcile_tests",
+            &[
+                "load_reconcile_config",
+                "validate_inputs",
+                "RealmReconciler",
+            ][..],
+        ),
     ] {
         let candidates = if let Some(relative) = manifest.doctor.sources.get(key) {
             vec![product_path(root, relative)?]
@@ -646,12 +678,14 @@ pub(super) fn validate_keycloak_realm_tools(
         for path in candidates {
             if path.is_file() {
                 let source = fs::read_to_string(path)?;
-                found |= source.contains("unittest") && source.contains(marker);
+                found |= source.contains("unittest")
+                    && markers.iter().any(|marker| source.contains(marker));
             }
         }
         if !found {
             failures.push(format!(
-                "missing {key} wiring (expected unittest coverage of {marker})"
+                "missing {key} wiring (expected unittest coverage of {})",
+                markers.join(" or ")
             ));
         }
     }
@@ -660,6 +694,13 @@ pub(super) fn validate_keycloak_realm_tools(
     else {
         return Ok(());
     };
+    let realm_document: serde_json::Value = serde_json::from_str(&fs::read_to_string(&realm)?)?;
+    if let Some(name) = realm_document
+        .get("realm")
+        .and_then(serde_json::Value::as_str)
+    {
+        identity::validate_admin_realm(root, manifest, name, failures)?;
+    }
     let relative = |path: &Path| -> Result<String> {
         Ok(path.strip_prefix(root)?.to_string_lossy().into_owned())
     };

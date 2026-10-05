@@ -142,18 +142,18 @@ Doctor looks for these symbols:
 
 | Source key | Required content |
 | --- | --- |
-| `backend_limits` | A shared limits check such as `check_measurement` |
+| `backend_limits` | A shared limits check such as `check_measurement`, or a measurement such as `trimmed_unicode_scalar_count` used by product validation |
 | `worker_entry` | A `main` function using `ProcessKind::Worker` |
 | `worker_tests` | `WorkerRunner` or a PostgreSQL test database fixture |
 | `auth_tests` | `check_auth_router_conformance` or `MockOidcServer` |
-| `pkce_login` | `code_challenge` and `S256` |
-| `mobile_sign_in` | `signIn`, `signInWithOidc` or `login` in an app route |
+| `pkce_login` | Optional developer login helper. Check `code_challenge` and `S256` when a path is declared. |
+| `mobile_sign_in` | `signIn`, `signInWithOidc` or `login` in an app route or its re-exported screen |
 | `mobile_auth` | `createExpoOidcClient`, `createNativeOidcClient` or `NativeOidcClient` |
 | `mobile_auth_tests` | `signIn` or `signInWithOidc` in a test |
 | `mobile_local_data` | `ScopedPersistenceRegistryStore` |
 | `mobile_persistence` | `ScopedPersistenceLifecycle` |
 | `keycloak_policy_tests` | unittest coverage of `validate_realm` |
-| `keycloak_reconcile_tests` | unittest coverage of `load_reconcile_config` |
+| `keycloak_reconcile_tests` | unittest coverage of `load_reconcile_config`, `validate_inputs` or `RealmReconciler` |
 
 Doctor requires the local Redis URL when backend source uses a Redis-backed
 adapter. OIDC alone does not require Redis. PostgreSQL-backed rate limiting can

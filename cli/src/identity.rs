@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::{AuthProvider, Manifest, quoted_string, source_constant};
 
@@ -130,7 +130,7 @@ fn field<'a>(source: &'a str, name: &str) -> Option<&'a str> {
         .map(str::trim)
 }
 
-fn module_path(directory: &Path, module: &str) -> Option<PathBuf> {
+pub(super) fn module_path(directory: &Path, module: &str) -> Option<PathBuf> {
     let path = directory.join(module);
     let stem = if path.extension().is_some_and(|value| value == "js") {
         path.with_extension("ts")
@@ -313,22 +313,101 @@ fn typescript_identities(
     Ok(count)
 }
 
-fn imports_rust_binding(source: &str, crate_name: &str, binding: &str) -> bool {
-    source.split("use ").skip(1).any(|statement| {
+pub(super) fn validate_admin_realm(
+    root: &Path,
+    manifest: &Manifest,
+    realm: &str,
+    failures: &mut Vec<String>,
+) -> Result<()> {
+    for krate in crate::doctor_layout::rust_crates(root, manifest)? {
+        for path in krate.sources {
+            let source = fs::read_to_string(&path)?;
+            let source = uncommented(source.split("#[cfg(test)]").next().unwrap_or(&source), true);
+            for declaration in source.split("identity_admin_realm:").skip(1) {
+                let Some(expression) = declaration
+                    .trim()
+                    .split([',', '\n'])
+                    .next()
+                    .and_then(|value| value.strip_suffix(".to_owned()"))
+                else {
+                    continue;
+                };
+                let value = quoted_string(expression)
+                    .map(str::to_owned)
+                    .or(resolve_binding(&path, &source, expression)?);
+                if let Some(value) = value
+                    && value != realm
+                {
+                    failures.push(format!("OIDC admin realm `{expression}` consumed by `{}` does not match selected Keycloak realm `{realm}`", path.strip_prefix(root)?.display()));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn imported_rust_binding(source: &str, crate_name: &str, expression: &str) -> Option<String> {
+    let prefix = format!("{crate_name}::");
+    if let Some(binding) = expression.strip_prefix(&prefix) {
+        return Some(binding.to_owned());
+    }
+    for statement in source.split("use ").skip(1) {
         let Some(import) = statement
             .split(';')
             .next()
-            .and_then(|value| value.strip_prefix(&format!("{crate_name}::")))
+            .and_then(|value| value.strip_prefix(&prefix))
         else {
-            return false;
+            continue;
         };
-        import.trim() == binding
-            || import
-                .trim()
-                .strip_prefix('{')
-                .and_then(|value| value.strip_suffix('}'))
-                .is_some_and(|names| names.split(',').any(|name| name.trim() == binding))
-    })
+        let import = import.trim().trim_start_matches('{').trim_end_matches('}');
+        for name in import.split(',') {
+            let mut parts = name.trim().split(" as ");
+            let binding = parts.next()?;
+            let local = parts.next().unwrap_or(binding);
+            if local == expression {
+                return Some(binding.to_owned());
+            }
+        }
+    }
+    None
+}
+
+fn library_sources(library: &Path) -> Result<BTreeSet<PathBuf>> {
+    let mut sources = BTreeSet::new();
+    let mut pending = vec![library.to_owned()];
+    while let Some(path) = pending.pop() {
+        if !path.is_file() || !sources.insert(path.clone()) {
+            continue;
+        }
+        let source = identity_code(&uncommented(&fs::read_to_string(&path)?, true), true);
+        let parent = path.parent().context("Rust module has no parent")?;
+        let directory = if matches!(
+            path.file_name().and_then(|name| name.to_str()),
+            Some("lib.rs" | "mod.rs")
+        ) {
+            parent.to_owned()
+        } else {
+            parent.join(path.file_stem().context("Rust module has no name")?)
+        };
+        for declaration in source.split(';') {
+            let words = declaration.split_whitespace().collect::<Vec<_>>();
+            if let [.., "mod", name] = words.as_slice()
+                && name
+                    .chars()
+                    .all(|value| value.is_ascii_alphanumeric() || value == '_')
+            {
+                for candidate in [
+                    directory.join(format!("{name}.rs")),
+                    directory.join(name).join("mod.rs"),
+                ] {
+                    if candidate.is_file() {
+                        pending.push(candidate);
+                    }
+                }
+            }
+        }
+    }
+    Ok(sources)
 }
 
 fn rust_identity(
@@ -343,38 +422,29 @@ fn rust_identity(
     let mut names = BTreeSet::new();
     let mut count = 0;
     for krate in crates {
+        let modules = library_sources(&krate.library)?;
         for path in krate.sources {
             let source = fs::read_to_string(&path)?;
             let source = uncommented(source.split("#[cfg(test)]").next().unwrap_or(&source), true);
-            if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
-                for declaration in source.split("identity_admin_realm:").skip(1) {
-                    if let Some(expression) = declaration
-                        .trim()
-                        .split([',', '\n'])
-                        .next()
-                        .and_then(|value| value.strip_suffix(".to_owned()"))
-                    {
-                        check_identity(
-                            root,
-                            &path,
-                            &source,
-                            expression,
-                            Some(&manifest.app.name),
-                            &BTreeSet::new(),
-                            failures,
-                        )?;
-                    }
-                }
-            }
             for (index, _) in identity_code(&source, true).match_indices("ConfigLoader::new(") {
                 let call = &source[index + "ConfigLoader::new(".len()..];
                 let Some(expression) = call.split(',').next().map(str::trim) else {
                     continue;
                 };
                 count += 1;
+                let local_binding = expression
+                    .strip_prefix("crate::")
+                    .filter(|_| {
+                        path == krate.library
+                            || path.file_name().is_some_and(|name| name == "main.rs")
+                            || path.parent().is_some_and(|parent| {
+                                parent.file_name().is_some_and(|name| name == "bin")
+                            })
+                    })
+                    .unwrap_or(expression);
                 let value = quoted_string(expression)
                     .or_else(|| {
-                        identity_constant(&source, expression, true).and_then(quoted_string)
+                        identity_constant(&source, local_binding, true).and_then(quoted_string)
                     })
                     .map(str::to_owned);
                 let value = match value {
@@ -387,13 +457,18 @@ fn rust_identity(
                             String::new()
                         };
                         let crate_name = krate.name.replace('-', "_");
-                        if imports_rust_binding(&source, &crate_name, expression) {
-                            identity_constant(&library_source, expression, true)
+                        let binding = imported_rust_binding(&source, &crate_name, expression)
+                            .or_else(|| {
+                                modules
+                                    .contains(&path)
+                                    .then(|| imported_rust_binding(&source, "crate", expression))
+                                    .flatten()
+                            });
+                        binding.and_then(|binding| {
+                            identity_constant(&library_source, &binding, true)
                                 .and_then(quoted_string)
                                 .map(str::to_owned)
-                        } else {
-                            None
-                        }
+                        })
                     }
                 };
                 if let Some(value) = value {
