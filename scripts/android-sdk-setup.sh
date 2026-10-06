@@ -57,6 +57,19 @@ if [[ ! -f "$ANDROID_AVD_HOME/$avd_name.ini" ]]; then
   exit 1
 fi
 
+python3 - "$ANDROID_AVD_HOME/$avd_name.avd/config.ini" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+lines = [
+    line for line in path.read_text().splitlines()
+    if line.partition("=")[0].strip() != "hw.cpu.ncore"
+]
+lines.append("hw.cpu.ncore=4")
+path.write_text("\n".join(lines) + "\n")
+PY
+
 cat <<EOF
 Android SDK is ready.
 export ANDROID_HOME="$ANDROID_HOME"

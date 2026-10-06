@@ -80,7 +80,7 @@ jobs:
       - name: Compile Android debug binary
         run: |
           set -o pipefail
-          ./android/gradlew -p android --no-daemon --stacktrace assembleDebug 2>&1 | tee native-assemble.log
+          ./android/gradlew -p android --no-daemon --stacktrace -PreactNativeDevServerIp=127.0.0.1 assembleDebug 2>&1 | tee native-assemble.log
       - name: Upload native failure diagnostics
         if: {% raw %}${{ failure() }}{% endraw %}
         uses: actions/upload-artifact@v7.0.1

@@ -52,14 +52,14 @@ class AndroidScriptsTest(unittest.TestCase):
         config.write_text(
             "image.sysdir.1=system-images/android-36/google_apis/x86_64/\n"
             "abi.type=x86_64\nhw.ramSize = 1024\n hw.ramSize=2048\n"
-            "hw.keyboard = no\n\thw.keyboard\t= no\nhw.gpu.mode=auto\n"
+            "hw.keyboard = no\n\thw.keyboard\t= no\nhw.gpu.mode=auto\nhw.cpu.ncore = 1\n\thw.cpu.ncore\t= 2\n"
         )
         for _ in range(2):
             self.run_script("android-sdk.sh")
             self.assertEqual(config.read_text().splitlines(), [
                 "image.sysdir.1=system-images/android-36/google_apis/x86_64/",
                 "abi.type=x86_64", "hw.gpu.mode=auto",
-                "hw.ramSize=4096", "hw.keyboard=yes",
+                "hw.ramSize=4096", "hw.keyboard=yes", "hw.cpu.ncore=4",
             ])
 
     def test_sdk_uses_pinned_tools_even_when_latest_exists(self) -> None:
@@ -69,6 +69,26 @@ class AndroidScriptsTest(unittest.TestCase):
         self.executable(self.sdk / "cmdline-tools/latest/bin/sdkmanager", "exit 99\n")
         self.run_script("android-sdk.sh")
         self.assertIn("pinned-sdk --sdk_root=", self.events.read_text())
+
+    def test_release_build_sets_loopback_without_host_interface_discovery(self) -> None:
+        bin_dir = self.root / "bin"
+        self.executable(bin_dir / "corepack", 'printf "corepack %s\\n" "$*" >> "$EVENTS"\n')
+        self.environment["PATH"] = str(bin_dir) + os.pathsep + self.environment["PATH"]
+        self.executable(self.root / "mobile/node_modules/.bin/expo", 'printf "expo %s\\n" "$*" >> "$EVENTS"\n')
+        self.executable(self.root / "mobile/android/gradlew", r'''
+printf 'gradle %s\n' "$*" >> "$EVENTS"
+apk="$(dirname "$0")/app/build/outputs/apk/release/app-release.apk"
+mkdir -p "$(dirname "$apk")"
+touch "$apk"
+''')
+        self.run_script("build-android.sh")
+        self.assertEqual(self.events.read_text().splitlines(), [
+            f"corepack pnpm@12.9.1 --dir {self.root}/mobile install --frozen-lockfile",
+            f"corepack pnpm@12.9.1 --dir {self.root}/mobile run tokens",
+            "expo prebuild --clean --platform android --no-install",
+            f"gradle -p {self.root}/mobile/android --no-daemon "
+            "-PreactNativeDevServerIp=127.0.0.1 -PreactNativeArchitectures=x86_64 assembleRelease",
+        ])
 
     def test_avd_is_recreated_when_api_tag_or_architecture_changes(self) -> None:
         tools = self.sdk / "cmdline-tools/13114758/bin"

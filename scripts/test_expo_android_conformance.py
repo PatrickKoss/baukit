@@ -101,6 +101,28 @@ class ExpoAndroidPhaseTest(unittest.TestCase):
         self.assertIn("BAUKIT_ANDROID_PHASE must be all, prepare, or run", result.stderr)
         self.assertEqual(self.read_events(), [])
 
+    def test_debug_build_sets_loopback_without_host_interface_discovery(self) -> None:
+        wrapper = self.example / "android/gradlew"
+        wrapper.parent.mkdir()
+        wrapper.write_text('#!/bin/sh\nprintf "gradle %s\\n" "$*" >> "$EVENTS"\n')
+        wrapper.chmod(0o755)
+        driver = r'''
+set -euo pipefail
+source "$1"
+expo_android_init "$2" dev.baukit.conformance
+adb() { printf 'adb %s\n' "$*" >> "$EVENTS"; }
+expo_android_install
+'''
+        result = subprocess.run(
+            ["bash", "-c", driver, "test", str(SCRIPT), str(self.example)],
+            env={**os.environ, "EVENTS": str(self.events)},
+            text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.read_events()[0],
+            f"gradle -p {self.example}/android --no-daemon --stacktrace "
+            "-PreactNativeDevServerIp=127.0.0.1 assembleDebug")
+
     def test_preparation_failures_stop_both_all_and_prepare_phases(self) -> None:
         for phase in ("all", "prepare"):
             for command in ("install --frozen-lockfile", "exec expo prebuild"):

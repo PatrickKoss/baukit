@@ -95,9 +95,9 @@ path = Path(sys.argv[1])
 lines = [
     line
     for line in path.read_text().splitlines()
-    if line.partition("=")[0].strip() not in {"hw.ramSize", "hw.keyboard"}
+    if line.partition("=")[0].strip() not in {"hw.ramSize", "hw.keyboard", "hw.cpu.ncore"}
 ]
-lines.extend(("hw.ramSize=4096", "hw.keyboard=yes"))
+lines.extend(("hw.ramSize=4096", "hw.keyboard=yes", "hw.cpu.ncore=4"))
 path.write_text("\n".join(lines) + "\n")
 PY
 fi

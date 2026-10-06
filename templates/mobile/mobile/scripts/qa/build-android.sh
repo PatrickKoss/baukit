@@ -40,6 +40,7 @@ corepack pnpm@12.9.1 --dir "$root/mobile" run tokens
 NODE_ENV=production "$root/mobile/android/gradlew" \
   -p "$root/mobile/android" \
   --no-daemon \
+  -PreactNativeDevServerIp=127.0.0.1 \
   -PreactNativeArchitectures="$architecture" \
   assembleRelease
 
