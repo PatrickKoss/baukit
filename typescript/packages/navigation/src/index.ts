@@ -81,6 +81,13 @@ export function getNavigationBarLineHeight(metrics: NavigationBarMetrics = {}): 
   );
 }
 
+export function getNavigationBarVisualHeight(fontScale = 1): number {
+  return Math.max(
+    NAVIGATION_BAR_DIMENSIONS.avatar,
+    NAVIGATION_BAR_DIMENSIONS.icon * Math.max(1, fontScale),
+  );
+}
+
 export function getNavigationBarHeight(
   fontScale = 1,
   bottomInset = 0,
@@ -90,7 +97,7 @@ export function getNavigationBarHeight(
   return (
     NAVIGATION_BAR_DIMENSIONS.border +
     2 * (NAVIGATION_BAR_DIMENSIONS.targetBorder + NAVIGATION_BAR_DIMENSIONS.targetPadding) +
-    Math.max(NAVIGATION_BAR_DIMENSIONS.avatar, NAVIGATION_BAR_DIMENSIONS.icon * scale) +
+    getNavigationBarVisualHeight(scale) +
     (metrics.spacing ?? NAVIGATION_BAR_DIMENSIONS.spacing) +
     getNavigationBarLineHeight(metrics) * scale +
     bottomInset

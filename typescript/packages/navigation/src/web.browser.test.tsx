@@ -458,3 +458,20 @@ it.each([600, 1024])('tabs into a visible Insights parent at width %s', async (w
     .element(page.getByRole(width === 1024 ? 'button' : 'link', { name: 'Insights' }))
     .toHaveFocus();
 });
+
+it('uses the body font in a standalone section picker', async () => {
+  styles = document.createElement('style');
+  styles.textContent = `${toCssVariables(exampleTokens)} ${stylesheet} body { font-family: serif; }`;
+  document.head.append(styles);
+  host = document.createElement('div');
+  document.body.append(host);
+  root = createRoot(host);
+  await act(() => {
+    root?.render(<SectionPicker item={section} pathname="/progress" />);
+    return Promise.resolve();
+  });
+  const picker = host.querySelector('.bk-navigation-picker');
+  expect(picker).not.toBeNull();
+  if (picker === null) throw new Error('Section picker is missing');
+  expect(getComputedStyle(picker).fontFamily).toBe(exampleTokens.typography.family.body);
+});

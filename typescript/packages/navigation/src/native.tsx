@@ -37,6 +37,7 @@ import {
 import {
   getNavigationLayout,
   getNavigationBarHeight,
+  getNavigationBarVisualHeight,
   getNavigationBarLineHeight,
   NAVIGATION_BAR_DIMENSIONS,
   type NavigationBarMetrics,
@@ -552,25 +553,31 @@ function Menu({
   );
 }
 
+function compactVisualStyle(fontScale: number): ViewStyle {
+  return { height: getNavigationBarVisualHeight(fontScale), justifyContent: 'center' };
+}
+
 function Avatar({
   profile,
   active,
   theme,
+  style,
 }: {
   readonly profile: NavigationProfile;
   readonly active: boolean;
   readonly theme: NavigationTheme;
+  readonly style?: StyleProp<ViewStyle>;
 }) {
   const [failedUrl, setFailedUrl] = useState<string>();
   if (profile.renderAvatar !== undefined) {
     return (
-      <Decorative>
+      <Decorative style={style}>
         {profile.renderAvatar({ active, size: NAVIGATION_DIMENSIONS.avatar })}
       </Decorative>
     );
   }
   return (
-    <Decorative>
+    <Decorative style={style}>
       {profile.imageUrl !== undefined && failedUrl !== profile.imageUrl ? (
         <Image
           source={{ uri: profile.imageUrl }}
@@ -614,6 +621,7 @@ function Profile({
   onNavigate,
   roving,
 }: ProfileProps) {
+  const { fontScale } = useWindowDimensions();
   const active =
     profile.href !== undefined
       ? navigationMatches({ id: 'profile', label: profile.label, href: profile.href }, pathname)
@@ -637,7 +645,12 @@ function Profile({
           else onOpen();
         }}
       >
-        <Avatar profile={profile} active={active} theme={theme} />
+        <Avatar
+          profile={profile}
+          active={active}
+          theme={theme}
+          style={bar ? compactVisualStyle(fontScale) : undefined}
+        />
       </Target>
     </View>
   );
@@ -783,17 +796,7 @@ export function AppNavigation(props: AppNavigationProps) {
                   else follow(href, event, onNavigate);
                 }}
               >
-                <Decorative
-                  style={
-                    bar
-                      ? {
-                          height:
-                            NAVIGATION_BAR_DIMENSIONS.icon * Math.max(1, dimensions.fontScale),
-                          justifyContent: 'center',
-                        }
-                      : undefined
-                  }
-                >
+                <Decorative style={bar ? compactVisualStyle(dimensions.fontScale) : undefined}>
                   {item.icon({ active, size: NAVIGATION_BAR_DIMENSIONS.icon })}
                 </Decorative>
               </Target>

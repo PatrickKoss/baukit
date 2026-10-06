@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Give compact icons and avatars the same box height so their labels align at every font scale.
+- Apply the body font to standalone web section pickers.
+
 - Derive compact native bar height from the avatar, icon, label line height, spacing, padding and borders. Size compact icon containers from the same dimensions so Android font padding cannot squeeze labels. Keep rendered height and reserved height aligned at normal and enlarged font scales.
 
 ## 0.7.3

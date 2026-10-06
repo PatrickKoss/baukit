@@ -1,5 +1,6 @@
 .bk-navigation,
 .bk-navigation-picker {
+  font-family: var(--bk-typography-family-body);
   --bk-navigation-active-background: color-mix(
     in srgb,
     var(--bk-color-background-accent) 14%,
@@ -18,7 +19,6 @@
   box-sizing: border-box;
   color: var(--bk-color-text-primary);
   background: var(--bk-color-background-primary);
-  font-family: var(--bk-typography-family-body);
 }
 .bk-navigation *,
 .bk-navigation-picker * {

@@ -3,6 +3,7 @@ import { blendColors, contrastRatio, exampleTokens } from '@baukit/ui-tokens';
 import {
   getNavigationLayout,
   getNavigationBarHeight,
+  getNavigationBarVisualHeight,
   NAVIGATION_BAR_DIMENSIONS,
   navigationReducer,
   navigationMatches,
@@ -240,4 +241,19 @@ it.each([1, 1.3, 2])('fits the profile and a full label at font scale %s', (font
 it('reserves the configured label size, line height and spacing', () => {
   expect(getNavigationBarHeight(1.3, 24, { spacing: 12, fontSize: 18 })).toBeCloseTo(125.3);
   expect(getNavigationBarHeight(1.3, 24, { spacing: 12, lineHeight: 30 })).toBe(129.2);
+});
+
+it.each([
+  [0.8, 28],
+  [1, 28],
+  [1.3, 31.2],
+  [2, 48],
+])('shares one icon and avatar box at font scale %s', (fontScale, expected) => {
+  expect(getNavigationBarVisualHeight(fontScale)).toBeCloseTo(expected);
+  expect(getNavigationBarVisualHeight(fontScale)).toBeGreaterThanOrEqual(
+    NAVIGATION_BAR_DIMENSIONS.avatar,
+  );
+  expect(getNavigationBarVisualHeight(fontScale)).toBeGreaterThanOrEqual(
+    NAVIGATION_BAR_DIMENSIONS.icon * fontScale,
+  );
 });
