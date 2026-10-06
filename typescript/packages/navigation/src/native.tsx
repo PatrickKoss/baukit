@@ -19,6 +19,9 @@ import {
   View,
   useWindowDimensions,
   type GestureResponderEvent,
+  type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   type StyleProp,
   type ViewStyle,
   type TextStyle,
@@ -588,7 +591,9 @@ function Avatar({
         />
       ) : (
         <View style={[styles.avatar, { backgroundColor: theme.activeBackground }]}>
-          <Text style={{ ...textStyle(theme), color: theme.activeText }}>{profile.initials}</Text>
+          <Text allowFontScaling={false} style={{ ...textStyle(theme), color: theme.activeText }}>
+            {profile.initials}
+          </Text>
         </View>
       )}
     </Decorative>
@@ -607,6 +612,12 @@ interface ProfileProps {
   readonly pathname: string;
   readonly onNavigate: Navigate;
   readonly roving: ReturnType<ReturnType<typeof useRovingMenu>['itemProps']>;
+  readonly onLayout?: (event: LayoutChangeEvent) => void;
+}
+function profileIsActive(profile: NavigationProfile, pathname: string): boolean {
+  return profile.href !== undefined
+    ? navigationMatches({ id: 'profile', label: profile.label, href: profile.href }, pathname)
+    : resolveActiveMenuEntry(profile.menu, pathname) !== null;
 }
 function Profile({
   profile,
@@ -620,14 +631,16 @@ function Profile({
   pathname,
   onNavigate,
   roving,
+  onLayout,
 }: ProfileProps) {
   const { fontScale } = useWindowDimensions();
-  const active =
-    profile.href !== undefined
-      ? navigationMatches({ id: 'profile', label: profile.label, href: profile.href }, pathname)
-      : resolveActiveMenuEntry(profile.menu, pathname) !== null;
+  const active = profileIsActive(profile, pathname);
   return (
-    <View style={bar ? styles.barSection : styles.profile} testID="navigation-profile">
+    <View
+      style={bar ? styles.barSection : styles.profile}
+      testID="navigation-profile"
+      onLayout={onLayout}
+    >
       <Target
         label={profile.label}
         subtitle={profile.subtitle}
@@ -659,6 +672,47 @@ function Profile({
 export function useNavigationBarHeight(bottomInset = 0, theme?: NavigationTheme): number {
   const { fontScale } = useWindowDimensions();
   return getNavigationBarHeight(fontScale, bottomInset, barMetrics(theme));
+}
+
+function useCompactBarScroll(selectedIndex: number) {
+  const ref = useRef<ScrollView>(null);
+  const viewport = useRef(0);
+  const content = useRef(0);
+  const offset = useRef(0);
+  const frames = useRef(new Map<number, { x: number; width: number }>());
+  const revealSelected = useCallback(() => {
+    const frame = frames.current.get(selectedIndex);
+    if (frame === undefined || viewport.current === 0 || content.current === 0) return;
+    if (frame.x >= offset.current && frame.x + frame.width <= offset.current + viewport.current)
+      return;
+    const x = Math.max(
+      0,
+      Math.min(frame.x + (frame.width - viewport.current) / 2, content.current - viewport.current),
+    );
+    ref.current?.scrollTo({ x, animated: false });
+    offset.current = x;
+  }, [selectedIndex]);
+  useEffect(revealSelected, [revealSelected]);
+  return {
+    scrollProps: {
+      ref,
+      onLayout: (event: LayoutChangeEvent) => {
+        viewport.current = event.nativeEvent.layout.width;
+        revealSelected();
+      },
+      onContentSizeChange: (width: number) => {
+        content.current = width;
+        revealSelected();
+      },
+      onScroll: (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+        offset.current = event.nativeEvent.contentOffset.x;
+      },
+    },
+    itemLayout: (index: number) => (event: LayoutChangeEvent) => {
+      frames.current.set(index, event.nativeEvent.layout);
+      revealSelected();
+    },
+  };
 }
 
 export interface AppNavigationProps extends CollapseProps {
@@ -706,13 +760,17 @@ export function AppNavigation(props: AppNavigationProps) {
   const activeId = visible.some((item) => item.id === state.active.subItem?.id)
     ? state.active.subItem?.id
     : state.active.item?.id;
+  const profileActive = profile !== undefined && profileIsActive(profile, pathname);
+  const compactScroll = useCompactBarScroll(
+    bar ? (profileActive ? items.length : items.findIndex((item) => item.id === activeId)) : -1,
+  );
   const roving = useRovingMenu({
     active: true,
     options: [
       ...visible.map((item) => ({
         selected: item.id === activeId,
       })),
-      ...(profile === undefined ? [] : [{}]),
+      ...(profile === undefined ? [] : [{ selected: profileActive }]),
     ],
   });
   const renderBackground = (backgroundProps: OverlayBackgroundProps = {}) => (
@@ -763,8 +821,10 @@ export function AppNavigation(props: AppNavigationProps) {
         </Target>
       ) : null}
       <ScrollView
+        {...(bar ? compactScroll.scrollProps : {})}
+        testID="navigation-items"
         horizontal={bar}
-        scrollEnabled={!bar}
+        scrollEnabled
         showsHorizontalScrollIndicator={false}
         style={bar ? styles.barItems : styles.railItems}
         contentContainerStyle={bar ? styles.barContent : undefined}
@@ -779,6 +839,7 @@ export function AppNavigation(props: AppNavigationProps) {
               key={item.id}
               style={bar ? styles.barSection : undefined}
               testID={`navigation-section-${item.id}`}
+              onLayout={bar ? compactScroll.itemLayout(index) : undefined}
             >
               <Target
                 label={item.label}
@@ -847,6 +908,7 @@ export function AppNavigation(props: AppNavigationProps) {
             pathname={pathname}
             onNavigate={onNavigate}
             roving={roving.itemProps(visible.length)}
+            onLayout={compactScroll.itemLayout(items.length)}
           />
         ) : null}
       </ScrollView>
@@ -987,7 +1049,7 @@ const styles = StyleSheet.create({
   rail: { borderRightWidth: 1, height: '100%' },
   railItems: { flex: 1 },
   barItems: { width: '100%' },
-  barContent: { flexDirection: 'row', flexGrow: 1 },
+  barContent: { flexDirection: 'row', flexGrow: 1, minWidth: '100%' },
   barSection: { flex: 1, minWidth: NAVIGATION_DIMENSIONS.target },
   children: { marginLeft: 20, paddingLeft: 8, borderLeftWidth: 1 },
   profile: { position: 'relative', marginTop: 'auto', paddingTop: 8, borderTopWidth: 1 },

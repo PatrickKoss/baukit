@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react-native';
-import { AccessibilityInfo, Platform, Text } from 'react-native';
+import { AccessibilityInfo, Platform, ScrollView, Text } from 'react-native';
 import {
   AppNavigation,
   useNavigationBarHeight,
@@ -57,6 +57,70 @@ const theme: NavigationTheme = {
 };
 const profile = { label: 'Account', initials: 'AB', href: '/profile' };
 const event = () => ({ nativeEvent: {}, preventDefault: jest.fn() });
+
+it('fills the compact viewport, permits overflow and reveals selected German items at 200%', async () => {
+  jest.spyOn(nativeModules, 'useWindowDimensions').mockReturnValue({
+    width: 360,
+    height: 800,
+    scale: 1,
+    fontScale: 2,
+  });
+  const scrollTo = jest.spyOn(ScrollView.prototype, 'scrollTo');
+  const germanItems = [
+    { id: 'today', label: 'Mein heutiger Tagesablauf', href: '/', icon },
+    { id: 'journal', label: 'Persönliches Tagebuch', href: '/journal', icon },
+    { id: 'exercises', label: 'Entspannungsübungen', href: '/exercises', icon },
+    { id: 'community', label: 'Gemeinschaft und Austausch', href: '/community', icon },
+  ];
+  const props = {
+    ...labels,
+    items: germanItems,
+    theme,
+    onNavigate: jest.fn(),
+    profile: { ...profile, label: 'Profil und Einstellungen' },
+  };
+  await render(<AppNavigation {...props} pathname="/" />);
+  const scroll = screen.getByTestId('navigation-items');
+  expect(scroll).toHaveProp('scrollEnabled', true);
+  expect(scroll).toHaveProp(
+    'contentContainerStyle',
+    expect.objectContaining({
+      minWidth: '100%',
+      flexGrow: 1,
+    }),
+  );
+  expect(scroll.props['contentContainerStyle']).not.toHaveProperty('width');
+  const layout = (x: number, width: number) => ({
+    nativeEvent: { layout: { x, y: 0, width, height: 130 } },
+  });
+  await fireEvent(scroll, 'layout', layout(0, 360));
+  for (const [index, id] of [
+    ...germanItems.map((item) => `navigation-section-${item.id}`),
+    'navigation-profile',
+  ].entries()) {
+    await fireEvent(screen.getByTestId(id), 'layout', layout(index * 72, 72));
+  }
+  await fireEvent(scroll, 'contentSizeChange', 360, 130);
+  expect(scrollTo).not.toHaveBeenCalled();
+  for (const [index, id] of [
+    ...germanItems.map((item) => `navigation-section-${item.id}`),
+    'navigation-profile',
+  ].entries()) {
+    await fireEvent(screen.getByTestId(id), 'layout', layout(index * 180, 180));
+  }
+  await fireEvent(scroll, 'contentSizeChange', 900, 130);
+  await screen.rerender(<AppNavigation {...props} pathname="/community" />);
+  expect(scrollTo).toHaveBeenLastCalledWith({ x: 450, animated: false });
+  await screen.rerender(<AppNavigation {...props} pathname="/profile" />);
+  expect(scrollTo).toHaveBeenLastCalledWith({ x: 540, animated: false });
+  expect(screen.getByRole('link', { name: 'Profil und Einstellungen' })).toHaveProp('tabIndex', 0);
+  scrollTo.mockClear();
+  await fireEvent.scroll(scroll, { nativeEvent: { contentOffset: { x: 0, y: 0 } } });
+  expect(scrollTo).not.toHaveBeenCalled();
+  await screen.rerender(<AppNavigation {...props} pathname="/" />);
+  expect(scrollTo).not.toHaveBeenCalled();
+  jest.restoreAllMocks();
+});
 
 it('keeps keyboard focus visible on active navigation, picker and menu entries', async () => {
   await render(
@@ -810,6 +874,10 @@ it.each([1, 1.3, 2])('reserves compact navigation space at font scale %s', async
   expect(screen.getByTestId('primary-navigation')).toHaveStyle({ minHeight: height });
   expect(screen.getByTestId('reserved-height').props['children']).toBe(height);
   expect(screen.getByText('Home')).toHaveStyle({ lineHeight: 16 });
+  expect(screen.getByText('AB', { includeHiddenElements: true })).toHaveProp(
+    'allowFontScaling',
+    false,
+  );
   expect(screen.getByText('filled', { includeHiddenElements: true }).parent).toHaveStyle({
     height: Math.max(28, 24 * fontScale),
     justifyContent: 'center',

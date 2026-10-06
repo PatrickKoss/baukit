@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Fill the compact viewport and allow horizontal scrolling when items overflow. Reveal the selected item after route changes. Keep decorative initials inside their fixed avatar circle at enlarged font scales.
 - Give compact icons and avatars the same box height so their labels align at every font scale.
 - Apply the body font to standalone web section pickers.
 
