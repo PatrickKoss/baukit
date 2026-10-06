@@ -40,8 +40,20 @@ worker:
 {% endif %}
 {% endif %}
 
-ingress:
-  enabled: false
+{% if context.mcp_remote %}mcp:
+  enabled: true
+  resourceUrl: https://mcp.example.com/mcp
+  issuer: https://identity.example.com/realms/{{ context.app_name }}
+  allowedHosts: [mcp.example.com]
+  allowedOrigins: []
+
+{% endif %}ingress:
+  enabled: false{% if context.mcp_remote %}
+  hosts:
+    - host: mcp.example.com
+      paths:
+        - path: /v1
+          pathType: Prefix{% endif %}
 
 serviceMonitor:
   enabled: false

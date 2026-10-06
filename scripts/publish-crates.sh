@@ -14,7 +14,7 @@ ORDER=(
   baukit-core baukit-events baukit-openapi baukit-sync
   baukit-config baukit-runtime baukit-telemetry baukit-credential-vault
   baukit-http baukit-egress baukit-jobs baukit-ops baukit-auth baukit-erasure
-  baukit-integrations baukit-push baukit-ratelimit baukit-test
+  baukit-integrations baukit-push baukit-ratelimit baukit-mcp baukit-test
 )
 
 version=$(python3 -c "

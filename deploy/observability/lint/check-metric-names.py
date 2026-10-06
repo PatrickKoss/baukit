@@ -17,6 +17,8 @@ OBSERVABILITY = ROOT / "deploy" / "observability"
 # Source of truth: docs/platform/telemetry-spec.md, section 2.
 SPEC_METRICS = (
     "http_requests_total",
+    "mcp_requests_total",
+    "mcp_request_duration_seconds",
     "http_request_duration_seconds",
     "http_requests_in_flight",
     "http_rate_limit_decisions_total",
@@ -37,6 +39,7 @@ HISTOGRAM_SUFFIXES = ("_bucket", "_count", "_sum")
 HISTOGRAM_MARKER = "histogram"
 METRIC_NAME = re.compile(r"^[A-Za-z_:][A-Za-z0-9_:]*$")
 HISTOGRAM_METRICS = {
+    "mcp_request_duration_seconds",
     "http_request_duration_seconds",
     "db_pool_acquire_duration_seconds",
     "worker_job_duration_seconds",

@@ -228,6 +228,31 @@ jobs:
       - run: cargo clippy --manifest-path cli/Cargo.toml --all-targets -- -D warnings
       - run: cargo test --manifest-path cli/Cargo.toml
 
+  mcp-remote-fixture:
+    name: Remote MCP fixture and OAuth smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      CI: true
+      CARGO_BUILD_JOBS: 6
+      VITEST_MAX_WORKERS: 4
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version-file: typescript/.nvmrc
+      - run: npm install --global corepack@0.36.0 && corepack enable
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          workspaces: |
+            rust -> target
+            cli -> target
+      - run: cargo test --manifest-path rust/Cargo.toml -p baukit-mcp -- --include-ignored
+      - run: make mcp-remote-fixture-gate
+
   generated-fixture:
     name: Generated fixture (${{ matrix.flavor }})
     runs-on: ubuntu-latest

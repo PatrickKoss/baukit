@@ -70,6 +70,18 @@ Forbidden as label values anywhere: raw URL paths, user identifiers, email addre
 
 Domain metrics are product-owned, use the product name as prefix (for example `fittrack_sync_conflicts_total`), and follow the same label rules.
 
+### 2.6 Remote MCP (owned by `baukit-mcp`)
+
+| Metric | Type | Labels |
+|---|---|---|
+| `mcp_requests_total` | counter | `status` |
+| `mcp_request_duration_seconds` | histogram | none |
+
+These metrics cover authorization and execution on `/mcp`. Status uses exact
+numeric HTTP codes. Token values, subjects, and tool arguments are never labels.
+MCP quota decisions use `http_rate_limit_decisions_total` with scope `mcp` and
+outcomes `allowed` or `limited`.
+
 ## 3. Logs
 
 - JSON to stdout in deployed environments; human-readable format in local development. The switch follows `deployment.environment.name`.

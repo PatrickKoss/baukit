@@ -94,6 +94,7 @@ def login(
     client_id: str,
     redirect_uri: str,
     scope: str,
+    resource: str | None = None,
 ) -> str:
     verifier = base64.urlsafe_b64encode(secrets.token_bytes(64)).decode().rstrip("=")
     challenge = (
@@ -111,6 +112,7 @@ def login(
             "state": state,
             "code_challenge": challenge,
             "code_challenge_method": "S256",
+            **({"resource": resource} if resource else {}),
         }
     )
     with client.open(authorization_url, timeout=20) as response:
@@ -153,6 +155,7 @@ def login(
                     "redirect_uri": redirect_uri,
                     "code": code,
                     "code_verifier": verifier,
+                    **({"resource": resource} if resource else {}),
                 }
             ).encode(),
             headers={"Content-Type": "application/x-www-form-urlencoded"},

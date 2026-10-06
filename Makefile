@@ -1,4 +1,4 @@
-.PHONY: toolchain fmt lint test check ci platform-validate platform-up platform-down platform-nuke platform-recreate platform-status ts-install ts-build ts-fmt ts-lint ts-test ts-browser-deps ts-browser-test ts-check cli-fmt cli-lint cli-test cli-check cli-ci scripts-test example-lockfiles-check mcp-fixture-gate install-skills android-sdk-setup native-android-gate expo-sqlite-conformance expo-sqlite-conformance-prepare expo-notifications-conformance expo-notifications-conformance-prepare media-grants-test media-grants-njs-test
+.PHONY: toolchain fmt lint test check ci platform-validate platform-up platform-down platform-nuke platform-recreate platform-status ts-install ts-build ts-fmt ts-lint ts-test ts-browser-deps ts-browser-test ts-check cli-fmt cli-lint cli-test cli-check cli-ci scripts-test example-lockfiles-check mcp-fixture-gate mcp-remote-fixture-gate install-skills android-sdk-setup native-android-gate expo-sqlite-conformance expo-sqlite-conformance-prepare expo-notifications-conformance expo-notifications-conformance-prepare media-grants-test media-grants-njs-test
 
 RUST_MANIFEST := rust/Cargo.toml
 TS_DIR := typescript
@@ -79,6 +79,9 @@ mcp-fixture-gate:
 	corepack pnpm@12.9.1 --dir "$$fixture_parent/$$fixture_name/mcp" test; \
 	corepack pnpm@12.9.1 --dir "$$fixture_parent/$$fixture_name/mcp" openapi:check; \
 	corepack pnpm@12.9.1 --dir "$$fixture_parent/$$fixture_name/mcp" docs:check
+
+mcp-remote-fixture-gate:
+	./scripts/mcp-remote-fixture.sh
 
 install-skills:
 	@test -n "$(TARGET)" || (echo "TARGET is required: make install-skills TARGET=<product-dir>" >&2; exit 2)

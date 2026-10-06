@@ -26,7 +26,10 @@
 {% endif %}      "credentials": [{ "type": "password", "value": "development-password", "temporary": false }]
     }
   ],
-  "clients": [
+{% if context.mcp_remote %}  "clientScopes": {{ context.remote_mcp_client_scopes | indent(2) }},
+  "defaultDefaultClientScopes": ["profile", "email", "roles", "web-origins", "acr", "basic"],
+  "defaultOptionalClientScopes": ["offline_access", "address", "phone", "microprofile-jwt", "organization"],
+{% endif %}  "clients": [
     {
       "clientId": "{{ context.app_name }}-backend",
       "name": "Backend confidential client",
@@ -50,7 +53,32 @@
           }
         }
       ]
-    }{% if context.web %},
+    }{% if context.mcp_remote %},
+    {
+      "clientId": "{{ context.app_name }}-mcp",
+      "name": "MCP public PKCE client",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:18888/callback", "http://127.0.0.1:18888/callback", "https://claude.ai/api/mcp/auth_callback"],
+      "webOrigins": [],
+      "attributes": { "pkce.code.challenge.method": "S256" },
+      "protocol": "openid-connect",
+      "defaultClientScopes": ["basic"],
+      "optionalClientScopes": ["items:read"],
+      "protocolMappers": [
+        {
+          "name": "MCP resource audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {"included.custom.audience": "http://localhost:{{ context.api_host_port }}/mcp", "access.token.claim": "true", "id.token.claim": "false"}
+        }
+      ]
+    }{% endif %}{% if context.web %},
     {
       "clientId": "{{ context.app_name }}-web",
       "name": "Web public PKCE client",

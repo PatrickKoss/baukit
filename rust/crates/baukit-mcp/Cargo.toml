@@ -1,0 +1,36 @@
+[package]
+name = "baukit-mcp"
+description = "OAuth-protected Streamable HTTP MCP transport and scoped service ports for Baukit products."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+license.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
+
+[lints]
+workspace = true
+
+[dependencies]
+axum.workspace = true
+baukit-auth.workspace = true
+baukit-ratelimit.workspace = true
+http.workspace = true
+metrics.workspace = true
+rmcp.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+baukit-test = { path = "../baukit-test", default-features = false }
+reqwest.workspace = true
+rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }
+testcontainers.workspace = true
+tower = { workspace = true, features = ["util"] }

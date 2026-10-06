@@ -6,8 +6,8 @@ use std::{
 };
 
 use baukit_cli::{
-    AuthProvider, McpAuthentication, NewOptions, OpenApiCompatibility, QualityProfile, doctor,
-    generate_new,
+    AuthProvider, McpAuthentication, McpTransport, NewOptions, OpenApiCompatibility,
+    QualityProfile, doctor, generate_new,
 };
 use sha2::{Digest, Sha256};
 
@@ -28,6 +28,7 @@ fn options(parent: &Path, name: &str) -> NewOptions {
         pwa: false,
         mcp: false,
         mcp_auth: None,
+        mcp_transport: McpTransport::Stdio,
         auth: None,
         force: false,
         into_existing: false,
@@ -49,6 +50,7 @@ fn frontend_options(parent: &Path, name: &str, mobile: bool, web: bool) -> NewOp
         pwa: false,
         mcp: false,
         mcp_auth: None,
+        mcp_transport: McpTransport::Stdio,
         auth: None,
         force: false,
         into_existing: false,
@@ -1508,7 +1510,7 @@ fn raw_templates_do_not_contain_cargo_manifests() -> anyhow::Result<()> {
                 .file_name()
                 .is_some_and(|name| name == "Cargo.toml.jinja"))
             .count(),
-        8
+        9
     );
     Ok(())
 }
@@ -4724,5 +4726,179 @@ fn mobile_pwa_generation_matches_golden_tree() -> anyhow::Result<()> {
         render_hash_snapshot(&read_tree(&root)?),
         include_str!("snapshots/mobile-pwa.tree")
     );
+    Ok(())
+}
+
+#[test]
+fn remote_mcp_generation_matches_the_golden_tree() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut generated = options(parent.path(), "snapshot-app");
+    generated.auth = Some(AuthProvider::Oidc);
+    generated.mcp = true;
+    generated.mcp_transport = McpTransport::Remote;
+    let root = generate_new(&generated)?;
+    assert_eq!(
+        render_hash_snapshot(&read_tree(&root)?),
+        include_str!("snapshots/mcp-remote.tree")
+    );
+    let manifest = baukit_cli::read_manifest(&root)?;
+    let capability = manifest.capabilities.mcp.expect("MCP capability");
+    assert_eq!(capability.transport, McpTransport::Remote);
+    assert_eq!(capability.authentication, McpAuthentication::ResourceOauth);
+    assert!(!root.join("mcp").exists());
+    assert_eq!(manifest.openapi.consumers(), ["generated/openapi.d.ts"]);
+    doctor(&root)?;
+    Ok(())
+}
+
+#[test]
+fn remote_mcp_requires_oidc_backend_and_its_own_authentication() {
+    let parent = tempfile::tempdir().expect("tempdir");
+    let mut generated = options(parent.path(), "remote");
+    generated.mcp = true;
+    generated.mcp_transport = McpTransport::Remote;
+    assert!(
+        generate_new(&generated)
+            .expect_err("OIDC required")
+            .to_string()
+            .contains("requires --auth oidc")
+    );
+    generated.auth = Some(AuthProvider::Oidc);
+    generated.backend = false;
+    assert!(
+        generate_new(&generated)
+            .expect_err("backend required")
+            .to_string()
+            .contains("requires --backend")
+    );
+    generated.backend = true;
+    generated.mcp_auth = Some(McpAuthentication::CallerSupplied);
+    assert!(
+        generate_new(&generated)
+            .expect_err("OAuth required")
+            .to_string()
+            .contains("remote uses resource OAuth")
+    );
+}
+
+#[test]
+fn remote_realm_preserves_oidc_scopes_and_binds_the_resource_audience() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut generated = options(parent.path(), "remote");
+    generated.auth = Some(AuthProvider::Oidc);
+    generated.mcp = true;
+    generated.mcp_transport = McpTransport::Remote;
+    generated.web = true;
+    generated.mobile = true;
+    let root = generate_new(&generated)?;
+    let realm: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(root.join("keycloak/realm.json"))?)?;
+    let scopes = realm["clientScopes"].as_array().expect("client scopes");
+    for name in [
+        "basic",
+        "profile",
+        "email",
+        "roles",
+        "offline_access",
+        "items:read",
+    ] {
+        assert!(scopes.iter().any(|scope| scope["name"] == name), "{name}");
+    }
+    let basic = scopes
+        .iter()
+        .find(|scope| scope["name"] == "basic")
+        .expect("basic scope");
+    assert!(
+        basic["protocolMappers"]
+            .as_array()
+            .expect("basic mappers")
+            .iter()
+            .any(|mapper| {
+                mapper["protocolMapper"] == "oidc-sub-mapper"
+                    && mapper["config"]["access.token.claim"] == "true"
+            })
+    );
+    assert!(
+        realm["defaultDefaultClientScopes"]
+            .as_array()
+            .expect("default scopes")
+            .contains(&serde_json::json!("basic"))
+    );
+    assert!(
+        realm["defaultOptionalClientScopes"]
+            .as_array()
+            .expect("optional scopes")
+            .contains(&serde_json::json!("offline_access"))
+    );
+    let client = realm["clients"]
+        .as_array()
+        .expect("clients")
+        .iter()
+        .find(|client| client["clientId"] == "remote-mcp")
+        .expect("MCP client");
+    assert_eq!(client["publicClient"], true);
+    assert_eq!(client["directAccessGrantsEnabled"], false);
+    assert_eq!(client["attributes"]["pkce.code.challenge.method"], "S256");
+    assert_eq!(client["defaultClientScopes"], serde_json::json!(["basic"]));
+    assert_eq!(
+        client["optionalClientScopes"],
+        serde_json::json!(["items:read"])
+    );
+    assert!(
+        client["protocolMappers"]
+            .as_array()
+            .expect("MCP mappers")
+            .iter()
+            .any(|mapper| {
+                mapper["protocolMapper"] == "oidc-audience-mapper"
+                    && mapper["config"]["included.custom.audience"] == "http://localhost:8080/mcp"
+                    && mapper["config"]["id.token.claim"] == "false"
+            })
+    );
+    Ok(())
+}
+
+#[test]
+fn doctor_reports_each_missing_remote_mcp_connection() -> anyhow::Result<()> {
+    for (relative, symbol, finding) in [
+        (
+            "backend/crates/remote-bin/src/bin/api.rs",
+            "baukit_mcp::router(",
+            "router mount and auth layer",
+        ),
+        (
+            "backend/crates/remote-bin/src/bin/api.rs",
+            "api.merge(mcp)",
+            "router mount and auth layer",
+        ),
+        (
+            "backend/crates/remote-mcp/src/lib.rs",
+            "Self::definitions()",
+            "tool registration and scope enforcement",
+        ),
+        (
+            "backend/crates/remote-mcp/Cargo.toml",
+            "baukit-mcp.workspace = true",
+            "auth layer",
+        ),
+        (
+            "deploy/values.yaml",
+            "allowedHosts:",
+            "deployment is missing",
+        ),
+    ] {
+        let parent = tempfile::tempdir()?;
+        let mut generated = options(parent.path(), "remote");
+        generated.mcp = true;
+        generated.auth = Some(AuthProvider::Oidc);
+        generated.mcp_transport = McpTransport::Remote;
+        let root = generate_new(&generated)?;
+        let path = root.join(relative);
+        let source = fs::read_to_string(&path)?;
+        assert!(source.contains(symbol));
+        fs::write(path, source.replace(symbol, ""))?;
+        let error = doctor(&root).expect_err("missing remote wiring");
+        assert!(error.to_string().contains(finding), "{relative}: {error}");
+    }
     Ok(())
 }

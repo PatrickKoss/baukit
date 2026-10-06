@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-## [0.7.4] - 2026-10-06
+{% if context.mcp_remote %}- Add an opt-in Rust remote MCP template with Keycloak PKCE, deployment routes, exact Host and Origin configuration, and scoped service ports.
+
+{% endif %}## [0.7.4] - 2026-10-06
 
 {% if context.mobile and context.pwa and not context.web %}- Generate Expo web dependencies, SQLite WASM assets and single-page output for the mobile PWA host. Build and check the worker in the exported site.
 {% endif %}{% if context.mobile %}- Set the Android Gradle dev-server address to loopback and give QA emulators four CPU cores.

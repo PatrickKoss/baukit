@@ -279,3 +279,12 @@ networkPolicy:
   additionalIngress: []
   # Kubernetes NetworkPolicy egress rules appended after the DNS rule.
   additionalEgress: []
+
+mcp:
+  enabled: false
+  resourceUrl: ""
+  issuer: ""
+  allowedHosts: []
+  allowedOrigins: []
+  maxRequestBodyBytes: 32768
+  requestsPerMinute: 60

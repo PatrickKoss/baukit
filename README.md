@@ -110,6 +110,7 @@ Nothing here depends on the CLI, and no crate drags in the rest. Take the error 
 | [`baukit-ops`](rust/crates/baukit-ops) | Separate liveness, readiness, metrics, and build-info endpoints |
 | [`baukit-telemetry`](rust/crates/baukit-telemetry) | Structured logs, OpenTelemetry traces, Prometheus metrics from one builder |
 | [`baukit-auth`](rust/crates/baukit-auth) | OIDC, Clerk, and WorkOS verification; personal access tokens; Axum principal extraction |
+| [`baukit-mcp`](rust/crates/baukit-mcp) | OAuth-protected Streamable HTTP, scoped tool ports, resource metadata, body limits, and quotas |
 | [`baukit-jobs`](rust/crates/baukit-jobs) | Durable PostgreSQL outbox and supervised workers |
 | [`baukit-openapi`](rust/crates/baukit-openapi) | Utoipa metadata, deterministic schema output, drift checks |
 | [`baukit-ratelimit`](rust/crates/baukit-ratelimit) | Redis token buckets keyed by identity or client IP |
@@ -158,6 +159,8 @@ The repo also ships a [Helm chart](deploy/chart) and [Grafana dashboards, alerts
 
 ## Documentation
 
+See [remote MCP](docs/remote-mcp.md) for tool adapters, client setup, and the OAuth flow.
+
 Contracts and recipes live in [`docs/platform/`](docs/platform): [local-data ownership](docs/platform/local-data-ownership-contract.md), [offline readiness](docs/platform/offline-readiness-contract.md), [integration reliability](docs/platform/integration-reliability.md), [accessibility](docs/platform/accessibility-contract.md), [localization](docs/platform/localization-contract.md), [native quality gates](docs/platform/native-quality-gates.md), [telemetry](docs/platform/telemetry-spec.md), [onboarding](docs/platform/onboarding-recipe.md), [calendar export](docs/platform/calendar-export-recipe.md), and [mirrored Rust/TypeScript domain logic](docs/platform/mirrored-domain-logic.md). Release process is in [`docs/releasing.md`](docs/releasing.md).
 
 ## Working on baukit itself
@@ -165,7 +168,7 @@ Contracts and recipes live in [`docs/platform/`](docs/platform): [local-data own
 Three workspaces, no root workspace, so always pass a manifest path.
 
 ```text
-rust/        18 library crates
+rust/        19 library crates
 typescript/  21 packages, pnpm + Turborepo
 cli/         the baukit binary
 templates/   what the CLI renders

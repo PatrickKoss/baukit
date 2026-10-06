@@ -30,7 +30,8 @@ use uuid::Uuid;
 #[serde(default)]
 {% if context.auth_oidc or context.worker %}pub struct ProductConfig {
 {% if context.auth_oidc %}    pub auth: AuthConfig,
-{% endif %}{% if context.worker %}    pub worker: WorkerProductConfig,
+{% if context.mcp_remote %}    pub mcp: baukit_mcp::McpConfig,
+{% endif %}{% endif %}{% if context.worker %}    pub worker: WorkerProductConfig,
 {% endif %}}
 {% else %}pub struct ProductConfig {}
 {% endif %}
@@ -42,6 +43,11 @@ impl Validate for ProductConfig {
         }
 {% endif %}{% if context.worker %}        if let Err(worker) = self.worker.validate() {
             errors.extend(worker.into_errors());
+        }
+{% endif %}{% if context.mcp_remote %}        if self.mcp.enabled
+            && let Err(error) = self.mcp.validate()
+        {
+            errors.push(ValidationError::new("mcp", error.to_string()));
         }
 {% endif %}        if errors.is_empty() {
             Ok(())

@@ -23,9 +23,11 @@ use serde::{Deserialize, Serialize};
 static BACKEND_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/backend");
 static COMMON_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/common");
 static MOBILE_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/mobile");
+static MCP_REMOTE_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/mcp-remote");
 static MCP_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/mcp");
 static WEB_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/web");
 static WORKER_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/worker");
+const REMOTE_MCP_CLIENT_SCOPES: &str = include_str!("../resources/remote-mcp-client-scopes.json");
 
 pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
 pub const TEMPLATE_VERSION: &str = include_str!("../../templates/VERSION").trim_ascii();
@@ -175,6 +177,7 @@ pub struct NewOptions {
     pub pwa: bool,
     pub mcp: bool,
     pub mcp_auth: Option<McpAuthentication>,
+    pub mcp_transport: McpTransport,
     pub auth: Option<AuthProvider>,
     pub force: bool,
     pub into_existing: bool,
@@ -190,12 +193,27 @@ pub enum AuthProvider {
     Oidc,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum McpTransport {
+    #[default]
+    Stdio,
+    Remote,
+}
+
+impl McpTransport {
+    fn is_stdio(&self) -> bool {
+        *self == Self::Stdio
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
 #[serde(rename_all = "kebab-case")]
 pub enum McpAuthentication {
     PersonalToken,
     NodeOidc,
     CallerSupplied,
+    ResourceOauth,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
@@ -312,6 +330,8 @@ pub enum AnalyticsAdapter {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct McpCapability {
+    #[serde(default, skip_serializing_if = "McpTransport::is_stdio")]
+    pub transport: McpTransport,
     pub authentication: McpAuthentication,
 }
 
@@ -368,6 +388,8 @@ struct TemplateContext {
     web: bool,
     pwa: bool,
     mcp: bool,
+    mcp_remote: bool,
+    remote_mcp_client_scopes: &'static str,
     mcp_auth_node_oidc: bool,
     mcp_auth_caller_supplied: bool,
     auth_oidc: bool,
@@ -505,7 +527,7 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         options.pwa,
         auth_oidc,
         options.worker,
-        mcp_authentication,
+        options.mcp.then_some(options.mcp_transport),
     )?;
     let context = TemplateContext {
         app_name: options.name.clone(),
@@ -526,7 +548,9 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         mobile: options.mobile,
         web: options.web,
         pwa: options.pwa,
-        mcp: options.mcp,
+        mcp: options.mcp && options.mcp_transport == McpTransport::Stdio,
+        mcp_remote: options.mcp && options.mcp_transport == McpTransport::Remote,
+        remote_mcp_client_scopes: REMOTE_MCP_CLIENT_SCOPES,
         mcp_auth_node_oidc: mcp_authentication == Some(McpAuthentication::NodeOidc),
         mcp_auth_caller_supplied: mcp_authentication == Some(McpAuthentication::CallerSupplied),
         auth_oidc,
@@ -602,7 +626,10 @@ fn resolve_lockfiles(destination: &Path, options: &NewOptions) -> Result<()> {
     for capability in [
         (options.web, "web"),
         (options.mobile, "mobile"),
-        (options.mcp, "mcp"),
+        (
+            options.mcp && options.mcp_transport == McpTransport::Stdio,
+            "mcp",
+        ),
     ]
     .into_iter()
     .filter_map(|(enabled, name)| enabled.then_some(name))
@@ -670,7 +697,7 @@ fn dependency_context(
     pwa: bool,
     auth_oidc: bool,
     worker: bool,
-    mcp_authentication: Option<McpAuthentication>,
+    mcp_transport: Option<McpTransport>,
 ) -> Result<DependencyContext> {
     let mut web_packages = typescript_packages(false, false, web && auth_oidc);
     if pwa && web {
@@ -715,6 +742,9 @@ fn dependency_context(
         }
         if worker || auth_oidc {
             names.push("baukit-jobs");
+        }
+        if mcp_transport == Some(McpTransport::Remote) {
+            names.push("baukit-mcp");
         }
         let cargo = names
             .iter()
@@ -761,7 +791,7 @@ fn dependency_context(
                 .collect::<Vec<_>>()
                 .join(",\n")
         };
-        let mcp_typescript = if mcp_authentication.is_some() {
+        let mcp_typescript = if mcp_transport == Some(McpTransport::Stdio) {
             let auth_node = typescript_root.join("packages/auth-node/package.json");
             if !auth_node.is_file() {
                 bail!(
@@ -804,6 +834,9 @@ fn dependency_context(
         if worker || auth_oidc {
             names.push("baukit-jobs");
         }
+        if mcp_transport == Some(McpTransport::Remote) {
+            names.push("baukit-mcp");
+        }
         let cargo = names
             .iter()
             .map(|name| format!("{name} = \"{version}\""))
@@ -821,7 +854,7 @@ fn dependency_context(
             web_typescript: render_typescript(&web_packages),
             web_dev_typescript: render_leading_entries(&render_typescript(web_dev_packages)),
             mobile_typescript: render_typescript(&mobile_packages),
-            mcp_typescript: if mcp_authentication.is_some() {
+            mcp_typescript: if mcp_transport == Some(McpTransport::Stdio) {
                 format!("    \"@baukit/auth-node\": \"{version}\",\n")
             } else {
                 String::new()
@@ -930,7 +963,16 @@ fn render_product(
             render_directory(overlay, &environment, context, &mut rendered, true)?;
         }
     }
-    if options.mcp {
+    if context.mcp_remote {
+        render_directory(
+            &MCP_REMOTE_TEMPLATE,
+            &environment,
+            context,
+            &mut rendered,
+            false,
+        )?;
+    }
+    if context.mcp {
         render_directory(&MCP_TEMPLATE, &environment, context, &mut rendered, false)?;
         let declaration = rendered
             .get(Path::new("generated/openapi.d.ts"))
@@ -959,16 +1001,22 @@ fn render_manifest(context: &TemplateContext, options: &NewOptions) -> String {
         .expect("MCP options were validated before rendering")
         .map(|authentication| {
             format!(
-                "mcp = {{ authentication = \"{}\" }}\n",
+                "mcp = {{ authentication = \"{}\"{} }}\n",
                 match authentication {
                     McpAuthentication::PersonalToken => "personal-token",
                     McpAuthentication::NodeOidc => "node-oidc",
                     McpAuthentication::CallerSupplied => "caller-supplied",
+                    McpAuthentication::ResourceOauth => "resource-oauth",
+                },
+                if options.mcp_transport == McpTransport::Remote {
+                    ", transport = \"remote\""
+                } else {
+                    ""
                 }
             )
         })
         .unwrap_or_default();
-    let consumers = if options.mcp {
+    let consumers = if options.mcp && options.mcp_transport == McpTransport::Stdio {
         "[\"generated/openapi.d.ts\", \"mcp/src/api/schema.d.ts\"]"
     } else {
         "[\"generated/openapi.d.ts\"]"
@@ -1028,6 +1076,9 @@ consumers = {}\n",
 
 fn selected_mcp_authentication(options: &NewOptions) -> Result<Option<McpAuthentication>> {
     if !options.mcp {
+        if options.mcp_transport == McpTransport::Remote {
+            bail!("--mcp-transport remote requires --mcp");
+        }
         if options.mcp_auth.is_some() {
             bail!("--mcp-auth requires --mcp");
         }
@@ -1036,6 +1087,15 @@ fn selected_mcp_authentication(options: &NewOptions) -> Result<Option<McpAuthent
     if !options.backend {
         bail!("--mcp requires --backend because the generated package consumes its OpenAPI schema");
     }
+    if options.mcp_transport == McpTransport::Remote {
+        if options.auth != Some(AuthProvider::Oidc) {
+            bail!("--mcp-transport remote requires --auth oidc");
+        }
+        if options.mcp_auth.is_some() {
+            bail!("--mcp-auth selects stdio credentials; remote uses resource OAuth");
+        }
+        return Ok(Some(McpAuthentication::ResourceOauth));
+    }
     let authentication = options
         .mcp_auth
         .unwrap_or(if options.auth == Some(AuthProvider::Oidc) {
@@ -1043,6 +1103,9 @@ fn selected_mcp_authentication(options: &NewOptions) -> Result<Option<McpAuthent
         } else {
             McpAuthentication::PersonalToken
         });
+    if authentication == McpAuthentication::ResourceOauth {
+        bail!("resource-oauth requires --mcp-transport remote");
+    }
     if authentication == McpAuthentication::NodeOidc && options.auth != Some(AuthProvider::Oidc) {
         bail!("--mcp-auth node-oidc requires --auth oidc");
     }
@@ -1305,10 +1368,20 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
         failures.push("the MCP capability requires the backend capability".to_owned());
     }
     if manifest.capabilities.mcp.as_ref().is_some_and(|mcp| {
-        mcp.authentication == McpAuthentication::NodeOidc
+        (mcp.authentication == McpAuthentication::NodeOidc || mcp.transport == McpTransport::Remote)
             && manifest.capabilities.auth != Some(AuthProvider::Oidc)
     }) {
-        failures.push("MCP node-oidc authentication requires the OIDC capability".to_owned());
+        let finding = if manifest
+            .capabilities
+            .mcp
+            .as_ref()
+            .is_some_and(|mcp| mcp.transport == McpTransport::Remote)
+        {
+            "remote MCP OAuth requires the OIDC capability"
+        } else {
+            "MCP node-oidc authentication requires the OIDC capability"
+        };
+        failures.push(finding.to_owned());
     }
     if manifest.schema_version == MANIFEST_SCHEMA_VERSION {
         successes.push(format!(
@@ -1357,7 +1430,7 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
             )?;
         }
         if let Some(mcp) = &manifest.capabilities.mcp {
-            validate_mcp_capability(root, mcp, &mut successes, &mut failures)?;
+            validate_mcp_capability(root, &manifest.app.name, mcp, &mut successes, &mut failures)?;
         }
         let cargo = doctor_layout::backend_manifest(root, &manifest)?;
         if cargo.is_file() {
@@ -1797,7 +1870,12 @@ fn validate_port_configuration(
             ]);
         }
     }
-    if manifest.capabilities.mcp.is_some() {
+    if manifest
+        .capabilities
+        .mcp
+        .as_ref()
+        .is_some_and(|mcp| mcp.transport == McpTransport::Stdio)
+    {
         expected.push(("mcp/src/cli.ts", format!("localhost:{}", ports.api)));
         if manifest
             .capabilities
@@ -2411,12 +2489,100 @@ fn validate_mcp_document_inputs(root: &Path, failures: &mut Vec<String>) -> Resu
     Ok(())
 }
 
-fn validate_mcp_capability(
+fn validate_remote_mcp(
     root: &Path,
+    name: &str,
     mcp: &McpCapability,
     successes: &mut Vec<String>,
     failures: &mut Vec<String>,
 ) -> Result<()> {
+    let before = failures.len();
+    if mcp.authentication != McpAuthentication::ResourceOauth {
+        failures.push("remote MCP requires resource-oauth authentication".to_owned());
+    }
+    let crate_path = format!("backend/crates/{name}-mcp");
+    for (relative, label, symbols) in [
+        (
+            format!("{crate_path}/Cargo.toml"),
+            "auth layer",
+            vec!["baukit-mcp.workspace = true"],
+        ),
+        (
+            format!("backend/crates/{name}-bin/src/bin/api.rs"),
+            "router mount and auth layer",
+            vec![
+                "baukit_mcp::router(",
+                "api.merge(mcp)",
+                "ItemTools::new(",
+                "config.product.mcp",
+            ],
+        ),
+        (
+            format!("{crate_path}/src/lib.rs"),
+            "tool registration and scope enforcement",
+            vec![
+                "impl ToolService for ItemTools",
+                "fn tools(",
+                "Self::definitions()",
+                "required_scopes:",
+            ],
+        ),
+        (
+            "backend/tests/tool_drift.rs".to_owned(),
+            "tool schema drift check",
+            vec!["tool_schema(", "include_str!", "assert_eq!"],
+        ),
+        (
+            format!("backend/crates/{name}-bin/src/lib.rs"),
+            "resource configuration",
+            vec!["pub mcp: baukit_mcp::McpConfig", "self.mcp.validate()"],
+        ),
+    ] {
+        if !root.join(&relative).is_file() {
+            failures.push(format!("missing remote MCP {label} file `{relative}`"));
+            continue;
+        }
+        let source = identity::identity_code(&fs::read_to_string(root.join(&relative))?, true);
+        for symbol in symbols {
+            if !source.contains(symbol) {
+                failures.push(format!(
+                    "missing remote MCP {label} in `{relative}` (expected {symbol})"
+                ));
+            }
+        }
+    }
+    for relative in ["backend/mcp-tools.json", "docs/remote-mcp.md"] {
+        if !root.join(relative).is_file() {
+            failures.push(format!("missing remote MCP artifact `{relative}`"));
+        }
+    }
+    let values = root.join("deploy/values.yaml");
+    if values.is_file() {
+        let source = fs::read_to_string(values)?;
+        for symbol in ["mcp:", "resourceUrl:", "allowedHosts:", "/mcp"] {
+            if !source.contains(symbol) {
+                failures.push(format!("remote MCP deployment is missing `{symbol}`"));
+            }
+        }
+    } else {
+        failures.push("missing remote MCP deployment file `deploy/values.yaml`".to_owned());
+    }
+    if failures.len() == before {
+        successes.push("remote MCP router, resource metadata, OAuth layer, scoped tools, and drift check are wired".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_mcp_capability(
+    root: &Path,
+    name: &str,
+    mcp: &McpCapability,
+    successes: &mut Vec<String>,
+    failures: &mut Vec<String>,
+) -> Result<()> {
+    if mcp.transport == McpTransport::Remote {
+        return validate_remote_mcp(root, name, mcp, successes, failures);
+    }
     let initial_failure_count = failures.len();
     validate_mcp_tool_exports(root, failures)?;
     let sources = doctor_layout::files(&root.join("mcp/src"), "ts")?
@@ -2872,7 +3038,7 @@ mod generator_tests {
     use include_dir::{Dir, DirEntry, File};
     use minijinja::Environment;
 
-    use super::{TemplateContext, render_directory};
+    use super::{REMOTE_MCP_CLIENT_SCOPES, TemplateContext, render_directory};
 
     static PYTHON_CACHE_ENTRIES: &[DirEntry<'_>] = &[DirEntry::File(File::new(
         "__pycache__/template.cpython-313.pyc",
@@ -2907,6 +3073,8 @@ mod generator_tests {
             web: false,
             pwa: false,
             mcp: false,
+            mcp_remote: false,
+            remote_mcp_client_scopes: REMOTE_MCP_CLIENT_SCOPES,
             mcp_auth_node_oidc: false,
             mcp_auth_caller_supplied: false,
             auth_oidc: false,

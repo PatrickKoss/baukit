@@ -49,7 +49,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .map(|value| value.parse())
         .transpose()?
         .unwrap_or(Environment::Local);
-    let config: BaukitConfig<ProductConfig> = ConfigLoader::new(PRODUCT, environment)?.load()?;
+    let config: BaukitConfig<ProductConfig> = ConfigLoader::new(PRODUCT, environment)?{% if context.mcp_remote %}
+        .environment_collection("mcp.allowed_hosts")
+        .environment_collection("mcp.allowed_origins")
+        {% endif %}.load()?;
     run(config).await
 }
 
@@ -132,7 +135,7 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
     let api = routes(api_state);
 {% if context.auth_oidc %}    let rate_limit_options = RateLimitOptions::from_config(&config.rate_limit)?;
     let rate_limit_store = RedisRateLimitStore::connect_if_enabled(&rate_limit_options).await?;
-    let api = if let Some(store) = rate_limit_store {
+    let api = if let Some(store) = rate_limit_store{% if context.mcp_remote %}.clone(){% endif %} {
         let item_write_options = AuthenticatedRouteGroupOptions::new(
             ITEM_WRITE_GROUP,
             Quota::new(ITEM_WRITE_REQUESTS_PER_MINUTE, Duration::from_secs(60), 0)?,
@@ -155,6 +158,26 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         auth,
         baukit_auth::establish_principal,
     ));
+{% endif %}{% if context.mcp_remote %}    let mcp_store: Arc<dyn baukit_ratelimit::RateLimitStore> = match rate_limit_store {
+        Some(store) => Arc::new(store),
+        None if config.environment == Environment::Local || !config.product.mcp.enabled => {
+            Arc::new(baukit_ratelimit::InMemoryRateLimitStore::default())
+        }
+        None => {
+            return Err(
+                "remote MCP requires a shared rate-limit store outside local development".into(),
+            );
+        }
+    };
+    let mcp = baukit_mcp::router(
+        config.product.mcp.clone(),
+        Arc::new({{ context.app_crate }}_mcp::ItemTools::new(Arc::new(
+            item_service.clone(),
+        ))),
+        mcp_store,
+    )
+    .await?;
+    let api = api.merge(mcp);
 {% endif %}    let api = finalize_api(api, &config.http)?;
     let shutdown = ShutdownToken::new(config.shutdown.drain_timeout);
     let traffic_gate = TrafficGate::new();

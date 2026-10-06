@@ -84,6 +84,18 @@ baukit.dev/process: {{ .process }}
 {{- end }}
 {{- $overrides := deepCopy $root.Values.config.overrides -}}
 {{- if eq $process "api" }}
+{{- if $root.Values.mcp.enabled }}
+{{- if empty $root.Values.mcp.allowedHosts }}
+{{- fail "mcp.allowedHosts must not be empty when MCP is enabled" }}
+{{- end }}
+{{- $_ := set $overrides "MCP__ENABLED" "true" -}}
+{{- $_ := set $overrides "MCP__RESOURCE_URL" (required "mcp.resourceUrl is required" $root.Values.mcp.resourceUrl) -}}
+{{- $_ := set $overrides "MCP__ISSUER" (required "mcp.issuer is required" $root.Values.mcp.issuer) -}}
+{{- $_ := set $overrides "MCP__ALLOWED_HOSTS" (toJson $root.Values.mcp.allowedHosts) -}}
+{{- $_ := set $overrides "MCP__ALLOWED_ORIGINS" (toJson $root.Values.mcp.allowedOrigins) -}}
+{{- $_ := set $overrides "MCP__MAX_REQUEST_BODY_BYTES" (toString $root.Values.mcp.maxRequestBodyBytes) -}}
+{{- $_ := set $overrides "MCP__REQUESTS_PER_MINUTE" (toString $root.Values.mcp.requestsPerMinute) -}}
+{{- end }}
 {{- $_ := set $overrides "HTTP__PORT" (toString $root.Values.api.ports.http) -}}
 {{- $_ := set $overrides "OPS__PORT" (toString $root.Values.api.ports.ops) -}}
 {{- $_ := set $overrides "SHUTDOWN__DRAIN_TIMEOUT" (toString $root.Values.api.terminationGracePeriodSeconds) -}}

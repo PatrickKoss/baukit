@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use baukit_cli::{AuthProvider, NewOptions, QualityProfile, generate_new};
+use baukit_cli::{AuthProvider, McpTransport, NewOptions, QualityProfile, generate_new};
 use sha2::{Digest, Sha256};
 
 fn base(parent: &Path) -> NewOptions {
@@ -19,6 +19,7 @@ fn base(parent: &Path) -> NewOptions {
         pwa: false,
         mcp: false,
         mcp_auth: None,
+        mcp_transport: McpTransport::Stdio,
         auth: None,
         force: false,
         into_existing: false,
@@ -103,6 +104,11 @@ fn main() {
         o.web = true;
     });
     bless("mcp", |o| o.mcp = true);
+    bless("mcp-remote", |o| {
+        o.mcp = true;
+        o.auth = Some(AuthProvider::Oidc);
+        o.mcp_transport = McpTransport::Remote;
+    });
     bless("strict", |o| {
         o.mobile = true;
         o.web = true;

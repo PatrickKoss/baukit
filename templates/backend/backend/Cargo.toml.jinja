@@ -7,7 +7,8 @@ members = [
   "crates/{{ context.app_name }}-api",
   "crates/{{ context.app_name }}-postgres",
   "crates/{{ context.app_name }}-bin",
-{% if context.worker %}  "crates/{{ context.app_name }}-worker",
+{% if context.mcp_remote %}  "crates/{{ context.app_name }}-mcp",
+{% endif %}{% if context.worker %}  "crates/{{ context.app_name }}-worker",
 {% endif %}]
 
 [workspace.package]
@@ -34,6 +35,7 @@ uuid = { version = "1.27.0", features = ["v4", "v7", "serde"] }
 {{ context.app_crate }}-api = { path = "crates/{{ context.app_name }}-api" }
 {{ context.app_crate }}-postgres = { path = "crates/{{ context.app_name }}-postgres" }
 {% if context.worker %}{{ context.app_crate }}-worker = { path = "crates/{{ context.app_name }}-worker" }
+{% endif %}{% if context.mcp_remote %}{{ context.app_crate }}-mcp = { path = "crates/{{ context.app_name }}-mcp" }
 {% endif %}
 
 [workspace.lints.rust]
