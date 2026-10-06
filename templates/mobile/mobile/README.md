@@ -82,7 +82,25 @@ The Baukit packages come from {{ context.baukit_typescript_dependency_descriptio
 
 ## Optional PWA worker
 
-The generated manifest keeps `capabilities.pwa = false`. A product without a web app can serve a PWA
+{% if context.pwa and not context.web %}This product serves its PWA from the Expo web export. The mobile package includes the web
+dependencies matched to Expo 57 and exports a single-page app to `dist/`.
+
+```sh
+corepack pnpm exec expo export --platform web
+corepack pnpm run build:sw
+corepack pnpm run build:sw:check
+```
+
+The worker build copies `@baukit/pwa-web/worker` into `dist/baukit-pwa-worker.js` after export.
+The check compares the deployed copy with the package artifact. Deploy `dist/` and configure
+the host to serve `index.html` for app routes. Expo SQLite on web needs the hosting headers
+`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless`.
+
+Add a product-owned manifest, icons, `sw.js` and registration code under `public/` before
+exporting. The worker loads the Baukit helpers with `importScripts('/baukit-pwa-worker.js')`.
+Products own the cache policy and offline behavior. `baukit doctor` checks the worker wiring,
+and the strict runner exports the site before building and checking the worker.
+{% else %}The generated manifest keeps `capabilities.pwa = false`. A product without a web app can serve a PWA
 from the Expo web export. Set `capabilities.pwa = true` in the product-root `baukit.toml`, add
 `@baukit/pwa-web` and the `build:sw` and `build:sw:check` scripts to this package, and write
 `scripts/build-sw.mjs` so it copies `@baukit/pwa-web/worker` to `public/baukit-pwa-worker.js`.
@@ -90,7 +108,7 @@ Expo copies `public/` into the web export, so a product-owned `public/sw.js` loa
 `importScripts('/baukit-pwa-worker.js')`. `baukit doctor` checks the scripts, the dependency, and
 the copy source, and the strict runner calls `build:sw:check`. A product that also has a web app
 keeps the worker in `web/` instead.
-
+{% endif %}
 ## Checks
 
 ```sh

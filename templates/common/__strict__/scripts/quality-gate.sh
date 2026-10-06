@@ -222,12 +222,14 @@ corepack pnpm@12.9.1 --dir mobile typecheck
 corepack pnpm@12.9.1 --dir mobile lint
 corepack pnpm@12.9.1 --dir mobile run test:coverage
 {% if not context.web %}if [ "$(manifest_value capabilities.pwa)" = "true" ]; then
-  corepack pnpm@12.9.1 --dir mobile run build:sw:check
+{% if context.pwa %}  corepack pnpm@12.9.1 --dir mobile exec expo export --platform web --max-workers 4
+  corepack pnpm@12.9.1 --dir mobile run build:sw
+{% endif %}  corepack pnpm@12.9.1 --dir mobile run build:sw:check
 fi
 {% endif %}CI=1 corepack pnpm@12.9.1 --dir mobile exec expo prebuild --clean --platform ios
 CI=1 corepack pnpm@12.9.1 --dir mobile exec expo export --platform ios --output-dir dist/ios-check
 CI=1 corepack pnpm@12.9.1 --dir mobile exec expo prebuild --clean --platform android
-mobile/android/gradlew -p mobile/android --no-daemon --stacktrace assembleDebug
+mobile/android/gradlew -p mobile/android --no-daemon --stacktrace -PreactNativeDevServerIp=127.0.0.1 assembleDebug
 {% endif %}
 
 if [ -f deploy/observability/product-metrics.txt ]; then

@@ -5,7 +5,8 @@ const { getDefaultConfig } = metroConfig;
 
 const repositoryRoot = path.resolve(__dirname, '..');
 const config = getDefaultConfig(__dirname);
-const existingBlockList = config.resolver.blockList;
+{% if context.pwa and not context.web %}config.resolver.assetExts.push('wasm');
+{% endif %}const existingBlockList = config.resolver.blockList;
 const ignoredSiblings = new RegExp(
   `^${repositoryRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/(?!mobile/)[^/]+/`,
 );

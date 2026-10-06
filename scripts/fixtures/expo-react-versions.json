@@ -2,9 +2,14 @@
   "expo": "57.0.26",
   "tarball": "https://registry.npmjs.org/expo/-/expo-57.0.26.tgz",
   "integrity": "sha512-U1rsFwcuZNnU61Z/YLnnVC/ZqP0wpxh/rCKUMff3ot/rhLpxFY1zxEqu4vyaexyvBAB1mwpl9lA/ltcHBoQGyg==",
+  "resolvedWebModules": {
+    "react-native-web": "0.21.2"
+  },
   "bundledNativeModules": {
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-native-web": "~0.21.0",
+    "@expo/metro-runtime": "~57.0.16",
     "react-native": "0.86.3",
     "expo-constants": "~57.0.20",
     "expo-crypto": "~57.0.3",

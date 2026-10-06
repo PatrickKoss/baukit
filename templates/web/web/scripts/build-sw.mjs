@@ -2,8 +2,9 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { parseArgs } from "node:util";
 
-const DEFAULT_OUTPUT = "public/baukit-pwa-worker.js";
+const WORKER_FILE = "baukit-pwa-worker.js";
 
 function pwaEnabled(manifest) {
   let inCapabilities = false;
@@ -33,21 +34,30 @@ async function readIfPresent(path) {
 
 export async function buildWorker({
   webDirectory,
+  outputDirectory = "public",
   check,
   resolveWorker = () => import.meta.resolve("@baukit/pwa-web/worker"),
 }) {
   const manifestPath = resolve(webDirectory, "..", "baukit.toml");
-  const outputPath = join(webDirectory, DEFAULT_OUTPUT);
+  const output = join(outputDirectory, WORKER_FILE);
+  const outputPath = join(webDirectory, output);
   const manifest = await readFile(manifestPath, "utf8");
 
   if (!pwaEnabled(manifest)) {
     const existing = await readIfPresent(outputPath);
     if (existing !== null) {
-      throw new Error(
-        `${DEFAULT_OUTPUT} exists while capabilities.pwa is false`,
-      );
+      throw new Error(`${output} exists while capabilities.pwa is false`);
     }
     return "PWA capability is disabled; no worker artifact is expected.";
+  }
+
+  if (
+    outputDirectory !== "public" &&
+    (await readIfPresent(join(webDirectory, outputDirectory, "index.html"))) === null
+  ) {
+    throw new Error(
+      "Web export is missing. Run: corepack pnpm exec expo export --platform web",
+    );
   }
 
   const resolvedWorker = resolveWorker();
@@ -63,12 +73,12 @@ export async function buildWorker({
         `Worker artifact is stale. Run: corepack pnpm run build:sw`,
       );
     }
-    return `Worker artifact is current at ${DEFAULT_OUTPUT}.`;
+    return `Worker artifact is current at ${output}.`;
   }
 
   await mkdir(dirname(outputPath), { recursive: true });
   await writeFile(outputPath, expected);
-  return `Copied @baukit/pwa-web/worker to ${DEFAULT_OUTPUT}.`;
+  return `Copied @baukit/pwa-web/worker to ${output}.`;
 }
 
 const invokedPath =
@@ -78,10 +88,17 @@ const invokedPath =
 if (invokedPath === import.meta.url) {
   const webDirectory = dirname(dirname(fileURLToPath(import.meta.url)));
   try {
+    const { values } = parseArgs({
+      options: {
+        check: { type: "boolean", default: false },
+        "output-dir": { type: "string", default: "public" },
+      },
+    });
     console.log(
       await buildWorker({
         webDirectory,
-        check: process.argv.includes("--check"),
+        outputDirectory: values["output-dir"],
+        check: values.check,
       }),
     );
   } catch (error) {

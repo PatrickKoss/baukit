@@ -60,6 +60,7 @@ printf 'hw.cpu.ncore = 1\nhw.cpu.ncore=2\nhw.gpu.mode=auto\n' > "$ANDROID_AVD_HO
             for path in (
                 ".github/workflows/ci.yml",
                 "templates/common/.github/workflows/native.yml",
+                "templates/common/__strict__/scripts/quality-gate.sh",
             )
         )
         for command in commands:

@@ -15,6 +15,7 @@ class MobileReactVersionsTest(unittest.TestCase):
             with self.subTest(template=directory):
                 base = ROOT / "templates/mobile" / directory
                 source = (base / "package.json").read_text()
+                source = re.sub(r"\{%.*?%\}", "", source)
                 package = json.loads(source.replace("{{ context.app_name }}", "fixture").replace("{{ context.baukit_mobile_typescript_dependencies }}", '"@baukit/fixture": "0.7.0"'))
                 self.assertEqual(package["dependencies"]["expo"], published["expo"])
                 for name in ("react", "react-native"):
@@ -24,15 +25,19 @@ class MobileReactVersionsTest(unittest.TestCase):
                 self.assertEqual(package["devDependencies"]["@types/jest"].split(".")[0], jest_major)
                 self.assertEqual(package["devDependencies"]["@jest/globals"].split(".")[0], jest_major)
                 for name, expected in published["bundledNativeModules"].items():
-                    if name == "react-dom":
-                        continue
                     actual = package["dependencies"].get(name, package["devDependencies"].get(name))
                     if actual == "catalog:":
                         entry = re.search(rf"^  {re.escape(name)}: (.+)$", (base / "pnpm-workspace.yaml").read_text(), re.MULTILINE)
                         self.assertIsNotNone(entry, name)
                         actual = entry[1]
                     self.assertIsNotNone(actual, name)
-                    self.assertEqual(actual, expected.removeprefix("~"), name)
+                    expected_version = published.get("resolvedWebModules", {}).get(name, expected.removeprefix("~"))
+                    self.assertEqual(actual, expected_version, name)
+                    if name in published.get("resolvedWebModules", {}):
+                        bundled = tuple(map(int, expected.removeprefix("~").split(".")))
+                        resolved = tuple(map(int, expected_version.split(".")))
+                        self.assertEqual(resolved[:2], bundled[:2], name)
+                        self.assertGreaterEqual(resolved, bundled, name)
                 override = re.search(r"^  react-dom: (.+)$", (base / "pnpm-workspace.yaml").read_text(), re.MULTILINE)
                 self.assertIsNotNone(override)
                 self.assertEqual(override[1], published["bundledNativeModules"]["react-dom"])

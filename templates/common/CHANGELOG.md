@@ -2,7 +2,8 @@
 
 ## [Unreleased]
 
-{% if context.mobile %}- Set the Android Gradle dev-server address to loopback and give QA emulators four CPU cores.
+{% if context.mobile and context.pwa and not context.web %}- Generate Expo web dependencies, SQLite WASM assets and single-page output for the mobile PWA host. Build and check the worker in the exported site.
+{% endif %}{% if context.mobile %}- Set the Android Gradle dev-server address to loopback and give QA emulators four CPU cores.
 - Apply the top safe-area inset to tab scenes and the sign-in header.
 - Build the iOS simulator app in Release mode so Maestro has an embedded JavaScript bundle.
 - Generate service worker build and check scripts for Expo web.

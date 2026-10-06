@@ -30,4 +30,5 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   android: {
     package: `dev.baukit.${PRODUCT_NAME.replaceAll('-', '_')}`,
   },
-});
+{% if context.pwa and not context.web %}  web: { ...config.web, bundler: 'metro', output: 'single' },
+{% endif %}});

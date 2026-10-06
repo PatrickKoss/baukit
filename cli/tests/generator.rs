@@ -4622,14 +4622,93 @@ fn pwa_requires_an_app_and_selects_the_web_host_first() -> anyhow::Result<()> {
             package["dependencies"]["@baukit/pwa-web"],
             baukit_cli::TEMPLATE_VERSION
         );
-        assert_eq!(package["scripts"]["build:sw"], "node scripts/build-sw.mjs");
+        let output = if host == "mobile" {
+            " --output-dir dist"
+        } else {
+            ""
+        };
+        assert_eq!(
+            package["scripts"]["build:sw"],
+            format!("node scripts/build-sw.mjs{output}")
+        );
         assert_eq!(
             package["scripts"]["build:sw:check"],
-            "node scripts/build-sw.mjs --check"
+            format!("node scripts/build-sw.mjs{output} --check")
         );
         assert!(
             fs::read_to_string(root.join(host).join("scripts/build-sw.mjs"))?
                 .contains("@baukit/pwa-web/worker")
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn mobile_pwa_host_generates_expo_web_export_configuration() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    for (name, pwa, web, auth) in [
+        ("mobile-pwa", true, false, false),
+        ("auth-mobile-pwa", true, false, true),
+        ("native-mobile", false, false, false),
+        ("web-hosted-pwa", true, true, false),
+    ] {
+        let mut product = frontend_options(parent.path(), name, true, web);
+        product.pwa = pwa;
+        product.auth = auth.then_some(AuthProvider::Oidc);
+        let root = generate_new(&product)?;
+        let package: serde_json::Value =
+            serde_json::from_slice(&fs::read(root.join("mobile/package.json"))?)?;
+        let mobile_hosts_pwa = pwa && !web;
+        for (dependency, version) in [
+            ("@expo/metro-runtime", "57.0.16"),
+            ("react-dom", "19.2.3"),
+            ("react-native-web", "0.21.2"),
+        ] {
+            if mobile_hosts_pwa {
+                assert_eq!(package["dependencies"][dependency], version, "{name}");
+            } else {
+                assert!(package["dependencies"][dependency].is_null(), "{name}");
+            }
+        }
+        let output = if mobile_hosts_pwa {
+            " --output-dir dist"
+        } else {
+            ""
+        };
+        assert_eq!(
+            package["scripts"]["build:sw"],
+            format!("node scripts/build-sw.mjs{output}")
+        );
+        assert_eq!(
+            package["scripts"]["build:sw:check"],
+            format!("node scripts/build-sw.mjs{output} --check")
+        );
+        let config = fs::read_to_string(root.join("mobile/app.config.ts"))?;
+        assert_eq!(config.contains("output: 'single'"), mobile_hosts_pwa);
+        assert_eq!(config.contains("bundler: 'metro'"), mobile_hosts_pwa);
+        let metro = fs::read_to_string(root.join("mobile/metro.config.js"))?;
+        assert_eq!(
+            metro.contains("config.resolver.assetExts.push('wasm')"),
+            mobile_hosts_pwa
+        );
+        let workflow: serde_yaml_ng::Value =
+            serde_yaml_ng::from_str(&fs::read_to_string(root.join(".github/workflows/ci.yml"))?)?;
+        let steps = workflow["jobs"]["mobile"]["steps"]
+            .as_sequence()
+            .expect("mobile CI steps");
+        assert_eq!(
+            steps.iter().any(|step| step["run"]
+                .as_str()
+                .is_some_and(|run| run.contains("expo export --platform web"))),
+            mobile_hosts_pwa
+        );
+        product.name = format!("{name}-strict");
+        product.quality = QualityProfile::Strict;
+        let strict_root = generate_new(&product)?;
+        let gate = fs::read_to_string(strict_root.join("scripts/quality-gate.sh"))?;
+        assert_eq!(
+            gate.contains("--dir mobile exec expo export --platform web"),
+            mobile_hosts_pwa
         );
     }
     Ok(())

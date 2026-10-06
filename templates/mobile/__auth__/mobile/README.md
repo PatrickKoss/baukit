@@ -22,7 +22,25 @@ Protected API calls use the runtime's explicit one-replay 401 handshake: concurr
 
 Local state is cleared before provider logout. If provider logout is unavailable or fails, the next sign-in forces `prompt=login`. The sign-in screen passes the current theme mode to `signIn`, which adds an `ap1` appearance hint and a random nonce from `expo-crypto` to the OAuth `state`. The generated Keycloak theme reads it and opens the login page in the same light or dark mode. If the nonce cannot be generated, sign-in continues with the default state and the page follows the system setting. Cancel and dismiss results are non-errors and are announced so product UI can restore focus or provide additional guidance. Physical devices must use one reachable hostname consistently for both API and issuer URLs; the composed HTTP issuer is for emulator/local development only, and production must use HTTPS.
 
-## Native QA
+{% if context.pwa and not context.web %}## PWA web export
+
+The mobile package includes the web dependencies matched to Expo 57 and exports a single-page
+app to `dist/`.
+
+```sh
+corepack pnpm exec expo export --platform web
+corepack pnpm run build:sw
+corepack pnpm run build:sw:check
+```
+
+The worker build copies `@baukit/pwa-web/worker` into `dist/baukit-pwa-worker.js` after export.
+Deploy `dist/` and configure the host to serve `index.html` for app routes. Add a product-owned
+manifest, icons, `sw.js` and registration code under `public/` before exporting. The worker
+loads the Baukit helpers with `importScripts('/baukit-pwa-worker.js')`. Products own the cache
+policy and offline behavior. Expo SQLite on web needs the hosting headers
+`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless`.
+
+{% endif %}## Native QA
 
 The local QA targets start disposable PostgreSQL, Redis, Keycloak, and API instances on separate ports. They install an embedded release build in a dedicated emulator or simulator, so Metro is not required.
 

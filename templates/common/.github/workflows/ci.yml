@@ -278,7 +278,13 @@ jobs:
       - run: corepack pnpm@12.9.1 exec tsc --noEmit
       - run: corepack pnpm@12.9.1 lint
       - run: corepack pnpm@12.9.1 test
-
+{% if context.pwa and not context.web %}      - name: Export and verify the mobile PWA
+        run: |
+          corepack pnpm@12.9.1 exec expo install --check
+          corepack pnpm@12.9.1 exec expo export --platform web --max-workers 4
+          corepack pnpm@12.9.1 run build:sw
+          corepack pnpm@12.9.1 run build:sw:check
+{% endif %}
   mobile-coverage:
     name: Mobile coverage thresholds
     runs-on: ubuntu-latest

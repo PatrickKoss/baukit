@@ -10,8 +10,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "tokens": "node scripts/generate-tokens.mjs",
-    "build:sw": "node scripts/build-sw.mjs",
-    "build:sw:check": "node scripts/build-sw.mjs --check",
+    "build:sw": "node scripts/build-sw.mjs{% if context.pwa and not context.web %} --output-dir dist{% endif %}",
+    "build:sw:check": "node scripts/build-sw.mjs{% if context.pwa and not context.web %} --output-dir dist{% endif %} --check",
     "typecheck": "tsc --noEmit",
     "lint": "eslint app app.config.ts src --max-warnings=0",
     "test": "jest --runInBand && node --test scripts/build-sw.test.mjs",
@@ -19,7 +19,8 @@
   },
   "dependencies": {
 {{ context.baukit_mobile_typescript_dependencies }},
-    "@react-native-async-storage/async-storage": "2.2.0",
+{% if context.pwa and not context.web %}    "@expo/metro-runtime": "57.0.16",
+{% endif %}    "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "57.0.26",
     "expo-auth-session": "57.0.13",
     "expo-constants": "catalog:",
@@ -33,13 +34,15 @@
     "expo-web-browser": "57.0.3",
     "i18next": "26.4.2",
     "react": "19.2.3",
-    "react-i18next": "17.0.15",
+{% if context.pwa and not context.web %}    "react-dom": "19.2.3",
+{% endif %}    "react-i18next": "17.0.15",
     "react-native": "0.86.3",
     "react-native-gesture-handler": "2.32.0",
     "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "5.7.0",
     "react-native-screens": "4.26.2",
-    "react-native-worklets": "0.10.1"
+{% if context.pwa and not context.web %}    "react-native-web": "0.21.2",
+{% endif %}    "react-native-worklets": "0.10.1"
   },
   "devDependencies": {
     "@eslint/compat": "2.1.1",

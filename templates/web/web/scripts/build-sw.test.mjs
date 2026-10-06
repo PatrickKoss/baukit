@@ -43,3 +43,29 @@ test("the build copies the published worker and the check detects drift", async 
     /Worker artifact is stale/,
   );
 });
+
+test("an Expo worker build requires an export and checks the deployed artifact", async (t) => {
+  const { root, webDirectory } = await fixture(t, true);
+  const source = join(root, "worker.js");
+  const output = join(webDirectory, "dist", "baukit-pwa-worker.js");
+  await writeFile(source, "globalThis.BaukitPwa = {};\n");
+  const options = {
+    webDirectory,
+    outputDirectory: "dist",
+    check: false,
+    resolveWorker: () => source,
+  };
+
+  await assert.rejects(buildWorker(options), /Web export is missing/);
+  await mkdir(join(webDirectory, "dist"));
+  await writeFile(join(webDirectory, "dist", "index.html"), "<html></html>\n");
+  await buildWorker(options);
+  assert.equal(await readFile(output, "utf8"), "globalThis.BaukitPwa = {};\n");
+  await assert.doesNotReject(buildWorker({ ...options, check: true }));
+
+  await writeFile(output, "stale\n");
+  await assert.rejects(
+    buildWorker({ ...options, check: true }),
+    /Worker artifact is stale/,
+  );
+});

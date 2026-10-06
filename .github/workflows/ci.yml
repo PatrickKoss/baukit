@@ -256,6 +256,13 @@ jobs:
             mobile: true
             web: false
             mcp: false
+          - flavor: mobile-pwa
+            product_name: fixture
+            flags: --mobile --pwa
+            backend: false
+            mobile: true
+            web: false
+            mcp: false
           - flavor: combined
             product_name: fixture
             flags: --backend --mobile --web
@@ -316,7 +323,7 @@ jobs:
         working-directory: typescript
         run: |
           pnpm install --frozen-lockfile
-          pnpm --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/auth-native --filter @baukit/auth-node --filter @baukit/data-contracts --filter @baukit/ui-tokens --filter @baukit/navigation run build
+          pnpm --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/auth-native --filter @baukit/auth-node --filter @baukit/data-contracts --filter @baukit/ui-tokens --filter @baukit/navigation --filter @baukit/pwa-web run build
       - name: Build CLI and generate local-path fixture
         run: |
           cargo build --manifest-path cli/Cargo.toml --bin baukit
@@ -355,6 +362,14 @@ jobs:
           pnpm exec tsc --noEmit
           pnpm lint
           pnpm run test:coverage
+      - name: Export and verify the generated mobile PWA
+        if: matrix.flavor == 'mobile-pwa'
+        working-directory: .generated-fixture/${{ matrix.product_name }}/mobile
+        run: |
+          pnpm exec expo install --check
+          pnpm exec expo export --platform web --max-workers 4
+          pnpm run build:sw
+          pnpm run build:sw:check
       - name: Install and verify generated MCP package
         if: matrix.mcp
         working-directory: .generated-fixture/${{ matrix.product_name }}/mcp
