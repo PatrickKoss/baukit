@@ -95,6 +95,9 @@ it("renders German navigation labels from the catalog", () => {
     value: 1024,
   });
   render(<NavigationShell />);
+  fireEvent.click(screen.getByRole("button", { name: "Arbeitsbereich, Einträge" }));
+  fireEvent.click(screen.getByRole("button", { name: "Menü schließen" }));
+  expect(screen.queryByRole("menu")).toBeNull();
   expect(screen.getByRole("navigation", { name: "Hauptnavigation" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "Startseite" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Navigation einklappen" }));

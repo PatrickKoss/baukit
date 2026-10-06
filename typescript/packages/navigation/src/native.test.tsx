@@ -24,6 +24,10 @@ for (const name of [
   Reflect.get(nativeModules, name);
 }
 
+afterEach(() => {
+  jest.restoreAllMocks();
+});
+
 const labels = {
   label: 'Primary',
   collapseLabel: 'Collapse navigation',
@@ -47,6 +51,7 @@ const theme: NavigationTheme = {
   background: '#fff',
   text: '#111',
   muted: '#595959',
+  danger: '#b3261e',
   activeBackground: '#dbe9f8',
   activeText: '#005fcc',
   ancestorText: '#004799',
@@ -393,6 +398,7 @@ it('uses roving tab stops for Arrow, Home and End', async () => {
   expect(screen.getByRole('link', { name: 'Home' })).toHaveProp('tabIndex', 0);
 });
 it('opens a profile menu, runs an entry and closes', async () => {
+  jest.replaceProperty(Platform, 'OS', 'android');
   const action = jest.fn();
   await render(
     <AppNavigation
@@ -412,10 +418,18 @@ it('opens a profile menu, runs an entry and closes', async () => {
   await fireEvent.press(screen.getByRole('button', { name: 'Account' }), event());
   expect(screen.getByRole('menuitem', { name: 'Sign out' })).toBeOnTheScreen();
   await fireEvent.press(screen.getByRole('menuitem', { name: 'Sign out' }), event());
+  await act(async () => {
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => {
+        resolve();
+      }),
+    );
+  });
   expect(action).toHaveBeenCalledTimes(1);
   expect(screen.queryByRole('menuitem')).toBeNull();
 });
 it('shows a full-width section picker and navigates directly to a subpage', async () => {
+  jest.replaceProperty(Platform, 'OS', 'android');
   const navigate = jest.fn();
   await render(
     <SectionPicker
@@ -428,6 +442,13 @@ it('shows a full-width section picker and navigates directly to a subpage', asyn
   );
   await fireEvent.press(screen.getByRole('button', { name: 'Progress, Overview' }), event());
   await fireEvent.press(screen.getByRole('menuitem', { name: 'History' }), event());
+  await act(async () => {
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => {
+        resolve();
+      }),
+    );
+  });
   expect(navigate).toHaveBeenCalledWith('/progress/history');
   expect(screen.queryByRole('menuitem')).toBeNull();
 });
@@ -848,8 +869,14 @@ it.each([
   },
 );
 
-function ReservedHeight({ theme }: { readonly theme?: NavigationTheme }) {
-  return <Text testID="reserved-height">{useNavigationBarHeight(24, theme)}</Text>;
+function ReservedHeight({
+  theme,
+  slotHeight = 0,
+}: {
+  readonly theme?: NavigationTheme;
+  readonly slotHeight?: number;
+}) {
+  return <Text testID="reserved-height">{useNavigationBarHeight(24, theme, slotHeight)}</Text>;
 }
 
 it.each([1, 1.3, 2])('reserves compact navigation space at font scale %s', async (fontScale) => {
@@ -945,4 +972,262 @@ it('uses the same custom typography and spacing in the bar and height hook', asy
   });
   expect(screen.getByText('Account')).toHaveStyle({ fontSize: 18, lineHeight: 30 });
   jest.restoreAllMocks();
+});
+
+it.each(['android', 'ios'] as const)(
+  'runs profile navigation and actions after %s dismissal',
+  async (platform) => {
+    jest.replaceProperty(Platform, 'OS', platform);
+    let dismiss: (() => void) | undefined;
+    const OriginalModal = nativeModules.Modal;
+    class ObservedModal extends OriginalModal {
+      override render() {
+        dismiss = this.props.onDismiss;
+        return super.render();
+      }
+    }
+    jest.spyOn(nativeModules, 'Modal', 'get').mockReturnValue(ObservedModal);
+    const frames: FrameRequestCallback[] = [];
+    jest.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    jest.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => undefined);
+    const navigate = jest.fn(() => {
+      expect(screen.queryByRole('menu')).toBeNull();
+    });
+    const action = jest.fn(() => {
+      expect(screen.queryByRole('menu')).toBeNull();
+    });
+    await render(
+      <AppNavigation
+        {...labels}
+        items={items}
+        pathname="/"
+        theme={theme}
+        onNavigate={navigate}
+        profile={{
+          label: 'Account',
+          initials: 'AB',
+          menu: [
+            { id: 'settings', label: 'Settings', href: '/settings' },
+            { id: 'signout', label: 'Sign out', onSelect: action },
+          ],
+        }}
+      />,
+    );
+    for (const name of ['Settings', 'Sign out']) {
+      await fireEvent.press(screen.getByRole('button', { name: 'Account' }), event());
+      await fireEvent.press(screen.getByRole('menuitem', { name }), event());
+      expect(navigate).toHaveBeenCalledTimes(name === 'Settings' ? 0 : 1);
+      expect(action).not.toHaveBeenCalled();
+      expect(screen.queryByRole('menu')).toBeNull();
+      if (platform === 'ios') {
+        expect(dismiss).toBeDefined();
+        await act(() => {
+          dismiss?.();
+        });
+        await act(() => {
+          dismiss?.();
+        });
+      } else {
+        expect(frames).toHaveLength(name === 'Settings' ? 1 : 2);
+        await act(() => {
+          frames.at(-1)?.(0);
+        });
+        await act(() => {
+          frames.at(-1)?.(0);
+        });
+      }
+    }
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(navigate).toHaveBeenCalledWith('/settings');
+    expect(action).toHaveBeenCalledTimes(1);
+    jest.restoreAllMocks();
+  },
+);
+
+it('cancels a queued selection when navigation unmounts', async () => {
+  jest.replaceProperty(Platform, 'OS', 'android');
+  let frame: FrameRequestCallback | undefined;
+  jest.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+    frame = callback;
+    return 42;
+  });
+  const cancel = jest.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => undefined);
+  const navigate = jest.fn();
+  const view = await render(
+    <SectionPicker
+      closeLabel="Close"
+      item={section}
+      pathname="/progress"
+      theme={theme}
+      onNavigate={navigate}
+    />,
+  );
+  await fireEvent.press(screen.getByRole('button', { name: 'Progress, Overview' }), event());
+  await fireEvent.press(screen.getByRole('menuitem', { name: 'History' }), event());
+  expect(navigate).not.toHaveBeenCalled();
+  await view.unmount();
+  expect(cancel).toHaveBeenCalledWith(42);
+  await act(() => {
+    frame?.(0);
+  });
+  expect(navigate).not.toHaveBeenCalled();
+  jest.restoreAllMocks();
+});
+
+it.each([false, true])(
+  'renders danger menu text on the background, selected=%s',
+  async (selected) => {
+    await render(
+      <AppNavigation
+        {...labels}
+        items={items}
+        theme={theme}
+        pathname={selected ? '/delete' : '/'}
+        onNavigate={jest.fn()}
+        profile={{
+          label: 'Account',
+          initials: 'AB',
+          menu: [{ id: 'delete', label: 'Delete account', tone: 'danger', href: '/delete' }],
+        }}
+      />,
+    );
+    await fireEvent.press(screen.getByRole('button', { name: 'Account' }), event());
+    const entry = screen.getByRole('menuitem', { name: 'Delete account' });
+    expect(entry).toHaveStyle({ backgroundColor: theme.background });
+    expect(within(entry).getByText('Delete account')).toHaveStyle({ color: theme.danger });
+    expect(entry).toHaveProp('accessibilityState', { disabled: false, selected });
+  },
+);
+
+it.each(
+  [1, 2].flatMap((fontScale) => [
+    { width: 320, collapsed: false, fontScale },
+    { width: 1024, collapsed: false, fontScale },
+    { width: 1024, collapsed: true, fontScale },
+  ]),
+)(
+  'renders brand and accessory at $width, collapsed=$collapsed, font scale $fontScale',
+  async ({ width, collapsed, fontScale }) => {
+    jest
+      .spyOn(nativeModules, 'useWindowDimensions')
+      .mockReturnValue({ width, height: 900, scale: 1, fontScale });
+    const renderBrand = jest.fn(({ collapsed: small }: { collapsed: boolean }) => (
+      <Text>{small ? 'B' : 'Baukit'}</Text>
+    ));
+    const renderAccessory = jest.fn(() => <Text accessibilityRole="text">Workout active</Text>);
+    const changed = jest.fn();
+    await render(
+      <AppNavigation
+        {...labels}
+        width={width}
+        collapsed={collapsed}
+        items={items}
+        pathname="/"
+        theme={theme}
+        onNavigate={jest.fn()}
+        renderBrand={renderBrand}
+        renderAccessory={renderAccessory}
+        onBarHeightChange={changed}
+      />,
+    );
+    const layout = width === 320 ? 'bar' : 'rail';
+    expect(renderBrand).toHaveBeenCalledWith({ layout, collapsed });
+    expect(renderAccessory).toHaveBeenCalledWith({ layout, collapsed });
+    expect(screen.getByText(collapsed ? 'B' : 'Baukit')).toBeOnTheScreen();
+    expect(screen.getByText('Workout active')).toBeOnTheScreen();
+    if (layout === 'bar') {
+      expect(screen.getByTestId('navigation-items')).toHaveStyle({
+        height: getNavigationBarHeight(fontScale) - 1,
+      });
+      await fireEvent(screen.getByTestId('navigation-slots'), 'layout', {
+        nativeEvent: { layout: { x: 0, y: 0, width: 320, height: 52 } },
+      });
+      expect(screen.getByTestId('primary-navigation')).toHaveStyle({
+        minHeight: getNavigationBarHeight(fontScale, 0, { slotHeight: 52 }),
+      });
+      expect(changed).toHaveBeenLastCalledWith(
+        getNavigationBarHeight(fontScale, 0, { slotHeight: 52 }),
+      );
+    } else expect(changed).not.toHaveBeenCalled();
+  },
+);
+
+it('drops a queued action if the menu reopens before the dismissal frame', async () => {
+  jest.replaceProperty(Platform, 'OS', 'android');
+  const frames: FrameRequestCallback[] = [];
+  jest.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+    frames.push(callback);
+    return frames.length;
+  });
+  const cancel = jest.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => undefined);
+  const action = jest.fn();
+  await render(
+    <AppNavigation
+      {...labels}
+      items={items}
+      theme={theme}
+      pathname="/"
+      onNavigate={jest.fn()}
+      profile={{
+        label: 'Account',
+        initials: 'AB',
+        menu: [{ id: 'signout', label: 'Sign out', onSelect: action }],
+      }}
+    />,
+  );
+  await fireEvent.press(screen.getByRole('button', { name: 'Account' }), event());
+  await fireEvent.press(screen.getByRole('menuitem', { name: 'Sign out' }), event());
+  await fireEvent.press(screen.getByRole('button', { name: 'Account' }), event());
+  expect(cancel).toHaveBeenCalledWith(1);
+  await act(() => {
+    frames[0]?.(0);
+  });
+  expect(action).not.toHaveBeenCalled();
+  await fireEvent.press(screen.getByRole('menuitem', { name: 'Sign out' }), event());
+  await act(() => {
+    frames[1]?.(0);
+  });
+  expect(action).toHaveBeenCalledTimes(1);
+});
+
+it('reserves measured slot height through the native height hook at 200%', async () => {
+  jest
+    .spyOn(nativeModules, 'useWindowDimensions')
+    .mockReturnValue({ width: 320, height: 900, scale: 1, fontScale: 2 });
+  await render(<ReservedHeight slotHeight={64} />);
+  expect(screen.getByTestId('reserved-height').props['children']).toBe(
+    getNavigationBarHeight(2, 24, { slotHeight: 64 }),
+  );
+});
+
+it('removes slot height when conditional content disappears', async () => {
+  jest
+    .spyOn(nativeModules, 'useWindowDimensions')
+    .mockReturnValue({ width: 320, height: 900, scale: 1, fontScale: 1 });
+  const props = {
+    ...labels,
+    items,
+    theme,
+    pathname: '/',
+    onNavigate: jest.fn(),
+    onBarHeightChange: jest.fn(),
+  };
+  await render(<AppNavigation {...props} renderBrand={() => <Text>Baukit</Text>} />);
+  await fireEvent(screen.getByTestId('navigation-slots'), 'layout', {
+    nativeEvent: { layout: { x: 0, y: 0, width: 320, height: 52 } },
+  });
+  expect(props.onBarHeightChange).toHaveBeenLastCalledWith(
+    getNavigationBarHeight(1, 0, { slotHeight: 52 }),
+  );
+  await screen.rerender(
+    <AppNavigation {...props} renderBrand={() => null} renderAccessory={() => false} />,
+  );
+  expect(screen.queryByTestId('navigation-slots')).toBeNull();
+  expect(screen.getByTestId('primary-navigation')).toHaveStyle({
+    minHeight: getNavigationBarHeight(),
+  });
+  expect(props.onBarHeightChange).toHaveBeenLastCalledWith(getNavigationBarHeight());
 });

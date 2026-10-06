@@ -257,3 +257,16 @@ it.each([
     NAVIGATION_BAR_DIMENSIONS.icon * fontScale,
   );
 });
+
+it.each(['light', 'dark'] as const)('keeps danger menu text readable in the %s theme', (scheme) => {
+  expect(
+    contrastRatio(
+      exampleTokens.color.status.danger[scheme],
+      exampleTokens.color.background.primary[scheme],
+    ),
+  ).toBeGreaterThanOrEqual(4.5);
+});
+it('includes measured slot height in compact height at both font scales', () => {
+  expect(getNavigationBarHeight(1, 24, { slotHeight: 40 })).toBe(139);
+  expect(getNavigationBarHeight(2, 24, { slotHeight: 64 })).toBe(199);
+});

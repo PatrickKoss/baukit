@@ -10,6 +10,7 @@ const theme: NavigationTheme = {
   background: '#fff',
   text: '#111',
   muted: '#595959',
+  danger: '#b3261e',
   activeBackground: '#dbe9f8',
   activeText: '#005fcc',
   ancestorText: '#004799',
@@ -21,6 +22,7 @@ const theme: NavigationTheme = {
 const icon = () => <Text>●</Text>;
 let root: Root | undefined;
 let host: HTMLDivElement | undefined;
+
 afterEach(async () => {
   await act(() => {
     root?.unmount();
@@ -180,4 +182,47 @@ it('keeps a custom native avatar decorative with subtitle, typography and menu f
   await expect.element(page.getByRole('menuitem', { name: 'Settings' })).toHaveFocus();
   await click(page.getByRole('button', { name: 'Close' }));
   await expect.element(trigger).toHaveFocus();
+});
+
+it('preserves the compact brand width when accessory text wraps', async () => {
+  const heights = vi.fn<(height: number) => void>();
+  await mount(
+    <View style={{ height: 568, justifyContent: 'flex-end' }}>
+      <AppNavigation
+        label="Primary"
+        collapseLabel="Collapse"
+        expandLabel="Expand"
+        closeLabel="Close"
+        items={[{ id: 'home', label: 'Home', href: '/', icon }]}
+        width={320}
+        pathname="/"
+        theme={theme}
+        onNavigate={vi.fn()}
+        onBarHeightChange={heights}
+        renderBrand={() => <Text style={{ fontSize: 32 }}>Baukit</Text>}
+        renderAccessory={() => <Text style={{ fontSize: 32 }}>Workout active</Text>}
+      />
+    </View>,
+  );
+  const navigation = page.getByTestId('primary-navigation').element();
+  await act(async () => {
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          resolve();
+        }),
+      );
+    });
+  });
+  await expect
+    .poll(() => heights.mock.lastCall?.[0])
+    .toBe(navigation.getBoundingClientRect().height);
+  const brand = page.getByText('Baukit', { exact: true }).element();
+  const brandLines = document.createRange();
+  brandLines.selectNodeContents(brand);
+  expect(brandLines.getClientRects()).toHaveLength(1);
+  const accessory = page.getByTestId('navigation-accessory').element().getBoundingClientRect();
+  expect(accessory.left).toBeGreaterThanOrEqual(brand.getBoundingClientRect().right);
+  expect(accessory.right).toBeLessThanOrEqual(navigation.getBoundingClientRect().right);
+  expect(navigation.getBoundingClientRect().height).toBeGreaterThan(75);
 });

@@ -119,6 +119,7 @@ export function NavigationShell({
   return (
     <>
       <AppNavigation
+        closeLabel={copy.close}
         label={copy.primary}
         collapseLabel={copy.collapse}
         expandLabel={copy.expand}
@@ -129,6 +130,7 @@ export function NavigationShell({
       />
       <div className="section-picker">
         <SectionPicker
+          closeLabel={copy.close}
           item={section}
           pathname={pathname}
           onNavigate={navigate}

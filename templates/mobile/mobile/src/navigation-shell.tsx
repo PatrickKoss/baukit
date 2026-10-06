@@ -68,6 +68,7 @@ function useNavigationTheme(): NavigationTheme {
     background: theme.color.surface,
     text: theme.color.text,
     muted: theme.color.muted,
+    danger: theme.color.error,
     activeBackground: blendColors(theme.color.accent, theme.color.surface, 0.14),
     activeText: theme.color.accent,
     ancestorText: theme.color.accent,

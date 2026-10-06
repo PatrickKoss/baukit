@@ -26,6 +26,7 @@ import {
   resolveActiveMenuEntry,
   validateNavigation,
   type NavigationItem,
+  type NavigationSlots,
   type NavigationProfile,
   type NavigationProfileMenuEntry,
 } from './index.js';
@@ -80,6 +81,7 @@ interface MenuProps {
   readonly entries: readonly NavigationProfileMenuEntry[];
   readonly id: string;
   readonly label: string;
+  readonly closeLabel: string;
   readonly triggerRef: RefObject<HTMLButtonElement | null>;
   readonly onClose: () => void;
   readonly onNavigate: Navigate | undefined;
@@ -93,6 +95,7 @@ function Menu({
   entries,
   id,
   label,
+  closeLabel,
   triggerRef,
   onClose,
   onNavigate,
@@ -103,12 +106,13 @@ function Menu({
 }: MenuProps) {
   const activeEntry = resolveActiveMenuEntry(entries, pathname);
   const containerRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const roving = useRovingMenu({
     active: true,
     options: entries.map((entry) => ({ disabled: entry.disabled })),
   });
   useEffect(() => {
-    const menu = containerRef.current;
+    const menu = menuRef.current;
     const first = menu?.querySelector<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])');
     (first ?? menu)?.focus();
   }, []);
@@ -135,10 +139,6 @@ function Menu({
     <div
       className="bk-navigation-menu"
       style={maxHeight === undefined ? undefined : { maxHeight }}
-      id={id}
-      role="menu"
-      aria-label={subtitle === undefined ? label : `${label}, ${subtitle}`}
-      tabIndex={-1}
       ref={containerRef}
       onKeyDown={(event) => {
         if (event.key === 'Escape') {
@@ -153,61 +153,76 @@ function Menu({
         }
       }}
     >
-      {subtitle === undefined ? null : (
-        <div className="bk-navigation-menu-profile" aria-hidden="true">
-          <span className="bk-navigation-label">{label}</span>
-          <span className="bk-navigation-subtitle">{subtitle}</span>
+      <div
+        className="bk-navigation-menu-content"
+        id={id}
+        role="menu"
+        aria-label={subtitle === undefined ? label : `${label}, ${subtitle}`}
+        tabIndex={-1}
+        ref={menuRef}
+      >
+        {subtitle === undefined ? null : (
+          <div className="bk-navigation-menu-profile" aria-hidden="true">
+            <span className="bk-navigation-label">{label}</span>
+            <span className="bk-navigation-subtitle">{subtitle}</span>
+          </div>
+        )}
+        <div className="bk-navigation-menu-items">
+          {entries.map((entry, index) => {
+            const props = {
+              ...roving.itemProps(index),
+              className: 'bk-navigation-item',
+              role: 'menuitem',
+              'aria-disabled': entry.disabled === true ? true : undefined,
+              'data-active': entry === activeEntry ? 'page' : undefined,
+              'data-tone': entry.tone,
+            } as const;
+            return entry.href !== undefined ? (
+              <Link
+                {...props}
+                renderLink={renderLink}
+                href={entry.href}
+                key={entry.id}
+                aria-current={entry === activeEntry ? 'page' : undefined}
+                onClick={(event) => {
+                  if (entry.disabled === true) {
+                    event.preventDefault();
+                    return;
+                  }
+                  if (!isNavigationClick(event)) return;
+                  closeAndRestore();
+                  follow(entry.href, event, onNavigate);
+                }}
+                onKeyDown={(event) => {
+                  props.onKeyDown(event);
+                  if (event.key === ' ' && entry.disabled !== true) {
+                    event.preventDefault();
+                    event.currentTarget.click();
+                  }
+                }}
+              >
+                {entry.label}
+              </Link>
+            ) : (
+              <button
+                {...props}
+                type="button"
+                disabled={entry.disabled}
+                key={entry.id}
+                onClick={() => {
+                  closeAndRestore();
+                  entry.onSelect();
+                }}
+              >
+                {entry.label}
+              </button>
+            );
+          })}
         </div>
-      )}
-      {entries.map((entry, index) => {
-        const props = {
-          ...roving.itemProps(index),
-          className: 'bk-navigation-item',
-          role: 'menuitem',
-          'aria-disabled': entry.disabled === true ? true : undefined,
-          'data-active': entry === activeEntry ? 'page' : undefined,
-        } as const;
-        return entry.href !== undefined ? (
-          <Link
-            {...props}
-            renderLink={renderLink}
-            href={entry.href}
-            key={entry.id}
-            aria-current={entry === activeEntry ? 'page' : undefined}
-            onClick={(event) => {
-              if (entry.disabled === true) {
-                event.preventDefault();
-                return;
-              }
-              if (!isNavigationClick(event)) return;
-              closeAndRestore();
-              follow(entry.href, event, onNavigate);
-            }}
-            onKeyDown={(event) => {
-              props.onKeyDown(event);
-              if (event.key === ' ' && entry.disabled !== true) {
-                event.preventDefault();
-                event.currentTarget.click();
-              }
-            }}
-          >
-            {entry.label}
-          </Link>
-        ) : (
-          <button
-            {...props}
-            type="button"
-            disabled={entry.disabled}
-            key={entry.id}
-            onClick={() => {
-              closeAndRestore();
-              entry.onSelect();
-            }}
-          >
-            {entry.label}
-          </button>
-        );
-      })}
+      </div>
+      <button type="button" className="bk-navigation-menu-close" onClick={closeAndRestore}>
+        {closeLabel}
+      </button>
     </div>
   );
 }
@@ -245,6 +260,7 @@ function Avatar({
 }
 
 interface ProfileProps {
+  readonly closeLabel: string;
   readonly profile: NavigationProfile;
   readonly pathname: string;
   readonly collapsed: boolean;
@@ -253,6 +269,7 @@ interface ProfileProps {
   readonly renderLink: NavigationLinkRenderer | undefined;
 }
 function Profile({
+  closeLabel,
   profile,
   pathname,
   collapsed,
@@ -325,6 +342,7 @@ function Profile({
       )}
       {open && profile.menu !== undefined ? (
         <Menu
+          closeLabel={closeLabel}
           entries={profile.menu}
           id={id}
           label={profile.label}
@@ -342,7 +360,8 @@ function Profile({
   );
 }
 
-export interface AppNavigationProps extends CollapseProps {
+export interface AppNavigationProps extends CollapseProps, NavigationSlots {
+  readonly closeLabel: string;
   readonly items: readonly NavigationItem<NavigationIcon>[];
   readonly profile?: NavigationProfile;
   readonly pathname: string;
@@ -366,6 +385,25 @@ export function AppNavigation(props: AppNavigationProps) {
   const collapsed = layout === 'rail' && state.collapsed;
   const { reducedMotion, resolved } = useReducedMotionPreference();
   const id = useId();
+  const navigationRef = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const navigation = navigationRef.current;
+    if (layout !== 'bar' || navigation === null || props.onBarHeightChange === undefined) return;
+    const measure = () => {
+      props.onBarHeightChange?.(navigation.getBoundingClientRect().height);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(navigation);
+    return () => {
+      observer.disconnect();
+    };
+  }, [layout, props.onBarHeightChange]);
+  const slotState = { layout, collapsed };
+  const brand = props.renderBrand?.(slotState);
+  const accessory = props.renderAccessory?.(slotState);
+  const hasBrand = brand != null && typeof brand !== 'boolean';
+  const hasAccessory = accessory != null && typeof accessory !== 'boolean';
   const visible = items.flatMap((item) =>
     layout === 'rail' && !collapsed && state.openIds.includes(item.id)
       ? [item, ...(item.children ?? [])]
@@ -385,6 +423,14 @@ export function AppNavigation(props: AppNavigationProps) {
   });
   return (
     <nav
+      ref={navigationRef}
+      style={
+        layout === 'bar'
+          ? {
+              gridTemplateColumns: `repeat(${String(Math.max(1, items.length + (profile === undefined ? 0 : 1)))}, minmax(${String(NAVIGATION_DIMENSIONS.target)}px, 1fr))`,
+            }
+          : undefined
+      }
       aria-label={label}
       className={`bk-navigation ${props.className ?? ''}`}
       data-testid="primary-navigation"
@@ -392,6 +438,12 @@ export function AppNavigation(props: AppNavigationProps) {
       data-collapsed={collapsed}
       data-motion={!resolved ? 'unresolved' : reducedMotion ? 'reduced' : 'standard'}
     >
+      {!hasBrand && !hasAccessory ? null : (
+        <div className="bk-navigation-slots">
+          {!hasBrand ? null : <div className="bk-navigation-brand">{brand}</div>}
+          {!hasAccessory ? null : <div className="bk-navigation-accessory">{accessory}</div>}
+        </div>
+      )}
       {layout === 'rail' ? (
         <button
           className="bk-navigation-toggle"
@@ -497,6 +549,7 @@ export function AppNavigation(props: AppNavigationProps) {
       </div>
       {profile === undefined ? null : (
         <Profile
+          closeLabel={props.closeLabel}
           profile={profile}
           pathname={pathname}
           collapsed={collapsed}
@@ -557,12 +610,19 @@ function useSectionMenuHeight(open: boolean, triggerRef: RefObject<HTMLButtonEle
 }
 
 export interface SectionPickerProps {
+  readonly closeLabel: string;
   readonly item: NavigationItem<NavigationIcon>;
   readonly pathname: string;
   readonly onNavigate?: Navigate;
   readonly renderLink?: NavigationLinkRenderer;
 }
-export function SectionPicker({ item, pathname, onNavigate, renderLink }: SectionPickerProps) {
+export function SectionPicker({
+  item,
+  pathname,
+  onNavigate,
+  renderLink,
+  closeLabel,
+}: SectionPickerProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const maxHeight = useSectionMenuHeight(open, triggerRef);
@@ -593,6 +653,7 @@ export function SectionPicker({ item, pathname, onNavigate, renderLink }: Sectio
       </button>
       {open ? (
         <Menu
+          closeLabel={closeLabel}
           entries={entries}
           maxHeight={maxHeight}
           id={id}

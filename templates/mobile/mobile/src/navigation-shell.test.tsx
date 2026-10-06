@@ -1,5 +1,6 @@
 {% raw %}
-import { fireEvent, render, screen } from "@testing-library/react-native";
+import { act, fireEvent, render, screen } from "@testing-library/react-native";
+import { Platform } from "react-native";
 import { usePathname, useRouter } from "expo-router";
 import { NavigationBar, WorkspacePicker } from "./navigation-shell";
 import { lightTheme } from "./theme";
@@ -52,7 +53,8 @@ it("rotates the current compact section and keeps the profile last", async () =>
   const links = screen.getAllByRole("link");
   expect(links.at(-1)).toBe(screen.getByRole("link", { name: "Profile" }));
 });
-it("lets the section picker choose a page directly", async () => {
+it("lets the section picker choose a page after closing on Android", async () => {
+  jest.replaceProperty(Platform, "OS", "android");
   await render(<WorkspacePicker />);
   await fireEvent.press(
     screen.getByRole("button", { name: "Workspace, Items" }),
@@ -61,7 +63,17 @@ it("lets the section picker choose a page directly", async () => {
     nativeEvent: {},
     preventDefault: jest.fn(),
   });
+  expect(navigate).not.toHaveBeenCalled();
+  expect(screen.queryByRole("menu")).toBeNull();
+  await act(async () => {
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => {
+        resolve();
+      }),
+    );
+  });
   expect(navigate).toHaveBeenCalledWith("/workspace/privacy");
+  jest.restoreAllMocks();
 });
 it("renders German navigation and menu controls from the catalog", async () => {
   await initializeI18n("de");
@@ -81,5 +93,20 @@ it("renders German navigation and menu controls from the catalog", async () => {
   );
   expect(screen.getByRole("menuitem", { name: "Datenschutz" })).toBeOnTheScreen();
   expect(screen.getByRole("button", { name: "Menü schließen" })).toBeOnTheScreen();
+});
+it("uses the semantic danger token for destructive profile actions", async () => {
+  await render(
+    <NavigationBar
+      profile={{
+        label: "Account",
+        initials: "A",
+        menu: [
+          { id: "signout", label: "Sign out", tone: "danger", onSelect: jest.fn() },
+        ],
+      }}
+    />,
+  );
+  await fireEvent.press(screen.getByRole("button", { name: "Account" }));
+  expect(screen.getByText("Sign out")).toHaveStyle({ color: lightTheme.color.error });
 });
 {% endraw %}

@@ -18,6 +18,7 @@ export type NavigationProfileMenuEntry = {
   readonly id: string;
   readonly label: string;
   readonly disabled?: boolean;
+  readonly tone?: 'default' | 'danger';
 } & (
   | {
       readonly href: string;
@@ -65,7 +66,19 @@ export const NAVIGATION_BAR_DIMENSIONS = {
   spacing: 8,
 } as const;
 
+export interface NavigationSlotState {
+  readonly layout: 'bar' | 'rail';
+  readonly collapsed: boolean;
+}
+
+export interface NavigationSlots {
+  readonly renderBrand?: (state: NavigationSlotState) => ReactNode;
+  readonly renderAccessory?: (state: NavigationSlotState) => ReactNode;
+  readonly onBarHeightChange?: (height: number) => void;
+}
+
 export interface NavigationBarMetrics {
+  readonly slotHeight?: number;
   readonly spacing?: number;
   readonly fontSize?: number;
   readonly lineHeight?: number;
@@ -100,7 +113,8 @@ export function getNavigationBarHeight(
     getNavigationBarVisualHeight(scale) +
     (metrics.spacing ?? NAVIGATION_BAR_DIMENSIONS.spacing) +
     getNavigationBarLineHeight(metrics) * scale +
-    bottomInset
+    bottomInset +
+    (metrics.slotHeight ?? 0)
   );
 }
 

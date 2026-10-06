@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Include the command arguments in Android QA timeout errors.
+- Supply localized web menu Close labels and the native navigation danger token in generated shells.
+
 - Add `--pwa` to generate a worker builder and dependency for the selected web host, including mobile-only products.
 - Apply mobile top insets, select iOS Release builds, split OIDC storage by platform, and remove token-expiry waits from generated tests.
 

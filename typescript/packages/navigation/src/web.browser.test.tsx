@@ -60,7 +60,7 @@ function Fixture() {
         }}
       >
         <h1>Navigation fixture</h1>
-        <SectionPicker item={section} pathname="/progress/history" />
+        <SectionPicker closeLabel="Close" item={section} pathname="/progress/history" />
         <button type="button" style={{ minWidth: 44, minHeight: 44 }}>
           Primary action
         </button>
@@ -234,7 +234,7 @@ it('keeps a long compact section menu between its picker and the bottom bar', as
           profile={{ label: 'Account', initials: 'AB', href: '/profile' }}
         />
         <main style={{ padding: 8, paddingTop: 200 }}>
-          <SectionPicker item={cost} pathname="/cost/1" />
+          <SectionPicker closeLabel="Close" item={cost} pathname="/cost/1" />
         </main>
       </>,
     );
@@ -243,17 +243,26 @@ it('keeps a long compact section menu between its picker and the bottom bar', as
   const trigger = page.getByRole('button', { name: 'Cost, Cost page 1' });
   await act(async () => trigger.click());
   const menu = page.getByRole('menu', { name: 'Cost' }).element();
+  const panel = menu.closest('.bk-navigation-menu');
+  if (panel === null) throw new Error('Menu panel did not render');
+  const scroll = menu.querySelector<HTMLElement>('.bk-navigation-menu-items');
+  if (scroll === null) throw new Error('Menu scroll container did not render');
+  const close = page.getByRole('button', { name: 'Close', exact: true });
   const navigation = document.querySelector('.bk-navigation');
   if (navigation === null) throw new Error('Bottom navigation did not render');
-  function expectBounds() {
-    const menuBox = menu.getBoundingClientRect();
+  const expectBounds = () => {
+    const menuBox = panel.getBoundingClientRect();
     expect(menuBox.top).toBeGreaterThanOrEqual(
       trigger.element().getBoundingClientRect().bottom + 8,
     );
-    expect(menuBox.bottom).toBeLessThanOrEqual(navigation?.getBoundingClientRect().top ?? 0);
-    expect(menu.scrollHeight).toBeGreaterThan(menu.clientHeight);
-    expect(getComputedStyle(menu).overflowY).toBe('auto');
-  }
+    expect(menuBox.bottom).toBeLessThanOrEqual(navigation.getBoundingClientRect().top);
+    expect(scroll.scrollHeight).toBeGreaterThan(scroll.clientHeight);
+    expect(getComputedStyle(scroll).overflowY).toBe('auto');
+    const closeBox = close.element().getBoundingClientRect();
+    expect(closeBox.top).toBeGreaterThanOrEqual(scroll.getBoundingClientRect().bottom);
+    expect(closeBox.bottom).toBeLessThanOrEqual(menuBox.bottom);
+    expect(closeBox.height).toBeGreaterThanOrEqual(44);
+  };
   expectBounds();
   await act(async () => userEvent.keyboard('{End}'));
   const last = page.getByRole('menuitem', { name: 'Cost page 14' }).element();
@@ -261,7 +270,7 @@ it('keeps a long compact section menu between its picker and the bottom bar', as
   expect(last.getBoundingClientRect().bottom).toBeLessThanOrEqual(
     menu.getBoundingClientRect().bottom,
   );
-  expect(menu.scrollTop).toBeGreaterThan(0);
+  expect(scroll.scrollTop).toBeGreaterThan(0);
   await act(async () => {
     await page.viewport(320, 480);
     await new Promise<void>((resolve) =>
@@ -273,7 +282,7 @@ it('keeps a long compact section menu between its picker and the bottom bar', as
     );
   });
   await expect
-    .poll(() => menu.getBoundingClientRect().bottom <= navigation.getBoundingClientRect().top)
+    .poll(() => panel.getBoundingClientRect().bottom <= navigation.getBoundingClientRect().top)
     .toBe(true);
   expectBounds();
   const main = host.querySelector('main');
@@ -289,9 +298,14 @@ it('keeps a long compact section menu between its picker and the bottom bar', as
     );
   });
   await expect
-    .poll(() => menu.getBoundingClientRect().bottom <= navigation.getBoundingClientRect().top)
+    .poll(() => panel.getBoundingClientRect().bottom <= navigation.getBoundingClientRect().top)
     .toBe(true);
   expectBounds();
+  await expect.element(close).toBeVisible();
+  await act(async () => {
+    await close.click();
+  });
+  await expect.element(page.getByRole('menu')).not.toBeInTheDocument();
 });
 
 it('ellipsizes long labels inside all six compact targets at 320 pixels', async () => {
@@ -467,7 +481,7 @@ it('uses the body font in a standalone section picker', async () => {
   document.body.append(host);
   root = createRoot(host);
   await act(() => {
-    root?.render(<SectionPicker item={section} pathname="/progress" />);
+    root?.render(<SectionPicker closeLabel="Close" item={section} pathname="/progress" />);
     return Promise.resolve();
   });
   const picker = host.querySelector('.bk-navigation-picker');
@@ -475,3 +489,130 @@ it('uses the body font in a standalone section picker', async () => {
   if (picker === null) throw new Error('Section picker is missing');
   expect(getComputedStyle(picker).fontFamily).toBe(exampleTokens.typography.family.body);
 });
+
+function SlotFixture() {
+  const [collapsed, setCollapsed] = useState(false);
+  const [barHeight, setBarHeight] = useState(64);
+  return (
+    <>
+      <AppNavigation
+        {...labels}
+        closeLabel="Menü schließen"
+        items={items}
+        pathname="/delete"
+        collapsed={collapsed}
+        onCollapsedChange={setCollapsed}
+        onBarHeightChange={setBarHeight}
+        renderBrand={({ collapsed: small }) => <strong>{small ? 'B' : 'Baukit'}</strong>}
+        renderAccessory={({ collapsed: small }) => (
+          <span role="status" aria-label="Workout status">
+            {small ? '●' : 'Workout active'}
+          </span>
+        )}
+        profile={{
+          label: 'Account',
+          initials: 'AB',
+          menu: [
+            { id: 'settings', label: 'Settings', href: '/settings' },
+            { id: 'delete', label: 'Delete account', tone: 'danger', href: '/delete' },
+            { id: 'signout', label: 'Sign out', tone: 'danger', onSelect: () => undefined },
+          ],
+        }}
+      />
+      <main
+        style={{
+          marginLeft: window.innerWidth >= 1024 ? (collapsed ? 76 : 280) : 0,
+          paddingBottom: barHeight,
+        }}
+      >
+        <h1>Navigation with slots</h1>
+        <SectionPicker closeLabel="Auswahl schließen" item={section} pathname="/progress" />
+      </main>
+    </>
+  );
+}
+it.each(
+  [1, 2].flatMap((scale) =>
+    [320, 1024].flatMap((width) => ['light', 'dark'].map((theme) => ({ scale, width, theme }))),
+  ),
+)(
+  'keeps slots and danger menus accessible at $width, font scale $scale, $theme',
+  async ({ scale, width, theme }) => {
+    await page.viewport(width, 900);
+    document.documentElement.lang = 'de';
+    document.documentElement.dataset['theme'] = theme;
+    styles = document.createElement('style');
+    styles.textContent = `${toCssVariables(exampleTokens)} ${stylesheet} html{font-size:${String(16 * scale)}px} body{margin:0;background:var(--bk-color-background-primary);color:var(--bk-color-text-primary)}`;
+    document.head.append(styles);
+    host = document.createElement('div');
+    document.body.append(host);
+    root = createRoot(host);
+    await act(() => {
+      root?.render(<SlotFixture />);
+      return Promise.resolve();
+    });
+    const navigation = page.getByTestId('primary-navigation').element();
+    const slots = navigation.querySelector('.bk-navigation-slots');
+    if (slots === null) throw new Error('Slots are missing');
+    expect(
+      page.getByText('Baukit', { exact: true }).element().getBoundingClientRect().width,
+    ).toBeGreaterThan(0);
+    const brandLines = document.createRange();
+    brandLines.selectNodeContents(page.getByText('Baukit', { exact: true }).element());
+    expect(brandLines.getClientRects()).toHaveLength(1);
+    expect(page.getByRole('status', { name: 'Workout status' }).element().textContent).toBe(
+      'Workout active',
+    );
+    const home = page.getByRole('link', { name: 'Home' }).element();
+    expect(home.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      slots.getBoundingClientRect().bottom,
+    );
+    for (const slot of slots.children) {
+      const bounds = slot.getBoundingClientRect();
+      expect(bounds.left).toBeGreaterThanOrEqual(navigation.getBoundingClientRect().left);
+      expect(bounds.right).toBeLessThanOrEqual(navigation.getBoundingClientRect().right);
+    }
+    if (width === 320) {
+      const main = host.querySelector('main');
+      if (main === null) throw new Error('Content is missing');
+      await expect
+        .poll(() => Number.parseFloat(getComputedStyle(main).paddingBottom))
+        .toBe(navigation.getBoundingClientRect().height);
+      const iconBox = home.querySelector('.bk-navigation-icon')?.getBoundingClientRect();
+      const labelBox = home.querySelector('.bk-navigation-label')?.getBoundingClientRect();
+      if (iconBox === undefined || labelBox === undefined)
+        throw new Error('Icon or label is missing');
+      expect(labelBox.top).toBeGreaterThanOrEqual(iconBox.bottom);
+      expect(navigation.getBoundingClientRect().height).toBeGreaterThan(64);
+    } else {
+      await act(async () => {
+        await page.getByRole('button', { name: 'Collapse navigation' }).click();
+      });
+      await expect.element(page.getByText('B', { exact: true })).toBeVisible();
+      expect(page.getByRole('status', { name: 'Workout status' }).element().textContent).toBe('●');
+    }
+    const account = page.getByRole('button', { name: 'Account' });
+    await act(async () => {
+      await account.click();
+    });
+    const danger = page.getByRole('menuitem', { name: 'Delete account' }).element();
+    expect(getComputedStyle(danger).fontSize).toBe(`${String(16 * scale)}px`);
+    const expectedColor = exampleTokens.color.status.danger[theme === 'dark' ? 'dark' : 'light'];
+    const probe = document.createElement('span');
+    probe.style.color = expectedColor;
+    host.append(probe);
+    expect(getComputedStyle(danger).color).toBe(getComputedStyle(probe).color);
+    probe.remove();
+    expect((await axe.run(host)).violations).toEqual([]);
+    await act(async () => {
+      await userEvent.keyboard('{End}');
+    });
+    await expect.element(page.getByRole('menuitem', { name: 'Sign out' })).toHaveFocus();
+    await act(async () => {
+      await page.getByRole('button', { name: 'Menü schließen' }).click();
+    });
+    await expect.element(account).toHaveFocus();
+    await expect.element(page.getByRole('menu')).not.toBeInTheDocument();
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+  },
+);

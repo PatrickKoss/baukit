@@ -34,12 +34,13 @@ const progress = {
   label={copy.primary}
   collapseLabel={copy.collapse}
   expandLabel={copy.expand}
+  closeLabel={copy.close}
   items={[progress]}
   pathname={pathname}
   onNavigate={(href) => router.navigate(href)}
   profile={{ label: 'Account', initials: 'AB', href: '/profile' }}
 />;
-<SectionPicker item={progress} pathname={pathname} onNavigate={navigate} />;
+<SectionPicker closeLabel={copy.close} item={progress} pathname={pathname} onNavigate={navigate} />;
 ```
 
 Declare `items` as `readonly NavigationItem<NavigationIcon>[]` to type icon
@@ -61,7 +62,7 @@ expands the rail and opens that section.
 
 `collapsed`, `defaultCollapsed`, and `onCollapsedChange` support controlled and
 uncontrolled state. Persist the controlled value in the product's preference
-store. Supply `collapseLabel`, `expandLabel`, and `label` from the product's catalog. Native `AppNavigation` and `SectionPicker` also require `closeLabel` for the visible and accessible menu Close control. Components have no English defaults.
+store. Supply `collapseLabel`, `expandLabel`, and `label` from the product's catalog. Web and native `AppNavigation` and `SectionPicker` also require `closeLabel` for the visible and accessible menu Close control. Components have no English defaults.
 
 Web uses real anchors. `onNavigate` intercepts only an unmodified primary click.
 Without it the browser follows the href. `renderLink(props)` can return a router
@@ -70,7 +71,12 @@ ARIA attributes. Keep modified clicks in the browser. TanStack Router products
 can map `href` to `to`, or use `onNavigate` with their router instance.
 
 A profile accepts either `href` or a nonempty `menu`. Menu entries have unique
-ids, labels and either `href` or synchronous `onSelect`. Link entries accept `matches(pathname)`. Only the most-specific matching path is selected in a menu. A product owns async
+ids, labels and either `href` or synchronous `onSelect`. Set `tone: 'danger'`
+for destructive actions. Web uses `color.status.danger`; native uses the
+`NavigationTheme.danger` token against `background`. Check that pair at 4.5:1
+in both themes. Native invokes callbacks after the menu closes, using iOS
+`onDismiss` or the first frame after unanimated Modal removal on Android/web.
+Link entries accept `matches(pathname)`. Only the most-specific matching path is selected in a menu. A product owns async
 action errors. Start an async sign-out in `onSelect` and handle its rejection in
 the product. `imageUrl` renders an avatar, with initials after an image failure.
 `renderAvatar({ active, size })` replaces the image or initials with a product
@@ -98,6 +104,7 @@ raw brand colors in the navigation component.
 | --------------------- | ---------------------------------------------------- |
 | background            | color.background.primary or surface                  |
 | text                  | color.text.primary                                   |
+| danger                | color.status.danger                                  |
 | muted                 | color.text.muted                                     |
 | activeBackground      | blendColors(accent, background, 0.14) from ui-tokens |
 | activeText            | color.background.accent                              |
@@ -159,3 +166,21 @@ Native `NavigationTheme.typography` can set `fontFamily`, `fontSize`,
 and `letterSpacing`. Sizes and line height use React Native units. Omitted fields
 keep the default sizes and weights. The font family also applies to menu entries,
 initials and section pickers, as the web navigation inherits its CSS font family.
+
+## Brand and accessory slots
+
+Pass `renderBrand(state)` for a wordmark or logo and `renderAccessory(state)`
+for status or a product control. Both receive `{ layout: 'bar' | 'rail', collapsed }`.
+Return a small logo and compact status in a collapsed rail. Supply accessible
+names for logos and controls. Slot content keeps its own semantics.
+
+The rail puts both slots above its controls. The compact bar puts them in a row
+above the stacked icon and label targets. Native measures that row and includes
+it in `getNavigationBarHeight` through `NavigationBarMetrics.slotHeight`.
+`useNavigationBarHeight(bottomInset, theme, slotHeight)` accepts the same height.
+
+On both platforms, `onBarHeightChange(height)` reports the full compact bar
+height, including slots and safe areas. Store it in the content shell to reserve
+bottom space. Web reports rendered height with a ResizeObserver, including font
+changes. Native reports the height from the same calculation it uses to size
+the bar. Use this callback when slots can change size.

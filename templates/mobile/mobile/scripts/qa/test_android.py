@@ -143,6 +143,8 @@ esac
                 )
                 self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
                 self.assertIn("timed out", result.stderr)
+                if arguments[-1] == "devices":
+                    self.assertIn(" ".join(arguments), result.stderr)
                 self.assertLess(time.monotonic() - started, 5)
 
     def test_probe_timeouts_reject_nonpositive_or_nonfinite_values(self) -> None:

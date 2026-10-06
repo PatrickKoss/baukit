@@ -44,6 +44,7 @@ import {
   getNavigationBarLineHeight,
   NAVIGATION_BAR_DIMENSIONS,
   type NavigationBarMetrics,
+  type NavigationSlots,
   NAVIGATION_DIMENSIONS,
   navigationMatches,
   nextSectionHref,
@@ -76,6 +77,7 @@ export interface NavigationTheme {
   readonly background: string;
   readonly text: string;
   readonly muted: string;
+  readonly danger: string;
   readonly activeBackground: string;
   readonly activeText: string;
   readonly ancestorText: string;
@@ -346,6 +348,30 @@ function Menu({
   const closeRef = useRef<View>(null);
   const pendingFocus = useRef<(() => void) | null>(null);
   const presented = useRef(false);
+  const pendingSelection = useRef<(() => void) | null>(null);
+  const finishSelection = useCallback(() => {
+    const selection = pendingSelection.current;
+    pendingSelection.current = null;
+    selection?.();
+  }, []);
+  useEffect(() => {
+    if (visible) {
+      pendingSelection.current = null;
+      return;
+    }
+    if (Platform.OS === 'ios' || pendingSelection.current === null) return;
+    // Android removes an unanimated Modal in the close commit and has no onDismiss event.
+    const frame = requestAnimationFrame(finishSelection);
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, [visible, finishSelection]);
+  useEffect(
+    () => () => {
+      pendingSelection.current = null;
+    },
+    [],
+  );
   const [webPresented, setWebPresented] = useState(false);
   const [webPosition, setWebPosition] = useState<ViewStyle>();
   const deferFocus = useCallback((task: () => void) => {
@@ -485,7 +511,7 @@ function Menu({
           <FocusablePressable
             theme={theme}
             selected={entry === activeEntry}
-            {...{ dataSet: { active: entry === activeEntry ? 'page' : 'false' } }}
+            {...{ dataSet: { active: entry === activeEntry ? 'page' : 'false', tone: entry.tone } }}
             {...roving.itemProps(index)}
             key={entry.id}
             accessibilityRole="menuitem"
@@ -497,22 +523,35 @@ function Menu({
             disabled={entry.disabled}
             {...(entry.href === undefined ? {} : webLink(entry.href, entry === activeEntry))}
             onPress={(event) => {
-              if (isModifiedPress(event)) return;
+              if (isModifiedPress(event) || pendingSelection.current !== null) return;
+              event.preventDefault();
+              pendingSelection.current =
+                entry.href !== undefined
+                  ? () => {
+                      onNavigate(entry.href);
+                    }
+                  : entry.onSelect;
               closeAndRestore();
-              if (entry.href !== undefined) follow(entry.href, event, onNavigate);
-              else entry.onSelect();
             }}
             style={[
               styles.menuItem,
               {
                 paddingHorizontal: theme.spacing,
-                backgroundColor: entry === activeEntry ? theme.activeBackground : theme.background,
+                backgroundColor:
+                  entry === activeEntry && entry.tone !== 'danger'
+                    ? theme.activeBackground
+                    : theme.background,
               },
             ]}
           >
             <Text
               style={{
-                color: entry === activeEntry ? theme.activeText : theme.text,
+                color:
+                  entry.tone === 'danger'
+                    ? theme.danger
+                    : entry === activeEntry
+                      ? theme.activeText
+                      : theme.text,
                 ...textStyle(theme, entry === activeEntry),
               }}
             >
@@ -541,6 +580,9 @@ function Menu({
         transparent
         animationType="none"
         onRequestClose={onClose}
+        onDismiss={() => {
+          if (!visible) finishSelection();
+        }}
         onShow={() => {
           if (!visible) return;
           presented.current = true;
@@ -669,9 +711,13 @@ function Profile({
   );
 }
 
-export function useNavigationBarHeight(bottomInset = 0, theme?: NavigationTheme): number {
+export function useNavigationBarHeight(
+  bottomInset = 0,
+  theme?: NavigationTheme,
+  slotHeight = 0,
+): number {
   const { fontScale } = useWindowDimensions();
-  return getNavigationBarHeight(fontScale, bottomInset, barMetrics(theme));
+  return getNavigationBarHeight(fontScale, bottomInset, { ...barMetrics(theme), slotHeight });
 }
 
 function useCompactBarScroll(selectedIndex: number) {
@@ -715,7 +761,7 @@ function useCompactBarScroll(selectedIndex: number) {
   };
 }
 
-export interface AppNavigationProps extends CollapseProps {
+export interface AppNavigationProps extends CollapseProps, NavigationSlots {
   readonly items: readonly NavigationItem<NavigationIcon>[];
   readonly profile?: NavigationProfile;
   readonly pathname: string;
@@ -742,6 +788,7 @@ export function AppNavigation(props: AppNavigationProps) {
     collapseLabel,
     expandLabel,
   } = props;
+  const [slotHeight, setSlotHeight] = useState(0);
   const [profileOpen, setProfileOpen] = useState(false);
   const profileTriggerRef = useRef<View>(null);
   const profileMenuId = useId();
@@ -751,6 +798,19 @@ export function AppNavigation(props: AppNavigationProps) {
   const bar = getNavigationLayout(props.width ?? dimensions.width) === 'bar';
   const state = useNavigationState(items, pathname, props);
   const collapsed = !bar && state.collapsed;
+  const slotState = { layout: bar ? ('bar' as const) : ('rail' as const), collapsed };
+  const brand = props.renderBrand?.(slotState);
+  const accessory = props.renderAccessory?.(slotState);
+  const hasBrand = brand != null && typeof brand !== 'boolean';
+  const hasAccessory = accessory != null && typeof accessory !== 'boolean';
+  const hasSlots = hasBrand || hasAccessory;
+  const barHeight = getNavigationBarHeight(dimensions.fontScale, insets.bottom, {
+    ...barMetrics(theme),
+    slotHeight: hasSlots ? slotHeight : 0,
+  });
+  useEffect(() => {
+    if (bar) props.onBarHeightChange?.(barHeight);
+  }, [bar, barHeight, props.onBarHeightChange]);
   const id = useId();
   const visible = items.flatMap((item) =>
     !bar && !collapsed && state.openIds.includes(item.id)
@@ -788,11 +848,7 @@ export function AppNavigation(props: AppNavigationProps) {
           paddingBottom: insets.bottom ?? 0,
           ...(bar
             ? {
-                minHeight: getNavigationBarHeight(
-                  dimensions.fontScale,
-                  insets.bottom,
-                  barMetrics(theme),
-                ),
+                minHeight: barHeight,
               }
             : {}),
           paddingLeft: insets.left ?? 0,
@@ -805,6 +861,30 @@ export function AppNavigation(props: AppNavigationProps) {
         props.style,
       ]}
     >
+      {hasSlots ? (
+        <View
+          testID="navigation-slots"
+          style={[
+            styles.slots,
+            bar && styles.barSlots,
+            { padding: theme.spacing, gap: theme.spacing },
+          ]}
+          onLayout={(event) => {
+            if (bar) setSlotHeight(event.nativeEvent.layout.height);
+          }}
+        >
+          {!hasBrand ? null : (
+            <View testID="navigation-brand" style={[styles.slot, bar && styles.barBrand]}>
+              {brand}
+            </View>
+          )}
+          {!hasAccessory ? null : (
+            <View testID="navigation-accessory" style={styles.slot}>
+              {accessory}
+            </View>
+          )}
+        </View>
+      ) : null}
       {!bar ? (
         <Target
           label={collapsed ? expandLabel : collapseLabel}
@@ -826,7 +906,18 @@ export function AppNavigation(props: AppNavigationProps) {
         horizontal={bar}
         scrollEnabled
         showsHorizontalScrollIndicator={false}
-        style={bar ? styles.barItems : styles.railItems}
+        style={
+          bar
+            ? [
+                styles.barItems,
+                {
+                  height:
+                    getNavigationBarHeight(dimensions.fontScale, 0, barMetrics(theme)) -
+                    NAVIGATION_BAR_DIMENSIONS.border,
+                },
+              ]
+            : styles.railItems
+        }
         contentContainerStyle={bar ? styles.barContent : undefined}
       >
         {items.map((item, index) => {
@@ -1041,14 +1132,18 @@ const styles = StyleSheet.create({
   collapsedTarget: { justifyContent: 'center' },
   barTarget: { flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1 },
   bar: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     minHeight: NAVIGATION_DIMENSIONS.nativeBar,
     borderTopWidth: NAVIGATION_BAR_DIMENSIONS.border,
     width: '100%',
   },
   rail: { borderRightWidth: 1, height: '100%' },
+  slots: { flexShrink: 0 },
+  barSlots: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  slot: { minWidth: 0, flexShrink: 1 },
+  barBrand: { flexShrink: 0 },
   railItems: { flex: 1 },
-  barItems: { width: '100%' },
+  barItems: { width: '100%', flexGrow: 0, flexShrink: 0 },
   barContent: { flexDirection: 'row', flexGrow: 1, minWidth: '100%' },
   barSection: { flex: 1, minWidth: NAVIGATION_DIMENSIONS.target },
   children: { marginLeft: 20, paddingLeft: 8, borderLeftWidth: 1 },

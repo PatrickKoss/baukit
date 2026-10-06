@@ -259,7 +259,9 @@ it('handles profile menu focus, disabled items, actions, Escape and outside clic
 });
 it('lets a picker select a section page directly', () => {
   const navigate = vi.fn();
-  render(<SectionPicker item={section} pathname="/progress" onNavigate={navigate} />);
+  render(
+    <SectionPicker closeLabel="Close" item={section} pathname="/progress" onNavigate={navigate} />,
+  );
   fireEvent.click(screen.getByRole('button', { name: 'Progress, Overview' }));
   fireEvent.click(screen.getByRole('menuitem', { name: 'History' }));
   expect(navigate).toHaveBeenCalledWith('/progress/history', expect.anything());
@@ -353,6 +355,7 @@ it('uses product labels for the navigation and collapse controls', () => {
       items={items}
       pathname="/"
       width={1024}
+      closeLabel="Schließen"
       label="Hauptnavigation"
       collapseLabel="Einklappen"
       expandLabel="Ausklappen"
@@ -480,4 +483,106 @@ it.each([600, 1024])('enters the visible parent of a hidden active child at widt
   expect(parent.tabIndex).toBe(0);
   expect(screen.getByRole('link', { name: 'Home' }).tabIndex).toBe(-1);
   expect(screen.queryByRole('link', { name: 'Charts' })).toBeNull();
+});
+
+it('closes both menus with a visible localized control and restores focus', () => {
+  const action = vi.fn();
+  render(
+    <>
+      <AppNavigation
+        {...labels}
+        closeLabel="Menü schließen"
+        items={items}
+        pathname="/"
+        profile={{
+          label: 'Account',
+          initials: 'AB',
+          menu: [{ id: 'signout', label: 'Sign out', onSelect: action }],
+        }}
+      />
+      <SectionPicker item={section} pathname="/progress" closeLabel="Auswahl schließen" />
+    </>,
+  );
+  for (const [triggerName, closeName] of [
+    ['Account', 'Menü schließen'],
+    ['Progress, Overview', 'Auswahl schließen'],
+  ] as const) {
+    const trigger = screen.getByRole('button', { name: triggerName });
+    fireEvent.click(trigger);
+    const close = screen.getByRole('button', { name: closeName });
+    expect(close.textContent).toBe(closeName);
+    expect(screen.getByRole('menu').contains(close)).toBe(false);
+    fireEvent.click(close);
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  }
+  expect(action).not.toHaveBeenCalled();
+});
+it('marks danger actions and links without changing menu keyboard order', () => {
+  render(
+    <AppNavigation
+      {...labels}
+      items={items}
+      pathname="/delete"
+      profile={{
+        label: 'Account',
+        initials: 'AB',
+        menu: [
+          { id: 'settings', label: 'Settings', href: '/settings' },
+          { id: 'delete', label: 'Delete account', href: '/delete', tone: 'danger' },
+          { id: 'signout', label: 'Sign out', onSelect: vi.fn(), tone: 'danger' },
+        ],
+      }}
+    />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Account' }));
+  const settings = screen.getByRole('menuitem', { name: 'Settings' });
+  expect(settings.hasAttribute('data-tone')).toBe(false);
+  fireEvent.keyDown(settings, { key: 'End' });
+  const signout = screen.getByRole('menuitem', { name: 'Sign out' });
+  expect(document.activeElement).toBe(signout);
+  expect(signout.getAttribute('data-tone')).toBe('danger');
+  expect(screen.getByRole('menuitem', { name: 'Delete account' }).getAttribute('data-tone')).toBe(
+    'danger',
+  );
+  expect(
+    screen.getByRole('menuitem', { name: 'Delete account' }).getAttribute('aria-current'),
+  ).toBe('page');
+});
+it.each([
+  { width: 320, collapsed: false },
+  { width: 1024, collapsed: false },
+  { width: 1024, collapsed: true },
+])('renders web slots at $width, collapsed=$collapsed', ({ width, collapsed }) => {
+  const brand = vi.fn(({ collapsed: small }: { collapsed: boolean }) => (
+    <span>{small ? 'B' : 'Baukit'}</span>
+  ));
+  const accessory = vi.fn(() => <span role="status">Workout active</span>);
+  render(
+    <AppNavigation
+      {...labels}
+      items={items}
+      pathname="/"
+      width={width}
+      collapsed={collapsed}
+      renderBrand={brand}
+      renderAccessory={accessory}
+    />,
+  );
+  expect(brand).toHaveBeenCalledWith({ layout: width === 320 ? 'bar' : 'rail', collapsed });
+  expect(accessory).toHaveBeenCalledWith({ layout: width === 320 ? 'bar' : 'rail', collapsed });
+  expect(
+    screen.getByText(collapsed ? 'B' : 'Baukit').closest('.bk-navigation-brand'),
+  ).not.toBeNull();
+  expect(within(screen.getByRole('navigation')).getByRole('status').textContent).toBe(
+    'Workout active',
+  );
+});
+
+it('omits web slots when their conditional content disappears', () => {
+  const props = { ...labels, items, pathname: '/', width: 320 };
+  const { rerender } = render(<AppNavigation {...props} renderBrand={() => <span>Baukit</span>} />);
+  expect(screen.getByText('Baukit')).toBeTruthy();
+  rerender(<AppNavigation {...props} renderBrand={() => null} renderAccessory={() => false} />);
+  expect(screen.getByRole('navigation').querySelector('.bk-navigation-slots')).toBeNull();
 });

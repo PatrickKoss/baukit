@@ -42,7 +42,7 @@ def main() -> int:
     try:
         return subprocess.run(sys.argv[1:], timeout=probe_timeout, check=False).returncode
     except subprocess.TimeoutExpired:
-        print("qa: ADB command timed out", file=sys.stderr)
+        print(f"qa: ADB command timed out: {' '.join(sys.argv[1:])}", file=sys.stderr)
         return 124
 
 
