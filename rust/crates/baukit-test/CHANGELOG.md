@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-10-06
+
 ## [0.7.3] - 2026-10-05
 
 - Check the `job_kind` label in worker metric conformance.

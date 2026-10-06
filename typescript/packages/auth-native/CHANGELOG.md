@@ -6,6 +6,12 @@
 
 - Use SecureStore-safe session and force-login keys. Encode default prefixes and reject invalid custom prefixes at construction. Old keys are not migrated.
 
+## 0.7.4
+
+### Patch Changes
+
+- Release the coordinated baukit 0.7.4 train.
+
 ## 0.7.3
 
 ### Patch Changes

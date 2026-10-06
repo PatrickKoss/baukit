@@ -10,6 +10,12 @@
 
 - Add the `/erasure` client with durable idempotency keys, typed receipts, fenced-subject handling, and bounded, abortable status polling.
 
+## 0.7.4
+
+### Patch Changes
+
+- Release the coordinated baukit 0.7.4 train.
+
 ## 0.7.3
 
 ### Patch Changes

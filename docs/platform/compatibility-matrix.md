@@ -5,17 +5,17 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
-Last verified release train: `v0.7.3` (Keycloak reconciliation that keeps
-confidential service-account clients and their secrets, job claims that survive
-caller cancellation without poisoning the pool, retained identity deletion
-failures, Testcontainers 0.28, aws-lc-rs instead of ring, SecureStore-safe
-native auth keys, doctor detection of custom product layouts, navigation profile
-subtitles, avatars and font-scale height reservation, and published package
-sources). The complete Linux gates passed locally on 2026-10-05: `make ci`,
-browser Dexie and navigation conformance, Docker-backed Rust tests with none
-ignored, every generated fixture flavor, the generated Android compile, a real
-Maestro OIDC flow, and version coherence. The iOS simulator gate requires macOS
-and remains a release-host check rather than a Linux result.
+Last verified release train: `v0.7.4` (compact native navigation height derived
+from its rendered layout, aligned avatar labels, scrolling at large text sizes,
+standalone picker fonts, doctor detection of wrapped sign-in screens with
+Git-aware layout scans, mobile safe areas, Expo web PWA hosts with `--pwa`,
+browser storage for mobile auth on web, a deterministic auth conformance
+fixture, iOS Release builds for Maestro, and Android QA pinned to a loopback
+Gradle host with four emulator cores). The complete Linux gates passed locally
+on 2026-10-06: `make ci`, browser Dexie and navigation conformance, every
+generated fixture flavor including mobile PWA, the generated Android compile,
+both Expo Android conformance gates, and version coherence. The iOS simulator
+gate requires macOS and remains a release-host check rather than a Linux result.
 
 ## Toolchain
 
