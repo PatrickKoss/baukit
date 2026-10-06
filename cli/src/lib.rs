@@ -172,6 +172,7 @@ pub struct NewOptions {
     pub worker: bool,
     pub mobile: bool,
     pub web: bool,
+    pub pwa: bool,
     pub mcp: bool,
     pub mcp_auth: Option<McpAuthentication>,
     pub auth: Option<AuthProvider>,
@@ -365,6 +366,7 @@ struct TemplateContext {
     worker: bool,
     mobile: bool,
     web: bool,
+    pwa: bool,
     mcp: bool,
     mcp_auth_node_oidc: bool,
     mcp_auth_caller_supplied: bool,
@@ -469,6 +471,9 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
     if options.worker && !options.backend {
         bail!("--worker requires --backend because it is generated in the backend workspace");
     }
+    if options.pwa && !options.mobile && !options.web {
+        bail!("--pwa requires --mobile or --web to serve the worker");
+    }
     let mcp_authentication = selected_mcp_authentication(options)?;
     if !options.backend && !options.mobile && !options.web {
         bail!("select at least one capability: --backend, --mobile, or --web");
@@ -497,6 +502,7 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         options.baukit_path.as_deref(),
         options.mobile,
         options.web,
+        options.pwa,
         auth_oidc,
         options.worker,
         mcp_authentication,
@@ -519,6 +525,7 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         worker: options.worker,
         mobile: options.mobile,
         web: options.web,
+        pwa: options.pwa,
         mcp: options.mcp,
         mcp_auth_node_oidc: mcp_authentication == Some(McpAuthentication::NodeOidc),
         mcp_auth_caller_supplied: mcp_authentication == Some(McpAuthentication::CallerSupplied),
@@ -660,17 +667,24 @@ fn dependency_context(
     path: Option<&Path>,
     mobile: bool,
     web: bool,
+    pwa: bool,
     auth_oidc: bool,
     worker: bool,
     mcp_authentication: Option<McpAuthentication>,
 ) -> Result<DependencyContext> {
-    let web_packages = typescript_packages(false, false, web && auth_oidc);
+    let mut web_packages = typescript_packages(false, false, web && auth_oidc);
+    if pwa && web {
+        web_packages.push("@baukit/pwa-web");
+    }
     let web_dev_packages: &[&str] = if web && auth_oidc {
         EXPECTED_WEB_AUTH_DEV_DEPENDENCIES
     } else {
         &[]
     };
-    let mobile_packages = typescript_packages(mobile, mobile && auth_oidc, false);
+    let mut mobile_packages = typescript_packages(mobile, mobile && auth_oidc, false);
+    if pwa && mobile && !web {
+        mobile_packages.push("@baukit/pwa-web");
+    }
     if let Some(path) = path {
         let path = path.canonicalize().with_context(|| {
             format!(
@@ -897,6 +911,17 @@ fn render_product(
             render_directory(overlay, &environment, context, &mut rendered, true)?;
         }
     }
+    if options.mobile {
+        for name in ["build-sw.mjs", "build-sw.test.mjs"] {
+            let source = WEB_TEMPLATE
+                .get_file(format!("web/scripts/{name}"))
+                .ok_or_else(|| anyhow!("web template is missing {name}"))?;
+            rendered.insert(
+                PathBuf::from(format!("mobile/scripts/{name}")),
+                source.contents().to_vec(),
+            );
+        }
+    }
     if options.web {
         render_directory(&WEB_TEMPLATE, &environment, context, &mut rendered, false)?;
         if context.auth_oidc
@@ -970,7 +995,7 @@ backend = {}\n\
 worker = {}\n\
 mobile = {}\n\
 web = {}\n\
-pwa = false\n\
+pwa = {}\n\
 {}\
 {}\
 \n\
@@ -993,6 +1018,7 @@ consumers = {}\n",
         options.worker,
         options.mobile,
         options.web,
+        options.pwa,
         mcp,
         auth,
         context.baukit_manifest,
@@ -2879,6 +2905,7 @@ mod generator_tests {
             worker: false,
             mobile: false,
             web: false,
+            pwa: false,
             mcp: false,
             mcp_auth_node_oidc: false,
             mcp_auth_caller_supplied: false,

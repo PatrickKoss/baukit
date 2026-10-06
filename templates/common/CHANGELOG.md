@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+{% if context.mobile %}- Apply the top safe-area inset to tab scenes and the sign-in header.
+- Build the iOS simulator app in Release mode so Maestro has an embedded JavaScript bundle.
+- Generate service worker build and check scripts for Expo web.
+{% endif %}{% if context.mobile and context.auth_oidc %}- Store OIDC sessions in browser storage on web and SecureStore on native platforms.
+{% endif %}{% if context.auth_oidc %}- Test expired access tokens separately from valid refresh sessions without waiting for expiry.
+{% endif %}
 - Keep the 0.7.2 changes under their release heading.
 
 ## [0.7.3] - 2026-10-05

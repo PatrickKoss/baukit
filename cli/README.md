@@ -21,6 +21,11 @@ git remote add origin git@github.com:YOUR_ORG/NAME.git
 git push -u origin main
 ```
 
+Use `--pwa` with `--mobile` or `--web` to generate the service worker build.
+The web app hosts it when both apps are present. Otherwise Expo web hosts it.
+Run `corepack pnpm run build:sw` before exporting the Expo web app, then
+`corepack pnpm run build:sw:check` to check the worker artifact.
+
 Use `--port-offset N` when several generated products run on one development
 machine. The CLI adds `N` to each generated PostgreSQL, API, operations,
 Keycloak, and fake-provider host port, then records the offset in `baukit.toml`.

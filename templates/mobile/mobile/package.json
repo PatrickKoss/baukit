@@ -10,9 +10,11 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "tokens": "node scripts/generate-tokens.mjs",
+    "build:sw": "node scripts/build-sw.mjs",
+    "build:sw:check": "node scripts/build-sw.mjs --check",
     "typecheck": "tsc --noEmit",
     "lint": "eslint app app.config.ts src --max-warnings=0",
-    "test": "jest --runInBand",
+    "test": "jest --runInBand && node --test scripts/build-sw.test.mjs",
     "test:coverage": "jest --runInBand --coverage"
   },
   "dependencies": {

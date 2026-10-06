@@ -47,6 +47,9 @@ struct NewCommand {
     /// Generate the Vite React web application.
     #[arg(long)]
     web: bool,
+    /// Build a PWA worker for the web app or Expo web export.
+    #[arg(long)]
+    pwa: bool,
     /// Generate a TypeScript MCP server package for the backend.
     #[arg(long, requires = "backend")]
     mcp: bool,
@@ -105,6 +108,7 @@ fn run() -> Result<()> {
                 worker: command.worker,
                 mobile: command.mobile,
                 web: command.web,
+                pwa: command.pwa,
                 mcp: command.mcp,
                 mcp_auth: command.mcp_auth,
                 auth: command.auth,

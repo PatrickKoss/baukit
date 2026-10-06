@@ -16,6 +16,7 @@ fn base(parent: &Path) -> NewOptions {
         worker: false,
         mobile: false,
         web: false,
+        pwa: false,
         mcp: false,
         mcp_auth: None,
         auth: None,
@@ -87,6 +88,11 @@ fn main() {
     bless("mobile", |o| {
         o.backend = false;
         o.mobile = true;
+    });
+    bless("mobile-pwa", |o| {
+        o.backend = false;
+        o.mobile = true;
+        o.pwa = true;
     });
     bless("web", |o| {
         o.backend = false;

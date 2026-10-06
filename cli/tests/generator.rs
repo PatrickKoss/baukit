@@ -25,6 +25,7 @@ fn options(parent: &Path, name: &str) -> NewOptions {
         worker: false,
         mobile: false,
         web: false,
+        pwa: false,
         mcp: false,
         mcp_auth: None,
         auth: None,
@@ -45,6 +46,7 @@ fn frontend_options(parent: &Path, name: &str, mobile: bool, web: bool) -> NewOp
         worker: false,
         mobile,
         web,
+        pwa: false,
         mcp: false,
         mcp_auth: None,
         auth: None,
@@ -2720,17 +2722,18 @@ fn doctor_requires_generated_environment_and_strict_markdown_scripts() -> anyhow
 #[test]
 fn doctor_checks_the_pwa_worker_build_in_a_mobile_only_product() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
-    let baukit_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust");
     let mut mobile_only = frontend_options(parent.path(), "pwa-mobile", true, false);
-    mobile_only.baukit_path = Some(baukit_path);
+    mobile_only.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    mobile_only.pwa = true;
     let root = generate_new(&mobile_only)?;
-    let manifest_path = root.join("baukit.toml");
-    let manifest = fs::read_to_string(&manifest_path)?;
-    fs::write(
-        &manifest_path,
-        manifest.replace("pwa = false", "pwa = true"),
-    )?;
-
+    assert!(
+        doctor(&root)?
+            .iter()
+            .any(|result| result == "mobile PWA worker build uses the supported Baukit artifact")
+    );
+    let builder = root.join("mobile/scripts/build-sw.mjs");
+    let source = fs::read(&builder)?;
+    fs::remove_file(&builder)?;
     let error = doctor(&root).expect_err("doctor must require the Expo worker build");
     assert!(
         error
@@ -2738,33 +2741,19 @@ fn doctor_checks_the_pwa_worker_build_in_a_mobile_only_product() -> anyhow::Resu
             .contains("the PWA capability requires `mobile/scripts/build-sw.mjs`")
     );
     assert!(!error.to_string().contains("requires the web"));
-
+    fs::write(&builder, source)?;
     let package_path = root.join("mobile/package.json");
-    let package = fs::read_to_string(&package_path)?;
-    fs::write(
-        &package_path,
-        package
-            .replacen(
-                "\"scripts\": {",
-                "\"scripts\": {\n    \"build:sw\": \"node scripts/build-sw.mjs\",\n    \"build:sw:check\": \"node scripts/build-sw.mjs --check\",",
-                1,
-            )
-            .replacen(
-                "\"dependencies\": {",
-                "\"dependencies\": {\n    \"@baukit/pwa-web\": \"0.5.1\",",
-                1,
-            ),
-    )?;
-    fs::write(
-        root.join("mobile/scripts/build-sw.mjs"),
-        "import.meta.resolve('@baukit/pwa-web/worker');\n",
-    )?;
-
-    let results = doctor(&root)?;
+    let mut package: serde_json::Value = serde_json::from_slice(&fs::read(&package_path)?)?;
+    package["scripts"]
+        .as_object_mut()
+        .expect("scripts")
+        .remove("build:sw:check");
+    fs::write(package_path, serde_json::to_vec(&package)?)?;
     assert!(
-        results
-            .iter()
-            .any(|result| result == "mobile PWA worker build uses the supported Baukit artifact")
+        doctor(&root)
+            .expect_err("missing check script")
+            .to_string()
+            .contains("requires the mobile `build:sw:check` script")
     );
     Ok(())
 }
@@ -4560,5 +4549,101 @@ fn generated_oidc_workers_retain_failed_identity_jobs() -> anyhow::Result<()> {
         );
     }
     doctor(&root)?;
+    Ok(())
+}
+
+#[test]
+fn native_ios_workflow_embeds_the_bundle_in_the_installed_app() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = generate_new(&frontend_options(parent.path(), "ios-release", true, false))?;
+    let workflow: serde_yaml_ng::Value =
+        serde_yaml_ng::from_slice(&fs::read(root.join(".github/workflows/native.yml"))?)?;
+    let steps = workflow["jobs"]["ios"]["steps"]
+        .as_sequence()
+        .expect("iOS steps");
+    let run = |name: &str| {
+        steps
+            .iter()
+            .find(|step| step["name"].as_str() == Some(name))
+            .and_then(|step| step["run"].as_str())
+            .expect("workflow step")
+    };
+    assert!(
+        run("Compile for iOS Simulator").contains("-configuration Release -sdk iphonesimulator")
+    );
+    assert!(
+        run("Run product-owned Maestro critical paths when configured")
+            .contains("Build/Products/Release-iphonesimulator")
+    );
+    Ok(())
+}
+
+#[test]
+fn auth_conformance_does_not_wait_for_access_token_expiry() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut product = options(parent.path(), "auth-lifetime");
+    product.auth = Some(AuthProvider::Oidc);
+    let root = generate_new(&product)?;
+    let test = fs::read_to_string(root.join("backend/tests/auth_conformance.rs"))?;
+    assert!(!test.contains("tokio::time::sleep"));
+    assert!(!test.contains("Duration::from_secs(1)"));
+    assert!(test.contains(".expires_at(0)"));
+    assert!(test.contains("authorization_header(&expired)"));
+    assert!(test.contains("refresh_session(session.refresh_token())"));
+    Ok(())
+}
+
+#[test]
+fn pwa_requires_an_app_and_selects_the_web_host_first() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut backend = options(parent.path(), "pwa-backend");
+    backend.pwa = true;
+    assert_eq!(
+        generate_new(&backend)
+            .expect_err("PWA needs an app")
+            .to_string(),
+        "--pwa requires --mobile or --web to serve the worker"
+    );
+    for (name, mobile, web, host) in [
+        ("web-pwa", false, true, "web"),
+        ("both-pwa", true, true, "web"),
+        ("auth-pwa", true, false, "mobile"),
+    ] {
+        let mut product = frontend_options(parent.path(), name, mobile, web);
+        product.pwa = true;
+        if name == "auth-pwa" {
+            product.auth = Some(AuthProvider::Oidc);
+        }
+        let root = generate_new(&product)?;
+        assert!(baukit_cli::read_manifest(&root)?.capabilities.pwa);
+        let package: serde_json::Value =
+            serde_json::from_slice(&fs::read(root.join(host).join("package.json"))?)?;
+        assert_eq!(
+            package["dependencies"]["@baukit/pwa-web"],
+            baukit_cli::TEMPLATE_VERSION
+        );
+        assert_eq!(package["scripts"]["build:sw"], "node scripts/build-sw.mjs");
+        assert_eq!(
+            package["scripts"]["build:sw:check"],
+            "node scripts/build-sw.mjs --check"
+        );
+        assert!(
+            fs::read_to_string(root.join(host).join("scripts/build-sw.mjs"))?
+                .contains("@baukit/pwa-web/worker")
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn mobile_pwa_generation_matches_golden_tree() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut product = frontend_options(parent.path(), "snapshot-app", true, false);
+    product.pwa = true;
+    let root = generate_new(&product)?;
+    assert_eq!(
+        render_hash_snapshot(&read_tree(&root)?),
+        include_str!("snapshots/mobile-pwa.tree")
+    );
     Ok(())
 }

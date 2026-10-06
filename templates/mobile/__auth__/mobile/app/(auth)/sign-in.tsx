@@ -1,4 +1,5 @@
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ActionButton } from '../../src/action-button';
 import { useOidcAuth } from '../../src/auth';
@@ -8,10 +9,11 @@ import { PRODUCT_NAME } from '../../src/product';
 
 export default function SignInScreen() {
   const auth = useOidcAuth();
+  const insets = useSafeAreaInsets();
   const { mode, theme } = useTheme();
   const styles = createStyles(theme);
   return (
-    <View style={styles.safeArea}>
+    <View style={[styles.safeArea, { paddingTop: insets.top }]} testID="sign-in-screen">
       <ScrollView contentContainerStyle={styles.page}>
         <Text style={styles.eyebrow}>BAUKIT MOBILE</Text>
         <Text style={styles.title}>{PRODUCT_NAME}</Text>

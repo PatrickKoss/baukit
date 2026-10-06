@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Add `--pwa` to generate a worker builder and dependency for the selected web host, including mobile-only products.
+- Apply mobile top insets, select iOS Release builds, split OIDC storage by platform, and remove token-expiry waits from generated tests.
+
 - Reject release preparation when the template changelog has uncut Unreleased entries or lacks the new release heading. Restore the missing 0.7.2 template heading from release history.
 
 - Follow relative imports from mobile routes when checking sign-in wiring. Recognize multiline JSX tags. Bound traversal and stop import cycles.

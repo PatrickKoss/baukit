@@ -99,7 +99,8 @@ async fn protected_route_conforms_and_maps_subject_to_internal_user() -> Result<
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
     }
 
-    let session = issuer.issue_session("seeded-test-subject", AUDIENCE, Duration::from_secs(1))?;
+    let session =
+        issuer.issue_session("seeded-test-subject", AUDIENCE, Duration::from_secs(300))?;
     let response = app
         .clone()
         .oneshot(
@@ -133,7 +134,11 @@ async fn protected_route_conforms_and_maps_subject_to_internal_user() -> Result<
         .await?;
     assert_eq!(response.status(), StatusCode::CREATED);
 
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    let expired = issuer.mint(
+        &issuer
+            .claims("seeded-test-subject", AUDIENCE, Duration::from_secs(300))?
+            .expires_at(0),
+    )?;
     let response = app
         .clone()
         .oneshot(
@@ -141,7 +146,7 @@ async fn protected_route_conforms_and_maps_subject_to_internal_user() -> Result<
                 .uri("/me")
                 .header(
                     header::AUTHORIZATION,
-                    baukit_test::authorization_header(session.access_token())?,
+                    baukit_test::authorization_header(&expired)?,
                 )
                 .body(Body::empty())?,
         )

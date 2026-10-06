@@ -122,7 +122,7 @@ jobs:
           workspace="$(find ios -maxdepth 1 -name '*.xcworkspace' -print -quit)"
           test -n "$workspace"
           scheme="$(xcodebuild -workspace "$workspace" -list -json | python3 -c 'import json,sys; print(json.load(sys.stdin)["workspace"]["schemes"][0])')"
-          xcodebuild -workspace "$workspace" -scheme "$scheme" -configuration Debug -sdk iphonesimulator -derivedDataPath ios-build CODE_SIGNING_ALLOWED=NO build 2>&1 | tee native-ios.log
+          xcodebuild -workspace "$workspace" -scheme "$scheme" -configuration Release -sdk iphonesimulator -derivedDataPath ios-build CODE_SIGNING_ALLOWED=NO build 2>&1 | tee native-ios.log
       - name: Run product-owned Maestro critical paths when configured
         env:
           SCHEDULED_MAESTRO: {% raw %}${{ vars.RUN_MAESTRO_NATIVE_GATE }}{% endraw %}
@@ -137,7 +137,7 @@ jobs:
           simulator="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next(x["udid"] for runtime, values in d.items() if ".iOS-" in runtime for x in values if x["isAvailable"]))')"
           xcrun simctl boot "$simulator" || true
           xcrun simctl bootstatus "$simulator" -b
-          app="$(find ios-build/Build/Products/Debug-iphonesimulator -maxdepth 1 -name '*.app' -print -quit)"
+          app="$(find ios-build/Build/Products/Release-iphonesimulator -maxdepth 1 -name '*.app' -print -quit)"
           test -n "$app"
           xcrun simctl install "$simulator" "$app"
           curl -Ls https://get.maestro.mobile.dev | bash
