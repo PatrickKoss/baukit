@@ -218,7 +218,7 @@ helm template all-options . -f tests/all-options-values.yaml
 ## Remote MCP
 
 Set `mcp.enabled`, `mcp.resourceUrl`, `mcp.issuer`, and `mcp.allowedHosts` for a
-backend generated with `--mcp-transport remote`. The chart passes these values
+backend generated with `--mcp --backend --auth oidc`. The chart passes these values
 as product configuration and adds `/mcp` and the RFC 9728 metadata paths to
 each ingress host. `mcp.allowedOrigins` is an exact list and defaults to empty.
 Set the Keycloak MCP audience mapper to the same resource URL. The endpoint

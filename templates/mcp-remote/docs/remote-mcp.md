@@ -3,7 +3,7 @@
 Generate a Rust MCP crate inside the backend with:
 
 ```sh
-baukit new {{ context.app_name }} --backend --mcp --mcp-transport remote --auth oidc
+baukit new {{ context.app_name }} --backend --mcp --auth oidc
 ```
 
 The backend mounts `/mcp` when `mcp.enabled` is true. Configure

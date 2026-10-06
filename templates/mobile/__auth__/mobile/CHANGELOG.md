@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Update Expo SDK 57 patches to match Expo compatibility checks.
+
 - Use dot-separated OIDC keys directly. Remove the colon-to-dot storage rewrite.
 
 - Use a valid SecureStore key for the local-data registry so identity bootstrap can open its partition.

@@ -26,7 +26,7 @@
 {% endif %}      "credentials": [{ "type": "password", "value": "development-password", "temporary": false }]
     }
   ],
-{% if context.mcp_remote %}  "clientScopes": {{ context.remote_mcp_client_scopes | indent(2) }},
+{% if context.mcp %}  "clientScopes": {{ context.remote_mcp_client_scopes | indent(2) }},
   "defaultDefaultClientScopes": ["profile", "email", "roles", "web-origins", "acr", "basic"],
   "defaultOptionalClientScopes": ["offline_access", "address", "phone", "microprofile-jwt", "organization"],
 {% endif %}  "clients": [
@@ -53,7 +53,7 @@
           }
         }
       ]
-    }{% if context.mcp_remote %},
+    }{% if context.mcp %},
     {
       "clientId": "{{ context.app_name }}-mcp",
       "name": "MCP public PKCE client",

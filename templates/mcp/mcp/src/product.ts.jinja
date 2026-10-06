@@ -1,7 +1,0 @@
-export const PRODUCT_NAME ={% if context.app_name | length > 49 %}
-  '{{ context.app_name }}';
-{% else %} '{{ context.app_name }}';
-{% endif %}export const ENV_PREFIX ={% if context.app_env | length > 51 %}
-  '{{ context.app_env }}';
-{% else %} '{{ context.app_env }}';
-{% endif %}export const KEYCLOAK_PORT = {{ context.keycloak_host_port }};

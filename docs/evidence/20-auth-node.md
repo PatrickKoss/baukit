@@ -1,5 +1,9 @@
 # Evidence for item 20: Node device authentication
 
+This records the Node client's original sources. `@baukit/auth-node`
+remains available for Node clients and web OIDC tests. Product MCP servers
+now follow the [Rust migration guide](../migrations/mcp-stdio-to-remote.md).
+
 ## Source product files
 
 - `tiefgang/mcp/src/auth.ts` and `tiefgang/mcp/test/auth.test.ts`
@@ -36,4 +40,6 @@ Node 24 or later. POSIX systems enforce `0600` cache files and a `0700` cache di
 
 ## Product adoption change
 
-Follow-up product pull requests should replace and delete `tiefgang/mcp/src/auth.ts`, `leitbild/mcp/src/auth.ts`, and `eigenruhe/mcp/src/auth.ts`. At least two must adopt the published package before item 20 is marked complete.
+Node clients can replace copied device-flow and cache code with the package.
+MCP servers port their tools to Rust and remove the TypeScript authentication
+code and cache through the migration guide.

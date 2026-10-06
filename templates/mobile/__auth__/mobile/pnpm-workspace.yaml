@@ -3,7 +3,7 @@ allowBuilds:
   unrs-resolver: true
 
 catalog:
-  expo-constants: 57.0.20
+  expo-constants: 57.0.21
 
 overrides:
   '@react-native/metro-config': 0.86.3

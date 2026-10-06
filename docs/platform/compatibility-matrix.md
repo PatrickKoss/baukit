@@ -76,8 +76,8 @@ columns. See the [PostgreSQL 18 release notes](https://www.postgresql.org/docs/1
 
 | Responsibility | Dependency | Tested baseline | Notes |
 |---|---|---|---|
-| Mobile runtime | Expo SDK | 57.0.26 (RN 0.86.3, React 19.2.3) | React/RN versions follow the Expo SDK, verified with Expo Doctor |
-| Mobile navigation | Expo Router | 57.0.24 | Generated mobile template baseline with Expo Router and `Stack.Protected` in the auth overlay; `react-native-screens` 4.26.2, `react-native-safe-area-context` 5.7.0, `react-native-reanimated` 4.5.1, `react-native-worklets` 0.10.1, and `react-native-gesture-handler` 2.32.0. |
+| Mobile runtime | Expo SDK | 57.0.27 (RN 0.86.3, React 19.2.3) | React/RN versions follow the Expo SDK, verified with Expo Doctor |
+| Mobile navigation | Expo Router | 57.0.25 | Generated mobile template baseline with Expo Router and `Stack.Protected` in the auth overlay; `react-native-screens` 4.26.2, `react-native-safe-area-context` 5.7.0, `react-native-reanimated` 4.5.1, `react-native-worklets` 0.10.1, and `react-native-gesture-handler` 2.32.0. |
 | Remote state | TanStack Query | 5 | |
 | Web routing | TanStack Router | current v1 | re-verify TanStack Start status separately |
 | Local state | Zustand | 5 | |
@@ -90,7 +90,7 @@ columns. See the [PostgreSQL 18 release notes](https://www.postgresql.org/docs/1
 | Provider registry | `@baukit/integrations-client` | 0.5.2 | Typed product connectors, stable registration order, and immutable connection-state overlays. |
 | Client sync primitives | `@baukit/sync-client` | 0.5.2 | Scheduler with optional retry, request-function and HTTP transports, status store, push-batch ranking, a persisted hybrid logical clock, and tombstone-horizon conformance. The optional `@baukit/sync-client/expo` entry uses Expo Network 57.0.2 and React Native 0.86.3; the root entry has no runtime dependencies and no React. |
 | PWA cache strategy | `@baukit/pwa-web` | 0.5.2 | ESM and CJS builds, request classification, `navigationFallback`, and strategy execution for a product-owned service worker; no dependencies and no service-worker globals. |
-| MCP server | `@modelcontextprotocol/sdk` + zod | 1.32.0 + 4.6.5 | Opt-in `--mcp` generated stdio package; bearer tokens from `@baukit/auth-node` or a caller-supplied provider. |
+| MCP server | `rmcp` | 3.5.1 | `--mcp --backend --auth oidc` generates Rust Streamable HTTP with resource OAuth and service ports. |
 | Web build | Vite | 8.3.2 | |
 | Styling | Tailwind CSS | 4 | |
 | Web persistence | `@baukit/data-contracts-dexie` / Dexie | 4.4.6 | only when offline is enabled; Chromium and WebKit conformance-tested |
@@ -110,7 +110,7 @@ releases.
 | Dependency | Available stable release | Reason for the current line |
 |---|---|---|
 | TypeScript | 7.0.2 | typescript-eslint 8.71.0 accepts TypeScript below 6.1. |
-| Expo SDK | 57.0.26 | SDK 57 is the latest stable SDK. Its native package versions remain together. |
+| Expo SDK | 57.0.27 | SDK 57 is the latest stable SDK. Its native package versions remain together. |
 | React Native | 0.87.1 | Expo SDK 57 uses 0.86.3, including the Babel and Jest presets. |
 | React on mobile | 19.3.0 | Expo SDK 57 uses 19.2.3. Web uses 19.3.0. |
 | Jest and @jest/globals | 30.5.2 | jest-expo 57 and the React Native Jest preset use Jest 29. Types use @types/jest 29.5.14. |

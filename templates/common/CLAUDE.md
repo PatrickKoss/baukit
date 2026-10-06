@@ -21,13 +21,7 @@ corepack pnpm@12.9.1 --dir web test
 corepack pnpm@12.9.1 --dir mobile typecheck
 corepack pnpm@12.9.1 --dir mobile lint
 corepack pnpm@12.9.1 --dir mobile test
-{% endif %}{% if context.mcp %}corepack pnpm@12.9.1 --dir mcp install --frozen-lockfile
-corepack pnpm@12.9.1 --dir mcp build
-corepack pnpm@12.9.1 --dir mcp typecheck
-corepack pnpm@12.9.1 --dir mcp lint
-corepack pnpm@12.9.1 --dir mcp test
-corepack pnpm@12.9.1 --dir mcp openapi:check
-corepack pnpm@12.9.1 --dir mcp docs:check
+{% endif %}{% if context.mcp %}cargo test --manifest-path backend/Cargo.toml -p {{ context.app_name }}-mcp --test tool_drift
 {% endif %}baukit doctor
 ```
 
@@ -47,7 +41,7 @@ Set `BAUKIT_BASE_REVISION` to the pull request base commit when running the migr
 
 {% endif %}## Dependency and generated-file rules
 
-Commit `Cargo.lock`{% if context.web %}, `web/pnpm-lock.yaml`{% endif %}{% if context.mobile %}, `mobile/pnpm-lock.yaml`{% endif %}{% if context.mcp %}, `mcp/pnpm-lock.yaml`{% endif %}. CI uses `--locked` or `--frozen-lockfile`. Use Corepack's pinned pnpm version. Do not use a globally installed pnpm.
+Commit `Cargo.lock`{% if context.web %}, `web/pnpm-lock.yaml`{% endif %}{% if context.mobile %}, `mobile/pnpm-lock.yaml`{% endif %}. CI uses `--locked` or `--frozen-lockfile`. Use Corepack's pinned pnpm version. Do not use a globally installed pnpm.
 
 {% if context.backend %}The Rust workspace declares its minimum supported Rust version in `backend/Cargo.toml`. Keep code compatible with that version. Regenerate `backend/openapi.json` with `sh scripts/openapi.sh`. List every committed TypeScript declaration in `openapi.consumers` in `baukit.toml`, then regenerate all of them with `sh scripts/openapi-client.sh`.
 
@@ -63,7 +57,7 @@ Use `make qa-android` or `make qa-ios` to open an isolated release build for exp
 
 {% if not context.web %}If `capabilities.pwa` becomes true, the Expo web export serves the PWA. Provide `mobile`'s `build:sw:check` command and commit its generated service-worker output. The strict runner treats drift as a failure.
 
-{% endif %}{% endif %}{% if context.mcp %}The MCP package keeps read and write tools in separate registries. Each tool needs complete annotations and a matching entry in `mcp/src/tool-routes.ts`. Run the OpenAPI and generated-doc checks after changing a registry or route. Keep stdout for protocol messages and send outcome-only logs to stderr.
+{% endif %}{% endif %}{% if context.mcp %}MCP tools live in `backend/crates/{{ context.app_name }}-mcp`. Call product services through ports, validate arguments, and declare required OAuth scopes. Review and regenerate `backend/mcp-tools.json` after changing schemas or scopes. Run `tool_drift` and follow `docs/remote-mcp.md` for OAuth configuration.
 
 {% endif %}## Boundaries
 

@@ -94,9 +94,9 @@ cargo test --manifest-path ".generated-fixture/$fixture_name/backend/Cargo.toml"
 cargo test --manifest-path ".generated-fixture/$fixture_name/backend/Cargo.toml" -p "$fixture_name-bin" --test openapi_drift
 # web:    cd ".generated-fixture/$fixture_name/web" && corepack pnpm install && corepack pnpm build && corepack pnpm lint && corepack pnpm test && corepack pnpm run test:coverage
 # mobile: cd ".generated-fixture/$fixture_name/mobile" && corepack pnpm install && corepack pnpm exec tsc --noEmit && corepack pnpm lint && corepack pnpm run test:coverage
-# MCP:    `make mcp-fixture-gate` uses `long-product-name-fixture --backend --mcp`,
-#         checks the backend, then builds, lints, typechecks, tests,
-#         and runs both MCP drift checks.
+# MCP:    `make mcp-fixture-gate` generates this combined OIDC fixture, checks
+#         the backend, web and mobile, runs tool_drift, and calls MCP over HTTP
+#         with a real Keycloak token.
 ```
 
 (For web/mobile flavors, first build the local TS deps:

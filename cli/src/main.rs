@@ -2,8 +2,7 @@ use std::{env, path::PathBuf, process::ExitCode};
 
 use anyhow::Result;
 use baukit_cli::{
-    AuthProvider, McpAuthentication, McpTransport, NewOptions, QualityProfile, doctor,
-    generate_new, generate_openapi_client,
+    AuthProvider, NewOptions, QualityProfile, doctor, generate_new, generate_openapi_client,
 };
 use clap::{Args, Parser, Subcommand};
 
@@ -53,12 +52,6 @@ struct NewCommand {
     /// Generate an MCP server for the backend.
     #[arg(long, requires = "backend")]
     mcp: bool,
-    /// Select stdio TypeScript or remote Rust Streamable HTTP.
-    #[arg(long, value_enum, default_value_t = McpTransport::Stdio, requires = "mcp")]
-    mcp_transport: McpTransport,
-    /// Select how the generated MCP bootstrap obtains bearer tokens.
-    #[arg(long, value_enum, requires = "mcp")]
-    mcp_auth: Option<McpAuthentication>,
     /// Add an authentication capability.
     #[arg(long, value_enum)]
     auth: Option<AuthProvider>,
@@ -113,8 +106,6 @@ fn run() -> Result<()> {
                 web: command.web,
                 pwa: command.pwa,
                 mcp: command.mcp,
-                mcp_auth: command.mcp_auth,
-                mcp_transport: command.mcp_transport,
                 auth: command.auth,
                 force: command.force,
                 into_existing: command.into_existing,

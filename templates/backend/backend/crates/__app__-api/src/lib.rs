@@ -79,7 +79,7 @@ pub fn routes(state: ApiState) -> Router {
 pub fn finalize_api(router: Router, config: &HttpConfig) -> Result<Router, HttpOptionsError> {
     Ok(baukit_http::finalize(
         router,
-        HttpOptions::from_config(config)?{% if context.mcp_remote %}
+        HttpOptions::from_config(config)?{% if context.mcp %}
             .with_additional_allowed_headers(baukit_mcp::ALLOWED_HEADERS)?
             .with_additional_exposed_headers(["www-authenticate"])?
             {% endif %}.with_json_rejection_codes(JsonRejectionCodes::default()),

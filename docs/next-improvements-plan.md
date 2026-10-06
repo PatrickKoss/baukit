@@ -104,16 +104,16 @@ Filled in as items complete. Each line names the product file to delete once the
 - Items 14 and 15, Eigenruhe: delete `scripts/reconcile_env.py` and `scripts/test_reconcile_env.py` and call the generated `scripts/setup.sh`. Redemut: delete `scripts/check-doc-links.mjs` and its workflow command; use the generated strict link check.
 - Items 16 and 17, Redemut: delete `scripts/check-keycloak-policy.mjs` and `deploy/keycloak/configure-dev-realm.sh`; call the generated `scripts/keycloak_policy.py` and `scripts/reconcile_keycloak.py`.
 - Item 7b, Eigenruhe: same files as item 7; the generated templates now show the adopted shape.
-- Item 20, Tiefgang, Leitbild, Eigenruhe: delete `mcp/src/auth.ts` in each product once their MCP servers construct `DeviceFlowClient` with product policy and presentation callbacks; keep only configuration and presentation tests.
+- Item 20: keep `@baukit/auth-node` for Node clients and web OIDC tests. Product MCP servers adopt Rust resource OAuth through the [migration guide](migrations/mcp-stdio-to-remote.md).
 - Item 22, Tiefgang: remove the horizon and reset cases from `mobile/src/sync/engine.test.ts` and `mobile/src/db/repository-contract.ts` and enable the `fullResync` conformance group. Eigenruhe: add `horizonRevision` to `resync_required`, make row clearing and cursor zero one transaction, then enable the same group.
 - Item 24, Tiefgang: delete `backend/crates/tiefgang-bin/src/adapters/integrations/fake.rs`; remove `TokenProviderConnector` and `TokenProviderError` from `tiefgang-ports/src/integrations.rs`, `ProviderAccount` from `tiefgang-domain/src/integrations.rs`, and the error-code mapping in `tiefgang-services/src/integrations/mod.rs`; implement `CredentialProbe` in the GitHub and Toggl adapters and run `check_credential_probe_conformance`.
 - Item 23, Tiefgang: erasure in `backend/crates/tiefgang-postgres/src/erasure.rs` checks top-level payload keys while webhook jobs store the subject at `event.user_id`; that is a product privacy bug to fix now, independent of `owner_key`. Eigenruhe: replace the hard-coded zero background-job count in `backend/crates/eigenruhe-postgres/src/profile.rs` once owner-scoped jobs exist.
-- Item 27, Tiefgang: `extension/scripts/copy-openapi.mjs`, `extension/scripts/check-openapi.mjs`, the MCP copy line in `scripts/openapi-client.sh`, and the equality checks in `scripts/quality-gate.sh` and `extension/test/contracts.test.ts` stay until `openapi.mirrors` ships.
+- Item 27, Tiefgang: keep the extension copy and equality checks until `openapi.mirrors` ships. Remove the MCP schema copy and its checks when migrating the MCP tools to Rust.
 - Item 25, Eigenruhe: replace the local import preparation, allowlist, preview, and atomic commit code with `@baukit/data-contracts/import-envelope` and run the fixture-backed conformance cases against its adapter; Tiefgang: same for its partial import once it adopts the envelope.
 - Item 18, Leitbild: delete `keycloak/themes/leitbild/login/login.ftl` and `keycloak/themes/leitbild/login/resources/js/required-validation.js`. Tiefgang: delete `keycloak/themes/tiefgang/login/login.ftl`, `resources/js/required-validation.js`, and `required-validation.test.mjs`; both keep CSS, messages, preferences script, and product theme properties as children of `baukit-accessible`.
 - Item 29 (decision: implement, not yet built): after the helpers ship, Leitbild deletes `mobile/src/autosave.ts` and its test and shrinks the web autosave to a React wrapper; Redemut removes `FormDraftController` from `web/src/form-draft.tsx`. Item 30 (deferred): Eigenruhe first unifies its manifest schema and adds runtime hash verification, paused and corrupt states, cleanup planning, and identity fencing in `mobile/src/downloads/`.
 - Item 26, Tiefgang: remove the inbox replay assertions from `backend/tests/postgres_integration.rs`, the multi-target delivery loop in `backend/crates/tiefgang-worker/src/lib.rs`, and the duplicate signature helper in `backend/tests/worker_integration.rs`; run `check_postgres_inbox_conformance` and the scripted webhook receiver instead.
-- Item 21, Tiefgang, Leitbild, Eigenruhe: delete `mcp/src/index.ts` and `mcp/src/server.ts` after adopting the generated bootstrap; keep tool and route code. With `node-oidc` each also deletes `mcp/src/auth.ts` (same file as item 20).
+- Item 21, every product: port tools and service ports to the Rust MCP crate, then delete the TypeScript MCP package and its token cache. Follow the [migration guide](migrations/mcp-stdio-to-remote.md), including SLS's authentication policy requirement.
 - Item 28, Eigenruhe: replace the unprotected count operations in `row_caps.rs` with one documented enforcement method, implement `PostgresLiveRowCapAdapter`, and delete `assert_practice_cap` plus the duplicated update and tombstone-release blocks in `backend/tests/postgres_integration.rs`.
 - Item 31 (decision: implement `useRovingMenu` in `@baukit/a11y-core`, not yet built): Tiefgang and Eigenruhe delete the index, ref, and key-handling blocks in `mobile/src/components/context-menu.tsx`; Redemut deletes the DOM query and `moveFocus` logic in `packages/ui/src/context-menu.tsx`. Fitness Tracker must be inspected before any rendered Expo package.
 - Item 32 (decision: implement `@baukit/notifications-core` and an Expo adapter, not yet built; timeline deferred): Eigenruhe deletes `mobile/src/features/reminders/schedule.ts`, `port.ts`, and most of `expo-adapter.ts`; Redemut deletes the civil-date loop in `mobile/src/reminders.ts` and the cancel-all block in `mobile/src/notification-adapter.ts`.
@@ -187,7 +187,7 @@ Repeated findings carry more weight, but repetition is not enough on its own. A 
 
 Two disagreements need an explicit resolution.
 
-First, MCP authentication must not dictate the MCP generator schedule. Redemut favors personal access tokens for stdio, while Tiefgang, Leitbild, and Eigenruhe have device-flow implementations. The generator should initially accept an injected bearer-token provider and include a documented personal-token mode. `@baukit/auth-node` can become an optional adapter after its security gates pass.
+MCP now uses the Rust remote server with resource OAuth. See the [migration guide](migrations/mcp-stdio-to-remote.md) for product adoption.
 
 Second, Baukit should not commit to maintaining its own iCalendar encoder based on Redemut alone. The calendar study must compare maintained dependencies with the two Redemut implementations. A Baukit implementation is justified only if no suitable dependency meets the Rust, TypeScript, timezone, and deterministic-test requirements.
 
@@ -748,39 +748,12 @@ These are independent pull requests that can share one wave.
 
 **Done when:** at least two product MCP or CLI clients replace their local auth modules with the package.
 
-### 21. Add an opt-in MCP capability
+### 21. Rust remote MCP capability
 
-**Evidence:** Tiefgang, Leitbild, and Eigenruhe have the same package outline. Redemut confirms the need but exposes security problems in a different transport and cache design.
-
-**Dependency:** The first generator does not depend on item 20. It accepts a bearer-token provider and documents personal access tokens. Add `@baukit/auth-node` as an optional auth choice after that package passes its gates.
-
-**CLI and manifest design:**
-
-- Add `--mcp` and `capabilities.mcp` only for projects with a backend and TypeScript workspace support.
-- Let authentication be `personal-token`, `node-oidc`, or caller-supplied according to selected capabilities.
-- Register generated OpenAPI declarations through `openapi.consumers`.
-- Keep raw schema copies out of the initial capability unless item 27 is complete.
-- Extend doctor, lockfile generation, CI, snapshots, and generated-fixture checks.
-
-**Generated package:**
-
-- isolated TypeScript package with build, lint, typecheck, and test commands;
-- stdio bootstrap that reserves stdout for protocol messages;
-- graceful shutdown and `--help`;
-- typed OpenAPI client seam;
-- explicit read and write tool registries;
-- one harmless example tool and, if useful, one resource example;
-- outcome-only stderr logging;
-- in-memory transport tests;
-- annotations required for every registered tool;
-- a product-owned tool-to-route allowlist checked against OpenAPI; and
-- documentation generated from the registry rather than arbitrary source-string scans.
-
-**Do not generate:** one tool per OpenAPI operation, product tool names, destructive defaults, product scopes, consent language, domain recovery copy, or raw backend exceptions.
-
-**Tests:** protocol-clean stdout, malformed input, safe error conversion, annotation completeness, read and write separation, OpenAPI path drift, docs drift, shutdown, auth failure, no credential logging, package build, and generated fixture execution.
-
-**Done when:** a generated fixture passes the full package gate and at least one existing product replaces its package bootstrap while retaining its product-authored tools.
+`--mcp --backend --auth oidc` generates a Rust service using `baukit-mcp`.
+Products implement scoped tools through service ports and migrate with the
+[migration guide](migrations/mcp-stdio-to-remote.md). The earlier TypeScript
+server plan has been retired.
 
 ## Wave 5: data lifecycle and integration contracts
 

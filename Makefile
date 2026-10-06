@@ -1,4 +1,4 @@
-.PHONY: toolchain fmt lint test check ci platform-validate platform-up platform-down platform-nuke platform-recreate platform-status ts-install ts-build ts-fmt ts-lint ts-test ts-browser-deps ts-browser-test ts-check cli-fmt cli-lint cli-test cli-check cli-ci scripts-test example-lockfiles-check mcp-fixture-gate mcp-remote-fixture-gate install-skills android-sdk-setup native-android-gate expo-sqlite-conformance expo-sqlite-conformance-prepare expo-notifications-conformance expo-notifications-conformance-prepare media-grants-test media-grants-njs-test
+.PHONY: toolchain fmt lint test check ci platform-validate platform-up platform-down platform-nuke platform-recreate platform-status ts-install ts-build ts-fmt ts-lint ts-test ts-browser-deps ts-browser-test ts-check cli-fmt cli-lint cli-test cli-check cli-ci scripts-test example-lockfiles-check mcp-fixture-gate install-skills android-sdk-setup native-android-gate expo-sqlite-conformance expo-sqlite-conformance-prepare expo-notifications-conformance expo-notifications-conformance-prepare media-grants-test media-grants-njs-test
 
 RUST_MANIFEST := rust/Cargo.toml
 TS_DIR := typescript
@@ -60,27 +60,6 @@ example-lockfiles-check:
 	python3 scripts/check-example-lockfiles.py
 
 mcp-fixture-gate:
-	@set -eu; \
-	fixture_name=long-product-name-fixture; \
-	fixture_parent="$$(mktemp -d)"; \
-	trap 'rm -rf "$$fixture_parent"' EXIT; \
-	cargo build --manifest-path $(CLI_MANIFEST) --bin baukit; \
-	cli/target/debug/baukit new "$$fixture_name" --backend --mcp --dir "$$fixture_parent" --baukit-path rust; \
-	corepack pnpm@12.9.1 --dir typescript install --frozen-lockfile; \
-	corepack pnpm@12.9.1 --dir typescript --filter @baukit/auth-node run build; \
-	cargo fmt --manifest-path "$$fixture_parent/$$fixture_name/backend/Cargo.toml" --all --check; \
-	cargo clippy --manifest-path "$$fixture_parent/$$fixture_name/backend/Cargo.toml" --all-targets -- -D warnings; \
-	cargo test --manifest-path "$$fixture_parent/$$fixture_name/backend/Cargo.toml" -- --include-ignored; \
-	cargo test --manifest-path "$$fixture_parent/$$fixture_name/backend/Cargo.toml" -p "$$fixture_name-bin" --test openapi_drift; \
-	corepack pnpm@12.9.1 --dir "$$fixture_parent/$$fixture_name/mcp" install --frozen-lockfile; \
-	corepack pnpm@12.9.1 --dir "$$fixture_parent/$$fixture_name/mcp" build; \
-	corepack pnpm@12.9.1 --dir "$$fixture_parent/$$fixture_name/mcp" typecheck; \
-	corepack pnpm@12.9.1 --dir "$$fixture_parent/$$fixture_name/mcp" lint; \
-	corepack pnpm@12.9.1 --dir "$$fixture_parent/$$fixture_name/mcp" test; \
-	corepack pnpm@12.9.1 --dir "$$fixture_parent/$$fixture_name/mcp" openapi:check; \
-	corepack pnpm@12.9.1 --dir "$$fixture_parent/$$fixture_name/mcp" docs:check
-
-mcp-remote-fixture-gate:
 	./scripts/mcp-remote-fixture.sh
 
 install-skills:
@@ -98,6 +77,7 @@ native-android-gate: android-sdk-setup
 	cargo build --manifest-path $(CLI_MANIFEST) --bin baukit; \
 	cli/target/debug/baukit new fixture --mobile --dir "$$fixture_parent" --baukit-path rust; \
 	corepack pnpm@12.9.1 --dir "$$fixture_parent/fixture/mobile" install --frozen-lockfile; \
+	corepack pnpm@12.9.1 --dir "$$fixture_parent/fixture/mobile" exec expo install --check; \
 	(cd "$$fixture_parent/fixture/mobile" && BAUKIT_QA_BUILD=1 CI=1 ./node_modules/.bin/expo prebuild --clean --platform android --no-install); \
 	ANDROID_HOME="$${ANDROID_HOME:-$$HOME/Android/Sdk}" ANDROID_SDK_ROOT="$${ANDROID_SDK_ROOT:-$${ANDROID_HOME:-$$HOME/Android/Sdk}}" \
 		"$$fixture_parent/fixture/mobile/android/gradlew" -p "$$fixture_parent/fixture/mobile/android" --no-daemon --stacktrace -PreactNativeDevServerIp=127.0.0.1 assembleDebug

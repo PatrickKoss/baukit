@@ -16,7 +16,7 @@
       "clientId": "{{ context.app_name }}-backend",
       "activeOrigins": [],
       "activeRedirectUris": []
-    }{% if context.mcp_remote %},
+    }{% if context.mcp %},
     {
       "clientId": "{{ context.app_name }}-mcp",
       "activeOrigins": [],

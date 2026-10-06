@@ -159,7 +159,7 @@ The repo also ships a [Helm chart](deploy/chart) and [Grafana dashboards, alerts
 
 ## Documentation
 
-See [remote MCP](docs/remote-mcp.md) for tool adapters, client setup, and the OAuth flow.
+See [remote MCP](docs/remote-mcp.md) for tool adapters, client setup, and the OAuth flow. Existing products follow the [MCP migration guide](docs/migrations/mcp-stdio-to-remote.md).
 
 Contracts and recipes live in [`docs/platform/`](docs/platform): [local-data ownership](docs/platform/local-data-ownership-contract.md), [offline readiness](docs/platform/offline-readiness-contract.md), [integration reliability](docs/platform/integration-reliability.md), [accessibility](docs/platform/accessibility-contract.md), [localization](docs/platform/localization-contract.md), [native quality gates](docs/platform/native-quality-gates.md), [telemetry](docs/platform/telemetry-spec.md), [onboarding](docs/platform/onboarding-recipe.md), [calendar export](docs/platform/calendar-export-recipe.md), and [mirrored Rust/TypeScript domain logic](docs/platform/mirrored-domain-logic.md). Release process is in [`docs/releasing.md`](docs/releasing.md).
 

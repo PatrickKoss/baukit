@@ -4,7 +4,7 @@
 
 - Include the command arguments in Android QA timeout errors.
 - Supply localized web menu Close labels and the native navigation danger token in generated shells.
-- Add `--mcp-transport remote` for a Rust HTTP MCP backend with resource OAuth, scoped service adapters, metadata discovery, doctor checks, and tool schema drift checks.
+- Breaking: `--mcp` now generates the Rust remote MCP server and requires `--backend --auth oidc`. Remove the TypeScript stdio template and transport and authentication selection flags. Existing MCP manifests and TypeScript servers receive a migration finding with `docs/migrations/mcp-stdio-to-remote.md`.
 
 - Add `--pwa` to generate a worker builder and dependency for the selected web host, including mobile-only products.
 - Apply mobile top insets, select iOS Release builds, split OIDC storage by platform, and remove token-expiry waits from generated tests.
@@ -14,7 +14,7 @@
 - Follow relative imports from mobile routes when checking sign-in wiring. Recognize multiline JSX tags. Bound traversal and stop import cycles.
 - Scan tracked files and untracked files that Git does not ignore. Keep the filesystem scan outside Git, including when Git is not installed.
 
-- Accept Redis URL environment fallbacks and detect MCP server, stdio and tool wiring by content. Use declared OpenAPI consumers instead of a fixed MCP schema path.
+- Accept Redis URL environment fallbacks and detect MCP router and tool wiring by content. Use declared OpenAPI consumers instead of a fixed MCP schema path.
 
 - Parse balanced parentheses and angle brackets in strict Markdown link targets.
 - Stop Android QA setup before cleanup or service startup when the device probe fails or times out.
@@ -53,19 +53,17 @@
 
 - Install the unpublished CLI from the matching Git release tag. Check install commands and update concrete tags during release preparation.
 
-- Check MCP read and write registry exports instead of requiring the template helper module filename. Accept explicit tool-name registries used by existing products. Ignore declarations in comments and strings.
-
-- Stop requiring template guidance filenames. Keep machine-read files such as MCP tool docs and declared OpenAPI consumers required.
+- Stop requiring template guidance filenames. Keep declared OpenAPI consumers required.
 
 - Check explicit host and container port declarations independently. Keep offset defaults for undeclared ports and reject wrong Compose targets and loopback URLs.
 
 - Let products set `capabilities.analytics = "none"` to omit the mobile PostHog adapter. Generated manifests default to `"posthog"`.
 
-- Check that a root pnpm workspace includes each mobile, web, and MCP app when it has no nested workspace.
+- Check that a root pnpm workspace includes each mobile and web app when it has no nested workspace.
 
 - Install Corepack 0.36.0 before using pnpm in generated CI. Node 26 does not bundle Corepack.
 
-- Refresh generated dependencies: pnpm 12.9.1, ESLint 10.12, MCP SDK 1.32, Tokio 1.53.2, and UUID 1.27. Match mobile Jest types to Jest 29. Update the MCP doctor check and GitHub Actions patch pins. Use Node 26.10 and matching Node types in generated CI.
+- Refresh generated dependencies: pnpm 12.9.1, ESLint 10.12, Tokio 1.53.2, and UUID 1.27. Match mobile Jest types to Jest 29. Update GitHub Actions patch pins. Use Node 26.10 and matching Node types in generated CI.
 
 - Use caret requirements for CLI and generated backend third-party Rust dependencies. Generated Baukit dependencies stay exact.
 
@@ -73,6 +71,6 @@
 - Pin generated development databases to PostgreSQL `18.6-alpine`. Keep the
   volume at `/var/lib/postgresql` for the versioned data directory and document
   local volume recreation on major upgrades.
-- Fixed doctor checks for custom literal ports, loopback compose mappings, PKCE check paths, and MCP URLs supplied by the environment. Products with a port offset still get checks for stale literal defaults.
+- Fixed doctor checks for custom literal ports, loopback compose mappings and PKCE check paths. Products with a port offset still get checks for stale literal defaults.
 - Accepted root pnpm workspaces for web and mobile apps. Allowed `@baukit/auth-node` in web dev dependencies for Keycloak tests and rejected it in web runtime dependencies.
 - Fixed snapshot regeneration from the repository root with `--manifest-path cli/Cargo.toml`.

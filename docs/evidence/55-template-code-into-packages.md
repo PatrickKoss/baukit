@@ -2,6 +2,9 @@
 
 Plan item 19, "Move copied template code into packages". Six helpers, one commit each.
 
+This records earlier package work. The TypeScript MCP template has since
+been removed. Current MCP adoption follows the [migration guide](../migrations/mcp-stdio-to-remote.md).
+
 ## Source revisions
 
 - Baukit baseline `2c8fefb`.
@@ -18,7 +21,6 @@ Plan item 19, "Move copied template code into packages". Six helpers, one commit
 | Route heading focus      | `@baukit/a11y-core` root                             | `templates/mobile/mobile/src/route-heading-focus.ts`         | shipped |
 | Themed OIDC browser flow | `@baukit/auth-native` root and `/expo`               | `templates/mobile/__auth__/mobile/src/auth.ts`, Keycloak theme | shipped |
 | Keycloak e2e helpers     | web auth template (no package)                       | `templates/web/__auth__/web/e2e/stack/keycloak.ts`           | shipped |
-| MCP API origin           | `@baukit/auth-node` root                             | `templates/mcp/mcp/src/cli.ts.jinja`                         | shipped |
 
 No helper was skipped. Two helpers cover only part of what the products copied, and the parts left
 out are named under each helper.
@@ -218,40 +220,12 @@ package in the workspace has Playwright as a dependency. No CI gate runs the sta
 needs the composed Keycloak. `EXPECTED_AUTH_WEB_FILES` does not list the new files, so `baukit
 doctor` does not fail products that lack them.
 
-## 6. MCP API origin validation
+## 6. MCP migration
 
-### Observed copies
-
-- Eigenruhe `mcp/src/api/origin.ts` trims, accepts only an origin, and allows loopback HTTP by
-  default (`allowLoopbackHttp = true`). It detects IPv4 loopback with `isIP`.
-- Hebkit `mcp/src/auth.ts:40-60` allows HTTP on `localhost`, `127.0.0.1`, and `[::1]` only, always,
-  including production.
-- Leitbild `mcp/src/api/client.ts:170-195` accepts an `/api` path prefix and returns it with the
-  origin. It also allows loopback HTTP always.
-- `@baukit/auth-node` `device-flow.ts` had its own https and loopback check for provider endpoints.
-- The MCP template did not validate `<APP>_API_URL`. It only stripped a trailing slash.
-
-### Baukit owner and public contract
-
-`@baukit/auth-node` root adds `parseApiOrigin(value, { allowLoopbackHttp?, label? })`,
-`ApiOriginError` with `reason` (`invalid_url`, `insecure_scheme`, `not_an_origin`), and the
-`ApiOriginOptions` and `ApiOriginErrorReason` types. Loopback means `localhost`, `::1`, or any
-`127.x.x.x`. The device flow now uses the same scheme and loopback check.
-
-The MCP template calls it once at startup with
-`allowLoopbackHttp: process.env['NODE_ENV'] !== 'production'` and the setting name as `label`. A bad
-value exits with `server outcome=failed api_url=<reason>`, and a stdio test asserts that output and
-that the value is never printed.
-
-### Left product-side
-
-Leitbild's `/api` prefix. A path is exactly what `parseApiOrigin` rejects, and a second mode for it
-would be a switch for one product. Leitbild can join the prefix after parsing the origin.
-
-### Failure behavior and privacy boundary
-
-`ApiOriginError` extends `TypeError`. Its message names the setting and the rule, never the value, so
-a URL with embedded credentials does not reach logs.
+The TypeScript MCP template has been removed. Products migrate to the Rust
+remote server through the [migration guide](../migrations/mcp-stdio-to-remote.md).
+`@baukit/auth-node` remains available for web OIDC test clients and other Node
+clients. It is no longer a generated MCP server dependency.
 
 ## Supported runtimes
 
@@ -282,21 +256,21 @@ Package exports gain only additions. The behavior changes are:
 
 Deletion is deferred to each product's adoption pass. Per product:
 
+MCP tools now follow the Rust migration guide above. Delete their old API
+origin helpers with the TypeScript server after porting the tools.
+
 - **Eigenruhe.** Replace `mobile/src/limits.ts`'s parser with a v2 schema and keep its
   `LimitError` message mapping. Delete the class in `mobile/src/analytics.ts`. Keep the DOM fallback
   in `route-heading-focus.ts` or drop it. Delete `mobile/src/auth-themed-browser.ts`, pass
   `appearanceStateDecoration` to `signIn`, and replace the `er1` decoder with the template's by
   making the theme a child of `baukit-accessible`. Replace the Keycloak user setup in
-  `e2e/tests/helpers.ts`. Replace `mcp/src/api/origin.ts` with `parseApiOrigin`.
+  `e2e/tests/helpers.ts`.
 - **Hebkit.** Add a schema to `mobile/src/limits.ts`, which today validates nothing. Delete
   `mobile/src/monitoring/storage.ts`'s class. Delete `mobile/src/utils/accessibility-focus.ts` and
   call `focusAccessibilityElement`. Replace the Keycloak helpers in `web/e2e/tests/helpers.ts`.
-  Replace `validateApiUrl` in `mcp/src/auth.ts` and decide whether production may use loopback
-  HTTP.
 - **Leitbild.** Replace the parser in `mobile/src/limits.ts` and `web/src/limits.ts`. Delete the
   class in `mobile/src/analytics.ts`. Delete the native no-op in `route-heading-focus.ts`, which
-  also turns native focus on. Call `parseApiOrigin` in `mcp/src/api/client.ts` and append `/api`
-  itself.
+  also turns native focus on.
 - **Redemut.** Replace the parser in `mobile/src/limits.ts` and `web/src/limits.ts`. Keep
   `ExpoAnalyticsStorage`. Keep `routeKey` or move it to the call site. Replace the Keycloak user
   setup in `web/e2e/tests/helpers.ts`, keeping its retry only if its stack needs it.
@@ -333,8 +307,7 @@ Deletion is deferred to each product's adoption pass. Per product:
 - `typescript/packages/auth-node/src/api-origin.test.ts`.
 - `templates/backend/__auth__/scripts/tests/keycloak_theme_preferences.test.mjs` and the
   appearance case in `templates/backend/__auth__/scripts/keycloak-theme.browser.mjs`.
-- Template tests: `limits.test.ts` in mobile and web, `route-heading-focus.test.ts`, and the MCP
-  `stdio.test.ts` API URL case.
+- Template tests: `limits.test.ts` in mobile and web, and `route-heading-focus.test.ts`.
 
 ## Follow-up (2026-09-28)
 

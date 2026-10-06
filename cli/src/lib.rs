@@ -24,7 +24,6 @@ static BACKEND_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../template
 static COMMON_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/common");
 static MOBILE_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/mobile");
 static MCP_REMOTE_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/mcp-remote");
-static MCP_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/mcp");
 static WEB_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/web");
 static WORKER_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/worker");
 const REMOTE_MCP_CLIENT_SCOPES: &str = include_str!("../resources/remote-mcp-client-scopes.json");
@@ -176,8 +175,6 @@ pub struct NewOptions {
     pub web: bool,
     pub pwa: bool,
     pub mcp: bool,
-    pub mcp_auth: Option<McpAuthentication>,
-    pub mcp_transport: McpTransport,
     pub auth: Option<AuthProvider>,
     pub force: bool,
     pub into_existing: bool,
@@ -191,29 +188,6 @@ pub struct NewOptions {
 #[serde(rename_all = "lowercase")]
 pub enum AuthProvider {
     Oidc,
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
-#[serde(rename_all = "lowercase")]
-pub enum McpTransport {
-    #[default]
-    Stdio,
-    Remote,
-}
-
-impl McpTransport {
-    fn is_stdio(&self) -> bool {
-        *self == Self::Stdio
-    }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
-#[serde(rename_all = "kebab-case")]
-pub enum McpAuthentication {
-    PersonalToken,
-    NodeOidc,
-    CallerSupplied,
-    ResourceOauth,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
@@ -314,8 +288,8 @@ pub struct Capabilities {
     pub web: bool,
     #[serde(default)]
     pub pwa: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mcp: Option<McpCapability>,
+    #[serde(default)]
+    pub mcp: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth: Option<AuthProvider>,
 }
@@ -326,13 +300,6 @@ pub enum AnalyticsAdapter {
     Posthog,
     #[default]
     None,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct McpCapability {
-    #[serde(default, skip_serializing_if = "McpTransport::is_stdio")]
-    pub transport: McpTransport,
-    pub authentication: McpAuthentication,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -377,7 +344,6 @@ struct TemplateContext {
     baukit_web_typescript_dependencies: String,
     baukit_web_typescript_dev_dependencies: String,
     baukit_mobile_typescript_dependencies: String,
-    baukit_mcp_typescript_dependency: String,
     baukit_manifest: String,
     baukit_dependency_description: String,
     baukit_typescript_dependency_description: String,
@@ -388,10 +354,7 @@ struct TemplateContext {
     web: bool,
     pwa: bool,
     mcp: bool,
-    mcp_remote: bool,
     remote_mcp_client_scopes: &'static str,
-    mcp_auth_node_oidc: bool,
-    mcp_auth_caller_supplied: bool,
     auth_oidc: bool,
     quality_strict: bool,
     port_offset: u32,
@@ -496,7 +459,7 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
     if options.pwa && !options.mobile && !options.web {
         bail!("--pwa requires --mobile or --web to serve the worker");
     }
-    let mcp_authentication = selected_mcp_authentication(options)?;
+    validate_mcp_options(options)?;
     if !options.backend && !options.mobile && !options.web {
         bail!("select at least one capability: --backend, --mobile, or --web");
     }
@@ -527,7 +490,7 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         options.pwa,
         auth_oidc,
         options.worker,
-        options.mcp.then_some(options.mcp_transport),
+        options.mcp,
     )?;
     let context = TemplateContext {
         app_name: options.name.clone(),
@@ -538,7 +501,6 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         baukit_web_typescript_dependencies: dependency.web_typescript,
         baukit_web_typescript_dev_dependencies: dependency.web_dev_typescript,
         baukit_mobile_typescript_dependencies: dependency.mobile_typescript,
-        baukit_mcp_typescript_dependency: dependency.mcp_typescript,
         baukit_manifest: dependency.manifest,
         baukit_dependency_description: dependency.description,
         baukit_typescript_dependency_description: dependency.typescript_description,
@@ -548,11 +510,8 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         mobile: options.mobile,
         web: options.web,
         pwa: options.pwa,
-        mcp: options.mcp && options.mcp_transport == McpTransport::Stdio,
-        mcp_remote: options.mcp && options.mcp_transport == McpTransport::Remote,
+        mcp: options.mcp,
         remote_mcp_client_scopes: REMOTE_MCP_CLIENT_SCOPES,
-        mcp_auth_node_oidc: mcp_authentication == Some(McpAuthentication::NodeOidc),
-        mcp_auth_caller_supplied: mcp_authentication == Some(McpAuthentication::CallerSupplied),
         auth_oidc,
         quality_strict: options.quality == QualityProfile::Strict,
         port_offset: options.port_offset,
@@ -623,16 +582,9 @@ fn resolve_lockfiles(destination: &Path, options: &NewOptions) -> Result<()> {
         )?;
     }
 
-    for capability in [
-        (options.web, "web"),
-        (options.mobile, "mobile"),
-        (
-            options.mcp && options.mcp_transport == McpTransport::Stdio,
-            "mcp",
-        ),
-    ]
-    .into_iter()
-    .filter_map(|(enabled, name)| enabled.then_some(name))
+    for capability in [(options.web, "web"), (options.mobile, "mobile")]
+        .into_iter()
+        .filter_map(|(enabled, name)| enabled.then_some(name))
     {
         if destination
             .join(capability)
@@ -684,7 +636,6 @@ struct DependencyContext {
     web_typescript: String,
     web_dev_typescript: String,
     mobile_typescript: String,
-    mcp_typescript: String,
     manifest: String,
     description: String,
     typescript_description: String,
@@ -697,7 +648,7 @@ fn dependency_context(
     pwa: bool,
     auth_oidc: bool,
     worker: bool,
-    mcp_transport: Option<McpTransport>,
+    mcp: bool,
 ) -> Result<DependencyContext> {
     let mut web_packages = typescript_packages(false, false, web && auth_oidc);
     if pwa && web {
@@ -743,7 +694,7 @@ fn dependency_context(
         if worker || auth_oidc {
             names.push("baukit-jobs");
         }
-        if mcp_transport == Some(McpTransport::Remote) {
+        if mcp {
             names.push("baukit-mcp");
         }
         let cargo = names
@@ -791,27 +742,11 @@ fn dependency_context(
                 .collect::<Vec<_>>()
                 .join(",\n")
         };
-        let mcp_typescript = if mcp_transport == Some(McpTransport::Stdio) {
-            let auth_node = typescript_root.join("packages/auth-node/package.json");
-            if !auth_node.is_file() {
-                bail!(
-                    "--baukit-path {} has no matching TypeScript package `@baukit/auth-node` at {}",
-                    path.display(),
-                    typescript_root.display()
-                );
-            }
-            format!(
-                "    \"@baukit/auth-node\": \"file:{typescript_display}/packages/auth-node\",\n"
-            )
-        } else {
-            String::new()
-        };
         Ok(DependencyContext {
             cargo,
             web_typescript: render_typescript(&web_packages),
             web_dev_typescript: render_leading_entries(&render_typescript(web_dev_packages)),
             mobile_typescript: render_typescript(&mobile_packages),
-            mcp_typescript,
             manifest: format!("source = \"path\"\npath = \"{display}\""),
             description: format!("local path `{}`", path.display()),
             typescript_description: format!("local path `{}`", typescript_root.display()),
@@ -834,7 +769,7 @@ fn dependency_context(
         if worker || auth_oidc {
             names.push("baukit-jobs");
         }
-        if mcp_transport == Some(McpTransport::Remote) {
+        if mcp {
             names.push("baukit-mcp");
         }
         let cargo = names
@@ -854,11 +789,6 @@ fn dependency_context(
             web_typescript: render_typescript(&web_packages),
             web_dev_typescript: render_leading_entries(&render_typescript(web_dev_packages)),
             mobile_typescript: render_typescript(&mobile_packages),
-            mcp_typescript: if mcp_transport == Some(McpTransport::Stdio) {
-                format!("    \"@baukit/auth-node\": \"{version}\",\n")
-            } else {
-                String::new()
-            },
             manifest: format!("source = \"registry\"\nversion = \"{version}\""),
             description: format!("crates.io version `{version}`"),
             typescript_description: format!("npm version `{version}`"),
@@ -963,7 +893,7 @@ fn render_product(
             render_directory(overlay, &environment, context, &mut rendered, true)?;
         }
     }
-    if context.mcp_remote {
+    if context.mcp {
         render_directory(
             &MCP_REMOTE_TEMPLATE,
             &environment,
@@ -971,14 +901,6 @@ fn render_product(
             &mut rendered,
             false,
         )?;
-    }
-    if context.mcp {
-        render_directory(&MCP_TEMPLATE, &environment, context, &mut rendered, false)?;
-        let declaration = rendered
-            .get(Path::new("generated/openapi.d.ts"))
-            .cloned()
-            .ok_or_else(|| anyhow!("backend template has no generated OpenAPI declaration"))?;
-        rendered.insert(PathBuf::from("mcp/src/api/schema.d.ts"), declaration);
     }
     rendered.insert(
         PathBuf::from("baukit.toml"),
@@ -997,30 +919,8 @@ fn render_manifest(context: &TemplateContext, options: &NewOptions) -> String {
     } else {
         format!("port_offset = {}\n", options.port_offset)
     };
-    let mcp = selected_mcp_authentication(options)
-        .expect("MCP options were validated before rendering")
-        .map(|authentication| {
-            format!(
-                "mcp = {{ authentication = \"{}\"{} }}\n",
-                match authentication {
-                    McpAuthentication::PersonalToken => "personal-token",
-                    McpAuthentication::NodeOidc => "node-oidc",
-                    McpAuthentication::CallerSupplied => "caller-supplied",
-                    McpAuthentication::ResourceOauth => "resource-oauth",
-                },
-                if options.mcp_transport == McpTransport::Remote {
-                    ", transport = \"remote\""
-                } else {
-                    ""
-                }
-            )
-        })
-        .unwrap_or_default();
-    let consumers = if options.mcp && options.mcp_transport == McpTransport::Stdio {
-        "[\"generated/openapi.d.ts\", \"mcp/src/api/schema.d.ts\"]"
-    } else {
-        "[\"generated/openapi.d.ts\"]"
-    };
+    let mcp = if options.mcp { "mcp = true\n" } else { "" };
+    let consumers = "[\"generated/openapi.d.ts\"]";
     format!(
         "schema_version = {MANIFEST_SCHEMA_VERSION}\n\
 template_version = \"{}\"\n\
@@ -1074,42 +974,17 @@ consumers = {}\n",
     )
 }
 
-fn selected_mcp_authentication(options: &NewOptions) -> Result<Option<McpAuthentication>> {
+fn validate_mcp_options(options: &NewOptions) -> Result<()> {
     if !options.mcp {
-        if options.mcp_transport == McpTransport::Remote {
-            bail!("--mcp-transport remote requires --mcp");
-        }
-        if options.mcp_auth.is_some() {
-            bail!("--mcp-auth requires --mcp");
-        }
-        return Ok(None);
+        return Ok(());
     }
     if !options.backend {
-        bail!("--mcp requires --backend because the generated package consumes its OpenAPI schema");
+        bail!("--mcp requires --backend because the Rust server runs in the backend workspace");
     }
-    if options.mcp_transport == McpTransport::Remote {
-        if options.auth != Some(AuthProvider::Oidc) {
-            bail!("--mcp-transport remote requires --auth oidc");
-        }
-        if options.mcp_auth.is_some() {
-            bail!("--mcp-auth selects stdio credentials; remote uses resource OAuth");
-        }
-        return Ok(Some(McpAuthentication::ResourceOauth));
+    if options.auth != Some(AuthProvider::Oidc) {
+        bail!("--mcp requires --auth oidc");
     }
-    let authentication = options
-        .mcp_auth
-        .unwrap_or(if options.auth == Some(AuthProvider::Oidc) {
-            McpAuthentication::NodeOidc
-        } else {
-            McpAuthentication::PersonalToken
-        });
-    if authentication == McpAuthentication::ResourceOauth {
-        bail!("resource-oauth requires --mcp-transport remote");
-    }
-    if authentication == McpAuthentication::NodeOidc && options.auth != Some(AuthProvider::Oidc) {
-        bail!("--mcp-auth node-oidc requires --auth oidc");
-    }
-    Ok(Some(authentication))
+    Ok(())
 }
 
 fn render_directory(
@@ -1221,7 +1096,27 @@ pub fn read_manifest(root: &Path) -> Result<Manifest> {
             path.display()
         )
     })?;
-    toml::from_str(&source).with_context(|| format!("could not parse {}", path.display()))
+    let value: toml::Value =
+        toml::from_str(&source).with_context(|| format!("could not parse {}", path.display()))?;
+    if value
+        .get("capabilities")
+        .and_then(|capabilities| capabilities.get("mcp"))
+        .is_some_and(|mcp| !mcp.is_bool())
+    {
+        bail!(
+            "baukit.toml uses the retired MCP capability table; migrate tools to backend/crates/{{name}}-mcp and set capabilities.mcp = true. Follow docs/migrations/mcp-stdio-to-remote.md"
+        );
+    }
+    if root.join("mcp/package.json").is_file()
+        || !doctor_layout::files(&root.join("mcp/src"), "ts")?.is_empty()
+    {
+        bail!(
+            "retired TypeScript MCP server found in mcp/; port its tools to backend/crates/{{name}}-mcp and delete mcp/. Follow docs/migrations/mcp-stdio-to-remote.md"
+        );
+    }
+    value
+        .try_into()
+        .with_context(|| format!("could not parse {}", path.display()))
 }
 
 pub fn doctor(root: &Path) -> Result<Vec<String>> {
@@ -1364,24 +1259,11 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
     if manifest.capabilities.pwa && pwa_app_directory(&manifest.capabilities).is_none() {
         failures.push("the PWA capability requires the web or mobile capability".to_owned());
     }
-    if manifest.capabilities.mcp.is_some() && !manifest.capabilities.backend {
+    if manifest.capabilities.mcp && !manifest.capabilities.backend {
         failures.push("the MCP capability requires the backend capability".to_owned());
     }
-    if manifest.capabilities.mcp.as_ref().is_some_and(|mcp| {
-        (mcp.authentication == McpAuthentication::NodeOidc || mcp.transport == McpTransport::Remote)
-            && manifest.capabilities.auth != Some(AuthProvider::Oidc)
-    }) {
-        let finding = if manifest
-            .capabilities
-            .mcp
-            .as_ref()
-            .is_some_and(|mcp| mcp.transport == McpTransport::Remote)
-        {
-            "remote MCP OAuth requires the OIDC capability"
-        } else {
-            "MCP node-oidc authentication requires the OIDC capability"
-        };
-        failures.push(finding.to_owned());
+    if manifest.capabilities.mcp && manifest.capabilities.auth != Some(AuthProvider::Oidc) {
+        failures.push("remote MCP OAuth requires the OIDC capability".to_owned());
     }
     if manifest.schema_version == MANIFEST_SCHEMA_VERSION {
         successes.push(format!(
@@ -1429,8 +1311,8 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
                 &mut failures,
             )?;
         }
-        if let Some(mcp) = &manifest.capabilities.mcp {
-            validate_mcp_capability(root, &manifest.app.name, mcp, &mut successes, &mut failures)?;
+        if manifest.capabilities.mcp {
+            validate_remote_mcp(root, &manifest.app.name, &mut successes, &mut failures)?;
         }
         let cargo = doctor_layout::backend_manifest(root, &manifest)?;
         if cargo.is_file() {
@@ -1638,34 +1520,6 @@ fn validate_product_constants(
     identity::validate(root, manifest, successes, failures)
 }
 
-fn validate_mcp_keycloak_port(
-    root: &Path,
-    manifest: &Manifest,
-    expected_port: u16,
-    failures: &mut Vec<String>,
-) -> Result<()> {
-    let relative = "mcp/src/product.ts";
-    let path = root.join(relative);
-    if !path.is_file() {
-        return Ok(());
-    }
-    let source = fs::read_to_string(path)?;
-    let Some(port) = source_constant(&source, "KEYCLOAK_PORT") else {
-        failures.push(format!(
-            "generated file `{relative}` does not define KEYCLOAK_PORT"
-        ));
-        return Ok(());
-    };
-    if port.parse::<u16>().ok() != Some(expected_port) {
-        failures.push(if manifest.ports.is_empty() {
-            format!("generated file `{relative}` KEYCLOAK_PORT does not use port offset {}", manifest.port_offset)
-        } else {
-            format!("generated file `{relative}` KEYCLOAK_PORT must match declared host port {expected_port}")
-        });
-    }
-    Ok(())
-}
-
 #[derive(PartialEq)]
 enum MakefileAssignment {
     Default,
@@ -1870,26 +1724,6 @@ fn validate_port_configuration(
             ]);
         }
     }
-    if manifest
-        .capabilities
-        .mcp
-        .as_ref()
-        .is_some_and(|mcp| mcp.transport == McpTransport::Stdio)
-    {
-        expected.push(("mcp/src/cli.ts", format!("localhost:{}", ports.api)));
-        if manifest
-            .capabilities
-            .mcp
-            .as_ref()
-            .is_some_and(|mcp| mcp.authentication == McpAuthentication::NodeOidc)
-        {
-            validate_mcp_keycloak_port(root, manifest, ports.keycloak, failures)?;
-            expected.push((
-                "mcp/src/auth.ts",
-                format!("localhost:{}/realms/", ports.keycloak),
-            ));
-        }
-    }
     let mut expected = expected
         .into_iter()
         .map(|(path, snippet)| (path.to_owned(), snippet))
@@ -1958,10 +1792,7 @@ fn validate_port_configuration(
             } else {
                 source
             };
-            if matches!(
-                relative.as_str(),
-                "mobile/src/api.ts" | "web/src/api.ts" | "mcp/src/cli.ts"
-            ) {
+            if matches!(relative.as_str(), "mobile/src/api.ts" | "web/src/api.ts") {
                 loopback_ports(&source, snippet.contains("/realms/"))
                     .iter()
                     .any(|port| *port != expected_port)
@@ -2003,8 +1834,6 @@ fn is_environment_capable_source(relative: &str) -> bool {
             | "web/src/delete-profile.ts"
             | "web/e2e/stack/keycloak.ts"
             | "scripts/pkce-login.py"
-            | "mcp/src/cli.ts"
-            | "mcp/src/auth.ts"
     ) || relative.ends_with("-bin/src/lib.rs")
 }
 
@@ -2382,124 +2211,13 @@ fn validate_openapi_file(root: &Path, kind: &str, relative: &str, failures: &mut
     }
 }
 
-fn skip_typescript_string(chars: &mut impl Iterator<Item = char>, quote: char) {
-    let mut escaped = false;
-    for character in chars {
-        if escaped {
-            escaped = false;
-        } else if character == '\\' {
-            escaped = true;
-        } else if character == quote {
-            return;
-        }
-    }
-}
-
-fn skip_typescript_block_comment(chars: &mut std::iter::Peekable<impl Iterator<Item = char>>) {
-    while let Some(character) = chars.next() {
-        if character == '*' && chars.next_if_eq(&'/').is_some() {
-            return;
-        }
-    }
-}
-
-fn typescript_code(source: &str) -> String {
-    let mut code = String::with_capacity(source.len());
-    let mut chars = source.chars().peekable();
-    while let Some(character) = chars.next() {
-        match character {
-            '\'' | '"' | '`' => {
-                code.push(' ');
-                skip_typescript_string(&mut chars, character);
-            }
-            '/' if chars.next_if_eq(&'/').is_some() => {
-                code.push(' ');
-                chars.by_ref().find(|character| *character == '\n');
-            }
-            '/' if chars.next_if_eq(&'*').is_some() => {
-                code.push(' ');
-                skip_typescript_block_comment(&mut chars);
-            }
-            character => code.push(character),
-        }
-    }
-    code
-}
-
-fn has_typescript_registry_export(source: &str, names: &[&str]) -> bool {
-    let code = typescript_code(source);
-    let tokens = code.split_whitespace().collect::<Vec<_>>();
-    tokens.windows(3).any(|declaration| {
-        declaration[0] == "export"
-            && declaration[1] == "const"
-            && declaration[2]
-                .split([':', '='])
-                .next()
-                .is_some_and(|binding| names.contains(&binding))
-    })
-}
-
-fn validate_mcp_tool_exports(root: &Path, failures: &mut Vec<String>) -> Result<()> {
-    for (relative, names) in [
-        ("mcp/src/tools/read.ts", ["READ_TOOLS", "READ_TOOL_NAMES"]),
-        (
-            "mcp/src/tools/write.ts",
-            ["WRITE_TOOLS", "WRITE_TOOL_NAMES"],
-        ),
-    ] {
-        let path = root.join(relative);
-        if !path.is_file() {
-            continue;
-        }
-        let source = fs::read_to_string(path)?;
-        if !has_typescript_registry_export(&source, &names) {
-            failures.push(format!(
-                "{relative} must export an explicit tool registry ({})",
-                names.join(" or ")
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn validate_mcp_document_inputs(root: &Path, failures: &mut Vec<String>) -> Result<()> {
-    for path in doctor_layout::files(&root.join("mcp"), "mjs")? {
-        let source = fs::read_to_string(&path)?;
-        for target in source.split(['\'', '"']).filter(|value| {
-            value.starts_with("../") && value.ends_with(".md") && !value.contains('\n')
-        }) {
-            let mut input = path.parent().context("MCP script directory")?.to_path_buf();
-            for component in Path::new(target).components() {
-                match component {
-                    std::path::Component::ParentDir => {
-                        input.pop();
-                    }
-                    std::path::Component::Normal(part) => input.push(part),
-                    _ => {}
-                }
-            }
-            if input.starts_with(root) && !input.is_file() {
-                failures.push(format!(
-                    "missing MCP document input `{}`",
-                    input.strip_prefix(root)?.display()
-                ));
-            }
-        }
-    }
-    Ok(())
-}
-
 fn validate_remote_mcp(
     root: &Path,
     name: &str,
-    mcp: &McpCapability,
     successes: &mut Vec<String>,
     failures: &mut Vec<String>,
 ) -> Result<()> {
     let before = failures.len();
-    if mcp.authentication != McpAuthentication::ResourceOauth {
-        failures.push("remote MCP requires resource-oauth authentication".to_owned());
-    }
     let crate_path = format!("backend/crates/{name}-mcp");
     for (relative, label, symbols) in [
         (
@@ -2513,7 +2231,7 @@ fn validate_remote_mcp(
             vec![
                 "baukit_mcp::router(",
                 "api.merge(mcp)",
-                "ItemTools::new(",
+                "_mcp::",
                 "config.product.mcp",
             ],
         ),
@@ -2521,7 +2239,7 @@ fn validate_remote_mcp(
             format!("{crate_path}/src/lib.rs"),
             "tool registration and scope enforcement",
             vec![
-                "impl ToolService for ItemTools",
+                "impl ToolService for",
                 "fn tools(",
                 "Self::definitions()",
                 "required_scopes:",
@@ -2569,71 +2287,6 @@ fn validate_remote_mcp(
     }
     if failures.len() == before {
         successes.push("remote MCP router, resource metadata, OAuth layer, scoped tools, and drift check are wired".to_owned());
-    }
-    Ok(())
-}
-
-fn validate_mcp_capability(
-    root: &Path,
-    name: &str,
-    mcp: &McpCapability,
-    successes: &mut Vec<String>,
-    failures: &mut Vec<String>,
-) -> Result<()> {
-    if mcp.transport == McpTransport::Remote {
-        return validate_remote_mcp(root, name, mcp, successes, failures);
-    }
-    let initial_failure_count = failures.len();
-    validate_mcp_tool_exports(root, failures)?;
-    let sources = doctor_layout::files(&root.join("mcp/src"), "ts")?
-        .into_iter()
-        .filter(|path| !path.to_string_lossy().ends_with(".test.ts"))
-        .map(fs::read_to_string)
-        .collect::<std::io::Result<Vec<_>>>()?;
-    let code = typescript_code(&sources.join("\n"));
-    for (label, symbol) in [
-        ("server", "new McpServer"),
-        ("stdio transport", "new StdioServerTransport"),
-        ("tool registration", ".registerTool("),
-    ] {
-        if !code.contains(symbol) {
-            failures.push(format!("missing MCP {label} wiring (expected {symbol})"));
-        }
-    }
-    validate_mcp_document_inputs(root, failures)?;
-
-    let package_path = root.join("mcp/package.json");
-    if package_path.is_file() {
-        let source = fs::read_to_string(&package_path)
-            .with_context(|| format!("could not read {}", package_path.display()))?;
-        let package: PackageDependencies =
-            serde_json::from_str(&source).context("could not parse mcp/package.json")?;
-        if package
-            .package_manager
-            .as_deref()
-            .is_some_and(|manager| manager.starts_with("pnpm@"))
-            || root.join("mcp/pnpm-lock.yaml").is_file()
-        {
-            validate_pnpm_workspace(root, "mcp", failures)?;
-        }
-        if !source.contains("\"@modelcontextprotocol/sdk\"")
-            && !source.contains("\"@modelcontextprotocol/server\"")
-        {
-            failures.push("mcp/package.json must depend on an MCP server package".to_owned());
-        }
-        if !source.contains("\"@baukit/auth-node\"") {
-            failures.push("mcp/package.json must depend on `@baukit/auth-node`".to_owned());
-        }
-    }
-
-    if !package_path.is_file() {
-        failures.push("missing MCP package.json".to_owned());
-    }
-    if failures.len() == initial_failure_count {
-        successes.push(format!(
-            "MCP package files and {:?} authentication are configured",
-            mcp.authentication
-        ));
     }
     Ok(())
 }
@@ -2738,8 +2391,6 @@ fn sql_creates_table(source: &str, table: &str) -> bool {
 
 #[derive(Deserialize)]
 struct PackageDependencies {
-    #[serde(default, rename = "packageManager")]
-    package_manager: Option<String>,
     #[serde(default)]
     dependencies: BTreeMap<String, String>,
     #[serde(default, rename = "devDependencies")]
@@ -3062,7 +2713,6 @@ mod generator_tests {
             baukit_web_typescript_dependencies: String::new(),
             baukit_web_typescript_dev_dependencies: String::new(),
             baukit_mobile_typescript_dependencies: String::new(),
-            baukit_mcp_typescript_dependency: String::new(),
             baukit_manifest: String::new(),
             baukit_dependency_description: String::new(),
             baukit_typescript_dependency_description: String::new(),
@@ -3073,10 +2723,7 @@ mod generator_tests {
             web: false,
             pwa: false,
             mcp: false,
-            mcp_remote: false,
             remote_mcp_client_scopes: REMOTE_MCP_CLIENT_SCOPES,
-            mcp_auth_node_oidc: false,
-            mcp_auth_caller_supplied: false,
             auth_oidc: false,
             quality_strict: false,
             port_offset: 0,
@@ -3232,7 +2879,7 @@ mod doctor_tests {
             mobile,
             web,
             pwa: true,
-            mcp: None,
+            mcp: false,
             auth: None,
         };
 

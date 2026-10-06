@@ -185,10 +185,10 @@ class ReleaseTrainFilesTest(unittest.TestCase):
         shipped, previous = history.split("## [0.6.0] - 2026-10-02", 1)
         self.assertIn("React and the react-dom override", pending)
         self.assertIn("Update pnpm to 12.9.1", shipped)
-        self.assertIn("Added `dateTimeInput`", shipped)
+        self.assertIn("development Keycloak image", shipped)
         self.assertNotIn("Changed generated API DTOs", shipped)
         self.assertIn("Changed generated API DTOs", previous)
-        self.assertIn("Added the opt-in MCP stdio package", previous)
+        self.assertIn("Changed `backend/Dockerfile`", previous)
         self.assertNotIn("pinned pnpm to 12.7.0", source)
 
     def test_template_changelog_separates_072_and_073(self):

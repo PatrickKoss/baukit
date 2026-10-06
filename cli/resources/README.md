@@ -9,4 +9,4 @@ claim, and the standard scopes used by the backend, web, and mobile clients.
 
 When changing the Keycloak image version, export OIDC client scopes from a
 fresh realm and compare their mapper settings. Keep `items:read`, run the
-generator tests, and run `make mcp-remote-fixture-gate` to verify real tokens.
+generator tests, and run `make mcp-fixture-gate` to verify real tokens.

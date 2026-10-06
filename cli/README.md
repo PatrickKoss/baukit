@@ -40,7 +40,7 @@ proposed manifest and strict-check behavior.
 
 Each frontend can have its own `pnpm-workspace.yaml`. A product can instead
 use one root workspace whose `packages` patterns include every enabled app
-(`mobile`, `web`, and pnpm-managed `mcp`). Doctor checks inclusions and exclusions in those
+(`mobile` and `web`). Doctor checks inclusions and exclusions in those
 patterns.
 
 `capabilities.analytics` selects the mobile analytics adapter. It accepts
@@ -72,16 +72,15 @@ for the generated images. Doctor checks literal Compose mappings and parameter
 defaults against declarations, and checks loopback source URLs against host
 ports. Runtime environment overrides remain product-owned.
 
-Doctor checks identity where code consumes it. Analytics context names and MCP
-server names must match `app.name`. It follows local constants and relative
+Doctor checks identity where code consumes it. Analytics context names must match `app.name`. It follows local constants and relative
 named imports, including renamed bindings. Expo's slug can use a product's
 public name. Backend config consumers must agree on one namespace; authenticated
 backends use `app.name`. An unauthenticated backend can use a different config
 namespace, which its analytics context can also use. For example, SLS uses
 `sl` for packages and `solo-leveling-system` for config and analytics.
 
-A product needs a consumed identity source. Doctor accepts inline Expo config,
-MCP server metadata, and backend `ConfigLoader::new` calls. It does not require
+A product needs a consumed identity source. Doctor accepts inline Expo config
+and backend `ConfigLoader::new` calls. It does not require
 `src/product.ts` or a library constant named `PRODUCT`. Missing imported bindings,
 empty identities, and conflicting backend namespaces still fail. These static
 checks cover literal names and constants; compilation checks computed values.
@@ -90,15 +89,10 @@ Doctor does not require the template's guidance filenames. Products can write
 API policy, fake-provider, sync-table, navigation, observability, budget, and
 local-data-retention guidance under their own names. Generated links should
 be updated when a document moves. Doctor checks the declared OpenAPI schema and
-consumers. MCP can use a shared consumer outside `mcp/`. It finds server
-construction, stdio transport and tool
-registration in MCP source files, including renamed modules. Referenced tool
-documents stay required when a script reads them. Products can choose their
-build, lint, test and guidance filenames.
-
-Doctor accepts exported `READ_TOOLS` and `WRITE_TOOLS` metadata, or
-`READ_TOOL_NAMES` and `WRITE_TOOL_NAMES` catalogs in the template's registry
-modules. A product can register tools directly in its server instead.
+consumers. For MCP, it checks the Rust router, OAuth configuration, metadata
+route, scoped tool registration and schema drift test. A retired TypeScript
+server or MCP capability table receives a migration finding. Follow the
+[MCP migration guide](../docs/migrations/mcp-stdio-to-remote.md).
 
 ## Doctor paths for existing products
 

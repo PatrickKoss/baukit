@@ -38,6 +38,9 @@ class MobileReactVersionsTest(unittest.TestCase):
                         resolved = tuple(map(int, expected_version.split(".")))
                         self.assertEqual(resolved[:2], bundled[:2], name)
                         self.assertGreaterEqual(resolved, bundled, name)
+                if directory == "__auth__/mobile":
+                    for name, expected in published["authNativeModules"].items():
+                        self.assertEqual(package["dependencies"][name], expected.removeprefix("~"), name)
                 override = re.search(r"^  react-dom: (.+)$", (base / "pnpm-workspace.yaml").read_text(), re.MULTILINE)
                 self.assertIsNotNone(override)
                 self.assertEqual(override[1], published["bundledNativeModules"]["react-dom"])

@@ -29,6 +29,14 @@ fn sources(directory: &Path, extension: &str, output: &mut Vec<PathBuf>) -> Resu
     Ok(())
 }
 
+fn skip_block_comment(chars: &mut std::iter::Peekable<impl Iterator<Item = char>>) {
+    while let Some(character) = chars.next() {
+        if character == '*' && chars.next_if_eq(&'/').is_some() {
+            return;
+        }
+    }
+}
+
 pub(super) fn uncommented(source: &str, rust: bool) -> String {
     let mut result = String::new();
     let mut chars = source.chars().peekable();
@@ -56,7 +64,7 @@ pub(super) fn uncommented(source: &str, rust: bool) -> String {
             chars.by_ref().find(|value| *value == '\n');
             result.push('\n');
         } else if character == '/' && chars.next_if_eq(&'*').is_some() {
-            crate::skip_typescript_block_comment(&mut chars);
+            skip_block_comment(&mut chars);
             result.push(' ');
         } else {
             result.push(character);
@@ -245,7 +253,6 @@ fn typescript_identities(
     for (directory, enabled) in [
         ("mobile", manifest.capabilities.mobile),
         ("web", manifest.capabilities.web),
-        ("mcp", manifest.capabilities.mcp.is_some()),
     ] {
         if !enabled {
             continue;
@@ -264,9 +271,6 @@ fn typescript_identities(
             let code = identity_code(&source, false);
             let consumer = if let Some(context) = consumer(&source, &code, "new AnalyticsClient") {
                 field(context, "app").map(|value| (value, Some(manifest.app.name.clone())))
-            } else if let Some(server) = consumer(&source, &code, "new McpServer(") {
-                field(server, "name")
-                    .map(|value| (value, Some(format!("{}-mcp", manifest.app.name))))
             } else if path.ends_with("app.config.ts") {
                 field(&source, "slug").map(|value| (value, None))
             } else {
@@ -287,27 +291,6 @@ fn typescript_identities(
                     },
                     failures,
                 )?;
-            }
-            if directory == "mcp" {
-                for (index, _) in code.match_indices("process.env[") {
-                    let Some(statement) =
-                        source[index + "process.env[".len()..].strip_prefix("`${")
-                    else {
-                        continue;
-                    };
-                    let Some((binding, _)) = statement.split_once('}') else {
-                        continue;
-                    };
-                    check_identity(
-                        root,
-                        &path,
-                        &source,
-                        binding,
-                        Some(&manifest.app.name.replace('-', "_").to_ascii_uppercase()),
-                        &no_aliases,
-                        failures,
-                    )?;
-                }
             }
         }
     }

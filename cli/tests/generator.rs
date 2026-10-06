@@ -6,8 +6,7 @@ use std::{
 };
 
 use baukit_cli::{
-    AuthProvider, McpAuthentication, McpTransport, NewOptions, OpenApiCompatibility,
-    QualityProfile, doctor, generate_new,
+    AuthProvider, NewOptions, OpenApiCompatibility, QualityProfile, doctor, generate_new,
 };
 use sha2::{Digest, Sha256};
 
@@ -27,8 +26,6 @@ fn options(parent: &Path, name: &str) -> NewOptions {
         web: false,
         pwa: false,
         mcp: false,
-        mcp_auth: None,
-        mcp_transport: McpTransport::Stdio,
         auth: None,
         force: false,
         into_existing: false,
@@ -49,8 +46,6 @@ fn frontend_options(parent: &Path, name: &str, mobile: bool, web: bool) -> NewOp
         web,
         pwa: false,
         mcp: false,
-        mcp_auth: None,
-        mcp_transport: McpTransport::Stdio,
         auth: None,
         force: false,
         into_existing: false,
@@ -136,11 +131,7 @@ fn longest_application_name_generates_every_capability() -> anyhow::Result<()> {
     let root = generate_new(&generated)?;
     let manifest = baukit_cli::read_manifest(&root)?;
     assert_eq!(manifest.app.name, name);
-    for path in [
-        "mcp/src/product.ts",
-        "mobile/src/product.ts",
-        "web/src/product.ts",
-    ] {
+    for path in ["mobile/src/product.ts", "web/src/product.ts"] {
         assert!(
             fs::read_to_string(root.join(path))?
                 .contains(&format!("export const PRODUCT_NAME = '{name}';"))
@@ -645,7 +636,7 @@ fn quality_flag_generates_the_strict_profile() -> anyhow::Result<()> {
 }
 
 #[test]
-fn mcp_flag_generates_the_package_and_records_the_default_authentication() -> anyhow::Result<()> {
+fn mcp_flag_generates_the_rust_server_and_records_the_capability() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let output = Command::new(env!("CARGO_BIN_EXE_baukit"))
         .args([
@@ -653,6 +644,8 @@ fn mcp_flag_generates_the_package_and_records_the_default_authentication() -> an
             "mcp-flag",
             "--backend",
             "--mcp",
+            "--auth",
+            "oidc",
             "--skip-lockfiles",
             "--dir",
         ])
@@ -667,11 +660,12 @@ fn mcp_flag_generates_the_package_and_records_the_default_authentication() -> an
 
     let root = parent.path().join("mcp-flag");
     let manifest = baukit_cli::read_manifest(&root)?;
-    assert_eq!(
-        manifest.capabilities.mcp.map(|mcp| mcp.authentication),
-        Some(McpAuthentication::PersonalToken)
+    assert!(manifest.capabilities.mcp);
+    assert!(
+        root.join("backend/crates/mcp-flag-mcp/Cargo.toml")
+            .is_file()
     );
-    assert!(root.join("mcp/package.json").is_file());
+    assert!(!root.join("mcp").exists());
     Ok(())
 }
 
@@ -1571,31 +1565,12 @@ fn doctor_validates_a_local_generated_product() -> anyhow::Result<()> {
 fn doctor_validates_long_name_products_of_every_flavor() -> anyhow::Result<()> {
     for offset in [0, 100] {
         for (backend, mobile, web, mcp, auth) in [
-            (true, false, false, None, None),
-            (false, true, false, None, None),
-            (false, false, true, None, None),
-            (true, true, true, None, None),
-            (
-                true,
-                false,
-                false,
-                Some(McpAuthentication::PersonalToken),
-                None,
-            ),
-            (
-                true,
-                false,
-                false,
-                Some(McpAuthentication::CallerSupplied),
-                None,
-            ),
-            (
-                true,
-                true,
-                true,
-                Some(McpAuthentication::NodeOidc),
-                Some(AuthProvider::Oidc),
-            ),
+            (true, false, false, false, None),
+            (false, true, false, false, None),
+            (false, false, true, false, None),
+            (true, true, true, false, None),
+            (true, false, false, true, Some(AuthProvider::Oidc)),
+            (true, true, true, true, Some(AuthProvider::Oidc)),
         ] {
             let parent = tempfile::tempdir()?;
             let mut local = options(parent.path(), "long-product-name-fixture");
@@ -1603,8 +1578,7 @@ fn doctor_validates_long_name_products_of_every_flavor() -> anyhow::Result<()> {
             local.worker = backend;
             local.mobile = mobile;
             local.web = web;
-            local.mcp = mcp.is_some();
-            local.mcp_auth = mcp;
+            local.mcp = mcp;
             local.auth = auth;
             local.port_offset = offset;
             local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
@@ -1634,31 +1608,12 @@ fn doctor_rejects_drift_in_product_constants_and_url_defaults() -> anyhow::Resul
     local.mobile = true;
     local.web = true;
     local.mcp = true;
-    local.mcp_auth = Some(McpAuthentication::NodeOidc);
     local.auth = Some(AuthProvider::Oidc);
     local.port_offset = 100;
     local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
     let root = generate_new(&local)?;
     doctor(&root)?;
     for (relative, original, drifted, diagnostic) in [
-        (
-            "mcp/src/product.ts",
-            "KEYCLOAK_PORT = 8181",
-            "KEYCLOAK_PORT = 9999",
-            "KEYCLOAK_PORT",
-        ),
-        (
-            "mcp/src/product.ts",
-            "LONG_PRODUCT_NAME_FIXTURE",
-            "OTHER_PRODUCT",
-            "ENV_PREFIX",
-        ),
-        (
-            "mcp/src/product.ts",
-            "long-product-name-fixture",
-            "other-product",
-            "PRODUCT_NAME",
-        ),
         (
             "web/src/product.ts",
             "long-product-name-fixture",
@@ -1670,18 +1625,6 @@ fn doctor_rejects_drift_in_product_constants_and_url_defaults() -> anyhow::Resul
             "long-product-name-fixture",
             "other-product",
             "PRODUCT_NAME",
-        ),
-        (
-            "mcp/src/auth.ts",
-            "${KEYCLOAK_PORT}",
-            "9999",
-            "port offset 100",
-        ),
-        (
-            "mcp/src/cli.ts",
-            "localhost:8180",
-            "localhost:9999",
-            "port offset 100",
         ),
         (
             "web/src/auth.ts",
@@ -1738,24 +1681,6 @@ fn doctor_rejects_drift_in_product_constants_and_url_defaults() -> anyhow::Resul
             "port offset 100",
         ),
         (
-            "mcp/src/product.ts",
-            "KEYCLOAK_PORT = 8181",
-            "KEYCLOAK_PORT = 99999",
-            "KEYCLOAK_PORT",
-        ),
-        (
-            "mcp/src/product.ts",
-            "KEYCLOAK_PORT = 8181",
-            "KEYCLOAK_PORT = -1",
-            "KEYCLOAK_PORT",
-        ),
-        (
-            "mcp/src/product.ts",
-            "KEYCLOAK_PORT = 8181",
-            "RENAMED_PORT = 8181",
-            "KEYCLOAK_PORT",
-        ),
-        (
             "backend/crates/long-product-name-fixture-bin/src/lib.rs",
             "8181/realms",
             "9999/realms",
@@ -1795,11 +1720,7 @@ fn doctor_accepts_variable_url_configuration_and_formatted_constants() -> anyhow
     local.port_offset = 100;
     local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
     let root = generate_new(&local)?;
-    for relative in [
-        "mobile/src/product.ts",
-        "web/src/product.ts",
-        "mcp/src/product.ts",
-    ] {
+    for relative in ["mobile/src/product.ts", "web/src/product.ts"] {
         let path = root.join(relative);
         let source = fs::read_to_string(&path)?;
         fs::write(
@@ -1834,10 +1755,6 @@ fn doctor_accepts_variable_url_configuration_and_formatted_constants() -> anyhow
         (
             "web/e2e/stack/keycloak.ts",
             "export const url = process.env.E2E_KEYCLOAK_URL;",
-        ),
-        (
-            "mcp/src/auth.ts",
-            "export const issuer = process.env.PRODUCT_OIDC_ISSUER;",
         ),
     ] {
         let path = root.join(relative);
@@ -1879,19 +1796,6 @@ fn doctor_distinguishes_missing_constants_from_wrong_values() -> anyhow::Result<
             "constant-diagnostics",
             "wrong-product",
         ),
-        (
-            "mcp/src/product.ts",
-            "PRODUCT_NAME",
-            "constant-diagnostics",
-            "wrong-product",
-        ),
-        (
-            "mcp/src/product.ts",
-            "ENV_PREFIX",
-            "CONSTANT_DIAGNOSTICS",
-            "WRONG_PREFIX",
-        ),
-        ("mcp/src/product.ts", "KEYCLOAK_PORT", "8181", "9999"),
         (
             "backend/crates/constant-diagnostics-bin/src/bin/api.rs",
             "PRODUCT",
@@ -2347,32 +2251,6 @@ fn doctor_checks_pkce_ports_without_requiring_the_me_path() -> anyhow::Result<()
 }
 
 #[test]
-fn doctor_accepts_mcp_urls_from_the_environment_and_checks_literal_defaults() -> anyhow::Result<()>
-{
-    let parent = tempfile::tempdir()?;
-    let mut local = options(parent.path(), "mcp-url");
-    local.mcp = true;
-    local.port_offset = 100;
-    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
-    let root = generate_new(&local)?;
-    let script = root.join("mcp/src/cli.ts");
-    let source = fs::read_to_string(&script)?;
-    fs::write(
-        &script,
-        source.replace("'http://localhost:8180'", "process.env.PRODUCT_API_URL"),
-    )?;
-    doctor(&root)?;
-    fs::write(&script, source.replace("localhost:8180", "localhost:8080"))?;
-    let error = doctor(&root).expect_err("configured offsets must reject a stale MCP default");
-    assert!(
-        error
-            .to_string()
-            .contains("mcp/src/cli.ts` does not use port offset 100")
-    );
-    Ok(())
-}
-
-#[test]
 fn doctor_accepts_web_without_unused_keycloak_test_helpers() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "web-without-e2e");
@@ -2424,79 +2302,6 @@ fn doctor_accepts_auth_node_for_web_e2e_and_rejects_it_at_runtime() -> anyhow::R
 }
 
 #[test]
-fn doctor_checks_mcp_registry_exports_without_requiring_the_helper_filename() -> anyhow::Result<()>
-{
-    let parent = tempfile::tempdir()?;
-    let mut local = options(parent.path(), "registry-exports");
-    local.mcp = true;
-    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
-    let root = generate_new(&local)?;
-    let helper = root.join("mcp/src/tools/registry.ts");
-    fs::rename(&helper, root.join("mcp/src/tools/api.ts"))?;
-    for relative in [
-        "mcp/src/tools/read.ts",
-        "mcp/src/tools/write.ts",
-        "mcp/src/server.ts",
-    ] {
-        let path = root.join(relative);
-        fs::write(
-            &path,
-            fs::read_to_string(&path)?.replace("registry.js", "api.js"),
-        )?;
-    }
-    doctor(&root)?;
-    for (relative, name) in [
-        ("mcp/src/tools/read.ts", "READ_TOOLS"),
-        ("mcp/src/tools/write.ts", "WRITE_TOOLS"),
-    ] {
-        let path = root.join(relative);
-        let source = fs::read_to_string(&path)?;
-        fs::write(
-            &path,
-            source.replace(&format!("export const {name}"), &format!("const {name}")),
-        )?;
-        assert!(
-            doctor(&root)
-                .expect_err("a private collection cannot declare the product registry")
-                .to_string()
-                .contains(&format!("{relative} must export an explicit tool registry"))
-        );
-        fs::write(&path, source)?;
-    }
-    for (relative, name) in [
-        ("mcp/src/tools/read.ts", "READ_TOOL_NAMES"),
-        ("mcp/src/tools/write.ts", "WRITE_TOOL_NAMES"),
-    ] {
-        fs::write(
-            root.join(relative),
-            format!("export const {name} = ['get_me'] as const;\n"),
-        )?;
-    }
-    doctor(&root)?;
-    for source in [
-        "// export const READ_TOOL_NAMES = ['get_me'];\nconst READ_TOOL_NAMES = ['get_me'];\n",
-        "/*\nexport const READ_TOOL_NAMES = ['get_me'];\n*/\n",
-        "const documentation = `\nexport const READ_TOOL_NAMES = ['get_me'];\n`;\n",
-        "const documentation = \"escaped \\\" export const READ_TOOL_NAMES = []\";\n",
-        "export const READ_TOOL_NAMES_EXTRA = ['get_me'];\n",
-    ] {
-        fs::write(root.join("mcp/src/tools/read.ts"), source)?;
-        assert!(
-            doctor(&root)
-                .expect_err("comments and documentation strings are not exports")
-                .to_string()
-                .contains("read.ts must export")
-        );
-    }
-    fs::write(
-        root.join("mcp/src/tools/read.ts"),
-        "export /* registry metadata */ const\nREAD_TOOL_NAMES = ['get_me'];\n",
-    )?;
-    doctor(&root)?;
-    Ok(())
-}
-
-#[test]
 fn doctor_accepts_product_guidance_names_and_keeps_machine_read_docs() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "product-docs");
@@ -2523,12 +2328,12 @@ fn doctor_accepts_product_guidance_names_and_keeps_machine_read_docs() -> anyhow
         "# API policy\n\nCheck generated clients against OpenAPI in CI.\n",
     )?;
     doctor(&root)?;
-    fs::remove_file(root.join("mcp/docs/tools.md"))?;
+    fs::remove_file(root.join("docs/remote-mcp.md"))?;
     assert!(
         doctor(&root)
-            .expect_err("MCP docs:check reads the generated tool document")
+            .expect_err("remote MCP documentation is required")
             .to_string()
-            .contains("missing MCP document input `mcp/docs/tools.md`")
+            .contains("missing remote MCP artifact `docs/remote-mcp.md`")
     );
     Ok(())
 }
@@ -2604,18 +2409,17 @@ fn doctor_requires_root_workspace_membership_for_every_app() -> anyhow::Result<(
     let mut local = options(parent.path(), "workspace-members");
     local.mobile = true;
     local.web = true;
-    local.mcp = true;
     local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
     let root = generate_new(&local)?;
     doctor(&root)?;
-    for capability in ["mobile", "web", "mcp"] {
+    for capability in ["mobile", "web"] {
         fs::remove_file(root.join(capability).join("pnpm-workspace.yaml"))?;
     }
     for packages in [
-        "['mobile', 'web', 'mcp']",
+        "['mobile', 'web']",
         "['*']",
-        "['./mobile/', '{web,mcp}']",
-        "['**/mobile', 'web', 'mcp']",
+        "['./mobile/', '{web}']",
+        "['**/mobile', 'web']",
     ] {
         fs::write(
             root.join("pnpm-workspace.yaml"),
@@ -2623,12 +2427,12 @@ fn doctor_requires_root_workspace_membership_for_every_app() -> anyhow::Result<(
         )?;
         doctor(&root)?;
     }
-    for capability in ["mobile", "web", "mcp"] {
+    for capability in ["mobile", "web"] {
         for packages in [
             format!("['*', '!{capability}']"),
             format!(
                 "['packages/*', '{}']",
-                ["mobile", "web", "mcp"]
+                ["mobile", "web"]
                     .into_iter()
                     .filter(|name| *name != capability)
                     .collect::<Vec<_>>()
@@ -2647,33 +2451,6 @@ fn doctor_requires_root_workspace_membership_for_every_app() -> anyhow::Result<(
             );
         }
     }
-    Ok(())
-}
-
-#[test]
-fn doctor_does_not_require_a_pnpm_workspace_for_an_npm_mcp_app() -> anyhow::Result<()> {
-    let parent = tempfile::tempdir()?;
-    let mut local = options(parent.path(), "npm-mcp");
-    local.mcp = true;
-    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
-    let root = generate_new(&local)?;
-    let path = root.join("mcp/package.json");
-    let mut package: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path)?)?;
-    package
-        .as_object_mut()
-        .expect("package object")
-        .remove("packageManager");
-    fs::write(&path, serde_json::to_string_pretty(&package)?)?;
-    fs::remove_file(root.join("mcp/pnpm-workspace.yaml"))?;
-    fs::write(root.join("pnpm-workspace.yaml"), "packages: ['mobile']\n")?;
-    doctor(&root)?;
-    fs::write(root.join("mcp/pnpm-lock.yaml"), "lockfileVersion: '9.0'\n")?;
-    assert!(
-        doctor(&root)
-            .expect_err("an MCP pnpm lockfile selects the pnpm workspace check")
-            .to_string()
-            .contains("packages do not include `mcp`")
-    );
     Ok(())
 }
 
@@ -2914,113 +2691,27 @@ fn doctor_rejects_an_auth_redis_port_without_the_offset() -> anyhow::Result<()> 
 }
 
 #[test]
-fn mcp_generation_matches_golden_tree_and_records_personal_token_auth() -> anyhow::Result<()> {
-    let first_parent = tempfile::tempdir()?;
-    let second_parent = tempfile::tempdir()?;
-    let mut first_options = options(first_parent.path(), "snapshot-app");
-    first_options.mcp = true;
-    let mut second_options = options(second_parent.path(), "snapshot-app");
-    second_options.mcp = true;
-
-    let first = generate_new(&first_options)?;
-    let second = generate_new(&second_options)?;
-    let first_tree = read_tree(&first)?;
-    assert_eq!(first_tree, read_tree(&second)?);
-    assert_eq!(
-        render_hash_snapshot(&first_tree),
-        include_str!("snapshots/mcp.tree")
-    );
-
-    let manifest = baukit_cli::read_manifest(&first)?;
-    assert_eq!(
-        manifest
-            .capabilities
-            .mcp
-            .as_ref()
-            .map(|mcp| mcp.authentication),
-        Some(McpAuthentication::PersonalToken)
-    );
-    assert_eq!(
-        manifest.openapi.consumers(),
-        ["generated/openapi.d.ts", "mcp/src/api/schema.d.ts"]
-    );
-    let package = fs::read_to_string(first.join("mcp/package.json"))?;
-    assert!(package.contains("\"@modelcontextprotocol/sdk\": \"1.32.0\""));
-    assert!(package.contains("\"@baukit/auth-node\""));
-    assert!(!first.join("mcp/openapi.json").exists());
-    assert!(first.join("mcp/src/api/schema.d.ts").is_file());
-    assert!(
-        fs::read_to_string(first.join("mcp/src/tools/read.ts"))?.contains("readOnlyHint: true")
-    );
-    assert!(fs::read_to_string(first.join("mcp/src/tools/write.ts"))?.contains("WRITE_TOOLS = []"));
-    let results = doctor(&first)?;
-    assert!(
-        results
-            .iter()
-            .any(|result| result.contains("MCP package files"))
-    );
-    Ok(())
-}
-
-#[test]
-fn mcp_product_constants_wrap_long_literals_in_plain_exports() -> anyhow::Result<()> {
-    let name = "a".repeat(64);
-    let prefix = name.to_ascii_uppercase();
-    let rendered = minijinja::Environment::new().render_str(
-        include_str!("../../templates/mcp/mcp/src/product.ts.jinja"),
-        minijinja::context!(context => minijinja::context!(
-            app_name => &name,
-            app_env => &prefix,
-            keycloak_host_port => 8081,
-        )),
-    )?;
-    assert_eq!(
-        rendered,
-        format!(
-            "export const PRODUCT_NAME =\n  '{name}';\nexport const ENV_PREFIX =\n  '{prefix}';\nexport const KEYCLOAK_PORT = 8081;"
-        )
-    );
-    Ok(())
-}
-
-#[test]
 fn typescript_source_is_independent_of_product_name_length() -> anyhow::Result<()> {
     let maximum_name = "a".repeat(41);
-    for authentication in [
-        McpAuthentication::PersonalToken,
-        McpAuthentication::NodeOidc,
-        McpAuthentication::CallerSupplied,
-    ] {
+    for auth in [None, Some(AuthProvider::Oidc)] {
         let parent = tempfile::tempdir()?;
         let mut baseline = None;
         for name in ["fixture", "solo-leveling-system-companion", &maximum_name] {
             let mut generated = options(parent.path(), name);
-            generated.mcp = true;
             generated.web = true;
             generated.mobile = true;
-            generated.mcp_auth = Some(authentication);
             generated.port_offset = 100;
-            if authentication == McpAuthentication::NodeOidc {
-                generated.auth = Some(AuthProvider::Oidc);
-            }
+            generated.auth = auth;
             let root = generate_new(&generated)?;
             let mut source = read_tree(&root)?;
             source.retain(|path, _| {
-                ["mcp", "web", "mobile"]
+                ["web", "mobile"]
                     .iter()
                     .any(|flavor| path.starts_with(flavor))
                     && path
                         .extension()
                         .is_some_and(|ext| ext == "ts" || ext == "tsx" || ext == "js")
             });
-            let product = source
-                .remove(Path::new("mcp/src/product.ts"))
-                .expect("MCP product constants must be generated");
-            let product = String::from_utf8(product)?;
-            assert!(product.contains(&format!("export const PRODUCT_NAME = '{name}';")));
-            let prefix = name.replace('-', "_").to_ascii_uppercase();
-            assert!(product.contains(&format!("export const ENV_PREFIX = '{prefix}';")));
-            assert!(product.contains("export const KEYCLOAK_PORT = 8181;"));
             for flavor in ["web", "mobile"] {
                 let path = PathBuf::from(format!("{flavor}/src/product.ts"));
                 let product = source
@@ -3033,7 +2724,7 @@ fn typescript_source_is_independent_of_product_name_length() -> anyhow::Result<(
             if let Some(expected) = &baseline {
                 assert_eq!(
                     &source, expected,
-                    "TypeScript source changed with product name {name} and auth {authentication:?}"
+                    "TypeScript source changed with product name {name} and auth {auth:?}"
                 );
             } else {
                 baseline = Some(source);
@@ -3044,54 +2735,7 @@ fn typescript_source_is_independent_of_product_name_length() -> anyhow::Result<(
 }
 
 #[test]
-fn oidc_mcp_generation_selects_auth_node_and_caller_auth_remains_available() -> anyhow::Result<()> {
-    let parent = tempfile::tempdir()?;
-    let baukit_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust");
-    let mut oidc = options(parent.path(), "oidc-mcp");
-    oidc.mobile = true;
-    oidc.web = true;
-    oidc.auth = Some(AuthProvider::Oidc);
-    oidc.mcp = true;
-    oidc.baukit_path = Some(baukit_path);
-    let root = generate_new(&oidc)?;
-
-    let manifest = baukit_cli::read_manifest(&root)?;
-    assert_eq!(
-        manifest
-            .capabilities
-            .mcp
-            .as_ref()
-            .map(|mcp| mcp.authentication),
-        Some(McpAuthentication::NodeOidc)
-    );
-    let package = fs::read_to_string(root.join("mcp/package.json"))?;
-    assert!(package.contains("\"@baukit/auth-node\": \"file:"));
-    let auth = fs::read_to_string(root.join("mcp/src/auth.ts"))?;
-    assert!(auth.contains("DeviceFlowClient"));
-    assert!(auth.contains("allowLoopbackHttp"));
-
-    let caller_parent = tempfile::tempdir()?;
-    let mut caller = options(caller_parent.path(), "caller-mcp");
-    caller.mcp = true;
-    caller.mcp_auth = Some(McpAuthentication::CallerSupplied);
-    let caller_root = generate_new(&caller)?;
-    let caller_manifest = baukit_cli::read_manifest(&caller_root)?;
-    assert_eq!(
-        caller_manifest
-            .capabilities
-            .mcp
-            .as_ref()
-            .map(|mcp| mcp.authentication),
-        Some(McpAuthentication::CallerSupplied)
-    );
-    assert!(
-        fs::read_to_string(caller_root.join("mcp/src/auth.ts"))?.contains("callerSuppliedProvider")
-    );
-    Ok(())
-}
-
-#[test]
-fn mcp_requires_a_backend_and_node_oidc_requires_oidc() {
+fn mcp_requires_a_backend_and_oidc() {
     let parent = tempfile::tempdir().expect("temporary directory");
     let mut no_backend = frontend_options(parent.path(), "mcp-web", false, true);
     no_backend.mcp = true;
@@ -3104,10 +2748,9 @@ fn mcp_requires_a_backend_and_node_oidc_requires_oidc() {
 
     let mut no_oidc = options(parent.path(), "mcp-no-oidc");
     no_oidc.mcp = true;
-    no_oidc.mcp_auth = Some(McpAuthentication::NodeOidc);
     assert!(
         generate_new(&no_oidc)
-            .expect_err("node-oidc without OIDC must fail")
+            .expect_err("MCP without OIDC must fail")
             .to_string()
             .contains("requires --auth oidc")
     );
@@ -3124,7 +2767,7 @@ fn backend_without_mcp_has_no_mcp_files_dependencies_or_configuration() -> anyho
         assert!(!source.contains("modelcontextprotocol"));
         assert!(!source.contains("capabilities.mcp"));
     }
-    assert!(baukit_cli::read_manifest(&root)?.capabilities.mcp.is_none());
+    assert!(!baukit_cli::read_manifest(&root)?.capabilities.mcp);
     Ok(())
 }
 
@@ -3195,7 +2838,7 @@ fn doctor_follows_relocated_identity_modules_and_binding_names() -> anyhow::Resu
     local.auth = Some(AuthProvider::Oidc);
     local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
     let root = generate_new(&local)?;
-    for component in ["mobile", "web", "mcp"] {
+    for component in ["mobile", "web"] {
         let directory = root.join(component).join("src");
         for entry in fs::read_dir(&directory)? {
             let path = entry?.path();
@@ -3263,7 +2906,7 @@ fn doctor_accepts_product_review_identity_layouts() -> anyhow::Result<()> {
         let mut local = options(parent.path(), name);
         local.mobile = true;
         local.web = true;
-        local.mcp = true;
+        local.mcp = name != "sl";
         local.auth = (name != "sl").then_some(AuthProvider::Oidc);
         local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
         let root = generate_new(&local)?;
@@ -3302,35 +2945,6 @@ fn doctor_accepts_product_review_identity_layouts() -> anyhow::Result<()> {
                 .replace("PRODUCT_NAME", "ANALYTICS_APP"),
         )?;
         fs::remove_file(root.join("mobile/src/product.ts"))?;
-        let server = root.join("mcp/src/server.ts");
-        fs::write(
-            &server,
-            fs::read_to_string(&server)?
-                .replace("import { PRODUCT_NAME } from './product.js';", "")
-                .replace("`${PRODUCT_NAME}-mcp`", &format!("'{name}-mcp'")),
-        )?;
-        for filename in ["api.ts", "auth.ts", "cli.ts"] {
-            let path = root.join("mcp/src").join(filename);
-            if !path.is_file() {
-                continue;
-            }
-            let source = fs::read_to_string(&path)?;
-            let product =
-                fs::read_to_string(root.join("mcp/src/product.ts"))?.replace("export ", "");
-            let source = source
-                .lines()
-                .map(|line| {
-                    if line.contains("from './product.js'") {
-                        product.as_str()
-                    } else {
-                        line
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-            fs::write(path, source)?;
-        }
-        fs::remove_file(root.join("mcp/src/product.ts"))?;
         let library = root.join(format!("backend/crates/{name}-bin/src/lib.rs"));
         if local.auth.is_some() {
             let source = fs::read_to_string(&library)?;
@@ -3386,14 +3000,6 @@ fn doctor_ignores_identity_examples_in_comments_and_strings() -> anyhow::Result<
         (
             "web/src/analytics.ts",
             "const example = \"new AnalyticsClient({ app: 'wrong-product' })\";\n// new AnalyticsClient({ app: 'wrong-product' })\n",
-        ),
-        (
-            "mcp/src/server.ts",
-            "const example = \"new McpServer({ name: 'wrong-mcp' })\";\n/* new McpServer({ name: 'wrong-mcp' }) */\n",
-        ),
-        (
-            "mcp/src/cli.ts",
-            "const example = 'process.env[`${UNKNOWN}_API_URL`]';\n",
         ),
         (
             "mobile/src/product.ts",
@@ -4432,109 +4038,6 @@ fn doctor_accepts_redis_url_environment_fallback() -> anyhow::Result<()> {
 }
 
 #[test]
-fn doctor_accepts_moved_mcp_sources_and_shared_schema_consumer() -> anyhow::Result<()> {
-    let parent = tempfile::tempdir()?;
-    let mut local = options(parent.path(), "mcp-layout");
-    local.mcp = true;
-    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
-    let root = generate_new(&local)?;
-    fs::create_dir_all(root.join("generated"))?;
-    fs::rename(
-        root.join("mcp/src/api/schema.d.ts"),
-        root.join("generated/openapi.d.ts"),
-    )?;
-    let manifest = root.join("baukit.toml");
-    fs::write(
-        &manifest,
-        fs::read_to_string(&manifest)?.replace("mcp/src/api/schema.d.ts", "generated/openapi.d.ts"),
-    )?;
-    let client = root.join("mcp/src/api/client.ts");
-    fs::write(
-        &client,
-        fs::read_to_string(&client)?.replace("'./schema.js'", "'../../../generated/openapi.js'"),
-    )?;
-    fs::rename(
-        root.join("mcp/src/server.ts"),
-        root.join("mcp/src/protocol.ts"),
-    )?;
-    fs::rename(root.join("mcp/src/cli.ts"), root.join("mcp/src/main.ts"))?;
-    fs::rename(root.join("mcp/src/tools"), root.join("mcp/src/catalog"))?;
-    for relative in [
-        "mcp/README.md",
-        "mcp/tsconfig.build.json",
-        "mcp/eslint.config.js",
-        "mcp/vitest.config.ts",
-        "mcp/test/server.test.ts",
-        "mcp/test/stdio.test.ts",
-    ] {
-        fs::remove_file(root.join(relative))?;
-    }
-    for (relative, _) in read_tree(&root)? {
-        if !relative.starts_with("mcp")
-            || !matches!(
-                relative.extension().and_then(|value| value.to_str()),
-                Some("ts" | "mjs")
-            )
-        {
-            continue;
-        }
-        let path = root.join(relative);
-        let source = fs::read_to_string(&path)?;
-        fs::write(
-            &path,
-            source
-                .replace("./server.js", "./protocol.js")
-                .replace("./tools/", "./catalog/")
-                .replace("../tools/", "../catalog/"),
-        )?;
-    }
-    let package = root.join("mcp/package.json");
-    let mut settings: serde_json::Value = serde_json::from_str(&fs::read_to_string(&package)?)?;
-    settings["scripts"]["build"] =
-        serde_json::json!("tsc -p tsconfig.json --noEmit false --outDir dist");
-    settings["bin"]["mcp-layout-mcp"] = serde_json::json!("dist/main.js");
-    fs::write(&package, serde_json::to_string_pretty(&settings)?)?;
-    doctor(&root)?;
-    for (filename, symbol, label) in [
-        (
-            "mcp/src/main.ts",
-            "new StdioServerTransport",
-            "stdio transport",
-        ),
-        ("mcp/src/protocol.ts", ".registerTool(", "tool registration"),
-    ] {
-        let path = root.join(filename);
-        let original = fs::read_to_string(&path)?;
-        fs::write(&path, original.replace(symbol, "missingSymbol"))?;
-        assert!(
-            doctor(&root)
-                .expect_err("missing MCP wiring")
-                .to_string()
-                .contains(label)
-        );
-        fs::write(path, original)?;
-    }
-    let consumer = root.join("generated/openapi.d.ts");
-    let original = fs::read_to_string(&consumer)?;
-    fs::remove_file(&consumer)?;
-    assert!(
-        doctor(&root)
-            .expect_err("missing declared shared consumer")
-            .to_string()
-            .contains("generated/openapi.d.ts")
-    );
-    fs::write(consumer, original)?;
-    fs::remove_file(root.join("mcp/src/protocol.ts"))?;
-    assert!(
-        doctor(&root)
-            .expect_err("missing MCP server")
-            .to_string()
-            .contains("MCP server wiring")
-    );
-    Ok(())
-}
-
-#[test]
 fn generated_oidc_workers_retain_failed_identity_jobs() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "retained-erasure");
@@ -4735,16 +4238,13 @@ fn remote_mcp_generation_matches_the_golden_tree() -> anyhow::Result<()> {
     let mut generated = options(parent.path(), "snapshot-app");
     generated.auth = Some(AuthProvider::Oidc);
     generated.mcp = true;
-    generated.mcp_transport = McpTransport::Remote;
     let root = generate_new(&generated)?;
     assert_eq!(
         render_hash_snapshot(&read_tree(&root)?),
         include_str!("snapshots/mcp-remote.tree")
     );
     let manifest = baukit_cli::read_manifest(&root)?;
-    let capability = manifest.capabilities.mcp.expect("MCP capability");
-    assert_eq!(capability.transport, McpTransport::Remote);
-    assert_eq!(capability.authentication, McpAuthentication::ResourceOauth);
+    assert!(manifest.capabilities.mcp);
     assert!(!root.join("mcp").exists());
     assert_eq!(manifest.openapi.consumers(), ["generated/openapi.d.ts"]);
     doctor(&root)?;
@@ -4752,11 +4252,10 @@ fn remote_mcp_generation_matches_the_golden_tree() -> anyhow::Result<()> {
 }
 
 #[test]
-fn remote_mcp_requires_oidc_backend_and_its_own_authentication() {
+fn remote_mcp_requires_oidc_and_backend() {
     let parent = tempfile::tempdir().expect("tempdir");
     let mut generated = options(parent.path(), "remote");
     generated.mcp = true;
-    generated.mcp_transport = McpTransport::Remote;
     assert!(
         generate_new(&generated)
             .expect_err("OIDC required")
@@ -4771,14 +4270,6 @@ fn remote_mcp_requires_oidc_backend_and_its_own_authentication() {
             .to_string()
             .contains("requires --backend")
     );
-    generated.backend = true;
-    generated.mcp_auth = Some(McpAuthentication::CallerSupplied);
-    assert!(
-        generate_new(&generated)
-            .expect_err("OAuth required")
-            .to_string()
-            .contains("remote uses resource OAuth")
-    );
 }
 
 #[test]
@@ -4787,7 +4278,6 @@ fn remote_realm_preserves_oidc_scopes_and_binds_the_resource_audience() -> anyho
     let mut generated = options(parent.path(), "remote");
     generated.auth = Some(AuthProvider::Oidc);
     generated.mcp = true;
-    generated.mcp_transport = McpTransport::Remote;
     generated.web = true;
     generated.mobile = true;
     let root = generate_new(&generated)?;
@@ -4891,7 +4381,6 @@ fn doctor_reports_each_missing_remote_mcp_connection() -> anyhow::Result<()> {
         let mut generated = options(parent.path(), "remote");
         generated.mcp = true;
         generated.auth = Some(AuthProvider::Oidc);
-        generated.mcp_transport = McpTransport::Remote;
         let root = generate_new(&generated)?;
         let path = root.join(relative);
         let source = fs::read_to_string(&path)?;
@@ -4900,5 +4389,132 @@ fn doctor_reports_each_missing_remote_mcp_connection() -> anyhow::Result<()> {
         let error = doctor(&root).expect_err("missing remote wiring");
         assert!(error.to_string().contains(finding), "{relative}: {error}");
     }
+    Ok(())
+}
+
+#[test]
+fn doctor_reports_migration_for_every_retired_mcp_manifest_shape() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut generated = options(parent.path(), "migration");
+    generated.mcp = true;
+    generated.auth = Some(AuthProvider::Oidc);
+    let root = generate_new(&generated)?;
+    let path = root.join("baukit.toml");
+    let manifest = fs::read_to_string(&path)?;
+    for capability in [
+        "{ authentication = \"personal-token\" }",
+        "{ authentication = \"node-oidc\" }",
+        "{ authentication = \"caller-supplied\" }",
+        "{ authentication = \"resource-oauth\", transport = \"remote\" }",
+    ] {
+        fs::write(
+            &path,
+            manifest.replace("mcp = true", &format!("mcp = {capability}")),
+        )?;
+        let finding = doctor(&root)
+            .expect_err("retired capability needs migration")
+            .to_string();
+        assert!(
+            finding.contains("retired MCP capability table"),
+            "{finding}"
+        );
+        assert!(finding.contains("capabilities.mcp = true"), "{finding}");
+        assert!(
+            finding.contains("docs/migrations/mcp-stdio-to-remote.md"),
+            "{finding}"
+        );
+        assert!(!finding.contains("could not parse"), "{finding}");
+    }
+    Ok(())
+}
+
+#[test]
+fn doctor_reports_retired_typescript_mcp_even_without_a_capability() -> anyhow::Result<()> {
+    for artifact in [
+        "mcp/package.json",
+        "mcp/src/server.ts",
+        "mcp/src/transports/server.ts",
+    ] {
+        let parent = tempfile::tempdir()?;
+        let root = generate_new(&options(parent.path(), "old-server"))?;
+        let path = root.join(artifact);
+        fs::create_dir_all(path.parent().expect("parent"))?;
+        fs::write(path, "{}")?;
+        let finding = doctor(&root)
+            .expect_err("retired server needs migration")
+            .to_string();
+        assert!(
+            finding.contains("retired TypeScript MCP server found in mcp/"),
+            "{finding}"
+        );
+        assert!(
+            finding.contains("docs/migrations/mcp-stdio-to-remote.md"),
+            "{finding}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn cli_rejects_removed_mcp_selection_flags() -> anyhow::Result<()> {
+    for flag in ["--mcp-transport", "--mcp-auth"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_baukit"))
+            .args([
+                "new",
+                "removed-flags",
+                "--backend",
+                "--mcp",
+                "--auth",
+                "oidc",
+                flag,
+                "remote",
+            ])
+            .output()?;
+        assert!(!output.status.success());
+        let finding = String::from_utf8(output.stderr)?;
+        assert!(finding.contains("unexpected argument"), "{finding}");
+        assert!(finding.contains(flag), "{finding}");
+    }
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_product_named_remote_tool_adapters() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut generated = options(parent.path(), "product-tools");
+    generated.mcp = true;
+    generated.auth = Some(AuthProvider::Oidc);
+    let root = generate_new(&generated)?;
+    for relative in [
+        "backend/crates/product-tools-mcp/src/lib.rs",
+        "backend/crates/product-tools-bin/src/bin/api.rs",
+        "backend/crates/product-tools-mcp/src/bin/mcp-tools.rs",
+        "backend/tests/tool_drift.rs",
+    ] {
+        let path = root.join(relative);
+        let source = fs::read_to_string(&path)?;
+        assert!(source.contains("ItemTools"));
+        fs::write(path, source.replace("ItemTools", "ProductTools"))?;
+    }
+    let findings = doctor(&root)?;
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.contains("scoped tools, and drift check are wired"))
+    );
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_non_typescript_files_in_a_root_mcp_directory() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = generate_new(&options(parent.path(), "rust-files"))?;
+    fs::create_dir_all(root.join("mcp/src"))?;
+    fs::write(
+        root.join("mcp/src/lib.rs"),
+        "pub const NAME: &str = \"rust-files\";",
+    )?;
+    doctor(&root)?;
+    assert!(!baukit_cli::read_manifest(&root)?.capabilities.mcp);
     Ok(())
 }

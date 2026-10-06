@@ -1,4 +1,6 @@
-# Final verification
+# Historical verification
+
+This report records checks from the earlier TypeScript MCP implementation. That server has been removed. Current product adoption follows the [migration guide](../migrations/mcp-stdio-to-remote.md).
 
 ## 1. Summary
 
@@ -35,7 +37,6 @@ Generated OIDC MCP code needed one Prettier correction. The strict quality gate 
 - `templates/common/__strict__/scripts/check-markdown-links.py`
 - `templates/common/__strict__/scripts/check-markdown-links.test.py`
 - `templates/common/__strict__/scripts/quality-gate.sh`
-- `templates/mcp/mcp/src/auth.ts.jinja`
 
 ## 3. Verification
 
