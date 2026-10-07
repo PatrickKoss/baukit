@@ -4,6 +4,8 @@ All notable changes to `baukit-ratelimit` are documented here.
 
 ## [Unreleased]
 
+- Trigger Sentinel promotion explicitly in the recovery test and keep its existing deadline under CPU load.
+
 ## [0.8.0] - 2026-10-07
 
 ## [0.7.4] - 2026-10-06

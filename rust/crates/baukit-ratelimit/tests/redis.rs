@@ -270,6 +270,7 @@ async fn sentinel_store_recovers_after_master_failover() -> Result<(), Box<dyn E
     );
 
     let original_master = fixture.master_address().await?;
+    fixture.request_failover().await?;
     fixture.stop_master().await?;
 
     // Wait for Sentinel to publish the promoted replica rather than polling the

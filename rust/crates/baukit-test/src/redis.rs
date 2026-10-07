@@ -23,12 +23,6 @@ const REDIS_SENTINEL_MASTER_NAME: &str = "mymaster";
 const SENTINEL_CONFIG_PATH: &str = "/tmp/sentinel.conf";
 
 /// Maximum time the Sentinel readiness and failover polls wait for.
-///
-/// Sentinel enters TILT mode when its event loop is starved, which happens on a
-/// host busy starting many containers at once. TILT lasts a fixed 30 seconds and
-/// Sentinel performs no failover while in it, so any budget at or below 30 seconds
-/// fails outright whenever TILT triggers. This allows for one full TILT period plus
-/// the failover that follows it.
 const SENTINEL_READY_TIMEOUT: Duration = Duration::from_secs(90);
 
 /// Delay between Sentinel readiness polls.
@@ -111,6 +105,36 @@ impl RedisSentinelTestContainer {
         Ok(())
     }
 
+    /// Requests promotion without waiting for automatic failure detection.
+    ///
+    /// Call this while the topology is healthy, then stop the old master to test
+    /// client recovery. The failover timeout leaves room for Sentinel's 30-second
+    /// TILT period when a loaded host stalls its event loop.
+    pub async fn request_failover(&self) -> Result<(), RedisTestError> {
+        let mut result = self
+            .sentinel
+            .exec(ExecCommand::new([
+                "redis-cli",
+                "-e",
+                "-p",
+                &REDIS_SENTINEL_PORT.to_string(),
+                "sentinel",
+                "failover",
+                REDIS_SENTINEL_MASTER_NAME,
+            ]))
+            .await?;
+        let stdout = result.stdout_to_vec().await?;
+        let stderr = result.stderr_to_vec().await?;
+        let reply = String::from_utf8_lossy(&stdout);
+        if reply.trim() != "OK" {
+            return Err(RedisTestError::Topology(format!(
+                "Sentinel rejected the failover request: {reply}{}",
+                String::from_utf8_lossy(&stderr)
+            )));
+        }
+        Ok(())
+    }
+
     /// Waits until Sentinel reports the master healthy and has found the replica.
     ///
     /// A fixed sleep cannot express this. Sentinel needs the replica in its own view
@@ -118,11 +142,22 @@ impl RedisSentinelTestContainer {
     /// host is. Polling the state Sentinel actually publishes removes the guess.
     async fn wait_until_ready(&self) -> Result<(), RedisTestError> {
         self.poll_until(
+            "master",
             |master| {
                 sentinel_field(master, "num-slaves").is_some_and(|slaves| slaves != "0")
                     && sentinel_field(master, "flags").is_some_and(|flags| flags == "master")
             },
             "Sentinel did not report a healthy master with a discovered replica",
+        )
+        .await?;
+        self.poll_until(
+            "replicas",
+            |replica| {
+                sentinel_field(replica, "flags") == Some("slave")
+                    && sentinel_field(replica, "master-link-down-time") == Some("0")
+                    && sentinel_field(replica, "role-reported") == Some("slave")
+            },
+            "Sentinel did not report a healthy promotion candidate",
         )
         .await
     }
@@ -139,6 +174,7 @@ impl RedisSentinelTestContainer {
     ) -> Result<String, RedisTestError> {
         let previous = previous_address.to_owned();
         self.poll_until(
+            "master",
             move |master| sentinel_has_new_master(master, &previous),
             "Sentinel did not publish a promoted master",
         )
@@ -148,7 +184,7 @@ impl RedisSentinelTestContainer {
 
     /// Returns the `ip:port` Sentinel currently publishes for the monitored master.
     pub async fn master_address(&self) -> Result<String, RedisTestError> {
-        let master = self.sentinel_master_state().await?;
+        let master = self.sentinel_state("master").await?;
         let ip = sentinel_field(&master, "ip")
             .ok_or_else(|| RedisTestError::Topology("Sentinel reported no master ip".to_owned()))?;
         let port = sentinel_field(&master, "port").ok_or_else(|| {
@@ -157,23 +193,33 @@ impl RedisSentinelTestContainer {
         Ok(format!("{ip}:{port}"))
     }
 
-    async fn poll_until<F>(&self, ready: F, failure: &str) -> Result<(), RedisTestError>
+    async fn poll_until<F>(
+        &self,
+        command: &str,
+        ready: F,
+        failure: &str,
+    ) -> Result<(), RedisTestError>
     where
         F: Fn(&[String]) -> bool,
     {
-        self.poll_until_within(&ready, SENTINEL_READY_TIMEOUT)
+        self.poll_until_within(command, &ready, SENTINEL_READY_TIMEOUT)
             .await
             .map_err(|error| RedisTestError::Topology(format!("{failure}: {error}")))
     }
 
-    async fn poll_until_within<F>(&self, ready: &F, budget: Duration) -> Result<(), RedisTestError>
+    async fn poll_until_within<F>(
+        &self,
+        command: &str,
+        ready: &F,
+        budget: Duration,
+    ) -> Result<(), RedisTestError>
     where
         F: Fn(&[String]) -> bool,
     {
         let deadline = tokio::time::Instant::now() + budget;
         let mut last_state;
         loop {
-            match self.sentinel_master_state().await {
+            match self.sentinel_state(command).await {
                 Ok(master) => {
                     if ready(&master) {
                         return Ok(());
@@ -221,7 +267,7 @@ impl RedisSentinelTestContainer {
         }
     }
 
-    async fn sentinel_master_state(&self) -> Result<Vec<String>, RedisTestError> {
+    async fn sentinel_state(&self, command: &str) -> Result<Vec<String>, RedisTestError> {
         let mut result = self
             .sentinel
             .exec(ExecCommand::new([
@@ -229,7 +275,7 @@ impl RedisSentinelTestContainer {
                 "-p",
                 &REDIS_SENTINEL_PORT.to_string(),
                 "sentinel",
-                "master",
+                command,
                 REDIS_SENTINEL_MASTER_NAME,
             ]))
             .await?;
@@ -322,8 +368,9 @@ pub async fn start_redis() -> Result<RedisTestContainer, RedisTestError> {
 /// Starts a disposable Redis Sentinel topology asynchronously.
 ///
 /// The fixture uses Redis `8.10.2-alpine` for one master, one replica, and one
-/// quorum-one Sentinel named `mymaster`. Its low failure-detection interval is
-/// intended for failover tests, not production configuration. The local Docker
+/// quorum-one Sentinel named `mymaster`. Its failure-detection interval and
+/// explicit failover trigger are intended for failover tests, not production
+/// configuration. The local Docker
 /// host must be able to route Testcontainers bridge addresses because those are
 /// the node addresses Sentinel returns during master discovery.
 pub async fn start_redis_sentinel() -> Result<RedisSentinelTestContainer, RedisTestError> {
@@ -376,8 +423,8 @@ pub async fn start_redis_sentinel() -> Result<RedisSentinelTestContainer, RedisT
          protected-mode no\n\
          dir /tmp\n\
          sentinel monitor {REDIS_SENTINEL_MASTER_NAME} {master_ip} {REDIS_PORT} 1\n\
-         sentinel down-after-milliseconds {REDIS_SENTINEL_MASTER_NAME} 500\n\
-         sentinel failover-timeout {REDIS_SENTINEL_MASTER_NAME} 3000\n\
+         sentinel down-after-milliseconds {REDIS_SENTINEL_MASTER_NAME} 5000\n\
+         sentinel failover-timeout {REDIS_SENTINEL_MASTER_NAME} 60000\n\
          sentinel parallel-syncs {REDIS_SENTINEL_MASTER_NAME} 1\n"
     );
     let sentinel = GenericImage::new("redis", REDIS_IMAGE_TAG)
