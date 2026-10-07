@@ -1325,26 +1325,34 @@ fn generated_preflight_fails_without_an_agent_and_supports_prebuilt_images() -> 
     fs::create_dir(&fake_bin)?;
     write_executable(
         &fake_bin.join("ssh-add"),
-        "#!/bin/sh\nexit \"$BAUKIT_TEST_SSH_ADD_STATUS\"\n",
+        "#!/bin/sh\nprintf '%s\\n' \"$BAUKIT_TEST_SSH_ADD_STATUS\" >> \"$BAUKIT_TEST_SSH_ADD_LOG\"\nexit \"$BAUKIT_TEST_SSH_ADD_STATUS\"\n",
     )?;
+    for program in ["dirname", "grep", "sh"] {
+        let resolved = Command::new("sh")
+            .args(["-c", "command -v \"$1\"", "sh", program])
+            .output()?;
+        assert!(resolved.status.success(), "find {program}");
+        std::os::unix::fs::symlink(
+            String::from_utf8(resolved.stdout)?.trim(),
+            fake_bin.join(program),
+        )?;
+    }
     let agent_socket = parent.path().join("agent.sock");
     let _agent = UnixListener::bind(&agent_socket)?;
-    let path = format!(
-        "{}:{}",
-        fake_bin.display(),
-        env::var("PATH").unwrap_or_default()
-    );
+    let calls = parent.path().join("ssh-add.calls");
     for (status, expected) in [("1", "no loaded identities"), ("2", "agent is unusable")] {
         let result = Command::new("sh")
             .arg("scripts/preflight.sh")
             .current_dir(&root)
-            .env("PATH", &path)
+            .env("PATH", &fake_bin)
             .env("SSH_AUTH_SOCK", &agent_socket)
             .env("BAUKIT_TEST_SSH_ADD_STATUS", status)
+            .env("BAUKIT_TEST_SSH_ADD_LOG", &calls)
             .output()?;
         assert!(!result.status.success());
         assert!(String::from_utf8_lossy(&result.stderr).contains(expected));
     }
+    assert_eq!(fs::read_to_string(calls)?, "1\n2\n");
     Ok(())
 }
 
