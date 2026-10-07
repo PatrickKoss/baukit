@@ -220,7 +220,10 @@ it.each([320, 1024])('keeps profile last at width %i', (width) => {
   expect(links.at(-1)?.getAttribute('aria-current')).toBe('page');
 });
 it('handles profile menu focus, disabled items, actions, Escape and outside clicks', () => {
-  const action = vi.fn();
+  const action = vi.fn(() => {
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Account' }));
+  });
   render(
     <AppNavigation
       {...labels}
@@ -257,8 +260,11 @@ it('handles profile menu focus, disabled items, actions, Escape and outside clic
   fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Settings' }), { key: 'Tab' });
   expect(screen.queryByRole('menu')).toBeNull();
 });
-it('lets a picker select a section page directly', () => {
-  const navigate = vi.fn();
+it('lets a picker select a section page after removing the menu', () => {
+  const navigate = vi.fn(() => {
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Progress, Overview' }));
+  });
   render(
     <SectionPicker closeLabel="Close" item={section} pathname="/progress" onNavigate={navigate} />,
   );

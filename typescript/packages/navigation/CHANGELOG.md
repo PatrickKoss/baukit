@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Remove web menus before restoring focus and calling menu actions or navigation callbacks.
+
 - Run native menu callbacks after dismissal. Products can pass navigation and sign-out callbacks directly.
 - Add a danger tone for menu entries, with semantic token colors on web and native.
 - Require localized visible Close controls in web profile and section menus. Keep Close visible while long menus scroll.

@@ -10,6 +10,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
+import { flushSync } from 'react-dom';
 import {
   announce,
   useAriaHiddenInert,
@@ -132,7 +133,7 @@ function Menu({
     };
   }, [onClose, triggerRef]);
   function closeAndRestore() {
-    onClose();
+    flushSync(onClose);
     triggerRef.current?.focus();
   }
   return (
