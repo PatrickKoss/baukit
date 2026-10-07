@@ -250,7 +250,7 @@ impl IdentityVerifier for WorkOsVerifier {
 }
 
 fn clerk_jwks_uri(config: &OidcConfig) -> Result<Url, OidcConfigError> {
-    let mut jwks_uri = config.issuer.clone();
+    let mut jwks_uri = config.issuer_url.clone();
     let mut segments = jwks_uri
         .path_segments_mut()
         .map_err(|_| OidcConfigError::IssuerCannotBeBase)?;

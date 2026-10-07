@@ -259,6 +259,9 @@ For Keycloak introspection, configure `mcp.introspection_client_id` and
 `mcp.introspection_client_secret` through the existing configuration and secret
 store. The generated startup rejects partial credentials and rejects this policy
 for Clerk and WorkOS. Their JWT mode observes revocation at token expiry.
+WorkOS Connect advertises an introspection endpoint, but this Keycloak adapter
+does not implement its provider configuration. See
+[WorkOS MCP metadata](https://workos.com/docs/authkit/mcp).
 Opaque Clerk tokens are unsupported. The adapter implements Keycloak's RFC 7662
 endpoint convention; another OIDC provider needs its own policy adapter.
 

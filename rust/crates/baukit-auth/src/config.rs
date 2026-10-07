@@ -189,7 +189,8 @@ impl PrincipalClaimMapping {
 /// Provider-neutral OIDC verification configuration.
 #[derive(Clone, Debug)]
 pub struct OidcConfig {
-    pub(crate) issuer: Url,
+    pub(crate) issuer: String,
+    pub(crate) issuer_url: Url,
     pub(crate) audiences: BTreeSet<String>,
     pub(crate) client_id: Option<String>,
     pub(crate) allowed_clients: Option<BTreeSet<String>>,
@@ -210,11 +211,12 @@ impl OidcConfig {
         issuer: impl AsRef<str>,
         audience: impl Into<String>,
     ) -> Result<Self, OidcConfigError> {
-        let issuer = normalized_issuer(issuer.as_ref())?;
+        let issuer_url = parsed_issuer(issuer.as_ref())?;
         let audience = audience.into();
         validate_nonempty("audience", &audience)?;
         Ok(Self {
-            issuer,
+            issuer: issuer.as_ref().to_owned(),
+            issuer_url,
             client_id: None,
             allowed_clients: None,
             audiences: BTreeSet::from([audience]),
@@ -237,7 +239,8 @@ impl OidcConfig {
     {
         let authorized_parties = nonempty_values("authorized party", authorized_parties)?;
         Ok(Self {
-            issuer: normalized_issuer(issuer.as_ref())?,
+            issuer: issuer.as_ref().to_owned(),
+            issuer_url: parsed_issuer(issuer.as_ref())?,
             audiences: BTreeSet::new(),
             client_id: None,
             allowed_clients: None,
@@ -257,7 +260,8 @@ impl OidcConfig {
         let client_id = client_id.into();
         validate_nonempty("client ID", &client_id)?;
         Ok(Self {
-            issuer: normalized_issuer(issuer.as_ref())?,
+            issuer: issuer.as_ref().to_owned(),
+            issuer_url: parsed_issuer(issuer.as_ref())?,
             audiences: BTreeSet::new(),
             client_id: Some(client_id.clone()),
             allowed_clients: None,
@@ -391,16 +395,16 @@ impl OidcConfig {
     }
 
     pub(crate) fn discovery_url(&self) -> Url {
-        let mut discovery = self.issuer.clone();
+        let mut discovery = self.issuer_url.clone();
         discovery.set_path(&format!(
             "{}/.well-known/openid-configuration",
-            self.issuer.path().trim_end_matches('/')
+            self.issuer_url.path().trim_end_matches('/')
         ));
         discovery
     }
 }
 
-fn normalized_issuer(value: &str) -> Result<Url, OidcConfigError> {
+fn parsed_issuer(value: &str) -> Result<Url, OidcConfigError> {
     validate_nonempty("issuer", value)?;
     let mut issuer =
         Url::parse(value).map_err(|error| OidcConfigError::InvalidIssuer(error.to_string()))?;
@@ -409,8 +413,6 @@ fn normalized_issuer(value: &str) -> Result<Url, OidcConfigError> {
     }
     issuer.set_query(None);
     issuer.set_fragment(None);
-    let normalized_path = issuer.path().trim_end_matches('/').to_owned();
-    issuer.set_path(&normalized_path);
     Ok(issuer)
 }
 

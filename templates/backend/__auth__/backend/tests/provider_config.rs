@@ -177,20 +177,17 @@ async fn configured_provider_authenticates_the_product_route_with_the_same_ident
 
     let fixture = erasure::erasure_fixture().await?;
     let server = baukit_test::MockOidcServer::start().await?;
+    let issuer = "https://external.example/tenant/";
     let users = UserService::new(Arc::new(InMemoryUserRepository::new()));
     let mut user_id = None;
     for provider in ["oidc", "clerk", "workos"] {
         let file = tempfile::Builder::new().suffix(".toml").tempfile()?;
-        let jwks = if provider == "oidc" {
-            String::new()
-        } else {
-            format!("jwks_uri = {:?}\n", server.jwks_url())
-        };
+        let jwks = format!("jwks_uri = {:?}\n", server.jwks_url());
         std::fs::write(
             file.path(),
             format!(
                 "[auth]\nprovider = {provider:?}\nissuer = {:?}\naudience = \"api\"\nclient_id = \"client_app\"\nauthorized_parties = [\"https://app.example\"]\n{jwks}",
-                server.issuer(),
+                issuer,
             ),
         )?;
         let config: BaukitConfig<ProductConfig> =
@@ -210,6 +207,7 @@ async fn configured_provider_authenticates_the_product_route_with_the_same_ident
         )?;
         let claims = server
             .claims("user_123", "api", Duration::from_secs(300))?
+            .issuer(issuer)
             .claim("azp", "https://app.example")
             .claim("client_id", "client_app");
         let response = app

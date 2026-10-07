@@ -4,6 +4,7 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+- Preserve exact issuer text in discovery and token checks, including bare hosts and trailing slashes.
 - Add Clerk OAuth JWT verification bound to a dedicated OAuth client ID.
 
 ## [0.8.0] - 2026-10-07

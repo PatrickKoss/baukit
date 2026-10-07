@@ -369,7 +369,7 @@ impl MultiIssuerVerifier {
         verifier.verify(token).await
     }
 
-    /// Returns whether an exact normalized issuer is configured.
+    /// Returns whether the exact issuer text is configured.
     #[must_use]
     pub fn supports_issuer(&self, issuer: &str) -> bool {
         self.verifiers.contains_key(issuer)
@@ -400,7 +400,7 @@ pub enum MultiIssuerError {
     /// No issuer configuration was supplied.
     #[error("at least one OIDC issuer must be configured")]
     NoIssuers,
-    /// The same normalized issuer was configured more than once.
+    /// The same issuer text was configured more than once.
     #[error("OIDC issuer was configured more than once: {0}")]
     DuplicateIssuer(String),
     /// One configured issuer could not be discovered.
