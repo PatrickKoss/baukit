@@ -11,7 +11,11 @@ use rmcp::{
 };
 use serde_json::{Value, json};
 
-use crate::{McpConfigError, Principal};
+use crate::capabilities::{
+    ScopedPrompt, ScopedResource, ScopedResourceTemplate, template_matches, validate_prompts,
+    validate_resources,
+};
+use crate::{McpConfigError, Principal, PromptService, ResourceService};
 
 const MAX_TOOL_NAME_BYTES: usize = 128;
 
@@ -32,6 +36,12 @@ pub type ToolFuture<'a> = Pin<Box<dyn Future<Output = Result<Value, ToolError>> 
 /// Product service port. Implementations receive only verified identity and JSON arguments.
 pub trait ToolService: Send + Sync + 'static {
     fn tools(&self) -> Vec<ScopedTool>;
+    fn resource_service(&self) -> Option<Arc<dyn ResourceService>> {
+        None
+    }
+    fn prompt_service(&self) -> Option<Arc<dyn PromptService>> {
+        None
+    }
     fn call<'a>(
         &'a self,
         principal: &'a Principal,
@@ -46,19 +56,80 @@ pub trait ToolService: Send + Sync + 'static {
 pub struct ToolError {
     pub code: String,
     pub message: String,
+    content: ErrorContent,
+}
+
+#[derive(Debug)]
+enum ErrorContent {
+    Default,
+    Structured(Value),
+    TextOnly,
+}
+
+impl ToolError {
+    pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            message: message.into(),
+            content: ErrorContent::Default,
+        }
+    }
+
+    /// Replaces the default {code,message} payload. The message is the text content.
+    pub fn with_structured_content(mut self, value: Value) -> Self {
+        self.content = ErrorContent::Structured(value);
+        self
+    }
+
+    /// Preserves older text-only error contracts. Omit outputSchema for such tools.
+    pub fn text_only(mut self) -> Self {
+        self.content = ErrorContent::TextOnly;
+        self
+    }
+
+    fn into_result(self) -> CallToolResult {
+        let mut result = match self.content {
+            ErrorContent::Default => {
+                return CallToolResult::structured_error(
+                    json!({"code":self.code,"message":self.message}),
+                );
+            }
+            ErrorContent::Structured(value) => CallToolResult::structured_error(value),
+            ErrorContent::TextOnly => CallToolResult::error(Vec::new()),
+        };
+        result.content = vec![rmcp::model::ContentBlock::text(self.message)];
+        result
+    }
 }
 
 pub(crate) struct RegisteredTools {
     pub service: Arc<dyn ToolService>,
     pub definitions: Vec<ScopedTool>,
     pub protocol_tools: Vec<Tool>,
+    pub resources: Option<Arc<dyn ResourceService>>,
+    pub resource_definitions: Vec<ScopedResource>,
+    pub templates: Vec<ScopedResourceTemplate>,
+    pub prompts: Option<Arc<dyn PromptService>>,
+    pub prompt_definitions: Vec<ScopedPrompt>,
 }
 
 impl RegisteredTools {
     pub fn new(service: Arc<dyn ToolService>) -> Result<Self, McpConfigError> {
         let definitions = service.tools();
         let protocol_tools = compile_tools(&definitions)?;
+        let resources = service.resource_service();
+        let resource_definitions = resources.as_ref().map_or_else(Vec::new, |s| s.list());
+        let templates = resources.as_ref().map_or_else(Vec::new, |s| s.templates());
+        validate_resources(&resource_definitions, &templates)?;
+        let prompts = service.prompt_service();
+        let prompt_definitions = prompts.as_ref().map_or_else(Vec::new, |s| s.list());
+        validate_prompts(&prompt_definitions)?;
         Ok(Self {
+            resources,
+            resource_definitions,
+            templates,
+            prompts,
+            prompt_definitions,
             service,
             definitions,
             protocol_tools,
@@ -69,9 +140,42 @@ impl RegisteredTools {
         self.definitions
             .iter()
             .flat_map(|tool| tool.required_scopes.iter().cloned())
+            .chain(
+                self.resource_definitions
+                    .iter()
+                    .flat_map(|r| r.required_scopes.iter().cloned()),
+            )
+            .chain(
+                self.templates
+                    .iter()
+                    .flat_map(|r| r.required_scopes.iter().cloned()),
+            )
+            .chain(
+                self.prompt_definitions
+                    .iter()
+                    .flat_map(|p| p.required_scopes.iter().cloned()),
+            )
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect()
+    }
+
+    fn resource_scopes(&self, uri: &str) -> Option<Vec<String>> {
+        let scopes = self
+            .resource_definitions
+            .iter()
+            .filter(|resource| resource.resource.uri == uri)
+            .map(|resource| &resource.required_scopes)
+            .chain(
+                self.templates
+                    .iter()
+                    .filter(|template| template_matches(&template.template.uri_template, uri))
+                    .map(|template| &template.required_scopes),
+            )
+            .flatten()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        (!scopes.is_empty()).then(|| scopes.into_iter().collect())
     }
 
     pub fn tool(&self, name: &str) -> Option<&ScopedTool> {
@@ -147,6 +251,125 @@ pub fn tool_schema(definitions: &[ScopedTool]) -> Result<Value, McpConfigError> 
 pub(crate) struct ProductServer(pub Arc<RegisteredTools>);
 
 impl ServerHandler for ProductServer {
+    async fn list_resources(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<rmcp::model::ListResourcesResult, ErrorData> {
+        let principal = principal(&context)?;
+        let resources = self
+            .0
+            .resource_definitions
+            .iter()
+            .filter(|r| {
+                self.0
+                    .resource_scopes(&r.resource.uri)
+                    .is_some_and(|scopes| permitted_scopes(principal, &scopes))
+            })
+            .map(|r| r.resource.clone())
+            .collect();
+        Ok(rmcp::model::ListResourcesResult::with_all_items(resources)
+            .with_ttl_ms(0)
+            .with_cache_scope(CacheScope::Private))
+    }
+
+    async fn list_resource_templates(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<rmcp::model::ListResourceTemplatesResult, ErrorData> {
+        let principal = principal(&context)?;
+        let templates = self
+            .0
+            .templates
+            .iter()
+            .filter(|r| permitted_scopes(principal, &r.required_scopes))
+            .map(|r| r.template.clone())
+            .collect();
+        Ok(rmcp::model::ListResourceTemplatesResult::with_all_items(
+            templates,
+        ))
+    }
+
+    async fn read_resource(
+        &self,
+        request: rmcp::model::ReadResourceRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<rmcp::model::ReadResourceResponse, ErrorData> {
+        let principal = principal(&context)?;
+        let service =
+            self.0.resources.as_ref().ok_or_else(
+                ErrorData::method_not_found::<rmcp::model::ReadResourceRequestMethod>,
+            )?;
+        let scopes = self
+            .0
+            .resource_scopes(&request.uri)
+            .ok_or_else(|| ErrorData::invalid_params("Unknown resource", None))?;
+        require_scopes(&context, principal, &scopes)?;
+        let contents = service
+            .read(principal, &request.uri)
+            .await
+            .map_err(ErrorData::from)?;
+        Ok(rmcp::model::ReadResourceResult::new(contents)
+            .with_ttl_ms(0)
+            .with_cache_scope(CacheScope::Private)
+            .into())
+    }
+
+    async fn list_prompts(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<rmcp::model::ListPromptsResult, ErrorData> {
+        let principal = principal(&context)?;
+        let prompts = self
+            .0
+            .prompt_definitions
+            .iter()
+            .filter(|p| permitted_scopes(principal, &p.required_scopes))
+            .map(|p| p.prompt.clone())
+            .collect();
+        Ok(rmcp::model::ListPromptsResult::with_all_items(prompts)
+            .with_ttl_ms(0)
+            .with_cache_scope(CacheScope::Private))
+    }
+
+    async fn get_prompt(
+        &self,
+        request: rmcp::model::GetPromptRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<rmcp::model::GetPromptResponse, ErrorData> {
+        let principal = principal(&context)?;
+        let service = self
+            .0
+            .prompts
+            .as_ref()
+            .ok_or_else(ErrorData::method_not_found::<rmcp::model::GetPromptRequestMethod>)?;
+        let definition = self
+            .0
+            .prompt_definitions
+            .iter()
+            .find(|p| p.prompt.name == request.name)
+            .ok_or_else(|| ErrorData::invalid_params("Unknown prompt", None))?;
+        require_scopes(&context, principal, &definition.required_scopes)?;
+        let arguments = request.arguments.unwrap_or_default();
+        let declared = definition.prompt.arguments.as_deref().unwrap_or_default();
+        if arguments
+            .iter()
+            .any(|(name, value)| !value.is_string() || !declared.iter().any(|a| a.name == *name))
+            || declared
+                .iter()
+                .any(|a| a.required == Some(true) && !arguments.contains_key(&a.name))
+        {
+            return Err(ErrorData::invalid_params("Invalid prompt arguments", None));
+        }
+        Ok(service
+            .get(principal, &request.name, Value::Object(arguments))
+            .await
+            .map_err(ErrorData::from)?
+            .into())
+    }
+
     fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
         Cow::Borrowed(&[
             ProtocolVersion::V_2026_07_28,
@@ -156,7 +379,14 @@ impl ServerHandler for ProductServer {
     }
 
     fn get_info(&self) -> ServerConfig {
-        ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
+        let mut capabilities = ServerCapabilities::builder().enable_tools().build();
+        if self.0.resources.is_some() {
+            capabilities.resources = Some(Default::default());
+        }
+        if self.0.prompts.is_some() {
+            capabilities.prompts = Some(Default::default());
+        }
+        ServerConfig::new(capabilities)
             .with_server_info(Implementation::new("baukit-mcp", env!("CARGO_PKG_VERSION")))
             .with_protocol_version(ProtocolVersion::V_2026_07_28)
     }
@@ -212,9 +442,7 @@ impl ServerHandler for ProductServer {
             .await;
         let response = match result {
             Ok(value) => CallToolResult::structured(value),
-            Err(error) => CallToolResult::structured_error(
-                json!({"code": error.code, "message": error.message}),
-            ),
+            Err(error) => error.into_result(),
         };
         Ok(response.into())
     }
@@ -229,9 +457,31 @@ fn principal(context: &RequestContext<RoleServer>) -> Result<&Principal, ErrorDa
 }
 
 pub(crate) fn permitted(principal: &Principal, tool: &ScopedTool) -> bool {
-    tool.required_scopes
+    permitted_scopes(principal, &tool.required_scopes)
+}
+
+fn permitted_scopes(principal: &Principal, scopes: &[String]) -> bool {
+    scopes
         .iter()
         .all(|scope| principal.scopes().contains(scope))
+}
+
+fn require_scopes(
+    context: &RequestContext<RoleServer>,
+    principal: &Principal,
+    scopes: &[String],
+) -> Result<(), ErrorData> {
+    if permitted_scopes(principal, scopes) {
+        return Ok(());
+    }
+    if let Some(denial) = context
+        .extensions
+        .get::<http::request::Parts>()
+        .and_then(|parts| parts.extensions.get::<crate::mount::ScopeDenial>())
+    {
+        denial.0.get_or_init(|| scopes.to_vec());
+    }
+    Err(ErrorData::invalid_request("insufficient_scope", None))
 }
 
 #[cfg(test)]
@@ -247,6 +497,68 @@ mod tests {
             required_scopes: vec!["account:read".into()],
             read_only: true,
         }
+    }
+
+    #[tokio::test]
+    async fn scope_filtering_requires_every_grant_from_the_effective_principal() {
+        let issuer = baukit_test::MockOidcServer::start().await.expect("issuer");
+        let config = baukit_auth::OidcConfig::new(issuer.issuer(), "https://mcp.example/mcp")
+            .expect("config");
+        let verifier = baukit_auth::OidcVerifier::discover(config)
+            .await
+            .expect("verifier");
+        let claims = issuer
+            .claims(
+                "alice",
+                "https://mcp.example/mcp",
+                std::time::Duration::from_secs(300),
+            )
+            .expect("claims")
+            .claim("scope", "items:read learning:read");
+        let token = issuer.mint(&claims).expect("token");
+        let principal = Principal::from(verifier.verify(&token).await.expect("principal"));
+        assert!(permitted_scopes(
+            &principal,
+            &["items:read".into(), "learning:read".into()]
+        ));
+        assert!(!permitted_scopes(
+            &principal,
+            &["items:read".into(), "private:read".into()]
+        ));
+        let effective = principal.with_scopes(["items:read".into()]);
+        assert!(permitted_scopes(&effective, &["items:read".into()]));
+        assert!(!permitted_scopes(&effective, &["learning:read".into()]));
+    }
+
+    #[test]
+    fn default_custom_and_text_only_tool_errors_preserve_their_content() {
+        let default = ToolError::new("not_found", "Item not found").into_result();
+        assert_eq!(default.is_error, Some(true));
+        assert_eq!(
+            default.structured_content,
+            Some(json!({"code":"not_found","message":"Item not found"}))
+        );
+        let custom = ToolError::new("stale", "Reload revision 7")
+            .with_structured_content(json!({"data":null,"error":{"currentRevision":7}}))
+            .into_result();
+        assert_eq!(custom.is_error, Some(true));
+        assert_eq!(
+            custom.structured_content,
+            Some(json!({"data":null,"error":{"currentRevision":7}}))
+        );
+        assert_eq!(
+            serde_json::to_value(custom.content).expect("content"),
+            json!([{"type":"text","text":"Reload revision 7"}])
+        );
+        let text = ToolError::new("not_found", "Item not found")
+            .text_only()
+            .into_result();
+        assert_eq!(text.is_error, Some(true));
+        assert_eq!(text.structured_content, None);
+        assert_eq!(
+            serde_json::to_value(text.content).expect("content"),
+            json!([{"type":"text","text":"Item not found"}])
+        );
     }
 
     #[test]

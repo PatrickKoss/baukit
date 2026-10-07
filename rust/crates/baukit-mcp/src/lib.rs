@@ -1,17 +1,25 @@
 //! OAuth-protected MCP over stateless Streamable HTTP.
 
+mod capabilities;
 mod config;
 mod introspection;
+mod mount;
 mod policy;
 mod security;
 mod server;
 
+pub use capabilities::{
+    CapabilityError, CapabilityFuture, McpServices, Prompt, PromptArgument, PromptFuture,
+    PromptMessage, PromptResult, PromptService, Resource, ResourceContents, ResourceFuture,
+    ResourceService, ResourceTemplate, Role, ScopedPrompt, ScopedResource, ScopedResourceTemplate,
+    capability_schema, prompt_schema, resource_schema, service_schema,
+};
 pub use config::{McpConfig, McpConfigError, ProtectedResourceMetadata};
 pub use introspection::{KeycloakIntrospectionConfig, KeycloakIntrospectionPolicy};
+pub use mount::router;
 pub use policy::{
     AuthenticationPolicy, JwtOnlyPolicy, PolicyDenial, PolicyFuture, Principal, VerifiedPrincipal,
 };
-pub use security::router;
 pub use server::{ScopedTool, ToolError, ToolFuture, ToolService, tool_schema};
 
 /// MCP request headers to add to a product's CORS policy.

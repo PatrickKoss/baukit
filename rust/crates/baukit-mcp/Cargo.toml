@@ -32,6 +32,7 @@ tokio.workspace = true
 url.workspace = true
 
 [dev-dependencies]
+jsonschema.workspace = true
 baukit-test = { path = "../baukit-test", default-features = false }
 metrics-util.workspace = true
 rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }

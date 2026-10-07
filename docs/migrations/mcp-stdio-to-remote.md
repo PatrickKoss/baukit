@@ -72,8 +72,8 @@ cargo test --manifest-path backend/Cargo.toml -p NAME-mcp --test tool_drift
 The reusable server rejects missing scopes with HTTP 403 before dispatch
 and filters `tools/list` by the principal's grants. Each required scope
 must also be advertised in `mcp.scopes_supported` and issued by Keycloak.
-An empty required-scopes list makes a tool available to every authenticated
-caller. Use explicit grants for reads and writes.
+Empty required-scopes lists are rejected at registration. Use explicit
+grants for reads and writes.
 
 For writes, set `read_only = false` and require a separate write scope.
 Baukit gives writes a conservative destructive annotation and does not
@@ -88,6 +88,72 @@ The server defaults to a 32 KiB request limit. Review larger draft tools
 against that limit and configure a bounded `max_request_body_bytes` if
 needed. Keep product output limits and pagination. Schlauzug's complete
 draft and SLS's 256 KiB result bound need explicit review.
+
+## Port errors, resources and prompts
+
+| TypeScript pattern | Rust API |
+| --- | --- |
+| `return {isError: true, content, structuredContent}` | Return `Err(ToolError::new(code, text).with_structured_content(payload))`. The message supplies text and the payload supplies `structuredContent`. |
+| `return {isError: true, content}` | Return `Err(ToolError::new(code, text).text_only())` for a tool without an output schema. |
+| `registerResource(name, uri, metadata, callback)` | Add `ScopedResource { resource: Resource::new(uri, name), required_scopes }` to `ResourceService::list`. Copy title, description and MIME type with the resource builders. Implement `read(principal, uri)`. |
+| `registerResource(name, new ResourceTemplate(uriTemplate, {list: undefined}), metadata, callback)` | Add `ScopedResourceTemplate` to `ResourceService::templates`. Leave the concrete list empty when the old callback did not list resources. Implement `read` using the matched URI. |
+| `registerPrompt(name, {description, argsSchema}, callback)` | Add `ScopedPrompt` to `PromptService::list`, with `PromptArgument` metadata. Implement `get(principal, name, arguments)` and return `PromptResult` messages. Use `None` for an argument-free prompt. |
+| `throw new McpError(InvalidParams, message, data)` in a resource or prompt | Return `CapabilityError::InvalidParams { message, data }`. Use `CapabilityError::Internal` for a safe service failure. |
+
+Eigenruhe's strict tool envelope remains `{data,error}`. Successes return
+`json!({"data": value, "error": null})`. Errors return the same envelope with
+`data: null`, a safe error object and `with_structured_content`. Keep its
+65,536-byte output bound, clipped strings, status, request ID and allowed
+stale-revision details in the product adapter. Test both envelopes against
+its output schema. Preserve `eigenruhe://content/{id}` and
+`eigenruhe://programs/{id}` as templates named `content` and `program`,
+including titles, descriptions and `application/json`. Use `content:read`
+and the product's program read grant. Keep UUID validation and account checks
+in the read service; return the original URI with JSON text contents.
+
+Hebkit's `exercise` and `training-plan` templates remain
+`hebkit://exercises/{id}` and `hebkit://plans/{id}`. Copy their titles,
+descriptions and MIME types into `ResourceTemplate` metadata and attach the
+catalog and training read grants. Preserve its UUID validation and safe
+not-found error details in `read`. Return JSON text using the requested URI.
+Both products currently omit a resource listing callback, so their concrete
+`ResourceService::list` registries stay empty.
+
+Redemut's `recommend-next-steps` prompt has no arguments. Register a
+`ScopedPrompt` with `Prompt::new("recommend-next-steps", Some(description), None)`
+and the learning/content read grants. Return its existing user-role text
+through `PromptResult::new(vec![PromptMessage::new_text(Role::User, text)])`.
+Keep the instructions to read stats, the current plan and available content,
+and to ask before setting a plan.
+
+Schlauzug currently returns text-only tool errors. Serialize its safe
+`code`, `message`, optional `requestId` and `retryAfterSeconds` object into
+`ToolError::new(code, serialized_error).text_only()`. This retains the
+`isError` flag and text block without adding an envelope. If the tool also
+advertises an output schema, MCP 2026-07-28 requires a structured error that
+matches it. Preserve the text, define a success/error schema and use
+`with_structured_content` for that schema, or omit the output schema to keep
+the existing text-only contract. No resources or prompts are needed.
+
+```rust
+let services = baukit_mcp::McpServices::new(tools)
+    .with_resources(resources)
+    .with_prompts(prompts);
+let mcp = baukit_mcp::router(config, std::sync::Arc::new(services), store, policy).await?;
+```
+
+Attach only services the product uses. Resource templates support simple
+`{name}` path segments, which cover the Eigenruhe and Hebkit URIs above.
+All lists filter by the policy's effective scopes; reads and gets require
+all declared grants. These checks do not replace record ownership checks.
+
+Extend the product's committed definition export with `capability_schema`
+or `service_schema`, and keep `tool_drift` as the combined contract test.
+`resource_schema` includes concrete resource metadata, template URIs and grants;
+`prompt_schema` includes prompt descriptions, arguments and grants. Add HTTP
+rejection tests and a real Keycloak resource read. See
+[resources and prompts](../remote-mcp.md#add-resources-and-prompts) for the port
+signatures and result constructors.
 
 ## Change Keycloak and deployment
 

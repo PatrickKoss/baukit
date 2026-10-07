@@ -2,7 +2,8 @@
 
 ## [Unreleased]
 
-{% if context.mcp %}- Fix rustfmt drift in the MCP router wiring for short product names.
+{% if context.mcp %}- Check tools, resources and prompts in MCP definition drift tests. Accept default tool errors in the example output schema.
+- Fix rustfmt drift in the MCP router wiring for short product names.
 
 {% endif %}{% if context.web %}- Measure the screen and scroller together in the browser geometry check, so navigation animation cannot mix two layouts.
 

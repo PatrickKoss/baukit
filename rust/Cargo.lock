@@ -432,6 +432,7 @@ dependencies = [
  "baukit-ratelimit",
  "baukit-test",
  "http",
+ "jsonschema",
  "metrics",
  "metrics-util",
  "reqwest",

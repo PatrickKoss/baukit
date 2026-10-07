@@ -1,3 +1,6 @@
+#[path = "support/resources.rs"]
+mod resources;
+
 use std::{
     error::Error,
     sync::Arc,
@@ -5,14 +8,14 @@ use std::{
 };
 
 use baukit_mcp::{
-    KeycloakIntrospectionConfig, KeycloakIntrospectionPolicy, McpConfig, Principal, ScopedTool,
-    ToolFuture, ToolService,
+    KeycloakIntrospectionConfig, KeycloakIntrospectionPolicy, McpConfig, McpServices, Principal,
+    ScopedTool, ToolFuture, ToolService,
 };
 use baukit_ratelimit::InMemoryRateLimitStore;
 use reqwest::Client;
 use rmcp::{
     ClientServiceExt,
-    model::{CallToolRequestParams, ProtocolVersion},
+    model::{CallToolRequestParams, ProtocolVersion, ReadResourceRequestParams},
     service::ClientLifecycleMode,
     transport::{
         StreamableHttpClientTransport, streamable_http_client::StreamableHttpClientTransportConfig,
@@ -173,7 +176,10 @@ async fn real_keycloak_audience_expiry_protocol_introspection_and_logout()
     let policy = Arc::new(KeycloakIntrospectionPolicy::new(policy_config)?);
     let app = baukit_mcp::router(
         config,
-        Arc::new(Subject),
+        Arc::new(
+            McpServices::new(Arc::new(Subject))
+                .with_resources(Arc::new(resources::Catalog::default())),
+        ),
         Arc::new(InMemoryRateLimitStore::default()),
         policy,
     )
@@ -247,6 +253,14 @@ async fn real_keycloak_audience_expiry_protocol_introspection_and_logout()
                 .as_str()
                 .is_some_and(|subject| !subject.is_empty())
         );
+        let read = peer
+            .read_resource(ReadResourceRequestParams::new("product://items/42"))
+            .await?;
+        let content = serde_json::to_value(&read.contents)?;
+        assert_eq!(content[0]["uri"], "product://items/42");
+        let data: Value =
+            serde_json::from_str(content[0]["text"].as_str().ok_or("resource text")?)?;
+        assert_eq!(data["subject"], output["subject"]);
         peer.cancel().await?;
     }
     let wrong = token(&client, &issuer, "wrong").await?;

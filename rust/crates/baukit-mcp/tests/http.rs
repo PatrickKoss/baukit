@@ -1,3 +1,5 @@
+mod support;
+
 use std::{
     error::Error,
     future::Future,
@@ -12,7 +14,8 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use baukit_mcp::{
-    JwtOnlyPolicy, McpConfig, Principal, ScopedTool, ToolError, ToolFuture, ToolService, router,
+    JwtOnlyPolicy, McpConfig, McpServices, Principal, ScopedTool, ToolError, ToolFuture,
+    ToolService, router,
 };
 use baukit_ratelimit::{
     InMemoryRateLimitStore, Quota, RateLimitDecision, RateLimitStore, RateLimitStoreError,
@@ -41,10 +44,10 @@ impl ToolService for IdentityTool {
     ) -> ToolFuture<'a> {
         Box::pin(async move {
             if name != "identity" || arguments != json!({}) {
-                return Err(ToolError {
-                    code: "invalid_arguments".into(),
-                    message: "Empty arguments required".into(),
-                });
+                return Err(ToolError::new(
+                    "invalid_arguments",
+                    "Empty arguments required",
+                ));
             }
             Ok(
                 json!({"subject":principal.subject(), "issuer":principal.issuer(), "client":principal.client_id(), "scopes":principal.scopes()}),
@@ -76,7 +79,16 @@ async fn app(config: McpConfig) -> Result<Router, Box<dyn Error>> {
 async fn send(
     app: &Router,
     token: Option<&str>,
+    message: Value,
+) -> Result<(StatusCode, http::HeaderMap, Value), Box<dyn Error>> {
+    send_with_origin(app, token, message, None).await
+}
+
+async fn send_with_origin(
+    app: &Router,
+    token: Option<&str>,
     mut message: Value,
+    origin: Option<&str>,
 ) -> Result<(StatusCode, http::HeaderMap, Value), Box<dyn Error>> {
     if message["method"] != "initialize" {
         message["params"]["_meta"] = json!({"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"protocol-test","version":"1"},"io.modelcontextprotocol/clientCapabilities":{}});
@@ -94,8 +106,15 @@ async fn send(
         .header(header::ACCEPT, "application/json, text/event-stream")
         .header("mcp-protocol-version", version)
         .header("mcp-method", message["method"].as_str().unwrap_or_default());
-    if let Some(name) = message.pointer("/params/name").and_then(Value::as_str) {
+    if let Some(name) = message
+        .pointer("/params/name")
+        .or_else(|| message.pointer("/params/uri"))
+        .and_then(Value::as_str)
+    {
         builder = builder.header("mcp-name", name);
+    }
+    if let Some(origin) = origin {
+        builder = builder.header(header::ORIGIN, origin);
     }
     if let Some(token) = token {
         builder = builder.header(header::AUTHORIZATION, format!("Bearer {token}"));
@@ -197,6 +216,8 @@ async fn initialize_list_and_call_preserve_verified_principal() -> Result<(), Bo
     let (status, _, result) = send(&app, Some(&token), json!({"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"protocol-test","version":"1"}}})).await?;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(result["result"]["protocolVersion"], "2025-11-25");
+    assert!(result["result"]["capabilities"].get("resources").is_none());
+    assert!(result["result"]["capabilities"].get("prompts").is_none());
     let (status, _, result) = send(&app, Some(&token), list()).await?;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(result["result"]["tools"][0]["name"], "identity");
@@ -504,5 +525,326 @@ async fn effective_scopes_filter_discovery_and_dispatch_and_map_account()
         }
         assert_eq!(policy.calls.load(std::sync::atomic::Ordering::SeqCst), 2);
     }
+    Ok(())
+}
+
+struct ConflictTool;
+
+fn conflict_schema() -> Value {
+    json!({"type":"object","properties":{"data":{"type":"null"},"error":{"type":"object","properties":{"code":{"const":"stale_revision"},"message":{"type":"string"},"status":{"type":"integer","minimum":400,"maximum":599},"details":{"type":"object","properties":{"currentRevision":{"type":"integer","minimum":0}},"required":["currentRevision"],"additionalProperties":false}},"required":["code","message","status","details"],"additionalProperties":false}},"required":["data","error"],"additionalProperties":false})
+}
+
+impl ToolService for ConflictTool {
+    fn tools(&self) -> Vec<ScopedTool> {
+        vec![ScopedTool {
+            name: "save".into(),
+            description: "Save a revision".into(),
+            input_schema: json!({"type":"object"}),
+            output_schema: Some(conflict_schema()),
+            required_scopes: vec!["items:write".into()],
+            read_only: false,
+        }]
+    }
+    fn call<'a>(
+        &'a self,
+        _principal: &'a Principal,
+        _name: &'a str,
+        _arguments: Value,
+    ) -> ToolFuture<'a> {
+        Box::pin(async {
+            Err(ToolError::new("stale_revision", "Reload revision 7 before saving").with_structured_content(json!({"data":null,"error":{"code":"stale_revision","message":"Reload revision 7 before saving","status":409,"details":{"currentRevision":7}}})))
+        })
+    }
+}
+
+fn request(method: &str, params: Value) -> Value {
+    json!({"jsonrpc":"2.0","id":42,"method":method,"params":params})
+}
+
+#[tokio::test]
+async fn optional_capabilities_use_the_real_router_and_scope_grants() -> Result<(), Box<dyn Error>>
+{
+    let issuer = MockOidcServer::start().await?;
+    let config = config(&issuer);
+    let claims = issuer.claims("alice", &config.resource_url, Duration::from_secs(300))?;
+    let token = issuer.mint(
+        &claims
+            .clone()
+            .claim("scope", "items:read learning:read items:write"),
+    )?;
+    let denied = issuer.mint(&claims.clone().claim("scope", "unrelated:read"))?;
+    let catalog = Arc::new(support::Catalog::default());
+    let recommendations = Arc::new(support::Recommendations::default());
+    let services = McpServices::new(Arc::new(ConflictTool))
+        .with_resources(catalog.clone())
+        .with_prompts(recommendations.clone());
+    let app = router(
+        config,
+        Arc::new(services),
+        Arc::new(InMemoryRateLimitStore::default()),
+        Arc::new(JwtOnlyPolicy),
+    )
+    .await?;
+    let (_, _, discovered) =
+        send(&app, Some(&token), request("server/discover", json!({}))).await?;
+    assert_eq!(discovered["result"]["capabilities"]["resources"], json!({}));
+    assert_eq!(discovered["result"]["capabilities"]["prompts"], json!({}));
+    for (method, params) in [
+        ("resources/list", json!({})),
+        ("resources/templates/list", json!({})),
+        ("resources/read", json!({"uri":"product://items/42"})),
+        ("prompts/list", json!({})),
+        (
+            "prompts/get",
+            json!({"name":"next-steps","arguments":{"language":"de"}}),
+        ),
+        ("tools/call", json!({"name":"save","arguments":{}})),
+    ] {
+        let message = request(method, params);
+        let (status, headers, body) = send(&app, None, message.clone()).await?;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{method}");
+        assert_eq!(body, json!({"error":"invalid_token"}));
+        assert!(
+            headers[header::WWW_AUTHENTICATE]
+                .to_str()?
+                .contains("items:read")
+        );
+        let (status, _, body) = send_with_origin(
+            &app,
+            Some(&token),
+            message.clone(),
+            Some("https://evil.example"),
+        )
+        .await?;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{method}");
+        assert_eq!(body, json!({"error":"invalid_host_or_origin"}));
+        let (status, headers, body) = send(&app, Some(&denied), message.clone()).await?;
+        if method.ends_with("/list") {
+            assert_eq!(status, StatusCode::OK, "{method}");
+            let key = match method {
+                "resources/list" => "resources",
+                "resources/templates/list" => "resourceTemplates",
+                _ => "prompts",
+            };
+            assert_eq!(body["result"][key], json!([]));
+        } else {
+            assert_eq!(status, StatusCode::FORBIDDEN, "{method}");
+            assert_eq!(body, json!({"error":"insufficient_scope"}));
+            assert!(
+                headers[header::WWW_AUTHENTICATE]
+                    .to_str()?
+                    .contains("insufficient_scope")
+            );
+        }
+        let (status, headers, body) = send(&app, Some(&token), message).await?;
+        assert_eq!(status, StatusCode::OK, "{method}: {body}");
+        assert_eq!(headers[header::CACHE_CONTROL], "no-store");
+        let result = &body["result"];
+        match method {
+            "resources/list" => {
+                assert_eq!(result["resources"].as_array().ok_or("resources")?.len(), 1);
+                assert_eq!(result["resources"][0]["uri"], "product://guide");
+                assert_eq!(result["resources"][0]["mimeType"], "application/json");
+                assert_eq!(result["ttlMs"], 0);
+                assert_eq!(result["cacheScope"], "private");
+            }
+            "resources/templates/list" => {
+                assert_eq!(
+                    result["resourceTemplates"]
+                        .as_array()
+                        .ok_or("templates")?
+                        .len(),
+                    1
+                );
+                assert_eq!(
+                    result["resourceTemplates"][0]["uriTemplate"],
+                    "product://items/{id}"
+                );
+            }
+            "resources/read" => {
+                assert_eq!(result["contents"][0]["uri"], "product://items/42");
+                let content: Value =
+                    serde_json::from_str(result["contents"][0]["text"].as_str().ok_or("text")?)?;
+                assert_eq!(content["subject"], "alice");
+                assert_eq!(result["ttlMs"], 0);
+                assert_eq!(result["cacheScope"], "private");
+            }
+            "prompts/list" => {
+                assert_eq!(result["prompts"].as_array().ok_or("prompts")?.len(), 2);
+                assert_eq!(
+                    result["prompts"][0]["arguments"][0],
+                    json!({"name":"language","description":"Output language","required":true})
+                );
+                assert_eq!(result["ttlMs"], 0);
+                assert_eq!(result["cacheScope"], "private");
+            }
+            "prompts/get" => {
+                assert_eq!(result["messages"][0]["role"], "user");
+                assert_eq!(
+                    result["messages"][0]["content"]["text"],
+                    "Recommend practice for alice in \"de\""
+                );
+            }
+            _ => {
+                assert_eq!(result["isError"], true);
+                assert_eq!(
+                    result["content"],
+                    json!([{"type":"text","text":"Reload revision 7 before saving"}])
+                );
+                assert_eq!(
+                    result["structuredContent"]["error"]["details"]["currentRevision"],
+                    7
+                );
+                let validator = jsonschema::validator_for(&conflict_schema())?;
+                assert!(validator.is_valid(&result["structuredContent"]));
+                assert!(
+                    !validator
+                        .is_valid(&json!({"code":"stale_revision","message":"wrong envelope"}))
+                );
+            }
+        }
+    }
+    assert_eq!(
+        *catalog.0.lock().expect("reads"),
+        [("alice".into(), "product://items/42".into())]
+    );
+    assert_eq!(
+        *recommendations.0.lock().expect("prompts"),
+        [("alice".into(), json!({"language":"de"}))]
+    );
+    for uri in ["product://private", "product://private/42"] {
+        let (status, _, _) = send(
+            &app,
+            Some(&token),
+            request("resources/read", json!({"uri":uri})),
+        )
+        .await?;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+    for (uri, code, message) in [
+        ("product://items/missing", -32602, "Item not found"),
+        ("product://items/unavailable", -32603, "Items unavailable"),
+        ("product://unknown", -32602, "Unknown resource"),
+    ] {
+        let (_, _, body) = send(
+            &app,
+            Some(&token),
+            request("resources/read", json!({"uri":uri})),
+        )
+        .await?;
+        assert_eq!(body["error"]["code"], code);
+        assert_eq!(body["error"]["message"], message);
+    }
+    let count = recommendations.0.lock().expect("prompts").len();
+    for params in [
+        json!({"name":"next-steps"}),
+        json!({"name":"next-steps","arguments":{"language":42}}),
+        json!({"name":"next-steps","arguments":{"language":"de","extra":"value"}}),
+        json!({"name":"unknown"}),
+    ] {
+        let (_, _, body) = send(&app, Some(&token), request("prompts/get", params)).await?;
+        assert_eq!(body["error"]["code"], -32602);
+    }
+    assert_eq!(recommendations.0.lock().expect("prompts").len(), count);
+    let (_, _, result) = send(
+        &app,
+        Some(&token),
+        request("prompts/get", json!({"name":"recommend-next-steps"})),
+    )
+    .await?;
+    assert_eq!(result["result"]["messages"][0]["role"], "user");
+    let (_, _, result) = send(
+        &app,
+        Some(&token),
+        request(
+            "prompts/get",
+            json!({"name":"next-steps","arguments":{"language":"unavailable"}}),
+        ),
+    )
+    .await?;
+    assert_eq!(result["error"]["message"], "Recommendations unavailable");
+    Ok(())
+}
+
+struct OverlappingCatalog(support::Catalog);
+
+impl baukit_mcp::ResourceService for OverlappingCatalog {
+    fn list(&self) -> Vec<baukit_mcp::ScopedResource> {
+        vec![baukit_mcp::ScopedResource {
+            resource: baukit_mcp::Resource::new("product://items/42", "special"),
+            required_scopes: vec!["private:read".into()],
+        }]
+    }
+    fn templates(&self) -> Vec<baukit_mcp::ScopedResourceTemplate> {
+        self.0.templates()
+    }
+    fn read<'a>(
+        &'a self,
+        principal: &'a Principal,
+        uri: &'a str,
+    ) -> baukit_mcp::ResourceFuture<'a> {
+        self.0.read(principal, uri)
+    }
+}
+
+#[tokio::test]
+async fn overlapping_resource_grants_and_effective_policy_scopes_cannot_be_bypassed()
+-> Result<(), Box<dyn Error>> {
+    let issuer = MockOidcServer::start().await?;
+    let config = config(&issuer);
+    let claims = issuer.claims("alice", &config.resource_url, Duration::from_secs(300))?;
+    let catalog = Arc::new(OverlappingCatalog(support::Catalog::default()));
+    let policy = Arc::new(ProductPolicy {
+        denial: None,
+        scopes: vec!["items:read".into(), "private:read".into()],
+        calls: std::sync::atomic::AtomicUsize::new(0),
+    });
+    let services = McpServices::new(Arc::new(IdentityTool))
+        .with_resources(catalog.clone())
+        .with_prompts(Arc::new(support::Recommendations::default()));
+    let app = router(
+        config,
+        Arc::new(services),
+        Arc::new(InMemoryRateLimitStore::default()),
+        policy,
+    )
+    .await?;
+    for scopes in ["items:read", "private:read"] {
+        let token = issuer.mint(&claims.clone().claim("scope", scopes))?;
+        let (status, _, result) =
+            send(&app, Some(&token), request("resources/list", json!({}))).await?;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(result["result"]["resources"], json!([]));
+        let (status, _, _) = send(
+            &app,
+            Some(&token),
+            request("resources/read", json!({"uri":"product://items/42"})),
+        )
+        .await?;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+    assert!(catalog.0.0.lock().expect("reads").is_empty());
+    let token = issuer.mint(&claims.claim("scope", "items:read private:read learning:read"))?;
+    let (_, _, result) = send(
+        &app,
+        Some(&token),
+        request("resources/read", json!({"uri":"product://items/42"})),
+    )
+    .await?;
+    let content: Value = serde_json::from_str(
+        result["result"]["contents"][0]["text"]
+            .as_str()
+            .ok_or("text")?,
+    )?;
+    assert_eq!(content["subject"], "linked-account");
+    let (_, _, result) = send(&app, Some(&token), request("prompts/list", json!({}))).await?;
+    assert_eq!(result["result"]["prompts"], json!([]));
+    let (status, _, _) = send(
+        &app,
+        Some(&token),
+        request("prompts/get", json!({"name":"recommend-next-steps"})),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::FORBIDDEN);
     Ok(())
 }

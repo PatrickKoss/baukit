@@ -39,6 +39,121 @@ cargo run --manifest-path backend/Cargo.toml -p my-product-mcp --bin mcp-tools >
 cargo test --manifest-path backend/Cargo.toml -p my-product-mcp --test tool_drift
 ```
 
+## Return tool errors
+
+Use `ToolError::new(code, message)` for the default structured
+`{code,message}` error. A product can supply its own envelope and text:
+
+```rust
+Err(ToolError::new("stale_revision", "Reload revision 7 before saving")
+    .with_structured_content(serde_json::json!({
+        "data": null,
+        "error": {
+            "code": "stale_revision",
+            "message": "Reload revision 7 before saving",
+            "status": 409,
+            "details": {"currentRevision": 7}
+        }
+    })))
+```
+
+The message becomes the text content, the envelope becomes
+`structuredContent`, and `isError` is true. Keep messages and details safe
+for clients. Product adapters own redaction, bounds, and revision handling.
+Use `ToolError::new(code, text).text_only()` to preserve a text-only error
+contract for a tool without an output schema.
+
+An advertised `outputSchema` must accept both success and error payloads.
+This follows the [MCP structured result contract](https://modelcontextprotocol.io/specification/2026-07-28/server/tools#output-schema).
+The generated example uses `oneOf` for its items result and default error.
+Baukit checks schema object shape at registration but does not run a JSON
+Schema validator on results, including in debug builds. Validate representative
+success and error payloads with `jsonschema::validator_for` in product tests.
+This keeps debug and release behavior the same and avoids adding a validator
+and external reference resolution to every product request.
+
+## Add resources and prompts
+
+The generated crate registers only tools. Compose optional services when a
+product needs resources or prompts:
+
+```rust
+let services = baukit_mcp::McpServices::new(tools)
+    .with_resources(resources)
+    .with_prompts(prompts);
+let mcp = baukit_mcp::router(config, std::sync::Arc::new(services), store, policy).await?;
+```
+
+`ResourceService::list` returns fixed `ScopedResource` definitions.
+`ResourceService::templates` returns `ScopedResourceTemplate` definitions.
+Both attach `required_scopes` to the protocol metadata. For example:
+
+```rust
+use baukit_mcp::{ResourceTemplate, ScopedResourceTemplate};
+
+let definition = ScopedResourceTemplate {
+    template: ResourceTemplate::new("product://content/{id}", "content")
+        .with_title("Content item")
+        .with_mime_type("application/json"),
+    required_scopes: vec!["content:read".into()],
+};
+```
+
+`ResourceService::read(&self, principal, uri) -> ResourceFuture<'_>` returns
+`Result<Vec<ResourceContents>, CapabilityError>`. Return JSON text with
+`ResourceContents::text(serialized_json, uri).with_mime_type("application/json")`.
+Binary resources use `ResourceContents::blob(base64_data, uri)`.
+Templates support simple `{name}` path segments, such as `{id}`.
+The server matches the URI before dispatch; the product must decode and
+validate IDs and enforce account ownership. Unknown URIs are invalid params.
+If definitions overlap, a read requires all matching scopes. Concrete
+resource definitions are fixed when the router starts; account-specific
+catalogs can be read through tools or resource templates.
+
+`PromptService::list` returns `ScopedPrompt` definitions, including their
+arguments. `PromptService::get(&self, principal, name, arguments) -> PromptFuture<'_>`
+returns `Result<PromptResult, CapabilityError>`. For example:
+
+```rust
+use baukit_mcp::{Prompt, PromptArgument, PromptMessage, PromptResult, Role, ScopedPrompt};
+
+let definition = ScopedPrompt {
+    prompt: Prompt::new("recommend-next-steps", Some("Recommend practice"),
+        Some(vec![PromptArgument::new("language").with_required(true)])),
+    required_scopes: vec!["learning:read".into()],
+};
+let result = PromptResult::new(vec![
+    PromptMessage::new_text(Role::User, "Read learning stats and the current plan."),
+]);
+```
+
+Use `None` for arguments when porting an argument-free prompt. The server
+rejects unknown arguments, missing required arguments and non-string values
+before calling the product. Product code checks argument values.
+
+Each service receives the policy's effective principal on reads or gets.
+All definitions require explicit, nonempty scopes. Add these scopes to
+Keycloak; protected resource metadata includes tool, resource and prompt grants.
+The server advertises resources or prompts only when the service is registered.
+Lists omit definitions whose scopes are missing. Reads and gets return HTTP
+403 with a scope challenge before product dispatch. Resource reads and lists,
+and prompt lists, use private caching with a zero TTL.
+
+Use `CapabilityError::InvalidParams { message, data }` for safe bad-input
+or missing-record errors and `CapabilityError::Internal { message, data }`
+for safe service failures. These become JSON-RPC errors with optional product
+data, unlike a tool's `isError` result. Keep database and provider error text
+inside the product.
+
+`resource_schema` and `prompt_schema` export definitions and scopes.
+`capability_schema(tools, resources, templates, prompts)` combines them with
+`tool_schema`. `service_schema(&services)` exports the actual service registries.
+The generated `mcp-tools` binary and `tool_drift` test use `ItemTools::schema`,
+which includes empty resource and prompt registries. When adding a service,
+pass its shared definitions into that export and test, then review the committed
+`mcp-tools.json` diff. Changes to resource metadata, URI templates, prompt
+arguments or scopes must change the committed contract.
+
 ## Connect clients
 
 For Claude Code, register the generated public client and fixed callback port:
