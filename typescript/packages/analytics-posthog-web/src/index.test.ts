@@ -143,6 +143,7 @@ describe('PostHogWebTransport mapping', () => {
   it('preserves consent through reset with the installed PostHog SDK', async () => {
     const posthog = new PostHog();
     posthog.init('phc_test', {
+      api_host: 'https://posthog.example.test',
       persistence: 'memory',
       opt_out_capturing_by_default: true,
       autocapture: false,

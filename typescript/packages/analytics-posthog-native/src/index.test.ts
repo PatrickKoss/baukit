@@ -208,6 +208,7 @@ describe('PostHogNativeTransport mapping', () => {
 
     expect(posthog.capture).not.toHaveBeenCalled();
     expect(posthog.optOut).toHaveBeenCalledTimes(2);
+    await Promise.resolve(posthog.client.capture('consent_probe'));
     expect(posthog.queue).toEqual([]);
   });
 
