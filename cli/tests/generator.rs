@@ -4493,16 +4493,33 @@ fn doctor_accepts_product_named_remote_tool_adapters() -> anyhow::Result<()> {
     generated.mcp = true;
     generated.auth = Some(AuthProvider::Oidc);
     let root = generate_new(&generated)?;
-    for relative in [
-        "backend/crates/product-tools-mcp/src/lib.rs",
-        "backend/crates/product-tools-bin/src/bin/api.rs",
-        "backend/crates/product-tools-mcp/src/bin/mcp-tools.rs",
-        "backend/tests/tool_drift.rs",
+    for (relative, before, after) in [
+        (
+            "backend/crates/product-tools-mcp/src/lib.rs",
+            "ItemTools",
+            "ProductTools",
+        ),
+        (
+            "backend/crates/product-tools-mcp/src/lib.rs",
+            "pub fn services(",
+            "pub fn product_services(",
+        ),
+        (
+            "backend/crates/product-tools-bin/src/bin/api.rs",
+            "product_tools_mcp::services(",
+            "product_tools_mcp::product_services(",
+        ),
+        (
+            "backend/crates/product-tools-mcp/src/bin/mcp-tools.rs",
+            "ItemTools",
+            "ProductTools",
+        ),
+        ("backend/tests/tool_drift.rs", "ItemTools", "ProductTools"),
     ] {
         let path = root.join(relative);
         let source = fs::read_to_string(&path)?;
-        assert!(source.contains("ItemTools"));
-        fs::write(path, source.replace("ItemTools", "ProductTools"))?;
+        assert!(source.contains(before), "{relative}");
+        fs::write(path, source.replace(before, after))?;
     }
     let findings = doctor(&root)?;
     assert!(
