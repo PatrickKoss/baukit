@@ -93,7 +93,7 @@ TRAIN_VERSION="$next" perl -0pi -e \
 cargo update --manifest-path cli/Cargo.toml --workspace
 
 release_date=${RELEASE_DATE:-$(date -u +%F)}
-for changelog in rust/crates/*/CHANGELOG.md templates/common/CHANGELOG.md; do
+for changelog in rust/crates/*/CHANGELOG.md cli/CHANGELOG.md templates/common/CHANGELOG.md; do
   TRAIN_VERSION="$next" RELEASE_DATE="$release_date" perl -0pi -e \
     's{## \[Unreleased\]\n\n}{"## [Unreleased]\n\n## [".$ENV{TRAIN_VERSION}."] - ".$ENV{RELEASE_DATE}."\n\n"}e' \
     "$changelog"

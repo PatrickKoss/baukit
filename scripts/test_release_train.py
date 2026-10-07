@@ -201,6 +201,18 @@ class ReleaseTrainFilesTest(unittest.TestCase):
         self.assertIn("Return mobile OIDC callbacks", shipped)
         self.assertNotIn("Reconcile confidential backend clients", shipped)
 
+    def test_cli_changelog_separates_pending_and_shipped_080_entries(self):
+        source = (ROOT / "cli/CHANGELOG.md").read_text()
+        pending, history = source.split("## [0.8.0] - 2026-10-07", 1)
+        shipped, earlier = history.split("## Earlier releases", 1)
+        self.assertIn("Cut CLI release notes", pending)
+        self.assertNotIn("Breaking: `--mcp`", pending)
+        self.assertIn("Breaking: `--mcp`", shipped)
+        self.assertIn("JWT-only authentication policy", shipped)
+        self.assertIn("Android QA timeout errors", shipped)
+        self.assertNotIn("Add `--pwa`", shipped)
+        self.assertIn("Add `--pwa`", earlier)
+
     def test_patch_train_cuts_template_changelog_and_updates_cli_tags(self):
         self.check_patch_train("## [Unreleased]\n\n- Pending template fix.\n", True)
 
@@ -216,6 +228,7 @@ class ReleaseTrainFilesTest(unittest.TestCase):
                 shutil.copyfile(ROOT / relative, destination)
             files = {
                 "rust/Cargo.toml": '[workspace.package]\nversion = "0.7.0"\n',
+                "cli/CHANGELOG.md": "## [Unreleased]\n\n- Pending CLI fix.\n\n## [0.7.0] - 2026-10-04\n\n- Shipped CLI fix.\n",
                 "cli/Cargo.toml": '[package]\nname = "baukit-cli"\nversion = "0.7.0"\n',
                 "rust/crates/baukit-core/CHANGELOG.md": "## [Unreleased]\n\n- Pending crate fix.\n",
                 "typescript/packages/analytics-core/package.json": json.dumps({"name": "@baukit/analytics-core", "version": "0.7.1"}),
@@ -252,6 +265,8 @@ class ReleaseTrainFilesTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             after = (root / "templates/common/CHANGELOG.md").read_text()
             self.assertEqual(after, before.replace("## [Unreleased]\n\n", "## [Unreleased]\n\n## [0.7.1] - 2026-10-05\n\n", 1))
+            cli_changelog = (root / "cli/CHANGELOG.md").read_text()
+            self.assertEqual(cli_changelog, "## [Unreleased]\n\n## [0.7.1] - 2026-10-05\n\n- Pending CLI fix.\n\n## [0.7.0] - 2026-10-04\n\n- Shipped CLI fix.\n")
             self.assertEqual(after.count("## [0.7.0]"), 1)
             self.assertEqual(after.count("## [0.6.0]"), 1)
             self.assertIn("--tag v0.7.1 --locked baukit-cli", (root / "README.md").read_text())
@@ -347,6 +362,7 @@ class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
                 '[package]\nname = "baukit-cli"\nversion = "0.7.1"\nedition = "2021"\n'
             ),
             "cli/src/main.rs": "fn main() {}\n",
+            "cli/CHANGELOG.md": "## [Unreleased]\n\n- Pending CLI fix.\n",
             "templates/common/CHANGELOG.md": "## [Unreleased]\n\n- Pending fix.\n",
             "templates/VERSION": "0.7.1\n",
             "deploy/chart/baukit-app/Chart.yaml": 'version: 0.7.1\nappVersion: "0.7.1"\n',

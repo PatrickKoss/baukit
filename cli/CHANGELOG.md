@@ -2,11 +2,20 @@
 
 ## [Unreleased]
 
+- Cut CLI release notes during release preparation.
+- Check tool, resource and prompt definitions in generated MCP drift tests. Let the tools-only example return schema-conforming errors.
+
+## [0.8.0] - 2026-10-07
+
 - Include the command arguments in Android QA timeout errors.
 - Supply localized web menu Close labels and the native navigation danger token in generated shells.
 - Wire an explicit JWT-only authentication policy in generated remote MCP crates. Document introspection and product account policies.
 
 - Breaking: `--mcp` now generates the Rust remote MCP server and requires `--backend --auth oidc`. Remove the TypeScript stdio template and transport and authentication selection flags. Existing MCP manifests and TypeScript servers receive a migration finding with `docs/migrations/mcp-stdio-to-remote.md`.
+
+## Earlier releases
+
+These entries were already present in v0.7.4.
 
 - Add `--pwa` to generate a worker builder and dependency for the selected web host, including mobile-only products.
 - Apply mobile top insets, select iOS Release builds, split OIDC storage by platform, and remove token-expiry waits from generated tests.
