@@ -26,6 +26,16 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./peers": {
+      "import": {
+        "types": "./dist/peers.d.ts",
+        "default": "./dist/peers.js"
+      },
+      "require": {
+        "types": "./dist/cjs/peers.d.ts",
+        "default": "./dist/cjs/peers.js"
+      }
     }
   },
   "files": [
@@ -35,13 +45,14 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node scripts/build-cjs.mjs",
     "prepare": "pnpm run build",
-    "test": "tsc -p tsconfig.test.json && vitest run --config ../../vitest.config.ts && node ../../scripts/test-packed-exports.mjs",
+    "test": "tsc -p tsconfig.test.json && vitest run --config ../../vitest.config.ts --maxWorkers=4 && node --test scripts/peers.test.cjs && node ../../scripts/test-packed-exports.mjs --load ./peers",
     "lint": "eslint src --max-warnings=0",
-    "format:check": "prettier --check src package.json tsconfig.json tsconfig.test.json"
+    "format:check": "prettier --check src scripts package.json turbo.json tsconfig.json tsconfig.test.json tsconfig.cjs.json"
   },
   "devDependencies": {
+    "@types/node": "26.6.4",
     "typescript": "6.0.3",
     "vitest": "5.0.3"
   },

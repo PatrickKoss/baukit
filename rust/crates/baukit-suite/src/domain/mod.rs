@@ -232,6 +232,10 @@ impl PeerRegistry {
     pub fn metadata(&self) -> &[PeerMetadata] {
         &self.metadata
     }
+    /// Looks up embedded metadata for the own app or any peer, including inactive peers.
+    pub fn peer_metadata(&self, id: &str) -> Option<&PeerMetadata> {
+        self.metadata.iter().find(|peer| peer.id == id)
+    }
     pub fn active_peers(&self) -> &[ActivePeer] {
         &self.active
     }

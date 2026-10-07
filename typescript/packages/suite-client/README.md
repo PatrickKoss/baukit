@@ -49,5 +49,26 @@ Register `suiteMessages` with `@baukit/localization-core`. Products replace
 `{product}` and render labels for their own event types. Message key and interpolation
 parity is checked across `en`, `de` and `es`.
 
+## Peer metadata at config time
+
+The dependency-free `@baukit/suite-client/peers` subpath has ESM and CommonJS
+exports. Expo config plugins can require it without loading the client or its
+dependencies. Products own their peers file; none ships in this package.
+
+```js
+const { readFileSync } = require('node:fs');
+const { parsePeersFile, peerLinkQuerySchemes } = require('@baukit/suite-client/peers');
+
+const peers = parsePeersFile(JSON.parse(readFileSync(peersPath, 'utf8')));
+const schemes = peerLinkQuerySchemes(peers, ownAppId);
+```
+
+`parsePeersFile(json: unknown): PeerMetadata[]` validates the schema-version-1
+file with the Rust registry rules. `peerLinkQuerySchemes(peers: readonly
+PeerMetadata[], ownAppId: string): string[]` excludes the own app by id, then
+deduplicates and sorts schemes. Use the result for iOS
+`LSApplicationQueriesSchemes` and Android `<queries>`. The adoption guide has a
+config plugin that preserves existing entries.
+
 See [suite adoption](../../../docs/platform/suite-events.md) for server wiring
 and the protocol contract. This package adds no CLI template capability.

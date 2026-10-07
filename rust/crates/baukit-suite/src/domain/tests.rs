@@ -1610,6 +1610,77 @@ fn catalog_rejects_invalid_contracts_and_exposes_typed_payloads() {
 }
 
 #[test]
+fn registry_looks_up_own_and_inactive_peer_metadata_by_id() {
+    let registry = PeerRegistry::new("alpha", SUITE_PEERS_JSON, PeerRegistrySettings::default())
+        .expect("registry");
+    assert!(registry.standalone());
+    assert_eq!(registry.peer_metadata("alpha"), Some(registry.own()));
+    let beta = registry.peer_metadata("beta").expect("inactive peer");
+    assert_eq!(beta.scheme, "beta");
+    assert_eq!(beta.display_name, "Beta");
+    assert_eq!(registry.metadata(), &[registry.own().clone(), beta.clone()]);
+    assert!(registry.active_peer("beta").is_none());
+    assert!(registry.peer_metadata("unknown").is_none());
+    assert!(registry.peer_metadata("Alpha").is_none());
+    let active = configured_registry();
+    assert_eq!(
+        active.peer_metadata("beta"),
+        Some(&active.active_peer("beta").expect("active peer").metadata)
+    );
+}
+
+#[test]
+fn peer_metadata_vectors_match_registry_validation() {
+    let vectors = fixture("peer-metadata.json");
+    for case in vectors["peerCases"].as_array().expect("peer cases") {
+        let mut peer = vectors["basePeer"].as_object().expect("base peer").clone();
+        if let Some(patch) = case["patch"].as_object() {
+            peer.extend(patch.clone());
+        }
+        if let Some(omit) = case["omit"].as_str() {
+            peer.remove(omit);
+        }
+        let file = json!({"schemaVersion": 1, "peers": [peer]});
+        assert_peer_file_vector(&file, case);
+    }
+    for case in vectors["fileCases"].as_array().expect("file cases") {
+        assert_peer_file_vector(&case["file"], case);
+    }
+    let peer = &vectors["basePeer"];
+    let duplicates = json!({"schemaVersion": 1, "peers": [peer, peer]});
+    assert!(
+        PeerRegistry::new(
+            "alpha",
+            &duplicates.to_string(),
+            PeerRegistrySettings::default()
+        )
+        .is_err()
+    );
+    let mut other = peer.clone();
+    other["id"] = json!("beta");
+    let same_scheme = json!({"schemaVersion": 1, "peers": [peer, other]});
+    assert!(
+        PeerRegistry::new(
+            "alpha",
+            &same_scheme.to_string(),
+            PeerRegistrySettings::default()
+        )
+        .is_ok()
+    );
+}
+
+fn assert_peer_file_vector(file: &Value, case: &Value) {
+    let valid = serde_json::from_value::<PeerFile>(file.clone())
+        .is_ok_and(|file| file.schema_version == 1 && validate_peer_metadata(&file.peers).is_ok());
+    assert_eq!(
+        valid,
+        case["valid"].as_bool().expect("valid flag"),
+        "{}",
+        case["name"]
+    );
+}
+
+#[test]
 fn registry_requires_both_public_urls_and_a_configured_peer_with_event_flow() {
     let settings = PeerRegistrySettings {
         public_api_url: Some("https://alpha.example/api/v1".into()),

@@ -4,6 +4,7 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+- Add peer metadata validation vectors shared by the Rust registry and TypeScript client.
 - Add the `suite` feature with protocol fixtures, a scripted receiver and a second app served through an in-process router.
 
 ## [0.9.0] - 2026-10-07

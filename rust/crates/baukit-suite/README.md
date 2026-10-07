@@ -6,6 +6,9 @@ and apply an event in one PostgreSQL transaction.
 
 Products embed their own `peers.json` and `catalog.json`. App ids are strings.
 The crate has no event builders, reward rules, account tables or UI.
+`PeerRegistry::peer_metadata(&self, id: &str) -> Option<&PeerMetadata>` returns
+metadata for the own app or any peer, including inactive peers. Use `scheme`
+when building product action links. `metadata()` keeps the full embedded list.
 
 ## Features
 
@@ -43,12 +46,31 @@ Use `SuiteConfig` as the product's `suite` configuration section. Call
 Copy `SUITE_MIGRATION_SQL` and `SUITE_RUNTIME_MIGRATION_SQL` after the jobs
 migrations for products adding suite tables. Keep applied suite migrations when
 their schema matches the shipped SQL, apart from product owner foreign keys.
+Keep the original filenames and SQLx migration history. Do not copy or run the
+crate's `001` and `002` again when their schema is already applied.
 Migrations do not run on startup. Add any missing owner foreign keys in the product.
 Use `PostgresSuiteErasure` and `erase_with_suite` to notify peers before the erasure
 transaction starts, then delete suite rows in that transaction. Implement
 `SuiteErasureOwnerLookup::lock_owner_in_transaction` with a product owner row
 lock. The adapter takes the suite advisory lock first, so domain writes that
 use the outbox owner lock finish before cleanup.
+
+## Packaging
+
+The crate archive includes `migrations/001_suite.sql` and
+`migrations/002_suite_runtime.sql`. These are the only embedded runtime files.
+Protocol fixtures ship with `baukit-test` under its `suite` feature; products
+provide their own peers and catalog at runtime.
+
+Before the release train publishes the connection-based `baukit-jobs` API,
+verify both pending packages together:
+
+```sh
+cargo package --manifest-path rust/Cargo.toml -p baukit-jobs -p baukit-suite --all-features
+```
+
+Cargo builds the extracted archives against the pending jobs archive. A suite-only
+package check against published `baukit-jobs` 0.9.0 uses its older transaction API.
 
 See [suite adoption and protocol](../../../docs/platform/suite-events.md) for
 configuration keys, public signatures, route mounting, worker wiring, client

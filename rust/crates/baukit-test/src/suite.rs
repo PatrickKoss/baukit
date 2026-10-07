@@ -20,6 +20,7 @@ pub fn fixture(name: &str) -> Option<&'static str> {
     match name {
         "SHA256SUMS" => Some(include_str!("suite/fixtures/v1/SHA256SUMS")),
         "peers.json" => Some(include_str!("suite/fixtures/v1/peers.json")),
+        "peer-metadata.json" => Some(include_str!("suite/fixtures/v1/peer-metadata.json")),
         "catalog.json" => Some(include_str!("suite/fixtures/v1/catalog.json")),
         "signature.json" => Some(include_str!("suite/fixtures/v1/signature.json")),
         "link-protocol.json" => Some(include_str!("suite/fixtures/v1/link-protocol.json")),

@@ -135,6 +135,10 @@ Metrics use the product's configured prefix, with these suffixes and labels:
    with at most 64 bytes. Both public URLs, both peer URLs and at least one
    event intersection are required for an active peer. No active peer means
    standalone mode: peers are hidden and emission enqueues nothing.
+   `PeerRegistry::peer_metadata(&self, id: &str) -> Option<&PeerMetadata>` looks
+   up the own app and inactive peers as well as active peers. Use its `scheme`
+   for product action links, such as `<scheme>://action/start-today`.
+   `metadata()` still returns the full embedded list.
 2. Embed `SuiteConfig` as `suite` in the product settings and delegate its
    `Validate` implementation. Call `validate_for(own_app, peers_json, cipher)`
    at startup. Active mode requires a credential cipher. URLs require HTTPS;
@@ -143,6 +147,11 @@ Metrics use the product's configured prefix, with these suffixes and labels:
    jobs migrations. Constants are
    `baukit_suite::{SUITE_MIGRATION_SQL, SUITE_RUNTIME_MIGRATION_SQL}`.
    Keep applied suite migrations in products that already have these tables.
+   For SLS, `0056_suite.sql` corresponds to `001_suite.sql` and
+   `0059_suite_runtime.sql` corresponds to `002_suite_runtime.sql`.
+   Keep those product files and their SQLx migration history unchanged. Do not
+   copy or run `001` and `002` again, and do not replace or renumber applied files.
+   The crate exposes SQL constants; it does not register or run migrations.
    Compare their schema with the shipped SQL, keeping product owner foreign
    keys. Add a migration only for other differences.
    Owner ids are UUIDs; no owner foreign key is shipped. Add missing owner
@@ -237,6 +246,51 @@ Metrics use the product's configured prefix, with these suffixes and labels:
     SHA256SUMS` from `fixtures/suite-events/v1`, and compare its protocol fixtures
     with Baukit before changing either side. The sample peers and catalog are
     neutral test data, not the product's deployment metadata.
+
+### Native link query schemes
+
+`@baukit/suite-client/peers` has no runtime dependencies and exports both ESM and
+CommonJS. `parsePeersFile(json: unknown): PeerMetadata[]` accepts a parsed
+schema-version-1 peers file. It checks the Rust registry's ids, schemes, required
+fields, string lists and reward modes, and rejects unknown fields and duplicate
+ids. `displayName` must be a string. `peerLinkQuerySchemes(peers, ownAppId)`
+returns every other app's scheme, deduplicated and sorted. Products own their
+`peers.json`; the package ships no deployment metadata.
+
+A product can use these helpers in `plugins/with-suite-link-queries.cjs`:
+
+```js
+const { readFileSync } = require('node:fs');
+const { withInfoPlist, withAndroidManifest } = require('@expo/config-plugins');
+const { parsePeersFile, peerLinkQuerySchemes } = require('@baukit/suite-client/peers');
+
+module.exports = (config, { ownAppId, peersPath }) => {
+  const peers = parsePeersFile(JSON.parse(readFileSync(peersPath, 'utf8')));
+  const schemes = peerLinkQuerySchemes(peers, ownAppId);
+  config = withInfoPlist(config, (mod) => {
+    const existing = mod.modResults.LSApplicationQueriesSchemes ?? [];
+    mod.modResults.LSApplicationQueriesSchemes = [...new Set([...existing, ...schemes])].sort();
+    return mod;
+  });
+  return withAndroidManifest(config, (mod) => {
+    const queries = (mod.modResults.manifest.queries ??= []);
+    const intents = queries.flatMap((query) => query.intent ?? []);
+    const missing = schemes.filter((scheme) => !intents.some((intent) =>
+      intent.action?.some((action) => action.$['android:name'] === 'android.intent.action.VIEW') &&
+      intent.data?.some((data) => data.$['android:scheme'] === scheme)
+    ));
+    if (missing.length) queries.push({ intent: missing.map((scheme) => ({
+      action: [{ $: { 'android:name': 'android.intent.action.VIEW' } }],
+      data: [{ $: { 'android:scheme': scheme } }],
+    })) });
+    return mod;
+  });
+};
+```
+
+Register the plugin in `app.config.cjs` with the product's app id and an absolute
+`peersPath`, such as `require.resolve('./suite/peers.json')`. It preserves existing
+iOS queries and Android intents. Changing peers requires a new native build.
 
 Configuration keys use the product prefix without renaming:
 
