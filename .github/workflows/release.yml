@@ -124,7 +124,7 @@ jobs:
       - name: Verify tagged train
         run: |
           cargo test --manifest-path rust/Cargo.toml
-          (cd typescript && pnpm check)
+          (cd typescript && pnpm check --concurrency=4)
           cargo test --manifest-path examples/minimal-api/Cargo.toml
 
       - name: Aggregate release notes

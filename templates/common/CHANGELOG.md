@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-## [0.9.0] - 2026-10-07
+{% if context.mcp %}- Keep product-crate imports in their own group in the MCP crate and drift test, so rustfmt output no longer depends on the product name.
+
+{% endif %}## [0.9.0] - 2026-10-07
 
 {% if context.mcp %}- Fetch signing keys over the internal network while keeping the public issuer. Add an optional backend Compose profile.
 - Register MCP services through `McpServices`.

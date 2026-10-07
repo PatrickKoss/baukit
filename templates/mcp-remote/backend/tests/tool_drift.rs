@@ -1,6 +1,7 @@
 use baukit_mcp::tool_schema;
-use {{ context.app_crate }}_mcp::ItemTools;
 use serde_json::Value;
+
+use {{ context.app_crate }}_mcp::ItemTools;
 
 fn committed_schema() -> Value {
     serde_json::from_str(include_str!("../mcp-tools.json")).expect("committed schema")

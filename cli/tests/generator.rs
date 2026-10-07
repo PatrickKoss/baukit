@@ -242,6 +242,7 @@ fn generated_backend_is_rustfmt_clean_across_product_names() -> anyhow::Result<(
         let parent = tempfile::tempdir()?;
         let mut generated_options = options(parent.path(), name);
         generated_options.worker = true;
+        generated_options.mcp = true;
         generated_options.auth = Some(AuthProvider::Oidc);
         let root = generate_new(&generated_options)?;
         let tree = read_tree(&root.join("backend"))?;

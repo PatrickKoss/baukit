@@ -172,7 +172,7 @@ jobs:
         working-directory: typescript
         run: |
           pnpm run test:source-maps
-          pnpm turbo build lint test
+          pnpm turbo build lint test --concurrency=4
       - name: Test Dexie conformance in Chromium and WebKit
         working-directory: typescript
         env:

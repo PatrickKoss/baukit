@@ -6,10 +6,11 @@ use baukit_mcp::{
     AuthenticationPolicy, JwtOnlyPolicy, McpServices, Principal, ScopedTool, ToolError, ToolFuture,
     ToolService,
 };
+use serde_json::{Value, json};
+
 use {{ context.app_crate }}_domain::Item;
 use {{ context.app_crate }}_ports::PortFuture;
 use {{ context.app_crate }}_services::{ItemService, ServiceError};
-use serde_json::{Value, json};
 
 pub fn authentication_policy() -> Arc<dyn AuthenticationPolicy> {
     Arc::new(JwtOnlyPolicy)
