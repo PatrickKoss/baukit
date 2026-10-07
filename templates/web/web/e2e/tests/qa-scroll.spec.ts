@@ -18,7 +18,7 @@ test.describe('scroll', () => {
     await stubApi(page, qaConfig.apiStubs);
   });
 
-  test('scroller geometry stays consistent while its width changes', async ({ page }) => {
+  test('measures the screen and scroller before a queued layout change', async ({ page }) => {
     await page.setContent(`
       <style>
         #scroller { overflow-y: auto; width: 400px; }
@@ -26,15 +26,25 @@ test.describe('scroll', () => {
       </style>
       <div id="scroller"><div id="screen"></div></div>
     `);
-    for (const width of [400, 500, 600, 700]) {
-      await page.locator('#scroller').evaluate((element, value) => {
-        element.style.width = `${String(value)}px`;
-      }, width);
-      const { screen, scroller } = await scrollingLayout(page.locator('#screen'));
-      expect(scroller.width).toBeCloseTo(width, 3);
-      expect(screen.width).toBeCloseTo(width / 2, 3);
-      expect(screen.x + screen.width / 2).toBeCloseTo(scroller.x + scroller.width / 2, 3);
-    }
+    await page.locator('#screen').evaluate((element) => {
+      const scroller = element.parentElement;
+      if (!scroller) throw new Error('Missing scroller');
+      for (const target of [element, scroller]) {
+        const getRectangle = target.getBoundingClientRect.bind(target);
+        target.getBoundingClientRect = () => {
+          const rectangle = getRectangle();
+          queueMicrotask(() => {
+            scroller.style.width = '800px';
+          });
+          return rectangle;
+        };
+      }
+    });
+    const { screen, scroller } = await scrollingLayout(page.locator('#screen'));
+    expect(scroller.width).toBeCloseTo(400, 3);
+    expect(screen.width).toBeCloseTo(200, 3);
+    expect(screen.x + screen.width / 2).toBeCloseTo(scroller.x + scroller.width / 2, 3);
+    await expect(page.locator('#scroller')).toHaveCSS('width', '800px');
   });
 
   for (const route of qaConfig.routes.filter(({ checkScroll }) => checkScroll !== false)) {
