@@ -139,10 +139,14 @@ Metrics use the product's configured prefix, with these suffixes and labels:
    `Validate` implementation. Call `validate_for(own_app, peers_json, cipher)`
    at startup. Active mode requires a credential cipher. URLs require HTTPS;
    `allow_loopback` permits HTTP only for localhost, 127.0.0.1 or ::1.
-3. Copy both suite SQL files after the three jobs migrations. Constants are
+3. For a product adding suite tables, copy both suite SQL files after the three
+   jobs migrations. Constants are
    `baukit_suite::{SUITE_MIGRATION_SQL, SUITE_RUNTIME_MIGRATION_SQL}`.
-   Columns match the protocol stores. Owner ids are UUIDs; no owner foreign
-   key is shipped. Add this product migration for each of `suite_links`,
+   Keep applied suite migrations in products that already have these tables.
+   Compare their schema with the shipped SQL, keeping product owner foreign
+   keys. Add a migration only for other differences.
+   Owner ids are UUIDs; no owner foreign key is shipped. Add missing owner
+   foreign keys with this product migration for each of `suite_links`,
    `suite_link_requests`, `suite_link_codes` and `suite_inbound_events`, replacing
    `owners` and the constraint name for each table:
 
@@ -252,7 +256,7 @@ head and emit points in each product before adoption.
 
 | Product app id | Config prefix and API base | Product work |
 | --- | --- | --- |
-| `sololeveling` | `SOLO_LEVELING_SYSTEM`, `/api/v1` | Replace the copied suite module. Keep typed payloads, LifeGraph mappings, rewards, the mapping route and migration `0061`. Implement replay from existing domain history. |
+| `sololeveling` | `SOLO_LEVELING_SYSTEM`, `/api/v1` | Replace the copied suite module. Keep applied migrations `0056`, `0059` and `0061`, including their owner foreign keys. Keep typed payloads, LifeGraph mappings, rewards and the mapping route. Implement replay from existing domain history. |
 | `eigenruhe` | `EIGENRUHE`, `/api/v1` | Replace hub publishing and its connection UI. Emit practice completion and check-ins from REST and sync transactions. Replay those rows. Keep the fitness-tracker connection. |
 | `hebkit` | `HEBKIT`, `/api/v1` | Replace the Tiefgang-specific sender and connection route. Emit first-party workouts and sleep, including imported sleep, at existing write points. Update closed job-type dispatch and replay both histories. |
 | `leitbild` | `LEITBILD`, `/api/v1` | Add a vault keyring. Run suite delivery independently of the AI worker. Emit new journal entries and completed program runs, excluding backfills. Supply replay and preserve the authorize query across login. |

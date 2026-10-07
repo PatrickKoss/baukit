@@ -41,7 +41,9 @@ Use `SuiteConfig` as the product's `suite` configuration section. Call
 `Arc<dyn baukit_ratelimit::RateLimitStore>`; use Redis for multiple processes.
 
 Copy `SUITE_MIGRATION_SQL` and `SUITE_RUNTIME_MIGRATION_SQL` after the jobs
-migrations. They do not run on startup. Add the owner foreign keys in the product.
+migrations for products adding suite tables. Keep applied suite migrations when
+their schema matches the shipped SQL, apart from product owner foreign keys.
+Migrations do not run on startup. Add any missing owner foreign keys in the product.
 Use `PostgresSuiteErasure` and `erase_with_suite` to notify peers before the erasure
 transaction starts, then delete suite rows in that transaction. Implement
 `SuiteErasureOwnerLookup::lock_owner_in_transaction` with a product owner row
