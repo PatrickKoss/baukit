@@ -7,7 +7,7 @@
   "scripts": {
     "setup": "sh ../scripts/setup.sh",
     "start": "pnpm run tokens && expo start",
-    "android": "expo run:android",
+    "android": "bash scripts/android-java.sh expo run:android",
     "ios": "expo run:ios",
     "tokens": "node scripts/generate-tokens.mjs",
     "build:sw": "node scripts/build-sw.mjs{% if context.pwa and not context.web %} --output-dir dist{% endif %}",

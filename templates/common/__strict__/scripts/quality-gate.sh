@@ -229,7 +229,7 @@ fi
 {% endif %}CI=1 corepack pnpm@12.9.1 --dir mobile exec expo prebuild --clean --platform ios
 CI=1 corepack pnpm@12.9.1 --dir mobile exec expo export --platform ios --output-dir dist/ios-check
 CI=1 corepack pnpm@12.9.1 --dir mobile exec expo prebuild --clean --platform android
-mobile/android/gradlew -p mobile/android --no-daemon --stacktrace -PreactNativeDevServerIp=127.0.0.1 assembleDebug
+bash mobile/scripts/android-java.sh mobile/android/gradlew -p mobile/android --no-daemon --stacktrace -PreactNativeDevServerIp=127.0.0.1 assembleDebug
 {% endif %}
 
 if [ -f deploy/observability/product-metrics.txt ]; then

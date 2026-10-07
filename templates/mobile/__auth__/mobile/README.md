@@ -64,6 +64,8 @@ policy and offline behavior. Expo SQLite on web needs the hosting headers
 
 {% endif %}## Native QA
 
+Android builds require Java 25. `corepack pnpm android` and the QA targets grant native access to Android's Prefab tool. Use `bash scripts/android-java.sh ./android/gradlew` with your Gradle arguments for direct builds.
+
 The local QA targets start disposable PostgreSQL, Redis{% if context.auth_oidc %}, Keycloak{% endif %} and API instances on separate ports. Managed providers need the backend issuer, client ID and deletion secrets configured before starting the API. They install an embedded release build in a dedicated emulator or simulator, so Metro is not required.
 
 ```sh

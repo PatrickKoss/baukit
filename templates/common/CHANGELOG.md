@@ -2,9 +2,11 @@
 
 ## [Unreleased]
 
-{% if context.mcp %}- Set the product name, version and instructions in MCP server discovery. Keep the default annotations explicit in tool declarations.
-
-- Keep product-crate imports in their own group in the MCP crate and drift test, so rustfmt output no longer depends on the product name.
+{% if context.mcp or context.mobile %}{% if context.mcp %}- Set the product name, version and instructions in MCP server discovery. Keep the default annotations explicit in tool declarations.
+{% endif %}{% if context.mobile %}- Breaking: Native checks now require Java 25. Use Android command-line tools 23.0 in QA. Select the macOS download for the host CPU.
+- Grant native access to Android's Prefab tool during native builds. Preserve existing JVM options.
+{% endif %}
+{% endif %}{% if context.mcp %}- Keep product-crate imports in their own group in the MCP crate and drift test, so rustfmt output no longer depends on the product name.
 
 {% endif %}## [0.9.0] - 2026-10-07
 

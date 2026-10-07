@@ -53,7 +53,7 @@ jobs:
       - uses: actions/setup-java@v6.0.1
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: "25"
       - name: Enable pinned pnpm
         run: |
           npm install --global corepack@0.36.0
@@ -80,7 +80,7 @@ jobs:
       - name: Compile Android debug binary
         run: |
           set -o pipefail
-          ./android/gradlew -p android --no-daemon --stacktrace -PreactNativeDevServerIp=127.0.0.1 assembleDebug 2>&1 | tee native-assemble.log
+          bash scripts/android-java.sh ./android/gradlew -p android --no-daemon --stacktrace -PreactNativeDevServerIp=127.0.0.1 assembleDebug 2>&1 | tee native-assemble.log
       - name: Upload native failure diagnostics
         if: {% raw %}${{ failure() }}{% endraw %}
         uses: actions/upload-artifact@v7.0.1

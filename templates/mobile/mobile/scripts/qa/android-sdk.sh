@@ -8,7 +8,7 @@ avd_home="${ANDROID_AVD_HOME:-$HOME/.android/avd}"
 avd_name="${BAUKIT_QA_ANDROID_AVD:-{{ context.app_name }}-qa}"
 api_level="${BAUKIT_QA_ANDROID_API_LEVEL:-36}"
 image_tag="${BAUKIT_QA_ANDROID_IMAGE_TAG:-google_apis}"
-command_tools_version="13114758"
+command_tools_version="16111833"
 
 case "$(uname -m)" in
   arm64 | aarch64) default_architecture=arm64-v8a ;;
@@ -18,7 +18,12 @@ architecture="${BAUKIT_QA_ANDROID_ARCHITECTURE:-$default_architecture}"
 
 case "$(uname -s)" in
   Linux) command_tools_platform=linux ;;
-  Darwin) command_tools_platform=mac ;;
+  Darwin)
+    case "$(uname -m)" in
+      arm64 | aarch64) command_tools_platform=mac_arm64 ;;
+      *) command_tools_platform=mac_x86_64 ;;
+    esac
+    ;;
   *)
     echo "qa: Android setup supports Linux and macOS" >&2
     exit 1

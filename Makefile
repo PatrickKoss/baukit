@@ -80,7 +80,7 @@ native-android-gate: android-sdk-setup
 	corepack pnpm@12.9.1 --dir "$$fixture_parent/fixture/mobile" exec expo install --check; \
 	(cd "$$fixture_parent/fixture/mobile" && BAUKIT_QA_BUILD=1 CI=1 ./node_modules/.bin/expo prebuild --clean --platform android --no-install); \
 	ANDROID_HOME="$${ANDROID_HOME:-$$HOME/Android/Sdk}" ANDROID_SDK_ROOT="$${ANDROID_SDK_ROOT:-$${ANDROID_HOME:-$$HOME/Android/Sdk}}" \
-		"$$fixture_parent/fixture/mobile/android/gradlew" -p "$$fixture_parent/fixture/mobile/android" --no-daemon --stacktrace -PreactNativeDevServerIp=127.0.0.1 assembleDebug
+		bash "$$fixture_parent/fixture/mobile/scripts/android-java.sh" "$$fixture_parent/fixture/mobile/android/gradlew" -p "$$fixture_parent/fixture/mobile/android" --no-daemon --stacktrace -PreactNativeDevServerIp=127.0.0.1 assembleDebug
 
 expo-sqlite-conformance:
 	./examples/expo-sqlite-conformance/scripts/run-android.sh

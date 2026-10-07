@@ -54,6 +54,8 @@ Before claiming native accessibility, follow the VoiceOver and TalkBack release 
 
 ## Native smoke guidance
 
+Android builds require Java 25. `corepack pnpm android` and the QA targets grant native access to Android's Prefab tool. Use `bash scripts/android-java.sh ./android/gradlew` with your Gradle arguments for direct builds.
+
 The generated native workflow clean-prebuilds and compiles Android for relevant mobile/configuration changes. Its scheduled/manual iOS layer requires a macOS runner. The local QA targets go further: they start disposable services, build a release app with an embedded JavaScript bundle, install it in a dedicated emulator or simulator, and run `mobile/.maestro/`.
 
 From a combined product's repository root, use:

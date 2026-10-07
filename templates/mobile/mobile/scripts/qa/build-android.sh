@@ -37,7 +37,7 @@ corepack pnpm@12.9.1 --dir "$root/mobile" install --frozen-lockfile
 corepack pnpm@12.9.1 --dir "$root/mobile" run tokens
 (cd "$root/mobile" && CI=1 ./node_modules/.bin/expo prebuild \
   --clean --platform android --no-install)
-NODE_ENV=production "$root/mobile/android/gradlew" \
+NODE_ENV=production bash "$root/mobile/scripts/android-java.sh" "$root/mobile/android/gradlew" \
   -p "$root/mobile/android" \
   --no-daemon \
   -PreactNativeDevServerIp=127.0.0.1 \

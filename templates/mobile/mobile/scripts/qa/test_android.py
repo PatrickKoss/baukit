@@ -17,6 +17,7 @@ class AndroidScriptsTest(unittest.TestCase):
         self.root = Path(directory.name)
         self.scripts = self.root / "mobile/scripts/qa"
         shutil.copytree(SCRIPTS, self.scripts)
+        shutil.copyfile(SCRIPTS.parent / "android-java.sh", self.scripts.parent / "android-java.sh")
         self.sdk = self.root / "sdk"
         self.avds = self.root / "avds"
         self.events = self.root / "events"
@@ -44,7 +45,7 @@ class AndroidScriptsTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_avd_keys_with_whitespace_are_replaced_once(self) -> None:
-        tools = self.sdk / "cmdline-tools/13114758/bin"
+        tools = self.sdk / "cmdline-tools/16111833/bin"
         self.executable(tools / "sdkmanager", "exit 0\n")
         self.executable(tools / "avdmanager", 'echo "Name: test-qa"\n')
         config = self.avds / "test-qa.avd/config.ini"
@@ -63,20 +64,60 @@ class AndroidScriptsTest(unittest.TestCase):
             ])
 
     def test_sdk_uses_pinned_tools_even_when_latest_exists(self) -> None:
-        tools = self.sdk / "cmdline-tools/13114758/bin"
+        tools = self.sdk / "cmdline-tools/16111833/bin"
         self.executable(tools / "sdkmanager", 'printf "pinned-sdk %s\\n" "$*" >> "$EVENTS"\n')
         self.executable(tools / "avdmanager", 'echo "Name: test-qa"\n')
         self.executable(self.sdk / "cmdline-tools/latest/bin/sdkmanager", "exit 99\n")
         self.run_script("android-sdk.sh")
-        self.assertIn("pinned-sdk --sdk_root=", self.events.read_text())
+        events = self.events.read_text().splitlines()
+        self.assertEqual(events, [
+            f"pinned-sdk --sdk_root={self.sdk} --licenses",
+            f"pinned-sdk --sdk_root={self.sdk} platform-tools emulator platforms;android-36 "
+            "build-tools;36.0.0 system-images;android-36;google_apis;x86_64",
+        ])
+
+    def test_download_uses_the_host_platform_and_cpu(self) -> None:
+        for system, machine, platform in (
+            ("Linux", "x86_64", "linux"),
+            ("Darwin", "x86_64", "mac_x86_64"),
+            ("Darwin", "arm64", "mac_arm64"),
+        ):
+            with self.subTest(system=system, machine=machine):
+                sdk = self.root / platform
+                binaries = self.root / "bin"
+                self.executable(binaries / "uname", f'if [[ "$1" == -s ]]; then echo {system}; else echo {machine}; fi\n')
+                self.executable(binaries / "curl", r'''
+while [[ "$1" != --output ]]; do shift; done
+zip=$2
+printf '%s\n' "$3" > "$EVENTS"
+touch "$zip"
+''')
+                self.executable(binaries / "unzip", r'''
+while [[ "$1" != -d ]]; do shift; done
+tools="$2/cmdline-tools/bin"
+mkdir -p "$tools"
+printf '#!/bin/sh\nexit 0\n' > "$tools/sdkmanager"
+printf '#!/bin/sh\necho "Name: test-qa"\n' > "$tools/avdmanager"
+chmod +x "$tools/sdkmanager" "$tools/avdmanager"
+''')
+                self.environment.update({
+                    "PATH": str(binaries) + os.pathsep + os.environ["PATH"],
+                    "ANDROID_HOME": str(sdk), "ANDROID_SDK_ROOT": str(sdk),
+                })
+                self.run_script("android-sdk.sh")
+                self.assertEqual(self.events.read_text().strip(),
+                    f"https://dl.google.com/android/repository/commandlinetools-{platform}-16111833_latest.zip")
+                self.assertTrue((sdk / "cmdline-tools/16111833/bin/sdkmanager").is_file())
 
     def test_release_build_sets_loopback_without_host_interface_discovery(self) -> None:
         bin_dir = self.root / "bin"
         self.executable(bin_dir / "corepack", 'printf "corepack %s\\n" "$*" >> "$EVENTS"\n')
         self.environment["PATH"] = str(bin_dir) + os.pathsep + self.environment["PATH"]
+        self.environment["JAVA_TOOL_OPTIONS"] = "-Dqa.test=1"
         self.executable(self.root / "mobile/node_modules/.bin/expo", 'printf "expo %s\\n" "$*" >> "$EVENTS"\n')
         self.executable(self.root / "mobile/android/gradlew", r'''
 printf 'gradle %s\n' "$*" >> "$EVENTS"
+printf 'java-options %s\n' "$JAVA_TOOL_OPTIONS" >> "$EVENTS"
 apk="$(dirname "$0")/app/build/outputs/apk/release/app-release.apk"
 mkdir -p "$(dirname "$apk")"
 touch "$apk"
@@ -88,10 +129,20 @@ touch "$apk"
             "expo prebuild --clean --platform android --no-install",
             f"gradle -p {self.root}/mobile/android --no-daemon "
             "-PreactNativeDevServerIp=127.0.0.1 -PreactNativeArchitectures=x86_64 assembleRelease",
+            "java-options -Dqa.test=1 --enable-native-access=ALL-UNNAMED",
         ])
 
+    def test_android_java_reports_usage_and_preserves_command_failure(self) -> None:
+        for arguments, expected_status in (([], 2), (["bash", "-c", "exit 17"], 17)):
+            with self.subTest(arguments=arguments):
+                result = subprocess.run(
+                    ["bash", str(self.scripts.parent / "android-java.sh"), *arguments],
+                    env=self.environment, capture_output=True, text=True, check=False,
+                )
+                self.assertEqual(result.returncode, expected_status, result.stdout + result.stderr)
+
     def test_avd_is_recreated_when_api_tag_or_architecture_changes(self) -> None:
-        tools = self.sdk / "cmdline-tools/13114758/bin"
+        tools = self.sdk / "cmdline-tools/16111833/bin"
         self.executable(tools / "sdkmanager", "exit 0\n")
         self.executable(tools / "avdmanager", r'''
 printf '%s\n' "$*" >> "$EVENTS"
