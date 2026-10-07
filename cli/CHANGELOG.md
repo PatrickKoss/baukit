@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-07
+
 - Check MCP wiring across declared Cargo modules and accept explicit Doctor source paths.
 
 - Register generated MCP services through `McpServices`.

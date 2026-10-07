@@ -554,13 +554,13 @@ packages:
     resolution: {directory: ../../typescript/packages/notifications-core, type: directory}
     engines: {node: '>=24.0.0'}
     peerDependencies:
-      '@baukit/localization-core': ^0.8.0
+      '@baukit/localization-core': ^0.9.0
 
   '@baukit/notifications-expo@file:../../typescript/packages/notifications-expo':
     resolution: {directory: ../../typescript/packages/notifications-expo, type: directory}
     engines: {node: '>=24.0.0'}
     peerDependencies:
-      '@baukit/notifications-core': ^0.8.0
+      '@baukit/notifications-core': ^0.9.0
       expo-notifications: ^57.0.21
 
   '@expo/cli@57.0.27':

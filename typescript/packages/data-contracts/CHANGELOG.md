@@ -7,6 +7,12 @@
 - Document pending wire receipts and local fence confirmations separately. Test pending, completed and failed receipts with the shared Rust vectors.
 - Report `pending` after server profile erasure commits but sign-in account deletion is still finishing. Keep local cleanup and sign-out in the committed flow. A pending receipt may have a null operation ID when a `profile_erased` fence confirms the commit without a receipt.
 
+## 0.9.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.9.0 train.
+
 ## 0.8.0
 
 ### Minor Changes

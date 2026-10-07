@@ -8,6 +8,17 @@
 
 - Verify the adapter against posthog-js 1.435.8.
 
+## 0.9.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.9.0 train.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/analytics-core@0.9.0
+
 ## 0.8.0
 
 ### Minor Changes

@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-07
+
 - Add an explicit Sentinel failover trigger. Allow the failover state machine to survive a TILT pause without extending the fixture deadline.
 
 ## [0.8.0] - 2026-10-07

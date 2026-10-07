@@ -5,17 +5,17 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
-Last verified release train: `v0.8.0` (the `baukit-mcp` crate and a Rust
-remote MCP template behind `--mcp`, with Streamable HTTP, audience-bound OIDC
-tokens, RFC 9728 protected-resource metadata, per-tool scopes, a pluggable
-authentication policy, and Keycloak token introspection; the TypeScript stdio
-MCP template is gone. Navigation menus run callbacks after they close, accept a
-danger tone, a localized close label, and brand and accessory slots, and wrap
-long web text). The complete Linux gates passed locally on 2026-10-07:
-`make ci`, every Rust test with `--include-ignored`, the remote MCP fixture
-gate, version coherence, example lockfiles, metric names, cargo deny, and the
-Rust 1.95 MSRV check. The iOS simulator gate requires macOS and remains a
-release-host check rather than a Linux result.
+Last verified release train: `v0.9.0` (MCP services register resources and
+prompts next to tools, return custom structured errors and check scopes before
+dispatch; `--auth oidc|clerk|workos` generates Clerk and WorkOS products with
+MCP, web, mobile and erasure support; MCP can fetch signing keys from an
+internal URL; `baukit doctor` finds MCP wiring in split product modules). The
+complete Linux gates passed locally on 2026-10-07: `make ci`, the browser
+suites, every Rust test with `--include-ignored`, the remote MCP fixture gate,
+the generated fixture for each auth provider, version coherence, example
+lockfiles, metric names, cargo deny, and the Rust 1.95 MSRV check. The iOS
+simulator gate requires macOS and remains a release-host check rather than a
+Linux result.
 
 ## Toolchain
 

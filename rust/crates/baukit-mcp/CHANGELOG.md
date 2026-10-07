@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-07
+
 - Validate internal JWKS overrides separately from the public issuer. Reject unknown config fields and correct migration scope instructions.
 
 - Add product-defined structured and text-only tool errors. Use `ToolError::new` instead of struct literals for the default error.
