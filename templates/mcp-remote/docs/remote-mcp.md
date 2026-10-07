@@ -194,3 +194,11 @@ product error envelope. Test structured errors against the product's output
 schema. Use `text_only()` to preserve text-only `isError` results with the
 existing output schema. See [Baukit remote MCP](https://github.com/PatrickKoss/baukit/blob/main/docs/remote-mcp.md)
 for optional service ports and examples.
+
+## Request cancellation
+
+Tool calls receive a `baukit_mcp::CancellationToken` as their final argument.
+The item adapter stops its pending service read when the client cancels or
+disconnects. Use `run_until_cancelled()` or await `cancelled()` when adding
+tools or resource reads. Cancellation notifications identify an active request
+from the same issuer, subject and OAuth client.

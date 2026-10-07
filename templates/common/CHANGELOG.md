@@ -4,7 +4,8 @@
 
 {% if context.auth_oidc %}- Reconcile Keycloak client scopes and their bindings. Repair scope protocol mappers through their Admin API endpoints.
 
-{% endif %}{% if context.mcp or context.mobile %}{% if context.mcp %}- Set the product name, version and instructions in MCP server discovery. Keep the default annotations explicit in tool declarations.
+{% endif %}{% if context.mcp or context.mobile %}{% if context.mcp %}- Breaking: MCP tool adapters receive a request cancellation token and stop pending item reads when cancelled.
+- Set the product name, version and instructions in MCP server discovery. Keep the default annotations explicit in tool declarations.
 {% endif %}{% if context.mobile %}- Breaking: Native checks now require Java 25. Use Android command-line tools 23.0 in QA. Select the macOS download for the host CPU.
 - Grant native access to Android's Prefab tool during native builds. Preserve existing JVM options.
 {% endif %}

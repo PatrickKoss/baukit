@@ -39,7 +39,12 @@ impl ResourceService for Catalog {
             },
         ]
     }
-    fn read<'a>(&'a self, principal: &'a Principal, uri: &'a str) -> ResourceFuture<'a> {
+    fn read<'a>(
+        &'a self,
+        principal: &'a Principal,
+        uri: &'a str,
+        _cancellation: baukit_mcp::CancellationToken,
+    ) -> ResourceFuture<'a> {
         Box::pin(async move {
             self.0
                 .lock()

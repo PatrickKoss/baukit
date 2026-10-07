@@ -15,7 +15,9 @@ use crate::capabilities::{
     ScopedPrompt, ScopedResource, ScopedResourceTemplate, template_matches, validate_prompts,
     validate_resources,
 };
-use crate::{McpConfigError, McpServices, Principal, PromptService, ResourceService};
+use crate::{
+    CancellationToken, McpConfigError, McpServices, Principal, PromptService, ResourceService,
+};
 
 const MAX_TOOL_NAME_BYTES: usize = 128;
 
@@ -35,7 +37,7 @@ pub struct ScopedTool {
 /// Asynchronous product service result without transport types.
 pub type ToolFuture<'a> = Pin<Box<dyn Future<Output = Result<Value, ToolError>> + Send + 'a>>;
 
-/// Product service port. Implementations receive only verified identity and JSON arguments.
+/// Product service port with verified identity, JSON arguments and request cancellation.
 pub trait ToolService: Send + Sync + 'static {
     fn tools(&self) -> Vec<ScopedTool>;
     fn call<'a>(
@@ -43,6 +45,7 @@ pub trait ToolService: Send + Sync + 'static {
         principal: &'a Principal,
         name: &'a str,
         arguments: Value,
+        cancellation: CancellationToken,
     ) -> ToolFuture<'a>;
 }
 
@@ -99,6 +102,7 @@ impl ToolError {
 }
 
 pub(crate) struct RegisteredServices {
+    pub requests: crate::cancellation::ActiveRequests,
     pub service: Arc<dyn ToolService>,
     pub server_info: Implementation,
     pub instructions: Option<String>,
@@ -130,6 +134,7 @@ impl RegisteredServices {
         let prompt_definitions = prompts.as_ref().map_or_else(Vec::new, |s| s.list());
         validate_prompts(&prompt_definitions)?;
         Ok(Self {
+            requests: Default::default(),
             server_info,
             instructions,
             success_text_prefix,
@@ -336,8 +341,12 @@ impl ServerHandler for ProductServer {
             .resource_scopes(&request.uri)
             .ok_or_else(|| ErrorData::invalid_params("Unknown resource", None))?;
         require_scopes(principal, &scopes)?;
+        let _request = self
+            .0
+            .requests
+            .register(principal, &context.id, context.ct.clone())?;
         let contents = service
-            .read(principal, &request.uri)
+            .read(principal, &request.uri, context.ct.clone())
             .await
             .map_err(ErrorData::from)?;
         Ok(rmcp::model::ReadResourceResult::new(contents)
@@ -463,6 +472,10 @@ impl ServerHandler for ProductServer {
         if !permitted(principal, definition) {
             return Err(ErrorData::invalid_request("insufficient_scope", None));
         }
+        let _request = self
+            .0
+            .requests
+            .register(principal, &context.id, context.ct.clone())?;
         let result = self
             .0
             .service
@@ -470,6 +483,7 @@ impl ServerHandler for ProductServer {
                 principal,
                 &request.name,
                 Value::Object(request.arguments.unwrap_or_default()),
+                context.ct.clone(),
             )
             .await;
         let response = match result {

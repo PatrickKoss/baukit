@@ -47,6 +47,7 @@ impl ToolService for Subject {
         principal: &'a Principal,
         _name: &'a str,
         _arguments: Value,
+        _cancellation: baukit_mcp::CancellationToken,
     ) -> ToolFuture<'a> {
         Box::pin(async move {
             Ok(json!({"subject":principal.subject(), "client":principal.client_id()}))

@@ -218,6 +218,19 @@ async fn authorize_inner(state: &Security, mut request: Request, next: Next) -> 
             if message.is_array() {
                 return error(StatusCode::BAD_REQUEST, "batch_not_supported");
             }
+            if message.get("jsonrpc").and_then(Value::as_str) == Some("2.0")
+                && message.get("id").is_none()
+                && message.get("method").and_then(Value::as_str) == Some("notifications/cancelled")
+            {
+                if let Some(id) = message
+                    .pointer("/params/requestId")
+                    .and_then(|id| serde_json::from_value(id.clone()).ok())
+                {
+                    state.services.requests.cancel(&principal, &id);
+                }
+                return (StatusCode::ACCEPTED, [(header::CACHE_CONTROL, "no-store")])
+                    .into_response();
+            }
             if let Some(scopes) = state.services.required_scopes(&message)
                 && !permitted_scopes(&principal, &scopes)
             {

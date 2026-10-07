@@ -62,3 +62,10 @@ let annotations = ToolAnnotations::with_title("Duplicate item")
 ```
 
 Review annotation changes in `tool_schema` exports alongside schemas and scopes.
+
+`ToolService::call` and `ResourceService::read` receive a `CancellationToken`
+as their final argument. Await `cancelled()` or use `run_until_cancelled()` to
+stop pending work. The token signals HTTP disconnects and authenticated
+`notifications/cancelled` messages for that request. Request IDs belong to
+the verified issuer, subject and OAuth client. Unknown and completed IDs
+are ignored. Concurrent requests from the same caller must use distinct IDs.

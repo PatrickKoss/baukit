@@ -130,7 +130,7 @@ let definition = ScopedResourceTemplate {
 };
 ```
 
-`ResourceService::read(&self, principal, uri) -> ResourceFuture<'_>` returns
+`ResourceService::read(&self, principal, uri, cancellation) -> ResourceFuture<'_>` returns
 `Result<Vec<ResourceContents>, CapabilityError>`. Return JSON text with
 `ResourceContents::text(serialized_json, uri).with_mime_type("application/json")`.
 Binary resources use `ResourceContents::blob(base64_data, uri)`.
@@ -140,6 +140,12 @@ validate IDs and enforce account ownership. Unknown URIs are invalid params.
 If definitions overlap, a read requires all matching scopes. Concrete
 resource definitions are fixed when the router starts; account-specific
 catalogs can be read through tools or resource templates.
+
+Tool and resource calls receive a `CancellationToken` as their final argument.
+Use `run_until_cancelled()` around pending work or await `cancelled()` in a
+product worker. HTTP disconnects and authenticated cancellation notifications
+signal the token. Only the caller's issuer, subject and OAuth client can cancel
+an active request with that ID. Unknown and completed IDs are ignored.
 
 `PromptService::list` returns `ScopedPrompt` definitions, including their
 arguments. `PromptService::get(&self, principal, name, arguments) -> PromptFuture<'_>`

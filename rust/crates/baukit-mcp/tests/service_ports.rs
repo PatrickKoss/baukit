@@ -18,6 +18,7 @@ impl ToolService for NoTools {
         _principal: &'a Principal,
         name: &'a str,
         _arguments: Value,
+        _cancellation: baukit_mcp::CancellationToken,
     ) -> ToolFuture<'a> {
         Box::pin(async move {
             Err(ToolError::new(
@@ -33,7 +34,11 @@ async fn resource_and_prompt_ports_receive_identity_and_preserve_content_and_saf
     let principal = Principal::new("account-42");
     let resources = support::Catalog::default();
     let content = resources
-        .read(&principal, "product://items/42")
+        .read(
+            &principal,
+            "product://items/42",
+            baukit_mcp::CancellationToken::new(),
+        )
         .await
         .expect("resource");
     let value = serde_json::to_value(content).expect("content");
@@ -46,7 +51,11 @@ async fn resource_and_prompt_ports_receive_identity_and_preserve_content_and_saf
         [("account-42".into(), "product://items/42".into())]
     );
     let error = resources
-        .read(&principal, "product://items/missing")
+        .read(
+            &principal,
+            "product://items/missing",
+            baukit_mcp::CancellationToken::new(),
+        )
         .await
         .expect_err("missing resource");
     assert_eq!(error.to_string(), "Item not found");

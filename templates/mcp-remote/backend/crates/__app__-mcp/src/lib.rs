@@ -76,6 +76,7 @@ impl ToolService for ItemTools {
         principal: &'a Principal,
         name: &'a str,
         arguments: Value,
+        cancellation: baukit_mcp::CancellationToken,
     ) -> ToolFuture<'a> {
         Box::pin(async move {
             if name != "list_items"
@@ -88,10 +89,13 @@ impl ToolService for ItemTools {
                     "list_items accepts an empty object",
                 ));
             }
-            let items = self
-                .service
-                .list(principal.subject())
+            if cancellation.is_cancelled() {
+                return Err(ToolError::new("cancelled", "Request cancelled"));
+            }
+            let items = cancellation
+                .run_until_cancelled(self.service.list(principal.subject()))
                 .await
+                .ok_or_else(|| ToolError::new("cancelled", "Request cancelled"))?
                 .map_err(|_| ToolError::new("service_unavailable", "Items are unavailable"))?;
             Ok(
                 json!({"items": items.into_iter().take(MAX_ITEMS).map(|item| json!({"id": item.id, "name": item.name})).collect::<Vec<_>>()}),
@@ -119,7 +123,12 @@ mod tests {
         let service = Arc::new(Items(Mutex::new(Vec::new())));
         let tools = ItemTools::new(service.clone());
         let result = tools
-            .call(&Principal::new("user-42"), "list_items", json!({}))
+            .call(
+                &Principal::new("user-42"),
+                "list_items",
+                json!({}),
+                baukit_mcp::CancellationToken::new(),
+            )
             .await
             .expect("items");
         assert_eq!(result, json!({"items": []}));
@@ -129,12 +138,32 @@ mod tests {
                 .call(
                     &Principal::new("user-42"),
                     "list_items",
-                    json!({"unexpected": true})
+                    json!({"unexpected": true}),
+                    baukit_mcp::CancellationToken::new(),
                 )
                 .await
                 .is_err()
         );
         assert_eq!(service.0.lock().expect("subjects").len(), 1);
+    }
+
+    #[tokio::test]
+    async fn cancelled_tool_does_not_call_the_product_service() {
+        let service = Arc::new(Items(Mutex::new(Vec::new())));
+        let tools = ItemTools::new(service.clone());
+        let cancellation = baukit_mcp::CancellationToken::new();
+        cancellation.cancel();
+        let error = tools
+            .call(
+                &Principal::new("user-42"),
+                "list_items",
+                json!({}),
+                cancellation,
+            )
+            .await
+            .expect_err("cancelled request");
+        assert_eq!(error.code, "cancelled");
+        assert!(service.0.lock().expect("subjects").is_empty());
     }
 
     struct Catalog;
@@ -167,13 +196,23 @@ mod tests {
     async fn read_tool_bounds_results_and_maps_service_errors() {
         let principal = Principal::new("user-42");
         let result = ItemTools::new(Arc::new(Catalog))
-            .call(&principal, "list_items", json!({}))
+            .call(
+                &principal,
+                "list_items",
+                json!({}),
+                baukit_mcp::CancellationToken::new(),
+            )
             .await
             .expect("catalog");
         assert_eq!(result["items"].as_array().expect("items").len(), 20);
         assert_eq!(result["items"][19]["name"], "item-19");
         let error = ItemTools::new(Arc::new(Unavailable))
-            .call(&principal, "list_items", json!({}))
+            .call(
+                &principal,
+                "list_items",
+                json!({}),
+                baukit_mcp::CancellationToken::new(),
+            )
             .await
             .expect_err("unavailable service");
         assert_eq!(error.code, "service_unavailable");

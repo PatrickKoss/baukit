@@ -1,5 +1,6 @@
 //! OAuth-protected MCP over stateless Streamable HTTP.
 
+mod cancellation;
 mod capabilities;
 mod config;
 mod introspection;
@@ -14,6 +15,7 @@ pub use capabilities::{
     capability_schema, prompt_schema, resource_schema, service_schema,
 };
 pub use rmcp::model::{Implementation, ToolAnnotations};
+pub use tokio_util::sync::CancellationToken;
 
 pub use config::{McpConfig, McpConfigError, ProtectedResourceMetadata};
 pub use introspection::{KeycloakIntrospectionConfig, KeycloakIntrospectionPolicy};

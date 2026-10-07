@@ -3,7 +3,7 @@ use std::{collections::BTreeSet, future::Future, pin::Pin, sync::Arc};
 use rmcp::ErrorData;
 use serde_json::{Value, json};
 
-use crate::{McpConfigError, Principal, ScopedTool, ToolService};
+use crate::{CancellationToken, McpConfigError, Principal, ScopedTool, ToolService};
 
 pub use rmcp::model::{
     GetPromptResult as PromptResult, Prompt, PromptArgument, PromptMessage, Resource,
@@ -40,7 +40,12 @@ pub type CapabilityFuture<'a, T> =
 pub trait ResourceService: Send + Sync + 'static {
     fn list(&self) -> Vec<ScopedResource>;
     fn templates(&self) -> Vec<ScopedResourceTemplate>;
-    fn read<'a>(&'a self, principal: &'a Principal, uri: &'a str) -> ResourceFuture<'a>;
+    fn read<'a>(
+        &'a self,
+        principal: &'a Principal,
+        uri: &'a str,
+        cancellation: CancellationToken,
+    ) -> ResourceFuture<'a>;
 }
 
 pub trait PromptService: Send + Sync + 'static {
