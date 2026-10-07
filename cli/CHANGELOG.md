@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Follow MCP source modules and check router composition and configuration validation across backend crates. Accept chart-managed routes in disabled deployment values.
 - Generate product MCP server identity and instructions, with explicit default tool annotations.
 - Breaking: Generated native checks now require Java 25. Use Android command-line tools 23.0 downloads.
 - Grant native access to Android's Prefab tool during generated native builds. Preserve existing JVM options.

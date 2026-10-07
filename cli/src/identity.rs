@@ -356,7 +356,7 @@ fn imported_rust_binding(source: &str, crate_name: &str, expression: &str) -> Op
     None
 }
 
-fn library_sources(library: &Path) -> Result<BTreeSet<PathBuf>> {
+pub(super) fn library_sources(library: &Path) -> Result<BTreeSet<PathBuf>> {
     let mut sources = BTreeSet::new();
     let mut pending = vec![library.to_owned()];
     while let Some(path) = pending.pop() {

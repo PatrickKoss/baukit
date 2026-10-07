@@ -4793,6 +4793,15 @@ fn doctor_accepts_remote_mcp_modules_in_declared_crates() -> anyhow::Result<()> 
         ),
     )?;
     doctor(&root)?;
+    let manifest = fs::read_to_string(&manifest_path)?;
+    fs::write(
+        &manifest_path,
+        manifest.replace(
+            "mcp_config = \"backend/crates/redemut-shaped-bin/src/config.rs\"",
+            "mcp_config = \"backend/crates/redemut-shaped-bin/src/lib.rs\"",
+        ) + "mcp_tools = \"backend/crates/redemut-shaped-mcp/src/lib.rs\"\n",
+    )?;
+    doctor(&root)?;
     for (relative, symbol, finding) in [
         (
             "backend/crates/redemut-shaped-bin/src/application.rs",
@@ -4842,6 +4851,83 @@ fn doctor_accepts_remote_mcp_modules_in_declared_crates() -> anyhow::Result<()> 
         assert!(error.to_string().contains(finding), "{symbol}: {error}");
         fs::write(path, source)?;
     }
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_mcp_composition_and_validation_across_backend_crates() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "graph-mcp");
+    local.auth = Some(AuthProvider::Oidc);
+    local.mcp = true;
+    let root = generate_new(&local)?;
+    let entry = root.join("backend/crates/graph-mcp-bin/src/bin/api.rs");
+    let source = fs::read_to_string(&entry)?;
+    assert!(source.contains("api.merge(mcp)"));
+    fs::write(
+        &entry,
+        source.replace(
+            "api.merge(mcp)",
+            "graph_mcp_api::router_with_routes(api, mcp)",
+        ),
+    )?;
+    let api = root.join("backend/crates/graph-mcp-api/src/lib.rs");
+    let source = fs::read_to_string(&api)?;
+    fs::write(
+        &api,
+        format!(
+            "{source}\npub fn router_with_routes(api: axum::Router, routes: axum::Router) -> axum::Router {{ api.merge(routes) }}\npub fn validate_mcp(config: &baukit_mcp::McpConfig) -> Result<(), baukit_mcp::McpConfigError> {{ config.validate() }}\n"
+        ),
+    )?;
+    let config = root.join("backend/crates/graph-mcp-bin/src/lib.rs");
+    let source = fs::read_to_string(&config)?;
+    assert!(source.contains("self.mcp.validate()"));
+    fs::write(
+        &config,
+        source.replace(
+            "self.mcp.validate()",
+            "graph_mcp_api::validate_mcp(&self.mcp)",
+        ),
+    )?;
+    let values = root.join("deploy/values.yaml");
+    let mut deployment: serde_yaml_ng::Value =
+        serde_yaml_ng::from_str(&fs::read_to_string(&values)?)?;
+    deployment["mcp"]["enabled"] = false.into();
+    deployment["mcp"]["resourceUrl"] = "".into();
+    fs::write(&values, serde_yaml_ng::to_string(&deployment)?)?;
+    assert!(!fs::read_to_string(&values)?.contains("/mcp"));
+    doctor(&root)?;
+    for (path, symbol, finding) in [
+        (&api, "api.merge(routes)", "router merge"),
+        (&api, "config.validate()", "configuration validation"),
+        (
+            &config,
+            "graph_mcp_api::validate_mcp(&self.mcp)",
+            "configuration validation",
+        ),
+    ] {
+        let source = fs::read_to_string(path)?;
+        assert!(source.contains(symbol));
+        fs::write(path, source.replace(symbol, "missing_wiring"))?;
+        assert!(
+            doctor(&root)
+                .expect_err("missing wiring")
+                .to_string()
+                .contains(finding)
+        );
+        fs::write(path, source)?;
+    }
+    deployment["mcp"]
+        .as_mapping_mut()
+        .expect("MCP values")
+        .remove("allowedHosts");
+    fs::write(values, serde_yaml_ng::to_string(&deployment)?)?;
+    assert!(
+        doctor(&root)
+            .expect_err("missing MCP values")
+            .to_string()
+            .contains("allowedHosts:")
+    );
     Ok(())
 }
 

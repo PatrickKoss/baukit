@@ -2391,10 +2391,10 @@ fn validate_remote_mcp(
     }
     let values = root.join("deploy/values.yaml");
     if values.is_file() {
-        let source = fs::read_to_string(values)?;
-        for symbol in ["mcp:", "resourceUrl:", "allowedHosts:", "/mcp"] {
-            if !source.contains(symbol) {
-                failures.push(format!("remote MCP deployment is missing `{symbol}`"));
+        let values: serde_yaml_ng::Value = serde_yaml_ng::from_str(&fs::read_to_string(values)?)?;
+        for key in ["resourceUrl", "allowedHosts"] {
+            if values["mcp"][key].is_null() {
+                failures.push(format!("remote MCP deployment is missing `{key}:`"));
             }
         }
     } else {
