@@ -104,14 +104,16 @@ from pathlib import Path
 import re
 import sys
 
-source = Path("templates/common/CHANGELOG.md").read_text()
-sections = re.split(r"^## ", source, flags=re.MULTILINE)
-unreleased = [section for section in sections if section.startswith("[Unreleased]\n")]
+changelogs = [*Path("rust/crates").glob("*/CHANGELOG.md"),
+              Path("cli/CHANGELOG.md"), Path("templates/common/CHANGELOG.md")]
 heading = f"[{sys.argv[1]}] - "
-if len(unreleased) != 1 or unreleased[0].split("\n", 1)[1].strip() or not any(
-    section.startswith(heading) for section in sections
-):
-    sys.exit("templates/common/CHANGELOG.md still has uncut Unreleased entries or is missing the new release heading")
+for changelog in changelogs:
+    sections = re.split(r"^## ", changelog.read_text(), flags=re.MULTILINE)
+    unreleased = [section for section in sections if section.startswith("[Unreleased]\n")]
+    if len(unreleased) != 1 or unreleased[0].split("\n", 1)[1].strip() or not any(
+        section.startswith(heading) for section in sections
+    ):
+        sys.exit(f"{changelog} still has uncut Unreleased entries or is missing the new release heading")
 PYTHON
 
 # The template manifest and generated baukit.toml files use the bare semantic

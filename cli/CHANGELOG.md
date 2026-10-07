@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Validate that release preparation cuts CLI and crate changelogs as well as the template changelog.
+
 ## [0.9.0] - 2026-10-07
 
 - Check MCP wiring across declared Cargo modules and accept explicit Doctor source paths.
