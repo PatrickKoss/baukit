@@ -160,6 +160,8 @@ describe('OidcClient', () => {
         scopes: ['profile', 'email', 'profile'],
         offlineAccess: true,
         storageKeyPrefix: 'test-auth',
+        audience: 'https://api.example.test',
+        resource: 'https://api.example.test',
       },
       test.environment,
     );
@@ -170,6 +172,8 @@ describe('OidcClient', () => {
       'https://login.example.test/oauth/authorize',
     );
     expect(authorization.searchParams.get('scope')).toBe('openid profile email offline_access');
+    expect(authorization.searchParams.get('audience')).toBe('https://api.example.test');
+    expect(authorization.searchParams.get('resource')).toBe('https://api.example.test');
     expect(authorization.searchParams.get('code_challenge_method')).toBe('S256');
     expect(authorization.searchParams.get('code_challenge')).toMatch(/^[\w-]{43}$/u);
 

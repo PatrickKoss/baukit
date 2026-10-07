@@ -101,6 +101,10 @@ async function authorizeWithAuthSession(
     responseType: AuthSession.ResponseType.Code,
     scopes: [...request.scopes],
     usePKCE: true,
+    extraParams: {
+      ...(request.audience === undefined ? {} : { audience: request.audience }),
+      ...(request.resource === undefined ? {} : { resource: request.resource }),
+    },
     ...(request.prompt === undefined ? {} : { prompt: AuthSession.Prompt.Login }),
     ...(state === undefined ? {} : { state }),
   });

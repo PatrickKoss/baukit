@@ -42,6 +42,8 @@ export interface OidcClientConfig {
   readonly issuer: string;
   readonly clientId: string;
   readonly redirectUri: string;
+  readonly audience?: string;
+  readonly resource?: string;
   /** `openid` is prepended when omitted. Defaults to `openid profile email`. */
   readonly scopes?: readonly string[];
   /** Adds `offline_access` to the requested scopes. Defaults to false. */
@@ -76,6 +78,8 @@ interface NormalizedConfig {
   readonly issuer: string;
   readonly clientId: string;
   readonly redirectUri: string;
+  readonly audience?: string;
+  readonly resource?: string;
   readonly scopes: readonly string[];
   readonly postLogoutRedirectUri: string;
   readonly refreshLeewayMs: number;
@@ -137,7 +141,10 @@ export function normalizeIssuer(issuer: string): string {
 
 /** Builds an authorization request from the endpoint supplied by discovery. */
 export function buildAuthorizationUrl(
-  config: Pick<OidcClientConfig, 'clientId' | 'redirectUri' | 'scopes' | 'offlineAccess'>,
+  config: Pick<
+    OidcClientConfig,
+    'clientId' | 'redirectUri' | 'scopes' | 'offlineAccess' | 'audience' | 'resource'
+  >,
   authorizationEndpoint: string,
   pkce: PkceAuthorizationRequest,
 ): URL {
@@ -151,6 +158,10 @@ export function buildAuthorizationUrl(
     code_challenge: pkce.challenge,
     code_challenge_method: 'S256',
   }).toString();
+  if (config.audience !== undefined)
+    endpoint.searchParams.set('audience', requiredText(config.audience, 'OIDC audience'));
+  if (config.resource !== undefined)
+    endpoint.searchParams.set('resource', requiredText(config.resource, 'OIDC resource'));
   return endpoint;
 }
 
@@ -211,15 +222,10 @@ export class OidcClient {
       this.transactionStorageKey,
       JSON.stringify({ state, verifier }),
     );
-    const authorizationUrl = buildAuthorizationUrl(
-      {
-        clientId: this.config.clientId,
-        redirectUri: this.config.redirectUri,
-        scopes: this.config.scopes,
-      },
-      metadata.authorizationEndpoint,
-      { state, challenge },
-    );
+    const authorizationUrl = buildAuthorizationUrl(this.config, metadata.authorizationEndpoint, {
+      state,
+      challenge,
+    });
     this.environment.navigate(authorizationUrl.toString());
   }
 
@@ -544,6 +550,12 @@ function normalizeConfig(config: OidcClientConfig): NormalizedConfig {
     issuer,
     clientId,
     redirectUri,
+    ...(config.audience === undefined
+      ? {}
+      : { audience: requiredText(config.audience, 'OIDC audience') }),
+    ...(config.resource === undefined
+      ? {}
+      : { resource: requiredText(config.resource, 'OIDC resource') }),
     scopes: normalizeScopes(config.scopes, config.offlineAccess),
     postLogoutRedirectUri: requiredUrl(
       config.postLogoutRedirectUri ?? redirectUri,

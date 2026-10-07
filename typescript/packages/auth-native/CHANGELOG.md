@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Pass optional API audience and resource parameters through the native browser port and Expo AuthSession.
+
 - Add Clerk hosted Expo sign-in and WorkOS AuthKit public-client PKCE with secure storage, refresh rotation and logout.
 
 - Publish the TypeScript sources referenced by JavaScript and declaration maps. Check source paths in the packed archive.

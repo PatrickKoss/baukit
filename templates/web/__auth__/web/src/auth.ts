@@ -9,6 +9,10 @@ import type { SessionExpiredEvent } from '@baukit/auth-web';
 
 {% if context.auth_oidc %}const configuredIssuer: unknown = import.meta.env['VITE_OIDC_ISSUER'];
 const configuredClientId: unknown = import.meta.env['VITE_OIDC_CLIENT_ID'];
+const configuredAudience: unknown = import.meta.env['VITE_OIDC_AUDIENCE'];
+const configuredResource: unknown = import.meta.env['VITE_OIDC_RESOURCE'];
+const configuredScopes: unknown = import.meta.env['VITE_OIDC_SCOPES'];
+const offlineAccess = import.meta.env['VITE_OIDC_OFFLINE_ACCESS'] !== 'false';
 
 {% elif context.auth_clerk %}const configuredPublishableKey: unknown = import.meta.env['VITE_CLERK_PUBLISHABLE_KEY'];
 {% else %}const configuredClientId: unknown = import.meta.env['VITE_WORKOS_CLIENT_ID'];
@@ -25,8 +29,11 @@ function client(): ProviderClient {
 {% elif context.auth_clerk %}    publishableKey: typeof configuredPublishableKey === 'string' ? configuredPublishableKey : '',
 {% else %}    clientId: typeof configuredClientId === 'string' ? configuredClientId : '',
 {% endif %}    redirectUri: `${window.location.origin}/`,
-{% if context.auth_oidc %}    scopes: ['openid', 'profile', 'email'],
-    offlineAccess: true,
+{% if context.auth_oidc %}    scopes: typeof configuredScopes === 'string' && configuredScopes.trim()
+      ? configuredScopes.trim().split(/\s+/u) : ['openid', 'profile', 'email'],
+    ...(typeof configuredAudience === 'string' && configuredAudience.trim() ? { audience: configuredAudience } : {}),
+    ...(typeof configuredResource === 'string' && configuredResource.trim() ? { resource: configuredResource } : {}),
+    offlineAccess,
     storageKeyPrefix: `${PRODUCT_NAME}:oidc`,
 {% endif %}  });
   return providerClient;

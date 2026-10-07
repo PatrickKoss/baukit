@@ -31,6 +31,34 @@ redirect. The native adapter needs UserInfo and supports refresh-token rotation.
 The backend discovers JWKS at startup. `auth.jwks_uri` explicitly overrides
 that endpoint for a proxy or test; issuer and audience checks still apply.
 
+The web `VITE_OIDC_AUDIENCE`, `VITE_OIDC_RESOURCE` and space-separated
+`VITE_OIDC_SCOPES` configure authorization requests. Mobile uses the matching
+`EXPO_PUBLIC_OIDC_*` variables. Set `OIDC_OFFLINE_ACCESS=false` under each prefix
+if the provider issues refresh tokens without the `offline_access` scope.
+Restart Expo after changing its configuration.
+
+For Auth0, register an API identifier, set backend `auth.audience` to it, and
+request that identifier through `OIDC_AUDIENCE`. Without a custom API audience,
+Auth0 can return an opaque access token. See [Auth0 access tokens](https://auth0.com/docs/secure/tokens/access-tokens/get-access-tokens).
+For Cognito, use the user-pool issuer for discovery and a public app client with
+managed login. Set `OIDC_RESOURCE` and backend `auth.audience` to the same API
+URL. Disable the `offline_access` scope. Cognito adds `aud` only when the client
+requests resource binding; refreshed tokens retain it.
+See [Cognito resource binding](https://docs.aws.amazon.com/cognito/latest/developerguide/authorization-endpoint.html).
+For Entra ID, request the registered API's delegated scope in `OIDC_SCOPES` and
+use its access-token audience and exact tenant issuer in backend configuration.
+Use the API application's client ID as the audience for v2 access tokens, and
+use discovery metadata for that token version. See
+[Entra access tokens](https://learn.microsoft.com/en-us/entra/identity-platform/access-tokens).
+For Zitadel, select JWT access tokens and add
+`urn:zitadel:iam:org:project:id:YOUR_PROJECT_ID:aud` to `OIDC_SCOPES`.
+Set backend `auth.audience` to that project ID. See
+[Zitadel scopes](https://zitadel.com/docs/apis/openidoauth/scopes).
+For Authentik, keep its default per-application issuer, select an asymmetric
+signing key and include the `offline_access` scope mapping for refresh tokens.
+Set backend `auth.audience` to the audience issued for the application.
+See [Authentik OAuth configuration](https://docs.goauthentik.io/add-secure-apps/providers/oauth2/).
+
 Remove the `keycloak` service, its volume and `keycloak/` tree when using an
 external issuer. Start Redis with `docker compose up -d redis` and PostgreSQL
 with `make db-up`. Do not run the Keycloak reconciliation targets. The generated

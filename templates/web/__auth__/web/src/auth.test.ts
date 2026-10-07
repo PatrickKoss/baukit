@@ -115,6 +115,10 @@ describe('authClient in the browser', () => {
   it('uses the configured issuer and client ID', async () => {
     vi.stubEnv('VITE_OIDC_ISSUER', 'https://login.example.test/realms/product');
     vi.stubEnv('VITE_OIDC_CLIENT_ID', 'product-web');
+    vi.stubEnv('VITE_OIDC_AUDIENCE', 'https://api.example.test');
+    vi.stubEnv('VITE_OIDC_RESOURCE', 'https://api.example.test');
+    vi.stubEnv('VITE_OIDC_SCOPES', 'openid api/read');
+    vi.stubEnv('VITE_OIDC_OFFLINE_ACCESS', 'false');
     const authClient = await loadAuthClient();
 
     authClient.hasSession();
@@ -122,6 +126,10 @@ describe('authClient in the browser', () => {
     expect(oidc.constructed[0]).toMatchObject({
       issuer: 'https://login.example.test/realms/product',
       clientId: 'product-web',
+      audience: 'https://api.example.test',
+      resource: 'https://api.example.test',
+      scopes: ['openid', 'api/read'],
+      offlineAccess: false,
     });
   });
 

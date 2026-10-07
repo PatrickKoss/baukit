@@ -264,6 +264,25 @@ describe('NativeOidcClient', () => {
     expect(keys.size).toBe(4);
   });
 
+  it('passes external API token binding through the browser port', async () => {
+    const test = makeHarness({
+      config: {
+        issuer,
+        clientId: 'product-mobile',
+        redirectUri: 'product://oauth',
+        audience: 'https://api.example.test',
+        resource: 'https://api.example.test',
+        scopes: ['openid', 'api/read'],
+      },
+    });
+    await expect(test.client.signIn()).resolves.toMatchObject({ status: 'success' });
+    expect(test.browser.authorizationRequests[0]).toMatchObject({
+      audience: 'https://api.example.test',
+      resource: 'https://api.example.test',
+      scopes: ['openid', 'api/read'],
+    });
+  });
+
   it('discovers standard endpoints, exchanges PKCE, and stores the UserInfo subject', async () => {
     const test = makeHarness();
     const updates: (string | undefined)[] = [];

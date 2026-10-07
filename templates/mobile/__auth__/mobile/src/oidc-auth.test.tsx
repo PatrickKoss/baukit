@@ -13,6 +13,16 @@ import {
 
 jest.mock('expo-auth-session', () => ({ makeRedirectUri: () => 'product://oauth' }));
 jest.mock('expo-crypto', () => ({ getRandomBytesAsync: jest.fn() }));
+{% if context.auth_oidc %}jest.mock('expo-constants', () => ({
+  __esModule: true,
+  default: { expoConfig: { extra: {
+    oidcAudience: 'https://api.example.test',
+    oidcResource: 'https://api.example.test',
+    oidcScopes: 'openid api/read',
+    oidcOfflineAccess: false,
+  } } },
+}));
+{% endif %}
 jest.mock('{% if context.auth_oidc %}@baukit/auth-native/expo{% elif context.auth_workos %}@baukit/auth-native/workos{% else %}@baukit/auth-native/clerk-expo{% endif %}', () => {
   const client = {
     subscribe: jest.fn(),
@@ -35,6 +45,8 @@ import { authStorage } from './auth-storage';
 
 const client = jest.mocked(authClient);
 const clientEnvironment = jest.mocked(createClient).mock.calls[0]?.[1];
+{% if context.auth_oidc %}const clientConfiguration = jest.mocked(createClient).mock.calls[0]?.[0];
+{% endif %}
 const REFRESH_LEAD_MS = 30_000;
 
 function session(overrides: Partial<OidcSession> = {}): OidcSession {
@@ -83,6 +95,16 @@ afterEach(() => {
 });
 
 describe('useAuth', () => {
+{% if context.auth_oidc %}  it('passes external API token binding and scopes from Expo configuration', () => {
+    expect(clientConfiguration).toMatchObject({
+      audience: 'https://api.example.test',
+      resource: 'https://api.example.test',
+      scopes: ['openid', 'api/read'],
+      offlineAccess: false,
+    });
+  });
+
+{% endif %}
   it('uses the SecureStore storage port', () => {
     expect({% if context.auth_clerk %}clientEnvironment{% else %}clientEnvironment?.storage{% endif %}).toBe(authStorage);
   });

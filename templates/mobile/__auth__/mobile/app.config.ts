@@ -6,6 +6,10 @@ const configuredApiUrl: unknown = process.env['EXPO_PUBLIC_API_URL'];
 const configuredKey: unknown = process.env['EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY'];
 const configuredIssuer: unknown = process.env['EXPO_PUBLIC_OIDC_ISSUER'];
 const configuredClientId: unknown = process.env['EXPO_PUBLIC_OIDC_CLIENT_ID'];
+{% if context.auth_oidc %}const configuredAudience: unknown = process.env['EXPO_PUBLIC_OIDC_AUDIENCE'];
+const configuredResource: unknown = process.env['EXPO_PUBLIC_OIDC_RESOURCE'];
+const configuredScopes: unknown = process.env['EXPO_PUBLIC_OIDC_SCOPES'];
+{% endif %}
 const isQaBuild = process.env['BAUKIT_QA_BUILD'] === '1';
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
@@ -34,6 +38,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         : {% if context.auth_oidc %}`http://localhost:{{ context.keycloak_host_port }}/realms/${PRODUCT_NAME}`{% elif context.auth_workos %}'https://api.workos.com/'{% else %}''{% endif %},
     oidcClientId:
       typeof configuredClientId === 'string' ? configuredClientId : `${PRODUCT_NAME}-mobile`,
+{% if context.auth_oidc %}    oidcAudience: typeof configuredAudience === 'string' ? configuredAudience : undefined,
+    oidcResource: typeof configuredResource === 'string' ? configuredResource : undefined,
+    oidcScopes: typeof configuredScopes === 'string' ? configuredScopes : undefined,
+    oidcOfflineAccess: process.env['EXPO_PUBLIC_OIDC_OFFLINE_ACCESS'] !== 'false',
+{% endif %}
   },
   ios: {
     bundleIdentifier: `dev.baukit.${PRODUCT_NAME}`,

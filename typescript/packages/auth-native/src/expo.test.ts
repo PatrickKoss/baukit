@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 interface AuthRequestConfig {
+  readonly extraParams?: Readonly<Record<string, string>>;
   readonly state?: string;
   readonly prompt?: string;
 }
@@ -68,6 +69,22 @@ describe('createExpoOidcEnvironment', () => {
 });
 
 describe('createExpoBrowserFlow', () => {
+  it('passes resource and audience to AuthSession while retaining PKCE and state', async () => {
+    const result = await createExpoBrowserFlow().authorize({
+      ...request,
+      audience: 'https://api.example.test',
+      resource: 'https://api.example.test',
+    });
+    expect(authRequestConfigs[0]?.extraParams).toEqual({
+      audience: 'https://api.example.test',
+      resource: 'https://api.example.test',
+    });
+    expect(result).toMatchObject({
+      type: 'success',
+      codeVerifier: 'pkce-verifier',
+      expectedState: DEFAULT_STATE,
+    });
+  });
   it('prefixes the decoration to a random nonce', async () => {
     const browser = createExpoBrowserFlow({ randomBytes: zeroBytes });
 

@@ -34,6 +34,11 @@ import { authStorage } from './auth-storage';
 
 const configuredIssuer: unknown = Constants.expoConfig?.extra?.['oidcIssuer'];
 const configuredClientId: unknown = Constants.expoConfig?.extra?.['oidcClientId'];
+{% if context.auth_oidc %}const configuredAudience: unknown = Constants.expoConfig?.extra?.['oidcAudience'];
+const configuredResource: unknown = Constants.expoConfig?.extra?.['oidcResource'];
+const configuredScopes: unknown = Constants.expoConfig?.extra?.['oidcScopes'];
+const offlineAccess = Constants.expoConfig?.extra?.['oidcOfflineAccess'] !== false;
+{% endif %}
 const issuer =
   typeof configuredIssuer === 'string'
     ? configuredIssuer
@@ -50,8 +55,14 @@ export const authClient = {% if context.auth_oidc %}createExpoOidcClient{% else 
     issuer,
     clientId,
     redirectUri,
-    scopes: ['openid', 'profile', 'email'],
+{% if context.auth_oidc %}    scopes: typeof configuredScopes === 'string' && configuredScopes.trim()
+      ? configuredScopes.trim().split(/\s+/u) : ['openid', 'profile', 'email'],
+    ...(typeof configuredAudience === 'string' && configuredAudience.trim() ? { audience: configuredAudience } : {}),
+    ...(typeof configuredResource === 'string' && configuredResource.trim() ? { resource: configuredResource } : {}),
+    offlineAccess,
+{% else %}    scopes: ['openid', 'profile', 'email'],
     offlineAccess: true,
+{% endif %}
     storageKeyPrefix: `${PRODUCT_NAME}.oidc`,
   },
 {% if context.auth_workos %}  createExpoOidcEnvironment({

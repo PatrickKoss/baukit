@@ -58,6 +58,8 @@ export interface NativeOidcConfig {
   readonly issuer: string;
   readonly clientId: string;
   readonly redirectUri: string;
+  readonly audience?: string;
+  readonly resource?: string;
   /** `openid` is prepended when omitted. Defaults to `openid profile email`. */
   readonly scopes?: readonly string[];
   /** Adds `offline_access` to the requested scopes. Defaults to false. */
@@ -119,6 +121,8 @@ export interface AuthorizationRequest {
   readonly clientId: string;
   readonly redirectUri: string;
   readonly scopes: readonly string[];
+  readonly audience?: string;
+  readonly resource?: string;
   readonly prompt?: 'login';
   /** Segments a decorating browser flow puts in front of its random state. Other flows ignore them. */
   readonly stateDecoration?: readonly string[];
@@ -168,6 +172,8 @@ interface NormalizedConfig {
   readonly issuer: string;
   readonly clientId: string;
   readonly redirectUri: string;
+  readonly audience?: string;
+  readonly resource?: string;
   readonly scopes: readonly string[];
   readonly postLogoutRedirectUri: string;
   readonly refreshLeewayMs: number;
@@ -264,6 +270,8 @@ export class NativeOidcClient {
         clientId: this.config.clientId,
         redirectUri: this.config.redirectUri,
         scopes: this.config.scopes,
+        ...(this.config.audience === undefined ? {} : { audience: this.config.audience }),
+        ...(this.config.resource === undefined ? {} : { resource: this.config.resource }),
         ...(forceLogin ? { prompt: 'login' as const } : {}),
         ...(options.stateDecoration === undefined
           ? {}
@@ -664,6 +672,12 @@ function normalizeConfig(config: NativeOidcConfig): NormalizedConfig {
     issuer,
     clientId,
     redirectUri,
+    ...(config.audience === undefined
+      ? {}
+      : { audience: requiredText(config.audience, 'OIDC audience') }),
+    ...(config.resource === undefined
+      ? {}
+      : { resource: requiredText(config.resource, 'OIDC resource') }),
     scopes: normalizeScopes(config.scopes, config.offlineAccess),
     postLogoutRedirectUri: requiredUrl(
       config.postLogoutRedirectUri ?? redirectUri,
