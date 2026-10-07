@@ -141,6 +141,7 @@ impl RedisSentinelTestContainer {
     /// before it can promote one, and how long that takes depends on how loaded the
     /// host is. Polling the state Sentinel actually publishes removes the guess.
     async fn wait_until_ready(&self) -> Result<(), RedisTestError> {
+        let deadline = tokio::time::Instant::now() + SENTINEL_READY_TIMEOUT;
         self.poll_until(
             "master",
             |master| {
@@ -148,6 +149,7 @@ impl RedisSentinelTestContainer {
                     && sentinel_field(master, "flags").is_some_and(|flags| flags == "master")
             },
             "Sentinel did not report a healthy master with a discovered replica",
+            deadline,
         )
         .await?;
         self.poll_until(
@@ -158,6 +160,7 @@ impl RedisSentinelTestContainer {
                     && sentinel_field(replica, "role-reported") == Some("slave")
             },
             "Sentinel did not report a healthy promotion candidate",
+            deadline,
         )
         .await
     }
@@ -177,6 +180,7 @@ impl RedisSentinelTestContainer {
             "master",
             move |master| sentinel_has_new_master(master, &previous),
             "Sentinel did not publish a promoted master",
+            tokio::time::Instant::now() + SENTINEL_READY_TIMEOUT,
         )
         .await?;
         self.master_address().await
@@ -198,11 +202,13 @@ impl RedisSentinelTestContainer {
         command: &str,
         ready: F,
         failure: &str,
+        deadline: tokio::time::Instant,
     ) -> Result<(), RedisTestError>
     where
         F: Fn(&[String]) -> bool,
     {
-        self.poll_until_within(command, &ready, SENTINEL_READY_TIMEOUT)
+        let budget = deadline.saturating_duration_since(tokio::time::Instant::now());
+        self.poll_until_within(command, &ready, budget)
             .await
             .map_err(|error| RedisTestError::Topology(format!("{failure}: {error}")))
     }
