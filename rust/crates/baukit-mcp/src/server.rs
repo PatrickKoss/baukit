@@ -1,6 +1,5 @@
 use std::{borrow::Cow, collections::BTreeSet, future::Future, pin::Pin, sync::Arc};
 
-use baukit_auth::Principal;
 use rmcp::{
     ErrorData, RoleServer, ServerHandler,
     model::{
@@ -12,7 +11,7 @@ use rmcp::{
 };
 use serde_json::{Value, json};
 
-use crate::McpConfigError;
+use crate::{McpConfigError, Principal};
 
 const MAX_TOOL_NAME_BYTES: usize = 128;
 
@@ -80,7 +79,7 @@ impl RegisteredTools {
     }
 }
 
-fn valid_scope(scope: &str) -> bool {
+pub(crate) fn valid_scope(scope: &str) -> bool {
     !scope.is_empty()
         && scope
             .bytes()

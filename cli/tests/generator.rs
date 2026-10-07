@@ -4246,6 +4246,11 @@ fn remote_mcp_generation_matches_the_golden_tree() -> anyhow::Result<()> {
     let manifest = baukit_cli::read_manifest(&root)?;
     assert!(manifest.capabilities.mcp);
     assert!(!root.join("mcp").exists());
+    let api = fs::read_to_string(root.join("backend/crates/snapshot-app-bin/src/bin/api.rs"))?;
+    assert!(api.contains("snapshot_app_mcp::authentication_policy()"));
+    let tools = fs::read_to_string(root.join("backend/crates/snapshot-app-mcp/src/lib.rs"))?;
+    assert!(tools.contains("pub fn authentication_policy() -> Arc<dyn AuthenticationPolicy>"));
+    assert!(tools.contains("Arc::new(JwtOnlyPolicy)"));
     assert_eq!(manifest.openapi.consumers(), ["generated/openapi.d.ts"]);
     doctor(&root)?;
     Ok(())

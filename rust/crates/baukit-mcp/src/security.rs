@@ -17,8 +17,8 @@ use rmcp::transport::streamable_http_server::{
 use serde_json::{Value, json};
 
 use crate::{
-    McpConfig, McpConfigError, ToolService,
-    server::{ProductServer, RegisteredTools, permitted},
+    AuthenticationPolicy, McpConfig, McpConfigError, PolicyDenial, ToolService,
+    server::{ProductServer, RegisteredTools, permitted, valid_scope},
 };
 
 const MAX_BEARER_TOKEN_BYTES: usize = 16 * 1024;
@@ -31,6 +31,7 @@ struct Security {
     store: Arc<dyn RateLimitStore>,
     quota: Quota,
     metadata_url: String,
+    policy: Arc<dyn AuthenticationPolicy>,
 }
 
 /// Mounts `/mcp` and both RFC 9728 discovery paths with dedicated resource-audience verification.
@@ -39,6 +40,7 @@ pub async fn router(
     config: McpConfig,
     tools: Arc<dyn ToolService>,
     store: Arc<dyn RateLimitStore>,
+    policy: Arc<dyn AuthenticationPolicy>,
 ) -> Result<Router, McpConfigError> {
     if !config.enabled {
         return Ok(Router::new());
@@ -66,6 +68,7 @@ pub async fn router(
         verifier,
         tools,
         store,
+        policy,
     };
     let mcp = Router::new()
         .route_service("/mcp", service)
@@ -185,6 +188,23 @@ async fn authorize_inner(state: &Security, mut request: Request, next: Next) -> 
         }
         return response;
     }
+    let started = Instant::now();
+    let result = state.policy.authenticate(&principal, token).await;
+    let outcome = match &result {
+        Ok(_) => "allowed",
+        Err(PolicyDenial::Inactive) => "inactive",
+        Err(PolicyDenial::InsufficientScope(_)) => "insufficient_scope",
+        Err(PolicyDenial::Unavailable) => "unavailable",
+        Err(PolicyDenial::RateLimited(_)) => "limited",
+    };
+    metrics::counter!("mcp_authentication_policy_decisions_total", "outcome" => outcome)
+        .increment(1);
+    metrics::histogram!("mcp_authentication_policy_duration_seconds")
+        .record(started.elapsed().as_secs_f64());
+    let principal = match result {
+        Ok(principal) => principal,
+        Err(denial) => return policy_denial(state, denial),
+    };
     if request.method() == Method::POST {
         let (parts, body) = request.into_parts();
         let bytes = match to_bytes(body, state.config.max_request_body_bytes).await {
@@ -216,6 +236,34 @@ async fn authorize_inner(state: &Security, mut request: Request, next: Next) -> 
         .headers_mut()
         .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     response
+}
+
+fn policy_denial(state: &Security, denial: PolicyDenial) -> Response {
+    match denial {
+        PolicyDenial::Inactive => challenge(
+            state,
+            StatusCode::UNAUTHORIZED,
+            "invalid_token",
+            &state.tools.scopes(),
+        ),
+        PolicyDenial::InsufficientScope(scopes) => {
+            if scopes.is_empty() || scopes.iter().any(|scope| !valid_scope(scope)) {
+                return error(StatusCode::INTERNAL_SERVER_ERROR, "invalid_policy_scopes");
+            }
+            challenge(state, StatusCode::FORBIDDEN, "insufficient_scope", &scopes)
+        }
+        PolicyDenial::Unavailable => error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "authentication_policy_unavailable",
+        ),
+        PolicyDenial::RateLimited(retry_after) => {
+            let mut response = error(StatusCode::TOO_MANY_REQUESTS, "rate_limited");
+            if let Ok(value) = HeaderValue::from_str(&retry_after.as_secs().max(1).to_string()) {
+                response.headers_mut().insert(header::RETRY_AFTER, value);
+            }
+            response
+        }
+    }
 }
 
 fn challenge(state: &Security, status: StatusCode, code: &str, scopes: &[String]) -> Response {

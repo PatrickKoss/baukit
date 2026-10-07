@@ -76,6 +76,9 @@ Domain metrics are product-owned, use the product name as prefix (for example `f
 |---|---|---|
 | `mcp_requests_total` | counter | `status` |
 | `mcp_request_duration_seconds` | histogram | none |
+| `mcp_authentication_policy_decisions_total` | counter | `outcome` (`allowed`, `inactive`, `insufficient_scope`, `unavailable`, `limited`) |
+| `mcp_authentication_policy_duration_seconds` | histogram | none |
+| `mcp_introspection_cache_requests_total` | counter | `outcome` (`hit`, `miss`) |
 
 These metrics cover authorization and execution on `/mcp`. Status uses exact
 numeric HTTP codes. Token values, subjects, and tool arguments are never labels.

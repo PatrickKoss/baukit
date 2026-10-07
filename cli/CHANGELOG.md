@@ -4,6 +4,8 @@
 
 - Include the command arguments in Android QA timeout errors.
 - Supply localized web menu Close labels and the native navigation danger token in generated shells.
+- Wire an explicit JWT-only authentication policy in generated remote MCP crates. Document introspection and product account policies.
+
 - Breaking: `--mcp` now generates the Rust remote MCP server and requires `--backend --auth oidc`. Remove the TypeScript stdio template and transport and authentication selection flags. Existing MCP manifests and TypeScript servers receive a migration finding with `docs/migrations/mcp-stdio-to-remote.md`.
 
 - Add `--pwa` to generate a worker builder and dependency for the selected web host, including mobile-only products.

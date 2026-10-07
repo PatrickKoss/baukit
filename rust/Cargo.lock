@@ -425,12 +425,15 @@ dependencies = [
 name = "baukit-mcp"
 version = "0.7.4"
 dependencies = [
+ "aws-lc-rs",
  "axum",
  "baukit-auth",
+ "baukit-config",
  "baukit-ratelimit",
  "baukit-test",
  "http",
  "metrics",
+ "metrics-util",
  "reqwest",
  "rmcp",
  "serde",

@@ -7,12 +7,18 @@ only for loopback development. Host and Origin lists use exact values.
 
 Implement `ToolService` in a product adapter. Each `ScopedTool` declares its
 schema and required scopes. The transport checks scopes before execution,
-returns HTTP 403 with an OAuth challenge, and passes the verified `Principal`
+returns HTTP 403 with an OAuth challenge, and passes the effective `Principal`
 to the service. `tools/list` lists only permitted tools. The stateless
 transport verifies each request and does not retain an authenticated session.
 
-Pass a baukit-ratelimit store to `router`. Use Redis across replicas and the
-bounded memory store in local development. `tool_schema` exports the
+Pass a baukit-ratelimit store and an `AuthenticationPolicy` to `router`.
+`JwtOnlyPolicy` preserves verified JWT identity and grants.
+`KeycloakIntrospectionPolicy` checks live token state with a timeout and a
+bounded token-hash cache. Disable caching for per-request revocation checks.
+Product policies can add account lookups, erasure fences and quotas, then
+return an effective principal for both discovery and execution.
+
+Use Redis across replicas and the bounded memory store in local development. `tool_schema` exports the
 registered schemas and scopes for a product's committed drift artifact.
 
 See [remote MCP](../../../docs/remote-mcp.md) for template setup and client configuration.

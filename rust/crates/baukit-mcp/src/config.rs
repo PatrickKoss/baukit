@@ -103,7 +103,7 @@ impl McpConfig {
     }
 }
 
-fn endpoint(value: &str) -> Result<Url, McpConfigError> {
+pub(crate) fn endpoint(value: &str) -> Result<Url, McpConfigError> {
     let url = Url::parse(value).map_err(|_| McpConfigError::Invalid("invalid absolute URL"))?;
     let local = matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
     if !(url.scheme() == "https" || url.scheme() == "http" && local)

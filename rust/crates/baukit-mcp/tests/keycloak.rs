@@ -4,7 +4,10 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use baukit_mcp::{McpConfig, Principal, ScopedTool, ToolFuture, ToolService};
+use baukit_mcp::{
+    KeycloakIntrospectionConfig, KeycloakIntrospectionPolicy, McpConfig, Principal, ScopedTool,
+    ToolFuture, ToolService,
+};
 use baukit_ratelimit::InMemoryRateLimitStore;
 use reqwest::Client;
 use rmcp::{
@@ -47,6 +50,13 @@ impl ToolService for Subject {
     }
 }
 
+fn audience_mappers(resource: &str) -> Value {
+    json!([
+        {"name":"resource audience","protocol":"openid-connect","protocolMapper":"oidc-audience-mapper","config":{"included.custom.audience":resource,"access.token.claim":"true"}},
+        {"name":"backend audience","protocol":"openid-connect","protocolMapper":"oidc-audience-mapper","config":{"included.client.audience":"mcp-resource","access.token.claim":"true"}}
+    ])
+}
+
 async fn token(client: &Client, issuer: &str, id: &str) -> Result<Value, Box<dyn Error>> {
     Ok(client
         .post(format!("{issuer}/protocol/openid-connect/token"))
@@ -86,7 +96,8 @@ async fn rejected(client: &Client, resource: &str, access: &str) -> Result<(), B
 
 #[tokio::test]
 #[ignore = "requires Docker Keycloak"]
-async fn real_keycloak_audience_expiry_and_protocol() -> Result<(), Box<dyn Error>> {
+async fn real_keycloak_audience_expiry_protocol_introspection_and_logout()
+-> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let address = listener.local_addr()?;
     let resource = format!("http://{address}/mcp");
@@ -132,15 +143,17 @@ async fn real_keycloak_audience_expiry_and_protocol() -> Result<(), Box<dyn Erro
         .error_for_status()?
         .json()
         .await?;
-    let clients: Vec<Value> = [("mcp", &resource, None), ("wrong", &"https://other.example/mcp".to_owned(), None), ("expired", &resource, Some("1"))].into_iter()
+    let mut clients: Vec<Value> = [("mcp", &resource, None), ("wrong", &"https://other.example/mcp".to_owned(), None), ("expired", &resource, Some("1"))].into_iter()
         .map(|(id, audience, lifetime)| {
             let mut attributes = json!({});
             if let Some(lifetime) = lifetime { attributes["access.token.lifespan"] = json!(lifetime); }
             json!({"clientId":id,"enabled":true,"publicClient":false,"secret":"test-secret","standardFlowEnabled":false,"serviceAccountsEnabled":true,"defaultClientScopes":["basic"],"optionalClientScopes":["items:read"],"attributes":attributes,
-                "protocolMappers":[{"name":"resource audience","protocol":"openid-connect","protocolMapper":"oidc-audience-mapper","config":{"included.custom.audience":audience,"access.token.claim":"true"}}]})
+                "protocolMappers":audience_mappers(audience)})
         }).collect();
+    clients.push(json!({"clientId":"session","enabled":true,"publicClient":false,"secret":"test-secret","standardFlowEnabled":false,"directAccessGrantsEnabled":true,"defaultClientScopes":["basic"],"optionalClientScopes":["items:read"],"protocolMappers":audience_mappers(&resource)}));
+    clients.push(json!({"clientId":"mcp-resource","enabled":true,"publicClient":false,"secret":"test-secret","standardFlowEnabled":false,"directAccessGrantsEnabled":false,"serviceAccountsEnabled":false}));
     client.post(format!("{base}/admin/realms")).bearer_auth(admin["access_token"].as_str().ok_or("admin token")?)
-        .json(&json!({"realm":"mcp-test","enabled":true,"sslRequired":"none","clientScopes":[{"name":"items:read","protocol":"openid-connect","attributes":{"include.in.token.scope":"true"}}],"clients":clients}))
+        .json(&json!({"realm":"mcp-test","enabled":true,"sslRequired":"none","clientScopes":[{"name":"basic","protocol":"openid-connect","attributes":{"include.in.token.scope":"false"},"protocolMappers":[{"name":"sub","protocol":"openid-connect","protocolMapper":"oidc-sub-mapper","config":{"introspection.token.claim":"true","access.token.claim":"true"}}]},{"name":"items:read","protocol":"openid-connect","attributes":{"include.in.token.scope":"true"}}],"clients":clients,"users":[{"username":"mcp-user","firstName":"MCP","lastName":"Test","email":"mcp-user@example.test","enabled":true,"emailVerified":true,"credentials":[{"type":"password","value":"test-user-password","temporary":false}]}]}))
         .send().await?.error_for_status()?;
     let issuer = format!("{base}/realms/mcp-test");
     let config = McpConfig {
@@ -150,14 +163,57 @@ async fn real_keycloak_audience_expiry_and_protocol() -> Result<(), Box<dyn Erro
         allowed_hosts: vec![address.to_string()],
         ..Default::default()
     };
+    let mut policy_config = KeycloakIntrospectionConfig::new(
+        &issuer,
+        "mcp-resource",
+        baukit_config::Secret::new("test-secret".to_owned()),
+    );
+    let cache_ttl = Duration::from_secs(1);
+    policy_config.cache_ttl = cache_ttl;
+    let policy = Arc::new(KeycloakIntrospectionPolicy::new(policy_config)?);
     let app = baukit_mcp::router(
         config,
         Arc::new(Subject),
         Arc::new(InMemoryRateLimitStore::default()),
+        policy,
     )
     .await?;
     let server = tokio::spawn(async move { axum::serve(listener, app).await });
     let access = token(&client, &issuer, "mcp").await?;
+    let introspected: Value = client
+        .post(format!("{issuer}/protocol/openid-connect/token/introspect"))
+        .basic_auth("mcp-resource", Some("test-secret"))
+        .form(&[
+            (
+                "token",
+                access["access_token"].as_str().ok_or("active token")?,
+            ),
+            ("token_type_hint", "access_token"),
+        ])
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(introspected["active"], true);
+    let verifier = baukit_auth::OidcVerifier::discover(
+        baukit_auth::OidcConfig::new(&issuer, &resource)?.with_principal_claims(
+            baukit_auth::PrincipalClaimMapping::new().client_id_claim("azp"),
+        ),
+    )
+    .await?;
+    let identity = verifier
+        .verify(access["access_token"].as_str().ok_or("active token")?)
+        .await?;
+    assert_eq!(introspected["sub"], identity.subject());
+    assert_eq!(
+        introspected["client_id"],
+        identity.client_id().ok_or("verified client")?
+    );
+    assert_eq!(
+        introspected["iss"],
+        identity.issuer().ok_or("verified issuer")?
+    );
     for lifecycle in [
         ClientLifecycleMode::Initialize,
         ClientLifecycleMode::Discover {
@@ -213,6 +269,66 @@ async fn real_keycloak_audience_expiry_and_protocol() -> Result<(), Box<dyn Erro
         expired["access_token"].as_str().ok_or("expired token")?,
     )
     .await?;
+    let session: Value = client
+        .post(format!("{issuer}/protocol/openid-connect/token"))
+        .form(&[
+            ("grant_type", "password"),
+            ("client_id", "session"),
+            ("client_secret", "test-secret"),
+            ("username", "mcp-user"),
+            ("password", "test-user-password"),
+            ("scope", "items:read"),
+        ])
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let session_access = session["access_token"]
+        .as_str()
+        .ok_or("session access token")?;
+    let session_identity = verifier.verify(session_access).await?;
+    let transport = StreamableHttpClientTransport::with_client(
+        client.clone(),
+        StreamableHttpClientTransportConfig::with_uri(resource.clone()).auth_header(session_access),
+    );
+    let peer = ().serve_with_lifecycle(transport, ClientLifecycleMode::Initialize).await?;
+    assert_eq!(peer.list_all_tools().await?.len(), 1);
+    let output = peer
+        .call_tool(CallToolRequestParams::new("subject"))
+        .await?
+        .structured_content
+        .ok_or("session content")?;
+    assert_eq!(output["client"], "session");
+    assert_eq!(output["subject"], session_identity.subject());
+    peer.cancel().await?;
+    client
+        .post(format!("{issuer}/protocol/openid-connect/logout"))
+        .basic_auth("session", Some("test-secret"))
+        .form(&[(
+            "refresh_token",
+            session["refresh_token"].as_str().ok_or("refresh token")?,
+        )])
+        .send()
+        .await?
+        .error_for_status()?;
+    let introspected: Value = client
+        .post(format!("{issuer}/protocol/openid-connect/token/introspect"))
+        .basic_auth("mcp-resource", Some("test-secret"))
+        .form(&[
+            ("token", session_access),
+            ("token_type_hint", "access_token"),
+        ])
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(introspected["active"], false);
+    tokio::time::sleep(cache_ttl).await;
+    assert_eq!(verifier.verify(session_access).await?, session_identity);
+    rejected(&client, &resource, session_access).await?;
+    rejected(&client, &resource, session_access).await?;
     server.abort();
     assert!(server.await.expect_err("server cancelled").is_cancelled());
     Ok(())

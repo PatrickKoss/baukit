@@ -2,11 +2,17 @@
 
 use std::sync::Arc;
 
-use baukit_mcp::{Principal, ScopedTool, ToolError, ToolFuture, ToolService};
+use baukit_mcp::{
+    AuthenticationPolicy, JwtOnlyPolicy, Principal, ScopedTool, ToolError, ToolFuture, ToolService,
+};
 use {{ context.app_crate }}_domain::Item;
 use {{ context.app_crate }}_ports::PortFuture;
 use {{ context.app_crate }}_services::{ItemService, ServiceError};
 use serde_json::{Value, json};
+
+pub fn authentication_policy() -> Arc<dyn AuthenticationPolicy> {
+    Arc::new(JwtOnlyPolicy)
+}
 
 pub const READ_SCOPE: &str = "items:read";
 const MAX_ITEMS: usize = 20;

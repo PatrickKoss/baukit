@@ -16,7 +16,7 @@ b8e5b11dc177ffd2cd83c9ef160858507ffe8cca63de7c2648a1dd5a1484b4bb  backend/Cargo.
 5eff47648470ef46c43d291809badc2a9143dd620b08ff9078379fe2393d4b77  backend/crates/snapshot-app-api/Cargo.toml
 03428bb6b6bff9e258d80f4dc0539a6746914ba65d16464c6132ed365b764f92  backend/crates/snapshot-app-api/src/lib.rs
 707dc0db2c6c1120a31b5337b0badc9e3fbbecf0a140463ebea9af4e03469ce1  backend/crates/snapshot-app-bin/Cargo.toml
-046077cbcd73d8570222c77d5358f49da52ed43ab63a61962af2bdf2b55d816b  backend/crates/snapshot-app-bin/src/bin/api.rs
+acf32f2c029f89e76883ff6221421a8c747d82fcecb9dc33e6191e774ce1212c  backend/crates/snapshot-app-bin/src/bin/api.rs
 035efd2a3fe286d022f9f838f50ba1af11c777a09d90b137c7429f0f4d3db24c  backend/crates/snapshot-app-bin/src/bin/migrate.rs
 e3ace3e22180259e0bd22854962a4021c049b6cd372657d019b8642d9d3bdda4  backend/crates/snapshot-app-bin/src/bin/openapi.rs
 1f3733ee0e4a8a6e1c253404fd16de0afa588622d76e0e898e2da33059cf1eba  backend/crates/snapshot-app-bin/src/lib.rs
@@ -25,7 +25,7 @@ e3ace3e22180259e0bd22854962a4021c049b6cd372657d019b8642d9d3bdda4  backend/crates
 eb3028dc8a3f1e03dc36a4b45df0d5c01b5ca5d4f5f93145fb02048cb75568ef  backend/crates/snapshot-app-domain/src/limits.rs
 7e4ae4979fdf97ff271884f2d6c0791ce123d5af6b07a60259162f48858cd219  backend/crates/snapshot-app-mcp/Cargo.toml
 fab4bb418c0c778a140df34bfe67a5b880a0c0c731d5dfdbdccced9012e4a386  backend/crates/snapshot-app-mcp/src/bin/mcp-tools.rs
-d947d36f64f3db3e786f4c70e7afc73638f6630ee9a580c3c491890495e21151  backend/crates/snapshot-app-mcp/src/lib.rs
+700d457fdfbea5f71fa4adb8ed0cd834357fa7a42629b072e1ecebfad854ac8e  backend/crates/snapshot-app-mcp/src/lib.rs
 20b12d25ed51edb83888a6e9d578301554b6d10154bfd630454bcdd13fd67caa  backend/crates/snapshot-app-ports/Cargo.toml
 6a1a7e715f795b73d41c4bdc1ffbf8e248f71f064d0a78e95a5113bde67658d8  backend/crates/snapshot-app-ports/src/lib.rs
 a51828869d4e0163b227312152407e98482324ec81faf3860d0e2458e01a94b5  backend/crates/snapshot-app-postgres/Cargo.toml
@@ -53,7 +53,7 @@ c2ade433d32a8ed9c651cff80da82c546b0a5d1eb5ea1f78fdbd79041f560fdf  docs/fake-prov
 a699fd266bd64e483e44f881ab05689fade6ea9a202ab0bb9d799539e38eb362  docs/navigation-recipe.md
 2c6f4d5b155a090f634915f188bb553e634b3255e786a43d4d065b09aede6b34  docs/observability-lint.md
 ebddf447d8608ee465dd7aaa8bd63966a2493d3bb12fb934132cfccc5239869d  docs/openapi-drift.md
-839aa3ae6f00b1cc3937664ed80524f8ce49abc09f13a7ff10105be8be259e2e  docs/remote-mcp.md
+a97dd398537b39f529c4fc2388c4401d59080567882521ab93055ffc7c6e506f  docs/remote-mcp.md
 dee8b2fb16b9c29ec55958b361f1aba8ffb151e7307d22c658cdf64cef62d296  docs/resource-budgets.md
 0de5ab988fd42ee4b7452cbd86ac37b1eaa05c2983780fe6e4c9eb64b41f49fa  docs/syncable-tables.md
 2337d1ff698d79b4e00c792a4715665637b4be867fcd023c44e0b3c1ecf8a05e  generated/openapi.d.ts

@@ -11,7 +11,9 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
-use baukit_mcp::{McpConfig, Principal, ScopedTool, ToolError, ToolFuture, ToolService, router};
+use baukit_mcp::{
+    JwtOnlyPolicy, McpConfig, Principal, ScopedTool, ToolError, ToolFuture, ToolService, router,
+};
 use baukit_ratelimit::{
     InMemoryRateLimitStore, Quota, RateLimitDecision, RateLimitStore, RateLimitStoreError,
 };
@@ -66,6 +68,7 @@ async fn app(config: McpConfig) -> Result<Router, Box<dyn Error>> {
         config,
         Arc::new(IdentityTool),
         Arc::new(InMemoryRateLimitStore::default()),
+        Arc::new(JwtOnlyPolicy),
     )
     .await?)
 }
@@ -269,6 +272,7 @@ async fn disabled_resources_are_absent_and_store_failure_fails_closed() -> Resul
         McpConfig::default(),
         Arc::new(IdentityTool),
         Arc::new(UnavailableStore),
+        Arc::new(JwtOnlyPolicy),
     )
     .await?;
     for path in ["/mcp", "/.well-known/oauth-protected-resource"] {
@@ -282,10 +286,223 @@ async fn disabled_resources_are_absent_and_store_failure_fails_closed() -> Resul
     let config = config(&issuer);
     let token =
         issuer.mint(&issuer.claims("alice", &config.resource_url, Duration::from_secs(300))?)?;
-    let app = router(config, Arc::new(IdentityTool), Arc::new(UnavailableStore)).await?;
+    let app = router(
+        config,
+        Arc::new(IdentityTool),
+        Arc::new(UnavailableStore),
+        Arc::new(JwtOnlyPolicy),
+    )
+    .await?;
     let (status, headers, body) = send(&app, Some(&token), list()).await?;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(headers[header::CACHE_CONTROL], "no-store");
     assert_eq!(body, json!({"error": "rate_limit_unavailable"}));
+    Ok(())
+}
+
+struct ProductPolicy {
+    denial: Option<baukit_mcp::PolicyDenial>,
+    scopes: Vec<String>,
+    calls: std::sync::atomic::AtomicUsize,
+}
+
+impl baukit_mcp::AuthenticationPolicy for ProductPolicy {
+    fn authenticate<'a>(
+        &'a self,
+        principal: &'a baukit_mcp::VerifiedPrincipal,
+        token: &'a str,
+    ) -> baukit_mcp::PolicyFuture<'a> {
+        Box::pin(async move {
+            assert!(!token.is_empty());
+            assert_eq!(principal.subject(), "alice");
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if let Some(denial) = &self.denial {
+                return Err(denial.clone());
+            }
+            Ok(Principal::from(principal.clone())
+                .with_subject("linked-account")
+                .with_scopes(self.scopes.clone()))
+        })
+    }
+}
+
+#[tokio::test]
+async fn policy_denials_have_safe_http_shapes_before_dispatch() -> Result<(), Box<dyn Error>> {
+    use metrics_util::debugging::{DebugValue, DebuggingRecorder};
+    let recorder = DebuggingRecorder::new();
+    let snapshotter = recorder.snapshotter();
+    let _recorder_guard = metrics::set_default_local_recorder(&recorder);
+    use baukit_mcp::PolicyDenial;
+    let issuer = MockOidcServer::start().await?;
+    let config = config(&issuer);
+    let token = issuer.mint(
+        &issuer
+            .claims("alice", &config.resource_url, Duration::from_secs(300))?
+            .claim("scope", "identity:read account:read"),
+    )?;
+    for (denial, expected, code, challenge_scope) in [
+        (
+            PolicyDenial::Inactive,
+            StatusCode::UNAUTHORIZED,
+            "invalid_token",
+            Some("account:read identity:read"),
+        ),
+        (
+            PolicyDenial::InsufficientScope(vec!["account:write".into()]),
+            StatusCode::FORBIDDEN,
+            "insufficient_scope",
+            Some("account:write"),
+        ),
+        (
+            PolicyDenial::Unavailable,
+            StatusCode::SERVICE_UNAVAILABLE,
+            "authentication_policy_unavailable",
+            None,
+        ),
+        (
+            PolicyDenial::RateLimited(Duration::from_secs(7)),
+            StatusCode::TOO_MANY_REQUESTS,
+            "rate_limited",
+            None,
+        ),
+        (
+            PolicyDenial::InsufficientScope(vec!["unsafe\"".into()]),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "invalid_policy_scopes",
+            None,
+        ),
+        (
+            PolicyDenial::InsufficientScope(vec![]),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "invalid_policy_scopes",
+            None,
+        ),
+    ] {
+        let policy = Arc::new(ProductPolicy {
+            denial: Some(denial),
+            scopes: vec![],
+            calls: Default::default(),
+        });
+        let app = router(
+            config.clone(),
+            Arc::new(IdentityTool),
+            Arc::new(InMemoryRateLimitStore::default()),
+            policy.clone(),
+        )
+        .await?;
+        for request in [list(), call()] {
+            let (status, headers, body) = send(&app, Some(&token), request).await?;
+            assert_eq!(status, expected);
+            assert_eq!(body, json!({"error": code}));
+            assert_eq!(headers[header::CACHE_CONTROL], "no-store");
+            if let Some(scope) = challenge_scope {
+                assert_eq!(
+                    headers[header::WWW_AUTHENTICATE],
+                    format!(
+                        "Bearer resource_metadata=\"https://mcp.example/.well-known/oauth-protected-resource\", error=\"{code}\", scope=\"{scope}\""
+                    )
+                );
+            } else {
+                assert!(!headers.contains_key(header::WWW_AUTHENTICATE));
+            }
+            if expected == StatusCode::TOO_MANY_REQUESTS {
+                assert_eq!(headers[header::RETRY_AFTER], "7");
+            }
+        }
+        assert_eq!(policy.calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+        let (status, _, _) = send(&app, Some("invalid-jwt"), list()).await?;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_eq!(policy.calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+    let app = app(config).await?;
+    assert_eq!(send(&app, Some(&token), list()).await?.0, StatusCode::OK);
+    let measurements = snapshotter.snapshot().into_vec();
+    let mut outcomes = std::collections::BTreeMap::new();
+    for (key, _, _, value) in &measurements {
+        if key.key().name() == "mcp_authentication_policy_decisions_total" {
+            let labels = key.key().labels().collect::<Vec<_>>();
+            assert_eq!(labels.len(), 1);
+            assert_eq!(labels[0].key(), "outcome");
+            let DebugValue::Counter(count) = value else {
+                panic!("expected counter")
+            };
+            outcomes.insert(labels[0].value(), *count);
+        }
+        if key.key().name() == "mcp_authentication_policy_duration_seconds" {
+            assert_eq!(key.key().labels().count(), 0);
+            assert!(matches!(value, DebugValue::Histogram(values) if values.len() == 13));
+        }
+    }
+    assert_eq!(
+        outcomes,
+        std::collections::BTreeMap::from([
+            ("allowed", 1),
+            ("inactive", 2),
+            ("insufficient_scope", 6),
+            ("limited", 2),
+            ("unavailable", 2),
+        ])
+    );
+    assert!(
+        measurements
+            .iter()
+            .any(|(key, _, _, _)| key.key().name() == "mcp_authentication_policy_duration_seconds")
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn effective_scopes_filter_discovery_and_dispatch_and_map_account()
+-> Result<(), Box<dyn Error>> {
+    let issuer = MockOidcServer::start().await?;
+    let config = config(&issuer);
+    let token = issuer.mint(
+        &issuer
+            .claims("alice", &config.resource_url, Duration::from_secs(300))?
+            .claim("scope", "identity:read account:read")
+            .claim("azp", "registered-client"),
+    )?;
+    for (scopes, allowed) in [
+        (vec!["identity:read"], false),
+        (
+            vec!["identity:read", "account:reader", "injected:write"],
+            false,
+        ),
+        (
+            vec!["identity:read", "account:read", "injected:write"],
+            true,
+        ),
+    ] {
+        let policy = Arc::new(ProductPolicy {
+            denial: None,
+            scopes: scopes.into_iter().map(str::to_owned).collect(),
+            calls: Default::default(),
+        });
+        let app = router(
+            config.clone(),
+            Arc::new(IdentityTool),
+            Arc::new(InMemoryRateLimitStore::default()),
+            policy.clone(),
+        )
+        .await?;
+        let (status, _, body) = send(&app, Some(&token), list()).await?;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            body["result"]["tools"].as_array().ok_or("tools")?.len(),
+            usize::from(allowed)
+        );
+        let (status, _, body) = send(&app, Some(&token), call()).await?;
+        if allowed {
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(
+                body["result"]["structuredContent"],
+                json!({"subject":"linked-account", "issuer":issuer.issuer(), "client":"registered-client", "scopes":["account:read","identity:read"]})
+            );
+        } else {
+            assert_eq!(status, StatusCode::FORBIDDEN);
+            assert_eq!(body["error"], "insufficient_scope");
+        }
+        assert_eq!(policy.calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
     Ok(())
 }

@@ -16,11 +16,14 @@ readme = "README.md"
 workspace = true
 
 [dependencies]
+aws-lc-rs.workspace = true
 axum.workspace = true
 baukit-auth.workspace = true
+baukit-config.workspace = true
 baukit-ratelimit.workspace = true
 http.workspace = true
 metrics.workspace = true
+reqwest = { workspace = true, features = ["form"] }
 rmcp.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -30,7 +33,8 @@ url.workspace = true
 
 [dev-dependencies]
 baukit-test = { path = "../baukit-test", default-features = false }
-reqwest.workspace = true
+metrics-util.workspace = true
 rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }
 testcontainers.workspace = true
 tower = { workspace = true, features = ["util"] }
+tokio = { workspace = true, features = ["test-util"] }

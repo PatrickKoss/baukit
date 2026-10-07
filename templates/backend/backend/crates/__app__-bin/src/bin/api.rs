@@ -175,6 +175,7 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
             item_service.clone(),
         ))),
         mcp_store,
+        {{ context.app_crate }}_mcp::authentication_policy(),
     )
     .await?;
     let api = api.merge(mcp);

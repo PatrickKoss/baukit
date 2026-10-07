@@ -1,11 +1,16 @@
 //! OAuth-protected MCP over stateless Streamable HTTP.
 
 mod config;
+mod introspection;
+mod policy;
 mod security;
 mod server;
 
-pub use baukit_auth::Principal;
 pub use config::{McpConfig, McpConfigError, ProtectedResourceMetadata};
+pub use introspection::{KeycloakIntrospectionConfig, KeycloakIntrospectionPolicy};
+pub use policy::{
+    AuthenticationPolicy, JwtOnlyPolicy, PolicyDenial, PolicyFuture, Principal, VerifiedPrincipal,
+};
 pub use security::router;
 pub use server::{ScopedTool, ToolError, ToolFuture, ToolService, tool_schema};
 

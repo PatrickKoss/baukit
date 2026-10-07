@@ -145,14 +145,23 @@ connection instructions. Remove old command-based MCP client entries.
 | Schlauzug | 6 reads and 3 default writes, plus opt-in `draft_delete`. Static `SCHLAUZUG_ACCESS_TOKEN` and a newer TS server SDK. | Add a Keycloak MCP client and read/draft-write scopes. Port catalog, owned drafts, progress and history. Preserve opaque account-bound page tokens, field redaction, five-question slices, no answer-key disclosure, strict question-format tagged unions and root `limits.json` bounds. Keep draft versions, UUID operation IDs, 24-hour replay semantics and the deletion opt-in. No publishing, purchases, account deletion or gameplay tools are introduced. |
 | SLS | Its own Rust rmcp server, 4 reads and 2 writes. Per-request JWT validation, introspection, issuer/subject account lookup, erasure fence and product quota checks. | Replace generic transport, Host/Origin protection, metadata, challenges, body limits and scope dispatch with `baukit-mcp`. Keep `MeService`, quest catalog and user-quest ports, account lookup, deleted-user checks, erasure fences, quota receipts, private projections and bounded output. Preserve `profile:read`, `quests:read`, `quests:write`, absolute task-progress writes and stable idempotency keys. |
 
-SLS checks introspection on every request and uses the returned scopes so
-revocations and reduced grants take effect before JWT expiry. Baukit's
-router validates signed JWTs; it has no introspection adapter. Before
-adopting that router in SLS, add an authentication policy port that performs
-SLS's live checks and passes the resulting effective principal into scope
-dispatch. Checking introspection only inside tool calls leaves `tools/list`
-and revoked sessions with different behavior. Do not remove the existing
-SLS authentication layer until that policy is supported and tested.
+SLS can use `AuthenticationPolicy` before both `tools/list` and `tools/call`.
+Compose `KeycloakIntrospectionPolicy` with SLS's account, user, erasure and
+quota ports. Set `cache_ttl = Duration::ZERO` to preserve its every-request
+introspection. Run the erasure fence against the verified issuer/subject,
+resolve the linked active user, and retain the personal quota check.
+Return the introspected principal with `with_subject(user.id.to_string())`;
+its effective scopes drive discovery and dispatch. Keep database and erasure
+checks outside the introspection cache. Map erased or deleted users to
+`PolicyDenial::Inactive`, storage failures to `Unavailable`, and exhausted
+quotas to `RateLimited`. No SLS domain type enters Baukit.
+
+Use `profile:read`, `quests:read` and `quests:write` in the tool definitions.
+Keep SLS's service authorization, pagination, projections, bounded output,
+write preconditions and replay keys. Baukit replaces its JWT/introspection
+HTTP adapter, host/origin checks, metadata, challenges, body limits and scope
+dispatch. See [authentication policy](../remote-mcp.md#authentication-policy)
+for credentials, cache settings and the generated composition hook.
 
 ## Remove the old server and verify
 
@@ -164,7 +173,7 @@ stdio tests, CI job and command-based client configuration. Remove
 used by web/mobile; `@baukit/auth-node` is still used by web OIDC tests.
 
 SLS instead deletes its duplicated rmcp server and HTTP middleware after
-the policy port above is available. Its product services and account policy
+its composed policy passes the revocation, account and erasure tests. Its product services and account policy
 remain in SLS. Product repositories are not migrated by this Baukit change.
 
 ```sh
