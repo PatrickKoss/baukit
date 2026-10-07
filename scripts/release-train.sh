@@ -93,7 +93,7 @@ TRAIN_VERSION="$next" perl -0pi -e \
 cargo update --manifest-path cli/Cargo.toml --workspace
 
 release_date=${RELEASE_DATE:-$(date -u +%F)}
-for changelog in rust/crates/*/CHANGELOG.md cli/CHANGELOG.md templates/common/CHANGELOG.md; do
+for changelog in rust/crates/*/CHANGELOG.md cli/CHANGELOG.md templates/common/CHANGELOG.md deploy/chart/baukit-app/CHANGELOG.md; do
   TRAIN_VERSION="$next" RELEASE_DATE="$release_date" perl -0pi -e \
     's{## \[Unreleased\]\n\n}{"## [Unreleased]\n\n## [".$ENV{TRAIN_VERSION}."] - ".$ENV{RELEASE_DATE}."\n\n"}e' \
     "$changelog"
@@ -105,7 +105,8 @@ import re
 import sys
 
 changelogs = [*Path("rust/crates").glob("*/CHANGELOG.md"),
-              Path("cli/CHANGELOG.md"), Path("templates/common/CHANGELOG.md")]
+              Path("cli/CHANGELOG.md"), Path("templates/common/CHANGELOG.md"),
+              Path("deploy/chart/baukit-app/CHANGELOG.md")]
 heading = f"[{sys.argv[1]}] - "
 for changelog in changelogs:
     sections = re.split(r"^## ", changelog.read_text(), flags=re.MULTILINE)

@@ -5,7 +5,7 @@
 - Generate product MCP server identity and instructions, with explicit default tool annotations.
 - Breaking: Generated native checks now require Java 25. Use Android command-line tools 23.0 downloads.
 - Grant native access to Android's Prefab tool during generated native builds. Preserve existing JVM options.
-- Validate that release preparation cuts CLI and crate changelogs as well as the template changelog.
+- Cut chart release notes and validate CLI, crate, chart and template changelog cuts during release preparation.
 
 ## [0.9.0] - 2026-10-07
 

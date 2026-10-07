@@ -235,6 +235,10 @@ class ReleaseTrainFilesTest(unittest.TestCase):
         self.check_patch_train("## [Unreleased]\n\n- Pending template fix.\n", False,
                                {"rust/crates/baukit-core/CHANGELOG.md": "## [Unreleased]\n- Pending crate fix.\n"})
 
+    def test_patch_train_rejects_uncut_chart_entries(self):
+        self.check_patch_train("## [Unreleased]\n\n- Pending template fix.\n", False,
+                               {"deploy/chart/baukit-app/CHANGELOG.md": "## [Unreleased]\n- Pending chart fix.\n"})
+
     def test_patch_train_cuts_template_changelog_and_updates_cli_tags(self):
         self.check_patch_train("## [Unreleased]\n\n- Pending template fix.\n", True)
 
@@ -255,6 +259,7 @@ class ReleaseTrainFilesTest(unittest.TestCase):
                 "rust/crates/baukit-core/CHANGELOG.md": "## [Unreleased]\n\n- Pending crate fix.\n",
                 "typescript/packages/analytics-core/package.json": json.dumps({"name": "@baukit/analytics-core", "version": "0.7.1"}),
                 "deploy/chart/baukit-app/Chart.yaml": 'version: 0.7.0\nappVersion: "0.7.0"\n',
+                "deploy/chart/baukit-app/CHANGELOG.md": "## [Unreleased]\n\n- Pending chart fix.\n",
                 "deploy/observability/Chart.yaml": 'version: 0.7.0\nappVersion: "0.7.0"\n',
                 "deploy/chart/baukit-app/README.md": '  - name: baukit-app\n    version: 0.7.0\n',
             }
@@ -293,6 +298,8 @@ class ReleaseTrainFilesTest(unittest.TestCase):
             self.assertEqual(after, before.replace("## [Unreleased]\n\n", "## [Unreleased]\n\n## [0.7.1] - 2026-10-05\n\n", 1))
             cli_changelog = (root / "cli/CHANGELOG.md").read_text()
             self.assertEqual(cli_changelog, "## [Unreleased]\n\n## [0.7.1] - 2026-10-05\n\n- Pending CLI fix.\n\n## [0.7.0] - 2026-10-04\n\n- Shipped CLI fix.\n")
+            chart_changelog = (root / "deploy/chart/baukit-app/CHANGELOG.md").read_text()
+            self.assertEqual(chart_changelog, "## [Unreleased]\n\n## [0.7.1] - 2026-10-05\n\n- Pending chart fix.\n")
             self.assertEqual(after.count("## [0.7.0]"), 1)
             self.assertEqual(after.count("## [0.6.0]"), 1)
             self.assertIn("--tag v0.7.1 --locked baukit-cli", (root / "README.md").read_text())
@@ -392,6 +399,7 @@ class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
             "templates/common/CHANGELOG.md": "## [Unreleased]\n\n- Pending fix.\n",
             "templates/VERSION": "0.7.1\n",
             "deploy/chart/baukit-app/Chart.yaml": 'version: 0.7.1\nappVersion: "0.7.1"\n',
+            "deploy/chart/baukit-app/CHANGELOG.md": "## [Unreleased]\n\n- Pending chart fix.\n",
             "deploy/observability/Chart.yaml": 'version: 0.7.1\nappVersion: "0.7.1"\n',
             "deploy/chart/baukit-app/README.md": "  - name: baukit-app\n    version: 0.7.1\n",
             "typescript/pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n",
