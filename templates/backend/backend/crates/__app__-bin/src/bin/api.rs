@@ -169,11 +169,11 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
             );
         }
     };
+    let item_reads = Arc::new(item_service.clone());
+    let mcp_tools = Arc::new({{ context.app_crate }}_mcp::ItemTools::new(item_reads));
     let mcp = baukit_mcp::router(
         config.product.mcp.clone(),
-        Arc::new({{ context.app_crate }}_mcp::ItemTools::new(Arc::new(
-            item_service.clone(),
-        ))),
+        mcp_tools,
         mcp_store,
         {{ context.app_crate }}_mcp::authentication_policy(),
     )
