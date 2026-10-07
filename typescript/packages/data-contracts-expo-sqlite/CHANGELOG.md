@@ -4,6 +4,17 @@
 
 - Publish the TypeScript sources referenced by JavaScript and declaration maps. Check source paths in the packed archive.
 
+## 0.8.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.8.0 train.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/data-contracts@0.8.0
+
 ## 0.7.4
 
 ### Patch Changes

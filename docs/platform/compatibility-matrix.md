@@ -5,17 +5,17 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
-Last verified release train: `v0.7.4` (compact native navigation height derived
-from its rendered layout, aligned avatar labels, scrolling at large text sizes,
-standalone picker fonts, doctor detection of wrapped sign-in screens with
-Git-aware layout scans, mobile safe areas, Expo web PWA hosts with `--pwa`,
-browser storage for mobile auth on web, a deterministic auth conformance
-fixture, iOS Release builds for Maestro, and Android QA pinned to a loopback
-Gradle host with four emulator cores). The complete Linux gates passed locally
-on 2026-10-06: `make ci`, browser Dexie and navigation conformance, every
-generated fixture flavor including mobile PWA, the generated Android compile,
-both Expo Android conformance gates, and version coherence. The iOS simulator
-gate requires macOS and remains a release-host check rather than a Linux result.
+Last verified release train: `v0.8.0` (the `baukit-mcp` crate and a Rust
+remote MCP template behind `--mcp`, with Streamable HTTP, audience-bound OIDC
+tokens, RFC 9728 protected-resource metadata, per-tool scopes, a pluggable
+authentication policy, and Keycloak token introspection; the TypeScript stdio
+MCP template is gone. Navigation menus run callbacks after they close, accept a
+danger tone, a localized close label, and brand and accessory slots, and wrap
+long web text). The complete Linux gates passed locally on 2026-10-07:
+`make ci`, every Rust test with `--include-ignored`, the remote MCP fixture
+gate, version coherence, example lockfiles, metric names, cargo deny, and the
+Rust 1.95 MSRV check. The iOS simulator gate requires macOS and remains a
+release-host check rather than a Linux result.
 
 ## Toolchain
 

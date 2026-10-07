@@ -14,6 +14,18 @@
 
 - Derive compact native bar height from the avatar, icon, label line height, spacing, padding and borders. Size compact icon containers from the same dimensions so Android font padding cannot squeeze labels. Keep rendered height and reserved height aligned at normal and enlarged font scales.
 
+## 0.8.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.8.0 train.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/a11y-core@0.8.0
+  - @baukit/ui-tokens@0.8.0
+
 ## 0.7.4
 
 ### Patch Changes

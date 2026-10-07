@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-07
+
 {% if context.mcp %}- Breaking: `--mcp` now generates the Rust remote server and requires `--backend --auth oidc`. The TypeScript stdio template and its authentication flags are removed. Set `capabilities.mcp = true` after migrating existing tools.
 {% endif %}{% if context.mobile %}- Update Expo SDK 57 patches to match Expo compatibility checks.
 {% endif %}
