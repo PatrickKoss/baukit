@@ -22,6 +22,12 @@ const MAX_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_CACHE_CAPACITY: usize = 4096;
 const MAX_RESPONSE_BYTES: usize = 32 * 1024;
 
+fn encode_client_credential(value: &str) -> String {
+    let mut encoded = url::form_urlencoded::Serializer::new(String::new());
+    encoded.append_key_only(value);
+    encoded.finish()
+}
+
 /// Credentials for a separate confidential Keycloak resource-server client.
 pub struct KeycloakIntrospectionConfig {
     pub issuer: String,
@@ -109,8 +115,8 @@ impl KeycloakIntrospectionPolicy {
             .client
             .post(&self.endpoint)
             .basic_auth(
-                &self.config.client_id,
-                Some(self.config.client_secret.expose()),
+                encode_client_credential(&self.config.client_id),
+                Some(encode_client_credential(self.config.client_secret.expose())),
             )
             .form(&[("token", token), ("token_type_hint", "access_token")])
             .send()
@@ -473,6 +479,42 @@ mod tests {
         assert!(policy.cached(&[3; 32]).await.is_none());
         policy.remember([4; 32], result, Duration::ZERO).await;
         assert!(policy.cache.lock().await.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn oauth_client_credentials_are_encoded_before_basic_auth() -> Result<(), Box<dyn Error>>
+    {
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let config = KeycloakIntrospectionConfig::new(
+            format!("http://{}", listener.local_addr()?),
+            "resource:client",
+            Secret::new("secret +%".to_owned()),
+        );
+        let policy = KeycloakIntrospectionPolicy::new(config)?;
+        let app = Router::new().route(
+            "/protocol/openid-connect/token/introspect",
+            post(|headers: HeaderMap| async move {
+                if headers
+                    .get("authorization")
+                    .and_then(|value| value.to_str().ok())
+                    != Some("Basic cmVzb3VyY2UlM0FjbGllbnQ6c2VjcmV0KyUyQiUyNQ==")
+                {
+                    return (StatusCode::UNAUTHORIZED, axum::Json(json!({})));
+                }
+                (StatusCode::OK, axum::Json(active()))
+            }),
+        );
+        let server = tokio::spawn(axum::serve(listener, app).into_future());
+        let result = policy
+            .authenticate(&principal().await?, "verified-token")
+            .await?;
+        assert_eq!(
+            result.scopes(),
+            &std::collections::BTreeSet::from(["read".to_owned()])
+        );
+        server.abort();
+        assert!(server.await.expect_err("cancelled server").is_cancelled());
         Ok(())
     }
 
