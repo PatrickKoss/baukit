@@ -277,6 +277,7 @@ impl SuiteEventOutbox for PostgresSuiteEventOutbox {
         events: &[SuiteEvent],
     ) -> Result<u64, SuiteStoreError> {
         validate_replay_since(since, now.date_naive()).map_err(invalid)?;
+        super::lock_owner(tx, owner).await?;
         let link: SuiteLink = sqlx::query_as::<_, LinkRow>(
             r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
@@ -332,6 +333,7 @@ impl SuiteEventOutbox for PostgresSuiteEventOutbox {
         id: Uuid,
         event: &SuiteEvent,
     ) -> Result<(), SuiteStoreError> {
+        super::lock_owner(tx, owner).await?;
         let link: SuiteLink = sqlx::query_as::<_, LinkRow>(r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
             secret_key_version, sends, receives, share_xp, reward_mode, delivery_health,

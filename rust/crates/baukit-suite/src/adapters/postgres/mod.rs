@@ -419,6 +419,13 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         tx: &mut sqlx::PgConnection,
         id: Uuid,
     ) -> Result<SuiteLink, SuiteStoreError> {
+        let owner: Uuid = sqlx::query_scalar("SELECT user_id FROM suite_links WHERE id=$1")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(storage)?
+            .ok_or(SuiteStoreError::NotFound)?;
+        lock_owner(tx, owner).await?;
         sqlx::query_as::<_, LinkRow>(r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
             secret_key_version, sends, receives, share_xp, reward_mode, delivery_health,
@@ -923,6 +930,7 @@ impl PostgresSuiteLinkStore {
         links_for_erasure(&self.pool, owner).await
     }
     /// Deletes suite jobs and every suite row in the product's erasure transaction.
+    /// Hold the product owner row lock first, as `PostgresSuiteErasure` does.
     pub async fn erase_owner(
         &self,
         connection: &mut sqlx::PgConnection,

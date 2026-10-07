@@ -40,7 +40,10 @@ Use `SuiteConfig` as the product's `suite` configuration section. Call
 Copy `SUITE_MIGRATION_SQL` and `SUITE_RUNTIME_MIGRATION_SQL` after the jobs
 migrations. They do not run on startup. Add the owner foreign keys in the product.
 Use `PostgresSuiteErasure` and `erase_with_suite` to notify peers before the erasure
-transaction starts, then delete suite rows in that transaction.
+transaction starts, then delete suite rows in that transaction. Implement
+`SuiteErasureOwnerLookup::lock_owner_in_transaction` with a product owner row
+lock. The adapter takes the suite advisory lock first, then waits for domain
+writes before cleanup.
 
 See [suite adoption and protocol](../../../docs/platform/suite-events.md) for
 configuration keys, public signatures, route mounting, worker wiring, client

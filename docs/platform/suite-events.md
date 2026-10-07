@@ -168,6 +168,10 @@ Metrics use the product's configured prefix, with these suffixes and labels:
    async fn SuiteIdentitySource::identity_in_transaction(
        &self, connection: &mut PgConnection, owner_id: Uuid,
    ) -> Result<SuiteIdentity, SuiteStoreError>;
+
+   async fn SuiteErasureOwnerLookup::lock_owner_in_transaction(
+       &self, connection: &mut PgConnection, owner: Uuid,
+   ) -> Result<(), sqlx::Error>;
    ```
 
    The applier locks the product rows it changes. The receiver already holds
@@ -204,9 +208,12 @@ Metrics use the product's configured prefix, with these suffixes and labels:
    a 500 ms bound per link and ignored errors. It covers active, attention,
    disabled, and revoked links with a pending revoke job. Suite jobs and rows
    are then deleted before product rows in the erasure transaction.
-   The owner lookup reads without `FOR UPDATE`. The adapter takes the suite
-   owner advisory lock before product erasure locks its rows. Preserve that
-   order when adding owner foreign keys.
+   `owner_in_transaction` reads without `FOR UPDATE`. The adapter takes the suite
+   owner advisory lock, then calls `lock_owner_in_transaction(connection, owner)`.
+   Implement that hook with `SELECT id FROM owners WHERE id=$1 FOR UPDATE`, using
+   the product's owner table. This waits for product writes and their outbox jobs
+   before suite cleanup starts. Product erasure then deletes its rows. Preserve
+   this lock order when adding owner foreign keys.
 9. Add `@baukit/suite-client` to the client. Supply authenticated transport,
    persistent OAuth state, same-tab web redirects and native auth-session
    adapters. Use `SuiteSession.connect(peerApp)` and `handleRedirect(url)`;
@@ -309,3 +316,10 @@ The source paths below refer to snapshot `6a95ac2`.
   the suite owner advisory lock before either a code or request row. A concurrent
   exchange, completion and erasure test verifies that erasure can delete those
   rows while the link operation waits.
+- `backend/crates/solo-leveling-system-postgres/src/profile_erasure.rs:125`
+  deletes suite jobs before deleting links. Replay and test enqueue methods lock
+  only the link at `backend/crates/solo-leveling-system-postgres/src/suite/outbox.rs:337`
+  and line 386; disconnect does the same through `suite.rs:427`. They can commit
+  another job while erasure waits for that link, leaving an orphan after cleanup.
+  Shared link operations take the owner advisory lock first. Router tests race
+  replay, test and disconnect with erasure and check that no jobs remain.

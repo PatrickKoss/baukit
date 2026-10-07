@@ -1856,6 +1856,17 @@ impl SuiteErasureOwnerLookup for Identities {
             .fetch_optional(connection)
             .await
     }
+    async fn lock_owner_in_transaction(
+        &self,
+        connection: &mut sqlx::PgConnection,
+        owner: Uuid,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM users WHERE id=$1 FOR UPDATE")
+            .bind(owner)
+            .fetch_optional(connection)
+            .await
+            .map(|_| ())
+    }
 }
 struct ProductDeletion {
     peer: Arc<ScriptedWebhookReceiver>,
@@ -2819,6 +2830,121 @@ async fn exchange_and_complete_lock_the_owner_before_codes_and_requests_during_e
         .fetch_one(&db.pool)
         .await?;
     assert_eq!(requests, 0);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn erasure_waits_for_product_writes_before_deleting_their_suite_jobs() -> TestResult {
+    use baukit_erasure::ProductErasure;
+
+    let (db, context, owner) = authorizer_fixture().await?;
+    let (link, _) =
+        exchange_link(&SuiteLinkService::new(context.clone()), owner, None, None).await?;
+    sqlx::query("CREATE TABLE product_facts(owner_id uuid REFERENCES users(id) ON DELETE CASCADE, sequence integer NOT NULL)")
+        .execute(&db.pool).await?;
+    let peer = Arc::new(ScriptedWebhookReceiver::start().await?);
+    let adapter = PostgresSuiteErasure::new(
+        PostgresSuiteLinkStore::new(db.pool.clone()),
+        Arc::new(Identities(db.pool.clone())),
+        Arc::new(ProductDeletion {
+            peer,
+            expected_calls: 0,
+        }),
+    );
+    let mut domain = db.pool.begin().await?;
+    sqlx::query("INSERT INTO product_facts(owner_id,sequence) VALUES($1,1)")
+        .bind(owner)
+        .execute(&mut *domain)
+        .await?;
+    let blocker: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *domain)
+        .await?;
+    let pool = db.pool.clone();
+    let erasure = tokio::spawn(async move {
+        let mut transaction = pool.begin().await?;
+        adapter.erase(&mut transaction, &owner.to_string()).await?;
+        transaction.commit().await
+    });
+    wait_for_blocked_connection(&db.pool, blocker).await?;
+    assert_eq!(
+        context
+            .outbox
+            .enqueue_in_transaction(&mut domain, owner, &[activity(10, None)])
+            .await?,
+        1
+    );
+    domain.commit().await?;
+    tokio::time::timeout(std::time::Duration::from_secs(5), erasure).await???;
+    let rows: (i64, i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM product_facts WHERE owner_id=$1),
+        (SELECT count(*) FROM suite_links WHERE user_id=$1),
+        (SELECT count(*) FROM job_outbox WHERE payload->>'link_id'=$2)",
+    )
+    .bind(owner)
+    .bind(link.id.to_string())
+    .fetch_one(&db.pool)
+    .await?;
+    assert_eq!(rows, (0, 0, 0));
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn link_job_routes_wait_for_erasure_before_locking_links() -> TestResult {
+    let db = common::postgres_database().await?;
+    let context = make_context(&db.pool, registry("alpha", "beta", 12340, 12341));
+    let app = common::app_with_suite(
+        &db.pool,
+        module(&db.pool, context.clone(), Arc::new(Applier::default())),
+    );
+    for operation in ["test", "replay", "disconnect"] {
+        let owner = user(&db.pool, operation).await?;
+        let (link, _) =
+            exchange_link(&SuiteLinkService::new(context.clone()), owner, None, None).await?;
+        sqlx::query("UPDATE suite_links SET last_replay_at=NULL WHERE id=$1")
+            .bind(link.id)
+            .execute(&db.pool)
+            .await?;
+        let mut erasure = db.pool.begin().await?;
+        context.store.lock_ingest_user(&mut erasure, owner).await?;
+        let blocker: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&mut *erasure)
+            .await?;
+        let (method, path) = if operation == "disconnect" {
+            ("DELETE", format!("/suite/links/{}", link.id))
+        } else {
+            ("POST", format!("/suite/links/{}/{operation}", link.id))
+        };
+        let server = app.clone();
+        let request = tokio::spawn(async move {
+            call(
+                &server,
+                method,
+                &path,
+                Some(&owner.to_string()),
+                json!({"since":Utc::now().date_naive()}),
+            )
+            .await
+            .map_err(|error| error.to_string())
+        });
+        wait_for_blocked_connection(&db.pool, blocker).await?;
+        PostgresSuiteLinkStore::new(db.pool.clone())
+            .erase_owner(&mut erasure, owner)
+            .await?;
+        erasure.commit().await?;
+        let response = tokio::time::timeout(std::time::Duration::from_secs(5), request)
+            .await??
+            .map_err(std::io::Error::other)?;
+        assert_eq!(response.0, StatusCode::NOT_FOUND, "{operation}");
+        assert_eq!(response.1["error"]["code"], "not_found");
+        let jobs: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM job_outbox WHERE payload->>'link_id'=$1")
+                .bind(link.id.to_string())
+                .fetch_one(&db.pool)
+                .await?;
+        assert_eq!(jobs, 0, "{operation}");
+    }
     Ok(())
 }
 

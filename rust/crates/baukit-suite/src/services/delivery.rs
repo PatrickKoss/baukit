@@ -133,6 +133,7 @@ impl SuiteDeliveryService {
             return Err(SuiteStoreError::ReplayTooSoon(retry_after).into());
         }
         let mut tx = self.context.store.begin_transaction().await?;
+        self.context.store.lock_ingest_user(&mut tx, owner).await?;
         let events = self
             .context
             .replay

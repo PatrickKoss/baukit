@@ -15,12 +15,18 @@ pub trait SuiteErasureOwnerLookup: Send + Sync {
     /// Resolves the owner before remote revokes. No transaction is open.
     async fn owner(&self, subject: &str) -> Result<Option<Uuid>, sqlx::Error>;
     /// Resolves the owner without row locks, before suite takes its owner advisory lock.
-    /// Product erasure may lock the identity row after the suite rows have been deleted.
     async fn owner_in_transaction(
         &self,
         connection: &mut PgConnection,
         subject: &str,
     ) -> Result<Option<Uuid>, sqlx::Error>;
+    /// Locks the product owner row with `FOR UPDATE` after the suite advisory lock.
+    /// This waits for domain writes and their outbox jobs before suite cleanup starts.
+    async fn lock_owner_in_transaction(
+        &self,
+        connection: &mut PgConnection,
+        owner: Uuid,
+    ) -> Result<(), sqlx::Error>;
 }
 /// Deletes suite rows before delegating to product erasure in the same transaction.
 pub struct PostgresSuiteErasure {
@@ -54,6 +60,12 @@ impl ProductErasure for PostgresSuiteErasure {
                 .owner_in_transaction(connection, subject)
                 .await?
             {
+                super::lock_owner(connection, owner)
+                    .await
+                    .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+                self.owners
+                    .lock_owner_in_transaction(connection, owner)
+                    .await?;
                 self.store.erase_owner(connection, owner).await?;
             }
             self.product.erase(connection, subject).await
