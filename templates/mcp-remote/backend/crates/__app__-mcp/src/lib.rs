@@ -166,6 +166,45 @@ mod tests {
         assert!(service.0.lock().expect("subjects").is_empty());
     }
 
+    struct PendingItems {
+        started: tokio::sync::Notify,
+        dropped: baukit_mcp::CancellationToken,
+    }
+
+    impl ItemReadService for PendingItems {
+        fn list(&self, _subject: &str) -> PortFuture<'_, Result<Vec<Item>, ServiceError>> {
+            let dropped = self.dropped.clone().drop_guard();
+            Box::pin(async move {
+                let _dropped = dropped;
+                self.started.notify_one();
+                std::future::pending().await
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn cancellation_drops_a_pending_product_read() {
+        let service = Arc::new(PendingItems {
+            started: Default::default(),
+            dropped: baukit_mcp::CancellationToken::new(),
+        });
+        let tools = ItemTools::new(service.clone());
+        let principal = Principal::new("user-42");
+        let cancellation = baukit_mcp::CancellationToken::new();
+        let read = tools.call(&principal, "list_items", json!({}), cancellation.clone());
+        let cancel = async {
+            service.started.notified().await;
+            cancellation.cancel();
+        };
+        let (result, ()) = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            tokio::join!(read, cancel)
+        })
+        .await
+        .expect("pending read cancellation");
+        assert_eq!(result.expect_err("cancelled read").code, "cancelled");
+        assert!(service.dropped.is_cancelled());
+    }
+
     struct Catalog;
 
     impl ItemReadService for Catalog {

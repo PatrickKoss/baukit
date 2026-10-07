@@ -26,7 +26,7 @@ e3ace3e22180259e0bd22854962a4021c049b6cd372657d019b8642d9d3bdda4  backend/crates
 eb3028dc8a3f1e03dc36a4b45df0d5c01b5ca5d4f5f93145fb02048cb75568ef  backend/crates/snapshot-app-domain/src/limits.rs
 7e4ae4979fdf97ff271884f2d6c0791ce123d5af6b07a60259162f48858cd219  backend/crates/snapshot-app-mcp/Cargo.toml
 7c3dbe1b3cd0008914b2750be283eaaf9361633e257974eeb38807f6a3b3c39d  backend/crates/snapshot-app-mcp/src/bin/mcp-tools.rs
-60d61a71b20d20b9a268b306edbba1d45d8ec45b81c4fa49235ad05a5002de97  backend/crates/snapshot-app-mcp/src/lib.rs
+53da118c126bed61e358b10448ca9e6e1c390675c1f7c0c119276d759edfba65  backend/crates/snapshot-app-mcp/src/lib.rs
 20b12d25ed51edb83888a6e9d578301554b6d10154bfd630454bcdd13fd67caa  backend/crates/snapshot-app-ports/Cargo.toml
 6a1a7e715f795b73d41c4bdc1ffbf8e248f71f064d0a78e95a5113bde67658d8  backend/crates/snapshot-app-ports/src/lib.rs
 a51828869d4e0163b227312152407e98482324ec81faf3860d0e2458e01a94b5  backend/crates/snapshot-app-postgres/Cargo.toml
