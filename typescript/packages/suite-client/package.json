@@ -1,0 +1,52 @@
+{
+  "name": "@baukit/suite-client",
+  "version": "0.9.0",
+  "description": "Headless suite linking, authorization state and connected app clients.",
+  "license": "MIT",
+  "author": "Patrick Koss",
+  "homepage": "https://github.com/PatrickKoss/baukit#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PatrickKoss/baukit.git",
+    "directory": "typescript/packages/suite-client"
+  },
+  "bugs": {
+    "url": "https://github.com/PatrickKoss/baukit/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "pnpm run build",
+    "test": "tsc -p tsconfig.test.json && vitest run --config ../../vitest.config.ts && node ../../scripts/test-packed-exports.mjs",
+    "lint": "eslint src --max-warnings=0",
+    "format:check": "prettier --check src package.json tsconfig.json tsconfig.test.json"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3",
+    "vitest": "5.0.3"
+  },
+  "dependencies": {
+    "@baukit/integrations-client": "workspace:*",
+    "@baukit/localization-core": "workspace:*"
+  }
+}

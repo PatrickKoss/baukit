@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+- Add the `suite` feature with protocol fixtures, a scripted receiver and a second app served through an in-process router.
+
 ## [0.9.0] - 2026-10-07
 
 - Add an explicit Sentinel failover trigger. Allow the failover state machine to survive a TILT pause without extending the fixture deadline.

@@ -127,7 +127,7 @@ impl PostgresJobStore {
     /// pattern. The transaction remains owned by the caller.
     pub async fn enqueue_in_transaction(
         &self,
-        transaction: &mut Transaction<'_, Postgres>,
+        transaction: &mut PgConnection,
         job: NewJob,
     ) -> Result<EnqueueOutcome, StoreError> {
         validate_new_job(&job)?;

@@ -23,6 +23,7 @@
       "@baukit/notifications-expo",
       "@baukit/preferences-core",
       "@baukit/pwa-web",
+      "@baukit/suite-client",
       "@baukit/sync-client",
       "@baukit/ui-tokens"
     ]

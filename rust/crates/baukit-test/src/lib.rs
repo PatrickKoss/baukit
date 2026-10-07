@@ -146,3 +146,6 @@ pub use webhook::{
 #[doc = include_str!("../README.md")]
 #[cfg(doctest)]
 struct ReadmeDoctests;
+
+#[cfg(feature = "suite")]
+pub mod suite;

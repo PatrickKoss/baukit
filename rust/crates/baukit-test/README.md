@@ -427,3 +427,17 @@ register a machine client. Send HTTP Basic authentication or the form's
 response has a signed five-minute access token with the supplied audience,
 client ID as its subject, and `azp` and `client_id` claims. It has no refresh
 token. Unknown clients and incorrect secrets return `invalid_client`.
+
+## Suite peers
+
+Enable the `suite` feature for `suite::fixture`, `ScriptedSuiteReceiver` and
+`InProcessSuitePeer`. Mount the other app's raw suite router on the in-process
+peer before sending an exchange, delivery or revoke. It runs the real router
+without opening a listening socket. Use the scripted receiver to check signed
+bytes, response classes and timeouts over HTTP.
+
+The crate embeds the JSON vectors and `SHA256SUMS` so published test kits can
+load them without the Baukit checkout. Its copy lives in `src/suite/fixtures/v1`.
+When updating the canonical `fixtures/suite-events/v1` directory, update this
+copy too. The suite checksum test compares every packaged file with the canonical
+version.

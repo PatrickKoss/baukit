@@ -7,7 +7,7 @@
 
 The boring 80% of a Rust backend and its TypeScript clients, already built and already tested.
 
-*Baukit* is German for a construction kit, and that is the whole idea. Eighteen Rust crates and twenty-one npm packages, each small enough to adopt on its own, plus a CLI that wires them into a working product when you want the whole thing.
+*Baukit* is German for a construction kit, and that is the whole idea. Twenty Rust crates and twenty-two npm packages, each small enough to adopt on its own, plus a CLI that wires them into a working product when you want the whole thing.
 
 > [!WARNING]
 > **Under heavy development. Expect breaking changes.**
@@ -122,6 +122,7 @@ Nothing here depends on the CLI, and no crate drags in the rest. Take the error 
 | [`baukit-egress`](rust/crates/baukit-egress) | Outbound HTTP client for user-supplied URLs that pins DNS answers to public addresses |
 | [`baukit-erasure`](rust/crates/baukit-erasure) | Transactional profile erasure, keyed receipts and fences, durable identity account deletion |
 | [`baukit-core`](rust/crates/baukit-core) | Dependency-light vocabulary shared by the others, plus optional keyset pagination |
+| [`baukit-suite`](rust/crates/baukit-suite) | Peer linking, signed event delivery and transactional ingestion |
 | [`baukit-test`](rust/crates/baukit-test) | Docker PostgreSQL and Redis fixtures, a mock OIDC issuer, conformance suites |
 
 ### TypeScript
@@ -134,6 +135,7 @@ Nothing here depends on the CLI, and no crate drags in the rest. Take the error 
 | [`@baukit/data-contracts`](typescript/packages/data-contracts) | Storage contracts plus conformance suites you run against your adapter |
 | [`@baukit/data-contracts-dexie`](typescript/packages/data-contracts-dexie) · [`-expo-sqlite`](typescript/packages/data-contracts-expo-sqlite) | IndexedDB and Expo SQLite adapters, verified in a real browser and on a real Android device in CI |
 | [`@baukit/integrations-client`](typescript/packages/integrations-client) | Connection health, OAuth session coordination, provider registry |
+| [`@baukit/suite-client`](typescript/packages/suite-client) | Suite linking, authorization and connected-app state for web and native clients |
 | [`@baukit/sync-client`](typescript/packages/sync-client) | Sync scheduling, transport, status store, push-batch ordering |
 | [`@baukit/ui-tokens`](typescript/packages/ui-tokens) | Design-token schema, contrast checker, CSS and React Native compilers, a `no-raw-color` eslint rule |
 | [`@baukit/a11y-core`](typescript/packages/a11y-core) | Focus traps, inert backgrounds, announcements, reduced motion, on both web and native |

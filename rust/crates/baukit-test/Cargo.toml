@@ -17,11 +17,14 @@ workspace = true
 
 [features]
 default = ["sqlx-postgres"]
+suite = ["dep:baukit-suite"]
 sqlx-postgres = ["dep:sqlx"]
 
 [dependencies]
+async-trait = "0.1.92"
 axum.workspace = true
 base64.workspace = true
+baukit-suite = { workspace = true, optional = true }
 baukit-auth.workspace = true
 baukit-core.workspace = true
 baukit-erasure.workspace = true

@@ -1,0 +1,268 @@
+{
+  "description": "Signing and verification vectors for the baukit-webhook-v1 HMAC-SHA256 signature. Secrets are UTF-8 bytes. Bodies are UTF-8 unless given as bodyHex. The signing input is 'baukit-webhook-v1\\n', the decimal timestamp, '\\n', the decimal byte length of the delivery ID, '\\n', the delivery ID, '\\n', then the raw body. The signature is 'v1=' followed by unpadded base64url of the tag. Verification tries each candidate secret and compares in constant time. Timestamp windows and delivery-ID deduplication are receiver policy and are not covered here.",
+  "signingCases": [
+    {
+      "body": "{\"event\":\"created\"}",
+      "deliveryId": "delivery-7",
+      "name": "reference",
+      "secret": "current-secret",
+      "signature": "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w",
+      "signingInputHex": "6261756b69742d776562686f6f6b2d76310a313830303030303030300a31300a64656c69766572792d370a7b226576656e74223a2263726561746564227d",
+      "timestamp": 1800000000
+    },
+    {
+      "body": "",
+      "deliveryId": "delivery-7",
+      "name": "empty-body",
+      "secret": "current-secret",
+      "signature": "v1=4K_Sw8cxCI-yA8t4wadYmTq7ExVF1DnJO1XioBMCRkw",
+      "signingInputHex": "6261756b69742d776562686f6f6b2d76310a313830303030303030300a31300a64656c69766572792d370a",
+      "timestamp": 1800000000
+    },
+    {
+      "body": "{\"event\":\"created\"}",
+      "deliveryId": "",
+      "name": "empty-delivery-id",
+      "secret": "current-secret",
+      "signature": "v1=npsGYs0-leYAj99OJ63wZ7DMQL58J944II8OWTVDdFs",
+      "signingInputHex": "6261756b69742d776562686f6f6b2d76310a313830303030303030300a300a0a7b226576656e74223a2263726561746564227d",
+      "timestamp": 1800000000
+    },
+    {
+      "body": "{\"event\":\"created\"}",
+      "deliveryId": "lieferung-ü",
+      "name": "multibyte-delivery-id",
+      "secret": "current-secret",
+      "signature": "v1=SFWdMjwAYgmONE5S7233o7DXwThNmo9n5jIvkqybjrM",
+      "signingInputHex": "6261756b69742d776562686f6f6b2d76310a313830303030303030300a31320a6c6965666572756e672dc3bc0a7b226576656e74223a2263726561746564227d",
+      "timestamp": 1800000000
+    },
+    {
+      "body": "c",
+      "deliveryId": "a\nb",
+      "name": "newline-in-delivery-id",
+      "secret": "current-secret",
+      "signature": "v1=WoJNX2lLq9cR3XpHtGZzuVXYQCoM53Y3c4w1ueHzeq8",
+      "signingInputHex": "6261756b69742d776562686f6f6b2d76310a313830303030303030300a330a610a620a63",
+      "timestamp": 1800000000
+    },
+    {
+      "body": "b\nc",
+      "deliveryId": "a",
+      "name": "newline-in-body-instead",
+      "secret": "current-secret",
+      "signature": "v1=nCOoZZo2hgDBx-QeTCR7YfD65uQJRNTFyNW-x0Tg_5U",
+      "signingInputHex": "6261756b69742d776562686f6f6b2d76310a313830303030303030300a310a610a620a63",
+      "timestamp": 1800000000
+    },
+    {
+      "body": "{\"event\":\"created\"}",
+      "deliveryId": "delivery-7",
+      "name": "negative-timestamp",
+      "secret": "current-secret",
+      "signature": "v1=pNbN6cLaFxDINwLqZxk5MJPq5lTVeF41oFn7bUIgZSA",
+      "signingInputHex": "6261756b69742d776562686f6f6b2d76310a2d310a31300a64656c69766572792d370a7b226576656e74223a2263726561746564227d",
+      "timestamp": -1
+    },
+    {
+      "bodyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "deliveryId": "delivery-7",
+      "name": "binary-body",
+      "secret": "current-secret",
+      "signature": "v1=ggqkiQU1jngky-TToTTWGbD6v4ifAZ1OTkatygrZZC0",
+      "signingInputHex": "6261756b69742d776562686f6f6b2d76310a300a31300a64656c69766572792d370a000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "timestamp": 0
+    }
+  ],
+  "suiteCases": [
+    {
+      "body": "{\"event\":\"created\"}",
+      "cryptographicValid": true,
+      "deliveryId": "delivery-7",
+      "expected": true,
+      "name": "valid",
+      "now": 1800000000,
+      "secret": "current-secret",
+      "signature": "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w",
+      "timestamp": 1800000000
+    },
+    {
+      "body": "{ \"event\": \"created\" }",
+      "cryptographicValid": false,
+      "deliveryId": "delivery-7",
+      "expected": false,
+      "name": "reformatted-body",
+      "now": 1800000000,
+      "secret": "current-secret",
+      "signature": "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w",
+      "timestamp": 1800000000
+    },
+    {
+      "body": "{\"event\":\"created\"}",
+      "cryptographicValid": false,
+      "deliveryId": "delivery-7",
+      "expected": false,
+      "name": "wrong-secret",
+      "now": 1800000000,
+      "secret": "wrong-secret",
+      "signature": "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w",
+      "timestamp": 1800000000
+    },
+    {
+      "body": "{\"event\":\"created\"}",
+      "cryptographicValid": true,
+      "deliveryId": "delivery-7",
+      "expected": false,
+      "name": "stale-timestamp",
+      "now": 1800000301,
+      "secret": "current-secret",
+      "signature": "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w",
+      "timestamp": 1800000000
+    }
+  ],
+  "verificationCases": [
+    {
+      "body": "{\"event\":\"created\"}",
+      "candidateSecrets": [
+        "current-secret"
+      ],
+      "deliveryId": "delivery-7",
+      "expected": true,
+      "name": "current-key",
+      "signature": "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w",
+      "timestamp": 1800000000
+    },
+    {
+      "body": "{\"event\":\"created\"}",
+      "candidateSecrets": [
+        "previous-secret",
+        "current-secret"
+      ],
+      "deliveryId": "delivery-7",
+      "expected": true,
+      "name": "previous-then-current-key",
+      "signature": "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w",
+      "timestamp": 1800000000
+    },
+    {
+      "body": "{\"event\":\"created\"}",
+      "candidateSecrets": [
+        "previous-secret"
+      ],
+      "deliveryId": "delivery-7",
+      "expected": false,
+      "name": "only-previous-key",
+      "signature": "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w",
+      "timestamp": 1800000000
+    },
+    {
+      "body": "{\"event\":\"created\"}",
+      "candidateSecrets": [],
+      "deliveryId": "delivery-7",
+      "expected": false,
+      "name": "no-candidates",
+      "signature": "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w",
+      "timestamp": 1800000000
+    },
+    {
+      "body": "{\"event\":\"created\"}",
+      "candidateSecrets": [
+        "current-secret"
+      ],
+      "deliveryId": "delivery-7",
+      "expected": false,
+      "name": "timestamp-changed",
+      "signature": "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w",
+      "timestamp": 1800000001
+    },
+    {
+      "body": "{\"event\":\"created\"}",
+      "candidateSecrets": [
+        "current-secret"
+      ],
+      "deliveryId": "delivery-8",
+      "expected": false,
+      "name": "delivery-id-changed",
+      "signature": "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w",
+      "timestamp": 1800000000
+    },
+    {
+      "body": "{\"event\":\"created\" }",
+      "candidateSecrets": [
+        "current-secret"
+      ],
+      "deliveryId": "delivery-7",
+      "expected": false,
+      "name": "body-changed",
+      "signature": "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w",
+      "timestamp": 1800000000
+    },
+    {
+      "body": "{\"event\":\"created\"}",
+      "candidateSecrets": [
+        "current-secret"
+      ],
+      "deliveryId": "delivery-7",
+      "expected": false,
+      "name": "missing-prefix",
+      "signature": "UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w",
+      "timestamp": 1800000000
+    },
+    {
+      "body": "{\"event\":\"created\"}",
+      "candidateSecrets": [
+        "current-secret"
+      ],
+      "deliveryId": "delivery-7",
+      "expected": false,
+      "name": "uppercase-prefix",
+      "signature": "V1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w",
+      "timestamp": 1800000000
+    },
+    {
+      "body": "{\"event\":\"created\"}",
+      "candidateSecrets": [
+        "current-secret"
+      ],
+      "deliveryId": "delivery-7",
+      "expected": false,
+      "name": "padded-base64url",
+      "signature": "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4py7w=",
+      "timestamp": 1800000000
+    },
+    {
+      "body": "{\"event\":\"created\"}",
+      "candidateSecrets": [
+        "current-secret"
+      ],
+      "deliveryId": "delivery-7",
+      "expected": false,
+      "name": "hex-encoding",
+      "signature": "v1=52934974f91fd704bba7b0d8ef92fc9f3ed1cff0543c516510e5f799ae29cbbc",
+      "timestamp": 1800000000
+    },
+    {
+      "body": "{\"event\":\"created\"}",
+      "candidateSecrets": [
+        "current-secret"
+      ],
+      "deliveryId": "delivery-7",
+      "expected": false,
+      "name": "truncated",
+      "signature": "v1=UpNJdPkf1wS7p7DY75L8nz7Rz_BUPFFlEOX3ma4",
+      "timestamp": 1800000000
+    },
+    {
+      "body": "{\"event\":\"created\"}",
+      "candidateSecrets": [
+        "current-secret"
+      ],
+      "deliveryId": "delivery-7",
+      "expected": false,
+      "name": "empty-signature",
+      "signature": "",
+      "timestamp": 1800000000
+    }
+  ],
+  "version": 1
+}

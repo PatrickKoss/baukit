@@ -4,6 +4,8 @@ All notable changes to `baukit-jobs` are documented here.
 
 ## [Unreleased]
 
+- Accept `&mut PgConnection` in `enqueue_in_transaction` so callers can share their domain transaction. Existing `Transaction` callers use deref coercion.
+
 ## [0.9.0] - 2026-10-07
 
 ## [0.8.0] - 2026-10-07

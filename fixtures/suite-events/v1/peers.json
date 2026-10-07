@@ -1,0 +1,37 @@
+{
+  "peers": [
+    {
+      "accepts": [
+        "beta.activity.completed"
+      ],
+      "displayName": "Alpha",
+      "emits": [
+        "alpha.activity.completed"
+      ],
+      "id": "alpha",
+      "rewardModes": [
+        "native",
+        "source_xp",
+        "off"
+      ],
+      "scheme": "alpha"
+    },
+    {
+      "accepts": [
+        "alpha.activity.completed"
+      ],
+      "displayName": "Beta",
+      "emits": [
+        "beta.activity.completed"
+      ],
+      "id": "beta",
+      "rewardModes": [
+        "native",
+        "source_xp",
+        "off"
+      ],
+      "scheme": "beta"
+    }
+  ],
+  "schemaVersion": 1
+}

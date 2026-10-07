@@ -537,6 +537,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "baukit-suite"
+version = "0.9.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "base64 0.23.1",
+ "baukit-config",
+ "baukit-core",
+ "baukit-credential-vault",
+ "baukit-egress",
+ "baukit-erasure",
+ "baukit-events",
+ "baukit-http",
+ "baukit-jobs",
+ "baukit-ratelimit",
+ "baukit-runtime",
+ "baukit-suite",
+ "baukit-test",
+ "chrono",
+ "metrics",
+ "rand 0.9.5",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "tower",
+ "tracing",
+ "url",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
 name = "baukit-sync"
 version = "0.9.0"
 dependencies = [
@@ -577,6 +613,7 @@ dependencies = [
 name = "baukit-test"
 version = "0.9.0"
 dependencies = [
+ "async-trait",
  "aws-lc-rs",
  "axum",
  "base64 0.23.1",
@@ -587,6 +624,7 @@ dependencies = [
  "baukit-integrations",
  "baukit-openapi",
  "baukit-ops",
+ "baukit-suite",
  "baukit-telemetry",
  "chrono",
  "jsonschema",
@@ -869,6 +907,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "const-oid"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
+
+[[package]]
 name = "const-random"
 version = "0.1.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1125,6 +1169,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1dd6dbb5841937940781866fa1281a1ff7bd3bf827091440879f9994983d5c2"
 dependencies = [
  "block-buffer 0.12.1",
+ "const-oid",
  "crypto-common 0.2.2",
  "ctutils",
 ]
@@ -3552,6 +3597,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha1_smol"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbfa15b3dddfee50a0fff136974b3e1bde555604ba463834a7eb7deb6417705d"
+
+[[package]]
 name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4519,6 +4570,7 @@ dependencies = [
  "quote",
  "regex",
  "syn 3.0.6",
+ "uuid",
 ]
 
 [[package]]
@@ -4530,6 +4582,7 @@ dependencies = [
  "getrandom 0.4.3",
  "js-sys",
  "serde_core",
+ "sha1_smol",
  "wasm-bindgen",
 ]
 

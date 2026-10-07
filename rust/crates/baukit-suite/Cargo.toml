@@ -1,0 +1,57 @@
+[package]
+name = "baukit-suite"
+description = "Peer linking, signed suite event delivery and transactional ingestion."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+license.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
+
+[lints]
+workspace = true
+
+[features]
+default = []
+postgres = []
+http = ["dep:axum", "dep:utoipa"]
+jobs = []
+
+[dependencies]
+async-trait = "0.1.92"
+base64.workspace = true
+baukit-config.workspace = true
+baukit-http.workspace = true
+baukit-core = { workspace = true, features = ["webhook-signature"] }
+baukit-credential-vault.workspace = true
+baukit-egress.workspace = true
+baukit-erasure.workspace = true
+baukit-events.workspace = true
+baukit-jobs.workspace = true
+baukit-ratelimit.workspace = true
+chrono.workspace = true
+metrics.workspace = true
+reqwest.workspace = true
+rand = "0.9.5"
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.11.0"
+sqlx = { workspace = true, features = ["derive"] }
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+uuid = { workspace = true, features = ["v5"] }
+axum = { workspace = true, optional = true }
+utoipa = { workspace = true, optional = true, features = ["uuid", "chrono"] }
+
+[dev-dependencies]
+baukit-suite = { path = ".", features = ["postgres", "http", "jobs"] }
+baukit-test = { path = "../baukit-test", features = ["suite"] }
+baukit-runtime = { path = "../baukit-runtime" }
+tower = { workspace = true, features = ["util"] }
+tokio = { workspace = true, features = ["test-util"] }

@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "types": [
+    {
+      "fields": [
+        {
+          "name": "activityId",
+          "required": true,
+          "type": "uuid"
+        },
+        {
+          "maximum": 1440,
+          "minimum": 0,
+          "name": "minutes",
+          "required": true,
+          "type": "integer"
+        },
+        {
+          "maximum": 100000,
+          "minimum": 0,
+          "name": "xp",
+          "required": false,
+          "type": "integer"
+        }
+      ],
+      "naturalKey": "activityId",
+      "type": "alpha.activity.completed"
+    },
+    {
+      "fields": [
+        {
+          "name": "activityId",
+          "required": true,
+          "type": "uuid"
+        },
+        {
+          "maximum": 1440,
+          "minimum": 0,
+          "name": "minutes",
+          "required": true,
+          "type": "integer"
+        },
+        {
+          "maximum": 100000,
+          "minimum": 0,
+          "name": "xp",
+          "required": false,
+          "type": "integer"
+        }
+      ],
+      "naturalKey": "activityId",
+      "type": "beta.activity.completed"
+    }
+  ]
+}

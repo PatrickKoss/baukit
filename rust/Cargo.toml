@@ -19,6 +19,7 @@ members = [
   "crates/baukit-push",
   "crates/baukit-ratelimit",
   "crates/baukit-sync",
+  "crates/baukit-suite",
   "crates/baukit-test",
 ]
 
@@ -53,6 +54,7 @@ baukit-push = { version = "=0.9.0", path = "crates/baukit-push" }
 baukit-ratelimit = { version = "=0.9.0", path = "crates/baukit-ratelimit" }
 baukit-ops = { version = "=0.9.0", path = "crates/baukit-ops" }
 baukit-runtime = { version = "=0.9.0", path = "crates/baukit-runtime" }
+baukit-suite = { version = "=0.9.0", path = "crates/baukit-suite" }
 baukit-sync = { version = "=0.9.0", path = "crates/baukit-sync" }
 baukit-telemetry = { version = "=0.9.0", path = "crates/baukit-telemetry" }
 baukit-test = { version = "=0.9.0", path = "crates/baukit-test" }

@@ -1,0 +1,1302 @@
+{
+  "errors": [
+    {
+      "error": "suite_peer_unknown",
+      "expectedStatus": 400,
+      "name": "unknown-peer",
+      "operation": "preview",
+      "request": {
+        "client": "unknown",
+        "hint": "kPetKgWl81rXeCG76KqGdoiCdsjA1KPz5PpHIZRznp4"
+      }
+    },
+    {
+      "error": "suite_return_url_invalid",
+      "expectedStatus": 400,
+      "name": "invalid-return-url",
+      "operation": "start",
+      "request": {
+        "peerApp": "beta",
+        "returnUrl": "https://evil.example/suite/linked",
+        "stateNonce": "client-nonce-17"
+      }
+    },
+    {
+      "error": "suite_disabled",
+      "expectedStatus": 403,
+      "name": "disabled",
+      "operation": "start",
+      "request": {
+        "peerApp": "beta",
+        "returnUrl": "https://alpha.example/suite/linked",
+        "stateNonce": "client-nonce-17"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "storedCode": {
+          "autoApproved": false,
+          "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "codeChallenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+          "consumedAt": null,
+          "expiresAt": "2026-10-06T08:16:00Z",
+          "linkId": null,
+          "peerApp": "alpha",
+          "suiteSubject": "suite-local|user-17",
+          "userId": "0199ba71-6000-7000-8000-000000000005"
+        }
+      },
+      "error": "suite_link_account_mismatch",
+      "expectedStatus": 409,
+      "name": "account-mismatch",
+      "operation": "exchange",
+      "request": {
+        "client": "alpha",
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "codeVerifier": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+        "initiatorDisplayName": "User",
+        "initiatorLinkId": "0199ba71-6000-7000-8000-000000000001",
+        "initiatorSubject": "alpha-user",
+        "initiatorSuiteSubject": "suite-local|another-user",
+        "linkSecret": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "storedCode": {
+          "autoApproved": false,
+          "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "codeChallenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+          "consumedAt": null,
+          "expiresAt": "2026-10-06T08:15:00Z",
+          "linkId": null,
+          "peerApp": "alpha",
+          "suiteSubject": "suite-local|user-17",
+          "userId": "0199ba71-6000-7000-8000-000000000005"
+        }
+      },
+      "error": "suite_code_invalid",
+      "expectedStatus": 422,
+      "name": "expired-code",
+      "operation": "exchange",
+      "request": {
+        "client": "alpha",
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "codeVerifier": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+        "initiatorDisplayName": "User",
+        "initiatorLinkId": "0199ba71-6000-7000-8000-000000000001",
+        "initiatorSubject": "alpha-user",
+        "initiatorSuiteSubject": "suite-local|user-17",
+        "linkSecret": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8"
+      }
+    },
+    {
+      "context": {
+        "existingLink": {
+          "id": "0199ba71-6000-7000-8000-000000000002",
+          "peerApp": "alpha",
+          "remoteLinkId": "0199ba71-6000-7000-8000-000000000099",
+          "userId": "0199ba71-6000-7000-8000-000000000005"
+        },
+        "now": "2026-10-06T08:15:00Z",
+        "storedCode": {
+          "autoApproved": false,
+          "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "codeChallenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+          "consumedAt": "2026-10-06T08:15:00Z",
+          "expiresAt": "2026-10-06T08:16:00Z",
+          "linkId": "0199ba71-6000-7000-8000-000000000002",
+          "peerApp": "alpha",
+          "suiteSubject": "suite-local|user-17",
+          "userId": "0199ba71-6000-7000-8000-000000000005"
+        }
+      },
+      "error": "suite_code_invalid",
+      "expectedStatus": 422,
+      "name": "reused-code",
+      "operation": "exchange",
+      "request": {
+        "client": "alpha",
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "codeVerifier": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+        "initiatorDisplayName": "User",
+        "initiatorLinkId": "0199ba71-6000-7000-8000-000000000001",
+        "initiatorSubject": "alpha-user",
+        "initiatorSuiteSubject": "suite-local|user-17",
+        "linkSecret": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "storedCode": {
+          "autoApproved": false,
+          "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "codeChallenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+          "consumedAt": null,
+          "expiresAt": "2026-10-06T08:16:00Z",
+          "linkId": null,
+          "peerApp": "alpha",
+          "suiteSubject": "suite-local|user-17",
+          "userId": "0199ba71-6000-7000-8000-000000000005"
+        }
+      },
+      "error": "suite_code_invalid",
+      "expectedStatus": 422,
+      "name": "wrong-verifier",
+      "operation": "exchange",
+      "request": {
+        "client": "alpha",
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "codeVerifier": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+        "initiatorDisplayName": "User",
+        "initiatorLinkId": "0199ba71-6000-7000-8000-000000000001",
+        "initiatorSubject": "alpha-user",
+        "initiatorSuiteSubject": "suite-local|user-17",
+        "linkSecret": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "ownerId": "0199ba71-6000-7000-8000-000000000004",
+        "peerFailure": "transport",
+        "storedRequest": {
+          "clientStateNonce": "client-nonce-17",
+          "consumedAt": null,
+          "expiresAt": "2026-10-06T08:25:00Z",
+          "id": "0199ba71-6000-7000-8000-000000000010",
+          "linkId": null,
+          "peerApp": "beta",
+          "returnUrl": "https://alpha.example/suite/linked",
+          "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+          "userId": "0199ba71-6000-7000-8000-000000000004"
+        }
+      },
+      "error": "suite_peer_unreachable",
+      "expectedStatus": 502,
+      "name": "unreachable",
+      "operation": "complete",
+      "request": {
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+      }
+    },
+    {
+      "error": "rate_limited",
+      "expectedStatus": 429,
+      "name": "rate-limit",
+      "operation": "exchange",
+      "request": {
+        "client": "alpha",
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "codeVerifier": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+        "initiatorDisplayName": "User",
+        "initiatorLinkId": "0199ba71-6000-7000-8000-000000000001",
+        "initiatorSubject": "alpha-user",
+        "initiatorSuiteSubject": "suite-local|user-17",
+        "linkSecret": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "storedRequest": {
+          "clientStateNonce": "client-nonce-17",
+          "consumedAt": null,
+          "expiresAt": "2026-10-06T08:25:00Z",
+          "id": "0199ba71-6000-7000-8000-000000000010",
+          "linkId": null,
+          "peerApp": "beta",
+          "returnUrl": "https://alpha.example/suite/linked",
+          "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+          "userId": "0199ba71-6000-7000-8000-000000000004"
+        }
+      },
+      "error": "suite_code_invalid",
+      "expectedStatus": 303,
+      "name": "callback-mix-up",
+      "operation": "callback",
+      "request": {
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "from": "unknown",
+        "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8"
+      },
+      "response": {
+        "location": "https://alpha.example/suite/linked?state=client-nonce-17&status=failed&code=suite_code_invalid"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "storedRequest": {
+          "clientStateNonce": "client-nonce-17",
+          "consumedAt": null,
+          "expiresAt": "2026-10-06T08:15:00Z",
+          "id": "0199ba71-6000-7000-8000-000000000010",
+          "linkId": null,
+          "peerApp": "beta",
+          "returnUrl": "https://alpha.example/suite/linked",
+          "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+          "userId": "0199ba71-6000-7000-8000-000000000004"
+        }
+      },
+      "error": "suite_code_invalid",
+      "expectedStatus": 303,
+      "name": "callback-expired",
+      "operation": "callback",
+      "request": {
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "from": "beta",
+        "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8"
+      },
+      "response": {
+        "location": "https://alpha.example/suite/linked?state=client-nonce-17&status=failed&code=suite_code_invalid"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "storedRequest": {
+          "clientStateNonce": "client-nonce-17",
+          "consumedAt": "2026-10-06T08:15:00Z",
+          "expiresAt": "2026-10-06T08:25:00Z",
+          "id": "0199ba71-6000-7000-8000-000000000010",
+          "linkId": null,
+          "peerApp": "beta",
+          "returnUrl": "https://alpha.example/suite/linked",
+          "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+          "userId": "0199ba71-6000-7000-8000-000000000004"
+        }
+      },
+      "error": "suite_code_invalid",
+      "expectedStatus": 303,
+      "name": "callback-consumed",
+      "operation": "callback",
+      "request": {
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "from": "beta",
+        "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8"
+      },
+      "response": {
+        "location": "https://alpha.example/suite/linked?state=client-nonce-17&status=failed&code=suite_code_invalid"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "storedRequest": {
+          "clientStateNonce": "client-nonce-17",
+          "consumedAt": null,
+          "expiresAt": "2026-10-06T08:25:00Z",
+          "id": "0199ba71-6000-7000-8000-000000000010",
+          "linkId": null,
+          "peerApp": "beta",
+          "returnUrl": "https://alpha.example/suite/linked",
+          "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+          "userId": "0199ba71-6000-7000-8000-000000000004"
+        }
+      },
+      "error": "suite_code_invalid",
+      "expectedStatus": 303,
+      "name": "callback-wrong-state",
+      "operation": "callback",
+      "request": {
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "from": "beta",
+        "state": "wrong-state"
+      },
+      "response": {
+        "location": "https://alpha.example/suite/linked?state=client-nonce-17&status=failed&code=suite_code_invalid"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "storedRequest": {
+          "clientStateNonce": "client-nonce-17",
+          "consumedAt": null,
+          "expiresAt": "2026-10-06T08:25:00Z",
+          "id": "0199ba71-6000-7000-8000-000000000010",
+          "linkId": null,
+          "peerApp": "beta",
+          "returnUrl": "https://alpha.example/suite/linked",
+          "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+          "userId": "0199ba71-6000-7000-8000-000000000004"
+        }
+      },
+      "error": "suite_code_invalid",
+      "expectedStatus": 303,
+      "name": "callback-missing-from",
+      "operation": "callback",
+      "request": {
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8"
+      },
+      "response": {
+        "location": "https://alpha.example/suite/linked?state=client-nonce-17&status=failed&code=suite_code_invalid"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "storedRequest": null
+      },
+      "error": "suite_code_invalid",
+      "expectedStatus": 400,
+      "name": "callback-unknown",
+      "operation": "callback",
+      "request": {
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "from": "beta",
+        "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "storedRequest": {
+          "clientStateNonce": "client-nonce-17",
+          "consumedAt": null,
+          "expiresAt": "2026-10-06T08:25:00Z",
+          "id": "0199ba71-6000-7000-8000-000000000010",
+          "linkId": null,
+          "peerApp": "beta",
+          "returnUrl": "https://alpha.example/suite/linked",
+          "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+          "userId": "0199ba71-6000-7000-8000-000000000004"
+        }
+      },
+      "error": "suite_code_invalid",
+      "expectedStatus": 303,
+      "name": "callback-both-code-and-error",
+      "operation": "callback",
+      "request": {
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "error": "access_denied",
+        "from": "beta",
+        "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8"
+      },
+      "response": {
+        "location": "https://alpha.example/suite/linked?state=client-nonce-17&status=failed&code=suite_code_invalid"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "ownerId": "0199ba71-6000-7000-8000-000000000099",
+        "storedRequest": {
+          "clientStateNonce": "client-nonce-17",
+          "consumedAt": null,
+          "expiresAt": "2026-10-06T08:25:00Z",
+          "id": "0199ba71-6000-7000-8000-000000000010",
+          "linkId": null,
+          "peerApp": "beta",
+          "returnUrl": "https://alpha.example/suite/linked",
+          "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+          "userId": "0199ba71-6000-7000-8000-000000000004"
+        }
+      },
+      "error": "not_found",
+      "expectedStatus": 404,
+      "name": "complete-link-injection",
+      "operation": "complete",
+      "request": {
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "ownerId": "0199ba71-6000-7000-8000-000000000004",
+        "storedRequest": null
+      },
+      "error": "not_found",
+      "expectedStatus": 404,
+      "name": "complete-unknown",
+      "operation": "complete",
+      "request": {
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "ownerId": "0199ba71-6000-7000-8000-000000000004",
+        "storedRequest": {
+          "clientStateNonce": "client-nonce-17",
+          "consumedAt": null,
+          "expiresAt": "2026-10-06T08:15:00Z",
+          "id": "0199ba71-6000-7000-8000-000000000010",
+          "linkId": null,
+          "peerApp": "beta",
+          "returnUrl": "https://alpha.example/suite/linked",
+          "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+          "userId": "0199ba71-6000-7000-8000-000000000004"
+        }
+      },
+      "error": "suite_code_invalid",
+      "expectedStatus": 422,
+      "name": "complete-expired",
+      "operation": "complete",
+      "request": {
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "ownerId": "0199ba71-6000-7000-8000-000000000004",
+        "storedRequest": {
+          "clientStateNonce": "client-nonce-17",
+          "consumedAt": "2026-10-06T08:15:00Z",
+          "expiresAt": "2026-10-06T08:25:00Z",
+          "id": "0199ba71-6000-7000-8000-000000000010",
+          "linkId": null,
+          "peerApp": "beta",
+          "returnUrl": "https://alpha.example/suite/linked",
+          "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+          "userId": "0199ba71-6000-7000-8000-000000000004"
+        }
+      },
+      "error": "suite_code_invalid",
+      "expectedStatus": 422,
+      "name": "complete-consumed-without-link",
+      "operation": "complete",
+      "request": {
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "storedCode": {
+          "autoApproved": true,
+          "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "codeChallenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+          "consumedAt": null,
+          "expiresAt": "2026-10-06T08:16:00Z",
+          "linkId": null,
+          "peerApp": "alpha",
+          "suiteSubject": "suite-local|user-17",
+          "userId": "0199ba71-6000-7000-8000-000000000005"
+        }
+      },
+      "error": "suite_link_account_mismatch",
+      "expectedStatus": 409,
+      "name": "exchange-auto-missing-subject",
+      "operation": "exchange",
+      "request": {
+        "client": "alpha",
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "codeVerifier": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+        "initiatorDisplayName": "User",
+        "initiatorLinkId": "0199ba71-6000-7000-8000-000000000001",
+        "initiatorSubject": "alpha-user",
+        "linkSecret": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "storedCode": {
+          "autoApproved": true,
+          "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "codeChallenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+          "consumedAt": null,
+          "expiresAt": "2026-10-06T08:16:00Z",
+          "linkId": null,
+          "peerApp": "alpha",
+          "suiteSubject": "suite-local|user-17",
+          "userId": "0199ba71-6000-7000-8000-000000000005"
+        }
+      },
+      "error": "suite_link_account_mismatch",
+      "expectedStatus": 409,
+      "name": "exchange-auto-different-domain",
+      "operation": "exchange",
+      "request": {
+        "client": "alpha",
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "codeVerifier": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+        "initiatorDisplayName": "User",
+        "initiatorLinkId": "0199ba71-6000-7000-8000-000000000001",
+        "initiatorSubject": "alpha-user",
+        "initiatorSuiteSubject": "clerk-prod|user-17",
+        "linkSecret": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "storedCode": null
+      },
+      "error": "suite_code_invalid",
+      "expectedStatus": 422,
+      "name": "exchange-unknown-code",
+      "operation": "exchange",
+      "request": {
+        "client": "alpha",
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "codeVerifier": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+        "initiatorDisplayName": "User",
+        "initiatorLinkId": "0199ba71-6000-7000-8000-000000000001",
+        "initiatorSubject": "alpha-user",
+        "initiatorSuiteSubject": "suite-local|user-17",
+        "linkSecret": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "storedCode": {
+          "autoApproved": false,
+          "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "codeChallenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+          "consumedAt": null,
+          "expiresAt": "2026-10-06T08:16:00Z",
+          "linkId": null,
+          "peerApp": "alpha",
+          "suiteSubject": "suite-local|user-17",
+          "userId": "0199ba71-6000-7000-8000-000000000005"
+        }
+      },
+      "error": "suite_code_invalid",
+      "expectedStatus": 422,
+      "name": "exchange-wrong-client",
+      "operation": "exchange",
+      "request": {
+        "client": "hebkit",
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "codeVerifier": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+        "initiatorDisplayName": "User",
+        "initiatorLinkId": "0199ba71-6000-7000-8000-000000000001",
+        "initiatorSubject": "alpha-user",
+        "initiatorSuiteSubject": "suite-local|user-17",
+        "linkSecret": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "storedCode": {
+          "autoApproved": false,
+          "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "codeChallenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+          "consumedAt": "2026-10-06T08:15:00Z",
+          "expiresAt": "2026-10-06T08:16:00Z",
+          "linkId": "0199ba71-6000-7000-8000-000000000002",
+          "peerApp": "alpha",
+          "suiteSubject": "suite-local|user-17",
+          "userId": "0199ba71-6000-7000-8000-000000000005"
+        }
+      },
+      "error": "suite_code_invalid",
+      "expectedStatus": 422,
+      "name": "exchange-retry-missing-link",
+      "operation": "exchange",
+      "request": {
+        "client": "alpha",
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "codeVerifier": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+        "initiatorDisplayName": "User",
+        "initiatorLinkId": "0199ba71-6000-7000-8000-000000000001",
+        "initiatorSubject": "alpha-user",
+        "initiatorSuiteSubject": "suite-local|user-17",
+        "linkSecret": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8"
+      }
+    },
+    {
+      "context": {
+        "existingLink": {
+          "id": "0199ba71-6000-7000-8000-000000000002",
+          "peerApp": "alpha",
+          "remoteLinkId": "0199ba71-6000-7000-8000-000000000001",
+          "userId": "0199ba71-6000-7000-8000-000000000005"
+        },
+        "now": "2026-10-06T08:15:00Z",
+        "storedCode": {
+          "autoApproved": false,
+          "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "codeChallenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+          "consumedAt": "2026-10-06T08:15:00Z",
+          "expiresAt": "2026-10-06T08:15:00Z",
+          "linkId": "0199ba71-6000-7000-8000-000000000002",
+          "peerApp": "alpha",
+          "suiteSubject": "suite-local|user-17",
+          "userId": "0199ba71-6000-7000-8000-000000000005"
+        }
+      },
+      "error": "suite_code_invalid",
+      "expectedStatus": 422,
+      "name": "exchange-retry-expired",
+      "operation": "exchange",
+      "request": {
+        "client": "alpha",
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "codeVerifier": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+        "initiatorDisplayName": "User",
+        "initiatorLinkId": "0199ba71-6000-7000-8000-000000000001",
+        "initiatorSubject": "alpha-user",
+        "initiatorSuiteSubject": "suite-local|user-17",
+        "linkSecret": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8"
+      }
+    }
+  ],
+  "hints": [
+    {
+      "hint": "kPetKgWl81rXeCG76KqGdoiCdsjA1KPz5PpHIZRznp4",
+      "subject": "suite-local|user-17"
+    },
+    {
+      "hint": "W3onkXhGxnNexOa7333W67F6b3Ibb1hxR7HBN9MdVTg",
+      "subject": "clerk-prod|user_2abc"
+    },
+    {
+      "hint": "UN8YwMMhg5XZPFs5dDJ1_MbyiHMZPpatJIAhkNFor3g",
+      "subject": "suite-local|üser"
+    }
+  ],
+  "payloads": [
+    {
+      "context": {
+        "existingLink": false,
+        "suiteSubject": "suite-local|user-17"
+      },
+      "expectedStatus": 200,
+      "name": "preview-auto-approve",
+      "operation": "preview",
+      "request": {
+        "client": "alpha",
+        "hint": "kPetKgWl81rXeCG76KqGdoiCdsjA1KPz5PpHIZRznp4"
+      },
+      "response": {
+        "authorizerSends": [
+          "beta.activity.completed"
+        ],
+        "autoApprove": true,
+        "existingLink": false,
+        "hintMismatch": false,
+        "initiatorSends": [
+          "alpha.activity.completed"
+        ],
+        "peer": "Alpha"
+      }
+    },
+    {
+      "context": {
+        "existingLink": false,
+        "suiteSubject": "suite-local|user-17"
+      },
+      "expectedStatus": 200,
+      "name": "preview-consent",
+      "operation": "preview",
+      "request": {
+        "client": "alpha"
+      },
+      "response": {
+        "authorizerSends": [
+          "beta.activity.completed"
+        ],
+        "autoApprove": false,
+        "existingLink": false,
+        "hintMismatch": false,
+        "initiatorSends": [
+          "alpha.activity.completed"
+        ],
+        "peer": "Alpha"
+      }
+    },
+    {
+      "expectedStatus": 200,
+      "name": "authorize",
+      "operation": "authorize",
+      "request": {
+        "client": "alpha",
+        "codeChallenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+        "hint": "kPetKgWl81rXeCG76KqGdoiCdsjA1KPz5PpHIZRznp4",
+        "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8"
+      },
+      "response": {
+        "redirectUrl": "https://alpha.example/api/v1/suite/links/callback?state=ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8&code=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&from=beta"
+      }
+    },
+    {
+      "expectedStatus": 200,
+      "name": "deny",
+      "operation": "deny",
+      "request": {
+        "client": "alpha",
+        "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8"
+      },
+      "response": {
+        "redirectUrl": "https://alpha.example/api/v1/suite/links/callback?state=ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8&error=access_denied&from=beta"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "storedCode": {
+          "autoApproved": false,
+          "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "codeChallenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+          "consumedAt": null,
+          "expiresAt": "2026-10-06T08:16:00Z",
+          "linkId": null,
+          "peerApp": "alpha",
+          "suiteSubject": "suite-local|user-17",
+          "userId": "0199ba71-6000-7000-8000-000000000005"
+        }
+      },
+      "expectedDecision": "create_link",
+      "expectedStatus": 201,
+      "expectedSuiteSubject": "suite-local|user-17",
+      "name": "exchange",
+      "operation": "exchange",
+      "request": {
+        "client": "alpha",
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "codeVerifier": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+        "initiatorDisplayName": "User",
+        "initiatorLinkId": "0199ba71-6000-7000-8000-000000000001",
+        "initiatorSubject": "alpha-user",
+        "initiatorSuiteSubject": "suite-local|user-17",
+        "linkSecret": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8"
+      },
+      "response": {
+        "authorizerSends": [
+          "beta.activity.completed"
+        ],
+        "displayName": "User",
+        "initiatorSends": [
+          "alpha.activity.completed"
+        ],
+        "linkId": "0199ba71-6000-7000-8000-000000000002",
+        "subject": "beta-user",
+        "suiteSubject": "suite-local|user-17"
+      }
+    },
+    {
+      "context": {
+        "existingLink": true,
+        "suiteSubject": "suite-local|user-17"
+      },
+      "expectedStatus": 200,
+      "name": "preview-hint-mismatch",
+      "operation": "preview",
+      "request": {
+        "client": "alpha",
+        "hint": "wrong-hint"
+      },
+      "response": {
+        "authorizerSends": [
+          "beta.activity.completed"
+        ],
+        "autoApprove": false,
+        "existingLink": true,
+        "hintMismatch": true,
+        "initiatorSends": [
+          "alpha.activity.completed"
+        ],
+        "peer": "Alpha"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "replacementRequest": {
+          "clientStateNonce": "replacement-nonce",
+          "consumedAt": null,
+          "expiresAt": "2026-10-06T08:25:00Z",
+          "id": "0199ba71-6000-7000-8000-000000000011",
+          "linkId": null,
+          "peerApp": "beta",
+          "returnUrl": "https://alpha.example/suite/linked",
+          "state": "YGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn8",
+          "userId": "0199ba71-6000-7000-8000-000000000004"
+        },
+        "storedRequest": {
+          "clientStateNonce": "client-nonce-17",
+          "consumedAt": null,
+          "expiresAt": "2026-10-06T08:25:00Z",
+          "id": "0199ba71-6000-7000-8000-000000000010",
+          "linkId": null,
+          "peerApp": "beta",
+          "returnUrl": "https://alpha.example/suite/linked",
+          "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+          "userId": "0199ba71-6000-7000-8000-000000000004"
+        }
+      },
+      "expectedStatus": 201,
+      "expectedSuperseded": true,
+      "name": "start-supersedes-open-request",
+      "operation": "start",
+      "request": {
+        "peerApp": "beta",
+        "returnUrl": "https://alpha.example/suite/linked",
+        "stateNonce": "replacement-nonce"
+      },
+      "response": {
+        "authorizeUrl": "https://beta.example/suite/authorize?client=alpha&state=YGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn8&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&hint=kPetKgWl81rXeCG76KqGdoiCdsjA1KPz5PpHIZRznp4",
+        "requestId": "0199ba71-6000-7000-8000-000000000011"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "storedRequest": {
+          "clientStateNonce": "client-nonce-17",
+          "consumedAt": null,
+          "expiresAt": "2026-10-06T08:25:00Z",
+          "id": "0199ba71-6000-7000-8000-000000000010",
+          "linkId": null,
+          "peerApp": "beta",
+          "returnUrl": "https://alpha.example/suite/linked",
+          "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+          "userId": "0199ba71-6000-7000-8000-000000000004"
+        }
+      },
+      "expectedStatus": 303,
+      "name": "callback-relay",
+      "operation": "callback",
+      "request": {
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "from": "beta",
+        "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8"
+      },
+      "response": {
+        "location": "https://alpha.example/suite/linked?state=client-nonce-17&request=0199ba71-6000-7000-8000-000000000010&code=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "storedRequest": {
+          "clientStateNonce": "client-nonce-17",
+          "consumedAt": null,
+          "expiresAt": "2026-10-06T08:25:00Z",
+          "id": "0199ba71-6000-7000-8000-000000000010",
+          "linkId": null,
+          "peerApp": "beta",
+          "returnUrl": "https://alpha.example/suite/linked",
+          "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+          "userId": "0199ba71-6000-7000-8000-000000000004"
+        }
+      },
+      "expectedStatus": 303,
+      "name": "callback-denied",
+      "operation": "callback",
+      "request": {
+        "error": "access_denied",
+        "from": "beta",
+        "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8"
+      },
+      "response": {
+        "location": "https://alpha.example/suite/linked?state=client-nonce-17&request=0199ba71-6000-7000-8000-000000000010&status=denied"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "storedRequest": {
+          "clientStateNonce": "nonce +&=ü/?",
+          "consumedAt": null,
+          "expiresAt": "2026-10-06T08:25:00Z",
+          "id": "0199ba71-6000-7000-8000-000000000010",
+          "linkId": null,
+          "peerApp": "beta",
+          "returnUrl": "https://alpha.example/suite/linked?view=apps%20%26%20links&state=old&request=old&code=old&status=old",
+          "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+          "userId": "0199ba71-6000-7000-8000-000000000004"
+        }
+      },
+      "expectedStatus": 303,
+      "name": "callback-encoded-query",
+      "operation": "callback",
+      "request": {
+        "code": "code +&=ü/?",
+        "from": "beta",
+        "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8"
+      },
+      "response": {
+        "location": "https://alpha.example/suite/linked?view=apps+%26+links&state=nonce+%2B%26%3D%C3%BC%2F%3F&request=0199ba71-6000-7000-8000-000000000010&code=code+%2B%26%3D%C3%BC%2F%3F"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "storedRequest": {
+          "clientStateNonce": "client-nonce-17",
+          "consumedAt": null,
+          "expiresAt": "2026-10-06T08:25:00Z",
+          "id": "0199ba71-6000-7000-8000-000000000010",
+          "linkId": null,
+          "peerApp": "beta",
+          "returnUrl": "solo-leveling-system://suite/linked?view=settings",
+          "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+          "userId": "0199ba71-6000-7000-8000-000000000004"
+        }
+      },
+      "expectedStatus": 303,
+      "name": "callback-native",
+      "operation": "callback",
+      "request": {
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "from": "beta",
+        "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8"
+      },
+      "response": {
+        "location": "solo-leveling-system://suite/linked?view=settings&state=client-nonce-17&request=0199ba71-6000-7000-8000-000000000010&code=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "ownerId": "0199ba71-6000-7000-8000-000000000004",
+        "storedRequest": {
+          "clientStateNonce": "client-nonce-17",
+          "consumedAt": null,
+          "expiresAt": "2026-10-06T08:25:00Z",
+          "id": "0199ba71-6000-7000-8000-000000000010",
+          "linkId": null,
+          "peerApp": "beta",
+          "returnUrl": "https://alpha.example/suite/linked",
+          "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+          "userId": "0199ba71-6000-7000-8000-000000000004"
+        }
+      },
+      "expectedDecision": "create_link",
+      "expectedStatus": 201,
+      "name": "complete",
+      "operation": "complete",
+      "request": {
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+      },
+      "response": {
+        "id": "0199ba71-6000-7000-8000-000000000001",
+        "peerApp": "beta",
+        "status": "active"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "ownerId": "0199ba71-6000-7000-8000-000000000004",
+        "storedRequest": {
+          "clientStateNonce": "client-nonce-17",
+          "consumedAt": "2026-10-06T08:15:00Z",
+          "expiresAt": "2026-10-06T08:25:00Z",
+          "id": "0199ba71-6000-7000-8000-000000000010",
+          "linkId": "0199ba71-6000-7000-8000-000000000001",
+          "peerApp": "beta",
+          "returnUrl": "https://alpha.example/suite/linked",
+          "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+          "userId": "0199ba71-6000-7000-8000-000000000004"
+        }
+      },
+      "expectedDecision": "existing_link",
+      "expectedStatus": 201,
+      "name": "complete-retry",
+      "operation": "complete",
+      "request": {
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+      },
+      "response": {
+        "id": "0199ba71-6000-7000-8000-000000000001",
+        "peerApp": "beta",
+        "status": "active"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "ownerId": "0199ba71-6000-7000-8000-000000000004",
+        "storedRequest": {
+          "clientStateNonce": "client-nonce-17",
+          "consumedAt": "2026-10-06T08:15:00Z",
+          "expiresAt": "2026-10-06T08:15:00Z",
+          "id": "0199ba71-6000-7000-8000-000000000010",
+          "linkId": "0199ba71-6000-7000-8000-000000000001",
+          "peerApp": "beta",
+          "returnUrl": "https://alpha.example/suite/linked",
+          "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+          "userId": "0199ba71-6000-7000-8000-000000000004"
+        }
+      },
+      "expectedDecision": "existing_link",
+      "expectedStatus": 201,
+      "name": "complete-retry-after-expiry",
+      "operation": "complete",
+      "request": {
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+      },
+      "response": {
+        "id": "0199ba71-6000-7000-8000-000000000001",
+        "peerApp": "beta",
+        "status": "active"
+      }
+    },
+    {
+      "context": {
+        "existingLink": {
+          "id": "0199ba71-6000-7000-8000-000000000002",
+          "peerApp": "alpha",
+          "remoteLinkId": "0199ba71-6000-7000-8000-000000000001",
+          "userId": "0199ba71-6000-7000-8000-000000000005"
+        },
+        "now": "2026-10-06T08:15:00Z",
+        "storedCode": {
+          "autoApproved": false,
+          "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "codeChallenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+          "consumedAt": "2026-10-06T08:15:00Z",
+          "expiresAt": "2026-10-06T08:16:00Z",
+          "linkId": "0199ba71-6000-7000-8000-000000000002",
+          "peerApp": "alpha",
+          "suiteSubject": "suite-local|user-17",
+          "userId": "0199ba71-6000-7000-8000-000000000005"
+        }
+      },
+      "expectedDecision": "existing_link",
+      "expectedStatus": 201,
+      "expectedSuiteSubject": "suite-local|user-17",
+      "name": "exchange-retry",
+      "operation": "exchange",
+      "request": {
+        "client": "alpha",
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "codeVerifier": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+        "initiatorDisplayName": "User",
+        "initiatorLinkId": "0199ba71-6000-7000-8000-000000000001",
+        "initiatorSubject": "alpha-user",
+        "initiatorSuiteSubject": "suite-local|user-17",
+        "linkSecret": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8"
+      },
+      "response": {
+        "authorizerSends": [
+          "beta.activity.completed"
+        ],
+        "displayName": "User",
+        "initiatorSends": [
+          "alpha.activity.completed"
+        ],
+        "linkId": "0199ba71-6000-7000-8000-000000000002",
+        "subject": "beta-user",
+        "suiteSubject": "suite-local|user-17"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "storedCode": {
+          "autoApproved": true,
+          "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "codeChallenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+          "consumedAt": null,
+          "expiresAt": "2026-10-06T08:16:00Z",
+          "linkId": null,
+          "peerApp": "alpha",
+          "suiteSubject": "suite-local|user-17",
+          "userId": "0199ba71-6000-7000-8000-000000000005"
+        }
+      },
+      "expectedDecision": "create_link",
+      "expectedStatus": 201,
+      "expectedSuiteSubject": "suite-local|user-17",
+      "name": "exchange-auto-approved",
+      "operation": "exchange",
+      "request": {
+        "client": "alpha",
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "codeVerifier": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+        "initiatorDisplayName": "User",
+        "initiatorLinkId": "0199ba71-6000-7000-8000-000000000001",
+        "initiatorSubject": "alpha-user",
+        "initiatorSuiteSubject": "suite-local|user-17",
+        "linkSecret": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8"
+      },
+      "response": {
+        "authorizerSends": [
+          "beta.activity.completed"
+        ],
+        "displayName": "User",
+        "initiatorSends": [
+          "alpha.activity.completed"
+        ],
+        "linkId": "0199ba71-6000-7000-8000-000000000002",
+        "subject": "beta-user",
+        "suiteSubject": "suite-local|user-17"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "storedCode": {
+          "autoApproved": false,
+          "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "codeChallenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+          "consumedAt": null,
+          "expiresAt": "2026-10-06T08:16:00Z",
+          "linkId": null,
+          "peerApp": "alpha",
+          "suiteSubject": "suite-local|user-17",
+          "userId": "0199ba71-6000-7000-8000-000000000005"
+        }
+      },
+      "expectedDecision": "create_link",
+      "expectedStatus": 201,
+      "expectedSuiteSubject": null,
+      "name": "exchange-different-domain",
+      "operation": "exchange",
+      "request": {
+        "client": "alpha",
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "codeVerifier": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+        "initiatorDisplayName": "User",
+        "initiatorLinkId": "0199ba71-6000-7000-8000-000000000001",
+        "initiatorSubject": "alpha-user",
+        "initiatorSuiteSubject": "clerk-prod|user-17",
+        "linkSecret": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8"
+      },
+      "response": {
+        "authorizerSends": [
+          "beta.activity.completed"
+        ],
+        "displayName": "User",
+        "initiatorSends": [
+          "alpha.activity.completed"
+        ],
+        "linkId": "0199ba71-6000-7000-8000-000000000002",
+        "subject": "beta-user"
+      }
+    },
+    {
+      "context": {
+        "now": "2026-10-06T08:15:00Z",
+        "storedCode": {
+          "autoApproved": false,
+          "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "codeChallenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+          "consumedAt": null,
+          "expiresAt": "2026-10-06T08:16:00Z",
+          "linkId": null,
+          "peerApp": "alpha",
+          "suiteSubject": "suite-local|user-17",
+          "userId": "0199ba71-6000-7000-8000-000000000005"
+        }
+      },
+      "expectedDecision": "create_link",
+      "expectedStatus": 201,
+      "expectedSuiteSubject": null,
+      "name": "exchange-no-suite-subject",
+      "operation": "exchange",
+      "request": {
+        "client": "alpha",
+        "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "codeVerifier": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+        "initiatorDisplayName": "User",
+        "initiatorLinkId": "0199ba71-6000-7000-8000-000000000001",
+        "initiatorSubject": "alpha-user",
+        "linkSecret": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8"
+      },
+      "response": {
+        "authorizerSends": [
+          "beta.activity.completed"
+        ],
+        "displayName": "User",
+        "initiatorSends": [
+          "alpha.activity.completed"
+        ],
+        "linkId": "0199ba71-6000-7000-8000-000000000002",
+        "subject": "beta-user"
+      }
+    }
+  ],
+  "pkce": [
+    {
+      "challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+      "verifier": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+    },
+    {
+      "challenge": "fR4ifSAEy-7Mu6g7FHZulPKrtjqdAnUCwRFAJt2JFsA",
+      "verifier": "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG"
+    },
+    {
+      "challenge": "DwBzhbb51LfusnSGBa_hqYSgo7-j8BTQnip4TOnlzRo",
+      "verifier": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "challenge": "sbJ3NEXTKTBD99T9rE9hafUneZ3DGhnsopX-b51JVi8",
+      "verifier": "________________________________________________________________________________________________________________________________"
+    }
+  ],
+  "returnUrls": {
+    "scheme": "solo-leveling-system",
+    "vectors": [
+      {
+        "expected": true,
+        "url": "https://alpha.example/suite/linked"
+      },
+      {
+        "expected": true,
+        "url": "solo-leveling-system://suite/linked"
+      },
+      {
+        "expected": true,
+        "url": "https://alpha.example/suite/linked?status=connected"
+      },
+      {
+        "expected": false,
+        "url": "https://evil.example/suite/linked"
+      },
+      {
+        "expected": false,
+        "url": "https://alpha.example/other"
+      },
+      {
+        "expected": false,
+        "url": "https://user@alpha.example/suite/linked"
+      },
+      {
+        "expected": false,
+        "url": "https://alpha.example.evil.example/suite/linked"
+      },
+      {
+        "expected": false,
+        "url": "alpha://suite/linked"
+      },
+      {
+        "expected": false,
+        "url": "solo-leveling-system://other/linked"
+      },
+      {
+        "expected": false,
+        "url": "https://alpha.example:444/suite/linked"
+      },
+      {
+        "expected": false,
+        "url": "https://alpha.example/suite/%6cinked"
+      }
+    ],
+    "webOrigin": "https://alpha.example"
+  },
+  "schemaVersion": 1,
+  "subjects": [
+    {
+      "authorizer": "suite-local|user-17",
+      "expected": "suite-local|user-17",
+      "initiator": "suite-local|user-17"
+    },
+    {
+      "authorizer": "suite-local|other",
+      "error": "suite_link_account_mismatch",
+      "initiator": "suite-local|user-17"
+    },
+    {
+      "authorizer": "clerk-prod|user-17",
+      "expected": null,
+      "initiator": "suite-local|user-17"
+    }
+  ]
+}

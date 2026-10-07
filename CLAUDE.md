@@ -16,13 +16,13 @@ free of product-specific logic.
 ```text
 rust/crates/        baukit-auth, -config, -core, -credential-vault, -egress, -erasure, -events,
                      -http, -integrations, -jobs, -openapi, -ops, -push, -ratelimit,
-                     -runtime, -sync, -telemetry, -test
+                     -runtime, -suite, -sync, -telemetry, -test
 typescript/packages/ a11y-core, analytics-core, analytics-posthog-{web,native},
                      api-runtime, auth-{native,node,web},
                      data-contracts{,-dexie,-expo-sqlite}, events,
                      integrations-client, localization-core, navigation,
                      notifications-{core,expo}, preferences-core, pwa-web,
-                     sync-client, ui-tokens
+                     suite-client, sync-client, ui-tokens
 cli/                `baukit` CLI (scaffolds products from templates/)
 templates/          project templates consumed by the CLI
 deploy/             Helm chart, observability (dashboards, alerts, recording rules),

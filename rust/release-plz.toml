@@ -112,3 +112,8 @@ sort_commits = "oldest"
 name = "baukit-mcp"
 version_group = "baukit-release-train"
 publish = false
+
+[[package]]
+name = "baukit-suite"
+version_group = "baukit-release-train"
+publish = false
