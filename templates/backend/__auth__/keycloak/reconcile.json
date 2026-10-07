@@ -9,7 +9,10 @@
     "loginWithEmailAllowed",
     "loginTheme",
     "passwordPolicy",
-    "bruteForceProtected"
+    "bruteForceProtected"{% if context.mcp %},
+    "clientScopes",
+    "defaultDefaultClientScopes",
+    "defaultOptionalClientScopes"{% endif %}
   ],
   "clients": [
     {

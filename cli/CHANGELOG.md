@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Reconcile generated Keycloak client scopes, their default and optional bindings, and scope audience mappers through the Admin API.
 - Follow MCP source modules and check router composition and configuration validation across backend crates. Accept chart-managed routes in disabled deployment values.
 - Generate product MCP server identity and instructions, with explicit default tool annotations.
 - Breaking: Generated native checks now require Java 25. Use Android command-line tools 23.0 downloads.

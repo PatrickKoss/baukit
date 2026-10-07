@@ -20,7 +20,9 @@ SPEC.loader.exec_module(reconcile_keycloak)
 
 
 class FakeApi:
-    def __init__(self, realm, clients=None, users=None):
+    def __init__(self, realm, clients=None, users=None, scopes=None):
+        self.scopes = copy.deepcopy(scopes or {})
+        self.bindings = {}
         self.realm_value = copy.deepcopy(realm)
         self.clients = copy.deepcopy(clients or {})
         self.users = copy.deepcopy(users or {})
@@ -41,7 +43,7 @@ class FakeApi:
         self.updates.append(("realm", realm))
 
     def find(self, realm, collection, key, value):
-        values = self.clients if collection == "clients" else self.users
+        values = {"clients": self.clients, "users": self.users, "client-scopes": self.scopes}[collection]
         return [
             copy.deepcopy(item)
             for item in values.values()
@@ -49,11 +51,11 @@ class FakeApi:
         ]
 
     def get(self, realm, collection, identity):
-        values = self.clients if collection == "clients" else self.users
+        values = {"clients": self.clients, "users": self.users, "client-scopes": self.scopes}[collection]
         return copy.deepcopy(values[identity])
 
     def create(self, realm, collection, value):
-        values = self.clients if collection == "clients" else self.users
+        values = {"clients": self.clients, "users": self.users, "client-scopes": self.scopes}[collection]
         identity = f"{collection}-{len(values) + 1}"
         created = copy.deepcopy(value)
         created["id"] = identity
@@ -64,17 +66,40 @@ class FakeApi:
         self.updates.append((f"create-{collection}", value.get("clientId", value.get("username"))))
 
     def update(self, realm, collection, identity, value):
-        values = self.clients if collection == "clients" else self.users
+        values = {"clients": self.clients, "users": self.users, "client-scopes": self.scopes}[collection]
         if collection == "clients":
             self.client_updates.append(copy.deepcopy(value))
             values[identity].update(copy.deepcopy(value))
+        elif collection == "client-scopes":
+            values[identity].update({key: copy.deepcopy(value) for key, value in value.items() if key != "protocolMappers"})
         else:
             values[identity] = copy.deepcopy(value)
         self.updates.append((f"update-{collection}", identity))
 
     def delete(self, realm, collection, identity):
-        values = self.clients if collection == "clients" else self.users
+        values = {"clients": self.clients, "users": self.users, "client-scopes": self.scopes}[collection]
         del values[identity]
+
+    def scope_bindings(self, realm, collection, client=None):
+        return copy.deepcopy(self.bindings.get((collection, client), []))
+
+    def scope_mappers(self, realm, scope):
+        return copy.deepcopy(self.scopes[scope].get("protocolMappers", []))
+
+    def create_scope_mapper(self, realm, scope, mapper):
+        mappers = self.scopes[scope].setdefault("protocolMappers", [])
+        mappers.append({**copy.deepcopy(mapper), "id": f"mapper-{len(mappers) + 1}"})
+        self.updates.append(("create-mapper", scope))
+
+    def update_scope_mapper(self, realm, scope, identity, mapper):
+        mappers = self.scopes[scope]["protocolMappers"]
+        index = next(index for index, value in enumerate(mappers) if value["id"] == identity)
+        mappers[index] = copy.deepcopy(mapper)
+        self.updates.append(("update-mapper", scope, identity))
+
+    def add_scope_binding(self, realm, collection, scope, client=None):
+        self.bindings.setdefault((collection, client), []).append(copy.deepcopy(self.scopes[scope]))
+        self.updates.append(("scope-binding", collection, client, scope))
 
     def reset_password(self, realm, user_id, credential):
         self.password_resets.append((user_id, copy.deepcopy(credential)))
@@ -90,6 +115,34 @@ class FakeApi:
 
 
 class RealmReconcilerTests(unittest.TestCase):
+    def test_scope_search_filters_names_and_mapper_requests_use_the_child_endpoint(self):
+        class RecordingApi(reconcile_keycloak.KeycloakApi):
+            def __init__(self):
+                super().__init__("https://identity.example")
+                self.requests = []
+
+            def request(self, method, path, payload=None, query=None, form=None):
+                self.requests.append((method, path, payload))
+                return [{"id": "read", "name": "read"}, {"id": "other", "name": "other"}]
+
+        api = RecordingApi()
+        self.assertEqual(
+            api.find("fixture", "client-scopes", "name", "read"),
+            [{"id": "read", "name": "read"}],
+        )
+        api.scope_mappers("realm/name", "scope/id")
+        api.create_scope_mapper("realm/name", "scope/id", {"name": "audience"})
+        api.update_scope_mapper("realm/name", "scope/id", "mapper/id", {"name": "audience"})
+        prefix = "/admin/realms/realm%2Fname/client-scopes/scope%2Fid/protocol-mappers/models"
+        self.assertEqual(
+            api.requests[1:],
+            [
+                ("GET", prefix, None),
+                ("POST", prefix, {"name": "audience"}),
+                ("PUT", prefix + "/mapper%2Fid", {"name": "audience"}),
+            ],
+        )
+
     def setUp(self):
         self.desired = {
             "realm": "fixture",
@@ -162,6 +215,180 @@ class RealmReconcilerTests(unittest.TestCase):
         realm_fields = realm_source.split('  "users":', 1)[0]
         fields = set(re.findall(r'^  "([^"]+)":', realm_fields, re.MULTILINE))
         self.assertEqual(fields - {"realm"} - reconcile_keycloak.RECONCILABLE_REALM_FIELDS, set())
+
+    def test_mcp_scopes_are_created_updated_bound_and_reconciled_idempotently(self):
+        desired = copy.deepcopy(self.desired)
+        desired["clientScopes"] = [
+            {
+                "name": "read",
+                "protocol": "openid-connect",
+                "attributes": {"include.in.token.scope": "true"},
+            },
+            {"name": "basic", "protocol": "openid-connect"},
+        ]
+        desired["defaultDefaultClientScopes"] = ["basic"]
+        desired["defaultOptionalClientScopes"] = ["read"]
+        desired["clients"][0]["defaultClientScopes"] = ["basic"]
+        desired["clients"][0]["optionalClientScopes"] = ["read"]
+        config = copy.deepcopy(self.config)
+        config["realmFields"] += sorted(reconcile_keycloak.SCOPE_REALM_FIELDS)
+        api = FakeApi(
+            {"realm": "fixture"},
+            scopes={
+                "scope-read": {
+                    "id": "scope-read",
+                    "name": "read",
+                    "protocol": "openid-connect",
+                    "attributes": {"include.in.token.scope": "false"},
+                    "productOwned": "preserved",
+                }
+            },
+        )
+        reconciler = reconcile_keycloak.RealmReconciler(api)
+        reconciler.reconcile(desired, config, set())
+        self.assertEqual(
+            api.scopes["scope-read"]["attributes"]["include.in.token.scope"], "true"
+        )
+        self.assertEqual(api.scopes["scope-read"]["productOwned"], "preserved")
+        self.assertEqual(
+            {scope["name"] for scope in api.scopes.values()}, {"read", "basic"}
+        )
+        client_id = next(iter(api.clients))
+        for collection, client, name in [
+            ("default-default-client-scopes", None, "basic"),
+            ("default-optional-client-scopes", None, "read"),
+            ("default-client-scopes", client_id, "basic"),
+            ("optional-client-scopes", client_id, "read"),
+        ]:
+            self.assertEqual(
+                [scope["name"] for scope in api.bindings[(collection, client)]], [name]
+            )
+        api.updates.clear()
+        reconciler.reconcile(desired, config, set())
+        self.assertEqual(api.updates, [])
+
+    def test_missing_client_scope_rejects_reconciliation(self):
+        api = FakeApi({"realm": "fixture"})
+        with self.assertRaisesRegex(reconcile_keycloak.ReconcileError, "absent or ambiguous"):
+            reconcile_keycloak.RealmReconciler(api).reconcile_scope_bindings(
+                "fixture", "optional-client-scopes", ["missing"], "client"
+            )
+
+    def test_scope_mapper_updates_preserve_server_ids_and_unowned_mappers(self):
+        existing = {
+            "id": "scope-basic",
+            "name": "basic",
+            "protocol": "openid-connect",
+            "protocolMappers": [
+                {
+                    "id": "mapper-sub",
+                    "name": "sub",
+                    "config": {"access.token.claim": "false", "product.claim": "true"},
+                },
+                {"id": "mapper-extra", "name": "extra", "config": {}},
+            ],
+        }
+        desired = {
+            "name": "basic",
+            "protocol": "openid-connect",
+            "protocolMappers": [
+                {
+                    "id": "exported-id",
+                    "name": "sub",
+                    "config": {"access.token.claim": "true"},
+                },
+                {
+                    "name": "audience",
+                    "protocol": "openid-connect",
+                    "protocolMapper": "oidc-audience-mapper",
+                    "config": {
+                        "included.custom.audience": "https://mcp.example/mcp",
+                        "access.token.claim": "true",
+                    },
+                },
+            ],
+        }
+        api = FakeApi({"realm": "fixture"}, scopes={"scope-basic": existing})
+        reconciler = reconcile_keycloak.RealmReconciler(api)
+        reconciler.reconcile_scope("fixture", desired)
+        mappers = api.scopes["scope-basic"]["protocolMappers"]
+        self.assertEqual(mappers[0]["id"], "mapper-sub")
+        self.assertEqual(mappers[0]["config"]["access.token.claim"], "true")
+        self.assertEqual(mappers[0]["config"]["product.claim"], "true")
+        self.assertEqual(mappers[1], existing["protocolMappers"][1])
+        self.assertEqual(
+            mappers[2]["config"]["included.custom.audience"], "https://mcp.example/mcp"
+        )
+        self.assertIn(("update-mapper", "scope-basic", "mapper-sub"), api.updates)
+        self.assertIn(("create-mapper", "scope-basic"), api.updates)
+        api.updates.clear()
+        reconciler.reconcile_scope("fixture", desired)
+        self.assertEqual(api.updates, [])
+
+    def test_scope_binding_names_reject_invalid_values(self):
+        for value in (None, "read", [""], [7]):
+            with self.subTest(value=value), self.assertRaisesRegex(
+                reconcile_keycloak.ReconcileError, "array of non-empty strings"
+            ):
+                reconcile_keycloak.scope_names(value, "optionalClientScopes")
+
+    def test_client_mapper_ids_and_unowned_scope_bindings_survive_updates(self):
+        desired = copy.deepcopy(self.desired["clients"][0])
+        desired["protocolMappers"] = [
+            {"name": "audience", "config": {"access.token.claim": "true"}}
+        ]
+        desired["optionalClientScopes"] = ["read"]
+        existing = {
+            **desired,
+            "id": "client",
+            "optionalClientScopes": ["read", "private-scope"],
+            "protocolMappers": [
+                {
+                    "id": "mapper",
+                    "name": "audience",
+                    "config": {"access.token.claim": "false"},
+                }
+            ],
+        }
+        api = FakeApi({"realm": "fixture"}, clients={"client": existing})
+        reconciler = reconcile_keycloak.RealmReconciler(api)
+        reconciler.reconcile_client("fixture", desired, self.config["clients"][0])
+        updated = api.clients["client"]
+        self.assertEqual(updated["protocolMappers"][0]["id"], "mapper")
+        self.assertEqual(
+            updated["protocolMappers"][0]["config"]["access.token.claim"], "true"
+        )
+        self.assertEqual(updated["optionalClientScopes"], ["read", "private-scope"])
+        api.updates.clear()
+        reconciler.reconcile_client("fixture", desired, self.config["clients"][0])
+        self.assertEqual(api.updates, [])
+
+    def test_client_attributes_preserve_keycloak_defaults_and_repair_declared_settings(self):
+        desired = copy.deepcopy(self.desired["clients"][0])
+        existing = {
+            **desired,
+            "id": "client",
+            "attributes": {
+                "pkce.code.challenge.method": "plain",
+                "realm_client": "false",
+                "post.logout.redirect.uris": "+",
+            },
+        }
+        api = FakeApi({"realm": "fixture"}, clients={"client": existing})
+        reconciler = reconcile_keycloak.RealmReconciler(api)
+        reconciler.reconcile_client("fixture", desired, self.config["clients"][0])
+        self.assertEqual(
+            api.clients["client"]["attributes"],
+            {
+                "pkce.code.challenge.method": "S256",
+                "realm_client": "false",
+                "post.logout.redirect.uris": "+",
+            },
+        )
+        self.assertEqual(api.updates, [("update-clients", "client")])
+        api.updates.clear()
+        reconciler.reconcile_client("fixture", desired, self.config["clients"][0])
+        self.assertEqual(api.updates, [])
 
     def test_unknown_realm_field_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

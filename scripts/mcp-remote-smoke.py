@@ -10,6 +10,7 @@ import importlib.util
 import json
 import os
 import signal
+import sys
 from pathlib import Path
 import subprocess
 import tempfile
@@ -32,6 +33,118 @@ def wait_ready(url: str, process: subprocess.Popen) -> None:
             last_error = str(error)
         time.sleep(0.2)
     raise RuntimeError(f"backend did not become ready: {last_error}")
+
+
+def reconcile_scopes(fixture: Path, issuer: str) -> None:
+    scripts = fixture / "scripts"
+    sys.path.insert(0, str(scripts))
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "mcp_reconcile", scripts / "reconcile_keycloak.py"
+        )
+        if spec is None or spec.loader is None:
+            raise RuntimeError("cannot load generated realm reconciler")
+        reconcile = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(reconcile)
+    finally:
+        sys.path.pop(0)
+
+    class RecordingApi(reconcile.KeycloakApi):
+        def __init__(self, base_url: str):
+            super().__init__(base_url)
+            self.mutations: list[tuple[str, str]] = []
+
+        def request(self, method, path, payload=None, query=None, form=None):
+            if method != "GET":
+                self.mutations.append((method, path))
+            return super().request(method, path, payload, query, form)
+
+    api = RecordingApi(issuer.split("/realms/", 1)[0])
+    api.token = api.authenticate(os.environ.get("KEYCLOAK_ADMIN_USERNAME", "admin"), os.environ.get("KEYCLOAK_ADMIN_PASSWORD", "admin"))
+    desired = json.loads((fixture / "keycloak/realm.json").read_text())
+    realm = desired["realm"]
+    config = reconcile.load_reconcile_config(fixture / "keycloak/reconcile.json")
+    audience_scope = next(
+        scope for scope in desired["clientScopes"] if scope["name"] == "items:read"
+    )
+    audience_scope["protocolMappers"] = [
+        {
+            "name": "reconcile-audience",
+            "protocol": "openid-connect",
+            "protocolMapper": "oidc-audience-mapper",
+            "config": {
+                "included.custom.audience": "http://localhost:8080/mcp",
+                "access.token.claim": "true",
+                "id.token.claim": "false",
+            },
+        }
+    ]
+    desired["clientScopes"].append(
+        {
+            "name": "reconcile:read",
+            "protocol": "openid-connect",
+            "attributes": {"include.in.token.scope": "true"},
+        }
+    )
+    desired["defaultOptionalClientScopes"].append("reconcile:read")
+    desired_client = next(
+        client for client in desired["clients"]
+        if client["clientId"] == f"{fixture.name}-mcp"
+    )
+    desired_client["optionalClientScopes"].append("reconcile:read")
+    scope = api.find(realm, "client-scopes", "name", audience_scope["name"])[0]
+    api.create_scope_mapper(realm, scope["id"], audience_scope["protocolMappers"][0])
+    mapper = next(
+        mapper for mapper in api.scope_mappers(realm, scope["id"])
+        if mapper["protocolMapper"] == "oidc-audience-mapper"
+    )
+    wrong_mapper = {
+        **mapper,
+        "config": {
+            **mapper["config"],
+            "included.custom.audience": "https://wrong.example/mcp",
+        },
+    }
+    api.update_scope_mapper(realm, scope["id"], mapper["id"], wrong_mapper)
+    client = api.find(realm, "clients", "clientId", f"{fixture.name}-mcp")[0]
+    basic = api.find(realm, "client-scopes", "name", "basic")[0]
+    api.delete(realm, f"clients/{client['id']}/default-client-scopes", basic["id"])
+    api.delete(realm, f"clients/{client['id']}/optional-client-scopes", scope["id"])
+    api.delete(realm, "default-default-client-scopes", basic["id"])
+    reconciler = reconcile.RealmReconciler(api)
+    reconciler.reconcile(desired, config, set())
+    updated = next(
+        value for value in api.scope_mappers(realm, scope["id"])
+        if value["id"] == mapper["id"]
+    )
+    expected = next(
+        value for value in audience_scope["protocolMappers"]
+        if value["name"] == mapper["name"]
+    )
+    mismatched = [
+        key for key, value in expected["config"].items()
+        if updated["config"].get(key) != value
+    ]
+    if mismatched:
+        raise RuntimeError("scope audience mapper was not repaired: " + ", ".join(mismatched))
+    for collection, identity, name in [
+        ("default-default-client-scopes", None, "basic"),
+        ("default-client-scopes", client["id"], "basic"),
+        ("optional-client-scopes", client["id"], "items:read"),
+        ("default-optional-client-scopes", None, "reconcile:read"),
+        ("optional-client-scopes", client["id"], "reconcile:read"),
+    ]:
+        names = {
+            value["name"] for value in api.scope_bindings(realm, collection, identity)
+        }
+        if name not in names:
+            raise RuntimeError(f"scope binding was not repaired in {collection}")
+    api.mutations.clear()
+    reconciler.reconcile(desired, config, set())
+    if api.mutations:
+        writes = ", ".join(f"{method} {path}" for method, path in api.mutations)
+        raise RuntimeError("a second realm reconciliation changed Keycloak: " + writes)
+    print("Keycloak: repaired scopes, bindings and audience mappers; second reconciliation made no writes", flush=True)
 
 
 def run_backend(fixture: Path, repository: Path) -> None:
@@ -64,6 +177,7 @@ def run_backend(fixture: Path, repository: Path) -> None:
             pkce = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(pkce)
             issuer = f"http://localhost:8081/realms/{name}"
+            reconcile_scopes(fixture, issuer)
             opener = urllib.request.build_opener(
                 urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar(policy=pkce.LocalDevelopmentCookiePolicy())),
                 pkce.CallbackRedirectHandler("http://localhost:18888/callback"),

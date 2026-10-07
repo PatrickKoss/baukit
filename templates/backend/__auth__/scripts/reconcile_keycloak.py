@@ -17,7 +17,21 @@ from urllib.request import Request, urlopen
 
 import keycloak_policy
 
-RECONCILABLE_REALM_FIELDS = {
+SCOPE_REALM_FIELDS = {
+    "clientScopes",
+    "defaultDefaultClientScopes",
+    "defaultOptionalClientScopes",
+}
+REALM_SCOPE_BINDINGS = (
+    ("defaultDefaultClientScopes", "default-default-client-scopes"),
+    ("defaultOptionalClientScopes", "default-optional-client-scopes"),
+)
+CLIENT_SCOPE_BINDINGS = (
+    ("defaultClientScopes", "default-client-scopes"),
+    ("optionalClientScopes", "optional-client-scopes"),
+)
+
+RECONCILABLE_REALM_FIELDS = SCOPE_REALM_FIELDS | {
     "displayName",
     "enabled",
     "sslRequired",
@@ -139,6 +153,14 @@ def validate_inputs(
     policy: dict[str, Any],
     config: dict[str, Any],
 ) -> None:
+    for field in config.get("realmFields", []):
+        if field in SCOPE_REALM_FIELDS and field not in realm:
+            fail(f"selected realm field {field!r} is absent from the realm file")
+    if "clientScopes" in config.get("realmFields", []):
+        values_by_key(realm["clientScopes"], "name", "clientScopes")
+    for field, _ in REALM_SCOPE_BINDINGS:
+        if field in config.get("realmFields", []):
+            scope_names(realm[field], field)
     desired_clients = values_by_key(realm.get("clients"), "clientId", "clients")
     candidate = json.loads(json.dumps(realm))
     candidate_clients = values_by_key(candidate.get("clients"), "clientId", "clients")
@@ -147,6 +169,9 @@ def validate_inputs(
         desired = desired_clients.get(client_id)
         if desired is None:
             fail(f"selected client {client_id!r} is absent from the realm file")
+        for field, _ in CLIENT_SCOPE_BINDINGS:
+            if field in desired:
+                scope_names(desired[field], field)
         candidate_client = candidate_clients[client_id]
         candidate_client["webOrigins"] = merge_unique(
             candidate_client.get("webOrigins"), selection["activeOrigins"]
@@ -163,6 +188,27 @@ def validate_inputs(
     failures = keycloak_policy.validate_realm(candidate, policy, "development")
     if failures:
         fail("realm or active client URL violates policy: " + "; ".join(failures))
+
+
+def scope_names(value: object, field: str) -> list[str]:
+    if not isinstance(value, list) or not all(
+        isinstance(name, str) and name for name in value
+    ):
+        fail(f"{field} must be an array of non-empty strings")
+    return value
+
+
+def merge_protocol_mappers(existing: object, desired: object) -> list[dict[str, object]]:
+    mappers = values_by_key(existing, "name", "protocolMappers")
+    for name, mapper in values_by_key(desired, "name", "protocolMappers").items():
+        current = mappers.get(name, {})
+        mappers[name] = {
+            **current,
+            **{field: value for field, value in mapper.items() if field != "id"},
+        }
+        if isinstance(mapper.get("config"), dict):
+            mappers[name]["config"] = {**current.get("config", {}), **mapper["config"]}
+    return list(mappers.values())
 
 
 class KeycloakApi:
@@ -240,9 +286,11 @@ class KeycloakApi:
             f"/admin/realms/{quote(realm, safe='')}/{collection}",
             query={key: value, "exact": "true"},
         )
-        if not isinstance(response, list):
+        if not isinstance(response, list) or not all(
+            isinstance(item, dict) for item in response
+        ):
             fail(f"Keycloak returned invalid {collection} search data")
-        return response
+        return [item for item in response if item.get(key) == value]
 
     def get(self, realm: str, collection: str, identity: str) -> dict[str, Any]:
         response = self.request(
@@ -272,6 +320,51 @@ class KeycloakApi:
             "DELETE",
             f"/admin/realms/{quote(realm, safe='')}/{collection}/{quote(identity, safe='')}",
         )
+
+    def scope_bindings(
+        self, realm: str, collection: str, client: str | None = None
+    ) -> list[dict[str, object]]:
+        prefix = f"/admin/realms/{quote(realm, safe='')}"
+        if client is not None:
+            prefix += f"/clients/{quote(client, safe='')}"
+        response = self.request("GET", f"{prefix}/{collection}")
+        if not isinstance(response, list) or not all(
+            isinstance(scope, dict) for scope in response
+        ):
+            fail("Keycloak returned invalid client scope bindings")
+        return response
+
+    def scope_mappers(self, realm: str, scope: str) -> list[dict[str, Any]]:
+        response = self.request(
+            "GET",
+            f"/admin/realms/{quote(realm, safe='')}/client-scopes/{quote(scope, safe='')}/protocol-mappers/models",
+        )
+        if not isinstance(response, list):
+            fail("Keycloak returned invalid scope mapper data")
+        return response
+
+    def create_scope_mapper(self, realm: str, scope: str, mapper: dict[str, Any]) -> None:
+        self.create(
+            realm, f"client-scopes/{quote(scope, safe='')}/protocol-mappers/models", mapper
+        )
+
+    def update_scope_mapper(
+        self, realm: str, scope: str, identity: str, mapper: dict[str, Any]
+    ) -> None:
+        self.update(
+            realm,
+            f"client-scopes/{quote(scope, safe='')}/protocol-mappers/models",
+            identity,
+            mapper,
+        )
+
+    def add_scope_binding(
+        self, realm: str, collection: str, scope: str, client: str | None = None
+    ) -> None:
+        prefix = f"/admin/realms/{quote(realm, safe='')}"
+        if client is not None:
+            prefix += f"/clients/{quote(client, safe='')}"
+        self.request("PUT", f"{prefix}/{collection}/{quote(scope, safe='')}")
 
     def reset_password(self, realm: str, user_id: str, credential: dict[str, Any]) -> None:
         self.request(
@@ -357,9 +450,30 @@ class RealmReconciler:
             fail("realm file must contain a non-empty realm name")
         desired_clients = values_by_key(desired.get("clients"), "clientId", "clients")
         desired_users = values_by_key(desired.get("users"), "username", "users")
+        if "clientScopes" in config["realmFields"]:
+            scopes = values_by_key(desired.get("clientScopes"), "name", "clientScopes")
+            for scope in scopes.values():
+                self.reconcile_scope(realm_name, scope)
         self.reconcile_realm(realm_name, desired, config["realmFields"])
+        for field, collection in REALM_SCOPE_BINDINGS:
+            if field in config["realmFields"]:
+                self.reconcile_scope_bindings(
+                    realm_name, collection, scope_names(desired.get(field), field)
+                )
         for selection in config["clients"]:
             self.reconcile_client(realm_name, desired_clients[selection["clientId"]], selection)
+            client = desired_clients[selection["clientId"]]
+            if "defaultClientScopes" in client or "optionalClientScopes" in client:
+                matches = self.api.find(realm_name, "clients", "clientId", client["clientId"])
+                if len(matches) != 1 or not isinstance(matches[0].get("id"), str):
+                    fail("client scope binding requires a unique client")
+                for field, collection in CLIENT_SCOPE_BINDINGS:
+                    self.reconcile_scope_bindings(
+                        realm_name,
+                        collection,
+                        scope_names(client.get(field, []), field),
+                        matches[0]["id"],
+                    )
         for client_id, roles in config.get("serviceAccountRoles", {}).items():
             self.reconcile_service_account_roles(realm_name, client_id, roles)
         for username in config["users"]:
@@ -368,6 +482,68 @@ class RealmReconciler:
                 desired_users[username],
                 username in reset_passwords,
             )
+
+    def reconcile_scope(self, realm: str, desired: dict[str, object]) -> None:
+        name = desired["name"]
+        if not isinstance(name, str):
+            fail("client scope name must be a string")
+        matches = self.api.find(realm, "client-scopes", "name", name)
+        if not matches:
+            created = {field: value for field, value in desired.items() if field != "id"}
+            if "protocolMappers" in created:
+                created["protocolMappers"] = merge_protocol_mappers(
+                    [], created["protocolMappers"]
+                )
+            self.api.create(realm, "client-scopes", created)
+            return
+        if len(matches) != 1 or not isinstance(matches[0].get("id"), str):
+            fail("client scope reconciliation requires a unique scope")
+        identity = matches[0]["id"]
+        existing = self.api.get(realm, "client-scopes", identity)
+        existing.pop("protocolMappers", None)
+        merged = dict(existing)
+        for field, value in desired.items():
+            if field in ("id", "protocolMappers"):
+                continue
+            if field == "attributes" and isinstance(value, dict):
+                merged[field] = {**existing.get(field, {}), **value}
+            else:
+                merged[field] = value
+        if merged != existing:
+            self.api.update(realm, "client-scopes", identity, merged)
+        if "protocolMappers" in desired:
+            self.reconcile_scope_mappers(realm, identity, desired["protocolMappers"])
+
+    def reconcile_scope_mappers(self, realm: str, scope: str, desired: object) -> None:
+        existing = values_by_key(
+            self.api.scope_mappers(realm, scope), "name", "protocolMappers"
+        )
+        for mapper in merge_protocol_mappers([], desired):
+            current = existing.get(mapper["name"])
+            if current is None:
+                self.api.create_scope_mapper(realm, scope, mapper)
+                continue
+            identity = current.get("id")
+            if not isinstance(identity, str) or not identity:
+                fail("Keycloak scope mapper has no id")
+            merged = merge_protocol_mappers([current], [mapper])[0]
+            if merged != current:
+                self.api.update_scope_mapper(realm, scope, identity, merged)
+
+    def reconcile_scope_bindings(
+        self, realm: str, collection: str, names: list[str], client: str | None = None
+    ) -> None:
+        existing = {
+            scope.get("name")
+            for scope in self.api.scope_bindings(realm, collection, client)
+        }
+        for name in names:
+            if name in existing:
+                continue
+            matches = self.api.find(realm, "client-scopes", "name", name)
+            if len(matches) != 1 or not isinstance(matches[0].get("id"), str):
+                fail(f"client scope {name!r} is absent or ambiguous")
+            self.api.add_scope_binding(realm, collection, matches[0]["id"], client)
 
     def reconcile_service_account_roles(self, realm: str, client_id: str, roles: list[str]) -> None:
         clients = self.api.find(realm, "clients", "clientId", client_id)
@@ -387,6 +563,8 @@ class RealmReconciler:
         existing = self.api.realm(realm_name)
         merged = dict(existing)
         for field in fields:
+            if field in SCOPE_REALM_FIELDS:
+                continue
             if field not in desired:
                 fail(f"selected realm field {field!r} is absent from the realm file")
             merged[field] = desired[field]
@@ -418,7 +596,18 @@ class RealmReconciler:
         existing.pop("secret", None)
         merged = dict(existing)
         for key, value in desired.items():
-            if key not in ("id", "secret", "webOrigins", "redirectUris"):
+            if key == "protocolMappers":
+                merged[key] = merge_protocol_mappers(existing.get(key, []), value)
+            elif key == "attributes" and isinstance(value, dict):
+                merged[key] = {**existing.get(key, {}), **value}
+            elif key not in (
+                "id",
+                "secret",
+                "webOrigins",
+                "redirectUris",
+                "defaultClientScopes",
+                "optionalClientScopes",
+            ):
                 merged[key] = value
         merged["webOrigins"] = merge_unique(
             existing.get("webOrigins"), desired.get("webOrigins"), selection["activeOrigins"]
