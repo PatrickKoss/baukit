@@ -284,6 +284,8 @@ mcp:
   enabled: false
   resourceUrl: ""
   issuer: ""
+  # Optional internal signing-key endpoint. Public discovery still uses issuer.
+  jwksUri: ""
   allowedHosts: []
   allowedOrigins: []
   maxRequestBodyBytes: 32768

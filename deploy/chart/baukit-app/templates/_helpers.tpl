@@ -91,6 +91,9 @@ baukit.dev/process: {{ .process }}
 {{- $_ := set $overrides "MCP__ENABLED" "true" -}}
 {{- $_ := set $overrides "MCP__RESOURCE_URL" (required "mcp.resourceUrl is required" $root.Values.mcp.resourceUrl) -}}
 {{- $_ := set $overrides "MCP__ISSUER" (required "mcp.issuer is required" $root.Values.mcp.issuer) -}}
+{{- with $root.Values.mcp.jwksUri }}
+{{- $_ := set $overrides "MCP__JWKS_URI" . -}}
+{{- end }}
 {{- $_ := set $overrides "MCP__ALLOWED_HOSTS" (toJson $root.Values.mcp.allowedHosts) -}}
 {{- $_ := set $overrides "MCP__ALLOWED_ORIGINS" (toJson $root.Values.mcp.allowedOrigins) -}}
 {{- $_ := set $overrides "MCP__MAX_REQUEST_BODY_BYTES" (toString $root.Values.mcp.maxRequestBodyBytes) -}}

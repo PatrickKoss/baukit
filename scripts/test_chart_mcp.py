@@ -28,6 +28,28 @@ class McpChartTest(unittest.TestCase):
         self.assertIn('MCP__ALLOWED_HOSTS', enabled.stdout)
         self.assertIn('value: "[\\"mcp.example\\"]"', enabled.stdout)
 
+    def test_jwks_override_is_optional_and_only_applies_to_the_api(self) -> None:
+        settings = (
+            "worker.enabled=true", "mcp.enabled=true",
+            "mcp.resourceUrl=https://mcp.example/mcp",
+            "mcp.issuer=https://identity.example/realms/product",
+            "mcp.allowedHosts[0]=mcp.example",
+        )
+        default = self.render(*settings)
+        self.assertEqual(default.returncode, 0, default.stderr)
+        self.assertNotIn("MCP__JWKS_URI", default.stdout)
+        uri = "http://keycloak:8080/realms/product/protocol/openid-connect/certs"
+        enabled = self.render(*settings, f"mcp.jwksUri={uri}")
+        self.assertEqual(enabled.returncode, 0, enabled.stderr)
+        self.assertEqual(enabled.stdout.count('MCP__JWKS_URI'), 1)
+        api = next(document for document in enabled.stdout.split('---')
+                   if 'name: mcp-test-baukit-app-api' in document and 'kind: Deployment' in document)
+        self.assertIn(f'- name: MINIMAL_API__MCP__JWKS_URI\n              value: "{uri}"', api)
+        self.assertIn('value: "https://identity.example/realms/product"', api)
+        disabled = self.render(f"mcp.jwksUri={uri}")
+        self.assertEqual(disabled.returncode, 0, disabled.stderr)
+        self.assertNotIn("MCP__JWKS_URI", disabled.stdout)
+
     def test_enabled_mcp_requires_a_host_allowlist(self) -> None:
         result = self.render("mcp.enabled=true", "mcp.resourceUrl=https://mcp.example/mcp", "mcp.issuer=https://identity.example")
         self.assertNotEqual(result.returncode, 0)
