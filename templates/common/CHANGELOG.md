@@ -2,13 +2,15 @@
 
 ## [Unreleased]
 
-{% if context.mcp %}- Register MCP services through `McpServices`.
+{% if context.mcp %}- Fetch signing keys over the internal network while keeping the public issuer. Add an optional backend Compose profile.
+- Register MCP services through `McpServices`.
 - Check tools, resources and prompts in MCP definition drift tests. Accept default tool errors in the example output schema.
 - Fix rustfmt drift in the MCP router wiring for short product names.
 
 {% endif %}{% if context.web %}- Measure the screen and scroller together in the browser geometry check, so navigation animation cannot mix two layouts.
 
-{% endif %}{% if context.mobile %}- Keep Android QA ownership until cleanup succeeds. Verify emulator shutdown and report service teardown failures.
+{% endif %}{% if context.mobile %}- Control the animation frame in the Android navigation test so dismissal checks do not depend on elapsed time.
+- Keep Android QA ownership until cleanup succeeds. Verify emulator shutdown and report service teardown failures.
 - Reject System UI and keyboard crashes or ANRs after boot and before Maestro flows.
 - Limit the Android software renderer to four threads by default. Set `BAUKIT_QA_RENDERER_THREADS` to change the limit.
 

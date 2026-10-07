@@ -135,7 +135,13 @@ impl AuthenticatedRouteGroupOptions {
         &self.group
     }
 
-    pub(crate) fn key(&self, subject_key: &str) -> String {
+    /// Returns the same store key used by [`crate::authenticated_route_group`].
+    ///
+    /// External callers can consume this key with the same store and quota to
+    /// share a subject's route-group allowance across REST and MCP. Pass the
+    /// same subject key produced by the REST middleware's extractor.
+    #[must_use]
+    pub fn key(&self, subject_key: &str) -> String {
         format!("{}group:{}:{subject_key}", self.key_prefix, self.group)
     }
 }

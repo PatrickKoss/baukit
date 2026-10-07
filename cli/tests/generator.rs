@@ -4727,3 +4727,183 @@ fn doctor_accepts_external_oidc_without_the_bundled_realm() -> anyhow::Result<()
     }
     Ok(())
 }
+
+#[test]
+fn doctor_accepts_remote_mcp_modules_in_declared_crates() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "redemut-shaped");
+    local.auth = Some(AuthProvider::Oidc);
+    local.mcp = true;
+    let root = generate_new(&local)?;
+    doctor(&root)?;
+    let bin = root.join("backend/crates/redemut-shaped-bin/src");
+    fs::rename(bin.join("bin/api.rs"), bin.join("application.rs"))?;
+    let library_path = bin.join("lib.rs");
+    let library = fs::read_to_string(&library_path)?;
+    let start = library
+        .find("#[derive(Clone, Debug, Default, Deserialize)]")
+        .expect("config start");
+    let end = library
+        .find("#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]")
+        .expect("config end");
+    fs::write(
+        bin.join("config.rs"),
+        format!("use super::*;\n{}", &library[start..end]),
+    )?;
+    fs::write(
+        library_path,
+        format!(
+            "{}mod config;\nmod application;\npub use config::ProductConfig;\n{}",
+            &library[..start],
+            &library[end..]
+        ),
+    )?;
+    let mcp = root.join("backend/crates/redemut-shaped-mcp/src");
+    let source = fs::read_to_string(mcp.join("lib.rs"))?;
+    let start = source.find("impl ItemTools {").expect("definitions start");
+    let end = source
+        .find("impl ToolService for ItemTools")
+        .expect("definitions end");
+    fs::write(
+        mcp.join("definitions.rs"),
+        format!("use super::*;\n{}", &source[start..end]),
+    )?;
+    fs::write(
+        mcp.join("lib.rs"),
+        format!("{}mod definitions;\n{}", &source[..start], &source[end..]),
+    )?;
+    doctor(&root)?;
+    let mcp_manifest = root.join("backend/crates/redemut-shaped-mcp/Cargo.toml");
+    let cargo = fs::read_to_string(&mcp_manifest)?;
+    fs::write(
+        mcp_manifest,
+        cargo.replace(
+            "name = \"redemut-shaped-mcp\"",
+            "name = \"custom-tool-adapter\"",
+        ),
+    )?;
+    doctor(&root)?;
+    let manifest_path = root.join("baukit.toml");
+    let manifest = fs::read_to_string(&manifest_path)?;
+    fs::write(
+        &manifest_path,
+        format!(
+            "{manifest}\n[doctor.sources]\nmcp_router = \"backend/crates/redemut-shaped-bin/src/application.rs\"\nmcp_config = \"backend/crates/redemut-shaped-bin/src/config.rs\"\nmcp_drift = \"backend/tests/tool_drift.rs\"\n"
+        ),
+    )?;
+    doctor(&root)?;
+    for (relative, symbol, finding) in [
+        (
+            "backend/crates/redemut-shaped-bin/src/application.rs",
+            "baukit_mcp::router",
+            "router mount",
+        ),
+        (
+            "backend/crates/redemut-shaped-bin/src/application.rs",
+            "api.merge(mcp)",
+            "router merge",
+        ),
+        (
+            "backend/crates/redemut-shaped-mcp/src/lib.rs",
+            "impl ToolService for",
+            "tool registration",
+        ),
+        (
+            "backend/crates/redemut-shaped-mcp/src/definitions.rs",
+            "required_scopes:",
+            "scope enforcement",
+        ),
+        (
+            "backend/crates/redemut-shaped-bin/src/config.rs",
+            "pub mcp: baukit_mcp::McpConfig",
+            "resource configuration",
+        ),
+        (
+            "backend/crates/redemut-shaped-bin/src/config.rs",
+            "self.mcp.validate()",
+            "configuration validation",
+        ),
+        (
+            "backend/tests/tool_drift.rs",
+            "assert_eq!",
+            "schema drift check",
+        ),
+    ] {
+        let path = root.join(relative);
+        let source = fs::read_to_string(&path)?;
+        assert!(source.contains(symbol), "{relative}: {symbol}");
+        let missing = source.replace(symbol, "missing_wiring");
+        fs::write(&path, format!("{missing}\n// {symbol}\n"))?;
+        let error = match doctor(&root) {
+            Err(error) => error,
+            Ok(findings) => panic!("missing {symbol} accepted: {findings:?}"),
+        };
+        assert!(error.to_string().contains(finding), "{symbol}: {error}");
+        fs::write(path, source)?;
+    }
+    Ok(())
+}
+
+#[test]
+fn remote_mcp_compose_keeps_public_issuers_and_fetches_internal_keys() -> anyhow::Result<()> {
+    for provider in [
+        AuthProvider::Oidc,
+        AuthProvider::Clerk,
+        AuthProvider::Workos,
+    ] {
+        let parent = tempfile::tempdir()?;
+        let mut local = options(parent.path(), "container-auth");
+        local.auth = Some(provider);
+        local.mcp = true;
+        let root = generate_new(&local)?;
+        let compose: serde_yaml_ng::Value =
+            serde_yaml_ng::from_str(&fs::read_to_string(root.join("compose.yaml"))?)?;
+        let backend = &compose["services"]["backend"];
+        assert_eq!(backend["profiles"][0], "backend");
+        let environment = &backend["environment"];
+        assert_eq!(
+            environment["CONTAINER_AUTH__MCP__ENABLED"],
+            "${CONTAINER_AUTH__MCP__ENABLED:-false}"
+        );
+        if provider == AuthProvider::Oidc {
+            assert_eq!(
+                environment["CONTAINER_AUTH__MCP__JWKS_URI"],
+                "${CONTAINER_AUTH__MCP__JWKS_URI:-http://keycloak:8080/realms/container-auth/protocol/openid-connect/certs}"
+            );
+            assert_eq!(
+                environment["CONTAINER_AUTH__AUTH__JWKS_URI"],
+                "${CONTAINER_AUTH__AUTH__JWKS_URI:-http://keycloak:8080/realms/container-auth/protocol/openid-connect/certs}"
+            );
+            assert_eq!(
+                environment["CONTAINER_AUTH__MCP__ISSUER"],
+                "${CONTAINER_AUTH__MCP__ISSUER:-http://localhost:8081/realms/container-auth}"
+            );
+        } else {
+            assert!(environment["CONTAINER_AUTH__MCP__JWKS_URI"].is_null());
+            assert!(compose["services"]["keycloak"].is_null());
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn doctor_requires_a_consumed_remote_mcp_dependency() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "mcp-dependency");
+    local.auth = Some(AuthProvider::Oidc);
+    local.mcp = true;
+    let root = generate_new(&local)?;
+    for suffix in ["bin", "mcp", "api"] {
+        let path = root.join(format!("backend/crates/mcp-dependency-{suffix}/Cargo.toml"));
+        let source = fs::read_to_string(&path)?;
+        assert!(source.contains("baukit-mcp.workspace = true"));
+        fs::write(path, source.replace("baukit-mcp.workspace = true", ""))?;
+    }
+    assert!(
+        doctor(&root)
+            .expect_err("unused workspace dependency is not MCP wiring")
+            .to_string()
+            .contains("remote MCP auth layer")
+    );
+    Ok(())
+}

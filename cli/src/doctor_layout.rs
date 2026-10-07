@@ -64,6 +64,10 @@ fn cargo_path(root: &Path, directory: &Path, relative: &str) -> Result<PathBuf> 
 pub(super) fn validate_paths(root: &Path, manifest: &Manifest) -> Result<()> {
     const SOURCE_KEYS: &[&str] = &[
         "backend_limits",
+        "mcp_router",
+        "mcp_tools",
+        "mcp_config",
+        "mcp_drift",
         "worker_entry",
         "worker_tests",
         "auth_tests",
@@ -201,6 +205,7 @@ fn walk_files(directory: &Path, extension: &str, paths: &mut Vec<PathBuf>) -> Re
 }
 
 pub(super) struct RustCrate {
+    pub manifest: PathBuf,
     pub name: String,
     pub library: PathBuf,
     pub sources: Vec<PathBuf>,
@@ -292,6 +297,7 @@ pub(super) fn rust_crates(root: &Path, manifest: &Manifest) -> Result<Vec<RustCr
         tests.sort();
         tests.dedup();
         crates.push(RustCrate {
+            manifest: path,
             name,
             library,
             sources,

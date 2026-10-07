@@ -1,4 +1,5 @@
 mod doctor_layout;
+mod doctor_mcp;
 mod identity;
 
 pub use doctor_layout::DoctorPaths;
@@ -1345,7 +1346,7 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
             )?;
         }
         if manifest.capabilities.mcp {
-            validate_remote_mcp(root, &manifest.app.name, &mut successes, &mut failures)?;
+            validate_remote_mcp(root, &manifest, &mut successes, &mut failures)?;
         }
         let cargo = doctor_layout::backend_manifest(root, &manifest)?;
         if cargo.is_file() {
@@ -2377,62 +2378,12 @@ fn validate_auth_provider(
 
 fn validate_remote_mcp(
     root: &Path,
-    name: &str,
+    manifest: &Manifest,
     successes: &mut Vec<String>,
     failures: &mut Vec<String>,
 ) -> Result<()> {
     let before = failures.len();
-    let crate_path = format!("backend/crates/{name}-mcp");
-    for (relative, label, symbols) in [
-        (
-            format!("{crate_path}/Cargo.toml"),
-            "auth layer",
-            vec!["baukit-mcp.workspace = true"],
-        ),
-        (
-            format!("backend/crates/{name}-bin/src/bin/api.rs"),
-            "router mount and auth layer",
-            vec![
-                "baukit_mcp::router(",
-                "api.merge(mcp)",
-                "_mcp::",
-                "config.product.mcp",
-            ],
-        ),
-        (
-            format!("{crate_path}/src/lib.rs"),
-            "tool registration and scope enforcement",
-            vec![
-                "impl ToolService for",
-                "fn tools(",
-                "Self::definitions()",
-                "required_scopes:",
-            ],
-        ),
-        (
-            "backend/tests/tool_drift.rs".to_owned(),
-            "tool schema drift check",
-            vec!["tool_schema(", "include_str!", "assert_eq!"],
-        ),
-        (
-            format!("backend/crates/{name}-bin/src/lib.rs"),
-            "resource configuration",
-            vec!["pub mcp: baukit_mcp::McpConfig", "self.mcp.validate()"],
-        ),
-    ] {
-        if !root.join(&relative).is_file() {
-            failures.push(format!("missing remote MCP {label} file `{relative}`"));
-            continue;
-        }
-        let source = identity::identity_code(&fs::read_to_string(root.join(&relative))?, true);
-        for symbol in symbols {
-            if !source.contains(symbol) {
-                failures.push(format!(
-                    "missing remote MCP {label} in `{relative}` (expected {symbol})"
-                ));
-            }
-        }
-    }
+    doctor_mcp::validate_wiring(root, manifest, failures)?;
     for relative in ["backend/mcp-tools.json", "docs/remote-mcp.md"] {
         if !root.join(relative).is_file() {
             failures.push(format!("missing remote MCP artifact `{relative}`"));

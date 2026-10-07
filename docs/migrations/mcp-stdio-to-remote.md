@@ -26,7 +26,7 @@ repositories. The reference `list_items` tool is an example to replace.
 
 Set `mcp = true` under `[capabilities]` in `baukit.toml`. Remove the previous
 inline table or `[capabilities.mcp]` table, including `authentication` and
-`transport`. Keep `auth = "oidc"` and `backend = true`. Remove
+`transport`. Set `auth = "oidc"`, `"clerk"`, or `"workos"` and keep `backend = true`. Remove
 `mcp/src/api/schema.d.ts` from `openapi.consumers`; retain declarations used
 by web and mobile. Doctor reports old capability tables and remaining
 TypeScript servers with this guide's path before typed manifest parsing.
@@ -70,8 +70,10 @@ cargo test --manifest-path backend/Cargo.toml -p NAME-mcp --test tool_drift
 ```
 
 The reusable server rejects missing scopes with HTTP 403 before dispatch
-and filters `tools/list` by the principal's grants. Each required scope
-must also be advertised in `mcp.scopes_supported` and issued by Keycloak.
+and filters `tools/list` by the principal's grants. The server derives
+`scopes_supported` in protected resource metadata from registered tool,
+resource and prompt grants. It is not an `McpConfig` field. Configure the
+selected provider to issue those grants.
 Empty required-scopes lists are rejected at registration. Use explicit
 grants for reads and writes.
 
@@ -138,10 +140,10 @@ No resources or prompts are needed.
 let services = baukit_mcp::McpServices::new(tools)
     .with_resources(resources)
     .with_prompts(prompts);
-let mcp = baukit_mcp::router(config, services, store, policy).await?;
+let mcp = baukit_mcp::router(config, verifier, services, store, policy).await?;
 ```
 
-The generated MCP crate's `services` function supplies the router's second
+The generated MCP crate's `services` function supplies the router's third
 argument. Add optional services there. Attach only services the product uses.
 Resource templates support simple
 `{name}` path segments, which cover the Eigenruhe and Hebkit URIs above.

@@ -1,2 +1,10 @@
 [auth]
 provider = "{{ context.auth_provider }}"
+
+# Use a private key URL here when the public issuer is unreachable internally.
+# jwks_uri = "https://keys.internal.example/jwks"
+{% if context.mcp %}
+[mcp]
+# Keep issuer public. This override fetches keys without changing token checks.
+# jwks_uri = "https://keys.internal.example/mcp-jwks"
+{% endif %}

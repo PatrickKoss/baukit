@@ -4,6 +4,8 @@ All notable changes to `baukit-ratelimit` are documented here.
 
 ## [Unreleased]
 
+- Expose AuthenticatedRouteGroupOptions::key so REST and external callers can share a quota without duplicating key formatting.
+
 - Trigger Sentinel promotion explicitly in the recovery test and keep its existing deadline under CPU load.
 
 ## [0.8.0] - 2026-10-07

@@ -17,6 +17,19 @@ public resource URL.
 Use HTTPS outside loopback development and a shared Redis rate-limit store
 outside local development. The generated template starts with MCP disabled.
 
+Set `mcp.jwks_uri` or the product-prefixed `MCP__JWKS_URI` when containers
+cannot reach the public issuer. This optional HTTP or HTTPS URL fetches keys
+without changing the expected token issuer or the authorization server in
+protected resource metadata. It works for OIDC, Clerk OAuth JWTs and WorkOS
+Connect JWTs. Discovery uses the public issuer when this override is absent.
+For bundled Keycloak, the generated Compose `backend` profile uses
+`http://keycloak:8080/realms/NAME/protocol/openid-connect/certs` internally.
+The issuer remains the browser-visible URL. Replace `NAME` with the product
+name. Configure hosted providers in `config/local.toml` or `.env` before
+starting `docker compose --profile backend up backend`, and run migrations
+first. The backend service expects registry dependencies; local path builds
+need the documented Docker build-context overrides.
+
 ## Add a tool
 
 Add a service trait and implementation in the product's ports and services,
@@ -82,14 +95,14 @@ and external reference resolution to every product request.
 ## Add resources and prompts
 
 The generated crate's `services` function returns tools-only `McpServices`.
-The router takes this registration directly as its second argument. Add optional
+The router takes this registration directly as its third argument. Add optional
 services in that function when a product needs resources or prompts:
 
 ```rust
 let services = baukit_mcp::McpServices::new(tools)
     .with_resources(resources)
     .with_prompts(prompts);
-let mcp = baukit_mcp::router(config, services, store, policy).await?;
+let mcp = baukit_mcp::router(config, verifier, services, store, policy).await?;
 ```
 
 `ResourceService::list` returns fixed `ScopedResource` definitions.

@@ -10,12 +10,14 @@ const DEFAULT_BODY_LIMIT: usize = 32 * 1024;
 
 /// Product configuration for one MCP resource at `/mcp`.
 #[derive(Clone, Debug, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct McpConfig {
     pub enabled: bool,
     pub resource_url: String,
     pub issuer: String,
     pub oauth_client_id: Option<String>,
+    /// Optional key-fetch URL, including an internal HTTP endpoint.
+    /// Token issuer checks and public discovery still use `issuer`.
     pub jwks_uri: Option<String>,
     pub introspection_client_id: Option<String>,
     pub introspection_client_secret: Option<baukit_config::Secret<String>>,
@@ -51,6 +53,20 @@ impl McpConfig {
             return Err(McpConfigError::Invalid("resource_url must have path /mcp"));
         }
         endpoint(&self.issuer)?;
+        if let Some(uri) = &self.jwks_uri {
+            let url = Url::parse(uri).map_err(|_| McpConfigError::Invalid("invalid JWKS URL"))?;
+            if !matches!(url.scheme(), "http" | "https")
+                || url.host_str().is_none()
+                || !url.username().is_empty()
+                || url.password().is_some()
+                || url.query().is_some()
+                || url.fragment().is_some()
+            {
+                return Err(McpConfigError::Invalid(
+                    "JWKS URL requires HTTP or HTTPS without credentials, query, or fragment",
+                ));
+            }
+        }
         if self.allowed_hosts.is_empty() {
             return Err(McpConfigError::Invalid("allowed_hosts must not be empty"));
         }
@@ -155,6 +171,44 @@ mod tests {
             allowed_hosts: vec!["mcp.example".into()],
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn internal_jwks_urls_are_separate_from_public_issuer_validation() {
+        let mut config = valid();
+        config.jwks_uri =
+            Some("http://keycloak:8080/realms/product/protocol/openid-connect/certs".into());
+        assert!(config.validate().is_ok());
+        assert_eq!(
+            config
+                .metadata(vec!["items:read".into()])
+                .authorization_servers,
+            ["https://identity.example/realms/product"]
+        );
+        for uri in [
+            "",
+            "file:///keys.json",
+            "ftp://keys.example/jwks",
+            "https://user:secret@keys.example/jwks",
+            "https://keys.example/jwks?secret=x",
+            "https://keys.example/jwks#fragment",
+        ] {
+            config.jwks_uri = Some(uri.into());
+            assert!(config.validate().is_err(), "{uri}");
+        }
+    }
+
+    #[test]
+    fn scopes_are_registry_metadata_and_not_a_configuration_field() {
+        let error = serde_json::from_value::<McpConfig>(
+            serde_json::json!({"scopes_supported": ["items:read"]}),
+        )
+        .expect_err("unknown configuration fields must fail");
+        assert!(error.to_string().contains("scopes_supported"));
+        assert_eq!(
+            valid().metadata(vec!["items:read".into()]).scopes_supported,
+            ["items:read"]
+        );
     }
 
     #[test]

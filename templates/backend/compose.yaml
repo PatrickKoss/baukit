@@ -53,7 +53,44 @@ services:
 
 {% endif %}
 
-volumes:
+{% if context.mcp %}  backend:
+    profiles: [backend]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: api
+      args:
+        BACKEND_CONTEXT: backend
+        LIMITS_FILE: limits.json
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      {{ context.app_env }}__DATABASE__URL: postgres://postgres:postgres@postgres:5432/{{ context.app_crate }}
+      {{ context.app_env }}__RATE_LIMIT__REDIS_URL: redis://redis:6379/
+      {{ context.app_env }}__HTTP__BIND_ADDRESS: 0.0.0.0
+      {{ context.app_env }}__OPS__BIND_ADDRESS: 0.0.0.0
+{% if context.auth_oidc %}      {{ context.app_env }}__AUTH__JWKS_URI: ${ {{- context.app_env -}} __AUTH__JWKS_URI:-http://keycloak:8080/realms/{{ context.app_name }}/protocol/openid-connect/certs}
+      {{ context.app_env }}__AUTH__IDENTITY_ADMIN_BASE_URL: ${ {{- context.app_env -}} __AUTH__IDENTITY_ADMIN_BASE_URL:-http://keycloak:8080}
+      {{ context.app_env }}__MCP__ISSUER: ${ {{- context.app_env -}} __MCP__ISSUER:-http://localhost:{{ context.keycloak_host_port }}/realms/{{ context.app_name }}}
+      {{ context.app_env }}__MCP__JWKS_URI: ${ {{- context.app_env -}} __MCP__JWKS_URI:-http://keycloak:8080/realms/{{ context.app_name }}/protocol/openid-connect/certs}
+{% endif %}      {{ context.app_env }}__MCP__ENABLED: ${ {{- context.app_env -}} __MCP__ENABLED:-false}
+      {{ context.app_env }}__MCP__RESOURCE_URL: ${ {{- context.app_env -}} __MCP__RESOURCE_URL:-http://localhost:{{ context.api_host_port }}/mcp}
+      {{ context.app_env }}__MCP__ALLOWED_HOSTS: '["localhost:{{ context.api_host_port }}"]'
+    ports:
+      - "{{ context.api_host_port }}:8080"
+      - "127.0.0.1:{{ context.ops_host_port }}:9090"
+    volumes:
+      - ./config:/app/config:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+{% if context.auth_oidc %}      keycloak:
+        condition: service_healthy
+{% endif %}
+{% endif %}volumes:
   postgres-data:
 {% if context.auth_oidc %}  keycloak-data:
 {% endif %}

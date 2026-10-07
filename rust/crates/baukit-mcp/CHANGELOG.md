@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Validate internal JWKS overrides separately from the public issuer. Reject unknown config fields and correct migration scope instructions.
+
 - Add product-defined structured and text-only tool errors. Use `ToolError::new` instead of struct literals for the default error.
 - Add optional scoped resource and prompt services, scope-filtered discovery, safe errors, and committed definition exports. The router takes `McpServices` with tools required and resources and prompts optional.
 

@@ -5,7 +5,8 @@ use std::{error::Error, time::Duration};
 use {{ context.app_crate }}_bin::AuthProvider;
 use {{ context.app_crate }}_bin::ProductConfig;
 use {{ context.app_crate }}_bin::auth_verifier;
-
+{% if context.mcp %}use {{ context.app_crate }}_bin::mcp_verifier;
+{% endif %}
 #[tokio::test]
 async fn external_issuer_configuration_selects_the_verifier_end_to_end()
 -> Result<(), Box<dyn Error>> {
@@ -71,16 +72,39 @@ async fn mcp_enforces_provider_token_binding_and_introspection_is_restricted()
         };
         let mut config = baukit_mcp::McpConfig {
             enabled: true,
-            issuer: server.issuer().into(),
+            issuer: "https://public-issuer.example/tenant/".into(),
             jwks_uri: Some(server.jwks_url().into()),
             oauth_client_id: Some("client_mcp".into()),
             resource_url: "https://mcp.example/mcp".into(),
             allowed_hosts: vec!["mcp.example".into()],
             ..Default::default()
         };
-        let verifier = {{ context.app_crate }}_bin::mcp_verifier(&auth, &config).await?;
+        let file = tempfile::Builder::new().suffix(".toml").tempfile()?;
+        let provider_name = match provider {
+            AuthProvider::Oidc => "oidc",
+            AuthProvider::Clerk => "clerk",
+            AuthProvider::Workos => "workos",
+        };
+        std::fs::write(
+            file.path(),
+            format!(
+                "[auth]\nprovider = {provider_name:?}\nissuer = \"https://rest.example\"\nclient_id = \"client_app\"\n[mcp]\nenabled = true\nissuer = {:?}\njwks_uri = {:?}\noauth_client_id = \"client_mcp\"\nresource_url = {:?}\nallowed_hosts = [\"mcp.example\"]\n",
+                config.issuer,
+                server.jwks_url(),
+                config.resource_url,
+            ),
+        )?;
+        let loaded: BaukitConfig<ProductConfig> =
+            ConfigLoader::new("internal-jwks-test", Environment::Local)?
+                .local_file(file.path())
+                .without_dotenv()
+                .load()?;
+        assert_eq!(loaded.product.mcp.issuer, config.issuer);
+        assert_ne!(server.issuer(), loaded.product.mcp.issuer);
+        let verifier = mcp_verifier(&loaded.product.auth, &loaded.product.mcp).await?;
         let claims = server
             .claims("user_123", &config.resource_url, Duration::from_secs(300))?
+            .issuer(&config.issuer)
             .claim("client_id", "client_mcp");
         assert_eq!(
             verifier.verify(&server.mint(&claims)?).await?.subject(),

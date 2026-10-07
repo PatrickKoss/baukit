@@ -28,6 +28,9 @@ beforeEach(async () => {
   jest.mocked(usePathname).mockReturnValue("/workspace/items");
   navigate.mockClear();
 });
+afterEach(() => {
+  jest.restoreAllMocks();
+});
 it("rotates the current compact section and keeps the profile last", async () => {
   await render(
     <NavigationBar
@@ -55,6 +58,12 @@ it("rotates the current compact section and keeps the profile last", async () =>
 });
 it("lets the section picker choose a page after closing on Android", async () => {
   jest.replaceProperty(Platform, "OS", "android");
+  const frames: FrameRequestCallback[] = [];
+  jest.spyOn(globalThis, "requestAnimationFrame").mockImplementation((callback) => {
+    frames.push(callback);
+    return frames.length;
+  });
+  jest.spyOn(globalThis, "cancelAnimationFrame").mockImplementation(() => undefined);
   await render(<WorkspacePicker />);
   await fireEvent.press(
     screen.getByRole("button", { name: "Workspace, Items" }),
@@ -65,15 +74,14 @@ it("lets the section picker choose a page after closing on Android", async () =>
   });
   expect(navigate).not.toHaveBeenCalled();
   expect(screen.queryByRole("menu")).toBeNull();
-  await act(async () => {
-    await new Promise<void>((resolve) =>
-      requestAnimationFrame(() => {
-        resolve();
-      }),
-    );
+  expect(frames).toHaveLength(1);
+  await act(() => {
+    frames.forEach((frame) => {
+      frame(0);
+    });
   });
   expect(navigate).toHaveBeenCalledWith("/workspace/privacy");
-  jest.restoreAllMocks();
+  expect(navigate).toHaveBeenCalledTimes(1);
 });
 it("renders German navigation and menu controls from the catalog", async () => {
   await initializeI18n("de");

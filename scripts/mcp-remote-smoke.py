@@ -40,6 +40,8 @@ def run_backend(fixture: Path, repository: Path) -> None:
     environment = os.environ.copy()
     environment[f"{prefix}__DATABASE__URL"] = f"postgres://postgres:postgres@postgres:5432/{name.replace('-', '_')}"
     environment[f"{prefix}__RATE_LIMIT__REDIS_URL"] = "redis://redis:6379/"
+    internal_jwks = f"http://smoke:8081/realms/{name}/protocol/openid-connect/certs"
+    environment[f"{prefix}__AUTH__JWKS_URI"] = internal_jwks
     backend = None
     with tempfile.TemporaryFile(mode="w+") as output:
         try:
@@ -47,6 +49,7 @@ def run_backend(fixture: Path, repository: Path) -> None:
             resource = "http://localhost:8080/mcp"
             environment.update({
                 f"{prefix}__MCP__ENABLED": "true",
+                f"{prefix}__MCP__JWKS_URI": internal_jwks,
                 f"{prefix}__MCP__RESOURCE_URL": resource,
                 f"{prefix}__MCP__ISSUER": f"http://localhost:8081/realms/{name}",
                 f"{prefix}__MCP__ALLOWED_HOSTS": '["localhost:8080"]',

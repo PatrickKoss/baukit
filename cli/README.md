@@ -166,3 +166,9 @@ Doctor looks for these symbols:
 Doctor requires the local Redis URL when backend source uses a Redis-backed
 adapter. OIDC alone does not require Redis. PostgreSQL-backed rate limiting can
 omit that URL.
+
+Doctor scans MCP wiring in the backend's declared Cargo packages, including
+split router, configuration and tool-definition modules. Override individual
+checks under `[doctor.sources]` with `mcp_router`, `mcp_config`, `mcp_tools`, or
+`mcp_drift`. Each value is a path relative to the product root. Doctor checks
+symbols in those files and continues to report missing wiring.

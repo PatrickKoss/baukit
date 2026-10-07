@@ -16,6 +16,19 @@ Update the Keycloak MCP audience mapper to the same public resource URL.
 Use HTTPS outside loopback development and a shared Redis rate-limit store
 outside local development. The generated template starts with MCP disabled.
 
+Set `mcp.jwks_uri` or the product-prefixed `MCP__JWKS_URI` when containers
+cannot reach the public issuer. This optional HTTP or HTTPS URL fetches keys
+without changing the expected token issuer or the authorization server in
+protected resource metadata. It works for OIDC, Clerk OAuth JWTs and WorkOS
+Connect JWTs. Discovery uses the public issuer when this override is absent.
+For bundled Keycloak, the generated Compose `backend` profile uses
+`http://keycloak:8080/realms/NAME/protocol/openid-connect/certs` internally.
+The issuer remains the browser-visible URL. Replace `NAME` with the product
+name. Configure hosted providers in `config/local.toml` or `.env` before
+starting `docker compose --profile backend up backend`, and run migrations
+first. The backend service expects registry dependencies; local path builds
+need the documented Docker build-context overrides.
+
 ## Add a tool
 
 Add a service trait and implementation in the product's ports and services,
@@ -84,7 +97,7 @@ Use the policy port below when a product needs live checks.
 
 ## Authentication policy
 
-The product MCP crate's `authentication_policy` function supplies the fourth
+The product MCP crate's `authentication_policy` function supplies the fifth
 argument to `baukit_mcp::router`. Replace that function to select a different
 policy. `AuthenticationPolicy::authenticate` receives the verified
 `baukit_auth::Principal` and bearer token on every authenticated request.
@@ -161,7 +174,7 @@ required scopes in `WWW-Authenticate`; quota denials return 429 with
 with no Axum or rmcp types.
 
 The generated `services` function returns tools-only `McpServices` for the
-router's second argument. Add optional resource and prompt services there.
+router's third argument. Add optional resource and prompt services there.
 `ItemTools::schema` and `tool_drift` also record empty resource and prompt
 registries. When adding either service,
 include its definitions in that export and review `mcp-tools.json`.
