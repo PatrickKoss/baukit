@@ -94,7 +94,7 @@ draft and SLS's 256 KiB result bound need explicit review.
 | TypeScript pattern | Rust API |
 | --- | --- |
 | `return {isError: true, content, structuredContent}` | Return `Err(ToolError::new(code, text).with_structured_content(payload))`. The message supplies text and the payload supplies `structuredContent`. |
-| `return {isError: true, content}` | Return `Err(ToolError::new(code, text).text_only())` for a tool without an output schema. |
+| `return {isError: true, content}` | Return `Err(ToolError::new(code, text).text_only())`. Keep the existing output schema. |
 | `registerResource(name, uri, metadata, callback)` | Add `ScopedResource { resource: Resource::new(uri, name), required_scopes }` to `ResourceService::list`. Copy title, description and MIME type with the resource builders. Implement `read(principal, uri)`. |
 | `registerResource(name, new ResourceTemplate(uriTemplate, {list: undefined}), metadata, callback)` | Add `ScopedResourceTemplate` to `ResourceService::templates`. Leave the concrete list empty when the old callback did not list resources. Implement `read` using the matched URI. |
 | `registerPrompt(name, {description, argsSchema}, callback)` | Add `ScopedPrompt` to `PromptService::list`, with `PromptArgument` metadata. Implement `get(principal, name, arguments)` and return `PromptResult` messages. Use `None` for an argument-free prompt. |
@@ -129,20 +129,21 @@ and to ask before setting a plan.
 Schlauzug currently returns text-only tool errors. Serialize its safe
 `code`, `message`, optional `requestId` and `retryAfterSeconds` object into
 `ToolError::new(code, serialized_error).text_only()`. This retains the
-`isError` flag and text block without adding an envelope. If the tool also
-advertises an output schema, MCP 2026-07-28 requires a structured error that
-matches it. Preserve the text, define a success/error schema and use
-`with_structured_content` for that schema, or omit the output schema to keep
-the existing text-only contract. No resources or prompts are needed.
+`isError` flag and text block without adding an envelope. Keep its existing
+output schemas. The [MCP error examples](https://modelcontextprotocol.io/specification/2026-07-28/server/tools#error-handling)
+use text-only errors, and the [TypeScript SDK skips their output-schema validation](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/servers/errors.md).
+No resources or prompts are needed.
 
 ```rust
 let services = baukit_mcp::McpServices::new(tools)
     .with_resources(resources)
     .with_prompts(prompts);
-let mcp = baukit_mcp::router(config, std::sync::Arc::new(services), store, policy).await?;
+let mcp = baukit_mcp::router(config, services, store, policy).await?;
 ```
 
-Attach only services the product uses. Resource templates support simple
+The generated MCP crate's `services` function supplies the router's second
+argument. Add optional services there. Attach only services the product uses.
+Resource templates support simple
 `{name}` path segments, which cover the Eigenruhe and Hebkit URIs above.
 All lists filter by the policy's effective scopes; reads and gets require
 all declared grants. These checks do not replace record ownership checks.

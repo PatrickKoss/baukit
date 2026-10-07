@@ -17,8 +17,8 @@ use rmcp::transport::streamable_http_server::{
 use serde_json::{Value, json};
 
 use crate::{
-    AuthenticationPolicy, McpConfig, McpConfigError, PolicyDenial, ToolService,
-    server::{ProductServer, RegisteredTools, permitted, valid_scope},
+    AuthenticationPolicy, McpConfig, McpConfigError, McpServices, PolicyDenial,
+    server::{ProductServer, RegisteredServices, permitted_scopes, valid_scope},
 };
 
 const MAX_BEARER_TOKEN_BYTES: usize = 16 * 1024;
@@ -27,7 +27,7 @@ const MAX_BEARER_TOKEN_BYTES: usize = 16 * 1024;
 struct Security {
     config: McpConfig,
     verifier: OidcVerifier,
-    tools: Arc<RegisteredTools>,
+    services: Arc<RegisteredServices>,
     store: Arc<dyn RateLimitStore>,
     quota: Quota,
     metadata_url: String,
@@ -38,7 +38,7 @@ struct Security {
 /// The store may be shared Redis or a process-local store for a single replica.
 pub async fn router(
     config: McpConfig,
-    tools: Arc<dyn ToolService>,
+    services: McpServices,
     store: Arc<dyn RateLimitStore>,
     policy: Arc<dyn AuthenticationPolicy>,
 ) -> Result<Router, McpConfigError> {
@@ -46,18 +46,18 @@ pub async fn router(
         return Ok(Router::new());
     }
     config.validate()?;
-    let tools = Arc::new(RegisteredTools::new(tools)?);
+    let services = Arc::new(RegisteredServices::new(services)?);
     let verifier = OidcVerifier::discover(config.oidc()?).await?;
-    let metadata = config.metadata(tools.scopes());
+    let metadata = config.metadata(services.scopes());
     let mut transport = StreamableHttpServerConfig::default();
     transport.legacy_session_mode = false;
     transport.json_response = true;
     transport.stateless_protocol_metadata_required = false;
     transport.max_request_body_bytes = config.max_request_body_bytes;
     transport.allowed_hosts = config.allowed_hosts.clone();
-    let server_tools = tools.clone();
+    let server_services = services.clone();
     let service = StreamableHttpService::new(
-        move || Ok(ProductServer(server_tools.clone())),
+        move || Ok(ProductServer(server_services.clone())),
         Arc::new(NeverSessionManager::default()),
         transport,
     );
@@ -66,7 +66,7 @@ pub async fn router(
         metadata_url: config.metadata_url()?,
         config,
         verifier,
-        tools,
+        services,
         store,
         policy,
     };
@@ -155,7 +155,7 @@ async fn authorize_inner(state: &Security, mut request: Request, next: Next) -> 
             state,
             StatusCode::UNAUTHORIZED,
             "invalid_token",
-            &state.tools.scopes(),
+            &state.services.scopes(),
         );
     };
     let principal = match state.verifier.verify(token).await {
@@ -165,7 +165,7 @@ async fn authorize_inner(state: &Security, mut request: Request, next: Next) -> 
                 state,
                 StatusCode::UNAUTHORIZED,
                 "invalid_token",
-                &state.tools.scopes(),
+                &state.services.scopes(),
             );
         }
     };
@@ -215,17 +215,10 @@ async fn authorize_inner(state: &Security, mut request: Request, next: Next) -> 
             if message.is_array() {
                 return error(StatusCode::BAD_REQUEST, "batch_not_supported");
             }
-            if message.get("method").and_then(Value::as_str) == Some("tools/call")
-                && let Some(name) = message.pointer("/params/name").and_then(Value::as_str)
-                && let Some(tool) = state.tools.tool(name)
-                && !permitted(&principal, tool)
+            if let Some(scopes) = state.services.required_scopes(&message)
+                && !permitted_scopes(&principal, &scopes)
             {
-                return challenge(
-                    state,
-                    StatusCode::FORBIDDEN,
-                    "insufficient_scope",
-                    &tool.required_scopes,
-                );
+                return challenge(state, StatusCode::FORBIDDEN, "insufficient_scope", &scopes);
             }
         }
         request = Request::from_parts(parts, Body::from(bytes));
@@ -244,7 +237,7 @@ fn policy_denial(state: &Security, denial: PolicyDenial) -> Response {
             state,
             StatusCode::UNAUTHORIZED,
             "invalid_token",
-            &state.tools.scopes(),
+            &state.services.scopes(),
         ),
         PolicyDenial::InsufficientScope(scopes) => {
             if scopes.is_empty() || scopes.iter().any(|scope| !valid_scope(scope)) {

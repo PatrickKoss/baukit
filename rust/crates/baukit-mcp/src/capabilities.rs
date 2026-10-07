@@ -3,7 +3,7 @@ use std::{collections::BTreeSet, future::Future, pin::Pin, sync::Arc};
 use rmcp::ErrorData;
 use serde_json::{Value, json};
 
-use crate::{McpConfigError, Principal, ScopedTool, ToolFuture, ToolService};
+use crate::{McpConfigError, Principal, ScopedTool, ToolService};
 
 pub use rmcp::model::{
     GetPromptResult as PromptResult, Prompt, PromptArgument, PromptMessage, Resource,
@@ -77,11 +77,11 @@ impl From<CapabilityError> for ErrorData {
     }
 }
 
-/// Adds optional product services to the existing router's tool-service argument.
+/// Registers tools and optional resource and prompt services for the router.
 pub struct McpServices {
-    tools: Arc<dyn ToolService>,
-    resources: Option<Arc<dyn ResourceService>>,
-    prompts: Option<Arc<dyn PromptService>>,
+    pub(crate) tools: Arc<dyn ToolService>,
+    pub(crate) resources: Option<Arc<dyn ResourceService>>,
+    pub(crate) prompts: Option<Arc<dyn PromptService>>,
 }
 
 impl McpServices {
@@ -101,28 +101,6 @@ impl McpServices {
     pub fn with_prompts(mut self, prompts: Arc<dyn PromptService>) -> Self {
         self.prompts = Some(prompts);
         self
-    }
-}
-
-impl ToolService for McpServices {
-    fn tools(&self) -> Vec<ScopedTool> {
-        self.tools.tools()
-    }
-    fn call<'a>(
-        &'a self,
-        principal: &'a Principal,
-        name: &'a str,
-        arguments: Value,
-    ) -> ToolFuture<'a> {
-        self.tools.call(principal, name, arguments)
-    }
-    fn resource_service(&self) -> Option<Arc<dyn ResourceService>> {
-        self.resources
-            .clone()
-            .or_else(|| self.tools.resource_service())
-    }
-    fn prompt_service(&self) -> Option<Arc<dyn PromptService>> {
-        self.prompts.clone().or_else(|| self.tools.prompt_service())
     }
 }
 
@@ -270,11 +248,11 @@ pub fn capability_schema(
 }
 
 /// Exports the definitions registered by a product's composed services.
-pub fn service_schema(service: &dyn ToolService) -> Result<Value, McpConfigError> {
-    let resources = service.resource_service();
-    let prompts = service.prompt_service();
+pub fn service_schema(services: &McpServices) -> Result<Value, McpConfigError> {
+    let resources = &services.resources;
+    let prompts = &services.prompts;
     capability_schema(
-        &service.tools(),
+        &services.tools.tools(),
         &resources.as_ref().map_or_else(Vec::new, |s| s.list()),
         &resources.as_ref().map_or_else(Vec::new, |s| s.templates()),
         &prompts.as_ref().map_or_else(Vec::new, |s| s.list()),

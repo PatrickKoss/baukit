@@ -3,7 +3,8 @@
 use std::sync::Arc;
 
 use baukit_mcp::{
-    AuthenticationPolicy, JwtOnlyPolicy, Principal, ScopedTool, ToolError, ToolFuture, ToolService,
+    AuthenticationPolicy, JwtOnlyPolicy, McpServices, Principal, ScopedTool, ToolError, ToolFuture,
+    ToolService,
 };
 use {{ context.app_crate }}_domain::Item;
 use {{ context.app_crate }}_ports::PortFuture;
@@ -12,6 +13,10 @@ use serde_json::{Value, json};
 
 pub fn authentication_policy() -> Arc<dyn AuthenticationPolicy> {
     Arc::new(JwtOnlyPolicy)
+}
+
+pub fn services(items: Arc<dyn ItemReadService>) -> McpServices {
+    McpServices::new(Arc::new(ItemTools::new(items)))
 }
 
 pub const READ_SCOPE: &str = "items:read";

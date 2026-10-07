@@ -176,10 +176,7 @@ async fn real_keycloak_audience_expiry_protocol_introspection_and_logout()
     let policy = Arc::new(KeycloakIntrospectionPolicy::new(policy_config)?);
     let app = baukit_mcp::router(
         config,
-        Arc::new(
-            McpServices::new(Arc::new(Subject))
-                .with_resources(Arc::new(resources::Catalog::default())),
-        ),
+        McpServices::new(Arc::new(Subject)).with_resources(Arc::new(resources::Catalog::default())),
         Arc::new(InMemoryRateLimitStore::default()),
         policy,
     )

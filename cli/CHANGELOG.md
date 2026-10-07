@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Register generated MCP services through `McpServices`.
+
 - Cut CLI release notes during release preparation.
 - Check tool, resource and prompt definitions in generated MCP drift tests. Let the tools-only example return schema-conforming errors.
 

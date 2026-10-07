@@ -69,7 +69,7 @@ fn config(issuer: &MockOidcServer) -> McpConfig {
 async fn app(config: McpConfig) -> Result<Router, Box<dyn Error>> {
     Ok(router(
         config,
-        Arc::new(IdentityTool),
+        McpServices::new(Arc::new(IdentityTool)),
         Arc::new(InMemoryRateLimitStore::default()),
         Arc::new(JwtOnlyPolicy),
     )
@@ -291,7 +291,7 @@ async fn disabled_resources_are_absent_and_store_failure_fails_closed() -> Resul
 {
     let disabled = router(
         McpConfig::default(),
-        Arc::new(IdentityTool),
+        McpServices::new(Arc::new(IdentityTool)),
         Arc::new(UnavailableStore),
         Arc::new(JwtOnlyPolicy),
     )
@@ -309,7 +309,7 @@ async fn disabled_resources_are_absent_and_store_failure_fails_closed() -> Resul
         issuer.mint(&issuer.claims("alice", &config.resource_url, Duration::from_secs(300))?)?;
     let app = router(
         config,
-        Arc::new(IdentityTool),
+        McpServices::new(Arc::new(IdentityTool)),
         Arc::new(UnavailableStore),
         Arc::new(JwtOnlyPolicy),
     )
@@ -406,7 +406,7 @@ async fn policy_denials_have_safe_http_shapes_before_dispatch() -> Result<(), Bo
         });
         let app = router(
             config.clone(),
-            Arc::new(IdentityTool),
+            McpServices::new(Arc::new(IdentityTool)),
             Arc::new(InMemoryRateLimitStore::default()),
             policy.clone(),
         )
@@ -501,7 +501,7 @@ async fn effective_scopes_filter_discovery_and_dispatch_and_map_account()
         });
         let app = router(
             config.clone(),
-            Arc::new(IdentityTool),
+            McpServices::new(Arc::new(IdentityTool)),
             Arc::new(InMemoryRateLimitStore::default()),
             policy.clone(),
         )
@@ -561,6 +561,160 @@ fn request(method: &str, params: Value) -> Value {
     json!({"jsonrpc":"2.0","id":42,"method":method,"params":params})
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn scope_denials_record_the_http_status_before_dispatch() -> Result<(), Box<dyn Error>> {
+    use metrics_util::debugging::{DebugValue, DebuggingRecorder};
+
+    let issuer = MockOidcServer::start().await?;
+    let config = config(&issuer);
+    let token = issuer.mint(
+        &issuer
+            .claims("alice", &config.resource_url, Duration::from_secs(300))?
+            .claim("scope", "unrelated:read"),
+    )?;
+    let catalog = Arc::new(support::Catalog::default());
+    let prompts = Arc::new(support::Recommendations::default());
+    let services = McpServices::new(Arc::new(IdentityTool))
+        .with_resources(catalog.clone())
+        .with_prompts(prompts.clone());
+    let app = router(
+        config,
+        services,
+        Arc::new(InMemoryRateLimitStore::default()),
+        Arc::new(JwtOnlyPolicy),
+    )
+    .await?;
+    for (method, params, scope) in [
+        (
+            "tools/call",
+            json!({"name":"identity","arguments":{}}),
+            "identity:read account:read",
+        ),
+        (
+            "resources/read",
+            json!({"uri":"product://items/42"}),
+            "items:read",
+        ),
+        (
+            "prompts/get",
+            json!({"name":"next-steps","arguments":{"language":"de"}}),
+            "learning:read",
+        ),
+    ] {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let _guard = metrics::set_default_local_recorder(&recorder);
+        let (status, headers, body) = send(&app, Some(&token), request(method, params)).await?;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{method}");
+        assert_eq!(body, json!({"error":"insufficient_scope"}));
+        assert_eq!(headers[header::CACHE_CONTROL], "no-store");
+        assert_eq!(
+            headers[header::WWW_AUTHENTICATE],
+            format!(
+                "Bearer resource_metadata=\"https://mcp.example/.well-known/oauth-protected-resource\", error=\"insufficient_scope\", scope=\"{scope}\""
+            )
+        );
+        let measurements = snapshotter.snapshot().into_vec();
+        let requests = measurements
+            .iter()
+            .filter(|(key, _, _, _)| key.key().name() == "mcp_requests_total")
+            .collect::<Vec<_>>();
+        assert_eq!(requests.len(), 1, "{method}");
+        let (key, _, _, value) = requests[0];
+        assert_eq!(
+            key.key()
+                .labels()
+                .map(|label| (label.key(), label.value()))
+                .collect::<Vec<_>>(),
+            [("status", "403")],
+            "{method}"
+        );
+        assert_eq!(*value, DebugValue::Counter(1), "{method}");
+    }
+    assert!(catalog.0.lock().expect("reads").is_empty());
+    assert!(prompts.0.lock().expect("prompts").is_empty());
+    Ok(())
+}
+
+struct TextErrorTool;
+
+impl ToolService for TextErrorTool {
+    fn tools(&self) -> Vec<ScopedTool> {
+        vec![ScopedTool {
+            name: "draft".into(),
+            description: "Read a draft".into(),
+            input_schema: json!({"type":"object"}),
+            output_schema: Some(
+                json!({"type":"object","properties":{"draft":{"type":"string"}},"required":["draft"],"additionalProperties":false}),
+            ),
+            required_scopes: vec!["draft:read".into()],
+            read_only: true,
+        }]
+    }
+
+    fn call<'a>(
+        &'a self,
+        _principal: &'a Principal,
+        _name: &'a str,
+        _arguments: Value,
+    ) -> ToolFuture<'a> {
+        Box::pin(async {
+            Err(ToolError::new("unavailable", json!({"code":"unavailable","message":"Draft unavailable","requestId":"request-42","retryAfterSeconds":5}).to_string()).text_only())
+        })
+    }
+}
+
+#[tokio::test]
+async fn text_only_errors_preserve_a_success_output_schema() -> Result<(), Box<dyn Error>> {
+    let issuer = MockOidcServer::start().await?;
+    let config = config(&issuer);
+    let token = issuer.mint(
+        &issuer
+            .claims("alice", &config.resource_url, Duration::from_secs(300))?
+            .claim("scope", "draft:read"),
+    )?;
+    let app = router(
+        config,
+        McpServices::new(Arc::new(TextErrorTool)),
+        Arc::new(InMemoryRateLimitStore::default()),
+        Arc::new(JwtOnlyPolicy),
+    )
+    .await?;
+    let (status, _, listed) = send(&app, Some(&token), list()).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        listed["result"]["tools"][0]["outputSchema"],
+        TextErrorTool.tools()[0]
+            .output_schema
+            .clone()
+            .expect("schema")
+    );
+    let (status, _, body) = send(
+        &app,
+        Some(&token),
+        request("tools/call", json!({"name":"draft","arguments":{}})),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["result"]["isError"], true);
+    assert!(body["result"].get("structuredContent").is_none());
+    assert_eq!(
+        body["result"]["content"].as_array().ok_or("content")?.len(),
+        1
+    );
+    assert_eq!(body["result"]["content"][0]["type"], "text");
+    let error: Value = serde_json::from_str(
+        body["result"]["content"][0]["text"]
+            .as_str()
+            .ok_or("text")?,
+    )?;
+    assert_eq!(
+        error,
+        json!({"code":"unavailable","message":"Draft unavailable","requestId":"request-42","retryAfterSeconds":5})
+    );
+    Ok(())
+}
+
 #[tokio::test]
 async fn optional_capabilities_use_the_real_router_and_scope_grants() -> Result<(), Box<dyn Error>>
 {
@@ -580,7 +734,7 @@ async fn optional_capabilities_use_the_real_router_and_scope_grants() -> Result<
         .with_prompts(recommendations.clone());
     let app = router(
         config,
-        Arc::new(services),
+        services,
         Arc::new(InMemoryRateLimitStore::default()),
         Arc::new(JwtOnlyPolicy),
     )
@@ -804,7 +958,7 @@ async fn overlapping_resource_grants_and_effective_policy_scopes_cannot_be_bypas
         .with_prompts(Arc::new(support::Recommendations::default()));
     let app = router(
         config,
-        Arc::new(services),
+        services,
         Arc::new(InMemoryRateLimitStore::default()),
         policy,
     )

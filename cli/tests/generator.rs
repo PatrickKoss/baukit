@@ -4248,9 +4248,12 @@ fn remote_mcp_generation_matches_the_golden_tree() -> anyhow::Result<()> {
     assert!(!root.join("mcp").exists());
     let api = fs::read_to_string(root.join("backend/crates/snapshot-app-bin/src/bin/api.rs"))?;
     assert!(api.contains("snapshot_app_mcp::authentication_policy()"));
+    assert!(api.contains("let mcp_services = snapshot_app_mcp::services(item_reads);"));
     let tools = fs::read_to_string(root.join("backend/crates/snapshot-app-mcp/src/lib.rs"))?;
     assert!(tools.contains("pub fn authentication_policy() -> Arc<dyn AuthenticationPolicy>"));
     assert!(tools.contains("Arc::new(JwtOnlyPolicy)"));
+    assert!(tools.contains("pub fn services(items: Arc<dyn ItemReadService>) -> McpServices"));
+    assert!(tools.contains("McpServices::new(Arc::new(ItemTools::new(items)))"));
     assert_eq!(manifest.openapi.consumers(), ["generated/openapi.d.ts"]);
     doctor(&root)?;
     Ok(())

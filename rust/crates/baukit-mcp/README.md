@@ -11,6 +11,12 @@ returns HTTP 403 with an OAuth challenge, and passes the effective `Principal`
 to the service. `tools/list` lists only permitted tools. The stateless
 transport verifies each request and does not retain an authenticated session.
 
+Pass `McpServices::new(tools)` as the second argument to `router`. Register
+optional `ResourceService` and `PromptService` adapters with `with_resources`
+and `with_prompts`. Their lists filter by scope, and reads and gets use the
+same HTTP scope challenges as tools. `service_schema(&services)` exports all
+registered definitions for drift checks.
+
 Pass a baukit-ratelimit store and an `AuthenticationPolicy` to `router`.
 `JwtOnlyPolicy` preserves verified JWT identity and grants.
 `KeycloakIntrospectionPolicy` checks live token state with a timeout and a

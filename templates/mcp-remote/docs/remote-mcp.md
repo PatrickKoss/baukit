@@ -160,10 +160,13 @@ required scopes in `WWW-Authenticate`; quota denials return 429 with
 `Retry-After`. Policy implementations use domain types and service ports,
 with no Axum or rmcp types.
 
-The generated server registers only tools. `ItemTools::schema` and `tool_drift`
-also record empty resource and prompt registries. When adding either service,
+The generated `services` function returns tools-only `McpServices` for the
+router's second argument. Add optional resource and prompt services there.
+`ItemTools::schema` and `tool_drift` also record empty resource and prompt
+registries. When adding either service,
 include its definitions in that export and review `mcp-tools.json`.
 Use `ToolError::new` for default errors or `with_structured_content` for a
-product error envelope. Both success and error payloads must match the tool's
-output schema. See [Baukit remote MCP](https://github.com/PatrickKoss/baukit/blob/main/docs/remote-mcp.md)
+product error envelope. Test structured errors against the product's output
+schema. Use `text_only()` to preserve text-only `isError` results with the
+existing output schema. See [Baukit remote MCP](https://github.com/PatrickKoss/baukit/blob/main/docs/remote-mcp.md)
 for optional service ports and examples.

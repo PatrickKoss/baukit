@@ -15,7 +15,7 @@ use crate::capabilities::{
     ScopedPrompt, ScopedResource, ScopedResourceTemplate, template_matches, validate_prompts,
     validate_resources,
 };
-use crate::{McpConfigError, Principal, PromptService, ResourceService};
+use crate::{McpConfigError, McpServices, Principal, PromptService, ResourceService};
 
 const MAX_TOOL_NAME_BYTES: usize = 128;
 
@@ -36,12 +36,6 @@ pub type ToolFuture<'a> = Pin<Box<dyn Future<Output = Result<Value, ToolError>> 
 /// Product service port. Implementations receive only verified identity and JSON arguments.
 pub trait ToolService: Send + Sync + 'static {
     fn tools(&self) -> Vec<ScopedTool>;
-    fn resource_service(&self) -> Option<Arc<dyn ResourceService>> {
-        None
-    }
-    fn prompt_service(&self) -> Option<Arc<dyn PromptService>> {
-        None
-    }
     fn call<'a>(
         &'a self,
         principal: &'a Principal,
@@ -81,7 +75,7 @@ impl ToolError {
         self
     }
 
-    /// Preserves older text-only error contracts. Omit outputSchema for such tools.
+    /// Returns an isError result with text content and no structured content.
     pub fn text_only(mut self) -> Self {
         self.content = ErrorContent::TextOnly;
         self
@@ -102,7 +96,7 @@ impl ToolError {
     }
 }
 
-pub(crate) struct RegisteredTools {
+pub(crate) struct RegisteredServices {
     pub service: Arc<dyn ToolService>,
     pub definitions: Vec<ScopedTool>,
     pub protocol_tools: Vec<Tool>,
@@ -113,15 +107,18 @@ pub(crate) struct RegisteredTools {
     pub prompt_definitions: Vec<ScopedPrompt>,
 }
 
-impl RegisteredTools {
-    pub fn new(service: Arc<dyn ToolService>) -> Result<Self, McpConfigError> {
+impl RegisteredServices {
+    pub fn new(services: McpServices) -> Result<Self, McpConfigError> {
+        let McpServices {
+            tools: service,
+            resources,
+            prompts,
+        } = services;
         let definitions = service.tools();
         let protocol_tools = compile_tools(&definitions)?;
-        let resources = service.resource_service();
         let resource_definitions = resources.as_ref().map_or_else(Vec::new, |s| s.list());
         let templates = resources.as_ref().map_or_else(Vec::new, |s| s.templates());
         validate_resources(&resource_definitions, &templates)?;
-        let prompts = service.prompt_service();
         let prompt_definitions = prompts.as_ref().map_or_else(Vec::new, |s| s.list());
         validate_prompts(&prompt_definitions)?;
         Ok(Self {
@@ -158,6 +155,23 @@ impl RegisteredTools {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect()
+    }
+
+    pub fn required_scopes(&self, message: &Value) -> Option<Vec<String>> {
+        match message.get("method")?.as_str()? {
+            "tools/call" => self
+                .tool(message.pointer("/params/name")?.as_str()?)
+                .map(|tool| tool.required_scopes.clone()),
+            "resources/read" => self.resource_scopes(message.pointer("/params/uri")?.as_str()?),
+            "prompts/get" => {
+                let name = message.pointer("/params/name")?.as_str()?;
+                self.prompt_definitions
+                    .iter()
+                    .find(|definition| definition.prompt.name == name)
+                    .map(|definition| definition.required_scopes.clone())
+            }
+            _ => None,
+        }
     }
 
     fn resource_scopes(&self, uri: &str) -> Option<Vec<String>> {
@@ -248,7 +262,7 @@ pub fn tool_schema(definitions: &[ScopedTool]) -> Result<Value, McpConfigError> 
 }
 
 #[derive(Clone)]
-pub(crate) struct ProductServer(pub Arc<RegisteredTools>);
+pub(crate) struct ProductServer(pub Arc<RegisteredServices>);
 
 impl ServerHandler for ProductServer {
     async fn list_resources(
@@ -305,7 +319,7 @@ impl ServerHandler for ProductServer {
             .0
             .resource_scopes(&request.uri)
             .ok_or_else(|| ErrorData::invalid_params("Unknown resource", None))?;
-        require_scopes(&context, principal, &scopes)?;
+        require_scopes(principal, &scopes)?;
         let contents = service
             .read(principal, &request.uri)
             .await
@@ -351,7 +365,7 @@ impl ServerHandler for ProductServer {
             .iter()
             .find(|p| p.prompt.name == request.name)
             .ok_or_else(|| ErrorData::invalid_params("Unknown prompt", None))?;
-        require_scopes(&context, principal, &definition.required_scopes)?;
+        require_scopes(principal, &definition.required_scopes)?;
         let arguments = request.arguments.unwrap_or_default();
         let declared = definition.prompt.arguments.as_deref().unwrap_or_default();
         if arguments
@@ -460,26 +474,15 @@ pub(crate) fn permitted(principal: &Principal, tool: &ScopedTool) -> bool {
     permitted_scopes(principal, &tool.required_scopes)
 }
 
-fn permitted_scopes(principal: &Principal, scopes: &[String]) -> bool {
+pub(crate) fn permitted_scopes(principal: &Principal, scopes: &[String]) -> bool {
     scopes
         .iter()
         .all(|scope| principal.scopes().contains(scope))
 }
 
-fn require_scopes(
-    context: &RequestContext<RoleServer>,
-    principal: &Principal,
-    scopes: &[String],
-) -> Result<(), ErrorData> {
+fn require_scopes(principal: &Principal, scopes: &[String]) -> Result<(), ErrorData> {
     if permitted_scopes(principal, scopes) {
         return Ok(());
-    }
-    if let Some(denial) = context
-        .extensions
-        .get::<http::request::Parts>()
-        .and_then(|parts| parts.extensions.get::<crate::mount::ScopeDenial>())
-    {
-        denial.0.get_or_init(|| scopes.to_vec());
     }
     Err(ErrorData::invalid_request("insufficient_scope", None))
 }

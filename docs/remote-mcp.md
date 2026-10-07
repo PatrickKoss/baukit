@@ -61,11 +61,16 @@ The message becomes the text content, the envelope becomes
 `structuredContent`, and `isError` is true. Keep messages and details safe
 for clients. Product adapters own redaction, bounds, and revision handling.
 Use `ToolError::new(code, text).text_only()` to preserve a text-only error
-contract for a tool without an output schema.
+contract, including for a tool with an output schema.
 
-An advertised `outputSchema` must accept both success and error payloads.
-This follows the [MCP structured result contract](https://modelcontextprotocol.io/specification/2026-07-28/server/tools#output-schema).
-The generated example uses `oneOf` for its items result and default error.
+An advertised `outputSchema` describes structured results. The
+[MCP error examples](https://modelcontextprotocol.io/specification/2026-07-28/server/tools#error-handling)
+use text-only `isError` results, and the
+[TypeScript SDK skips output-schema validation for them](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/servers/errors.md).
+Text-only errors do not require a success/error schema union. When a product
+supplies structured errors, test them against its advertised schema to preserve
+that contract. The generated example chooses `oneOf` for its items result and
+default structured error.
 Baukit checks schema object shape at registration but does not run a JSON
 Schema validator on results, including in debug builds. Validate representative
 success and error payloads with `jsonschema::validator_for` in product tests.
@@ -74,14 +79,15 @@ and external reference resolution to every product request.
 
 ## Add resources and prompts
 
-The generated crate registers only tools. Compose optional services when a
-product needs resources or prompts:
+The generated crate's `services` function returns tools-only `McpServices`.
+The router takes this registration directly as its second argument. Add optional
+services in that function when a product needs resources or prompts:
 
 ```rust
 let services = baukit_mcp::McpServices::new(tools)
     .with_resources(resources)
     .with_prompts(prompts);
-let mcp = baukit_mcp::router(config, std::sync::Arc::new(services), store, policy).await?;
+let mcp = baukit_mcp::router(config, services, store, policy).await?;
 ```
 
 `ResourceService::list` returns fixed `ScopedResource` definitions.
@@ -136,7 +142,8 @@ All definitions require explicit, nonempty scopes. Add these scopes to
 Keycloak; protected resource metadata includes tool, resource and prompt grants.
 The server advertises resources or prompts only when the service is registered.
 Lists omit definitions whose scopes are missing. Reads and gets return HTTP
-403 with a scope challenge before product dispatch. Resource reads and lists,
+403 with a scope challenge before product dispatch. The authorizer records
+these denials as 403 in `mcp_requests_total`. Resource reads and lists,
 and prompt lists, use private caching with a zero TTL.
 
 Use `CapabilityError::InvalidParams { message, data }` for safe bad-input
