@@ -80,6 +80,9 @@ impl From<CapabilityError> for ErrorData {
 /// Registers tools and optional resource and prompt services for the router.
 pub struct McpServices {
     pub(crate) tools: Arc<dyn ToolService>,
+    pub(crate) server_info: crate::Implementation,
+    pub(crate) instructions: Option<String>,
+    pub(crate) success_text_prefix: Option<String>,
     pub(crate) resources: Option<Arc<dyn ResourceService>>,
     pub(crate) prompts: Option<Arc<dyn PromptService>>,
 }
@@ -88,9 +91,31 @@ impl McpServices {
     pub fn new(tools: Arc<dyn ToolService>) -> Self {
         Self {
             tools,
+            server_info: crate::Implementation::new("baukit-mcp", env!("CARGO_PKG_VERSION")),
+            instructions: None,
+            success_text_prefix: None,
             resources: None,
             prompts: None,
         }
+    }
+
+    /// Sets the product name, version and optional display metadata in initialize.
+    pub fn with_server_info(mut self, server_info: crate::Implementation) -> Self {
+        self.server_info = server_info;
+        self
+    }
+
+    /// Sets the instructions returned during initialize.
+    pub fn with_instructions(mut self, instructions: impl Into<String>) -> Self {
+        self.instructions = Some(instructions.into());
+        self
+    }
+
+    /// Prepends text to successful tool content. Structured content and errors are unchanged.
+    /// Include any required separator in the prefix.
+    pub fn with_success_text_prefix(mut self, prefix: impl Into<String>) -> Self {
+        self.success_text_prefix = Some(prefix.into());
+        self
     }
 
     pub fn with_resources(mut self, resources: Arc<dyn ResourceService>) -> Self {

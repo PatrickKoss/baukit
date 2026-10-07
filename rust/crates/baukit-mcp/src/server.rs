@@ -28,6 +28,8 @@ pub struct ScopedTool {
     pub output_schema: Option<Value>,
     pub required_scopes: Vec<String>,
     pub read_only: bool,
+    /// Optional hints override the defaults derived from `read_only`.
+    pub annotations: ToolAnnotations,
 }
 
 /// Asynchronous product service result without transport types.
@@ -98,6 +100,9 @@ impl ToolError {
 
 pub(crate) struct RegisteredServices {
     pub service: Arc<dyn ToolService>,
+    pub server_info: Implementation,
+    pub instructions: Option<String>,
+    pub success_text_prefix: Option<String>,
     pub definitions: Vec<ScopedTool>,
     pub protocol_tools: Vec<Tool>,
     pub resources: Option<Arc<dyn ResourceService>>,
@@ -111,6 +116,9 @@ impl RegisteredServices {
     pub fn new(services: McpServices) -> Result<Self, McpConfigError> {
         let McpServices {
             tools: service,
+            server_info,
+            instructions,
+            success_text_prefix,
             resources,
             prompts,
         } = services;
@@ -122,6 +130,9 @@ impl RegisteredServices {
         let prompt_definitions = prompts.as_ref().map_or_else(Vec::new, |s| s.list());
         validate_prompts(&prompt_definitions)?;
         Ok(Self {
+            server_info,
+            instructions,
+            success_text_prefix,
             resources,
             resource_definitions,
             templates,
@@ -237,12 +248,7 @@ fn compile_tools(definitions: &[ScopedTool]) -> Result<Vec<Tool>, McpConfigError
             definition.description.clone(),
             Arc::new(schema.clone()),
         )
-        .with_annotations(
-            ToolAnnotations::new()
-                .read_only(definition.read_only)
-                .destructive(!definition.read_only)
-                .open_world(false),
-        );
+        .with_annotations(tool_annotations(definition));
         if let Some(output) = &definition.output_schema {
             let schema = output.as_object().ok_or(McpConfigError::Invalid(
                 "tool output schema must be an object",
@@ -252,6 +258,16 @@ fn compile_tools(definitions: &[ScopedTool]) -> Result<Vec<Tool>, McpConfigError
         protocol_tools.push(tool);
     }
     Ok(protocol_tools)
+}
+
+fn tool_annotations(definition: &ScopedTool) -> ToolAnnotations {
+    let mut annotations = definition.annotations.clone();
+    let read_only = *annotations
+        .read_only_hint
+        .get_or_insert(definition.read_only);
+    annotations.destructive_hint.get_or_insert(!read_only);
+    annotations.open_world_hint.get_or_insert(false);
+    annotations
 }
 
 /// Exports protocol schemas and required scopes for drift checks.
@@ -400,9 +416,11 @@ impl ServerHandler for ProductServer {
         if self.0.prompts.is_some() {
             capabilities.prompts = Some(Default::default());
         }
-        ServerConfig::new(capabilities)
-            .with_server_info(Implementation::new("baukit-mcp", env!("CARGO_PKG_VERSION")))
-            .with_protocol_version(ProtocolVersion::V_2026_07_28)
+        let mut config = ServerConfig::new(capabilities)
+            .with_server_info(self.0.server_info.clone())
+            .with_protocol_version(ProtocolVersion::V_2026_07_28);
+        config.instructions = self.0.instructions.clone();
+        config
     }
 
     async fn list_tools(
@@ -455,7 +473,17 @@ impl ServerHandler for ProductServer {
             )
             .await;
         let response = match result {
-            Ok(value) => CallToolResult::structured(value),
+            Ok(value) => {
+                let mut result = CallToolResult::structured(value);
+                if let Some(prefix) = &self.0.success_text_prefix {
+                    for content in &mut result.content {
+                        if let rmcp::model::ContentBlock::Text(text) = content {
+                            text.text.insert_str(0, prefix);
+                        }
+                    }
+                }
+                result
+            }
             Err(error) => error.into_result(),
         };
         Ok(response.into())
@@ -499,6 +527,7 @@ mod tests {
             output_schema: Some(json!({"type": "object", "required": ["id"]})),
             required_scopes: vec!["account:read".into()],
             read_only: true,
+            annotations: Default::default(),
         }
     }
 
@@ -580,6 +609,57 @@ mod tests {
             false
         );
         assert_eq!(contract["tools"][0]["annotations"]["openWorldHint"], false);
+    }
+
+    #[test]
+    fn annotations_merge_each_hint_with_the_read_write_defaults() {
+        let read = definition();
+        let mut write = read.clone();
+        write.name = "create_account".into();
+        write.read_only = false;
+        let contract = tool_schema(&[read, write.clone()]).expect("contract");
+        assert_eq!(
+            contract["tools"][0]["annotations"],
+            json!({
+                "readOnlyHint": true, "destructiveHint": false, "openWorldHint": false
+            })
+        );
+        assert_eq!(
+            contract["tools"][1]["annotations"],
+            json!({
+                "readOnlyHint": false, "destructiveHint": true, "openWorldHint": false
+            })
+        );
+        write.annotations = ToolAnnotations::new().open_world(true);
+        let contract = tool_schema(&[write.clone()]).expect("contract");
+        assert_eq!(
+            contract["tools"][0]["annotations"],
+            json!({
+                "readOnlyHint": false, "destructiveHint": true, "openWorldHint": true
+            })
+        );
+        write.annotations = ToolAnnotations::with_title("Create account")
+            .read_only(false)
+            .destructive(false)
+            .idempotent(true)
+            .open_world(true);
+        let contract = tool_schema(&[write.clone()]).expect("contract");
+        assert_eq!(
+            contract["tools"][0]["annotations"],
+            json!({
+                "title": "Create account", "readOnlyHint": false, "destructiveHint": false,
+                "idempotentHint": true, "openWorldHint": true
+            })
+        );
+        write.annotations = ToolAnnotations::new().read_only(true).idempotent(false);
+        let contract = tool_schema(&[write]).expect("contract");
+        assert_eq!(
+            contract["tools"][0]["annotations"],
+            json!({
+                "readOnlyHint": true, "destructiveHint": false,
+                "idempotentHint": false, "openWorldHint": false
+            })
+        );
     }
 
     #[test]

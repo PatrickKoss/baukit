@@ -14,6 +14,7 @@ fn migration_scope_instructions_match_the_configuration_and_registry() {
         output_schema: None,
         required_scopes: Vec::new(),
         read_only: true,
+        annotations: Default::default(),
     };
     assert!(tool_schema(&[tool.clone()]).is_err());
     tool.required_scopes = vec!["items:read".into()];

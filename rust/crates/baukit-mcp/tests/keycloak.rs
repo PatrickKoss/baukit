@@ -39,6 +39,7 @@ impl ToolService for Subject {
             output_schema: None,
             required_scopes: vec!["items:read".into()],
             read_only: true,
+            annotations: Default::default(),
         }]
     }
     fn call<'a>(

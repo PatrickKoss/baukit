@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-{% if context.mcp %}- Keep product-crate imports in their own group in the MCP crate and drift test, so rustfmt output no longer depends on the product name.
+{% if context.mcp %}- Set the product name, version and instructions in MCP server discovery. Keep the default annotations explicit in tool declarations.
+
+- Keep product-crate imports in their own group in the MCP crate and drift test, so rustfmt output no longer depends on the product name.
 
 {% endif %}## [0.9.0] - 2026-10-07
 

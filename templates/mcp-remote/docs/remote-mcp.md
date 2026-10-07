@@ -16,7 +16,7 @@ Update the Keycloak MCP audience mapper to the same public resource URL.
 Use HTTPS outside loopback development and a shared Redis rate-limit store
 outside local development. The generated template starts with MCP disabled.
 
-Set `mcp.jwks_uri` or the product-prefixed `MCP__JWKS_URI` when containers
+Set `mcp.jwks_uri`, Helm `mcp.jwksUri`, or the product-prefixed `MCP__JWKS_URI` when containers
 cannot reach the public issuer. This optional HTTP or HTTPS URL fetches keys
 without changing the expected token issuer or the authorization server in
 protected resource metadata. It works for OIDC, Clerk OAuth JWTs and WorkOS
@@ -29,7 +29,18 @@ starting `docker compose --profile backend up backend`, and run migrations
 first. The backend service expects registry dependencies; local path builds
 need the documented Docker build-context overrides.
 
+The generated `services` builder supplies the product name, package version and
+instructions. Set an optional display title with `Implementation::with_title`.
+Use `McpServices::with_success_text_prefix` when successful text needs an
+untrusted-data marker. Include the separator in the prefix. Structured content
+and tool errors keep their original values.
+
 ## Add a tool
+
+Set each tool's `annotations` to `ToolAnnotations::default()` to keep the
+read/write defaults. Override hints with `read_only`, `destructive`, `idempotent`
+and `open_world`. Use `ToolAnnotations::with_title` for a display title.
+Review annotation changes in `mcp-tools.json` with schemas and scopes.
 
 Add a service trait and implementation in the product's ports and services,
 or beside the MCP adapter when only MCP consumes it. Tool logic takes domain

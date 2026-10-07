@@ -13,6 +13,8 @@ pub use capabilities::{
     ResourceService, ResourceTemplate, Role, ScopedPrompt, ScopedResource, ScopedResourceTemplate,
     capability_schema, prompt_schema, resource_schema, service_schema,
 };
+pub use rmcp::model::{Implementation, ToolAnnotations};
+
 pub use config::{McpConfig, McpConfigError, ProtectedResourceMetadata};
 pub use introspection::{KeycloakIntrospectionConfig, KeycloakIntrospectionPolicy};
 pub use policy::{

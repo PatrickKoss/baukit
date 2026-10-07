@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Breaking: `ScopedTool` requires an `annotations` field. Use `ToolAnnotations::default()` to keep the read/write defaults. Tools can override each hint and title. Drift exports include the overrides.
+- Let `McpServices` set the product server name, version, title and initialize instructions.
+- Add a server success text prefix without changing structured content or errors.
+
 ## [0.9.0] - 2026-10-07
 
 - Validate internal JWKS overrides separately from the public issuer. Reject unknown config fields and correct migration scope instructions.

@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Generate product MCP server identity and instructions, with explicit default tool annotations.
 - Validate that release preparation cuts CLI and crate changelogs as well as the template changelog.
 
 ## [0.9.0] - 2026-10-07
