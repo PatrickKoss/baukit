@@ -41,11 +41,16 @@ the shared item catalog. Products with user-owned records must scope the
 service query to the verified issuer and subject.
 
 Add a `ScopedTool` to `ItemTools::definitions` with its input and output schemas,
-read-only annotation, and required OAuth scopes. Add its dispatch in `call`.
+`read_only` flag, `annotations`, and required OAuth scopes. Add its dispatch in `call`.
 The HTTP layer requires all declared scopes before execution. `tools/list`
 omits tools the principal cannot call. Product authorization still belongs
 in the service. Register the scope with the selected provider and test the
 service and HTTP call.
+
+Set `annotations` to `ToolAnnotations::default()` to preserve the read/write
+hints. Use `ToolAnnotations::with_title` and the `read_only`, `destructive`,
+`idempotent`, and `open_world` methods to override individual hints. The export
+includes these annotations, so review their changes with schemas and scopes.
 
 Export the contract and review its diff:
 
@@ -95,6 +100,11 @@ and external reference resolution to every product request.
 ## Add resources and prompts
 
 The generated crate's `services` function returns tools-only `McpServices`.
+It sets the product name, package version and instructions. Products can use
+`with_server_info(Implementation::new(name, version))` and `with_instructions`
+to supply their own values. `Implementation::with_title` sets a display title.
+`with_success_text_prefix` prepends a marker to successful tool text. Include
+any separator in the prefix. Structured content and errors keep their values.
 The router takes this registration directly as its third argument. Add optional
 services in that function when a product needs resources or prompts:
 

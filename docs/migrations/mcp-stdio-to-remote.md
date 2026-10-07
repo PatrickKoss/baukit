@@ -39,7 +39,9 @@ actual registration calls. Redemut keeps schemas in `server.ts`; Schlauzug
 has a single `tools.ts` instead of split registries.
 
 1. Put the tool's description, input JSON Schema, output JSON Schema,
-   required scopes and `read_only` flag in `ScopedTool`. Keep `definitions()`
+   required scopes and `read_only` flag in `ScopedTool`. Set its required
+   `annotations` field to `ToolAnnotations::default()` to keep the read/write
+   hints, or declare tool-specific hints and a title. Keep `definitions()`
    as the committed schema source and return it from `ToolService::tools`.
    Translate Zod objects, enums, tagged unions, defaults, optional fields,
    bounds and formats. Match strict objects with `additionalProperties: false`.
