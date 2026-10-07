@@ -90,3 +90,20 @@ subpath. Construct `NativeOidcClient` with your own `SecureStoragePort`, `Browse
 and clock when you are on another native stack or want a deterministic test.
 
 `@baukit/auth-web` is the same contract for browsers.
+
+## Provider adapters
+
+`@baukit/auth-native/clerk-expo` creates a `ClerkNativeClient` and its React
+`Provider` together. Install the optional `@clerk/expo` and React peers, apply
+Clerk's Expo config plugin, and wrap the product in the returned provider.
+Supply the publishable key and `SecureStoragePort`. The bridge uses Clerk's
+hosted sign-in and token cache. `@baukit/auth-native/clerk` exports the client
+and SDK port separately for other integrations.
+
+`@baukit/auth-native/workos` exports `createWorkOsNativeClient`. Supply the
+AuthKit public client ID and the existing Expo browser/storage environment.
+It runs S256 PKCE through the browser port and exchanges tokens using WorkOS's
+JSON public-client API. It stores refresh tokens in secure storage and clears
+them before ending the provider session. No API key belongs in the app.
+Provider clients share `initialize`, `session`, `subscribe`, `accessToken`,
+`signIn`, `signOut`, `clearSession` and `subscribeSessionExpired` with OIDC.

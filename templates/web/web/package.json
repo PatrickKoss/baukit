@@ -17,7 +17,9 @@
   },
   "dependencies": {
 {{ context.baukit_web_typescript_dependencies }},
-    "@tanstack/react-query": "5.104.1",
+{% if context.auth_clerk %}    "@clerk/clerk-js": "6.38.0",
+{% elif context.auth_workos %}    "@workos-inc/authkit-js": "0.20.4",
+{% endif %}    "@tanstack/react-query": "5.104.1",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },

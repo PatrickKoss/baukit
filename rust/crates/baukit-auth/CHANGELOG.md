@@ -4,6 +4,8 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+- Add Clerk OAuth JWT verification bound to a dedicated OAuth client ID.
+
 ## [0.8.0] - 2026-10-07
 
 ## [0.7.4] - 2026-10-06

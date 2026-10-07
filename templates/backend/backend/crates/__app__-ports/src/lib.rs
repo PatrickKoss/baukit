@@ -1,6 +1,6 @@
 use std::{future::Future, pin::Pin};
 
-{% if context.auth_oidc %}use {{ context.app_crate }}_domain::InternalUser;
+{% if context.auth_enabled %}use {{ context.app_crate }}_domain::InternalUser;
 use {{ context.app_crate }}_domain::Item;
 {% else %}use {{ context.app_crate }}_domain::Item;
 {% endif %}
@@ -18,7 +18,7 @@ pub trait ItemRepository: Send + Sync + 'static {
     fn ready(&self) -> PortFuture<'_, Result<(), RepositoryError>>;
 }
 
-{% if context.auth_oidc %}pub trait UserRepository: Send + Sync + 'static {
+{% if context.auth_enabled %}pub trait UserRepository: Send + Sync + 'static {
     fn resolve_subject(
         &self,
         subject: String,
@@ -27,7 +27,7 @@ pub trait ItemRepository: Send + Sync + 'static {
 
 {% endif %}#[derive(Debug, Error)]
 pub enum RepositoryError {
-{% if context.auth_oidc %}    #[error("profile erased")]
+{% if context.auth_enabled %}    #[error("profile erased")]
     ProfileErased,
 {% endif %}    #[error("item already exists")]
     Conflict,

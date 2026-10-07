@@ -1,13 +1,13 @@
-{% if context.auth_oidc %}#[path = "support/erasure.rs"]
+{% if context.auth_enabled %}#[path = "support/erasure.rs"]
 mod erasure;
 
-{% endif %}use std::{error::Error, sync::Arc{% if context.auth_oidc %}, time::Duration{% endif %}};
+{% endif %}use std::{error::Error, sync::Arc{% if context.auth_enabled %}, time::Duration{% endif %}};
 
 use axum::{
     body::{Body, to_bytes},
     http::{Method, Request, StatusCode, header},
 };
-{% if context.auth_oidc %}use baukit_auth::{AuthState, OidcConfig, OidcVerifier};
+{% if context.auth_enabled %}use baukit_auth::{AuthState, OidcConfig, OidcVerifier};
 {% endif %}use baukit_config::HttpConfig;
 use baukit_ops::TrafficGate;
 use baukit_runtime::{DeploymentEnvironment, ProcessKind, ServiceInfo, build_info};
@@ -18,16 +18,16 @@ use tower::ServiceExt as _;
 use {{ context.app_crate }}_api::ApiState;
 use {{ context.app_crate }}_api::router;
 use {{ context.app_crate }}_bin::InMemoryItemRepository;
-{% if context.auth_oidc %}use {{ context.app_crate }}_bin::InMemoryUserRepository;
+{% if context.auth_enabled %}use {{ context.app_crate }}_bin::InMemoryUserRepository;
 {% endif %}use {{ context.app_crate }}_bin::operations_router;
-{% if context.auth_oidc %}use {{ context.app_crate }}_services::ItemService;
+{% if context.auth_enabled %}use {{ context.app_crate }}_services::ItemService;
 use {{ context.app_crate }}_services::UserService;
 {% else %}use {{ context.app_crate }}_services::ItemService;
 {% endif %}
-{% if context.auth_oidc %}const AUDIENCE: &str = "{{ context.app_name }}-backend";
+{% if context.auth_enabled %}const AUDIENCE: &str = "{{ context.app_name }}-backend";
 
 {% endif %}#[tokio::test]
-{% if context.auth_oidc %}#[ignore = "requires Docker PostgreSQL"]
+{% if context.auth_enabled %}#[ignore = "requires Docker PostgreSQL"]
 {% endif %}async fn health_and_metrics_conform_to_baukit() -> Result<(), Box<dyn Error>> {
     let service_info = ServiceInfo::new(
         "{{ context.app_name }}",
@@ -40,21 +40,21 @@ use {{ context.app_crate }}_services::UserService;
         .init()?;
     let repository = Arc::new(InMemoryItemRepository::new());
     let items = ItemService::new(repository.clone());
-{% if context.auth_oidc %}    let fixture = erasure::erasure_fixture().await?;
+{% if context.auth_enabled %}    let fixture = erasure::erasure_fixture().await?;
     let users = UserService::new(Arc::new(InMemoryUserRepository::new()));
     let issuer = baukit_test::MockOidcServer::start().await?;
     let verifier = OidcVerifier::discover(OidcConfig::new(issuer.issuer(), AUDIENCE)?).await?;
 {% endif %}    let api = router(
         ApiState {
             items: items.clone(),
-{% if context.auth_oidc %}            users,
+{% if context.auth_enabled %}            users,
             auth: AuthState::new(verifier),
             erasure: fixture.erasure.clone(),
 {% endif %}        },
         &HttpConfig::default(),
     )?;
     let request = Request::builder().method(Method::GET).uri("/items");
-{% if context.auth_oidc %}    let claims = issuer.claims("conformance-user", AUDIENCE, Duration::from_secs(60))?;
+{% if context.auth_enabled %}    let claims = issuer.claims("conformance-user", AUDIENCE, Duration::from_secs(60))?;
     let token = issuer.mint(&claims)?;
     let request = request.header(
         axum::http::header::AUTHORIZATION,
@@ -76,10 +76,10 @@ use {{ context.app_crate }}_services::UserService;
 }
 
 #[tokio::test]
-{% if context.auth_oidc %}#[ignore = "requires Docker PostgreSQL"]
+{% if context.auth_enabled %}#[ignore = "requires Docker PostgreSQL"]
 {% endif %}async fn json_rejections_keep_their_protocol_statuses() -> Result<(), Box<dyn Error>> {
     let repository = Arc::new(InMemoryItemRepository::new());
-{% if context.auth_oidc %}    let fixture = erasure::erasure_fixture().await?;
+{% if context.auth_enabled %}    let fixture = erasure::erasure_fixture().await?;
     let users = UserService::new(Arc::new(InMemoryUserRepository::new()));
     let issuer = baukit_test::MockOidcServer::start().await?;
     let verifier = OidcVerifier::discover(OidcConfig::new(issuer.issuer(), AUDIENCE)?).await?;
@@ -92,7 +92,7 @@ use {{ context.app_crate }}_services::UserService;
     let app = router(
         ApiState {
             items: ItemService::new(repository),
-{% if context.auth_oidc %}            users,
+{% if context.auth_enabled %}            users,
             auth: AuthState::new(verifier),
             erasure: fixture.erasure.clone(),
 {% endif %}        },
@@ -128,7 +128,7 @@ use {{ context.app_crate }}_services::UserService;
         ),
     ] {
         let request = Request::builder().method(Method::POST).uri("/items");
-{% if context.auth_oidc %}        let request = request.header(
+{% if context.auth_enabled %}        let request = request.header(
             header::AUTHORIZATION,
             baukit_test::authorization_header(&token)?,
         );

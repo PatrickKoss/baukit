@@ -113,6 +113,51 @@ impl IdentityVerifier for ClerkVerifier {
     }
 }
 
+/// Clerk OAuth JWT verification restricted to one pre-registered OAuth client.
+///
+/// Clerk does not document resource-indicator audiences for OAuth access tokens.
+/// This verifier requires the signed `client_id` instead. Dedicate that OAuth
+/// client to one MCP resource and enforce resource-specific scopes separately.
+#[derive(Clone, Debug)]
+pub struct ClerkOAuthVerifier {
+    inner: OidcVerifier,
+}
+
+impl ClerkOAuthVerifier {
+    /// Uses the Clerk instance's Frontend API URL and signing keys.
+    pub fn new(
+        issuer: impl AsRef<str>,
+        client_id: impl Into<String>,
+    ) -> Result<Self, ProviderVerifierError> {
+        let client_id = client_id.into();
+        let config = OidcConfig::client_bound(issuer, &client_id)?;
+        let jwks = clerk_jwks_uri(&config)?;
+        Self::from_jwks_uri(config.issuer.as_str(), client_id, jwks.as_str())
+    }
+
+    /// Uses an explicit signing-key endpoint with the same OAuth client binding.
+    pub fn from_jwks_uri(
+        issuer: impl AsRef<str>,
+        client_id: impl Into<String>,
+        jwks_uri: impl AsRef<str>,
+    ) -> Result<Self, ProviderVerifierError> {
+        let config =
+            OidcConfig::client_bound(issuer, client_id)?.with_clock_skew(std::time::Duration::ZERO);
+        Ok(Self {
+            inner: OidcVerifier::from_jwks_uri(config, jwks_uri)?,
+        })
+    }
+}
+
+impl IdentityVerifier for ClerkOAuthVerifier {
+    fn verify<'a>(
+        &'a self,
+        token: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<Principal, VerificationError>> + Send + 'a>> {
+        Box::pin(self.inner.verify(token))
+    }
+}
+
 /// WorkOS AuthKit session-token verification bound to one application client.
 ///
 /// AuthKit session tokens do not require an `aud` claim, so this adapter checks
@@ -148,7 +193,7 @@ impl WorkOsVerifier {
         client_id: impl Into<String>,
         jwks_uri: impl AsRef<str>,
     ) -> Result<Self, ProviderVerifierError> {
-        let config = OidcConfig::workos(issuer, client_id)?;
+        let config = OidcConfig::client_bound(issuer, client_id)?;
         Ok(Self {
             inner: OidcVerifier::from_jwks_uri(config, jwks_uri)?,
         })

@@ -167,7 +167,7 @@ export function App() {
 {% endraw %}
       <p className="eyebrow">BAUKIT WEB</p>
       <h1>{PRODUCT_NAME}</h1>
-      <p className="lede">A Vite app using Baukit OIDC discovery and authorization code + PKCE.</p>
+      <p className="lede">Sign in to open your account.</p>
 
       {deletingProfile ? <DeleteProfileRoute
         subject={user?.subject}
@@ -232,7 +232,7 @@ export function App() {
           </>
         ) : (
           <button className="action" type="button" onClick={() => void authClient.login()}>
-            Sign in with local Keycloak
+            Sign in with {{ "local Keycloak" if context.auth_oidc else "Clerk" if context.auth_clerk else "WorkOS" }}
           </button>
         )}
       </section>

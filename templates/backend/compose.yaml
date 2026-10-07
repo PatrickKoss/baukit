@@ -41,7 +41,7 @@ services:
       - ./keycloak/themes:/opt/keycloak/themes:ro
       - keycloak-data:/opt/keycloak/data
 
-  redis:
+{% endif %}{% if context.auth_enabled %}  redis:
     image: redis:8.10.2-alpine
     ports:
       - "127.0.0.1:{{ context.redis_host_port }}:6379"

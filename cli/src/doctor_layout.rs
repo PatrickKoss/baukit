@@ -9,7 +9,7 @@ use anyhow::{Context, Result, bail};
 use globset::Glob;
 use serde::{Deserialize, Serialize};
 
-use crate::{AuthProvider, DoctorHost, Manifest, identity};
+use crate::{DoctorHost, Manifest, identity};
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -456,7 +456,7 @@ pub(super) fn validate_backend_wiring(
             failures,
         )?;
     }
-    if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
+    if manifest.capabilities.auth.is_some() {
         require_source(
             root,
             manifest,
@@ -595,6 +595,8 @@ pub(super) fn validate_mobile_auth_wiring(
                 "createExpoOidcClient",
                 "createNativeOidcClient",
                 "NativeOidcClient",
+                "createClerkExpoClient",
+                "createWorkOsNativeClient",
             ][..],
         ),
         (

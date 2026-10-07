@@ -975,7 +975,7 @@ fn validate_token_profile(
             Some(Value::String(_)) => Err(VerificationError::WrongAuthorizedParty),
             Some(_) => Err(VerificationError::InvalidPrincipalContext),
         },
-        TokenProfile::WorkOs { client_id } => match claims.extra.get("client_id") {
+        TokenProfile::ClientBound { client_id } => match claims.extra.get("client_id") {
             Some(Value::String(value)) if value == client_id => Ok(()),
             Some(Value::String(_)) | None | Some(Value::Null) => {
                 Err(VerificationError::WrongClientId)

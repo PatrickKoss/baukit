@@ -8,31 +8,36 @@ import {
   useState,
 } from 'react';
 import Constants from 'expo-constants';
-import * as AuthSession from 'expo-auth-session';
+{% if not context.auth_clerk %}import * as AuthSession from 'expo-auth-session';
 import * as Crypto from 'expo-crypto';
+{% endif %}
 import {
-  appearanceStateDecoration,
+{% if not context.auth_clerk %}  appearanceStateDecoration,{% endif %}
   safeAuthErrorMessage,
   type OidcSession,
   type SignInResult,
   type SignOutResult,
 } from '@baukit/auth-native';
-import { completeExpoAuthSession, createExpoOidcClient } from '@baukit/auth-native/expo';
+{% if context.auth_oidc %}import { completeExpoAuthSession, createExpoOidcClient } from '@baukit/auth-native/expo';
+{% elif context.auth_workos %}import { completeExpoAuthSession, createExpoOidcEnvironment } from '@baukit/auth-native/expo';
+import { createWorkOsNativeClient } from '@baukit/auth-native/workos';
+{% else %}import { createClerkExpoClient } from '@baukit/auth-native/clerk-expo';
+{% endif %}
 
 import type { ThemePreference } from './app-preferences';
 import { signInFeedback } from './auth-feedback';
 import { authStorage } from './auth-storage';
 
-import { PRODUCT_NAME } from './product';
+{% if not context.auth_clerk %}import { PRODUCT_NAME } from './product';{% endif %}
 
-completeExpoAuthSession();
+{% if not context.auth_clerk %}completeExpoAuthSession();
 
 const configuredIssuer: unknown = Constants.expoConfig?.extra?.['oidcIssuer'];
 const configuredClientId: unknown = Constants.expoConfig?.extra?.['oidcClientId'];
 const issuer =
   typeof configuredIssuer === 'string'
     ? configuredIssuer
-    : `http://localhost:{{ context.keycloak_host_port }}/realms/${PRODUCT_NAME}`;
+    : {% if context.auth_oidc %}`http://localhost:{{ context.keycloak_host_port }}/realms/${PRODUCT_NAME}`{% else %}'https://api.workos.com/'{% endif %};
 const clientId =
   typeof configuredClientId === 'string' ? configuredClientId : `${PRODUCT_NAME}-mobile`;
 const redirectUri = AuthSession.makeRedirectUri({
@@ -40,7 +45,7 @@ const redirectUri = AuthSession.makeRedirectUri({
   path: 'oauth',
 });
 
-export const authClient = createExpoOidcClient(
+export const authClient = {% if context.auth_oidc %}createExpoOidcClient{% else %}createWorkOsNativeClient{% endif %}(
   {
     issuer,
     clientId,
@@ -49,13 +54,22 @@ export const authClient = createExpoOidcClient(
     offlineAccess: true,
     storageKeyPrefix: `${PRODUCT_NAME}.oidc`,
   },
-  {
+{% if context.auth_workos %}  createExpoOidcEnvironment({
+    randomBytes: (size) => Crypto.getRandomBytesAsync(size),
+    storage: authStorage,
+  }),
+{% else %}  {
     randomBytes: (size) => Crypto.getRandomBytesAsync(size),
     storage: authStorage,
   },
+{% endif %}
 );
 
-export interface OidcAuth {
+{% else %}const configuredKey: unknown = Constants.expoConfig?.extra?.['clerkPublishableKey'];
+const clerk = createClerkExpoClient(typeof configuredKey === 'string' ? configuredKey : '', authStorage);
+export const authClient = clerk.client;
+{% endif %}
+export interface ProductAuth {
   readonly accessToken?: string;
   readonly subject?: string;
   readonly ready: boolean;
@@ -67,22 +81,23 @@ export interface OidcAuth {
   readonly signOut: () => Promise<SignOutResult | undefined>;
 }
 
-const OidcAuthContext = createContext<OidcAuth | undefined>(undefined);
+const AuthContext = createContext<ProductAuth | undefined>(undefined);
 
-export function OidcAuthProvider({ children }: PropsWithChildren) {
-  const auth = useOidcAuthState();
-  return createElement(OidcAuthContext.Provider, { value: auth }, children);
+export function AuthProvider({ children }: PropsWithChildren) {
+  const auth = useAuthState();
+  const content = createElement(AuthContext.Provider, { value: auth }, children);
+  return {% if context.auth_clerk %}createElement(clerk.Provider, {}, content){% else %}content{% endif %};
 }
 
-export function useOidcAuth(): OidcAuth {
-  const auth = useContext(OidcAuthContext);
+export function useAuth(): ProductAuth {
+  const auth = useContext(AuthContext);
   if (auth === undefined) {
-    throw new Error('useOidcAuth must be used within OidcAuthProvider.');
+    throw new Error('useAuth must be used within AuthProvider.');
   }
   return auth;
 }
 
-function useOidcAuthState(): OidcAuth {
+function useAuthState(): ProductAuth {
   const [session, setSession] = useState<OidcSession>();
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string>();
@@ -139,16 +154,16 @@ function useOidcAuthState(): OidcAuth {
   }, [session]);
 
   const signIn = useCallback(
-    async (appearance?: ThemePreference): Promise<SignInResult | undefined> => {
+    async ({% if not context.auth_clerk %}appearance?: ThemePreference{% endif %}): Promise<SignInResult | undefined> => {
       setError(undefined);
       setAnnouncement(undefined);
       setSessionExpired(false);
       try {
-        const result = await authClient.signIn(
+        const result = await authClient.signIn({% if not context.auth_clerk %}
           appearance === undefined
             ? {}
             : { stateDecoration: appearanceStateDecoration({ mode: appearance }) },
-        );
+{% endif %});
         setAnnouncement(signInFeedback(result));
         return result;
       } catch (cause) {

@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use baukit_auth::{OidcConfig, OidcConfigError, PrincipalClaimMapping};
+use baukit_auth::OidcConfigError;
 use baukit_ratelimit::{Quota, QuotaError};
 use http::uri::Authority;
 use serde::{Deserialize, Serialize};
@@ -15,6 +15,10 @@ pub struct McpConfig {
     pub enabled: bool,
     pub resource_url: String,
     pub issuer: String,
+    pub oauth_client_id: Option<String>,
+    pub jwks_uri: Option<String>,
+    pub introspection_client_id: Option<String>,
+    pub introspection_client_secret: Option<baukit_config::Secret<String>>,
     pub allowed_hosts: Vec<String>,
     pub allowed_origins: Vec<String>,
     pub max_request_body_bytes: usize,
@@ -27,6 +31,10 @@ impl Default for McpConfig {
             enabled: false,
             resource_url: String::new(),
             issuer: String::new(),
+            oauth_client_id: None,
+            jwks_uri: None,
+            introspection_client_id: None,
+            introspection_client_secret: None,
             allowed_hosts: Vec::new(),
             allowed_origins: Vec::new(),
             max_request_body_bytes: DEFAULT_BODY_LIMIT,
@@ -74,12 +82,6 @@ impl McpConfig {
         }
         self.quota()?;
         Ok(())
-    }
-
-    pub(crate) fn oidc(&self) -> Result<OidcConfig, OidcConfigError> {
-        Ok(OidcConfig::new(&self.issuer, &self.resource_url)?
-            .with_clock_skew(Duration::ZERO)
-            .with_principal_claims(PrincipalClaimMapping::new().client_id_claim("azp")))
     }
 
     pub(crate) fn quota(&self) -> Result<Quota, QuotaError> {

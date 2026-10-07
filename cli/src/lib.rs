@@ -188,6 +188,8 @@ pub struct NewOptions {
 #[serde(rename_all = "lowercase")]
 pub enum AuthProvider {
     Oidc,
+    Clerk,
+    Workos,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
@@ -355,7 +357,11 @@ struct TemplateContext {
     pwa: bool,
     mcp: bool,
     remote_mcp_client_scopes: &'static str,
+    auth_enabled: bool,
     auth_oidc: bool,
+    auth_clerk: bool,
+    auth_workos: bool,
+    auth_provider: &'static str,
     quality_strict: bool,
     port_offset: u32,
     postgres_host_port: u16,
@@ -482,13 +488,13 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         );
     }
 
-    let auth_oidc = options.auth == Some(AuthProvider::Oidc);
+    let auth_enabled = options.auth.is_some();
     let dependency = dependency_context(
         options.baukit_path.as_deref(),
         options.mobile,
         options.web,
         options.pwa,
-        auth_oidc,
+        auth_enabled,
         options.worker,
         options.mcp,
     )?;
@@ -512,7 +518,16 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         pwa: options.pwa,
         mcp: options.mcp,
         remote_mcp_client_scopes: REMOTE_MCP_CLIENT_SCOPES,
-        auth_oidc,
+        auth_enabled,
+        auth_oidc: options.auth == Some(AuthProvider::Oidc),
+        auth_clerk: options.auth == Some(AuthProvider::Clerk),
+        auth_workos: options.auth == Some(AuthProvider::Workos),
+        auth_provider: match options.auth {
+            Some(AuthProvider::Oidc) => "oidc",
+            Some(AuthProvider::Clerk) => "clerk",
+            Some(AuthProvider::Workos) => "workos",
+            None => "",
+        },
         quality_strict: options.quality == QualityProfile::Strict,
         port_offset: options.port_offset,
         postgres_host_port: ports.postgres,
@@ -646,20 +661,20 @@ fn dependency_context(
     mobile: bool,
     web: bool,
     pwa: bool,
-    auth_oidc: bool,
+    auth_enabled: bool,
     worker: bool,
     mcp: bool,
 ) -> Result<DependencyContext> {
-    let mut web_packages = typescript_packages(false, false, web && auth_oidc);
+    let mut web_packages = typescript_packages(false, false, web && auth_enabled);
     if pwa && web {
         web_packages.push("@baukit/pwa-web");
     }
-    let web_dev_packages: &[&str] = if web && auth_oidc {
+    let web_dev_packages: &[&str] = if web && auth_enabled {
         EXPECTED_WEB_AUTH_DEV_DEPENDENCIES
     } else {
         &[]
     };
-    let mut mobile_packages = typescript_packages(mobile, mobile && auth_oidc, false);
+    let mut mobile_packages = typescript_packages(mobile, mobile && auth_enabled, false);
     if pwa && mobile && !web {
         mobile_packages.push("@baukit/pwa-web");
     }
@@ -688,10 +703,10 @@ fn dependency_context(
             "baukit-telemetry",
             "baukit-test",
         ];
-        if auth_oidc {
+        if auth_enabled {
             names.extend(["baukit-auth", "baukit-erasure", "baukit-ratelimit"]);
         }
-        if worker || auth_oidc {
+        if worker || auth_enabled {
             names.push("baukit-jobs");
         }
         if mcp {
@@ -763,10 +778,10 @@ fn dependency_context(
             "baukit-telemetry",
             "baukit-test",
         ];
-        if auth_oidc {
+        if auth_enabled {
             names.extend(["baukit-auth", "baukit-erasure", "baukit-ratelimit"]);
         }
-        if worker || auth_oidc {
+        if worker || auth_enabled {
             names.push("baukit-jobs");
         }
         if mcp {
@@ -845,7 +860,7 @@ fn render_product(
             &mut rendered,
             false,
         )?;
-        if context.auth_oidc
+        if context.auth_enabled
             && let Some(overlay) = BACKEND_TEMPLATE.get_dir("__auth__")
         {
             render_directory(overlay, &environment, context, &mut rendered, true)?;
@@ -868,7 +883,7 @@ fn render_product(
             &mut rendered,
             false,
         )?;
-        if context.auth_oidc
+        if context.auth_enabled
             && let Some(overlay) = MOBILE_TEMPLATE.get_dir("__auth__")
         {
             render_directory(overlay, &environment, context, &mut rendered, true)?;
@@ -887,7 +902,7 @@ fn render_product(
     }
     if options.web {
         render_directory(&WEB_TEMPLATE, &environment, context, &mut rendered, false)?;
-        if context.auth_oidc
+        if context.auth_enabled
             && let Some(overlay) = WEB_TEMPLATE.get_dir("__auth__")
         {
             render_directory(overlay, &environment, context, &mut rendered, true)?;
@@ -912,6 +927,8 @@ fn render_product(
 fn render_manifest(context: &TemplateContext, options: &NewOptions) -> String {
     let auth = match options.auth {
         Some(AuthProvider::Oidc) => "auth = \"oidc\"\n",
+        Some(AuthProvider::Clerk) => "auth = \"clerk\"\n",
+        Some(AuthProvider::Workos) => "auth = \"workos\"\n",
         None => "",
     };
     let port_offset = if options.port_offset == 0 {
@@ -981,8 +998,8 @@ fn validate_mcp_options(options: &NewOptions) -> Result<()> {
     if !options.backend {
         bail!("--mcp requires --backend because the Rust server runs in the backend workspace");
     }
-    if options.auth != Some(AuthProvider::Oidc) {
-        bail!("--mcp requires --auth oidc");
+    if options.auth.is_none() {
+        bail!("--mcp requires --auth oidc, clerk, or workos");
     }
     Ok(())
 }
@@ -996,10 +1013,13 @@ fn render_directory(
 ) -> Result<()> {
     for file in directory.files() {
         let relative = file.path();
+        if !context.auth_oidc && is_keycloak_only(relative) {
+            continue;
+        }
         if is_python_cache_artifact(relative) {
             continue;
         }
-        if is_auth_only(relative) && (!context.auth_oidc || !auth_overlay) {
+        if is_auth_only(relative) && (!context.auth_enabled || !auth_overlay) {
             continue;
         }
         if is_strict_only(relative) && !context.quality_strict {
@@ -1030,6 +1050,9 @@ fn render_directory(
         rendered.insert(output_path, output.into_bytes());
     }
     for child in directory.dirs() {
+        if !context.auth_oidc && is_keycloak_only(child.path()) {
+            continue;
+        }
         if is_python_cache_artifact(child.path()) {
             continue;
         }
@@ -1065,6 +1088,15 @@ fn product_description(options: &NewOptions) -> String {
         capabilities.push("MCP server");
     }
     format!("Baukit product with {}", capabilities.join(", "))
+}
+
+fn is_keycloak_only(path: &Path) -> bool {
+    let value = path.to_string_lossy();
+    value.contains("keycloak")
+        || value.contains("reconcile_keycloak")
+        || value.contains("scripts/tests/fixtures/")
+        || value.contains("web/e2e/playwright.stack.config.ts")
+        || value.contains("web/e2e/stack")
 }
 
 fn is_auth_only(path: &Path) -> bool {
@@ -1262,8 +1294,8 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
     if manifest.capabilities.mcp && !manifest.capabilities.backend {
         failures.push("the MCP capability requires the backend capability".to_owned());
     }
-    if manifest.capabilities.mcp && manifest.capabilities.auth != Some(AuthProvider::Oidc) {
-        failures.push("remote MCP OAuth requires the OIDC capability".to_owned());
+    if manifest.capabilities.mcp && manifest.capabilities.auth.is_none() {
+        failures.push("remote MCP OAuth requires an auth provider".to_owned());
     }
     if manifest.schema_version == MANIFEST_SCHEMA_VERSION {
         successes.push(format!(
@@ -1287,6 +1319,7 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
             manifest.template_version, TEMPLATE_VERSION
         ));
     }
+    validate_auth_provider(root, &manifest, &mut successes, &mut failures)?;
     validate_product_constants(root, &manifest, &mut successes, &mut failures)?;
     validate_port_configuration(root, &manifest, &mut successes, &mut failures)?;
     if manifest.capabilities.backend {
@@ -1302,7 +1335,7 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
         if manifest.capabilities.worker {
             validate_jobs_migration(root, &manifest, &mut successes, &mut failures)?;
         }
-        if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
+        if uses_bundled_keycloak(root, &manifest)? {
             doctor_layout::validate_keycloak_realm_tools(
                 root,
                 &manifest,
@@ -1358,7 +1391,7 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
         if manifest.capabilities.analytics == AnalyticsAdapter::Posthog {
             dependencies.push("@baukit/analytics-posthog-native");
         }
-        if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
+        if manifest.capabilities.auth.is_some() {
             dependencies.extend(EXPECTED_MOBILE_AUTH_DEPENDENCIES);
         }
         validate_frontend_capability(
@@ -1370,7 +1403,7 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
             &mut failures,
         )?;
         validate_mobile_router_configuration(root, &mut successes, &mut failures)?;
-        if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
+        if manifest.capabilities.auth.is_some() {
             doctor_layout::validate_mobile_auth_wiring(root, &manifest, &mut failures)?;
         }
     }
@@ -1379,7 +1412,7 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
         if manifest.capabilities.analytics != AnalyticsAdapter::None {
             dependencies.push("@baukit/analytics-core");
         }
-        if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
+        if manifest.capabilities.auth.is_some() {
             dependencies.extend(EXPECTED_WEB_AUTH_DEPENDENCIES);
         }
         validate_frontend_capability(
@@ -1664,7 +1697,7 @@ fn validate_port_configuration(
                 format!("REDIS_URL=redis://127.0.0.1:{redis_port}/"),
             ));
         }
-        if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
+        if uses_bundled_keycloak(root, manifest)? {
             expected.extend([
                 ("Makefile", format!("localhost:{}/realms/", ports.keycloak)),
                 ("scripts/pkce-login.py", format!("localhost:{}", ports.api)),
@@ -1677,7 +1710,7 @@ fn validate_port_configuration(
             ("mobile/app.config.ts", format!("localhost:{}", ports.api)),
             ("mobile/src/api.ts", format!("localhost:{}", ports.api)),
         ]);
-        if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
+        if uses_bundled_keycloak(root, manifest)? {
             expected.extend([
                 (
                     "mobile/.env.example",
@@ -1703,7 +1736,7 @@ fn validate_port_configuration(
             ("web/.env.example", format!("localhost:{}", ports.api)),
             ("web/src/api.ts", format!("localhost:{}", ports.api)),
         ]);
-        if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
+        if uses_bundled_keycloak(root, manifest)? {
             expected.extend([
                 (
                     "web/.env.example",
@@ -1728,7 +1761,7 @@ fn validate_port_configuration(
         .into_iter()
         .map(|(path, snippet)| (path.to_owned(), snippet))
         .collect::<Vec<_>>();
-    if manifest.capabilities.backend && manifest.capabilities.auth == Some(AuthProvider::Oidc) {
+    if manifest.capabilities.backend && uses_bundled_keycloak(root, manifest)? {
         for krate in doctor_layout::rust_crates(root, manifest)? {
             for path in krate.sources {
                 let source = fs::read_to_string(&path)?;
@@ -1929,7 +1962,7 @@ fn validate_compose_ports(
     let compose: ComposeFile = serde_yaml_ng::from_str(&fs::read_to_string(&path)?)
         .context("could not parse compose.yaml")?;
     let mut mappings = vec![("postgres", 5432, ports.postgres)];
-    if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
+    if uses_bundled_keycloak(root, manifest)? {
         mappings.push(("keycloak", 8080, ports.keycloak));
     }
     if doctor_layout::uses_redis(root, manifest)? {
@@ -2209,6 +2242,137 @@ fn validate_openapi_file(root: &Path, kind: &str, relative: &str, failures: &mut
     } else if !root.join(path).is_file() {
         failures.push(format!("missing OpenAPI {kind} file `{relative}`"));
     }
+}
+
+fn uses_bundled_keycloak(root: &Path, manifest: &Manifest) -> Result<bool> {
+    if manifest.capabilities.auth != Some(AuthProvider::Oidc) {
+        return Ok(false);
+    }
+    let path = root.join("config/local.toml");
+    if !path.is_file() {
+        return Ok(true);
+    }
+    let config: toml::Value =
+        toml::from_str(&fs::read_to_string(path)?).context("could not parse config/local.toml")?;
+    let issuer = config
+        .get("auth")
+        .and_then(|auth| auth.get("issuer"))
+        .and_then(toml::Value::as_str);
+    let ports = PortConfiguration::from_manifest(manifest)?;
+    Ok(issuer.is_none_or(|issuer| {
+        ["localhost", "127.0.0.1"].into_iter().any(|host| {
+            issuer.trim_end_matches('/')
+                == format!(
+                    "http://{host}:{}/realms/{}",
+                    ports.keycloak, manifest.app.name
+                )
+        })
+    }))
+}
+
+fn validate_auth_provider(
+    root: &Path,
+    manifest: &Manifest,
+    successes: &mut Vec<String>,
+    failures: &mut Vec<String>,
+) -> Result<()> {
+    let Some(provider) = manifest.capabilities.auth else {
+        return Ok(());
+    };
+    let name = match provider {
+        AuthProvider::Oidc => "oidc",
+        AuthProvider::Clerk => "clerk",
+        AuthProvider::Workos => "workos",
+    };
+    let before = failures.len();
+    if provider != AuthProvider::Oidc && root.join("keycloak/realm.json").exists() {
+        failures.push(format!(
+            "auth provider `{name}` has a Keycloak realm left over at `keycloak/realm.json`"
+        ));
+    }
+    let compose_path = root.join("compose.yaml");
+    if provider != AuthProvider::Oidc && compose_path.is_file() {
+        let compose: serde_yaml_ng::Value =
+            serde_yaml_ng::from_str(&fs::read_to_string(compose_path)?)?;
+        if !compose["services"]["keycloak"].is_null() {
+            failures.push(format!(
+                "compose.yaml has a Keycloak service for auth provider `{name}`"
+            ));
+        }
+    }
+    let config_path = root.join("config/local.toml");
+    if config_path.is_file() {
+        let config: toml::Value = toml::from_str(&fs::read_to_string(config_path)?)?;
+        if let Some(actual) = config
+            .get("auth")
+            .and_then(|auth| auth.get("provider"))
+            .and_then(toml::Value::as_str)
+            && actual != name
+        {
+            failures.push(format!(
+                "config/local.toml auth.provider is `{actual}`, but baukit.toml selects `{name}`"
+            ));
+        }
+        if provider != AuthProvider::Oidc
+            && let Some(issuer) = config
+                .get("auth")
+                .and_then(|auth| auth.get("issuer"))
+                .and_then(toml::Value::as_str)
+            && issuer.contains("/realms/")
+        {
+            failures.push(format!(
+                "config/local.toml auth.issuer points to a Keycloak realm for `{name}`"
+            ));
+        }
+        if provider != AuthProvider::Oidc
+            && let Some(mcp) = config.get("mcp")
+            && (mcp.get("introspection_client_id").is_some()
+                || mcp.get("introspection_client_secret").is_some())
+        {
+            failures.push(format!(
+                "`{name}` does not support the generated Keycloak MCP introspection policy"
+            ));
+        }
+    }
+    for (enabled, directory, dependency) in [
+        (
+            manifest.capabilities.web,
+            "web",
+            match provider {
+                AuthProvider::Clerk => "@clerk/clerk-js",
+                AuthProvider::Workos => "@workos-inc/authkit-js",
+                AuthProvider::Oidc => "@baukit/auth-web",
+            },
+        ),
+        (
+            manifest.capabilities.mobile,
+            "mobile",
+            match provider {
+                AuthProvider::Clerk => "@clerk/expo",
+                _ => "@baukit/auth-native",
+            },
+        ),
+    ] {
+        if !enabled {
+            continue;
+        }
+        let path = root.join(directory).join("package.json");
+        if !path.is_file() {
+            continue;
+        }
+        let package: serde_json::Value = serde_json::from_str(&fs::read_to_string(path)?)?;
+        if package["dependencies"][dependency].is_null() {
+            failures.push(format!(
+                "{directory}/package.json is missing `{dependency}` for auth provider `{name}`"
+            ));
+        }
+    }
+    if failures.len() == before {
+        successes.push(format!(
+            "auth provider `{name}` matches config and frontend SDK wiring"
+        ));
+    }
+    Ok(())
 }
 
 fn validate_remote_mcp(
@@ -2724,7 +2888,11 @@ mod generator_tests {
             pwa: false,
             mcp: false,
             remote_mcp_client_scopes: REMOTE_MCP_CLIENT_SCOPES,
+            auth_enabled: false,
             auth_oidc: false,
+            auth_clerk: false,
+            auth_workos: false,
+            auth_provider: "",
             quality_strict: false,
             port_offset: 0,
             postgres_host_port: 5432,

@@ -1,0 +1,2 @@
+[auth]
+provider = "{{ context.auth_provider }}"

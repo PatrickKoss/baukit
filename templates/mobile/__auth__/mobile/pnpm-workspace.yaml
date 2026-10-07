@@ -1,5 +1,7 @@
 allowBuilds:
   core-js: false
+{% if context.auth_clerk %}  browser-tabs-lock: false
+{% endif %}
   unrs-resolver: true
 
 catalog:

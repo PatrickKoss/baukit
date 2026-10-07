@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add Clerk hosted Expo sign-in and WorkOS AuthKit public-client PKCE with secure storage, refresh rotation and logout.
+
 - Publish the TypeScript sources referenced by JavaScript and declaration maps. Check source paths in the packed archive.
 
 - Use SecureStore-safe session and force-login keys. Encode default prefixes and reject invalid custom prefixes at construction. Old keys are not migrated.

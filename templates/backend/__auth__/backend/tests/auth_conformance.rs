@@ -1,8 +1,9 @@
 #[path = "support/erasure.rs"]
 mod erasure;
 
-use std::{error::Error, path::PathBuf, process::Command, sync::Arc, time::Duration};
-
+use std::{error::Error, sync::Arc, time::Duration};
+{% if context.auth_oidc %}use std::{path::PathBuf, process::Command};
+{% endif %}
 use axum::{
     body::{Body, to_bytes},
     http::{Method, Request, StatusCode, header},
@@ -26,7 +27,7 @@ use {{ context.app_crate }}_services::UserService;
 const AUDIENCE: &str = "{{ context.app_name }}-backend";
 const WEB_ORIGIN: &str = "https://app.example.com";
 
-#[test]
+{% if context.auth_oidc %}#[test]
 fn generated_keycloak_tools_pass_their_offline_checks() -> Result<(), Box<dyn Error>> {
     let product_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
     for arguments in [
@@ -53,7 +54,7 @@ fn generated_keycloak_tools_pass_their_offline_checks() -> Result<(), Box<dyn Er
     Ok(())
 }
 
-#[tokio::test]
+{% endif %}#[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]
 async fn protected_route_conforms_and_maps_subject_to_internal_user() -> Result<(), Box<dyn Error>>
 {

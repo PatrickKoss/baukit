@@ -9,7 +9,7 @@ pub(crate) enum TokenProfile {
     Clerk {
         authorized_parties: BTreeSet<String>,
     },
-    WorkOs {
+    ClientBound {
         client_id: String,
     },
 }
@@ -177,7 +177,7 @@ impl PrincipalClaimMapping {
         }
     }
 
-    pub(crate) fn workos() -> Self {
+    pub(crate) fn client_bound() -> Self {
         Self {
             organization: Some(ClaimPath::top_level("org_id")),
             client_id: Some(ClaimPath::top_level("client_id")),
@@ -250,7 +250,7 @@ impl OidcConfig {
         })
     }
 
-    pub(crate) fn workos(
+    pub(crate) fn client_bound(
         issuer: impl AsRef<str>,
         client_id: impl Into<String>,
     ) -> Result<Self, OidcConfigError> {
@@ -265,8 +265,8 @@ impl OidcConfig {
             cache_ttl: Duration::from_secs(300),
             request_timeout: Duration::from_secs(5),
             clock_skew: Duration::from_secs(60),
-            claim_mapping: PrincipalClaimMapping::workos(),
-            token_profile: TokenProfile::WorkOs { client_id },
+            claim_mapping: PrincipalClaimMapping::client_bound(),
+            token_profile: TokenProfile::ClientBound { client_id },
         })
     }
 

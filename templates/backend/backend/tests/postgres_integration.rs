@@ -1,10 +1,10 @@
 use std::{error::Error, path::PathBuf, sync::Arc};
 
-{% if context.auth_oidc %}use {{ context.app_crate }}_postgres::PostgresItemRepository;
+{% if context.auth_enabled %}use {{ context.app_crate }}_postgres::PostgresItemRepository;
 use {{ context.app_crate }}_postgres::PostgresUserRepository;
 {% else %}use {{ context.app_crate }}_postgres::PostgresItemRepository;
 {% endif %}
-{% if context.auth_oidc %}use {{ context.app_crate }}_services::ItemService;
+{% if context.auth_enabled %}use {{ context.app_crate }}_services::ItemService;
 use {{ context.app_crate }}_services::UserService;
 {% else %}use {{ context.app_crate }}_services::ItemService;
 {% endif %}
@@ -16,7 +16,7 @@ async fn postgres_adapter_crud() -> Result<(), Box<dyn Error>> {
     let pool = sqlx::PgPool::connect(fixture.connection_url()).await?;
     let repository = Arc::new(PostgresItemRepository::new(pool.clone()));
     let service = ItemService::new(repository.clone());
-{% if context.auth_oidc %}    let users = UserService::new(Arc::new(PostgresUserRepository::new(
+{% if context.auth_enabled %}    let users = UserService::new(Arc::new(PostgresUserRepository::new(
         pool.clone(),
         baukit_erasure::PostgresErasureStore::new(
             pool.clone(),
@@ -31,7 +31,7 @@ async fn postgres_adapter_crud() -> Result<(), Box<dyn Error>> {
     assert_eq!(updated.name, "updated");
     service.delete(created.id).await?;
     assert!(service.list().await?.is_empty());
-{% if context.auth_oidc %}
+{% if context.auth_enabled %}
     let first = users.resolve_subject("oidc-subject").await?;
     let second = users.resolve_subject("oidc-subject").await?;
     assert_eq!(first, second);

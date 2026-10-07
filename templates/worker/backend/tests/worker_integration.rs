@@ -1,6 +1,6 @@
 use std::{error::Error, path::PathBuf, sync::Arc, time::Duration};
 
-{% if context.auth_oidc %}use baukit_config::Secret;
+{% if context.auth_enabled %}use baukit_config::Secret;
 use baukit_erasure::{ErasureService, ErasureState, IdentityDeletionError, PostgresErasureStore};
 {% endif %}use baukit_jobs::{PostgresJobStore, WorkerConfig, WorkerRunner};
 use baukit_ops::TrafficGate;
@@ -8,7 +8,7 @@ use baukit_runtime::{DeploymentEnvironment, ProcessKind, ServiceInfo, ShutdownTo
 use baukit_telemetry::TelemetryBuilder;
 
 use {{ context.app_crate }}_bin::worker_operations_router;
-{% if context.auth_oidc %}use {{ context.app_crate }}_postgres::PostgresItemRepository;
+{% if context.auth_enabled %}use {{ context.app_crate }}_postgres::PostgresItemRepository;
 use {{ context.app_crate }}_postgres::PostgresProfileErasure;
 {% else %}use {{ context.app_crate }}_postgres::PostgresItemRepository;
 {% endif %}use {{ context.app_crate }}_services::ItemService;
@@ -30,7 +30,7 @@ async fn durable_outbox_runs_the_generated_demo_handler() -> Result<(), Box<dyn 
     assert_eq!(status, "pending");
     assert_eq!(payload["item_id"], item.id.to_string());
 
-{% if context.auth_oidc %}    let fake = Arc::new(baukit_test::FakeIdentityAccountDeleter::default());
+{% if context.auth_enabled %}    let fake = Arc::new(baukit_test::FakeIdentityAccountDeleter::default());
     fake.push_outcome(Err(IdentityDeletionError::Retryable));
     let erasure = ErasureService::new(
         PostgresErasureStore::new(
@@ -112,7 +112,7 @@ async fn durable_outbox_runs_the_generated_demo_handler() -> Result<(), Box<dyn 
         .fetch_one(&pool)
         .await?;
     assert_eq!(status, "succeeded");
-{% if context.auth_oidc %}    assert_eq!(fake.calls(), ["worker-erasure-subject"]);
+{% if context.auth_enabled %}    assert_eq!(fake.calls(), ["worker-erasure-subject"]);
     let identity_status: String = sqlx::query_scalar(
         "SELECT status FROM job_outbox WHERE job_type = 'identity.account.delete'",
     )

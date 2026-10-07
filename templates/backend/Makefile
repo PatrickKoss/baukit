@@ -1,4 +1,4 @@
-.PHONY: setup preflight fmt lint test test-scripts check{% if context.web %} check-web{% endif %}{% if context.mobile %} check-mobile qa-setup qa-android-setup qa-ios-setup qa-android-build qa-ios-build qa-android qa-ios e2e-mobile e2e-mobile-live e2e-android e2e-android-live e2e-ios e2e-ios-live qa-android-down qa-ios-down qa-down{% endif %} lockfiles run{% if context.worker %} run-worker{% endif %} migrate openapi openapi-client db-up db-down{% if context.auth_oidc %} dev keycloak-policy keycloak-reconcile keycloak-test keycloak-theme-test{% if context.web %} keycloak-theme-browser-test{% endif %}{% endif %}
+.PHONY: setup preflight fmt lint test test-scripts check{% if context.web %} check-web{% endif %}{% if context.mobile %} check-mobile qa-setup qa-android-setup qa-ios-setup qa-android-build qa-ios-build qa-android qa-ios e2e-mobile e2e-mobile-live e2e-android e2e-android-live e2e-ios e2e-ios-live qa-android-down qa-ios-down qa-down{% endif %} lockfiles run{% if context.worker %} run-worker{% endif %} migrate openapi openapi-client db-up db-down{% if context.auth_enabled %} dev{% endif %}{% if context.auth_oidc %} keycloak-policy keycloak-reconcile keycloak-test keycloak-theme-test{% if context.web %} keycloak-theme-browser-test{% endif %}{% endif %}
 
 BACKEND_MANIFEST := backend/Cargo.toml
 PLAYWRIGHT_BROWSERS_PATH := $(abspath web/.playwright-browsers)
@@ -97,7 +97,7 @@ qa-down:
 	@bash mobile/scripts/qa/ios-env.sh stop
 
 {% endif %}run: preflight
-	{% if context.port_offset > 0 %}{{ context.app_env }}__HTTP__PORT={{ context.api_host_port }} {{ context.app_env }}__OPS__PORT={{ context.ops_host_port }} {% if context.auth_oidc %}{{ context.app_env }}__RATE_LIMIT__REDIS_URL=redis://127.0.0.1:{{ context.redis_host_port }}/ {% endif %}{% endif %}cargo run --manifest-path $(BACKEND_MANIFEST) -p {{ context.app_name }}-bin --bin api
+	{% if context.port_offset > 0 %}{{ context.app_env }}__HTTP__PORT={{ context.api_host_port }} {{ context.app_env }}__OPS__PORT={{ context.ops_host_port }} {% if context.auth_enabled %}{{ context.app_env }}__RATE_LIMIT__REDIS_URL=redis://127.0.0.1:{{ context.redis_host_port }}/ {% endif %}{% endif %}cargo run --manifest-path $(BACKEND_MANIFEST) -p {{ context.app_name }}-bin --bin api
 
 {% if context.worker %}run-worker: preflight
 	{% if context.port_offset > 0 %}{{ context.app_env }}__OPS__PORT={{ context.ops_host_port }} {% endif %}cargo run --manifest-path $(BACKEND_MANIFEST) -p {{ context.app_name }}-bin --bin worker
@@ -115,7 +115,10 @@ openapi-client:
 db-up:
 	docker compose up -d postgres
 
-{% if context.auth_oidc %}keycloak-policy:
+{% if context.auth_enabled and not context.auth_oidc %}dev:
+	docker compose up -d redis
+
+{% endif %}{% if context.auth_oidc %}keycloak-policy:
 	python3 scripts/keycloak_policy.py --environment-class development
 
 keycloak-test:

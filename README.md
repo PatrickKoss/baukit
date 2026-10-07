@@ -129,7 +129,7 @@ Nothing here depends on the CLI, and no crate drags in the rest. Take the error 
 | Package | What it gives you |
 |---|---|
 | [`@baukit/api-runtime`](typescript/packages/api-runtime) | Auth and request-ID headers, trace propagation, normalized errors, safe retries |
-| [`@baukit/auth-web`](typescript/packages/auth-web) · [`-native`](typescript/packages/auth-native) | OIDC authorization code with S256 PKCE, refresh rotation |
+| [`@baukit/auth-web`](typescript/packages/auth-web) · [`-native`](typescript/packages/auth-native) | OIDC PKCE, Clerk and WorkOS adapters, refresh rotation |
 | [`@baukit/auth-node`](typescript/packages/auth-node) | OIDC device authorization with S256 PKCE, bounded polling, refresh rotation, and a locked profile cache |
 | [`@baukit/data-contracts`](typescript/packages/data-contracts) | Storage contracts plus conformance suites you run against your adapter |
 | [`@baukit/data-contracts-dexie`](typescript/packages/data-contracts-dexie) · [`-expo-sqlite`](typescript/packages/data-contracts-expo-sqlite) | IndexedDB and Expo SQLite adapters, verified in a real browser and on a real Android device in CI |

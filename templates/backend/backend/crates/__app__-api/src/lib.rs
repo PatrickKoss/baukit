@@ -1,4 +1,4 @@
-{% if context.auth_oidc %}use std::{collections::BTreeMap, sync::Arc};
+{% if context.auth_enabled %}use std::{collections::BTreeMap, sync::Arc};
 
 use axum::{
     Json, Router,
@@ -13,7 +13,7 @@ use baukit_auth::{AuthState, Principal};
 
 use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
 {% endif %}use baukit_config::HttpConfig;
-{% if context.auth_oidc %}use baukit_erasure::{
+{% if context.auth_enabled %}use baukit_erasure::{
     ErasureError, ErasureOutcome, ErasureService, ProductErasure, reject_fenced_subject,
 };
 {% endif %}
@@ -31,17 +31,17 @@ use {{ context.app_crate }}_domain::Item;
 use {{ context.app_crate }}_ports::RepositoryError;
 use {{ context.app_crate }}_services::ItemService;
 use {{ context.app_crate }}_services::ServiceError;
-{% if context.auth_oidc %}use {{ context.app_crate }}_services::UserService;
+{% if context.auth_enabled %}use {{ context.app_crate }}_services::UserService;
 {% endif %}
 #[derive(Clone)]
 pub struct ApiState {
     pub items: ItemService,
-{% if context.auth_oidc %}    pub users: UserService,
+{% if context.auth_enabled %}    pub users: UserService,
     pub auth: AuthState,
     pub erasure: ErasureApi,
 {% endif %}}
 
-{% if context.auth_oidc %}#[derive(Clone)]
+{% if context.auth_enabled %}#[derive(Clone)]
 pub struct ErasureApi {
     pub service: ErasureService,
     pub product: Arc<dyn ProductErasure>,
@@ -64,7 +64,7 @@ pub fn routes(state: ApiState) -> Router {
             "/items/{id}",
             get(get_item).put(update_item).delete(delete_item),
         );
-{% if context.auth_oidc %}    let protected = protected
+{% if context.auth_enabled %}    let protected = protected
         .route("/me", get(current_user))
         .route_layer(middleware::from_fn_with_state(state.clone(), erasure_fence));
     let reconciliation = Router::new()
@@ -108,7 +108,7 @@ pub struct SaveItemRequest {
     pub name: String,
 }
 
-{% if context.auth_oidc %}#[derive(Clone, Debug, Serialize, ToSchema)]
+{% if context.auth_enabled %}#[derive(Clone, Debug, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ErasureStatusDto {
     Pending,
@@ -261,14 +261,14 @@ async fn current_user(
 {% endif %}#[utoipa::path(
     get,
     path = "/items",
-{% if context.auth_oidc %}    security(("bearerAuth" = [])),
+{% if context.auth_enabled %}    security(("bearerAuth" = [])),
 {% endif %}    responses(
-        (status = 200, description = "Items", body = [ItemDto]){% if context.auth_oidc %},
+        (status = 200, description = "Items", body = [ItemDto]){% if context.auth_enabled %},
         (status = 401, description = "Authentication required", body = ErrorEnvelope){% endif %}
     ),
     tag = "items"
 )]
-{% if context.auth_oidc %}async fn list_items(
+{% if context.auth_enabled %}async fn list_items(
     State(state): State<ApiState>,
     _principal: Principal,
 ) -> Result<Json<Vec<ItemDto>>, ApiError> {
@@ -287,11 +287,11 @@ async fn current_user(
 #[utoipa::path(
     get,
     path = "/items/{id}",
-{% if context.auth_oidc %}    security(("bearerAuth" = [])),
+{% if context.auth_enabled %}    security(("bearerAuth" = [])),
 {% endif %}    params(("id" = Uuid, Path, description = "Item identifier")),
     responses(
         (status = 200, description = "Item", body = ItemDto),
-        (status = 404, description = "Not found", body = ErrorEnvelope){% if context.auth_oidc %},
+        (status = 404, description = "Not found", body = ErrorEnvelope){% if context.auth_enabled %},
         (status = 401, description = "Authentication required", body = ErrorEnvelope){% endif %}
     ),
     tag = "items"
@@ -299,7 +299,7 @@ async fn current_user(
 async fn get_item(
     State(state): State<ApiState>,
     ApiPath(id): ApiPath<Uuid>,
-{% if context.auth_oidc %}    _principal: Principal,
+{% if context.auth_enabled %}    _principal: Principal,
 {% endif %}) -> Result<Json<ItemDto>, ApiError> {
     state
         .items
@@ -313,19 +313,19 @@ async fn get_item(
 #[utoipa::path(
     post,
     path = "/items",
-{% if context.auth_oidc %}    security(("bearerAuth" = [])),
+{% if context.auth_enabled %}    security(("bearerAuth" = [])),
 {% endif %}    request_body = SaveItemRequest,
     responses(
         (status = 201, description = "Created", body = ItemDto),
         (status = 400, description = "Invalid request", body = ErrorEnvelope),
-        (status = 409, description = "Conflict", body = ErrorEnvelope){% if context.auth_oidc %},
+        (status = 409, description = "Conflict", body = ErrorEnvelope){% if context.auth_enabled %},
         (status = 401, description = "Authentication required", body = ErrorEnvelope){% endif %}
     ),
     tag = "items"
 )]
 async fn create_item(
     State(state): State<ApiState>,
-{% if context.auth_oidc %}    _principal: Principal,
+{% if context.auth_enabled %}    _principal: Principal,
 {% endif %}    ApiJson(request): ApiJson<SaveItemRequest>,
 ) -> Result<(StatusCode, Json<ItemDto>), ApiError> {
     let item = state
@@ -339,13 +339,13 @@ async fn create_item(
 #[utoipa::path(
     put,
     path = "/items/{id}",
-{% if context.auth_oidc %}    security(("bearerAuth" = [])),
+{% if context.auth_enabled %}    security(("bearerAuth" = [])),
 {% endif %}    params(("id" = Uuid, Path, description = "Item identifier")),
     request_body = SaveItemRequest,
     responses(
         (status = 200, description = "Updated", body = ItemDto),
         (status = 400, description = "Invalid request", body = ErrorEnvelope),
-        (status = 404, description = "Not found", body = ErrorEnvelope){% if context.auth_oidc %},
+        (status = 404, description = "Not found", body = ErrorEnvelope){% if context.auth_enabled %},
         (status = 401, description = "Authentication required", body = ErrorEnvelope){% endif %}
     ),
     tag = "items"
@@ -353,7 +353,7 @@ async fn create_item(
 async fn update_item(
     State(state): State<ApiState>,
     ApiPath(id): ApiPath<Uuid>,
-{% if context.auth_oidc %}    _principal: Principal,
+{% if context.auth_enabled %}    _principal: Principal,
 {% endif %}    ApiJson(request): ApiJson<SaveItemRequest>,
 ) -> Result<Json<ItemDto>, ApiError> {
     state
@@ -368,11 +368,11 @@ async fn update_item(
 #[utoipa::path(
     delete,
     path = "/items/{id}",
-{% if context.auth_oidc %}    security(("bearerAuth" = [])),
+{% if context.auth_enabled %}    security(("bearerAuth" = [])),
 {% endif %}    params(("id" = Uuid, Path, description = "Item identifier")),
     responses(
         (status = 204, description = "Deleted"),
-        (status = 404, description = "Not found", body = ErrorEnvelope){% if context.auth_oidc %},
+        (status = 404, description = "Not found", body = ErrorEnvelope){% if context.auth_enabled %},
         (status = 401, description = "Authentication required", body = ErrorEnvelope){% endif %}
     ),
     tag = "items"
@@ -380,7 +380,7 @@ async fn update_item(
 async fn delete_item(
     State(state): State<ApiState>,
     ApiPath(id): ApiPath<Uuid>,
-{% if context.auth_oidc %}    _principal: Principal,
+{% if context.auth_enabled %}    _principal: Principal,
 {% endif %}) -> Result<StatusCode, ApiError> {
     state.items.delete(id).await.map_err(map_service_error)?;
     Ok(StatusCode::NO_CONTENT)
@@ -388,7 +388,7 @@ async fn delete_item(
 
 fn map_service_error(error: ServiceError) -> ApiError {
     match error {
-{% if context.auth_oidc %}        ServiceError::Repository(RepositoryError::ProfileErased) => ApiError::new(
+{% if context.auth_enabled %}        ServiceError::Repository(RepositoryError::ProfileErased) => ApiError::new(
             StatusCode::UNAUTHORIZED,
             "profile_erased",
             "The profile has been erased",
@@ -413,10 +413,10 @@ pub fn openapi_document() -> utoipa::openapi::OpenApi {
     let metadata = OpenApiMetadata::new(
         "{{ context.app_name }} API",
         env!("CARGO_PKG_VERSION"),
-{% if context.auth_oidc %}        "Generated Baukit item service. Erasure errors: erasure_idempotency_key_invalid, erasure_idempotency_conflict, erasure_operation_not_found, profile_erased.",
+{% if context.auth_enabled %}        "Generated Baukit item service. Erasure errors: erasure_idempotency_key_invalid, erasure_idempotency_conflict, erasure_operation_not_found, profile_erased.",
 {% else %}        "Generated Baukit item service.",
 {% endif %}    );
-{% if context.auth_oidc %}    let metadata = metadata.bearer_auth();
+{% if context.auth_enabled %}    let metadata = metadata.bearer_auth();
 {% endif %}    metadata.apply_to(&mut document);
     error_response_rules().apply(&mut document);
     document
@@ -442,7 +442,7 @@ fn error_response_rules() -> ErrorResponseRules {
             "The request body does not match the schema.",
         )
         .status(When::HasPathParameter, 404, "The resource was not found.")
-{% if context.auth_oidc %}        .status(
+{% if context.auth_enabled %}        .status(
             When::Secured,
             401,
             "A valid bearer credential is required; profile_erased rejects fenced subjects.",
@@ -463,10 +463,10 @@ fn error_response_rules() -> ErrorResponseRules {
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(list_items, get_item, create_item, update_item, delete_item{% if context.auth_oidc %}, current_user, erase_current_user, erasure_status{% endif %}),
-    components(schemas(ItemDto, SaveItemRequest, ErrorEnvelope, ErrorBody{% if context.auth_oidc %}, CurrentUserDto, ErasureDto{% endif %})),
+    paths(list_items, get_item, create_item, update_item, delete_item{% if context.auth_enabled %}, current_user, erase_current_user, erasure_status{% endif %}),
+    components(schemas(ItemDto, SaveItemRequest, ErrorEnvelope, ErrorBody{% if context.auth_enabled %}, CurrentUserDto, ErasureDto{% endif %})),
     tags(
-        (name = "items", description = "Example item operations"){% if context.auth_oidc %},
+        (name = "items", description = "Example item operations"){% if context.auth_enabled %},
         (name = "auth", description = "Protected identity example"){% endif %}
     )
 )]

@@ -26,6 +26,16 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./clerk": {
+      "types": "./dist/clerk.d.ts",
+      "import": "./dist/clerk.js",
+      "default": "./dist/clerk.js"
+    },
+    "./workos": {
+      "types": "./dist/workos.d.ts",
+      "import": "./dist/workos.js",
+      "default": "./dist/workos.js"
     }
   },
   "files": [
@@ -42,6 +52,20 @@
     "format:check": "prettier --check src package.json tsconfig.json tsconfig.test.json"
   },
   "devDependencies": {
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "@clerk/clerk-js": "6.38.0",
+    "@workos-inc/authkit-js": "0.20.4"
+  },
+  "peerDependencies": {
+    "@clerk/clerk-js": "^6.38.0",
+    "@workos-inc/authkit-js": "^0.20.4"
+  },
+  "peerDependenciesMeta": {
+    "@clerk/clerk-js": {
+      "optional": true
+    },
+    "@workos-inc/authkit-js": {
+      "optional": true
+    }
   }
 }

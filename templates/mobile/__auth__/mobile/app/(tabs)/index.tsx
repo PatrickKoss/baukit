@@ -12,7 +12,7 @@ import { loadAnalytics } from '../../src/analytics';
 import { useAnalyticsConsent, useAppPreferences } from '../../src/app-shell';
 import { currentUser, listItems } from '../../src/api';
 import type { CurrentUser, Item } from '../../src/api';
-import { useOidcAuth } from '../../src/auth';
+import { useAuth } from '../../src/auth';
 import { useAuthenticatedLocalData } from '../../src/local-data';
 import { signOutWithPreferenceReset } from '../../src/preference-sign-out';
 import { useTheme, type AppTheme } from '../../src/theme';
@@ -24,7 +24,7 @@ export default function TodayScreen() {
   const { t } = useTranslation(['bootstrap', 'home']);
   const { theme } = useTheme();
   const styles = createStyles(theme);
-  const auth = useOidcAuth();
+  const auth = useAuth();
   const localData = useAuthenticatedLocalData();
   const { resetPreferenceIdentity } = useAppPreferences();
   const blockIdentityMismatch = localData.blockIdentityMismatch;

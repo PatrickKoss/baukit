@@ -4,3 +4,4 @@ minimumReleaseAge: 1440
 minimumReleaseAgeStrict: true
 allowBuilds:
   core-js: true
+  browser-tabs-lock: false

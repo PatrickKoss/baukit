@@ -3,7 +3,7 @@ use std::sync::Arc;
 use thiserror::Error;
 use uuid::Uuid;
 
-{% if context.auth_oidc %}use {{ context.app_crate }}_domain::DomainError;
+{% if context.auth_enabled %}use {{ context.app_crate }}_domain::DomainError;
 use {{ context.app_crate }}_domain::InternalUser;
 use {{ context.app_crate }}_domain::Item;
 {% else %}use {{ context.app_crate }}_domain::DomainError;
@@ -11,14 +11,14 @@ use {{ context.app_crate }}_domain::Item;
 {% endif %}
 use {{ context.app_crate }}_ports::ItemRepository;
 use {{ context.app_crate }}_ports::RepositoryError;
-{% if context.auth_oidc %}use {{ context.app_crate }}_ports::UserRepository;
+{% if context.auth_enabled %}use {{ context.app_crate }}_ports::UserRepository;
 {% endif %}
 #[derive(Clone)]
 pub struct ItemService {
     repository: Arc<dyn ItemRepository>,
 }
 
-{% if context.auth_oidc %}#[derive(Clone)]
+{% if context.auth_enabled %}#[derive(Clone)]
 pub struct UserService {
     repository: Arc<dyn UserRepository>,
 }

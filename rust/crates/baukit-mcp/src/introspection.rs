@@ -280,7 +280,13 @@ mod tests {
             resource_url: "https://mcp.example/mcp".into(),
             ..Default::default()
         };
-        let verifier = OidcVerifier::discover(config.oidc()?).await?;
+        let verifier = OidcVerifier::discover(
+            baukit_auth::OidcConfig::new(&config.issuer, &config.resource_url)?
+                .with_principal_claims(
+                    baukit_auth::PrincipalClaimMapping::new().client_id_claim("azp"),
+                ),
+        )
+        .await?;
         let token = issuer.mint(
             &issuer
                 .claims("alice", &config.resource_url, Duration::from_secs(300))?

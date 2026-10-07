@@ -3,7 +3,7 @@
 {% endif %}use sqlx::PgPool;
 use uuid::Uuid;
 
-{% if context.auth_oidc %}use {{ context.app_crate }}_domain::InternalUser;
+{% if context.auth_enabled %}use {{ context.app_crate }}_domain::InternalUser;
 use {{ context.app_crate }}_domain::Item;
 {% else %}use {{ context.app_crate }}_domain::Item;
 {% endif %}
@@ -12,7 +12,7 @@ use {{ context.app_crate }}_domain::ItemCreatedJob;
 {% endif %}use {{ context.app_crate }}_ports::ItemRepository;
 use {{ context.app_crate }}_ports::PortFuture;
 use {{ context.app_crate }}_ports::RepositoryError;
-{% if context.auth_oidc %}use {{ context.app_crate }}_ports::UserRepository;
+{% if context.auth_enabled %}use {{ context.app_crate }}_ports::UserRepository;
 {% endif %}
 #[derive(Clone)]
 pub struct PostgresItemRepository {
@@ -27,7 +27,7 @@ impl PostgresItemRepository {
     pub fn pool(&self) -> &PgPool {
         &self.pool
     }
-}{% if context.auth_oidc %}
+}{% if context.auth_enabled %}
 
 #[derive(Clone)]
 pub struct PostgresUserRepository {
@@ -168,7 +168,7 @@ impl ItemRepository for PostgresItemRepository {
                 .map_err(RepositoryError::unavailable)
         })
     }
-}{% if context.auth_oidc %}
+}{% if context.auth_enabled %}
 
 impl UserRepository for PostgresUserRepository {
     fn resolve_subject(
@@ -208,7 +208,7 @@ impl UserRepository for PostgresUserRepository {
             Ok(InternalUser { id, subject })
         })
     }
-}{% endif %}{% if context.auth_oidc %}
+}{% endif %}{% if context.auth_enabled %}
 
 pub struct PostgresProfileErasure;
 

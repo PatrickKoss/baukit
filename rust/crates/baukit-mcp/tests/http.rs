@@ -66,9 +66,25 @@ fn config(issuer: &MockOidcServer) -> McpConfig {
     }
 }
 
+async fn verifier(
+    config: &McpConfig,
+) -> Result<Arc<dyn baukit_auth::IdentityVerifier>, Box<dyn Error>> {
+    Ok(Arc::new(
+        baukit_auth::OidcVerifier::discover(
+            baukit_auth::OidcConfig::new(&config.issuer, &config.resource_url)?
+                .with_clock_skew(Duration::ZERO)
+                .with_principal_claims(
+                    baukit_auth::PrincipalClaimMapping::new().client_id_claim("azp"),
+                ),
+        )
+        .await?,
+    ))
+}
+
 async fn app(config: McpConfig) -> Result<Router, Box<dyn Error>> {
     Ok(router(
-        config,
+        config.clone(),
+        verifier(&config).await?,
         McpServices::new(Arc::new(IdentityTool)),
         Arc::new(InMemoryRateLimitStore::default()),
         Arc::new(JwtOnlyPolicy),
@@ -289,8 +305,10 @@ impl RateLimitStore for UnavailableStore {
 #[tokio::test]
 async fn disabled_resources_are_absent_and_store_failure_fails_closed() -> Result<(), Box<dyn Error>>
 {
+    let disabled_issuer = MockOidcServer::start().await?;
     let disabled = router(
         McpConfig::default(),
+        verifier(&config(&disabled_issuer)).await?,
         McpServices::new(Arc::new(IdentityTool)),
         Arc::new(UnavailableStore),
         Arc::new(JwtOnlyPolicy),
@@ -308,7 +326,8 @@ async fn disabled_resources_are_absent_and_store_failure_fails_closed() -> Resul
     let token =
         issuer.mint(&issuer.claims("alice", &config.resource_url, Duration::from_secs(300))?)?;
     let app = router(
-        config,
+        config.clone(),
+        verifier(&config).await?,
         McpServices::new(Arc::new(IdentityTool)),
         Arc::new(UnavailableStore),
         Arc::new(JwtOnlyPolicy),
@@ -406,6 +425,7 @@ async fn policy_denials_have_safe_http_shapes_before_dispatch() -> Result<(), Bo
         });
         let app = router(
             config.clone(),
+            verifier(&config).await?,
             McpServices::new(Arc::new(IdentityTool)),
             Arc::new(InMemoryRateLimitStore::default()),
             policy.clone(),
@@ -501,6 +521,7 @@ async fn effective_scopes_filter_discovery_and_dispatch_and_map_account()
         });
         let app = router(
             config.clone(),
+            verifier(&config).await?,
             McpServices::new(Arc::new(IdentityTool)),
             Arc::new(InMemoryRateLimitStore::default()),
             policy.clone(),
@@ -578,7 +599,8 @@ async fn scope_denials_record_the_http_status_before_dispatch() -> Result<(), Bo
         .with_resources(catalog.clone())
         .with_prompts(prompts.clone());
     let app = router(
-        config,
+        config.clone(),
+        verifier(&config).await?,
         services,
         Arc::new(InMemoryRateLimitStore::default()),
         Arc::new(JwtOnlyPolicy),
@@ -674,7 +696,8 @@ async fn text_only_errors_preserve_a_success_output_schema() -> Result<(), Box<d
             .claim("scope", "draft:read"),
     )?;
     let app = router(
-        config,
+        config.clone(),
+        verifier(&config).await?,
         McpServices::new(Arc::new(TextErrorTool)),
         Arc::new(InMemoryRateLimitStore::default()),
         Arc::new(JwtOnlyPolicy),
@@ -733,7 +756,8 @@ async fn optional_capabilities_use_the_real_router_and_scope_grants() -> Result<
         .with_resources(catalog.clone())
         .with_prompts(recommendations.clone());
     let app = router(
-        config,
+        config.clone(),
+        verifier(&config).await?,
         services,
         Arc::new(InMemoryRateLimitStore::default()),
         Arc::new(JwtOnlyPolicy),
@@ -957,7 +981,8 @@ async fn overlapping_resource_grants_and_effective_policy_scopes_cannot_be_bypas
         .with_resources(catalog.clone())
         .with_prompts(Arc::new(support::Recommendations::default()));
     let app = router(
-        config,
+        config.clone(),
+        verifier(&config).await?,
         services,
         Arc::new(InMemoryRateLimitStore::default()),
         policy,
@@ -1000,5 +1025,56 @@ async fn overlapping_resource_grants_and_effective_policy_scopes_cannot_be_bypas
     )
     .await?;
     assert_eq!(status, StatusCode::FORBIDDEN);
+    Ok(())
+}
+
+#[tokio::test]
+async fn supplied_provider_verifier_and_authorization_metadata_are_independent()
+-> Result<(), Box<dyn Error>> {
+    let server = MockOidcServer::start().await?;
+    let mut settings = config(&server);
+    settings.issuer = "https://configured-provider.example".into();
+    let verifier = Arc::new(baukit_auth::ClerkOAuthVerifier::from_jwks_uri(
+        server.issuer(),
+        "client_mcp",
+        server.jwks_url(),
+    )?);
+    let app = router(
+        settings,
+        verifier,
+        McpServices::new(Arc::new(IdentityTool)),
+        Arc::new(InMemoryRateLimitStore::new(128)?),
+        Arc::new(JwtOnlyPolicy),
+    )
+    .await?;
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/.well-known/oauth-protected-resource")
+                .header(header::HOST, "mcp.example")
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let metadata: Value = serde_json::from_slice(&to_bytes(response.into_body(), 4096).await?)?;
+    assert_eq!(
+        metadata["authorization_servers"],
+        json!(["https://configured-provider.example"])
+    );
+    let claims = server
+        .claims("user_123", "client_mcp", Duration::from_secs(300))?
+        .claim("client_id", "client_mcp")
+        .claim("scope", "identity:read account:read");
+    let (status, _, result) = send(&app, Some(&server.mint(&claims)?), call()).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(result["result"]["structuredContent"]["subject"], "user_123");
+    let (status, _, _) = send(
+        &app,
+        Some(&server.mint(&claims.claim("client_id", "another_client"))?),
+        call(),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
     Ok(())
 }

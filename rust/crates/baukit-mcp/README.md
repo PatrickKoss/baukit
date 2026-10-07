@@ -1,9 +1,11 @@
 # baukit-mcp
 
 Mount an OAuth-protected MCP resource at `/mcp` in an Axum backend.
-`router` validates configuration, discovers the issuer through baukit-auth,
-and verifies every token for the configured resource URL. HTTP is allowed
-only for loopback development. Host and Origin lists use exact values.
+`router` takes an `Arc<dyn IdentityVerifier>` and verifies every request with it.
+The caller selects the provider and enforces the resource audience or the
+provider's documented token binding. `McpConfig::issuer` names the authorization
+server in RFC 9728 metadata. HTTP is allowed only for loopback development.
+Host and Origin lists use exact values.
 
 Implement `ToolService` in a product adapter. Each `ScopedTool` declares its
 schema and required scopes. The transport checks scopes before execution,

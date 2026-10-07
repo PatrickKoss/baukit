@@ -20,7 +20,7 @@ web = false
 pwa = false
 {% if context.mcp %}mcp = true
 {% endif %}
-{% if context.auth_oidc %}auth = "oidc"
+{% if context.auth_enabled %}auth = "{{ context.auth_provider }}"
 {% endif %}
 
 [dependencies.baukit]

@@ -6,6 +6,7 @@
 - Add optional scoped resource and prompt services, scope-filtered discovery, safe errors, and committed definition exports. The router takes `McpServices` with tools required and resources and prompts optional.
 
 - Check tool, resource and prompt scopes in the HTTP authorizer. Report denied requests as 403 in request metrics.
+- Accept a shared IdentityVerifier and configured authorization-server metadata. Keep token binding in the supplied verifier.
 
 ## [0.8.0] - 2026-10-07
 

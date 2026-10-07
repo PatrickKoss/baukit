@@ -96,7 +96,7 @@ pub use baukit_openapi::{BEARER_AUTH_SCHEME, OpenApiMetadata};
 pub use config::{OidcConfig, OidcConfigError, PrincipalClaimMapping, SigningAlgorithm};
 #[cfg(feature = "sqlx-postgres")]
 pub use postgres::{PostgresApiTokenStore, erase_owner_api_tokens, purge_inactive_api_tokens};
-pub use providers::{ClerkVerifier, ProviderVerifierError, WorkOsVerifier};
+pub use providers::{ClerkOAuthVerifier, ClerkVerifier, ProviderVerifierError, WorkOsVerifier};
 pub use secret::constant_time_eq;
 pub use verifier::{
     IdentityVerifier, IssuerVerifier, MultiIssuerError, MultiIssuerVerifier, OidcVerifier,

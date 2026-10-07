@@ -12,6 +12,8 @@
 - Reject System UI and keyboard crashes or ANRs after boot and before Maestro flows.
 - Limit the Android software renderer to four threads by default. Set `BAUKIT_QA_RENDERER_THREADS` to change the limit.
 
+{% endif %}{% if context.auth_enabled %}- Generate {{ context.auth_provider }} sign-in, token verification and profile deletion. MCP applies the provider's OAuth token binding.
+
 {% endif %}## [0.8.0] - 2026-10-07
 
 {% if context.mcp %}- Breaking: `--mcp` now generates the Rust remote server and requires `--backend --auth oidc`. The TypeScript stdio template and its authentication flags are removed. Set `capabilities.mcp = true` after migrating existing tools.

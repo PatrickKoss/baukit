@@ -7,7 +7,7 @@ jest.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: jest.fn(),
 }));
 jest.mock("./auth", () => ({
-  useOidcAuth: () => ({ ready: true, signIn: jest.fn() }),
+  useAuth: () => ({ ready: true, signIn: jest.fn() }),
 }));
 jest.mock("./theme", () => {
   const theme = jest.requireActual<typeof import("./theme")>("./theme");

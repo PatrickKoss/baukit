@@ -3,7 +3,7 @@
 Generate a Rust MCP crate inside the backend with:
 
 ```sh
-baukit new my-product --backend --mcp --auth oidc
+baukit new my-product --backend --mcp --auth oidc # or clerk, workos
 ```
 
 The backend mounts `/mcp` when `mcp.enabled` is true. Configure
@@ -12,7 +12,8 @@ The backend mounts `/mcp` when `mcp.enabled` is true. Configure
 Lists are JSON arrays. Use the canonical public `/mcp` URL as the resource.
 The Helm `mcp` values configure the resource, issuer, and allowlists. The chart
 adds `/mcp` and protected resource metadata paths when ingress is enabled.
-Update the Keycloak MCP audience mapper to the same public resource URL.
+For the bundled OIDC realm, update the Keycloak MCP audience mapper to the same
+public resource URL.
 Use HTTPS outside loopback development and a shared Redis rate-limit store
 outside local development. The generated template starts with MCP disabled.
 
@@ -30,7 +31,8 @@ Add a `ScopedTool` to `ItemTools::definitions` with its input and output schemas
 read-only annotation, and required OAuth scopes. Add its dispatch in `call`.
 The HTTP layer requires all declared scopes before execution. `tools/list`
 omits tools the principal cannot call. Product authorization still belongs
-in the service. Add the scope to Keycloak and test the service and HTTP call.
+in the service. Register the scope with the selected provider and test the
+service and HTTP call.
 
 Export the contract and review its diff:
 
@@ -163,7 +165,8 @@ arguments or scopes must change the committed contract.
 
 ## Connect clients
 
-For Claude Code, register the generated public client and fixed callback port:
+For Claude Code, register a public client with the selected provider and a fixed
+callback port. The bundled OIDC realm supplies `my-product-mcp`:
 
 ```sh
 claude mcp add --transport http --client-id my-product-mcp --callback-port 18888 my-product https://mcp.example.com/mcp
@@ -175,27 +178,63 @@ See [Claude Code MCP configuration](https://code.claude.com/docs/en/mcp).
 
 In Claude Desktop, open Customize > Connectors, add a custom connector with
 the public HTTPS `/mcp` URL, select sign-in and "Use your own OAuth client",
-and enter `my-product-mcp` with no secret. The template registers
-`https://claude.ai/api/mcp/auth_callback`. Remote connectors connect through
+and enter the registered client ID with no secret. The bundled OIDC realm
+registers `https://claude.ai/api/mcp/auth_callback`. Register that callback with
+Clerk or WorkOS when creating their client. Remote connectors connect through
 Anthropic's servers, so the resource and issuer must be reachable there.
 See [remote connector configuration](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp).
+
+## Clerk clients
+
+Set `mcp.issuer` to the Clerk Frontend API URL, select JWT access tokens in OAuth
+application settings and require PKCE S256. Pre-register a public OAuth client
+with the callback URL of each MCP client. Set `mcp.oauth_client_id` to that
+client's ID. Dedicate the client to this MCP resource. Register `items:read` as
+a custom scope and grant it only to that client. Pass its ID with Claude Code's
+`--client-id` or the Desktop connector's OAuth client setting above.
+
+Clerk's current docs describe JWT OAuth tokens, custom scopes, CIMD and DCR,
+but do not document resource-indicator audience configuration. Baukit therefore
+checks signature, exact issuer, expiry, signed `client_id` and each tool's scope.
+This binds tokens to the dedicated client, not the resource URL. Tokens issued
+to another client and ordinary Clerk session tokens are rejected. Keep client
+registration explicit; this verifier cannot accept arbitrary dynamically
+registered clients. It does not claim resource-audience isolation.
+See [Clerk MCP setup](https://clerk.com/docs/expressjs/guides/ai/mcp/build-mcp-server)
+and [Clerk OAuth configuration](https://clerk.com/docs/guides/configure/auth-strategies/oauth/how-clerk-implements-oauth).
+
+## WorkOS clients
+
+Enable WorkOS Connect, configure `https://mcp.example.com/mcp` as a resource
+indicator and register the tool scopes. Set `mcp.issuer` to your AuthKit domain's
+OAuth issuer, such as `https://example.authkit.app`. Its signing keys are at
+`/oauth2/jwks`, distinct from AuthKit REST session tokens. The generated verifier
+requires the exact resource URL in `aud`, including its path. A REST token or a
+token for another MCP resource is rejected.
+
+Register a Connect client with the MCP client's callback and PKCE S256. Use that
+client ID in Claude Code or Desktop as above. Connect also supports CIMD and DCR
+when enabled in its settings; resource-audience verification does not depend on
+a fixed client ID. Clients must request the configured resource indicator and
+tool scopes. See [WorkOS Connect MCP setup](https://workos.com/docs/authkit/mcp).
 
 ## OAuth flow
 
 A request without a valid token receives 401 with a `resource_metadata` URL.
-The client reads RFC 9728 metadata, discovers Keycloak, and signs in with
+The client reads RFC 9728 metadata, discovers the configured authorization server, and signs in with
 Authorization Code and PKCE S256. It sends the resource URL in authorization
 and token requests and sends the access token on every MCP request.
-The backend checks signature, issuer, resource audience, and expiry, then
+The backend checks signature, issuer, token binding and expiry, then
 runs the authentication policy before discovery or execution.
 A missing tool scope receives 403 `insufficient_scope` with the required scopes.
 These requirements follow [MCP authorization 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization).
 
-The template uses pre-registration. It does not enable anonymous dynamic
-registration or depend on Client ID Metadata Documents. Pre-registration works
-with Keycloak's realm import and keeps redirect URIs and granted scopes under
-product control. Keycloak's custom audience mapper binds this client to one
-resource even where Keycloak ignores the OAuth `resource` parameter.
+The bundled OIDC realm uses pre-registration. It does not enable anonymous
+dynamic registration or depend on Client ID Metadata Documents. Its realm
+import fixes redirect URIs and granted scopes. Keycloak's custom audience mapper
+binds this client to one resource even where Keycloak ignores the OAuth
+`resource` parameter. Clerk requires the dedicated client described above;
+WorkOS Connect can use its own dynamic registration settings.
 
 rmcp 3.5.1 serves stateless HTTP and supports the 2026-07-28 protocol, which uses
 `server/discover` and per-request metadata. It also accepts the 2025-11-25 and
@@ -206,37 +245,23 @@ Use the policy port below when a product needs live checks.
 
 ## Authentication policy
 
-The product MCP crate's `authentication_policy` function supplies the fourth
-argument to `baukit_mcp::router`. Replace that function to select a different
-policy. `AuthenticationPolicy::authenticate` receives the verified
+The router takes `config`, `Arc<dyn IdentityVerifier>`, tools, rate-limit store
+and authentication policy. The supplied verifier owns token binding; metadata
+names `config.issuer`. The generated bin crate selects REST and MCP verifiers
+separately. Its `mcp_policy` uses the product MCP crate's `authentication_policy`
+by default. Replace that function to select a different policy. `AuthenticationPolicy::authenticate` receives the verified
 `baukit_auth::Principal` and bearer token on every authenticated request.
 It returns the effective `baukit_mcp::Principal`, or `PolicyDenial`.
 Both `tools/list` and `tools/call` use its effective scopes. Scope reductions
 cannot grant rights absent from the JWT or restore rights a prior policy removed.
 
-For Keycloak introspection, add `baukit-config.workspace = true` to the product
-MCP crate and load a confidential client's credentials from product config:
+For Keycloak introspection, configure `mcp.introspection_client_id` and
+`mcp.introspection_client_secret` through the existing configuration and secret
+store. The generated startup rejects partial credentials and rejects this policy
+for Clerk and WorkOS. Their JWT mode observes revocation at token expiry.
+Opaque Clerk tokens are unsupported. The adapter implements Keycloak's RFC 7662
+endpoint convention; another OIDC provider needs its own policy adapter.
 
-```rust
-use std::{sync::Arc, time::Duration};
-use baukit_config::Secret;
-use baukit_mcp::{
-    AuthenticationPolicy, KeycloakIntrospectionConfig,
-    KeycloakIntrospectionPolicy, McpConfigError,
-};
-
-pub fn authentication_policy(
-    issuer: &str,
-    client_id: &str,
-    secret: Secret<String>,
-) -> Result<Arc<dyn AuthenticationPolicy>, McpConfigError> {
-    let mut config = KeycloakIntrospectionConfig::new(issuer, client_id, secret);
-    config.cache_ttl = Duration::ZERO;
-    Ok(Arc::new(KeycloakIntrospectionPolicy::new(config)?))
-}
-```
-
-Pass these arguments and propagate the result in the backend's router setup.
 Keep the public PKCE client for MCP clients. Add a separate confidential
 Keycloak client with client authentication enabled for the backend's
 introspection requests. Store its secret in the deployment secret store.

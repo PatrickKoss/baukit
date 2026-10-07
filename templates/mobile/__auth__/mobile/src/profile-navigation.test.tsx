@@ -6,11 +6,11 @@ import {
   waitFor,
 } from "@testing-library/react-native";
 import ProfileScreen from "../app/(tabs)/profile";
-import { useOidcAuth } from "./auth";
+import { useAuth } from "./auth";
 import { defaultAppPreferences } from "./app-preferences";
 import { initializeI18n } from "./localization/i18n";
 
-jest.mock("./auth", () => ({ useOidcAuth: jest.fn() }));
+jest.mock("./auth", () => ({ useAuth: jest.fn() }));
 jest.mock("./app-shell", () => ({ useAppPreferences: jest.fn() }));
 jest.mock("./theme", () => {
   const theme = jest.requireActual<typeof import("./theme")>("./theme");
@@ -25,7 +25,7 @@ const signOut = jest.fn(() =>
 );
 beforeEach(() => {
   jest.clearAllMocks();
-  jest.mocked(useOidcAuth).mockReturnValue({
+  jest.mocked(useAuth).mockReturnValue({
     subject: "subject-123",
     ready: true,
     sessionExpired: false,

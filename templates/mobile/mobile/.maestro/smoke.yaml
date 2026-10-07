@@ -2,7 +2,8 @@ appId: ${APP_ID}
 ---
 - launchApp:
     clearState: true
-{% if context.auth_oidc %}- extendedWaitUntil:
+{% if context.auth_enabled and not context.auth_oidc %}- assertVisible: Sign in with {{ "Clerk" if context.auth_clerk else "WorkOS" }}
+{% else %}{% if context.auth_oidc %}- extendedWaitUntil:
     visible: Sign in with local Keycloak
     timeout: 30000
 - tapOn: Sign in with local Keycloak
@@ -27,4 +28,4 @@ appId: ${APP_ID}
     direction: DOWN
     timeout: 30000
 - tapOn: Allow
-- assertVisible: "Current consent: granted.*"
+- assertVisible: "Current consent: granted.*"{% endif %}

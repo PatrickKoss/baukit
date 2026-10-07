@@ -19,8 +19,8 @@ const oidc = vi.hoisted(() => {
   };
 });
 
-vi.mock('@baukit/auth-web', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@baukit/auth-web')>();
+vi.mock('{% if context.auth_oidc %}@baukit/auth-web{% elif context.auth_clerk %}@baukit/auth-web/clerk{% else %}@baukit/auth-web/workos{% endif %}', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('{% if context.auth_oidc %}@baukit/auth-web{% elif context.auth_clerk %}@baukit/auth-web/clerk{% else %}@baukit/auth-web/workos{% endif %}')>();
   class FakeOidcClient {
     public constructor(options: unknown) {
       oidc.constructed.push(options);
@@ -33,7 +33,7 @@ vi.mock('@baukit/auth-web', async (importOriginal) => {
     public logout = oidc.logout;
     public clearSession = oidc.clearSession;
   }
-  return { ...actual, OidcClient: FakeOidcClient };
+  return { ...actual, {{ "OidcClient" if context.auth_oidc else "ClerkWebClient" if context.auth_clerk else "WorkOsWebClient" }}: FakeOidcClient };
 });
 
 async function loadAuthClient(): Promise<typeof import('./auth').authClient> {
@@ -93,7 +93,7 @@ describe('authClient in the browser', () => {
     vi.stubGlobal('window', { location: { origin: 'https://app.example.test' } });
   });
 
-  it('builds one OIDC client from the local development defaults', async () => {
+{% if context.auth_oidc %}  it('builds one OIDC client from the local development defaults', async () => {
     vi.stubEnv('VITE_OIDC_ISSUER', undefined);
     vi.stubEnv('VITE_OIDC_CLIENT_ID', undefined);
     const authClient = await loadAuthClient();
@@ -125,7 +125,14 @@ describe('authClient in the browser', () => {
     });
   });
 
-  it('delegates each call to the OIDC client', async () => {
+{% else %}  it('uses the configured provider SDK once', async () => {
+    vi.stubEnv('{{ "VITE_CLERK_PUBLISHABLE_KEY" if context.auth_clerk else "VITE_WORKOS_CLIENT_ID" }}', 'public-provider-id');
+    const auth = await loadAuthClient();
+    auth.hasSession();
+    auth.hasSession();
+    expect(oidc.constructed).toEqual([{ {{ "publishableKey" if context.auth_clerk else "clientId" }}: 'public-provider-id', redirectUri: 'https://app.example.test/' }]);
+  });
+{% endif %}  it('delegates each call to the OIDC client', async () => {
     const authClient = await loadAuthClient();
     const listener = vi.fn();
 

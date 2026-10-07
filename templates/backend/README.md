@@ -26,7 +26,7 @@ make run
 
 Migrations are never run during API startup. The public API listens on port {{ context.api_host_port }} and private health, readiness, metrics, and build endpoints listen on port {{ context.ops_host_port }} by default.
 
-`routes` in the API crate builds the product routes and `finalize_api` applies the Baukit HTTP layers. The API binary adds {% if context.auth_oidc %}authentication and rate limiting{% else %}any request middleware{% endif %} between the two, so every public response, including {% if context.auth_oidc %}401 and 429 rejections{% else %}middleware rejections{% endif %}, carries CORS headers, a request ID, and `Cache-Control: private, no-store`. Browsers can read `Retry-After` and the `RateLimit-*` headers. A handler that sets its own `Cache-Control` keeps it. The operations listener does not use these layers.
+`routes` in the API crate builds the product routes and `finalize_api` applies the Baukit HTTP layers. The API binary adds {% if context.auth_enabled %}authentication and rate limiting{% else %}any request middleware{% endif %} between the two, so every public response, including {% if context.auth_enabled %}401 and 429 rejections{% else %}middleware rejections{% endif %}, carries CORS headers, a request ID, and `Cache-Control: private, no-store`. Browsers can read `Retry-After` and the `RateLimit-*` headers. A handler that sets its own `Cache-Control` keeps it. The operations listener does not use these layers.
 
 `backend/Dockerfile` has separate `api`, `migrate`{% if context.worker %}, and
 `worker`{% endif %} runtime targets. Build each process from the backend context,
@@ -40,7 +40,9 @@ inside the Docker build context without editing generated source.
 {% if context.worker %}
 `make run-worker` starts the durable worker, which requires PostgreSQL and exposes only the private operations listener. Its `[worker]` product configuration is available through `{{ context.app_env }}__WORKER__CONCURRENCY`, `{{ context.app_env }}__WORKER__LEASE_DURATION_SECONDS`, `{{ context.app_env }}__WORKER__JOB_TIMEOUT_SECONDS`, and `{{ context.app_env }}__WORKER__POLL_INTERVAL_MILLISECONDS`; the generated deploy values carry the same defaults. Creating an item through the PostgreSQL adapter atomically emits the demo `item.created` outbox job. The generated handler logs identifiers only, and the ignored Docker integration test proves the real claim, handle, and completion path.
 {% endif %}
-{% if context.auth_oidc %}
+{% if context.auth_enabled %}Read [authentication provider setup](docs/auth-providers.md) before running this product.
+
+{% endif %}{% if context.auth_oidc %}
 Every generated API route requires a bearer token. `GET /me` also maps the token's stable `sub` claim to an internal user UUID. Auth configuration follows the product convention `{{ context.app_env }}__AUTH__ISSUER` and `{{ context.app_env }}__AUTH__AUDIENCE`, defaulting to the composed realm and `{{ context.app_name }}-backend` audience.
 
 `make dev` starts Keycloak and Redis, validates the declared development policy, and reconciles the retained Keycloak volume. Run `make db-up` separately when the API needs PostgreSQL. The API's rate limiter connects to Redis at startup in every environment and exits with `RateLimitStoreError` when it cannot, so run `make dev` before `make run`. Compose publishes Redis on `127.0.0.1:{{ context.redis_host_port }}`{% if context.port_offset > 0 %} and `make run` passes that address as `{{ context.app_env }}__RATE_LIMIT__REDIS_URL`{% else %}, which matches the `{{ context.app_env }}__RATE_LIMIT__REDIS_URL` default of `redis://127.0.0.1/`{% endif %}. Deployments set that variable to their own Redis. Sign in as `test` / `development-password`; the imported realm contains the confidential backend client{% if context.web %}, a PKCE-only web client{% endif %}{% if context.mobile %}, and a PKCE-only mobile client{% endif %}. The checked-in credentials are development-only. Existing generated realms used the shorter `password` credential. The reconciler leaves that existing password unchanged unless you request a reset.
@@ -91,7 +93,7 @@ make setup
 make preflight
 make check
 {% if context.auth_oidc %}make keycloak-policy
-make dev
+{% endif %}{% if context.auth_enabled %}make dev
 {% endif %}make openapi
 baukit doctor
 make openapi-client
@@ -112,7 +114,7 @@ with browsers under the repository-local
 
 `make openapi` refreshes the committed backend schema. `make openapi-client` consumes that schema without rebuilding the backend or requiring `baukit` on `PATH`; it uses current Node.js LTS with corepack or npx and writes `generated/openapi.d.ts`.
 
-Handlers document only the statuses they return themselves. `error_response_rules()` in `{{ context.app_name }}-api` documents the rest from the middleware: 400, 413, 415, and 422 on operations with a JSON body, 400 and 404 on operations with a path parameter,{% if context.auth_oidc %} 401 on secured operations, 429 on every operation,{% endif %} and 500 and 504 on every operation. It also adds `X-Request-Id` to every response{% if context.auth_oidc %}, `Retry-After` to 429, and `WWW-Authenticate` to 401{% endif %}. Add a rule there when middleware starts returning a new status, then run `make openapi` and `make openapi-client`.
+Handlers document only the statuses they return themselves. `error_response_rules()` in `{{ context.app_name }}-api` documents the rest from the middleware: 400, 413, 415, and 422 on operations with a JSON body, 400 and 404 on operations with a path parameter,{% if context.auth_enabled %} 401 on secured operations, 429 on every operation,{% endif %} and 500 and 504 on every operation. It also adds `X-Request-Id` to every response{% if context.auth_enabled %}, `Retry-After` to 429, and `WWW-Authenticate` to 401{% endif %}. Add a rule there when middleware starts returning a new status, then run `make openapi` and `make openapi-client`.
 
 ## Backend layout
 
@@ -147,7 +149,7 @@ git push -u origin main
 For an existing or orphan-branch repository root, run `baukit new {{ context.app_name }} ... --dir . --into-existing`; existing differing files are reported as conflicts and never overwritten.
 
 Existing generated products can adopt append-only environment setup by copying `scripts/setup.sh`, `scripts/reconcile-env.py`, and its test from the current template, then replacing instructions that copy `.env.example` over `.env` with `make setup`. Existing `.env` bytes remain unchanged. The script only appends missing assignments.
-{% if context.auth_oidc %}
+{% if context.auth_enabled %}
 
 ## Profile and identity deletion
 
@@ -158,10 +160,10 @@ transaction. The example items are shared resources without user ownership.
 Add every product-owned table, API token and job to `PostgresProfileErasure`
 when adopting this template. Track external data in the deletion inventory.
 
-A completed inline Keycloak deletion returns 200. An unavailable provider
+A completed inline provider deletion returns 200. An unavailable provider
 returns 202 with an operation ID and Location for
 `GET /me/erasures/{operationId}`. A supervised in-process identity worker runs
-in the API in both auth flavors. The optional standalone worker handles only
+in the API for every provider. The optional standalone worker handles only
 item-created demo jobs. The identity runner claims only `identity.account.delete`
 jobs, so the runners do not claim each other's work. Keep the API deployed while
 identity erasures remain pending.
@@ -173,14 +175,10 @@ Ordinary requests from fenced subjects return 401 `profile_erased`. Status
 lookup and DELETE replay remain available to the original token's subject.
 Subject resolution checks the fence in the profile-insert transaction.
 
-Local development uses `local-backend-secret` and a local hash key. Other
-environments require `{{ context.app_env }}__AUTH__IDENTITY_ADMIN_CLIENT_SECRET`
-and `{{ context.app_env }}__AUTH__ERASURE_HASH_KEY`. Provision at least 32 random
-bytes for the hash key and keep it stable. Set
-`{{ context.app_env }}__AUTH__IDENTITY_ADMIN_BASE_URL` to the HTTPS Keycloak base
-and `{{ context.app_env }}__AUTH__IDENTITY_ADMIN_REALM` to the product realm.
-The confidential backend client's service account requires
-`realm-management/manage-users`. Keycloak has no delete-only role.
+Configure the deletion API credential and a stable erasure hash key as described
+in [authentication provider setup](docs/auth-providers.md). The selected provider's
+adapter deletes the identity after the product transaction commits. A provider
+404 completes deletion; 5xx and 429 responses use the durable retry worker.
 
 Run the Docker endpoint conformance test with
 `cargo test --manifest-path backend/Cargo.toml --test identity_erasure_conformance -- --include-ignored`.

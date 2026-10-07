@@ -63,7 +63,7 @@ Use `make qa-android` or `make qa-ios` to open an isolated release build for exp
 
 {% if context.backend %}The backend uses hexagonal layers. Domain code owns rules and validation. Ports define boundary traits. Services coordinate use cases. API, PostgreSQL, and other adapters implement boundaries. The binary crate owns configuration and composition. Do not import Axum or SQLx into the domain crate, or adapter crates into services.
 
-{% if context.auth_oidc %}Keep provider-specific authentication behavior inside the OIDC adapter. Other backend code depends on verified identity, not provider names or claims.
+{% if context.auth_enabled %}Keep provider-specific authentication behavior inside the authentication adapter. Other backend code depends on verified identity, not provider names or claims.
 
 {% endif %}Run migrations as a release operation. Do not run them during API startup.
 

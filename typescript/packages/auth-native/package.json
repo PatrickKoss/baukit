@@ -31,6 +31,21 @@
       "types": "./dist/expo.d.ts",
       "import": "./dist/expo.js",
       "default": "./dist/expo.js"
+    },
+    "./clerk": {
+      "types": "./dist/clerk.d.ts",
+      "import": "./dist/clerk.js",
+      "default": "./dist/clerk.js"
+    },
+    "./clerk-expo": {
+      "types": "./dist/clerk-expo.d.ts",
+      "import": "./dist/clerk-expo.js",
+      "default": "./dist/clerk-expo.js"
+    },
+    "./workos": {
+      "types": "./dist/workos.d.ts",
+      "import": "./dist/workos.js",
+      "default": "./dist/workos.js"
     }
   },
   "files": [
@@ -50,11 +65,24 @@
     "expo-auth-session": "57.0.13",
     "expo-secure-store": "57.0.4",
     "expo-web-browser": "57.0.3",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "@clerk/expo": "4.8.1",
+    "react": "19.3.0",
+    "@types/react": "19.3.0"
   },
   "peerDependencies": {
     "expo-auth-session": "^57.0.13",
     "expo-secure-store": "^57.0.4",
-    "expo-web-browser": "^57.0.3"
+    "expo-web-browser": "^57.0.3",
+    "@clerk/expo": "^4.8.1",
+    "react": "^19.2.3"
+  },
+  "peerDependenciesMeta": {
+    "@clerk/expo": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
   }
 }

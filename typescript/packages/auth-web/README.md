@@ -39,3 +39,17 @@ than an oversight, and it is why `safeAuthErrorMessage` exists: provider bodies,
 codes, and token contents never reach a message the UI can render or a logger can capture.
 
 `@baukit/auth-native` is the same contract for React Native and Expo.
+
+## Provider adapters
+
+`@baukit/auth-web/clerk` exports `ClerkWebClient`, using the optional
+`@clerk/clerk-js` peer. Supply a publishable key and redirect URI. An optional
+JWT template can add a REST audience. The adapter uses Clerk's hosted sign-in,
+refresh and sign-out without exposing its SDK to product components.
+
+`@baukit/auth-web/workos` exports `WorkOsWebClient`, using the optional
+`@workos-inc/authkit-js` peer. Supply the public AuthKit client ID and redirect
+URI. Network refresh failures retain the session; terminal rejection emits the
+same session-expired event as OIDC. Both adapters implement `hasSession`,
+`handleCallback`, `login`, `accessToken`, `clearSession`, `logout` and
+`subscribeSessionExpired`.

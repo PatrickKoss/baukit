@@ -110,6 +110,17 @@ fn main() {
         o.web = true;
         o.quality = QualityProfile::Strict;
     });
+    for (name, provider) in [
+        ("clerk", AuthProvider::Clerk),
+        ("workos", AuthProvider::Workos),
+    ] {
+        bless(name, |o| {
+            o.mobile = true;
+            o.web = true;
+            o.mcp = true;
+            o.auth = Some(provider);
+        });
+    }
     bless("auth", |o| {
         o.mobile = true;
         o.web = true;

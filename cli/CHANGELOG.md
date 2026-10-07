@@ -7,13 +7,15 @@
 - Cut CLI release notes during release preparation.
 - Check tool, resource and prompt definitions in generated MCP drift tests. Let the tools-only example return schema-conforming errors.
 
+- Generate OIDC, Clerk and WorkOS authentication for backend, web, mobile and MCP products. Doctor checks provider configuration and SDK wiring.
+
 ## [0.8.0] - 2026-10-07
 
 - Include the command arguments in Android QA timeout errors.
 - Supply localized web menu Close labels and the native navigation danger token in generated shells.
 - Wire an explicit JWT-only authentication policy in generated remote MCP crates. Document introspection and product account policies.
 
-- Breaking: `--mcp` now generates the Rust remote MCP server and requires `--backend --auth oidc`. Remove the TypeScript stdio template and transport and authentication selection flags. Existing MCP manifests and TypeScript servers receive a migration finding with `docs/migrations/mcp-stdio-to-remote.md`.
+- Breaking: `--mcp` now generates the Rust remote MCP server and requires `--backend --auth oidc|clerk|workos`. Remove the TypeScript stdio template and transport and authentication selection flags. Existing MCP manifests and TypeScript servers receive a migration finding with `docs/migrations/mcp-stdio-to-remote.md`.
 
 ## Earlier releases
 

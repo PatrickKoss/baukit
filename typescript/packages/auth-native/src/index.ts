@@ -149,7 +149,15 @@ export interface BrowserFlowPort {
 
 export type FetchPort = (input: string, init?: RequestInit) => Promise<Response>;
 
+export interface NativeTokenProtocol {
+  discover(): Promise<OidcProviderMetadata>;
+  exchange(endpoint: string, body: URLSearchParams): Promise<Response>;
+  subject(accessToken: string): Promise<string>;
+  logout?(session: OidcSession, redirectUri: string): Promise<boolean>;
+}
+
 export interface NativeOidcEnvironment {
+  readonly protocol?: NativeTokenProtocol;
   readonly fetch: FetchPort;
   readonly storage: SecureStoragePort;
   readonly browser: BrowserFlowPort;
@@ -239,7 +247,9 @@ export class NativeOidcClient {
   }
 
   public discover(): Promise<OidcProviderMetadata> {
-    this.metadataPromise ??= discoverProvider(this.config.issuer, this.environment.fetch);
+    this.metadataPromise ??=
+      this.environment.protocol?.discover() ??
+      discoverProvider(this.config.issuer, this.environment.fetch);
     return this.metadataPromise;
   }
 
@@ -287,11 +297,8 @@ export class NativeOidcClient {
       }),
       'token_exchange_failed',
     );
-    const subject = await fetchSubject(
-      metadata.userInfoEndpoint,
-      tokens.access_token,
-      this.environment.fetch,
-    );
+    const subject = await (this.environment.protocol?.subject(tokens.access_token) ??
+      fetchSubject(metadata.userInfoEndpoint, tokens.access_token, this.environment.fetch));
     const session = makeSession(tokens, subject);
     await this.writeSession(session);
     await this.deleteForceLoginBestEffort();
@@ -332,9 +339,23 @@ export class NativeOidcClient {
   /** Clears local state first, then makes a best-effort provider logout attempt. */
   public async signOut(): Promise<SignOutResult> {
     await this.initialize();
-    const idToken = this.currentSession?.idToken;
+    const session = this.currentSession;
+    const idToken = session?.idToken;
     await this.clearSession();
     await this.setForceLogin();
+
+    if (session !== undefined && this.environment.protocol?.logout !== undefined) {
+      try {
+        const completed = await this.environment.protocol.logout(
+          session,
+          this.config.postLogoutRedirectUri,
+        );
+        if (completed) await this.deleteForceLoginBestEffort();
+        return { providerLogout: completed ? 'completed' : 'failed' };
+      } catch {
+        return { providerLogout: 'failed' };
+      }
+    }
 
     let metadata: OidcProviderMetadata;
     try {
@@ -442,11 +463,12 @@ export class NativeOidcClient {
   ): Promise<ReceivedTokenResponse> {
     let response: Response;
     try {
-      response = await this.environment.fetch(endpoint, {
-        method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body,
-      });
+      response = await (this.environment.protocol?.exchange(endpoint, body) ??
+        this.environment.fetch(endpoint, {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body,
+        }));
     } catch {
       throw new OidcError(failureCode, { retryable: failureCode === 'refresh_failed' });
     }

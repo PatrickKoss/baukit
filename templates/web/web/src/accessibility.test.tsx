@@ -12,7 +12,15 @@ vi.mock('./api', () => ({
   listItems: vi.fn().mockResolvedValue([]),
 }));
 
-afterEach(cleanup);
+{% if context.auth_enabled %}vi.mock('./auth', () => ({
+  authClient: {
+    hasSession: vi.fn().mockReturnValue(false),
+    handleCallback: vi.fn().mockResolvedValue(false),
+    subscribeSessionExpired: () => () => undefined,
+  },
+}));
+
+{% endif %}afterEach(cleanup);
 
 async function expectNoHighImpactViolations(root: Element): Promise<void> {
   const results = await axe.run(root, {
@@ -38,7 +46,10 @@ describe('generated accessibility scan', () => {
       </QueryClientProvider>,
     );
 
-    await expectNoHighImpactViolations(result.container);
+{% if context.auth_enabled %}    expect(screen.getByRole('button', {
+      name: 'Sign in with {{ "local Keycloak" if context.auth_oidc else "Clerk" if context.auth_clerk else "WorkOS" }}',
+    })).toBeDefined();
+{% endif %}    await expectNoHighImpactViolations(result.container);
   });
 
   it('has no serious or critical axe violations in the open dialog', async () => {

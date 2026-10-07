@@ -43,7 +43,7 @@ worker:
 {% if context.mcp %}mcp:
   enabled: true
   resourceUrl: https://mcp.example.com/mcp
-  issuer: https://identity.example.com/realms/{{ context.app_name }}
+  issuer: {% if context.auth_oidc %}https://identity.example.com/realms/{{ context.app_name }}{% elif context.auth_clerk %}https://clerk.example.com{% else %}https://example.authkit.app{% endif %}
   allowedHosts: [mcp.example.com]
   allowedOrigins: []
 

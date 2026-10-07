@@ -1,26 +1,35 @@
-import { OidcClient } from '@baukit/auth-web';
+{% if context.auth_oidc %}import { OidcClient as ProviderClient } from '@baukit/auth-web';
+{% elif context.auth_clerk %}import { ClerkWebClient as ProviderClient } from '@baukit/auth-web/clerk';
+{% else %}import { WorkOsWebClient as ProviderClient } from '@baukit/auth-web/workos';
+{% endif %}
 import type { SessionExpiredEvent } from '@baukit/auth-web';
 
-import { PRODUCT_NAME } from './product';
+{% if context.auth_oidc %}import { PRODUCT_NAME } from './product';
+{% endif %}
 
-const configuredIssuer: unknown = import.meta.env['VITE_OIDC_ISSUER'];
+{% if context.auth_oidc %}const configuredIssuer: unknown = import.meta.env['VITE_OIDC_ISSUER'];
 const configuredClientId: unknown = import.meta.env['VITE_OIDC_CLIENT_ID'];
 
-let oidcClient: OidcClient | undefined;
+{% elif context.auth_clerk %}const configuredPublishableKey: unknown = import.meta.env['VITE_CLERK_PUBLISHABLE_KEY'];
+{% else %}const configuredClientId: unknown = import.meta.env['VITE_WORKOS_CLIENT_ID'];
+{% endif %}
+let providerClient: ProviderClient | undefined;
 
-function client(): OidcClient {
-  oidcClient ??= new OidcClient({
-    issuer:
+function client(): ProviderClient {
+  providerClient ??= new ProviderClient({
+{% if context.auth_oidc %}    issuer:
       typeof configuredIssuer === 'string'
         ? configuredIssuer
         : `http://localhost:{{ context.keycloak_host_port }}/realms/${PRODUCT_NAME}`,
     clientId: typeof configuredClientId === 'string' ? configuredClientId : `${PRODUCT_NAME}-web`,
-    redirectUri: `${window.location.origin}/`,
-    scopes: ['openid', 'profile', 'email'],
+{% elif context.auth_clerk %}    publishableKey: typeof configuredPublishableKey === 'string' ? configuredPublishableKey : '',
+{% else %}    clientId: typeof configuredClientId === 'string' ? configuredClientId : '',
+{% endif %}    redirectUri: `${window.location.origin}/`,
+{% if context.auth_oidc %}    scopes: ['openid', 'profile', 'email'],
     offlineAccess: true,
     storageKeyPrefix: `${PRODUCT_NAME}:oidc`,
-  });
-  return oidcClient;
+{% endif %}  });
+  return providerClient;
 }
 
 export const authClient = {

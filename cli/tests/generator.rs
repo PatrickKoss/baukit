@@ -2735,7 +2735,7 @@ fn typescript_source_is_independent_of_product_name_length() -> anyhow::Result<(
 }
 
 #[test]
-fn mcp_requires_a_backend_and_oidc() {
+fn mcp_requires_a_backend_and_auth_provider() {
     let parent = tempfile::tempdir().expect("temporary directory");
     let mut no_backend = frontend_options(parent.path(), "mcp-web", false, true);
     no_backend.mcp = true;
@@ -3114,17 +3114,17 @@ fn doctor_accepts_renamed_crates_and_relocated_wiring() -> anyhow::Result<()> {
     fs::write(
         &login,
         fs::read_to_string(&login)?
-            .replace("{ useOidcAuth }", "{ useOidcAuth, useLogin }")
+            .replace("{ useAuth }", "{ useAuth, useLogin }")
             .replace(
-                "const auth = useOidcAuth();",
-                "const auth = useOidcAuth();\n  const login = useLogin();",
+                "const auth = useAuth();",
+                "const auth = useAuth();\n  const login = useLogin();",
             )
             .replace("auth.signIn(mode)", "login(mode)"),
     )?;
     let session = root.join("mobile/src/session.ts");
     fs::write(
         &session,
-        format!("{}\nexport function useLogin() {{ return useOidcAuth().signIn; }}\n", fs::read_to_string(&session)?)
+        format!("{}\nexport function useLogin() {{ return useAuth().signIn; }}\n", fs::read_to_string(&session)?)
             .replace("createExpoOidcClient }", "createExpoOidcEnvironment }")
             .replace("  appearanceStateDecoration,", "  NativeOidcClient,\n  appearanceStateDecoration,")
             .replace("authClient = createExpoOidcClient(", "authClient = new NativeOidcClient(")
@@ -4247,7 +4247,7 @@ fn remote_mcp_generation_matches_the_golden_tree() -> anyhow::Result<()> {
     assert!(manifest.capabilities.mcp);
     assert!(!root.join("mcp").exists());
     let api = fs::read_to_string(root.join("backend/crates/snapshot-app-bin/src/bin/api.rs"))?;
-    assert!(api.contains("snapshot_app_mcp::authentication_policy()"));
+    assert!(api.contains("mcp_policy("));
     assert!(api.contains("let mcp_services = snapshot_app_mcp::services(item_reads);"));
     let tools = fs::read_to_string(root.join("backend/crates/snapshot-app-mcp/src/lib.rs"))?;
     assert!(tools.contains("pub fn authentication_policy() -> Arc<dyn AuthenticationPolicy>"));
@@ -4260,7 +4260,7 @@ fn remote_mcp_generation_matches_the_golden_tree() -> anyhow::Result<()> {
 }
 
 #[test]
-fn remote_mcp_requires_oidc_and_backend() {
+fn remote_mcp_requires_auth_and_backend() {
     let parent = tempfile::tempdir().expect("tempdir");
     let mut generated = options(parent.path(), "remote");
     generated.mcp = true;
@@ -4541,5 +4541,189 @@ fn doctor_accepts_non_typescript_files_in_a_root_mcp_directory() -> anyhow::Resu
     )?;
     doctor(&root)?;
     assert!(!baukit_cli::read_manifest(&root)?.capabilities.mcp);
+    Ok(())
+}
+
+#[test]
+fn managed_auth_providers_generate_every_flavor_and_mcp_without_keycloak() -> anyhow::Result<()> {
+    for (provider, sdk, snapshot) in [
+        (
+            AuthProvider::Clerk,
+            "@clerk/clerk-js",
+            include_str!("snapshots/clerk.tree"),
+        ),
+        (
+            AuthProvider::Workos,
+            "@workos-inc/authkit-js",
+            include_str!("snapshots/workos.tree"),
+        ),
+    ] {
+        for (backend, web, mobile, mcp, worker, pwa, quality) in [
+            (
+                true,
+                false,
+                false,
+                false,
+                false,
+                false,
+                QualityProfile::Standard,
+            ),
+            (
+                false,
+                true,
+                false,
+                false,
+                false,
+                false,
+                QualityProfile::Standard,
+            ),
+            (
+                false,
+                false,
+                true,
+                false,
+                false,
+                false,
+                QualityProfile::Standard,
+            ),
+            (
+                true,
+                true,
+                true,
+                true,
+                false,
+                false,
+                QualityProfile::Standard,
+            ),
+            (
+                false,
+                false,
+                true,
+                false,
+                false,
+                true,
+                QualityProfile::Standard,
+            ),
+            (
+                true,
+                false,
+                false,
+                true,
+                true,
+                false,
+                QualityProfile::Standard,
+            ),
+            (true, true, true, true, true, true, QualityProfile::Strict),
+        ] {
+            let parent = tempfile::tempdir()?;
+            let mut generated = options(parent.path(), "snapshot-app");
+            generated.backend = backend;
+            generated.web = web;
+            generated.mobile = mobile;
+            generated.mcp = mcp;
+            generated.worker = worker;
+            generated.pwa = pwa;
+            generated.quality = quality;
+            generated.auth = Some(provider);
+            let root = generate_new(&generated)?;
+            let tree = read_tree(&root)?;
+            assert!(
+                tree.keys()
+                    .all(|path| !path.to_string_lossy().contains("keycloak"))
+            );
+            assert!(!root.join("keycloak").exists());
+            assert_eq!(
+                baukit_cli::read_manifest(&root)?.capabilities.auth,
+                Some(provider)
+            );
+            if backend {
+                let compose = fs::read_to_string(root.join("compose.yaml"))?;
+                assert!(compose.contains("redis:"));
+                assert!(!compose.contains("keycloak"));
+            }
+            if web {
+                assert!(fs::read_to_string(root.join("web/package.json"))?.contains(sdk));
+            }
+            if mcp && web && mobile && !worker {
+                assert_eq!(render_hash_snapshot(&tree), snapshot);
+            }
+            doctor(&root)?;
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn doctor_reports_provider_config_sdk_and_keycloak_mismatches() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut generated = options(parent.path(), "provider-wiring");
+    generated.auth = Some(AuthProvider::Clerk);
+    generated.web = true;
+    generated.mcp = true;
+    let root = generate_new(&generated)?;
+    fs::create_dir(root.join("keycloak"))?;
+    fs::write(root.join("keycloak/realm.json"), "{}")?;
+    let compose_path = root.join("compose.yaml");
+    let mut compose: serde_yaml_ng::Value =
+        serde_yaml_ng::from_str(&fs::read_to_string(&compose_path)?)?;
+    compose["services"]["keycloak"] =
+        serde_yaml_ng::from_str("image: quay.io/keycloak/keycloak:26.8.0")?;
+    fs::write(compose_path, serde_yaml_ng::to_string(&compose)?)?;
+    fs::write(
+        root.join("config/local.toml"),
+        "[auth]\nprovider = \"workos\"\nissuer = \"https://identity.example/realms/product\"\n[mcp]\nintrospection_client_id = \"backend\"\n",
+    )?;
+    let path = root.join("web/package.json");
+    let mut package: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path)?)?;
+    package["dependencies"]
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("missing dependencies"))?
+        .remove("@clerk/clerk-js");
+    fs::write(path, serde_json::to_string_pretty(&package)?)?;
+    let error = doctor(&root)
+        .expect_err("provider mismatches must fail doctor")
+        .to_string();
+    for finding in [
+        "Keycloak realm left over",
+        "compose.yaml has a Keycloak service",
+        "auth.provider is `workos`",
+        "auth.issuer points to a Keycloak realm",
+        "Keycloak MCP introspection policy",
+        "missing `@clerk/clerk-js`",
+    ] {
+        assert!(
+            error.contains(finding),
+            "missing finding {finding}: {error}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_external_oidc_without_the_bundled_realm() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut generated = options(parent.path(), "external-provider");
+    generated.auth = Some(AuthProvider::Oidc);
+    let root = generate_new(&generated)?;
+    fs::remove_dir_all(root.join("keycloak"))?;
+    let path = root.join("compose.yaml");
+    let mut compose: serde_yaml_ng::Value = serde_yaml_ng::from_str(&fs::read_to_string(&path)?)?;
+    compose["services"]
+        .as_mapping_mut()
+        .ok_or_else(|| anyhow::anyhow!("missing services"))?
+        .remove(serde_yaml_ng::Value::String("keycloak".into()));
+    fs::write(path, serde_yaml_ng::to_string(&compose)?)?;
+    for issuer in [
+        "https://external.example/tenant",
+        "http://localhost:8181/tenant",
+    ] {
+        fs::write(
+            root.join("config/local.toml"),
+            format!(
+                "[auth]\nprovider = \"oidc\"\nissuer = {issuer:?}\naudience = \"external-provider-backend\"\n",
+            ),
+        )?;
+        doctor(&root)?;
+    }
     Ok(())
 }

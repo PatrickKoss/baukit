@@ -94,7 +94,7 @@ The transaction keeps the product write, next enqueue, and current completion
 together. If enqueue fails, return an error and leave the current attempt
 unfinished. Duplicate delivery and process restart reuse the same idempotency
 key, so they do not create a second next-slot row.
-{% if context.auth_oidc %}
+{% if context.auth_enabled %}
 ## Identity deletion
 
 The API runs a supervised in-process `IdentityDeletionHandler` in this flavor.

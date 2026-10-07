@@ -9,7 +9,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use baukit_auth::OidcVerifier;
+use baukit_auth::IdentityVerifier;
 use baukit_ratelimit::{Quota, RateLimitStore};
 use rmcp::transport::streamable_http_server::{
     StreamableHttpServerConfig, StreamableHttpService, session::never::NeverSessionManager,
@@ -26,7 +26,7 @@ const MAX_BEARER_TOKEN_BYTES: usize = 16 * 1024;
 #[derive(Clone)]
 struct Security {
     config: McpConfig,
-    verifier: OidcVerifier,
+    verifier: Arc<dyn IdentityVerifier>,
     services: Arc<RegisteredServices>,
     store: Arc<dyn RateLimitStore>,
     quota: Quota,
@@ -34,10 +34,14 @@ struct Security {
     policy: Arc<dyn AuthenticationPolicy>,
 }
 
-/// Mounts `/mcp` and both RFC 9728 discovery paths with dedicated resource-audience verification.
-/// The store may be shared Redis or a process-local store for a single replica.
+/// Mounts `/mcp` and both RFC 9728 discovery paths using the supplied verifier.
+///
+/// The caller must enforce a resource audience or the documented provider
+/// equivalent. `config.issuer` names the authorization server in discovery.
+/// The rate-limit store may be shared Redis.
 pub async fn router(
     config: McpConfig,
+    verifier: Arc<dyn IdentityVerifier>,
     services: McpServices,
     store: Arc<dyn RateLimitStore>,
     policy: Arc<dyn AuthenticationPolicy>,
@@ -47,7 +51,6 @@ pub async fn router(
     }
     config.validate()?;
     let services = Arc::new(RegisteredServices::new(services)?);
-    let verifier = OidcVerifier::discover(config.oidc()?).await?;
     let metadata = config.metadata(services.scopes());
     let mut transport = StreamableHttpServerConfig::default();
     transport.legacy_session_mode = false;

@@ -1,6 +1,8 @@
 //! Erase product data atomically, then delete the identity account durably.
 #![deny(missing_docs)]
 
+#[cfg(feature = "api-providers")]
+mod api;
 #[cfg(feature = "keycloak")]
 mod keycloak;
 mod store;
@@ -8,6 +10,8 @@ mod worker;
 
 use std::{future::Future, pin::Pin};
 
+#[cfg(feature = "api-providers")]
+pub use api::{ApiDeletionConfig, ClerkAccountDeleter, WorkOsAccountDeleter};
 #[cfg(feature = "keycloak")]
 pub use keycloak::{KeycloakAccountDeleter, KeycloakDeletionConfig};
 pub use store::{

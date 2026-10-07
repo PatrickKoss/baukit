@@ -309,6 +309,20 @@ jobs:
             mobile: true
             web: true
             mcp: true
+          - flavor: clerk
+            product_name: clerk-provider-fixture
+            flags: --backend --mobile --web --auth clerk --mcp
+            backend: true
+            mobile: true
+            web: true
+            mcp: true
+          - flavor: workos
+            product_name: workos-provider-fixture
+            flags: --backend --mobile --web --auth workos --mcp
+            backend: true
+            mobile: true
+            web: true
+            mcp: true
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: dtolnay/rust-toolchain@stable
@@ -400,10 +414,22 @@ jobs:
         run: cargo test --manifest-path ".generated-fixture/${{ matrix.product_name }}/backend/Cargo.toml" -p "${{ matrix.product_name }}-mcp" --test tool_drift
 
   generated-mobile-android-build:
-    name: Build generated mobile Android fixture
+    name: Build generated mobile Android fixture (${{ matrix.provider }})
     needs: native-changes
     if: needs.native-changes.outputs.mobile == 'true'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - provider: none
+            flags: ''
+          - provider: oidc
+            flags: --auth oidc
+          - provider: clerk
+            flags: --auth clerk
+          - provider: workos
+            flags: --auth workos
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: dtolnay/rust-toolchain@stable
@@ -439,11 +465,11 @@ jobs:
         working-directory: typescript
         run: |
           pnpm install --frozen-lockfile
-          pnpm --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/data-contracts --filter @baukit/data-contracts-expo-sqlite --filter @baukit/localization-core --filter @baukit/ui-tokens --filter @baukit/navigation run build
+          pnpm --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/auth-native --filter @baukit/data-contracts --filter @baukit/data-contracts-expo-sqlite --filter @baukit/localization-core --filter @baukit/ui-tokens --filter @baukit/navigation run build
       - name: Generate mobile fixture
         run: |
           cargo build --manifest-path cli/Cargo.toml --bin baukit
-          cli/target/debug/baukit new fixture --mobile --dir .generated-native-fixture --baukit-path rust
+          cli/target/debug/baukit new fixture --mobile ${{ matrix.flags }} --dir .generated-native-fixture --baukit-path rust
       - name: Install fixture dependencies
         working-directory: .generated-native-fixture/fixture/mobile
         run: pnpm install --frozen-lockfile
@@ -465,7 +491,7 @@ jobs:
         if: ${{ failure() }}
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: generated-mobile-android-failure
+          name: generated-mobile-android-failure-${{ matrix.provider }}
           if-no-files-found: warn
           retention-days: 7
           path: |

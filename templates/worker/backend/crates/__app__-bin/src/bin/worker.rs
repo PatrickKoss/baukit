@@ -55,7 +55,7 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         .await?;
     let pool_metrics = spawn_pool_metrics_sampler(pool.clone(), Duration::from_secs(15))?;
     let runner = WorkerRunner::new(
-        {% if context.auth_oidc %}Arc::new(
+        {% if context.auth_enabled %}Arc::new(
             PostgresJobStore::new(pool.clone())
                 .retain_failed_kinds(&[baukit_erasure::IDENTITY_DELETE_JOB_TYPE]),
         ),{% else %}Arc::new(PostgresJobStore::new(pool.clone())),{% endif %}

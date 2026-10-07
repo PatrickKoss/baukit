@@ -2,13 +2,13 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ActionButton } from '../../src/action-button';
-import { useOidcAuth } from '../../src/auth';
+import { useAuth } from '../../src/auth';
 import { useTheme, type AppTheme } from '../../src/theme';
 
 import { PRODUCT_NAME } from '../../src/product';
 
 export default function SignInScreen() {
-  const auth = useOidcAuth();
+  const auth = useAuth();
   const insets = useSafeAreaInsets();
   const { mode, theme } = useTheme();
   const styles = createStyles(theme);
@@ -17,7 +17,7 @@ export default function SignInScreen() {
       <ScrollView contentContainerStyle={styles.page}>
         <Text style={styles.eyebrow}>BAUKIT MOBILE</Text>
         <Text style={styles.title}>{PRODUCT_NAME}</Text>
-        <Text style={styles.subtitle}>Standard OIDC discovery + authorization code PKCE</Text>
+        <Text style={styles.subtitle}>Sign in to your account.</Text>
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Sign in</Text>
@@ -29,7 +29,7 @@ export default function SignInScreen() {
           )}
           <ActionButton
             disabled={!auth.ready}
-            label={auth.ready ? 'Sign in with local Keycloak' : 'Preparing sign in…'}
+            label={auth.ready ? 'Sign in with {{ "local Keycloak" if context.auth_oidc else "Clerk" if context.auth_clerk else "WorkOS" }}' : 'Preparing sign in...'}
             onPress={() => void auth.signIn(mode)}
           />
         </View>

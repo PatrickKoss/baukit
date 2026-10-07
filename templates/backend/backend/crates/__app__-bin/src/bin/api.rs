@@ -1,12 +1,12 @@
 use std::{env, error::Error, net::SocketAddr, sync::Arc, time::Duration};
 
-{% if context.auth_oidc %}use axum::{extract::Request, http::Method, middleware};
-use baukit_auth::{AuthState, OidcConfig, OidcVerifier, Principal};
+{% if context.auth_enabled %}use axum::{extract::Request, http::Method, middleware};
+use baukit_auth::{AuthState, Principal};
 {% endif %}use baukit_config::{BaukitConfig, ConfigLoader, Environment};
-{% if context.auth_oidc %}use baukit_jobs::{PostgresJobStore, WorkerConfig, WorkerRunner};
-{% endif %}{% if not context.auth_oidc %}use baukit_ops::PoolMetricsSampler;
+{% if context.auth_enabled %}use baukit_jobs::{PostgresJobStore, WorkerConfig, WorkerRunner};
+{% endif %}{% if not context.auth_enabled %}use baukit_ops::PoolMetricsSampler;
 {% endif %}use baukit_ops::{TrafficGate, spawn_pool_metrics_sampler};
-{% if context.auth_oidc %}use baukit_ratelimit::{
+{% if context.auth_enabled %}use baukit_ratelimit::{
     AuthenticatedRouteGroupOptions, Quota, RateLimitOptions, RedisRateLimitStore,
 };
 {% endif %}use baukit_runtime::{ProcessKind, ServiceInfo, ShutdownToken, build_info, serve_listener_pair};
@@ -15,12 +15,16 @@ use baukit_telemetry::{TelemetryBuilder, tracing};
 use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
 
-{% if context.auth_oidc %}use {{ context.app_crate }}_api::ApiState;
+{% if context.auth_enabled %}use {{ context.app_crate }}_api::ApiState;
 use {{ context.app_crate }}_api::ErasureApi;
 use {{ context.app_crate }}_api::finalize_api;
 use {{ context.app_crate }}_api::routes;
 use {{ context.app_crate }}_bin::ProductConfig;
+use {{ context.app_crate }}_bin::auth_verifier;
 use {{ context.app_crate }}_bin::identity_erasure;
+{% if context.mcp %}use {{ context.app_crate }}_bin::mcp_policy;
+use {{ context.app_crate }}_bin::mcp_verifier;
+{% endif %}
 use {{ context.app_crate }}_bin::operations_router;
 use {{ context.app_crate }}_postgres::PostgresItemRepository;
 use {{ context.app_crate }}_postgres::PostgresProfileErasure;
@@ -39,7 +43,7 @@ use {{ context.app_crate }}_services::ItemService;
 {% endif %}
 const PRODUCT: &str = "{{ context.app_name }}";
 const ENV_PREFIX: &str = "{{ context.app_env }}";
-{% if context.auth_oidc %}const ITEM_WRITE_GROUP: &str = "item_writes";
+{% if context.auth_enabled %}const ITEM_WRITE_GROUP: &str = "item_writes";
 const ITEM_WRITE_REQUESTS_PER_MINUTE: u64 = 30;
 {% endif %}
 #[tokio::main]
@@ -49,10 +53,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .map(|value| value.parse())
         .transpose()?
         .unwrap_or(Environment::Local);
-    let config: BaukitConfig<ProductConfig> = ConfigLoader::new(PRODUCT, environment)?{% if context.mcp %}
-        .environment_collection("mcp.allowed_hosts")
+    let config: BaukitConfig<ProductConfig> = ConfigLoader::new(PRODUCT, environment)?{% if context.auth_enabled %}
+        .environment_collection("auth.authorized_parties")
+{% endif %}{% if context.mcp %}        .environment_collection("mcp.allowed_hosts")
         .environment_collection("mcp.allowed_origins")
-        {% endif %}.load()?;
+{% endif %}{% if context.auth_enabled %}        .load()?;{% else %}.load()?;{% endif %}
     run(config).await
 }
 
@@ -67,7 +72,7 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
     }
     let telemetry = Arc::new(telemetry_builder.init()?);
 
-{% if context.auth_oidc %}    let database = config
+{% if context.auth_enabled %}    let database = config
         .database
         .as_ref()
         .ok_or("authenticated backend requires database configuration")?;
@@ -100,8 +105,8 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         pool,
         erasure_service.store().clone(),
     )));
-    let oidc = OidcConfig::new(&config.product.auth.issuer, &config.product.auth.audience)?;
-    let auth = AuthState::new(OidcVerifier::discover(oidc).await?);
+    let verifier = auth_verifier(&config.product.auth).await?;
+    let auth = AuthState::from_shared(verifier.clone());
 {% else %}    let (repository, pool_metrics): (Arc<dyn ItemRepository>, Option<PoolMetricsSampler>) =
         if let Some(database) = &config.database {
             let pool = PgPoolOptions::new()
@@ -125,7 +130,7 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
 {% endif %}
     let api_state = ApiState {
         items: item_service.clone(),
-{% if context.auth_oidc %}        users: user_service,
+{% if context.auth_enabled %}        users: user_service,
         auth: auth.clone(),
         erasure: ErasureApi {
             service: erasure_service,
@@ -133,7 +138,7 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         },
 {% endif %}    };
     let api = routes(api_state);
-{% if context.auth_oidc %}    let rate_limit_options = RateLimitOptions::from_config(&config.rate_limit)?;
+{% if context.auth_enabled %}    let rate_limit_options = RateLimitOptions::from_config(&config.rate_limit)?;
     let rate_limit_store = RedisRateLimitStore::connect_if_enabled(&rate_limit_options).await?;
     let api = if let Some(store) = rate_limit_store{% if context.mcp %}.clone(){% endif %} {
         let item_write_options = AuthenticatedRouteGroupOptions::new(
@@ -173,9 +178,14 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
     let mcp_services = {{ context.app_crate }}_mcp::services(item_reads);
     let mcp = baukit_mcp::router(
         config.product.mcp.clone(),
+        if config.product.mcp.enabled {
+            mcp_verifier(&config.product.auth, &config.product.mcp).await?
+        } else {
+            verifier
+        },
         mcp_services,
         mcp_store,
-        {{ context.app_crate }}_mcp::authentication_policy(),
+        mcp_policy(&config.product.auth, &config.product.mcp)?,
     )
     .await?;
     let api = api.merge(mcp);
@@ -203,7 +213,7 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         operations_address = %operations_listener.local_addr()?,
     );
 
-{% if context.auth_oidc %}    let erasure_shutdown = shutdown.clone();
+{% if context.auth_enabled %}    let erasure_shutdown = shutdown.clone();
     let erasure_task = tokio::spawn(async move {
         let result = erasure_runner.run(erasure_shutdown.clone()).await;
         if result.is_err() {
@@ -225,7 +235,7 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         signal_task.abort();
     }
     let _signal_result = signal_task.await;
-{% if context.auth_oidc %}    shutdown.run_during_drain(erasure_task).await???;
+{% if context.auth_enabled %}    shutdown.run_during_drain(erasure_task).await???;
 {% endif %}    if let Some(pool_metrics) = pool_metrics {
         pool_metrics.shutdown().await;
     }
@@ -237,7 +247,7 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         .await???;
     result?;
     Ok(())
-}{% if context.auth_oidc %}
+}{% if context.auth_enabled %}
 
 fn item_write_subject(principal: &Principal) -> String {
     principal.subject().to_owned()

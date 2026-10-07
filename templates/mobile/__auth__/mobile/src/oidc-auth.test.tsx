@@ -1,8 +1,11 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import type { PropsWithChildren } from 'react';
-import { createExpoOidcClient } from '@baukit/auth-native/expo';
+{% if context.auth_oidc %}import { createExpoOidcClient as createClient } from '@baukit/auth-native/expo';
+{% elif context.auth_workos %}import { createWorkOsNativeClient as createClient } from '@baukit/auth-native/workos';
+{% else %}import { createClerkExpoClient as createClient } from '@baukit/auth-native/clerk-expo';
+{% endif %}
 import {
-  appearanceStateDecoration,
+{% if not context.auth_clerk %}  appearanceStateDecoration,{% endif %}
   OidcError,
   type OidcSession,
   type SessionExpiredEvent,
@@ -10,7 +13,7 @@ import {
 
 jest.mock('expo-auth-session', () => ({ makeRedirectUri: () => 'product://oauth' }));
 jest.mock('expo-crypto', () => ({ getRandomBytesAsync: jest.fn() }));
-jest.mock('@baukit/auth-native/expo', () => {
+jest.mock('{% if context.auth_oidc %}@baukit/auth-native/expo{% elif context.auth_workos %}@baukit/auth-native/workos{% else %}@baukit/auth-native/clerk-expo{% endif %}', () => {
   const client = {
     subscribe: jest.fn(),
     subscribeSessionExpired: jest.fn(),
@@ -19,14 +22,19 @@ jest.mock('@baukit/auth-native/expo', () => {
     signIn: jest.fn(),
     signOut: jest.fn(),
   };
-  return { completeExpoAuthSession: jest.fn(), createExpoOidcClient: jest.fn(() => client) };
+{% if context.auth_oidc %}  return { completeExpoAuthSession: jest.fn(), createExpoOidcClient: jest.fn(() => client) };
+{% elif context.auth_workos %}  return { createWorkOsNativeClient: jest.fn(() => client) };
+{% else %}  return { createClerkExpoClient: jest.fn(() => ({ client, Provider: ({ children }: PropsWithChildren) => children })) };
+{% endif %}
 });
 
-import { authClient, OidcAuthProvider, useOidcAuth } from './auth';
+{% if context.auth_workos %}jest.mock('@baukit/auth-native/expo', () => ({ completeExpoAuthSession: jest.fn(), createExpoOidcEnvironment: (environment: unknown) => environment }));
+{% endif %}
+import { authClient, AuthProvider, useAuth } from './auth';
 import { authStorage } from './auth-storage';
 
 const client = jest.mocked(authClient);
-const clientEnvironment = jest.mocked(createExpoOidcClient).mock.calls[0]?.[1];
+const clientEnvironment = jest.mocked(createClient).mock.calls[0]?.[1];
 const REFRESH_LEAD_MS = 30_000;
 
 function session(overrides: Partial<OidcSession> = {}): OidcSession {
@@ -39,11 +47,11 @@ function session(overrides: Partial<OidcSession> = {}): OidcSession {
 }
 
 function wrapper({ children }: PropsWithChildren) {
-  return <OidcAuthProvider>{children}</OidcAuthProvider>;
+  return <AuthProvider>{children}</AuthProvider>;
 }
 
 async function renderAuth() {
-  const rendered = await renderHook(() => useOidcAuth(), { wrapper });
+  const rendered = await renderHook(() => useAuth(), { wrapper });
   await waitFor(() => {
     expect(rendered.result.current.ready).toBe(true);
   });
@@ -74,16 +82,16 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-describe('useOidcAuth', () => {
+describe('useAuth', () => {
   it('uses the SecureStore storage port', () => {
-    expect(clientEnvironment?.storage).toBe(authStorage);
+    expect({% if context.auth_clerk %}clientEnvironment{% else %}clientEnvironment?.storage{% endif %}).toBe(authStorage);
   });
 
   it('requires the provider', async () => {
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    await expect(renderHook(() => useOidcAuth())).rejects.toThrow(
-      'useOidcAuth must be used within OidcAuthProvider.',
+    await expect(renderHook(() => useAuth())).rejects.toThrow(
+      'useAuth must be used within AuthProvider.',
     );
   });
 
@@ -160,9 +168,9 @@ describe('useOidcAuth', () => {
     const outcome = await act(() => result.current.signIn('dark'));
 
     expect(outcome).toEqual({ status: 'success', subject: 'subject-123' });
-    expect(client.signIn.mock.calls).toEqual([
+    expect(client.signIn.mock.calls).toEqual({% if context.auth_clerk %}[[]]{% else %}[
       [{ stateDecoration: appearanceStateDecoration({ mode: 'dark' }) }],
-    ]);
+    ]{% endif %});
     expect(result.current.sessionExpired).toBe(false);
     expect(result.current.announcement).toBeUndefined();
   });
@@ -173,7 +181,7 @@ describe('useOidcAuth', () => {
 
     await act(() => result.current.signIn());
 
-    expect(client.signIn.mock.calls).toEqual([[{}]]);
+    expect(client.signIn.mock.calls).toEqual({% if context.auth_clerk %}[[]]{% else %}[[{}]]{% endif %});
     expect(result.current.announcement).toBe('Sign in cancelled. You can try again.');
   });
 

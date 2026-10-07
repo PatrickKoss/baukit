@@ -13,7 +13,7 @@ jest.mock('expo-router', () => ({
   Stack: { Screen: jest.fn(() => null) },
 }));
 jest.mock('./auth', () => ({
-  useOidcAuth: () => ({ subject: 'subject' }),
+  useAuth: () => ({ subject: 'subject' }),
 }));
 jest.mock('./local-data', () => ({
   useAuthenticatedLocalData: () => ({

@@ -301,7 +301,10 @@ async fn endpoint_identity_erasure_conforms() -> Result<(), TestError> {
 async fn identity_configuration_requires_production_secrets_and_https() -> Result<(), TestError> {
     let pool = PgPool::connect_lazy("postgres://postgres:postgres@localhost/configuration-test")?;
     let mut config = AuthConfig::default();
-    assert!(identity_erasure(pool.clone(), &config, Environment::Local).is_ok());
+    assert_eq!(
+        identity_erasure(pool.clone(), &config, Environment::Local).is_ok(),
+        config.provider == {{ context.app_crate }}_bin::AuthProvider::Oidc
+    );
     config.identity_admin_base_url = "https://keycloak.example.test".into();
     assert!(identity_erasure(pool.clone(), &config, Environment::Production).is_err());
     config.identity_admin_client_secret = Some(Secret::new("configured-client-secret".into()));

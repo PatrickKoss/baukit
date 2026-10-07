@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import type { ProfileErasureClient } from '@baukit/api-runtime/erasure';
 
 import { useAppPreferences } from '../src/app-shell';
-import { useOidcAuth } from '../src/auth';
+import { useAuth } from '../src/auth';
 import { createDeleteProfileClient, deleteProfile } from '../src/delete-profile';
 import { DeleteProfileScreen } from '../src/delete-profile-screen';
 import { useAuthenticatedLocalData } from '../src/local-data';
@@ -12,7 +12,7 @@ import { useAuthenticatedLocalData } from '../src/local-data';
 export default function DeleteProfileRoute() {
   const { t } = useTranslation('home');
   const headerOptions = { title: t('erasure.title') };
-  const auth = useOidcAuth();
+  const auth = useAuth();
   const localData = useAuthenticatedLocalData();
   const { resetPreferenceIdentity } = useAppPreferences();
   const client = useRef<ProfileErasureClient | null>(null);

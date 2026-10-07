@@ -1,7 +1,7 @@
 import { Stack } from 'expo-router';
 
 import { AppShell } from '../src/app-shell';
-import { OidcAuthProvider, useOidcAuth } from '../src/auth';
+import { AuthProvider, useAuth } from '../src/auth';
 import { AuthenticatedLocalDataProvider } from '../src/local-data';
 import { useTheme } from '../src/theme';
 
@@ -9,14 +9,14 @@ const groupOptions = { headerShown: false };
 
 export default function RootLayout() {
   return (
-    <OidcAuthProvider>
+    <AuthProvider>
       <AuthGate />
-    </OidcAuthProvider>
+    </AuthProvider>
   );
 }
 
 function AuthGate() {
-  const auth = useOidcAuth();
+  const auth = useAuth();
   return (
     <AppShell preferenceSubjectId={auth.subject ?? null}>
       <AppNavigator auth={auth} />
@@ -27,7 +27,7 @@ function AuthGate() {
 function AppNavigator({
   auth,
 }: {
-  readonly auth: ReturnType<typeof useOidcAuth>;
+  readonly auth: ReturnType<typeof useAuth>;
 }) {
   const { theme } = useTheme();
   const screenOptions = {

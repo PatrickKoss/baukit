@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add Clerk and WorkOS SDK adapters behind the browser authentication contract.
+
 - Publish the TypeScript sources referenced by JavaScript and declaration maps. Check source paths in the packed archive.
 
 ## 0.8.0

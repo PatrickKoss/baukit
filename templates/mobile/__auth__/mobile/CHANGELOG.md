@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Select the {{ context.auth_provider }} adapter through the shared authentication contract.
+
 - Update Expo SDK 57 patches to match Expo compatibility checks.
 
 - Use dot-separated OIDC keys directly. Remove the colon-to-dot storage rewrite.

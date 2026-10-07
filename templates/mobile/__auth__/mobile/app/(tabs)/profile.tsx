@@ -3,7 +3,7 @@ import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Link } from "expo-router";
 import { useTranslation } from "react-i18next";
-import { useOidcAuth } from "../../src/auth";
+import { useAuth } from "../../src/auth";
 import { useTheme } from "../../src/theme";
 import { ActionButton } from "../../src/action-button";
 import { useAppPreferences } from "../../src/app-shell";
@@ -11,7 +11,7 @@ import { signOutWithPreferenceReset } from "../../src/preference-sign-out";
 
 export default function ProfileScreen() {
   const [error, setError] = useState<string>();
-  const auth = useOidcAuth();
+  const auth = useAuth();
   const { t } = useTranslation("home");
   const { theme } = useTheme();
   const { resetPreferenceIdentity } = useAppPreferences();

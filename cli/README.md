@@ -26,6 +26,15 @@ The web app hosts it when both apps are present. Otherwise Expo web hosts it.
 Run `corepack pnpm run build:sw` before exporting the Expo web app, then
 `corepack pnpm run build:sw:check` to check the worker artifact.
 
+Use `--auth oidc`, `--auth clerk` or `--auth workos` with any backend, web or
+mobile flavor. Each also supports `--backend --mcp`. Only OIDC includes the
+development Keycloak realm. Managed providers use their official web SDKs;
+mobile uses Clerk Expo or WorkOS AuthKit public-client PKCE. Generated READMEs
+describe client IDs, publishable keys and backend secret bindings.
+The generated backend's `docs/auth-providers.md` explains external OIDC issuers.
+See [remote MCP](../docs/remote-mcp.md) for each provider's OAuth client setup
+and token binding.
+
 Use `--port-offset N` when several generated products run on one development
 machine. The CLI adds `N` to each generated PostgreSQL, API, operations,
 Keycloak, and fake-provider host port, then records the offset in `baukit.toml`.
