@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- Breaking: `ToolService::call` and `ResourceService::read` take a `CancellationToken` as their final argument. The token signals client cancellation and HTTP disconnects. Cancellation notifications apply only to active requests from the same issuer, subject and OAuth client.
+- Breaking: `ToolService::call` and `ResourceService::read` take a `CancellationToken` as their final argument. The token signals client cancellation and HTTP disconnects. Cancellation notifications apply only to active requests from the same issuer, subject and OAuth client. Concurrent calls from that caller must use distinct request IDs.
 - Breaking: `ScopedTool` requires an `annotations` field. Use `ToolAnnotations::default()` to keep the read/write defaults. Tools can override each hint and title. Drift exports include the overrides.
 - Let `McpServices` set the product server name, version, title and initialize instructions.
 - Add a server success text prefix without changing structured content or errors.
