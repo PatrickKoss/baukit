@@ -32,6 +32,14 @@ esac
 
 [[ -f "$state_file" ]] || { echo "qa: no live $platform QA environment; start it first" >&2; exit 1; }
 device="$(<"$state_file")"
+if [[ "$platform" == android ]]; then
+  sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+  if [[ -z "$sdk_root" && -f "$mobile_dir/.qa/android-home" ]]; then
+    sdk_root="$(<"$mobile_dir/.qa/android-home")"
+  fi
+  [[ -n "$sdk_root" ]] || { echo "qa: Android SDK location is missing" >&2; exit 1; }
+  python3 "$mobile_dir/scripts/qa/android-adb.py" --check-health "$sdk_root/platform-tools/adb" "$device"
+fi
 cd "$mobile_dir"
 "$maestro_bin" test \
   --platform "$platform" \

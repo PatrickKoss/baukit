@@ -188,13 +188,15 @@ if [[ "$*" == *'getprop sys.boot_completed' ]]; then echo 1; fi
 {% else %}            self.assertFalse(any("chrome" in event for event in events))
 {% endif %}
 
-    def test_android_setup_stops_before_cleanup_when_device_probe_fails(self) -> None:
+    def test_android_setup_keeps_ownership_when_device_probe_fails(self) -> None:
         self.executable(self.sdk / "emulator/emulator", 'echo emulator >> "$EVENTS"\n')
         self.executable(self.scripts / "services.sh", 'echo services >> "$EVENTS"\n')
         state = self.root / "mobile/.qa"
         state.mkdir()
         owned = state / "android-owned"
         owned.touch()
+        serial = state / "android-serial"
+        serial.write_text("emulator-5556\n")
         apk = self.root / "mobile/android/app/build/outputs/apk/release/app-release.apk"
         apk.parent.mkdir(parents=True)
         apk.touch()
@@ -215,8 +217,9 @@ if [[ "$*" == *'getprop sys.boot_completed' ]]; then echo 1; fi
                     capture_output=True, text=True, check=False, timeout=5,
                 )
                 self.assertEqual(result.returncode, expected_status, result.stdout + result.stderr)
-                self.assertFalse(self.events.exists())
+                self.assertEqual(self.events.read_text().splitlines(), ["services"])
                 self.assertTrue(owned.exists())
+                self.assertTrue(serial.exists())
 
 
 if __name__ == "__main__":

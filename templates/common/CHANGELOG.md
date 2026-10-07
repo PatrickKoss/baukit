@@ -4,6 +4,12 @@
 
 {% if context.mcp %}- Fix rustfmt drift in the MCP router wiring for short product names.
 
+{% endif %}{% if context.web %}- Measure the screen and scroller together in the browser geometry check, so navigation animation cannot mix two layouts.
+
+{% endif %}{% if context.mobile %}- Keep Android QA ownership until cleanup succeeds. Verify emulator shutdown and report service teardown failures.
+- Reject System UI and keyboard crashes or ANRs after boot and before Maestro flows.
+- Limit the Android software renderer to four threads by default. Set `BAUKIT_QA_RENDERER_THREADS` to change the limit.
+
 {% endif %}## [0.8.0] - 2026-10-07
 
 {% if context.mcp %}- Breaking: `--mcp` now generates the Rust remote server and requires `--backend --auth oidc`. The TypeScript stdio template and its authentication flags are removed. Set `capabilities.mcp = true` after migrating existing tools.

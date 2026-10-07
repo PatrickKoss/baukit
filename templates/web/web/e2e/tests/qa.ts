@@ -154,19 +154,26 @@ export interface Box {
   readonly y: number;
 }
 
-/** Box of the nearest ancestor that actually scrolls vertically. */
-export async function scrollingAncestorBox(locator: Locator): Promise<Box> {
+/** Measures the screen and its scrolling ancestor in the same layout. */
+export async function scrollingLayout(locator: Locator): Promise<{ screen: Box; scroller: Box }> {
   return locator.evaluate((element) => {
+    const screenRectangle = element.getBoundingClientRect();
+    const screen = {
+      height: screenRectangle.height,
+      width: screenRectangle.width,
+      x: screenRectangle.x,
+      y: screenRectangle.y,
+    };
     let candidate: HTMLElement | null = element as HTMLElement;
     while (candidate) {
       const { overflowY } = window.getComputedStyle(candidate);
       if (overflowY === 'auto' || overflowY === 'scroll') {
         const { height, width, x, y } = candidate.getBoundingClientRect();
-        return { height, width, x, y };
+        return { screen, scroller: { height, width, x, y } };
       }
       candidate = candidate.parentElement;
     }
     const { height, width, x, y } = document.documentElement.getBoundingClientRect();
-    return { height, width, x, y };
+    return { screen, scroller: { height, width, x, y } };
   });
 }

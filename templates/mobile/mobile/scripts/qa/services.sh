@@ -19,24 +19,41 @@ compose=(
   -f "$root/mobile/scripts/qa/docker-compose.qa.yml"
 )
 
+api_running() {
+  kill -0 "$1" 2>/dev/null && [[ "$(ps -o stat= -p "$1")" != Z* ]]
+}
+
 stop_api() {
-  if [[ -f "$state_dir/backend.pid" ]]; then
-    pid="$(<"$state_dir/backend.pid")"
-    if [[ "$pid" =~ ^[1-9][0-9]*$ ]] && kill -0 "$pid" 2>/dev/null; then
-      kill "$pid" 2>/dev/null || true
-      for _ in $(seq 1 30); do
-        kill -0 "$pid" 2>/dev/null || break
-        sleep 1
-      done
+  [[ -f "$state_dir/backend.pid" ]] || return 0
+  local pid
+  pid="$(<"$state_dir/backend.pid")"
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || {
+    echo "qa: invalid backend PID; ownership state was kept" >&2
+    return 1
+  }
+  if api_running "$pid"; then
+    kill "$pid" || return
+    for _ in $(seq 1 30); do
+      api_running "$pid" || break
+      sleep 1
+    done
+    if api_running "$pid"; then
+      echo "qa: backend $pid did not stop; ownership state was kept" >&2
+      return 1
     fi
-    rm -f "$state_dir/backend.pid"
   fi
+  rm -f "$state_dir/backend.pid"
 }
 
 stop_services() {
-  stop_api
-{% if context.backend %}  "${compose[@]}" down --volumes >/dev/null 2>&1 || true
-{% endif %}}
+  local status=0
+  stop_api || status=$?
+{% if context.backend %}  "${compose[@]}" down --volumes || status=$?
+{% endif %}  if [[ "$status" != 0 ]]; then
+    echo "qa: service cleanup failed; ownership state was kept" >&2
+    return "$status"
+  fi
+}
 
 if [[ "$action" == stop ]]; then
   stop_services

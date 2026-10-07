@@ -30,8 +30,10 @@ e2e-mobile-live: e2e-android-live
 
 e2e-android:
 	@set -eu; \
-		cleanup() { $(MAKE) --no-print-directory qa-android-down; }; \
-		trap cleanup EXIT INT TERM; \
+		cleanup() { status=$$?; $(MAKE) --no-print-directory qa-android-down || status=$$?; exit "$$status"; }; \
+		trap cleanup EXIT; \
+		trap 'exit 130' INT; \
+		trap 'exit 143' TERM; \
 		$(MAKE) --no-print-directory qa-android; \
 		$(MAKE) --no-print-directory e2e-android-live
 

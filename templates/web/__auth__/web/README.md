@@ -52,6 +52,10 @@ E2E_WEB_PORT=5183 corepack pnpm@12.9.1 exec playwright test --config e2e/playwri
 
 `E2E_WEB_PORT` sets the Vite port and defaults to 5173, the only origin the realm file lists. Before the specs run, global setup adds the chosen origin to the `{{ context.app_name }}-web` client's redirect URIs and web origins through the admin API if the client lacks it. The config reuses a server that already listens on the port, so pick a free port when another process holds 5173. `E2E_KEYCLOAK_URL`, `E2E_KEYCLOAK_REALM`, `E2E_KEYCLOAK_ADMIN_USERNAME`, `E2E_KEYCLOAK_ADMIN_PASSWORD`, and `E2E_KEYCLOAK_WEB_CLIENT_ID` override the development defaults. Each run leaves its users and any added origin in the realm, so point it only at a disposable development realm. The hermetic browser gate never runs these specs.
 
+The template has no automated full-stack lifecycle or image cache. Its browser gate stubs the API, and this single stack test checks real UI sign-in. Per-project Docker stacks and API-seeded sessions suit a larger suite with many authenticated flows. Adding them here would require a new runner, backend image, realm lifecycle, and cleanup protocol.
+
+The smallest next step is a disposable launcher for this sign-in test. It should override every Compose host port with a Docker-assigned port, read the mappings before starting the API, and import a temporary realm with the chosen web origin. Dependency installation should take a lock inside the worktree. Keep UI login for this test. Add a session client at runtime only when repeated authenticated flows need it, with a check that rejects the product realm as the import destination. Measure startup and test time before adding an image cache or concurrent stacks.
+
 ## Delete profile
 
 The Identity section links to `/?page=delete-profile`. The screen requires a second explicit

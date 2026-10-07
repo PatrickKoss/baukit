@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import { qaConfig } from '../qa.config';
-import { openRoute, scrollingAncestorBox, stubApi } from './qa';
+import { openRoute, scrollingLayout, stubApi } from './qa';
 
 const VIEWPORTS = [
   { width: 1280, height: 720 },
@@ -16,6 +16,25 @@ const VIEWPORTS = [
 test.describe('scroll', () => {
   test.beforeEach(async ({ page }) => {
     await stubApi(page, qaConfig.apiStubs);
+  });
+
+  test('scroller geometry stays consistent while its width changes', async ({ page }) => {
+    await page.setContent(`
+      <style>
+        #scroller { overflow-y: auto; width: 400px; }
+        #screen { width: 50%; margin-inline: auto; height: 1000px; }
+      </style>
+      <div id="scroller"><div id="screen"></div></div>
+    `);
+    for (const width of [400, 500, 600, 700]) {
+      await page.locator('#scroller').evaluate((element, value) => {
+        element.style.width = `${String(value)}px`;
+      }, width);
+      const { screen, scroller } = await scrollingLayout(page.locator('#screen'));
+      expect(scroller.width).toBeCloseTo(width, 3);
+      expect(screen.width).toBeCloseTo(width / 2, 3);
+      expect(screen.x + screen.width / 2).toBeCloseTo(scroller.x + scroller.width / 2, 3);
+    }
   });
 
   for (const route of qaConfig.routes.filter(({ checkScroll }) => checkScroll !== false)) {
@@ -56,12 +75,7 @@ test.describe('scroll', () => {
       const screen = page.locator(route.screenSelector ?? qaConfig.screenSelector).first();
       await expect(screen).toBeVisible();
 
-      const scroller = await scrollingAncestorBox(screen);
-      const screenBox = await screen.boundingBox();
-      expect(screenBox).not.toBeNull();
-      if (screenBox === null) {
-        return;
-      }
+      const { scroller, screen: screenBox } = await scrollingLayout(screen);
 
       // The screen must sit inside the scroller and stay horizontally centred
       // in it, so no content is clipped and no scrollbar is stranded.
