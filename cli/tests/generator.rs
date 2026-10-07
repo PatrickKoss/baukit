@@ -4932,6 +4932,75 @@ fn doctor_accepts_mcp_composition_and_validation_across_backend_crates() -> anyh
 }
 
 #[test]
+fn doctor_follows_mcp_definitions_and_configuration_from_library_entry_points() -> anyhow::Result<()>
+{
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "module-mcp");
+    local.auth = Some(AuthProvider::Oidc);
+    local.mcp = true;
+    let root = generate_new(&local)?;
+    let mcp = root.join("backend/crates/module-mcp-mcp/src");
+    let library = fs::read_to_string(mcp.join("lib.rs"))?;
+    let start = library.find("impl ItemTools {").expect("tool definitions");
+    let end = library
+        .find("impl ToolService for ItemTools")
+        .expect("tool service");
+    fs::write(
+        mcp.join("definitions.rs"),
+        format!("use super::*;\n{}", &library[start..end]),
+    )?;
+    fs::write(
+        mcp.join("lib.rs"),
+        format!(
+            "{}mod definitions;\nmod config;\n{}",
+            &library[..start],
+            &library[end..]
+        ),
+    )?;
+    fs::write(
+        mcp.join("config.rs"),
+        "pub struct RemoteConfig { pub resource: baukit_mcp::McpConfig }\nimpl RemoteConfig { pub fn validate(&self) -> Result<(), baukit_mcp::McpConfigError> { self.resource.validate() } }\n",
+    )?;
+    let manifest = root.join("baukit.toml");
+    fs::write(
+        &manifest,
+        format!(
+            "{}\n[doctor.sources]\nmcp_tools = \"backend/crates/module-mcp-mcp/src/lib.rs\"\nmcp_config = \"backend/crates/module-mcp-mcp/src/lib.rs\"\n",
+            fs::read_to_string(&manifest)?
+        ),
+    )?;
+    doctor(&root)?;
+    for (file, symbol, finding) in [
+        ("lib.rs", "mod definitions;", "scope enforcement"),
+        ("definitions.rs", "required_scopes:", "scope enforcement"),
+        ("lib.rs", "mod config;", "resource configuration"),
+        (
+            "config.rs",
+            "resource: baukit_mcp::McpConfig",
+            "resource configuration",
+        ),
+        (
+            "config.rs",
+            "self.resource.validate()",
+            "configuration validation",
+        ),
+    ] {
+        let path = mcp.join(file);
+        let source = fs::read_to_string(&path)?;
+        assert!(source.contains(symbol));
+        fs::write(&path, source.replace(symbol, "missing_wiring"))?;
+        assert!(
+            doctor(&root)
+                .expect_err("missing module wiring")
+                .to_string()
+                .contains(finding)
+        );
+        fs::write(path, source)?;
+    }
+    Ok(())
+}
+
+#[test]
 fn remote_mcp_compose_keeps_public_issuers_and_fetches_internal_keys() -> anyhow::Result<()> {
     for provider in [
         AuthProvider::Oidc,
