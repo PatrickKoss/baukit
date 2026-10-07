@@ -190,12 +190,18 @@ Metrics use the product's configured prefix, with these suffixes and labels:
    `SuiteModule`. Mount `adapters::http::router(SuiteHttpState { api })` and
    merge `SuiteOpenApi` into the product's OpenAPI document.
 6. Emit `SuiteEvent { event_type, natural_key, occurred_at, payload }` at the
-   product's domain write points. Call
+   product's domain write points. Before locking or writing product rows, call
+   `SuiteEventOutbox::lock_owner_in_transaction(&mut PgConnection, owner_id)`
+   on the domain transaction. This serializes the write with ingest and erasure.
+   Call
    `SuiteEventOutbox::enqueue_in_transaction(&mut PgConnection, owner_id, &[SuiteEvent])`
    before commit. One job is created per matching active link. Rollback removes
    every job. XP is included only when both global and per-link switches are
    on. Invalid product payloads are skipped and counted; persistence failures
-   return errors to the domain caller.
+   return errors to the domain caller. An enqueue without the owner lock returns
+   `SuiteStoreError::Timeout` if another suite transaction holds it. That error
+   leaves the transaction usable. The product can roll back an atomic write or
+   commit a best-effort write and recover the event through replay.
 7. Register `SuiteJobHandler::new(Arc<dyn SuiteDeliveryRunner>)` with the jobs
    runner. Configure the queue, concurrency and backoff above. Supervise
    `run_hourly_cleanup(service, watch::Receiver<bool>)` alongside it. Cleanup
@@ -211,8 +217,9 @@ Metrics use the product's configured prefix, with these suffixes and labels:
    `owner_in_transaction` reads without `FOR UPDATE`. The adapter takes the suite
    owner advisory lock, then calls `lock_owner_in_transaction(connection, owner)`.
    Implement that hook with `SELECT id FROM owners WHERE id=$1 FOR UPDATE`, using
-   the product's owner table. This waits for product writes and their outbox jobs
-   before suite cleanup starts. Product erasure then deletes its rows. Preserve
+   the product's owner table. The advisory lock waits for domain writes that use
+   the outbox owner lock. The row lock also waits for inserts that reference the
+   owner. Product erasure then deletes its rows. Preserve
    this lock order when adding owner foreign keys.
 9. Add `@baukit/suite-client` to the client. Supply authenticated transport,
    persistent OAuth state, same-tab web redirects and native auth-session

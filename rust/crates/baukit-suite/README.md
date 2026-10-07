@@ -29,8 +29,11 @@ ledger entry id. Replay must return `NoRule` or `Capped` with no ledger entry.
 `ValidatedPayload::deserialize<T>()` reads a product-owned type. Put
 `#[serde(deny_unknown_fields)]` on that type. Typed builders stay in the product.
 
-Emit `SuiteEvent`s through `SuiteEventOutbox::enqueue_in_transaction` before
-committing the domain write. Implement identity lookup and history reads on the
+Call `SuiteEventOutbox::lock_owner_in_transaction` before locking or writing
+product rows. Emit `SuiteEvent`s through `enqueue_in_transaction` before
+committing the domain write. Without that owner lock, enqueue returns
+`SuiteStoreError::Timeout` on contention and leaves the transaction usable.
+Implement identity lookup and history reads on the
 provided connection so neither acquires another connection during that transaction.
 
 Use `SuiteConfig` as the product's `suite` configuration section. Call
@@ -42,8 +45,8 @@ migrations. They do not run on startup. Add the owner foreign keys in the produc
 Use `PostgresSuiteErasure` and `erase_with_suite` to notify peers before the erasure
 transaction starts, then delete suite rows in that transaction. Implement
 `SuiteErasureOwnerLookup::lock_owner_in_transaction` with a product owner row
-lock. The adapter takes the suite advisory lock first, then waits for domain
-writes before cleanup.
+lock. The adapter takes the suite advisory lock first, so domain writes that
+use the outbox owner lock finish before cleanup.
 
 See [suite adoption and protocol](../../../docs/platform/suite-events.md) for
 configuration keys, public signatures, route mounting, worker wiring, client

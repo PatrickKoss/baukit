@@ -203,6 +203,15 @@ impl PostgresSuiteEventOutbox {
         if self.registry.standalone() || events.is_empty() {
             return Ok(0);
         }
+        if !super::try_lock_owner(tx, owner)
+            .await
+            .map_err(|error| SuiteEmissionError::new(&events[0].event_type, error))?
+        {
+            return Err(SuiteEmissionError::new(
+                &events[0].event_type,
+                SuiteStoreError::Timeout,
+            ));
+        }
         let links = sqlx::query_as::<_, LinkRow>(
             r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
@@ -238,6 +247,16 @@ impl PostgresSuiteEventOutbox {
 }
 #[async_trait]
 impl SuiteEventOutbox for PostgresSuiteEventOutbox {
+    async fn lock_owner_in_transaction(
+        &self,
+        tx: &mut PgConnection,
+        owner: Uuid,
+    ) -> Result<(), SuiteStoreError> {
+        if self.registry.standalone() {
+            return Ok(());
+        }
+        super::lock_owner(tx, owner).await
+    }
     async fn enqueue_in_transaction(
         &self,
         tx: &mut PgConnection,
@@ -246,7 +265,15 @@ impl SuiteEventOutbox for PostgresSuiteEventOutbox {
     ) -> Result<u64, SuiteStoreError> {
         self.enqueue_events(tx, owner, events)
             .await
-            .map_err(|error| error.error)
+            .map_err(|error| {
+                record_emission_skip(
+                    &self.metric_prefix,
+                    &error.event_type,
+                    &error.error,
+                    EmissionKind::Live,
+                );
+                error.error
+            })
     }
     async fn enqueue_revoke_in_transaction(
         &self,

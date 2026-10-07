@@ -2853,6 +2853,10 @@ async fn erasure_waits_for_product_writes_before_deleting_their_suite_jobs() -> 
         }),
     );
     let mut domain = db.pool.begin().await?;
+    context
+        .outbox
+        .lock_owner_in_transaction(&mut domain, owner)
+        .await?;
     sqlx::query("INSERT INTO product_facts(owner_id,sequence) VALUES($1,1)")
         .bind(owner)
         .execute(&mut *domain)
@@ -2944,6 +2948,79 @@ async fn link_job_routes_wait_for_erasure_before_locking_links() -> TestResult {
                 .fetch_one(&db.pool)
                 .await?;
         assert_eq!(jobs, 0, "{operation}");
+    }
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn unfenced_product_inserts_and_updates_cannot_enqueue_during_erasure() -> TestResult {
+    use baukit_erasure::ProductErasure;
+
+    let db = common::postgres_database().await?;
+    sqlx::query("CREATE TABLE product_facts(owner_id uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, sequence integer NOT NULL)")
+        .execute(&db.pool).await?;
+    let context = make_context(&db.pool, registry("alpha", "beta", 12340, 12341));
+    let peer = Arc::new(ScriptedWebhookReceiver::start().await?);
+    for operation in ["insert", "update"] {
+        let owner = user(&db.pool, &format!("unfenced-{operation}")).await?;
+        let (link, _) =
+            exchange_link(&SuiteLinkService::new(context.clone()), owner, None, None).await?;
+        if operation == "update" {
+            sqlx::query("INSERT INTO product_facts(owner_id,sequence) VALUES($1,1)")
+                .bind(owner)
+                .execute(&db.pool)
+                .await?;
+        }
+        let mut domain = db.pool.begin().await?;
+        let statement = if operation == "insert" {
+            "INSERT INTO product_facts(owner_id,sequence) VALUES($1,1)"
+        } else {
+            "UPDATE product_facts SET sequence=2 WHERE owner_id=$1"
+        };
+        sqlx::query(statement)
+            .bind(owner)
+            .execute(&mut *domain)
+            .await?;
+        let blocker: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&mut *domain)
+            .await?;
+        let adapter = PostgresSuiteErasure::new(
+            PostgresSuiteLinkStore::new(db.pool.clone()),
+            Arc::new(Identities(db.pool.clone())),
+            Arc::new(ProductDeletion {
+                peer: peer.clone(),
+                expected_calls: 0,
+            }),
+        );
+        let pool = db.pool.clone();
+        let erasure = tokio::spawn(async move {
+            let mut transaction = pool.begin().await?;
+            adapter.erase(&mut transaction, &owner.to_string()).await?;
+            transaction.commit().await
+        });
+        wait_for_blocked_connection(&db.pool, blocker).await?;
+        assert_eq!(
+            context
+                .outbox
+                .enqueue_in_transaction(&mut domain, owner, &[activity(10, None)])
+                .await
+                .expect_err("erasure owns the suite lock"),
+            SuiteStoreError::Timeout,
+            "{operation}"
+        );
+        domain.commit().await?;
+        tokio::time::timeout(std::time::Duration::from_secs(5), erasure).await???;
+        let rows: (i64, i64, i64) = sqlx::query_as(
+            "SELECT (SELECT count(*) FROM product_facts WHERE owner_id=$1),
+            (SELECT count(*) FROM suite_links WHERE user_id=$1),
+            (SELECT count(*) FROM job_outbox WHERE payload->>'link_id'=$2)",
+        )
+        .bind(owner)
+        .bind(link.id.to_string())
+        .fetch_one(&db.pool)
+        .await?;
+        assert_eq!(rows, (0, 0, 0), "{operation}");
     }
     Ok(())
 }

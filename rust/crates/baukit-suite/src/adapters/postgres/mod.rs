@@ -904,6 +904,14 @@ async fn lock_owner(tx: &mut sqlx::PgConnection, owner: Uuid) -> Result<(), Suit
     Ok(())
 }
 
+async fn try_lock_owner(tx: &mut sqlx::PgConnection, owner: Uuid) -> Result<bool, SuiteStoreError> {
+    sqlx::query_scalar("SELECT pg_try_advisory_xact_lock(hashtextextended($1,0))")
+        .bind(format!("baukit_suite.owner:{owner}"))
+        .fetch_one(tx)
+        .await
+        .map_err(storage)
+}
+
 #[derive(sqlx::FromRow)]
 struct InboxRow {
     payload_hash: Vec<u8>,

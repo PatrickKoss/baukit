@@ -272,6 +272,12 @@ pub trait SuiteLinkStore: Send + Sync {
 
 #[async_trait]
 pub trait SuiteEventOutbox: Send + Sync {
+    /// Call before locking product rows to serialize domain writes with ingest and erasure.
+    async fn lock_owner_in_transaction(
+        &self,
+        tx: &mut sqlx::PgConnection,
+        owner_id: Uuid,
+    ) -> Result<(), SuiteStoreError>;
     async fn enqueue_in_transaction(
         &self,
         tx: &mut sqlx::PgConnection,
