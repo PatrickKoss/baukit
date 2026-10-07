@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Preserve analytics consent across SDK reset and logout. Keep consent withdrawn when it changes during an asynchronous reset.
+
 - Publish the TypeScript sources referenced by JavaScript and declaration maps. Check source paths in the packed archive.
 
 - Verify consent withdrawal and storage against posthog-react-native 4.78.4.

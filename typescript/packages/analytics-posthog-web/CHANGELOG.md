@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Restore analytics consent after SDK reset so later events still reach PostHog.
+
 - Publish the TypeScript sources referenced by JavaScript and declaration maps. Check source paths in the packed archive.
 
 - Verify the adapter against posthog-js 1.435.8.

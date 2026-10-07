@@ -162,16 +162,22 @@ export class PostHogWebTransport<
       }
       this.#clearRequired = false;
     }
-    if (!this.#optIn(client)) {
-      return;
-    }
-
     for (const envelope of envelopes) {
       if (generation !== this.#clearGeneration) {
         return;
       }
+      if (!this.#optIn(client)) {
+        return;
+      }
       try {
         await this.#dispatch(client, envelope);
+        if (
+          envelope.type === 'reset' &&
+          generation === this.#clearGeneration &&
+          !this.#optIn(client)
+        ) {
+          return;
+        }
       } catch (error: unknown) {
         this.#reportError(error);
       }
@@ -229,6 +235,7 @@ export class PostHogWebTransport<
         await Promise.resolve(client.alias(envelope.user_id, envelope.anonymous_id));
         break;
       case 'reset':
+        this.#providerOptedOut = true;
         await Promise.resolve(client.reset());
         break;
     }

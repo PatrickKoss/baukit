@@ -164,16 +164,22 @@ export class PostHogNativeTransport<
       }
       this.#clearRequired = false;
     }
-    if (!(await this.#optIn(client))) {
-      return;
-    }
-
     for (const envelope of envelopes) {
       if (generation !== this.#clearGeneration) {
         return;
       }
+      if (!(await this.#optIn(client, generation)) || generation !== this.#clearGeneration) {
+        return;
+      }
       try {
         await this.#dispatch(client, envelope);
+        if (
+          envelope.type === 'reset' &&
+          generation === this.#clearGeneration &&
+          !(await this.#optIn(client, generation))
+        ) {
+          return;
+        }
       } catch (error: unknown) {
         this.#reportError(error);
       }
@@ -231,17 +237,22 @@ export class PostHogNativeTransport<
         await Promise.resolve(client.alias(envelope.user_id));
         break;
       case 'reset':
+        this.#providerOptedOut = true;
         await Promise.resolve(client.reset());
         break;
     }
   }
 
-  async #optIn(client: PostHogNativeClient): Promise<boolean> {
+  async #optIn(client: PostHogNativeClient, generation: number): Promise<boolean> {
     if (!this.#providerOptedOut) {
       return true;
     }
     try {
       await Promise.resolve(client.optIn());
+      if (generation !== this.#clearGeneration) {
+        await this.#purgeClient(client);
+        return false;
+      }
       this.#providerOptedOut = false;
       return true;
     } catch (error: unknown) {

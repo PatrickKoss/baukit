@@ -57,7 +57,10 @@ function createMockClient(): MockClient {
     },
     identify,
     alias,
-    reset,
+    reset() {
+      reset();
+      optedOut = true;
+    },
     optIn() {
       optIn();
       optedOut = false;
@@ -142,6 +145,70 @@ describe('PostHogNativeTransport mapping', () => {
     });
     expect(posthog.alias).toHaveBeenCalledWith(USER_ID);
     expect(posthog.reset).toHaveBeenCalledWith();
+  });
+
+  it('restores SDK consent after reset, in the same batch and later batches', async () => {
+    const posthog = createMockClient();
+    const transport = new PostHogNativeTransport<ProductEvent>(posthog.client);
+    const capture = lifecycleEnvelopes().slice(0, 1);
+    const reset = lifecycleEnvelopes().slice(3);
+
+    await transport.send([...capture, ...reset, ...capture]);
+    await transport.send(capture);
+
+    expect(posthog.optIn).toHaveBeenCalledTimes(2);
+    expect(posthog.queue).toEqual(Array<string>(3).fill('onboarding_started'));
+  });
+
+  it('keeps consent withdrawn while an asynchronous reset finishes', async () => {
+    const posthog = createMockClient();
+    let finishReset: (() => void) | undefined;
+    const reset = vi.fn<() => Promise<void>>(
+      () =>
+        new Promise<void>((resolve) => {
+          finishReset = resolve;
+        }),
+    );
+    const client = { ...posthog.client, reset };
+    const transport = new PostHogNativeTransport<ProductEvent>(client);
+    await transport.send(lifecycleEnvelopes().slice(0, 1));
+    const sending = transport.send(lifecycleEnvelopes().slice(3));
+    await vi.waitFor(() => {
+      expect(finishReset).toBeDefined();
+    });
+    await transport.clearPending();
+    finishReset?.();
+    await sending;
+
+    expect(posthog.optIn).toHaveBeenCalledOnce();
+    expect(posthog.optOut).toHaveBeenCalledOnce();
+    expect(posthog.queue).toEqual([]);
+  });
+
+  it('keeps consent withdrawn when SDK opt-in finishes after withdrawal', async () => {
+    const posthog = createMockClient();
+    let finishOptIn: (() => Promise<void>) | undefined;
+    const optIn = vi.fn<() => Promise<void>>(
+      () =>
+        new Promise<void>((resolve) => {
+          finishOptIn = async () => {
+            await posthog.client.optIn();
+            resolve();
+          };
+        }),
+    );
+    const transport = new PostHogNativeTransport<ProductEvent>({ ...posthog.client, optIn });
+    const sending = transport.send(lifecycleEnvelopes().slice(0, 1));
+    await vi.waitFor(() => {
+      expect(finishOptIn).toBeDefined();
+    });
+    await transport.clearPending();
+    await finishOptIn?.();
+    await sending;
+
+    expect(posthog.capture).not.toHaveBeenCalled();
+    expect(posthog.optOut).toHaveBeenCalledTimes(2);
+    expect(posthog.queue).toEqual([]);
   });
 
   it('contains client and diagnostic failures', async () => {

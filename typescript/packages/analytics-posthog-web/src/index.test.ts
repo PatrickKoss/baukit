@@ -1,3 +1,4 @@
+import { PostHog } from 'posthog-js';
 import { AnalyticsClient } from '@baukit/analytics-core';
 import type { AnalyticsContext, AnalyticsEnvelope, EventAllowlist } from '@baukit/analytics-core';
 import { describe, expect, it, vi } from 'vitest';
@@ -51,7 +52,10 @@ function createMockClient(): MockClient {
     },
     identify,
     alias,
-    reset,
+    reset() {
+      reset();
+      optedOut = true;
+    },
     opt_in_capturing(options?: { readonly captureEventName?: string | null | false }) {
       optIn(options);
       optedOut = false;
@@ -121,6 +125,40 @@ describe('PostHogWebTransport mapping', () => {
     });
     expect(posthog.alias).toHaveBeenCalledWith(USER_ID, ANONYMOUS_ID);
     expect(posthog.reset).toHaveBeenCalledWith();
+  });
+
+  it('restores SDK consent after reset, in the same batch and later batches', async () => {
+    const posthog = createMockClient();
+    const transport = new PostHogWebTransport<ProductEvent>(posthog.client);
+    const capture = lifecycleEnvelopes().slice(0, 1);
+    const reset = lifecycleEnvelopes().slice(3);
+
+    await transport.send([...capture, ...reset, ...capture]);
+    await transport.send(capture);
+
+    expect(posthog.optIn).toHaveBeenCalledTimes(2);
+    expect(posthog.queue).toEqual(Array<string>(3).fill('onboarding_started'));
+  });
+
+  it('preserves consent through reset with the installed PostHog SDK', async () => {
+    const posthog = new PostHog();
+    posthog.init('phc_test', {
+      persistence: 'memory',
+      opt_out_capturing_by_default: true,
+      autocapture: false,
+      capture_pageview: false,
+      disable_session_recording: true,
+      advanced_disable_flags: true,
+    });
+    const transport = new PostHogWebTransport<ProductEvent>(posthog);
+    await transport.send(lifecycleEnvelopes().slice(0, 1));
+    expect(posthog.has_opted_out_capturing()).toBe(false);
+
+    await transport.send(lifecycleEnvelopes().slice(3));
+    expect(posthog.has_opted_out_capturing()).toBe(false);
+
+    await transport.clearPending();
+    expect(posthog.has_opted_out_capturing()).toBe(true);
   });
 
   it('contains client and diagnostic failures', async () => {
