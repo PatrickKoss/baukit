@@ -225,11 +225,15 @@ class ReleaseTrainFilesTest(unittest.TestCase):
 
     def test_patch_train_rejects_uncut_cli_entries(self):
         self.check_patch_train("## [Unreleased]\n\n- Pending template fix.\n", False,
-                               "## [Unreleased]\n- Pending CLI fix.\n")
+                               {"cli/CHANGELOG.md": "## [Unreleased]\n- Pending CLI fix.\n"})
 
     def test_patch_train_rejects_a_missing_cli_unreleased_heading(self):
         self.check_patch_train("## [Unreleased]\n\n- Pending template fix.\n", False,
-                               "## [0.7.0] - 2026-10-04\n\n- Shipped CLI fix.\n")
+                               {"cli/CHANGELOG.md": "## [0.7.0] - 2026-10-04\n\n- Shipped CLI fix.\n"})
+
+    def test_patch_train_rejects_uncut_crate_entries(self):
+        self.check_patch_train("## [Unreleased]\n\n- Pending template fix.\n", False,
+                               {"rust/crates/baukit-core/CHANGELOG.md": "## [Unreleased]\n- Pending crate fix.\n"})
 
     def test_patch_train_cuts_template_changelog_and_updates_cli_tags(self):
         self.check_patch_train("## [Unreleased]\n\n- Pending template fix.\n", True)
@@ -237,7 +241,7 @@ class ReleaseTrainFilesTest(unittest.TestCase):
     def test_patch_train_rejects_uncut_template_entries(self):
         self.check_patch_train("## [Unreleased]\n- Pending template fix.\n", False)
 
-    def check_patch_train(self, changelog: str, succeeds: bool, cli_changelog: str | None = None):
+    def check_patch_train(self, changelog: str, succeeds: bool, changelog_overrides: dict[str, str] | None = None):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for relative in ["scripts/release-train.sh", "scripts/release_packages.py", "scripts/check-example-lockfiles.py", "scripts/cli_install.py", "templates/common/CHANGELOG.md", "README.md"]:
@@ -258,8 +262,8 @@ class ReleaseTrainFilesTest(unittest.TestCase):
                 path = root / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(source)
-            if cli_changelog is not None:
-                (root / "cli/CHANGELOG.md").write_text(cli_changelog)
+            for relative, source in (changelog_overrides or {}).items():
+                (root / relative).write_text(source)
             (root / "typescript/.changeset").mkdir()
             (root / "templates/common/CHANGELOG.md").write_text(changelog + "\n## [0.7.0] - 2026-10-04\n\n- Previous fix.\n\n## [0.6.0] - 2026-10-02\n")
             before = (root / "templates/common/CHANGELOG.md").read_text()
@@ -281,8 +285,8 @@ class ReleaseTrainFilesTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("still has uncut Unreleased entries", result.stderr)
                 self.assertNotIn("Prepared v", result.stdout)
-                if cli_changelog is not None:
-                    self.assertIn("cli/CHANGELOG.md", result.stderr)
+                for relative in changelog_overrides or {}:
+                    self.assertIn(relative, result.stderr)
                 return
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             after = (root / "templates/common/CHANGELOG.md").read_text()
