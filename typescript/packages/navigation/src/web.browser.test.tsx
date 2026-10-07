@@ -490,23 +490,33 @@ it('uses the body font in a standalone section picker', async () => {
   expect(getComputedStyle(picker).fontFamily).toBe(exampleTokens.typography.family.body);
 });
 
-function SlotFixture() {
+function SlotFixture({
+  brandLabel = 'Baukit',
+  accessoryLabel = 'Workout active',
+  dangerLabel = 'Delete account',
+  closeLabel = 'Menü schließen',
+}: {
+  readonly brandLabel?: string;
+  readonly accessoryLabel?: string;
+  readonly dangerLabel?: string;
+  readonly closeLabel?: string;
+} = {}) {
   const [collapsed, setCollapsed] = useState(false);
   const [barHeight, setBarHeight] = useState(64);
   return (
     <>
       <AppNavigation
         {...labels}
-        closeLabel="Menü schließen"
+        closeLabel={closeLabel}
         items={items}
         pathname="/delete"
         collapsed={collapsed}
         onCollapsedChange={setCollapsed}
         onBarHeightChange={setBarHeight}
-        renderBrand={({ collapsed: small }) => <strong>{small ? 'B' : 'Baukit'}</strong>}
+        renderBrand={({ collapsed: small }) => <strong>{small ? 'B' : brandLabel}</strong>}
         renderAccessory={({ collapsed: small }) => (
           <span role="status" aria-label="Workout status">
-            {small ? '●' : 'Workout active'}
+            {small ? '●' : accessoryLabel}
           </span>
         )}
         profile={{
@@ -514,7 +524,7 @@ function SlotFixture() {
           initials: 'AB',
           menu: [
             { id: 'settings', label: 'Settings', href: '/settings' },
-            { id: 'delete', label: 'Delete account', tone: 'danger', href: '/delete' },
+            { id: 'delete', label: dangerLabel, tone: 'danger', href: '/delete' },
             { id: 'signout', label: 'Sign out', tone: 'danger', onSelect: () => undefined },
           ],
         }}
@@ -525,7 +535,7 @@ function SlotFixture() {
           paddingBottom: barHeight,
         }}
       >
-        <h1>Navigation with slots</h1>
+        <h1 style={{ overflowWrap: 'anywhere' }}>Navigation with slots</h1>
         <SectionPicker closeLabel="Auswahl schließen" item={section} pathname="/progress" />
       </main>
     </>
@@ -616,3 +626,70 @@ it.each(
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
   },
 );
+
+it.each([320, 1024])('wraps long slot and menu text at $0 px and font scale 2', async (width) => {
+  await page.viewport(width, 900);
+  document.documentElement.lang = 'de';
+  styles = document.createElement('style');
+  styles.textContent = `${toCssVariables(exampleTokens)} ${stylesheet} html{font-size:32px} body{margin:0}`;
+  document.head.append(styles);
+  host = document.createElement('div');
+  document.body.append(host);
+  root = createRoot(host);
+  const dangerLabel = 'Kontozugriffdauerhaftbeenden';
+  const closeLabel = 'MenüschließenundzurÜbersichtzurückkehren';
+  await act(() => {
+    root?.render(
+      <SlotFixture
+        brandLabel="BaukitTrainingsverwaltung"
+        accessoryLabel="Kraftausdauertrainingläuft"
+        dangerLabel={dangerLabel}
+        closeLabel={closeLabel}
+      />,
+    );
+    return Promise.resolve();
+  });
+  const navigation = page.getByTestId('primary-navigation').element();
+  const slots = navigation.querySelector('.bk-navigation-slots');
+  if (slots === null) throw new Error('Slots are missing');
+  for (const slot of slots.children) {
+    const bounds = slot.getBoundingClientRect();
+    expect(bounds.left).toBeGreaterThanOrEqual(navigation.getBoundingClientRect().left);
+    expect(bounds.right).toBeLessThanOrEqual(navigation.getBoundingClientRect().right);
+    expect(slot.scrollWidth).toBeLessThanOrEqual(slot.clientWidth);
+    const text = document.createRange();
+    text.selectNodeContents(slot);
+    expect(text.getClientRects().length).toBeGreaterThan(1);
+    for (const line of text.getClientRects()) {
+      expect(line.left).toBeGreaterThanOrEqual(bounds.left);
+      expect(line.right).toBeLessThanOrEqual(bounds.right);
+    }
+  }
+  if (width === 320) {
+    const main = host.querySelector('main');
+    if (main === null) throw new Error('Content is missing');
+    await expect
+      .poll(() => Number.parseFloat(getComputedStyle(main).paddingBottom))
+      .toBe(navigation.getBoundingClientRect().height);
+    expect(
+      page.getByRole('link', { name: 'Home' }).element().getBoundingClientRect().top,
+    ).toBeGreaterThanOrEqual(slots.getBoundingClientRect().bottom);
+  }
+  await act(async () => {
+    await page.getByRole('button', { name: 'Account' }).click();
+  });
+  const danger = page.getByRole('menuitem', { name: dangerLabel }).element();
+  const close = page.getByRole('button', { name: closeLabel }).element();
+  for (const control of [danger, close]) {
+    expect(control.scrollWidth).toBeLessThanOrEqual(control.clientWidth);
+    const text = document.createRange();
+    text.selectNodeContents(control);
+    expect(text.getClientRects().length).toBeGreaterThan(1);
+    const bounds = control.getBoundingClientRect();
+    for (const line of text.getClientRects()) {
+      expect(line.left).toBeGreaterThanOrEqual(bounds.left);
+      expect(line.right).toBeLessThanOrEqual(bounds.right);
+    }
+  }
+  expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+});

@@ -184,6 +184,7 @@
   max-height: calc(100dvh - 100px);
   display: flex;
   flex-direction: column;
+  overflow-wrap: anywhere;
   overflow: hidden;
   padding: 8px;
   color: var(--bk-color-text-primary);
@@ -296,12 +297,14 @@
 .bk-navigation-brand,
 .bk-navigation-accessory {
   min-width: 0;
+  max-width: 100%;
   overflow-wrap: anywhere;
 }
 .bk-navigation[data-layout='bar'] .bk-navigation-slots {
   grid-column: 1 / -1;
   grid-row: 1;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
 }

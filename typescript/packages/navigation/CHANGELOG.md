@@ -6,6 +6,7 @@
 - Add a danger tone for menu entries, with semantic token colors on web and native.
 - Require localized visible Close controls in web profile and section menus. Keep Close visible while long menus scroll.
 - Add brand and accessory render slots for rails and compact bars. Report compact height with slots for content spacing.
+- Wrap long web slot and menu labels within their containers.
 
 - Fill the compact viewport and allow horizontal scrolling when items overflow. Reveal the selected item after route changes. Keep decorative initials inside their fixed avatar circle at enlarged font scales.
 - Give compact icons and avatars the same box height so their labels align at every font scale.

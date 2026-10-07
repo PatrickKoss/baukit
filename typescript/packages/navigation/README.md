@@ -174,9 +174,10 @@ for status or a product control. Both receive `{ layout: 'bar' | 'rail', collaps
 Return a small logo and compact status in a collapsed rail. Supply accessible
 names for logos and controls. Slot content keeps its own semantics.
 
-The rail puts both slots above its controls. The compact bar puts them in a row
-above the stacked icon and label targets. Native measures that row and includes
-it in `getNavigationBarHeight` through `NavigationBarMetrics.slotHeight`.
+The rail puts both slots above its controls. The compact bar puts them above
+the stacked icon and label targets. Web wraps the slot row when its content does
+not fit. Native measures the slot row and includes it in `getNavigationBarHeight`
+through `NavigationBarMetrics.slotHeight`.
 `useNavigationBarHeight(bottomInset, theme, slotHeight)` accepts the same height.
 
 On both platforms, `onBarHeightChange(height)` reports the full compact bar
