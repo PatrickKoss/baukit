@@ -362,7 +362,7 @@ also refuses framed pages, but the product owns these hosting headers.
 | b. UUID owners and erasure | Migrations omit product owner foreign keys. Products add the SQL above. Revokes run before the erasure transaction, bounded to 500 ms per link; the adapter deletes suite jobs and rows by owner inside it. |
 | c. Product replay | `SuiteReplaySource` supplies history on the existing connection. The generic outbox only stores and fans out validated events. |
 | d. Shared rate limits | `Arc<dyn RateLimitStore>` supplies the three protocol buckets. Unknown sources fail before storage and limiter access. |
-| e. Connection test | Every app emits `suite.connection.tested`; event-id and protocol fixtures use it. |
+| e. Connection test | Every app emits `suite.connection.tested`; protocol fixtures use it. |
 | f. Product mapping metadata | Shared peers omit `mappableMetrics`. Products retain their mapping routes. |
 | g. Transaction arguments | Transactional ports accept `&mut PgConnection`. The jobs enqueue API accepts the same connection; callers can pass an existing SQLx transaction by dereference. |
 | h. Config loading | `SuiteConfig` implements `baukit_config::Validate`, preserves the environment keys and validates active peers, HTTPS, loopback exceptions and standalone mode. |

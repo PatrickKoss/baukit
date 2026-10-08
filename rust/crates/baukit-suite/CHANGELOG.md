@@ -8,6 +8,7 @@
 - Return 422 `suite_payload_invalid` for typed payload rejections. Export the field validators and keep existing applier signatures.
 - Accept empty boolean settings as false.
 - Cover HTTP error codes, rate-limit keys, delivery revocation, link isolation, failed exchanges, replay, URLs and wire contracts in protocol tests.
+- Use real catalog types in the event-id vectors. Products that copy the vectors should refresh them.
 
 ## [0.10.2] - 2026-10-08
 

@@ -186,6 +186,7 @@ fn decode_hex(value: &str) -> Vec<u8> {
 #[test]
 fn event_id_vectors_and_envelope_identity_are_deterministic() {
     let vectors = fixture("event-ids.json");
+    let catalog = PayloadCatalog::from_json(&fixture("catalog.json").to_string()).expect("catalog");
     assert_eq!(vectors["namespace"], SUITE_EVENT_NAMESPACE.to_string());
     assert_eq!(
         vectors["vectors"].as_array().expect("valid fixture").len(),
@@ -196,13 +197,20 @@ fn event_id_vectors_and_envelope_identity_are_deterministic() {
             event_type: vector["type"].as_str().expect("valid fixture").into(),
             natural_key: vector["naturalKey"].as_str().expect("valid fixture").into(),
             occurred_at: "2026-10-06T08:15:00Z".parse().expect("valid fixture"),
-            payload: Map::new(),
+            payload: json!({"activityId": vector["naturalKey"], "minutes": 10})
+                .as_object()
+                .expect("payload")
+                .clone(),
         };
+        catalog
+            .validate(&event.event_type, event.payload.clone())
+            .expect("catalog event");
         assert_eq!(event.event_id().to_string(), vector["eventId"]);
         assert_eq!(event.event_id().get_version_num(), 5);
-        let envelope = event.envelope("oidc-sub", "alpha");
+        let source = event.event_type.split('.').next().expect("source app");
+        let envelope = event.envelope("oidc-sub", source);
         assert_eq!(envelope.user_id, "oidc-sub");
-        assert_eq!(envelope.source_app, "alpha");
+        assert_eq!(envelope.source_app, source);
         assert_eq!(envelope.schema_version, 1);
         let wire = serde_json::to_value(envelope).expect("valid fixture");
         assert_eq!(wire["occurredAt"], "2026-10-06T08:15:00Z");
