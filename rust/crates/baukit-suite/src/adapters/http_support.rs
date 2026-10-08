@@ -83,7 +83,9 @@ impl From<SuiteServiceError> for HttpError {
             | E::Protocol(P::CodeInvalid | P::PayloadInvalid)
             | E::PayloadInvalid
             | E::Inbound(_)
-            | E::Store(S::CodeInvalid | S::EventIdConflict) => StatusCode::UNPROCESSABLE_ENTITY,
+            | E::Store(S::CodeInvalid | S::EventIdConflict | S::PayloadInvalid(_)) => {
+                StatusCode::UNPROCESSABLE_ENTITY
+            }
             _ => return Self::internal(error),
         };
         let mut api = ApiError::new(status, code, "Suite request failed");

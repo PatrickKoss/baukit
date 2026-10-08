@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 pub const MAX_PAYLOAD_KEYS: usize = 32;
 
-#[derive(Clone, Debug, Error, PartialEq)]
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum PayloadError {
     #[error("unsupported event type: {0}")]
     UnsupportedType(String),

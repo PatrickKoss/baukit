@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Keep the peer and completed request id on the ready state returned by `ConnectedApps.connect`. Clear that completion on a later list load.
+- Test one code redemption and one announcement when native completion and the redirect handler both fire.
+
 ## 0.10.2
 
 - Read the npm 12 `npm pack --json` format in the publish check. The 0.10.1 npm publish stopped on it, so 0.10.2 is the first release with installable peers.

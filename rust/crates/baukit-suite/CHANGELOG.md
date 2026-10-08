@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Keep hourly cleanup alive after storage errors. Log each failure and count it in `suite_cleanup_failures_total`.
+- Guard cleanup across replicas and lock owners before links and jobs. Add `003_suite_lock_order.sql` to record failed jobs without locking links, then account for failures before health reads and writes.
+- Add a default `SuiteEventApplier::lock_owner` hook before ingest locks a link.
+- Return 422 `suite_payload_invalid` for typed payload rejections. Export the field validators and keep existing applier signatures.
+- Accept empty boolean settings as false.
+- Cover HTTP error codes, rate-limit keys, delivery revocation, link isolation, failed exchanges, replay, URLs and wire contracts in protocol tests.
+
 ## [0.10.2] - 2026-10-08
 
 ## [0.10.1] - 2026-10-08

@@ -192,6 +192,9 @@ impl SuiteIngestService {
             .store
             .lock_ingest_user(&mut tx, link.user_id)
             .await?;
+        if let Some(applier) = &self.applier {
+            applier.lock_owner(&mut tx, link.user_id).await?;
+        }
         let mut link = self.context.store.link_for_update(&mut tx, id).await?;
         self.verify(&link, &h, &body, now)?;
         let payload = validate_inbound(&self.context.catalog, &envelope, &link, now, h.replay)?;

@@ -212,6 +212,9 @@ impl PostgresSuiteEventOutbox {
                 SuiteStoreError::Timeout,
             ));
         }
+        super::account_owner_failures(tx, owner)
+            .await
+            .map_err(|error| SuiteEmissionError::new(&events[0].event_type, error))?;
         let links = sqlx::query_as::<_, LinkRow>(
             r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
@@ -280,6 +283,7 @@ impl SuiteEventOutbox for PostgresSuiteEventOutbox {
         tx: &mut PgConnection,
         id: Uuid,
     ) -> Result<(), SuiteStoreError> {
+        super::account_failures(tx, id).await?;
         self.jobs
             .enqueue_in_transaction(
                 tx,
@@ -305,6 +309,7 @@ impl SuiteEventOutbox for PostgresSuiteEventOutbox {
     ) -> Result<u64, SuiteStoreError> {
         validate_replay_since(since, now.date_naive()).map_err(invalid)?;
         super::lock_owner(tx, owner).await?;
+        super::account_owner_failures(tx, owner).await?;
         let link: SuiteLink = sqlx::query_as::<_, LinkRow>(
             r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
@@ -361,6 +366,7 @@ impl SuiteEventOutbox for PostgresSuiteEventOutbox {
         event: &SuiteEvent,
     ) -> Result<(), SuiteStoreError> {
         super::lock_owner(tx, owner).await?;
+        super::account_owner_failures(tx, owner).await?;
         let link: SuiteLink = sqlx::query_as::<_, LinkRow>(r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
             secret_key_version, sends, receives, share_xp, reward_mode, delivery_health,

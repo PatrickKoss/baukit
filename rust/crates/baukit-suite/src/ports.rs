@@ -57,6 +57,8 @@ pub enum SuiteStoreError {
     LinkInactive,
     #[error("invalid suite persistence data: {0}")]
     InvalidData(String),
+    #[error("suite payload is invalid: {0}")]
+    PayloadInvalid(#[from] crate::domain::PayloadError),
     #[error("suite persistence failed: {0}")]
     Storage(String),
     #[error("suite persistence timed out")]
@@ -364,9 +366,18 @@ pub trait SuitePeerClient: Send + Sync {
 }
 
 #[async_trait]
-/// The caller holds a suite owner advisory lock. Lock product rows here before applying.
+/// Ingest takes the owner advisory lock, calls `lock_owner`, then locks the link.
 #[cfg(feature = "postgres")]
 pub trait SuiteEventApplier: Send + Sync {
+    /// Lock the product owner row here, before ingest locks suite links.
+    async fn lock_owner(
+        &self,
+        _tx: &mut sqlx::PgConnection,
+        _owner: Uuid,
+    ) -> Result<(), SuiteStoreError> {
+        Ok(())
+    }
+    /// Return `SuiteStoreError::PayloadInvalid` for typed payload rejection.
     async fn apply(
         &self,
         tx: &mut sqlx::PgConnection,
@@ -374,6 +385,7 @@ pub trait SuiteEventApplier: Send + Sync {
     ) -> Result<AppliedOutcome, SuiteStoreError>;
 }
 
+#[derive(Clone, Copy)]
 pub struct SuiteApplyEvent<'a> {
     pub owner_id: Uuid,
     pub link: &'a SuiteLink,

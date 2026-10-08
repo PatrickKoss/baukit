@@ -81,35 +81,55 @@ fn service_job_error(error: SuiteServiceError) -> JobError {
         SuiteServiceError::Protocol(
             LinkProtocolError::Disabled | LinkProtocolError::PeerUnknown,
         ) => JobError::permanent("suite_link_disabled"),
-        SuiteServiceError::Cipher | SuiteServiceError::Store(SuiteStoreError::InvalidData(_)) => {
-            JobError::permanent(error.code())
-        }
+        SuiteServiceError::Cipher
+        | SuiteServiceError::PayloadInvalid
+        | SuiteServiceError::Store(
+            SuiteStoreError::InvalidData(_) | SuiteStoreError::PayloadInvalid(_),
+        ) => JobError::permanent(error.code()),
         _ => JobError::retryable(error.code()),
     }
 }
 
 /// Runs cleanup on UTC hour boundaries until the shutdown channel closes or becomes true.
-/// Return errors to the product's worker supervisor.
+/// Storage failures are logged and counted, then retried at the next boundary.
 pub async fn run_hourly_cleanup(
     service: Arc<dyn SuiteDeliveryRunner>,
-    mut shutdown: tokio::sync::watch::Receiver<bool>,
+    shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> Result<(), SuiteServiceError> {
+    run_hourly_cleanup_with_clock(service, shutdown, Utc::now).await
+}
+
+async fn run_hourly_cleanup_with_clock(
+    service: Arc<dyn SuiteDeliveryRunner>,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
+    now: impl Fn() -> chrono::DateTime<Utc>,
+) -> Result<(), SuiteServiceError> {
+    metrics::describe_counter!(
+        "suite_cleanup_failures_total",
+        "Failed hourly suite cleanup runs"
+    );
+    metrics::counter!("suite_cleanup_failures_total").increment(0);
     let interval = baukit_jobs::FixedUtcInterval::new(std::time::Duration::from_secs(60 * 60))
         .map_err(|error| SuiteStoreError::InvalidData(error.to_string()))?;
     let mut slot = interval
-        .slot_at(Utc::now())
+        .slot_at(now())
         .map_err(|error| SuiteStoreError::InvalidData(error.to_string()))?;
     loop {
         if *shutdown.borrow() {
             return Ok(());
         }
         slot = interval
-            .next_slot(slot, Utc::now())
+            .next_slot(slot, now())
             .map_err(|error| SuiteStoreError::InvalidData(error.to_string()))?;
-        let wait = (slot.starts_at() - Utc::now()).to_std().unwrap_or_default();
+        let wait = (slot.starts_at() - now()).to_std().unwrap_or_default();
         tokio::select! {
             () = shutdown_requested(&mut shutdown) => { return Ok(()); }
-            () = tokio::time::sleep(wait) => { service.cleanup(Utc::now()).await?; }
+            () = tokio::time::sleep(wait) => {
+                if let Err(error) = service.cleanup(now()).await {
+                    tracing::warn!(code = error.code(), error = %error, "Suite cleanup failed; retrying next hour");
+                    metrics::counter!("suite_cleanup_failures_total").increment(1);
+                }
+            }
         }
     }
 }
@@ -125,6 +145,56 @@ async fn shutdown_requested(shutdown: &mut tokio::sync::watch::Receiver<bool>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    struct CleanupMetrics(Arc<std::sync::atomic::AtomicU64>);
+    impl metrics::Recorder for CleanupMetrics {
+        fn describe_counter(
+            &self,
+            key: metrics::KeyName,
+            unit: Option<metrics::Unit>,
+            description: metrics::SharedString,
+        ) {
+            metrics::NoopRecorder.describe_counter(key, unit, description);
+        }
+        fn describe_gauge(
+            &self,
+            key: metrics::KeyName,
+            unit: Option<metrics::Unit>,
+            description: metrics::SharedString,
+        ) {
+            metrics::NoopRecorder.describe_gauge(key, unit, description);
+        }
+        fn describe_histogram(
+            &self,
+            key: metrics::KeyName,
+            unit: Option<metrics::Unit>,
+            description: metrics::SharedString,
+        ) {
+            metrics::NoopRecorder.describe_histogram(key, unit, description);
+        }
+        fn register_counter(
+            &self,
+            key: &metrics::Key,
+            _: &metrics::Metadata<'_>,
+        ) -> metrics::Counter {
+            assert_eq!(key.name(), "suite_cleanup_failures_total");
+            assert_eq!(key.labels().count(), 0);
+            metrics::Counter::from_arc(self.0.clone())
+        }
+        fn register_gauge(
+            &self,
+            key: &metrics::Key,
+            metadata: &metrics::Metadata<'_>,
+        ) -> metrics::Gauge {
+            metrics::NoopRecorder.register_gauge(key, metadata)
+        }
+        fn register_histogram(
+            &self,
+            key: &metrics::Key,
+            metadata: &metrics::Metadata<'_>,
+        ) -> metrics::Histogram {
+            metrics::NoopRecorder.register_histogram(key, metadata)
+        }
+    }
     struct CleanupRunner(std::sync::atomic::AtomicUsize);
     #[async_trait::async_trait]
     impl SuiteDeliveryRunner for CleanupRunner {
@@ -148,26 +218,44 @@ mod tests {
             &self,
             _: chrono::DateTime<Utc>,
         ) -> Result<SuiteCleanupOutcome, SuiteServiceError> {
-            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            Err(SuiteStoreError::Storage("cleanup database unavailable".into()).into())
+            if self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                return Err(SuiteStoreError::Storage("cleanup database unavailable".into()).into());
+            }
+            Ok(SuiteCleanupOutcome::default())
         }
     }
     #[tokio::test(start_paused = true)]
-    async fn cleanup_waits_for_the_hour_and_propagates_failure_after_false_notifications() {
+    async fn cleanup_survives_storage_failure_and_retries_at_the_next_boundary() {
+        let failures = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let recorder = CleanupMetrics(failures.clone());
+        let _guard = metrics::set_default_local_recorder(&recorder);
         let service = Arc::new(CleanupRunner(std::sync::atomic::AtomicUsize::new(0)));
         let (sender, receiver) = tokio::sync::watch::channel(false);
-        let task = tokio::spawn(run_hourly_cleanup(service.clone(), receiver));
+        let started = tokio::time::Instant::now();
+        let anchor: chrono::DateTime<Utc> = "2026-10-08T12:30:00Z".parse().expect("time");
+        let task = tokio::spawn(run_hourly_cleanup_with_clock(
+            service.clone(),
+            receiver,
+            move || anchor + chrono::Duration::from_std(started.elapsed()).expect("elapsed"),
+        ));
         tokio::task::yield_now().await;
         sender.send(false).expect("notification");
+        tokio::time::advance(std::time::Duration::from_secs(1799)).await;
         tokio::task::yield_now().await;
         assert_eq!(service.0.load(std::sync::atomic::Ordering::SeqCst), 0);
-        tokio::time::advance(std::time::Duration::from_secs(3600)).await;
-        let error = task.await.expect("task").expect_err("cleanup failure");
-        assert!(matches!(
-            error,
-            SuiteServiceError::Store(SuiteStoreError::Storage(_))
-        ));
+        tokio::time::advance(std::time::Duration::from_secs(1)).await;
+        tokio::task::yield_now().await;
+        assert!(!task.is_finished());
         assert_eq!(service.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+        tokio::time::advance(std::time::Duration::from_secs(3599)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(service.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+        tokio::time::advance(std::time::Duration::from_secs(1)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(service.0.load(std::sync::atomic::Ordering::SeqCst), 2);
+        sender.send(true).expect("shutdown");
+        task.await.expect("task").expect("shutdown after failures");
+        assert_eq!(failures.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
     #[tokio::test(start_paused = true)]
     async fn cleanup_stops_on_shutdown_or_channel_close_without_accessing_storage() {
@@ -198,6 +286,12 @@ mod tests {
             assert!(!job_error.is_retryable());
             assert_eq!(job_error.to_string(), "internal_error");
         }
+        let payload = service_job_error(
+            SuiteStoreError::PayloadInvalid(PayloadError::InvalidPayload("typed payload".into()))
+                .into(),
+        );
+        assert!(!payload.is_retryable());
+        assert_eq!(payload.to_string(), "suite_payload_invalid");
         let disabled = service_job_error(LinkProtocolError::Disabled.into());
         assert!(!disabled.is_retryable());
         assert_eq!(disabled.to_string(), "suite_link_disabled");

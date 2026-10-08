@@ -459,6 +459,56 @@ describe('authorize state', () => {
   });
 });
 describe('connected apps and linked page', () => {
+  it.each(['native_first', 'redirect_first'] as const)(
+    'returns the completed request and announces once when %s',
+    async (order) => {
+      const f = sessionFixture();
+      const connected = new ConnectedApps(f.client, f.session);
+      const navigation = createSuiteNavigationStore(() => 'notice');
+      const linked = new SuiteLinkedMachine({
+        originalUrl: f.callback,
+        session: f.session,
+        navigation,
+        refresh: async () => {
+          await connected.load();
+        },
+        scrubHistory: () => undefined,
+      });
+      const native = connected.connect('beta');
+      const redirect = linked.restore(false, true);
+      const claims: boolean[] = [];
+      const claimNative = async () => {
+        const state = await native;
+        expect(state).toEqual({
+          type: 'ready',
+          peers: [],
+          links: [],
+          completed: { peerApp: 'beta', requestId: 'request' },
+        });
+        if (state.type === 'ready' && state.completed) {
+          claims.push(navigation.claimSuiteConnectionAnnouncement(state.completed.requestId));
+        }
+      };
+      const claimRedirect = async () => {
+        const state = await redirect;
+        expect(state).toEqual({ type: 'connected_apps', noticeToken: 'notice' });
+        if (state.type === 'connected_apps') {
+          claims.push(navigation.consumeSuiteNotice(state.noticeToken)?.announce ?? false);
+        }
+      };
+      if (order === 'native_first') {
+        await claimNative();
+        await claimRedirect();
+      } else {
+        await claimRedirect();
+        await claimNative();
+      }
+      expect(claims).toEqual([true, false]);
+      expect(f.request.mock.calls.filter(([, path]) => path.endsWith('/complete'))).toHaveLength(1);
+      expect(await connected.load()).toEqual({ type: 'ready', peers: [], links: [] });
+    },
+  );
+
   it('waits for restoration, scrubs history, completes and refetches before navigating', async () => {
     const f = sessionFixture('web');
     await f.storage.save({

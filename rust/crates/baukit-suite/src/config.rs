@@ -15,8 +15,10 @@ pub struct SuiteConfig {
     #[serde(deserialize_with = "empty_string_as_none")]
     pub public_web_url: Option<String>,
     pub peers: BTreeMap<String, PeerUrls>,
+    #[serde(deserialize_with = "flexible_bool")]
     pub allow_loopback: bool,
     pub initial_replay_days: u32,
+    #[serde(deserialize_with = "flexible_bool")]
     pub share_xp: bool,
     #[serde(deserialize_with = "empty_string_as_none")]
     pub identity_domain: Option<String>,
@@ -117,6 +119,20 @@ pub(crate) fn empty_string_as_none<'de, D: Deserializer<'de>>(
     Ok(Option::<String>::deserialize(deserializer)?.filter(|value| !value.is_empty()))
 }
 
+fn flexible_bool<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Input {
+        Bool(bool),
+        Text(String),
+    }
+    match Input::deserialize(deserializer)? {
+        Input::Bool(value) => Ok(value),
+        Input::Text(value) if value.is_empty() => Ok(false),
+        Input::Text(value) => value.parse().map_err(serde::de::Error::custom),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -156,8 +172,8 @@ mod tests {
                         "SUITE_CONFIG_TEST__SUITE__PEERS__BETA__WEB_URL",
                         "https://beta.example",
                     )
-                    .env("SUITE_CONFIG_TEST__SUITE__ALLOW_LOOPBACK", "false")
-                    .env("SUITE_CONFIG_TEST__SUITE__SHARE_XP", "false")
+                    .env("SUITE_CONFIG_TEST__SUITE__ALLOW_LOOPBACK", "")
+                    .env("SUITE_CONFIG_TEST__SUITE__SHARE_XP", "")
                     .env("SUITE_CONFIG_TEST__SUITE__INITIAL_REPLAY_DAYS", "42")
                     .env("SUITE_CONFIG_TEST__SUITE__IDENTITY_DOMAIN", "shared")
                     .env("SUITE_CONFIG_TEST__SUITE__IDENTITY_CLAIM", "sub")
@@ -194,6 +210,36 @@ mod tests {
                 .expect("registry")
                 .standalone()
         );
+    }
+    #[test]
+    fn booleans_accept_empty_strings_and_preserve_boolean_values() {
+        for (value, expected) in [
+            (serde_json::json!(""), false),
+            (serde_json::json!("false"), false),
+            (serde_json::json!("true"), true),
+            (serde_json::json!(false), false),
+            (serde_json::json!(true), true),
+        ] {
+            let config: SuiteConfig = serde_json::from_value(
+                serde_json::json!({"share_xp":value,"allow_loopback":value}),
+            )
+            .expect("bool");
+            assert_eq!(config.share_xp, expected);
+            assert_eq!(config.allow_loopback, expected);
+        }
+        for value in [
+            serde_json::json!("yes"),
+            serde_json::json!(1),
+            serde_json::Value::Null,
+        ] {
+            assert!(
+                serde_json::from_value::<SuiteConfig>(serde_json::json!({"share_xp":value}))
+                    .is_err()
+            );
+        }
+        let defaults: SuiteConfig = serde_json::from_str("{}").expect("defaults");
+        assert!(defaults.share_xp);
+        assert!(!defaults.allow_loopback);
     }
     #[test]
     fn settings_reject_invalid_identity_and_replay_and_require_active_cipher() {

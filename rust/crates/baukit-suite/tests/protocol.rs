@@ -174,11 +174,34 @@ fn secret(link: &SuiteLink) -> Vec<u8> {
         .to_vec()
 }
 
+fn registry_with_hebkit() -> Result<Arc<PeerRegistry>, Box<dyn Error>> {
+    let mut peers: Value = serde_json::from_str(PEERS)?;
+    let mut hebkit = peers["peers"][1].clone();
+    hebkit["id"] = json!("hebkit");
+    hebkit["scheme"] = json!("hebkit");
+    hebkit["displayName"] = json!("Hebkit");
+    peers["peers"].as_array_mut().expect("peers").push(hebkit);
+    let urls = |port| PeerUrls {
+        api_url: Some(format!("http://127.0.0.1:{port}/api/v1")),
+        web_url: Some(format!("http://127.0.0.1:{port}")),
+    };
+    Ok(Arc::new(PeerRegistry::new(
+        "alpha",
+        &peers.to_string(),
+        PeerRegistrySettings {
+            public_api_url: Some("http://127.0.0.1:12340/api/v1".into()),
+            public_web_url: Some("http://127.0.0.1:12340".into()),
+            peers: BTreeMap::from([("beta".into(), urls(12341)), ("hebkit".into(), urls(12342))]),
+            allow_loopback: true,
+        },
+    )?))
+}
+
 async fn authorizer_fixture()
 -> Result<(common::TestDatabase, Arc<SuiteContext>, Uuid), Box<dyn Error>> {
     let db = common::postgres_database().await?;
     let owner = user(&db.pool, "suite-owner").await?;
-    let context = make_context(&db.pool, registry("alpha", "beta", 12340, 12341));
+    let context = make_context(&db.pool, registry_with_hebkit()?);
     Ok((db, context, owner))
 }
 
@@ -294,6 +317,7 @@ async fn two_routers_link_both_roles_reconnect_relay_and_disconnect() -> TestRes
         )
         .await?;
         assert_eq!(wrong.0, StatusCode::NOT_FOUND);
+        assert_eq!(wrong.1["error"]["code"], "not_found");
         let complete_path = format!("/suite/links/requests/{request}/complete");
         let (first, concurrent) = tokio::time::timeout(std::time::Duration::from_secs(5), async {
             tokio::join!(
@@ -572,6 +596,50 @@ async fn codes_subjects_supersession_and_expiry_follow_fixtures() -> TestResult 
         return_url: "http://127.0.0.1:12340/suite/linked".to_owned(),
         state_nonce: "nonce".to_owned(),
     };
+    let before: i64 = sqlx::query_scalar("SELECT count(*) FROM suite_link_requests")
+        .fetch_one(&db.pool)
+        .await?;
+    for nonce in ["", "invalid\nnonce", &"x".repeat(129)] {
+        let invalid = LinkStartRequest {
+            state_nonce: nonce.into(),
+            ..start.clone()
+        };
+        assert_eq!(
+            service
+                .start(u.clone(), invalid, Utc::now())
+                .await
+                .expect_err("nonce")
+                .code(),
+            "suite_payload_invalid"
+        );
+    }
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM suite_link_requests")
+            .fetch_one(&db.pool)
+            .await?,
+        before
+    );
+    let other_owner = user(&db.pool, "supersession-other").await?;
+    let untouched_owner = service
+        .start(
+            SuiteUser {
+                id: other_owner,
+                ..SuiteUser::default()
+            },
+            start.clone(),
+            Utc::now(),
+        )
+        .await?;
+    let untouched_peer = service
+        .start(
+            u.clone(),
+            LinkStartRequest {
+                peer_app: "hebkit".into(),
+                ..start.clone()
+            },
+            Utc::now(),
+        )
+        .await?;
     let first = service.start(u.clone(), start.clone(), Utc::now()).await?;
     let sealed = cipher().encrypt(
         first.request_id,
@@ -592,6 +660,14 @@ async fn codes_subjects_supersession_and_expiry_follow_fixtures() -> TestResult 
         .await?;
     c.store.commit_transaction(tx).await?;
     let second = service.start(u.clone(), start.clone(), Utc::now()).await?;
+    for untouched in [untouched_owner.request_id, untouched_peer.request_id] {
+        let open: bool =
+            sqlx::query_scalar("SELECT consumed_at IS NULL FROM suite_link_requests WHERE id=$1")
+                .bind(untouched)
+                .fetch_one(&db.pool)
+                .await?;
+        assert!(open, "supersession changed another owner or peer");
+    }
     let cleared: bool = sqlx::query_scalar(
         "SELECT consumed_at IS NOT NULL AND initiator_link_id IS NULL AND \
          secret_ciphertext IS NULL AND secret_nonce IS NULL AND secret_key_version IS NULL \
@@ -612,18 +688,21 @@ async fn codes_subjects_supersession_and_expiry_follow_fixtures() -> TestResult 
             .code(),
         "suite_code_invalid"
     );
-    let bad = service
-        .callback(
-            LinkCallbackQuery {
-                state: Some(query(&second.authorize_url, "state")),
-                from: Some("unknown".to_owned()),
-                code: Some("code".to_owned()),
-                error: None,
-            },
-            Utc::now(),
-        )
-        .await?;
-    assert_eq!(query(&bad.location, "status"), "failed");
+    for wrong_source in ["unknown", "hebkit"] {
+        let bad = service
+            .callback(
+                LinkCallbackQuery {
+                    state: Some(query(&second.authorize_url, "state")),
+                    from: Some(wrong_source.to_owned()),
+                    code: Some("code".to_owned()),
+                    error: None,
+                },
+                Utc::now(),
+            )
+            .await?;
+        assert_eq!(query(&bad.location, "status"), "failed");
+        assert_eq!(query(&bad.location, "code"), "suite_code_invalid");
+    }
     let expired = service
         .callback(
             LinkCallbackQuery {
@@ -877,9 +956,10 @@ async fn inbound_limits_isolate_known_links_from_unknown_id_traffic() -> TestRes
     let db = common::postgres_database().await?;
     let mut context = make_context(&db.pool, registry("alpha", "beta", 12340, 12341));
     // Hold the window fixed so database latency cannot replenish the test budget.
+    let limiter = Arc::new(FixedWindowLimiter::default());
     Arc::get_mut(&mut context)
         .expect("valid test value")
-        .limiter = Arc::new(FixedWindowLimiter::default());
+        .limiter = limiter.clone();
     let service = SuiteLinkService::new(context.clone());
     let applier = Arc::new(Applier::default());
     let app = common::app_with_suite(&db.pool, module(&db.pool, context, applier.clone()));
@@ -919,6 +999,25 @@ async fn inbound_limits_isolate_known_links_from_unknown_id_traffic() -> TestRes
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         links.push((link, key, envelope.clone()));
     }
+    let expected: Vec<_> = links
+        .iter()
+        .map(|(link, _, _)| {
+            (
+                format!("suite:inbound:{}", link.id),
+                120,
+                std::time::Duration::from_secs(60),
+            )
+        })
+        .collect();
+    assert_eq!(*limiter.calls.lock().expect("calls"), expected);
+    assert!(
+        !limiter
+            .counts
+            .lock()
+            .expect("counts")
+            .keys()
+            .any(|key| key.starts_with("suite:inbound:unknown:"))
+    );
     assert_eq!(applier.calls.lock().expect("valid test value").len(), 25);
     let (link, key, mut event) = links[0].clone();
     for index in 0..=SUITE_INBOUND_UNKNOWN_LIMIT {
@@ -1474,7 +1573,10 @@ impl SuiteIdentitySource for Identities {
         })
     }
 }
-struct History;
+#[derive(Default)]
+struct History {
+    reads: std::sync::atomic::AtomicUsize,
+}
 #[async_trait]
 impl SuiteReplaySource for History {
     async fn replay_since(
@@ -1483,6 +1585,7 @@ impl SuiteReplaySource for History {
         owner: Uuid,
         since: chrono::NaiveDate,
     ) -> Result<Vec<SuiteEvent>, SuiteStoreError> {
+        self.reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let events: Vec<(String, String, chrono::DateTime<Utc>, Value)> = sqlx::query_as("SELECT event_type,natural_key,occurred_at,payload FROM history_events WHERE owner_id=$1 AND occurred_at::date >= $2 ORDER BY occurred_at,natural_key")
             .bind(owner).bind(since).fetch_all(connection).await.map_err(|error| SuiteStoreError::Storage(error.to_string()))?;
         events
@@ -1517,7 +1620,7 @@ fn make_context(pool: &PgPool, registry: Arc<PeerRegistry>) -> Arc<SuiteContext>
             )),
             peer: Arc::new(ReqwestSuitePeerClient::new(true).expect("client")),
             limiter: Arc::new(InMemoryRateLimitStore::default()),
-            replay: Arc::new(History),
+            replay: Arc::new(History::default()),
             identities,
         },
         SuiteServiceConfig {
@@ -1576,6 +1679,13 @@ mod common {
         pub _container: baukit_test::PostgresTestContainer,
     }
     pub async fn postgres_database() -> Result<TestDatabase, Box<dyn Error>> {
+        let database = postgres_database_before_lock_order().await?;
+        sqlx::raw_sql(SUITE_LOCK_ORDER_MIGRATION_SQL)
+            .execute(&database.pool)
+            .await?;
+        Ok(database)
+    }
+    pub async fn postgres_database_before_lock_order() -> Result<TestDatabase, Box<dyn Error>> {
         let container = baukit_test::start_postgres().await?;
         let pool = PgPool::connect(container.connection_url()).await?;
         for migration in [
@@ -1635,6 +1745,7 @@ mod common {
 
 #[derive(Default)]
 struct FixedWindowLimiter {
+    calls: Mutex<Vec<(String, u64, std::time::Duration)>>,
     counts: Mutex<BTreeMap<String, u64>>,
 }
 impl baukit_ratelimit::RateLimitStore for FixedWindowLimiter {
@@ -1654,6 +1765,10 @@ impl baukit_ratelimit::RateLimitStore for FixedWindowLimiter {
         >,
     > {
         Box::pin(async move {
+            self.calls
+                .lock()
+                .expect("calls")
+                .push((key.into(), quota.capacity(), quota.period()));
             let mut counts = self.counts.lock().expect("limiter");
             let count = counts.entry(key.into()).or_default();
             let allowed = *count < quota.capacity();
@@ -1727,6 +1842,7 @@ async fn receiving_deduplicates_conflicts_isolates_owners_and_makes_replay_rewar
     assert_eq!(applier.calls.lock().expect("calls").len(), 1);
     let wrong_key = signed_route(&app, other_link.id, &event, &key, false).await?;
     assert_eq!(wrong_key.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(wrong_key.1["error"]["code"], "suite_signature_invalid");
     event.payload.insert("minutes".into(), json!(25));
     let conflict = signed_route(&app, link.id, &event, &key, false).await?;
     assert_eq!(conflict.0, StatusCode::UNPROCESSABLE_ENTITY);
@@ -2161,6 +2277,8 @@ async fn unknown_source_is_rejected_without_a_database_read_or_limiter_key() -> 
 async fn replay_errors_peer_metadata_and_failed_exchange_budgets_match_the_contract() -> TestResult
 {
     let (db, mut context, owner) = authorizer_fixture().await?;
+    let history = Arc::new(History::default());
+    Arc::get_mut(&mut context).expect("unique context").replay = history.clone();
     let limiter = Arc::new(FixedWindowLimiter::default());
     Arc::get_mut(&mut context).expect("unique context").limiter = limiter.clone();
     Arc::get_mut(&mut context).expect("unique context").share_xp = false;
@@ -2180,6 +2298,26 @@ async fn replay_errors_peer_metadata_and_failed_exchange_budgets_match_the_contr
         json!(["native", "source_xp", "off"])
     );
     assert!(peers.1[0].get("mappableMetrics").is_none());
+    history.reads.store(0, std::sync::atomic::Ordering::SeqCst);
+    let last: chrono::DateTime<Utc> =
+        sqlx::query_scalar("SELECT last_replay_at FROM suite_links WHERE id=$1")
+            .bind(link.id)
+            .fetch_one(&db.pool)
+            .await?;
+    let exact = SuiteDeliveryService::new(context.clone())
+        .replay(
+            owner,
+            link.id,
+            last.date_naive(),
+            last + chrono::Duration::seconds(1),
+        )
+        .await
+        .expect_err("cooldown");
+    assert!(matches!(
+        exact,
+        SuiteServiceError::Store(SuiteStoreError::ReplayTooSoon(86_399))
+    ));
+    assert_eq!(history.reads.load(std::sync::atomic::Ordering::SeqCst), 0);
     let today = Utc::now().date_naive();
     let earliest = today - chrono::Duration::days(i64::from(SUITE_MAX_REPLAY_DAYS));
     let path = format!("/suite/links/{}/replay", link.id);
@@ -2209,6 +2347,7 @@ async fn replay_errors_peer_metadata_and_failed_exchange_budgets_match_the_contr
     assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
     let retry: u64 = response.headers()["retry-after"].to_str()?.parse()?;
     assert!((1..=u64::try_from(SUITE_REPLAY_INTERVAL_SECONDS)?).contains(&retry));
+    assert_eq!(history.reads.load(std::sync::atomic::Ordering::SeqCst), 0);
     for _ in 0..SUITE_EXCHANGE_FAILURE_LIMIT {
         let mut wrong = request.clone();
         wrong.code_verifier = URL_SAFE_NO_PAD.encode([11u8; 32]);
@@ -2239,6 +2378,20 @@ async fn replay_errors_peer_metadata_and_failed_exchange_budgets_match_the_contr
             .get("suite:exchange:beta"),
         Some(&u64::from(SUITE_EXCHANGE_FAILURE_LIMIT))
     );
+    service.disconnect(owner, link.id, Utc::now()).await?;
+    let mut removed = (*context).clone();
+    removed.registry = Arc::new(PeerRegistry::new(
+        "alpha",
+        PEERS,
+        PeerRegistrySettings::default(),
+    )?);
+    assert!(matches!(
+        SuiteDeliveryService::new(Arc::new(removed))
+            .replay(owner, link.id, today, Utc::now())
+            .await,
+        Err(SuiteServiceError::LinkRevoked)
+    ));
+    assert_eq!(history.reads.load(std::sync::atomic::Ordering::SeqCst), 0);
     db.pool.close().await;
     for i in 0..200 {
         let input = ExchangeRequest {
@@ -2370,8 +2523,12 @@ async fn signed_http_matrix_hides_revocation_and_protocol_tests_skip_the_applier
             .oneshot(request.body(Body::from(raw.clone()))?)
             .await?;
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{missing}");
+        let body: Value = serde_json::from_slice(
+            &axum::body::to_bytes(response.into_body(), SUITE_MAX_BODY_BYTES).await?,
+        )?;
+        assert_eq!(body["error"]["code"], "suite_signature_invalid");
     }
-    for delta in [-600, 600] {
+    for delta in [-301, 600] {
         let timestamp = Utc::now().timestamp() + delta;
         let request = Request::builder()
             .method("POST")
@@ -2385,11 +2542,18 @@ async fn signed_http_matrix_hides_revocation_and_protocol_tests_skip_the_applier
                 sign_webhook_hmac_sha256(&key, timestamp, &event.event_id, &raw),
             )
             .body(Body::from(raw.clone()))?;
-        assert_eq!(
-            app.clone().oneshot(request).await?.status(),
-            StatusCode::UNAUTHORIZED
-        );
+        let response = app.clone().oneshot(request).await?;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let body: Value = serde_json::from_slice(
+            &axum::body::to_bytes(response.into_body(), SUITE_MAX_BODY_BYTES).await?,
+        )?;
+        assert_eq!(body["error"]["code"], "suite_signature_invalid");
     }
+    let mut wrong_source = event.clone();
+    wrong_source.source_app = "hebkit".into();
+    let response = signed_route(&app, link.id, &wrong_source, &key, false).await?;
+    assert_eq!(response.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(response.1["error"]["code"], "suite_signature_invalid");
     sqlx::query("UPDATE suite_links SET receives='{}',delivery_health='degraded',consecutive_failures=19 WHERE id=$1").bind(link.id).execute(&db.pool).await?;
     assert_eq!(
         signed_route(&app, link.id, &event, &key, false).await?.0,
@@ -2405,16 +2569,18 @@ async fn signed_http_matrix_hides_revocation_and_protocol_tests_skip_the_applier
         .await?;
     assert_eq!(count, 0);
     links.disconnect(owner, link.id, Utc::now()).await?;
-    assert_eq!(
-        signed_route(&app, link.id, &event, &[99; 32], false)
-            .await?
-            .0,
-        StatusCode::UNAUTHORIZED
-    );
-    assert_eq!(
-        signed_route(&app, link.id, &event, &key, false).await?.0,
-        StatusCode::GONE
-    );
+    for (key, status, code) in [
+        (
+            &[99_u8; 32][..],
+            StatusCode::UNAUTHORIZED,
+            "suite_signature_invalid",
+        ),
+        (&key[..], StatusCode::GONE, "suite_link_revoked"),
+    ] {
+        let response = signed_route(&app, link.id, &event, key, false).await?;
+        assert_eq!(response.0, status);
+        assert_eq!(response.1["error"]["code"], code);
+    }
     Ok(())
 }
 
@@ -3037,9 +3203,446 @@ async fn wait_for_blocked_connection(pool: &PgPool, blocker: i32) -> TestResult 
             if waiting {
                 return Ok::<(), sqlx::Error>(());
             }
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            tokio::task::yield_now().await;
         }
     })
     .await??;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn two_cleanups_delivery_failure_and_erasure_do_not_invert_link_and_job_locks() -> TestResult
+{
+    let (db, context, owner) = authorizer_fixture().await?;
+    let (link, _) =
+        exchange_link(&SuiteLinkService::new(context.clone()), owner, None, None).await?;
+    let now = Utc::now();
+    sqlx::query("UPDATE suite_links SET created_at=$2 WHERE id=$1")
+        .bind(link.id)
+        .bind(now - chrono::Duration::days(8))
+        .execute(&db.pool)
+        .await?;
+    let job = PostgresJobStore::new(db.pool.clone())
+        .enqueue(NewJob::new(
+            SUITE_EVENTS_DELIVER_JOB_TYPE,
+            json!({"link_id":link.id}),
+            1,
+        ))
+        .await?
+        .job;
+    let mut failure = db.pool.begin().await?;
+    let failure_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *failure)
+        .await?;
+    sqlx::query("SELECT id FROM job_outbox WHERE id=$1 FOR UPDATE")
+        .bind(job.id)
+        .execute(&mut *failure)
+        .await?;
+    let store = PostgresSuiteLinkStore::new(db.pool.clone());
+    let cleanup_store = store.clone();
+    let cleanup = tokio::spawn(async move { cleanup_store.cleanup(now).await });
+    wait_for_blocked_connection(&db.pool, failure_pid).await?;
+    let cleanup_pid: i32 =
+        sqlx::query_scalar("SELECT pid FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid))")
+            .bind(failure_pid)
+            .fetch_one(&db.pool)
+            .await?;
+    let pool = db.pool.clone();
+    let erasure_store = store.clone();
+    let erasure = tokio::spawn(async move {
+        let mut tx = pool.begin().await?;
+        erasure_store.erase_owner(&mut tx, owner).await?;
+        tx.commit().await
+    });
+    wait_for_blocked_connection(&db.pool, cleanup_pid).await?;
+    let second =
+        tokio::time::timeout(std::time::Duration::from_secs(5), store.cleanup(now)).await??;
+    assert_eq!(second, SuiteCleanupOutcome::default());
+    tokio::time::timeout(std::time::Duration::from_secs(5),
+        sqlx::query("UPDATE job_outbox SET status='failed',failure_reason='permanent',last_error='suite_rejected' WHERE id=$1")
+            .bind(job.id).execute(&mut *failure),
+    ).await??;
+    failure.commit().await?;
+    let result = tokio::time::timeout(std::time::Duration::from_secs(5), cleanup).await???;
+    assert_eq!(result.unused_links, 1);
+    tokio::time::timeout(std::time::Duration::from_secs(5), erasure).await???;
+    let rows: (i64, i64, i64, i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM suite_links),(SELECT count(*) FROM job_outbox),
+        (SELECT count(*) FROM suite_failed_delivery_jobs),(SELECT count(*) FROM suite_link_codes),
+        (SELECT count(*) FROM suite_link_requests)",
+    )
+    .fetch_one(&db.pool)
+    .await?;
+    assert_eq!(rows, (0, 0, 0, 0, 0));
+    Ok(())
+}
+
+struct OwnerRowApplier;
+#[async_trait]
+impl SuiteEventApplier for OwnerRowApplier {
+    async fn lock_owner(
+        &self,
+        tx: &mut sqlx::PgConnection,
+        owner: Uuid,
+    ) -> Result<(), SuiteStoreError> {
+        sqlx::query("SELECT id FROM users WHERE id=$1 FOR NO KEY UPDATE")
+            .bind(owner)
+            .execute(tx)
+            .await
+            .map_err(|error| SuiteStoreError::Storage(error.to_string()))?;
+        Ok(())
+    }
+    async fn apply(
+        &self,
+        tx: &mut sqlx::PgConnection,
+        event: SuiteApplyEvent<'_>,
+    ) -> Result<AppliedOutcome, SuiteStoreError> {
+        Applier::default().apply(tx, event).await
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn ingest_locks_the_product_owner_before_the_link_and_applies_in_that_transaction()
+-> TestResult {
+    let (db, context, owner) = authorizer_fixture().await?;
+    let (link, _) =
+        exchange_link(&SuiteLinkService::new(context.clone()), owner, None, None).await?;
+    let mut product = db.pool.begin().await?;
+    let blocker: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *product)
+        .await?;
+    sqlx::query("SELECT id FROM users WHERE id=$1 FOR NO KEY UPDATE")
+        .bind(owner)
+        .execute(&mut *product)
+        .await?;
+    let app = common::app_with_suite(
+        &db.pool,
+        module(&db.pool, context, Arc::new(OwnerRowApplier)),
+    );
+    let mut event = activity(5, None).envelope("remote", "beta");
+    event.event_type = "beta.activity.completed".into();
+    let key = secret(&link);
+    let ingest = tokio::spawn(async move {
+        signed_route(&app, link.id, &event, &key, false)
+            .await
+            .map_err(|error| error.to_string())
+    });
+    wait_for_blocked_connection(&db.pool, blocker).await?;
+    let mut probe = db.pool.begin().await?;
+    sqlx::query("SELECT id FROM suite_links WHERE id=$1 FOR UPDATE NOWAIT")
+        .bind(link.id)
+        .execute(&mut *probe)
+        .await?;
+    probe.rollback().await?;
+    sqlx::query("UPDATE users SET display_name='after product write' WHERE id=$1")
+        .bind(owner)
+        .execute(&mut *product)
+        .await?;
+    product.commit().await?;
+    let response = tokio::time::timeout(std::time::Duration::from_secs(5), ingest)
+        .await??
+        .map_err(std::io::Error::other)?;
+    assert_eq!(response.0, StatusCode::ACCEPTED);
+    let writes: i64 = sqlx::query_scalar("SELECT count(*) FROM applied_events WHERE owner_id=$1")
+        .bind(owner)
+        .fetch_one(&db.pool)
+        .await?;
+    assert_eq!(writes, 1);
+    Ok(())
+}
+
+struct TypedPayloadApplier;
+#[async_trait]
+impl SuiteEventApplier for TypedPayloadApplier {
+    async fn apply(
+        &self,
+        tx: &mut sqlx::PgConnection,
+        event: SuiteApplyEvent<'_>,
+    ) -> Result<AppliedOutcome, SuiteStoreError> {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct Activity {
+            activity_id: Uuid,
+            #[serde(
+                deserialize_with = "baukit_suite::domain::validation::integer::<_, u32, 1, 10>"
+            )]
+            minutes: u32,
+        }
+        let outcome = Applier::default().apply(tx, event).await?;
+        let typed: Activity = event.payload.deserialize()?;
+        assert!(!typed.activity_id.is_nil());
+        assert!((1..=10).contains(&typed.minutes));
+        Ok(outcome)
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn typed_payload_rejection_returns_422_and_rolls_back_all_writes() -> TestResult {
+    let (db, context, owner) = authorizer_fixture().await?;
+    let (link, _) =
+        exchange_link(&SuiteLinkService::new(context.clone()), owner, None, None).await?;
+    let app = common::app_with_suite(
+        &db.pool,
+        module(&db.pool, context.clone(), Arc::new(TypedPayloadApplier)),
+    );
+    let mut event = activity(24, None).envelope("remote", "beta");
+    event.event_type = "beta.activity.completed".into();
+    let response = signed_route(&app, link.id, &event, &secret(&link), false).await?;
+    assert_eq!(response.0, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(response.1["error"]["code"], "suite_payload_invalid");
+    assert!(!response.2.contains_key("retry-after"));
+    let rows: (i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM suite_inbound_events),(SELECT count(*) FROM applied_events)",
+    )
+    .fetch_one(&db.pool)
+    .await?;
+    assert_eq!(rows, (0, 0));
+    assert!(
+        context
+            .store
+            .find_link(link.id)
+            .await?
+            .expect("link")
+            .last_received_at
+            .is_none()
+    );
+    event.payload.insert("minutes".into(), json!(5));
+    assert_eq!(
+        signed_route(&app, link.id, &event, &secret(&link), false)
+            .await?
+            .0,
+        StatusCode::ACCEPTED
+    );
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn delivery_maps_401_and_410_then_stops_calling_a_revoked_peer() -> TestResult {
+    let db = common::postgres_database().await?;
+    let receiver = ScriptedWebhookReceiver::start().await?;
+    receiver.push_response(ScriptedWebhookResponse::new(401));
+    receiver.push_response(ScriptedWebhookResponse::new(410));
+    let port = Url::parse(&receiver.url("/"))?.port().expect("port");
+    let context = make_context(&db.pool, registry("alpha", "beta", 12340, port));
+    let owner = user(&db.pool, "delivery-revocation").await?;
+    let links = SuiteLinkService::new(context.clone());
+    let (link, _) = exchange_link(&links, owner, None, None).await?;
+    let job = SuiteDeliverJobV1::new(
+        link.id,
+        activity(5, None).envelope(&owner.to_string(), "alpha"),
+        false,
+    );
+    let delivery = SuiteDeliveryService::new(context);
+    assert_eq!(
+        delivery.deliver(job.clone(), Utc::now()).await?,
+        DeliveryAction::Unauthorized
+    );
+    let attention = links.get(owner, link.id).await?;
+    assert_eq!(attention.status, LinkStatus::NeedsAttention);
+    assert_eq!(attention.delivery_health, DeliveryHealth::NeedsAttention);
+    assert_eq!(
+        attention.last_failure_code.as_deref(),
+        Some("suite_unauthorized")
+    );
+    assert_eq!(
+        delivery.deliver(job.clone(), Utc::now()).await?,
+        DeliveryAction::Revoked
+    );
+    assert_eq!(links.get(owner, link.id).await?.status, LinkStatus::Revoked);
+    assert_eq!(receiver.calls(), 2);
+    assert_eq!(
+        delivery.deliver(job, Utc::now()).await?,
+        DeliveryAction::LinkRevoked
+    );
+    assert_eq!(receiver.calls(), 2);
+    Ok(())
+}
+
+async fn issue_exchange_request(
+    service: &SuiteLinkService,
+    owner: Uuid,
+    client: &str,
+    now: chrono::DateTime<Utc>,
+) -> Result<ExchangeRequest, Box<dyn Error>> {
+    let verifier = URL_SAFE_NO_PAD.encode([9_u8; 32]);
+    let authorized = service
+        .authorize(
+            SuiteUser {
+                id: owner,
+                ..SuiteUser::default()
+            },
+            AuthorizationRequest {
+                client: client.into(),
+                state: verifier.clone(),
+                code_challenge: pkce_challenge(&verifier)?,
+                hint: None,
+            },
+            now,
+        )
+        .await?;
+    Ok(ExchangeRequest {
+        client: client.into(),
+        code: query(&authorized.redirect_url, "code"),
+        code_verifier: verifier.clone(),
+        initiator_link_id: Uuid::now_v7(),
+        link_secret: verifier,
+        initiator_subject: "remote".into(),
+        initiator_suite_subject: None,
+        initiator_display_name: None,
+    })
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn failed_exchange_budget_counts_every_invalid_code_and_allows_a_fresh_valid_code()
+-> TestResult {
+    let (db, mut context, owner) = authorizer_fixture().await?;
+    let limiter = Arc::new(FixedWindowLimiter::default());
+    Arc::get_mut(&mut context).expect("context").limiter = limiter.clone();
+    let service = SuiteLinkService::new(context);
+    let now = Utc::now();
+    let valid = issue_exchange_request(&service, owner, "beta", now).await?;
+    let mut unknown = valid.clone();
+    unknown.code = URL_SAFE_NO_PAD.encode([8_u8; 32]);
+    let expired =
+        issue_exchange_request(&service, owner, "beta", now - chrono::Duration::seconds(61))
+            .await?;
+    let mut wrong_client = issue_exchange_request(&service, owner, "hebkit", now).await?;
+    wrong_client.client = "beta".into();
+    let mut wrong_verifier = valid;
+    wrong_verifier.code_verifier = URL_SAFE_NO_PAD.encode([7_u8; 32]);
+    let invalid = [unknown, expired, wrong_client, wrong_verifier];
+    for index in 0..SUITE_EXCHANGE_FAILURE_LIMIT {
+        let request = invalid[usize::try_from(index)? % invalid.len()].clone();
+        assert_eq!(
+            service
+                .exchange(request, now)
+                .await
+                .expect_err("invalid code")
+                .code(),
+            "suite_code_invalid"
+        );
+        assert_eq!(
+            limiter.counts.lock().expect("counts")["suite:exchange:beta"],
+            u64::from(index + 1)
+        );
+    }
+    for request in &invalid {
+        assert!(matches!(
+            service.exchange(request.clone(), now).await,
+            Err(SuiteServiceError::RateLimited(60))
+        ));
+    }
+    let fresh = issue_exchange_request(&service, owner, "beta", now).await?;
+    let completed = service.exchange(fresh, now).await?;
+    assert_eq!(
+        service.get(owner, completed.link_id).await?.status,
+        LinkStatus::Active
+    );
+    assert_eq!(
+        limiter.counts.lock().expect("counts")["suite:exchange:beta"],
+        20
+    );
+    assert_eq!(limiter.calls.lock().expect("calls").len(), 24);
+    let links: i64 = sqlx::query_scalar("SELECT count(*) FROM suite_links")
+        .fetch_one(&db.pool)
+        .await?;
+    assert_eq!(links, 1);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn lock_order_migration_preserves_old_failures_and_accounts_new_jobs_once() -> TestResult {
+    let db = common::postgres_database_before_lock_order().await?;
+    let owner = user(&db.pool, "suite-upgrade").await?;
+    let link = Uuid::now_v7();
+    sqlx::query("INSERT INTO suite_links(id,user_id,peer_app,role,remote_link_id,remote_subject,secret_ciphertext,secret_nonce,secret_key_version,sends,receives) VALUES($1,$2,'beta','authorizer',$3,'remote',$4,$5,1,'{}','{}')")
+        .bind(link).bind(owner).bind(Uuid::now_v7()).bind(vec![1u8]).bind(vec![2u8])
+        .execute(&db.pool).await?;
+    let jobs = PostgresJobStore::new(db.pool.clone());
+    let old_job = jobs
+        .enqueue(NewJob::new(
+            SUITE_EVENTS_DELIVER_JOB_TYPE,
+            json!({"link_id":link}),
+            1,
+        ))
+        .await?
+        .job;
+    sqlx::query("UPDATE job_outbox SET status='failed',failure_reason='permanent',last_error='suite_rejected' WHERE id=$1")
+        .bind(old_job.id).execute(&db.pool).await?;
+    let old_count: i32 =
+        sqlx::query_scalar("SELECT consecutive_failures FROM suite_links WHERE id=$1")
+            .bind(link)
+            .fetch_one(&db.pool)
+            .await?;
+    assert_eq!(old_count, 1);
+
+    sqlx::raw_sql(SUITE_LOCK_ORDER_MIGRATION_SQL)
+        .execute(&db.pool)
+        .await?;
+    let store = PostgresSuiteLinkStore::new(db.pool.clone());
+    assert_eq!(
+        store
+            .find_link(link)
+            .await?
+            .expect("link")
+            .consecutive_failures,
+        1
+    );
+    let old_accounted: bool =
+        sqlx::query_scalar("SELECT accounted FROM suite_failed_delivery_jobs WHERE job_id=$1")
+            .bind(old_job.id)
+            .fetch_one(&db.pool)
+            .await?;
+    assert!(old_accounted);
+
+    let new_job = jobs
+        .enqueue(NewJob::new(
+            SUITE_EVENTS_DELIVER_JOB_TYPE,
+            json!({"link_id":link}),
+            1,
+        ))
+        .await?
+        .job;
+    sqlx::query("UPDATE job_outbox SET status='failed',failure_reason='permanent',last_error='suite_unauthorized' WHERE id=$1")
+        .bind(new_job.id).execute(&db.pool).await?;
+    let pending: bool =
+        sqlx::query_scalar("SELECT NOT accounted FROM suite_failed_delivery_jobs WHERE job_id=$1")
+            .bind(new_job.id)
+            .fetch_one(&db.pool)
+            .await?;
+    assert!(pending);
+    let counted = store.find_link(link).await?.expect("link");
+    assert_eq!(counted.consecutive_failures, 2);
+    assert_eq!(
+        counted.last_failure_code.as_deref(),
+        Some("suite_unauthorized")
+    );
+    sqlx::query("UPDATE job_outbox SET status='pending',failure_reason=NULL WHERE id=$1")
+        .bind(new_job.id)
+        .execute(&db.pool)
+        .await?;
+    sqlx::query("UPDATE job_outbox SET status='failed',failure_reason='permanent' WHERE id=$1")
+        .bind(new_job.id)
+        .execute(&db.pool)
+        .await?;
+    assert_eq!(
+        store
+            .find_link(link)
+            .await?
+            .expect("link")
+            .consecutive_failures,
+        2
+    );
+    let pending_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM suite_failed_delivery_jobs WHERE NOT accounted")
+            .fetch_one(&db.pool)
+            .await?;
+    assert_eq!(pending_count, 0);
     Ok(())
 }

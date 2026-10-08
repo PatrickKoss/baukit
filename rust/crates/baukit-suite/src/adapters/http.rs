@@ -964,7 +964,7 @@ async fn revoke(
         (status = 403, body = ErrorResponse),
         (status = 404, body = ErrorResponse),
         (status = 410, body = ErrorResponse),
-        (status = 422, body = ErrorResponse),
+        (status = 422, description = "suite_payload_invalid: catalog or product applier rejected the payload; suite_event_type_unsupported: type or source mismatch", body = ErrorResponse),
         (status = 429, body = ErrorResponse),
         (status = 500, body = ErrorResponse),
         (status = 504, body = ErrorResponse),
@@ -1054,6 +1054,12 @@ mod tests {
             schemas["StartRequest"]["properties"]["peerApp"]
                 .get("enum")
                 .is_none()
+        );
+        assert!(
+            document["paths"]["/suite/inbound/{linkId}"]["post"]["responses"]["422"]["description"]
+                .as_str()
+                .expect("payload rejection description")
+                .contains("suite_payload_invalid")
         );
         assert_eq!(document["paths"].as_object().expect("paths").len(), 15);
         assert!(

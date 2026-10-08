@@ -133,6 +133,9 @@ Metrics use the product's configured prefix, with these suffixes and labels:
 | `{prefix}_suite_deliveries_total` | `outcome` |
 | `{prefix}_suite_emission_skipped_total` | `reason` |
 
+The cleanup runner counts failures in `suite_cleanup_failures_total`, without
+a product prefix or labels.
+
 ## Adopt in a product
 
 1. Embed the product's peers and catalog. Construct
@@ -150,15 +153,19 @@ Metrics use the product's configured prefix, with these suffixes and labels:
    `Validate` implementation. Call `validate_for(own_app, peers_json, cipher)`
    at startup. Active mode requires a credential cipher. URLs require HTTPS;
    `allow_loopback` permits HTTP only for localhost, 127.0.0.1 or ::1.
-3. For a product adding suite tables, copy both suite SQL files after the three
+3. For a product adding suite tables, copy the three suite SQL files after the three
    jobs migrations. Constants are
-   `baukit_suite::{SUITE_MIGRATION_SQL, SUITE_RUNTIME_MIGRATION_SQL}`.
+   `baukit_suite::{SUITE_MIGRATION_SQL, SUITE_RUNTIME_MIGRATION_SQL, SUITE_LOCK_ORDER_MIGRATION_SQL}`.
    Keep applied suite migrations in products that already have these tables.
    For SLS, `0056_suite.sql` corresponds to `001_suite.sql` and
    `0059_suite_runtime.sql` corresponds to `002_suite_runtime.sql`.
    Keep those product files and their SQLx migration history unchanged. Do not
    copy or run `001` and `002` again, and do not replace or renumber applied files.
-   The crate exposes SQL constants; it does not register or run migrations.
+   Add `003_suite_lock_order.sql` as a new product migration when upgrading
+   from 0.10.2. Apply it before deploying the new store code. It replaces the
+   failure trigger with job-only accounting records and preserves the counters
+   already recorded. SLS keeps `0056`, `0059` and `0061` and adds this migration
+   after them. The crate exposes SQL constants; it does not run migrations.
    Compare their schema with the shipped SQL, keeping product owner foreign
    keys. Add a migration only for other differences.
    Owner ids are UUIDs; no owner foreign key is shipped. Add missing owner
@@ -194,12 +201,19 @@ Metrics use the product's configured prefix, with these suffixes and labels:
    ) -> Result<(), sqlx::Error>;
    ```
 
-   The applier locks the product rows it changes. The receiver already holds
-   the suite owner advisory lock and has inserted the inbox row. Do all reward,
+   Override the default `SuiteEventApplier::lock_owner(connection, owner)`
+   hook when product writers lock the owner row. SLS uses
+   `SELECT id FROM users WHERE id=$1 FOR NO KEY UPDATE`. Ingest calls this hook
+   after the suite owner advisory lock and before it locks the link. `apply`
+   receives the same transaction with its inbox row already inserted.
+   Follow the [crate lock order](https://docs.rs/baukit-suite/latest/baukit_suite/#postgresql-lock-order). Do all reward,
    ledger, progress and downstream event writes on the provided connection.
    Any error rolls back those writes and the inbox. Replay cannot grant a
    reward or return a ledger entry. Use `ValidatedPayload::deserialize<T>()`
-   with a product type that denies unknown fields.
+   with a product type that denies unknown fields. Its errors convert through
+   `?` to `SuiteStoreError::PayloadInvalid`, which returns HTTP 422 with
+   `suite_payload_invalid`. Peers do not retry that rejection. The public
+   `domain::validation` module exposes field validators for typed parsers.
 5. Construct `PostgresSuiteLinkStore::new(pool)` and
    `PostgresSuiteEventOutbox::new(pool, registry, catalog, identities, share_xp, metric_prefix)`.
    Put those stores, a `ReqwestSuitePeerClient::new(allow_loopback)`, limiter,
@@ -225,7 +239,9 @@ Metrics use the product's configured prefix, with these suffixes and labels:
 7. Register `SuiteJobHandler::new(Arc<dyn SuiteDeliveryRunner>)` with the jobs
    runner. Configure the queue, concurrency and backoff above. Supervise
    `run_hourly_cleanup(service, watch::Receiver<bool>)` alongside it. Cleanup
-   runs on UTC hour boundaries and returns storage errors to the supervisor.
+   runs on UTC hour boundaries. It logs storage errors, increments
+   `suite_cleanup_failures_total` and retries at the next boundary. A transaction
+   advisory lock skips concurrent cleanup on other replicas.
 8. Wrap the product erasure implementation with `PostgresSuiteErasure`, using
    a `SuiteErasureOwnerLookup` for subject-to-owner resolution. Construct
    `SuiteErasureNotificationService` with that adapter and the delivery service.
@@ -245,6 +261,13 @@ Metrics use the product's configured prefix, with these suffixes and labels:
    persistent OAuth state, same-tab web redirects and native auth-session
    adapters. Use `SuiteSession.connect(peerApp)` and `handleRedirect(url)`;
    render `SuiteAuthorizeMachine`, `SuiteLinkedMachine` and `ConnectedApps`.
+   A successful `ConnectedApps.connect(peerApp)` returns a ready state with
+   `completed: { peerApp, requestId }` after refreshing its lists. Pass that
+   request id to `SuiteNavigationStore.claimSuiteConnectionAnnouncement`.
+   Share this store with `SuiteLinkedMachine` so the native auth session and
+   redirect handler announce the connection once. A later `load()` clears
+   `completed`. This additive state field keeps the list state and completion
+   id together, so SLS can remove its B9 completion workaround.
    Register `suiteMessages`; validate intents with
    `createSuiteNativeIntentValidator(scheme)` and use `openSuitePeer` for
    native-to-web fallback. Product UI supplies event labels and mapping controls.

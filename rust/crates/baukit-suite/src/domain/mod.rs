@@ -16,7 +16,7 @@ mod link_protocol;
 pub use link_protocol::*;
 
 mod payloads;
-mod validation;
+pub mod validation;
 pub use payloads::*;
 
 pub const SUITE_EVENT_NAMESPACE: Uuid = Uuid::from_u128(0x5f0e8c1a_3b7d_4c2e_9a61_2d8f4b7e0c95);

@@ -26,8 +26,20 @@ import { SuiteClient, ConnectedApps } from '@baukit/suite-client';
 const client = new SuiteClient(transport);
 const connectedApps = new ConnectedApps(client, session);
 await connectedApps.load();
-await connectedApps.connect('beta');
+const result = await connectedApps.connect('beta');
+if (result.type === 'ready' && result.completed) {
+  if (navigation.claimSuiteConnectionAnnouncement(result.completed.requestId)) {
+    announceConnected(result.completed.peerApp);
+  }
+}
 ```
+
+A successful `connect()` refreshes the lists and returns a ready state with
+`completed: { peerApp, requestId }`. This additive field keeps the completed
+request id with the list state. A later `load()` clears it. Share one
+`SuiteNavigationStore` between this caller and `SuiteLinkedMachine`; its
+announcement guard deduplicates the native auth-session result and redirect
+notice by request id. The session redeems the code once even if both paths fire.
 
 ## Pages and native intents
 

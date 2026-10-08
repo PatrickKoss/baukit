@@ -65,7 +65,9 @@ impl SuiteServiceError {
             Self::SignatureInvalid => "suite_signature_invalid",
             Self::LinkRevoked => "suite_link_revoked",
             Self::ReplayWindow { .. } => "suite_replay_window",
-            Self::PayloadInvalid => "suite_payload_invalid",
+            Self::PayloadInvalid | Self::Store(SuiteStoreError::PayloadInvalid(_)) => {
+                "suite_payload_invalid"
+            }
             Self::Inbound(e) => e.code(),
             Self::PeerUnreachable => "suite_peer_unreachable",
             Self::RateLimited(_) => "rate_limited",

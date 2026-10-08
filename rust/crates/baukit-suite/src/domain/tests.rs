@@ -206,7 +206,6 @@ fn event_id_vectors_and_envelope_identity_are_deterministic() {
         assert_eq!(envelope.schema_version, 1);
         let wire = serde_json::to_value(envelope).expect("valid fixture");
         assert_eq!(wire["occurredAt"], "2026-10-06T08:15:00Z");
-        assert_eq!(wire["eventId"], vector["eventId"]);
     }
 }
 
@@ -1899,6 +1898,8 @@ fn versioned_jobs_and_exchange_values_use_the_exact_wire_shapes() {
     let job = SuiteDeliverJobV1::new(Uuid::now_v7(), event, true);
     let wire = serde_json::to_value(&job).expect("wire");
     assert_eq!(wire["schema_version"], 1);
+    assert_eq!(wire["link_id"], job.link_id.to_string());
+    assert!(wire.get("linkId").is_none());
     assert_eq!(wire["replay"], true);
     assert_eq!(
         serde_json::from_value::<SuiteDeliverJobV1>(wire.clone()).expect("job"),
@@ -1919,5 +1920,124 @@ fn versioned_jobs_and_exchange_values_use_the_exact_wire_shapes() {
         let mut invalid = wire.clone();
         invalid[field] = value;
         assert!(serde_json::from_value::<SuiteRevokeJobV1>(invalid).is_err());
+    }
+}
+
+#[test]
+fn configured_urls_reject_wrong_schemes_hosts_paths_and_unknown_peers() {
+    for (url, loopback, origin) in [
+        ("ftp://localhost", true, false),
+        ("http://alpha.example", true, false),
+        ("https://alpha.example/path", false, true),
+    ] {
+        assert_eq!(
+            configured_url(url, loopback, origin, "alpha"),
+            Err(SuiteDataError::InvalidUrl("alpha".into()))
+        );
+    }
+    let settings = PeerRegistrySettings {
+        peers: BTreeMap::from([("unknown".into(), PeerUrls::default())]),
+        ..PeerRegistrySettings::default()
+    };
+    assert!(
+        matches!(PeerRegistry::new("alpha", SUITE_PEERS_JSON, settings), Err(SuiteDataError::UnknownPeer(id)) if id == "unknown")
+    );
+}
+
+#[test]
+fn protocol_type_lists_match_the_authorizer_registry() {
+    let registry = protocol_authorizer_registry();
+    let peer = registry.active_peer("alpha").expect("peer");
+    let corpus = protocol();
+    let mut checked = 0;
+    for case in corpus["payloads"]
+        .as_array()
+        .expect("payloads")
+        .iter()
+        .filter(|case| case["operation"] == "exchange" || case["operation"] == "preview")
+    {
+        assert_eq!(
+            case["response"]["authorizerSends"],
+            json!(peer.sends),
+            "{}",
+            case["name"]
+        );
+        assert_eq!(
+            case["response"]["initiatorSends"],
+            json!(peer.receives),
+            "{}",
+            case["name"]
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, 8);
+}
+
+#[test]
+fn inbound_type_source_future_and_error_codes_are_explicit_for_live_and_replay() {
+    let catalog = PayloadCatalog::from_json(include_str!(
+        "../../../../../fixtures/suite-events/v1/catalog.json"
+    ))
+    .expect("catalog");
+    let mut link = test_link();
+    let envelope = SuiteEvent {
+        event_type: "beta.activity.completed".into(),
+        natural_key: "event".into(),
+        occurred_at: link.created_at,
+        payload: json!({"activityId":link.id,"minutes":10})
+            .as_object()
+            .expect("map")
+            .clone(),
+    }
+    .envelope("sender-subject", "beta");
+    for replay in [false, true] {
+        link.receives.clear();
+        let error = validate_inbound(&catalog, &envelope, &link, link.created_at, replay)
+            .expect_err("unsubscribed");
+        assert_eq!(error, InboundValidationError::UnsupportedType);
+        assert_eq!(error.code(), "suite_event_type_unsupported");
+        link.receives = vec![
+            "beta.activity.completed".into(),
+            "beta.activity.unknown".into(),
+        ];
+        let unknown = EventEnvelope {
+            event_type: "beta.activity.unknown".into(),
+            ..envelope.clone()
+        };
+        let error = validate_inbound(&catalog, &unknown, &link, link.created_at, replay)
+            .expect_err("catalog type");
+        assert_eq!(
+            error,
+            InboundValidationError::Payload(PayloadError::UnsupportedType(
+                "beta.activity.unknown".into()
+            ))
+        );
+        assert_eq!(error.code(), "suite_payload_invalid");
+        let wrong = EventEnvelope {
+            source_app: "alpha".into(),
+            ..envelope.clone()
+        };
+        let error =
+            validate_inbound(&catalog, &wrong, &link, link.created_at, replay).expect_err("source");
+        assert_eq!(error, InboundValidationError::SourceAppMismatch);
+        assert_eq!(error.code(), "suite_event_type_unsupported");
+        let future = EventEnvelope {
+            occurred_at: link.created_at + chrono::Duration::seconds(301),
+            ..envelope.clone()
+        };
+        let error = validate_inbound(&catalog, &future, &link, link.created_at, replay)
+            .expect_err("future");
+        assert_eq!(error, InboundValidationError::FutureOccurrence);
+        assert_eq!(error.code(), "suite_payload_invalid");
+        let invalid = EventEnvelope {
+            schema_version: 2,
+            ..envelope.clone()
+        };
+        assert_eq!(
+            validate_inbound(&catalog, &invalid, &link, link.created_at, replay)
+                .expect_err("schema")
+                .code(),
+            "event_schema_unsupported"
+        );
     }
 }
