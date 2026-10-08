@@ -17,16 +17,23 @@ DEPENDENCY_GROUPS = ("dependencies", "peerDependencies", "optionalDependencies")
 LOCAL_PROTOCOLS = ("workspace:", "link:", "file:")
 
 
+def packed_filename(output: str, directory: Path) -> str:
+    """npm 11 prints a list of archives; npm 12 prints an object keyed by package name."""
+    packed = json.loads(output)
+    archives = list(packed.values()) if isinstance(packed, dict) else packed
+    if len(archives) != 1:
+        raise ValueError(f"{directory}: expected one npm archive")
+    return archives[0]["filename"]
+
+
 def check_package(directory: Path) -> None:
     with tempfile.TemporaryDirectory(prefix="baukit-npm-pack-") as temporary:
         result = subprocess.run(
             ["npm", "pack", "--json", "--ignore-scripts", "--pack-destination", temporary],
             cwd=directory, check=True, capture_output=True, text=True,
         )
-        packed = json.loads(result.stdout)
-        if len(packed) != 1:
-            raise ValueError(f"{directory}: expected one npm archive")
-        with tarfile.open(Path(temporary) / packed[0]["filename"], "r:gz") as archive:
+        filename = packed_filename(result.stdout, directory)
+        with tarfile.open(Path(temporary) / filename, "r:gz") as archive:
             manifest = archive.extractfile("package/package.json")
             if manifest is None:
                 raise ValueError(f"{directory}: npm archive has no package.json")

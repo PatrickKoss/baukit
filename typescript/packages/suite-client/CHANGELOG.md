@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Read the npm 12 `npm pack --json` format in the publish check. The 0.10.1 npm publish stopped on it, so 0.10.2 is the first release with installable peers.
+
 ## 0.10.1
 
 - Declare sibling Baukit packages as versioned peers so npm consumers can install the package. Keep workspace links in development dependencies.

@@ -30,6 +30,17 @@ class PackedDependenciesTest(unittest.TestCase):
                         with self.assertRaisesRegex(ValueError, f"{group}.*{protocol}"):
                             check.check_package(directory)
 
+    def test_pack_output_of_npm_11_and_npm_12_is_read(self) -> None:
+        entry = {"name": "@baukit/pack-test", "filename": "baukit-pack-test-1.0.0.tgz"}
+        for output in ([entry], {"@baukit/pack-test": entry}):
+            with self.subTest(shape=type(output).__name__):
+                self.assertEqual(
+                    check.packed_filename(json.dumps(output), Path(".")),
+                    "baukit-pack-test-1.0.0.tgz",
+                )
+        with self.assertRaisesRegex(ValueError, "expected one npm archive"):
+            check.packed_filename(json.dumps([entry, entry]), Path("."))
+
     def test_registry_ranges_and_local_dev_dependencies_are_accepted(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
@@ -80,7 +91,7 @@ class PackedDependenciesTest(unittest.TestCase):
                     cwd=manifests[name].parent, capture_output=True, text=True,
                 )
                 self.assertEqual(packed.returncode, 0, packed.stdout + packed.stderr)
-                archives.append(str(consumer / json.loads(packed.stdout)[0]["filename"]))
+                archives.append(str(consumer / check.packed_filename(packed.stdout, consumer)))
             (consumer / "package.json").write_text(json.dumps({
                 "name": "suite-client-consumer", "version": "0.0.0", "private": True,
             }))
