@@ -5,6 +5,8 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+Unreleased changes pin every Android gate to Temurin 25.0.4.1+1. Doctor checks actual Baukit pins and every product Cargo workspace. Generated products probe PostgreSQL over TCP and launch Android QA through MainActivity.
+
 Last verified release train: `v0.10.2` (the npm publish check reads npm 12 pack output, which stopped the `v0.10.1` npm publish after its crates went out; `baukit-suite` builds its domain
 contracts without database, Tokio or HTTP dependencies and gates runtime parts
 behind `postgres`, `runtime`, `delivery`, `http` and `jobs`; `@baukit/suite-client`
@@ -26,7 +28,7 @@ a Linux result.
 | Rust | 1.95.0 MSRV | CI-enforced with Rust 1.95; refresh uses stable 1.99.0 |
 | Node | 26.10.0 | pinned via `mise.toml` and `typescript/.nvmrc`; Node types use major 26. Package engines still accept Node 24 and later. |
 | Corepack | 0.36.0 | installed through mise locally and npm in CI; Node 26 does not bundle it |
-| Java | Temurin 21.0.12.1 | pinned via `mise.toml`; used by Android builds |
+| Java | Temurin 25.0.4.1+1 | `mise.toml` and every Android CI job pin the same build as `25.0.4+101.0.LTS`, the Adoptium API version. Generated builds and Expo conformance builds grant native access to Android's Prefab tool. |
 | Swift | 6.4.0 | pinned via `mise.toml`; compiler version checked on Linux |
 | xtool | 1.20.1 | pinned via `mise.toml`; version checked on Linux, without a Darwin SDK or simulator |
 | pnpm | 12.9.1 | pinned via `packageManager`; fresh generated web, mobile, and MCP lockfiles pass `--frozen-lockfile` |
@@ -100,7 +102,7 @@ columns. See the [PostgreSQL 18 release notes](https://www.postgresql.org/docs/1
 | Native accessibility lint | `eslint-plugin-react-native-a11y` + `@eslint/compat` | 3.5.1 + 2.1.1 | Generated mobile template lint baseline on ESLint 10; the plugin declares an ESLint 8 peer, so the template allows ESLint 10 through `peerDependencyRules` |
 | Web accessibility checks | axe-core | 4.13.0 | Serious/critical jsdom scan seam; contrast remains a real-browser check |
 | Web e2e | Playwright | 1.63.0 | Chromium 153.0.8010.12 (revision 1243) and WebKit 26.6 (revision 2359) |
-| Android native compile | Expo prebuild + Gradle | API 36, build-tools 36.0.0, Java 21 | Blocking for relevant generated-product and Baukit fixture changes |
+| Android native compile | Expo prebuild + Gradle | API 36, build-tools 36.0.0, Temurin 25.0.4.1+1 | Blocking for relevant generated-product and Baukit fixture changes |
 | Native e2e | Maestro | latest | Configurable for product-owned critical paths; scheduled/manual, not part of the universal pull-request promise |
 | iOS native compile | Xcode + iOS Simulator | macOS runner | Scheduled/manual; Linux is recorded as blocked, never as a passing skip |
 
@@ -121,7 +123,7 @@ releases.
 | AsyncStorage | 3.1.1 | The [Expo SDK 57 bundle](https://github.com/expo/expo/blob/sdk-57/packages/expo/bundledNativeModules.json) uses 2.2.0 for Expo Go. Version 3 uses a new native module. |
 | Gesture Handler | 3.3.0 | Expo SDK 57 uses 2.32.0 with its navigation packages. |
 | Reanimated / Worklets | 4.7.1 / 0.13.0 | Expo SDK 57 uses 4.5.1 / 0.10.1. Screens 4.26.2 and Safe Area Context 5.7.0 stay on the same SDK baseline. |
-| Java | Temurin 27 | Expo SDK 57 generates Gradle 9.3.1. [Java 27 requires Gradle 9.8](https://docs.gradle.org/current/userguide/compatibility.html), so Android builds use the latest Temurin 21 patch. |
+| Java | Temurin 27 | Expo SDK 57 generates Gradle 9.3.1. [Java 27 requires Gradle 9.8](https://docs.gradle.org/current/userguide/compatibility.html), so Android builds use Temurin 25.0.4.1+1. Gradle supports Java 25 since 9.1.0. |
 | PostgreSQL | 18.6 | PostgreSQL stays on 18.x. Version 19 is still in beta. PostHog's separate database stays on 14.1. |
 | Keycloak | 26.8.0 | This is still the latest stable release. The theme matrix covers 26.7.5 and 26.8.0. |
 

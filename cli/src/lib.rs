@@ -1,3 +1,4 @@
+mod doctor_dependencies;
 mod doctor_layout;
 mod doctor_mcp;
 mod identity;
@@ -1348,24 +1349,31 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
         if manifest.capabilities.mcp {
             validate_remote_mcp(root, &manifest, &mut successes, &mut failures)?;
         }
-        let cargo = doctor_layout::backend_manifest(root, &manifest)?;
-        if cargo.is_file() {
-            let args = vec![
-                "metadata".to_owned(),
-                "--manifest-path".to_owned(),
-                cargo.to_string_lossy().into_owned(),
-                "--format-version".to_owned(),
-                "1".to_owned(),
-                "--no-deps".to_owned(),
-            ];
-            let output = host
-                .run_command("cargo", &args, None)
-                .context("could not run cargo metadata; install Rust from https://rustup.rs")?;
-            if output.success {
-                successes.push("Cargo workspace and dependency manifests parse".to_owned());
-            } else {
-                failures.push(format!("Cargo workspace does not parse: {}", output.stderr));
-            }
+    }
+    for cargo in doctor_layout::cargo_workspaces(root, &manifest)? {
+        let relative = cargo.strip_prefix(root)?.display();
+        let args = vec![
+            "metadata".to_owned(),
+            "--manifest-path".to_owned(),
+            cargo.to_string_lossy().into_owned(),
+            "--format-version".to_owned(),
+            "1".to_owned(),
+            "--no-deps".to_owned(),
+        ];
+        let output = host.run_command("cargo", &args, None).with_context(|| {
+            format!(
+                "could not run cargo metadata for `{relative}`; install Rust from https://rustup.rs"
+            )
+        })?;
+        if output.success {
+            successes.push(format!(
+                "Cargo workspace `{relative}` and dependency manifests parse"
+            ));
+        } else {
+            failures.push(format!(
+                "Cargo workspace `{relative}` does not parse: {}",
+                output.stderr
+            ));
         }
     }
     if manifest.capabilities.mobile {
@@ -1457,9 +1465,12 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
             Some(ready)
         }
         BaukitDependency::Registry { version } => {
-            successes.push(format!(
-                "Baukit dependencies resolve from crates.io and npm at version {version}"
-            ));
+            doctor_dependencies::validate_registry_pins(
+                root,
+                version,
+                &mut successes,
+                &mut failures,
+            )?;
             None
         }
     };

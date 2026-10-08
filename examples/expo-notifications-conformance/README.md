@@ -15,7 +15,7 @@ This Expo SDK 57 app runs two checks inside Hermes on an Android emulator.
   permission revoked, the replacement must report `permission_denied` for every entry, schedule
   nothing, and still cancel an owned request left from a granted period.
 
-On Linux with Java 21 and KVM available:
+On Linux with Temurin 25.0.4.1+1 and KVM available:
 
 ```sh
 make expo-notifications-conformance

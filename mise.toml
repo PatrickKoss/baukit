@@ -1,5 +1,5 @@
 [tools]
-java = "temurin-21.0.12+101.0.LTS"
+java = "temurin-25.0.4+101.0.LTS"
 node = { version = "26.10.0", postinstall = "npm install --global --prefix \"$MISE_TOOL_INSTALL_PATH\" corepack@0.36.0" }
 rust = { version = "1.99.0", components = "clippy,rustfmt" }
 swift = "6.4.0"

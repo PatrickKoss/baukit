@@ -51,7 +51,7 @@ merged.
 
 ## Cost and runner requirements
 
-The Android compile requires Linux, Java 21, the Android API 36 SDK, and Gradle;
+The Android compile requires Linux, Temurin 25.0.4.1+1, the Android API 36 SDK, and Gradle;
 it does not require an emulator. The real SQLite proof additionally requires
 hardware virtualization and an API 36 x86_64 emulator image. Locally,
 `scripts/android-sdk-setup.sh` installs only those components under

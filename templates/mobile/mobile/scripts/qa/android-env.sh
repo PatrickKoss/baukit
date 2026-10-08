@@ -139,7 +139,7 @@ fi
 apk="$root/mobile/android/app/build/outputs/apk/release/app-release.apk"
 [[ -f "$apk" ]] || { echo "qa: missing $apk; run 'make qa-android-build'" >&2; exit 1; }
 "$adb" -s "$serial" install -r "$apk" >/dev/null
-"$adb" -s "$serial" shell monkey -p dev.baukit.{{ context.app_crate }} 1 >/dev/null
+"$adb" -s "$serial" shell am start -n dev.baukit.{{ context.app_crate }}/.MainActivity -W >/dev/null
 
 echo "qa: Android app ready on $serial"
 echo "qa: run 'make e2e-android-live' or inspect the emulator, then 'make qa-android-down'"

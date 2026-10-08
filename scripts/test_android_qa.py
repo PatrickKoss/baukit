@@ -68,6 +68,7 @@ case "$*" in
   *'emu kill')
     [[ "$FAILURE" != kill ]] || exit 9
     if [[ "$FAILURE" != disconnect ]]; then rm -f "$ATTACHED"; fi ;;
+  *'shell am start '*) [[ "$FAILURE" != launch ]] || exit 17 ;;
   *'getprop sys.boot_completed') if grep -q '^{' "$EVENTS"; then echo 1; fi ;;
   *logcat*)
     if [[ "$FAILURE" == health ]]; then echo 'am_anr: [0,123,com.android.systemui,1,reason]'; fi ;;
@@ -173,6 +174,23 @@ RENDERER
                 stopped = self.run_script("android-env.sh", "stop")
                 self.assertEqual(stopped.returncode, 0, stopped.stderr)
                 self.assertFalse((self.state / "renderer").exists())
+
+    def test_start_launches_main_activity_and_waits_for_it(self):
+        self.prepare_start()
+        result = self.run_script("android-env.sh", "start")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        events = self.events.read_text().splitlines()
+        launch = "adb -s emulator-5556 shell am start -n dev.baukit.test/.MainActivity -W"
+        self.assertIn(launch, events)
+        install = next(i for i, event in enumerate(events) if "install -r" in event)
+        self.assertLess(install, events.index(launch))
+        self.assertFalse(any("monkey" in event for event in events))
+
+    def test_failed_activity_launch_does_not_report_ready(self):
+        self.prepare_start()
+        result = self.run_script("android-env.sh", "start", FAILURE="launch")
+        self.assertEqual(result.returncode, 17, result.stderr)
+        self.assertNotIn("Android app ready", result.stdout)
 
     def test_invalid_renderer_limits_fail_before_starting_services(self):
         self.prepare_start()

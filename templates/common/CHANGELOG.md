@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+{% if context.backend %}- Wait for PostgreSQL to accept TCP connections before reporting Compose health.
+{% endif %}{% if context.mobile %}- Pin Android CI to Temurin 25.0.4.1+1 and launch QA through MainActivity.
+{% endif %}
+
 ## [0.10.2] - 2026-10-08
 
 ## [0.10.1] - 2026-10-08

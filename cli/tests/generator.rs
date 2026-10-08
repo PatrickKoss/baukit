@@ -3756,6 +3756,217 @@ fn doctor_accepts_registry_dependencies_without_a_checkout() -> anyhow::Result<(
 }
 
 #[test]
+fn doctor_checks_each_registry_pin_and_names_its_file() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "registry-census");
+    local.mobile = true;
+    local.web = true;
+    let root = generate_new(&local)?;
+    let baukit_cli::BaukitDependency::Registry { version } =
+        baukit_cli::read_manifest(&root)?.dependencies.baukit
+    else {
+        anyhow::bail!("fixture must use registry dependencies");
+    };
+    let lock = format!(
+        "version = 4\n[[package]]\nname = \"baukit-core\"\nversion = \"{version}\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n[[package]]\nname = \"baukit-config\"\nversion = \"{version}\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n"
+    );
+    fs::write(root.join("backend/Cargo.lock"), &lock)?;
+    let pnpm = format!(
+        "lockfileVersion: '9.0'\nimporters:\n  mobile:\n    dependencies:\n      '@baukit/api-runtime':\n        specifier: {version}\n        version: {version}(react@19.2.3)\npackages:\n  '@baukit/api-runtime@{version}': {{}}\nsnapshots:\n  '@baukit/api-runtime@{version}(react@19.2.3)': {{}}\n"
+    );
+    fs::write(root.join("pnpm-lock.yaml"), &pnpm)?;
+    assert!(
+        Command::new("git")
+            .args(["init", "--quiet"])
+            .current_dir(&root)
+            .status()?
+            .success()
+    );
+    let ignore = root.join(".gitignore");
+    fs::write(
+        &ignore,
+        format!(
+            "{}\n/backend/Cargo.lock\n/pnpm-lock.yaml\n",
+            fs::read_to_string(&ignore)?
+        ),
+    )?;
+    let findings = doctor(&root)?;
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.contains("Baukit registry pins match"))
+    );
+    let cases = [
+        ("backend/Cargo.toml", "baukit-core"),
+        ("backend/Cargo.lock", "baukit-core"),
+        ("mobile/package.json", "@baukit/api-runtime"),
+        ("web/package.json", "@baukit/api-runtime"),
+        ("pnpm-lock.yaml", "@baukit/api-runtime"),
+    ];
+    for (relative, name) in cases {
+        let path = root.join(relative);
+        let original = fs::read_to_string(&path)?;
+        let changed = if relative.ends_with("package.json") {
+            original.replacen(
+                &format!("\"{name}\": \"{version}\""),
+                &format!("\"{name}\": \"0.9.0\""),
+                1,
+            )
+        } else {
+            original.replacen(&version, "0.9.0", 1)
+        };
+        assert_ne!(changed, original, "fixture must change a pin in {relative}");
+        fs::write(&path, changed)?;
+        let error = doctor(&root)
+            .expect_err("each stale pin must fail doctor")
+            .to_string();
+        assert!(error.contains(relative), "{error}");
+        assert!(error.contains(name), "{error}");
+        assert!(error.contains("0.9.0"), "{error}");
+        fs::write(&path, original)?;
+    }
+    let (first, last) = lock
+        .rsplit_once(&version)
+        .expect("lock contains two Baukit pins");
+    for source in [
+        lock.replacen(&version, "0.9.0", 2),
+        lock.replacen(&version, "0.9.0", 1),
+        format!("{first}0.9.0{last}"),
+        format!(
+            "{lock}\n[[package]]\nname = \"baukit-core\"\nversion = \"0.9.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n"
+        ),
+    ] {
+        fs::write(root.join("backend/Cargo.lock"), source)?;
+        assert!(
+            doctor(&root)
+                .expect_err("multiple resolutions must all be checked")
+                .to_string()
+                .contains("backend/Cargo.lock")
+        );
+    }
+    fs::write(root.join("backend/Cargo.lock"), lock)?;
+    for source in [
+        pnpm.replace(&format!("version: {version}"), "version: 0.9.0"),
+        pnpm.replace(&format!("@{version}"), "@0.9.0"),
+        pnpm.replacen(
+            &format!("'@baukit/api-runtime@{version}':"),
+            "'@baukit/api-runtime@0.9.0':",
+            1,
+        ),
+        pnpm.replacen(
+            &format!("'@baukit/api-runtime@{version}(react@19.2.3)'"),
+            "'@baukit/api-runtime@0.9.0(react@19.2.3)'",
+            1,
+        ),
+    ] {
+        fs::write(root.join("pnpm-lock.yaml"), source)?;
+        assert!(
+            doctor(&root)
+                .expect_err("resolved pnpm versions must be checked")
+                .to_string()
+                .contains("pnpm-lock.yaml")
+        );
+    }
+    fs::write(root.join("pnpm-lock.yaml"), pnpm)?;
+    doctor(&root)?;
+    Ok(())
+}
+
+#[test]
+fn doctor_checks_agent_and_nested_fuzz_workspaces() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = generate_new(&options(parent.path(), "extra-workspaces"))?;
+    for (directory, name) in [("agent", "agent"), ("agent/fuzz", "agent-fuzz")] {
+        fs::create_dir_all(root.join(directory).join("src"))?;
+        fs::write(
+            root.join(directory).join("src/lib.rs"),
+            "pub fn ready() -> bool { true }\n",
+        )?;
+        fs::write(
+            root.join(directory).join("Cargo.toml"),
+            format!(
+                "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n[workspace]\n"
+            ),
+        )?;
+    }
+    fs::create_dir_all(root.join("agent/crates/tools/src"))?;
+    fs::write(
+        root.join("agent/crates/tools/src/lib.rs"),
+        "pub fn available() -> bool { true }\n",
+    )?;
+    fs::write(
+        root.join("agent/crates/tools/Cargo.toml"),
+        "[package]\nname = \"agent-tools\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+    )?;
+    let agent = root.join("agent/Cargo.toml");
+    fs::write(
+        &agent,
+        fs::read_to_string(&agent)?
+            .replace("[workspace]\n", "[workspace]\nmembers = [\"crates/*\"]\n"),
+    )?;
+    let fuzz = root.join("agent/fuzz/Cargo.toml");
+    fs::write(
+        &fuzz,
+        fs::read_to_string(&fuzz)?.replace("[workspace]\n", "[workspace]\nmembers = [\".\"]\n"),
+    )?;
+    for directory in [
+        "target/ignored",
+        "node_modules/ignored",
+        "agent/target/ignored",
+    ] {
+        fs::create_dir_all(root.join(directory))?;
+        fs::write(root.join(directory).join("Cargo.toml"), "invalid TOML [")?;
+    }
+    for git in [false, true] {
+        if git {
+            assert!(
+                Command::new("git")
+                    .args(["init", "--quiet"])
+                    .current_dir(&root)
+                    .status()?
+                    .success()
+            );
+            fs::write(root.join(".gitignore"), "agent/\n")?;
+        }
+        let findings = doctor(&root)?;
+        for relative in ["agent/Cargo.toml", "agent/fuzz/Cargo.toml"] {
+            assert!(
+                findings.iter().any(|finding| finding.contains(relative)),
+                "{findings:?}"
+            );
+            let path = root.join(relative);
+            let original = fs::read_to_string(&path)?;
+            fs::write(
+                &path,
+                format!("{original}\n[dependencies]\nbroken = {{ workspace = true }}\n"),
+            )?;
+            let error = doctor(&root)
+                .expect_err("metadata must check every workspace")
+                .to_string();
+            assert!(error.contains(relative), "{error}");
+            assert!(error.contains("does not parse"), "{error}");
+            fs::write(path, original)?;
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn generated_postgres_healthcheck_waits_for_tcp() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = generate_new(&options(parent.path(), "tcp-health"))?;
+    let compose: serde_yaml_ng::Value =
+        serde_yaml_ng::from_str(&fs::read_to_string(root.join("compose.yaml"))?)?;
+    let test = &compose["services"]["postgres"]["healthcheck"]["test"];
+    assert_eq!(test[0].as_str(), Some("CMD-SHELL"));
+    assert_eq!(
+        test[1].as_str(),
+        Some("pg_isready -h 127.0.0.1 -p 5432 -U postgres -d tcp_health")
+    );
+    Ok(())
+}
+
+#[test]
 fn doctor_checks_optional_pkce_tools_and_selected_realms() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "realm-product");

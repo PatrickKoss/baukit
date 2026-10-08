@@ -22,7 +22,7 @@ memory reset, one-time legacy claiming, corrupt-registry blocking, terminal
 session expiry, and server-subject mismatch behavior. Expo Crypto is injected
 as the React Native SHA-256 implementation.
 
-On Linux with Java 21 and KVM available:
+On Linux with Temurin 25.0.4.1+1 and KVM available:
 
 ```sh
 make expo-sqlite-conformance

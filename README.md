@@ -178,7 +178,7 @@ examples/    minimal-api, expo-sqlite-conformance
 ```
 
 ```bash
-make toolchain          # mise: Node 26, Temurin 21, Rust 1.99.0
+make toolchain          # mise: Node 26, Temurin 25.0.4.1+1, Rust 1.99.0
 mise exec -- make ci    # fmt, clippy, tests, and the TypeScript gates
 ```
 

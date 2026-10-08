@@ -136,6 +136,37 @@ expo_android_install
                         any(event.startswith("adb ") for event in self.read_events())
                     )
 
+    def test_debug_build_grants_native_access_and_preserves_jvm_options(self) -> None:
+        wrapper = self.example / "android/gradlew"
+        wrapper.parent.mkdir()
+        wrapper.write_text(
+            '#!/bin/sh\nprintf "java-options %s\\n" "$JAVA_TOOL_OPTIONS" >> "$EVENTS"\n'
+        )
+        wrapper.chmod(0o755)
+        driver = r'''
+set -euo pipefail
+source "$1"
+expo_android_init "$2" dev.baukit.conformance
+adb() { printf 'adb %s\n' "$*" >> "$EVENTS"; }
+expo_android_install
+printf 'caller-options %s\n' "${JAVA_TOOL_OPTIONS:-}" >> "$EVENTS"
+'''
+        for options in ("", "-Dqa.test=1"):
+            with self.subTest(options=options):
+                self.events.unlink(missing_ok=True)
+                result = subprocess.run(
+                    ["bash", "-c", driver, "test", str(SCRIPT), str(self.example)],
+                    env={**os.environ, "EVENTS": str(self.events), "JAVA_TOOL_OPTIONS": options},
+                    text=True, capture_output=True, check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                expected = f"{options} " if options else ""
+                self.assertEqual(
+                    self.read_events()[0],
+                    f"java-options {expected}--enable-native-access=ALL-UNNAMED",
+                )
+                self.assertEqual(self.read_events()[-1], f"caller-options {options}")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -231,7 +231,10 @@ if [[ "$*" == *'getprop sys.boot_completed' ]]; then echo 1; fi
             self.events.unlink(missing_ok=True)
             self.run_script("android-env.sh")
             events = self.events.read_text().splitlines()
-            launch = next(index for index, event in enumerate(events) if "shell monkey" in event)
+            command = "-s emulator-5556 shell am start -n dev.baukit.{{ context.app_crate }}/.MainActivity -W"
+            self.assertEqual(events.count(command), 1)
+            launch = events.index(command)
+            self.assertFalse(any("monkey" in event for event in events))
 {% if context.auth_oidc %}            for command in (flags, debug, stop):
                 self.assertEqual(events.count(command), 1)
                 self.assertLess(events.index(command), launch)

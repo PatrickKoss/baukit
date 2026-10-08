@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Check every Baukit registry pin in Cargo manifests, Cargo lockfiles, package manifests and pnpm lockfiles. Report mismatches with their file paths.
+- Check all product Cargo workspaces, including separate agent and fuzz workspaces.
+- Pin Android checks to Temurin 25.0.4.1+1. Probe PostgreSQL health over TCP and launch Android QA through MainActivity.
+- Grant native access to Android's Prefab tool in both Expo conformance builds. Preserve existing JVM options.
+
 ## [0.10.2] - 2026-10-08
 
 ## [0.10.1] - 2026-10-08

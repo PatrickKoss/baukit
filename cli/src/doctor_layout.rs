@@ -100,6 +100,38 @@ pub(super) fn backend_manifest(root: &Path, manifest: &Manifest) -> Result<PathB
     )
 }
 
+pub(super) fn cargo_manifests(root: &Path) -> Result<Vec<PathBuf>> {
+    Ok(product_files(root, "toml")?
+        .into_iter()
+        .filter(|path| path.file_name().is_some_and(|name| name == "Cargo.toml"))
+        .collect())
+}
+
+pub(super) fn cargo_workspaces(root: &Path, manifest: &Manifest) -> Result<Vec<PathBuf>> {
+    let mut workspaces = Vec::new();
+    for path in cargo_manifests(root)? {
+        let cargo: toml::Value =
+            toml::from_str(&fs::read_to_string(&path)?).with_context(|| {
+                format!(
+                    "could not parse `{}`",
+                    path.strip_prefix(root).unwrap_or(&path).display()
+                )
+            })?;
+        if cargo.get("workspace").is_some() {
+            workspaces.push(path);
+        }
+    }
+    if manifest.capabilities.backend {
+        let backend = backend_manifest(root, manifest)?;
+        if backend.is_file() {
+            workspaces.push(backend);
+        }
+    }
+    workspaces.sort();
+    workspaces.dedup();
+    Ok(workspaces)
+}
+
 pub(super) fn migrations(root: &Path, manifest: &Manifest) -> Result<PathBuf> {
     product_path(
         root,
@@ -135,9 +167,7 @@ pub(super) fn files(directory: &Path, extension: &str) -> Result<Vec<PathBuf>> {
         Err(error) => return Err(error.into()),
     };
     if repository.is_none_or(|output| !output.status.success() || output.stdout != b"true\n") {
-        walk_files(directory, extension, &mut paths)?;
-        paths.sort();
-        return Ok(paths);
+        return product_files(directory, extension);
     }
     let output = Command::new("git")
         .arg("-C")
@@ -164,6 +194,11 @@ pub(super) fn files(directory: &Path, extension: &str) -> Result<Vec<PathBuf>> {
         .filter(|name| !name.is_empty())
     {
         let path = directory.join(std::str::from_utf8(name).context("non-UTF-8 Git path")?);
+        if path.strip_prefix(directory)?.components().any(
+            |part| matches!(part, Component::Normal(name) if excluded_directory(name.to_str())),
+        ) {
+            continue;
+        }
         if path.extension().is_some_and(|value| value == extension)
             && path
                 .symlink_metadata()
@@ -177,24 +212,22 @@ pub(super) fn files(directory: &Path, extension: &str) -> Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
+pub(super) fn product_files(directory: &Path, extension: &str) -> Result<Vec<PathBuf>> {
+    let mut paths = Vec::new();
+    if directory.is_dir() {
+        walk_files(directory, extension, &mut paths)?;
+    }
+    paths.sort();
+    Ok(paths)
+}
+
 fn walk_files(directory: &Path, extension: &str, paths: &mut Vec<PathBuf>) -> Result<()> {
     for entry in fs::read_dir(directory)? {
         let entry = entry?;
         let path = entry.path();
         let kind = entry.file_type()?;
         if kind.is_dir() {
-            if !matches!(
-                entry.file_name().to_str(),
-                Some(
-                    "target"
-                        | "node_modules"
-                        | ".git"
-                        | ".generated-fixture"
-                        | ".playwright-browsers"
-                        | "dist"
-                        | "coverage"
-                )
-            ) {
+            if !excluded_directory(entry.file_name().to_str()) {
                 walk_files(&path, extension, paths)?;
             }
         } else if kind.is_file() && path.extension().is_some_and(|value| value == extension) {
@@ -202,6 +235,21 @@ fn walk_files(directory: &Path, extension: &str, paths: &mut Vec<PathBuf>) -> Re
         }
     }
     Ok(())
+}
+
+fn excluded_directory(name: Option<&str>) -> bool {
+    matches!(
+        name,
+        Some(
+            "target"
+                | "node_modules"
+                | ".git"
+                | ".generated-fixture"
+                | ".playwright-browsers"
+                | "dist"
+                | "coverage"
+        )
+    )
 }
 
 pub(super) struct RustCrate {
@@ -213,19 +261,28 @@ pub(super) struct RustCrate {
 }
 
 pub(super) fn rust_crates(root: &Path, manifest: &Manifest) -> Result<Vec<RustCrate>> {
-    let workspace_path = backend_manifest(root, manifest)?;
-    if !workspace_path.is_file() {
-        return Ok(Vec::new());
+    let mut manifests = Vec::new();
+    for workspace_path in cargo_workspaces(root, manifest)? {
+        manifests.extend(workspace_members(root, &workspace_path)?);
     }
-    let workspace: toml::Value = toml::from_str(&fs::read_to_string(&workspace_path)?)?;
+    manifests.sort();
+    manifests.dedup();
+    manifests
+        .into_iter()
+        .map(|path| rust_crate(root, path))
+        .collect()
+}
+
+fn workspace_members(root: &Path, workspace_path: &Path) -> Result<Vec<PathBuf>> {
+    let workspace: toml::Value = toml::from_str(&fs::read_to_string(workspace_path)?)?;
     let directory = workspace_path
         .parent()
         .context("backend manifest has no parent")?;
     let mut manifests = Vec::new();
     if workspace.get("package").is_some() {
-        manifests.push(workspace_path.clone());
+        manifests.push(workspace_path.to_owned());
     }
-    let candidates = files(directory, "toml")?;
+    let candidates = product_files(directory, "toml")?;
     if let Some(members) = workspace
         .get("workspace")
         .and_then(|value| value.get("members"))
@@ -236,6 +293,10 @@ pub(super) fn rust_crates(root: &Path, manifest: &Manifest) -> Result<Vec<RustCr
                 .as_str()
                 .context("Cargo workspace members must be paths")?;
             product_path(directory, member)?;
+            if member == "." {
+                manifests.push(workspace_path.to_owned());
+                continue;
+            }
             let pattern = Glob::new(member)?.compile_matcher();
             let matched = candidates
                 .iter()
@@ -249,62 +310,63 @@ pub(super) fn rust_crates(root: &Path, manifest: &Manifest) -> Result<Vec<RustCr
                 .cloned()
                 .collect::<Vec<_>>();
             if matched.is_empty() {
-                bail!("declared Cargo workspace member `{member}` has no manifest");
+                bail!(
+                    "`{}`: declared Cargo workspace member `{member}` has no manifest",
+                    workspace_path.strip_prefix(root)?.display()
+                );
             }
             manifests.extend(matched);
         }
     }
-    manifests.sort();
-    manifests.dedup();
-    let mut crates = Vec::new();
-    for path in manifests {
-        let cargo: toml::Value = toml::from_str(&fs::read_to_string(&path)?)?;
-        let directory = path.parent().context("crate manifest has no parent")?;
-        let name = cargo
-            .get("package")
-            .and_then(|value| value.get("name"))
+    Ok(manifests)
+}
+
+fn rust_crate(root: &Path, path: PathBuf) -> Result<RustCrate> {
+    let cargo: toml::Value = toml::from_str(&fs::read_to_string(&path)?)?;
+    let directory = path.parent().context("crate manifest has no parent")?;
+    let name = cargo
+        .get("package")
+        .and_then(|value| value.get("name"))
+        .and_then(toml::Value::as_str)
+        .context("declared crate has no package name")?
+        .to_owned();
+    let library = cargo_path(
+        root,
+        directory,
+        cargo
+            .get("lib")
+            .and_then(|value| value.get("path"))
             .and_then(toml::Value::as_str)
-            .context("declared crate has no package name")?
-            .to_owned();
-        let library = cargo_path(
-            root,
-            directory,
-            cargo
-                .get("lib")
-                .and_then(|value| value.get("path"))
-                .and_then(toml::Value::as_str)
-                .unwrap_or("src/lib.rs"),
-        )?;
-        let mut sources = files(&directory.join("src"), "rs")?;
-        let mut tests = files(&directory.join("tests"), "rs")?;
-        if library.is_file() {
-            sources.push(library.clone());
-        }
-        for (key, output) in [("bin", &mut sources), ("test", &mut tests)] {
-            if let Some(targets) = cargo.get(key).and_then(toml::Value::as_array) {
-                for target in targets {
-                    if let Some(relative) = target.get("path").and_then(toml::Value::as_str) {
-                        let path = cargo_path(root, directory, relative)?;
-                        if path.is_file() {
-                            output.push(path);
-                        }
+            .unwrap_or("src/lib.rs"),
+    )?;
+    let mut sources = files(&directory.join("src"), "rs")?;
+    let mut tests = files(&directory.join("tests"), "rs")?;
+    if library.is_file() {
+        sources.push(library.clone());
+    }
+    for (key, output) in [("bin", &mut sources), ("test", &mut tests)] {
+        if let Some(targets) = cargo.get(key).and_then(toml::Value::as_array) {
+            for target in targets {
+                if let Some(relative) = target.get("path").and_then(toml::Value::as_str) {
+                    let path = cargo_path(root, directory, relative)?;
+                    if path.is_file() {
+                        output.push(path);
                     }
                 }
             }
         }
-        sources.sort();
-        sources.dedup();
-        tests.sort();
-        tests.dedup();
-        crates.push(RustCrate {
-            manifest: path,
-            name,
-            library,
-            sources,
-            tests,
-        });
     }
-    Ok(crates)
+    sources.sort();
+    sources.dedup();
+    tests.sort();
+    tests.dedup();
+    Ok(RustCrate {
+        manifest: path,
+        name,
+        library,
+        sources,
+        tests,
+    })
 }
 
 pub(super) fn symbols(source: &str, rust: bool) -> String {
