@@ -4984,6 +4984,83 @@ fn doctor_accepts_mcp_composition_and_validation_across_backend_crates() -> anyh
 }
 
 #[test]
+fn doctor_follows_a_returned_mcp_router_and_requires_its_result_to_be_merged() -> anyhow::Result<()>
+{
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "returned-mcp");
+    local.auth = Some(AuthProvider::Oidc);
+    local.mcp = true;
+    let root = generate_new(&local)?;
+    let bin = root.join("backend/crates/returned-mcp-bin/src");
+    let entry = bin.join("bin/api.rs");
+    let api = fs::read_to_string(&entry)?;
+    let api = api
+        .replace(
+            "let mcp = baukit_mcp::router(",
+            "let mcp_app = returned_mcp_bin::compose::mcp::router(",
+        )
+        .replace("api.merge(mcp)", "api.merge(mcp_app)");
+    assert!(api.contains("let mcp_app = returned_mcp_bin::compose::mcp::router("));
+    fs::write(&entry, &api)?;
+    let library = bin.join("lib.rs");
+    fs::write(
+        &library,
+        format!("{}\npub mod compose;\n", fs::read_to_string(&library)?),
+    )?;
+    fs::create_dir(bin.join("compose"))?;
+    fs::write(bin.join("compose/mod.rs"), "pub mod mcp;\n")?;
+    let wrapper = bin.join("compose/mcp.rs");
+    let compose = r#"
+use std::sync::Arc;
+
+pub async fn router(
+    config: baukit_mcp::McpConfig,
+    verifier: Arc<dyn baukit_auth::IdentityVerifier>,
+    services: baukit_mcp::McpServices,
+    store: Arc<dyn baukit_ratelimit::RateLimitStore>,
+    policy: Arc<dyn baukit_mcp::AuthenticationPolicy>,
+) -> Result<axum::Router, baukit_mcp::McpConfigError> {
+    if !config.enabled {
+        return Ok(axum::Router::new());
+    }
+    Ok(baukit_mcp::router(config, verifier, services, store, policy).await?)
+}
+"#;
+    fs::write(&wrapper, compose)?;
+    doctor(&root)?;
+    for missing in [
+        api.replace("api.merge(mcp_app)", "api"),
+        api.replace(
+            "returned_mcp_bin::compose::mcp::router(",
+            "returned_mcp_api::router(",
+        ),
+    ] {
+        fs::write(&entry, missing)?;
+        assert!(
+            doctor(&root)
+                .expect_err("unmerged MCP router")
+                .to_string()
+                .contains("router merge")
+        );
+    }
+    fs::write(&entry, api)?;
+    fs::write(
+        wrapper,
+        compose.replace(
+            "Ok(baukit_mcp::router(config, verifier, services, store, policy).await?)",
+            "let _unused = baukit_mcp::router(config, verifier, services, store, policy).await?;\n    Ok(axum::Router::new())",
+        ),
+    )?;
+    assert!(
+        doctor(&root)
+            .expect_err("discarded MCP router")
+            .to_string()
+            .contains("router merge")
+    );
+    Ok(())
+}
+
+#[test]
 fn doctor_follows_mcp_definitions_and_configuration_from_library_entry_points() -> anyhow::Result<()>
 {
     let parent = tempfile::tempdir()?;

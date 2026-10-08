@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Follow returned MCP routers through one wrapper call and require its result to be merged.
 - Cut and validate package and authentication template changelogs during release preparation.
 - Check telemetry product identities when configuration comes from a shared loader.
 - Generate one configuration loader for API, migration and worker commands, including MCP JSON-array environment values.

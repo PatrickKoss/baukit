@@ -144,6 +144,109 @@ fn router_merged(router: &str, graph: &str) -> bool {
     })
 }
 
+fn after_call(call: &str) -> Option<&str> {
+    let arguments = block(call, '(', ')')?;
+    let suffix = &call[arguments.len() + 1..];
+    let suffix = suffix.strip_prefix(".await").unwrap_or(suffix);
+    Some(suffix.strip_prefix('?').unwrap_or(suffix))
+}
+
+fn returns_mcp_router(body: &str) -> bool {
+    let terminated = body.ends_with(';');
+    let body = body.strip_suffix(';').unwrap_or(body);
+    let Some((prefix, call)) = body.rsplit_once("baukit_mcp::router(") else {
+        return false;
+    };
+    let prefix = prefix.rsplit([';', '{', '}']).next().unwrap_or(prefix);
+    (!terminated || prefix.starts_with("return"))
+        && matches!(
+            (prefix, after_call(call)),
+            ("" | "return", Some("")) | ("Ok(" | "returnOk(", Some(")"))
+        )
+}
+
+fn called_result_merged(code: &str, name: &str) -> bool {
+    let call = format!("{name}(");
+    functions(code).any(|(_, _, body)| {
+        body.match_indices(&call).any(|(index, _)| {
+            let prefix = &body[..index];
+            if prefix.ends_with(|c: char| c.is_ascii_alphanumeric() || c == '_' || c == ':') {
+                return false;
+            }
+            let Some(suffix) = after_call(&body[index + call.len()..]) else {
+                return false;
+            };
+            if prefix.ends_with(".merge(") && suffix.starts_with(')') {
+                return true;
+            }
+            let Some(binding) = prefix.strip_suffix('=') else {
+                return false;
+            };
+            if !suffix.starts_with(';') {
+                return false;
+            }
+            let binding = binding
+                .rsplit(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                .next()
+                .unwrap_or(binding);
+            let binding = binding
+                .strip_prefix("letmut")
+                .or_else(|| binding.strip_prefix("let"))
+                .unwrap_or(binding);
+            !binding.is_empty() && body.contains(&format!(".merge({binding})"))
+        })
+    })
+}
+
+fn qualified_function(krate: &doctor_layout::RustCrate, path: &Path, name: &str) -> Option<String> {
+    let mut parts = vec![krate.name.replace('-', "_")];
+    if path != krate.library {
+        let module = path
+            .strip_prefix(krate.library.parent()?)
+            .ok()?
+            .with_extension("");
+        parts.extend(
+            module
+                .components()
+                .map(|component| component.as_os_str().to_str().map(str::to_owned))
+                .collect::<Option<Vec<_>>>()?,
+        );
+        if parts.last().is_some_and(|part| part == "mod") {
+            parts.pop();
+        }
+    }
+    parts.push(name.to_owned());
+    Some(parts.join("::"))
+}
+
+fn returned_router_merged(
+    crates: &[doctor_layout::RustCrate],
+    router: &str,
+    graph: &str,
+) -> Result<bool> {
+    for krate in crates {
+        for path in &krate.sources {
+            let text = fs::read_to_string(path)?;
+            let production = text.split("#[cfg(test)]").next().unwrap_or(&text);
+            let code = doctor_layout::symbols(production, true)
+                .split_whitespace()
+                .collect::<String>();
+            for (name, _, body) in functions(&code) {
+                if !router.contains(body) || !returns_mcp_router(body) {
+                    continue;
+                }
+                if called_result_merged(&code, name)
+                    || qualified_function(krate, path, name)
+                        .is_some_and(|qualified| called_result_merged(graph, &qualified))
+                {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+    Ok(false)
+}
+
 fn wrapper_validates_config(code: &str) -> bool {
     functions(code).any(|(name, parameters, body)| {
         code.matches(&format!("{name}(")).count() >= 2
@@ -204,7 +307,7 @@ pub(super) fn validate_wiring(
         failures,
     );
     require(
-        router_merged(&router, &graph),
+        router_merged(&router, &graph) || returned_router_merged(&crates, &router, &graph)?,
         "router mount and auth layer (router merge)",
         failures,
     );
@@ -250,6 +353,44 @@ pub(super) fn validate_wiring(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn returned_router_must_be_the_function_result() {
+        assert!(returns_mcp_router(
+            "if!config.enabled{returnOk(Router::new());}Ok(baukit_mcp::router(config).await?)"
+        ));
+        assert!(returns_mcp_router("returnbaukit_mcp::router(config);"));
+        assert!(!returns_mcp_router(
+            "letunused=baukit_mcp::router(config).await?;Ok(Router::new())"
+        ));
+        assert!(!returns_mcp_router(
+            "letunused=Ok(baukit_mcp::router(config).await?);"
+        ));
+        assert!(!returns_mcp_router("baukit_mcp::router(config);"));
+        assert!(!returns_mcp_router(
+            "Ok(baukit_mcp::router(config).await?);"
+        ));
+    }
+
+    #[test]
+    fn wrapper_result_must_be_merged_in_its_caller() {
+        let name = "product_bin::compose::mcp::router";
+        let code = format!("asyncfnrun(){{letmcp={name}(config).await?;api.merge(mcp)}}");
+        assert!(called_result_merged(&code, name));
+        assert!(called_result_merged(
+            &format!("asyncfnrun(){{api.merge({name}(config).await?)}}"),
+            name
+        ));
+        for missing in [
+            code.replace(".merge(mcp)", ""),
+            code.replace(".merge(mcp)", ".merge(other)"),
+            code.replace(name, "product_api::router"),
+            code.replace(name, &format!("other_{name}")),
+            format!("asyncfnrun(){{letmcp={name}(config).await?;}}fnother(){{api.merge(mcp)}}"),
+        ] {
+            assert!(!called_result_merged(&missing, name), "{missing}");
+        }
+    }
 
     #[test]
     fn composition_follows_the_mcp_argument_past_other_router_merges_and_middleware() {
