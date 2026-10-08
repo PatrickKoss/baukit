@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-08
+
 ## [0.10.0] - 2026-10-08
 
 - Place shipped authentication template notes under their release headings.

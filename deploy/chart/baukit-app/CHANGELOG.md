@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-08
+
 ## [0.10.0] - 2026-10-08
 
 - Map `mcp.jwksUri` to the API MCP signing-key endpoint. Keep the public issuer separate.

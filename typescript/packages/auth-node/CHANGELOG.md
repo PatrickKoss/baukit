@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.10.1
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.1 train.
+
 ## 0.10.0
 
 - Handle Keycloak password-only reauthentication forms in the test sign-in helper. Breaking: custom `KeycloakLoginPage` locators must implement `waitFor` and `isVisible`.

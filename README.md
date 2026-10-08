@@ -26,7 +26,7 @@ Baukit is that work, extracted from real products, with the tests attached.
 Scaffold a product:
 
 ```bash
-cargo install --git https://github.com/PatrickKoss/baukit --tag v0.10.0 --locked baukit-cli
+cargo install --git https://github.com/PatrickKoss/baukit --tag v0.10.1 --locked baukit-cli
 baukit new orders --backend --web
 cd orders && make check
 ```

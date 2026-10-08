@@ -2,8 +2,17 @@
 
 ## [Unreleased]
 
+## 0.10.1
+
 - Declare sibling Baukit packages as versioned peers so npm consumers can install the package. Keep workspace links in development dependencies.
 - Check packed dependency specifiers before publishing and in CI.
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.1 train.
+- Updated dependencies
+  - @baukit/integrations-client@0.10.1
+  - @baukit/localization-core@0.10.1
 
 ## 0.10.0
 

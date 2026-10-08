@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.10.1
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.1 train.
+- Updated dependencies
+  - @baukit/data-contracts@0.10.1
+
 ## 0.10.0
 
 - Move shipped notes out of Unreleased into their release sections.

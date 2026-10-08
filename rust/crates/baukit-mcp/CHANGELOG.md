@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-08
+
 ## [0.10.0] - 2026-10-08
 
 - Breaking: `ToolService::call` and `ResourceService::read` take a `CancellationToken` as their final argument. The token signals client cancellation and HTTP disconnects. Cancellation notifications apply only to active requests from the same issuer, subject and OAuth client. Concurrent calls from that caller must use distinct request IDs.
