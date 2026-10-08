@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+- Enable webhook signing directly when the suite test helpers are used.
+
 ## [0.10.0] - 2026-10-08
 
 - Add peer metadata validation vectors shared by the Rust registry and TypeScript client.

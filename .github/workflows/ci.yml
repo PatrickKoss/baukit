@@ -112,6 +112,19 @@ jobs:
           workspaces: rust -> target
       - run: cargo test --manifest-path rust/Cargo.toml
 
+  suite-features:
+    name: Suite feature boundaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          workspaces: rust -> target
+      - run: make suite-features-check
+
   cargo-deny:
     name: Cargo deny
     runs-on: ubuntu-latest

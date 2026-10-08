@@ -17,40 +17,43 @@ workspace = true
 
 [features]
 default = []
-postgres = []
-http = ["dep:axum", "dep:utoipa"]
-jobs = []
+postgres = ["dep:sqlx", "dep:baukit-jobs", "dep:baukit-erasure", "dep:metrics", "dep:tracing"]
+http = ["runtime", "dep:axum", "dep:utoipa", "dep:baukit-http"]
+jobs = ["runtime"]
+runtime = ["postgres", "dep:baukit-core", "dep:baukit-credential-vault", "dep:baukit-ratelimit", "dep:rand", "dep:tokio"]
+delivery = ["runtime", "dep:baukit-egress", "dep:reqwest"]
 
 [dependencies]
 async-trait = "0.1.92"
 base64.workspace = true
 baukit-config.workspace = true
-baukit-http.workspace = true
-baukit-core = { workspace = true, features = ["webhook-signature"] }
-baukit-credential-vault.workspace = true
-baukit-egress.workspace = true
-baukit-erasure.workspace = true
+baukit-http = { workspace = true, optional = true }
+baukit-core = { workspace = true, features = ["webhook-signature"], optional = true }
+baukit-credential-vault = { workspace = true, optional = true }
+baukit-egress = { workspace = true, optional = true }
+baukit-erasure = { workspace = true, optional = true }
 baukit-events.workspace = true
-baukit-jobs.workspace = true
-baukit-ratelimit.workspace = true
+baukit-jobs = { workspace = true, optional = true }
+baukit-ratelimit = { workspace = true, optional = true }
 chrono.workspace = true
-metrics.workspace = true
-reqwest.workspace = true
-rand = "0.9.5"
+metrics = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
+rand = { version = "0.9.5", optional = true }
 serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.11.0"
-sqlx = { workspace = true, features = ["derive"] }
+sqlx = { workspace = true, features = ["derive"], optional = true }
 thiserror.workspace = true
-tokio.workspace = true
-tracing.workspace = true
+tokio = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
 url.workspace = true
 uuid = { workspace = true, features = ["v5"] }
 axum = { workspace = true, optional = true }
 utoipa = { workspace = true, optional = true, features = ["uuid", "chrono"] }
 
 [dev-dependencies]
-baukit-suite = { path = ".", features = ["postgres", "http", "jobs"] }
+baukit-core = { path = "../baukit-core", features = ["webhook-signature"] }
+baukit-suite = { path = ".", features = ["postgres", "http", "jobs", "delivery"] }
 baukit-test = { path = "../baukit-test", features = ["suite"] }
 baukit-runtime = { path = "../baukit-runtime" }
 tower = { workspace = true, features = ["util"] }

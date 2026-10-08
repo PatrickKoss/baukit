@@ -54,6 +54,7 @@ impl SuiteConfig {
         )
     }
     /// Validate the embedded registry and require encryption whenever suite mode is active.
+    #[cfg(feature = "runtime")]
     pub fn validate_for(
         &self,
         own_app: &str,

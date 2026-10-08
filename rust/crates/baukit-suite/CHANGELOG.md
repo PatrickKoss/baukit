@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Keep the default build free of database, Tokio and HTTP dependencies. Gate SQLx ports and stores behind `postgres`, services behind `runtime`, and the guarded peer client behind `delivery`.
+- Check each feature build with Clippy and test a domain consumer without features.
+
 ## [0.10.0] - 2026-10-08
 
 - Look up metadata for the own app and inactive peers by id. Share peer validation vectors with the client.

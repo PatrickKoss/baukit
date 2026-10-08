@@ -12,15 +12,32 @@ when building product action links. `metadata()` keeps the full embedded list.
 
 ## Features
 
-| Feature | Adds |
-| --- | --- |
-| `postgres` | Link, inbox and outbox stores; SQL migration constants; erasure adapter |
-| `http` | Axum router and `SuiteOpenApi` with the suite routes |
-| `jobs` | `SuiteJobHandler` and `run_hourly_cleanup` |
+The default build contains the domain, payload catalog and validation, link protocol,
+serde contracts and configuration. It has no PostgreSQL, Tokio or HTTP dependencies.
+Use `default-features = false` in domain and ports crates.
 
-The domain and service ports are available without these features. Transactions
-use `&mut sqlx::PgConnection`; services open PostgreSQL transactions through the
-link store. Enable all three features for the supplied production adapters.
+| Feature | Adds | Enables |
+| --- | --- | --- |
+| `postgres` | SQLx connection ports, link/inbox/outbox stores, migration constants and erasure adapter. The stores use the `baukit-jobs` outbox and `baukit-erasure` transaction contract. | None |
+| `runtime` | Link, ingest, delivery and erasure services, credential validation, rate limits and Tokio timeouts | `postgres` |
+| `delivery` | `ReqwestSuitePeerClient` with guarded HTTP egress | `runtime` |
+| `http` | Axum router and `SuiteOpenApi` with the suite routes | `runtime` |
+| `jobs` | `SuiteJobHandler` and `run_hourly_cleanup` | `runtime` |
+
+Ports that name `PgConnection` require `postgres`. Other ports and serde types
+keep their existing paths without features. `SuiteConfig::validate_for` requires
+`runtime` because it accepts a credential cipher. `SuiteConfig::registry` and
+ordinary configuration validation work without features.
+
+Enable `http`, `jobs` and `delivery` for the supplied production adapters.
+Use `runtime` with a product-owned `SuitePeerClient` to omit the supplied delivery client.
+
+```toml
+# Domain and ports crates:
+baukit-suite = { version = "0.10.0", default-features = false }
+# Product adapter crate:
+baukit-suite = { version = "0.10.0", features = ["http", "jobs", "delivery"] }
+```
 
 ## Product contracts
 

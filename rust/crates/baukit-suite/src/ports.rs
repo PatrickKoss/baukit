@@ -1,12 +1,17 @@
 use std::time::Duration;
 
 use crate::domain::{
-    ActivePeer, DeliveryAction, DeliveryState, ExchangeRequest, ExchangeResponse, LinkCode,
-    LinkRequest, PreparedExchange, RewardMode, SuiteEvent, SuiteLink, ValidatedPayload,
+    ActivePeer, ExchangeRequest, ExchangeResponse, RewardMode, SuiteLink, ValidatedPayload,
+};
+#[cfg(feature = "postgres")]
+use crate::domain::{
+    DeliveryAction, DeliveryState, LinkCode, LinkRequest, PreparedExchange, SuiteEvent,
 };
 use async_trait::async_trait;
 use baukit_events::{EventEnvelope, IngestOutcome, IngestOutcomeStatus};
-use chrono::{DateTime, NaiveDate, Utc};
+#[cfg(feature = "postgres")]
+use chrono::NaiveDate;
+use chrono::{DateTime, Utc};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -100,6 +105,7 @@ pub struct SuiteCleanupOutcome {
 
 // One transaction crosses link replacement, inbox, applier and outbox operations.
 #[async_trait]
+#[cfg(feature = "postgres")]
 pub trait SuiteLinkStore: Send + Sync {
     async fn begin_transaction(
         &self,
@@ -271,6 +277,7 @@ pub trait SuiteLinkStore: Send + Sync {
 }
 
 #[async_trait]
+#[cfg(feature = "postgres")]
 pub trait SuiteEventOutbox: Send + Sync {
     /// Call before locking product rows to serialize domain writes with ingest and erasure.
     async fn lock_owner_in_transaction(
@@ -358,6 +365,7 @@ pub trait SuitePeerClient: Send + Sync {
 
 #[async_trait]
 /// The caller holds a suite owner advisory lock. Lock product rows here before applying.
+#[cfg(feature = "postgres")]
 pub trait SuiteEventApplier: Send + Sync {
     async fn apply(
         &self,
@@ -430,6 +438,7 @@ mod tests {
 
 /// Reads historical product events. Reuse the product's live event builders.
 #[async_trait]
+#[cfg(feature = "postgres")]
 pub trait SuiteReplaySource: Send + Sync {
     async fn replay_since(
         &self,
@@ -441,6 +450,7 @@ pub trait SuiteReplaySource: Send + Sync {
 
 /// Looks up the product's stable outbound subject and current display name.
 #[async_trait]
+#[cfg(feature = "postgres")]
 pub trait SuiteIdentitySource: Send + Sync {
     async fn identity(&self, owner_id: Uuid) -> Result<SuiteIdentity, SuiteStoreError>;
     /// Uses the caller's connection during emission, without acquiring another pool connection.

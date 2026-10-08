@@ -1,5 +1,12 @@
 # Suite events
 
+Domain and ports crates can depend on `baukit-suite` with `default-features = false`
+for peer metadata, catalogs, payload validation, link protocol and serde contracts.
+SQLx connection ports and stores require `postgres`. Services require `runtime`,
+which enables `postgres`. Enable `http`, `jobs` and `delivery` in the product's
+adapter crate to add the router, worker handler and guarded peer client.
+See the [crate feature table](../../rust/crates/baukit-suite/README.md#features).
+
 `baukit-suite` links two apps for one user with an OAuth-style code flow and
 PKCE S256. Each link has a sealed HMAC secret. Domain writes enqueue signed
 events through `baukit-jobs`; receivers verify, validate, deduplicate and apply

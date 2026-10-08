@@ -17,7 +17,7 @@ workspace = true
 
 [features]
 default = ["sqlx-postgres"]
-suite = ["dep:baukit-suite"]
+suite = ["dep:baukit-suite", "baukit-core/webhook-signature"]
 sqlx-postgres = ["dep:sqlx"]
 
 [dependencies]
