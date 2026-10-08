@@ -5,9 +5,9 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
-Last verified release train: `v0.10.3` (every Android gate uses Temurin 25.0.4.1+1; doctor checks each Baukit pin and every product Cargo workspace;
-generated products probe PostgreSQL over TCP and launch Android QA through MainActivity; `baukit-suite` serializes cleanup across replicas, follows one
-owner, link, job lock order and returns 422 for rejected payloads; `ConnectedApps` keeps the completed request id).
+Last verified release train: `v0.10.4` (doctor reads every document of pnpm 12 lockfiles and scans MCP code after test modules; Keycloak
+reconciliation removes stale MCP audience mappers and keeps reordered redirect URIs; `ConnectedApps` keeps the completed request id when the
+list refresh after a connect fails).
 
 ## Toolchain
 

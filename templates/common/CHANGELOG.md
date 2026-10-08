@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.4] - 2026-10-08
+
 {% if context.auth_oidc and context.mcp %}- Remove stale MCP audience mappers and callback URIs during Keycloak reconciliation. Preserve callback order returned by Keycloak.
 
 {% endif %}## [0.10.3] - 2026-10-08

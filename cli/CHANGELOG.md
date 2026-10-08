@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.4] - 2026-10-08
+
 - Read every document in pnpm 12 lockfiles when checking Baukit registry pins.
 - Scan MCP production code after test modules and exclude test module bodies.
 - Generate exact Keycloak MCP audience mappers and callback URIs. Preserve callback order returned by Keycloak.
