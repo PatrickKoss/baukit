@@ -48,6 +48,8 @@ export interface KeycloakRequestOptions {
 export interface KeycloakLoginPage {
   waitForURL(url: (url: URL) => boolean, options?: { timeout?: number }): Promise<unknown>;
   locator(selector: string): {
+    waitFor(options: { state: 'visible'; timeout?: number }): Promise<unknown>;
+    isVisible(): Promise<boolean>;
     fill(value: string): Promise<unknown>;
     click(): Promise<unknown>;
   };
@@ -186,7 +188,7 @@ export async function allowKeycloakWebOrigin(
   }
 }
 
-/** Waits for the Keycloak login page, fills it by its stable `keycloak.v2` IDs, and submits. */
+/** Submits the Keycloak login or password-only reauthentication form. */
 export async function signInWithKeycloak(
   loginPage: KeycloakLoginPage,
   user: Pick<KeycloakTestUser, 'username' | 'password'>,
@@ -198,8 +200,16 @@ export async function signInWithKeycloak(
   await (options.timeoutMs === undefined
     ? loginPage.waitForURL(isKeycloak)
     : loginPage.waitForURL(isKeycloak, { timeout: options.timeoutMs }));
-  await loginPage.locator('#username').fill(user.username);
-  await loginPage.locator('#password').fill(user.password);
+  const password = loginPage.locator('#password');
+  await password.waitFor({
+    state: 'visible',
+    ...(options.timeoutMs === undefined ? {} : { timeout: options.timeoutMs }),
+  });
+  const username = loginPage.locator('#username');
+  if (await username.isVisible()) {
+    await username.fill(user.username);
+  }
+  await password.fill(user.password);
   await loginPage.locator('#kc-login').click();
 }
 

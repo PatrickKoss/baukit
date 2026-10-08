@@ -315,18 +315,42 @@ describe('allowKeycloakWebOrigin', () => {
 });
 
 describe('signInWithKeycloak', () => {
-  function fakePage(): { readonly page: KeycloakLoginPage; readonly steps: string[] } {
+  function fakePage(form: 'login' | 'reauthentication' = 'login'): {
+    readonly page: KeycloakLoginPage;
+    readonly steps: string[];
+  } {
     const steps: string[] = [];
+    let formReady = false;
     const onKeycloak = new URL('http://localhost:8081/realms/notes/login');
     const onApp = new URL('http://localhost:5173/');
     const page: KeycloakLoginPage = {
       waitForURL: (matches, options) => {
+        formReady = false;
         const timeout = options?.timeout === undefined ? 'default' : String(options.timeout);
         steps.push(`wait ${String(matches(onKeycloak))} ${String(matches(onApp))} ${timeout}`);
         return Promise.resolve();
       },
       locator: (selector) => ({
+        waitFor: (options) => {
+          expect(selector).toBe('#password');
+          expect(options.state).toBe('visible');
+          const timeout = options.timeout === undefined ? 'default' : String(options.timeout);
+          steps.push(`ready ${selector} ${timeout}`);
+          formReady = true;
+          return Promise.resolve();
+        },
+        isVisible: () => {
+          expect(formReady).toBe(true);
+          expect(selector).toBe('#username');
+          const visible = form === 'login';
+          steps.push(`visible ${selector} ${String(visible)}`);
+          return Promise.resolve(visible);
+        },
         fill: (value) => {
+          expect(formReady).toBe(true);
+          if (form === 'reauthentication' && selector === '#username') {
+            throw new Error('The reauthentication username input is not visible.');
+          }
           steps.push(`fill ${selector} ${value}`);
           return Promise.resolve();
         },
@@ -349,11 +373,29 @@ describe('signInWithKeycloak', () => {
 
     expect(steps).toEqual([
       'wait true false 60000',
+      'ready #password 60000',
+      'visible #username true',
       'fill #username ada',
       'fill #password pw',
       'click #kc-login',
       'wait true false default',
+      'ready #password default',
+      'visible #username true',
       'fill #username ada',
+      'fill #password pw',
+      'click #kc-login',
+    ]);
+  });
+
+  it('submits a password-only form when Keycloak retains the SSO identity', async () => {
+    const { page, steps } = fakePage('reauthentication');
+
+    await signInWithKeycloak(page, { username: 'ada', password: 'pw' }, STACK);
+
+    expect(steps).toEqual([
+      'wait true false default',
+      'ready #password default',
+      'visible #username false',
       'fill #password pw',
       'click #kc-login',
     ]);

@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
+import { createHash, randomBytes } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
-import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -8,6 +8,7 @@ import { promisify } from 'node:util';
 import { chromium } from '@playwright/test';
 
 import { DeviceFlowClient } from '../dist/index.js';
+import { keycloakStack, signInWithKeycloak } from '../dist/keycloak-testing.js';
 
 const KEYCLOAK_IMAGE = 'quay.io/keycloak/keycloak:26.7.0';
 const REALM = 'baukit-auth-node-conformance';
@@ -20,8 +21,6 @@ const temporaryDirectory = await mkdtemp(join(tmpdir(), 'baukit-auth-node-keyclo
 let browser;
 
 try {
-  const port = await availablePort();
-  const baseUrl = `http://127.0.0.1:${String(port)}`;
   await run('docker', [
     'run',
     '--detach',
@@ -29,7 +28,7 @@ try {
     '--name',
     containerName,
     '--publish',
-    `127.0.0.1:${String(port)}:8080`,
+    '127.0.0.1::8080',
     '--env',
     'KC_BOOTSTRAP_ADMIN_USERNAME=admin',
     '--env',
@@ -37,6 +36,8 @@ try {
     KEYCLOAK_IMAGE,
     'start-dev',
   ]);
+  const { stdout } = await run('docker', ['port', containerName, '8080/tcp']);
+  const baseUrl = `http://${stdout.trim()}`;
   await waitUntilReady(baseUrl);
   await configureRealm(baseUrl);
 
@@ -73,6 +74,7 @@ try {
   assert(loggedIn.accessToken.length > 0, 'Login did not return an access token.');
   assert(loggedIn.refreshToken !== undefined, 'Login did not return a refresh token.');
   assert(statuses.includes('authorized'), 'Login did not reach the authorized state.');
+  await checkLoginForms(page, baseUrl);
 
   const refreshed = await auth.accessToken({ forceRefresh: true });
   assert(refreshed.length > 0, 'Refresh did not return an access token.');
@@ -80,28 +82,15 @@ try {
   process.stdout.write(`Keycloak ${KEYCLOAK_IMAGE} device-flow conformance passed.\n`);
 } finally {
   await browser?.close();
-  await run('docker', ['rm', '--force', containerName]).catch(() => undefined);
+  await run('docker', ['rm', '--force', containerName]).catch((error) => {
+    if (
+      !(error instanceof Error) ||
+      !error.message.includes(`No such container: ${containerName}`)
+    ) {
+      throw error;
+    }
+  });
   await rm(temporaryDirectory, { recursive: true, force: true });
-}
-
-async function availablePort() {
-  const server = createServer();
-  await new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', resolve);
-  });
-  const address = server.address();
-  if (address === null || typeof address === 'string') {
-    server.close();
-    throw new Error('Could not allocate a Keycloak port.');
-  }
-  await new Promise((resolve, reject) => {
-    server.close((error) => {
-      if (error === undefined) resolve();
-      else reject(error);
-    });
-  });
-  return address.port;
 }
 
 async function waitUntilReady(baseUrl) {
@@ -168,7 +157,8 @@ async function configureRealm(baseUrl) {
           name: 'Baukit auth-node conformance',
           enabled: true,
           publicClient: true,
-          standardFlowEnabled: false,
+          standardFlowEnabled: true,
+          redirectUris: [`${baseUrl}/callback`],
           directAccessGrantsEnabled: false,
           protocol: 'openid-connect',
           attributes: {
@@ -184,9 +174,17 @@ async function configureRealm(baseUrl) {
 
 async function approveInBrowser(page, verificationUriComplete) {
   await page.goto(verificationUriComplete);
-  await page.locator('#username').fill(USERNAME);
-  await page.locator('#password').fill(PASSWORD);
-  await page.getByRole('button', { name: 'Sign In' }).click();
+  await page.locator('#password').waitFor({ state: 'visible' });
+  assert(await page.locator('#username').isVisible(), 'Fresh login has no username field.');
+  await signInWithKeycloak(
+    page,
+    { username: USERNAME, password: PASSWORD },
+    keycloakStack({
+      url: new URL(verificationUriComplete).origin,
+      realm: REALM,
+      webClientId: CLIENT_ID,
+    }),
+  );
   await page.waitForLoadState('networkidle');
   const consent = page.getByRole('button', { name: 'Yes' });
   if (await consent.isVisible()) {
@@ -195,6 +193,41 @@ async function approveInBrowser(page, verificationUriComplete) {
   }
   const text = await page.locator('body').innerText();
   assert(/success|connected|device/i.test(text), 'Keycloak did not confirm device approval.');
+}
+
+async function checkLoginForms(page, baseUrl) {
+  await page.context().clearCookies();
+  await page.route(`${baseUrl}/callback**`, (route) =>
+    route.fulfill({ status: 200, body: 'Signed in.' }),
+  );
+  for (const usernameVisible of [true, false]) {
+    const verifier = randomBytes(32).toString('base64url');
+    const authorization = new URL(`${baseUrl}/realms/${REALM}/protocol/openid-connect/auth`);
+    authorization.search = new URLSearchParams({
+      client_id: CLIENT_ID,
+      redirect_uri: `${baseUrl}/callback`,
+      response_type: 'code',
+      scope: 'openid',
+      prompt: 'login',
+      code_challenge_method: 'S256',
+      code_challenge: createHash('sha256').update(verifier).digest('base64url'),
+    }).toString();
+    await page.goto(authorization.toString());
+    await page.locator('#password').waitFor({ state: 'visible' });
+    assert(
+      (await page.locator('#username').isVisible()) === usernameVisible,
+      usernameVisible
+        ? 'Fresh login has no username field.'
+        : 'SSO reauthentication has a visible username field.',
+    );
+    await signInWithKeycloak(
+      page,
+      { username: USERNAME, password: PASSWORD },
+      keycloakStack({ url: baseUrl, realm: REALM, webClientId: CLIENT_ID }),
+    );
+    await page.waitForURL((url) => url.origin === baseUrl && url.pathname === '/callback');
+    assert(page.url().includes('code='), 'Login did not return an authorization code.');
+  }
 }
 
 function assert(condition, message) {
