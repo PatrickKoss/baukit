@@ -265,7 +265,11 @@ pub(super) fn rust_crates(root: &Path, manifest: &Manifest) -> Result<Vec<RustCr
 }
 
 pub(super) fn backend_crates(root: &Path, manifest: &Manifest) -> Result<Vec<RustCrate>> {
-    workspace_crates(root, &[backend_manifest(root, manifest)?])
+    let backend = backend_manifest(root, manifest)?;
+    if !backend.is_file() {
+        return Ok(Vec::new());
+    }
+    workspace_crates(root, &[backend])
 }
 
 fn workspace_crates(root: &Path, workspaces: &[PathBuf]) -> Result<Vec<RustCrate>> {
