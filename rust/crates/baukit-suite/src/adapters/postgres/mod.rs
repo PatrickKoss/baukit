@@ -838,8 +838,25 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         if !acquired {
             return Ok(SuiteCleanupOutcome::default());
         }
-        let owners: Vec<Uuid> = sqlx::query_scalar("SELECT user_id FROM suite_links UNION SELECT user_id FROM suite_link_requests UNION SELECT user_id FROM suite_link_codes ORDER BY user_id")
-            .fetch_all(&mut *tx).await.map_err(storage)?;
+        let owners: Vec<Uuid> = sqlx::query_scalar(
+            r#"SELECT user_id FROM suite_link_requests WHERE expires_at<$1
+            UNION SELECT user_id FROM suite_link_codes WHERE expires_at<$1
+            UNION SELECT user_id FROM suite_links WHERE (status='revoked' AND revoked_at<$2)
+                OR (created_at<$3 AND last_delivery_at IS NULL AND last_received_at IS NULL)
+            UNION SELECT l.user_id FROM suite_links l WHERE
+                EXISTS(SELECT 1 FROM suite_failed_delivery_jobs f WHERE f.link_id=l.id AND NOT f.accounted)
+                OR EXISTS(SELECT 1 FROM job_outbox j WHERE j.payload->>'link_id'=l.id::text
+                    AND j.job_type IN ('suite.events.deliver','suite.links.revoke')
+                    AND j.status IN ('succeeded','failed','cancelled') AND j.updated_at<$4)
+            ORDER BY user_id"#,
+        )
+        .bind(now - Duration::days(1))
+        .bind(now - Duration::days(30))
+        .bind(now - Duration::days(7))
+        .bind(now - Duration::days(SUITE_TERMINAL_JOB_RETENTION_DAYS))
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(storage)?;
         for owner in &owners {
             lock_owner(&mut tx, *owner).await?;
         }
@@ -850,8 +867,8 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         .fetch_all(&mut *tx)
         .await
         .map_err(storage)?;
-        for id in links {
-            account_failures(&mut tx, id).await?;
+        for id in &links {
+            account_failures(&mut tx, *id).await?;
         }
         let requests = sqlx::query(
             r#"DELETE FROM suite_link_requests WHERE expires_at<$1 AND user_id=ANY($2)"#,
@@ -903,8 +920,13 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         .await
         .map_err(storage)?
         .rows_affected();
-        let terminal_jobs = sqlx::query(r#"DELETE FROM job_outbox WHERE job_type IN ('suite.events.deliver','suite.links.revoke') AND status IN ('succeeded','failed','cancelled') AND updated_at<$1"#)
-.bind(now - Duration::days(SUITE_TERMINAL_JOB_RETENTION_DAYS))
+        let linked_ids: Vec<String> = links.iter().map(Uuid::to_string).collect();
+        let terminal_jobs = sqlx::query(r#"DELETE FROM job_outbox j
+            WHERE j.job_type IN ('suite.events.deliver','suite.links.revoke')
+            AND j.status IN ('succeeded','failed','cancelled') AND j.updated_at<$1
+            AND (j.payload->>'link_id'=ANY($2)
+                OR NOT EXISTS(SELECT 1 FROM suite_links l WHERE l.id::text=j.payload->>'link_id'))"#)
+.bind(now - Duration::days(SUITE_TERMINAL_JOB_RETENTION_DAYS)).bind(&linked_ids)
             .execute(&mut *tx).await.map_err(storage)?.rows_affected();
         self.commit_transaction(tx).await?;
         Ok(SuiteCleanupOutcome {

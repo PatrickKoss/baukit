@@ -3646,3 +3646,42 @@ async fn lock_order_migration_preserves_old_failures_and_accounts_new_jobs_once(
     assert_eq!(pending_count, 0);
     Ok(())
 }
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn cleanup_does_not_wait_for_an_owner_without_cleanup_work() -> TestResult {
+    let (db, context, owner) = authorizer_fixture().await?;
+    let service = SuiteLinkService::new(context.clone());
+    let (expired, _) = exchange_link(&service, owner, None, None).await?;
+    let recent_owner = user(&db.pool, "recent-owner").await?;
+    let (recent, _) = exchange_link(&service, recent_owner, None, None).await?;
+    let now = Utc::now();
+    sqlx::query("UPDATE suite_links SET created_at=$2 WHERE id=$1")
+        .bind(expired.id)
+        .bind(now - chrono::Duration::days(8))
+        .execute(&db.pool)
+        .await?;
+    let mut busy = db.pool.begin().await?;
+    context
+        .store
+        .lock_ingest_user(&mut busy, recent_owner)
+        .await?;
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        context.store.cleanup(now),
+    )
+    .await??;
+    assert_eq!(result.unused_links, 1);
+    assert!(context.store.find_link(expired.id).await?.is_none());
+    assert_eq!(
+        context
+            .store
+            .find_link(recent.id)
+            .await?
+            .expect("recent link")
+            .status,
+        LinkStatus::Active
+    );
+    busy.rollback().await?;
+    Ok(())
+}

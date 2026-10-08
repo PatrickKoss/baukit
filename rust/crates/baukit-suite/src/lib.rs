@@ -26,7 +26,8 @@
 //! `SuiteEventOutbox::lock_owner_in_transaction` before locking product rows.
 //!
 //! Cleanup takes a transaction-scoped `pg_try_advisory_xact_lock` for the whole
-//! run before any owner locks. Another replica skips that run. Failed-job triggers
+//! run before any owner locks. Another replica skips that run. Cleanup locks owners
+//! only for rows eligible for removal or failure accounting. Failed-job triggers
 //! only record job ids; they never lock links. The store accounts those records
 //! under the owner/link/job order before reading health, changing preferences,
 //! resetting a circuit or enqueueing work. Apply `SUITE_LOCK_ORDER_MIGRATION_SQL`
