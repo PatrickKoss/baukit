@@ -26,12 +26,11 @@ fn source(
             continue;
         }
         let text = fs::read_to_string(path)?;
-        let text = if production {
-            text.split("#[cfg(test)]").next().unwrap_or(&text)
+        let symbols = if production {
+            production_symbols(&text)
         } else {
-            &text
+            doctor_layout::symbols(&text, true)
         };
-        let symbols = doctor_layout::symbols(text, true);
         let compact = symbols.split_whitespace().collect::<String>();
         if key == "mcp_drift"
             && !["tool_schema(", "service_schema(", "capability_schema("]
@@ -44,6 +43,29 @@ fn source(
         code.push('\n');
     }
     Ok(code.split_whitespace().collect())
+}
+
+fn production_symbols(text: &str) -> String {
+    let symbols = doctor_layout::symbols(text, true);
+    let compact = symbols.split_whitespace().collect::<String>();
+    let mut remaining = compact.as_str();
+    let mut code = String::new();
+    while let Some((before, item)) = remaining.split_once("#[cfg(test)]") {
+        code.push_str(before);
+        let Some(index) = item.find(['{', ';']) else {
+            return code;
+        };
+        let suffix = &item[index + 1..];
+        if item.as_bytes()[index] == b';' {
+            remaining = suffix;
+        } else if let Some(body) = block(suffix, '{', '}') {
+            remaining = &suffix[body.len() + 1..];
+        } else {
+            return code;
+        }
+    }
+    code.push_str(remaining);
+    code
 }
 
 fn require(found: bool, label: &str, failures: &mut Vec<String>) {
@@ -289,10 +311,7 @@ fn returned_router_merged(
     for krate in crates {
         for path in &krate.sources {
             let text = fs::read_to_string(path)?;
-            let production = text.split("#[cfg(test)]").next().unwrap_or(&text);
-            let code = doctor_layout::symbols(production, true)
-                .split_whitespace()
-                .collect::<String>();
+            let code = production_symbols(&text);
             for (name, _, body) in functions(&code) {
                 if !router.contains(body) || !returns_mcp_router(body) {
                     continue;
@@ -415,6 +434,34 @@ pub(super) fn validate_wiring(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn production_scan_keeps_code_after_test_modules() {
+        let source = r#"
+#[cfg ( test )]
+mod tests {
+    mod nested {
+        fn fake() { baukit_mcp::router(test_config); }
+    }
+    const BRACE: &str = "}";
+}
+fn run() { api.merge(baukit_mcp::router(config)); }
+#[cfg(test)]
+mod more_tests { fn fake() { test_config.validate(); } }
+fn validate(config: &McpConfig) { config.validate(); }
+"#;
+        let code = production_symbols(source);
+        assert_eq!(
+            code,
+            "fnrun(){api.merge(baukit_mcp::router(config));}fnvalidate(config:&McpConfig){config.validate();}"
+        );
+        assert!(router_merged(&code, &code));
+        assert!(validates_config(&code, &["config"]));
+        let tests_only = production_symbols(
+            "#[cfg(test)] mod tests { fn run() { api.merge(baukit_mcp::router(config)); } }",
+        );
+        assert!(!router_merged(&tests_only, &tests_only));
+    }
 
     #[test]
     fn conditional_router_follows_branch_results_and_the_merged_binding() {

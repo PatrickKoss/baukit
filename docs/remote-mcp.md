@@ -280,8 +280,12 @@ Use the policy port below when a product needs live checks.
 
 ## Authentication policy
 
-The router takes `config`, `Arc<dyn IdentityVerifier>`, tools, rate-limit store
-and authentication policy. The supplied verifier owns token binding; metadata
+The router takes `config`, `Arc<dyn IdentityVerifier>`, `McpServices`, rate-limit
+store and authentication policy. Build `McpServices::new(tools)` with an
+`Arc<dyn ToolService>`. Register optional resource and prompt services with
+`with_resources` and `with_prompts`. Set the product's server identity and
+instructions with `with_server_info` and `with_instructions`.
+The supplied verifier owns token binding; metadata
 names `config.issuer`. The generated bin crate selects REST and MCP verifiers
 separately. Its `mcp_policy` uses the product MCP crate's `authentication_policy`
 by default. Replace that function to select a different policy. `AuthenticationPolicy::authenticate` receives the verified

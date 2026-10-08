@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Read every document in pnpm 12 lockfiles when checking Baukit registry pins.
+- Scan MCP production code after test modules and exclude test module bodies.
+- Generate exact Keycloak MCP audience mappers and callback URIs. Preserve callback order returned by Keycloak.
+- Correct the MCP router argument list in the remote MCP guide.
+
 ## [0.10.3] - 2026-10-08
 
 - Check every Baukit registry pin in Cargo manifests, Cargo lockfiles, package manifests and pnpm lockfiles. Report mismatches with their file paths.

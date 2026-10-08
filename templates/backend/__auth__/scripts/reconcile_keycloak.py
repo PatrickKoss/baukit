@@ -82,6 +82,9 @@ def load_reconcile_config(path: Path) -> dict[str, Any]:
     for client in config["clients"]:
         if not isinstance(client, dict) or not isinstance(client.get("clientId"), str):
             fail("each reconciliation client must have a string clientId")
+        for field in ("exactRedirectUris", "exactProtocolMappers"):
+            if field in client and not isinstance(client[field], bool):
+                fail(f"reconciliation {field} must be a boolean")
         for field in ("activeOrigins", "activeRedirectUris"):
             if not isinstance(client.get(field), list) or not all(
                 isinstance(value, str) for value in client[field]
@@ -209,6 +212,21 @@ def merge_protocol_mappers(existing: object, desired: object) -> list[dict[str, 
         if isinstance(mapper.get("config"), dict):
             mappers[name]["config"] = {**current.get("config", {}), **mapper["config"]}
     return list(mappers.values())
+
+
+def replace_protocol_mappers(existing: object, desired: object) -> list[dict[str, object]]:
+    current = values_by_key(existing, "name", "protocolMappers")
+    selected = []
+    for name, mapper in values_by_key(desired, "name", "protocolMappers").items():
+        config = mapper.get("config", {})
+        if not isinstance(config, dict):
+            fail("protocol mapper config must be an object")
+        selected.append({
+            **current.get(name, {}),
+            **{field: value for field, value in mapper.items() if field != "id"},
+            "config": dict(config),
+        })
+    return selected
 
 
 class KeycloakApi:
@@ -597,7 +615,12 @@ class RealmReconciler:
         merged = dict(existing)
         for key, value in desired.items():
             if key == "protocolMappers":
-                merged[key] = merge_protocol_mappers(existing.get(key, []), value)
+                merge = (
+                    replace_protocol_mappers
+                    if selection.get("exactProtocolMappers", False)
+                    else merge_protocol_mappers
+                )
+                merged[key] = merge(existing.get(key, []), value)
             elif key == "attributes" and isinstance(value, dict):
                 merged[key] = {**existing.get(key, {}), **value}
             elif key not in (
@@ -617,6 +640,11 @@ class RealmReconciler:
             desired.get("redirectUris"),
             selection["activeRedirectUris"],
         )
+        if selection.get("exactRedirectUris", False):
+            allowed = merge_unique(desired.get("redirectUris"), selection["activeRedirectUris"])
+            merged["redirectUris"] = [
+                uri for uri in merged["redirectUris"] if uri in allowed
+            ]
         if merged != existing:
             self.api.update(realm_name, "clients", identity, merged)
 

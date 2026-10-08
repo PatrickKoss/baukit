@@ -22,6 +22,8 @@
     }{% if context.mcp %},
     {
       "clientId": "{{ context.app_name }}-mcp",
+      "exactProtocolMappers": true,
+      "exactRedirectUris": true,
       "activeOrigins": [],
       "activeRedirectUris": ["http://localhost:18888/callback", "http://127.0.0.1:18888/callback", "https://claude.ai/api/mcp/auth_callback"]
     }{% endif %}{% if context.web %},

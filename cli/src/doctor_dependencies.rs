@@ -1,6 +1,7 @@
 use std::{fs, path::Path};
 
 use anyhow::{Context, Result};
+use serde::Deserialize;
 
 use crate::doctor_layout;
 
@@ -98,7 +99,11 @@ fn read_pins(filename: Option<&str>, source: &str) -> Result<Vec<Pin>> {
             }
         }
         Some("package.json") => npm_dependencies(&serde_json::from_str(source)?, &mut pins),
-        Some("pnpm-lock.yaml") => pnpm_pins(&serde_yaml_ng::from_str(source)?, &mut pins),
+        Some("pnpm-lock.yaml") => {
+            for document in serde_yaml_ng::Deserializer::from_str(source) {
+                pnpm_pins(&serde_yaml_ng::Value::deserialize(document)?, &mut pins);
+            }
+        }
         _ => {}
     }
     Ok(pins)
@@ -246,6 +251,56 @@ fn pnpm_pins(value: &serde_yaml_ng::Value, pins: &mut Vec<Pin>) {
 #[cfg(test)]
 mod tests {
     use super::read_pins;
+
+    const PNPM_12_LOCK: &str = include_str!("../tests/fixtures/pnpm-12-lock.yaml");
+
+    #[test]
+    fn pnpm_census_reads_the_project_after_the_package_manager_document() -> anyhow::Result<()> {
+        let pins = read_pins(Some("pnpm-lock.yaml"), PNPM_12_LOCK)?;
+        assert_eq!(pins.len(), 4);
+        assert!(pins.iter().all(|pin| pin.name == "@baukit/analytics-core"));
+        assert!(pins.iter().all(|pin| pin.matches("0.10.3")));
+        Ok(())
+    }
+
+    #[test]
+    fn pnpm_census_still_reads_single_document_lockfiles() -> anyhow::Result<()> {
+        let (_, project) = PNPM_12_LOCK.split_once("\n---\n").expect("two documents");
+        let pins = read_pins(Some("pnpm-lock.yaml"), project)?;
+        assert_eq!(pins.len(), 4);
+        assert!(pins.iter().all(|pin| pin.matches("0.10.3")));
+        Ok(())
+    }
+
+    #[test]
+    fn pnpm_census_reports_a_mismatch_in_the_second_document() -> anyhow::Result<()> {
+        let source = PNPM_12_LOCK.replacen("specifier: 0.10.3", "specifier: 0.9.0", 1);
+        let pins = read_pins(Some("pnpm-lock.yaml"), &source)?;
+        let mismatches = pins
+            .iter()
+            .filter(|pin| !pin.matches("0.10.3"))
+            .map(|pin| (pin.name.as_str(), pin.version.as_str()))
+            .collect::<Vec<_>>();
+        assert_eq!(mismatches, [("@baukit/analytics-core", "0.9.0")]);
+        Ok(())
+    }
+
+    #[test]
+    fn pnpm_census_checks_pins_in_every_document() -> anyhow::Result<()> {
+        let source = format!("overrides:\n  '@baukit/events': 0.9.0\n{PNPM_12_LOCK}");
+        let pins = read_pins(Some("pnpm-lock.yaml"), &source)?;
+        assert_eq!(pins.len(), 5);
+        assert_eq!(pins[0].name, "@baukit/events");
+        assert!(!pins[0].matches("0.10.3"));
+        assert!(pins[1..].iter().all(|pin| pin.matches("0.10.3")));
+        Ok(())
+    }
+
+    #[test]
+    fn pnpm_census_rejects_invalid_later_documents() {
+        let source = format!("{PNPM_12_LOCK}---\ninvalid: [\n");
+        assert!(read_pins(Some("pnpm-lock.yaml"), &source).is_err());
+    }
 
     #[test]
     fn peer_suffixes_are_only_valid_in_pnpm_resolutions() -> anyhow::Result<()> {

@@ -3774,7 +3774,15 @@ fn doctor_checks_each_registry_pin_and_names_its_file() -> anyhow::Result<()> {
     let pnpm = format!(
         "lockfileVersion: '9.0'\nimporters:\n  mobile:\n    dependencies:\n      '@baukit/api-runtime':\n        specifier: {version}\n        version: {version}(react@19.2.3)\npackages:\n  '@baukit/api-runtime@{version}': {{}}\nsnapshots:\n  '@baukit/api-runtime@{version}(react@19.2.3)': {{}}\n"
     );
+    let (manager, _) = include_str!("fixtures/pnpm-12-lock.yaml")
+        .split_once("\n---\n")
+        .expect("pnpm package manager document");
+    let pnpm = format!("{manager}\n---\n{pnpm}");
     fs::write(root.join("pnpm-lock.yaml"), &pnpm)?;
+    fs::write(
+        root.join("package.json"),
+        format!(r#"{{"devDependencies":{{"@baukit/events": "{version}"}}}}"#),
+    )?;
     assert!(
         Command::new("git")
             .args(["init", "--quiet"])
@@ -3797,6 +3805,7 @@ fn doctor_checks_each_registry_pin_and_names_its_file() -> anyhow::Result<()> {
             .any(|finding| finding.contains("Baukit registry pins match"))
     );
     let cases = [
+        ("package.json", "@baukit/events"),
         ("backend/Cargo.toml", "baukit-core"),
         ("backend/Cargo.lock", "baukit-core"),
         ("mobile/package.json", "@baukit/api-runtime"),
@@ -4549,6 +4558,24 @@ fn remote_realm_preserves_oidc_scopes_and_binds_the_resource_audience() -> anyho
     generated.web = true;
     generated.mobile = true;
     let root = generate_new(&generated)?;
+    let reconciliation: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join("keycloak/reconcile.json"))?)?;
+    for client in reconciliation["clients"]
+        .as_array()
+        .expect("selected clients")
+    {
+        let mcp = client["clientId"]
+            .as_str()
+            .expect("client id")
+            .ends_with("-mcp");
+        if mcp {
+            assert_eq!(client["exactProtocolMappers"], true);
+            assert_eq!(client["exactRedirectUris"], true);
+        } else {
+            assert!(client.get("exactProtocolMappers").is_none());
+            assert!(client.get("exactRedirectUris").is_none());
+        }
+    }
     let realm: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(root.join("keycloak/realm.json"))?)?;
     let scopes = realm["clientScopes"].as_array().expect("client scopes");
@@ -5023,7 +5050,10 @@ fn doctor_accepts_remote_mcp_modules_in_declared_crates() -> anyhow::Result<()> 
         ),
     )?;
     let mcp = root.join("backend/crates/redemut-shaped-mcp/src");
-    let source = fs::read_to_string(mcp.join("lib.rs"))?;
+    let source = format!(
+        "#[cfg(test)] mod tests {{ fn unrelated() {{}} }}\n{}",
+        fs::read_to_string(mcp.join("lib.rs"))?
+    );
     let start = source.find("impl ItemTools {").expect("definitions start");
     let end = source
         .find("impl ToolService for ItemTools")
@@ -5340,7 +5370,8 @@ pub async fn router(
     Ok(baukit_mcp::router(config, verifier, services, store, policy).await?)
 }
 "#;
-    fs::write(&wrapper, compose)?;
+    let compose = format!("#[cfg(test)] mod tests {{ fn unused() {{}} }}\n{compose}");
+    fs::write(&wrapper, &compose)?;
     doctor(&root)?;
     for missing in [
         api.replace("api.merge(mcp_app)", "api"),

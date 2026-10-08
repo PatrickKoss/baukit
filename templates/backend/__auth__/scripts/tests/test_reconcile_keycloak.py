@@ -390,6 +390,88 @@ class RealmReconcilerTests(unittest.TestCase):
         reconciler.reconcile_client("fixture", desired, self.config["clients"][0])
         self.assertEqual(api.updates, [])
 
+    def test_exact_mcp_mappers_remove_stale_audiences_and_preserve_server_ids(self):
+        desired = copy.deepcopy(self.desired["clients"][0])
+        desired["protocolMappers"] = [{
+            "name": "mcp-audience",
+            "protocolMapper": "oidc-audience-mapper",
+            "config": {"included.custom.audience": "https://new.example/mcp"},
+        }]
+        existing = {
+            **desired,
+            "id": "client",
+            "protocolMappers": [
+                {
+                    "id": "mapper-current",
+                    "name": "mcp-audience",
+                    "protocolMapper": "oidc-audience-mapper",
+                    "config": {
+                        "included.custom.audience": "https://old.example/mcp",
+                        "included.client.audience": "old-backend",
+                    },
+                },
+                {
+                    "id": "mapper-stale",
+                    "name": "old-mcp-audience",
+                    "protocolMapper": "oidc-audience-mapper",
+                    "config": {"included.custom.audience": "https://old.example/mcp"},
+                },
+            ],
+        }
+        selection = {**self.config["clients"][0], "exactProtocolMappers": True}
+        api = FakeApi({"realm": "fixture"}, clients={"client": existing})
+        reconciler = reconcile_keycloak.RealmReconciler(api)
+        reconciler.reconcile_client("fixture", desired, selection)
+        self.assertEqual(api.clients["client"]["protocolMappers"], [{
+            **desired["protocolMappers"][0], "id": "mapper-current",
+        }])
+        api.updates.clear()
+        reconciler.reconcile_client("fixture", desired, selection)
+        self.assertEqual(api.updates, [])
+        desired["protocolMappers"] = []
+        reconciler.reconcile_client("fixture", desired, selection)
+        self.assertEqual(api.clients["client"]["protocolMappers"], [])
+
+    def test_exact_redirects_remove_stale_uris_and_keep_keycloak_order(self):
+        desired = copy.deepcopy(self.desired["clients"][0])
+        selection = {**self.config["clients"][0], "exactRedirectUris": True}
+        desired_uri = desired["redirectUris"][0]
+        active_uri = selection["activeRedirectUris"][0]
+        existing = {
+            **desired,
+            "id": "client",
+            "redirectUris": [active_uri, "https://old.example/callback", desired_uri],
+        }
+        api = FakeApi({"realm": "fixture"}, clients={"client": existing})
+        reconciler = reconcile_keycloak.RealmReconciler(api)
+        reconciler.reconcile_client("fixture", desired, selection)
+        self.assertEqual(api.clients["client"]["redirectUris"], [active_uri, desired_uri])
+        self.assertEqual(api.updates, [("update-clients", "client")])
+        api.updates.clear()
+        reconciler.reconcile_client("fixture", desired, selection)
+        self.assertEqual(api.updates, [])
+        api.clients["client"]["redirectUris"].reverse()
+        reconciler.reconcile_client("fixture", desired, selection)
+        self.assertEqual(api.updates, [])
+        api.clients["client"]["redirectUris"] = [active_uri]
+        reconciler.reconcile_client("fixture", desired, selection)
+        self.assertEqual(api.clients["client"]["redirectUris"], [active_uri, desired_uri])
+
+    def test_exact_reconciliation_options_require_booleans(self):
+        for field in ("exactRedirectUris", "exactProtocolMappers"):
+            for value in ("true", 1, None):
+                with self.subTest(field=field, value=value), tempfile.TemporaryDirectory() as directory:
+                    config = copy.deepcopy(self.config)
+                    config["clients"][0][field] = value
+                    path = Path(directory) / "reconcile.json"
+                    path.write_text(json.dumps(config))
+                    with self.assertRaisesRegex(reconcile_keycloak.ReconcileError, field):
+                        reconcile_keycloak.load_reconcile_config(path)
+
+    def test_exact_mapper_config_requires_an_object(self):
+        with self.assertRaisesRegex(reconcile_keycloak.ReconcileError, "config must be an object"):
+            reconcile_keycloak.replace_protocol_mappers([], [{"name": "audience", "config": []}])
+
     def test_unknown_realm_field_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "reconcile.json"
