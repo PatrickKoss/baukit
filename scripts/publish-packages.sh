@@ -46,6 +46,7 @@ for pkg in "${ORDER[@]}"; do
     continue
   fi
 
+  python3 scripts/check-package-dependencies.py "$dir"
   echo "== publishing @baukit/$pkg $version"
   # --ignore-scripts: dist/ is already built by the caller; `prepare` would
   # rebuild it once per package and roughly double the job runtime.

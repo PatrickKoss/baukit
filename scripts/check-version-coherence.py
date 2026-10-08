@@ -151,7 +151,9 @@ def main() -> None:
             "optionalDependencies",
         ):
             for dependency, requirement in package.get(dependency_group, {}).items():
-                if not dependency.startswith("@baukit/") or requirement == "workspace:*":
+                if not dependency.startswith("@baukit/"):
+                    continue
+                if dependency_group == "devDependencies" and requirement == "workspace:*":
                     continue
                 if dependency_group == "devDependencies" and requirement.startswith("file:"):
                     linked_package = (path.parent / requirement.removeprefix("file:")).resolve()

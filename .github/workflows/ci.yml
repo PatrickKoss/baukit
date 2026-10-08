@@ -173,6 +173,8 @@ jobs:
         run: |
           pnpm run test:source-maps
           pnpm turbo build lint test --concurrency=4
+      - name: Check packed npm dependencies
+        run: make package-dependencies-check
       - name: Test Dexie conformance in Chromium and WebKit
         working-directory: typescript
         env:

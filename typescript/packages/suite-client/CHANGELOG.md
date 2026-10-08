@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Declare sibling Baukit packages as versioned peers so npm consumers can install the package. Keep workspace links in development dependencies.
+- Check packed dependency specifiers before publishing and in CI.
+
 ## 0.10.0
 
 - Add the dependency-free peers subpath with validated metadata and sorted native query schemes in ESM and CommonJS builds.

@@ -23,7 +23,11 @@ test: ts-test
 check: ts-check
 	cargo check --manifest-path $(RUST_MANIFEST) --workspace --all-targets
 
-ci: example-lockfiles-check fmt lint test check ts-check ts-browser-test cli-ci scripts-test platform-validate media-grants-test media-grants-njs-test
+ci: example-lockfiles-check fmt lint test check package-dependencies-check ts-check ts-browser-test cli-ci scripts-test platform-validate media-grants-test media-grants-njs-test
+
+.PHONY: package-dependencies-check
+package-dependencies-check:
+	python3 scripts/check-package-dependencies.py
 
 media-grants-test:
 	node --test $(MEDIA_GRANTS_NJS)/media-grant.test.mjs

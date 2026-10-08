@@ -52,12 +52,14 @@
     "format:check": "prettier --check src scripts package.json turbo.json tsconfig.json tsconfig.test.json tsconfig.cjs.json"
   },
   "devDependencies": {
+    "@baukit/integrations-client": "workspace:*",
+    "@baukit/localization-core": "workspace:*",
     "@types/node": "26.6.4",
     "typescript": "6.0.3",
     "vitest": "5.0.3"
   },
-  "dependencies": {
-    "@baukit/integrations-client": "workspace:*",
-    "@baukit/localization-core": "workspace:*"
+  "peerDependencies": {
+    "@baukit/integrations-client": "^0.10.0",
+    "@baukit/localization-core": "^0.10.0"
   }
 }

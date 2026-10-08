@@ -436,6 +436,25 @@ class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
                 (root / "examples/unrelated/pnpm-lock.yaml").read_bytes(), unrelated
             )
             self.run_command(root, environment, *check)
+            suite = json.loads((root / "typescript/packages/suite-client/package.json").read_text())
+            self.assertEqual(suite["peerDependencies"], {
+                "@baukit/integrations-client": "^0.7.2",
+                "@baukit/localization-core": "^0.7.2",
+            })
+            self.assertEqual(suite["devDependencies"]["@baukit/integrations-client"], "workspace:*")
+            suite_path = root / "typescript/packages/suite-client/package.json"
+            for invalid_range in ("^0.7.1", "workspace:*"):
+                suite["peerDependencies"]["@baukit/localization-core"] = invalid_range
+                suite_path.write_text(json.dumps(suite))
+                stale_peer = subprocess.run(
+                    ["python3", "scripts/check-version-coherence.py"], cwd=root,
+                    env=environment, capture_output=True, text=True,
+                )
+                self.assertNotEqual(stale_peer.returncode, 0)
+                self.assertIn("@baukit/suite-client peerDependencies requires @baukit/localization-core", stale_peer.stderr)
+            suite["peerDependencies"]["@baukit/localization-core"] = "^0.7.2"
+            suite_path.write_text(json.dumps(suite))
+            self.run_command(root, environment, "python3", "scripts/check-version-coherence.py")
             adapter = root / "typescript/packages/adapter/package.json"
             manifest = json.loads(adapter.read_text())
             manifest["peerDependencies"]["@baukit/data-contracts"] = ">=0.7.2"
@@ -510,6 +529,14 @@ class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
                 "peerDependencies": {"@baukit/data-contracts": "^0.7.1"},
             },
         }
+        for name in ("integrations-client", "localization-core", "suite-client"):
+            manifest = json.loads((ROOT / f"typescript/packages/{name}/package.json").read_text())
+            manifests[name] = {"name": manifest["name"], "version": "0.7.1"}
+            if name == "suite-client":
+                manifests[name].update({
+                    "peerDependencies": {dependency: "^0.7.1" for dependency in manifest["peerDependencies"]},
+                    "devDependencies": {dependency: "workspace:*" for dependency in manifest["peerDependencies"]},
+                })
         for name, manifest in manifests.items():
             manifest.update({"license": "MIT", "publishConfig": {"access": "public"}})
             files[f"typescript/packages/{name}/package.json"] = json.dumps(
