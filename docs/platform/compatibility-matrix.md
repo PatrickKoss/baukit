@@ -5,7 +5,7 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
-Last verified release train: `v0.10.1` (`baukit-suite` builds its domain
+Last verified release train: `v0.10.2` (the npm publish check reads npm 12 pack output, which stopped the `v0.10.1` npm publish after its crates went out; `baukit-suite` builds its domain
 contracts without database, Tokio or HTTP dependencies and gates runtime parts
 behind `postgres`, `runtime`, `delivery`, `http` and `jobs`; `@baukit/suite-client`
 declares sibling packages as versioned peers, and publishing rejects packed

@@ -2,7 +2,16 @@
 
 ## [Unreleased]
 
+## 0.10.2
+
 - Read the npm 12 `npm pack --json` format in the publish check. The 0.10.1 npm publish stopped on it, so 0.10.2 is the first release with installable peers.
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.2 train.
+- Updated dependencies
+  - @baukit/integrations-client@0.10.2
+  - @baukit/localization-core@0.10.2
 
 ## 0.10.1
 

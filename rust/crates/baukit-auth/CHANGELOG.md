@@ -4,6 +4,8 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-10-08
+
 ## [0.10.1] - 2026-10-08
 
 ## [0.10.0] - 2026-10-08
