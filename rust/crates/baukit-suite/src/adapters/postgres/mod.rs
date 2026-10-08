@@ -1000,7 +1000,8 @@ impl PostgresSuiteLinkStore {
         links_for_erasure(&self.pool, owner).await
     }
     /// Deletes suite jobs and every suite row in the product's erasure transaction.
-    /// Hold the product owner row lock first, as `PostgresSuiteErasure` does.
+    /// Follow the crate lock order when locking product rows.
+    /// `PostgresSuiteErasure` takes the owner locks before calling this method.
     pub async fn erase_owner(
         &self,
         connection: &mut sqlx::PgConnection,
