@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-08
+
 - Move shipped notes out of Unreleased into their release sections.
 
 ## [0.7.3] - 2026-10-05

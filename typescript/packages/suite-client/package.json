@@ -1,6 +1,6 @@
 {
   "name": "@baukit/suite-client",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Headless suite linking, authorization state and connected app clients.",
   "license": "MIT",
   "author": "Patrick Koss",

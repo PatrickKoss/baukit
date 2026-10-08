@@ -211,7 +211,10 @@ class ReleaseTrainFilesTest(unittest.TestCase):
         sections = re.split(r"^## ", navigation, flags=re.MULTILINE)
         pending = [section for section in sections if section.startswith("[Unreleased]\n")]
         self.assertEqual(len(pending), 1)
-        self.assertIn("Remove web menus before restoring focus", pending[0])
+        menu_focus = [section for section in sections
+                      if "Remove web menus before restoring focus" in section]
+        self.assertEqual(len(menu_focus), 1)
+        self.assertFalse(menu_focus[0].startswith(("0.9.0\n", "0.8.0\n")))
         shipped = next(section for section in sections if section.startswith("0.8.0\n"))
         self.assertIn("Run native menu callbacks after dismissal", shipped)
         self.assertNotIn("Run native menu callbacks after dismissal", pending[0])

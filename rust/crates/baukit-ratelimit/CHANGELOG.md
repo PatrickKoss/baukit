@@ -4,6 +4,8 @@ All notable changes to `baukit-ratelimit` are documented here.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-08
+
 ## [0.9.0] - 2026-10-07
 
 - Expose AuthenticatedRouteGroupOptions::key so REST and external callers can share a quota without duplicating key formatting.

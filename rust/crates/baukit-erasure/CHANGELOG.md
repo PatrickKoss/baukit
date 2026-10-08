@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-08
+
 ## [0.9.0] - 2026-10-07
 
 - Add Clerk and WorkOS user deletion adapters with typed failures and durable worker retries.

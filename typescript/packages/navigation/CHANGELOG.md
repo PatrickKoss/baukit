@@ -2,9 +2,21 @@
 
 ## [Unreleased]
 
+## 0.10.0
+
 - Remove web menus before restoring focus and calling menu actions or navigation callbacks.
 
 - Move shipped notes out of Unreleased into their release sections.
+
+### Minor Changes
+
+- Release the coordinated baukit 0.10.0 train.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/a11y-core@0.10.0
+  - @baukit/ui-tokens@0.10.0
 
 ## 0.9.0
 

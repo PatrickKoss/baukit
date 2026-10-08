@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-08
+
 - Place shipped authentication template notes under their release headings.
 
 - Share configuration collection declarations across the API, migration and worker commands. Parse MCP hosts and origins as JSON arrays in every command.

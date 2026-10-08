@@ -2,7 +2,13 @@
 
 ## [Unreleased]
 
+## 0.10.0
+
 - Move shipped notes out of Unreleased into their release sections.
+
+### Minor Changes
+
+- Release the coordinated baukit 0.10.0 train.
 
 ## 0.9.0
 

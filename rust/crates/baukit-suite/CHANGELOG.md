@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-08
+
 - Look up metadata for the own app and inactive peers by id. Share peer validation vectors with the client.
 - Document how existing suite migrations and pending release packages adopt the crate.
 - Add product-neutral peer linking, PKCE, sealed per-link secrets and catalog-driven payload validation.

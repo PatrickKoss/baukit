@@ -2,9 +2,15 @@
 
 ## Unreleased
 
+## 0.10.0
+
 - Handle Keycloak password-only reauthentication forms in the test sign-in helper. Breaking: custom `KeycloakLoginPage` locators must implement `waitFor` and `isVisible`.
 
 - Move shipped notes out of Unreleased into their release sections.
+
+### Minor Changes
+
+- Release the coordinated baukit 0.10.0 train.
 
 ## 0.9.0
 

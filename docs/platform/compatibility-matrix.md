@@ -5,17 +5,19 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
-Last verified release train: `v0.9.0` (MCP services register resources and
-prompts next to tools, return custom structured errors and check scopes before
-dispatch; `--auth oidc|clerk|workos` generates Clerk and WorkOS products with
-MCP, web, mobile and erasure support; MCP can fetch signing keys from an
-internal URL; `baukit doctor` finds MCP wiring in split product modules). The
-complete Linux gates passed locally on 2026-10-07: `make ci`, the browser
-suites, every Rust test with `--include-ignored`, the remote MCP fixture gate,
-the generated fixture for each auth provider, version coherence, example
-lockfiles, metric names, cargo deny, and the Rust 1.95 MSRV check. The iOS
-simulator gate requires macOS and remains a release-host check rather than a
-Linux result.
+Last verified release train: `v0.10.0` (new `baukit-suite` crate and
+`@baukit/suite-client` package for signed cross-product suite events; MCP tools
+declare their own annotations, servers report product identity and
+instructions, tool and resource services receive cancellation; the template
+reconciles Keycloak client scopes and shares one backend config loader;
+`baukit doctor` follows MCP wiring across crates, returned routers and
+conditional assignments; the chart maps the MCP JWKS URL). The complete Linux
+gates passed locally on 2026-10-08: `make ci`, the browser suites, every Rust
+test with `--include-ignored`, the remote MCP fixture gate, the generated
+fixture for each auth provider, the Android generated-mobile gate, version
+coherence, example lockfiles, metric names, cargo deny, and the Rust 1.95 MSRV
+check. The iOS simulator gate requires macOS and remains a release-host check
+rather than a Linux result.
 
 ## Toolchain
 
