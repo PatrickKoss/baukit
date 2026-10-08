@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Follow merged conditional MCP router values and check deployment values under `application.mcp`.
 - Follow returned MCP routers through one wrapper call and require its result to be merged.
 - Cut and validate package and authentication template changelogs during release preparation.
 - Check telemetry product identities when configuration comes from a shared loader.

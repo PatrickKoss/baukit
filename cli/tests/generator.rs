@@ -4984,6 +4984,109 @@ fn doctor_accepts_mcp_composition_and_validation_across_backend_crates() -> anyh
 }
 
 #[test]
+fn doctor_requires_conditional_mcp_router_results_to_be_merged() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "conditional-mcp");
+    local.auth = Some(AuthProvider::Oidc);
+    local.mcp = true;
+    let root = generate_new(&local)?;
+    let entry = root.join("backend/crates/conditional-mcp-bin/src/bin/api.rs");
+    let api = fs::read_to_string(&entry)?;
+    let start = api
+        .find("let mcp = baukit_mcp::router(")
+        .expect("MCP binding");
+    let end = start
+        + api[start..]
+            .find("let api = api.merge(mcp);")
+            .expect("MCP merge");
+    let call = api[start + "let mcp = ".len()..end]
+        .trim()
+        .strip_suffix(';')
+        .expect("router expression");
+    for (expression, discarded) in [
+        (
+            format!("if config.product.mcp.enabled {{ {call} }} else {{ axum::Router::new() }}"),
+            format!(
+                "if config.product.mcp.enabled {{ let unused = {call}; axum::Router::new() }} else {{ axum::Router::new() }}"
+            ),
+        ),
+        (
+            format!(
+                "match config.product.mcp.enabled {{ true => {{ {call} }}, false => axum::Router::new() }}"
+            ),
+            format!(
+                "match config.product.mcp.enabled {{ true => {{ let unused = {call}; axum::Router::new() }}, false => axum::Router::new() }}"
+            ),
+        ),
+    ] {
+        let wired = format!("{}let mcp = {expression};\n{}", &api[..start], &api[end..]);
+        fs::write(&entry, &wired)?;
+        doctor(&root)?;
+        for missing in [
+            wired.replace("api.merge(mcp)", "api"),
+            wired.replace("api.merge(mcp)", "api.merge(other)"),
+            wired.replace(&expression, &discarded),
+            wired.replace(&expression, &discarded.replace("let unused", "let mcp")),
+        ] {
+            fs::write(&entry, missing)?;
+            assert!(
+                doctor(&root)
+                    .expect_err("unmerged conditional MCP router")
+                    .to_string()
+                    .contains("router merge")
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn doctor_checks_mcp_values_under_the_application_chart() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "nested-mcp");
+    local.auth = Some(AuthProvider::Oidc);
+    local.mcp = true;
+    let root = generate_new(&local)?;
+    let path = root.join("deploy/values.yaml");
+    let mut values: serde_yaml_ng::Value = serde_yaml_ng::from_str(&fs::read_to_string(&path)?)?;
+    let mcp = values
+        .as_mapping_mut()
+        .expect("chart values")
+        .remove("mcp")
+        .expect("MCP values");
+    values["application"] = serde_yaml_ng::Value::Mapping(Default::default());
+    values["application"]["mcp"] = mcp;
+    fs::write(&path, serde_yaml_ng::to_string(&values)?)?;
+    doctor(&root)?;
+    for key in ["resourceUrl", "allowedHosts"] {
+        let mut missing = values.clone();
+        let value = missing["application"]["mcp"]
+            .as_mapping_mut()
+            .expect("MCP values")
+            .remove(key)
+            .expect("required MCP value");
+        missing["unrelated"] = serde_yaml_ng::Value::Mapping(Default::default());
+        missing["unrelated"][key] = value;
+        fs::write(&path, serde_yaml_ng::to_string(&missing)?)?;
+        assert!(
+            doctor(&root)
+                .expect_err("missing nested MCP value")
+                .to_string()
+                .contains(&format!("deployment is missing `{key}:`"))
+        );
+        missing["application"]["mcp"][key] = serde_yaml_ng::Value::Null;
+        fs::write(&path, serde_yaml_ng::to_string(&missing)?)?;
+        assert!(
+            doctor(&root)
+                .expect_err("null nested MCP value")
+                .to_string()
+                .contains(&format!("deployment is missing `{key}:`"))
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn doctor_follows_a_returned_mcp_router_and_requires_its_result_to_be_merged() -> anyhow::Result<()>
 {
     let parent = tempfile::tempdir()?;

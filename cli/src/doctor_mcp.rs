@@ -108,39 +108,101 @@ fn functions(code: &str) -> impl Iterator<Item = (&str, &str, &str)> {
 }
 
 fn router_merged(router: &str, graph: &str) -> bool {
-    if router.contains(".merge(baukit_mcp::router(") {
-        return true;
-    }
-    let bindings = router
-        .split("=baukit_mcp::router(")
-        .take(router.matches("=baukit_mcp::router(").count())
-        .filter_map(|prefix| {
-            prefix
-                .rsplit(|c: char| !c.is_ascii_alphanumeric() && c != '_')
-                .next()
-        })
-        .map(|binding| binding.strip_prefix("let").unwrap_or(binding))
-        .collect::<Vec<_>>();
-    if bindings
-        .iter()
-        .any(|binding| router.contains(&format!(".merge({binding})")))
-    {
-        return true;
-    }
-    functions(graph).any(|(name, parameters, body)| {
-        parameters.split(',').enumerate().any(|(index, parameter)| {
-            let Some((parameter, _)) = parameter.split_once(':') else {
-                return false;
-            };
-            if !body.contains(&format!(".merge({parameter})")) {
-                return false;
-            }
-            router.split(&format!("{name}(")).skip(1).any(|call| {
-                block(call, '(', ')')
-                    .and_then(|arguments| arguments.split(',').nth(index))
-                    .is_some_and(|argument| bindings.contains(&argument))
+    functions(router).any(|(_, _, caller)| {
+        if caller.contains(".merge(baukit_mcp::router(") {
+            return true;
+        }
+        let bindings = router_bindings(caller).collect::<Vec<_>>();
+        if bindings.is_empty() {
+            return false;
+        }
+        if bindings
+            .iter()
+            .any(|binding| caller.contains(&format!(".merge({binding})")))
+        {
+            return true;
+        }
+        functions(graph).any(|(name, parameters, body)| {
+            parameters.split(',').enumerate().any(|(index, parameter)| {
+                let Some((parameter, _)) = parameter.split_once(':') else {
+                    return false;
+                };
+                if !body.contains(&format!(".merge({parameter})")) {
+                    return false;
+                }
+                caller.split(&format!("{name}(")).skip(1).any(|call| {
+                    block(call, '(', ')')
+                        .and_then(|arguments| arguments.split(',').nth(index))
+                        .is_some_and(|argument| bindings.contains(&argument))
+                })
             })
         })
+    })
+}
+
+fn top_level_parts(code: &str, delimiter: char) -> impl Iterator<Item = &str> {
+    let mut depth = 0_usize;
+    code.split(move |character| {
+        let split = depth == 0 && character == delimiter;
+        match character {
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+        split
+    })
+}
+
+fn block_returns_router(body: &str) -> bool {
+    top_level_parts(body, ';')
+        .last()
+        .is_some_and(router_expression)
+}
+
+fn router_expression(expression: &str) -> bool {
+    if let Some(call) = expression.strip_prefix("baukit_mcp::router(") {
+        return after_call(call) == Some("");
+    }
+    if let Some(body) = expression.strip_prefix('{') {
+        return block(body, '{', '}')
+            .is_some_and(|inner| inner.len() + 1 == body.len() && block_returns_router(inner));
+    }
+    if !expression.starts_with("if") && !expression.starts_with("match") {
+        return false;
+    }
+    let header = top_level_parts(expression, '{')
+        .next()
+        .unwrap_or(expression);
+    let Some(body) = expression.get(header.len() + 1..) else {
+        return false;
+    };
+    let Some(inner) = block(body, '{', '}') else {
+        return false;
+    };
+    let suffix = &body[inner.len() + 1..];
+    if expression.starts_with("match") {
+        return suffix.is_empty()
+            && top_level_parts(inner, ',').any(|arm| {
+                arm.split_once("=>")
+                    .is_some_and(|(_, result)| router_expression(result))
+            });
+    }
+    suffix
+        .strip_prefix("else")
+        .is_some_and(|alternative| block_returns_router(inner) || router_expression(alternative))
+}
+
+fn router_bindings(body: &str) -> impl Iterator<Item = &str> {
+    top_level_parts(body, ';').filter_map(|statement| {
+        let prefix = top_level_parts(statement, '=').next()?;
+        let declaration = prefix
+            .rsplit(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+            .next()?;
+        let binding = declaration
+            .strip_prefix("letmut")
+            .or_else(|| declaration.strip_prefix("let"))?;
+        let expression = statement.get(prefix.len() + 1..)?;
+        (!binding.is_empty() && router_expression(expression)).then_some(binding)
     })
 }
 
@@ -355,6 +417,37 @@ mod tests {
     use super::*;
 
     #[test]
+    fn conditional_router_follows_branch_results_and_the_merged_binding() {
+        for expression in [
+            "ifconfig.enabled{baukit_mcp::router(config).await?}else{Router::new()}",
+            "ifcheck(Config{enabled:true}){Router::new()}elseifready{baukit_mcp::router(config).await?}else{Router::new()}",
+            "matchconfig.enabled{true=>baukit_mcp::router(config).await?,false=>Router::new()}",
+            "matchconfig.enabled{true=>{letchecked=check(config);baukit_mcp::router(checked).await?},false=>Router::new()}",
+        ] {
+            let code = format!("asyncfnrun(){{letmcp={expression};api.merge(mcp)}}");
+            assert!(router_merged(&code, &code), "{expression}");
+            let unmerged = code.replace(".merge(mcp)", ".merge(other)");
+            assert!(!router_merged(&unmerged, &unmerged));
+            let unmerged =
+                format!("asyncfnrun(){{letmcp={expression};}}fnother(){{api.merge(mcp)}}");
+            assert!(!router_merged(&unmerged, &unmerged));
+        }
+    }
+
+    #[test]
+    fn conditional_router_rejects_discarded_branch_values() {
+        for expression in [
+            "ifready{baukit_mcp::router(config).await?;Router::new()}else{Router::new()}",
+            "matchmode{Mcp=>{letunused=baukit_mcp::router(config).await?;Router::new()},_=>Router::new()}",
+            "ifready{consume(baukit_mcp::router(config).await?)}else{Router::new()}",
+            "ifready{letmcp=baukit_mcp::router(config).await?;Router::new()}else{Router::new()}",
+        ] {
+            let code = format!("asyncfnrun(){{letmcp={expression};api.merge(mcp)}}");
+            assert!(!router_merged(&code, &code), "{expression}");
+        }
+    }
+
+    #[test]
     fn returned_router_must_be_the_function_result() {
         assert!(returns_mcp_router(
             "if!config.enabled{returnOk(Router::new());}Ok(baukit_mcp::router(config).await?)"
@@ -394,7 +487,7 @@ mod tests {
 
     #[test]
     fn composition_follows_the_mcp_argument_past_other_router_merges_and_middleware() {
-        let router = "letmcp=baukit_mcp::router(config);router_with_routes(state,mcp)";
+        let router = "fnrun(){letmcp=baukit_mcp::router(config);router_with_routes(state,mcp)}";
         let graph = "pubfnrouter_with_routes(state:State,additional:Router)->Router{Router::new().merge(base).merge(additional).layer(middleware::from_fn(auth))}";
         assert!(router_merged(router, graph));
         assert!(!router_merged(
