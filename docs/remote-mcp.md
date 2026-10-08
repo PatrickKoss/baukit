@@ -52,6 +52,12 @@ hints. Use `ToolAnnotations::with_title` and the `read_only`, `destructive`,
 `idempotent`, and `open_world` methods to override individual hints. The export
 includes these annotations, so review their changes with schemas and scopes.
 
+Without overrides, read-only tools are non-destructive, write tools are
+destructive, and every tool is closed-world. Keep `destructive` on writes that
+overwrite state or make an irreversible transition. Set `idempotent(true)` on a
+write that has no further effect when repeated with the same arguments. Set
+`open_world(true)` only when the tool reaches systems outside the product.
+
 Export the contract and review its diff:
 
 ```sh

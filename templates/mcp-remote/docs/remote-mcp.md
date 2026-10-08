@@ -40,6 +40,11 @@ and tool errors keep their original values.
 Set each tool's `annotations` to `ToolAnnotations::default()` to keep the
 read/write defaults. Override hints with `read_only`, `destructive`, `idempotent`
 and `open_world`. Use `ToolAnnotations::with_title` for a display title.
+Without overrides, read-only tools are non-destructive, write tools are
+destructive, and every tool is closed-world. Keep `destructive` on writes that
+overwrite state or make an irreversible transition. Set `idempotent(true)` on a
+write that has no further effect when repeated with the same arguments. Set
+`open_world(true)` only when the tool reaches systems outside the product.
 Review annotation changes in `mcp-tools.json` with schemas and scopes.
 
 Add a service trait and implementation in the product's ports and services,
