@@ -233,15 +233,19 @@ fn worker_generation_matches_golden_tree_and_records_capability() -> anyhow::Res
 #[test]
 fn generated_backend_is_rustfmt_clean_across_product_names() -> anyhow::Result<()> {
     let maximum_name = "a".repeat(41);
-    for name in [
+    let names = [
         "aaa",
         "zeta",
         "solo-leveling-system-companion",
         &maximum_name,
-    ] {
+    ];
+    for (name, worker) in names
+        .into_iter()
+        .flat_map(|name| [(name, false), (name, true)])
+    {
         let parent = tempfile::tempdir()?;
         let mut generated_options = options(parent.path(), name);
-        generated_options.worker = true;
+        generated_options.worker = worker;
         generated_options.mcp = true;
         generated_options.auth = Some(AuthProvider::Oidc);
         let root = generate_new(&generated_options)?;
@@ -255,7 +259,7 @@ fn generated_backend_is_rustfmt_clean_across_product_names() -> anyhow::Result<(
             .output()?;
         assert!(
             output.status.success(),
-            "generated backend for {name} is not rustfmt-clean:\n{}{}",
+            "generated backend for {name} with worker={worker} is not rustfmt-clean:\n{}{}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr),
         );
@@ -2920,7 +2924,7 @@ fn doctor_accepts_product_review_identity_layouts() -> anyhow::Result<()> {
         local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
         let root = generate_new(&local)?;
         if name == "sl" {
-            for path in ["src/bin/api.rs", "src/bin/migrate.rs"] {
+            for path in ["src/bin/api.rs", "src/bin/migrate.rs", "src/config.rs"] {
                 let path = root.join("backend/crates/sl-bin").join(path);
                 fs::write(
                     &path,
@@ -2992,6 +2996,41 @@ fn doctor_accepts_product_review_identity_layouts() -> anyhow::Result<()> {
         assert!(error.contains("APP_NAME"), "{error}");
         assert!(error.contains("has no literal source"), "{error}");
     }
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_runtime_telemetry_identity_with_a_shared_loader() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), "runtime-identity");
+    local.auth = Some(AuthProvider::Oidc);
+    let root = generate_new(&local)?;
+    let bin = root.join("backend/crates/runtime-identity-bin/src");
+    let api = bin.join("bin/api.rs");
+    let source = fs::read_to_string(&api)?;
+    fs::write(
+        &api,
+        source
+            .replace(
+                "    let service_info =",
+                "    let product = config.telemetry.resource.product.as_deref().unwrap_or(PRODUCT);\n    let service_info =",
+            )
+            .replace("ServiceInfo::new(PRODUCT,", "ServiceInfo::new(product,"),
+    )?;
+    doctor(&root)?;
+    let config = bin.join("config.rs");
+    fs::write(
+        &config,
+        fs::read_to_string(&config)?.replace(
+            "const PRODUCT: &str = \"runtime-identity\";",
+            "const PRODUCT: &str = \"wrong-product\";",
+        ),
+    )?;
+    let error = doctor(&root)
+        .expect_err("runtime telemetry must not hide a shared loader identity mismatch")
+        .to_string();
+    assert!(error.contains("config.rs"), "{error}");
+    assert!(error.contains("does not match application name"), "{error}");
     Ok(())
 }
 
@@ -3643,8 +3682,8 @@ fn doctor_resolves_crate_identity_in_library_modules() -> anyhow::Result<()> {
     let root = generate_new(&local)?;
     let library = root.join("backend/crates/crate-identity-bin/src/lib.rs");
     let original = fs::read_to_string(&library)?;
-    fs::write(&library, format!("pub mod config;\n{original}"))?;
-    let config = library.with_file_name("config.rs");
+    fs::write(&library, format!("pub mod identity_config;\n{original}"))?;
+    let config = library.with_file_name("identity_config.rs");
     for (import, binding) in [
         ("use crate::PRODUCT;", "PRODUCT"),
         ("", "crate::PRODUCT"),
@@ -3668,10 +3707,11 @@ fn doctor_resolves_crate_identity_in_library_modules() -> anyhow::Result<()> {
             .expect_err("crate references must not hide identity drift")
             .to_string();
         assert!(
-            error.contains("config.rs") && error.contains("does not match application name"),
+            error.contains("identity_config.rs")
+                && error.contains("does not match application name"),
             "{error}"
         );
-        fs::write(&library, format!("pub mod config;\n{original}"))?;
+        fs::write(&library, format!("pub mod identity_config;\n{original}"))?;
     }
     let binary = library
         .parent()
@@ -3681,8 +3721,8 @@ fn doctor_resolves_crate_identity_in_library_modules() -> anyhow::Result<()> {
     fs::write(
         &binary,
         source.replace(
-            "ConfigLoader::new(PRODUCT,",
-            "ConfigLoader::new(crate::PRODUCT,",
+            "ServiceInfo::new(PRODUCT,",
+            "ServiceInfo::new(crate::PRODUCT,",
         ),
     )?;
     doctor(&root)?;
@@ -4757,12 +4797,16 @@ fn doctor_accepts_remote_mcp_modules_in_declared_crates() -> anyhow::Result<()> 
         .expect("config end");
     fs::write(
         bin.join("config.rs"),
-        format!("use super::*;\n{}", &library[start..end]),
+        format!(
+            "{}\nuse super::*;\n{}",
+            fs::read_to_string(bin.join("config.rs"))?,
+            &library[start..end]
+        ),
     )?;
     fs::write(
         library_path,
         format!(
-            "{}mod config;\nmod application;\npub use config::ProductConfig;\n{}",
+            "{}mod application;\npub use config::ProductConfig;\n{}",
             &library[..start],
             &library[end..]
         ),

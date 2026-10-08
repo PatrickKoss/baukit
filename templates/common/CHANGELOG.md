@@ -4,6 +4,8 @@
 
 - Place shipped authentication template notes under their release headings.
 
+- Share configuration collection declarations across the API, migration and worker commands. Parse MCP hosts and origins as JSON arrays in every command.
+
 {% if context.auth_oidc %}- Reconcile Keycloak client scopes and their bindings. Repair scope protocol mappers through their Admin API endpoints.
 
 {% endif %}{% if context.mcp or context.mobile %}{% if context.mcp %}- Breaking: MCP tool adapters receive a request cancellation token and stop pending item reads when cancelled.

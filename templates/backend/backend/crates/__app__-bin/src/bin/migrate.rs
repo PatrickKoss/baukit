@@ -1,10 +1,9 @@
 use std::{env, error::Error, io, path::PathBuf};
 
-use baukit_config::{BaukitConfig, ConfigLoader, Environment};
+use baukit_config::{BaukitConfig, Environment};
 
-use {{ context.app_crate }}_bin::ProductConfig;
+use {{ context.app_crate }}_bin::{ProductConfig, config_loader};
 
-const PRODUCT: &str = "{{ context.app_name }}";
 const ENV_PREFIX: &str = "{{ context.app_env }}";
 
 #[tokio::main]
@@ -14,7 +13,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .map(|value| value.parse())
         .transpose()?
         .unwrap_or(Environment::Local);
-    let config: BaukitConfig<ProductConfig> = ConfigLoader::new(PRODUCT, environment)?.load()?;
+    let config: BaukitConfig<ProductConfig> = config_loader(environment)?.load()?;
     let database = config.database.ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidInput,

@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 - Cut and validate package and authentication template changelogs during release preparation.
+- Check telemetry product identities when configuration comes from a shared loader.
+- Generate one configuration loader for API, migration and worker commands, including MCP JSON-array environment values.
 
 - Breaking: Generated MCP tool adapters receive request cancellation tokens and stop pending item reads when cancelled.
 - Reconcile generated Keycloak client scopes, their default and optional bindings, and scope audience mappers through the Admin API.

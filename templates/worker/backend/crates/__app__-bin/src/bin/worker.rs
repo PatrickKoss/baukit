@@ -1,6 +1,6 @@
 use std::{env, error::Error, io, net::SocketAddr, sync::Arc, time::Duration};
 
-use baukit_config::{BaukitConfig, ConfigLoader, Environment};
+use baukit_config::{BaukitConfig, Environment};
 use baukit_jobs::{PostgresJobStore, WorkerConfig, WorkerRunner};
 use baukit_ops::{TrafficGate, spawn_pool_metrics_sampler};
 use baukit_runtime::{
@@ -10,7 +10,9 @@ use baukit_telemetry::{TelemetryBuilder, tracing};
 use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
 
-use {{ context.app_crate }}_bin::{ProductConfig, worker_operations_router};
+use {{ context.app_crate }}_bin::ProductConfig;
+use {{ context.app_crate }}_bin::config_loader;
+use {{ context.app_crate }}_bin::worker_operations_router;
 use {{ context.app_crate }}_worker::DemoJobHandler;
 
 const PRODUCT: &str = "{{ context.app_name }}";
@@ -22,7 +24,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .map(|value| value.parse())
         .transpose()?
         .unwrap_or(Environment::Local);
-    let config: BaukitConfig<ProductConfig> = ConfigLoader::new(PRODUCT, environment)?.load()?;
+    let config = config_loader(environment)?.load()?;
     run(config).await
 }
 

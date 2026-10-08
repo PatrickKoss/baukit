@@ -410,11 +410,20 @@ fn rust_identity(
         for path in krate.sources {
             let source = fs::read_to_string(&path)?;
             let source = uncommented(source.split("#[cfg(test)]").next().unwrap_or(&source), true);
-            for (index, _) in identity_code(&source, true).match_indices("ConfigLoader::new(") {
-                let call = &source[index + "ConfigLoader::new(".len()..];
+            let code = identity_code(&source, true);
+            let consumers = ["ConfigLoader::new(", "ServiceInfo::new("];
+            for (start, is_loader) in consumers.into_iter().flat_map(|consumer| {
+                code.match_indices(consumer).map(move |(index, _)| {
+                    (index + consumer.len(), consumer == "ConfigLoader::new(")
+                })
+            }) {
+                let call = &source[start..];
                 let Some(expression) = call.split(',').next().map(str::trim) else {
                     continue;
                 };
+                if !is_loader && !static_rust_identity(expression) {
+                    continue;
+                }
                 count += 1;
                 let local_binding = expression
                     .strip_prefix("crate::")
@@ -475,6 +484,16 @@ fn rust_identity(
         failures.push("backend config consumers use inconsistent product identities".to_owned());
     }
     Ok((count, names))
+}
+
+fn static_rust_identity(expression: &str) -> bool {
+    quoted_string(expression).is_some()
+        || expression.rsplit("::").next().is_some_and(|name| {
+            name.chars().any(|c| c.is_ascii_uppercase())
+                && name
+                    .chars()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+        })
 }
 
 pub(super) fn validate(

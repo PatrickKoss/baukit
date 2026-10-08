@@ -24,6 +24,9 @@ use {{ context.app_crate }}_services::ItemService;
 use serde::Deserialize;
 use uuid::Uuid;
 
+mod config;
+pub use config::config_loader;
+
 {% if context.auth_enabled %}mod identity;
 {% if context.mcp %}pub use identity::{auth_verifier, mcp_policy, mcp_verifier};
 {% else %}pub use identity::auth_verifier;
