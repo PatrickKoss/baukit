@@ -2,13 +2,12 @@
 
 ## Unreleased
 
-- Pass optional API audience and resource parameters in OIDC authorization requests.
-
-- Add Clerk and WorkOS SDK adapters behind the browser authentication contract.
-
-- Publish the TypeScript sources referenced by JavaScript and declaration maps. Check source paths in the packed archive.
+- Move shipped notes out of Unreleased into their release sections.
 
 ## 0.9.0
+
+- Pass optional API audience and resource parameters in OIDC authorization requests.
+- Add Clerk and WorkOS SDK adapters behind the browser authentication contract.
 
 ### Minor Changes
 
@@ -27,6 +26,8 @@
 - Release the coordinated baukit 0.7.4 train.
 
 ## 0.7.3
+
+- Publish the TypeScript sources referenced by JavaScript and declaration maps. Check source paths in the packed archive.
 
 ### Patch Changes
 

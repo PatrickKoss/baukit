@@ -2,13 +2,11 @@
 
 ## [Unreleased]
 
-- Restore analytics consent after SDK reset so later events still reach PostHog.
-
-- Publish the TypeScript sources referenced by JavaScript and declaration maps. Check source paths in the packed archive.
-
-- Verify the adapter against posthog-js 1.435.8.
+- Move shipped notes out of Unreleased into their release sections.
 
 ## 0.9.0
+
+- Restore analytics consent after SDK reset so later events still reach PostHog.
 
 ### Minor Changes
 
@@ -40,6 +38,8 @@
 
 ## 0.7.3
 
+- Publish the TypeScript sources referenced by JavaScript and declaration maps. Check source paths in the packed archive.
+
 ### Patch Changes
 
 - Release the coordinated baukit 0.7.3 train.
@@ -63,6 +63,8 @@
   - @baukit/analytics-core@0.7.1
 
 ## 0.7.0
+
+- Verify the adapter against posthog-js 1.435.8.
 
 ### Minor Changes
 

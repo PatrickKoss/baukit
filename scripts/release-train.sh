@@ -77,6 +77,7 @@ if [[ "$actual_ts" != "$next" ]]; then
   done
 fi
 
+python3 scripts/release_packages.py --cut-changelogs "$next"
 python3 scripts/check-example-lockfiles.py --refresh
 
 TRAIN_VERSION="$next" perl -0pi -e \
@@ -93,9 +94,15 @@ TRAIN_VERSION="$next" perl -0pi -e \
 cargo update --manifest-path cli/Cargo.toml --workspace
 
 release_date=${RELEASE_DATE:-$(date -u +%F)}
-for changelog in rust/crates/*/CHANGELOG.md cli/CHANGELOG.md templates/common/CHANGELOG.md deploy/chart/baukit-app/CHANGELOG.md; do
+mapfile -t template_changelogs < <(python3 - <<'PYTHON'
+from pathlib import Path
+for path in sorted(Path("templates").rglob("CHANGELOG.md")):
+    print(path)
+PYTHON
+)
+for changelog in rust/crates/*/CHANGELOG.md cli/CHANGELOG.md "${template_changelogs[@]}" deploy/chart/baukit-app/CHANGELOG.md; do
   TRAIN_VERSION="$next" RELEASE_DATE="$release_date" perl -0pi -e \
-    's{## \[Unreleased\]\n\n}{"## [Unreleased]\n\n## [".$ENV{TRAIN_VERSION}."] - ".$ENV{RELEASE_DATE}."\n\n"}e' \
+    's{(## (?:\[Unreleased\]|Unreleased)\n\n)}{$1."## [".$ENV{TRAIN_VERSION}."] - ".$ENV{RELEASE_DATE}."\n\n"}e' \
     "$changelog"
 done
 
@@ -105,12 +112,13 @@ import re
 import sys
 
 changelogs = [*Path("rust/crates").glob("*/CHANGELOG.md"),
-              Path("cli/CHANGELOG.md"), Path("templates/common/CHANGELOG.md"),
+              Path("cli/CHANGELOG.md"), *Path("templates").rglob("CHANGELOG.md"),
+              *Path("typescript/packages").glob("*/CHANGELOG.md"),
               Path("deploy/chart/baukit-app/CHANGELOG.md")]
-heading = f"[{sys.argv[1]}] - "
 for changelog in changelogs:
+    heading = f"{sys.argv[1]}\n" if changelog.parts[0] == "typescript" else f"[{sys.argv[1]}] - "
     sections = re.split(r"^## ", changelog.read_text(), flags=re.MULTILINE)
-    unreleased = [section for section in sections if section.startswith("[Unreleased]\n")]
+    unreleased = [section for section in sections if section.startswith(("Unreleased\n", "[Unreleased]\n"))]
     if len(unreleased) != 1 or unreleased[0].split("\n", 1)[1].strip() or not any(
         section.startswith(heading) for section in sections
     ):

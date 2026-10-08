@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Place shipped authentication template notes under their release headings.
+
 {% if context.auth_oidc %}- Reconcile Keycloak client scopes and their bindings. Repair scope protocol mappers through their Admin API endpoints.
 
 {% endif %}{% if context.mcp or context.mobile %}{% if context.mcp %}- Breaking: MCP tool adapters receive a request cancellation token and stop pending item reads when cancelled.

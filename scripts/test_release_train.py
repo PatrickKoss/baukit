@@ -11,6 +11,8 @@ import tomllib
 import unittest
 from pathlib import Path
 
+from release_packages import cut_package_changelog
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/release-train.sh"
 
@@ -178,7 +180,61 @@ class ReleaseTrainCorepackTest(unittest.TestCase):
         path.chmod(0o755)
 
 
+class ReleasePackageChangelogTest(unittest.TestCase):
+    def test_cuts_notes_when_changesets_prepends_the_new_release(self):
+        source = "# Package\n\n## 0.9.1\n\n- Generated release note.\n\n## [Unreleased]\n\n- Product fix.\n\n## 0.9.0\n\n- Previous release.\n"
+        result = cut_package_changelog(source, "0.9.1")
+        pending, history = result.split("## 0.9.1", 1)
+        self.assertEqual(pending, "# Package\n\n## [Unreleased]\n\n")
+        release, previous = history.split("## 0.9.0", 1)
+        self.assertIn("- Product fix.", release)
+        self.assertIn("- Generated release note.", release)
+        self.assertNotIn("Product fix", previous)
+        self.assertIn("- Previous release.", previous)
+
+    def test_adds_an_empty_unreleased_section_for_a_new_package(self):
+        source = "# Package\n\n## 0.9.1\n\n- First release.\n"
+        self.assertEqual(cut_package_changelog(source, "0.9.1"),
+                         "# Package\n\n## Unreleased\n\n## 0.9.1\n\n- First release.\n")
+
+    def test_rejects_a_missing_or_duplicate_new_release(self):
+        for source in ("## Unreleased\n\n- Product fix.\n\n## 0.9.0\n\n- Old fix.\n",
+                       "## Unreleased\n\n- Product fix.\n\n## 0.9.1\n\n- One release.\n\n## 0.9.1\n\n- Duplicate release.\n"):
+            with self.subTest(source=source):
+                with self.assertRaisesRegex(ValueError, "missing the new release heading"):
+                    cut_package_changelog(source, "0.9.1")
+
+
 class ReleaseTrainFilesTest(unittest.TestCase):
+    def test_shipped_package_notes_are_in_their_first_release_sections(self):
+        navigation = (ROOT / "typescript/packages/navigation/CHANGELOG.md").read_text()
+        sections = re.split(r"^## ", navigation, flags=re.MULTILINE)
+        pending = [section for section in sections if section.startswith("[Unreleased]\n")]
+        self.assertEqual(len(pending), 1)
+        self.assertIn("Remove web menus before restoring focus", pending[0])
+        shipped = next(section for section in sections if section.startswith("0.8.0\n"))
+        self.assertIn("Run native menu callbacks after dismissal", shipped)
+        self.assertNotIn("Run native menu callbacks after dismissal", pending[0])
+        for path in (ROOT / "typescript/packages").glob("*/CHANGELOG.md"):
+            with self.subTest(path=path):
+                sections = re.split(r"^## ", path.read_text(), flags=re.MULTILINE)
+                pending = [section for section in sections
+                           if section.startswith(("Unreleased\n", "[Unreleased]\n"))]
+                self.assertEqual(len(pending), 1)
+                self.assertNotIn("Publish the TypeScript sources referenced", pending[0])
+
+    def test_authentication_template_notes_have_release_boundaries(self):
+        for relative in ("templates/web/__auth__/web/CHANGELOG.md",
+                         "templates/mobile/__auth__/mobile/CHANGELOG.md"):
+            source = (ROOT / relative).read_text()
+            pending, history = source.split("## [0.9.0] - 2026-10-07", 1)
+            self.assertNotIn("Select the {{ context.auth_provider }}", pending)
+            self.assertIn("Select the {{ context.auth_provider }}", history)
+        source = (ROOT / "templates/backend/__auth__/keycloak/CHANGELOG.md").read_text()
+        pending, history = source.split("## [0.7.3] - 2026-10-05", 1)
+        self.assertNotIn("Reconcile confidential backend clients", pending)
+        self.assertIn("Reconcile confidential backend clients", history)
+
     def test_common_template_records_shipped_entries_and_pending_fixes(self):
         source = (ROOT / "templates/common/CHANGELOG.md").read_text()
         pending, history = source.split("## [0.7.0] - 2026-10-04", 1)
@@ -239,6 +295,18 @@ class ReleaseTrainFilesTest(unittest.TestCase):
         self.check_patch_train("## [Unreleased]\n\n- Pending template fix.\n", False,
                                {"deploy/chart/baukit-app/CHANGELOG.md": "## [Unreleased]\n- Pending chart fix.\n"})
 
+    def test_patch_train_rejects_uncut_package_entries(self):
+        self.check_patch_train("## [Unreleased]\n\n- Pending template fix.\n", False,
+                               {"typescript/packages/analytics-core/CHANGELOG.md": "## Unreleased\n- Pending package fix.\n"})
+
+    def test_patch_train_rejects_duplicate_package_unreleased_sections(self):
+        self.check_patch_train("## [Unreleased]\n\n- Pending template fix.\n", False,
+                               {"typescript/packages/analytics-core/CHANGELOG.md": "## Unreleased\n\n- One fix.\n\n## [Unreleased]\n\n- Another fix.\n"})
+
+    def test_patch_train_rejects_uncut_authentication_template_entries(self):
+        self.check_patch_train("## [Unreleased]\n\n- Pending template fix.\n", False,
+                               {"templates/web/__auth__/web/CHANGELOG.md": "## Unreleased\n- Pending web fix.\n"})
+
     def test_patch_train_cuts_template_changelog_and_updates_cli_tags(self):
         self.check_patch_train("## [Unreleased]\n\n- Pending template fix.\n", True)
 
@@ -258,6 +326,8 @@ class ReleaseTrainFilesTest(unittest.TestCase):
                 "cli/Cargo.toml": '[package]\nname = "baukit-cli"\nversion = "0.7.0"\n',
                 "rust/crates/baukit-core/CHANGELOG.md": "## [Unreleased]\n\n- Pending crate fix.\n",
                 "typescript/packages/analytics-core/package.json": json.dumps({"name": "@baukit/analytics-core", "version": "0.7.1"}),
+                "typescript/packages/analytics-core/CHANGELOG.md": "# @baukit/analytics-core\n\n## Unreleased\n\n- Pending package fix.\n\n## 0.7.0\n\n- Previous package fix.\n",
+                "templates/web/__auth__/web/CHANGELOG.md": "## Unreleased\n\n- Pending web fix.\n",
                 "deploy/chart/baukit-app/Chart.yaml": 'version: 0.7.0\nappVersion: "0.7.0"\n',
                 "deploy/chart/baukit-app/CHANGELOG.md": "## [Unreleased]\n\n- Pending chart fix.\n",
                 "deploy/observability/Chart.yaml": 'version: 0.7.0\nappVersion: "0.7.0"\n',
@@ -268,7 +338,9 @@ class ReleaseTrainFilesTest(unittest.TestCase):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(source)
             for relative, source in (changelog_overrides or {}).items():
-                (root / relative).write_text(source)
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(source)
             (root / "typescript/.changeset").mkdir()
             (root / "templates/common/CHANGELOG.md").write_text(changelog + "\n## [0.7.0] - 2026-10-04\n\n- Previous fix.\n\n## [0.6.0] - 2026-10-02\n")
             before = (root / "templates/common/CHANGELOG.md").read_text()
@@ -280,7 +352,16 @@ class ReleaseTrainFilesTest(unittest.TestCase):
             subprocess.run([real_git, "init", "--quiet", str(root)], check=True)
             subprocess.run([real_git, "add", "."], cwd=root, check=True)
             executable(binaries / "git", '#!/bin/sh\ncase "$1" in\nrev-parse) printf "%s\\n" "$TEST_REPO_ROOT";;\nstatus) exit 0;;\n*) exec ' + shlex.quote(real_git) + ' "$@";;\nesac\n')
-            executable(binaries / "corepack", "#!/bin/sh\nexit 0\n")
+            executable(binaries / "corepack", """#!/bin/sh
+python3 - <<'PYTHON'
+from pathlib import Path
+path = Path("packages/analytics-core/CHANGELOG.md")
+source = path.read_text()
+heading = "## 0.7.1\\n\\n- Release the coordinated train.\\n\\n"
+source = source.replace("## ", heading + "## ", 1)
+path.write_text(source)
+PYTHON
+""")
             executable(binaries / "cargo", "#!/bin/sh\nexit 0\n")
             executable(binaries / "node", "#!/bin/sh\nprintf '0.7.1\\n'\n")
             executable(root / "scripts/check-version-coherence.py", "#!/bin/sh\nexit 0\n")
@@ -300,6 +381,10 @@ class ReleaseTrainFilesTest(unittest.TestCase):
             self.assertEqual(cli_changelog, "## [Unreleased]\n\n## [0.7.1] - 2026-10-05\n\n- Pending CLI fix.\n\n## [0.7.0] - 2026-10-04\n\n- Shipped CLI fix.\n")
             chart_changelog = (root / "deploy/chart/baukit-app/CHANGELOG.md").read_text()
             self.assertEqual(chart_changelog, "## [Unreleased]\n\n## [0.7.1] - 2026-10-05\n\n- Pending chart fix.\n")
+            package_changelog = (root / "typescript/packages/analytics-core/CHANGELOG.md").read_text()
+            self.assertEqual(package_changelog, "# @baukit/analytics-core\n\n## Unreleased\n\n## 0.7.1\n\n- Pending package fix.\n\n- Release the coordinated train.\n\n## 0.7.0\n\n- Previous package fix.\n")
+            self.assertEqual((root / "templates/web/__auth__/web/CHANGELOG.md").read_text(),
+                             "## Unreleased\n\n## [0.7.1] - 2026-10-05\n\n- Pending web fix.\n")
             self.assertEqual(after.count("## [0.7.0]"), 1)
             self.assertEqual(after.count("## [0.6.0]"), 1)
             self.assertIn("--tag v0.7.1 --locked baukit-cli", (root / "README.md").read_text())
@@ -334,6 +419,12 @@ class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
                 root, environment, "bash", "scripts/release-train.sh", "patch"
             )
             self.assertIn("Prepared v0.7.2", result.stdout)
+            for path in (root / "typescript/packages").glob("*/CHANGELOG.md"):
+                source = path.read_text()
+                pending, history = source.split("## 0.7.2", 1)
+                self.assertIn("## Unreleased\n\n", pending)
+                self.assertNotIn("Pending package fix", pending)
+                self.assertIn("Pending package fix", history)
             for example in ("examples/first", "examples/nested/second"):
                 lockfile = root / example / "pnpm-lock.yaml"
                 self.assertIn("^0.7.2", lockfile.read_text())
@@ -420,6 +511,9 @@ class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
             manifest.update({"license": "MIT", "publishConfig": {"access": "public"}})
             files[f"typescript/packages/{name}/package.json"] = json.dumps(
                 manifest, indent=2
+            )
+            files[f"typescript/packages/{name}/CHANGELOG.md"] = (
+                f"# @baukit/{name}\n\n## Unreleased\n\n- Pending package fix.\n"
             )
         files["typescript/package.json"] = json.dumps({
             "name": "release-test", "private": True, "packageManager": package_manager,

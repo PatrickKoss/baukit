@@ -2,13 +2,11 @@
 
 ## [Unreleased]
 
-- Preserve analytics consent across SDK reset and logout. Keep consent withdrawn when it changes during an asynchronous reset.
-
-- Publish the TypeScript sources referenced by JavaScript and declaration maps. Check source paths in the packed archive.
-
-- Verify consent withdrawal and storage against posthog-react-native 4.78.4.
+- Move shipped notes out of Unreleased into their release sections.
 
 ## 0.9.0
+
+- Preserve analytics consent across SDK reset and logout. Keep consent withdrawn when it changes during an asynchronous reset.
 
 ### Minor Changes
 
@@ -40,6 +38,8 @@
 
 ## 0.7.3
 
+- Publish the TypeScript sources referenced by JavaScript and declaration maps. Check source paths in the packed archive.
+
 ### Patch Changes
 
 - Release the coordinated baukit 0.7.3 train.
@@ -63,6 +63,8 @@
   - @baukit/analytics-core@0.7.1
 
 ## 0.7.0
+
+- Verify consent withdrawal and storage against posthog-react-native 4.78.4.
 
 ### Minor Changes
 

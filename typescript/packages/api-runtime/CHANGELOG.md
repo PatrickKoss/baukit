@@ -2,13 +2,7 @@
 
 ## [Unreleased]
 
-- Publish the TypeScript sources referenced by JavaScript and declaration maps. Check source paths in the packed archive.
-
-- Report failed erasure replays with a typed operation failure and retain the key for reconciliation after repair. Test the shared Rust wire receipts.
-
-- Remove durable erasure keys after definitive receipts. Preserve committed receipts when local key removal fails.
-
-- Add the `/erasure` client with durable idempotency keys, typed receipts, fenced-subject handling, and bounded, abortable status polling.
+- Move shipped notes out of Unreleased into their release sections.
 
 ## 0.9.0
 
@@ -30,6 +24,8 @@
 
 ## 0.7.3
 
+- Publish the TypeScript sources referenced by JavaScript and declaration maps. Check source paths in the packed archive.
+
 ### Patch Changes
 
 - Release the coordinated baukit 0.7.3 train.
@@ -42,11 +38,16 @@
 
 ## 0.7.1
 
+- Report failed erasure replays with a typed operation failure and retain the key for reconciliation after repair. Test the shared Rust wire receipts.
+
 ### Patch Changes
 
 - Release the coordinated baukit 0.7.1 train.
 
 ## 0.7.0
+
+- Remove durable erasure keys after definitive receipts. Preserve committed receipts when local key removal fails.
+- Add the `/erasure` client with durable idempotency keys, typed receipts, fenced-subject handling, and bounded, abortable status polling.
 
 ### Minor Changes
 

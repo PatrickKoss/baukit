@@ -2,10 +2,7 @@
 
 ## Unreleased
 
-- Publish the TypeScript sources referenced by JavaScript and declaration maps. Check source paths in the packed archive.
-
-- Document pending wire receipts and local fence confirmations separately. Test pending, completed and failed receipts with the shared Rust vectors.
-- Report `pending` after server profile erasure commits but sign-in account deletion is still finishing. Keep local cleanup and sign-out in the committed flow. A pending receipt may have a null operation ID when a `profile_erased` fence confirms the commit without a receipt.
+- Move shipped notes out of Unreleased into their release sections.
 
 ## 0.9.0
 
@@ -27,6 +24,9 @@
 
 ## 0.7.3
 
+- Publish the TypeScript sources referenced by JavaScript and declaration maps. Check source paths in the packed archive.
+- Document pending wire receipts and local fence confirmations separately. Test pending, completed and failed receipts with the shared Rust vectors.
+
 ### Patch Changes
 
 - Release the coordinated baukit 0.7.3 train.
@@ -44,6 +44,8 @@
 - Release the coordinated baukit 0.7.1 train.
 
 ## 0.7.0
+
+- Report `pending` after server profile erasure commits but sign-in account deletion is still finishing. Keep local cleanup and sign-out in the committed flow. A pending receipt may have a null operation ID when a `profile_erased` fence confirms the commit without a receipt.
 
 ### Minor Changes
 

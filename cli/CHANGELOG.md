@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Cut and validate package and authentication template changelogs during release preparation.
+
 - Breaking: Generated MCP tool adapters receive request cancellation tokens and stop pending item reads when cancelled.
 - Reconcile generated Keycloak client scopes, their default and optional bindings, and scope audience mappers through the Admin API.
 - Follow MCP source modules and check router composition and configuration validation across backend crates. Accept chart-managed routes in disabled deployment values.

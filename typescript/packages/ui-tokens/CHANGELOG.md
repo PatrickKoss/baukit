@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Publish the TypeScript sources referenced by JavaScript and declaration maps. Check source paths in the packed archive.
+- Move shipped notes out of Unreleased into their release sections.
 
 ## 0.9.0
 
@@ -23,6 +23,8 @@
 - Release the coordinated baukit 0.7.4 train.
 
 ## 0.7.3
+
+- Publish the TypeScript sources referenced by JavaScript and declaration maps. Check source paths in the packed archive.
 
 ### Patch Changes
 
