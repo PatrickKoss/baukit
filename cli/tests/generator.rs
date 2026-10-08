@@ -3000,6 +3000,137 @@ fn doctor_accepts_product_review_identity_layouts() -> anyhow::Result<()> {
 }
 
 #[test]
+fn doctor_scopes_backend_identity_to_its_workspace() -> anyhow::Result<()> {
+    for backend in ["backend", "server"] {
+        let parent = tempfile::tempdir()?;
+        let root = oidc_product_with_agent(parent.path(), backend)?;
+        let findings = doctor(&root)?;
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding == "consumed product identities are consistent"),
+            "{findings:?}"
+        );
+        assert!(
+            findings.iter().any(|finding| finding
+                == "Cargo workspace `agent/Cargo.toml` and dependency manifests parse"),
+            "{findings:?}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn doctor_rejects_backend_identity_and_admin_realm_mismatches() -> anyhow::Result<()> {
+    for backend in ["backend", "server"] {
+        let parent = tempfile::tempdir()?;
+        let root = oidc_product_with_agent(parent.path(), backend)?;
+        doctor(&root)?;
+        let config_path = format!("{backend}/crates/finops-bin/src/config.rs");
+        let config = root.join(&config_path);
+        let original = fs::read_to_string(&config)?;
+        let changed = original.replace(
+            "const PRODUCT: &str = \"finops\";",
+            "const PRODUCT: &str = \"wrong-product\";",
+        );
+        assert_ne!(changed, original);
+        fs::write(&config, changed)?;
+        let error = doctor(&root)
+            .expect_err("backend config identities must match the application")
+            .to_string();
+        assert!(
+            error.contains(&format!(
+                "product identity `PRODUCT` consumed by `{config_path}` does not match application name `finops`"
+            )),
+            "{error}"
+        );
+        assert!(
+            error.contains("backend config consumers use inconsistent product identities"),
+            "{error}"
+        );
+        fs::write(config, original)?;
+        let library_path = format!("{backend}/crates/finops-bin/src/lib.rs");
+        let library = root.join(&library_path);
+        let original = fs::read_to_string(&library)?;
+        let changed = original.replace(
+            "identity_admin_realm: PRODUCT.to_owned()",
+            "identity_admin_realm: \"wrong-realm\".to_owned()",
+        );
+        assert_ne!(changed, original);
+        fs::write(library, changed)?;
+        let error = doctor(&root)
+            .expect_err("backend admin realms must match the selected Keycloak realm")
+            .to_string();
+        assert!(
+            error.contains(&format!(
+                "OIDC admin realm `\"wrong-realm\"` consumed by `{library_path}` does not match selected Keycloak realm `finops`"
+            )),
+            "{error}"
+        );
+    }
+    Ok(())
+}
+
+fn oidc_product_with_agent(parent: &Path, backend: &str) -> anyhow::Result<PathBuf> {
+    let mut local = options(parent, "finops");
+    local.auth = Some(AuthProvider::Oidc);
+    let root = generate_new(&local)?;
+    let mut manifest = baukit_cli::read_manifest(&root)?;
+    if backend != "backend" {
+        fs::rename(root.join("backend"), root.join(backend))?;
+        manifest.openapi.schema = manifest
+            .openapi
+            .schema
+            .replace("backend/", &format!("{backend}/"));
+        manifest.doctor.backend_manifest = Some(format!("{backend}/Cargo.toml"));
+        manifest.doctor.backend_dockerfile = Some(format!("{backend}/Dockerfile"));
+        manifest.doctor.backend_dockerignore = Some(format!("{backend}/.dockerignore"));
+        manifest.doctor.migrations = Some(format!("{backend}/migrations"));
+        fs::write(root.join("baukit.toml"), toml::to_string(&manifest)?)?;
+    }
+    let baukit_cli::BaukitDependency::Registry { version } = manifest.dependencies.baukit else {
+        anyhow::bail!("fixture must use registry dependencies");
+    };
+    fs::create_dir_all(root.join("agent/crates/finops-agent/src"))?;
+    fs::write(
+        root.join("agent/Cargo.toml"),
+        "[workspace]\nresolver = \"2\"\nmembers = [\"crates/*\"]\n",
+    )?;
+    fs::write(
+        root.join("agent/crates/finops-agent/Cargo.toml"),
+        format!(
+            "[package]\nname = \"finops-agent\"\nversion = \"0.1.0\"\nedition = \"2024\"\n[dependencies]\nbaukit-config = \"={version}\"\n"
+        ),
+    )?;
+    fs::write(
+        root.join("agent/crates/finops-agent/src/lib.rs"),
+        "pub mod config;\n",
+    )?;
+    fs::write(
+        root.join("agent/crates/finops-agent/src/config.rs"),
+        r#"use baukit_config::{ConfigLoader, Environment, LoadError};
+
+pub fn config_loader(environment: Environment) -> Result<ConfigLoader, LoadError> {
+    ConfigLoader::new("finops_agent", environment)
+}
+
+pub struct AgentAuth {
+    pub identity_admin_realm: String,
+}
+
+impl Default for AgentAuth {
+    fn default() -> Self {
+        Self {
+            identity_admin_realm: "agent-realm".to_owned(),
+        }
+    }
+}
+"#,
+    )?;
+    Ok(root)
+}
+
+#[test]
 fn doctor_accepts_runtime_telemetry_identity_with_a_shared_loader() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "runtime-identity");

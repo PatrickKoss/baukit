@@ -261,9 +261,17 @@ pub(super) struct RustCrate {
 }
 
 pub(super) fn rust_crates(root: &Path, manifest: &Manifest) -> Result<Vec<RustCrate>> {
+    workspace_crates(root, &cargo_workspaces(root, manifest)?)
+}
+
+pub(super) fn backend_crates(root: &Path, manifest: &Manifest) -> Result<Vec<RustCrate>> {
+    workspace_crates(root, &[backend_manifest(root, manifest)?])
+}
+
+fn workspace_crates(root: &Path, workspaces: &[PathBuf]) -> Result<Vec<RustCrate>> {
     let mut manifests = Vec::new();
-    for workspace_path in cargo_workspaces(root, manifest)? {
-        manifests.extend(workspace_members(root, &workspace_path)?);
+    for workspace_path in workspaces {
+        manifests.extend(workspace_members(root, workspace_path)?);
     }
     manifests.sort();
     manifests.dedup();

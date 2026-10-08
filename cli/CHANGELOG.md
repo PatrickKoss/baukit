@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Scope backend product identity and OIDC admin realm checks to the backend Cargo workspace, including doctor path overrides.
+
 ## [0.10.4] - 2026-10-08
 
 - Read every document in pnpm 12 lockfiles when checking Baukit registry pins.

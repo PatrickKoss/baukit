@@ -303,7 +303,7 @@ pub(super) fn validate_admin_realm(
     realm: &str,
     failures: &mut Vec<String>,
 ) -> Result<()> {
-    for krate in crate::doctor_layout::rust_crates(root, manifest)? {
+    for krate in crate::doctor_layout::backend_crates(root, manifest)? {
         for path in krate.sources {
             let source = fs::read_to_string(&path)?;
             let source = uncommented(source.split("#[cfg(test)]").next().unwrap_or(&source), true);
@@ -402,7 +402,7 @@ fn rust_identity(
     if !manifest.capabilities.backend {
         return Ok((0, BTreeSet::new()));
     }
-    let crates = crate::doctor_layout::rust_crates(root, manifest)?;
+    let crates = crate::doctor_layout::backend_crates(root, manifest)?;
     let mut names = BTreeSet::new();
     let mut count = 0;
     for krate in crates {
