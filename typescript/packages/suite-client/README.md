@@ -27,18 +27,21 @@ const client = new SuiteClient(transport);
 const connectedApps = new ConnectedApps(client, session);
 await connectedApps.load();
 const result = await connectedApps.connect('beta');
-if (result.type === 'ready' && result.completed) {
+if ((result.type === 'ready' || result.type === 'failed') && result.completed) {
   if (navigation.claimSuiteConnectionAnnouncement(result.completed.requestId)) {
     announceConnected(result.completed.peerApp);
   }
 }
 ```
 
-A successful `connect()` refreshes the lists and returns a ready state with
-`completed: { peerApp, requestId }`. This additive field keeps the completed
-request id with the list state. A later `load()` clears it. Share one
-`SuiteNavigationStore` between this caller and `SuiteLinkedMachine`; its
-announcement guard deduplicates the native auth-session result and redirect
+A successful connection refreshes the lists. `connect()` returns
+`completed: { peerApp, requestId }` on the `ready` state, or on the `failed` state
+if that refresh fails. A failed state with `completed` means the server connected
+the apps; its `code` describes the refresh error. Handle that error separately
+from the connection announcement. A later `load()` clears `completed`.
+
+Share one `SuiteNavigationStore` between this caller and `SuiteLinkedMachine`.
+Its announcement guard deduplicates the native auth-session result and redirect
 notice by request id. The session redeems the code once even if both paths fire.
 
 ## Pages and native intents

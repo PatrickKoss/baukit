@@ -459,10 +459,17 @@ describe('authorize state', () => {
   });
 });
 describe('connected apps and linked page', () => {
-  it.each(['native_first', 'redirect_first'] as const)(
-    'returns the completed request and announces once when %s',
-    async (order) => {
+  it.each([
+    { order: 'native_first', refreshFails: false },
+    { order: 'redirect_first', refreshFails: false },
+    { order: 'native_first', refreshFails: true },
+    { order: 'redirect_first', refreshFails: true },
+  ] as const)(
+    'returns the completed request and announces once when $order and refreshFails=$refreshFails',
+    async ({ order, refreshFails }) => {
       const f = sessionFixture();
+      const list = vi.spyOn(f.client, 'list');
+      if (refreshFails) list.mockRejectedValue(new SuiteFlowError('suite_peer_unreachable'));
       const connected = new ConnectedApps(f.client, f.session);
       const navigation = createSuiteNavigationStore(() => 'notice');
       const linked = new SuiteLinkedMachine({
@@ -480,12 +487,12 @@ describe('connected apps and linked page', () => {
       const claimNative = async () => {
         const state = await native;
         expect(state).toEqual({
-          type: 'ready',
-          peers: [],
-          links: [],
+          ...(refreshFails
+            ? { type: 'failed', code: 'suite_peer_unreachable' }
+            : { type: 'ready', peers: [], links: [] }),
           completed: { peerApp: 'beta', requestId: 'request' },
         });
-        if (state.type === 'ready' && state.completed) {
+        if ((state.type === 'ready' || state.type === 'failed') && state.completed) {
           claims.push(navigation.claimSuiteConnectionAnnouncement(state.completed.requestId));
         }
       };
@@ -505,6 +512,7 @@ describe('connected apps and linked page', () => {
       }
       expect(claims).toEqual([true, false]);
       expect(f.request.mock.calls.filter(([, path]) => path.endsWith('/complete'))).toHaveLength(1);
+      list.mockRestore();
       expect(await connected.load()).toEqual({ type: 'ready', peers: [], links: [] });
     },
   );

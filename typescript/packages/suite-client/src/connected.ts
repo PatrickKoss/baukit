@@ -10,7 +10,11 @@ export type ConnectedAppsState =
     }
   | { readonly type: 'connecting'; readonly peerApp: string }
   | { readonly type: 'denied' | 'cancelled' }
-  | { readonly type: 'failed'; readonly code: string };
+  | {
+      readonly type: 'failed';
+      readonly code: string;
+      readonly completed?: { readonly peerApp: string; readonly requestId: string };
+    };
 export function suiteConnectionState(
   link: SuiteLink | undefined,
 ): 'not_connected' | 'connected' | 'needs_attention' | 'disabled' {
@@ -47,7 +51,7 @@ export class ConnectedApps {
       const result = await this.session.connect(peerApp);
       if (result.type === 'connected') {
         const loaded = await this.load();
-        if (loaded.type === 'ready') {
+        if (loaded.type === 'ready' || loaded.type === 'failed') {
           this.#state = {
             ...loaded,
             completed: { peerApp, requestId: result.requestId },

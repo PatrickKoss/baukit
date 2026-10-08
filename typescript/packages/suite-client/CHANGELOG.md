@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep the peer and completed request id on the failed state when a connection succeeds but its list refresh fails. Clear the completion on a later list load.
+
 ## 0.10.3
 
 - Keep the peer and completed request id on the ready state returned by `ConnectedApps.connect`. Clear that completion on a later list load.
