@@ -56,6 +56,9 @@ share bounds with typed parsers. Keep `InvalidData` for corrupt stored data.
 Override `SuiteEventApplier::lock_owner(&mut PgConnection, owner)` when product
 writers lock an owner row. Ingest calls this hook after its suite advisory lock
 and before locking the link. For example, SLS uses `FOR NO KEY UPDATE` on `users`.
+Lock deleted and deactivated owners too and check that state in `apply`.
+A filter in `lock_owner` turns connection tests and duplicate redeliveries
+for those owners into a permanent 404 `suite_rejected`.
 The default hook does nothing, so existing appliers compile unchanged.
 See the [crate lock order](https://docs.rs/baukit-suite/latest/baukit_suite/#postgresql-lock-order)
 when implementing transaction ports.

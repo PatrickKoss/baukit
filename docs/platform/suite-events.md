@@ -203,7 +203,10 @@ a product prefix or labels.
 
    Override the default `SuiteEventApplier::lock_owner(connection, owner)`
    hook when product writers lock the owner row. SLS uses
-   `SELECT id FROM users WHERE id=$1 FOR NO KEY UPDATE`. Ingest calls this hook
+   `SELECT id FROM users WHERE id=$1 FOR NO KEY UPDATE`. Lock deleted and
+   deactivated owners too and check that state in `apply`. A filter in
+   `lock_owner` turns connection tests and duplicate redeliveries for those
+   owners into a permanent 404 `suite_rejected`. Ingest calls this hook
    after the suite owner advisory lock and before it locks the link. `apply`
    receives the same transaction with its inbox row already inserted.
    Follow the [crate lock order](https://docs.rs/baukit-suite/latest/baukit_suite/#postgresql-lock-order). Do all reward,
