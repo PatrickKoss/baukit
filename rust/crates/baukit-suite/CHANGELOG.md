@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-10-08
+
 - Keep hourly cleanup alive after storage errors. Log each failure and count it in `suite_cleanup_failures_total`.
 - Guard cleanup across replicas and lock affected owners before links and jobs. Add `003_suite_lock_order.sql` to record failed jobs without locking links, then account for failures before health reads and writes.
 - Add a default `SuiteEventApplier::lock_owner` hook before ingest locks a link.

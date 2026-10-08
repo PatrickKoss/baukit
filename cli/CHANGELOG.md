@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-10-08
+
 - Check every Baukit registry pin in Cargo manifests, Cargo lockfiles, package manifests and pnpm lockfiles. Report mismatches with their file paths.
 - Check all product Cargo workspaces, including separate agent and fuzz workspaces.
 - Pin Android checks to Temurin 25.0.4.1+1. Probe PostgreSQL health over TCP and launch Android QA through MainActivity.

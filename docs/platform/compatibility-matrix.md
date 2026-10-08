@@ -5,21 +5,9 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
-Unreleased changes pin every Android gate to Temurin 25.0.4.1+1. Doctor checks actual Baukit pins and every product Cargo workspace. Generated products probe PostgreSQL over TCP and launch Android QA through MainActivity.
-
-Last verified release train: `v0.10.2` (the npm publish check reads npm 12 pack output, which stopped the `v0.10.1` npm publish after its crates went out; `baukit-suite` builds its domain
-contracts without database, Tokio or HTTP dependencies and gates runtime parts
-behind `postgres`, `runtime`, `delivery`, `http` and `jobs`; `@baukit/suite-client`
-declares sibling packages as versioned peers, and publishing rejects packed
-`workspace:`, `link:` and `file:` specifiers; the MCP docs explain annotation
-hints). `v0.10.0` added the suite crate and package, MCP annotations,
-cancellation and server identity, Keycloak scope reconciliation and the shared
-backend config loader. The Linux gates for this patch passed locally on
-2026-10-08: `make ci`, every Rust test with `--include-ignored`, each
-`baukit-suite` feature build, packed npm dependency checks, CLI snapshot tests,
-version coherence, metric names, cargo deny, and the Rust 1.95 MSRV check. The
-iOS simulator gate requires macOS and remains a release-host check rather than
-a Linux result.
+Last verified release train: `v0.10.3` (every Android gate uses Temurin 25.0.4.1+1; doctor checks each Baukit pin and every product Cargo workspace;
+generated products probe PostgreSQL over TCP and launch Android QA through MainActivity; `baukit-suite` serializes cleanup across replicas, follows one
+owner, link, job lock order and returns 422 for rejected payloads; `ConnectedApps` keeps the completed request id).
 
 ## Toolchain
 

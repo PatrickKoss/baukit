@@ -2,8 +2,17 @@
 
 ## [Unreleased]
 
+## 0.10.3
+
 - Keep the peer and completed request id on the ready state returned by `ConnectedApps.connect`. Clear that completion on a later list load.
 - Test one code redemption and one announcement when native completion and the redirect handler both fire.
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.3 train.
+- Updated dependencies
+  - @baukit/integrations-client@0.10.3
+  - @baukit/localization-core@0.10.3
 
 ## 0.10.2
 

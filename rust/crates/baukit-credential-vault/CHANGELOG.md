@@ -4,6 +4,8 @@ All notable changes to `baukit-credential-vault` are documented here.
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-10-08
+
 ## [0.10.2] - 2026-10-08
 
 ## [0.10.1] - 2026-10-08
