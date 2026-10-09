@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.8] - 2026-10-09
+
 {% if context.web %}- Wait for overlay triggers to be enabled before focusing them in the generated keyboard test.
 
 {% endif %}{% if context.backend %}- Build the backend image with BuildKit cache mounts for the cargo registry and `target/`. Image layers now hold only the binaries, not a full release `target/` per build.

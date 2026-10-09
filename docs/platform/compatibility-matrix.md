@@ -5,9 +5,9 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
-Last verified release train: `v0.10.7` (suite appliers report a resettable owner quota with
-`SuiteStoreError::QuotaExceeded` and inbound answers 429 with `Retry-After`; generated Android QA keeps
-health events and ANR summaries in `.qa/android-health.log`).
+Last verified release train: `v0.10.8` (generated backend images build with BuildKit cache mounts
+for the cargo registry and `target/`, so image layers hold only the binaries; the generated keyboard
+test waits for overlay triggers to be enabled before focusing them).
 
 ## Toolchain
 
