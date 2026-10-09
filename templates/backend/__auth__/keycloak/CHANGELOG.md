@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.5] - 2026-10-08
+
 ## [0.10.4] - 2026-10-08
 
 - Reconcile MCP protocol mappers and callback URIs exactly. Remove stale audiences and preserve callback order returned by Keycloak.

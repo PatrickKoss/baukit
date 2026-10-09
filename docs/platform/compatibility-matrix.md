@@ -5,9 +5,8 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
-Last verified release train: `v0.10.4` (doctor reads every document of pnpm 12 lockfiles and scans MCP code after test modules; Keycloak
-reconciliation removes stale MCP audience mappers and keeps reordered redirect URIs; `ConnectedApps` keeps the completed request id when the
-list refresh after a connect fails).
+Last verified release train: `v0.10.5` (doctor checks backend product identities and the OIDC admin realm only in the backend
+Cargo workspace, so separate services such as agents keep their own configuration names).
 
 ## Toolchain
 

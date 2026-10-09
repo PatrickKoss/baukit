@@ -1,6 +1,6 @@
 {
   "name": "@baukit/auth-native",
-  "version": "0.10.4",
+  "version": "0.10.5",
   "description": "Provider-neutral native OIDC authorization-code client with S256 PKCE, secure-storage and browser-flow ports, and refresh rotation.",
   "license": "MIT",
   "author": "Patrick Koss",

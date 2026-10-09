@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## 0.10.5
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.5 train.
+- Updated dependencies
+  - @baukit/integrations-client@0.10.5
+  - @baukit/localization-core@0.10.5
+
 ## 0.10.4
 
 - Keep the peer and completed request id on the failed state when a connection succeeds but its list refresh fails. Clear the completion on a later list load.

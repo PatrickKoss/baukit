@@ -1,6 +1,6 @@
 {
   "name": "@baukit/auth-node",
-  "version": "0.10.4",
+  "version": "0.10.5",
   "description": "Node OIDC device authorization with S256 PKCE, refresh rotation, and a locked token cache.",
   "license": "MIT",
   "author": "Patrick Koss",
