@@ -22,6 +22,7 @@ test.describe('keyboard', () => {
       await stubApi(page, overlay.apiStubs ?? []);
       await openRoute(page, overlay.path, overlay.authenticated);
       const trigger = page.getByRole('button', { name: overlay.trigger, exact: true }).first();
+      await expect(trigger).toBeEnabled();
       await trigger.focus();
       await expect(trigger).toBeFocused();
       await page.keyboard.press('Enter');

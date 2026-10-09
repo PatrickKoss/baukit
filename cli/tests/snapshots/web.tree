@@ -1,7 +1,7 @@
 68b64f9727a5488896e2af08c5a3c086693fc7a76fb833fcdafd2f9ed489232a  .github/workflows/ci.yml
 206ba2e7c8fc3d957918747d35536ab2fa9bc72734f54fd59a2ab4f10fa8c302  .github/workflows/native.yml
 d036dec2befe4002c1129651c5f97687463be4a42013bce7a8cd8956699ae26e  AGENTS.md
-afff53ad0cf7af228cc7a2724ee045ae79f32c9c57f29181cb8d51ab4800dfca  CHANGELOG.md
+5af4f24156425d766776852a0fb22ba6f2e6370c9e0e1cb41cfe4c42211aa74f  CHANGELOG.md
 d036dec2befe4002c1129651c5f97687463be4a42013bce7a8cd8956699ae26e  CLAUDE.md
 ed75487a54e926ef3b8b8c37ca889acb0af420378c5c39972d8c95e5f0c7cad8  baukit.toml
 a699fd266bd64e483e44f881ab05689fade6ea9a202ab0bb9d799539e38eb362  docs/navigation-recipe.md
@@ -26,7 +26,7 @@ c6f6dc6c509e951e5985e2b664e16123ed5f4dd00df095f305a36455041de4f6  web/e2e/tests/
 9bc13ec34a3b849a8866dee4640b7c4d03875654479c678547ae5932ba43d36d  web/e2e/tests/qa-console.spec.ts
 0523b5d4d4c151888ebec24e620330f0ec9822f53e02040f2036f4348a662b9a  web/e2e/tests/qa-dialog-focus.spec.ts
 420c917a53ea8aaae166e63c7eaa63a654e069a5c6e10e447aac26004c237b35  web/e2e/tests/qa-geometry.spec.ts
-4f66aa4f7408efd1e6d8a56bc11344c9c194e94d1575d4dd6e1be271d39cb852  web/e2e/tests/qa-keyboard.spec.ts
+af98e019d3c8917f227c70d4bd75f8006979a2053d3d5909ae3e97ea818d68c1  web/e2e/tests/qa-keyboard.spec.ts
 0f46257e2f47a127727f9b15b079cde7fdb7dc1b5d47bf043291de1a04172d39  web/e2e/tests/qa-overlay-dismiss.spec.ts
 dca6c90351f207b8a9b2696b71a94f7fae88ceec3c9c785d7d3549a585d9cd4e  web/e2e/tests/qa-route-state.spec.ts
 1bd6358d38270ebe5e17c4b847fb1214a824cbe86e2dd6b5ac666f35a6804af5  web/e2e/tests/qa-scroll.spec.ts
