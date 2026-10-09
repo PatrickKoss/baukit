@@ -5,8 +5,9 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
-Last verified release train: `v0.10.6` (`ErasureService::new` takes an explicit `IdentityRetention`; `Retain` erases product data
-and keeps a shared identity provider account; generated authenticated backends without MCP are rustfmt clean).
+Last verified release train: `v0.10.7` (suite appliers report a resettable owner quota with
+`SuiteStoreError::QuotaExceeded` and inbound answers 429 with `Retry-After`; generated Android QA keeps
+health events and ANR summaries in `.qa/android-health.log`).
 
 ## Toolchain
 

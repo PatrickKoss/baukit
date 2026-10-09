@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.7] - 2026-10-09
+
 {% if context.mobile %}- Preserve Android QA health events and matching ANR summaries in stderr and `.qa/android-health.log`.
 
 {% endif %}## [0.10.6] - 2026-10-09

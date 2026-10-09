@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.7] - 2026-10-09
+
 - Breaking: Add `SuiteStoreError::QuotaExceeded { retry_after_seconds }` for applier quotas that reset. Exhaustive matches need a new arm. Inbound returns 429 `suite_quota_exceeded` with `Retry-After` of at least one second. Permanent owner caps keep returning `Capped`.
 
 ## [0.10.6] - 2026-10-09
