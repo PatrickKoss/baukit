@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.6] - 2026-10-09
+
 ## [0.10.5] - 2026-10-08
 
 - Scope backend product identity and OIDC admin realm checks to the backend Cargo workspace, including doctor path overrides.

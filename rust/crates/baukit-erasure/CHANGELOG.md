@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.6] - 2026-10-09
+
 - Breaking: Require an explicit `IdentityRetention` in `ErasureService::new`. Add `Retain` for shared provider accounts. Complete product erasure and its receipt in one transaction without a provider call or identity deletion job.
 
 ## [0.10.5] - 2026-10-08

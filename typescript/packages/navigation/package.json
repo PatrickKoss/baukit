@@ -1,6 +1,6 @@
 {
   "name": "@baukit/navigation",
-  "version": "0.10.5",
+  "version": "0.10.6",
   "description": "Shared collapsible navigation for React web and React Native products.",
   "license": "MIT",
   "homepage": "https://github.com/PatrickKoss/baukit#readme",
@@ -84,8 +84,8 @@
     "react": "^19.2.0",
     "react-native": "^0.86.3",
     "react-dom": "^19.2.0",
-    "@baukit/a11y-core": "^0.10.5",
-    "@baukit/ui-tokens": "^0.10.5"
+    "@baukit/a11y-core": "^0.10.6",
+    "@baukit/ui-tokens": "^0.10.6"
   },
   "peerDependenciesMeta": {
     "react-native": {

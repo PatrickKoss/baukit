@@ -5,8 +5,8 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
-Last verified release train: `v0.10.5` (doctor checks backend product identities and the OIDC admin realm only in the backend
-Cargo workspace, so separate services such as agents keep their own configuration names).
+Last verified release train: `v0.10.6` (`ErasureService::new` takes an explicit `IdentityRetention`; `Retain` erases product data
+and keeps a shared identity provider account; generated authenticated backends without MCP are rustfmt clean).
 
 ## Toolchain
 

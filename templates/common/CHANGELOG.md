@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.6] - 2026-10-09
+
 {% if context.backend and context.auth_enabled %}- Choose `IdentityRetention::Delete` explicitly when building the erasure service. Generated products still delete the provider account.
 - Fix Rust formatting in authenticated backends without MCP.
 
