@@ -111,8 +111,8 @@ Eigenruhe's strict tool envelope remains `{data,error}`. Successes return
 stale-revision details in the product adapter. Test both envelopes against
 its output schema. Preserve `eigenruhe://content/{id}` and
 `eigenruhe://programs/{id}` as templates named `content` and `program`,
-including titles, descriptions and `application/json`. Use `content:read`
-and the product's program read grant. Keep UUID validation and account checks
+including titles, descriptions and `application/json`. Both resources use
+Eigenruhe's `read` scope. Keep UUID validation and account checks
 in the read service; return the original URI with JSON text contents.
 
 Hebkit's `exercise` and `training-plan` templates remain
