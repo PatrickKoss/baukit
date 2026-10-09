@@ -53,6 +53,14 @@ The inbound HTTP route returns 422 `suite_payload_invalid`; delivery treats
 422 as a permanent rejection. Use `domain::validation` field validators to
 share bounds with typed parsers. Keep `InvalidData` for corrupt stored data.
 
+Return `Capped` when an owner reached a permanent cap. Ingest records the event
+and returns 200, so the sender stops. Return
+`SuiteStoreError::QuotaExceeded { retry_after_seconds }` for a quota that
+resets. The route returns 429 `suite_quota_exceeded` with `Retry-After` and
+rolls back the applier writes. Delivery retries 429 up to ten attempts and
+honors `Retry-After` up to 300 seconds. Only a job that exhausts its attempts
+counts toward the circuit.
+
 Override `SuiteEventApplier::lock_owner(&mut PgConnection, owner)` when product
 writers lock an owner row. Ingest calls this hook after its suite advisory lock
 and before locking the link. For example, SLS uses `FOR NO KEY UPDATE` on `users`.

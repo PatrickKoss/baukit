@@ -51,6 +51,8 @@ pub enum SuiteStoreError {
     EventIdConflict,
     #[error("suite replay was requested within the last 24 hours")]
     ReplayTooSoon(u64),
+    #[error("suite owner quota is exhausted for {retry_after_seconds} seconds")]
+    QuotaExceeded { retry_after_seconds: u64 },
     #[error("suite link is revoked")]
     LinkRevoked,
     #[error("suite link cannot deliver")]
@@ -378,6 +380,8 @@ pub trait SuiteEventApplier: Send + Sync {
         Ok(())
     }
     /// Return `SuiteStoreError::PayloadInvalid` for typed payload rejection.
+    /// Return `AppliedOutcomeStatus::Capped` for a permanent owner cap and
+    /// `SuiteStoreError::QuotaExceeded` for a quota that resets.
     async fn apply(
         &self,
         tx: &mut sqlx::PgConnection,

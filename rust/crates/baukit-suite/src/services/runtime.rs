@@ -75,6 +75,7 @@ impl SuiteServiceError {
             Self::Store(SuiteStoreError::CodeInvalid) => "suite_code_invalid",
             Self::Store(SuiteStoreError::EventIdConflict) => "suite_event_id_conflict",
             Self::Store(SuiteStoreError::ReplayTooSoon(_)) => "suite_replay_throttled",
+            Self::Store(SuiteStoreError::QuotaExceeded { .. }) => "suite_quota_exceeded",
             Self::Store(SuiteStoreError::InvalidData(_)) => "internal_error",
             Self::Unavailable => "suite_unavailable",
             Self::LinkInactive | Self::Store(SuiteStoreError::LinkInactive) => {

@@ -105,6 +105,7 @@ Errors use the Baukit error envelope. Protocol codes include `suite_disabled`
 `suite_payload_invalid` (422), `suite_event_id_conflict` (422),
 `suite_link_revoked` (410), `suite_link_inactive` (409),
 `suite_replay_window` (422), `suite_replay_throttled` (429),
+`suite_quota_exceeded` (429, from an applier quota that resets),
 `suite_peer_unreachable` (502) and `suite_unavailable` (503).
 Envelope validation retains the `event_*` codes from `baukit-events`.
 An absent applier returns 503 with `Retry-After: 300` before persisting activity.

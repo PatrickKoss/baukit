@@ -78,7 +78,9 @@ impl From<SuiteServiceError> for HttpError {
             E::LinkRevoked | E::Store(S::LinkRevoked) => StatusCode::GONE,
             E::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
             E::PeerUnreachable => StatusCode::BAD_GATEWAY,
-            E::RateLimited(_) | E::Store(S::ReplayTooSoon(_)) => StatusCode::TOO_MANY_REQUESTS,
+            E::RateLimited(_) | E::Store(S::ReplayTooSoon(_) | S::QuotaExceeded { .. }) => {
+                StatusCode::TOO_MANY_REQUESTS
+            }
             E::ReplayWindow { .. }
             | E::Protocol(P::CodeInvalid | P::PayloadInvalid)
             | E::PayloadInvalid
@@ -96,6 +98,9 @@ impl From<SuiteServiceError> for HttpError {
             E::RateLimited(seconds) | E::Store(S::ReplayTooSoon(seconds)) => {
                 api = api.with_retry_after(seconds)
             }
+            E::Store(S::QuotaExceeded {
+                retry_after_seconds,
+            }) => api = api.with_retry_after(retry_after_seconds.max(1)),
             E::ReplayWindow { earliest, latest } => {
                 api = api.with_details(std::collections::BTreeMap::from([
                     ("earliest".into(), serde_json::json!(earliest)),

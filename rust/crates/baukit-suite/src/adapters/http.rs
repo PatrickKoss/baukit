@@ -965,7 +965,7 @@ async fn revoke(
         (status = 404, body = ErrorResponse),
         (status = 410, body = ErrorResponse),
         (status = 422, description = "suite_payload_invalid: catalog or product applier rejected the payload; suite_event_type_unsupported: type or source mismatch", body = ErrorResponse),
-        (status = 429, body = ErrorResponse),
+        (status = 429, description = "rate_limited: link or source limit; suite_quota_exceeded: product owner quota. Retry-After gives the wait in seconds", body = ErrorResponse),
         (status = 500, body = ErrorResponse),
         (status = 504, body = ErrorResponse),
         (status = 503, body = ErrorResponse),

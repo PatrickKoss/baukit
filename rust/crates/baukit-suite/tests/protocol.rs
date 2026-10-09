@@ -3446,6 +3446,55 @@ async fn typed_payload_rejection_returns_422_and_rolls_back_all_writes() -> Test
     Ok(())
 }
 
+struct QuotaApplier(u64);
+#[async_trait]
+impl SuiteEventApplier for QuotaApplier {
+    async fn apply(
+        &self,
+        tx: &mut sqlx::PgConnection,
+        event: SuiteApplyEvent<'_>,
+    ) -> Result<AppliedOutcome, SuiteStoreError> {
+        Applier::default().apply(tx, event).await?;
+        Err(SuiteStoreError::QuotaExceeded {
+            retry_after_seconds: self.0,
+        })
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn owner_quota_returns_429_with_retry_after_and_rolls_back_all_writes() -> TestResult {
+    let (db, context, owner) = authorizer_fixture().await?;
+    let (link, _) =
+        exchange_link(&SuiteLinkService::new(context.clone()), owner, None, None).await?;
+    let mut event = activity(25, None).envelope("remote", "beta");
+    event.event_type = "beta.activity.completed".into();
+    for (retry_after_seconds, expected) in [(90, "90"), (0, "1")] {
+        let app = common::app_with_suite(
+            &db.pool,
+            module(
+                &db.pool,
+                context.clone(),
+                Arc::new(QuotaApplier(retry_after_seconds)),
+            ),
+        );
+        let response = signed_route(&app, link.id, &event, &secret(&link), false).await?;
+        assert_eq!(response.0, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(response.1["error"]["code"], "suite_quota_exceeded");
+        assert_eq!(
+            response.2.get("retry-after").expect("retry-after"),
+            expected
+        );
+    }
+    let rows: (i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM suite_inbound_events),(SELECT count(*) FROM applied_events)",
+    )
+    .fetch_one(&db.pool)
+    .await?;
+    assert_eq!(rows, (0, 0));
+    Ok(())
+}
+
 #[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]
 async fn delivery_maps_401_and_410_then_stops_calling_a_revoked_peer() -> TestResult {
