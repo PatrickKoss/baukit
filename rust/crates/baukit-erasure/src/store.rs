@@ -22,7 +22,7 @@ use uuid::Uuid;
 pub enum ErasureState {
     /// Product rows are gone; provider deletion is queued.
     Pending,
-    /// Provider deletion also finished.
+    /// Product erasure and any requested provider deletion finished.
     Completed,
     /// Operators must repair and rerun the retained job.
     Failed,
@@ -238,35 +238,50 @@ pub async fn reject_fenced_subject(
         Ok(())
     }
 }
-/// Coordinates the product transaction, durable job, and bounded inline attempt.
+/// Whether product erasure also deletes the identity provider account.
+#[derive(Clone)]
+pub enum IdentityRetention {
+    /// Deletes the provider account through a durable job and bounded inline attempt.
+    Delete {
+        /// Provider-neutral account deletion implementation.
+        deleter: Arc<dyn IdentityAccountDeleter>,
+        /// Provider id matching the registered worker handler.
+        provider_id: String,
+        /// Whole-provider-call budget, including token acquisition.
+        /// Keep this short because the call holds a pooled connection and job row lock.
+        inline_timeout: Duration,
+        /// Maximum durable worker attempts.
+        max_attempts: u32,
+    },
+    /// Keeps the provider account and sessions. The product's subject fence remains active.
+    Retain,
+}
+/// Coordinates product erasure and the chosen identity retention mode.
 #[derive(Clone)]
 pub struct ErasureService {
     store: PostgresErasureStore,
-    deleter: Arc<dyn IdentityAccountDeleter>,
-    provider_id: String,
-    inline_timeout: Duration,
-    max_attempts: u32,
+    identity_retention: IdentityRetention,
 }
 impl ErasureService {
-    /// Builds a service. Provider id must match the registered worker handler.
-    /// Keep inline_timeout short: its whole-provider-call budget includes token
-    /// acquisition and holds a pooled connection and job row lock until it ends.
+    /// Builds a service with an explicit identity retention mode.
+    /// Delete mode requires a nonempty provider id, nonzero timeout and attempts.
     pub fn new(
         store: PostgresErasureStore,
-        deleter: Arc<dyn IdentityAccountDeleter>,
-        provider_id: String,
-        inline_timeout: Duration,
-        max_attempts: u32,
+        identity_retention: IdentityRetention,
     ) -> Result<Self, ErasureError> {
-        if provider_id.trim().is_empty() || inline_timeout.is_zero() || max_attempts == 0 {
+        if let IdentityRetention::Delete {
+            provider_id,
+            inline_timeout,
+            max_attempts,
+            ..
+        } = &identity_retention
+            && (provider_id.trim().is_empty() || inline_timeout.is_zero() || *max_attempts == 0)
+        {
             return Err(ErasureError::Configuration);
         }
         Ok(Self {
             store,
-            deleter,
-            provider_id,
-            inline_timeout,
-            max_attempts,
+            identity_retention,
         })
     }
     /// Receipt and fence store for status handlers and subject resolution.
@@ -317,17 +332,40 @@ impl ErasureService {
             .bind(subject_hash)
             .execute(&mut *transaction)
             .await?;
-        let payload = serde_json::json!({"subject": subject, "providerId": self.provider_id, "operationId": outcome.operation_id});
+        let IdentityRetention::Delete {
+            deleter,
+            provider_id,
+            inline_timeout,
+            max_attempts,
+        } = &self.identity_retention
+        else {
+            let completed = self
+                .store
+                .complete(&mut transaction, outcome.operation_id)
+                .await?;
+            transaction.commit().await?;
+            return Ok(completed);
+        };
+        let payload = serde_json::json!({"subject": subject, "providerId": provider_id, "operationId": outcome.operation_id});
         let job = PostgresJobStore::new(self.store.pool.clone())
             .enqueue_in_transaction(
                 &mut transaction,
-                NewJob::new(IDENTITY_DELETE_JOB_TYPE, payload, self.max_attempts)
+                NewJob::new(IDENTITY_DELETE_JOB_TYPE, payload, *max_attempts)
                     .idempotency_key(outcome.operation_id.to_string()),
             )
             .await?
             .job;
         transaction.commit().await?;
-        match self.inline(subject, job.id, outcome.clone()).await {
+        match self
+            .inline(
+                subject,
+                job.id,
+                outcome.clone(),
+                deleter.as_ref(),
+                *inline_timeout,
+            )
+            .await
+        {
             Ok(outcome) => Ok(outcome),
             // Acceptance is already durable. The worker also reconciles a provider
             // success whose receipt update failed.
@@ -346,6 +384,8 @@ impl ErasureService {
         subject: &str,
         job_id: Uuid,
         outcome: ErasureOutcome,
+        deleter: &dyn IdentityAccountDeleter,
+        inline_timeout: Duration,
     ) -> Result<ErasureOutcome, ErasureError> {
         let mut transaction = self.store.pool.begin().await?;
         // A worker may already own the job. Only an unclaimed job is completed inline.
@@ -363,9 +403,7 @@ impl ErasureService {
                 .unwrap_or(outcome));
         }
         let error_class =
-            match tokio::time::timeout(self.inline_timeout, self.deleter.delete_account(subject))
-                .await
-            {
+            match tokio::time::timeout(inline_timeout, deleter.delete_account(subject)).await {
                 Ok(Ok(())) => None,
                 Ok(Err(IdentityDeletionError::Retryable)) => Some("retryable"),
                 Ok(Err(IdentityDeletionError::Permanent)) => Some("permanent"),

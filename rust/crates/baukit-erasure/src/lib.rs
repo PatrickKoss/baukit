@@ -1,4 +1,4 @@
-//! Erase product data atomically, then delete the identity account durably.
+//! Erase product data atomically and choose whether to delete the identity account.
 #![deny(missing_docs)]
 
 #[cfg(feature = "api-providers")]
@@ -15,8 +15,8 @@ pub use api::{ApiDeletionConfig, ClerkAccountDeleter, WorkOsAccountDeleter};
 #[cfg(feature = "keycloak")]
 pub use keycloak::{KeycloakAccountDeleter, KeycloakDeletionConfig};
 pub use store::{
-    ErasureError, ErasureOutcome, ErasureService, ErasureState, PostgresErasureStore,
-    ProductErasure, reject_fenced_subject,
+    ErasureError, ErasureOutcome, ErasureService, ErasureState, IdentityRetention,
+    PostgresErasureStore, ProductErasure, reject_fenced_subject,
 };
 pub use worker::IdentityDeletionHandler;
 

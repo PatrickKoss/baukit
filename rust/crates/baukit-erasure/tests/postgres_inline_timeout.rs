@@ -3,7 +3,9 @@ mod logs;
 #[path = "support/postgres_fixture.rs"]
 mod postgres_fixture;
 
-use baukit_erasure::{ErasureFuture, ErasureService, ErasureState, IdentityDeletionError};
+use baukit_erasure::{
+    ErasureFuture, ErasureService, ErasureState, IdentityDeletionError, IdentityRetention,
+};
 use postgres_fixture::{Product, count, fixture};
 use std::{error::Error, sync::Arc, time::Duration};
 use tracing::instrument::WithSubscriber as _;
@@ -24,10 +26,12 @@ async fn inline_timeout_releases_job_lock_and_retains_durable_work() -> Result<(
     let (_container, pool, store, _fake, _service) = fixture().await?;
     let service = ErasureService::new(
         store.clone(),
-        Arc::new(BlockedDeleter),
-        "test".into(),
-        Duration::from_millis(50),
-        2,
+        IdentityRetention::Delete {
+            deleter: Arc::new(BlockedDeleter),
+            provider_id: "test".into(),
+            inline_timeout: Duration::from_millis(50),
+            max_attempts: 2,
+        },
     )?;
     let logs = logs::Logs::default();
     let outcome = service

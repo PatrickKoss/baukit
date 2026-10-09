@@ -1,6 +1,7 @@
 use baukit_config::Secret;
 use baukit_erasure::{
-    ErasureFuture, ErasureService, POSTGRES_MIGRATION_SQL, PostgresErasureStore, ProductErasure,
+    ErasureFuture, ErasureService, IdentityRetention, POSTGRES_MIGRATION_SQL, PostgresErasureStore,
+    ProductErasure,
 };
 use baukit_test::{FakeIdentityAccountDeleter, PostgresTestContainer};
 use sqlx::{PgConnection, PgPool};
@@ -22,16 +23,8 @@ impl ProductErasure for Product {
         })
     }
 }
-pub async fn fixture() -> Result<
-    (
-        PostgresTestContainer,
-        PgPool,
-        PostgresErasureStore,
-        Arc<FakeIdentityAccountDeleter>,
-        ErasureService,
-    ),
-    Box<dyn Error>,
-> {
+pub async fn database()
+-> Result<(PostgresTestContainer, PgPool, PostgresErasureStore), Box<dyn Error>> {
     let container = baukit_test::start_postgres().await?;
     let pool = PgPool::connect(container.connection_url()).await?;
     for migration in [
@@ -47,13 +40,28 @@ pub async fn fixture() -> Result<
         pool.clone(),
         Secret::new("test-key-with-at-least-32-bytes-of-entropy".into()),
     )?;
+    Ok((container, pool, store))
+}
+pub async fn fixture() -> Result<
+    (
+        PostgresTestContainer,
+        PgPool,
+        PostgresErasureStore,
+        Arc<FakeIdentityAccountDeleter>,
+        ErasureService,
+    ),
+    Box<dyn Error>,
+> {
+    let (container, pool, store) = database().await?;
     let fake = Arc::new(FakeIdentityAccountDeleter::default());
     let service = ErasureService::new(
         store.clone(),
-        fake.clone(),
-        "test".into(),
-        Duration::from_secs(1),
-        2,
+        IdentityRetention::Delete {
+            deleter: fake.clone(),
+            provider_id: "test".into(),
+            inline_timeout: Duration::from_secs(1),
+            max_attempts: 2,
+        },
     )?;
     Ok((container, pool, store, fake, service))
 }

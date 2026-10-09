@@ -2,7 +2,7 @@
 use baukit_config::Secret;
 use baukit_erasure::{
     ApiDeletionConfig, ClerkAccountDeleter, IdentityAccountDeleter, IdentityDeletionError,
-    WorkOsAccountDeleter,
+    IdentityRetention, WorkOsAccountDeleter,
 };
 use std::{error::Error, sync::Arc, time::Duration};
 use wiremock::{
@@ -112,10 +112,12 @@ async fn server_errors_are_retried_until_the_durable_operation_fails() -> Result
         let (_container, pool, store, _fake, _service) = postgres_fixture::fixture().await?;
         let service = ErasureService::new(
             store.clone(),
-            deleter.clone(),
-            "api".into(),
-            Duration::from_secs(1),
-            2,
+            IdentityRetention::Delete {
+                deleter: deleter.clone(),
+                provider_id: "api".into(),
+                inline_timeout: Duration::from_secs(1),
+                max_attempts: 2,
+            },
         )?;
         let pending = service
             .erase(

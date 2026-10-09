@@ -1,7 +1,9 @@
 use std::{error::Error, path::PathBuf, sync::Arc, time::Duration};
 
 {% if context.auth_enabled %}use baukit_config::Secret;
-use baukit_erasure::{ErasureService, ErasureState, IdentityDeletionError, PostgresErasureStore};
+use baukit_erasure::{
+    ErasureService, ErasureState, IdentityDeletionError, IdentityRetention, PostgresErasureStore,
+};
 {% endif %}use baukit_jobs::{PostgresJobStore, WorkerConfig, WorkerRunner};
 use baukit_ops::TrafficGate;
 use baukit_runtime::{DeploymentEnvironment, ProcessKind, ServiceInfo, ShutdownToken, build_info};
@@ -37,10 +39,12 @@ async fn durable_outbox_runs_the_generated_demo_handler() -> Result<(), Box<dyn 
             pool.clone(),
             Secret::new("worker-test-hash-key-with-at-least-32-bytes".into()),
         )?,
-        fake.clone(),
-        "keycloak".into(),
-        Duration::from_secs(1),
-        3,
+        IdentityRetention::Delete {
+            deleter: fake.clone(),
+            provider_id: "keycloak".into(),
+            inline_timeout: Duration::from_secs(1),
+            max_attempts: 3,
+        },
     )?;
     let operation = erasure
         .erase(

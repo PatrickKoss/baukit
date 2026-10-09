@@ -1,7 +1,7 @@
 use std::{error::Error, path::PathBuf, sync::Arc, time::Duration};
 
 use baukit_config::Secret;
-use baukit_erasure::{ErasureService, PostgresErasureStore};
+use baukit_erasure::{ErasureService, IdentityRetention, PostgresErasureStore};
 use baukit_test::{FakeIdentityAccountDeleter, PostgresTestContainer};
 use sqlx::PgPool;
 
@@ -25,10 +25,12 @@ pub async fn erasure_fixture() -> Result<ErasureFixture, Box<dyn Error>> {
         erasure: ErasureApi {
             service: ErasureService::new(
                 store,
-                Arc::new(FakeIdentityAccountDeleter::default()),
-                "keycloak".into(),
-                Duration::from_secs(1),
-                3,
+                IdentityRetention::Delete {
+                    deleter: Arc::new(FakeIdentityAccountDeleter::default()),
+                    provider_id: "keycloak".into(),
+                    inline_timeout: Duration::from_secs(1),
+                    max_attempts: 3,
+                },
             )?,
             product: Arc::new(PostgresProfileErasure),
         },

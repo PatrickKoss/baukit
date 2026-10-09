@@ -2,17 +2,170 @@
 mod logs;
 #[path = "support/postgres_fixture.rs"]
 mod postgres_fixture;
-use postgres_fixture::{Product, count, fixture};
+use postgres_fixture::{Product, count, database, fixture};
 
 use baukit_erasure::{
-    ErasureError, ErasureState, IdentityDeletionError, IdentityDeletionHandler,
-    PostgresErasureStore,
+    ErasureError, ErasureService, ErasureState, IdentityDeletionError, IdentityDeletionHandler,
+    IdentityRetention, PostgresErasureStore, reject_fenced_subject,
 };
 use baukit_jobs::{JobStore, PostgresJobStore, WorkerConfig, WorkerRunner};
 use baukit_runtime::ShutdownToken;
 use baukit_test::FakeIdentityAccountDeleter;
 use std::{error::Error, sync::Arc, time::Duration};
 use tracing::instrument::WithSubscriber as _;
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn retained_identity_completes_replays_and_fences_without_a_job() -> Result<(), Box<dyn Error>>
+{
+    let (_container, pool, store) = database().await?;
+    let service = ErasureService::new(store.clone(), IdentityRetention::Retain)?;
+    let first = service
+        .erase("alice", "retain-replay-key-01", &Product)
+        .await?;
+    assert_eq!(first.status, ErasureState::Completed);
+    assert_eq!(first.status_code(), axum::http::StatusCode::OK);
+    assert!(first.completed_at.is_some());
+    let row: (String, chrono::DateTime<chrono::Utc>, serde_json::Value) = sqlx::query_as(
+        "SELECT state, completed_at, response FROM erasure_operations WHERE id = $1",
+    )
+    .bind(first.operation_id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(row.0, "completed");
+    assert_eq!(
+        row.1.timestamp_micros(),
+        first.completed_at.expect("completed at").timestamp_micros()
+    );
+    assert_eq!(row.2, serde_json::to_value(&first)?);
+    assert_eq!(count(&pool, "profiles").await?, 1);
+    assert_eq!(count(&pool, "erasure_operations").await?, 1);
+    assert_eq!(count(&pool, "erasure_fences").await?, 1);
+    assert_eq!(count(&pool, "job_outbox").await?, 0);
+    assert!(store.is_fenced("alice").await?);
+    assert!(!store.is_fenced("bob").await?);
+    assert_eq!(
+        store.status("alice", first.operation_id).await?,
+        Some(first.clone())
+    );
+    assert!(store.status("bob", first.operation_id).await?.is_none());
+    assert!(store.status("alice", uuid::Uuid::now_v7()).await?.is_none());
+    sqlx::raw_sql("CREATE FUNCTION reject_product_delete() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'product erasure must not run on replay'; END; $$; CREATE TRIGGER reject_product_delete BEFORE DELETE ON profiles FOR EACH STATEMENT EXECUTE FUNCTION reject_product_delete();").execute(&pool).await?;
+    assert_eq!(
+        service
+            .erase("alice", "retain-replay-key-01", &Product)
+            .await?,
+        first
+    );
+    assert!(matches!(
+        service.erase("bob", "retain-replay-key-01", &Product).await,
+        Err(ErasureError::Conflict)
+    ));
+    assert!(matches!(
+        service
+            .erase("alice", "retain-second-key-01", &Product)
+            .await,
+        Err(ErasureError::ProfileErased)
+    ));
+    assert!(matches!(
+        reject_fenced_subject(&store, "alice").await,
+        Err(ErasureError::ProfileErased)
+    ));
+    let mut transaction = pool.begin().await?;
+    assert!(matches!(
+        store.guard_subject(&mut transaction, "alice").await,
+        Err(ErasureError::ProfileErased)
+    ));
+    transaction.rollback().await?;
+    assert_eq!(count(&pool, "erasure_operations").await?, 1);
+    assert_eq!(count(&pool, "job_outbox").await?, 0);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn retained_identity_completion_failure_rolls_back_product_receipt_and_fence()
+-> Result<(), Box<dyn Error>> {
+    let (_container, pool, store) = database().await?;
+    let service = ErasureService::new(store.clone(), IdentityRetention::Retain)?;
+    sqlx::raw_sql("CREATE FUNCTION reject_completion() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected completion failure'; END; $$; CREATE TRIGGER reject_completion BEFORE UPDATE ON erasure_operations FOR EACH ROW EXECUTE FUNCTION reject_completion();").execute(&pool).await?;
+    assert!(matches!(
+        service
+            .erase("alice", "retain-rollback-key-01", &Product)
+            .await,
+        Err(ErasureError::Database(_))
+    ));
+    assert_eq!(count(&pool, "profiles").await?, 2);
+    assert_eq!(count(&pool, "erasure_operations").await?, 0);
+    assert_eq!(count(&pool, "erasure_fences").await?, 0);
+    assert_eq!(count(&pool, "job_outbox").await?, 0);
+    assert!(!store.is_fenced("alice").await?);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn retained_identity_validates_keys_and_subject_before_erasure() -> Result<(), Box<dyn Error>>
+{
+    let (_container, pool, store) = database().await?;
+    let service = ErasureService::new(store, IdentityRetention::Retain)?;
+    for key in [
+        "short".to_owned(),
+        "a".repeat(129),
+        "invalid key with space".to_owned(),
+        "invalid-key-0000\n".to_owned(),
+    ] {
+        assert!(matches!(
+            service.erase("alice", &key, &Product).await,
+            Err(ErasureError::InvalidKey)
+        ));
+    }
+    assert!(matches!(
+        service.erase("", "retain-valid-key-01", &Product).await,
+        Err(ErasureError::Configuration)
+    ));
+    assert_eq!(count(&pool, "profiles").await?, 2);
+    assert_eq!(count(&pool, "erasure_operations").await?, 0);
+    assert_eq!(count(&pool, "erasure_fences").await?, 0);
+    assert_eq!(count(&pool, "job_outbox").await?, 0);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn retained_identity_concurrent_same_key_returns_the_same_completed_receipt()
+-> Result<(), Box<dyn Error>> {
+    let (_container, pool, store) = database().await?;
+    let service = ErasureService::new(store, IdentityRetention::Retain)?;
+    let barrier = Arc::new(tokio::sync::Barrier::new(9));
+    let mut tasks = Vec::new();
+    for _ in 0..8 {
+        let service = service.clone();
+        let barrier = barrier.clone();
+        tasks.push(tokio::spawn(async move {
+            barrier.wait().await;
+            service
+                .erase("alice", "retain-concurrent-01", &Product)
+                .await
+        }));
+    }
+    barrier.wait().await;
+    let mut receipt = None;
+    for task in tasks {
+        let outcome = task.await??;
+        assert_eq!(outcome.status, ErasureState::Completed);
+        assert!(outcome.completed_at.is_some());
+        if let Some(first) = &receipt {
+            assert_eq!(&outcome, first);
+        }
+        receipt = Some(outcome);
+    }
+    assert_eq!(count(&pool, "profiles").await?, 1);
+    assert_eq!(count(&pool, "erasure_operations").await?, 1);
+    assert_eq!(count(&pool, "erasure_fences").await?, 1);
+    assert_eq!(count(&pool, "job_outbox").await?, 0);
+    Ok(())
+}
 
 #[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]

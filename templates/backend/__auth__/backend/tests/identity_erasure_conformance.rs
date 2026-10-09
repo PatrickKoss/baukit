@@ -8,7 +8,8 @@ use axum::{
 use baukit_auth::{AuthState, OidcConfig, OidcVerifier};
 use baukit_config::{Environment, HttpConfig, Secret};
 use baukit_erasure::{
-    ErasureFuture, ErasureService, ErasureState, IdentityDeletionHandler, PostgresErasureStore,
+    ErasureFuture, ErasureService, ErasureState, IdentityDeletionHandler, IdentityRetention,
+    PostgresErasureStore,
 };
 use baukit_jobs::{PostgresJobStore, WorkerConfig, WorkerRunner};
 use baukit_runtime::ShutdownToken;
@@ -105,10 +106,12 @@ impl IdentityErasureAdapter for EndpointAdapter {
                 OidcVerifier::discover(OidcConfig::new(self.issuer.issuer(), AUDIENCE)?).await?;
             let service = ErasureService::new(
                 self.store.clone(),
-                fake.clone(),
-                "keycloak".into(),
-                Duration::from_secs(1),
-                3,
+                IdentityRetention::Delete {
+                    deleter: fake.clone(),
+                    provider_id: "keycloak".into(),
+                    inline_timeout: Duration::from_secs(1),
+                    max_attempts: 3,
+                },
             )?;
             self.handler = Some(IdentityDeletionHandler::new(
                 self.store.clone(),

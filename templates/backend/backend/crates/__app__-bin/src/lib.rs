@@ -433,10 +433,12 @@ pub fn identity_erasure(
     );
     let service = baukit_erasure::ErasureService::new(
         store,
-        deleter,
-        provider.into(),
-        std::time::Duration::from_secs(3),
-        12,
+        baukit_erasure::IdentityRetention::Delete {
+            deleter,
+            provider_id: provider.into(),
+            inline_timeout: std::time::Duration::from_secs(3),
+            max_attempts: 12,
+        },
     )?;
     Ok((service, handler))
 }{% endif %}

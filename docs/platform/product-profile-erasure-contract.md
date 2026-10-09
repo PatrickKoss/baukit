@@ -6,18 +6,30 @@
 [analytics privacy](./analytics-privacy-contract.md), and
 [`@baukit/api-runtime`](../../typescript/packages/api-runtime/README.md).
 
-Product-profile erasure deletes the product's user data and its identity-provider
-account. `baukit-erasure` coordinates the database transaction, receipt, fence,
-and durable identity deletion. The product supplies its owned-row deletion
-callback and its inventory. The client composition remains in
+Product-profile erasure deletes the product's user data. The product chooses
+whether to delete its identity-provider account through `IdentityRetention` in
+`ErasureService::new`. `baukit-erasure` coordinates the database transaction,
+receipt, fence, and any requested identity deletion. The product supplies its
+owned-row deletion callback and its inventory. The client composition remains in
 `@baukit/data-contracts`.
 
 The database transaction is the acceptance boundary. A failure before commit
-leaves both systems unchanged. After commit, the product rows are gone and the
-identity deletion is durable. A provider outage can leave identity deletion
-pending temporarily. The fence blocks old access tokens and profile recreation
-while the worker retries. Failed operations require operator repair and rerun;
-they are not instructions for the user to start another deletion.
+leaves both systems unchanged. After commit, the product rows are gone.
+In `IdentityRetention::Delete` mode, identity deletion is durable. A provider
+outage can leave identity deletion pending temporarily. The fence blocks old
+access tokens and profile recreation while the worker retries. Failed operations
+require operator repair and rerun. The user must not start another deletion.
+
+Use `IdentityRetention::Retain` when multiple apps share the same provider
+account, such as a Clerk production instance with satellite domains. It leaves
+the provider account and sessions in place so other apps can keep using them.
+Product erasure, the completed receipt and its completion timestamp, and the
+subject fence commit in the same transaction. It creates no identity deletion
+job and makes no provider call. DELETE returns 200, and status lookup and
+same-key replay report completed. The fence keeps that `sub` from accessing
+this product or recreating its profile afterwards. Retain mode needs no deleter,
+provider ID, inline timeout or maximum attempts. Delete mode requires all four
+settings and validates the provider ID, timeout and attempts.
 
 ## 1. Client operation
 
@@ -138,7 +150,7 @@ requires one `Idempotency-Key` header with 16 to 128 visible ASCII characters.
 The status endpoint compares the token subject's keyed hash with the receipt;
 unknown and foreign operation IDs both return 404.
 
-The server executes this sequence:
+In delete mode, the server executes this sequence:
 
 1. Lock the idempotency key and subject. Same-subject replay returns the stored
    receipt; another subject's reuse returns 409. A different key cannot start
@@ -167,11 +179,11 @@ Inline failures log the operation ID and error class without the subject.
 Database completion failures also log their class and leave the durable job for
 worker reconciliation.
 
-Generated auth backends run a supervised identity runner inside the API in both
-flavors, with or without a separate worker. The optional worker handles the
-item-created demo jobs. Each runner claims only its handler's job types, so the
-two runners do not claim each other's jobs. Deploy the API while identity
-erasures remain pending and alert if its runner fails.
+Generated auth backends choose delete mode and run a supervised identity runner
+inside the API in both flavors, with or without a separate worker. The optional
+worker handles the item-created demo jobs. Each runner claims only its handler's
+job types, so the two runners do not claim each other's jobs. Deploy the API
+while identity erasures remain pending and alert if its runner fails.
 
 A 200 body is
 `{"status":"completed","operationId":"<uuid>","completedAt":"<RFC 3339>"}`.
@@ -291,7 +303,8 @@ removed:
 - push registrations and external integration credentials;
 - analytics deletion or a documented retention policy;
 - backups and the point at which natural expiry removes the data;
-- the identity-provider account and sessions, removed by the identity deletion job.
+- the identity-provider account and sessions, removed by the identity deletion
+  job in delete mode or kept in retain mode because other apps share the account.
 
 The confirmation UI and receipt use this inventory to make accurate claims.
 Asynchronous processors include their expected completion or retention period.
@@ -352,7 +365,7 @@ Conformance runs with isolated test identities and reports resource names and
 counts only. Failure output and database diagnostics must not print inserted user
 content, credentials, request bodies, or processor payloads.
 
-Products also implement `IdentityErasureAdapter` and run
+Products using delete mode also implement `IdentityErasureAdapter` and run
 `check_identity_erasure_conformance` through their real authenticated endpoint
 and registered worker wiring. It injects one provider failure, checks that
 product rows are erased while the receipt and job remain pending, verifies
@@ -360,6 +373,12 @@ replay and 409 conflict, rejects fenced profile resolution, runs the worker,
 and checks completed replay plus the absence of every raw-subject location.
 Use `FakeIdentityAccountDeleter` for the provider; its calls and scripted errors
 are test observations, never log fields.
+
+Products using retain mode test their authenticated endpoint against real
+PostgreSQL. Verify product deletion, a completed receipt and timestamp, the
+subject fence, same-key replay and conflict, and the absence of identity
+deletion jobs. Fenced profile resolution and a second key for the same subject
+must fail with `profile_erased`.
 
 Analytics deletion is separate external work. Include analytics deletion or a
 documented retention policy in the inventory and follow the
@@ -379,8 +398,10 @@ make completion copy reflect their state.
   its registry entry, and attempt sign-out in the required order.
 - Local deletion and sign-out failures remain distinguishable in the result.
 - Repeated requests return the same receipt and terminal result.
-- Confirmation copy says the identity-provider account will also be deleted.
-  Pending copy describes outstanding provider or other processor work.
+- Confirmation copy states whether the identity-provider account and sessions
+  will be deleted or retained. In retain mode, it also explains that the same
+  account cannot recreate a profile in this product. Pending copy describes
+  outstanding provider or other processor work.
 - The deletion inventory addresses all eight classes, records `not applicable`
   where needed, and the conformance graph reaches zero for every registered
   resource.
@@ -398,11 +419,15 @@ make completion copy reflect their state.
   token deletion and every entry in the product's inventory.
 - Add fence checks to authenticated requests. Lock and check the fence inside
   subject resolution before inserting a profile.
-- Register `IdentityDeletionHandler` with the durable worker. Alert on failed
-  operations and provide a repair-and-rerun procedure that retains their jobs.
-- Configure the confidential admin client and permanent keyed-hash secret.
-  Grant and reconcile the backend service account's `manage-users` role.
+- Choose `IdentityRetention::Retain` for a shared provider account, or configure
+  `IdentityRetention::Delete` to remove the provider account too.
+- In delete mode, register `IdentityDeletionHandler` with the durable worker.
+  Alert on failed operations and provide a repair-and-rerun procedure that
+  retains their jobs.
+- Configure a permanent keyed-hash secret in both modes. In Keycloak delete
+  mode, configure the confidential admin client and grant and reconcile its
+  service account's `manage-users` role.
 - Expose the 200/202 DELETE receipt and subject-authorized status endpoint.
   Keep the same idempotency key across ambiguous responses.
-- Change UI copy that says the IdP account stays. Show pending work honestly,
-  then run identity-erasure conformance through the product's actual router.
+- Match UI copy to the chosen retention mode. Show pending work honestly and
+  run the mode's erasure checks through the product's actual router.

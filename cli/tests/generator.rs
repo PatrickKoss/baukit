@@ -239,15 +239,19 @@ fn generated_backend_is_rustfmt_clean_across_product_names() -> anyhow::Result<(
         "solo-leveling-system-companion",
         &maximum_name,
     ];
-    for (name, worker) in names
-        .into_iter()
-        .flat_map(|name| [(name, false), (name, true)])
-    {
+    for (name, worker, auth, mcp) in names.into_iter().flat_map(|name| {
+        [
+            (name, false, AuthProvider::Oidc, true),
+            (name, true, AuthProvider::Oidc, true),
+            (name, false, AuthProvider::Oidc, false),
+            (name, true, AuthProvider::Clerk, false),
+        ]
+    }) {
         let parent = tempfile::tempdir()?;
         let mut generated_options = options(parent.path(), name);
         generated_options.worker = worker;
-        generated_options.mcp = true;
-        generated_options.auth = Some(AuthProvider::Oidc);
+        generated_options.mcp = mcp;
+        generated_options.auth = Some(auth);
         let root = generate_new(&generated_options)?;
         let tree = read_tree(&root.join("backend"))?;
         let rust_sources = tree
@@ -259,7 +263,7 @@ fn generated_backend_is_rustfmt_clean_across_product_names() -> anyhow::Result<(
             .output()?;
         assert!(
             output.status.success(),
-            "generated backend for {name} with worker={worker} is not rustfmt-clean:\n{}{}",
+            "generated backend for {name} with worker={worker}, auth={auth:?}, mcp={mcp} is not rustfmt-clean:\n{}{}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr),
         );

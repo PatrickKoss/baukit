@@ -2024,6 +2024,22 @@ impl baukit_erasure::IdentityAccountDeleter for IdentityDeletion {
 #[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]
 async fn erasure_revokes_every_health_state_first_and_removes_every_suite_row() -> TestResult {
+    check_suite_erasure(baukit_erasure::IdentityRetention::Delete {
+        deleter: Arc::new(IdentityDeletion),
+        provider_id: "test".into(),
+        inline_timeout: std::time::Duration::from_millis(500),
+        max_attempts: 10,
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn erasure_retains_shared_identity_and_completes_after_suite_cleanup() -> TestResult {
+    check_suite_erasure(baukit_erasure::IdentityRetention::Retain).await
+}
+
+async fn check_suite_erasure(identity_retention: baukit_erasure::IdentityRetention) -> TestResult {
     use baukit_suite::services::erase_with_suite;
     let mut db = common::postgres_database().await?;
     db.pool.close().await;
@@ -2114,12 +2130,9 @@ async fn erasure_revokes_every_health_state_first_and_removes_every_suite_row() 
                 db.pool.clone(),
                 baukit_config::Secret::new("suite-erasure-key-material-32-bytes".into()),
             )?,
-            Arc::new(IdentityDeletion),
-            "test".into(),
-            std::time::Duration::from_millis(500),
-            10,
+            identity_retention.clone(),
         )?;
-        erase_with_suite(
+        let receipt = erase_with_suite(
             &service,
             &notifier,
             &owner.to_string(),
@@ -2127,6 +2140,20 @@ async fn erasure_revokes_every_health_state_first_and_removes_every_suite_row() 
             adapter.as_ref(),
         )
         .await?;
+        assert_eq!(receipt.status, baukit_erasure::ErasureState::Completed);
+        assert_eq!(receipt.status_code(), StatusCode::OK);
+        assert!(receipt.completed_at.is_some());
+        assert_eq!(
+            service
+                .store()
+                .status(&owner.to_string(), receipt.operation_id)
+                .await?,
+            Some(receipt)
+        );
+        assert!(service.store().is_fenced(&owner.to_string()).await?);
+        let remaining: (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM users WHERE id=$1), (SELECT count(*) FROM job_outbox WHERE job_type='identity.account.delete')")
+            .bind(owner).fetch_one(&db.pool).await?;
+        assert_eq!(remaining, (0, 0));
         let rows: (i64,i64,i64,i64,i64,i64) = sqlx::query_as("SELECT (SELECT count(*) FROM suite_links WHERE user_id=$1),(SELECT count(*) FROM suite_link_codes WHERE user_id=$1),(SELECT count(*) FROM suite_link_requests WHERE user_id=$1),(SELECT count(*) FROM suite_inbound_events WHERE user_id=$1),(SELECT count(*) FROM suite_failed_delivery_jobs),(SELECT count(*) FROM job_outbox WHERE job_type IN ('suite.events.deliver','suite.links.revoke'))").bind(owner).fetch_one(&db.pool).await?;
         assert_eq!(rows, (0, 0, 0, 0, 0, 0));
         let request = receiver.received_requests().last().expect("revoke").clone();
