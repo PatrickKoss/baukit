@@ -122,7 +122,7 @@ if ! python3 "$root/mobile/scripts/qa/android-adb.py" --wait-for-boot "$adb" "$s
   exit 1
 fi
 
-python3 "$root/mobile/scripts/qa/android-adb.py" --check-health "$adb" "$serial"
+python3 "$root/mobile/scripts/qa/android-adb.py" --check-health "$adb" "$serial" "$state_dir/android-health.log"
 
 "$adb" -s "$serial" shell settings put global window_animation_scale 0
 "$adb" -s "$serial" shell settings put global transition_animation_scale 0

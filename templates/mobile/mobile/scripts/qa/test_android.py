@@ -198,6 +198,95 @@ esac
                     self.assertIn(" ".join(arguments), result.stderr)
                 self.assertLess(time.monotonic() - started, 5)
 
+    def health_probe(self, report: Path | None = None) -> subprocess.CompletedProcess[str]:
+        arguments = [
+            "python3", str(self.scripts / "android-adb.py"), "--check-health",
+            str(self.sdk / "platform-tools/adb"), "emulator-5556",
+        ]
+        if report is not None:
+            arguments.append(str(report))
+        return subprocess.run(
+            arguments, env=self.environment, capture_output=True, text=True,
+            check=False, timeout=5,
+        )
+
+    def test_health_probe_appends_triggering_events_and_matching_anr_summary(self) -> None:
+        self.executable(self.sdk / "platform-tools/adb", r'''
+case "$*" in
+  *logcat*)
+    printf 'am_anr: [0,123,com.android.systemui,1,first reason]\nam_crash: [0,456,com.android.inputmethod.latin,1,second reason]\n' ;;
+  *'dumpsys activity lastanr')
+    printf 'ANR time: 2026-10-09 12:00:00\nPID: 123\nReason: executing service com.android.systemui/.SystemUIService\nErrorId: 1234\nFrozen: false\nprivate stack frame\n' ;;
+esac
+''')
+        report = self.root / "mobile/.qa/android-health.log"
+        first = self.health_probe(report)
+        self.assertEqual(first.returncode, 1, first.stderr)
+        evidence = report.read_text()
+        self.assertRegex(evidence, r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z emulator-5556 status=1\n")
+        for line in (
+            "am_anr: [0,123,com.android.systemui,1,first reason]",
+            "am_crash: [0,456,com.android.inputmethod.latin,1,second reason]",
+            "ANR time: 2026-10-09 12:00:00", "PID: 123",
+            "Reason: executing service com.android.systemui/.SystemUIService",
+            "ErrorId: 1234", "Frozen: false",
+        ):
+            self.assertIn(line, first.stderr)
+            self.assertIn(line, evidence)
+        self.assertNotIn("private stack frame", evidence)
+        second = self.health_probe(report)
+        self.assertEqual(second.returncode, 1, second.stderr)
+        self.assertTrue(report.read_text().startswith(evidence))
+        self.assertEqual(report.read_text().count("emulator-5556 status=1"), 2)
+
+    def test_health_probe_rejects_anr_details_for_another_package(self) -> None:
+        self.executable(self.sdk / "platform-tools/adb", r'''
+case "$*" in
+  *logcat*) echo 'am_anr: [0,123,com.android.systemui,1,reason]' ;;
+  *'dumpsys activity lastanr')
+    printf 'ANR in com.android.systemui.extra\nPID: 456\nReason: unrelated ANR\nstack: com.android.systemui\n' ;;
+esac
+''')
+        report = self.root / "mobile/.qa/android-health.log"
+        result = self.health_probe(report)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("no matching critical-process ANR", result.stderr)
+        self.assertNotIn("PID: 456", result.stderr)
+        self.assertNotIn("com.android.systemui.extra", report.read_text())
+
+    def test_health_probe_retains_evidence_when_anr_diagnostics_fail_or_time_out(self) -> None:
+        self.environment["BAUKIT_QA_ADB_TIMEOUT_SECONDS"] = "0.2"
+        report = self.root / "mobile/.qa/android-health.log"
+        for command, message in (
+            ("exit 7", "Android ANR diagnostics failed: exit 7"),
+            ("exec sleep 60", "Android ANR diagnostics timed out"),
+        ):
+            with self.subTest(command=command):
+                self.executable(self.sdk / "platform-tools/adb", f'''
+case "$*" in
+  *logcat*) echo 'am_anr: [0,123,com.android.systemui,1,reason]' ;;
+  *'dumpsys activity lastanr') {command} ;;
+esac
+''')
+                result = self.health_probe(report)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn("am_anr: [0,123,com.android.systemui,1,reason]", result.stderr)
+                self.assertIn(message, result.stderr)
+                self.assertIn(message, report.read_text())
+
+    def test_manual_health_probe_without_report_retains_event(self) -> None:
+        self.executable(self.sdk / "platform-tools/adb", r'''
+if [[ "$*" == *logcat* ]]; then
+  echo 'am_crash: [0,123,com.android.systemui,1,reason]'
+else
+  exit 99
+fi
+''')
+        result = self.health_probe()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("am_crash: [0,123,com.android.systemui,1,reason]", result.stderr)
+        self.assertFalse((self.root / "mobile/.qa").exists())
+
     def test_probe_timeouts_reject_nonpositive_or_nonfinite_values(self) -> None:
         adb = self.sdk / "platform-tools/adb"
         self.executable(adb, 'echo called >> "$EVENTS"\n')

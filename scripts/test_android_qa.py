@@ -72,6 +72,8 @@ case "$*" in
   *'getprop sys.boot_completed') if grep -q '^{' "$EVENTS"; then echo 1; fi ;;
   *logcat*)
     if [[ "$FAILURE" == health ]]; then echo 'am_anr: [0,123,com.android.systemui,1,reason]'; fi ;;
+  *'dumpsys activity lastanr')
+    printf 'ANR in com.android.systemui\nPID: 123\nReason: Input dispatching timed out\nprivate stack frame\n' ;;
 esac
 exit 0
 ''')
@@ -206,6 +208,7 @@ RENDERER
         result = self.run_script("android-env.sh", "start", FAILURE="health")
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("system process is unhealthy: com.android.systemui", result.stderr)
+        self.assert_health_evidence(result)
         self.assertTrue((self.state / "android-owned").exists())
         self.assertNotIn("install -r", self.events.read_text())
 
@@ -215,7 +218,18 @@ RENDERER
         self.executable(self.tools / "maestro", 'echo maestro >> "$EVENTS"\n')
         result = self.run_script("run-maestro.sh", "android", FAILURE="health")
         self.assertEqual(result.returncode, 1, result.stderr)
+        self.assert_health_evidence(result)
         self.assertNotIn("maestro", self.events.read_text())
+
+    def assert_health_evidence(self, result):
+        event = "am_anr: [0,123,com.android.systemui,1,reason]"
+        self.assertIn(event, result.stderr)
+        self.assertIn("Reason: Input dispatching timed out", result.stderr)
+        report = (self.state / "android-health.log").read_text()
+        self.assertRegex(report, r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z emulator-5556 status=1\n")
+        self.assertIn(event, report)
+        self.assertIn("Reason: Input dispatching timed out", report)
+        self.assertNotIn("private stack frame", report)
 
     def test_backend_invalid_pid_is_kept_and_compose_cleanup_is_attempted(self):
         (self.state / "backend.pid").write_text("invalid\n")

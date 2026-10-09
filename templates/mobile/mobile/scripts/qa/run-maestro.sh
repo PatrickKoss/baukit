@@ -38,7 +38,7 @@ if [[ "$platform" == android ]]; then
     sdk_root="$(<"$mobile_dir/.qa/android-home")"
   fi
   [[ -n "$sdk_root" ]] || { echo "qa: Android SDK location is missing" >&2; exit 1; }
-  python3 "$mobile_dir/scripts/qa/android-adb.py" --check-health "$sdk_root/platform-tools/adb" "$device"
+  python3 "$mobile_dir/scripts/qa/android-adb.py" --check-health "$sdk_root/platform-tools/adb" "$device" "$mobile_dir/.qa/android-health.log"
 fi
 cd "$mobile_dir"
 "$maestro_bin" test \
