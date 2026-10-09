@@ -4,6 +4,8 @@
 
 {% if context.web %}- Wait for overlay triggers to be enabled before focusing them in the generated keyboard test.
 
+{% endif %}{% if context.backend %}- Build the backend image with BuildKit cache mounts for the cargo registry and `target/`. Image layers now hold only the binaries, not a full release `target/` per build.
+
 {% endif %}## [0.10.7] - 2026-10-09
 
 {% if context.mobile %}- Preserve Android QA health events and matching ANR summaries in stderr and `.qa/android-health.log`.

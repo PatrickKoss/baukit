@@ -18,19 +18,24 @@ WORKDIR /workspace
 COPY ${BACKEND_CONTEXT}/ /workspace/
 COPY ${BAUKIT_CONTEXT}/ ${BAUKIT_DESTINATION}/
 COPY ${LIMITS_FILE} /limits.json
-RUN cargo build --locked --release -p {{ context.app_name }}-bin \
-    --bin api --bin migrate{% if context.worker %} --bin worker{% endif %}
+# The target dir lives in a cache mount, so layers hold only the binaries.
+RUN --mount=type=cache,id={{ context.app_name }}-cargo-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id={{ context.app_name }}-target,target=/workspace/target,sharing=locked \
+    cargo build --locked --release -p {{ context.app_name }}-bin \
+    --bin api --bin migrate{% if context.worker %} --bin worker{% endif %} \
+    && mkdir -p /out \
+    && cp target/release/api target/release/migrate{% if context.worker %} target/release/worker{% endif %} /out/
 
 FROM ${RUNTIME_IMAGE} AS api
 WORKDIR /app
-COPY --from=builder /workspace/target/release/api /app/api
+COPY --from=builder /out/api /app/api
 ENTRYPOINT ["/app/api"]
 
 FROM ${RUNTIME_IMAGE} AS migrate
 # The generated migrator resolves ../../migrations from its compile-time
 # CARGO_MANIFEST_DIR. Keep that path available in the runtime image.
 WORKDIR /workspace
-COPY --from=builder /workspace/target/release/migrate /app/migrate
+COPY --from=builder /out/migrate /app/migrate
 COPY --from=builder /workspace/migrations /workspace/migrations
 # This file materializes the intermediate compile-time crate directory too;
 # distroless deliberately has no shell with which to create it at startup.
@@ -39,6 +44,6 @@ ENTRYPOINT ["/app/migrate"]
 
 {% if context.worker %}FROM ${RUNTIME_IMAGE} AS worker
 WORKDIR /app
-COPY --from=builder /workspace/target/release/worker /app/worker
+COPY --from=builder /out/worker /app/worker
 ENTRYPOINT ["/app/worker"]
 {% endif %}
