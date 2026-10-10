@@ -18,6 +18,7 @@ pub use crate::ScriptedWebhookReceiver as ScriptedSuiteReceiver;
 /// Reads a checked-in suite fixture. Unknown names return `None`.
 pub fn fixture(name: &str) -> Option<&'static str> {
     match name {
+        "error-codes.json" => Some(include_str!("suite/fixtures/v1/error-codes.json")),
         "SHA256SUMS" => Some(include_str!("suite/fixtures/v1/SHA256SUMS")),
         "peers.json" => Some(include_str!("suite/fixtures/v1/peers.json")),
         "peer-metadata.json" => Some(include_str!("suite/fixtures/v1/peer-metadata.json")),

@@ -439,3 +439,16 @@ The source paths below refer to snapshot `6a95ac2`.
   another job while erasure waits for that link, leaving an orphan after cleanup.
   Shared link operations take the owner advisory lock first. Router tests race
   replay, test and disconnect with erasure and check that no jobs remain.
+
+## Error codes
+
+`baukit_suite::SUITE_ERROR_CODES` and `@baukit/suite-client`'s readonly
+`SUITE_ERROR_CODES` tuple list suite protocol errors, stored delivery failures,
+and default HTTP error codes in sorted order. The client exports the
+`SuiteErrorCode` union for product error mappings. Products can add their own
+middleware errors.
+
+Both lists match `fixtures/suite-events/v1/error-codes.json`. The test kit embeds
+the same file. The suite OpenAPI error envelope uses this list as its `code` enum.
+Failed authorization states preserve the server's JSON `details` object when
+present. Use `suiteErrorDetails` alongside `suiteErrorCode` for other flows.

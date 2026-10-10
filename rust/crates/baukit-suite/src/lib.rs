@@ -36,12 +36,14 @@
 pub mod adapters;
 pub mod config;
 pub mod domain;
+mod error_codes;
 pub mod ports;
 #[cfg(feature = "runtime")]
 mod secret_cipher;
 pub mod services;
 
 pub use domain::SUITE_JOB_TYPES;
+pub use error_codes::SUITE_ERROR_CODES;
 
 /// Copy this schema after the baukit-jobs migrations. Products add owner foreign keys.
 /// The crate never runs migrations on startup.

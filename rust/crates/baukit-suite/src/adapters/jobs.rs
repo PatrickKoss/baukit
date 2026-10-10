@@ -1,3 +1,4 @@
+use crate::error_codes::SuiteErrorCode;
 use crate::{
     domain::*,
     ports::*,
@@ -29,8 +30,11 @@ impl JobHandler for SuiteJobHandler {
                     SUITE_EVENTS_DELIVER_JOB_TYPE => {
                         self.service
                             .deliver(
-                                serde_json::from_value(job.payload.clone())
-                                    .map_err(|_| JobError::permanent("suite_payload_invalid"))?,
+                                serde_json::from_value(job.payload.clone()).map_err(|_| {
+                                    JobError::permanent(
+                                        SuiteErrorCode::SuitePayloadInvalid.as_str(),
+                                    )
+                                })?,
                                 Utc::now(),
                                 job.id,
                                 cancellation.worker_id(),
@@ -40,24 +44,33 @@ impl JobHandler for SuiteJobHandler {
                     SUITE_LINKS_REVOKE_JOB_TYPE => {
                         self.service
                             .revoke(
-                                serde_json::from_value(job.payload.clone())
-                                    .map_err(|_| JobError::permanent("suite_payload_invalid"))?,
+                                serde_json::from_value(job.payload.clone()).map_err(|_| {
+                                    JobError::permanent(
+                                        SuiteErrorCode::SuitePayloadInvalid.as_str(),
+                                    )
+                                })?,
                                 Utc::now(),
                             )
                             .await
                     }
-                    _ => return Err(JobError::permanent("suite_job_type_unsupported")),
+                    _ => {
+                        return Err(JobError::permanent(
+                            SuiteErrorCode::SuiteJobTypeUnsupported.as_str(),
+                        ));
+                    }
                 }
                 .map_err(service_job_error)?;
                 match action {
-                    DeliveryAction::Retry { after: Some(delay) } => {
-                        Err(JobError::retryable_after("suite_peer_unreachable", delay))
-                    }
-                    DeliveryAction::Retry { after: None } => {
-                        Err(JobError::retryable("suite_peer_unreachable"))
-                    }
+                    DeliveryAction::Retry { after: Some(delay) } => Err(JobError::retryable_after(
+                        SuiteErrorCode::SuitePeerUnreachable.as_str(),
+                        delay,
+                    )),
+                    DeliveryAction::Retry { after: None } => Err(JobError::retryable(
+                        SuiteErrorCode::SuitePeerUnreachable.as_str(),
+                    )),
                     a if a.permanent_code().is_some() => Err(JobError::permanent(
-                        a.permanent_code().unwrap_or("suite_rejected"),
+                        a.permanent_code()
+                            .unwrap_or(SuiteErrorCode::SuiteRejected.as_str()),
                     )),
                     DeliveryAction::Delivered if job.job_type == SUITE_EVENTS_DELIVER_JOB_TYPE => {
                         cancellation.mark_completed_in_transaction();
@@ -80,7 +93,7 @@ fn service_job_error(error: SuiteServiceError) -> JobError {
     match error {
         SuiteServiceError::Protocol(
             LinkProtocolError::Disabled | LinkProtocolError::PeerUnknown,
-        ) => JobError::permanent("suite_link_disabled"),
+        ) => JobError::permanent(SuiteErrorCode::SuiteLinkDisabled.as_str()),
         SuiteServiceError::Cipher
         | SuiteServiceError::PayloadInvalid
         | SuiteServiceError::Store(

@@ -1,6 +1,7 @@
 pub use super::http_support::SuiteHttpState;
 use super::http_support::*;
 use crate::domain::*;
+use crate::error_codes::SuiteErrorCode;
 use crate::services::{
     AuthorizationDeny, AuthorizationRequest, SignedHeaders, SuiteApi, SuiteLinkView, SuiteUser,
 };
@@ -59,38 +60,13 @@ enum SuiteDeliveryStatus {
     Cancelled,
 }
 
-#[derive(Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-enum SuiteDeliveryFailureCode {
-    SuiteUnauthorized,
-    SuiteLinkRevoked,
-    SuiteRejected,
-    SuiteLinkDisabled,
-    SuitePeerUnreachable,
-    SuitePayloadInvalid,
-    SuiteJobTypeUnsupported,
-    InternalError,
-    SuiteLinkInactive,
-    NotFound,
-}
+type SuiteDeliveryFailureCode = SuiteErrorCode;
 impl From<&str> for SuiteDeliveryFailureCode {
     fn from(code: &str) -> Self {
-        match code {
-            "suite_unauthorized" => Self::SuiteUnauthorized,
-            "suite_link_revoked" => Self::SuiteLinkRevoked,
-            "suite_rejected" => Self::SuiteRejected,
-            "suite_link_disabled" => Self::SuiteLinkDisabled,
-            "suite_peer_unreachable" => Self::SuitePeerUnreachable,
-            "suite_payload_invalid" => Self::SuitePayloadInvalid,
-            "suite_job_type_unsupported" => Self::SuiteJobTypeUnsupported,
-            "suite_link_inactive" => Self::SuiteLinkInactive,
-            "not_found" => Self::NotFound,
-            "internal_error" => Self::InternalError,
-            _ => {
-                tracing::warn!(stored_code = code, "unknown suite delivery failure code");
-                Self::InternalError
-            }
-        }
+        Self::parse(code).unwrap_or_else(|| {
+            tracing::warn!(stored_code = code, "unknown suite delivery failure code");
+            Self::InternalError
+        })
     }
 }
 
@@ -548,7 +524,7 @@ async fn update(
     ApiJson(r): ApiJson<PatchRequest>,
 ) -> Result<Json<SuiteLinkResponse>, HttpError> {
     let mode = r.reward_mode.map(|m| m.parse()).transpose().map_err(|_| {
-        HttpError::validation_with_code("suite_payload_invalid", "Invalid reward mode")
+        HttpError::validation_with_code(SuiteErrorCode::SuitePayloadInvalid, "Invalid reward mode")
     })?;
     Ok(Json(
         api(&state)?
@@ -892,8 +868,11 @@ async fn callback(
     Query(q): Query<LinkCallbackQuery>,
 ) -> Result<Response, HttpError> {
     let r = api(&state)?.callback(q, Utc::now()).await.map_err(|e| {
-        if e.code() == "suite_code_invalid" {
-            HttpError::bad_request_with_code("suite_code_invalid", "Invalid suite callback")
+        if e.code() == SuiteErrorCode::SuiteCodeInvalid.as_str() {
+            HttpError::bad_request_with_code(
+                SuiteErrorCode::SuiteCodeInvalid,
+                "Invalid suite callback",
+            )
         } else {
             e.into()
         }
@@ -1043,6 +1022,31 @@ pub struct SuiteOpenApi;
 mod tests {
     use super::*;
     use utoipa::OpenApi;
+    #[test]
+    fn delivery_error_codes_preserve_every_protocol_code() {
+        for code in crate::SUITE_ERROR_CODES {
+            let mapped = SuiteDeliveryFailureCode::from(*code);
+            assert_eq!(mapped.as_str(), *code);
+            assert_eq!(serde_json::to_value(mapped).expect("code"), *code);
+        }
+        assert_eq!(
+            SuiteDeliveryFailureCode::from("unknown").as_str(),
+            "internal_error"
+        );
+    }
+    #[test]
+    fn openapi_error_codes_match_protocol() {
+        let document = serde_json::to_value(SuiteOpenApi::openapi()).expect("OpenAPI");
+        let schemas = &document["components"]["schemas"];
+        assert_eq!(
+            schemas["SuiteErrorCode"]["enum"],
+            serde_json::json!(crate::SUITE_ERROR_CODES)
+        );
+        assert_eq!(
+            schemas["SuiteErrorBody"]["properties"]["code"]["$ref"],
+            "#/components/schemas/SuiteErrorCode"
+        );
+    }
     #[test]
     fn openapi_uses_the_event_envelope_wire_name_and_generic_app_ids() {
         let document = serde_json::to_value(SuiteOpenApi::openapi()).expect("OpenAPI");

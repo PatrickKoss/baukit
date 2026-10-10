@@ -1,3 +1,4 @@
+use crate::error_codes::SuiteErrorCode;
 use crate::{
     domain::LinkProtocolError,
     ports::SuiteStoreError,
@@ -42,17 +43,17 @@ impl From<ApiError> for HttpError {
     }
 }
 impl HttpError {
-    pub(super) fn validation_with_code(code: &str, message: &str) -> Self {
-        ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, code, message).into()
+    pub(super) fn validation_with_code(code: SuiteErrorCode, message: &str) -> Self {
+        ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, code.as_str(), message).into()
     }
-    pub(super) fn bad_request_with_code(code: &str, message: &str) -> Self {
-        ApiError::new(StatusCode::BAD_REQUEST, code, message).into()
+    pub(super) fn bad_request_with_code(code: SuiteErrorCode, message: &str) -> Self {
+        ApiError::new(StatusCode::BAD_REQUEST, code.as_str(), message).into()
     }
     fn internal_response(error: impl std::error::Error + Send + Sync + 'static) -> Self {
         tracing::error!(%error, "Suite request failed");
         ApiError::new(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "internal_server_error",
+            SuiteErrorCode::InternalServerError.as_str(),
             "Internal server error",
         )
         .into()
@@ -114,5 +115,14 @@ impl From<SuiteServiceError> for HttpError {
 }
 #[derive(serde::Serialize, utoipa::ToSchema)]
 pub(super) struct ErrorResponse {
-    pub error: serde_json::Value,
+    pub error: SuiteErrorBody,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct SuiteErrorBody {
+    code: SuiteErrorCode,
+    message: String,
+    request_id: String,
+    details: std::collections::BTreeMap<String, serde_json::Value>,
 }

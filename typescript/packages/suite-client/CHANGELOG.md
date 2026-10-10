@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Export `SUITE_ERROR_CODES` and `SuiteErrorCode`, checked against the shared Rust fixture.
+
 - Preserve server error details in failed authorization states and export `suiteErrorDetails`.
 
 ## 0.10.12

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Export the sorted suite error codes from the same definition as the Rust mappings and OpenAPI enum.
+
 ## [0.10.12] - 2026-10-10
 
 ## [0.10.11] - 2026-10-10

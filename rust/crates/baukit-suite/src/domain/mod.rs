@@ -1,3 +1,4 @@
+use crate::error_codes::SuiteErrorCode;
 use std::{collections::BTreeMap, net::IpAddr, time::Duration};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -394,11 +395,16 @@ pub enum InboundValidationError {
 }
 
 impl InboundValidationError {
-    pub const fn code(&self) -> &'static str {
+    pub fn code(&self) -> &'static str {
+        self.error_code().as_str()
+    }
+    pub(crate) fn error_code(&self) -> SuiteErrorCode {
         match self {
-            Self::Envelope(code) => code.as_str(),
-            Self::SourceAppMismatch | Self::UnsupportedType => "suite_event_type_unsupported",
-            Self::Payload(_) | Self::FutureOccurrence => "suite_payload_invalid",
+            Self::Envelope(code) => (*code).into(),
+            Self::SourceAppMismatch | Self::UnsupportedType => {
+                SuiteErrorCode::SuiteEventTypeUnsupported
+            }
+            Self::Payload(_) | Self::FutureOccurrence => SuiteErrorCode::SuitePayloadInvalid,
         }
     }
 }
@@ -751,12 +757,18 @@ impl DeliveryAction {
         }
     }
     pub const fn permanent_code(self) -> Option<&'static str> {
+        match self.permanent_error_code() {
+            Some(code) => Some(code.as_str()),
+            None => None,
+        }
+    }
+    const fn permanent_error_code(self) -> Option<SuiteErrorCode> {
         match self {
-            Self::Unauthorized => Some("suite_unauthorized"),
-            Self::Revoked => Some("suite_link_revoked"),
-            Self::Rejected => Some("suite_rejected"),
-            Self::Disabled => Some("suite_link_disabled"),
-            _ => None,
+            Self::Unauthorized => Some(SuiteErrorCode::SuiteUnauthorized),
+            Self::Revoked => Some(SuiteErrorCode::SuiteLinkRevoked),
+            Self::Rejected => Some(SuiteErrorCode::SuiteRejected),
+            Self::Disabled => Some(SuiteErrorCode::SuiteLinkDisabled),
+            Self::LinkMissing | Self::LinkRevoked | Self::Delivered | Self::Retry { .. } => None,
         }
     }
 }

@@ -1,3 +1,4 @@
+use crate::error_codes::SuiteErrorCode;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
@@ -109,14 +110,17 @@ pub enum LinkProtocolError {
 
 impl LinkProtocolError {
     pub const fn code(self) -> &'static str {
+        self.error_code().as_str()
+    }
+    pub(crate) const fn error_code(self) -> SuiteErrorCode {
         match self {
-            Self::NotFound => "not_found",
-            Self::CodeInvalid => "suite_code_invalid",
-            Self::AccountMismatch => "suite_link_account_mismatch",
-            Self::PeerUnknown => "suite_peer_unknown",
-            Self::Disabled => "suite_disabled",
-            Self::ReturnUrlInvalid => "suite_return_url_invalid",
-            Self::PayloadInvalid => "suite_payload_invalid",
+            Self::NotFound => SuiteErrorCode::NotFound,
+            Self::CodeInvalid => SuiteErrorCode::SuiteCodeInvalid,
+            Self::AccountMismatch => SuiteErrorCode::SuiteLinkAccountMismatch,
+            Self::PeerUnknown => SuiteErrorCode::SuitePeerUnknown,
+            Self::Disabled => SuiteErrorCode::SuiteDisabled,
+            Self::ReturnUrlInvalid => SuiteErrorCode::SuiteReturnUrlInvalid,
+            Self::PayloadInvalid => SuiteErrorCode::SuitePayloadInvalid,
         }
     }
 }
@@ -173,7 +177,12 @@ pub enum CallbackError {
 
 impl CallbackError {
     pub const fn code(self) -> &'static str {
-        "suite_code_invalid"
+        self.error_code().as_str()
+    }
+    const fn error_code(self) -> SuiteErrorCode {
+        match self {
+            Self::CodeInvalid => SuiteErrorCode::SuiteCodeInvalid,
+        }
     }
 }
 
@@ -218,7 +227,7 @@ pub fn relay_callback(
             }
             _ => {
                 pairs.append_pair("status", "failed");
-                pairs.append_pair("code", "suite_code_invalid");
+                pairs.append_pair("code", SuiteErrorCode::SuiteCodeInvalid.as_str());
             }
         }
     }

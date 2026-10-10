@@ -1,3 +1,4 @@
+use crate::error_codes::SuiteErrorCode;
 use std::{sync::Arc, time::Duration};
 
 use crate::domain::*;
@@ -60,29 +61,38 @@ pub enum SuiteServiceError {
 }
 impl SuiteServiceError {
     pub fn code(&self) -> &'static str {
+        self.error_code().as_str()
+    }
+    fn error_code(&self) -> SuiteErrorCode {
         match self {
-            Self::Protocol(e) => e.code(),
-            Self::SignatureInvalid => "suite_signature_invalid",
-            Self::LinkRevoked => "suite_link_revoked",
-            Self::ReplayWindow { .. } => "suite_replay_window",
+            Self::Protocol(e) => e.error_code(),
+            Self::SignatureInvalid => SuiteErrorCode::SuiteSignatureInvalid,
+            Self::LinkRevoked => SuiteErrorCode::SuiteLinkRevoked,
+            Self::ReplayWindow { .. } => SuiteErrorCode::SuiteReplayWindow,
             Self::PayloadInvalid | Self::Store(SuiteStoreError::PayloadInvalid(_)) => {
-                "suite_payload_invalid"
+                SuiteErrorCode::SuitePayloadInvalid
             }
-            Self::Inbound(e) => e.code(),
-            Self::PeerUnreachable => "suite_peer_unreachable",
-            Self::RateLimited(_) => "rate_limited",
-            Self::Store(SuiteStoreError::NotFound) => "not_found",
-            Self::Store(SuiteStoreError::CodeInvalid) => "suite_code_invalid",
-            Self::Store(SuiteStoreError::EventIdConflict) => "suite_event_id_conflict",
-            Self::Store(SuiteStoreError::ReplayTooSoon(_)) => "suite_replay_throttled",
-            Self::Store(SuiteStoreError::QuotaExceeded { .. }) => "suite_quota_exceeded",
-            Self::Store(SuiteStoreError::InvalidData(_)) => "internal_error",
-            Self::Unavailable => "suite_unavailable",
+            Self::Inbound(e) => e.error_code(),
+            Self::PeerUnreachable => SuiteErrorCode::SuitePeerUnreachable,
+            Self::RateLimited(_) => SuiteErrorCode::RateLimited,
+            Self::Store(SuiteStoreError::NotFound) => SuiteErrorCode::NotFound,
+            Self::Store(SuiteStoreError::CodeInvalid) => SuiteErrorCode::SuiteCodeInvalid,
+            Self::Store(SuiteStoreError::EventIdConflict) => SuiteErrorCode::SuiteEventIdConflict,
+            Self::Store(SuiteStoreError::ReplayTooSoon(_)) => SuiteErrorCode::SuiteReplayThrottled,
+            Self::Store(SuiteStoreError::QuotaExceeded { .. }) => {
+                SuiteErrorCode::SuiteQuotaExceeded
+            }
+            Self::Store(SuiteStoreError::InvalidData(_)) => SuiteErrorCode::InternalError,
+            Self::Unavailable => SuiteErrorCode::SuiteUnavailable,
             Self::LinkInactive | Self::Store(SuiteStoreError::LinkInactive) => {
-                "suite_link_inactive"
+                SuiteErrorCode::SuiteLinkInactive
             }
-            Self::Store(SuiteStoreError::LinkRevoked) => "suite_link_revoked",
-            _ => "internal_error",
+            Self::Store(SuiteStoreError::LinkRevoked) => SuiteErrorCode::SuiteLinkRevoked,
+            Self::Cipher
+            | Self::RateLimiter
+            | Self::Store(SuiteStoreError::Storage(_) | SuiteStoreError::Timeout) => {
+                SuiteErrorCode::InternalError
+            }
         }
     }
 }
