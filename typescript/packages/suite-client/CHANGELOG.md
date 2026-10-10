@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Preserve server error details in failed authorization states and export `suiteErrorDetails`.
+
 ## 0.10.12
 
 ### Patch Changes

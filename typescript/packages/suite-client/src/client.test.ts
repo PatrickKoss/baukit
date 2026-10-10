@@ -335,6 +335,33 @@ describe('OAuth session glue', () => {
   });
 });
 describe('authorize state', () => {
+  for (const action of ['load', 'approve', 'deny'] as const) {
+    it.each([undefined, { earliest: '2026-01-01', latest: '2026-10-10', nested: [null, true] }])(
+      `${action} preserves server details when present`,
+      async (details) => {
+        const f = apiFixture();
+        const machine = new SuiteAuthorizeMachine(f.client, input, {
+          web: true,
+          framed: false,
+          signedIn: true,
+        });
+        if (action !== 'load') await machine.load();
+        const error = Object.assign(
+          new SuiteFlowError('suite_replay_window'),
+          details === undefined ? {} : { details },
+        );
+        f.request.mockRejectedValueOnce(error);
+        const state = await machine[action]();
+        expect(state).toEqual({
+          type: 'failed',
+          code: 'suite_replay_window',
+          ...(details === undefined ? {} : { details }),
+        });
+        expect(Object.hasOwn(state, 'details')).toBe(details !== undefined);
+      },
+    );
+  }
+
   it('previews both directions with the identity domain then posts consent', async () => {
     const f = apiFixture();
     const machine = new SuiteAuthorizeMachine(f.client, input, {

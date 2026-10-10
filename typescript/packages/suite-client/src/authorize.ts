@@ -1,6 +1,8 @@
 import {
   SuiteClient,
   suiteErrorCode,
+  suiteErrorDetails,
+  type SuiteErrorDetails,
   type AuthorizationInput,
   type AuthorizationPreview,
 } from './api.js';
@@ -8,7 +10,7 @@ export type AuthorizeState =
   | { readonly type: 'loading' | 'login' | 'framed' | 'web_required' | 'invalid' | 'submitting' }
   | { readonly type: 'consent' | 'hint_mismatch'; readonly preview: AuthorizationPreview }
   | { readonly type: 'redirect'; readonly url: string }
-  | { readonly type: 'failed'; readonly code: string };
+  | { readonly type: 'failed'; readonly code: string; readonly details?: SuiteErrorDetails };
 export interface AuthorizeEnvironment {
   readonly web: boolean;
   readonly framed: boolean;
@@ -46,7 +48,7 @@ export class SuiteAuthorizeMachine {
       if (this.#preview.autoApprove) return await this.approve();
       return this.set({ type: 'consent', preview: this.#preview });
     } catch (error) {
-      return this.set({ type: 'failed', code: suiteErrorCode(error) });
+      return this.fail(error);
     }
   }
   public async approve(): Promise<AuthorizeState> {
@@ -71,7 +73,7 @@ export class SuiteAuthorizeMachine {
       });
       return this.set({ type: 'redirect', url: result.redirectUrl });
     } catch (error) {
-      return this.set({ type: 'failed', code: suiteErrorCode(error) });
+      return this.fail(error);
     }
   }
   public async deny(): Promise<AuthorizeState> {
@@ -85,8 +87,16 @@ export class SuiteAuthorizeMachine {
       const result = await this.client.deny({ client: this.input.client, state: this.input.state });
       return this.set({ type: 'redirect', url: result.redirectUrl });
     } catch (error) {
-      return this.set({ type: 'failed', code: suiteErrorCode(error) });
+      return this.fail(error);
     }
+  }
+  private fail(error: unknown): AuthorizeState {
+    const details = suiteErrorDetails(error);
+    return this.set({
+      type: 'failed',
+      code: suiteErrorCode(error),
+      ...(details === undefined ? {} : { details }),
+    });
   }
   private set(state: AuthorizeState): AuthorizeState {
     this.#state = state;

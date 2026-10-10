@@ -65,6 +65,38 @@ export class SuiteFlowError extends Error {
     super(code);
   }
 }
+export type SuiteJsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly SuiteJsonValue[]
+  | { readonly [key: string]: SuiteJsonValue };
+export type SuiteErrorDetails = Readonly<Record<string, SuiteJsonValue>>;
+
+export function suiteErrorDetails(error: unknown): SuiteErrorDetails | undefined {
+  if (!(error instanceof Error) || !('details' in error)) return undefined;
+  const details: unknown = error.details;
+  return isJsonObject(details) ? details : undefined;
+}
+function isJsonObject(value: unknown): value is SuiteErrorDetails {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.values(value).every(isJsonValue)
+  );
+}
+function isJsonValue(value: unknown): value is SuiteJsonValue {
+  return (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'boolean' ||
+    (typeof value === 'number' && Number.isFinite(value)) ||
+    (Array.isArray(value) ? value.every(isJsonValue) : isJsonObject(value))
+  );
+}
+
 export function suiteErrorCode(error: unknown): string {
   if (error instanceof Error && 'code' in error && typeof error.code === 'string')
     return error.code;
