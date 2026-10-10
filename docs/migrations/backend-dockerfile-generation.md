@@ -58,8 +58,11 @@ Hebkit currently calls the entrypoint binary `container-entrypoint`; keep that
 name until the Cargo target changes. Each listed command gets its own image
 stage. The shared runtime containing every command is removed. If the
 entrypoint still dispatches to companion commands, declare them through
-`runtime_binaries`, or move command selection and migration startup into
-Compose services and Helm init containers. The named command stages are the
+`runtime_binaries`, or select commands per Compose service and Helm component.
+Run migrations through the `baukit-app` chart's pre-install and pre-upgrade
+migration hook Job, and in Compose through a `migrate` service that the API
+and worker depend on with `condition: service_completed_successfully`. The
+chart has no init container support. The named command stages are the
 preferred deployment targets.
 
 Move `HEBKIT__HTTP__BIND_ADDRESS`, `HEBKIT__OPS__BIND_ADDRESS`,
@@ -118,8 +121,10 @@ files become build inputs, replace those copies with the Tiefgang directory
 copy.
 
 The `entrypoint` stage is its own image. API, migrate and worker invoke their
-own binaries directly. Move migration sequencing into Helm init containers
-or Compose services. If the product still needs the dispatcher image,
+own binaries directly. Run migrations through the `baukit-app` chart's
+pre-install and pre-upgrade migration hook Job, and in Compose through a
+`migrate` service that the API and worker depend on with
+`condition: service_completed_successfully`. If the product still needs the dispatcher image,
 `runtime_binaries` can copy its companion commands into the entrypoint stage.
 
 Move `SOLO_LEVELING_SYSTEM__HTTP__BIND_ADDRESS`,
