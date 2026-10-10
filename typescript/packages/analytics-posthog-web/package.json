@@ -1,6 +1,6 @@
 {
   "name": "@baukit/analytics-posthog-web",
-  "version": "0.10.8",
+  "version": "0.10.9",
   "description": "PostHog browser transport for @baukit/analytics-core.",
   "license": "MIT",
   "author": "Patrick Koss",
@@ -47,7 +47,7 @@
     "typescript": "6.0.3"
   },
   "peerDependencies": {
-    "@baukit/analytics-core": "^0.10.8",
+    "@baukit/analytics-core": "^0.10.9",
     "posthog-js": ">=1.43.1 <2"
   }
 }

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.9] - 2026-10-10
+
 {% if context.backend %}- Use Dockerfile frontend 1.28.0 for the backend image.
 - Generate the backend Dockerfile from `baukit.toml`. Regenerate it with `baukit generate dockerfile` after a Baukit update.
 - Pin Rust and distroless base images by digest. Set `SQLX_OFFLINE=true` during image builds.

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.9] - 2026-10-10
+
 - Generate backend Dockerfiles from optional `[backend.image]` settings in `baukit.toml`. Add `baukit generate dockerfile` and `--check`. Doctor reports Dockerfile drift.
 - Pin backend base images by digest and build with SQLx offline metadata.
 

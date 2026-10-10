@@ -2,7 +2,16 @@
 
 ## [Unreleased]
 
+## 0.10.9
+
 - Keep the connection notice from `SuiteLinkedMachine` when the redirect completes but the product `refresh` rejects. The link already exists, so a failed list reload no longer shows an error notice.
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.9 train.
+- Updated dependencies
+  - @baukit/integrations-client@0.10.9
+  - @baukit/localization-core@0.10.9
 
 ## 0.10.8
 

@@ -1,6 +1,6 @@
 {
   "name": "@baukit/suite-client",
-  "version": "0.10.8",
+  "version": "0.10.9",
   "description": "Headless suite linking, authorization state and connected app clients.",
   "license": "MIT",
   "author": "Patrick Koss",
@@ -59,7 +59,7 @@
     "vitest": "5.0.3"
   },
   "peerDependencies": {
-    "@baukit/integrations-client": "^0.10.8",
-    "@baukit/localization-core": "^0.10.8"
+    "@baukit/integrations-client": "^0.10.9",
+    "@baukit/localization-core": "^0.10.9"
   }
 }
