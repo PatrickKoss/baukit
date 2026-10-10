@@ -22,6 +22,7 @@ keep selecting those stages.
 | Solo Leveling System | `backend_context`, `binaries`, `cargo_build_jobs`, `build_inputs` |
 | Runtime Analyzer | `binaries`, `cargo_build_jobs`, `build_inputs`, `runtime_binaries`, `writable_directories`, `downloads` |
 | Schlauzug | `cargo_build_jobs`, `build_inputs` |
+| AHP | `runtime_packages`, `build_features` |
 
 These examples assume the current `capabilities.worker` declarations. Set it
 to true where a product uses worker and relies on the default binary list.
@@ -70,9 +71,9 @@ Move `HEBKIT__HTTP__BIND_ADDRESS`, `HEBKIT__OPS__BIND_ADDRESS`,
 `RUST_LOG` into Helm or Compose environment settings. Keep service and
 container ports there too. `EXPOSE` is removed.
 
-Baukit supplies digest-pinned Rust and distroless defaults. Build args can
-override them; the manifest does not pin base images. BuildKit cache mounts
-replace cargo-chef's planner and dependency stages.
+Baukit supplies digest-pinned Rust, distroless and Debian slim defaults.
+Build args can override them; the manifest does not pin base images. BuildKit
+cache mounts replace cargo-chef's planner and dependency stages.
 
 ## Redemut
 
@@ -177,6 +178,37 @@ build_inputs = [{ source = "fixtures", destination = "/fixtures/" }]
 
 This replaces the old `FIXTURES_CONTEXT` image arg. Set the manifest source to
 the fixtures directory relative to the chosen build context.
+
+## AHP
+
+Keep `capabilities.worker = true` or include `worker` in `backend.image.binaries`.
+
+```toml
+[[backend.image.runtime_packages]]
+stage = "worker"
+packages = ["git"]
+
+[[backend.image.build_features]]
+binary = "worker"
+features = ["smoke"]
+```
+
+The worker stage uses the pinned Debian slim base, installs `ca-certificates`
+and `git`, removes apt lists, and runs as `65532:65532`. API and migrate keep
+the distroless base. `PACKAGES_RUNTIME_IMAGE` can override the Debian base and
+appears only when runtime packages are declared. Package lists must be nonempty,
+use the same package-name rules as builder `apt_packages`, and name each stage
+only once.
+
+Use features that exist in the bin crate. The worker leaves the shared Cargo
+build and gets a separate build with `--features smoke` in the same cache
+mounts. Multiple features are comma-joined. Each binary entry and its feature
+list must be nonempty and cannot contain duplicates. Feature names use letters,
+digits, `_`, `-`, `+`, `.` or `/`. If every binary has features, the shared build
+is omitted. All binaries still enter `/out/` through one copy.
+
+Both keys accept only names from the image's binary list. Writable directories
+use numeric ownership `65532:65532` on both runtime bases.
 
 ## Build and check
 

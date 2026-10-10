@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -42,6 +42,10 @@ pub struct BackendImage {
     pub runtime_files: Vec<RuntimeFile>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub runtime_binaries: Vec<RuntimeBinary>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub runtime_packages: Vec<RuntimePackages>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub build_features: Vec<BuildFeatures>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub writable_directories: Vec<WritableDirectory>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -94,6 +98,20 @@ pub struct RuntimeFile {
 pub struct RuntimeBinary {
     pub stage: String,
     pub binary: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimePackages {
+    pub stage: String,
+    pub packages: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct BuildFeatures {
+    pub binary: String,
+    pub features: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -192,6 +210,8 @@ pub(crate) fn validate(manifest: &Manifest) -> Result<()> {
         stage(&file.stage, &binaries)?;
         stage(&file.binary, &binaries)?;
     }
+    validate_runtime_packages(&image.runtime_packages, &binaries)?;
+    validate_build_features(&image.build_features, &binaries)?;
     for directory in &image.writable_directories {
         stage(&directory.stage, &binaries)?;
         path(&directory.path, true)?;
@@ -201,14 +221,72 @@ pub(crate) fn validate(manifest: &Manifest) -> Result<()> {
         validate_download(download)?;
     }
     for package in &image.apt_packages {
+        apt_package(package, "builder")?;
+    }
+    Ok(())
+}
+
+fn apt_package(package: &str, scope: &str) -> Result<()> {
+    ensure!(
+        !package.is_empty()
+            && package.as_bytes()[0].is_ascii_alphanumeric()
+            && package
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b".+-".contains(&byte)),
+        "invalid {scope} apt package `{package}`"
+    );
+    Ok(())
+}
+
+fn validate_runtime_packages(entries: &[RuntimePackages], binaries: &[String]) -> Result<()> {
+    let mut stages = BTreeSet::new();
+    for entry in entries {
+        stage(&entry.stage, binaries)?;
         ensure!(
-            !package.is_empty()
-                && package.as_bytes()[0].is_ascii_alphanumeric()
-                && package
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || b".+-".contains(&byte)),
-            "invalid builder apt package `{package}`"
+            stages.insert(&entry.stage),
+            "duplicate runtime packages stage `{}`",
+            entry.stage
         );
+        ensure!(
+            !entry.packages.is_empty(),
+            "runtime packages for stage `{}` must not be empty",
+            entry.stage
+        );
+        for package in &entry.packages {
+            apt_package(package, "runtime")?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_build_features(entries: &[BuildFeatures], binaries: &[String]) -> Result<()> {
+    let mut configured = BTreeSet::new();
+    for entry in entries {
+        stage(&entry.binary, binaries)?;
+        ensure!(
+            configured.insert(&entry.binary),
+            "duplicate build features binary `{}`",
+            entry.binary
+        );
+        ensure!(
+            !entry.features.is_empty(),
+            "build features for binary `{}` must not be empty",
+            entry.binary
+        );
+        let mut features = BTreeSet::new();
+        for feature in &entry.features {
+            ensure!(
+                !feature.is_empty()
+                    && feature
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || b"_-+./".contains(&byte)),
+                "invalid cargo feature `{feature}`"
+            );
+            ensure!(
+                features.insert(feature),
+                "duplicate cargo feature `{feature}`"
+            );
+        }
     }
     Ok(())
 }
@@ -305,6 +383,21 @@ pub fn render_dockerfile(manifest: &Manifest) -> Result<String> {
     validate_name(&manifest.app.name)?;
     validate(manifest)?;
     let image = &manifest.backend.image;
+    let binaries = image.binaries(manifest.capabilities.worker);
+    let shared_binaries = binaries
+        .iter()
+        .filter(|binary| {
+            !image
+                .build_features
+                .iter()
+                .any(|entry| entry.binary == **binary)
+        })
+        .collect::<Vec<_>>();
+    let runtime_packages = image
+        .runtime_packages
+        .iter()
+        .map(|entry| (&entry.stage, &entry.packages))
+        .collect::<BTreeMap<_, _>>();
     let commands = image
         .pre_build
         .iter()
@@ -324,7 +417,8 @@ pub fn render_dockerfile(manifest: &Manifest) -> Result<String> {
             app_name => &manifest.app.name,
             bin_crate => image.bin_crate.clone().unwrap_or_else(|| format!("{}-bin", manifest.app.name)),
             backend_context => image.backend_context.as_deref().unwrap_or("."),
-            binaries => image.binaries(manifest.capabilities.worker),
+            binaries => binaries, shared_binaries => shared_binaries,
+            runtime_packages => runtime_packages,
             image => image, commands => commands, runtime_files => files,
         }
     }).context("could not render backend Dockerfile")
@@ -408,6 +502,17 @@ schema = "backend/openapi.json"
         Ok(toml::from_str(&source)?)
     }
 
+    fn assert_image_pin(output: &str, key: &str, image: &str) {
+        let line = output
+            .lines()
+            .find(|line| line.starts_with(&format!("ARG {key}=")))
+            .expect("base image argument");
+        assert!(line.starts_with(&format!("ARG {key}={image}@sha256:")));
+        let digest = line.rsplit(':').next().expect("digest");
+        assert_eq!(digest.len(), 64);
+        assert!(digest.bytes().all(|byte| byte.is_ascii_hexdigit()));
+    }
+
     #[test]
     fn defaults_and_worker_follow_capabilities() -> Result<()> {
         let mut manifest = manifest("")?;
@@ -425,13 +530,9 @@ schema = "backend/openapi.json"
             ("RUST_IMAGE", "rust:1.99.0-trixie"),
             ("RUNTIME_IMAGE", "gcr.io/distroless/cc-debian13:nonroot"),
         ] {
-            let line = output
-                .lines()
-                .find(|line| line.starts_with(&format!("ARG {key}=")))
-                .expect("base image argument");
-            assert!(line.starts_with(&format!("ARG {key}={image}@sha256:")));
-            assert_eq!(line.rsplit(':').next().expect("digest").len(), 64);
+            assert_image_pin(&output, key, image);
         }
+        assert!(!output.contains("PACKAGES_RUNTIME_IMAGE"));
         manifest.capabilities.worker = true;
         let output = render_dockerfile(&manifest)?;
         assert!(output.contains("--bin api --bin migrate --bin worker"));
@@ -473,13 +574,201 @@ writable_directories = [{ stage = "api", path = "/app/var/artifacts" }]
             "COPY --from=builder [\"/workspace/crates/postgres/Cargo.toml\", \"/workspace/crates/postgres/Cargo.toml\"]",
             "COPY --from=builder /out/seed /app/seed",
             "RUN mkdir -p /out/directories/0\n",
-            "COPY --from=builder --chown=nonroot:nonroot /out/directories/0 /app/var/artifacts",
+            "COPY --from=builder --chown=65532:65532 /out/directories/0 /app/var/artifacts",
             "FROM ${RUNTIME_IMAGE} AS seed",
             "ENTRYPOINT [\"/app/seed\"]",
         ] {
             assert!(output.contains(expected), "missing {expected}\n{output}");
         }
         assert!(!output.contains("AS worker"));
+        Ok(())
+    }
+
+    #[test]
+    fn runtime_packages_apply_only_to_the_selected_stage() -> Result<()> {
+        let manifest = manifest(
+            r#"
+binaries = ["api", "migrate", "worker"]
+writable_directories = [{stage = "worker", path = "/app/reports"}]
+[[backend.image.runtime_packages]]
+stage = "worker"
+packages = ["git", "libssl3t64"]
+"#,
+        )?;
+        let output = render_dockerfile(&manifest)?;
+        assert_image_pin(&output, "PACKAGES_RUNTIME_IMAGE", "debian:trixie-slim");
+        let (other_stages, worker) = output
+            .split_once("FROM ${PACKAGES_RUNTIME_IMAGE} AS worker\n")
+            .expect("Debian worker stage");
+        assert!(other_stages.contains("FROM ${RUNTIME_IMAGE} AS api\n"));
+        assert!(other_stages.contains("FROM ${RUNTIME_IMAGE} AS migrate\n"));
+        assert!(!other_stages.contains("apt-get"));
+        assert!(!other_stages.contains("USER "));
+        assert!(worker.starts_with(
+            "RUN apt-get update \\\n    && apt-get install --no-install-recommends --yes ca-certificates git libssl3t64 \\\n    && rm -rf /var/lib/apt/lists/*\nUSER 65532:65532\nWORKDIR /app\n"
+        ));
+        assert!(worker.contains("COPY --from=builder /out/worker /app/worker\n"));
+        assert!(
+            worker.contains(
+                "COPY --from=builder --chown=65532:65532 /out/directories/0 /app/reports\n"
+            )
+        );
+        assert!(output.ends_with("ENTRYPOINT [\"/app/worker\"]\n"));
+        Ok(())
+    }
+
+    #[test]
+    fn builder_packages_do_not_add_a_packages_runtime_argument() -> Result<()> {
+        let output = render_dockerfile(&manifest("apt_packages = ['git']")?)?;
+        assert!(output.contains("apt-get install --no-install-recommends --yes git"));
+        assert!(!output.contains("PACKAGES_RUNTIME_IMAGE"));
+        Ok(())
+    }
+
+    #[test]
+    fn feature_builds_exclude_the_binary_from_the_shared_build() -> Result<()> {
+        let manifest = manifest(
+            r#"
+binaries = ["api", "migrate", "worker"]
+bin_crate = "custom-bin"
+[[backend.image.build_features]]
+binary = "worker"
+features = ["a", "b"]
+"#,
+        )?;
+        let output = render_dockerfile(&manifest)?;
+        assert!(output.contains(
+            "cargo build --locked --release -p custom-bin \\\n    --bin api --bin migrate \\\n    && cargo build --locked --release -p custom-bin --bin worker --features a,b \\\n    && mkdir -p /out \\\n    && cp target/release/api target/release/migrate target/release/worker /out/\n"
+        ));
+        assert_eq!(output.matches("cargo build ").count(), 2);
+        assert_eq!(output.matches("--mount=type=cache").count(), 2);
+        assert_eq!(output.matches("&& cp ").count(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn all_feature_builds_omit_the_shared_build_and_keep_pre_build_commands() -> Result<()> {
+        let manifest = manifest(
+            r#"
+pre_build = [{command = ["true"]}]
+build_features = [{binary = "api", features = ["dep/feature_1-2+3.4"]}, {binary = "migrate", features = ["smoke"]}]
+"#,
+        )?;
+        let output = render_dockerfile(&manifest)?;
+        assert!(output.contains(
+            "'true' \\\n    && cargo build --locked --release -p test-product-bin --bin api --features dep/feature_1-2+3.4 \\\n    && cargo build --locked --release -p test-product-bin --bin migrate --features smoke \\\n    && mkdir -p /out \\\n    && cp target/release/api target/release/migrate /out/\n"
+        ));
+        assert_eq!(output.matches("cargo build ").count(), 2);
+        assert_eq!(output.matches("--mount=type=cache").count(), 2);
+        assert_eq!(output.matches("&& cp ").count(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn package_and_feature_combinations_preserve_output_whitespace() -> Result<()> {
+        for packages in [
+            "[]",
+            "[{stage = 'api', packages = ['git']}]",
+            "[{stage = 'api', packages = ['git']}, {stage = 'migrate', packages = ['curl']}]",
+        ] {
+            for features in [
+                "[]",
+                "[{binary = 'api', features = ['smoke']}]",
+                "[{binary = 'api', features = ['smoke']}, {binary = 'migrate', features = ['smoke']}]",
+            ] {
+                for pre_build in ["[]", "[{command = ['true']}]"] {
+                    let manifest = manifest(&format!(
+                        "runtime_packages = {packages}\nbuild_features = {features}\npre_build = {pre_build}\n"
+                    ))?;
+                    let output = render_dockerfile(&manifest)?;
+                    assert!(
+                        output.lines().all(|line| line == line.trim_end()),
+                        "{output}"
+                    );
+                    assert!(
+                        output.ends_with("ENTRYPOINT [\"/app/migrate\"]\n"),
+                        "{output}"
+                    );
+                    assert!(!output.contains("\n\n\n"), "{output}");
+                    assert_eq!(
+                        output.contains("ARG PACKAGES_RUNTIME_IMAGE="),
+                        packages != "[]"
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_invalid_runtime_packages_and_build_features() -> Result<()> {
+        for (source, expected) in [
+            (
+                "runtime_packages = [{stage = 'worker', packages = ['git']}]",
+                "image stage `worker` is not a declared binary",
+            ),
+            (
+                "runtime_packages = [{stage = 'api', packages = []}]",
+                "runtime packages for stage `api` must not be empty",
+            ),
+            (
+                "runtime_packages = [{stage = 'api', packages = ['']}]",
+                "invalid runtime apt package",
+            ),
+            (
+                "runtime_packages = [{stage = 'api', packages = ['--bad']}]",
+                "invalid runtime apt package",
+            ),
+            (
+                "runtime_packages = [{stage = 'api', packages = ['git;false']}]",
+                "invalid runtime apt package",
+            ),
+            (
+                "runtime_packages = [{stage = 'api', packages = ['git curl']}]",
+                "invalid runtime apt package",
+            ),
+            (
+                "runtime_packages = [{stage = 'api', packages = ['git']}, {stage = 'api', packages = ['curl']}]",
+                "duplicate runtime packages stage `api`",
+            ),
+            (
+                "build_features = [{binary = 'worker', features = ['a']}]",
+                "image stage `worker` is not a declared binary",
+            ),
+            (
+                "build_features = [{binary = 'api', features = []}]",
+                "build features for binary `api` must not be empty",
+            ),
+            (
+                "build_features = [{binary = 'api', features = ['']}]",
+                "invalid cargo feature",
+            ),
+            (
+                "build_features = [{binary = 'api', features = ['a,b']}]",
+                "invalid cargo feature",
+            ),
+            (
+                "build_features = [{binary = 'api', features = ['a b']}]",
+                "invalid cargo feature",
+            ),
+            (
+                "build_features = [{binary = 'api', features = ['a;false']}]",
+                "invalid cargo feature",
+            ),
+            (
+                "build_features = [{binary = 'api', features = ['a', 'a']}]",
+                "duplicate cargo feature `a`",
+            ),
+            (
+                "build_features = [{binary = 'api', features = ['a']}, {binary = 'api', features = ['b']}]",
+                "duplicate build features binary `api`",
+            ),
+        ] {
+            let error = render_dockerfile(&manifest(source)?)
+                .expect_err(source)
+                .to_string();
+            assert!(error.contains(expected), "{source}: {error}");
+        }
         Ok(())
     }
 
@@ -622,6 +911,8 @@ runtime_files = [{ stage = "api", source = "/generated/content/file", destinatio
             "pre_build = [{command = ['true'], typo = true}]",
             "runtime_files = [{stage = 'api', source = 'file', destination = '/file', typo = true}]",
             "runtime_binaries = [{stage = 'api', binary = 'migrate', typo = true}]",
+            "runtime_packages = [{stage = 'api', packages = ['git'], typo = true}]",
+            "build_features = [{binary = 'api', features = ['smoke'], typo = true}]",
             "writable_directories = [{stage = 'api', path = '/files', typo = true}]",
             "downloads = [{stage = 'api', url = 'https://example.com/tool', archive_sha256 = 'a', binary = 'tool', binary_sha256 = 'b', destination = '/tool', typo = true}]",
         ] {

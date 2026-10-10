@@ -199,8 +199,23 @@ fn copied_file(container: &str, source: &str, destination: &Path) -> Result<Vec<
 #[test]
 #[ignore = "requires Docker"]
 fn buildkit_builds_every_binary_with_stage_specific_files() -> Result<()> {
-    let parent = tempfile::tempdir()?;
-    let root = product(parent.path())?;
+    let parent = tempfile::tempdir_in(Path::new(env!("CARGO_MANIFEST_DIR")).join(".."))?;
+    let generated = cli(
+        parent.path(),
+        &[
+            "new",
+            "image-product",
+            "--backend",
+            "--worker",
+            "--skip-lockfiles",
+        ],
+    )?;
+    ensure!(
+        generated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&generated.stderr)
+    );
+    let root = parent.path().join("image-product");
     configure_build_fixture(&root)?;
     let suffix = root
         .parent()
@@ -244,6 +259,7 @@ fn buildkit_builds_every_binary_with_stage_specific_files() -> Result<()> {
                 root.to_str().context("context path")?,
             ])?;
             resources.images.push(tag.clone());
+            verify_runtime_commands(&tag, binary)?;
             let container = String::from_utf8(docker(&["create", &tag])?.stdout)?
                 .trim()
                 .to_owned();
@@ -269,11 +285,18 @@ build_inputs = [{source = "inputs/build.txt", destination = "/inputs/build.txt"}
 pre_build = [{command = ["sh", "-c", "mkdir -p /generated && cp /inputs/build.txt /generated/output.txt"], outputs = ["/generated"]}]
 runtime_files = [{stage = "api", source = "/generated/output.txt", destination = "/app/prebuilt.txt"}, {stage = "worker", source = "assets/worker.txt", destination = "/app/worker.txt"}]
 runtime_binaries = [{stage = "migrate", binary = "seed"}]
+runtime_packages = [{stage = "worker", packages = ["git"]}]
+build_features = [{binary = "worker", features = ["smoke"]}]
 writable_directories = [{stage = "api", path = "/app/var/artifacts"}, {stage = "worker", path = "/tmp/reports"}]
 "#,
     )?;
     fs::write(root.join("baukit.toml"), toml::to_string(&manifest)?)?;
-    baukit_cli::generate_dockerfile(root, false)?;
+    let generated = cli(root, &["generate", "dockerfile"])?;
+    ensure!(
+        generated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&generated.stderr)
+    );
     fs::create_dir(root.join("inputs"))?;
     fs::write(root.join("inputs/build.txt"), "compiled input\n")?;
     fs::create_dir(root.join("backend/assets"))?;
@@ -286,20 +309,44 @@ writable_directories = [{stage = "api", path = "/app/var/artifacts"}, {stage = "
     let crate_root = root.join("backend/crates/image-product-bin");
     fs::write(
         crate_root.join("Cargo.toml"),
-        "[package]\nname = \"image-product-bin\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+        "[package]\nname = \"image-product-bin\"\nversion = \"0.1.0\"\nedition = \"2024\"\n[features]\nsmoke = []\n",
     )?;
     fs::remove_dir_all(crate_root.join("src"))?;
     fs::create_dir_all(crate_root.join("src/bin"))?;
     for binary in ["api", "migrate", "worker", "seed"] {
         fs::write(
             crate_root.join(format!("src/bin/{binary}.rs")),
-            "fn main() { print!(\"{}\", include_str!(\"/generated/output.txt\")); }\n",
+            "fn main() { if cfg!(feature = \"smoke\") { println!(\"smoke\"); } print!(\"{}\", include_str!(\"/generated/output.txt\")); }\n",
         )?;
     }
     fs::write(
         root.join("backend/Cargo.lock"),
         "version = 4\n[[package]]\nname = \"image-product-bin\"\nversion = \"0.1.0\"\n",
     )?;
+    Ok(())
+}
+
+fn verify_runtime_commands(image: &str, binary: &str) -> Result<()> {
+    let output = docker(&["run", "--rm", image])?;
+    let expected = if binary == "worker" {
+        "smoke\ncompiled input\n"
+    } else {
+        "compiled input\n"
+    };
+    assert_eq!(output.stdout, expected.as_bytes());
+    if binary == "worker" {
+        let git = docker(&["run", "--rm", "--entrypoint", "git", image, "--version"])?;
+        assert!(String::from_utf8_lossy(&git.stdout).starts_with("git version "));
+        let user = docker(&["image", "inspect", "--format", "{{.Config.User}}", image])?;
+        assert_eq!(String::from_utf8_lossy(&user.stdout).trim(), "65532:65532");
+    } else {
+        let git = Command::new("docker")
+            .args(["run", "--rm", "--entrypoint", "git", image, "--version"])
+            .output()?;
+        assert!(!git.status.success());
+        let error = String::from_utf8_lossy(&git.stderr);
+        assert!(error.contains("executable file not found"), "{error}");
+    }
     Ok(())
 }
 

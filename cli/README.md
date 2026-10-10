@@ -133,11 +133,13 @@ the bin crate's Cargo manifest at their compile-time paths.
 | `backend_context` | `"."`. Default for the `BACKEND_CONTEXT` build arg. Use `"backend"` for a repository-root context. |
 | `cargo_build_jobs` | Unset. Optional positive default for `ARG CARGO_BUILD_JOBS`; Cargo chooses its own limit when absent. |
 | `apt_packages` | Empty list. Builder packages installed with `--no-install-recommends`. |
+| `runtime_packages` | Empty list of `{ stage, packages }`. Selected stages use Debian slim and install `ca-certificates` plus these packages with `--no-install-recommends`. They run as `65532:65532`; other stages stay distroless. |
+| `build_features` | Empty list of `{ binary, features }`. Each listed binary gets a separate Cargo build with its comma-joined features and leaves the shared build. |
 | `build_inputs` | Empty list of `{ source, destination }` copies into the builder. Sources are relative to the Docker build context; destinations are absolute. |
 | `pre_build` | Empty list of `{ command, outputs }`. `command` is an argv array, run before Cargo in the same cache mount. `outputs` defaults to an empty list. |
 | `runtime_files` | Empty list of `{ stage, source, destination }` copies from the builder. Relative sources resolve under `/workspace`; destinations are absolute. |
 | `runtime_binaries` | Empty list of `{ stage, binary }` companion binaries copied to `/app/<binary>`. Both names must be declared binaries. |
-| `writable_directories` | Empty list of `{ stage, path }` absolute directories owned by `nonroot:nonroot`. |
+| `writable_directories` | Empty list of `{ stage, path }` absolute directories owned by `65532:65532`, the distroless nonroot user and group. |
 | `downloads` | Empty list of `{ stage, url, archive_sha256, binary, binary_sha256, destination }`. Downloads are tar.gz archives; `binary` is the relative archive member. |
 
 Unknown fields fail parsing. Paths use letters, digits, `/`, `.`, `_` and `-`,
@@ -146,6 +148,28 @@ without `..`. Build-context sources cannot be absolute. Runtime sources outside
 names must appear in the binary list. Download URLs require HTTPS; both
 checksums require 64 hexadecimal SHA-256 digits. Downloads use `ADD --checksum`,
 verify the extracted binary, and copy it as root with mode `0555`.
+
+`runtime_packages` requires a declared stage and a nonempty package list.
+Stage entries cannot repeat. Package names use the same rules as `apt_packages`:
+they start with a letter or digit and contain only letters, digits, `.`, `+` or
+`-`. `build_features` requires a declared binary and a nonempty feature list.
+Binary entries and features within an entry cannot repeat. Feature names use
+letters, digits, `_`, `-`, `+`, `.` or `/`, including `dep/feature` syntax.
+
+```toml
+[[backend.image.runtime_packages]]
+stage = "worker"
+packages = ["git"]
+
+[[backend.image.build_features]]
+binary = "worker"
+features = ["smoke"]
+```
+
+Declare `smoke` in the bin crate's Cargo manifest before building this example.
+The shared build runs first, followed by the feature builds in manifest order.
+All builds use the same cache mounts. If every binary has features, the shared
+build is omitted. One final copy moves all binaries into `/out/`.
 
 Pre-build arguments are shell-quoted literals. To run shell syntax, explicitly
 use `["sh", "-c", "..."]`. Pre-build outputs needed at runtime must live outside
@@ -157,9 +181,11 @@ metadata, so image builds do not need a database. Refresh that metadata when
 queries change. Runtime bind addresses, ports, and log settings belong in Helm
 or Compose. The image does not declare `EXPOSE` or use cargo-chef.
 
-The Rust and distroless defaults are pinned `tag@sha256` values supplied by
-Baukit. They are not manifest settings. `RUST_IMAGE` and `RUNTIME_IMAGE` build
-args can override them. `BACKEND_CONTEXT`, `BAUKIT_CONTEXT`,
+The Rust, distroless and Debian slim defaults are pinned `tag@sha256` values
+supplied by Baukit. They are not manifest settings. `RUST_IMAGE`, `RUNTIME_IMAGE`
+and `PACKAGES_RUNTIME_IMAGE` build args can override them. The Dockerfile
+declares `PACKAGES_RUNTIME_IMAGE` only when a stage has runtime packages.
+`BACKEND_CONTEXT`, `BAUKIT_CONTEXT`,
 `BAUKIT_DESTINATION`, `LIMITS_FILE` and `GIT_COMMIT` remain available, including
 for builds of local-path fixtures from the Baukit repository root.
 
@@ -173,6 +199,10 @@ for limits, worker and authentication wiring, including their declared test
 and binary targets. Crate names do not need to match `app.name`. Mobile auth
 checks use source symbols, so files can move or have product-owned names.
 Doctor does not require a Keycloak guidance filename.
+
+The Baukit registry pin census skips paths with a `fixtures` or `testdata`
+component relative to the product root. Malformed manifests elsewhere still
+fail doctor with their file path. Other layout checks keep their existing scope.
 
 Paths below are optional and relative to the product root. They cannot contain
 `..`. `backend_manifest` defaults to `backend/Cargo.toml`; `migrations` defaults

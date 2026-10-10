@@ -5,8 +5,9 @@ mod doctor_mcp;
 mod identity;
 
 pub use dockerfile::{
-    BackendImage, BackendManifest, BuildInput, Download, PreBuildStep, RuntimeBinary, RuntimeFile,
-    WritableDirectory, generate_dockerfile, render_dockerfile,
+    BackendImage, BackendManifest, BuildFeatures, BuildInput, Download, PreBuildStep,
+    RuntimeBinary, RuntimeFile, RuntimePackages, WritableDirectory, generate_dockerfile,
+    render_dockerfile,
 };
 pub use doctor_layout::DoctorPaths;
 
