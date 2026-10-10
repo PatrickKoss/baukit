@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Export `SUITE_JOB_TYPES` for products to pass to `PostgresJobStore::retain_kinds`.
+  This keeps suite delivery and revoke history until suite cleanup removes it
+  after 30 days, even when generic job cleanup uses a shorter cutoff.
+
 ## [0.10.9] - 2026-10-10
 
 ## [0.10.8] - 2026-10-09

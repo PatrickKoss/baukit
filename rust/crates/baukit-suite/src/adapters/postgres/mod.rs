@@ -846,7 +846,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
             UNION SELECT l.user_id FROM suite_links l WHERE
                 EXISTS(SELECT 1 FROM suite_failed_delivery_jobs f WHERE f.link_id=l.id AND NOT f.accounted)
                 OR EXISTS(SELECT 1 FROM job_outbox j WHERE j.payload->>'link_id'=l.id::text
-                    AND j.job_type IN ('suite.events.deliver','suite.links.revoke')
+                    AND j.job_type=ANY($5)
                     AND j.status IN ('succeeded','failed','cancelled') AND j.updated_at<$4)
             ORDER BY user_id"#,
         )
@@ -854,6 +854,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         .bind(now - Duration::days(30))
         .bind(now - Duration::days(7))
         .bind(now - Duration::days(SUITE_TERMINAL_JOB_RETENTION_DAYS))
+        .bind(SUITE_JOB_TYPES.as_slice())
         .fetch_all(&mut *tx)
         .await
         .map_err(storage)?;
@@ -899,8 +900,14 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         .await
         .map_err(storage)?;
         let ids: Vec<String> = expired_links.into_iter().map(|id| id.to_string()).collect();
-        sqlx::query(r#"DELETE FROM job_outbox WHERE job_type IN ('suite.events.deliver','suite.links.revoke') AND payload->>'link_id'=ANY($1)"#)
-.bind(&ids).execute(&mut *tx).await.map_err(storage)?;
+        sqlx::query(
+            r#"DELETE FROM job_outbox WHERE job_type=ANY($2) AND payload->>'link_id'=ANY($1)"#,
+        )
+        .bind(&ids)
+        .bind(SUITE_JOB_TYPES.as_slice())
+        .execute(&mut *tx)
+        .await
+        .map_err(storage)?;
         let revoked_links =
             sqlx::query(r#"DELETE FROM suite_links WHERE status='revoked' AND revoked_at<$1 AND id::text=ANY($2)"#)
                 .bind(now - Duration::days(30))
@@ -921,13 +928,20 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         .map_err(storage)?
         .rows_affected();
         let linked_ids: Vec<String> = links.iter().map(Uuid::to_string).collect();
-        let terminal_jobs = sqlx::query(r#"DELETE FROM job_outbox j
-            WHERE j.job_type IN ('suite.events.deliver','suite.links.revoke')
+        let terminal_jobs = sqlx::query(
+            r#"DELETE FROM job_outbox j
+            WHERE j.job_type=ANY($3)
             AND j.status IN ('succeeded','failed','cancelled') AND j.updated_at<$1
             AND (j.payload->>'link_id'=ANY($2)
-                OR NOT EXISTS(SELECT 1 FROM suite_links l WHERE l.id::text=j.payload->>'link_id'))"#)
-.bind(now - Duration::days(SUITE_TERMINAL_JOB_RETENTION_DAYS)).bind(&linked_ids)
-            .execute(&mut *tx).await.map_err(storage)?.rows_affected();
+                OR NOT EXISTS(SELECT 1 FROM suite_links l WHERE l.id::text=j.payload->>'link_id'))"#,
+        )
+        .bind(now - Duration::days(SUITE_TERMINAL_JOB_RETENTION_DAYS))
+        .bind(&linked_ids)
+        .bind(SUITE_JOB_TYPES.as_slice())
+        .execute(&mut *tx)
+        .await
+        .map_err(storage)?
+        .rows_affected();
         self.commit_transaction(tx).await?;
         Ok(SuiteCleanupOutcome {
             requests,
@@ -1038,8 +1052,8 @@ impl PostgresSuiteLinkStore {
         .bind(owner)
         .fetch_all(&mut *connection)
         .await?;
-        sqlx::query("DELETE FROM job_outbox WHERE job_type IN ('suite.events.deliver','suite.links.revoke') AND payload->>'link_id' IN (SELECT id::text FROM suite_links WHERE user_id=$1)")
-            .bind(owner).execute(&mut *connection).await?;
+        sqlx::query("DELETE FROM job_outbox WHERE job_type=ANY($2) AND payload->>'link_id' IN (SELECT id::text FROM suite_links WHERE user_id=$1)")
+            .bind(owner).bind(SUITE_JOB_TYPES.as_slice()).execute(&mut *connection).await?;
         for statement in [
             "DELETE FROM suite_inbound_events WHERE user_id=$1",
             "DELETE FROM suite_link_codes WHERE user_id=$1",

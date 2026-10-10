@@ -87,6 +87,16 @@ application owns cutoff durations, call frequency, shutdown handling, metrics,
 and cleanup for product tables. Repeat bounded calls if a maintenance window
 should drain the backlog.
 
+Configure `retain_kinds(&["suite.events.deliver", "suite.links.revoke"])` on
+every store used for terminal cleanup when another component owns cleanup for
+those kinds. Their succeeded, cancelled, and failed jobs survive every cutoff
+and do not count toward the batch limit. Products using `baukit-suite` can pass
+`&baukit_suite::SUITE_JOB_TYPES` instead of spelling the kinds.
+
+Use `retain_failed_kinds(&["identity.account.delete"])` to keep only failed jobs
+for inspection and repair. Both builders can be set on the same store. Kinds
+in both lists are retained in every terminal status.
+
 ## Fixed recurring UTC slots
 
 `FixedUtcInterval` calculates whole-second UTC slots anchored at the Unix
@@ -154,7 +164,8 @@ recover it. Each such claim consumes an attempt.
 
 Call `retain_failed_kinds(&["identity.account.delete"])` on every store used for
 terminal cleanup when identity deletion failures need repair. The exclusion
-applies only to failed jobs. Successful and cancelled jobs still expire.
+applies only to failed jobs. Successful and cancelled jobs still expire unless
+their kind is also passed to `retain_kinds`.
 
 Transactions passed to `enqueue_in_transaction` and `complete_in_transaction`
 stay owned by the caller. These methods do not start a transaction.

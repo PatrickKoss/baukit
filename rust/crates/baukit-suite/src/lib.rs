@@ -41,6 +41,8 @@ pub mod ports;
 mod secret_cipher;
 pub mod services;
 
+pub use domain::SUITE_JOB_TYPES;
+
 /// Copy this schema after the baukit-jobs migrations. Products add owner foreign keys.
 /// The crate never runs migrations on startup.
 #[cfg(feature = "postgres")]

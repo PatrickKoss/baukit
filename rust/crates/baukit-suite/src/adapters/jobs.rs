@@ -16,7 +16,7 @@ impl SuiteJobHandler {
 }
 impl JobHandler for SuiteJobHandler {
     fn job_types(&self) -> &'static [&'static str] {
-        &[SUITE_EVENTS_DELIVER_JOB_TYPE, SUITE_LINKS_REVOKE_JOB_TYPE]
+        &SUITE_JOB_TYPES
     }
     fn handle<'a>(
         &'a self,

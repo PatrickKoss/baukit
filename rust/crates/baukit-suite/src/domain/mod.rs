@@ -22,6 +22,8 @@ pub use payloads::*;
 pub const SUITE_EVENT_NAMESPACE: Uuid = Uuid::from_u128(0x5f0e8c1a_3b7d_4c2e_9a61_2d8f4b7e0c95);
 pub const SUITE_EVENTS_DELIVER_JOB_TYPE: &str = "suite.events.deliver";
 pub const SUITE_LINKS_REVOKE_JOB_TYPE: &str = "suite.links.revoke";
+/// Job kinds whose terminal history is managed by suite cleanup.
+pub const SUITE_JOB_TYPES: [&str; 2] = [SUITE_EVENTS_DELIVER_JOB_TYPE, SUITE_LINKS_REVOKE_JOB_TYPE];
 pub const SUITE_QUEUE: &str = "suite-events";
 pub const SUITE_CIRCUIT_FAILURES: u32 = 20;
 pub const SUITE_MAX_ATTEMPTS: u32 = 10;

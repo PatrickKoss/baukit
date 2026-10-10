@@ -23,6 +23,12 @@ never deletes pending or running rows, including expired running leases. Run
 another batch only while the application's maintenance deadline and shutdown
 state permit it. Keep product-table cleanup in the product repository.
 
+If another component cleans up certain job kinds, configure every maintenance
+store with `retain_kinds` for those kinds. Generic cleanup then skips their
+succeeded, cancelled and failed jobs. Use `retain_failed_kinds` for kinds whose
+failed jobs need repair while their successful and cancelled jobs still expire.
+Both builders can be set on the same store.
+
 ```rust
 let deleted = jobs
     .cleanup_terminal_jobs(
@@ -103,7 +109,8 @@ by its handler's job types. Keep the API deployed until pending identity deletio
 jobs finish. Alert on failed erasure operations and retain their jobs for repair.
 Generated OIDC stores use `retain_failed_kinds` with
 `baukit_erasure::IDENTITY_DELETE_JOB_TYPE`. Apply the same policy to any store
-created for maintenance. Successful and cancelled identity jobs still expire.
+created for maintenance. Successful and cancelled identity jobs still expire
+unless their kind is also passed to `retain_kinds`.
 {% endif %}
 Worker metrics label the handler type with `job_kind`. Prometheus uses `job`
 for the scrape target, so worker queries must group by `job_kind`.

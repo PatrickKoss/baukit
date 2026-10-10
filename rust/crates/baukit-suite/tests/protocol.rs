@@ -11,7 +11,9 @@ use base64::{
 use baukit_core::webhook_signature::{sign_webhook_hmac_sha256, verify_webhook_hmac_sha256};
 use baukit_credential_vault::{CredentialCipher, EncryptedCredentials, EncryptedField};
 use baukit_events::EventEnvelope;
-use baukit_jobs::{JobStore, NewJob, PostgresJobStore};
+use baukit_jobs::{
+    JobStore, NewJob, PostgresJobStore, TerminalJobCleanupOutcome, TerminalJobCutoffs,
+};
 use baukit_test::{ScriptedWebhookReceiver, ScriptedWebhookResponse};
 use chrono::{SubsecRound as _, Utc};
 
@@ -1244,7 +1246,7 @@ async fn worker_retries_then_commits_delivery_and_health_with_its_lease() -> Tes
 
 #[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]
-async fn cleanup_removes_old_terminal_suite_jobs_and_retains_recent_jobs() -> TestResult {
+async fn suite_cleanup_retains_its_history_until_30_days_after_generic_cleanup() -> TestResult {
     let (db, context, owner) = authorizer_fixture().await?;
     let (link, _) =
         exchange_link(&SuiteLinkService::new(context.clone()), owner, None, None).await?;
@@ -1253,7 +1255,8 @@ async fn cleanup_removes_old_terminal_suite_jobs_and_retains_recent_jobs() -> Te
         .store
         .record_delivery(link.id, DeliveryAction::Delivered, now)
         .await?;
-    let jobs = PostgresJobStore::new(db.pool.clone());
+    let jobs = PostgresJobStore::new(db.pool.clone()).retain_kinds(&baukit_suite::SUITE_JOB_TYPES);
+    let mut suite_jobs = Vec::new();
     let mut retained = Vec::new();
     for old in [true, false] {
         for (kind, event_type) in [
@@ -1261,7 +1264,7 @@ async fn cleanup_removes_old_terminal_suite_jobs_and_retains_recent_jobs() -> Te
             (SUITE_EVENTS_DELIVER_JOB_TYPE, "suite.connection.tested"),
             (SUITE_LINKS_REVOKE_JOB_TYPE, ""),
         ] {
-            for status in ["succeeded", "failed"] {
+            for status in ["succeeded", "failed", "cancelled"] {
                 let updated = if old {
                     now - chrono::Duration::days(31)
                 } else {
@@ -1284,14 +1287,48 @@ async fn cleanup_removes_old_terminal_suite_jobs_and_retains_recent_jobs() -> Te
                 .bind((status == "failed").then_some("permanent"))
                 .execute(&db.pool)
                 .await?;
+                suite_jobs.push(job.id);
                 if !old {
                     retained.push(job.id);
                 }
             }
         }
     }
+    let ordinary_updated = now - chrono::Duration::days(31);
+    let mut pending = NewJob::new("email.send", json!({}), 1);
+    pending.created_at = ordinary_updated;
+    pending.run_after = ordinary_updated;
+    let ordinary = jobs.enqueue(pending).await?.job;
+    sqlx::query("UPDATE job_outbox SET status='succeeded',updated_at=$2 WHERE id=$1")
+        .bind(ordinary.id)
+        .bind(ordinary_updated)
+        .execute(&db.pool)
+        .await?;
+    let generic_cutoff = now - chrono::Duration::days(7);
+    assert_eq!(
+        jobs.cleanup_terminal_jobs(
+            TerminalJobCutoffs {
+                succeeded_before: generic_cutoff,
+                cancelled_before: generic_cutoff,
+                failed_before: generic_cutoff,
+            },
+            100,
+        )
+        .await?,
+        TerminalJobCleanupOutcome {
+            succeeded: 1,
+            cancelled: 0,
+            failed: 0,
+        }
+    );
+    let mut after_generic: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM job_outbox")
+        .fetch_all(&db.pool)
+        .await?;
+    after_generic.sort();
+    suite_jobs.sort();
+    assert_eq!(after_generic, suite_jobs);
     let result = context.store.cleanup(now).await?;
-    assert_eq!(result.terminal_jobs, 6);
+    assert_eq!(result.terminal_jobs, 9);
     let mut remaining: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM job_outbox")
         .fetch_all(&db.pool)
         .await?;
@@ -2154,7 +2191,8 @@ async fn check_suite_erasure(identity_retention: baukit_erasure::IdentityRetenti
         let remaining: (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM users WHERE id=$1), (SELECT count(*) FROM job_outbox WHERE job_type='identity.account.delete')")
             .bind(owner).fetch_one(&db.pool).await?;
         assert_eq!(remaining, (0, 0));
-        let rows: (i64,i64,i64,i64,i64,i64) = sqlx::query_as("SELECT (SELECT count(*) FROM suite_links WHERE user_id=$1),(SELECT count(*) FROM suite_link_codes WHERE user_id=$1),(SELECT count(*) FROM suite_link_requests WHERE user_id=$1),(SELECT count(*) FROM suite_inbound_events WHERE user_id=$1),(SELECT count(*) FROM suite_failed_delivery_jobs),(SELECT count(*) FROM job_outbox WHERE job_type IN ('suite.events.deliver','suite.links.revoke'))").bind(owner).fetch_one(&db.pool).await?;
+        let rows: (i64,i64,i64,i64,i64,i64) = sqlx::query_as("SELECT (SELECT count(*) FROM suite_links WHERE user_id=$1),(SELECT count(*) FROM suite_link_codes WHERE user_id=$1),(SELECT count(*) FROM suite_link_requests WHERE user_id=$1),(SELECT count(*) FROM suite_inbound_events WHERE user_id=$1),(SELECT count(*) FROM suite_failed_delivery_jobs),(SELECT count(*) FROM job_outbox WHERE job_type=ANY($2))")
+            .bind(owner).bind(SUITE_JOB_TYPES.as_slice()).fetch_one(&db.pool).await?;
         assert_eq!(rows, (0, 0, 0, 0, 0, 0));
         let request = receiver.received_requests().last().expect("revoke").clone();
         assert!(

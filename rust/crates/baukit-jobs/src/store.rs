@@ -95,6 +95,7 @@ pub trait JobStore: Send + Sync + 'static {
 #[derive(Clone, Debug)]
 pub struct PostgresJobStore {
     pool: PgPool,
+    retained_kinds: Vec<String>,
     retained_failed_kinds: Vec<String>,
 }
 
@@ -103,13 +104,22 @@ impl PostgresJobStore {
     pub const fn new(pool: PgPool) -> Self {
         Self {
             pool,
+            retained_kinds: Vec::new(),
             retained_failed_kinds: Vec::new(),
         }
     }
 
+    /// Retains jobs of these kinds in every terminal status for separate cleanup.
+    #[must_use]
+    pub fn retain_kinds(mut self, kinds: &[&str]) -> Self {
+        self.retained_kinds = kinds.iter().map(|kind| (*kind).to_owned()).collect();
+        self
+    }
+
     /// Retains failed jobs of these kinds for inspection and repair.
     ///
-    /// Successful and cancelled jobs of these kinds still follow their cutoffs.
+    /// Successful and cancelled jobs of these kinds still follow their cutoffs
+    /// unless also retained by [`Self::retain_kinds`].
     #[must_use]
     pub fn retain_failed_kinds(mut self, kinds: &[&str]) -> Self {
         self.retained_failed_kinds = kinds.iter().map(|kind| (*kind).to_owned()).collect();
@@ -161,6 +171,8 @@ impl PostgresJobStore {
     ///
     /// A row is eligible when its status is `succeeded`, `cancelled`, or
     /// `failed` and its `updated_at` is earlier than that status's cutoff.
+    /// Kinds configured with [`Self::retain_kinds`] are never eligible. Kinds
+    /// configured with [`Self::retain_failed_kinds`] are ineligible when failed.
     /// Pending and running jobs are never eligible, including running jobs
     /// whose lease has expired. Concurrently locked rows are skipped.
     pub async fn cleanup_terminal_jobs(
@@ -175,13 +187,24 @@ impl PostgresJobStore {
         }
 
         let deleted_statuses: Vec<String> = sqlx::query_scalar(
-            "WITH candidates AS (SELECT id FROM job_outbox WHERE (status = 'succeeded' AND updated_at < $1) OR (status = 'cancelled' AND updated_at < $2) OR (status = 'failed' AND updated_at < $3 AND NOT (job_type = ANY($5))) ORDER BY updated_at, id FOR UPDATE SKIP LOCKED LIMIT $4) DELETE FROM job_outbox AS job USING candidates WHERE job.id = candidates.id RETURNING job.status",
+            r#"WITH candidates AS (
+                SELECT id FROM job_outbox
+                WHERE NOT (job_type = ANY($6)) AND (
+                    (status = 'succeeded' AND updated_at < $1)
+                    OR (status = 'cancelled' AND updated_at < $2)
+                    OR (status = 'failed' AND updated_at < $3 AND NOT (job_type = ANY($5)))
+                )
+                ORDER BY updated_at, id FOR UPDATE SKIP LOCKED LIMIT $4
+            )
+            DELETE FROM job_outbox AS job USING candidates
+            WHERE job.id = candidates.id RETURNING job.status"#,
         )
         .bind(cutoffs.succeeded_before)
         .bind(cutoffs.cancelled_before)
         .bind(cutoffs.failed_before)
         .bind(i64::from(batch_size))
         .bind(&self.retained_failed_kinds)
+        .bind(&self.retained_kinds)
         .fetch_all(&self.pool)
         .await
         .map_err(StoreError::database)?;

@@ -478,6 +478,196 @@ async fn postgres_terminal_cleanup_uses_independent_cutoffs_and_preserves_active
 
 #[tokio::test]
 #[ignore = "requires Docker; mandatory in the full local gate"]
+async fn postgres_terminal_cleanup_retains_kinds_in_every_terminal_status()
+-> Result<(), Box<dyn Error>> {
+    let (fixture, pool, store) = fixture().await?;
+    let kinds = ["history.deliver", "history.revoke"];
+    let store = store.retain_kinds(&kinds);
+    let now = Utc::now();
+    let mut retained = Vec::new();
+    let mut ordinary = Vec::new();
+    for terminal_status in ["succeeded", "cancelled", "failed"] {
+        for kind in kinds {
+            let id = terminal_job(
+                &store,
+                &pool,
+                kind,
+                terminal_status,
+                now - TimeDelta::days(30),
+            )
+            .await?;
+            retained.push((id, terminal_status));
+        }
+        ordinary.push(
+            terminal_job(
+                &store,
+                &pool,
+                "email.send",
+                terminal_status,
+                now - TimeDelta::days(10),
+            )
+            .await?,
+        );
+    }
+
+    assert_eq!(
+        store
+            .cleanup_terminal_jobs(
+                TerminalJobCutoffs {
+                    succeeded_before: now - TimeDelta::days(5),
+                    cancelled_before: now - TimeDelta::days(3),
+                    failed_before: now - TimeDelta::days(7),
+                },
+                10,
+            )
+            .await?,
+        TerminalJobCleanupOutcome {
+            succeeded: 1,
+            cancelled: 1,
+            failed: 1,
+        }
+    );
+    for (id, terminal_status) in retained {
+        assert_eq!(status(&pool, id).await?, terminal_status);
+    }
+    for id in ordinary {
+        assert!(!job_exists(&pool, id).await?);
+    }
+
+    pool.close().await;
+    drop(fixture);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn postgres_terminal_cleanup_retained_kinds_do_not_consume_the_batch_limit()
+-> Result<(), Box<dyn Error>> {
+    let (fixture, pool, store) = fixture().await?;
+    let store = store.retain_kinds(&["history.deliver"]);
+    let now = Utc::now();
+    let mut retained = Vec::new();
+    for terminal_status in ["succeeded", "cancelled", "failed"] {
+        retained.push(
+            terminal_job(
+                &store,
+                &pool,
+                "history.deliver",
+                terminal_status,
+                now - TimeDelta::days(30),
+            )
+            .await?,
+        );
+    }
+    let mut ordinary = Vec::new();
+    for _ in 0..5 {
+        ordinary.push(
+            terminal_job(
+                &store,
+                &pool,
+                "email.send",
+                "succeeded",
+                now - TimeDelta::days(10),
+            )
+            .await?,
+        );
+    }
+    let cutoffs = TerminalJobCutoffs {
+        succeeded_before: now,
+        cancelled_before: now,
+        failed_before: now,
+    };
+    for expected in [2, 2, 1, 0] {
+        assert_eq!(
+            store.cleanup_terminal_jobs(cutoffs, 2).await?,
+            TerminalJobCleanupOutcome {
+                succeeded: expected,
+                cancelled: 0,
+                failed: 0,
+            }
+        );
+        for id in &retained {
+            assert!(job_exists(&pool, *id).await?);
+        }
+    }
+    for id in ordinary {
+        assert!(!job_exists(&pool, id).await?);
+    }
+    let remaining: i64 = sqlx::query_scalar("SELECT count(*) FROM job_outbox")
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(remaining, 3);
+
+    pool.close().await;
+    drop(fixture);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn postgres_terminal_cleanup_combines_all_status_and_failed_only_retention()
+-> Result<(), Box<dyn Error>> {
+    for failed_first in [true, false] {
+        let (fixture, pool, store) = fixture().await?;
+        let retained_kind = "history.deliver";
+        let identity_kind = "identity.account.delete";
+        let failed_kinds = [identity_kind, retained_kind];
+        let store = if failed_first {
+            store
+                .retain_failed_kinds(&failed_kinds)
+                .retain_kinds(&[retained_kind])
+        } else {
+            store
+                .retain_kinds(&[retained_kind])
+                .retain_failed_kinds(&failed_kinds)
+        };
+        let now = Utc::now();
+        let old = now - TimeDelta::days(30);
+        let mut retained = Vec::new();
+        let mut deleted = Vec::new();
+        for terminal_status in ["succeeded", "cancelled", "failed"] {
+            for kind in [retained_kind, identity_kind, "email.send"] {
+                let id = terminal_job(&store, &pool, kind, terminal_status, old).await?;
+                if kind == retained_kind || (kind == identity_kind && terminal_status == "failed") {
+                    retained.push((id, terminal_status));
+                } else {
+                    deleted.push(id);
+                }
+            }
+        }
+
+        assert_eq!(
+            store
+                .cleanup_terminal_jobs(
+                    TerminalJobCutoffs {
+                        succeeded_before: now,
+                        cancelled_before: now,
+                        failed_before: now,
+                    },
+                    10,
+                )
+                .await?,
+            TerminalJobCleanupOutcome {
+                succeeded: 2,
+                cancelled: 2,
+                failed: 1,
+            }
+        );
+        for (id, terminal_status) in retained {
+            assert_eq!(status(&pool, id).await?, terminal_status);
+        }
+        for id in deleted {
+            assert!(!job_exists(&pool, id).await?);
+        }
+
+        pool.close().await;
+        drop(fixture);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
 async fn postgres_terminal_cleanup_is_one_bounded_batch_and_repeated_calls_converge()
 -> Result<(), Box<dyn Error>> {
     let (fixture, pool, store) = fixture().await?;

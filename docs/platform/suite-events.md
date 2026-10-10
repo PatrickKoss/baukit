@@ -246,6 +246,23 @@ a product prefix or labels.
    runs on UTC hour boundaries. It logs storage errors, increments
    `suite_cleanup_failures_total` and retries at the next boundary. A transaction
    advisory lock skips concurrent cleanup on other replicas.
+   If the product also runs `PostgresJobStore::cleanup_terminal_jobs`, configure
+   every store used for that cleanup with
+   `retain_kinds(&SUITE_JOB_TYPES)`, using `baukit_suite::SUITE_JOB_TYPES`.
+   This keeps succeeded, cancelled and failed suite jobs for the suite's
+   30-day cleanup. It preserves the history used by link detail and resend
+   screens. Keep
+   `retain_failed_kinds(&[baukit_erasure::IDENTITY_DELETE_JOB_TYPE])` on the same
+   store for identity deletion failures that need repair. For example:
+
+   ```rust
+   use baukit_suite::SUITE_JOB_TYPES;
+
+   let jobs = PostgresJobStore::new(pool.clone())
+       .retain_kinds(&SUITE_JOB_TYPES)
+       .retain_failed_kinds(&[baukit_erasure::IDENTITY_DELETE_JOB_TYPE]);
+   ```
+
 8. Wrap the product erasure implementation with `PostgresSuiteErasure`, using
    a `SuiteErasureOwnerLookup` for subject-to-owner resolution. Construct
    `SuiteErasureNotificationService` with that adapter and the delivery service.
