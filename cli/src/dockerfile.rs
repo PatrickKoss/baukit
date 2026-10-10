@@ -413,6 +413,7 @@ schema = "backend/openapi.json"
         let mut manifest = manifest("")?;
         let output = render_dockerfile(&manifest)?;
         assert!(output.starts_with("# syntax=docker/dockerfile:1.28.0\n"));
+        assert!(output.ends_with("ENTRYPOINT [\"/app/migrate\"]\n"));
         assert!(output.contains("ARG CARGO_BUILD_JOBS\n"));
         assert!(!output.contains("ENV CARGO_BUILD_JOBS"));
         assert!(output.contains("SQLX_OFFLINE=true"));

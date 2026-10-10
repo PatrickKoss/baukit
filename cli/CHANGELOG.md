@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- End generated backend Dockerfiles with a single newline, so `git diff --check` passes.
+
 ## [0.10.9] - 2026-10-10
 
 - Generate backend Dockerfiles from optional `[backend.image]` settings in `baukit.toml`. Add `baukit generate dockerfile` and `--check`. Doctor reports Dockerfile drift.

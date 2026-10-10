@@ -50,4 +50,4 @@ COPY --from=builder /workspace/crates/{{ context.bin_crate }}/Cargo.toml /worksp
 {% endif %}{% endfor %}{% for directory in context.image.writable_directories %}{% if directory.stage == binary %}COPY --from=builder --chown=nonroot:nonroot /out/directories/{{ loop.index0 }} {{ directory.path }}
 {% endif %}{% endfor %}{% for download in context.image.downloads %}{% if download.stage == binary %}COPY --from=baukit-download-{{ loop.index0 }} --chown=0:0 --chmod=0555 /out/{{ download.binary }} {{ download.destination }}
 {% endif %}{% endfor %}ENTRYPOINT ["/app/{{ binary }}"]
-{% endfor %}
+{% endfor -%}
