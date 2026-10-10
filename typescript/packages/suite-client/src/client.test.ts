@@ -544,6 +544,30 @@ describe('connected apps and linked page', () => {
     expect(f.request).toHaveBeenCalledTimes(1);
     expect(refresh).toHaveBeenCalledTimes(1);
   });
+  it('keeps the connection notice when the refresh after completion rejects', async () => {
+    const f = sessionFixture('web');
+    await f.storage.save({
+      stateNonce: 'nonce',
+      returnUrl: 'https://alpha.example/suite/linked',
+      createdAt: 100,
+    });
+    const navigation = createSuiteNavigationStore(() => 'notice');
+    const machine = new SuiteLinkedMachine({
+      originalUrl: f.callback,
+      session: f.session,
+      navigation,
+      refresh: () => Promise.reject(new SuiteFlowError('suite_peer_unreachable')),
+      scrubHistory: () => undefined,
+    });
+    expect(await machine.restore(false, true)).toEqual({
+      type: 'connected_apps',
+      noticeToken: 'notice',
+    });
+    expect(navigation.consumeSuiteNotice('notice')?.notice).toEqual({
+      connected: true,
+      errorCode: null,
+    });
+  });
   it('requires login before redeeming a return and retains its query', async () => {
     const f = sessionFixture('web');
     const machine = new SuiteLinkedMachine({

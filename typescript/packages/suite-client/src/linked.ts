@@ -10,6 +10,7 @@ export interface SuiteLinkedOptions {
   readonly session: SuiteSession;
   readonly navigation: SuiteNavigationStore;
   readonly scrubHistory: (path: string) => void;
+  /** A rejection keeps the completion notice; the link already exists. */
   readonly refresh: () => Promise<void>;
 }
 /** Retains the callback in memory while removing codes from browser history. */
@@ -38,7 +39,7 @@ export class SuiteLinkedMachine {
     this.#state = { type: 'completing' };
     try {
       const result = await this.options.session.handleRedirect(this.options.originalUrl);
-      await this.options.refresh();
+      await this.options.refresh().catch(() => undefined);
       this.#state = {
         type: 'connected_apps',
         ...(result.type === 'connected'

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep the connection notice from `SuiteLinkedMachine` when the redirect completes but the product `refresh` rejects. The link already exists, so a failed list reload no longer shows an error notice.
+
 ## 0.10.8
 
 ### Patch Changes
