@@ -5,6 +5,7 @@
 ## [0.10.13] - 2026-10-10
 
 - Export the sorted suite error codes from the same definition as the Rust mappings and OpenAPI enum.
+- The OpenAPI `lastFailureCode` enum on suite link delivery status is now `SuiteErrorCode` with every value in `SUITE_ERROR_CODES`, replacing the ten-value `SuiteDeliveryFailureCode`. Generated clients with an exhaustive map over it need entries for the added codes.
 
 ## [0.10.12] - 2026-10-10
 
