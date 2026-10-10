@@ -5,9 +5,9 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
-Last verified release train: `v0.10.9` (`baukit generate dockerfile` writes the backend Dockerfile from
-`[backend.image]` in baukit.toml and doctor reports drift; generated images pin digest bases and the
-1.28.0 frontend; the suite-client linked page keeps the connection notice when its refresh rejects).
+Last verified release train: `v0.10.10` (generated files end with one newline and carry no trailing
+whitespace, checked across every snapshot flavor; `PostgresJobStore::retain_kinds` keeps chosen job kinds
+out of generic terminal-job cleanup, and baukit-suite exports `SUITE_JOB_TYPES` for it).
 
 ## Toolchain
 

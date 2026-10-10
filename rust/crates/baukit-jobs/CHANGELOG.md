@@ -4,6 +4,8 @@ All notable changes to `baukit-jobs` are documented here.
 
 ## [Unreleased]
 
+## [0.10.10] - 2026-10-10
+
 - Add `PostgresJobStore::retain_kinds` to keep succeeded, cancelled and failed
   jobs out of generic cleanup when another component owns their retention.
   It can be combined with `retain_failed_kinds` for failures that need repair.

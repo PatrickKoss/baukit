@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.10] - 2026-10-10
+
 {% if context.backend %}- End the generated backend Dockerfile with a single newline.
 {% endif %}- Keep generated files free of trailing whitespace and blank lines at EOF.
 
