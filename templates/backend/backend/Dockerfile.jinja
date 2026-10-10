@@ -31,8 +31,8 @@ RUN --mount=type=cache,id={{ context.app_name }}-cargo-registry,target=/usr/loca
     {% for binary in context.binaries %}--bin {{ binary }}{% if not loop.last %} {% endif %}{% endfor %} \
     && mkdir -p /out \
     && cp{% for binary in context.binaries %} target/release/{{ binary }}{% endfor %} /out/
-{% for directory in context.image.writable_directories %}RUN mkdir -p /out/directories/{{ loop.index0 }}
-{% endfor %}{% for download in context.image.downloads %}
+{% if context.image.writable_directories %}RUN mkdir -p{% for directory in context.image.writable_directories %} /out/directories/{{ loop.index0 }}{% endfor %}
+{% endif %}{% for download in context.image.downloads %}
 FROM ${RUST_IMAGE} AS baukit-download-{{ loop.index0 }}
 ADD --checksum=sha256:{{ download.archive_sha256 }} {{ download.url }} /tmp/release.tar.gz
 RUN mkdir -p /out \

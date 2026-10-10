@@ -471,6 +471,7 @@ writable_directories = [{ stage = "api", path = "/app/var/artifacts" }]
             "COPY --from=builder [\"/generated/content\", \"/app/content\"]",
             "COPY --from=builder [\"/workspace/crates/postgres/Cargo.toml\", \"/workspace/crates/postgres/Cargo.toml\"]",
             "COPY --from=builder /out/seed /app/seed",
+            "RUN mkdir -p /out/directories/0\n",
             "COPY --from=builder --chown=nonroot:nonroot /out/directories/0 /app/var/artifacts",
             "FROM ${RUNTIME_IMAGE} AS seed",
             "ENTRYPOINT [\"/app/seed\"]",
