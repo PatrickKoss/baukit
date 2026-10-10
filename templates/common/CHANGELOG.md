@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.11] - 2026-10-10
+
 ## [0.10.10] - 2026-10-10
 
 {% if context.backend %}- End the generated backend Dockerfile with a single newline.

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.11] - 2026-10-10
+
 ## [0.10.10] - 2026-10-10
 
 - Export `SUITE_JOB_TYPES` for products to pass to `PostgresJobStore::retain_kinds`.

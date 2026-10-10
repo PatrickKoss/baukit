@@ -4,6 +4,8 @@ All notable changes to `baukit-http` are documented here.
 
 ## [Unreleased]
 
+## [0.10.11] - 2026-10-10
+
 ### Added
 
 - `RetryHeaderOptions::with_forbidden_rate_limit` opts in to retryable `403` rate limits.

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.10.11
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.11 train.
+- Updated dependencies
+  - @baukit/data-contracts@0.10.11
+
 ## 0.10.10
 
 ### Patch Changes
