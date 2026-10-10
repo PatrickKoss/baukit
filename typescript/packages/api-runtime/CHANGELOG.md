@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- Send 401 `profile_erased` responses to `onProfileErased` and skip credential refresh and exhaustion handlers. Preserve the normal API error.
+- A 401 response with error code `profile_erased` now calls the new `onProfileErased` handler instead of `onUnauthorized` and `onUnauthorizedExhausted`, so no credential refresh runs. The runtime awaits the handler and ignores its return value; there is no `'handled'` result. The request still rejects with the normal `ApiError` whose code is `profile_erased`, so existing branches on that rejection keep working. An error thrown by the handler does not replace that `ApiError`.
 
 ## 0.10.12
 

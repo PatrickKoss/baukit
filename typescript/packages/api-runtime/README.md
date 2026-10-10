@@ -54,6 +54,12 @@ a signed-out state after that replay also returns 401. It receives the final
 normalized error with `canRetry: false`; observer failures never replace the
 API failure.
 
+A 401 whose error code is `profile_erased` means the backend fenced an erased
+profile, so new credentials cannot help. The runtime then skips `onUnauthorized`
+and `onUnauthorizedExhausted` and calls `onProfileErased` once. It awaits the
+handler and ignores its return value. The request still rejects with the
+`ApiError` whose code is `profile_erased`, and a handler failure never replaces it.
+
 This handshake does not make arbitrary mutations safe. Replaying `POST`, `PATCH`, or any write whose outcome may already have committed requires an `Idempotency-Key` the server honors; see [idempotent mutations](#idempotent-mutations) and the [replay-safe mutations protocol](../../../docs/platform/replay-safe-mutations.md). Follow the repository's [integration reliability recipe](../../../docs/platform/integration-reliability.md), [offline replay contract](../../../docs/platform/offline-readiness-contract.md), and [add-endpoint replay/idempotency guidance](../../../agent-skills/skills/baukit-add-endpoint/SKILL.md).
 
 ## Unverified display identity hints
