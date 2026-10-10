@@ -5,9 +5,9 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
-Last verified release train: `v0.10.12` (`backend.image` adds `runtime_packages` for Debian slim
-runtime stages and named `variants` that build with cargo features into `<binary>-<variant>` targets;
-doctor's pin census skips `fixtures` and `testdata` trees).
+Last verified release train: `v0.10.13` (`@baukit/api-runtime` calls `onProfileErased` for a 401
+`profile_erased` instead of refreshing credentials; `SUITE_ERROR_CODES` lists every suite protocol
+error code in Rust and TypeScript; the suite authorize `failed` state carries `details`).
 
 ## Toolchain
 

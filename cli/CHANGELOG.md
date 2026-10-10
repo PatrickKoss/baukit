@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.13] - 2026-10-10
+
 ## [0.10.12] - 2026-10-10
 
 - Skip `fixtures` and `testdata` trees when doctor checks Baukit registry pins. Malformed manifests elsewhere still fail the check.
