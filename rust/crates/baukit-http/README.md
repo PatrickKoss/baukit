@@ -364,6 +364,14 @@ re-authorization, and retrying it burns quota against an endpoint that will keep
 longer sent as early data. `retry_after_from_headers` parses both the delay-seconds and HTTP-date
 forms.
 
+`401` and `403` are `Revoked` by default. For APIs such as GitHub, pass
+`RetryHeaderOptions::default().with_forbidden_rate_limit()` to `classify_http_status_with_options`.
+A `403` with a usable `Retry-After` or configured vendor retry header becomes `RetryAfter`.
+Otherwise, `x-ratelimit-remaining: 0` uses `x-ratelimit-reset` as a Unix epoch in seconds,
+or gives `RateLimited` without a usable reset. Past resets give a zero delay. Other `403`
+responses and all `401` responses stay `Revoked`. Use `classify_http_status_with_options_at`
+to supply the reference time in tests.
+
 The delay is uncapped by default, so the classifier reports what the upstream sent. A worker that
 honors `Retry-After: 86400` sleeps for a day, so a client that schedules its own retries sets a
 cap. Delays above it are clamped to it:

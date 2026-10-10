@@ -127,8 +127,9 @@ pub use precondition::{
 };
 pub use retry::{
     RetryClass, RetryHeaderOptions, classify_http_status, classify_http_status_with_options,
-    classify_transport_error, retry_after_from_headers, retry_after_from_headers_at,
-    retry_after_from_headers_with_options, retry_after_from_headers_with_options_at,
+    classify_http_status_with_options_at, classify_transport_error, retry_after_from_headers,
+    retry_after_from_headers_at, retry_after_from_headers_with_options,
+    retry_after_from_headers_with_options_at,
 };
 pub use routing::finalize;
 

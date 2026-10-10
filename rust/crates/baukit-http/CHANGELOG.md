@@ -4,6 +4,15 @@ All notable changes to `baukit-http` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- `RetryHeaderOptions::with_forbidden_rate_limit` opts in to retryable `403` rate limits.
+  Usable retry headers give `RetryAfter`. Otherwise, `x-ratelimit-remaining: 0` gives
+  `RetryAfter` for a valid `x-ratelimit-reset` epoch, or `RateLimited` without one.
+  Past resets give zero delay, and all delays respect `max_retry_after`.
+  The default policy and `401` classification stay unchanged.
+- `classify_http_status_with_options_at` accepts a reference time for HTTP dates and reset epochs.
+
 ## [0.10.10] - 2026-10-10
 
 ## [0.10.9] - 2026-10-10

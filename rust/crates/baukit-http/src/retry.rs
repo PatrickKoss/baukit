@@ -15,7 +15,7 @@ use time::{OffsetDateTime, format_description::well_known::Rfc2822};
 pub enum RetryClass {
     /// The upstream asked for a specific wait before the next attempt.
     ///
-    /// This is a rate limit that came with a usable `Retry-After` value.
+    /// This is a rate limit that came with a usable retry delay.
     RetryAfter(Duration),
     /// The upstream rate limited the request without saying for how long.
     ///
@@ -41,11 +41,14 @@ pub enum RetryClass {
 /// Parsed delays are uncapped by default, so the classifier reports what the
 /// upstream sent. A client that schedules its own retries should set
 /// [`RetryHeaderOptions::with_max_retry_after`].
+/// Use [`RetryHeaderOptions::with_forbidden_rate_limit`] for APIs such as
+/// GitHub that also report rate limits with `403`.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct RetryHeaderOptions<'a> {
     extra_retry_after_headers: &'a [&'a str],
     first_field: bool,
     max_retry_after: Option<Duration>,
+    forbidden_rate_limit: bool,
 }
 
 impl<'a> RetryHeaderOptions<'a> {
@@ -55,6 +58,7 @@ impl<'a> RetryHeaderOptions<'a> {
             extra_retry_after_headers,
             first_field: false,
             max_retry_after: None,
+            forbidden_rate_limit: false,
         }
     }
 
@@ -75,6 +79,19 @@ impl<'a> RetryHeaderOptions<'a> {
     #[must_use]
     pub const fn with_max_retry_after(mut self, max: Duration) -> Self {
         self.max_retry_after = Some(max);
+        self
+    }
+
+    /// Recognizes rate-limit headers on `403` responses.
+    ///
+    /// A usable retry header gives [`RetryClass::RetryAfter`]. Otherwise,
+    /// `x-ratelimit-remaining: 0` gives [`RetryClass::RetryAfter`] when
+    /// `x-ratelimit-reset` is a valid Unix epoch in seconds, or
+    /// [`RetryClass::RateLimited`] without a usable reset. Other `403`
+    /// responses and all `401` responses stay [`RetryClass::Revoked`].
+    #[must_use]
+    pub const fn with_forbidden_rate_limit(mut self) -> Self {
+        self.forbidden_rate_limit = true;
         self
     }
 
@@ -165,20 +182,67 @@ pub fn classify_http_status(
 /// See [`classify_http_status`] for the status mapping. The options control
 /// which vendor retry headers are checked, whether their first
 /// comma-separated field is used, and the largest delay reported.
+/// [`RetryHeaderOptions::with_forbidden_rate_limit`] also recognizes rate
+/// limits on `403` responses. `401` always stays [`RetryClass::Revoked`].
 pub fn classify_http_status_with_options(
     status: StatusCode,
     headers: &HeaderMap,
     options: RetryHeaderOptions<'_>,
 ) -> RetryClass {
+    classify_http_status_with_options_at(status, headers, options, OffsetDateTime::now_utc())
+}
+
+/// Classifies an upstream HTTP response using `options` at `now`.
+///
+/// See [`classify_http_status_with_options`] for the status mapping.
+/// `now` is the reference instant for HTTP-date retry headers and the
+/// `x-ratelimit-reset` epoch on opted-in `403` responses. Past deadlines
+/// yield [`Duration::ZERO`], and delays are clamped to the configured cap.
+pub fn classify_http_status_with_options_at(
+    status: StatusCode,
+    headers: &HeaderMap,
+    options: RetryHeaderOptions<'_>,
+    now: OffsetDateTime,
+) -> RetryClass {
     match status {
+        StatusCode::FORBIDDEN if options.forbidden_rate_limit => {
+            classify_forbidden_rate_limit(headers, options, now)
+        }
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => RetryClass::Revoked,
         StatusCode::REQUEST_TIMEOUT | StatusCode::GATEWAY_TIMEOUT => RetryClass::Timeout,
         StatusCode::TOO_EARLY => RetryClass::Unavailable,
-        StatusCode::TOO_MANY_REQUESTS => retry_after_from_headers_with_options(headers, options)
-            .map_or(RetryClass::RateLimited, RetryClass::RetryAfter),
+        StatusCode::TOO_MANY_REQUESTS => {
+            retry_after_from_headers_with_options_at(headers, options, now)
+                .map_or(RetryClass::RateLimited, RetryClass::RetryAfter)
+        }
         _ if status.is_server_error() => RetryClass::Unavailable,
         _ => RetryClass::Permanent,
     }
+}
+
+fn classify_forbidden_rate_limit(
+    headers: &HeaderMap,
+    options: RetryHeaderOptions<'_>,
+    now: OffsetDateTime,
+) -> RetryClass {
+    if let Some(delay) = retry_after_from_headers_with_options_at(headers, options, now) {
+        return RetryClass::RetryAfter(delay);
+    }
+    let remaining = headers
+        .get("x-ratelimit-remaining")
+        .and_then(|value| value.to_str().ok());
+    if remaining.map(str::trim) != Some("0") {
+        return RetryClass::Revoked;
+    }
+    let reset = headers
+        .get("x-ratelimit-reset")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().parse::<i64>().ok())
+        .and_then(|epoch| OffsetDateTime::from_unix_timestamp(epoch).ok());
+    reset.map_or(RetryClass::RateLimited, |deadline| {
+        let delay = (deadline - now).try_into().unwrap_or(Duration::ZERO);
+        RetryClass::RetryAfter(options.cap(delay))
+    })
 }
 
 /// Reads the retry delay from the vendor headers first, then `Retry-After`.
@@ -313,6 +377,255 @@ mod tests {
             assert_eq!(
                 classify_http_status(status, &HeaderMap::new(), &[]),
                 RetryClass::Revoked
+            );
+        }
+    }
+
+    #[test]
+    fn forbidden_rate_limit_reads_retry_after_seconds() {
+        let options = RetryHeaderOptions::default().with_forbidden_rate_limit();
+        for seconds in [0, 120, 86_400] {
+            assert_eq!(
+                classify_http_status_with_options(
+                    StatusCode::FORBIDDEN,
+                    &headers(&[("retry-after", &seconds.to_string())]),
+                    options,
+                ),
+                RetryClass::RetryAfter(Duration::from_secs(seconds))
+            );
+        }
+    }
+
+    #[test]
+    fn forbidden_rate_limit_reads_retry_after_http_dates() {
+        let now = at("Wed, 21 Oct 2026 07:28:00 GMT");
+        let options = RetryHeaderOptions::default().with_forbidden_rate_limit();
+        let cases = [
+            ("Wed, 21 Oct 2026 07:30:00 GMT", Duration::from_secs(120)),
+            ("Wed, 21 Oct 2026 07:00:00 GMT", Duration::ZERO),
+        ];
+        for (date, delay) in cases {
+            assert_eq!(
+                classify_http_status_with_options_at(
+                    StatusCode::FORBIDDEN,
+                    &headers(&[("retry-after", date)]),
+                    options,
+                    now,
+                ),
+                RetryClass::RetryAfter(delay)
+            );
+        }
+    }
+
+    #[test]
+    fn forbidden_rate_limit_reads_reset_epochs_and_saturates_past_resets() {
+        let now = OffsetDateTime::from_unix_timestamp(1_000).expect("reference epoch is valid");
+        let options = RetryHeaderOptions::default().with_forbidden_rate_limit();
+        for (reset, delay) in [
+            ("1120", Duration::from_secs(120)),
+            ("1000", Duration::ZERO),
+            ("880", Duration::ZERO),
+            ("-1", Duration::ZERO),
+        ] {
+            assert_eq!(
+                classify_http_status_with_options_at(
+                    StatusCode::FORBIDDEN,
+                    &headers(&[("x-ratelimit-remaining", "0"), ("x-ratelimit-reset", reset)]),
+                    options,
+                    now,
+                ),
+                RetryClass::RetryAfter(delay),
+                "reset: {reset}"
+            );
+        }
+    }
+
+    #[test]
+    fn forbidden_rate_limit_without_a_usable_reset_has_no_delay() {
+        let now = OffsetDateTime::from_unix_timestamp(1_000).expect("reference epoch is valid");
+        let options = RetryHeaderOptions::default().with_forbidden_rate_limit();
+        for reset in [
+            None,
+            Some("later"),
+            Some("Wed, 21 Oct 2026 07:30:00 GMT"),
+            Some("1120.5"),
+            Some("9223372036854775807"),
+            Some("18446744073709551616"),
+        ] {
+            let mut map = headers(&[("x-ratelimit-remaining", "0"), ("retry-after", "soon")]);
+            if let Some(reset) = reset {
+                map.insert(
+                    "x-ratelimit-reset",
+                    HeaderValue::from_str(reset).expect("reset should be a valid header value"),
+                );
+            }
+            assert_eq!(
+                classify_http_status_with_options_at(StatusCode::FORBIDDEN, &map, options, now),
+                RetryClass::RateLimited,
+                "reset: {reset:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn forbidden_without_rate_limit_evidence_stays_revoked() {
+        let now = OffsetDateTime::from_unix_timestamp(1_000).expect("reference epoch is valid");
+        let options = RetryHeaderOptions::default().with_forbidden_rate_limit();
+        let cases = [
+            HeaderMap::new(),
+            headers(&[("retry-after", "soon")]),
+            headers(&[("x-ratelimit-reset", "1120")]),
+            headers(&[
+                ("x-ratelimit-remaining", "1"),
+                ("x-ratelimit-reset", "1120"),
+            ]),
+            headers(&[
+                ("x-ratelimit-remaining", "invalid"),
+                ("x-ratelimit-reset", "1120"),
+            ]),
+        ];
+        for map in cases {
+            assert_eq!(
+                classify_http_status_with_options_at(StatusCode::FORBIDDEN, &map, options, now),
+                RetryClass::Revoked,
+                "headers: {map:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn unauthorized_stays_revoked_with_forbidden_rate_limit_enabled() {
+        let options = RetryHeaderOptions::new(&[FITBIT_RESET]).with_forbidden_rate_limit();
+        let map = headers(&[
+            ("retry-after", "120"),
+            (FITBIT_RESET, "45"),
+            ("x-ratelimit-remaining", "0"),
+            ("x-ratelimit-reset", "1120"),
+        ]);
+        assert_eq!(
+            classify_http_status_with_options(StatusCode::UNAUTHORIZED, &map, options),
+            RetryClass::Revoked
+        );
+    }
+
+    #[test]
+    fn forbidden_rate_limit_headers_are_ignored_by_default() {
+        let now = OffsetDateTime::from_unix_timestamp(1_000).expect("reference epoch is valid");
+        let cases = [
+            headers(&[("retry-after", "120")]),
+            headers(&[("retry-after", "Wed, 21 Oct 2026 07:30:00 GMT")]),
+            headers(&[(FITBIT_RESET, "45")]),
+            headers(&[("ratelimit-reset", "30, 3600")]),
+            headers(&[
+                ("x-ratelimit-remaining", "0"),
+                ("x-ratelimit-reset", "1120"),
+            ]),
+            headers(&[("x-ratelimit-remaining", "0"), ("x-ratelimit-reset", "880")]),
+            headers(&[("x-ratelimit-remaining", "0")]),
+            headers(&[
+                ("x-ratelimit-remaining", "0"),
+                ("x-ratelimit-reset", "later"),
+            ]),
+            headers(&[
+                ("x-ratelimit-remaining", "1"),
+                ("x-ratelimit-reset", "1120"),
+            ]),
+            headers(&[
+                ("retry-after", "120"),
+                (FITBIT_RESET, "45"),
+                ("x-ratelimit-remaining", "0"),
+                ("x-ratelimit-reset", "1120"),
+            ]),
+            HeaderMap::new(),
+        ];
+        for options in [
+            RetryHeaderOptions::default(),
+            RetryHeaderOptions::new(&[FITBIT_RESET, "ratelimit-reset"]).with_first_field(),
+        ] {
+            for map in &cases {
+                assert_eq!(
+                    classify_http_status_with_options_at(StatusCode::FORBIDDEN, map, options, now),
+                    RetryClass::Revoked,
+                    "headers: {map:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn forbidden_rate_limit_delays_are_capped_for_every_header_source() {
+        let now = OffsetDateTime::from_unix_timestamp(1_000).expect("reference epoch is valid");
+        let cases = [
+            headers(&[("retry-after", "3600")]),
+            headers(&[("retry-after", "Thu, 01 Jan 1970 01:16:40 GMT")]),
+            headers(&[(FITBIT_RESET, "3600")]),
+            headers(&[
+                ("x-ratelimit-remaining", "0"),
+                ("x-ratelimit-reset", "4600"),
+            ]),
+        ];
+        for cap in [Duration::ZERO, Duration::from_secs(60)] {
+            let options = RetryHeaderOptions::new(&[FITBIT_RESET])
+                .with_forbidden_rate_limit()
+                .with_max_retry_after(cap);
+            for map in &cases {
+                assert_eq!(
+                    classify_http_status_with_options_at(StatusCode::FORBIDDEN, map, options, now),
+                    RetryClass::RetryAfter(cap),
+                    "headers: {map:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn forbidden_rate_limit_keeps_vendor_parsing_and_header_precedence() {
+        let options = RetryHeaderOptions::new(&[FITBIT_RESET]).with_forbidden_rate_limit();
+        for (vendor, delay) in [("45", 45), ("later", 120)] {
+            let map = headers(&[
+                (FITBIT_RESET, vendor),
+                ("retry-after", "120"),
+                ("x-ratelimit-remaining", "0"),
+                ("x-ratelimit-reset", "0"),
+            ]);
+            assert_eq!(
+                classify_http_status_with_options(StatusCode::FORBIDDEN, &map, options),
+                RetryClass::RetryAfter(Duration::from_secs(delay))
+            );
+        }
+        let map = headers(&[("ratelimit-reset", "30, 3600")]);
+        let options = RetryHeaderOptions::new(&["ratelimit-reset"]).with_forbidden_rate_limit();
+        assert_eq!(
+            classify_http_status_with_options(StatusCode::FORBIDDEN, &map, options),
+            RetryClass::Revoked
+        );
+        assert_eq!(
+            classify_http_status_with_options(
+                StatusCode::FORBIDDEN,
+                &map,
+                options.with_first_field()
+            ),
+            RetryClass::RetryAfter(Duration::from_secs(30))
+        );
+    }
+
+    #[test]
+    fn reset_epoch_handling_does_not_change_other_statuses_or_vendor_parsing() {
+        let now = OffsetDateTime::from_unix_timestamp(1_000).expect("reference epoch is valid");
+        let map = headers(&[
+            ("x-ratelimit-remaining", "0"),
+            ("x-ratelimit-reset", "1120"),
+        ]);
+        let options = RetryHeaderOptions::default().with_forbidden_rate_limit();
+        assert_eq!(
+            classify_http_status_with_options_at(StatusCode::TOO_MANY_REQUESTS, &map, options, now),
+            RetryClass::RateLimited
+        );
+        let options = RetryHeaderOptions::new(&["x-ratelimit-reset"]).with_forbidden_rate_limit();
+        for status in [StatusCode::TOO_MANY_REQUESTS, StatusCode::FORBIDDEN] {
+            assert_eq!(
+                classify_http_status_with_options_at(status, &map, options, now),
+                RetryClass::RetryAfter(Duration::from_secs(1_120))
             );
         }
     }

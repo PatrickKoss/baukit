@@ -14,8 +14,12 @@
 //! - it bounds the lookup, the connection, the whole request, and the response
 //!   body;
 //! - it returns an [`EgressError`] whose [`EgressError::retry_class`] uses
-//!   [`baukit_http::classify_http_status`], and whose messages never contain
-//!   the URL.
+//!   [`baukit_http::classify_http_status_with_options`], and whose messages
+//!   never contain the URL.
+//!
+//! `401` and `403` are revoked by default. Enable
+//! [`EgressOptions::with_forbidden_rate_limit`] to recognize rate-limit headers
+//! on `403` responses. `401` always stays revoked.
 //!
 //! The address policy follows the IANA special-purpose address registries and
 //! is pinned by the shared vectors in `fixtures/egress/address-policy-v1.json`.

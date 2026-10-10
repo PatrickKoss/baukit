@@ -111,14 +111,21 @@ example one backed by a DNS library with its own cache.
 | `Resolve` | `resolve_failed` | `Unavailable` |
 | `Timeout` | `timeout` | `Timeout` |
 | `Transport` | `transport_failed` | `Unavailable` |
-| `Status { status, class }` | `upstream_status` | `classify_http_status(status)` |
+| `Status { status, class }` | `upstream_status` | `classify_http_status_with_options(status, headers, options)` |
 | `ResponseTooLarge { limit }` | `response_too_large` | `Permanent` |
 
-`Status` uses `baukit_http::classify_http_status`. A `429` with `Retry-After`
+`Status` uses `baukit_http::classify_http_status_with_options`. A `429` with `Retry-After`
 comes back as `RetryClass::RetryAfter` and without it as `RateLimited`. `408`
 and `504` are `Timeout`, `425` and other `5xx` are `Unavailable`, `401` and
-`403` are `Revoked`, and every other status, `3xx` included, is `Permanent`.
+`403` are `Revoked` by default, and every other status, `3xx` included, is `Permanent`.
 The body of a non-`2xx` response is not read.
+
+Enable `EgressOptions::with_forbidden_rate_limit()` for APIs such as GitHub that report
+rate limits with `403`. A usable `Retry-After` gives `RetryAfter`. Otherwise,
+`x-ratelimit-remaining: 0` uses `x-ratelimit-reset` as a Unix epoch in seconds,
+or gives `RateLimited` without a usable reset. Past resets give a zero delay.
+Other `403` responses and all `401` responses stay `Revoked`.
+`EgressOptions::forbidden_rate_limit()` reports whether the option is enabled.
 
 The delay in `RetryAfter` is the receiver's value, clamped to
 `EgressOptions::max_retry_after` (300 s by default). A receiver that sends

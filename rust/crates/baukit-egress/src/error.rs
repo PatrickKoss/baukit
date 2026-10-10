@@ -70,8 +70,11 @@ pub enum EgressError {
         /// The status the destination returned.
         status: StatusCode,
         /// The status and retry headers classified by
-        /// [`baukit_http::classify_http_status`], with the `Retry-After`
+        /// [`baukit_http::classify_http_status_with_options`], with the retry
         /// delay capped at [`EgressOptions::max_retry_after`](crate::EgressOptions::max_retry_after).
+        /// `403` stays revoked unless
+        /// [`EgressOptions::with_forbidden_rate_limit`](crate::EgressOptions::with_forbidden_rate_limit)
+        /// is enabled and recognizes a rate limit. `401` always stays revoked.
         class: RetryClass,
     },
     /// The response body was larger than the configured limit.

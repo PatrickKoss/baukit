@@ -4,6 +4,14 @@ All notable changes to `baukit-egress` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- `EgressOptions::with_forbidden_rate_limit` opts in to retryable `403` rate limits,
+  and `forbidden_rate_limit` reports whether it is enabled. `GuardedClient` recognizes
+  usable retry headers or `x-ratelimit-remaining: 0` with an optional reset epoch.
+  Delays respect `max_retry_after`. Other `403` responses and all `401` responses stay
+  revoked. The option is off by default.
+
 ## [0.10.10] - 2026-10-10
 
 ## [0.10.9] - 2026-10-10

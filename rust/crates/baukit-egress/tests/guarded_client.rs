@@ -423,6 +423,42 @@ async fn statuses_use_the_shared_classification() {
 }
 
 #[tokio::test]
+async fn forbidden_rate_limit_requires_opt_in_and_keeps_the_delay_cap() {
+    let server = LocalServer::start(response("403 Forbidden", &[("retry-after", "7")], "")).await;
+    let options = development();
+    assert!(!options.forbidden_rate_limit());
+    let capped = options
+        .with_forbidden_rate_limit()
+        .with_max_retry_after(Duration::from_secs(3))
+        .expect("cap is valid");
+    let cases = [
+        (options, RetryClass::Revoked),
+        (
+            options.with_forbidden_rate_limit(),
+            RetryClass::RetryAfter(Duration::from_secs(7)),
+        ),
+        (capped, RetryClass::RetryAfter(Duration::from_secs(3))),
+    ];
+    for (options, expected) in cases {
+        let client = client(loopback_resolver(&["hooks.test"]), options);
+        assert_eq!(
+            client.options().forbidden_rate_limit(),
+            expected.is_retryable()
+        );
+        let error = client
+            .execute(EgressRequest::get(server.url("hooks.test", "/limit")))
+            .await
+            .expect_err("a 403 is an error");
+
+        assert!(
+            matches!(error, EgressError::Status { status: StatusCode::FORBIDDEN, class } if class == expected),
+            "{error:?}"
+        );
+        assert_eq!(error.is_retryable(), expected.is_retryable());
+    }
+}
+
+#[tokio::test]
 async fn long_retry_after_delays_are_capped() {
     let cases = [
         (development(), Duration::from_secs(300)),

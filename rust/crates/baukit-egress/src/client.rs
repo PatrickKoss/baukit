@@ -230,8 +230,10 @@ impl GuardedClient {
     /// Sends `request` and reads the response body.
     ///
     /// A status outside `2xx` becomes [`EgressError::Status`], classified by
-    /// [`baukit_http::classify_http_status`] without reading its body. A
-    /// `Retry-After` delay above [`EgressOptions::max_retry_after`] is clamped.
+    /// [`baukit_http::classify_http_status_with_options`] without reading its body.
+    /// A `Retry-After` delay above [`EgressOptions::max_retry_after`] is clamped.
+    /// `403` is revoked by default. [`EgressOptions::with_forbidden_rate_limit`]
+    /// recognizes rate-limit headers on `403`; `401` always stays revoked.
     pub async fn execute(&self, request: EgressRequest) -> Result<EgressResponse, EgressError> {
         let span = tracing::info_span!(
             target: TARGET,
@@ -271,8 +273,11 @@ impl GuardedClient {
         let status = response.status();
         let headers = response.headers().clone();
         if !status.is_success() {
-            let retry_headers =
+            let mut retry_headers =
                 RetryHeaderOptions::default().with_max_retry_after(self.options.max_retry_after());
+            if self.options.forbidden_rate_limit() {
+                retry_headers = retry_headers.with_forbidden_rate_limit();
+            }
             let class = classify_http_status_with_options(status, &headers, retry_headers);
             return Err(EgressError::Status { status, class });
         }

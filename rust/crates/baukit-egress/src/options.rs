@@ -22,6 +22,7 @@ pub struct EgressOptions {
     request_timeout: Duration,
     max_response_bytes: usize,
     max_retry_after: Duration,
+    forbidden_rate_limit: bool,
 }
 
 /// A rejected [`EgressOptions`] value.
@@ -47,6 +48,7 @@ impl Default for EgressOptions {
             request_timeout: DEFAULT_REQUEST_TIMEOUT,
             max_response_bytes: DEFAULT_MAX_RESPONSE_BYTES,
             max_retry_after: DEFAULT_MAX_RETRY_AFTER,
+            forbidden_rate_limit: false,
         }
     }
 }
@@ -100,6 +102,17 @@ impl EgressOptions {
         Ok(self)
     }
 
+    /// Recognizes rate limits on `403` responses using retry headers or
+    /// `x-ratelimit-remaining: 0` with an optional `x-ratelimit-reset` epoch.
+    ///
+    /// Delays are clamped to [`Self::max_retry_after`]. Other `403` responses
+    /// and all `401` responses stay [`RetryClass::Revoked`](baukit_http::RetryClass::Revoked).
+    #[must_use]
+    pub const fn with_forbidden_rate_limit(mut self) -> Self {
+        self.forbidden_rate_limit = true;
+        self
+    }
+
     /// Returns the address policy.
     #[must_use]
     pub const fn policy(&self) -> AddressPolicy {
@@ -134,6 +147,14 @@ impl EgressOptions {
     #[must_use]
     pub const fn max_retry_after(&self) -> Duration {
         self.max_retry_after
+    }
+
+    /// Returns whether rate-limit headers on `403` responses are recognized.
+    ///
+    /// Disabled by default.
+    #[must_use]
+    pub const fn forbidden_rate_limit(&self) -> bool {
+        self.forbidden_rate_limit
     }
 }
 
