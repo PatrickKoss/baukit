@@ -96,6 +96,9 @@ export type UnauthorizedHandler =
 /** Notification emitted when an explicit credential replay also returns 401. */
 export type UnauthorizedExhaustedHandler = (context: UnauthorizedContext) => void | Promise<void>;
 
+/** Notification for a fenced product profile. Credential recovery is skipped. */
+export type ProfileErasedHandler = (context: UnauthorizedContext) => void | Promise<void>;
+
 /** Options shared by the standalone fetch wrapper and generated clients. */
 export interface ApiRuntimeOptions extends ApiEnvironmentConfig {
   readonly fetch?: FetchImplementation;
@@ -105,6 +108,7 @@ export interface ApiRuntimeOptions extends ApiEnvironmentConfig {
   readonly requestIdFactory?: () => string;
   readonly onUnauthorized?: UnauthorizedHandler;
   readonly onUnauthorizedExhausted?: UnauthorizedExhaustedHandler;
+  readonly onProfileErased?: ProfileErasedHandler;
   readonly retry?: RetryOptions | false;
 }
 
@@ -312,6 +316,21 @@ export function createApiFetch(options: ApiRuntimeOptions): FetchImplementation 
         }
 
         const error = await normalizeResponseError(response);
+        if (response.status === 401 && isApiError(error, 'profile_erased')) {
+          try {
+            await options.onProfileErased?.({
+              error,
+              request: replaySource?.clone() ?? request,
+              response,
+              canRetry: false,
+            });
+          } catch {
+            throwIfAborted(request.signal, requestId);
+            throw error;
+          }
+          throwIfAborted(request.signal, requestId);
+          throw error;
+        }
         if (
           response.status === 401 &&
           unauthorizedReplayUsed &&

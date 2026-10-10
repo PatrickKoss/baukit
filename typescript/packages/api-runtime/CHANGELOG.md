@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Send 401 `profile_erased` responses to `onProfileErased` and skip credential refresh and exhaustion handlers. Preserve the normal API error.
+
 ## 0.10.12
 
 ### Patch Changes

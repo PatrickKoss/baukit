@@ -431,3 +431,17 @@ make completion copy reflect their state.
   Keep the same idempotency key across ambiguous responses.
 - Match UI copy to the chosen retention mode. Show pending work honestly and
   run the mode's erasure checks through the product's actual router.
+
+## Client fence handling
+
+The backend returns HTTP 401 with the standard envelope
+`{ "error": { "code": "profile_erased", "message": "The profile has been erased", "requestId": "...", "details": {} } }`
+when a subject is fenced. `@baukit/api-runtime` calls `onProfileErased` once for
+that response, skips `onUnauthorized` and `onUnauthorizedExhausted`, and rejects
+with an `ApiError` whose code is `profile_erased`. The response body remains
+available to the handler. Handler failures do not replace the API error.
+
+Authenticated templates clear the local session. Web returns to the existing
+signed-out page. Mobile's authentication guard shows the existing sign-in screen
+after the session notification. Neither path refreshes the fenced credentials.
+The deletion client keeps its receipt reconciliation flow and local erasure order.

@@ -22,7 +22,7 @@ function tokenClient(...tokens: (string | undefined)[]) {
 
 function runtimeFor(accessToken: AuthTokenClient['accessToken'], fetch?: MockFetch) {
   return createAuthenticatedApiRuntime({
-    auth: { accessToken },
+    auth: { accessToken, clearSession: () => undefined },
     baseUrl: 'https://api.example.test',
     environment: 'test',
     ...(fetch === undefined ? {} : { fetch: fetch.fetch }),
@@ -86,4 +86,26 @@ describe('authenticated API runtime', () => {
     expect(globalFetch).toHaveBeenCalledTimes(1);
     globalFetch.mockRestore();
   });
+});
+
+
+it('clears an erased profile session and uses the signed-out route without refresh', async () => {
+  const fetch = new MockFetch().enqueueJson({
+    error: { ...unauthorized.error, code: 'profile_erased' },
+  }, { status: 401 });
+  const order: string[] = [];
+  const clearSession = jest.fn(() => { order.push('clear'); });
+  const onProfileErased = jest.fn(() => { order.push('signed-out'); });
+  const accessToken = jest.fn<AuthTokenClient['accessToken']>().mockResolvedValue('old-token');
+  const runtime = createAuthenticatedApiRuntime({
+    auth: { accessToken, clearSession }, onProfileErased,
+    baseUrl: 'https://api.example.test', environment: 'test', fetch: fetch.fetch,
+  });
+  await expect(runtime.fetch('/me')).rejects.toMatchObject({ code: 'profile_erased' });
+  expect(clearSession).toHaveBeenCalledTimes(1);
+  expect(onProfileErased).toHaveBeenCalledTimes(1);
+  expect(order).toEqual(['clear', 'signed-out']);
+  expect(accessToken).toHaveBeenCalledTimes(1);
+  expect(accessToken).not.toHaveBeenCalledWith({ forceRefresh: true });
+  expect(fetch.requests).toHaveLength(1);
 });

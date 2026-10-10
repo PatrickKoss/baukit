@@ -15,7 +15,7 @@ const unauthorized = {
 
 function runtimeWith(accessToken: AuthTokenClient['accessToken'], fetch: MockFetch) {
   return createAuthenticatedApiRuntime({
-    auth: { accessToken },
+    auth: { accessToken, clearSession: () => undefined },
     baseUrl: 'https://api.example.test',
     environment: 'test',
     fetch: fetch.fetch,
@@ -75,7 +75,7 @@ describe('createAuthenticatedApiRuntime', () => {
     vi.stubGlobal('fetch', fetch.fetch);
     try {
       const runtime = createAuthenticatedApiRuntime({
-        auth: { accessToken: () => Promise.resolve('token') },
+        auth: { accessToken: () => Promise.resolve('token'), clearSession: () => undefined },
         baseUrl: 'https://api.example.test',
         environment: 'test',
       });
@@ -86,4 +86,26 @@ describe('createAuthenticatedApiRuntime', () => {
       vi.unstubAllGlobals();
     }
   });
+});
+
+
+it('clears an erased profile session and uses the signed-out route without refresh', async () => {
+  const fetch = new MockFetch().enqueueJson({
+    error: { ...unauthorized.error, code: 'profile_erased' },
+  }, { status: 401 });
+  const order: string[] = [];
+  const clearSession = vi.fn(() => { order.push('clear'); });
+  const onProfileErased = vi.fn(() => { order.push('signed-out'); });
+  const accessToken = vi.fn<AuthTokenClient['accessToken']>().mockResolvedValue('old-token');
+  const runtime = createAuthenticatedApiRuntime({
+    auth: { accessToken, clearSession }, onProfileErased,
+    baseUrl: 'https://api.example.test', environment: 'test', fetch: fetch.fetch,
+  });
+  await expect(runtime.fetch('/me')).rejects.toMatchObject({ code: 'profile_erased' });
+  expect(clearSession).toHaveBeenCalledTimes(1);
+  expect(onProfileErased).toHaveBeenCalledTimes(1);
+  expect(order).toEqual(['clear', 'signed-out']);
+  expect(accessToken).toHaveBeenCalledTimes(1);
+  expect(accessToken).not.toHaveBeenCalledWith({ forceRefresh: true });
+  expect(fetch.requests).toHaveLength(1);
 });

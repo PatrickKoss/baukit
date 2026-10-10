@@ -16,6 +16,9 @@ export interface CurrentUser {
 const configuredBaseUrl: unknown = import.meta.env['VITE_API_URL'];
 const api = createAuthenticatedApiRuntime({
   auth: authClient,
+  onProfileErased: () => {
+    window.location.replace('/');
+  },
   baseUrl: typeof configuredBaseUrl === 'string' ? configuredBaseUrl : 'http://localhost:{{ context.api_host_port }}',
   environment: import.meta.env.MODE,
 });

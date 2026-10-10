@@ -15,6 +15,7 @@ import {
   normalizeResponseError,
   parseApiErrorEnvelope,
   resolveApiEnvironment,
+  type UnauthorizedContext,
 } from './index.js';
 
 const baseOptions = { baseUrl: 'https://api.example.test/v1', environment: 'test' } as const;
@@ -449,5 +450,90 @@ describe('MockFetch assertions', () => {
     expect(() => {
       mock.assertQueueEmpty();
     }).not.toThrow();
+  });
+});
+
+describe('profile erasure fence', () => {
+  const erased = { error: { ...rustEnvelopeSample.error, code: 'profile_erased' } };
+  it('skips refresh and preserves the response body for the erasure observer', async () => {
+    const mock = new MockFetch().enqueueJson(erased, { status: 401 });
+    const onUnauthorized = vi.fn().mockReturnValue('retry-once');
+    const onUnauthorizedExhausted = vi.fn();
+    const onProfileErased = vi.fn(async ({ response, canRetry }: UnauthorizedContext) => {
+      expect(canRetry).toBe(false);
+      expect(await response.json()).toEqual(erased);
+    });
+    const apiFetch = createApiFetch({
+      ...baseOptions,
+      fetch: mock.fetch,
+      onUnauthorized,
+      onUnauthorizedExhausted,
+      onProfileErased,
+    });
+    await expect(apiFetch('/me')).rejects.toMatchObject({
+      kind: 'api',
+      status: 401,
+      code: 'profile_erased',
+      details: {},
+    });
+    expect(onProfileErased).toHaveBeenCalledOnce();
+    expect(onUnauthorized).not.toHaveBeenCalled();
+    expect(onUnauthorizedExhausted).not.toHaveBeenCalled();
+    expect(mock.requests).toHaveLength(1);
+  });
+  it('skips the exhausted observer when the replay encounters an erased profile', async () => {
+    const mock = new MockFetch()
+      .enqueueJson(rustEnvelopeSample, { status: 401 })
+      .enqueueJson(erased, { status: 401 });
+    const onUnauthorizedExhausted = vi.fn();
+    const onProfileErased = vi.fn();
+    const apiFetch = createApiFetch({
+      ...baseOptions,
+      fetch: mock.fetch,
+      onUnauthorized: () => 'retry-once',
+      onUnauthorizedExhausted,
+      onProfileErased,
+    });
+    await expect(apiFetch('/me')).rejects.toMatchObject({ code: 'profile_erased' });
+    expect(onProfileErased).toHaveBeenCalledOnce();
+    expect(onUnauthorizedExhausted).not.toHaveBeenCalled();
+    expect(mock.requests).toHaveLength(2);
+  });
+  it.each([false, true])('preserves the API error when the handler throws: %s', async (throws) => {
+    const mock = new MockFetch().enqueueJson(erased, { status: 401 });
+    const apiFetch = createApiFetch({
+      ...baseOptions,
+      fetch: mock.fetch,
+      ...(throws
+        ? {
+            onProfileErased: () => {
+              throw new Error('cleanup failed');
+            },
+          }
+        : {}),
+    });
+    await expect(apiFetch('/me')).rejects.toMatchObject({ code: 'profile_erased' });
+    expect(mock.requests).toHaveLength(1);
+  });
+  it.each([
+    ['a plain 401', ''],
+    ['another code', JSON.stringify(rustEnvelopeSample)],
+    ['non-JSON', 'Unauthorized'],
+  ])('refreshes %s', async (_label, body) => {
+    const mock = new MockFetch()
+      .enqueue(() => new Response(body, { status: 401 }))
+      .enqueueJson({ ok: true });
+    const onUnauthorized = vi.fn().mockReturnValue('retry-once');
+    const onProfileErased = vi.fn();
+    const apiFetch = createApiFetch({
+      ...baseOptions,
+      fetch: mock.fetch,
+      onUnauthorized,
+      onProfileErased,
+    });
+    await expect(apiFetch('/me')).resolves.toHaveProperty('status', 200);
+    expect(onUnauthorized).toHaveBeenCalledOnce();
+    expect(onProfileErased).not.toHaveBeenCalled();
+    expect(mock.requests).toHaveLength(2);
   });
 });
