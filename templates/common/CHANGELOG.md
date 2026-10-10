@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-## [0.10.8] - 2026-10-09
+{% if context.backend %}- Use Dockerfile frontend 1.28.0 for the backend image.
+
+{% endif %}## [0.10.8] - 2026-10-09
 
 {% if context.web %}- Wait for overlay triggers to be enabled before focusing them in the generated keyboard test.
 
