@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+## [0.10.12] - 2026-10-10
+
 ### Changed
 
 - The suite payload-validator corpus now includes the `rail-runner` mode from the current Schlauzug catalog.

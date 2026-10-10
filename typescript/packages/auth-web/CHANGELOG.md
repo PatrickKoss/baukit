@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.10.12
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.12 train.
+
 ## 0.10.11
 
 ### Patch Changes

@@ -5,9 +5,9 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
-Last verified release train: `v0.10.11` (`RetryHeaderOptions::with_forbidden_rate_limit` and
-`EgressOptions::with_forbidden_rate_limit` let callers retry 403 responses that carry `Retry-After` or
-`x-ratelimit-remaining: 0`; other 403 and all 401 responses stay revoked).
+Last verified release train: `v0.10.12` (`backend.image` adds `runtime_packages` for Debian slim
+runtime stages and named `variants` that build with cargo features into `<binary>-<variant>` targets;
+doctor's pin census skips `fixtures` and `testdata` trees).
 
 ## Toolchain
 

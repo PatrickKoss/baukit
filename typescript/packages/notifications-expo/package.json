@@ -1,6 +1,6 @@
 {
   "name": "@baukit/notifications-expo",
-  "version": "0.10.11",
+  "version": "0.10.12",
   "description": "Optional expo-notifications adapter for @baukit/notifications-core that replaces only notifications carrying one owner's namespace marker.",
   "license": "MIT",
   "author": "Patrick Koss",
@@ -49,7 +49,7 @@
     "vitest": "5.0.3"
   },
   "peerDependencies": {
-    "@baukit/notifications-core": "^0.10.11",
+    "@baukit/notifications-core": "^0.10.12",
     "expo-notifications": "^57.0.21"
   }
 }

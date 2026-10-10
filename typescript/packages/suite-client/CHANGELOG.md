@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## 0.10.12
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.12 train.
+- Updated dependencies
+  - @baukit/integrations-client@0.10.12
+  - @baukit/localization-core@0.10.12
+
 ## 0.10.11
 
 ### Patch Changes
