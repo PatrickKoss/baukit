@@ -3953,6 +3953,49 @@ fn doctor_accepts_registry_dependencies_without_a_checkout() -> anyhow::Result<(
 }
 
 #[test]
+fn doctor_pin_census_ignores_fixture_trees() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = generate_new(&options(parent.path(), "fixture-census"))?;
+    for directory in ["fixtures", "testdata"] {
+        let tree = root.join(format!("backend/crates/a/tests/{directory}/malformed"));
+        fs::create_dir_all(&tree)?;
+        fs::write(tree.join("package.json"), "{\n")?;
+    }
+    let findings = doctor(&root)?;
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.contains("Baukit registry pins match"))
+    );
+    Ok(())
+}
+
+#[test]
+fn doctor_pin_census_rejects_malformed_manifests_outside_fixture_trees() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let fixtures = parent.path().join("fixtures");
+    fs::create_dir(&fixtures)?;
+    let root = generate_new(&options(&fixtures, "malformed-census"))?;
+    for directory in ["tools", "fixtures-extra", "testdata-extra"] {
+        let tree = root.join(directory);
+        fs::create_dir(&tree)?;
+        let path = tree.join("package.json");
+        fs::write(&path, "{\n")?;
+        let error = doctor(&root)
+            .expect_err("malformed product manifests must fail the census")
+            .to_string();
+        assert!(
+            error.contains(&format!(
+                "could not read Baukit pins in `{directory}/package.json`"
+            )),
+            "{error}"
+        );
+        fs::remove_file(path)?;
+    }
+    Ok(())
+}
+
+#[test]
 fn doctor_checks_each_registry_pin_and_names_its_file() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "registry-census");

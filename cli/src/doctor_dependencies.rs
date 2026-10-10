@@ -54,7 +54,14 @@ pub(super) fn validate_registry_pins(
             ) {
                 continue;
             }
-            let relative = path.strip_prefix(root)?.display().to_string();
+            let relative = path.strip_prefix(root)?;
+            if relative
+                .components()
+                .any(|part| matches!(part.as_os_str().to_str(), Some("fixtures" | "testdata")))
+            {
+                continue;
+            }
+            let relative = relative.display().to_string();
             let source = fs::read_to_string(&path)?;
             let pins = read_pins(filename, &source)
                 .with_context(|| format!("could not read Baukit pins in `{relative}`"))?;
