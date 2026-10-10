@@ -13,7 +13,7 @@ TEMPLATES = Path(__file__).resolve().parents[1] / "templates/mobile/mobile"
 
 def render(source: str, backend: bool) -> str:
     flags = {"backend": backend, "auth_oidc": False}
-    pattern = r"{% if context\.(\w+) %}((?:(?!{% if).)*?){% endif %}"
+    pattern = r"{% if context\.(\w+) %}((?:(?!{% if).)*?){% endif (?:%}|-%}\s*)"
     while "{% if" in source:
         def choose(match):
             yes, _, no = match[2].partition("{% else %}")
