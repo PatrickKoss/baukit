@@ -26,4 +26,4 @@ export default function TabLayout() {
     </Tabs>
   );
 }
-{% endraw %}
+{% endraw -%}

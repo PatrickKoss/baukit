@@ -109,4 +109,4 @@ done
 echo "qa: backend readiness timed out; see $state_dir/backend.log" >&2
 exit 1
 {% else %}echo "qa: this product has no generated backend; native QA will cover the app's error state"
-{% endif %}
+{% endif -%}

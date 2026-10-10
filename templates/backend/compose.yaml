@@ -93,4 +93,4 @@ services:
 {% endif %}volumes:
   postgres-data:
 {% if context.auth_oidc %}  keycloak-data:
-{% endif %}
+{% endif -%}

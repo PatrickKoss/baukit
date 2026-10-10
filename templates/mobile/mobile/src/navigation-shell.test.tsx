@@ -117,4 +117,4 @@ it("uses the semantic danger token for destructive profile actions", async () =>
   await fireEvent.press(screen.getByRole("button", { name: "Account" }));
   expect(screen.getByText("Sign out")).toHaveStyle({ color: lightTheme.color.error });
 });
-{% endraw %}
+{% endraw -%}

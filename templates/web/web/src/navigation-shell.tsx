@@ -139,4 +139,4 @@ export function NavigationShell({
     </>
   );
 }
-{% endraw %}
+{% endraw -%}

@@ -121,4 +121,4 @@ export function WorkspacePicker() {
     />
   );
 }
-{% endraw %}
+{% endraw -%}

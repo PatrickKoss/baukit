@@ -74,4 +74,4 @@ it("links to profile deletion", async () => {
     screen.getByRole("link", { name: "Delete profile" }),
   ).toBeOnTheScreen();
 });
-{% endraw %}
+{% endraw -%}

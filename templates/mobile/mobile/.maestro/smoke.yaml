@@ -28,4 +28,5 @@ appId: ${APP_ID}
     direction: DOWN
     timeout: 30000
 - tapOn: Allow
-- assertVisible: "Current consent: granted.*"{% endif %}
+- assertVisible: "Current consent: granted.*"
+{% endif -%}

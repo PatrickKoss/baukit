@@ -14,4 +14,4 @@ services:
 {% if context.auth_oidc %}  keycloak:
     ports: !override
       - "127.0.0.1:${BAUKIT_QA_KEYCLOAK_PORT:-18081}:8080"
-{% endif %}
+{% endif -%}

@@ -103,4 +103,4 @@ it("renders German navigation labels from the catalog", () => {
   fireEvent.click(screen.getByRole("button", { name: "Navigation einklappen" }));
   expect(screen.getByRole("button", { name: "Navigation ausklappen" })).toBeTruthy();
 });
-{% endraw %}
+{% endraw -%}

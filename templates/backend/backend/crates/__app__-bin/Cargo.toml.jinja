@@ -76,12 +76,12 @@ path = "../../tests/postgres_integration.rs"
 [[test]]
 name = "worker_integration"
 path = "../../tests/worker_integration.rs"
-{% endif %}
+{% endif -%}
 {% if context.auth_enabled %}
 [[test]]
 name = "auth_conformance"
 path = "../../tests/auth_conformance.rs"
-{% endif %}
+{% endif -%}
 {% if context.auth_enabled %}
 [[test]]
 name = "identity_erasure_conformance"
@@ -90,4 +90,4 @@ path = "../../tests/identity_erasure_conformance.rs"
 [[test]]
 name = "provider_config"
 path = "../../tests/provider_config.rs"
-{% endif %}
+{% endif -%}

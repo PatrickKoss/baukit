@@ -3,8 +3,9 @@
 ## [Unreleased]
 
 {% if context.backend %}- End the generated backend Dockerfile with a single newline.
+{% endif %}- Keep generated files free of trailing whitespace and blank lines at EOF.
 
-{% endif %}## [0.10.9] - 2026-10-10
+## [0.10.9] - 2026-10-10
 
 {% if context.backend %}- Use Dockerfile frontend 1.28.0 for the backend image.
 - Generate the backend Dockerfile from `baukit.toml`. Regenerate it with `baukit generate dockerfile` after a Baukit update.

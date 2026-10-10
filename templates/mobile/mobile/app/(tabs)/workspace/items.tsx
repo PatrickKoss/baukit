@@ -11,4 +11,4 @@ export default function ItemsScreen() {
   );
 }
 const styles = StyleSheet.create({ screen: { flex: 1 } });
-{% endraw %}
+{% endraw -%}

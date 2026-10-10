@@ -169,4 +169,4 @@ jobs:
           echo "This product was generated without the mobile capability." >&2
           echo "Regenerate or upgrade with mobile support before running native gates." >&2
           exit 1
-{% endif %}
+{% endif -%}

@@ -5,28 +5,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use baukit_cli::{AuthProvider, NewOptions, QualityProfile, generate_new};
+use baukit_cli::{NewOptions, generate_new};
 use sha2::{Digest, Sha256};
 
-fn base(parent: &Path) -> NewOptions {
-    NewOptions {
-        name: "snapshot-app".to_owned(),
-        directory: parent.to_path_buf(),
-        backend: true,
-        worker: false,
-        mobile: false,
-        web: false,
-        pwa: false,
-        mcp: false,
-        auth: None,
-        force: false,
-        into_existing: false,
-        resolve_lockfiles: false,
-        baukit_path: None,
-        port_offset: 0,
-        quality: QualityProfile::Standard,
-    }
-}
+#[path = "../tests/support/snapshot_flavors.rs"]
+mod snapshot_flavors;
+
+use snapshot_flavors::snapshot_flavors;
 
 fn read_tree(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     let mut tree = BTreeMap::new();
@@ -70,11 +55,8 @@ fn sha256_hex(contents: &[u8]) -> String {
         .collect()
 }
 
-fn bless(name: &str, mutate: impl FnOnce(&mut NewOptions)) {
-    let parent = tempfile::tempdir().expect("tempdir");
-    let mut options = base(parent.path());
-    mutate(&mut options);
-    let root = generate_new(&options).expect("generate");
+fn bless(name: &str, options: &NewOptions) {
+    let root = generate_new(options).expect("generate");
     let snapshot = render(&read_tree(&root));
     let target = snapshot_path(name);
     fs::write(&target, snapshot).expect("write");
@@ -82,50 +64,11 @@ fn bless(name: &str, mutate: impl FnOnce(&mut NewOptions)) {
 }
 
 fn main() {
-    bless("backend", |_| {});
-    bless("worker", |o| o.worker = true);
-    bless("mobile", |o| {
-        o.backend = false;
-        o.mobile = true;
-    });
-    bless("mobile-pwa", |o| {
-        o.backend = false;
-        o.mobile = true;
-        o.pwa = true;
-    });
-    bless("web", |o| {
-        o.backend = false;
-        o.web = true;
-    });
-    bless("combined", |o| {
-        o.mobile = true;
-        o.web = true;
-    });
-    bless("mcp-remote", |o| {
-        o.mcp = true;
-        o.auth = Some(AuthProvider::Oidc);
-    });
-    bless("strict", |o| {
-        o.mobile = true;
-        o.web = true;
-        o.quality = QualityProfile::Strict;
-    });
-    for (name, provider) in [
-        ("clerk", AuthProvider::Clerk),
-        ("workos", AuthProvider::Workos),
-    ] {
-        bless(name, |o| {
-            o.mobile = true;
-            o.web = true;
-            o.mcp = true;
-            o.auth = Some(provider);
-        });
+    let parent = tempfile::tempdir().expect("tempdir");
+    for (name, options) in snapshot_flavors(parent.path()) {
+        bless(name, &options);
+        fs::remove_dir_all(parent.path().join(&options.name)).expect("remove rendered tree");
     }
-    bless("auth", |o| {
-        o.mobile = true;
-        o.web = true;
-        o.auth = Some(AuthProvider::Oidc);
-    });
 }
 
 fn snapshot_path(name: &str) -> PathBuf {

@@ -10,6 +10,11 @@ use baukit_cli::{
 };
 use sha2::{Digest, Sha256};
 
+#[path = "support/snapshot_flavors.rs"]
+mod snapshot_flavors;
+
+use snapshot_flavors::snapshot_flavors;
+
 #[cfg(unix)]
 use std::{
     env,
@@ -157,6 +162,62 @@ fn application_name_over_the_service_limit_is_rejected() {
         )
     );
     assert!(!parent.path().join(name).exists());
+}
+
+#[test]
+fn generated_text_is_whitespace_clean_in_every_snapshot_flavor() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut flavors: Vec<_> = snapshot_flavors(parent.path())
+        .flat_map(|(flavor, generated)| {
+            let mut extended = generated.clone();
+            extended.worker = extended.backend;
+            extended.pwa = extended.mobile || extended.web;
+            extended.quality = QualityProfile::Strict;
+            extended.auth = Some(extended.auth.unwrap_or(AuthProvider::Oidc));
+            extended.mcp = extended.backend;
+            [
+                (flavor.to_owned(), generated),
+                (format!("{flavor}-all-options"), extended),
+            ]
+        })
+        .collect();
+    let mut documented = options(parent.path(), "long-product-name-fixture");
+    documented.mobile = true;
+    documented.web = true;
+    documented.mcp = true;
+    documented.auth = Some(AuthProvider::Oidc);
+    flavors.push(("documented-mcp-oidc".to_owned(), documented));
+
+    let mut failures = Vec::new();
+    for (flavor, generated) in flavors {
+        let root = generate_new(&generated)?;
+        for (path, bytes) in read_tree(&root)? {
+            let Ok(text) = std::str::from_utf8(&bytes) else {
+                continue;
+            };
+            if !text.ends_with('\n') {
+                failures.push(format!("{flavor}/{} lacks a final newline", path.display()));
+            }
+            if text.lines().next_back().is_some_and(str::is_empty) {
+                failures.push(format!(
+                    "{flavor}/{} has a blank line at EOF",
+                    path.display()
+                ));
+            }
+            for (line, contents) in text.lines().enumerate() {
+                if contents.ends_with([' ', '\t']) {
+                    failures.push(format!(
+                        "{flavor}/{}:{} has trailing spaces or tabs",
+                        path.display(),
+                        line + 1
+                    ));
+                }
+            }
+        }
+        fs::remove_dir_all(root)?;
+    }
+    anyhow::ensure!(failures.is_empty(), "{}", failures.join("\n"));
+    Ok(())
 }
 
 #[test]

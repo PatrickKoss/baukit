@@ -1,6 +1,5 @@
-{% if not context.worker %}
 -- Reference schema for baukit-jobs.
---
+{% if not context.worker %}--
 -- Copy this file into the product's own ordered migrations. Products own
 -- migration execution; baukit-jobs deliberately does not migrate on startup.
 
@@ -85,5 +84,4 @@ DROP INDEX job_outbox_claim_idx;
 CREATE INDEX job_outbox_claim_idx
     ON job_outbox (job_type, run_after, created_at, id)
     WHERE status = 'pending';
-
-{% endif %}
+{% endif -%}

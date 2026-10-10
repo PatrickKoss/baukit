@@ -76,7 +76,7 @@ jobs:
             web/test-results
           if-no-files-found: warn
           retention-days: 7
-{% endif %}
+{% endif -%}
 {% else %}{% if context.backend %}  backend:
     runs-on: ubuntu-latest
     steps:
@@ -341,4 +341,4 @@ jobs:
           python3 .baukit/deploy/observability/lint/check-metric-names.py \
             --observability-root deploy/observability \
             --allowlist deploy/observability/product-metrics.txt
-{% endif %}
+{% endif -%}

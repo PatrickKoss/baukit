@@ -184,4 +184,4 @@ Run the Docker endpoint conformance test with
 `cargo test --manifest-path backend/Cargo.toml --test identity_erasure_conformance -- --include-ignored`.
 See the Baukit product-profile erasure contract for analytics deletion and
 migration of existing product receipts.
-{% endif %}
+{% endif -%}
