@@ -133,8 +133,8 @@ the bin crate's Cargo manifest at their compile-time paths.
 | `backend_context` | `"."`. Default for the `BACKEND_CONTEXT` build arg. Use `"backend"` for a repository-root context. |
 | `cargo_build_jobs` | Unset. Optional positive default for `ARG CARGO_BUILD_JOBS`; Cargo chooses its own limit when absent. |
 | `apt_packages` | Empty list. Builder packages installed with `--no-install-recommends`. |
-| `runtime_packages` | Empty list of `{ stage, packages }`. Selected stages use Debian slim and install `ca-certificates` plus these packages with `--no-install-recommends`. They run as `65532:65532`; other stages stay distroless. |
-| `build_features` | Empty list of `{ binary, features }`. Each listed binary gets a separate Cargo build with its comma-joined features and leaves the shared build. |
+| `runtime_packages` | Empty list of `{ stage, packages }`. Selected stages use Debian slim and install `ca-certificates` plus these packages with `--no-install-recommends`. An empty package list selects slim with only `ca-certificates`. They run as `65532:65532`; other stages stay distroless. |
+| `variants` | Empty list of `{ name, features, runtime_packages }`. Each variant builds all binaries with these Cargo features in `builder-<name>` and adds `<binary>-<name>` runtime stages. Variant `runtime_packages` defaults to an empty list. |
 | `build_inputs` | Empty list of `{ source, destination }` copies into the builder. Sources are relative to the Docker build context; destinations are absolute. |
 | `pre_build` | Empty list of `{ command, outputs }`. `command` is an argv array, run before Cargo in the same cache mount. `outputs` defaults to an empty list. |
 | `runtime_files` | Empty list of `{ stage, source, destination }` copies from the builder. Relative sources resolve under `/workspace`; destinations are absolute. |
@@ -149,27 +149,41 @@ names must appear in the binary list. Download URLs require HTTPS; both
 checksums require 64 hexadecimal SHA-256 digits. Downloads use `ADD --checksum`,
 verify the extracted binary, and copy it as root with mode `0555`.
 
-`runtime_packages` requires a declared stage and a nonempty package list.
-Stage entries cannot repeat. Package names use the same rules as `apt_packages`:
-they start with a letter or digit and contain only letters, digits, `.`, `+` or
-`-`. `build_features` requires a declared binary and a nonempty feature list.
-Binary entries and features within an entry cannot repeat. Feature names use
+`runtime_packages` requires a declared stage. Stage entries cannot repeat.
+An empty `packages` list selects Debian slim with only `ca-certificates`.
+Package names use the same rules as `apt_packages`: they start with a letter or
+digit and contain only letters, digits, `.`, `+` or `-`.
+
+Variant names match `[a-z][a-z0-9-]*` and cannot repeat. Generated stage names
+must not collide with binaries, `builder`, or another variant's stages.
+Each variant needs at least one feature. Features cannot repeat and use
 letters, digits, `_`, `-`, `+`, `.` or `/`, including `dep/feature` syntax.
+Variant package entries follow the same rules as base package entries.
 
 ```toml
 [[backend.image.runtime_packages]]
 stage = "worker"
 packages = ["git"]
 
-[[backend.image.build_features]]
-binary = "worker"
-features = ["smoke"]
+[[backend.image.variants]]
+name = "smoke"
+features = ["stack-fixtures"]
+runtime_packages = [{ stage = "api", packages = ["socat"] }, { stage = "worker", packages = ["socat"] }]
 ```
 
-Declare `smoke` in the bin crate's Cargo manifest before building this example.
-The shared build runs first, followed by the feature builds in manifest order.
-All builds use the same cache mounts. If every binary has features, the shared
-build is omitted. One final copy moves all binaries into `/out/`.
+Declare `stack-fixtures` in the bin crate's Cargo manifest before building this
+example. `builder-smoke` builds all binaries with `--features stack-fixtures`.
+Its target cache is `<app.name>-target-smoke`; the release builder keeps
+`<app.name>-target`. Both share the Cargo registry cache. Each builder runs the
+same pre-build commands and copies all binaries into `/out/` once.
+
+The base runtime stages come first, so `--target api` keeps the release build.
+Use `--target api-smoke` or `--target worker-smoke` to select a variant. Variant
+stages keep runtime files, companion binaries, writable directories, downloads,
+and migrate paths. Their packages are the union of the base and variant lists.
+A stage uses Debian slim when either list has an entry, even an empty one.
+Other stages keep distroless. In this example, `api-smoke` has `socat`, and
+`worker-smoke` has both `git` and `socat`.
 
 Pre-build arguments are shell-quoted literals. To run shell syntax, explicitly
 use `["sh", "-c", "..."]`. Pre-build outputs needed at runtime must live outside
@@ -184,7 +198,8 @@ or Compose. The image does not declare `EXPOSE` or use cargo-chef.
 The Rust, distroless and Debian slim defaults are pinned `tag@sha256` values
 supplied by Baukit. They are not manifest settings. `RUST_IMAGE`, `RUNTIME_IMAGE`
 and `PACKAGES_RUNTIME_IMAGE` build args can override them. The Dockerfile
-declares `PACKAGES_RUNTIME_IMAGE` only when a stage has runtime packages.
+declares `PACKAGES_RUNTIME_IMAGE` only when a base or variant stage selects
+Debian slim.
 `BACKEND_CONTEXT`, `BAUKIT_CONTEXT`,
 `BAUKIT_DESTINATION`, `LIMITS_FILE` and `GIT_COMMIT` remain available, including
 for builds of local-path fixtures from the Baukit repository root.

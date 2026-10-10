@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
 };
@@ -45,7 +45,7 @@ pub struct BackendImage {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub runtime_packages: Vec<RuntimePackages>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub build_features: Vec<BuildFeatures>,
+    pub variants: Vec<ImageVariant>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub writable_directories: Vec<WritableDirectory>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -107,11 +107,13 @@ pub struct RuntimePackages {
     pub packages: Vec<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct BuildFeatures {
-    pub binary: String,
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct ImageVariant {
+    pub name: String,
     pub features: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub runtime_packages: Vec<RuntimePackages>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -211,7 +213,7 @@ pub(crate) fn validate(manifest: &Manifest) -> Result<()> {
         stage(&file.binary, &binaries)?;
     }
     validate_runtime_packages(&image.runtime_packages, &binaries)?;
-    validate_build_features(&image.build_features, &binaries)?;
+    validate_variants(&image.variants, &binaries)?;
     for directory in &image.writable_directories {
         stage(&directory.stage, &binaries)?;
         path(&directory.path, true)?;
@@ -247,11 +249,6 @@ fn validate_runtime_packages(entries: &[RuntimePackages], binaries: &[String]) -
             "duplicate runtime packages stage `{}`",
             entry.stage
         );
-        ensure!(
-            !entry.packages.is_empty(),
-            "runtime packages for stage `{}` must not be empty",
-            entry.stage
-        );
         for package in &entry.packages {
             apt_package(package, "runtime")?;
         }
@@ -259,34 +256,62 @@ fn validate_runtime_packages(entries: &[RuntimePackages], binaries: &[String]) -
     Ok(())
 }
 
-fn validate_build_features(entries: &[BuildFeatures], binaries: &[String]) -> Result<()> {
-    let mut configured = BTreeSet::new();
-    for entry in entries {
-        stage(&entry.binary, binaries)?;
+fn validate_variants(variants: &[ImageVariant], binaries: &[String]) -> Result<()> {
+    let mut names = BTreeSet::new();
+    let mut stages = binaries.iter().cloned().collect::<BTreeSet<_>>();
+    stages.insert("builder".to_owned());
+    for variant in variants {
         ensure!(
-            configured.insert(&entry.binary),
-            "duplicate build features binary `{}`",
-            entry.binary
+            variant
+                .name
+                .as_bytes()
+                .first()
+                .is_some_and(u8::is_ascii_lowercase)
+                && variant
+                    .name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-'),
+            "invalid image variant name `{}`; expected [a-z][a-z0-9-]*",
+            variant.name
         );
         ensure!(
-            !entry.features.is_empty(),
-            "build features for binary `{}` must not be empty",
-            entry.binary
+            names.insert(&variant.name),
+            "duplicate image variant `{}`",
+            variant.name
         );
-        let mut features = BTreeSet::new();
-        for feature in &entry.features {
+        ensure!(
+            !variant.features.is_empty(),
+            "image variant `{}` must have at least one feature",
+            variant.name
+        );
+        validate_features(&variant.features)?;
+        validate_runtime_packages(&variant.runtime_packages, binaries)?;
+        for binary in std::iter::once("builder").chain(binaries.iter().map(String::as_str)) {
+            let name = format!("{binary}-{}", variant.name);
             ensure!(
-                !feature.is_empty()
-                    && feature
-                        .bytes()
-                        .all(|byte| byte.is_ascii_alphanumeric() || b"_-+./".contains(&byte)),
-                "invalid cargo feature `{feature}`"
-            );
-            ensure!(
-                features.insert(feature),
-                "duplicate cargo feature `{feature}`"
+                stages.insert(name.clone()),
+                "image variant `{}` produces duplicate image stage `{name}`",
+                variant.name
             );
         }
+    }
+    Ok(())
+}
+
+fn validate_features(features: &[String]) -> Result<()> {
+    let mut unique = BTreeSet::new();
+    for feature in features {
+        ensure!(
+            !feature.is_empty()
+                && feature
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"_-+./".contains(&byte)),
+            "invalid cargo feature `{feature}`"
+        );
+        ensure!(
+            unique.insert(feature),
+            "duplicate cargo feature `{feature}`"
+        );
     }
     Ok(())
 }
@@ -375,6 +400,91 @@ fn validate_download(download: &Download) -> Result<()> {
     Ok(())
 }
 
+#[derive(Serialize)]
+struct BuilderStage {
+    name: String,
+    target_cache_id: String,
+    features: Vec<String>,
+}
+
+fn builder_stages(image: &BackendImage, app_name: &str) -> Vec<BuilderStage> {
+    let mut builders = vec![BuilderStage {
+        name: "builder".to_owned(),
+        target_cache_id: format!("{app_name}-target"),
+        features: Vec::new(),
+    }];
+    builders.extend(image.variants.iter().map(|variant| BuilderStage {
+        name: format!("builder-{}", variant.name),
+        target_cache_id: format!("{app_name}-target-{}", variant.name),
+        features: variant.features.clone(),
+    }));
+    builders
+}
+
+#[derive(Serialize)]
+struct RuntimeStage {
+    name: String,
+    binary: String,
+    builder: String,
+    slim: bool,
+    packages: Vec<String>,
+}
+
+fn stage_packages<'a>(entries: &'a [RuntimePackages], binary: &str) -> Option<&'a [String]> {
+    entries
+        .iter()
+        .find(|entry| entry.stage == binary)
+        .map(|entry| entry.packages.as_slice())
+}
+
+fn runtime_stage(
+    image: &BackendImage,
+    binary: &str,
+    variant: Option<&ImageVariant>,
+) -> RuntimeStage {
+    let base_packages = stage_packages(&image.runtime_packages, binary);
+    let Some(variant) = variant else {
+        return RuntimeStage {
+            name: binary.to_owned(),
+            binary: binary.to_owned(),
+            builder: "builder".to_owned(),
+            slim: base_packages.is_some(),
+            packages: base_packages.unwrap_or_default().to_vec(),
+        };
+    };
+    let variant_packages = stage_packages(&variant.runtime_packages, binary);
+    let mut unique = BTreeSet::new();
+    let packages = base_packages
+        .unwrap_or_default()
+        .iter()
+        .chain(variant_packages.unwrap_or_default())
+        .filter(|package| unique.insert(*package))
+        .cloned()
+        .collect();
+    RuntimeStage {
+        name: format!("{binary}-{}", variant.name),
+        binary: binary.to_owned(),
+        builder: format!("builder-{}", variant.name),
+        slim: base_packages.is_some() || variant_packages.is_some(),
+        packages,
+    }
+}
+
+fn runtime_stages(image: &BackendImage, binaries: &[String]) -> Vec<RuntimeStage> {
+    let mut stages = binaries
+        .iter()
+        .map(|binary| runtime_stage(image, binary, None))
+        .collect::<Vec<_>>();
+    for variant in &image.variants {
+        stages.extend(
+            binaries
+                .iter()
+                .map(|binary| runtime_stage(image, binary, Some(variant))),
+        );
+    }
+    stages
+}
+
 pub fn render_dockerfile(manifest: &Manifest) -> Result<String> {
     ensure!(
         manifest.capabilities.backend,
@@ -384,20 +494,9 @@ pub fn render_dockerfile(manifest: &Manifest) -> Result<String> {
     validate(manifest)?;
     let image = &manifest.backend.image;
     let binaries = image.binaries(manifest.capabilities.worker);
-    let shared_binaries = binaries
-        .iter()
-        .filter(|binary| {
-            !image
-                .build_features
-                .iter()
-                .any(|entry| entry.binary == **binary)
-        })
-        .collect::<Vec<_>>();
-    let runtime_packages = image
-        .runtime_packages
-        .iter()
-        .map(|entry| (&entry.stage, &entry.packages))
-        .collect::<BTreeMap<_, _>>();
+    let builders = builder_stages(image, &manifest.app.name);
+    let stages = runtime_stages(image, &binaries);
+    let packages_runtime = stages.iter().any(|stage| stage.slim);
     let commands = image
         .pre_build
         .iter()
@@ -417,8 +516,8 @@ pub fn render_dockerfile(manifest: &Manifest) -> Result<String> {
             app_name => &manifest.app.name,
             bin_crate => image.bin_crate.clone().unwrap_or_else(|| format!("{}-bin", manifest.app.name)),
             backend_context => image.backend_context.as_deref().unwrap_or("."),
-            binaries => binaries, shared_binaries => shared_binaries,
-            runtime_packages => runtime_packages,
+            binaries => binaries, builders => builders, stages => stages,
+            packages_runtime => packages_runtime,
             image => image, commands => commands, runtime_files => files,
         }
     }).context("could not render backend Dockerfile")
@@ -625,60 +724,178 @@ packages = ["git", "libssl3t64"]
         Ok(())
     }
 
+    fn rendered_stage<'a>(output: &'a str, name: &str) -> &'a str {
+        output
+            .split("\nFROM ")
+            .find(|stage| {
+                stage
+                    .lines()
+                    .next()
+                    .is_some_and(|line| line.ends_with(&format!(" AS {name}")))
+            })
+            .expect("rendered stage")
+            .trim_end()
+    }
+
     #[test]
-    fn feature_builds_exclude_the_binary_from_the_shared_build() -> Result<()> {
+    fn variants_build_all_binaries_with_separate_target_caches() -> Result<()> {
         let manifest = manifest(
             r#"
 binaries = ["api", "migrate", "worker"]
 bin_crate = "custom-bin"
-[[backend.image.build_features]]
-binary = "worker"
-features = ["a", "b"]
+build_inputs = [{source = "content", destination = "/content"}]
+pre_build = [{command = ["true"]}]
+writable_directories = [{stage = "worker", path = "/app/reports"}]
+[[backend.image.variants]]
+name = "smoke"
+features = ["stack-fixtures", "dep/feature_1-2+3.4"]
 "#,
         )?;
         let output = render_dockerfile(&manifest)?;
-        assert!(output.contains(
-            "cargo build --locked --release -p custom-bin \\\n    --bin api --bin migrate \\\n    && cargo build --locked --release -p custom-bin --bin worker --features a,b \\\n    && mkdir -p /out \\\n    && cp target/release/api target/release/migrate target/release/worker /out/\n"
-        ));
+        let base = rendered_stage(&output, "builder");
+        let variant = rendered_stage(&output, "builder-smoke");
+        assert_eq!(
+            variant,
+            base.replace(" AS builder\n", " AS builder-smoke\n")
+                .replace("id=test-product-target,", "id=test-product-target-smoke,")
+                .replace(
+                    "--bin api --bin migrate --bin worker ",
+                    "--bin api --bin migrate --bin worker --features stack-fixtures,dep/feature_1-2+3.4 "
+                )
+        );
+        assert!(!base.contains("--features"));
+        assert!(variant.contains("'true' \\\n    && cargo build --locked --release -p custom-bin"));
+        assert_eq!(output.matches("&& cp ").count(), 2);
+        assert_eq!(output.matches("id=test-product-cargo-registry,").count(), 2);
         assert_eq!(output.matches("cargo build ").count(), 2);
-        assert_eq!(output.matches("--mount=type=cache").count(), 2);
-        assert_eq!(output.matches("&& cp ").count(), 1);
+        assert!(!output.contains("PACKAGES_RUNTIME_IMAGE"));
+        for binary in ["api", "migrate", "worker"] {
+            let stage = rendered_stage(&output, &format!("{binary}-smoke"));
+            assert!(stage.contains(&format!(
+                "COPY --from=builder-smoke /out/{binary} /app/{binary}"
+            )));
+            assert_eq!(
+                stage,
+                rendered_stage(&output, binary)
+                    .replacen(
+                        &format!(" AS {binary}\n"),
+                        &format!(" AS {binary}-smoke\n"),
+                        1
+                    )
+                    .replace("--from=builder ", "--from=builder-smoke ")
+            );
+        }
+        assert!(output.find(" AS worker\n") < output.find(" AS api-smoke\n"));
+        assert!(output.ends_with("ENTRYPOINT [\"/app/worker\"]\n"));
         Ok(())
     }
 
     #[test]
-    fn all_feature_builds_omit_the_shared_build_and_keep_pre_build_commands() -> Result<()> {
+    fn variant_packages_merge_with_base_and_keep_runtime_rules() -> Result<()> {
+        let manifest = manifest(&format!(
+            r#"
+binaries = ["api", "migrate", "worker", "seed"]
+build_inputs = [{{source = "content", destination = "/content"}}]
+pre_build = [{{command = ["true"], outputs = ["/generated"]}}]
+runtime_files = [{{stage = "api", source = "/generated/file", destination = "/app/file"}}]
+runtime_binaries = [{{stage = "migrate", binary = "seed"}}]
+writable_directories = [{{stage = "worker", path = "/app/reports"}}]
+downloads = [{{stage = "worker", url = "https://example.com/tool.tar.gz", archive_sha256 = "{}", binary = "tool", binary_sha256 = "{}", destination = "/app/tool"}}]
+runtime_packages = [{{stage = "worker", packages = ["git"]}}]
+[[backend.image.variants]]
+name = "smoke"
+features = ["stack-fixtures"]
+runtime_packages = [{{stage = "api", packages = ["socat"]}}, {{stage = "worker", packages = ["git", "socat", "socat"]}}]
+"#,
+            "a".repeat(64),
+            "b".repeat(64)
+        ))?;
+        let output = render_dockerfile(&manifest)?;
+        let worker = rendered_stage(&output, "worker");
+        assert!(worker.starts_with("${PACKAGES_RUNTIME_IMAGE} AS worker\n"));
+        assert!(worker.contains("--yes ca-certificates git \\\n"));
+        let variant = rendered_stage(&output, "worker-smoke");
+        assert!(variant.starts_with("${PACKAGES_RUNTIME_IMAGE} AS worker-smoke\n"));
+        assert!(variant.contains("--yes ca-certificates git socat \\\n"));
+        assert!(variant.contains("USER 65532:65532\n"));
+        assert!(variant.contains(
+            "COPY --from=builder-smoke --chown=65532:65532 /out/directories/0 /app/reports"
+        ));
+        assert!(variant.contains(
+            "COPY --from=baukit-download-0 --chown=0:0 --chmod=0555 /out/tool /app/tool"
+        ));
+        assert!(rendered_stage(&output, "api").starts_with("${RUNTIME_IMAGE} AS api\n"));
+        let api = rendered_stage(&output, "api-smoke");
+        assert!(api.starts_with("${PACKAGES_RUNTIME_IMAGE} AS api-smoke\n"));
+        assert!(api.contains("--yes ca-certificates socat \\\n"));
+        assert!(api.contains("COPY --from=builder-smoke [\"/generated/file\", \"/app/file\"]"));
+        let migrate = rendered_stage(&output, "migrate-smoke");
+        assert!(migrate.starts_with("${RUNTIME_IMAGE} AS migrate-smoke\n"));
+        assert!(migrate.contains("WORKDIR /workspace\n"));
+        assert!(
+            migrate
+                .contains("COPY --from=builder-smoke /workspace/migrations /workspace/migrations")
+        );
+        assert!(migrate.contains("COPY --from=builder-smoke /workspace/crates/test-product-bin/Cargo.toml /workspace/crates/test-product-bin/Cargo.toml"));
+        assert!(migrate.contains("COPY --from=builder-smoke /out/seed /app/seed"));
+        assert_eq!(output.matches(" AS baukit-download-0\n").count(), 1);
+        assert_image_pin(&output, "PACKAGES_RUNTIME_IMAGE", "debian:trixie-slim");
+        Ok(())
+    }
+
+    #[test]
+    fn empty_package_entries_select_slim_with_only_certificates() -> Result<()> {
         let manifest = manifest(
             r#"
-pre_build = [{command = ["true"]}]
-build_features = [{binary = "api", features = ["dep/feature_1-2+3.4"]}, {binary = "migrate", features = ["smoke"]}]
+runtime_packages = [{stage = "api", packages = []}]
+[[backend.image.variants]]
+name = "smoke"
+features = ["stack-fixtures"]
+runtime_packages = [{stage = "migrate", packages = []}]
 "#,
         )?;
         let output = render_dockerfile(&manifest)?;
-        assert!(output.contains(
-            "'true' \\\n    && cargo build --locked --release -p test-product-bin --bin api --features dep/feature_1-2+3.4 \\\n    && cargo build --locked --release -p test-product-bin --bin migrate --features smoke \\\n    && mkdir -p /out \\\n    && cp target/release/api target/release/migrate /out/\n"
-        ));
-        assert_eq!(output.matches("cargo build ").count(), 2);
-        assert_eq!(output.matches("--mount=type=cache").count(), 2);
-        assert_eq!(output.matches("&& cp ").count(), 1);
+        for name in ["api", "api-smoke", "migrate-smoke"] {
+            let stage = rendered_stage(&output, name);
+            assert!(stage.starts_with(&format!("${{PACKAGES_RUNTIME_IMAGE}} AS {name}\n")));
+            assert!(stage.contains("apt-get install --no-install-recommends --yes ca-certificates \\\n    && rm -rf /var/lib/apt/lists/*\nUSER 65532:65532\n"));
+        }
+        assert!(rendered_stage(&output, "migrate").starts_with("${RUNTIME_IMAGE} AS migrate\n"));
+        assert_image_pin(&output, "PACKAGES_RUNTIME_IMAGE", "debian:trixie-slim");
         Ok(())
     }
 
     #[test]
-    fn package_and_feature_combinations_preserve_output_whitespace() -> Result<()> {
+    fn omitted_variants_preserve_previous_default_bytes() -> Result<()> {
+        use sha2::{Digest, Sha256};
+
+        let output = render_dockerfile(&manifest("")?)?;
+        assert_eq!(
+            Sha256::digest(output.as_bytes())
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>(),
+            "6fb68c1e45d368b7b0b43ebeeaa84c4668cb6d3fdfcf7d01ab948922f830b485"
+        );
+        assert_eq!(output, render_dockerfile(&manifest("variants = []")?)?);
+        Ok(())
+    }
+
+    #[test]
+    fn package_and_variant_combinations_preserve_output_whitespace() -> Result<()> {
         for packages in [
             "[]",
-            "[{stage = 'api', packages = ['git']}]",
+            "[{stage = 'api', packages = []}]",
             "[{stage = 'api', packages = ['git']}, {stage = 'migrate', packages = ['curl']}]",
         ] {
-            for features in [
+            for variants in [
                 "[]",
-                "[{binary = 'api', features = ['smoke']}]",
-                "[{binary = 'api', features = ['smoke']}, {binary = 'migrate', features = ['smoke']}]",
+                "[{name = 'smoke', features = ['stack-fixtures']}]",
+                "[{name = 'smoke', features = ['a', 'b'], runtime_packages = [{stage = 'migrate', packages = ['socat']}]}, {name = 'debug-2', features = ['debug'], runtime_packages = [{stage = 'api', packages = []}]}]",
             ] {
                 for pre_build in ["[]", "[{command = ['true']}]"] {
                     let manifest = manifest(&format!(
-                        "runtime_packages = {packages}\nbuild_features = {features}\npre_build = {pre_build}\n"
+                        "runtime_packages = {packages}\nvariants = {variants}\npre_build = {pre_build}\n"
                     ))?;
                     let output = render_dockerfile(&manifest)?;
                     assert!(
@@ -692,7 +909,7 @@ build_features = [{binary = "api", features = ["dep/feature_1-2+3.4"]}, {binary 
                     assert!(!output.contains("\n\n\n"), "{output}");
                     assert_eq!(
                         output.contains("ARG PACKAGES_RUNTIME_IMAGE="),
-                        packages != "[]"
+                        packages != "[]" || variants.contains("runtime_packages")
                     );
                 }
             }
@@ -701,67 +918,131 @@ build_features = [{binary = "api", features = ["dep/feature_1-2+3.4"]}, {binary 
     }
 
     #[test]
-    fn rejects_invalid_runtime_packages_and_build_features() -> Result<()> {
-        for (source, expected) in [
+    fn rejects_invalid_runtime_packages() -> Result<()> {
+        for (entry, expected) in [
             (
-                "runtime_packages = [{stage = 'worker', packages = ['git']}]",
+                "{stage = 'worker', packages = ['git']}",
                 "image stage `worker` is not a declared binary",
             ),
             (
-                "runtime_packages = [{stage = 'api', packages = []}]",
-                "runtime packages for stage `api` must not be empty",
+                "{stage = '', packages = []}",
+                "image stage `` is not a declared binary",
             ),
             (
-                "runtime_packages = [{stage = 'api', packages = ['']}]",
+                "{stage = 'api', packages = ['']}",
                 "invalid runtime apt package",
             ),
             (
-                "runtime_packages = [{stage = 'api', packages = ['--bad']}]",
+                "{stage = 'api', packages = ['--bad']}",
                 "invalid runtime apt package",
             ),
             (
-                "runtime_packages = [{stage = 'api', packages = ['git;false']}]",
+                "{stage = 'api', packages = ['git;false']}",
                 "invalid runtime apt package",
             ),
             (
-                "runtime_packages = [{stage = 'api', packages = ['git curl']}]",
+                "{stage = 'api', packages = ['git curl']}",
                 "invalid runtime apt package",
             ),
             (
-                "runtime_packages = [{stage = 'api', packages = ['git']}, {stage = 'api', packages = ['curl']}]",
+                "{stage = 'api', packages = []}, {stage = 'api', packages = ['curl']}",
                 "duplicate runtime packages stage `api`",
             ),
+        ] {
+            for source in [
+                format!("runtime_packages = [{entry}]"),
+                format!(
+                    "variants = [{{name = 'smoke', features = ['stack-fixtures'], runtime_packages = [{entry}]}}]"
+                ),
+            ] {
+                let error = render_dockerfile(&manifest(&source)?)
+                    .expect_err(&source)
+                    .to_string();
+                assert!(error.contains(expected), "{source}: {error}");
+            }
+        }
+        for source in [
+            "runtime_packages = [{packages = []}]",
+            "variants = [{name = 'smoke', features = ['stack-fixtures'], runtime_packages = [{packages = []}]}]",
+        ] {
+            assert!(
+                manifest(source)
+                    .expect_err(source)
+                    .to_string()
+                    .contains("missing field `stage`")
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_invalid_variants() -> Result<()> {
+        for name in [
+            "",
+            "Smoke",
+            "1smoke",
+            "smoke_test",
+            "smoke.test",
+            "smoke/other",
+            "smoke;false",
+            "smöke",
+        ] {
+            let source = format!("variants = [{{name = '{name}', features = ['stack-fixtures']}}]");
+            assert!(
+                render_dockerfile(&manifest(&source)?)
+                    .expect_err(&source)
+                    .to_string()
+                    .contains("invalid image variant name")
+            );
+        }
+        for (source, expected) in [
             (
-                "build_features = [{binary = 'worker', features = ['a']}]",
-                "image stage `worker` is not a declared binary",
+                "variants = [{features = ['stack-fixtures']}]",
+                "invalid image variant name",
             ),
             (
-                "build_features = [{binary = 'api', features = []}]",
-                "build features for binary `api` must not be empty",
+                "variants = [{name = 'smoke'}]",
+                "must have at least one feature",
             ),
             (
-                "build_features = [{binary = 'api', features = ['']}]",
+                "variants = [{name = 'smoke', features = []}]",
+                "must have at least one feature",
+            ),
+            (
+                "variants = [{name = 'smoke', features = ['']}]",
                 "invalid cargo feature",
             ),
             (
-                "build_features = [{binary = 'api', features = ['a,b']}]",
+                "variants = [{name = 'smoke', features = ['a,b']}]",
                 "invalid cargo feature",
             ),
             (
-                "build_features = [{binary = 'api', features = ['a b']}]",
+                "variants = [{name = 'smoke', features = ['a b']}]",
                 "invalid cargo feature",
             ),
             (
-                "build_features = [{binary = 'api', features = ['a;false']}]",
+                "variants = [{name = 'smoke', features = ['a;false']}]",
                 "invalid cargo feature",
             ),
             (
-                "build_features = [{binary = 'api', features = ['a', 'a']}]",
+                "variants = [{name = 'smoke', features = ['a', 'a']}]",
                 "duplicate cargo feature `a`",
             ),
             (
-                "build_features = [{binary = 'api', features = ['a']}, {binary = 'api', features = ['b']}]",
-                "duplicate build features binary `api`",
+                "variants = [{name = 'smoke', features = ['a']}, {name = 'smoke', features = ['b']}]",
+                "duplicate image variant `smoke`",
+            ),
+            (
+                "binaries = ['api', 'builder-smoke']\nvariants = [{name = 'smoke', features = ['a']}]",
+                "duplicate image stage `builder-smoke`",
+            ),
+            (
+                "binaries = ['api', 'api-smoke']\nvariants = [{name = 'smoke', features = ['a']}]",
+                "duplicate image stage `api-smoke`",
+            ),
+            (
+                "binaries = ['api', 'api-debug']\nvariants = [{name = 'debug-smoke', features = ['a']}, {name = 'smoke', features = ['b']}]",
+                "duplicate image stage `api-debug-smoke`",
             ),
         ] {
             let error = render_dockerfile(&manifest(source)?)
@@ -912,7 +1193,8 @@ runtime_files = [{ stage = "api", source = "/generated/content/file", destinatio
             "runtime_files = [{stage = 'api', source = 'file', destination = '/file', typo = true}]",
             "runtime_binaries = [{stage = 'api', binary = 'migrate', typo = true}]",
             "runtime_packages = [{stage = 'api', packages = ['git'], typo = true}]",
-            "build_features = [{binary = 'api', features = ['smoke'], typo = true}]",
+            "variants = [{name = 'smoke', features = ['stack-fixtures'], typo = true}]",
+            "variants = [{name = 'smoke', features = ['stack-fixtures'], runtime_packages = [{stage = 'api', packages = [], typo = true}]}]",
             "writable_directories = [{stage = 'api', path = '/files', typo = true}]",
             "downloads = [{stage = 'api', url = 'https://example.com/tool', archive_sha256 = 'a', binary = 'tool', binary_sha256 = 'b', destination = '/tool', typo = true}]",
         ] {

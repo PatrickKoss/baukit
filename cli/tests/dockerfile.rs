@@ -80,6 +80,30 @@ fn generate_check_and_doctor_cover_clean_stale_and_missing_files() -> Result<()>
 }
 
 #[test]
+fn doctor_ignores_additional_hand_written_dockerfiles() -> Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = product(parent.path())?;
+    fs::create_dir_all(root.join("deploy/images"))?;
+    fs::write(
+        root.join("deploy/images/executor-fixture.Dockerfile"),
+        "FROM scratch\nENTRYPOINT [\"/fixture\"]\n",
+    )?;
+    let output = cli(&root, &["doctor"])?;
+    ensure!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("doctor: product is healthy"));
+    ensure!(
+        cli(&root, &["generate", "dockerfile", "--check"])?
+            .status
+            .success()
+    );
+    Ok(())
+}
+
+#[test]
 fn generation_respects_output_override_and_manifest_options() -> Result<()> {
     let parent = tempfile::tempdir()?;
     let root = product(parent.path())?;
@@ -240,31 +264,39 @@ fn buildkit_builds_every_binary_with_stage_specific_files() -> Result<()> {
     ])?;
     resources.builder = Some(builder.clone());
     let result = (|| -> Result<()> {
-        for binary in ["api", "migrate", "worker", "seed"] {
-            let tag = format!("{builder}:{binary}");
-            docker(&[
-                "buildx",
-                "build",
-                "--builder",
-                &builder,
-                "--load",
-                "--target",
-                binary,
-                "--tag",
-                &tag,
-                "--file",
-                root.join("backend/Dockerfile")
-                    .to_str()
-                    .context("Dockerfile path")?,
-                root.to_str().context("context path")?,
-            ])?;
-            resources.images.push(tag.clone());
-            verify_runtime_commands(&tag, binary)?;
-            let container = String::from_utf8(docker(&["create", &tag])?.stdout)?
-                .trim()
-                .to_owned();
-            resources.containers.push(container.clone());
-            verify_runtime_stage(&container, binary, parent.path())?;
+        for variant in [None, Some("smoke")] {
+            for binary in ["api", "migrate", "worker", "seed", "extra-proxy"] {
+                let stage = variant.map_or_else(
+                    || binary.to_owned(),
+                    |variant| format!("{binary}-{variant}"),
+                );
+                let tag = format!("{builder}:{stage}");
+                docker(&[
+                    "buildx",
+                    "build",
+                    "--builder",
+                    &builder,
+                    "--load",
+                    "--target",
+                    &stage,
+                    "--tag",
+                    &tag,
+                    "--file",
+                    root.join("backend/Dockerfile")
+                        .to_str()
+                        .context("Dockerfile path")?,
+                    root.to_str().context("context path")?,
+                ])?;
+                resources.images.push(tag.clone());
+                verify_runtime_commands(&tag, binary, variant.is_some())?;
+                let container = String::from_utf8(docker(&["create", &tag])?.stdout)?
+                    .trim()
+                    .to_owned();
+                resources.containers.push(container.clone());
+                let output = parent.path().join(stage);
+                fs::create_dir(&output)?;
+                verify_runtime_stage(&container, binary, &output)?;
+            }
         }
         Ok(())
     })();
@@ -278,15 +310,15 @@ fn configure_build_fixture(root: &Path) -> Result<()> {
     let mut manifest = read_manifest(root)?;
     manifest.backend.image = toml::from_str(
         r#"
-binaries = ["api", "migrate", "worker", "seed"]
+binaries = ["api", "migrate", "worker", "seed", "extra-proxy"]
 cargo_build_jobs = 6
 backend_context = "backend"
 build_inputs = [{source = "inputs/build.txt", destination = "/inputs/build.txt"}]
 pre_build = [{command = ["sh", "-c", "mkdir -p /generated && cp /inputs/build.txt /generated/output.txt"], outputs = ["/generated"]}]
 runtime_files = [{stage = "api", source = "/generated/output.txt", destination = "/app/prebuilt.txt"}, {stage = "worker", source = "assets/worker.txt", destination = "/app/worker.txt"}]
 runtime_binaries = [{stage = "migrate", binary = "seed"}]
-runtime_packages = [{stage = "worker", packages = ["git"]}]
-build_features = [{binary = "worker", features = ["smoke"]}]
+runtime_packages = [{stage = "worker", packages = ["git"]}, {stage = "extra-proxy", packages = []}]
+variants = [{name = "smoke", features = ["stack-fixtures"], runtime_packages = [{stage = "api", packages = ["socat"]}]}]
 writable_directories = [{stage = "api", path = "/app/var/artifacts"}, {stage = "worker", path = "/tmp/reports"}]
 "#,
     )?;
@@ -309,14 +341,14 @@ writable_directories = [{stage = "api", path = "/app/var/artifacts"}, {stage = "
     let crate_root = root.join("backend/crates/image-product-bin");
     fs::write(
         crate_root.join("Cargo.toml"),
-        "[package]\nname = \"image-product-bin\"\nversion = \"0.1.0\"\nedition = \"2024\"\n[features]\nsmoke = []\n",
+        "[package]\nname = \"image-product-bin\"\nversion = \"0.1.0\"\nedition = \"2024\"\n[features]\nstack-fixtures = []\n",
     )?;
     fs::remove_dir_all(crate_root.join("src"))?;
     fs::create_dir_all(crate_root.join("src/bin"))?;
-    for binary in ["api", "migrate", "worker", "seed"] {
+    for binary in ["api", "migrate", "worker", "seed", "extra-proxy"] {
         fs::write(
             crate_root.join(format!("src/bin/{binary}.rs")),
-            "fn main() { if cfg!(feature = \"smoke\") { println!(\"smoke\"); } print!(\"{}\", include_str!(\"/generated/output.txt\")); }\n",
+            "fn main() { if cfg!(feature = \"stack-fixtures\") { println!(\"smoke\"); } print!(\"{}\", include_str!(\"/generated/output.txt\")); }\n",
         )?;
     }
     fs::write(
@@ -326,9 +358,9 @@ writable_directories = [{stage = "api", path = "/app/var/artifacts"}, {stage = "
     Ok(())
 }
 
-fn verify_runtime_commands(image: &str, binary: &str) -> Result<()> {
+fn verify_runtime_commands(image: &str, binary: &str, variant: bool) -> Result<()> {
     let output = docker(&["run", "--rm", image])?;
-    let expected = if binary == "worker" {
+    let expected = if variant {
         "smoke\ncompiled input\n"
     } else {
         "compiled input\n"
@@ -337,16 +369,31 @@ fn verify_runtime_commands(image: &str, binary: &str) -> Result<()> {
     if binary == "worker" {
         let git = docker(&["run", "--rm", "--entrypoint", "git", image, "--version"])?;
         assert!(String::from_utf8_lossy(&git.stdout).starts_with("git version "));
+    } else {
+        assert_missing_command(image, "git")?;
+    }
+    if binary == "api" && variant {
+        let socat = docker(&["run", "--rm", "--entrypoint", "socat", image, "-V"])?;
+        assert!(String::from_utf8_lossy(&socat.stdout).starts_with("socat by "));
+    } else {
+        assert_missing_command(image, "socat")?;
+    }
+    if binary == "worker" || binary == "extra-proxy" || (binary == "api" && variant) {
         let user = docker(&["image", "inspect", "--format", "{{.Config.User}}", image])?;
         assert_eq!(String::from_utf8_lossy(&user.stdout).trim(), "65532:65532");
-    } else {
-        let git = Command::new("docker")
-            .args(["run", "--rm", "--entrypoint", "git", image, "--version"])
-            .output()?;
-        assert!(!git.status.success());
-        let error = String::from_utf8_lossy(&git.stderr);
-        assert!(error.contains("executable file not found"), "{error}");
+        let uid = docker(&["run", "--rm", "--entrypoint", "id", image, "-u"])?;
+        assert_eq!(String::from_utf8_lossy(&uid.stdout).trim(), "65532");
     }
+    Ok(())
+}
+
+fn assert_missing_command(image: &str, command: &str) -> Result<()> {
+    let output = Command::new("docker")
+        .args(["run", "--rm", "--entrypoint", command, image])
+        .output()?;
+    assert!(!output.status.success());
+    let error = String::from_utf8_lossy(&output.stderr);
+    assert!(error.contains("executable file not found"), "{error}");
     Ok(())
 }
 

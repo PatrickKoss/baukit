@@ -3,8 +3,8 @@
 ## [Unreleased]
 
 - Skip `fixtures` and `testdata` trees when doctor checks Baukit registry pins. Malformed manifests elsewhere still fail the check.
-- Add `backend.image.runtime_packages` for packages in selected Debian slim stages. Keep other stages distroless and use numeric nonroot ownership for writable directories.
-- Add `backend.image.build_features` for separate Cargo builds with per-binary features.
+- Add `backend.image.runtime_packages` for selected Debian slim stages. Allow empty package lists for stages with only CA certificates. Keep other stages distroless and use numeric nonroot ownership for writable directories.
+- Add `backend.image.variants` for named Cargo feature builds with separate target caches and inherited runtime stages. Merge variant runtime packages with the base packages.
 
 ## [0.10.11] - 2026-10-10
 

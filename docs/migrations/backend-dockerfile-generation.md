@@ -22,7 +22,7 @@ keep selecting those stages.
 | Solo Leveling System | `backend_context`, `binaries`, `cargo_build_jobs`, `build_inputs` |
 | Runtime Analyzer | `binaries`, `cargo_build_jobs`, `build_inputs`, `runtime_binaries`, `writable_directories`, `downloads` |
 | Schlauzug | `cargo_build_jobs`, `build_inputs` |
-| AHP | `runtime_packages`, `build_features` |
+| AHP | `runtime_packages`, `variants` |
 
 These examples assume the current `capabilities.worker` declarations. Set it
 to true where a product uses worker and relies on the default binary list.
@@ -182,33 +182,48 @@ the fixtures directory relative to the chosen build context.
 ## AHP
 
 Keep `capabilities.worker = true` or include `worker` in `backend.image.binaries`.
+Add the proxy binary to the bin crate and the image's binary list when needed.
 
 ```toml
+[backend.image]
+binaries = ["api", "migrate", "worker", "extra-proxy"]
+
 [[backend.image.runtime_packages]]
 stage = "worker"
 packages = ["git"]
 
-[[backend.image.build_features]]
-binary = "worker"
-features = ["smoke"]
+[[backend.image.runtime_packages]]
+stage = "extra-proxy"
+packages = []
+
+[[backend.image.variants]]
+name = "smoke"
+features = ["stack-fixtures"]
+runtime_packages = [{ stage = "api", packages = ["socat"] }, { stage = "worker", packages = ["socat"] }]
 ```
 
 The worker stage uses the pinned Debian slim base, installs `ca-certificates`
-and `git`, removes apt lists, and runs as `65532:65532`. API and migrate keep
-the distroless base. `PACKAGES_RUNTIME_IMAGE` can override the Debian base and
-appears only when runtime packages are declared. Package lists must be nonempty,
-use the same package-name rules as builder `apt_packages`, and name each stage
-only once.
+and `git`, removes apt lists, and runs as `65532:65532`. The proxy's empty list
+selects slim with only `ca-certificates`. API and migrate keep distroless.
+`PACKAGES_RUNTIME_IMAGE` can override the Debian base and appears only when a
+base or variant stage selects slim. Package entries name declared binaries,
+cannot repeat within a list, and use the builder `apt_packages` name rules.
 
-Use features that exist in the bin crate. The worker leaves the shared Cargo
-build and gets a separate build with `--features smoke` in the same cache
-mounts. Multiple features are comma-joined. Each binary entry and its feature
-list must be nonempty and cannot contain duplicates. Feature names use letters,
-digits, `_`, `-`, `+`, `.` or `/`. If every binary has features, the shared build
-is omitted. All binaries still enter `/out/` through one copy.
+Declare `stack-fixtures` in the bin crate. `builder-smoke` builds all binaries
+with `--features stack-fixtures`, using its own `<app.name>-target-smoke` cache
+and the shared registry cache. It repeats the base builder's inputs and
+pre-build commands, then copies all binaries into `/out/` once. Variant names
+match `[a-z][a-z0-9-]*`, cannot repeat, and cannot produce stage-name collisions.
+Each variant needs a nonempty feature list without duplicates. Feature names
+use letters, digits, `_`, `-`, `+`, `.` or `/`.
 
-Both keys accept only names from the image's binary list. Writable directories
-use numeric ownership `65532:65532` on both runtime bases.
+The base stages come first. `--target api` still selects the release API.
+`api-smoke` installs `socat`; `worker-smoke` merges `git` with `socat`.
+`extra-proxy-smoke` inherits the empty slim entry. Variant package lists default
+to empty and accept empty package entries. Every variant stage keeps the same
+runtime files, companion binaries, downloads, migrate paths, writable
+directories, and entrypoint. Writable directories use ownership `65532:65532`
+on both runtime bases.
 
 ## Build and check
 
