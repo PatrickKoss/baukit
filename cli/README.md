@@ -103,6 +103,69 @@ route, scoped tool registration and schema drift test. A retired TypeScript
 server or MCP capability table receives a migration finding. Follow the
 [MCP migration guide](../docs/migrations/mcp-stdio-to-remote.md).
 
+## Backend image settings
+
+Baukit owns the backend Dockerfile. `baukit new` renders it, and existing
+products regenerate it after changing image settings or updating Baukit:
+
+```sh
+baukit generate dockerfile
+baukit generate dockerfile --check
+git diff -- backend/Dockerfile
+```
+
+`--check` leaves the file alone and exits nonzero when it is missing or stale.
+Doctor keeps its missing-file check and reports
+`backend Dockerfile <path> differs from the render; run baukit generate dockerfile`
+when the committed bytes differ. Both commands use `doctor.backend_dockerfile`
+and otherwise write beside `doctor.backend_manifest`.
+
+The optional `[backend.image]` section keeps `schema_version = 1`. Omitting it
+builds `api` and `migrate` from `<app.name>-bin`, plus `worker` when
+`capabilities.worker` is true. Each binary has a separate distroless stage
+and `/app/<binary>` entrypoint. The migrate stage also contains migrations and
+the bin crate's Cargo manifest at their compile-time paths.
+
+| Setting | Default and meaning |
+| --- | --- |
+| `binaries` | Capability defaults above. An explicit list replaces them. Every binary gets its own stage. |
+| `bin_crate` | `<app.name>-bin`. Override for a product whose Cargo package has another name. |
+| `backend_context` | `"."`. Default for the `BACKEND_CONTEXT` build arg. Use `"backend"` for a repository-root context. |
+| `cargo_build_jobs` | Unset. Optional positive default for `ARG CARGO_BUILD_JOBS`; Cargo chooses its own limit when absent. |
+| `apt_packages` | Empty list. Builder packages installed with `--no-install-recommends`. |
+| `build_inputs` | Empty list of `{ source, destination }` copies into the builder. Sources are relative to the Docker build context; destinations are absolute. |
+| `pre_build` | Empty list of `{ command, outputs }`. `command` is an argv array, run before Cargo in the same cache mount. `outputs` defaults to an empty list. |
+| `runtime_files` | Empty list of `{ stage, source, destination }` copies from the builder. Relative sources resolve under `/workspace`; destinations are absolute. |
+| `runtime_binaries` | Empty list of `{ stage, binary }` companion binaries copied to `/app/<binary>`. Both names must be declared binaries. |
+| `writable_directories` | Empty list of `{ stage, path }` absolute directories owned by `nonroot:nonroot`. |
+| `downloads` | Empty list of `{ stage, url, archive_sha256, binary, binary_sha256, destination }`. Downloads are tar.gz archives; `binary` is the relative archive member. |
+
+Unknown fields fail parsing. Paths use letters, digits, `/`, `.`, `_` and `-`,
+without `..`. Build-context sources cannot be absolute. Runtime sources outside
+`/workspace` must be a declared pre-build output or its child. Runtime stage
+names must appear in the binary list. Download URLs require HTTPS; both
+checksums require 64 hexadecimal SHA-256 digits. Downloads use `ADD --checksum`,
+verify the extracted binary, and copy it as root with mode `0555`.
+
+Pre-build arguments are shell-quoted literals. To run shell syntax, explicitly
+use `["sh", "-c", "..."]`. Pre-build outputs needed at runtime must live outside
+`target/`, which is a cache mount and does not become part of the builder image.
+Use `runtime_binaries` to copy another built command.
+
+The Dockerfile always sets `SQLX_OFFLINE=true`. Generated backends commit `.sqlx`
+metadata, so image builds do not need a database. Refresh that metadata when
+queries change. Runtime bind addresses, ports, and log settings belong in Helm
+or Compose. The image does not declare `EXPOSE` or use cargo-chef.
+
+The Rust and distroless defaults are pinned `tag@sha256` values supplied by
+Baukit. They are not manifest settings. `RUST_IMAGE` and `RUNTIME_IMAGE` build
+args can override them. `BACKEND_CONTEXT`, `BAUKIT_CONTEXT`,
+`BAUKIT_DESTINATION`, `LIMITS_FILE` and `GIT_COMMIT` remain available, including
+for builds of local-path fixtures from the Baukit repository root.
+
+See the [migration guide](../docs/migrations/backend-dockerfile-generation.md)
+for the existing product patterns.
+
 ## Doctor paths for existing products
 
 Doctor reads the Cargo workspace declared by the product. It scans those crates

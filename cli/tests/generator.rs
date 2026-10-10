@@ -3419,10 +3419,11 @@ fn doctor_accepts_renamed_crates_and_relocated_wiring() -> anyhow::Result<()> {
     fs::write(
         &manifest,
         format!(
-            "{}\n[doctor]\nmigrations = \"database/schema\"\n",
+            "{}\n[doctor]\nmigrations = \"database/schema\"\n\n[backend.image]\nbin_crate = \"sl-bin\"\n",
             fs::read_to_string(&manifest)?
         ),
     )?;
+    baukit_cli::generate_dockerfile(&root, false)?;
     doctor(&root)?;
 
     let api = bin.join("src/bin/api.rs");

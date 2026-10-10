@@ -2,7 +2,8 @@ use std::{env, path::PathBuf, process::ExitCode};
 
 use anyhow::Result;
 use baukit_cli::{
-    AuthProvider, NewOptions, QualityProfile, doctor, generate_new, generate_openapi_client,
+    AuthProvider, NewOptions, QualityProfile, doctor, generate_dockerfile, generate_new,
+    generate_openapi_client,
 };
 use clap::{Args, Parser, Subcommand};
 
@@ -80,6 +81,12 @@ struct NewCommand {
 
 #[derive(Debug, Subcommand)]
 enum GenerateCommand {
+    /// Render the backend Dockerfile from baukit.toml.
+    Dockerfile {
+        /// Fail if the committed file differs from the render.
+        #[arg(long)]
+        check: bool,
+    },
     /// Generate TypeScript declarations from the committed OpenAPI schema.
     OpenapiClient,
 }
@@ -122,6 +129,16 @@ fn run() -> Result<()> {
                 println!("ok: {result}");
             }
             println!("doctor: product is healthy");
+        }
+        Commands::Generate {
+            command: GenerateCommand::Dockerfile { check },
+        } => {
+            let path = generate_dockerfile(&env::current_dir()?, check)?;
+            println!(
+                "{} {}",
+                if check { "checked" } else { "generated" },
+                path.display()
+            );
         }
         Commands::Generate {
             command: GenerateCommand::OpenapiClient,

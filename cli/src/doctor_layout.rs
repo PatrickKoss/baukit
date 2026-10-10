@@ -482,6 +482,15 @@ pub(super) fn validate_backend_wiring(
             ));
         }
     }
+    let dockerfile = crate::dockerfile::output_path(root, manifest)?;
+    if dockerfile.is_file()
+        && fs::read(&dockerfile)? != crate::render_dockerfile(manifest)?.as_bytes()
+    {
+        failures.push(format!(
+            "backend Dockerfile `{}` differs from the render; run `baukit generate dockerfile`",
+            dockerfile.strip_prefix(root)?.display()
+        ));
+    }
     let crates = rust_crates(root, manifest)?;
     if crates.is_empty() {
         failures.push("backend has no declared Cargo packages".to_owned());

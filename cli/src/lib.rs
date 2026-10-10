@@ -1,8 +1,13 @@
+mod dockerfile;
 mod doctor_dependencies;
 mod doctor_layout;
 mod doctor_mcp;
 mod identity;
 
+pub use dockerfile::{
+    BackendImage, BackendManifest, BuildInput, Download, PreBuildStep, RuntimeBinary, RuntimeFile,
+    WritableDirectory, generate_dockerfile, render_dockerfile,
+};
 pub use doctor_layout::DoctorPaths;
 
 use std::{
@@ -228,6 +233,8 @@ pub struct Manifest {
     pub openapi: OpenApiPaths,
     #[serde(default, skip_serializing_if = "DoctorPaths::is_empty")]
     pub doctor: DoctorPaths,
+    #[serde(default, skip_serializing_if = "BackendManifest::is_empty")]
+    pub backend: BackendManifest,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -919,10 +926,15 @@ fn render_product(
             false,
         )?;
     }
-    rendered.insert(
-        PathBuf::from("baukit.toml"),
-        render_manifest(context, options).into_bytes(),
-    );
+    let source = render_manifest(context, options);
+    if options.backend {
+        let manifest: Manifest = toml::from_str(&source)?;
+        rendered.insert(
+            PathBuf::from("backend/Dockerfile"),
+            render_dockerfile(&manifest)?.into_bytes(),
+        );
+    }
+    rendered.insert(PathBuf::from("baukit.toml"), source.into_bytes());
     Ok(rendered)
 }
 
@@ -1015,6 +1027,9 @@ fn render_directory(
 ) -> Result<()> {
     for file in directory.files() {
         let relative = file.path();
+        if relative == Path::new("backend/Dockerfile.jinja") {
+            continue;
+        }
         if !context.auth_oidc && is_keycloak_only(relative) {
             continue;
         }
@@ -1148,9 +1163,11 @@ pub fn read_manifest(root: &Path) -> Result<Manifest> {
             "retired TypeScript MCP server found in mcp/; port its tools to backend/crates/{{name}}-mcp and delete mcp/. Follow docs/migrations/mcp-stdio-to-remote.md"
         );
     }
-    value
+    let manifest: Manifest = value
         .try_into()
-        .with_context(|| format!("could not parse {}", path.display()))
+        .with_context(|| format!("could not parse {}", path.display()))?;
+    dockerfile::validate(&manifest)?;
+    Ok(manifest)
 }
 
 pub fn doctor(root: &Path) -> Result<Vec<String>> {
