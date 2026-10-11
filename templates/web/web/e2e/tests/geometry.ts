@@ -76,8 +76,7 @@ export async function expectRectanglesDoNotIntersect(
   fixedNavigation: Locator,
 ): Promise<void> {
   await target.scrollIntoViewIfNeeded();
-  const targetRectangle = await visibleRectangle(target);
-  const navigationRectangle = await visibleRectangle(fixedNavigation);
+  const [targetRectangle, navigationRectangle] = await visibleRectangles(target, fixedNavigation);
   expect(
     rectanglesIntersect(targetRectangle, navigationRectangle),
     `target ${JSON.stringify(targetRectangle)} intersects fixed navigation ${JSON.stringify(navigationRectangle)}`,
@@ -89,8 +88,7 @@ export async function expectInsideScrollContainer(
   scrollContainer: Locator,
 ): Promise<void> {
   await target.scrollIntoViewIfNeeded();
-  const targetRectangle = await visibleRectangle(target);
-  const containerRectangle = await visibleRectangle(scrollContainer);
+  const [targetRectangle, containerRectangle] = await visibleRectangles(target, scrollContainer);
   const tolerance = 1;
 
   expect(targetRectangle.x).toBeGreaterThanOrEqual(containerRectangle.x - tolerance);
@@ -132,11 +130,25 @@ export async function expectMinimumInteractiveTargetSize(
   expect(rectangles.length).toBeGreaterThan(0);
 }
 
-async function visibleRectangle(locator: Locator): Promise<LayoutRectangle> {
-  await expect(locator).toBeVisible();
-  const rectangle = await locator.boundingBox();
-  if (rectangle === null) throw new Error('visible element has no layout rectangle');
-  return rectangle;
+async function visibleRectangles(
+  first: Locator,
+  second: Locator,
+): Promise<readonly [LayoutRectangle, LayoutRectangle]> {
+  await expect(first).toBeVisible();
+  await expect(second).toBeVisible();
+  const secondElement = await second.elementHandle();
+  if (secondElement === null) throw new Error('visible element has no layout rectangle');
+  try {
+    return await first.evaluate((element, other): readonly [LayoutRectangle, LayoutRectangle] => {
+      function rectangle(target: Element): LayoutRectangle {
+        const { x, y, width, height } = target.getBoundingClientRect();
+        return { x, y, width, height };
+      }
+      return [rectangle(element), rectangle(other)];
+    }, secondElement);
+  } finally {
+    await secondElement.dispose();
+  }
 }
 
 function rectanglesIntersect(first: LayoutRectangle, second: LayoutRectangle): boolean {

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The generated web e2e geometry helpers read both rectangles in one browser call, so a layout shift between two reads cannot produce a false intersection or containment failure.
+
 - The remote MCP guide tells product policies to pass `verified_identity().authenticated_at()` to erasure fence checks, so re-onboarded subjects can use MCP.
 
 ## [0.10.19] - 2026-10-11
