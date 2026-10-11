@@ -4,6 +4,10 @@ All notable changes to `baukit-jobs` are documented here.
 
 ## [Unreleased]
 
+- Drop the handler future before recording timeout or cancellation outcomes.
+  This releases handler-owned transactions so their job row locks cannot
+  deadlock the runner's update.
+
 ## [0.10.17] - 2026-10-11
 
 - Add `FixedUtcJitter` and `FixedUtcInterval::run_at` for stable per-key,

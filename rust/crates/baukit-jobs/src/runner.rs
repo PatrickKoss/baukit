@@ -35,8 +35,9 @@ pub trait JobHandler: Send + Sync + 'static {
 
     /// Handles one claimed job.
     ///
-    /// The future is dropped on timeout or durable cancellation. Long-running
-    /// integrations can observe `cancellation` to stop their own child work.
+    /// The future is dropped on timeout or durable cancellation before the runner
+    /// records the outcome. Long-running integrations can observe `cancellation`
+    /// to stop their own child work.
     fn handle<'a>(
         &'a self,
         job: &'a ClaimedJob,
@@ -267,25 +268,27 @@ async fn process_claimed_job(
 ) -> Result<(), RunnerError> {
     let started = Instant::now();
     let cancellation = JobCancellation::new(&config.worker_id);
-    let future = handler.handle(&job, cancellation.clone());
-    tokio::pin!(future);
-    let timeout = tokio::time::sleep(config.job_timeout);
-    tokio::pin!(timeout);
-    let mut cancellation_poll = tokio::time::interval(config.cancellation_poll_interval);
-    cancellation_poll.set_missed_tick_behavior(MissedTickBehavior::Skip);
-    cancellation_poll.tick().await;
+    let result = {
+        let future = handler.handle(&job, cancellation.clone());
+        tokio::pin!(future);
+        let timeout = tokio::time::sleep(config.job_timeout);
+        tokio::pin!(timeout);
+        let mut cancellation_poll = tokio::time::interval(config.cancellation_poll_interval);
+        cancellation_poll.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        cancellation_poll.tick().await;
 
-    let result = loop {
-        tokio::select! {
-            result = &mut future => break AttemptResult::Handled(result),
-            () = &mut timeout => {
-                cancellation.cancel();
-                break AttemptResult::Handled(Err(JobError::retryable("job timed out")));
-            }
-            _ = cancellation_poll.tick() => {
-                if store.cancellation_requested(job.id).await? {
+        loop {
+            tokio::select! {
+                result = &mut future => break AttemptResult::Handled(result),
+                () = &mut timeout => {
                     cancellation.cancel();
-                    break AttemptResult::Cancelled;
+                    break AttemptResult::Handled(Err(JobError::retryable("job timed out")));
+                }
+                _ = cancellation_poll.tick() => {
+                    if store.cancellation_requested(job.id).await? {
+                        cancellation.cancel();
+                        break AttemptResult::Cancelled;
+                    }
                 }
             }
         }
