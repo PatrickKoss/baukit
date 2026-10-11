@@ -273,23 +273,20 @@ async fn process_claimed_job(
         tokio::pin!(future);
         let timeout = tokio::time::sleep(config.job_timeout);
         tokio::pin!(timeout);
-        let mut cancellation_poll = tokio::time::interval(config.cancellation_poll_interval);
-        cancellation_poll.set_missed_tick_behavior(MissedTickBehavior::Skip);
-        cancellation_poll.tick().await;
+        let cancellation_poll =
+            wait_for_cancellation(store.as_ref(), job.id, config.cancellation_poll_interval);
+        tokio::pin!(cancellation_poll);
 
-        loop {
-            tokio::select! {
-                result = &mut future => break AttemptResult::Handled(result),
-                () = &mut timeout => {
-                    cancellation.cancel();
-                    break AttemptResult::Handled(Err(JobError::retryable("job timed out")));
-                }
-                _ = cancellation_poll.tick() => {
-                    if store.cancellation_requested(job.id).await? {
-                        cancellation.cancel();
-                        break AttemptResult::Cancelled;
-                    }
-                }
+        tokio::select! {
+            result = &mut future => AttemptResult::Handled(result),
+            () = &mut timeout => {
+                cancellation.cancel();
+                AttemptResult::Handled(Err(JobError::retryable("job timed out")))
+            }
+            result = &mut cancellation_poll => {
+                result?;
+                cancellation.cancel();
+                AttemptResult::Cancelled
             }
         }
     };
@@ -381,6 +378,22 @@ async fn process_claimed_job(
         }
     }
     Ok(())
+}
+
+async fn wait_for_cancellation(
+    store: &dyn JobStore,
+    job_id: Uuid,
+    poll_interval: Duration,
+) -> Result<(), crate::StoreError> {
+    let mut interval = tokio::time::interval(poll_interval);
+    interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    interval.tick().await;
+    loop {
+        interval.tick().await;
+        if store.cancellation_requested(job_id).await? {
+            return Ok(());
+        }
+    }
 }
 
 fn retry_delay(config: &WorkerConfig, attempts: u32) -> Duration {
@@ -686,6 +699,73 @@ mod tests {
         assert_eq!(store.completed.load(Ordering::SeqCst), 0);
     }
 
+    #[tokio::test]
+    async fn a_pending_cancellation_query_does_not_stop_the_handler() {
+        let store = Arc::new(FakeStore::with_jobs(0));
+        store.block_cancellation_poll.store(true, Ordering::SeqCst);
+        let handler = Arc::new(BlockingHandler::default());
+        let task = tokio::spawn(process_claimed_job(
+            store.clone(),
+            handler.clone(),
+            test_config(),
+            fake_job(0),
+        ));
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            store.cancellation_poll_started.notified(),
+        )
+        .await
+        .expect("cancellation query starts");
+        handler.release.notify_one();
+        tokio::time::timeout(Duration::from_secs(1), task)
+            .await
+            .expect("handler completes while the cancellation query is pending")
+            .expect("attempt task")
+            .expect("attempt succeeds");
+        assert_eq!(store.completed.load(Ordering::SeqCst), 1);
+        assert_eq!(handler.maximum.load(Ordering::SeqCst), 1);
+        assert_eq!(handler.active.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn a_pending_cancellation_query_does_not_stop_the_timeout() {
+        let store = Arc::new(FakeStore::with_jobs(0));
+        store.block_cancellation_poll.store(true, Ordering::SeqCst);
+        let handler = Arc::new(BlockingHandler::default());
+        let task = tokio::spawn(process_claimed_job(
+            store.clone(),
+            handler.clone(),
+            WorkerConfig {
+                job_timeout: Duration::from_millis(20),
+                ..test_config()
+            },
+            fake_job(0),
+        ));
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            store.cancellation_poll_started.notified(),
+        )
+        .await
+        .expect("cancellation query starts");
+        assert_eq!(handler.maximum.load(Ordering::SeqCst), 1);
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while handler.active.load(Ordering::SeqCst) != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("timeout drops the handler while the cancellation query is pending");
+        store.block_cancellation_poll.store(false, Ordering::SeqCst);
+        store.cancellation_poll_release.notify_one();
+        tokio::time::timeout(Duration::from_secs(1), task)
+            .await
+            .expect("timeout outcome is recorded")
+            .expect("attempt task")
+            .expect("attempt succeeds");
+        assert_eq!(store.retried.load(Ordering::SeqCst), 1);
+        assert_eq!(store.completed.load(Ordering::SeqCst), 0);
+    }
+
     fn test_config() -> WorkerConfig {
         WorkerConfig {
             worker_id: "test-worker".to_owned(),
@@ -706,6 +786,9 @@ mod tests {
         retried: AtomicUsize,
         cancelled: AtomicUsize,
         cancel_requested: AtomicBool,
+        block_cancellation_poll: AtomicBool,
+        cancellation_poll_started: Notify,
+        cancellation_poll_release: Notify,
         transition: Notify,
         recorded_retry_delay: Mutex<Option<chrono::Duration>>,
         claimed_job_types: Mutex<Vec<Vec<String>>>,
@@ -719,6 +802,9 @@ mod tests {
                 retried: AtomicUsize::new(0),
                 cancelled: AtomicUsize::new(0),
                 cancel_requested: AtomicBool::new(false),
+                block_cancellation_poll: AtomicBool::new(false),
+                cancellation_poll_started: Notify::new(),
+                cancellation_poll_release: Notify::new(),
                 transition: Notify::new(),
                 recorded_retry_delay: Mutex::new(None),
                 claimed_job_types: Mutex::new(Vec::new()),
@@ -802,7 +888,13 @@ mod tests {
             &self,
             _job_id: Uuid,
         ) -> StoreFuture<'_, Result<bool, StoreError>> {
-            Box::pin(async move { Ok(self.cancel_requested.load(Ordering::SeqCst)) })
+            Box::pin(async move {
+                if self.block_cancellation_poll.load(Ordering::SeqCst) {
+                    self.cancellation_poll_started.notify_one();
+                    self.cancellation_poll_release.notified().await;
+                }
+                Ok(self.cancel_requested.load(Ordering::SeqCst))
+            })
         }
 
         fn request_cancellation(

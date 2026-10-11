@@ -4,6 +4,9 @@ All notable changes to `baukit-jobs` are documented here.
 
 ## [Unreleased]
 
+- Keep polling a job's handler and timeout while its cancellation query waits
+  for a database connection.
+
 ## [0.10.18] - 2026-10-11
 
 - Drop the handler future before recording timeout or cancellation outcomes.
