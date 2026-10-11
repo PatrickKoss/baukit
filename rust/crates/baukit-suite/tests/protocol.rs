@@ -36,6 +36,9 @@ use url::Url;
 use uuid::Uuid;
 
 type TestResult = Result<(), Box<dyn Error>>;
+#[path = "support/erasure.rs"]
+mod erasure;
+
 #[derive(Default)]
 struct Applier {
     calls: Mutex<Vec<(Uuid, RewardMode, bool)>>,

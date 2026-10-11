@@ -58,6 +58,14 @@ impl ErasureOutcome {
         }
     }
 }
+/// Read-only admission result before external erasure notifications.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ErasurePreflight {
+    /// The request passed validation and can attempt erasure.
+    Proceed,
+    /// The key already has a receipt for this subject. Do not notify again.
+    Replay(ErasureOutcome),
+}
 /// Errors before durable acceptance. Database errors may require client reconciliation.
 #[derive(Debug, thiserror::Error)]
 pub enum ErasureError {
@@ -304,6 +312,29 @@ impl ErasureService {
     pub fn store(&self) -> &PostgresErasureStore {
         &self.store
     }
+    /// Checks the key, subject, replay receipt and session fence without writes or locks.
+    ///
+    /// Use this before external notifications. `erase` repeats every check under
+    /// its locks because this result does not reserve the key or subject.
+    pub async fn preflight(
+        &self,
+        subject: &str,
+        authenticated_at: Option<DateTime<Utc>>,
+        key: &str,
+    ) -> Result<ErasurePreflight, ErasureError> {
+        validate_request(subject, key)?;
+        let previous = sqlx::query_as(
+            "SELECT subject_hash, response FROM erasure_operations WHERE key_hash = $1",
+        )
+        .bind(self.store.hash(b"erasure-key\0", key))
+        .fetch_optional(&self.store.pool)
+        .await?;
+        if let Some(outcome) = replay_outcome(&self.store.subject_hash(subject), previous)? {
+            return Ok(ErasurePreflight::Replay(outcome));
+        }
+        reject_fenced_subject(&self.store, subject, authenticated_at).await?;
+        Ok(ErasurePreflight::Proceed)
+    }
     /// Erases once under key and subject locks. Replays never call product deletion again.
     pub async fn erase(
         &self,
@@ -312,13 +343,7 @@ impl ErasureService {
         key: &str,
         product: &dyn ProductErasure,
     ) -> Result<ErasureOutcome, ErasureError> {
-        let value = axum::http::HeaderValue::from_str(key).map_err(|_| ErasureError::InvalidKey)?;
-        IdempotencyKeyRule::new(16, 128)
-            .parse(&value)
-            .map_err(|_| ErasureError::InvalidKey)?;
-        if subject.is_empty() {
-            return Err(ErasureError::Configuration);
-        }
+        validate_request(subject, key)?;
         let key_hash = self.store.hash(b"erasure-key\0", key);
         let subject_hash = self.store.subject_hash(subject);
         let mut transaction = self.store.pool.begin().await?;
@@ -329,11 +354,8 @@ impl ErasureService {
         .bind(&key_hash)
         .fetch_optional(&mut *transaction)
         .await?;
-        if let Some((owner, response)) = previous {
-            if owner != subject_hash {
-                return Err(ErasureError::Conflict);
-            }
-            return Ok(serde_json::from_value(response)?);
+        if let Some(outcome) = replay_outcome(&subject_hash, previous)? {
+            return Ok(outcome);
         }
         self.store
             .guard_subject(&mut transaction, subject, authenticated_at)
@@ -448,6 +470,30 @@ impl ErasureService {
         transaction.commit().await?;
         Ok(completed)
     }
+}
+
+fn validate_request(subject: &str, key: &str) -> Result<(), ErasureError> {
+    let value = axum::http::HeaderValue::from_str(key).map_err(|_| ErasureError::InvalidKey)?;
+    IdempotencyKeyRule::new(16, 128)
+        .parse(&value)
+        .map_err(|_| ErasureError::InvalidKey)?;
+    if subject.is_empty() {
+        return Err(ErasureError::Configuration);
+    }
+    Ok(())
+}
+
+fn replay_outcome(
+    subject_hash: &[u8],
+    previous: Option<(Vec<u8>, Value)>,
+) -> Result<Option<ErasureOutcome>, ErasureError> {
+    let Some((owner, response)) = previous else {
+        return Ok(None);
+    };
+    if owner != subject_hash {
+        return Err(ErasureError::Conflict);
+    }
+    Ok(Some(serde_json::from_value(response)?))
 }
 
 #[cfg(test)]

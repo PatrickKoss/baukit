@@ -5,14 +5,156 @@ mod postgres_fixture;
 use postgres_fixture::{Product, count, database, fixture};
 
 use baukit_erasure::{
-    ErasureError, ErasureService, ErasureState, IdentityDeletionError, IdentityDeletionHandler,
-    IdentityRetention, PostgresErasureStore, reject_fenced_subject,
+    ErasureError, ErasurePreflight, ErasureService, ErasureState, IdentityDeletionError,
+    IdentityDeletionHandler, IdentityRetention, PostgresErasureStore, reject_fenced_subject,
 };
 use baukit_jobs::{JobStore, PostgresJobStore, WorkerConfig, WorkerRunner};
 use baukit_runtime::ShutdownToken;
 use baukit_test::FakeIdentityAccountDeleter;
 use std::{error::Error, sync::Arc, time::Duration};
 use tracing::instrument::WithSubscriber as _;
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn preflight_proceeds_with_read_only_connections_and_no_subject_lock()
+-> Result<(), Box<dyn Error>> {
+    let (_container, pool, store) = database().await?;
+    let read_only_pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .after_connect(|connection, _| {
+            Box::pin(async move {
+                sqlx::query("SET default_transaction_read_only = on")
+                    .execute(connection)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect(_container.connection_url())
+        .await?;
+    let read_only_store = PostgresErasureStore::new(
+        read_only_pool.clone(),
+        baukit_config::Secret::new("test-key-with-at-least-32-bytes-of-entropy".into()),
+    )?;
+    let service = ErasureService::new(read_only_store, IdentityRetention::Retain)?;
+    let mut transaction = pool.begin().await?;
+    store.guard_subject(&mut transaction, "alice", None).await?;
+    assert_eq!(
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            service.preflight("alice", None, "preflight-proceed-01"),
+        )
+        .await??,
+        ErasurePreflight::Proceed
+    );
+    transaction.rollback().await?;
+    assert_eq!(count(&pool, "profiles").await?, 2);
+    assert_eq!(count(&pool, "erasure_operations").await?, 0);
+    assert_eq!(count(&pool, "erasure_fences").await?, 0);
+    assert_eq!(count(&pool, "job_outbox").await?, 0);
+    read_only_pool.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn preflight_replays_each_stored_outcome_before_checking_the_fence()
+-> Result<(), Box<dyn Error>> {
+    let (_container, pool, store, fake, service) = fixture().await?;
+    fake.push_outcome(Err(IdentityDeletionError::Retryable));
+    let mut outcome = service
+        .erase("alice", None, "preflight-replay-01", &Product)
+        .await?;
+    assert!(store.is_fenced("alice", None).await?);
+    for state in [
+        ErasureState::Pending,
+        ErasureState::Failed,
+        ErasureState::Completed,
+    ] {
+        outcome.status = state;
+        outcome.completed_at = (state == ErasureState::Completed).then(chrono::Utc::now);
+        sqlx::query("UPDATE erasure_operations SET state = $2, response = $3, completed_at = $4 WHERE id = $1")
+            .bind(outcome.operation_id)
+            .bind(serde_json::to_value(state)?.as_str().ok_or("state")?)
+            .bind(serde_json::to_value(&outcome)?)
+            .bind(outcome.completed_at)
+            .execute(&pool)
+            .await?;
+        assert_eq!(
+            service
+                .preflight("alice", None, "preflight-replay-01")
+                .await?,
+            ErasurePreflight::Replay(outcome.clone())
+        );
+        assert_eq!(
+            store.status("alice", outcome.operation_id).await?,
+            Some(outcome.clone())
+        );
+    }
+    assert_eq!(count(&pool, "erasure_operations").await?, 1);
+    assert_eq!(count(&pool, "erasure_fences").await?, 1);
+    assert_eq!(fake.calls(), ["alice"]);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn preflight_conflict_precedes_receipt_decoding_and_the_subject_fence()
+-> Result<(), Box<dyn Error>> {
+    let (_container, pool, store) = database().await?;
+    let service = ErasureService::new(store.clone(), IdentityRetention::Retain)?;
+    let alice = service
+        .erase("alice", None, "preflight-alice-01", &Product)
+        .await?;
+    service
+        .erase("bob", None, "preflight-bob-key-01", &Product)
+        .await?;
+    assert!(store.is_fenced("bob", None).await?);
+    sqlx::query("UPDATE erasure_operations SET response = '{}'::jsonb WHERE id = $1")
+        .bind(alice.operation_id)
+        .execute(&pool)
+        .await?;
+    assert!(matches!(
+        service.preflight("bob", None, "preflight-alice-01").await,
+        Err(ErasureError::Conflict)
+    ));
+    assert!(matches!(
+        service.preflight("alice", None, "preflight-alice-01").await,
+        Err(ErasureError::Receipt(_))
+    ));
+    assert_eq!(count(&pool, "erasure_operations").await?, 2);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn erase_rechecks_replay_and_fence_after_preflight_proceeds() -> Result<(), Box<dyn Error>> {
+    let (_container, pool, store) = database().await?;
+    let service = ErasureService::new(store, IdentityRetention::Retain)?;
+    for key in ["preflight-race-key-01", "preflight-race-key-02"] {
+        assert_eq!(
+            service.preflight("alice", None, key).await?,
+            ErasurePreflight::Proceed
+        );
+    }
+    let first = service
+        .erase("alice", None, "preflight-race-key-01", &Product)
+        .await?;
+    assert_eq!(
+        service
+            .erase("alice", None, "preflight-race-key-01", &Product)
+            .await?,
+        first
+    );
+    assert!(matches!(
+        service
+            .erase("alice", None, "preflight-race-key-02", &Product)
+            .await,
+        Err(ErasureError::ProfileErased)
+    ));
+    assert_eq!(count(&pool, "profiles").await?, 1);
+    assert_eq!(count(&pool, "erasure_operations").await?, 1);
+    Ok(())
+}
 
 #[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]
@@ -500,6 +642,15 @@ async fn assert_session_checks(
     rejected: bool,
 ) -> Result<(), Box<dyn Error>> {
     assert_eq!(store.is_fenced(subject, authenticated_at).await?, rejected);
+    let service = ErasureService::new(store.clone(), IdentityRetention::Retain)?;
+    let result = service
+        .preflight(subject, authenticated_at, "preflight-fence-key-01")
+        .await;
+    if rejected {
+        assert!(matches!(result, Err(ErasureError::ProfileErased)));
+    } else {
+        assert_eq!(result?, ErasurePreflight::Proceed);
+    }
     let result = reject_fenced_subject(store, subject, authenticated_at).await;
     if rejected {
         assert!(matches!(result, Err(ErasureError::ProfileErased)));

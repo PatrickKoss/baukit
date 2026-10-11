@@ -44,3 +44,33 @@ async fn only_delete_mode_requires_provider_configuration() -> Result<(), Box<dy
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn preflight_validates_key_before_subject_without_database_access()
+-> Result<(), Box<dyn Error>> {
+    let pool = sqlx::postgres::PgPoolOptions::new().connect_lazy("postgres://localhost/unused")?;
+    let store = PostgresErasureStore::new(
+        pool,
+        Secret::new("test-key-with-at-least-32-bytes-of-entropy".into()),
+    )?;
+    let service = ErasureService::new(store, IdentityRetention::Retain)?;
+    for subject in ["alice", ""] {
+        for key in [
+            "short".to_owned(),
+            "a".repeat(129),
+            "invalid key with space".to_owned(),
+            "invalid-key-0000\n".to_owned(),
+            "invalid-key-0000\u{7f}".to_owned(),
+        ] {
+            assert!(matches!(
+                service.preflight(subject, None, &key).await,
+                Err(ErasureError::InvalidKey)
+            ));
+        }
+    }
+    assert!(matches!(
+        service.preflight("", None, "preflight-valid-key-01").await,
+        Err(ErasureError::Configuration)
+    ));
+    Ok(())
+}

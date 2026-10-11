@@ -24,7 +24,12 @@ impl SuiteErasureNotifier for SuiteErasureNotificationService {
     }
 }
 
-/// Sends bounded revokes before baukit-erasure opens its product transaction.
+/// Checks erasure admission, then sends bounded revokes before the product transaction.
+/// Replays and rejected requests return without notifying peers.
+///
+/// Two concurrent first requests with the same key may both notify for the same
+/// current profile, which is the profile being erased. `erase` repeats all checks
+/// under its locks after notification.
 pub async fn erase_with_suite(
     service: &baukit_erasure::ErasureService,
     notifier: &dyn SuiteErasureNotifier,
@@ -33,6 +38,11 @@ pub async fn erase_with_suite(
     key: &str,
     product: &dyn baukit_erasure::ProductErasure,
 ) -> Result<baukit_erasure::ErasureOutcome, baukit_erasure::ErasureError> {
+    if let baukit_erasure::ErasurePreflight::Replay(outcome) =
+        service.preflight(subject, authenticated_at, key).await?
+    {
+        return Ok(outcome);
+    }
     notifier.notify_before_erasure(subject).await;
     service.erase(subject, authenticated_at, key, product).await
 }

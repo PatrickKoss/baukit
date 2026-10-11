@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Add read-only `ErasureService::preflight` to validate requests, return stored receipts and check session fences before external erasure notifications. `erase` still repeats every check under its locks.
 - Document that re-erasure needs `UPDATE (erased_at)` on `erasure_fences` for application roles with column privileges.
 
 ## [0.10.19] - 2026-10-11

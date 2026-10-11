@@ -170,6 +170,15 @@ In delete mode, the server executes this sequence:
    rerun, exclude them from general retention cleanup, and alert on failed
    operations. The fence remains active during repair.
 
+Products using suite links call `erase_with_suite`. It runs the read-only
+`ErasureService::preflight` before resolving the current profile's links and
+sending peer revokes. Preflight validates the key and nonempty subject, returns
+same-subject replay receipts or foreign-key conflicts, then checks the login
+time against the fence. Replays and errors return without notifying peers.
+Only `Proceed` sends revokes, then calls `erase`, which repeats every check under
+its locks. No advisory lock is held across peer calls. Two concurrent first
+requests with the same key may both notify for the current profile being erased.
+
 The inline attempt locks the unclaimed job row and holds one pooled connection
 while it calls the provider. This prevents a worker from claiming the same job.
 Keep `inline_timeout` short; the template uses three seconds. The timeout covers

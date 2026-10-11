@@ -95,8 +95,12 @@ from failed-job accounting records and replaces the job failure trigger. Existin
 failure records stay accounted; the new store accounts later records before it
 reads health or queues work. Deploy this migration before the new store code.
 
-Use `PostgresSuiteErasure` and `erase_with_suite` to notify peers before the erasure
-transaction starts, then delete suite rows in that transaction. Implement
+Use `PostgresSuiteErasure` and `erase_with_suite` to check erasure admission before
+notifying peers, then delete suite rows in the erasure transaction. Replays and
+rejected requests return without revoking the current profile's links.
+Preflight makes no writes and takes no locks. The erasure transaction repeats
+every check after notification. Two concurrent first requests with the same key
+may both notify for the current profile being erased. Implement
 `SuiteErasureOwnerLookup::lock_owner_in_transaction` with a product owner row
 lock. The adapter takes the suite advisory lock first, so domain writes that
 use the outbox owner lock finish before cleanup.

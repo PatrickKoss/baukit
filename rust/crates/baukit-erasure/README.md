@@ -81,6 +81,13 @@ login time. A new erasure key updates `erased_at` with the transaction's `now()`
 and fences the re-onboarded session again. Earlier keys still return their stored
 receipts and never erase the new profile.
 
+Before external erasure notifications, call
+`ErasureService::preflight(subject, authenticated_at, key)`. It validates the key
+and subject, returns `ErasurePreflight::Replay(outcome)` for a stored receipt,
+then checks the session fence. Notify only on `ErasurePreflight::Proceed`.
+Preflight makes no writes and takes no locks. `erase` repeats every check under
+its locks after notifications, so preflight does not reserve an erasure.
+
 After `profile_erased`, shared SSO clients must force a fresh login with
 `prompt=login`. Silent SSO and refresh keep the old `auth_time`. The auth-web and
 auth-native adapters use `clearSession({ reason: 'profile_erased' })` to request

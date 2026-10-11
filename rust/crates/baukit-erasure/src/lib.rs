@@ -15,8 +15,8 @@ pub use api::{ApiDeletionConfig, ClerkAccountDeleter, WorkOsAccountDeleter};
 #[cfg(feature = "keycloak")]
 pub use keycloak::{KeycloakAccountDeleter, KeycloakDeletionConfig};
 pub use store::{
-    ErasureError, ErasureOutcome, ErasureService, ErasureState, IdentityRetention,
-    PostgresErasureStore, ProductErasure, reject_fenced_subject,
+    ErasureError, ErasureOutcome, ErasurePreflight, ErasureService, ErasureState,
+    IdentityRetention, PostgresErasureStore, ProductErasure, reject_fenced_subject,
 };
 pub use worker::IdentityDeletionHandler;
 
