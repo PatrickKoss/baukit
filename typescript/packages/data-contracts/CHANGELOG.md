@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `ScopedPersistenceLifecycle.handleProfileErased()` and blocked reason `profile-erased`. It erases the last selected partition even after session cleanup closes it, removes its registry entry, and blocks with any cleanup error. Transitions remain serialized, and concurrent selection cannot reopen the erased profile.
+
 ## 0.10.18
 
 ### Patch Changes

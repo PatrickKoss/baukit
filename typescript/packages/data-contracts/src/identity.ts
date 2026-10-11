@@ -429,7 +429,8 @@ export type ScopedPersistenceLifecycleState<TPersistence extends ClosableScopedP
     }
   | {
       readonly status: 'blocked';
-      readonly reason: 'identity-mismatch' | 'initialization-failed' | 'session-expired';
+      readonly reason:
+        'identity-mismatch' | 'initialization-failed' | 'session-expired' | 'profile-erased';
       readonly error: Error;
     };
 
@@ -439,7 +440,7 @@ export interface ScopedPersistenceLifecycleOptions<
   /** Overrides registry resolution while retaining lifecycle transition guarantees. */
   readonly resolveStore?: ScopedPersistenceResolver;
   readonly open: (context: OpenScopedPersistenceContext) => Promise<TPersistence>;
-  /** Deletes a closed persistence partition. Required by eraseActivePartition. */
+  /** Deletes a closed partition. Required by eraseActivePartition and handleProfileErased. */
   readonly erase?: (context: OpenScopedPersistenceContext) => Promise<void>;
   readonly resetUserScopedState: () => MaybePromise<void>;
 }
@@ -450,6 +451,8 @@ export interface ScopedPersistenceLifecycleOptions<
  */
 export class ScopedPersistenceLifecycle<TPersistence extends ClosableScopedPersistence> {
   private activePartition: ScopedPersistencePartition<TPersistence> | undefined;
+  private lastSelectedPartition: OpenScopedPersistenceContext | undefined;
+  private erasedProfile: { readonly subject: string; error: Error } | undefined;
   private transitionTail: Promise<void> = Promise.resolve();
   private revision = 0;
   private lifecycleState: ScopedPersistenceLifecycleState<TPersistence> = {
@@ -504,14 +507,39 @@ export class ScopedPersistenceLifecycle<TPersistence extends ClosableScopedPersi
     this.lifecycleState = { status: 'signed-out' };
     return this.enqueue(async () => {
       await this.closePartitionAndReset(partition);
-      await erase({ subject: partition.subject, storeName: partition.storeName });
-      await removeScopedPersistenceRegistryEntry({
-        namespace: this.options.namespace,
-        subject: partition.subject,
-        registry: this.options.registry,
-      });
+      await this.erasePartition(partition, erase);
       if (revision === this.revision) this.lifecycleState = { status: 'signed-out' };
       return true;
+    });
+  }
+
+  /** Erases the last selected partition, even after session cleanup closed it. */
+  public handleProfileErased(): Promise<void> {
+    const erase = this.options.erase;
+    const revision = ++this.revision;
+    let error = new Error('The server profile was erased; sign in again to continue.');
+    this.lifecycleState = { status: 'blocked', reason: 'profile-erased', error };
+    return this.enqueue(async () => {
+      const partition = this.lastSelectedPartition;
+      if (partition !== undefined) this.erasedProfile = { subject: partition.subject, error };
+      try {
+        if (partition !== undefined) await this.closeAndReset();
+        if (erase === undefined) {
+          throw new Error('Active partition erasure requires a configured persistence erase hook.');
+        }
+        if (partition === undefined) return;
+        await this.erasePartition(partition, erase);
+      } catch (cause) {
+        error = cause instanceof Error ? cause : new Error('Local profile erasure failed.');
+        if (this.erasedProfile !== undefined && this.erasedProfile.subject === partition?.subject) {
+          this.erasedProfile.error = error;
+        }
+        throw cause;
+      } finally {
+        if (revision === this.revision) {
+          this.lifecycleState = { status: 'blocked', reason: 'profile-erased', error };
+        }
+      }
     });
   }
 
@@ -556,16 +584,27 @@ export class ScopedPersistenceLifecycle<TPersistence extends ClosableScopedPersi
     try {
       await this.closeAndReset();
       if (revision !== this.revision) return undefined;
+      if (this.erasedProfile?.subject === subject) {
+        this.lifecycleState = {
+          status: 'blocked',
+          reason: 'profile-erased',
+          error: this.erasedProfile.error,
+        };
+        return undefined;
+      }
+      if (this.lastSelectedPartition?.subject !== subject) this.lastSelectedPartition = undefined;
       const resolved =
         this.options.resolveStore === undefined
           ? await resolveScopedStore({ ...this.options, subject })
           : await this.options.resolveStore(subject);
       requiredIdentityPart(resolved.storeName, 'Resolved persistence store name');
       if (revision !== this.revision) return undefined;
-      const persistence = await this.options.open({
+      const context = {
         subject,
         storeName: resolved.storeName,
-      });
+      };
+      this.lastSelectedPartition = context;
+      const persistence = await this.options.open(context);
       if (revision !== this.revision) {
         await persistence.close();
         await this.options.resetUserScopedState();
@@ -588,6 +627,21 @@ export class ScopedPersistenceLifecycle<TPersistence extends ClosableScopedPersi
         };
       }
       throw cause;
+    }
+  }
+
+  private async erasePartition(
+    partition: OpenScopedPersistenceContext,
+    erase: NonNullable<ScopedPersistenceLifecycleOptions<TPersistence>['erase']>,
+  ): Promise<void> {
+    await erase({ subject: partition.subject, storeName: partition.storeName });
+    await removeScopedPersistenceRegistryEntry({
+      namespace: this.options.namespace,
+      subject: partition.subject,
+      registry: this.options.registry,
+    });
+    if (this.lastSelectedPartition?.subject === partition.subject) {
+      this.lastSelectedPartition = undefined;
     }
   }
 

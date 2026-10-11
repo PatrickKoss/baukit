@@ -185,7 +185,7 @@ describe('authenticated local data', () => {
     await rerender({ profileId: undefined, sessionExpiredReason: 'profile_erased' });
 
     await waitFor(() => {
-      expect(result.current.state).toMatchObject({ status: 'blocked', reason: 'session-expired' });
+      expect(result.current.state).toMatchObject({ status: 'blocked', reason: 'profile-erased' });
     });
     expect(mockStoreClose).toHaveBeenCalledTimes(1);
     expect(mockDeleteDatabase).toHaveBeenCalledTimes(1);
@@ -202,10 +202,42 @@ describe('authenticated local data', () => {
     await rerender({ profileId: undefined, sessionExpiredReason: 'profile_erased' });
 
     await waitFor(() => {
-      expect(result.current.state).toEqual({ status: 'blocked', reason: 'initialization-failed', error: failure });
+      expect(result.current.state).toEqual({ status: 'blocked', reason: 'profile-erased', error: failure });
     });
     const registry = [...mockSecureStore.entries()].find(([key]) => key.endsWith('.local-data-registry.v1'));
     expect(registry?.[1]).toContain('profile-delete-failed');
+  });
+
+  it('does not repeat erasure when profile confirmation clears after the expiry reason', async () => {
+    const { result, rerender } = await renderReady('profile-repeated-expiry');
+
+    await rerender({ profileId: 'profile-repeated-expiry', sessionExpiredReason: 'profile_erased' });
+    await waitFor(() => {
+      expect(mockDeleteDatabase).toHaveBeenCalledTimes(1);
+      expect(result.current.state).toMatchObject({ status: 'blocked', reason: 'profile-erased' });
+    });
+    await rerender({ profileId: undefined, sessionExpiredReason: 'profile_erased' });
+
+    expect(mockDeleteDatabase).toHaveBeenCalledTimes(1);
+    expect(result.current.state).toMatchObject({ status: 'blocked', reason: 'profile-erased' });
+  });
+
+  it('does not reopen the erased profile during cleanup', async () => {
+    const { result, rerender } = await renderReady('profile-concurrent-erasure');
+    let finish: (() => void) | undefined;
+    mockDeleteDatabase.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    await rerender({ profileId: undefined, sessionExpiredReason: 'profile_erased' });
+    await waitFor(() => { expect(mockDeleteDatabase).toHaveBeenCalledTimes(1); });
+    mockOpenDatabase.mockClear();
+
+    await rerender({ profileId: 'profile-concurrent-erasure', sessionExpiredReason: undefined });
+    await act(() => { finish?.(); });
+
+    await waitFor(() => {
+      expect(result.current.state).toMatchObject({ status: 'blocked', reason: 'profile-erased' });
+    });
+    expect(mockOpenDatabase).not.toHaveBeenCalled();
+    expect(mockDeleteDatabase).toHaveBeenCalledTimes(1);
   });
 
   it('does not block a fresh login when the previous profile cleanup finishes', async () => {

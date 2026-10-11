@@ -70,10 +70,12 @@ that locked removal directly and resolves `true` when it removes an entry or
 parse, edit, or rewrite the serialized registry JSON themselves.
 
 Auth integration must pass the session-expired reason to local-data cleanup.
-For `profile_erased`, block local access and erase the partition and its
-registry entry. Other expiry reasons only close and block. The generated templates
-also keep the last partition's cleanup context because native token clearing can
-close storage before the expiry reason arrives.
+For `profile_erased`, call `handleProfileErased()` to close and erase the last
+selected partition and remove its registry entry. The lifecycle keeps that
+partition's context after `clear()` or `handleSessionExpired()`, so token clearing
+can close storage before the erasure reason arrives. The transition ends blocked
+with reason `profile-erased`. A cleanup failure stays in that blocked state and
+preserves the registry entry. Other expiry reasons only close and block.
 
 A device that never receives `profile_erased` retains the old partition on disk.
 A new profile ID prevents that partition's data and outbox from being adopted,
@@ -168,13 +170,13 @@ Other production exports used by this contract include
 `recheckServerSubjectBeforeSyncAdoption`, and
 `isPersistenceIdentityMismatchError`. The lifecycle state statuses are
 `signed-out`, `initializing`, `ready`, and `blocked`. Blocked reasons are
-`identity-mismatch`, `initialization-failed`, and `session-expired`. The
-lifecycle hides an old handle immediately, waits for close and user-memory
-reset, and publishes the new partition only after the injected
+`identity-mismatch`, `initialization-failed`, `session-expired`, and
+`profile-erased`. The lifecycle hides an old handle immediately, waits for close
+and user-memory reset, and publishes the new partition only after the injected
 open/migrate/hydrate hook finishes. Product auth integration calls
-`eraseActivePartition()` for `profile_erased`, then `handleSessionExpired()`
-to block access. Other terminal expiry reasons call `handleSessionExpired()`
-directly. That method closes and blocks; it does not erase retained data.
+`handleProfileErased()` for `profile_erased`. Other terminal expiry reasons call
+`handleSessionExpired()` directly. That method closes and blocks; it does not
+erase retained data.
 
 The adapter-parameterized `describeScopedPersistenceContract` Vitest suite is
 exported from the test-only `@baukit/data-contracts/vitest` subpath, not the

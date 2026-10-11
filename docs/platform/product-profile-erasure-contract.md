@@ -485,8 +485,10 @@ with an `ApiError` whose code is `profile_erased`. The response body remains
 available to the handler. Handler failures do not replace the API error.
 
 Authenticated templates call `clearSession({ reason: 'profile_erased' })`.
-The session-expired listener blocks local access and erases the active partition
-and its registry entry. Web shows its signed-out page; mobile's auth guard
+The session-expired listener calls `ScopedPersistenceLifecycle.handleProfileErased()`
+to block local access, erase the last selected partition, and remove its registry
+entry. The lifecycle keeps that context after token clearing closes the store.
+Web shows its signed-out page; mobile's auth guard
 shows its sign-in screen. OIDC forces fresh authentication on the next login.
 The deletion client keeps its receipt reconciliation flow and local erasure order.
 

@@ -112,11 +112,43 @@ describe('useAuthenticatedLocalData', () => {
     rerender({ profileId: undefined, sessionExpiredReason: 'profile_erased' });
 
     await waitFor(() => {
-      expect(result.current.state).toMatchObject({ status: 'blocked', reason: 'session-expired' });
+      expect(result.current.state).toMatchObject({ status: 'blocked', reason: 'profile-erased' });
     });
     expect(queryClient.getQueryData(['private'])).toBeUndefined();
     const registry = Object.keys(localStorage).find((key) => key.endsWith(':local-data-registry:v1'));
     expect(localStorage.getItem(registry ?? '')).not.toContain('erased-profile');
+  });
+
+  it('keeps expiry cleanup stable when profile confirmation clears, then opens a fresh profile', async () => {
+    const queryClient = new QueryClient();
+    const clear = vi.spyOn(queryClient, 'clear');
+    const { result, rerender } = renderLocalData(
+      { profileId: 'erased-profile', sessionExpiredReason: undefined }, queryClient,
+    );
+    await waitFor(() => { expect(result.current.state.status).toBe('ready'); });
+    const previous = result.current.state;
+    if (previous.status !== 'ready') throw new Error('Expected a ready partition.');
+
+    rerender({ profileId: 'erased-profile', sessionExpiredReason: 'profile_erased' });
+    await waitFor(() => {
+      expect(result.current.state).toMatchObject({ status: 'blocked', reason: 'profile-erased' });
+    });
+    clear.mockClear();
+    await act(async () => {
+      rerender({ profileId: undefined, sessionExpiredReason: 'profile_erased' });
+      await Promise.resolve();
+    });
+    expect(clear).not.toHaveBeenCalled();
+
+    rerender({ profileId: 'new-profile', sessionExpiredReason: undefined });
+    await waitFor(() => { expect(result.current.state.status).toBe('ready'); });
+    const next = result.current.state;
+    if (next.status !== 'ready') throw new Error('Expected a ready partition.');
+    expect(next.partition.subject).toBe('new-profile');
+    expect(next.partition.storeName).not.toBe(previous.partition.storeName);
+    const registry = Object.keys(localStorage).find((key) => key.endsWith(':local-data-registry:v1'));
+    expect(localStorage.getItem(registry ?? '')).not.toContain('erased-profile');
+    expect(localStorage.getItem(registry ?? '')).toContain('new-profile');
   });
 
   it('opens a fresh partition after re-onboarding without an expiry event', async () => {

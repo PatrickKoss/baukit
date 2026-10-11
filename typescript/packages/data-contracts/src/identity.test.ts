@@ -204,6 +204,214 @@ describe('scoped persistence registry', () => {
 });
 
 describe('scoped persistence lifecycle', () => {
+  describe('profile-erased expiry', () => {
+    function createLifecycle() {
+      const registry = new InMemoryScopedPersistenceRegistryStore();
+      const close = vi.fn(() => Promise.resolve());
+      const open = vi.fn(() => Promise.resolve({ close }));
+      const erase = vi.fn((_context: { subject: string; storeName: string }) => Promise.resolve());
+      const reset = vi.fn();
+      const lifecycle = new ScopedPersistenceLifecycle({
+        namespace: 'example',
+        registry,
+        digest,
+        open,
+        erase,
+        resetUserScopedState: reset,
+      });
+      return { lifecycle, registry, close, open, erase, reset };
+    }
+
+    it.each(['open', 'cleared', 'expired'] as const)(
+      'erases and unregisters the last partition when it is %s',
+      async (status) => {
+        const { lifecycle, registry, close, erase } = createLifecycle();
+        const partition = await lifecycle.selectSubject('account-e');
+        if (status === 'cleared') await lifecycle.clear();
+        if (status === 'expired') await lifecycle.handleSessionExpired();
+
+        const erasure = lifecycle.handleProfileErased();
+        expect(lifecycle.current()).toBeUndefined();
+        expect(lifecycle.state).toMatchObject({ status: 'blocked', reason: 'profile-erased' });
+        await erasure;
+
+        expect(close).toHaveBeenCalledOnce();
+        expect(erase).toHaveBeenCalledExactlyOnceWith({
+          subject: 'account-e',
+          storeName: partition?.storeName,
+        });
+        expect(close.mock.invocationCallOrder[0]).toBeLessThan(
+          erase.mock.invocationCallOrder[0] ?? 0,
+        );
+        await expect(registry.read()).resolves.toBe('{"version":1,"namespaces":[]}');
+        expect(lifecycle.state).toMatchObject({ status: 'blocked', reason: 'profile-erased' });
+
+        await lifecycle.handleProfileErased();
+        expect(erase).toHaveBeenCalledOnce();
+      },
+    );
+
+    it('only blocks when no partition was ever selected', async () => {
+      const { lifecycle, registry, close, erase, open, reset } = createLifecycle();
+
+      await lifecycle.handleProfileErased();
+
+      expect(lifecycle.state).toMatchObject({ status: 'blocked', reason: 'profile-erased' });
+      expect(lifecycle.current()).toBeUndefined();
+      expect(close).not.toHaveBeenCalled();
+      expect(erase).not.toHaveBeenCalled();
+      expect(open).not.toHaveBeenCalled();
+      expect(reset).not.toHaveBeenCalled();
+      await expect(registry.read()).resolves.toBeNull();
+    });
+
+    it('requires the same erase configuration as active-partition erasure', async () => {
+      const close = vi.fn(() => Promise.resolve());
+      const lifecycle = new ScopedPersistenceLifecycle({
+        namespace: 'example',
+        registry: new InMemoryScopedPersistenceRegistryStore(),
+        digest,
+        open: () => Promise.resolve({ close }),
+        resetUserScopedState: () => undefined,
+      });
+      const message = 'Active partition erasure requires a configured persistence erase hook.';
+
+      await expect(lifecycle.handleProfileErased()).rejects.toThrow(message);
+      await lifecycle.selectSubject('account-e');
+      await expect(lifecycle.eraseActivePartition()).rejects.toThrow(message);
+      await expect(lifecycle.handleProfileErased()).rejects.toThrow(message);
+      expect(close).toHaveBeenCalledOnce();
+      expect(lifecycle.current()).toBeUndefined();
+      expect(lifecycle.state).toMatchObject({
+        status: 'blocked',
+        reason: 'profile-erased',
+        error: new Error(message),
+      });
+    });
+
+    it('blocks with the deletion error and retains ownership for another cleanup attempt', async () => {
+      const { lifecycle, registry, erase } = createLifecycle();
+      await lifecycle.selectSubject('account-e');
+      const error = new Error('disk unavailable');
+      erase.mockRejectedValueOnce(error);
+
+      await expect(lifecycle.handleProfileErased()).rejects.toBe(error);
+
+      expect(lifecycle.state).toEqual({ status: 'blocked', reason: 'profile-erased', error });
+      expect(lifecycle.current()).toBeUndefined();
+      await expect(registry.read()).resolves.toContain('account-e');
+      await expect(lifecycle.selectSubject('account-e')).resolves.toBeUndefined();
+      expect(lifecycle.state).toEqual({ status: 'blocked', reason: 'profile-erased', error });
+
+      await lifecycle.handleProfileErased();
+      expect(erase).toHaveBeenCalledTimes(2);
+      await expect(registry.read()).resolves.not.toContain('account-e');
+    });
+
+    it.each(['account-e', 'account-f'])(
+      'serializes a concurrent selection of %s without reopening the erased partition',
+      async (subject) => {
+        const { lifecycle, open, erase, registry } = createLifecycle();
+        const previous = await lifecycle.selectSubject('account-e');
+        let finishErase: (() => void) | undefined;
+        erase.mockReturnValueOnce(
+          new Promise<void>((resolve) => {
+            finishErase = resolve;
+          }),
+        );
+        const erasure = lifecycle.handleProfileErased();
+        await vi.waitFor(() => {
+          expect(erase).toHaveBeenCalledOnce();
+        });
+
+        const selection = lifecycle.selectSubject(subject);
+        expect(lifecycle.current()).toBeUndefined();
+        expect(open).toHaveBeenCalledOnce();
+        finishErase?.();
+        await erasure;
+
+        if (subject === 'account-e') {
+          await expect(selection).resolves.toBeUndefined();
+          expect(open).toHaveBeenCalledOnce();
+          expect(lifecycle.state).toMatchObject({ status: 'blocked', reason: 'profile-erased' });
+        } else {
+          const next = await selection;
+          expect(next?.subject).toBe('account-f');
+          expect(next?.storeName).not.toBe(previous?.storeName);
+          expect(open).toHaveBeenCalledTimes(2);
+          expect(lifecycle.state).toMatchObject({ status: 'ready', partition: next });
+        }
+        await expect(registry.read()).resolves.not.toContain('account-e');
+      },
+    );
+
+    it('fences a same-profile selection queued before erasure starts', async () => {
+      const { lifecycle, open } = createLifecycle();
+      await lifecycle.selectSubject('account-e');
+
+      const erasure = lifecycle.handleProfileErased();
+      const selection = lifecycle.selectSubject('account-e');
+      await erasure;
+
+      await expect(selection).resolves.toBeUndefined();
+      expect(open).toHaveBeenCalledOnce();
+      expect(lifecycle.state).toMatchObject({ status: 'blocked', reason: 'profile-erased' });
+    });
+
+    it('opens a new profile after erasure and retains that profile for later cleanup', async () => {
+      const { lifecycle, erase } = createLifecycle();
+      const previous = await lifecycle.selectSubject('account-e');
+      await lifecycle.handleProfileErased();
+
+      const next = await lifecycle.selectSubject('account-f');
+
+      expect(next?.subject).toBe('account-f');
+      expect(next?.storeName).not.toBe(previous?.storeName);
+      expect(lifecycle.current()).toBe(next);
+      await lifecycle.clear();
+      await lifecycle.handleProfileErased();
+      expect(erase).toHaveBeenLastCalledWith({ subject: 'account-f', storeName: next?.storeName });
+    });
+
+    it('forgets an old context on a subject switch and after successful active erasure', async () => {
+      const { lifecycle, erase, registry } = createLifecycle();
+      await lifecycle.selectSubject('account-e');
+      await lifecycle.clear();
+      await lifecycle.selectSubject('account-f');
+      await lifecycle.eraseActivePartition();
+
+      await lifecycle.handleProfileErased();
+
+      expect(erase).toHaveBeenCalledOnce();
+      expect(erase.mock.calls[0]?.[0].subject).toBe('account-f');
+      await expect(registry.read()).resolves.toContain('account-e');
+    });
+
+    it('erases a partition whose open hook finishes after expiry', async () => {
+      const { lifecycle, close, open, erase } = createLifecycle();
+      let finishOpen: (() => void) | undefined;
+      open.mockImplementationOnce(async () => {
+        await new Promise<void>((resolve) => {
+          finishOpen = resolve;
+        });
+        return { close };
+      });
+      const selection = lifecycle.selectSubject('account-e');
+      await vi.waitFor(() => {
+        expect(open).toHaveBeenCalledOnce();
+      });
+
+      const erasure = lifecycle.handleProfileErased();
+      finishOpen?.();
+
+      await expect(selection).resolves.toBeUndefined();
+      await erasure;
+      expect(close).toHaveBeenCalledOnce();
+      expect(erase.mock.calls[0]?.[0].subject).toBe('account-e');
+      expect(lifecycle.state).toMatchObject({ status: 'blocked', reason: 'profile-erased' });
+    });
+  });
+
   it('closes, deletes, and unregisters the active partition in order', async () => {
     const events: string[] = [];
     const registry = new InMemoryScopedPersistenceRegistryStore();

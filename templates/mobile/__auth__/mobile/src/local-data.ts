@@ -5,7 +5,6 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useRef,
   useState,
 } from 'react';
 import * as Crypto from 'expo-crypto';
@@ -13,7 +12,6 @@ import * as SecureStore from 'expo-secure-store';
 import * as SQLite from 'expo-sqlite';
 import {
   PersistenceIdentityMismatchError,
-  removeScopedPersistenceRegistryEntry,
   type OpenScopedPersistenceContext,
   type ScopedPersistenceLifecycleState,
   type ScopedPersistenceRegistryStore,
@@ -112,72 +110,26 @@ function useAuthenticatedLocalDataState(
   sessionExpiredReason: SessionExpiredReason | undefined,
 ): AuthenticatedLocalData {
   const [state, setState] = useState<LocalDataState>(localDataLifecycle.state);
-  const expiryTransition = useRef<{
-    readonly reason: SessionExpiredReason;
-    readonly transition: Promise<void>;
-  } | undefined>(undefined);
-  const lastPartition = useRef<OpenScopedPersistenceContext | undefined>(undefined);
-  const expireSession = useCallback(async (reason: SessionExpiredReason): Promise<void> => {
-    if (reason !== 'profile_erased') {
-      await localDataLifecycle.handleSessionExpired();
-      return;
-    }
-    const previous = lastPartition.current;
-    const erasure = localDataLifecycle.eraseActivePartition();
-    const blocked = localDataLifecycle.handleSessionExpired();
-    const [erased] = await Promise.all([erasure, blocked]);
-    if (!erased && previous !== undefined) {
-      // Token clearing can close the partition before the expiry event arrives.
-      await erasePartition(previous);
-      await removeScopedPersistenceRegistryEntry({
-        namespace: PRODUCT_NAME, subject: previous.subject, registry,
-      });
-    }
-    if (lastPartition.current === previous) lastPartition.current = undefined;
-  }, []);
+  const selectedProfileId = sessionExpiredReason === undefined ? profileId : undefined;
 
   useEffect(() => {
     let active = true;
-    if (profileId !== undefined && lastPartition.current?.subject !== profileId) {
-      lastPartition.current = undefined;
-    }
-    if (sessionExpiredReason === undefined) expiryTransition.current = undefined;
-    else if (expiryTransition.current?.reason !== sessionExpiredReason) {
-      expiryTransition.current = {
-        reason: sessionExpiredReason,
-        transition: expireSession(sessionExpiredReason),
-      };
-    }
-    const transition = expiryTransition.current?.transition ?? (
-      profileId === undefined
+    const transition = sessionExpiredReason !== undefined
+      ? sessionExpiredReason === 'profile_erased'
+        ? localDataLifecycle.handleProfileErased()
+        : localDataLifecycle.handleSessionExpired()
+      : selectedProfileId === undefined
         ? localDataLifecycle.clear()
-        : localDataLifecycle.selectSubject(profileId).then((partition) => {
-            if (partition !== undefined) lastPartition.current = {
-              subject: partition.subject,
-              storeName: partition.storeName,
-            };
-          })
-    );
-    void Promise.resolve().then(() => {
+        : localDataLifecycle.selectSubject(selectedProfileId);
+    const updateState = () => {
       if (active) setState(localDataLifecycle.state);
-    });
-    void transition.then(
-      () => {
-        if (active) setState(localDataLifecycle.state);
-      },
-      (cause: unknown) => {
-        if (!active) return;
-        setState(sessionExpiredReason !== 'profile_erased' && localDataLifecycle.state.status === 'blocked' ? localDataLifecycle.state : {
-          status: 'blocked',
-          reason: 'initialization-failed',
-          error: cause instanceof Error ? cause : new Error('Local data cleanup failed.'),
-        });
-      },
-    );
+    };
+    void Promise.resolve().then(updateState);
+    void transition.then(updateState, updateState);
     return () => {
       active = false;
     };
-  }, [expireSession, profileId, sessionExpiredReason]);
+  }, [selectedProfileId, sessionExpiredReason]);
 
   const blockIdentityMismatch = useCallback(
     async (error: PersistenceIdentityMismatchError): Promise<void> => {
@@ -194,7 +146,6 @@ function useAuthenticatedLocalDataState(
     if (!(await localDataLifecycle.eraseActivePartition())) {
       throw new Error('No active local account partition to erase.');
     }
-    lastPartition.current = undefined;
     setState(localDataLifecycle.state);
   }, []);
 

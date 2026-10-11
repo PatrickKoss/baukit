@@ -392,7 +392,17 @@ including across namespaces.
 opens another subject, resets product-provided user-scoped memory, and publishes
 only an open/migrated/hydrated partition. Call `handleSessionExpired()` for a
 terminal authentication expiry; it closes and blocks without inventing a
-subject switch. Products with an older, already-versioned ownership registry
+subject switch. For the auth reason `profile_erased`, call `handleProfileErased()`
+with a configured `erase` hook. It closes and deletes the last selected partition,
+removes its registry entry, and ends blocked with reason `profile-erased`. It
+retains the partition context after `clear()` or `handleSessionExpired()`, so
+token clearing can happen before the erasure event. Cleanup failures stay blocked
+with the error and retain the registry entry. Concurrent selection cannot reopen
+the erased profile; a new profile ID opens a fresh partition after cleanup.
+Products that keep an identity account after erasure must key partitions by the
+server profile ID, rather than the identity provider's subject.
+
+Products with an older, already-versioned ownership registry
 may supply `resolveStore` to retain those database names while adopting the
 shared close/reset/publish lifecycle. The compatibility resolver remains
 responsible for validating its legacy metadata and failing closed. Use
