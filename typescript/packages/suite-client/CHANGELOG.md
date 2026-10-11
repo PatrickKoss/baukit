@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## 0.10.15
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.15 train.
+- Updated dependencies
+  - @baukit/integrations-client@0.10.15
+  - @baukit/localization-core@0.10.15
+
 ## 0.10.14
 
 ### Patch Changes
