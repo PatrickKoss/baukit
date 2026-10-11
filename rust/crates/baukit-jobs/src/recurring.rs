@@ -62,8 +62,10 @@ impl FixedUtcInterval {
 
     /// Returns a slot's start plus a deterministic per-key offset.
     ///
-    /// The offset is whole seconds in `0..=floor(interval_seconds * fraction)`.
-    /// The bound uses IEEE 754 binary64 multiplication, capped at the interval.
+    /// The offset is whole seconds in
+    /// `0..=min(floor(interval_seconds * fraction), interval_seconds - 1)`.
+    /// The bound uses IEEE 754 binary64 multiplication. The run time stays
+    /// inside its slot, including when the fraction is one.
     /// Keys are hashed as UTF-8 bytes with 64-bit FNV-1a, using offset basis
     /// `14695981039346656037` and prime `1099511628211`, with wrapping arithmetic.
     /// The hash modulo `bound + 1` is the offset. This algorithm is fixed across
@@ -90,7 +92,7 @@ impl FixedUtcInterval {
         jitter: FixedUtcJitter,
     ) -> Result<DateTime<Utc>, FixedUtcIntervalError> {
         let bound =
-            ((self.seconds as f64 * jitter.fraction).floor() as u64).min(self.seconds as u64);
+            ((self.seconds as f64 * jitter.fraction).floor() as u64).min(self.seconds as u64 - 1);
         let offset = fnv1a(key.as_bytes()) % (bound + 1);
         let offset = chrono::Duration::try_seconds(offset as i64)
             .ok_or(FixedUtcIntervalError::OutOfRange)?;
@@ -280,7 +282,7 @@ mod tests {
             ("connection:1", 3600, 0.1, 345),
             ("connection:2", 3600, 0.1, 311),
             ("poll:%_é", 60, 0.5, 23),
-            ("alpha", 10, 1.0, 3),
+            ("alpha", 10, 1.0, 5),
             ("tiny", 1, 0.1, 0),
         ] {
             let interval = FixedUtcInterval::new(Duration::from_secs(seconds)).expect("interval");
@@ -356,6 +358,26 @@ mod tests {
     }
 
     #[test]
+    fn full_fraction_jitter_keeps_every_key_inside_its_slot() {
+        let jitter = FixedUtcJitter::new(1.0).expect("jitter");
+        for seconds in [1, 2, 10, 60, 3600] {
+            let interval = FixedUtcInterval::new(Duration::from_secs(seconds)).expect("interval");
+            for observed in [
+                DateTime::UNIX_EPOCH - TimeDelta::seconds(1),
+                DateTime::UNIX_EPOCH,
+                at(12, 0),
+            ] {
+                let slot = interval.slot_at(observed).expect("slot");
+                for sequence in 0..10_000 {
+                    let key = format!("connection:{sequence}");
+                    let run_at = interval.run_at(slot, &key, jitter).expect("run time");
+                    assert_eq!(interval.slot_at(run_at).expect("run slot"), slot);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn keys_and_jitter_leave_slot_identifiers_and_progress_unchanged() {
         let interval = FixedUtcInterval::new(Duration::from_secs(3600)).expect("interval");
         let slot = interval.slot_at(at(12, 0)).expect("slot");
@@ -392,14 +414,14 @@ mod tests {
     }
 
     #[test]
-    fn jitter_outside_the_timestamp_range_returns_an_error() {
+    fn jitter_handles_timestamp_limits_without_panicking() {
         let interval = FixedUtcInterval::new(Duration::from_secs(1)).expect("interval");
         let slot = interval
             .slot_at(DateTime::<Utc>::MAX_UTC)
             .expect("last slot");
         assert_eq!(
             interval.run_at(slot, "", FixedUtcJitter::new(1.0).expect("jitter")),
-            Err(FixedUtcIntervalError::OutOfRange)
+            Ok(slot.starts_at())
         );
         let interval =
             FixedUtcInterval::new(Duration::from_secs(i64::MAX as u64)).expect("interval");

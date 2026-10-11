@@ -125,14 +125,16 @@ not parse cron expressions or run a scheduler.
 
 Create `FixedUtcJitter::new(fraction)` with a finite fraction in `(0, 1]`, then
 call `interval.run_at(slot, key, jitter)` for `run_after`. It adds whole seconds
-between zero and `floor(interval_seconds * fraction)`, inclusive. A bound below
-one second gives no offset. Timestamp overflow returns
+in `0..=min(floor(interval_seconds * fraction), interval_seconds - 1)`. The run
+time stays inside its slot, even with fraction `1.0`. A bound below one second
+gives no offset. Timestamp overflow returns
 `FixedUtcIntervalError::OutOfRange`.
 
 The offset uses 64-bit FNV-1a over the key's UTF-8 bytes, with offset basis
 `14695981039346656037`, prime `1099511628211`, wrapping arithmetic, and modulo
-`bound + 1`. The bound uses IEEE 754 binary64 multiplication, capped at the
-interval. The algorithm stays fixed across releases, platforms, and restarts.
+`bound + 1`. The bound uses IEEE 754 binary64 multiplication, capped at one
+second less than the interval. The algorithm stays fixed across releases,
+platforms, and restarts.
 A connection keeps the same offset in every slot. For an hourly interval and
 fraction `0.1`, `connection:1` runs 345 seconds after the boundary.
 

@@ -224,7 +224,7 @@ impl PostgresJobStore {
     ) -> Result<CancellationOutcome, StoreError> {
         validate_text("job_type", job_type, MAX_JOB_TYPE_LENGTH)?;
         validate_text("idempotency_key", key, MAX_IDEMPOTENCY_KEY_LENGTH)?;
-        request_cancellation_by_key_on(transaction, job_type, key, false, now).await
+        request_cancellation_by_key_on(transaction, job_type, key, now).await
     }
 
     /// Cancels jobs with a literal key prefix inside the caller's transaction.
@@ -241,7 +241,7 @@ impl PostgresJobStore {
     ) -> Result<CancellationOutcome, StoreError> {
         validate_text("job_type", job_type, MAX_JOB_TYPE_LENGTH)?;
         validate_text("idempotency_key_prefix", prefix, MAX_IDEMPOTENCY_KEY_LENGTH)?;
-        request_cancellation_by_key_on(transaction, job_type, prefix, true, now).await
+        request_cancellation_by_key_prefix_on(transaction, job_type, prefix, now).await
     }
 
     /// Deletes at most one batch of terminal jobs.
@@ -581,37 +581,59 @@ async fn finish_on(
         "UPDATE job_outbox SET status = $5, locked_by = NULL, locked_until = NULL, cancel_requested_at = NULL, last_error = $6, failure_reason = NULL, updated_at = $3 WHERE id = $1 AND ",
         owned_lease_predicate!()
     ))
-        .bind(job_id)
-        .bind(worker_id)
-        .bind(now)
-        .bind(allow_cancellation)
-        .bind(status)
-        .bind(error.map(bound_error))
-        .execute(connection)
-        .await
-        .map(|result| result.rows_affected() == 1)
-        .map_err(StoreError::database)
+    .bind(job_id)
+    .bind(worker_id)
+    .bind(now)
+    .bind(allow_cancellation)
+    .bind(status)
+    .bind(error.map(bound_error))
+    .execute(connection)
+    .await
+    .map(|result| result.rows_affected() == 1)
+    .map_err(StoreError::database)
 }
 
 async fn request_cancellation_by_key_on(
     connection: &mut PgConnection,
     job_type: &str,
     key: &str,
-    prefix: bool,
     now: DateTime<Utc>,
 ) -> Result<CancellationOutcome, StoreError> {
     let statuses: Vec<String> = sqlx::query_scalar(concat!(
         "UPDATE job_outbox SET ",
         cancellation_assignments!(),
-        " WHERE job_type = $2 AND (CASE WHEN $4 THEN left(idempotency_key, char_length($3)) ELSE idempotency_key END) = $3 AND status IN ('pending', 'running') RETURNING status"
+        " WHERE job_type = $2 AND idempotency_key = $3 AND status IN ('pending', 'running') RETURNING status"
     ))
-        .bind(now)
-        .bind(job_type)
-        .bind(key)
-        .bind(prefix)
-        .fetch_all(connection)
-        .await
-        .map_err(StoreError::database)?;
+    .bind(now)
+    .bind(job_type)
+    .bind(key)
+    .fetch_all(connection)
+    .await
+    .map_err(StoreError::database)?;
+    count_cancellation_statuses(statuses)
+}
+
+async fn request_cancellation_by_key_prefix_on(
+    connection: &mut PgConnection,
+    job_type: &str,
+    prefix: &str,
+    now: DateTime<Utc>,
+) -> Result<CancellationOutcome, StoreError> {
+    let statuses: Vec<String> = sqlx::query_scalar(concat!(
+        "UPDATE job_outbox SET ",
+        cancellation_assignments!(),
+        " WHERE job_type = $2 AND left(idempotency_key, char_length($3)) = $3 AND status IN ('pending', 'running') RETURNING status"
+    ))
+    .bind(now)
+    .bind(job_type)
+    .bind(prefix)
+    .fetch_all(connection)
+    .await
+    .map_err(StoreError::database)?;
+    count_cancellation_statuses(statuses)
+}
+
+fn count_cancellation_statuses(statuses: Vec<String>) -> Result<CancellationOutcome, StoreError> {
     let mut outcome = CancellationOutcome::default();
     for status in statuses {
         match status.as_str() {

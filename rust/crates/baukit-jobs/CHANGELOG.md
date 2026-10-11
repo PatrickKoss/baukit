@@ -5,7 +5,8 @@ All notable changes to `baukit-jobs` are documented here.
 ## [Unreleased]
 
 - Add `FixedUtcJitter` and `FixedUtcInterval::run_at` for stable per-key,
-  whole-second offsets. Slot identifiers and progression stay unchanged.
+  whole-second offsets that stay inside their UTC slot, including at fraction
+  `1.0`. Slot identifiers and progression stay unchanged.
 - Add transaction cancellation by exact idempotency key or literal key prefix,
   scoped to a job type, with pending and running counts.
 - Add `PostgresJobStore::check_lease_in_transaction` to check lease ownership
