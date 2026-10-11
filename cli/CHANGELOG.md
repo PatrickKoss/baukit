@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Generated backends pass verified login times through fence checks and profile creation. Add the re-onboarding migration and test a fresh profile after retained-identity erasure. Worker erasure calls use an explicit missing login time.
+
 - The generated web QA Playwright config runs with `fullyParallel: true`. The stubbed specs share no state, so tests inside one file now spread across workers.
 
 ## [0.10.18] - 2026-10-11

@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Breaking: pass a login time to fence checks and `ErasureService::erase`. A login after `erased_at` can re-onboard only after every erasure operation completes. Missing login times keep the permanent fence.
+- Add `POSTGRES_REONBOARDING_MIGRATION_SQL`, to copy after 0001. Re-erasure updates the fence with the database clock; old idempotency keys keep their receipts.
+
 ## [0.10.18] - 2026-10-11
 
 ## [0.10.17] - 2026-10-11

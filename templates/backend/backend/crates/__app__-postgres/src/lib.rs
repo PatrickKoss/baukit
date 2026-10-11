@@ -174,6 +174,7 @@ impl UserRepository for PostgresUserRepository {
     fn resolve_subject(
         &self,
         subject: String,
+        authenticated_at: Option<chrono::DateTime<chrono::Utc>>,
     ) -> PortFuture<'_, Result<InternalUser, RepositoryError>> {
         Box::pin(async move {
             let mut transaction = self
@@ -182,7 +183,7 @@ impl UserRepository for PostgresUserRepository {
                 .await
                 .map_err(RepositoryError::unavailable)?;
             self.erasures
-                .guard_subject(&mut transaction, &subject)
+                .guard_subject(&mut transaction, &subject, authenticated_at)
                 .await
                 .map_err(|error| {
                     if matches!(error, baukit_erasure::ErasureError::ProfileErased) {

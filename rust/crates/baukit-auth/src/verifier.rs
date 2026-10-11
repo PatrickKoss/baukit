@@ -8,6 +8,7 @@ use std::{
 
 use aws_lc_rs::{digest, signature};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use chrono::{DateTime, Utc};
 use reqwest::{Client, StatusCode, Url};
 use serde::Deserialize;
 use serde_json::Value;
@@ -24,13 +25,14 @@ const MAX_UNKNOWN_KEYS: usize = 128;
 
 /// A verified, provider-neutral application identity.
 ///
-/// Only the stable subject and explicitly configured context cross the auth
-/// boundary. API-token principals also retain the verified stored token
-/// metadata. Raw JWT claims are deliberately not exposed.
+/// The stable subject, verified login time, and explicitly configured context
+/// cross the auth boundary. API-token principals also retain the verified stored
+/// token metadata. Raw JWT claims are deliberately not exposed.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Principal {
     subject: String,
     issuer: Option<String>,
+    authenticated_at: Option<DateTime<Utc>>,
     organization: Option<String>,
     tenant: Option<String>,
     client_id: Option<String>,
@@ -76,6 +78,7 @@ impl Principal {
         Self {
             subject: subject.into(),
             issuer: None,
+            authenticated_at: None,
             organization: None,
             tenant: None,
             client_id: None,
@@ -98,6 +101,21 @@ impl Principal {
     pub fn with_organization(mut self, organization: impl Into<String>) -> Self {
         self.organization = Some(organization.into());
         self
+    }
+
+    /// Adds the login time supplied by a trusted adapter.
+    #[must_use]
+    pub fn with_authenticated_at(mut self, authenticated_at: DateTime<Utc>) -> Self {
+        self.authenticated_at = Some(authenticated_at);
+        self
+    }
+
+    /// Returns the verified `auth_time`, which stays unchanged on token refresh.
+    ///
+    /// Absent claims, API tokens, and internal principals return `None`.
+    #[must_use]
+    pub const fn authenticated_at(&self) -> Option<DateTime<Utc>> {
+        self.authenticated_at
     }
 
     /// Adds tenant context to a principal created by a trusted adapter.
@@ -909,7 +927,7 @@ struct JwtClaims {
 
 impl JwtClaims {
     fn validate(
-        self,
+        mut self,
         config: &OidcConfig,
         verification: TokenVerification<'_>,
     ) -> Result<Principal, VerificationError> {
@@ -938,6 +956,8 @@ impl JwtClaims {
         {
             return Err(VerificationError::NotYetValid);
         }
+        let authenticated_at =
+            authentication_time(self.extra.remove("auth_time").as_ref(), now, skew)?;
         let organization = mapped_claim(&self.extra, config.claim_mapping.organization.as_ref())?;
         let tenant = mapped_claim(&self.extra, config.claim_mapping.tenant.as_ref())?;
         let client_id = mapped_claim(&self.extra, config.claim_mapping.client_id.as_ref())?;
@@ -946,6 +966,7 @@ impl JwtClaims {
         Ok(Principal {
             subject,
             issuer: Some(config.issuer().to_owned()),
+            authenticated_at,
             organization,
             tenant,
             client_id,
@@ -954,6 +975,25 @@ impl JwtClaims {
             api_token: None,
         })
     }
+}
+
+fn authentication_time(
+    value: Option<&Value>,
+    now: u64,
+    skew: u64,
+) -> Result<Option<DateTime<Utc>>, VerificationError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let seconds = value.as_u64().ok_or(VerificationError::MalformedToken)?;
+    let timestamp = i64::try_from(seconds)
+        .ok()
+        .and_then(|seconds| DateTime::from_timestamp(seconds, 0))
+        .ok_or(VerificationError::MalformedToken)?;
+    if seconds > now.saturating_add(skew) {
+        return Err(VerificationError::NotYetValid);
+    }
+    Ok(Some(timestamp))
 }
 
 fn validate_token_profile(
@@ -1261,6 +1301,7 @@ mod tests {
             .with_tenant("tenant");
         assert_eq!(principal.subject(), "subject");
         assert_eq!(principal.issuer(), None);
+        assert_eq!(principal.authenticated_at(), None);
         assert_eq!(principal.organization(), Some("org"));
         assert_eq!(principal.tenant(), Some("tenant"));
         assert_eq!(principal.client_id(), None);
@@ -1268,6 +1309,54 @@ mod tests {
         assert_eq!(principal.grants(), None);
         assert!(principal.profile_claims().is_empty());
         assert_eq!(principal.api_token(), None);
+    }
+
+    #[test]
+    fn authentication_time_validates_integer_shape_and_clock_skew() {
+        let now = 1_700_000_000;
+        let skew = 60;
+        assert_eq!(
+            authentication_time(None, now, skew).expect("valid timestamp"),
+            None
+        );
+        for seconds in [0, now - 1, now, now + skew] {
+            assert_eq!(
+                authentication_time(Some(&Value::from(seconds)), now, skew)
+                    .expect("valid timestamp"),
+                DateTime::from_timestamp(i64::try_from(seconds).expect("valid timestamp"), 0)
+            );
+        }
+        for invalid in [
+            Value::Null,
+            Value::from(-1),
+            Value::from(1.5),
+            Value::from(1.0),
+            Value::from("1700000000"),
+            Value::from(true),
+            serde_json::json!([]),
+            serde_json::json!({}),
+            Value::from(u64::MAX),
+        ] {
+            assert!(
+                matches!(
+                    authentication_time(Some(&invalid), now, skew),
+                    Err(VerificationError::MalformedToken)
+                ),
+                "{invalid}"
+            );
+        }
+        assert!(matches!(
+            authentication_time(Some(&Value::from(now + skew + 1)), now, skew),
+            Err(VerificationError::NotYetValid)
+        ));
+        let timestamp = DateTime::from_timestamp(i64::try_from(now).expect("valid timestamp"), 0)
+            .expect("valid timestamp");
+        assert_eq!(
+            Principal::new("subject")
+                .with_authenticated_at(timestamp)
+                .authenticated_at(),
+            Some(timestamp)
+        );
     }
 
     #[test]

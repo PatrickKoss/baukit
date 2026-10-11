@@ -26,10 +26,10 @@ the provider account and sessions in place so other apps can keep using them.
 Product erasure, the completed receipt and its completion timestamp, and the
 subject fence commit in the same transaction. It creates no identity deletion
 job and makes no provider call. DELETE returns 200, and status lookup and
-same-key replay report completed. The fence keeps that `sub` from accessing
-this product or recreating its profile afterwards. Retain mode needs no deleter,
-provider ID, inline timeout or maximum attempts. Delete mode requires all four
-settings and validates the provider ID, timeout and attempts.
+same-key replay report completed. Old sessions stay fenced. After completion,
+the same `sub` can log in again and create a fresh, empty profile. Retain mode
+needs no deleter, provider ID, inline timeout or maximum attempts. Delete mode
+requires all four settings and validates the provider ID, timeout and attempts.
 
 ## 1. Client operation
 
@@ -154,7 +154,7 @@ In delete mode, the server executes this sequence:
 
 1. Lock the idempotency key and subject. Same-subject replay returns the stored
    receipt; another subject's reuse returns 409. A different key cannot start
-   another erasure for a fenced subject.
+   another erasure until a fresh login passes the fence after completion.
 2. In one PostgreSQL transaction, call the product callback to erase every owned
    row and owned job, write a pending operation with keyed subject and key
    hashes, insert a keyed subject fence, and enqueue `identity.account.delete`
@@ -217,15 +217,44 @@ status/body pairs. Both Rust and TypeScript tests consume it.
 
 GET returns 200 with status `pending`, `completed` or `failed`, the operation ID,
 and `completedAt` only after completion. Every ordinary authenticated request
-from a fenced subject returns 401 `profile_erased`. Status lookup and DELETE
-reconciliation are allowed without resolving a profile. Subject resolution
-checks the fence under the same transaction lock used by erasure before any
-profile insert. Checking only in HTTP middleware leaves a creation race.
+whose session fails the fence check returns 401 `profile_erased`. Status lookup
+and DELETE reconciliation are allowed without resolving a profile. Subject
+resolution checks the fence under the same transaction lock used by erasure
+before any profile insert. Checking only in HTTP middleware leaves a creation
+race.
 
 Fences contain only HMAC-SHA256 subject hashes. Operations contain only keyed
 hashes, timestamps and safe response bodies. Completed job rows are deleted
-immediately, so no row retains the raw subject after completion. Keycloak
-subjects are UUIDs and are not reused; fences may remain permanently.
+immediately, so no row retains the raw subject after completion. Fences remain
+for the subject and record `erased_at` using the transaction's database `now()`.
+
+Copy `POSTGRES_REONBOARDING_MIGRATION_SQL` after the 0001 erasure migration.
+It adds `erased_at TIMESTAMPTZ NOT NULL DEFAULT now()`. Pass the verified
+`principal.authenticated_at()` to `guard_subject`, `is_fenced`,
+`reject_fenced_subject`, and `ErasureService::erase`. A fenced session passes
+only when its `auth_time` is present and strictly greater than `erased_at`, and
+every erasure operation for that subject is `completed`. `None`, an equal or
+older login, and any pending or failed operation keep the session fenced.
+Unfenced subjects are admitted without `auth_time`.
+
+The returning subject gets a new, empty profile. A new erasure key updates the
+fence timestamp and rejects that session again. Old keys return their stored
+receipts without deleting the new profile or moving the fence.
+
+Clock skew fails closed only when the identity provider clock is behind the
+database clock, because a fresh login can appear too old. A provider clock ahead
+of the database can make a pre-erasure session appear newer than `erased_at` and
+admit it after completion. The verifier checks future claims against the app
+clock with its existing leeway, not against the database clock. Synchronize all
+three clocks; the timestamp comparison alone cannot remove this residual risk.
+
+Shared SSO clients must use `prompt=login` after `profile_erased`. A silent login
+or refresh returns the old `auth_time`. Use
+`clearSession({ reason: 'profile_erased' })` in auth-web and auth-native so the
+next login requires fresh authentication. Clerk and WorkOS need a JWT template
+that adds the original session login time as numeric `auth_time` and keeps it
+unchanged on refresh. Without that claim, re-onboarding stays unavailable. `iat`
+cannot replace it because refresh changes the token's issuance time.
 
 ### Keycloak account deletion
 
@@ -272,7 +301,7 @@ The minimum stable product code set is:
 | Code | Meaning |
 | --- | --- |
 | `erasure_idempotency_key_invalid` | The required key is missing, repeated or malformed. |
-| `profile_erased` | A fenced subject cannot access product data or recreate a profile. |
+| `profile_erased` | This session cannot access product data or create a profile after erasure. |
 | `unauthenticated` | A valid authenticated principal is required. |
 | `permission_denied` | The principal may not erase the addressed profile. |
 | `erasure_idempotency_conflict` | The key was already used for an incompatible request. |
@@ -378,7 +407,8 @@ Products using retain mode test their authenticated endpoint against real
 PostgreSQL. Verify product deletion, a completed receipt and timestamp, the
 subject fence, same-key replay and conflict, and the absence of identity
 deletion jobs. Fenced profile resolution and a second key for the same subject
-must fail with `profile_erased`.
+must fail with `profile_erased` for an old or missing login time. A login strictly
+after the fence must create a new profile only after all operations complete.
 
 Analytics deletion is separate external work. Include analytics deletion or a
 documented retention policy in the inventory and follow the
@@ -400,7 +430,7 @@ make completion copy reflect their state.
 - Repeated requests return the same receipt and terminal result.
 - Confirmation copy states whether the identity-provider account and sessions
   will be deleted or retained. In retain mode, it also explains that the same
-  account cannot recreate a profile in this product. Pending copy describes
+  account can create a fresh, empty profile after completion and a new login. Pending copy describes
   outstanding provider or other processor work.
 - The deletion inventory addresses all eight classes, records `not applicable`
   where needed, and the conformance graph reaches zero for every registered
@@ -414,7 +444,8 @@ make completion copy reflect their state.
 
 - Add `baukit-erasure` and migrate the existing receipt table to the shared
   operation store. Preserve receipt IDs, replay responses and identity ownership
-  during migration. Apply the job failure trigger after the jobs schema.
+  during migration. Apply the job failure trigger after the jobs schema. Copy
+  the re-onboarding migration after 0001 erasure.
 - Move all owned-row and owned-job deletion into `ProductErasure`. Include API
   token deletion and every entry in the product's inventory.
 - Add fence checks to authenticated requests. Lock and check the fence inside
@@ -436,8 +467,9 @@ make completion copy reflect their state.
 
 The backend returns HTTP 401 with the standard envelope
 `{ "error": { "code": "profile_erased", "message": "The profile has been erased", "requestId": "...", "details": {} } }`
-when a subject is fenced. `@baukit/api-runtime` calls `onProfileErased` once for
-that response, skips `onUnauthorized` and `onUnauthorizedExhausted`, and rejects
+when a session fails its subject fence. `@baukit/api-runtime` calls
+`onProfileErased` once for that response, skips `onUnauthorized` and
+`onUnauthorizedExhausted`, and rejects
 with an `ApiError` whose code is `profile_erased`. The response body remains
 available to the handler. Handler failures do not replace the API error.
 

@@ -300,6 +300,7 @@ impl UserRepository for InMemoryUserRepository {
     fn resolve_subject(
         &self,
         subject: String,
+        _authenticated_at: Option<chrono::DateTime<chrono::Utc>>,
     ) -> PortFuture<'_, Result<InternalUser, RepositoryError>> {
         Box::pin(async move {
             let mut users = self

@@ -342,6 +342,7 @@ version = "0.10.18"
 dependencies = [
  "aws-lc-rs",
  "axum",
+ "baukit-auth",
  "baukit-config",
  "baukit-http",
  "baukit-jobs",

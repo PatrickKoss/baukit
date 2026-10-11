@@ -38,6 +38,7 @@ url = { workspace = true, optional = true }
 uuid.workspace = true
 
 [dev-dependencies]
+baukit-auth = { path = "../baukit-auth" }
 baukit-runtime = { path = "../baukit-runtime" }
 baukit-test = { path = "../baukit-test" }
 testcontainers.workspace = true

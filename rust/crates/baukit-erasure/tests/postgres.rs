@@ -21,7 +21,7 @@ async fn retained_identity_completes_replays_and_fences_without_a_job() -> Resul
     let (_container, pool, store) = database().await?;
     let service = ErasureService::new(store.clone(), IdentityRetention::Retain)?;
     let first = service
-        .erase("alice", "retain-replay-key-01", &Product)
+        .erase("alice", None, "retain-replay-key-01", &Product)
         .await?;
     assert_eq!(first.status, ErasureState::Completed);
     assert_eq!(first.status_code(), axum::http::StatusCode::OK);
@@ -42,8 +42,8 @@ async fn retained_identity_completes_replays_and_fences_without_a_job() -> Resul
     assert_eq!(count(&pool, "erasure_operations").await?, 1);
     assert_eq!(count(&pool, "erasure_fences").await?, 1);
     assert_eq!(count(&pool, "job_outbox").await?, 0);
-    assert!(store.is_fenced("alice").await?);
-    assert!(!store.is_fenced("bob").await?);
+    assert!(store.is_fenced("alice", None).await?);
+    assert!(!store.is_fenced("bob", None).await?);
     assert_eq!(
         store.status("alice", first.operation_id).await?,
         Some(first.clone())
@@ -53,27 +53,29 @@ async fn retained_identity_completes_replays_and_fences_without_a_job() -> Resul
     sqlx::raw_sql("CREATE FUNCTION reject_product_delete() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'product erasure must not run on replay'; END; $$; CREATE TRIGGER reject_product_delete BEFORE DELETE ON profiles FOR EACH STATEMENT EXECUTE FUNCTION reject_product_delete();").execute(&pool).await?;
     assert_eq!(
         service
-            .erase("alice", "retain-replay-key-01", &Product)
+            .erase("alice", None, "retain-replay-key-01", &Product)
             .await?,
         first
     );
     assert!(matches!(
-        service.erase("bob", "retain-replay-key-01", &Product).await,
+        service
+            .erase("bob", None, "retain-replay-key-01", &Product)
+            .await,
         Err(ErasureError::Conflict)
     ));
     assert!(matches!(
         service
-            .erase("alice", "retain-second-key-01", &Product)
+            .erase("alice", None, "retain-second-key-01", &Product)
             .await,
         Err(ErasureError::ProfileErased)
     ));
     assert!(matches!(
-        reject_fenced_subject(&store, "alice").await,
+        reject_fenced_subject(&store, "alice", None).await,
         Err(ErasureError::ProfileErased)
     ));
     let mut transaction = pool.begin().await?;
     assert!(matches!(
-        store.guard_subject(&mut transaction, "alice").await,
+        store.guard_subject(&mut transaction, "alice", None).await,
         Err(ErasureError::ProfileErased)
     ));
     transaction.rollback().await?;
@@ -91,7 +93,7 @@ async fn retained_identity_completion_failure_rolls_back_product_receipt_and_fen
     sqlx::raw_sql("CREATE FUNCTION reject_completion() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected completion failure'; END; $$; CREATE TRIGGER reject_completion BEFORE UPDATE ON erasure_operations FOR EACH ROW EXECUTE FUNCTION reject_completion();").execute(&pool).await?;
     assert!(matches!(
         service
-            .erase("alice", "retain-rollback-key-01", &Product)
+            .erase("alice", None, "retain-rollback-key-01", &Product)
             .await,
         Err(ErasureError::Database(_))
     ));
@@ -99,7 +101,7 @@ async fn retained_identity_completion_failure_rolls_back_product_receipt_and_fen
     assert_eq!(count(&pool, "erasure_operations").await?, 0);
     assert_eq!(count(&pool, "erasure_fences").await?, 0);
     assert_eq!(count(&pool, "job_outbox").await?, 0);
-    assert!(!store.is_fenced("alice").await?);
+    assert!(!store.is_fenced("alice", None).await?);
     Ok(())
 }
 
@@ -116,12 +118,14 @@ async fn retained_identity_validates_keys_and_subject_before_erasure() -> Result
         "invalid-key-0000\n".to_owned(),
     ] {
         assert!(matches!(
-            service.erase("alice", &key, &Product).await,
+            service.erase("alice", None, &key, &Product).await,
             Err(ErasureError::InvalidKey)
         ));
     }
     assert!(matches!(
-        service.erase("", "retain-valid-key-01", &Product).await,
+        service
+            .erase("", None, "retain-valid-key-01", &Product)
+            .await,
         Err(ErasureError::Configuration)
     ));
     assert_eq!(count(&pool, "profiles").await?, 2);
@@ -145,7 +149,7 @@ async fn retained_identity_concurrent_same_key_returns_the_same_completed_receip
         tasks.push(tokio::spawn(async move {
             barrier.wait().await;
             service
-                .erase("alice", "retain-concurrent-01", &Product)
+                .erase("alice", None, "retain-concurrent-01", &Product)
                 .await
         }));
     }
@@ -174,7 +178,7 @@ async fn atomic_rollback_after_product_callback() -> Result<(), Box<dyn Error>> 
     sqlx::raw_sql("CREATE FUNCTION reject_enqueue() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected failure'; END; $$; CREATE TRIGGER reject_enqueue BEFORE INSERT ON job_outbox FOR EACH ROW EXECUTE FUNCTION reject_enqueue();").execute(&pool).await?;
     assert!(
         service
-            .erase("alice", "atomic-key-0000001", &Product)
+            .erase("alice", None, "atomic-key-0000001", &Product)
             .await
             .is_err()
     );
@@ -182,7 +186,7 @@ async fn atomic_rollback_after_product_callback() -> Result<(), Box<dyn Error>> 
     assert_eq!(count(&pool, "erasure_operations").await?, 0);
     assert_eq!(count(&pool, "erasure_fences").await?, 0);
     assert_eq!(count(&pool, "job_outbox").await?, 0);
-    assert!(!store.is_fenced("alice").await?);
+    assert!(!store.is_fenced("alice", None).await?);
     assert!(fake.calls().is_empty());
     Ok(())
 }
@@ -191,21 +195,25 @@ async fn atomic_rollback_after_product_callback() -> Result<(), Box<dyn Error>> 
 async fn completed_replay_conflict_and_fence() -> Result<(), Box<dyn Error>> {
     let (_container, pool, store, fake, service) = fixture().await?;
     let first = service
-        .erase("alice", "replay-key-0000001", &Product)
+        .erase("alice", None, "replay-key-0000001", &Product)
         .await?;
     assert_eq!(first.status, ErasureState::Completed);
     assert_eq!(
         service
-            .erase("alice", "replay-key-0000001", &Product)
+            .erase("alice", None, "replay-key-0000001", &Product)
             .await?,
         first
     );
     assert!(matches!(
-        service.erase("bob", "replay-key-0000001", &Product).await,
+        service
+            .erase("bob", None, "replay-key-0000001", &Product)
+            .await,
         Err(ErasureError::Conflict)
     ));
     assert!(matches!(
-        service.erase("alice", "different-key-0001", &Product).await,
+        service
+            .erase("alice", None, "different-key-0001", &Product)
+            .await,
         Err(ErasureError::ProfileErased)
     ));
     assert!(store.status("bob", first.operation_id).await?.is_none());
@@ -215,7 +223,7 @@ async fn completed_replay_conflict_and_fence() -> Result<(), Box<dyn Error>> {
     );
     let mut transaction = pool.begin().await?;
     assert!(matches!(
-        store.guard_subject(&mut transaction, "alice").await,
+        store.guard_subject(&mut transaction, "alice", None).await,
         Err(ErasureError::ProfileErased)
     ));
     assert_eq!(count(&pool, "profiles").await?, 1);
@@ -234,7 +242,9 @@ async fn concurrent_same_key_only_erases_once() -> Result<(), Box<dyn Error>> {
         let barrier = barrier.clone();
         tasks.push(tokio::spawn(async move {
             barrier.wait().await;
-            service.erase("alice", "concurrent-key-001", &Product).await
+            service
+                .erase("alice", None, "concurrent-key-001", &Product)
+                .await
         }));
     }
     barrier.wait().await;
@@ -299,15 +309,15 @@ async fn worker_retries_completes_and_removes_subject_payload() -> Result<(), Bo
     fake.push_outcome(Err(IdentityDeletionError::Retryable));
     fake.push_outcome(Err(IdentityDeletionError::Retryable));
     let pending = service
-        .erase("alice", "worker-retry-key-01", &Product)
+        .erase("alice", None, "worker-retry-key-01", &Product)
         .await?;
     assert_eq!(pending.status, ErasureState::Pending);
     assert_eq!(count(&pool, "profiles").await?, 1);
     assert_eq!(count(&pool, "job_outbox").await?, 1);
-    assert!(store.is_fenced("alice").await?);
+    assert!(store.is_fenced("alice", None).await?);
     assert_eq!(
         service
-            .erase("alice", "worker-retry-key-01", &Product)
+            .erase("alice", None, "worker-retry-key-01", &Product)
             .await?,
         pending
     );
@@ -341,7 +351,7 @@ async fn permanent_and_exhausted_failures_remain_rerunnable() -> Result<(), Box<
             fake.push_outcome(Err(failure));
         }
         let pending = service
-            .erase("alice", "failed-worker-key-01", &Product)
+            .erase("alice", None, "failed-worker-key-01", &Product)
             .await?;
         run_until(
             store.clone(),
@@ -351,14 +361,14 @@ async fn permanent_and_exhausted_failures_remain_rerunnable() -> Result<(), Box<
             ErasureState::Failed,
         )
         .await?;
-        assert!(store.is_fenced("alice").await?);
+        assert!(store.is_fenced("alice", None).await?);
         let state: String = sqlx::query_scalar("SELECT status FROM job_outbox")
             .fetch_one(&pool)
             .await?;
         assert_eq!(state, "failed");
         let calls_before_replay = fake.calls().len();
         let replay = service
-            .erase("alice", "failed-worker-key-01", &Product)
+            .erase("alice", None, "failed-worker-key-01", &Product)
             .await?;
         assert_eq!(replay.status, ErasureState::Failed);
         assert_eq!(replay.operation_id, pending.operation_id);
@@ -391,7 +401,7 @@ async fn final_expired_lease_fails_operation() -> Result<(), Box<dyn Error>> {
     let (_container, pool, store, fake, service) = fixture().await?;
     fake.push_outcome(Err(IdentityDeletionError::Retryable));
     let pending = service
-        .erase("alice", "expired-lease-key-01", &Product)
+        .erase("alice", None, "expired-lease-key-01", &Product)
         .await?;
     sqlx::query("UPDATE job_outbox SET status = 'running', attempts = max_attempts, locked_by = 'dead-worker', locked_until = now() - interval '1 second'").execute(&pool).await?;
     PostgresJobStore::new(pool)
@@ -421,7 +431,7 @@ async fn inline_completion_database_failure_returns_durable_acceptance()
     sqlx::raw_sql("CREATE FUNCTION reject_completion() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected receipt failure'; END; $$; CREATE TRIGGER reject_completion BEFORE UPDATE ON erasure_operations FOR EACH ROW EXECUTE FUNCTION reject_completion();").execute(&pool).await?;
     let logs = logs::Logs::default();
     let pending = service
-        .erase("alice", "inline-db-failure-01", &Product)
+        .erase("alice", None, "inline-db-failure-01", &Product)
         .with_subscriber(logs.subscriber())
         .await?;
     let text = logs.text();
@@ -431,7 +441,7 @@ async fn inline_completion_database_failure_returns_durable_acceptance()
     assert_eq!(pending.status, ErasureState::Pending);
     assert_eq!(count(&pool, "profiles").await?, 1);
     assert_eq!(count(&pool, "job_outbox").await?, 1);
-    assert!(store.is_fenced("alice").await?);
+    assert!(store.is_fenced("alice", None).await?);
     assert_eq!(fake.calls(), ["alice"]);
     sqlx::query("DROP TRIGGER reject_completion ON erasure_operations")
         .execute(&pool)
@@ -470,7 +480,7 @@ async fn inline_failures_log_operation_and_class_without_subjects() -> Result<()
         fake.push_outcome(Err(error));
         let logs = logs::Logs::default();
         let outcome = service
-            .erase(subject, key, &Product)
+            .erase(subject, None, key, &Product)
             .with_subscriber(logs.subscriber())
             .await?;
         assert_eq!(outcome.status, ErasureState::Pending);
@@ -480,5 +490,144 @@ async fn inline_failures_log_operation_and_class_without_subjects() -> Result<()
         assert!(!text.contains(subject), "{text}");
         assert!(!text.contains(key), "{text}");
     }
+    Ok(())
+}
+
+async fn assert_session_checks(
+    store: &PostgresErasureStore,
+    subject: &str,
+    authenticated_at: Option<chrono::DateTime<chrono::Utc>>,
+    rejected: bool,
+) -> Result<(), Box<dyn Error>> {
+    assert_eq!(store.is_fenced(subject, authenticated_at).await?, rejected);
+    let result = reject_fenced_subject(store, subject, authenticated_at).await;
+    if rejected {
+        assert!(matches!(result, Err(ErasureError::ProfileErased)));
+    } else {
+        result?;
+    }
+    let mut transaction = store.pool().begin().await?;
+    let result = store
+        .guard_subject(&mut transaction, subject, authenticated_at)
+        .await;
+    if rejected {
+        assert!(matches!(result, Err(ErasureError::ProfileErased)));
+    } else {
+        result?;
+    }
+    transaction.rollback().await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn all_fence_checks_require_a_later_login_and_every_operation_completed()
+-> Result<(), Box<dyn Error>> {
+    let (_container, pool, store, fake, service) = fixture().await?;
+    for authenticated_at in [None, chrono::DateTime::from_timestamp(0, 0)] {
+        assert_session_checks(&store, "alice", authenticated_at, false).await?;
+    }
+    fake.push_outcome(Err(IdentityDeletionError::Retryable));
+    let operation = service
+        .erase("alice", None, "fence-matrix-key-01", &Product)
+        .await?;
+    assert_eq!(operation.status, ErasureState::Pending);
+    let erased_at: chrono::DateTime<chrono::Utc> =
+        sqlx::query_scalar("SELECT erased_at FROM erasure_fences WHERE subject_hash = $1")
+            .bind(store.subject_hash("alice"))
+            .fetch_one(&pool)
+            .await?;
+    let sessions = [
+        (None, true),
+        (Some(erased_at - chrono::Duration::microseconds(1)), true),
+        (Some(erased_at), true),
+        (Some(erased_at + chrono::Duration::microseconds(1)), false),
+    ];
+    for state in ["pending", "failed", "completed"] {
+        sqlx::query("UPDATE erasure_operations SET state = $2, completed_at = CASE WHEN $2 = 'completed' THEN now() ELSE NULL END WHERE id = $1")
+            .bind(operation.operation_id).bind(state).execute(&pool).await?;
+        for (authenticated_at, rejected_after_completion) in sessions {
+            assert_session_checks(
+                &store,
+                "alice",
+                authenticated_at,
+                state != "completed" || rejected_after_completion,
+            )
+            .await?;
+            assert_session_checks(&store, "bob", authenticated_at, false).await?;
+        }
+    }
+    // A completed latest operation cannot hide an earlier unfinished operation.
+    sqlx::query("INSERT INTO erasure_operations (id, subject_hash, key_hash, state, response) SELECT $1, subject_hash, $2, 'failed', response FROM erasure_operations WHERE id = $3")
+        .bind(uuid::Uuid::now_v7()).bind(vec![42_u8; 32]).bind(operation.operation_id).execute(&pool).await?;
+    assert_session_checks(&store, "alice", sessions[3].0, true).await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn reonboarding_can_erase_again_and_old_keys_keep_their_receipts()
+-> Result<(), Box<dyn Error>> {
+    let (_container, pool, store) = database().await?;
+    let service = ErasureService::new(store.clone(), IdentityRetention::Retain)?;
+    let first = service
+        .erase("alice", None, "first-erasure-key-01", &Product)
+        .await?;
+    let first_fence: chrono::DateTime<chrono::Utc> =
+        sqlx::query_scalar("SELECT erased_at FROM erasure_fences WHERE subject_hash = $1")
+            .bind(store.subject_hash("alice"))
+            .fetch_one(&pool)
+            .await?;
+    let fresh: chrono::DateTime<chrono::Utc> = sqlx::query_scalar("SELECT clock_timestamp()")
+        .fetch_one(&pool)
+        .await?;
+    assert!(fresh > first_fence);
+    let mut transaction = pool.begin().await?;
+    store
+        .guard_subject(&mut transaction, "alice", Some(fresh))
+        .await?;
+    sqlx::query("INSERT INTO profiles VALUES ('alice')")
+        .execute(&mut *transaction)
+        .await?;
+    transaction.commit().await?;
+    let second = service
+        .erase("alice", Some(fresh), "second-erasure-key-01", &Product)
+        .await?;
+    assert_ne!(first.operation_id, second.operation_id);
+    assert_eq!(second.status, ErasureState::Completed);
+    assert_eq!(count(&pool, "profiles").await?, 1);
+    assert_eq!(count(&pool, "erasure_operations").await?, 2);
+    assert_eq!(count(&pool, "erasure_fences").await?, 1);
+    let second_fence: chrono::DateTime<chrono::Utc> =
+        sqlx::query_scalar("SELECT erased_at FROM erasure_fences WHERE subject_hash = $1")
+            .bind(store.subject_hash("alice"))
+            .fetch_one(&pool)
+            .await?;
+    assert!(second_fence > fresh);
+    assert_session_checks(&store, "alice", Some(fresh), true).await?;
+    let newer: chrono::DateTime<chrono::Utc> = sqlx::query_scalar("SELECT clock_timestamp()")
+        .fetch_one(&pool)
+        .await?;
+    assert_session_checks(&store, "alice", Some(newer), false).await?;
+    for authenticated_at in [None, Some(fresh), Some(newer)] {
+        assert_eq!(
+            service
+                .erase("alice", authenticated_at, "first-erasure-key-01", &Product)
+                .await?,
+            first
+        );
+        assert_eq!(
+            service
+                .erase("alice", authenticated_at, "second-erasure-key-01", &Product)
+                .await?,
+            second
+        );
+    }
+    let unchanged: chrono::DateTime<chrono::Utc> =
+        sqlx::query_scalar("SELECT erased_at FROM erasure_fences WHERE subject_hash = $1")
+            .bind(store.subject_hash("alice"))
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(unchanged, second_fence);
     Ok(())
 }

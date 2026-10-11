@@ -22,6 +22,9 @@ pub use worker::IdentityDeletionHandler;
 
 /// Reference migration to copy after the baukit-jobs migrations.
 pub const POSTGRES_MIGRATION_SQL: &str = include_str!("../migrations/0001_erasure.sql");
+/// Reference migration to copy after 0001 erasure.
+pub const POSTGRES_REONBOARDING_MIGRATION_SQL: &str =
+    include_str!("../migrations/0002_erasure_reonboarding.sql");
 /// Durable job identifier.
 pub const IDENTITY_DELETE_JOB_TYPE: &str = "identity.account.delete";
 /// Boxed asynchronous result used by erasure ports.

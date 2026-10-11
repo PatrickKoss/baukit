@@ -1,0 +1,1 @@
+ALTER TABLE erasure_fences ADD COLUMN erased_at TIMESTAMPTZ NOT NULL DEFAULT now();

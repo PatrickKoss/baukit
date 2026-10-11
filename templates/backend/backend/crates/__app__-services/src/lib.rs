@@ -28,9 +28,13 @@ impl UserService {
         Self { repository }
     }
 
-    pub async fn resolve_subject(&self, subject: &str) -> Result<InternalUser, ServiceError> {
+    pub async fn resolve_subject(
+        &self,
+        subject: &str,
+        authenticated_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<InternalUser, ServiceError> {
         self.repository
-            .resolve_subject(subject.to_owned())
+            .resolve_subject(subject.to_owned(), authenticated_at)
             .await
             .map_err(Into::into)
     }

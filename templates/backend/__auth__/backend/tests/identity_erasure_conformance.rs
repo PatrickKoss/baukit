@@ -60,9 +60,24 @@ impl EndpointAdapter {
         path: &str,
         key: Option<&str>,
     ) -> Result<IdentityErasureResponse, TestError> {
-        let claims = self
+        self.request_with_authenticated_at(subject, method, path, key, None)
+            .await
+    }
+
+    async fn request_with_authenticated_at(
+        &self,
+        subject: &str,
+        method: &str,
+        path: &str,
+        key: Option<&str>,
+        authenticated_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<IdentityErasureResponse, TestError> {
+        let mut claims = self
             .issuer
             .claims(subject, AUDIENCE, Duration::from_secs(60))?;
+        if let Some(time) = authenticated_at {
+            claims = claims.claim("auth_time", time.timestamp());
+        }
         let token = self.issuer.mint(&claims)?;
         let mut request = Request::builder()
             .method(method)
@@ -101,7 +116,7 @@ impl IdentityErasureAdapter for EndpointAdapter {
                 self.pool.clone(),
                 self.store.clone(),
             )));
-            users.resolve_subject(subject).await?;
+            users.resolve_subject(subject, None).await?;
             let verifier =
                 OidcVerifier::discover(OidcConfig::new(self.issuer.issuer(), AUDIENCE)?).await?;
             let service = ErasureService::new(
@@ -176,7 +191,7 @@ impl IdentityErasureAdapter for EndpointAdapter {
                 product_rows: u64::try_from(product_rows)?,
                 identity_jobs: u64::try_from(identity_jobs)?,
                 raw_subject_rows: u64::try_from(product_rows + identity_jobs + receipts)?,
-                fenced: self.store.is_fenced(subject).await?,
+                fenced: self.store.is_fenced(subject, None).await?,
             })
         })
     }
@@ -293,7 +308,7 @@ async fn endpoint_identity_erasure_conforms() -> Result<(), TestError> {
         adapter.store.clone(),
     )));
     assert!(matches!(
-        users.resolve_subject("erasure-subject").await,
+        users.resolve_subject("erasure-subject", None).await,
         Err(ServiceError::Repository(RepositoryError::ProfileErased))
     ));
     adapter.pool.close().await;
@@ -321,5 +336,107 @@ async fn identity_configuration_requires_production_secrets_and_https() -> Resul
     config.identity_admin_base_url = "https://keycloak.example.test".into();
     config.erasure_hash_key = Some(Secret::new("too-short".into()));
     assert!(identity_erasure(pool, &config, Environment::Production).is_err());
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn retained_identity_reonboards_with_a_new_profile_and_rejects_old_sessions()
+-> Result<(), TestError> {
+    let migrations = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
+    let fixture = baukit_test::start_postgres_with_migrations(&migrations).await?;
+    let pool = PgPool::connect(fixture.connection_url()).await?;
+    let store = PostgresErasureStore::new(
+        pool.clone(),
+        Secret::new("test-hash-key-with-at-least-32-bytes".into()),
+    )?;
+    let issuer = MockOidcServer::start().await?;
+    let verifier = OidcVerifier::discover(OidcConfig::new(issuer.issuer(), AUDIENCE)?).await?;
+    let service = ErasureService::new(store.clone(), IdentityRetention::Retain)?;
+    let app = router(
+        ApiState {
+            items: ItemService::new(Arc::new(PostgresItemRepository::new(pool.clone()))),
+            users: UserService::new(Arc::new(PostgresUserRepository::new(
+                pool.clone(),
+                store.clone(),
+            ))),
+            auth: AuthState::new(verifier),
+            erasure: ErasureApi {
+                service,
+                product: Arc::new(PostgresProfileErasure),
+            },
+        },
+        &HttpConfig::default(),
+    )?;
+    let adapter = EndpointAdapter {
+        pool,
+        issuer,
+        store,
+        app: Some(app),
+        handler: None,
+        subject: String::new(),
+        prefix: "",
+    };
+    let original = adapter
+        .request("returning-subject", "GET", "/me", None)
+        .await?;
+    assert_eq!(original.status, 200);
+    let erased = adapter
+        .request(
+            "returning-subject",
+            "DELETE",
+            "/me",
+            Some("reonboard-first-key-01"),
+        )
+        .await?;
+    assert_eq!(erased.status, 200);
+    let fence: chrono::DateTime<chrono::Utc> =
+        sqlx::query_scalar("SELECT erased_at FROM erasure_fences WHERE subject_hash = $1")
+            .bind(adapter.store.subject_hash("returning-subject"))
+            .fetch_one(&adapter.pool)
+            .await?;
+    let old =
+        chrono::DateTime::from_timestamp(fence.timestamp(), 0).ok_or("old login timestamp")?;
+    for authenticated_at in [None, Some(old)] {
+        let response = adapter
+            .request_with_authenticated_at(
+                "returning-subject",
+                "GET",
+                "/me",
+                None,
+                authenticated_at,
+            )
+            .await?;
+        assert_eq!(response.status, 401);
+        assert_eq!(response.body["error"]["code"], "profile_erased");
+    }
+    let fresh = chrono::DateTime::from_timestamp(fence.timestamp() + 1, 0)
+        .ok_or("fresh login timestamp")?;
+    let onboarded = adapter
+        .request_with_authenticated_at("returning-subject", "GET", "/me", None, Some(fresh))
+        .await?;
+    assert_eq!(onboarded.status, 200);
+    assert_ne!(onboarded.body["id"], original.body["id"]);
+    assert_eq!(onboarded.body["subject"], original.body["subject"]);
+    let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM user_identities WHERE subject = $1")
+        .bind("returning-subject")
+        .fetch_one(&adapter.pool)
+        .await?;
+    assert_eq!(rows, 1);
+    let replay = adapter
+        .request_with_authenticated_at(
+            "returning-subject",
+            "DELETE",
+            "/me",
+            Some("reonboard-first-key-01"),
+            Some(fresh),
+        )
+        .await?;
+    assert_eq!(replay.body, erased.body);
+    let same_profile = adapter
+        .request_with_authenticated_at("returning-subject", "GET", "/me", None, Some(fresh))
+        .await?;
+    assert_eq!(same_profile.body, onboarded.body);
+    adapter.pool.close().await;
     Ok(())
 }

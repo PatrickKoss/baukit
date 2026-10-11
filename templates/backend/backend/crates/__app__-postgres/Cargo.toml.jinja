@@ -10,6 +10,7 @@ workspace = true
 
 [dependencies]
 {% if context.auth_enabled %}baukit-erasure.workspace = true
+chrono.workspace = true
 {% endif %}
 {{ context.app_crate }}-domain.workspace = true
 {{ context.app_crate }}-ports.workspace = true

@@ -214,3 +214,62 @@ async fn one_multi_issuer_verifier_routes_oidc_clerk_and_workos_tokens()
     ));
     Ok(())
 }
+
+#[tokio::test]
+async fn every_token_profile_exposes_authentication_time() -> Result<(), Box<dyn Error>> {
+    let server = MockOidcServer::start().await?;
+    let mapping = PrincipalClaimMapping::new().profile_claims(["auth_time"]);
+    let oidc = OidcVerifier::from_jwks_uri(
+        OidcConfig::new(server.issuer(), "api")?.with_principal_claims(mapping),
+        server.jwks_url(),
+    )?;
+    let clerk =
+        ClerkVerifier::from_jwks_uri(server.issuer(), ["https://app.example"], server.jwks_url())?;
+    let workos = WorkOsVerifier::from_jwks_uri(server.issuer(), "client_01ABC", server.jwks_url())?;
+    let profiles: [&dyn baukit_auth::IdentityVerifier; 3] = [&oidc, &clerk, &workos];
+    let base = server
+        .claims("subject", "api", LIFETIME)?
+        .claim("client_id", "client_01ABC");
+    for verifier in profiles {
+        assert_eq!(
+            verifier
+                .verify(&server.mint(&base)?)
+                .await?
+                .authenticated_at(),
+            None
+        );
+        let claims = base.clone().claim("auth_time", 1_700_000_000);
+        let principal = verifier.verify(&server.mint(&claims)?).await?;
+        assert_eq!(
+            principal.authenticated_at(),
+            chrono::DateTime::from_timestamp(1_700_000_000, 0)
+        );
+        assert!(principal.profile_claim("auth_time").is_none());
+        for invalid in [
+            json!(null),
+            json!(-1),
+            json!("1700000000"),
+            json!(true),
+            json!([]),
+            json!({}),
+            json!(1.5),
+        ] {
+            let claims = base.clone().claim("auth_time", invalid);
+            assert!(matches!(
+                verifier.verify(&server.mint(&claims)?).await,
+                Err(VerificationError::MalformedToken)
+            ));
+        }
+        let future = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_secs()
+            + 3_600;
+        assert!(matches!(
+            verifier
+                .verify(&server.mint(&base.clone().claim("auth_time", future))?)
+                .await,
+            Err(VerificationError::NotYetValid)
+        ));
+    }
+    Ok(())
+}

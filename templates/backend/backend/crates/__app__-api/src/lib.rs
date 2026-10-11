@@ -145,7 +145,12 @@ pub async fn erasure_fence(
     request: Request,
     next: Next,
 ) -> Result<Response, ErasureError> {
-    reject_fenced_subject(state.erasure.service.store(), principal.subject()).await?;
+    reject_fenced_subject(
+        state.erasure.service.store(),
+        principal.subject(),
+        principal.authenticated_at(),
+    )
+    .await?;
     Ok(next.run(request).await)
 }
 
@@ -177,7 +182,12 @@ async fn erase_current_user(
     let erasure = &state.erasure;
     let result = erasure
         .service
-        .erase(principal.subject(), key.as_str(), erasure.product.as_ref())
+        .erase(
+            principal.subject(),
+            principal.authenticated_at(),
+            key.as_str(),
+            erasure.product.as_ref(),
+        )
         .await;
     let outcome = match result {
         Ok(outcome) => outcome,
@@ -249,7 +259,7 @@ async fn current_user(
 ) -> Result<Json<CurrentUserDto>, ApiError> {
     let user = state
         .users
-        .resolve_subject(principal.subject())
+        .resolve_subject(principal.subject(), principal.authenticated_at())
         .await
         .map_err(map_service_error)?;
     Ok(Json(CurrentUserDto {

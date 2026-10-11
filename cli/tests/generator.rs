@@ -5777,3 +5777,27 @@ fn doctor_requires_a_consumed_remote_mcp_dependency() -> anyhow::Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn authenticated_backends_copy_the_reonboarding_migration() -> anyhow::Result<()> {
+    for provider in [
+        AuthProvider::Oidc,
+        AuthProvider::Clerk,
+        AuthProvider::Workos,
+    ] {
+        let parent = tempfile::tempdir()?;
+        let mut generated = options(parent.path(), "returning");
+        generated.auth = Some(provider);
+        generated.worker = true;
+        let root = generate_new(&generated)?;
+        assert_eq!(
+            fs::read_to_string(
+                root.join("backend/migrations/0006_identity_erasure_reonboarding.sql")
+            )?,
+            include_str!(
+                "../../rust/crates/baukit-erasure/migrations/0002_erasure_reonboarding.sql"
+            )
+        );
+    }
+    Ok(())
+}

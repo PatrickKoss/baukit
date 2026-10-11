@@ -9,7 +9,8 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-axum.workspace = true
+{% if context.auth_enabled %}chrono.workspace = true
+{% endif %}axum.workspace = true
 {% if context.auth_enabled %}baukit-auth.workspace = true
 baukit-erasure.workspace = true
 baukit-ratelimit.workspace = true

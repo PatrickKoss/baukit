@@ -2085,9 +2085,12 @@ async fn check_suite_erasure(identity_retention: baukit_erasure::IdentityRetenti
         .acquire_timeout(std::time::Duration::from_secs(1))
         .connect(db._container.connection_url())
         .await?;
-    sqlx::raw_sql(baukit_erasure::POSTGRES_MIGRATION_SQL)
-        .execute(&db.pool)
-        .await?;
+    for migration in [
+        baukit_erasure::POSTGRES_MIGRATION_SQL,
+        baukit_erasure::POSTGRES_REONBOARDING_MIGRATION_SQL,
+    ] {
+        sqlx::raw_sql(migration).execute(&db.pool).await?;
+    }
     let receiver = Arc::new(ScriptedWebhookReceiver::start().await?);
     let port = Url::parse(&receiver.url("/"))?.port().expect("port");
     let context = make_context(&db.pool, registry("alpha", "beta", 12340, port));
@@ -2173,6 +2176,7 @@ async fn check_suite_erasure(identity_retention: baukit_erasure::IdentityRetenti
             &service,
             &notifier,
             &owner.to_string(),
+            None,
             &format!("suite-erasure-key-{expected_calls}"),
             adapter.as_ref(),
         )
@@ -2187,7 +2191,7 @@ async fn check_suite_erasure(identity_retention: baukit_erasure::IdentityRetenti
                 .await?,
             Some(receipt)
         );
-        assert!(service.store().is_fenced(&owner.to_string()).await?);
+        assert!(service.store().is_fenced(&owner.to_string(), None).await?);
         let remaining: (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM users WHERE id=$1), (SELECT count(*) FROM job_outbox WHERE job_type='identity.account.delete')")
             .bind(owner).fetch_one(&db.pool).await?;
         assert_eq!(remaining, (0, 0));

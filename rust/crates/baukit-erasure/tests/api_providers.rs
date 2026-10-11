@@ -122,6 +122,7 @@ async fn server_errors_are_retried_until_the_durable_operation_fails() -> Result
         let pending = service
             .erase(
                 "user_123",
+                None,
                 "provider-delete-key-01",
                 &postgres_fixture::Product,
             )

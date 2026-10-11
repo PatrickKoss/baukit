@@ -142,11 +142,20 @@ WWW-Authenticate: Bearer error="invalid_token", error_description="invalid"
 Every other verification failure maps to `invalid`. The header never carries claim values, the
 issuer, or the verifier's error text. A request without credentials gets a bare `Bearer` challenge.
 
-## Only the claims you configured
+## Principal claims
 
 `OidcVerifier::discover` finds the issuer's JWKS endpoint through standard discovery and validates
-signatures, issuer, audience, and expiry. It then maps only the fields named in
-`PrincipalClaimMapping` into `Principal`.
+signatures, issuer, audience, and expiry. The principal carries the subject,
+issuer and verified login time. `PrincipalClaimMapping` selects its additional
+context.
+
+`Principal::authenticated_at()` returns the verified numeric `auth_time` as a
+UTC timestamp for OIDC, Clerk, and WorkOS tokens. A missing claim returns `None`,
+as do API tokens and internal principals. A present claim must be a non-negative
+integer and cannot be in the future beyond the configured clock skew. It is
+reserved and is not copied into selected profile claims. Trusted adapters can
+set it with `with_authenticated_at`. Use this session login time for erasure
+fences; refresh changes `iat` but keeps `auth_time`.
 
 Map the provider's OAuth client claim when a route needs a client allowlist:
 

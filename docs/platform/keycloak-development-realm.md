@@ -72,3 +72,9 @@ management credential. Local defaults apply only in the local environment.
 Production supplies the credential through `baukit_config::Secret` and uses
 HTTPS. See [profile erasure](./product-profile-erasure-contract.md) for the
 transaction, fence and retry rules.
+
+Generated realms use the `basic` client scope's `auth_time` mapper in access
+tokens as well as ID tokens for authorization-code logins.
+The verified login time stays unchanged on refresh. After `profile_erased`, a
+shared SSO client must use `prompt=login` to obtain a new login time before it
+can create a fresh profile.

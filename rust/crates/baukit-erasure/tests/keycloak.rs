@@ -136,6 +136,64 @@ async fn reconcile_generated_realm(
         .error_for_status()?;
     let access: Value = token_response.json().await?;
     assert!(access["access_token"].as_str().is_some());
+    check_login_and_refresh(client, base, &root).await?;
+    Ok(())
+}
+
+async fn check_login_and_refresh(
+    client: &Client,
+    base: &str,
+    root: &std::path::Path,
+) -> Result<(), Box<dyn Error>> {
+    let issuer = format!("{base}/realms/reconcile-fixture");
+    let tokens = tempfile::NamedTempFile::new()?;
+    let login = Command::new("python3")
+        .args(["-c", include_str!("support/keycloak_login.py")])
+        .arg(root)
+        .arg(&issuer)
+        .arg(tokens.path())
+        .output()?;
+    if !login.status.success() {
+        return Err("Keycloak authorization-code login failed".into());
+    }
+    let access: Value = serde_json::from_slice(&std::fs::read(tokens.path())?)?;
+    let verifier = baukit_auth::OidcVerifier::discover(baukit_auth::OidcConfig::new(
+        &issuer,
+        "reconcile-fixture-backend",
+    )?)
+    .await?;
+    let principal = verifier
+        .verify(access["access_token"].as_str().ok_or("access token")?)
+        .await?;
+    let authenticated_at = principal
+        .authenticated_at()
+        .ok_or("missing verified auth_time")?;
+    // Refresh in a later second so substituting iat would fail this check.
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    let refreshed: Value = client
+        .post(format!("{issuer}/protocol/openid-connect/token"))
+        .form(&[
+            ("grant_type", "refresh_token"),
+            ("client_id", "reconcile-fixture-web"),
+            (
+                "refresh_token",
+                access["refresh_token"].as_str().ok_or("refresh token")?,
+            ),
+        ])
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let refreshed = verifier
+        .verify(
+            refreshed["access_token"]
+                .as_str()
+                .ok_or("refreshed access token")?,
+        )
+        .await?;
+    assert_eq!(refreshed.subject(), principal.subject());
+    assert_eq!(refreshed.authenticated_at(), Some(authenticated_at));
     Ok(())
 }
 

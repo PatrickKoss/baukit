@@ -16,6 +16,16 @@ use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 use std::{sync::Arc, time::Duration};
 use uuid::Uuid;
 
+const REJECTED_SESSION_SQL: &str = "SELECT EXISTS (
+    SELECT 1 FROM erasure_fences AS fence
+    WHERE fence.subject_hash = $1 AND (
+        $2::timestamptz IS NULL OR $2 <= fence.erased_at OR EXISTS (
+            SELECT 1 FROM erasure_operations AS operation
+            WHERE operation.subject_hash = fence.subject_hash AND operation.state <> 'completed'
+        )
+    )
+)";
+
 /// Persistent erasure state.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -57,7 +67,7 @@ pub enum ErasureError {
     /// The key already belongs to another subject.
     #[error("erasure idempotency conflict")]
     Conflict,
-    /// A fenced identity cannot start another operation or recreate its profile.
+    /// This session cannot start another operation or recreate its profile after erasure.
     #[error("profile erased")]
     ProfileErased,
     /// Unsafe or incomplete service configuration.
@@ -155,34 +165,39 @@ impl PostgresErasureStore {
     pub fn subject_hash(&self, subject: &str) -> Vec<u8> {
         self.hash(b"erasure-subject\0", subject)
     }
-    /// Locks subject resolution against erasure and checks its fence in the same transaction.
+    /// Locks subject resolution against erasure and checks this session in the same transaction.
+    /// Admission requires a login after the fence and no unfinished erasure operations.
     pub async fn guard_subject(
         &self,
         transaction: &mut Transaction<'_, Postgres>,
         subject: &str,
+        authenticated_at: Option<DateTime<Utc>>,
     ) -> Result<(), ErasureError> {
         let hash = self.subject_hash(subject);
         lock(transaction, &hash).await?;
-        let fenced: bool = sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM erasure_fences WHERE subject_hash = $1)",
-        )
-        .bind(hash)
-        .fetch_one(&mut **transaction)
-        .await?;
+        let fenced: bool = sqlx::query_scalar(REJECTED_SESSION_SQL)
+            .bind(hash)
+            .bind(authenticated_at)
+            .fetch_one(&mut **transaction)
+            .await?;
         if fenced {
             Err(ErasureError::ProfileErased)
         } else {
             Ok(())
         }
     }
-    /// Checks the fence without resolving or creating a profile.
-    pub async fn is_fenced(&self, subject: &str) -> Result<bool, ErasureError> {
-        Ok(sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM erasure_fences WHERE subject_hash = $1)",
-        )
-        .bind(self.subject_hash(subject))
-        .fetch_one(&self.pool)
-        .await?)
+    /// Returns whether this session is rejected, without creating a profile.
+    /// A missing login time keeps a subject fenced permanently.
+    pub async fn is_fenced(
+        &self,
+        subject: &str,
+        authenticated_at: Option<DateTime<Utc>>,
+    ) -> Result<bool, ErasureError> {
+        Ok(sqlx::query_scalar(REJECTED_SESSION_SQL)
+            .bind(self.subject_hash(subject))
+            .bind(authenticated_at)
+            .fetch_one(&self.pool)
+            .await?)
     }
     /// Subject-authorized status lookup. Unknown and foreign operations both return None.
     pub async fn status(
@@ -231,8 +246,9 @@ async fn lock(transaction: &mut Transaction<'_, Postgres>, hash: &[u8]) -> Resul
 pub async fn reject_fenced_subject(
     store: &PostgresErasureStore,
     subject: &str,
+    authenticated_at: Option<DateTime<Utc>>,
 ) -> Result<(), ErasureError> {
-    if store.is_fenced(subject).await? {
+    if store.is_fenced(subject, authenticated_at).await? {
         Err(ErasureError::ProfileErased)
     } else {
         Ok(())
@@ -253,7 +269,7 @@ pub enum IdentityRetention {
         /// Maximum durable worker attempts.
         max_attempts: u32,
     },
-    /// Keeps the provider account and sessions. The product's subject fence remains active.
+    /// Keeps the provider account and sessions. A fresh login can re-onboard after completion.
     Retain,
 }
 /// Coordinates product erasure and the chosen identity retention mode.
@@ -292,6 +308,7 @@ impl ErasureService {
     pub async fn erase(
         &self,
         subject: &str,
+        authenticated_at: Option<DateTime<Utc>>,
         key: &str,
         product: &dyn ProductErasure,
     ) -> Result<ErasureOutcome, ErasureError> {
@@ -318,7 +335,9 @@ impl ErasureService {
             }
             return Ok(serde_json::from_value(response)?);
         }
-        self.store.guard_subject(&mut transaction, subject).await?;
+        self.store
+            .guard_subject(&mut transaction, subject, authenticated_at)
+            .await?;
         product.erase(&mut transaction, subject).await?;
         let outcome = ErasureOutcome {
             status: ErasureState::Pending,
@@ -328,7 +347,7 @@ impl ErasureService {
         sqlx::query("INSERT INTO erasure_operations (id, subject_hash, key_hash, state, response) VALUES ($1, $2, $3, 'pending', $4)")
             .bind(outcome.operation_id).bind(&subject_hash).bind(key_hash).bind(serde_json::to_value(&outcome)?)
             .execute(&mut *transaction).await?;
-        sqlx::query("INSERT INTO erasure_fences (subject_hash) VALUES ($1)")
+        sqlx::query("INSERT INTO erasure_fences (subject_hash, erased_at) VALUES ($1, now()) ON CONFLICT (subject_hash) DO UPDATE SET erased_at = now()")
             .bind(subject_hash)
             .execute(&mut *transaction)
             .await?;

@@ -35,11 +35,11 @@ async fn inline_timeout_releases_job_lock_and_retains_durable_work() -> Result<(
     )?;
     let logs = logs::Logs::default();
     let outcome = service
-        .erase("alice", "inline-timeout-001", &Product)
+        .erase("alice", None, "inline-timeout-001", &Product)
         .with_subscriber(logs.subscriber())
         .await?;
     assert_eq!(outcome.status, ErasureState::Pending);
-    assert!(store.is_fenced("alice").await?);
+    assert!(store.is_fenced("alice", None).await?);
     assert_eq!(count(&pool, "profiles").await?, 1);
     let mut transaction = pool.begin().await?;
     let status: String = sqlx::query_scalar("SELECT status FROM job_outbox FOR UPDATE NOWAIT")

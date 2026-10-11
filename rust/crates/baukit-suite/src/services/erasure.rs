@@ -29,9 +29,10 @@ pub async fn erase_with_suite(
     service: &baukit_erasure::ErasureService,
     notifier: &dyn SuiteErasureNotifier,
     subject: &str,
+    authenticated_at: Option<chrono::DateTime<chrono::Utc>>,
     key: &str,
     product: &dyn baukit_erasure::ProductErasure,
 ) -> Result<baukit_erasure::ErasureOutcome, baukit_erasure::ErasureError> {
     notifier.notify_before_erasure(subject).await;
-    service.erase(subject, key, product).await
+    service.erase(subject, authenticated_at, key, product).await
 }

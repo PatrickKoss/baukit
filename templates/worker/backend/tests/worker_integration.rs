@@ -49,6 +49,7 @@ async fn durable_outbox_runs_the_generated_demo_handler() -> Result<(), Box<dyn 
     let operation = erasure
         .erase(
             "worker-erasure-subject",
+            None,
             "worker-erasure-key-001",
             &PostgresProfileErasure,
         )

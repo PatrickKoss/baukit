@@ -32,8 +32,8 @@ async fn postgres_adapter_crud() -> Result<(), Box<dyn Error>> {
     service.delete(created.id).await?;
     assert!(service.list().await?.is_empty());
 {% if context.auth_enabled %}
-    let first = users.resolve_subject("oidc-subject").await?;
-    let second = users.resolve_subject("oidc-subject").await?;
+    let first = users.resolve_subject("oidc-subject", None).await?;
+    let second = users.resolve_subject("oidc-subject", None).await?;
     assert_eq!(first, second);
 {% endif %}
     pool.close().await;

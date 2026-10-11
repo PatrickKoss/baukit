@@ -266,7 +266,8 @@ a product prefix or labels.
 8. Wrap the product erasure implementation with `PostgresSuiteErasure`, using
    a `SuiteErasureOwnerLookup` for subject-to-owner resolution. Construct
    `SuiteErasureNotificationService` with that adapter and the delivery service.
-   Call `erase_with_suite(&ErasureService, &dyn SuiteErasureNotifier, subject, key, &dyn ProductErasure)`.
+   Call `erase_with_suite` with the erasure service, notifier, subject,
+   `principal.authenticated_at()`, idempotency key and product erasure adapter.
    It sends best-effort revokes before opening an erasure transaction, with
    a 500 ms bound per link and ignored errors. It covers active, attention,
    disabled, and revoked links with a pending revoke job. Suite jobs and rows

@@ -160,6 +160,7 @@ impl PrincipalClaimMapping {
     ///
     /// Only string and boolean values are copied, for example `email`,
     /// `email_verified`, `name`, and `picture`. Unselected claims stay private.
+    /// `auth_time` is reserved for [`Principal::authenticated_at`](crate::Principal::authenticated_at).
     #[must_use]
     pub fn profile_claims<I, T>(mut self, claims: I) -> Self
     where
