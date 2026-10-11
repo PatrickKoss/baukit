@@ -243,6 +243,7 @@ mtimes when it copies files. For an app named `my-app`, hash the checkout path:
 
 ```sh
 docker build --target api -f backend/Dockerfile \
+  --build-arg BACKEND_CONTEXT=backend \
   --build-arg CARGO_TARGET_CACHE_KEY="my-app-$(printf %s "$PWD" | sha256sum | cut -c1-12)" .
 ```
 

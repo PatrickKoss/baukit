@@ -134,6 +134,7 @@ avoid stale artifacts caused by preserved source mtimes. For `my-app`:
 
 ```sh
 docker build --target api -f backend/Dockerfile \
+  --build-arg BACKEND_CONTEXT=backend \
   --build-arg CARGO_TARGET_CACHE_KEY="my-app-$(printf %s "$PWD" | sha256sum | cut -c1-12)" .
 ```
 
