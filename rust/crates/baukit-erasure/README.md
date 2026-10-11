@@ -49,6 +49,11 @@ before the upgrade can re-onboard with any login whose `auth_time` is after the
 migration, once every erasure operation completes. Their pre-erasure sessions
 stay fenced.
 
+Re-erasure upserts the fence and sets `erased_at` again. An application role
+with column privileges needs `GRANT UPDATE (erased_at) ON erasure_fences` in
+addition to its existing fence privileges, or the second erasure of a subject
+fails.
+
 Keep the hash key in `baukit_config::Secret<String>`.
 Use at least 32 random bytes and keep that key stable across deployments. Losing
 or replacing it breaks receipt authorization and fences.

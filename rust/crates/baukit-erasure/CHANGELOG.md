@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Document that re-erasure needs `UPDATE (erased_at)` on `erasure_fences` for application roles with column privileges.
+
 ## [0.10.19] - 2026-10-11
 
 - Breaking: pass a login time to fence checks and `ErasureService::erase`. A login after `erased_at` can re-onboard only after every erasure operation completes. Missing login times keep the permanent fence.
