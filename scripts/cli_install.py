@@ -17,7 +17,7 @@ INSTALL = re.compile(r"cargo\s+install[^\n`]*")
 
 def instruction_files(root: Path) -> list[Path]:
     result = subprocess.run(["git", "ls-files", "-z"], cwd=root, capture_output=True, text=True, check=True)
-    return [root / name for name in result.stdout.split("\0") if name and
+    return [root / name for name in result.stdout.split("\0") if name and (root / name).is_file() and
             (name.endswith((".md", ".md.jinja")) or Path(name).name == "Makefile")]
 
 

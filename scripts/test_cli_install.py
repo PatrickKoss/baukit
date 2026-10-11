@@ -33,3 +33,16 @@ class CliInstallTest(unittest.TestCase):
             update_tags(root, "0.7.1")
             self.assertEqual(readme.read_text(), PREFIX + "0.7.1" + SUFFIX + "\n")
             self.assertIn("{{ context.template_version }}", template.read_text())
+
+    def test_release_update_skips_tracked_files_deleted_by_version_packages(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "--quiet", str(root)], check=True)
+            readme = root / "README.md"
+            readme.write_text(PREFIX + "0.7.0" + SUFFIX + "\n")
+            changeset = root / "changeset.md"
+            changeset.write_text("consumed\n")
+            subprocess.run(["git", "add", "README.md", "changeset.md"], cwd=root, check=True)
+            changeset.unlink()
+            update_tags(root, "0.7.1")
+            self.assertEqual(readme.read_text(), PREFIX + "0.7.1" + SUFFIX + "\n")
