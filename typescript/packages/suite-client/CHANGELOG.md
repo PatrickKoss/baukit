@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## 0.10.14
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.14 train.
+- Updated dependencies
+  - @baukit/integrations-client@0.10.14
+  - @baukit/localization-core@0.10.14
+
 ## 0.10.13
 
 - Export `SUITE_ERROR_CODES` and `SuiteErrorCode`, checked against the shared Rust fixture.

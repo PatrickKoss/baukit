@@ -2,7 +2,16 @@
 
 ## [Unreleased]
 
+## 0.10.14
+
 - Add opt-in `SectionPicker replace` on web and native. Pass replacement options to `onNavigate` and web `renderLink` without adding a DOM attribute. Keep history pushes by default.
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.14 train.
+- Updated dependencies
+  - @baukit/a11y-core@0.10.14
+  - @baukit/ui-tokens@0.10.14
 
 ## 0.10.13
 

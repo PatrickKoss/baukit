@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+## [0.10.14] - 2026-10-11
+
 ## [0.10.13] - 2026-10-10
 
 - Embed the shared suite error code fixture and its checksum.

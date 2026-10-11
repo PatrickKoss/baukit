@@ -2,7 +2,10 @@
 
 ## [Unreleased]
 
+## [0.10.14] - 2026-10-11
+
 - Add `CARGO_TARGET_CACHE_KEY` to generated backend builders so checkouts can use separate Cargo target caches. Keep the current cache ids by default and share the registry cache.
+- Products must rerun `baukit generate dockerfile` after upgrading, or `baukit generate dockerfile --check` fails. The built images do not change.
 - Apply SectionPicker replacement options in the generated web and mobile navigate adapters.
 
 ## [0.10.13] - 2026-10-10
