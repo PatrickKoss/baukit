@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.17] - 2026-10-11
+
 ## [0.10.16] - 2026-10-11
 
 - The generated web e2e helper `expectMinimumInteractiveTargetSize` measures all visible targets in one browser call instead of two round trips per target, so pages with many controls no longer exhaust the Playwright deadline on loaded machines. The assertions are unchanged.

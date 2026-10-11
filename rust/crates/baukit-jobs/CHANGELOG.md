@@ -4,6 +4,8 @@ All notable changes to `baukit-jobs` are documented here.
 
 ## [Unreleased]
 
+## [0.10.17] - 2026-10-11
+
 - Add `FixedUtcJitter` and `FixedUtcInterval::run_at` for stable per-key,
   whole-second offsets that stay inside their UTC slot, including at fraction
   `1.0`. Slot identifiers and progression stay unchanged.
