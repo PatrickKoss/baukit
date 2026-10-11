@@ -162,6 +162,7 @@ describe('useAuth', () => {
     });
 
     expect(result.current.sessionExpired).toBe(true);
+    expect(result.current.sessionExpiredReason).toBe(reason);
     expect(result.current.announcement).toBe('Your session expired. Sign in again to continue.');
   });
 
@@ -194,6 +195,7 @@ describe('useAuth', () => {
       [{ stateDecoration: appearanceStateDecoration({ mode: 'dark' }) }],
     ]{% endif %});
     expect(result.current.sessionExpired).toBe(false);
+    expect(result.current.sessionExpiredReason).toBeUndefined();
     expect(result.current.announcement).toBeUndefined();
   });
 

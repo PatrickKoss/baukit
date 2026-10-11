@@ -9,7 +9,7 @@ export type ProductPersistenceLifecycleOptions<
   TPersistence extends ClosableScopedPersistence,
 > = Omit<ScopedPersistenceLifecycleOptions<TPersistence>, 'namespace'>;
 
-/** Product composition seam: the immutable OIDC subject selects storage before repositories mount. */
+/** Product composition seam: the server profile ID selects storage before repositories mount. */
 export function createProductPersistenceLifecycle<
   TPersistence extends ClosableScopedPersistence,
 >(

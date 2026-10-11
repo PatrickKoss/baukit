@@ -26,12 +26,15 @@ export default function DeleteProfileRoute() {
       <DeleteProfileScreen
         available={auth.subject !== undefined && localData.state.status === 'ready'}
         erase={async () => {
-          if (auth.subject === undefined) throw new Error('No signed-in account.');
+          if (auth.subject === undefined || localData.state.status !== 'ready') {
+            throw new Error('No confirmed local profile.');
+          }
+          const profileId = localData.state.partition.subject;
           client.current = await createDeleteProfileClient(auth.subject);
           return deleteProfile({
             subject: auth.subject,
             client: client.current,
-            eraseLocalPartition: () => localData.erase(auth.subject ?? ''),
+            eraseLocalPartition: () => localData.erase(profileId),
             resetPreferenceIdentity,
           });
         }}

@@ -9,7 +9,7 @@ export type ProductPersistenceLifecycleOptions<
   TPersistence extends ClosableScopedPersistence,
 > = Omit<ScopedPersistenceLifecycleOptions<TPersistence>, 'namespace'>;
 
-/** Product composition seam: validated account identity gates all user-scoped caches. */
+/** Product composition seam: the server profile ID gates all user-scoped caches. */
 export function createProductPersistenceLifecycle<
   TPersistence extends ClosableScopedPersistence,
 >(

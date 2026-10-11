@@ -8,18 +8,18 @@ This is a security boundary. A sync-time identity check alone is insufficient: t
 
 ## 1. Partition identity
 
-- The partition key is the exact immutable OIDC `sub` from the validated session. Email, display name, an analytics ID, and a mutable product user ID are not partition keys.
-- Combine the subject with a stable application namespace using an unambiguous canonical encoding, then derive a deterministic, collision-resistant store name with a one-way digest. The resulting SQLite, IndexedDB, cache, or filesystem name must not disclose the subject.
-- Keep the subject-to-store mapping in a versioned registry outside the domain database. Serialize registry reads and writes so concurrent account selection cannot claim one store twice.
-- Treat an empty subject, an invalid digest result, an unsupported registry version, malformed registry data, and inconsistent ownership metadata as blocking initialization failures. Never fall back to a shared or legacy store.
+- The partition key is the server profile ID confirmed by `/me`. It stays immutable for that profile and changes when erasure is followed by re-onboarding. Products that keep the identity account must not use the OIDC `sub`: the same subject can own a new profile. Email, display name, analytics IDs, and mutable user IDs are not partition keys.
+- Combine the profile ID with a stable application namespace using an unambiguous canonical encoding, then derive a deterministic, collision-resistant store name with a one-way digest. The resulting SQLite, IndexedDB, cache, or filesystem name must not disclose the profile ID.
+- Keep the profile-to-store mapping in a versioned registry outside the domain database. Serialize registry reads and writes so concurrent account selection cannot claim one store twice.
+- Treat an empty profile ID, an invalid digest result, an unsupported registry version, malformed registry data, and inconsistent ownership metadata as blocking initialization failures. Never fall back to a shared or legacy store.
 
-Mapping an OIDC subject to an internal server UUID remains a backend concern. Product database schemas and repository types do not belong in this contract.
+The backend maps a validated OIDC subject to its current profile ID. The client confirms that mapping before opening storage. Data-contracts names the partition key `subject`; products pass the profile ID to that parameter. Product schemas and repository types remain product code.
 
 ## 2. Legacy stores
 
 A product may expose an explicit legacy-store inspector during migration. A legacy store may be claimed at most once and only when one of these rules proves ownership:
 
-- persisted ownership already names the current OIDC subject; or
+- persisted ownership already names the current server profile ID; or
 - every legacy owner marker is the product's documented pre-authentication placeholder and no server identity has adopted the store.
 
 An empty, ambiguous, or differently owned legacy store is not evidence for a claim. Leave it closed and create a fresh scoped partition. Record the successful claim in the registry before allowing normal use. A product may quarantine an unclaimable store, but must not silently merge it.
@@ -31,10 +31,10 @@ On login, logout, token-subject change, or account switch, perform this order:
 1. Unmount user-scoped repositories and stop sync/query work.
 2. Close the active database and wait for closure before opening another partition.
 3. Reset all user-scoped in-memory state, including sync status, pending mutation views, query caches, locale/theme preferences, and analytics identity.
-4. Resolve and validate the registry entry for the new `sub`.
+4. Resolve and validate the registry entry for the new profile ID.
 5. Open the partition and complete migrations and local hydration.
-6. Mount product repositories only after the partition is ready and still belongs to the active subject.
-7. Before adopting a server identity or pushing pending mutations, recheck that the server-confirmed subject matches the active partition subject. On mismatch, stop sync and enter a blocking identity-mismatch state.
+6. Mount product repositories only after the partition is ready and still belongs to the active profile ID.
+7. Before adopting a server identity or pushing pending mutations, recheck that the server-confirmed profile ID matches the active partition key. On mismatch, stop sync and enter a blocking identity-mismatch state.
 
 Late work from a previous partition must be cancelled or ignored. UI below the repository provider must not render against a stale handle while initialization is pending or blocked.
 
@@ -42,11 +42,11 @@ Late work from a previous partition must be cancelled or ignored. UI below the r
 
 Every product must choose and document one policy per data class:
 
-- `retain`: close the partition but keep it for a later login by the same subject;
+- `retain`: close the partition but keep it for a later login by the same profile ID;
 - `delete`: close it, remove its data and active registry entry, preserve any legacy-claim tombstone, and surface deletion failure honestly; or
 - `quarantine`: make it unavailable to normal mounting until an explicit recovery or deletion flow.
 
-Logout always performs the close and in-memory reset regardless of retention. Retention never permits a different subject to mount the partition.
+Logout always performs the close and in-memory reset regardless of retention. Retention never permits a different profile to mount the partition.
 
 ## 5. Product-profile erasure
 
@@ -68,6 +68,21 @@ removal is the final step and its failure is returned to the caller. The exporte
 that locked removal directly and resolves `true` when it removes an entry or
 `false` when no matching entry exists. Products use these APIs rather than read,
 parse, edit, or rewrite the serialized registry JSON themselves.
+
+Auth integration must pass the session-expired reason to local-data cleanup.
+For `profile_erased`, block local access and erase the partition and its
+registry entry. Other expiry reasons only close and block. The generated templates
+also keep the last partition's cleanup context because native token clearing can
+close storage before the expiry reason arrives.
+
+A device that never receives `profile_erased` retains the old partition on disk.
+A new profile ID prevents that partition's data and outbox from being adopted,
+but physical removal needs a product cleanup policy for unknown profiles.
+`LocalDataRetention` is a policy type, not an automatic cleanup service. The
+registry retains entries for other IDs. Data-contracts can erase the active
+partition and remove a known entry, but offers no public enumeration or bulk
+cleanup API. Products need their own partition inventory and cleanup policy;
+removing an entry alone does not delete its database.
 
 ## 6. Import safety
 
@@ -157,8 +172,9 @@ Other production exports used by this contract include
 lifecycle hides an old handle immediately, waits for close and user-memory
 reset, and publishes the new partition only after the injected
 open/migrate/hydrate hook finishes. Product auth integration calls
-`handleSessionExpired()` for a terminal session-expiry event. That method closes
-and blocks; it does not fabricate a subject switch.
+`eraseActivePartition()` for `profile_erased`, then `handleSessionExpired()`
+to block access. Other terminal expiry reasons call `handleSessionExpired()`
+directly. That method closes and blocks; it does not erase retained data.
 
 The adapter-parameterized `describeScopedPersistenceContract` Vitest suite is
 exported from the test-only `@baukit/data-contracts/vitest` subpath, not the

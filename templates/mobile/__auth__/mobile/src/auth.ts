@@ -15,6 +15,7 @@ import {
 {% if not context.auth_clerk %}  appearanceStateDecoration,{% endif %}
   safeAuthErrorMessage,
   type OidcSession,
+  type SessionExpiredReason,
   type SignInResult,
   type SignOutResult,
 } from '@baukit/auth-native';
@@ -87,6 +88,7 @@ export interface ProductAuth {
   readonly error?: string;
   readonly announcement?: string;
   readonly sessionExpired: boolean;
+  readonly sessionExpiredReason?: SessionExpiredReason;
   /** Passes the app's theme to the login page so it opens in the same mode. */
   readonly signIn: (appearance?: ThemePreference) => Promise<SignInResult | undefined>;
   readonly signOut: () => Promise<SignOutResult | undefined>;
@@ -113,7 +115,7 @@ function useAuthState(): ProductAuth {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string>();
   const [announcement, setAnnouncement] = useState<string>();
-  const [sessionExpired, setSessionExpired] = useState(false);
+  const [sessionExpiredReason, setSessionExpiredReason] = useState<SessionExpiredReason>();
 
   useEffect(() => {
     let active = true;
@@ -122,9 +124,9 @@ function useAuthState(): ProductAuth {
         setSession(nextSession);
       }
     });
-    const unsubscribeExpired = authClient.subscribeSessionExpired(() => {
+    const unsubscribeExpired = authClient.subscribeSessionExpired((event) => {
       if (active) {
-        setSessionExpired(true);
+        setSessionExpiredReason(event.reason);
         setAnnouncement('Your session expired. Sign in again to continue.');
       }
     });
@@ -168,7 +170,7 @@ function useAuthState(): ProductAuth {
     async ({% if not context.auth_clerk %}appearance?: ThemePreference{% endif %}): Promise<SignInResult | undefined> => {
       setError(undefined);
       setAnnouncement(undefined);
-      setSessionExpired(false);
+      setSessionExpiredReason(undefined);
       try {
         const result = await authClient.signIn({% if not context.auth_clerk %}
           appearance === undefined
@@ -202,7 +204,8 @@ function useAuthState(): ProductAuth {
     ready,
     ...(error === undefined ? {} : { error }),
     ...(announcement === undefined ? {} : { announcement }),
-    sessionExpired,
+    sessionExpired: sessionExpiredReason !== undefined,
+    ...(sessionExpiredReason === undefined ? {} : { sessionExpiredReason }),
     signIn,
     signOut,
   };

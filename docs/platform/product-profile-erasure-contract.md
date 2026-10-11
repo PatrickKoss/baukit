@@ -484,7 +484,22 @@ when a session fails its subject fence. `@baukit/api-runtime` calls
 with an `ApiError` whose code is `profile_erased`. The response body remains
 available to the handler. Handler failures do not replace the API error.
 
-Authenticated templates clear the local session. Web returns to the existing
-signed-out page. Mobile's authentication guard shows the existing sign-in screen
-after the session notification. Neither path refreshes the fenced credentials.
+Authenticated templates call `clearSession({ reason: 'profile_erased' })`.
+The session-expired listener blocks local access and erases the active partition
+and its registry entry. Web shows its signed-out page; mobile's auth guard
+shows its sign-in screen. OIDC forces fresh authentication on the next login.
 The deletion client keeps its receipt reconciliation flow and local erasure order.
+
+Generated backends use delete mode, which removes the identity account. Products
+that keep that account and allow re-onboarding after fresh authentication must
+key local partitions by the server profile ID returned by `/me`, not the auth
+subject. A new profile ID keeps data and pending mutations from the erased
+profile out of the new profile, including on a device that missed the erasure.
+Recheck that same profile ID before sync adoption or an outbox push.
+
+A partition on a device that never sees `profile_erased` remains on that device's
+disk until the product cleans up partitions of unknown profiles. Data-contracts
+has active-partition erasure and removal of a known registry entry, but no public
+API to enumerate or purge other profiles. `LocalDataRetention` only names logout
+policies. Products need an inventory and cleanup policy for retained partitions.
+See the [local-data ownership contract](./local-data-ownership-contract.md).

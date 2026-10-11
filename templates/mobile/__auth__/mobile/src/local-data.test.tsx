@@ -1,5 +1,6 @@
 import { act, render, renderHook, waitFor } from '@testing-library/react-native';
 import { PersistenceIdentityMismatchError } from '@baukit/data-contracts';
+import type { SessionExpiredReason } from '@baukit/auth-native';
 
 const mockSecureStore = new Map<string, string>();
 function mockValidateSecureStoreKey(key: string): void {
@@ -61,8 +62,8 @@ import {
 } from './local-data';
 
 interface Session {
-  readonly subject: string | undefined;
-  readonly sessionExpired: boolean;
+  readonly profileId: string | undefined;
+  readonly sessionExpiredReason: SessionExpiredReason | undefined;
 }
 
 interface LocalDataProbeProps {
@@ -98,7 +99,7 @@ async function renderLocalData(initial: Session) {
 }
 
 async function renderReady(subject: string) {
-  const rendered = await renderLocalData({ subject, sessionExpired: false });
+  const rendered = await renderLocalData({ profileId: subject, sessionExpiredReason: undefined });
   await waitFor(() => {
     expect(rendered.result.current.state.status).toBe('ready');
   });
@@ -115,7 +116,7 @@ describe('authenticated local data', () => {
     );
   });
 
-  it('opens the subject partition in its own database', async () => {
+  it('opens the server profile partition in its own database', async () => {
     const { result } = await renderReady('subject-open');
 
     const state = result.current.state;
@@ -138,7 +139,7 @@ describe('authenticated local data', () => {
   it('closes the partition on sign-out', async () => {
     const { result, rerender } = await renderReady('subject-sign-out');
 
-    await rerender({ subject: undefined, sessionExpired: false });
+    await rerender({ profileId: undefined, sessionExpiredReason: undefined });
 
     await waitFor(() => {
       expect(result.current.state.status).toBe('signed-out');
@@ -161,12 +162,85 @@ describe('authenticated local data', () => {
   it('blocks local data when the session expires', async () => {
     const { result, rerender } = await renderReady('subject-expired');
 
-    await rerender({ subject: 'subject-expired', sessionExpired: true });
+    await rerender({ profileId: 'subject-expired', sessionExpiredReason: 'refresh_rejected' });
 
     await waitFor(() => {
       expect(result.current.state).toMatchObject({ status: 'blocked', reason: 'session-expired' });
     });
     expect(mockStoreClose).toHaveBeenCalledTimes(1);
+    expect(mockDeleteDatabase).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true, 'refresh_rejected'] as const)('deletes an erased profile after token clearing: %s', async (closed) => {
+    const { result, rerender } = await renderReady(`erased-profile-${String(closed)}`);
+    const state = result.current.state;
+    if (state.status !== 'ready') throw new Error('Expected a ready partition.');
+    if (closed) {
+      await rerender({ profileId: undefined, sessionExpiredReason: closed === 'refresh_rejected' ? closed : undefined });
+      await waitFor(() => {
+        expect(result.current.state.status).toBe(closed === 'refresh_rejected' ? 'blocked' : 'signed-out');
+      });
+    }
+
+    await rerender({ profileId: undefined, sessionExpiredReason: 'profile_erased' });
+
+    await waitFor(() => {
+      expect(result.current.state).toMatchObject({ status: 'blocked', reason: 'session-expired' });
+    });
+    expect(mockStoreClose).toHaveBeenCalledTimes(1);
+    expect(mockDeleteDatabase).toHaveBeenCalledTimes(1);
+    expect(mockDeleteDatabase).toHaveBeenCalledWith(`${state.partition.storeName}.db`);
+    const registry = [...mockSecureStore.entries()].find(([key]) => key.endsWith('.local-data-registry.v1'));
+    expect(registry?.[1]).not.toContain(state.partition.subject);
+  });
+
+  it('preserves ownership and reports a failed expiry deletion', async () => {
+    const { result, rerender } = await renderReady('profile-delete-failed');
+    const failure = new Error('disk unavailable');
+    mockDeleteDatabase.mockRejectedValueOnce(failure);
+
+    await rerender({ profileId: undefined, sessionExpiredReason: 'profile_erased' });
+
+    await waitFor(() => {
+      expect(result.current.state).toEqual({ status: 'blocked', reason: 'initialization-failed', error: failure });
+    });
+    const registry = [...mockSecureStore.entries()].find(([key]) => key.endsWith('.local-data-registry.v1'));
+    expect(registry?.[1]).toContain('profile-delete-failed');
+  });
+
+  it('does not block a fresh login when the previous profile cleanup finishes', async () => {
+    const { result, rerender } = await renderReady('profile-slow-erasure');
+    let finish: (() => void) | undefined;
+    mockDeleteDatabase.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    await rerender({ profileId: undefined, sessionExpiredReason: 'profile_erased' });
+    await waitFor(() => { expect(mockDeleteDatabase).toHaveBeenCalledTimes(1); });
+    await rerender({ profileId: 'fresh-profile', sessionExpiredReason: undefined });
+
+    await act(() => { finish?.(); });
+
+    await waitFor(() => {
+      expect(result.current.state).toMatchObject({ status: 'ready', partition: { subject: 'fresh-profile' } });
+    });
+    expect(mockDeleteDatabase).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens a fresh database after re-onboarding without an expiry event', async () => {
+    const first = await renderReady('old-profile');
+    const oldState = first.result.current.state;
+    if (oldState.status !== 'ready') throw new Error('Expected a ready partition.');
+    await first.rerender({ profileId: undefined, sessionExpiredReason: 'refresh_rejected' });
+    await waitFor(() => { expect(first.result.current.state.status).toBe('blocked'); });
+    await first.unmount();
+
+    const next = await renderReady('new-profile');
+    const newState = next.result.current.state;
+    if (newState.status !== 'ready') throw new Error('Expected a ready partition.');
+    expect(newState.partition.storeName).not.toBe(oldState.partition.storeName);
+    expect(mockOpenDatabase).toHaveBeenLastCalledWith(`${newState.partition.storeName}.db`);
+    expect(mockDeleteDatabase).not.toHaveBeenCalled();
+    const registry = [...mockSecureStore.entries()].find(([key]) => key.endsWith('.local-data-registry.v1'));
+    expect(registry?.[1]).toContain('old-profile');
+    expect(registry?.[1]).toContain('new-profile');
   });
 
   it('blocks local data after an identity mismatch', async () => {
@@ -184,7 +258,7 @@ describe('authenticated local data', () => {
     mockStoreInitialize.mockRejectedValueOnce(failure);
     mockStoreClose.mockRejectedValueOnce(new Error('already closed'));
 
-    const { result } = await renderLocalData({ subject: 'subject-failed', sessionExpired: false });
+    const { result } = await renderLocalData({ profileId: 'subject-failed', sessionExpiredReason: undefined });
 
     await waitFor(() => {
       expect(result.current.state).toEqual({
@@ -204,8 +278,8 @@ describe('authenticated local data', () => {
       }),
     );
     const { result, unmount } = await renderLocalData({
-      subject: 'subject-unmounted',
-      sessionExpired: false,
+      profileId: 'subject-unmounted',
+      sessionExpiredReason: undefined,
     });
     expect(result.current.state.status).toBe('initializing');
 

@@ -14,6 +14,7 @@ function runtimeWith(mock: MockFetch) {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe('listItems', () => {
@@ -85,5 +86,24 @@ describe('currentUser', () => {
     const api = await import('./api');
 
     await expect(api.currentUser()).resolves.toMatchObject({ subject: 'subject-1' });
+  });
+
+  it('expires the session without navigating away from partition cleanup', async () => {
+    const mock = new MockFetch().enqueueJson({
+      error: { code: 'profile_erased', message: 'The profile has been erased', requestId: 'erased', details: {} },
+    }, { status: 401 });
+    const replace = vi.fn();
+    vi.stubGlobal('window', { location: { replace } });
+    vi.stubGlobal('fetch', mock.fetch);
+    vi.resetModules();
+    const { authClient } = await import('./auth');
+    vi.spyOn(authClient, 'accessToken').mockResolvedValue(undefined);
+    const clear = vi.spyOn(authClient, 'clearSession').mockImplementation(() => undefined);
+    const api = await import('./api');
+
+    await expect(api.currentUser()).rejects.toMatchObject({ code: 'profile_erased' });
+
+    expect(clear).toHaveBeenCalledWith({ reason: 'profile_erased' });
+    expect(replace).not.toHaveBeenCalled();
   });
 });

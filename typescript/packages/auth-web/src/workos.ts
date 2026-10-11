@@ -96,7 +96,6 @@ export class WorkOsWebClient {
         listener({ type: 'session-expired', reason });
       } catch {
         // Observers cannot interrupt session expiry.
-        continue;
       }
     }
   }

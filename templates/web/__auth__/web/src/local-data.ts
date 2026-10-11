@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
 import {
   PersistenceIdentityMismatchError,
+  removeScopedPersistenceRegistryEntry,
+  type OpenScopedPersistenceContext,
   type ScopedPersistenceLifecycleState,
   type ScopedPersistenceRegistryStore,
 } from '@baukit/data-contracts';
+import type { SessionExpiredReason } from '@baukit/auth-web';
 
 import { analytics } from './analytics';
 import { createProductPersistenceLifecycle } from './persistence-lifecycle';
@@ -32,7 +35,7 @@ export type LocalDataState = ScopedPersistenceLifecycleState<CachePartition>;
 export interface AuthenticatedLocalData {
   readonly state: LocalDataState;
   readonly clear: () => Promise<void>;
-  readonly erase: (subject: string) => Promise<void>;
+  readonly erase: (profileId: string) => Promise<void>;
   readonly blockIdentityMismatch: (
     error: PersistenceIdentityMismatchError,
   ) => Promise<void>;
@@ -40,35 +43,75 @@ export interface AuthenticatedLocalData {
 
 /** Retain is the generated default; add Dexie opening inside `open` when persistence is added. */
 export function useAuthenticatedLocalData(
-  subject: string | undefined,
-  sessionExpired: boolean,
+  profileId: string | undefined,
+  sessionExpiredReason: SessionExpiredReason | undefined,
   queryClient: QueryClient,
 ): AuthenticatedLocalData {
+  const registry = useMemo(() => new LocalStorageRegistry(), []);
+  const erasePartition: (partition: OpenScopedPersistenceContext) => Promise<void> = useCallback(() => {
+    queryClient.clear();
+    return Promise.resolve();
+  }, [queryClient]);
   const lifecycle = useMemo(
     () =>
       createProductPersistenceLifecycle<CachePartition>({
-        registry: new LocalStorageRegistry(),
+        registry,
         open: () => Promise.resolve({ close: () => Promise.resolve() }),
-        erase: () => {
-          queryClient.clear();
-          return Promise.resolve();
-        },
+        erase: erasePartition,
         resetUserScopedState: () => {
           queryClient.clear();
           analytics.reset();
         },
       }),
-    [queryClient],
+    [erasePartition, queryClient, registry],
   );
   const [state, setState] = useState<LocalDataState>(lifecycle.state);
+  const expiryTransition = useRef<{
+    readonly reason: SessionExpiredReason;
+    readonly transition: Promise<void>;
+  } | undefined>(undefined);
+  const lastPartition = useRef<OpenScopedPersistenceContext | undefined>(undefined);
+  const expireSession = useCallback(async (reason: SessionExpiredReason): Promise<void> => {
+    if (reason !== 'profile_erased') {
+      await lifecycle.handleSessionExpired();
+      return;
+    }
+    const previous = lastPartition.current;
+    const erasure = lifecycle.eraseActivePartition();
+    const blocked = lifecycle.handleSessionExpired();
+    const [erased] = await Promise.all([erasure, blocked]);
+    if (!erased && previous !== undefined) {
+      // Token clearing can close the partition before the expiry event arrives.
+      await erasePartition(previous);
+      await removeScopedPersistenceRegistryEntry({
+        namespace: PRODUCT_NAME, subject: previous.subject, registry,
+      });
+    }
+    if (lastPartition.current === previous) lastPartition.current = undefined;
+  }, [erasePartition, lifecycle, registry]);
 
   useEffect(() => {
     let active = true;
-    const transition = sessionExpired
-      ? lifecycle.handleSessionExpired()
-      : subject === undefined
+    if (profileId !== undefined && lastPartition.current?.subject !== profileId) {
+      lastPartition.current = undefined;
+    }
+    if (sessionExpiredReason === undefined) expiryTransition.current = undefined;
+    else if (expiryTransition.current?.reason !== sessionExpiredReason) {
+      expiryTransition.current = {
+        reason: sessionExpiredReason,
+        transition: expireSession(sessionExpiredReason),
+      };
+    }
+    const transition = expiryTransition.current?.transition ?? (
+      profileId === undefined
         ? lifecycle.clear()
-        : lifecycle.selectSubject(subject).then(() => undefined);
+        : lifecycle.selectSubject(profileId).then((partition) => {
+            if (partition !== undefined) lastPartition.current = {
+              subject: partition.subject,
+              storeName: partition.storeName,
+            };
+          })
+    );
     void Promise.resolve().then(() => {
       if (active) setState(lifecycle.state);
     });
@@ -76,27 +119,33 @@ export function useAuthenticatedLocalData(
       () => {
         if (active) setState(lifecycle.state);
       },
-      () => {
-        if (active) setState(lifecycle.state);
+      (cause: unknown) => {
+        if (!active) return;
+        setState(sessionExpiredReason !== 'profile_erased' && lifecycle.state.status === 'blocked' ? lifecycle.state : {
+          status: 'blocked',
+          reason: 'initialization-failed',
+          error: cause instanceof Error ? cause : new Error('Local data cleanup failed.'),
+        });
       },
     );
     return () => {
       active = false;
     };
-  }, [lifecycle, sessionExpired, subject]);
+  }, [expireSession, lifecycle, profileId, sessionExpiredReason]);
 
   const clear = useCallback(async (): Promise<void> => {
     await lifecycle.clear();
     setState(lifecycle.state);
   }, [lifecycle]);
 
-  const erase = useCallback(async (subject: string): Promise<void> => {
-    if (lifecycle.current()?.subject !== subject) {
+  const erase = useCallback(async (profileId: string): Promise<void> => {
+    if (lifecycle.current()?.subject !== profileId) {
       throw new PersistenceIdentityMismatchError();
     }
     if (!(await lifecycle.eraseActivePartition())) {
       throw new Error('No active local account partition to erase.');
     }
+    lastPartition.current = undefined;
     setState(lifecycle.state);
   }, [lifecycle]);
 

@@ -36,7 +36,7 @@ export default function TodayScreen() {
 
   const partition =
     localData.state.status === 'ready' &&
-    localData.state.partition.subject === auth.subject &&
+    auth.accessToken !== undefined &&
     !auth.sessionExpired
       ? localData.state.partition
       : undefined;
@@ -65,7 +65,7 @@ export default function TodayScreen() {
       .then(async ([nextItems, nextUser]) => {
         await recheckServerSubjectBeforeSyncAdoption({
           partitionSubject: partition.subject,
-          readServerSubject: () => Promise.resolve(nextUser.subject),
+          readServerSubject: () => Promise.resolve(nextUser.id),
           adopt: async () => {
             const client = await loadAnalytics();
             if (active) {

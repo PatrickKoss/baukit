@@ -1,5 +1,7 @@
-import { render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { Stack } from 'expo-router';
+
+const mockErasePartition = jest.fn(() => Promise.resolve());
 
 jest.mock('@baukit/a11y-core', () => ({
   announce: jest.fn(),
@@ -17,8 +19,8 @@ jest.mock('./auth', () => ({
 }));
 jest.mock('./local-data', () => ({
   useAuthenticatedLocalData: () => ({
-    state: { status: 'ready' },
-    erase: () => Promise.resolve(),
+    state: { status: 'ready', partition: { subject: 'server-profile-id' } },
+    erase: mockErasePartition,
   }),
 }));
 jest.mock('./app-shell', () => ({
@@ -33,6 +35,7 @@ import DeleteProfileRoute from '../app/delete-profile';
 import { englishErasureCopy, germanErasureCopy } from './delete-profile-copy';
 import { initializeI18n } from './localization/i18n';
 import { AppThemeProvider } from './theme';
+import { createDeleteProfileClient, deleteProfile } from './delete-profile';
 
 it.each([
   ['en', englishErasureCopy.title],
@@ -46,4 +49,22 @@ it.each([
   );
   expect(Stack.Screen).toHaveBeenLastCalledWith({ options: { title } }, undefined);
   expect(screen.getByText(title)).toBeOnTheScreen();
+});
+
+it('erases the server profile partition while authorizing deletion with the auth subject', async () => {
+  await initializeI18n('en');
+  jest.mocked(deleteProfile).mockImplementation(async (options) => {
+    await options.eraseLocalPartition();
+    return { status: 'erased', receipt: { status: 'completed', operationId: 'erasure' }, warnings: [] };
+  });
+  await render(
+    <AppThemeProvider mode="system" persistMode={() => Promise.resolve()}>
+      <DeleteProfileRoute />
+    </AppThemeProvider>,
+  );
+  await fireEvent.press(screen.getByRole('button', { name: englishErasureCopy.continue }));
+  await fireEvent.press(screen.getByRole('button', { name: englishErasureCopy.confirm }));
+  await waitFor(() => { expect(mockErasePartition).toHaveBeenCalledWith('server-profile-id'); });
+  expect(createDeleteProfileClient).toHaveBeenCalledWith('subject');
+  expect(deleteProfile).toHaveBeenCalledWith(expect.objectContaining({ subject: 'subject' }));
 });

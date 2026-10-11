@@ -4,6 +4,8 @@
 
 - Generated backends pass verified login times through fence checks and profile creation. Add the re-onboarding migration and test a fresh profile after retained-identity erasure. Worker erasure calls use an explicit missing login time.
 
+- Generated authenticated apps key local partitions by the server profile ID from `/me` and erase them on `profile_erased`. Products keeping the identity account must use the new profile ID after re-onboarding and compare it before sync. A device that misses the expiry event retains its old partition on disk until the product cleans up unknown profiles. Data-contracts has no public API to enumerate or purge those partitions.
+
 - Generated web and mobile apps clear sessions with reason `profile_erased` after a backend erasure response or a confirmed profile deletion. OIDC asks for fresh authentication on the next sign-in.
 
 - The generated web QA Playwright config runs with `fullyParallel: true`. The stubbed specs share no state, so tests inside one file now spread across workers.

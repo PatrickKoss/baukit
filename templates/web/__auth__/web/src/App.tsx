@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAriaHiddenInert } from '@baukit/a11y-core/web';
 import type { ConsentState } from '@baukit/analytics-core';
-import { safeAuthErrorMessage } from '@baukit/auth-web';
+import { safeAuthErrorMessage, type SessionExpiredReason } from '@baukit/auth-web';
 import {
   isPersistenceIdentityMismatchError,
   recheckServerSubjectBeforeSyncAdoption,
@@ -29,15 +29,15 @@ export function App() {
   useAriaHiddenInert();
   const queryClient = useQueryClient();
   const [authenticated, setAuthenticated] = useState(authClient.hasSession());
-  const [sessionExpired, setSessionExpired] = useState(false);
+  const [sessionExpiredReason, setSessionExpiredReason] = useState<SessionExpiredReason>();
   const [authError, setAuthError] = useState<string>();
   const [user, setUser] = useState<CurrentUser>();
-  const localData = useAuthenticatedLocalData(user?.subject, sessionExpired, queryClient);
+  const localData = useAuthenticatedLocalData(user?.id, sessionExpiredReason, queryClient);
   const blockIdentityMismatch = localData.blockIdentityMismatch;
   const partition =
     localData.state.status === 'ready' &&
-    localData.state.partition.subject === user?.subject &&
-    !sessionExpired
+    localData.state.partition.subject === user?.id &&
+    sessionExpiredReason === undefined
       ? localData.state.partition
       : undefined;
   const items = useQuery({
@@ -59,8 +59,8 @@ export function App() {
   });
 
   useEffect(() => {
-    const unsubscribe = authClient.subscribeSessionExpired(() => {
-      setSessionExpired(true);
+    const unsubscribe = authClient.subscribeSessionExpired((event) => {
+      setSessionExpiredReason(event.reason);
       setAuthenticated(false);
       setUser(undefined);
     });
@@ -68,7 +68,7 @@ export function App() {
       .handleCallback()
       .then((handled) => {
         if (handled) {
-          setSessionExpired(false);
+          setSessionExpiredReason(undefined);
           setAuthenticated(true);
         }
       })
@@ -101,7 +101,7 @@ export function App() {
     if (partition === undefined || user === undefined) return;
     void recheckServerSubjectBeforeSyncAdoption({
       partitionSubject: partition.subject,
-      readServerSubject: () => Promise.resolve(user.subject),
+      readServerSubject: () => Promise.resolve(user.id),
       adopt: () => {
         analytics.identify(user.id);
       },
@@ -172,7 +172,7 @@ export function App() {
       {deletingProfile ? <DeleteProfileRoute
         subject={user?.subject}
         ready={partition !== undefined}
-        eraseLocalPartition={() => localData.erase(user?.subject ?? '')}
+        eraseLocalPartition={() => localData.erase(user?.id ?? '')}
         onSignedOut={() => {
           setAuthenticated(false);
           setUser(undefined);
