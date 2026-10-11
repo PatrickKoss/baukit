@@ -292,7 +292,7 @@ it.each([undefined, false, true])(
     expect(screen.queryByRole('menu')).toBeNull();
   },
 );
-it.each([false, true])('passes replace=%s to custom picker links', (replace) => {
+it.each([undefined, false, true])('passes replace=%s to custom picker links', (replace) => {
   const rendered = vi.fn();
   const navigate = vi.fn();
   render(
@@ -300,7 +300,7 @@ it.each([false, true])('passes replace=%s to custom picker links', (replace) => 
       closeLabel="Close"
       item={section}
       pathname="/progress"
-      replace={replace}
+      {...(replace === undefined ? {} : { replace })}
       onNavigate={navigate}
       renderLink={({ replace: linkReplace, ...props }) => {
         rendered(linkReplace);
@@ -309,12 +309,13 @@ it.each([false, true])('passes replace=%s to custom picker links', (replace) => 
     />,
   );
   fireEvent.click(screen.getByRole('button', { name: 'Progress, Overview' }));
-  expect(rendered).toHaveBeenCalledWith(replace);
-  for (const [value] of rendered.mock.calls) expect(value).toBe(replace);
+  const expected = replace === true ? true : undefined;
+  expect(rendered).toHaveBeenCalledWith(expected);
+  for (const [value] of rendered.mock.calls) expect(value).toBe(expected);
   const history = screen.getByRole('menuitem', { name: 'History' });
   expect(history.getAttribute('data-router')).toBe('custom');
   fireEvent.click(history);
-  if (replace) {
+  if (replace === true) {
     expect(navigate).toHaveBeenCalledWith('/progress/history', expect.anything(), {
       replace: true,
     });

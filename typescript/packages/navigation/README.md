@@ -93,8 +93,9 @@ const onNavigate = (href: string, options?: { readonly replace: boolean }) => {
 };
 ```
 
-Web `renderLink` receives the optional `replace` field for picker links, so a
-router Link can apply it. Remove it before spreading props onto a DOM anchor.
+Web `renderLink` receives `replace: true` for picker links when replacement is
+requested. Otherwise the field is omitted, so existing renderers keep their
+props. A router Link can apply it. Remove it before spreading props onto a DOM anchor.
 The default anchor renderer removes it. Modified clicks keep normal browser
 behavior.
 

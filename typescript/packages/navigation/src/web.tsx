@@ -671,7 +671,7 @@ export function SectionPicker({
       </button>
       {open ? (
         <Menu
-          replace={replace}
+          {...(replace ? { replace } : {})}
           closeLabel={closeLabel}
           entries={entries}
           maxHeight={maxHeight}
