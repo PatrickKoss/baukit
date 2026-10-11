@@ -4,6 +4,8 @@ All notable changes to `baukit-jobs` are documented here.
 
 ## [Unreleased]
 
+## [0.10.18] - 2026-10-11
+
 - Drop the handler future before recording timeout or cancellation outcomes.
   This releases handler-owned transactions so their job row locks cannot
   deadlock the runner's update.

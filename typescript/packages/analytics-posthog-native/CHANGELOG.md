@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## 0.10.18
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.18 train.
+- Updated dependencies
+  - @baukit/analytics-core@0.10.18
+
 ## 0.10.17
 
 ### Patch Changes

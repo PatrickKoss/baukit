@@ -5,7 +5,7 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
-Last verified release train: `v0.10.17` (`baukit-jobs` adds `FixedUtcJitter` with `FixedUtcInterval::run_at` for stable per-key offsets inside a slot, transactional cancellation by idempotency key or literal prefix, and `check_lease_in_transaction`; the generated web e2e helper `expectMinimumInteractiveTargetSize` measures all visible targets in one browser call since v0.10.16; generated backend Dockerfiles take `CARGO_TARGET_CACHE_PREFIX` since v0.10.15; `@baukit/navigation` `SectionPicker` takes `replace` since v0.10.14).
+Last verified release train: `v0.10.18` (the `baukit-jobs` runner drops the handler future before recording a timeout or cancellation, so a handler transaction holding the job row cannot block the runner; v0.10.17 added `FixedUtcJitter` with `FixedUtcInterval::run_at`, transactional cancellation by idempotency key or literal prefix, and `check_lease_in_transaction`; the generated web e2e helper `expectMinimumInteractiveTargetSize` measures all visible targets in one browser call since v0.10.16; generated backend Dockerfiles take `CARGO_TARGET_CACHE_PREFIX` since v0.10.15; `@baukit/navigation` `SectionPicker` takes `replace` since v0.10.14).
 
 ## Toolchain
 
