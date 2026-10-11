@@ -234,17 +234,17 @@ on both runtime bases.
 
 ## Build and check
 
-`CARGO_TARGET_CACHE_KEY` selects the Cargo target cache for each builder stage.
+`CARGO_TARGET_CACHE_PREFIX` selects the Cargo target cache for each builder stage.
 Its default is `app.name`, so cache ids stay `<app>-target` and
 `<app>-target-<variant>`. The Cargo registry cache stays shared.
-Set a different key per checkout or worktree on the same Docker daemon.
+Set a different prefix per checkout or worktree on the same Docker daemon.
 Otherwise Cargo can reuse stale artifacts because BuildKit preserves source
 mtimes when it copies files. For an app named `my-app`, hash the checkout path:
 
 ```sh
 docker build --target api -f backend/Dockerfile \
   --build-arg BACKEND_CONTEXT=backend \
-  --build-arg CARGO_TARGET_CACHE_KEY="my-app-$(printf %s "$PWD" | sha256sum | cut -c1-12)" .
+  --build-arg CARGO_TARGET_CACHE_PREFIX="my-app-$(printf %s "$PWD" | sha256sum | cut -c1-12)" .
 ```
 
 The renderer retains `BACKEND_CONTEXT`, `BAUKIT_CONTEXT`,

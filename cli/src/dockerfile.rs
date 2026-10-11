@@ -410,12 +410,12 @@ struct BuilderStage {
 fn builder_stages(image: &BackendImage) -> Vec<BuilderStage> {
     let mut builders = vec![BuilderStage {
         name: "builder".to_owned(),
-        target_cache_id: "${CARGO_TARGET_CACHE_KEY}-target".to_owned(),
+        target_cache_id: "${CARGO_TARGET_CACHE_PREFIX}-target".to_owned(),
         features: Vec::new(),
     }];
     builders.extend(image.variants.iter().map(|variant| BuilderStage {
         name: format!("builder-{}", variant.name),
-        target_cache_id: format!("${{CARGO_TARGET_CACHE_KEY}}-target-{}", variant.name),
+        target_cache_id: format!("${{CARGO_TARGET_CACHE_PREFIX}}-target-{}", variant.name),
         features: variant.features.clone(),
     }));
     builders
@@ -619,8 +619,8 @@ schema = "backend/openapi.json"
         assert!(output.starts_with("# syntax=docker/dockerfile:1.28.0\n"));
         assert!(output.ends_with("ENTRYPOINT [\"/app/migrate\"]\n"));
         assert!(output.contains("ARG CARGO_BUILD_JOBS\n"));
-        assert!(output.contains("ARG CARGO_TARGET_CACHE_KEY=test-product\n"));
-        assert!(output.contains("id=${CARGO_TARGET_CACHE_KEY}-target,"));
+        assert!(output.contains("ARG CARGO_TARGET_CACHE_PREFIX=test-product\n"));
+        assert!(output.contains("id=${CARGO_TARGET_CACHE_PREFIX}-target,"));
         assert!(output.contains("id=test-product-cargo-registry,"));
         assert!(!output.contains("ENV CARGO_BUILD_JOBS"));
         assert!(output.contains("SQLX_OFFLINE=true"));
@@ -760,7 +760,7 @@ features = ["stack-fixtures", "dep/feature_1-2+3.4"]
         assert_eq!(
             variant,
             base.replace(" AS builder\n", " AS builder-smoke\n")
-                .replace("id=${CARGO_TARGET_CACHE_KEY}-target,", "id=${CARGO_TARGET_CACHE_KEY}-target-smoke,")
+                .replace("id=${CARGO_TARGET_CACHE_PREFIX}-target,", "id=${CARGO_TARGET_CACHE_PREFIX}-target-smoke,")
                 .replace(
                     "--bin api --bin migrate --bin worker ",
                     "--bin api --bin migrate --bin worker --features stack-fixtures,dep/feature_1-2+3.4 "
@@ -772,12 +772,12 @@ features = ["stack-fixtures", "dep/feature_1-2+3.4"]
         assert_eq!(output.matches("id=test-product-cargo-registry,").count(), 2);
         assert_eq!(
             output
-                .matches("ARG CARGO_TARGET_CACHE_KEY=test-product\n")
+                .matches("ARG CARGO_TARGET_CACHE_PREFIX=test-product\n")
                 .count(),
             2
         );
-        assert!(base.contains("id=${CARGO_TARGET_CACHE_KEY}-target,"));
-        assert!(variant.contains("id=${CARGO_TARGET_CACHE_KEY}-target-smoke,"));
+        assert!(base.contains("id=${CARGO_TARGET_CACHE_PREFIX}-target,"));
+        assert!(variant.contains("id=${CARGO_TARGET_CACHE_PREFIX}-target-smoke,"));
         assert_eq!(output.matches("cargo build ").count(), 2);
         assert!(!output.contains("PACKAGES_RUNTIME_IMAGE"));
         for binary in ["api", "migrate", "worker"] {
@@ -882,8 +882,8 @@ runtime_packages = [{stage = "migrate", packages = []}]
 
         let output = render_dockerfile(&manifest("")?)?;
         let previous = output
-            .replace("ARG CARGO_TARGET_CACHE_KEY=test-product\n", "")
-            .replace("${CARGO_TARGET_CACHE_KEY}-target", "test-product-target");
+            .replace("ARG CARGO_TARGET_CACHE_PREFIX=test-product\n", "")
+            .replace("${CARGO_TARGET_CACHE_PREFIX}-target", "test-product-target");
         assert_eq!(
             Sha256::digest(previous.as_bytes())
                 .iter()

@@ -220,12 +220,38 @@ fn copied_file(container: &str, source: &str, destination: &Path) -> Result<Vec<
     Ok(fs::read(destination)?)
 }
 
+fn check_dockerfile(root: &Path, builder: &str) -> Result<()> {
+    let output = Command::new("docker")
+        .args([
+            "buildx",
+            "build",
+            "--builder",
+            builder,
+            "--check",
+            "--build-arg",
+            "BUILDKIT_DOCKERFILE_CHECK=error=true",
+            "--progress",
+            "plain",
+            "--file",
+        ])
+        .arg(root.join("backend/Dockerfile"))
+        .arg(root)
+        .output()?;
+    ensure!(
+        output.status.success(),
+        "BuildKit Dockerfile check: {}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    Ok(())
+}
+
 fn build_image(
     root: &Path,
     builder: &str,
     stage: &str,
     tag: &str,
-    cache_key: Option<&str>,
+    cache_prefix: Option<&str>,
 ) -> Result<()> {
     let mut command = Command::new("docker");
     command.args([
@@ -239,8 +265,11 @@ fn build_image(
         "--tag",
         tag,
     ]);
-    if let Some(key) = cache_key {
-        command.args(["--build-arg", &format!("CARGO_TARGET_CACHE_KEY={key}")]);
+    if let Some(prefix) = cache_prefix {
+        command.args([
+            "--build-arg",
+            &format!("CARGO_TARGET_CACHE_PREFIX={prefix}"),
+        ]);
     }
     let output = command
         .arg("--file")
@@ -249,7 +278,7 @@ fn build_image(
         .output()?;
     ensure!(
         output.status.success(),
-        "BuildKit stage {stage}, cache key {cache_key:?}: {}\n{}",
+        "BuildKit stage {stage}, cache prefix {cache_prefix:?}: {}\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -258,7 +287,7 @@ fn build_image(
 
 #[test]
 #[ignore = "requires Docker"]
-fn buildkit_builds_every_binary_with_stage_specific_files() -> Result<()> {
+fn buildkit_checks_and_builds_every_binary_with_stage_specific_files() -> Result<()> {
     let parent = tempfile::tempdir_in(Path::new(env!("CARGO_MANIFEST_DIR")).join(".."))?;
     let generated = cli(
         parent.path(),
@@ -300,6 +329,7 @@ fn buildkit_builds_every_binary_with_stage_specific_files() -> Result<()> {
     ])?;
     resources.builder = Some(builder.clone());
     let result = (|| -> Result<()> {
+        check_dockerfile(&root, &builder)?;
         for variant in [None, Some("smoke")] {
             for binary in ["api", "migrate", "worker", "seed", "extra-proxy"] {
                 let stage = variant.map_or_else(
@@ -340,7 +370,7 @@ binaries = ["api", "migrate", "worker", "seed", "extra-proxy"]
 cargo_build_jobs = 6
 backend_context = "backend"
 build_inputs = [{source = "inputs/build.txt", destination = "/inputs/build.txt"}]
-pre_build = [{command = ["sh", "-ec", 'if [ -f target/cache-key ]; then test "$(cat target/cache-key)" = "$CARGO_TARGET_CACHE_KEY"; fi; printf %s "$CARGO_TARGET_CACHE_KEY" > target/cache-key; mkdir -p /generated && cp /inputs/build.txt /generated/output.txt'], outputs = ["/generated"]}]
+pre_build = [{command = ["sh", "-ec", 'if [ -f target/cache-prefix ]; then test "$(cat target/cache-prefix)" = "$CARGO_TARGET_CACHE_PREFIX"; fi; printf %s "$CARGO_TARGET_CACHE_PREFIX" > target/cache-prefix; mkdir -p /generated && cp /inputs/build.txt /generated/output.txt'], outputs = ["/generated"]}]
 runtime_files = [{stage = "api", source = "/generated/output.txt", destination = "/app/prebuilt.txt"}, {stage = "worker", source = "assets/worker.txt", destination = "/app/worker.txt"}]
 runtime_binaries = [{stage = "migrate", binary = "seed"}]
 runtime_packages = [{stage = "worker", packages = ["git"]}, {stage = "extra-proxy", packages = []}]

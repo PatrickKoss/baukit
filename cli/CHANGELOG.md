@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Breaking: rename the generated Dockerfile build argument `CARGO_TARGET_CACHE_KEY` to `CARGO_TARGET_CACHE_PREFIX`, because BuildKit's SecretsUsedInArgOrEnv check flagged the old name. Rerun `baukit generate dockerfile` and rename the build arg in image build scripts.
+
 ## [0.10.14] - 2026-10-11
 
 - Add `CARGO_TARGET_CACHE_KEY` to generated backend builders so checkouts can use separate Cargo target caches. Keep the current cache ids by default and share the registry cache.
