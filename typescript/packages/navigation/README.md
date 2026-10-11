@@ -70,6 +70,34 @@ Link. Forward every supplied prop, especially href, ref, onKeyDown, onClick and
 ARIA attributes. Keep modified clicks in the browser. TanStack Router products
 can map `href` to `to`, or use `onNavigate` with their router instance.
 
+Set `replace` on `SectionPicker` to replace the current history entry when a
+section is picked. It defaults to `false`. Existing callbacks keep their
+arguments unless replacement is requested. Web receives
+`onNavigate(href, event, { replace: true })`; native receives
+`onNavigate(href, { replace: true })`. The product's adapter must apply the option:
+
+```tsx
+// Web with React Router
+<SectionPicker
+  closeLabel={copy.close}
+  item={progress}
+  pathname={pathname}
+  replace
+  onNavigate={(href, _event, options) => navigate(href, { replace: options?.replace ?? false })}
+/>;
+
+// Native with Expo Router, alongside the required item, labels, pathname and theme
+const onNavigate = (href: string, options?: { readonly replace: boolean }) => {
+  if (options?.replace === true) router.replace(href);
+  else router.navigate(href);
+};
+```
+
+Web `renderLink` receives the optional `replace` field for picker links, so a
+router Link can apply it. Remove it before spreading props onto a DOM anchor.
+The default anchor renderer removes it. Modified clicks keep normal browser
+behavior.
+
 A profile accepts either `href` or a nonempty `menu`. Menu entries have unique
 ids, labels and either `href` or synchronous `onSelect`. Set `tone: 'danger'`
 for destructive actions. Web uses `color.status.danger`; native uses the

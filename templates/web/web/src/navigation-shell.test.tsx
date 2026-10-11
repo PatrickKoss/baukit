@@ -9,6 +9,11 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { NavigationShell } from "./navigation-shell";
+import * as navigation from "@baukit/navigation/web";
+
+vi.mock("@baukit/navigation/web", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@baukit/navigation/web")>(),
+}));
 
 afterEach(() => {
   cleanup();
@@ -63,6 +68,23 @@ it("wires direct section selection and product-provided profile actions", () => 
   fireEvent.click(screen.getByRole("button", { name: "Account" }));
   fireEvent.click(screen.getByRole("menuitem", { name: "Sign out" }));
   expect(signOut).toHaveBeenCalledOnce();
+});
+it("applies replacement requested by the section picker", () => {
+  const Picker = navigation.SectionPicker;
+  vi.spyOn(navigation, "SectionPicker").mockImplementation((props) => (
+    <Picker {...props} replace />
+  ));
+  window.history.replaceState(null, "", "/");
+  const replace = vi.spyOn(window.history, "replaceState");
+  const push = vi.spyOn(window.history, "pushState");
+  const onLocationChange = vi.fn();
+  render(<NavigationShell onLocationChange={onLocationChange} />);
+  fireEvent.click(screen.getByRole("button", { name: "Workspace, Items" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Privacy" }));
+  expect(replace).toHaveBeenCalledWith(null, "", "/#privacy-title");
+  expect(push).not.toHaveBeenCalled();
+  expect(window.location.hash).toBe("#privacy-title");
+  expect(onLocationChange).toHaveBeenCalledOnce();
 });
 it("reports pushed and popped locations to the product", () => {
   window.history.replaceState(null, "", "/");

@@ -103,11 +103,12 @@ it('presents an unclipped compact profile menu at 320 px', async () => {
   expect(navigate).toHaveBeenCalledWith('/settings');
   await expect.element(page.getByRole('button', { name: 'Account' })).toHaveFocus();
 });
-it('presents an unclipped section picker and focuses its selected child at 320 px', async () => {
+it.each([false, true])('focuses a picker child at 320 px with replace=%s', async (replace) => {
   const navigate = vi.fn();
   await mount(
     <View style={{ height: 568, overflow: 'hidden' }}>
       <SectionPicker
+        replace={replace}
         closeLabel="Close"
         theme={theme}
         pathname="/progress/history"
@@ -130,7 +131,8 @@ it('presents an unclipped section picker and focuses its selected child at 320 p
   expectVisibleMenu();
   await expect.element(page.getByRole('menuitem', { name: 'History' })).toHaveFocus();
   await click(page.getByRole('menuitem', { name: 'Overview' }));
-  expect(navigate).toHaveBeenCalledWith('/progress');
+  if (replace) expect(navigate).toHaveBeenCalledWith('/progress', { replace: true });
+  else expect(navigate).toHaveBeenCalledWith('/progress');
   await expect.element(page.getByRole('button', { name: 'Progress, History' })).toHaveFocus();
 });
 

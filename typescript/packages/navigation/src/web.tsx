@@ -38,9 +38,16 @@ export interface NavigationIconState {
   readonly size: number;
 }
 export type NavigationIcon = (state: NavigationIconState) => ReactNode;
-export type NavigationLinkProps = ComponentPropsWithRef<'a'> & { readonly href: string };
+export type NavigationLinkProps = ComponentPropsWithRef<'a'> & {
+  readonly href: string;
+  readonly replace?: boolean;
+};
 export type NavigationLinkRenderer = (props: NavigationLinkProps) => ReactNode;
-export type Navigate = (href: string, event: MouseEvent<HTMLAnchorElement>) => void;
+export type Navigate = (
+  href: string,
+  event: MouseEvent<HTMLAnchorElement>,
+  options?: { readonly replace: boolean },
+) => void;
 
 export function isNavigationClick(event: MouseEvent<HTMLAnchorElement>): boolean {
   return (
@@ -73,12 +80,18 @@ function serverWidth() {
 }
 function Link({
   renderLink,
+  replace,
   ...props
 }: NavigationLinkProps & { readonly renderLink: NavigationLinkRenderer | undefined }) {
-  return renderLink === undefined ? <a {...props} /> : renderLink(props);
+  return renderLink === undefined ? (
+    <a {...props} />
+  ) : (
+    renderLink(replace === undefined ? props : { ...props, replace })
+  );
 }
 
 interface MenuProps {
+  readonly replace?: boolean;
   readonly entries: readonly NavigationProfileMenuEntry[];
   readonly id: string;
   readonly label: string;
@@ -93,6 +106,7 @@ interface MenuProps {
 }
 
 function Menu({
+  replace,
   entries,
   id,
   label,
@@ -181,6 +195,7 @@ function Menu({
             return entry.href !== undefined ? (
               <Link
                 {...props}
+                {...(replace === undefined ? {} : { replace })}
                 renderLink={renderLink}
                 href={entry.href}
                 key={entry.id}
@@ -611,6 +626,7 @@ function useSectionMenuHeight(open: boolean, triggerRef: RefObject<HTMLButtonEle
 }
 
 export interface SectionPickerProps {
+  readonly replace?: boolean;
   readonly closeLabel: string;
   readonly item: NavigationItem<NavigationIcon>;
   readonly pathname: string;
@@ -618,6 +634,7 @@ export interface SectionPickerProps {
   readonly renderLink?: NavigationLinkRenderer;
 }
 export function SectionPicker({
+  replace = false,
   item,
   pathname,
   onNavigate,
@@ -654,6 +671,7 @@ export function SectionPicker({
       </button>
       {open ? (
         <Menu
+          replace={replace}
           closeLabel={closeLabel}
           entries={entries}
           maxHeight={maxHeight}
@@ -669,7 +687,8 @@ export function SectionPicker({
               ? undefined
               : (href, event) => {
                   announce(entries.find((entry) => entry.href === href)?.label ?? item.label);
-                  onNavigate(href, event);
+                  if (replace) onNavigate(href, event, { replace: true });
+                  else onNavigate(href, event);
                 }
           }
           renderLink={renderLink}

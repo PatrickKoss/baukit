@@ -490,6 +490,40 @@ it('uses the body font in a standalone section picker', async () => {
   expect(getComputedStyle(picker).fontFamily).toBe(exampleTokens.typography.family.body);
 });
 
+it.each([false, true])('selects a picker page with replace=%s in the browser', async (replace) => {
+  const navigate = vi.fn();
+  host = document.createElement('div');
+  document.body.append(host);
+  root = createRoot(host);
+  await act(() => {
+    root?.render(
+      <SectionPicker
+        closeLabel="Close"
+        item={section}
+        pathname="/progress"
+        replace={replace}
+        onNavigate={navigate}
+      />,
+    );
+    return Promise.resolve();
+  });
+  await userEvent.click(page.getByRole('button', { name: 'Progress, Overview' }));
+  await expect
+    .element(page.getByRole('menuitem', { name: 'History' }))
+    .not.toHaveAttribute('replace');
+  await userEvent.click(page.getByRole('menuitem', { name: 'History' }));
+  if (replace) {
+    expect(navigate).toHaveBeenCalledWith('/progress/history', expect.anything(), {
+      replace: true,
+    });
+  } else {
+    expect(navigate).toHaveBeenCalledWith('/progress/history', expect.anything());
+  }
+  expect(navigate).toHaveBeenCalledTimes(1);
+  await expect.element(page.getByRole('menu')).not.toBeInTheDocument();
+  await expect.element(page.getByRole('button', { name: 'Progress, Overview' })).toHaveFocus();
+});
+
 function SlotFixture({
   brandLabel = 'Baukit',
   accessoryLabel = 'Workout active',

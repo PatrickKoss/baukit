@@ -260,18 +260,67 @@ it('handles profile menu focus, disabled items, actions, Escape and outside clic
   fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Settings' }), { key: 'Tab' });
   expect(screen.queryByRole('menu')).toBeNull();
 });
-it('lets a picker select a section page after removing the menu', () => {
-  const navigate = vi.fn(() => {
+it.each([undefined, false, true])(
+  'selects a section page after closing with replace=%s',
+  (replace) => {
+    const navigate = vi.fn(() => {
+      expect(screen.queryByRole('menu')).toBeNull();
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'Progress, Overview' }),
+      );
+    });
+    render(
+      <SectionPicker
+        closeLabel="Close"
+        item={section}
+        pathname="/progress"
+        onNavigate={navigate}
+        {...(replace === undefined ? {} : { replace })}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Progress, Overview' }));
+    expect(screen.getByRole('menuitem', { name: 'History' }).hasAttribute('replace')).toBe(false);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'History' }));
+    if (replace === true) {
+      expect(navigate).toHaveBeenCalledWith('/progress/history', expect.anything(), {
+        replace: true,
+      });
+    } else {
+      expect(navigate).toHaveBeenCalledWith('/progress/history', expect.anything());
+    }
+    expect(navigate).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('menu')).toBeNull();
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Progress, Overview' }));
-  });
+  },
+);
+it.each([false, true])('passes replace=%s to custom picker links', (replace) => {
+  const rendered = vi.fn();
+  const navigate = vi.fn();
   render(
-    <SectionPicker closeLabel="Close" item={section} pathname="/progress" onNavigate={navigate} />,
+    <SectionPicker
+      closeLabel="Close"
+      item={section}
+      pathname="/progress"
+      replace={replace}
+      onNavigate={navigate}
+      renderLink={({ replace: linkReplace, ...props }) => {
+        rendered(linkReplace);
+        return <a {...props} data-router="custom" />;
+      }}
+    />,
   );
   fireEvent.click(screen.getByRole('button', { name: 'Progress, Overview' }));
-  fireEvent.click(screen.getByRole('menuitem', { name: 'History' }));
-  expect(navigate).toHaveBeenCalledWith('/progress/history', expect.anything());
-  expect(screen.queryByRole('menu')).toBeNull();
+  expect(rendered).toHaveBeenCalledWith(replace);
+  for (const [value] of rendered.mock.calls) expect(value).toBe(replace);
+  const history = screen.getByRole('menuitem', { name: 'History' });
+  expect(history.getAttribute('data-router')).toBe('custom');
+  fireEvent.click(history);
+  if (replace) {
+    expect(navigate).toHaveBeenCalledWith('/progress/history', expect.anything(), {
+      replace: true,
+    });
+  } else {
+    expect(navigate).toHaveBeenCalledWith('/progress/history', expect.anything());
+  }
 });
 it('keeps an all-disabled profile menu dismissible with the keyboard', () => {
   render(

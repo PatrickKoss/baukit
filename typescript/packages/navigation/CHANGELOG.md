@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add opt-in `SectionPicker replace` on web and native. Pass replacement options to `onNavigate` and web `renderLink` without adding a DOM attribute. Keep history pushes by default.
+
 ## 0.10.13
 
 ### Patch Changes

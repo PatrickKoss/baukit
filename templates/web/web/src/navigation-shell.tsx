@@ -4,6 +4,7 @@ import {
   AppNavigation,
   SectionPicker,
   type NavigationIcon,
+  type Navigate,
 } from "@baukit/navigation/web";
 import type { NavigationItem, NavigationProfile } from "@baukit/navigation";
 import { englishCatalog } from "./localization/en";
@@ -111,11 +112,12 @@ export function NavigationShell({
       }),
     [pathname],
   );
-  function navigate(href: string) {
-    window.history.pushState(null, "", href);
+  const navigate: Navigate = (href, _event, options) => {
+    if (options?.replace === true) window.history.replaceState(null, "", href);
+    else window.history.pushState(null, "", href);
     setPathname(window.location.pathname + window.location.hash);
     onLocationChange?.();
-  }
+  };
   return (
     <>
       <AppNavigation

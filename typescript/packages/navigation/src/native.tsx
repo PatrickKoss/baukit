@@ -119,7 +119,7 @@ export interface NavigationInsets {
   readonly left?: number;
   readonly right?: number;
 }
-export type Navigate = (href: string) => void;
+export type Navigate = (href: string, options?: { readonly replace: boolean }) => void;
 
 type FocusablePressableProps = Omit<ComponentPropsWithRef<typeof Pressable>, 'style'> & {
   readonly theme: NavigationTheme;
@@ -1044,6 +1044,7 @@ export function AppNavigation(props: AppNavigationProps) {
 }
 
 export interface SectionPickerProps {
+  readonly replace?: boolean;
   readonly closeLabel: string;
   readonly item: NavigationItem<NavigationIcon>;
   readonly pathname: string;
@@ -1051,6 +1052,7 @@ export interface SectionPickerProps {
   readonly theme: NavigationTheme;
 }
 export function SectionPicker({
+  replace = false,
   item,
   pathname,
   onNavigate,
@@ -1117,7 +1119,8 @@ export function SectionPicker({
       }}
       onNavigate={(href) => {
         announce(entries.find((entry) => entry.href === href)?.label ?? item.label);
-        onNavigate(href);
+        if (replace) onNavigate(href, { replace: true });
+        else onNavigate(href);
       }}
     />
   );

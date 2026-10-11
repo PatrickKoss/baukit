@@ -428,30 +428,39 @@ it('opens a profile menu, runs an entry and closes', async () => {
   expect(action).toHaveBeenCalledTimes(1);
   expect(screen.queryByRole('menuitem')).toBeNull();
 });
-it('shows a full-width section picker and navigates directly to a subpage', async () => {
-  jest.replaceProperty(Platform, 'OS', 'android');
-  const navigate = jest.fn();
-  await render(
-    <SectionPicker
-      closeLabel={labels.closeLabel}
-      item={section}
-      pathname="/progress"
-      theme={theme}
-      onNavigate={navigate}
-    />,
-  );
-  await fireEvent.press(screen.getByRole('button', { name: 'Progress, Overview' }), event());
-  await fireEvent.press(screen.getByRole('menuitem', { name: 'History' }), event());
-  await act(async () => {
-    await new Promise<void>((resolve) =>
-      requestAnimationFrame(() => {
-        resolve();
-      }),
+it.each([undefined, false, true])(
+  'navigates to a section subpage with replace=%s',
+  async (replace) => {
+    jest.replaceProperty(Platform, 'OS', 'android');
+    const navigate = jest.fn();
+    await render(
+      <SectionPicker
+        closeLabel={labels.closeLabel}
+        item={section}
+        pathname="/progress"
+        theme={theme}
+        onNavigate={navigate}
+        {...(replace === undefined ? {} : { replace })}
+      />,
     );
-  });
-  expect(navigate).toHaveBeenCalledWith('/progress/history');
-  expect(screen.queryByRole('menuitem')).toBeNull();
-});
+    await fireEvent.press(screen.getByRole('button', { name: 'Progress, Overview' }), event());
+    await fireEvent.press(screen.getByRole('menuitem', { name: 'History' }), event());
+    await act(async () => {
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => {
+          resolve();
+        }),
+      );
+    });
+    if (replace === true) {
+      expect(navigate).toHaveBeenCalledWith('/progress/history', { replace: true });
+    } else {
+      expect(navigate).toHaveBeenCalledWith('/progress/history');
+    }
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('menuitem')).toBeNull();
+  },
+);
 it('skips disabled menu entries with the keyboard and dismisses with Escape', async () => {
   const action = jest.fn();
   await render(

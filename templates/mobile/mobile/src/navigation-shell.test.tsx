@@ -2,6 +2,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { Platform } from "react-native";
 import { usePathname, useRouter } from "expo-router";
+import * as navigation from "@baukit/navigation/native";
 import { NavigationBar, WorkspacePicker } from "./navigation-shell";
 import { lightTheme } from "./theme";
 import { initializeI18n } from "./localization/i18n";
@@ -19,14 +20,17 @@ jest.mock("./theme", () => {
   return { ...theme, useTheme: () => ({ theme: theme.lightTheme }) };
 });
 const navigate = jest.fn();
+const replace = jest.fn();
 beforeEach(async () => {
   await initializeI18n("en");
   jest.mocked(useRouter).mockReturnValue({
     ...jest.requireActual<typeof import("expo-router")>("expo-router").router,
     navigate,
+    replace,
   });
   jest.mocked(usePathname).mockReturnValue("/workspace/items");
   navigate.mockClear();
+  replace.mockClear();
 });
 afterEach(() => {
   jest.restoreAllMocks();
@@ -56,7 +60,11 @@ it("rotates the current compact section and keeps the profile last", async () =>
   const links = screen.getAllByRole("link");
   expect(links.at(-1)).toBe(screen.getByRole("link", { name: "Profile" }));
 });
-it("lets the section picker choose a page after closing on Android", async () => {
+it.each([false, true])("applies section picker replacement=%s after closing on Android", async (shouldReplace) => {
+  const Picker = navigation.SectionPicker;
+  jest.spyOn(navigation, "SectionPicker").mockImplementation((props) => (
+    <Picker {...props} replace={shouldReplace} />
+  ));
   jest.replaceProperty(Platform, "OS", "android");
   const frames: FrameRequestCallback[] = [];
   jest.spyOn(globalThis, "requestAnimationFrame").mockImplementation((callback) => {
@@ -73,6 +81,7 @@ it("lets the section picker choose a page after closing on Android", async () =>
     preventDefault: jest.fn(),
   });
   expect(navigate).not.toHaveBeenCalled();
+  expect(replace).not.toHaveBeenCalled();
   expect(screen.queryByRole("menu")).toBeNull();
   expect(frames).toHaveLength(1);
   await act(() => {
@@ -80,8 +89,15 @@ it("lets the section picker choose a page after closing on Android", async () =>
       frame(0);
     });
   });
-  expect(navigate).toHaveBeenCalledWith("/workspace/privacy");
-  expect(navigate).toHaveBeenCalledTimes(1);
+  if (shouldReplace) {
+    expect(replace).toHaveBeenCalledWith("/workspace/privacy");
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(navigate).not.toHaveBeenCalled();
+  } else {
+    expect(navigate).toHaveBeenCalledWith("/workspace/privacy");
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(replace).not.toHaveBeenCalled();
+  }
 });
 it("renders German navigation and menu controls from the catalog", async () => {
   await initializeI18n("de");

@@ -94,8 +94,9 @@ export function NavigationBar({
       {...labels}
       items={items}
       pathname={pathname}
-      onNavigate={(href) => {
-        router.navigate(href);
+      onNavigate={(href, options) => {
+        if (options?.replace === true) router.replace(href);
+        else router.navigate(href);
       }}
       theme={theme}
       insets={insets}
@@ -114,8 +115,9 @@ export function WorkspacePicker() {
       item={workspace}
       closeLabel={labels.closeLabel}
       pathname={pathname}
-      onNavigate={(href) => {
-        router.navigate(href);
+      onNavigate={(href, options) => {
+        if (options?.replace === true) router.replace(href);
+        else router.navigate(href);
       }}
       theme={theme}
     />
