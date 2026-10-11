@@ -103,6 +103,7 @@ it('clears an erased profile session and uses the signed-out route without refre
   });
   await expect(runtime.fetch('/me')).rejects.toMatchObject({ code: 'profile_erased' });
   expect(clearSession).toHaveBeenCalledTimes(1);
+  expect(clearSession).toHaveBeenCalledWith({ reason: 'profile_erased' });
   expect(onProfileErased).toHaveBeenCalledTimes(1);
   expect(order).toEqual(['clear', 'signed-out']);
   expect(accessToken).toHaveBeenCalledTimes(1);

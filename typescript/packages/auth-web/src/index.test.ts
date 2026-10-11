@@ -123,6 +123,124 @@ function makeClient(test: TestEnvironment): OidcClient {
 }
 
 describe('OidcClient', () => {
+  it('clears silently without a reason and leaves normal login unchanged', async () => {
+    const test = makeEnvironment(() => Promise.resolve(discoveryResponse()));
+    const client = makeClient(test);
+    const expired = vi.fn();
+    client.subscribeSessionExpired(expired);
+    test.localStorage.setItem('lifecycle:tokens', storedTokens());
+    test.sessionStorage.setItem('lifecycle:transaction', '{}');
+
+    client.clearSession();
+
+    expect(client.hasSession()).toBe(false);
+    expect(test.localStorage.length).toBe(0);
+    expect(test.sessionStorage.length).toBe(0);
+    expect(expired).not.toHaveBeenCalled();
+    await client.login();
+    expect(new URL(required(test.navigations.at(-1))).searchParams.has('prompt')).toBe(false);
+  });
+
+  it('persists fresh authentication after erasure until a successful callback', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(discoveryResponse());
+    const test = makeEnvironment(fetch);
+    const client = makeClient(test);
+    test.localStorage.setItem('lifecycle:tokens', storedTokens());
+    test.sessionStorage.setItem('lifecycle:transaction', '{}');
+    const throwing = vi.fn(() => {
+      throw new Error('observer');
+    });
+    const observed: { hasSession: boolean; marker: string | null }[] = [];
+    const expired = vi.fn(() => {
+      observed.push({
+        hasSession: client.hasSession(),
+        marker: test.localStorage.getItem('lifecycle:force-login'),
+      });
+    });
+    client.subscribeSessionExpired(throwing);
+    client.subscribeSessionExpired(expired);
+
+    expect(() => {
+      client.clearSession({ reason: 'profile_erased' });
+    }).not.toThrow();
+
+    expect(throwing).toHaveBeenCalledTimes(1);
+    expect(expired).toHaveBeenCalledTimes(1);
+    expect(expired).toHaveBeenCalledWith({ type: 'session-expired', reason: 'profile_erased' });
+    expect(observed).toEqual([{ hasSession: false, marker: '1' }]);
+    expect(test.sessionStorage.length).toBe(0);
+    expect(test.localStorage.getItem('lifecycle:tokens')).toBeNull();
+    client.clearSession();
+    expect(expired).toHaveBeenCalledTimes(1);
+
+    const reloaded = makeClient(test);
+    await reloaded.login();
+    const authorization = new URL(required(test.navigations.at(-1)));
+    expect(authorization.searchParams.get('prompt')).toBe('login');
+    test.setCurrentUrl(
+      `https://app.example.test/callback?code=fresh&state=${required(authorization.searchParams.get('state'))}`,
+    );
+    fetch.mockResolvedValue(jsonResponse({ access_token: 'fresh-access', expires_in: 60 }));
+    await expect(reloaded.handleCallback()).resolves.toBe(true);
+    expect(test.localStorage.getItem('lifecycle:force-login')).toBeNull();
+    await expect(reloaded.accessToken()).resolves.toBe('fresh-access');
+    await reloaded.login();
+    expect(new URL(required(test.navigations.at(-1))).searchParams.has('prompt')).toBe(false);
+  });
+
+  it.each(['exchange', 'state', 'provider'] as const)(
+    'keeps fresh authentication after a failed %s callback',
+    async (failure) => {
+      const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(discoveryResponse());
+      const test = makeEnvironment(fetch);
+      const client = makeClient(test);
+      client.clearSession({ reason: 'profile_erased' });
+      await client.login();
+      const authorization = new URL(required(test.navigations.at(-1)));
+      const state =
+        failure === 'state' ? 'wrong' : required(authorization.searchParams.get('state'));
+      test.setCurrentUrl(
+        `https://app.example.test/callback?state=${state}&${failure === 'provider' ? 'error=access_denied' : 'code=fresh'}`,
+      );
+      fetch.mockResolvedValue(jsonResponse({ error: 'invalid_grant' }, 400));
+
+      await expect(client.handleCallback()).rejects.toBeInstanceOf(OidcError);
+
+      expect(test.localStorage.getItem('lifecycle:force-login')).toBe('1');
+      expect(client.hasSession()).toBe(false);
+      fetch.mockResolvedValue(discoveryResponse());
+      await makeClient(test).login();
+      expect(new URL(required(test.navigations.at(-1))).searchParams.get('prompt')).toBe('login');
+    },
+  );
+
+  it('keeps the erasure marker when a callback finishes after local clearing', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(discoveryResponse());
+    const test = makeEnvironment(fetch);
+    const client = makeClient(test);
+    await client.login();
+    const state = required(new URL(required(test.navigations.at(-1))).searchParams.get('state'));
+    test.setCurrentUrl(`https://app.example.test/callback?state=${state}&code=fresh`);
+    let complete: ((response: Response) => void) | undefined;
+    fetch.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    );
+    const callback = client.handleCallback();
+    await vi.waitFor(() => {
+      expect(complete).toBeDefined();
+    });
+
+    client.clearSession({ reason: 'profile_erased' });
+    required(complete)(jsonResponse({ access_token: 'late-access', expires_in: 60 }));
+    await callback;
+
+    expect(client.hasSession()).toBe(false);
+    expect(test.localStorage.getItem('lifecycle:force-login')).toBe('1');
+  });
+
   it('discovers endpoints and completes login, deduplicated callback, refresh, and logout', async () => {
     const requests: { readonly url: string; readonly init: RequestInit | undefined }[] = [];
     let tokenCalls = 0;

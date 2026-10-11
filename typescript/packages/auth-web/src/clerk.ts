@@ -1,5 +1,5 @@
 import { Clerk } from '@clerk/clerk-js';
-import type { SessionExpiredEvent } from './index.js';
+import type { ClearSessionOptions, SessionExpiredEvent, SessionExpiredReason } from './index.js';
 
 export interface ClerkWebConfig {
   readonly publishableKey: string;
@@ -48,9 +48,7 @@ export class ClerkWebClient {
       ...(this.config.jwtTemplate === undefined ? {} : { template: this.config.jwtTemplate }),
     });
     if (token == null) {
-      this.clearSession();
-      for (const listener of this.listeners)
-        listener({ type: 'session-expired', reason: 'refresh_rejected' });
+      this.expireSession('refresh_rejected');
       return undefined;
     }
     return token;
@@ -63,7 +61,11 @@ export class ClerkWebClient {
     };
   }
 
-  public clearSession(): void {
+  public clearSession(options: ClearSessionOptions = {}): void {
+    if (options.reason !== undefined) {
+      this.expireSession(options.reason);
+      return;
+    }
     this.cleared = true;
   }
 
@@ -72,5 +74,17 @@ export class ClerkWebClient {
     await this.load();
     await this.sdk.signOut({ redirectUrl: this.config.redirectUri });
     return true;
+  }
+
+  private expireSession(reason: SessionExpiredReason): void {
+    this.clearSession();
+    for (const listener of this.listeners) {
+      try {
+        listener({ type: 'session-expired', reason });
+      } catch {
+        // Observers cannot interrupt session expiry.
+        continue;
+      }
+    }
   }
 }

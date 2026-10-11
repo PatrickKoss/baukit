@@ -154,11 +154,11 @@ describe('useAuth', () => {
     expect(unsubscribeExpired).toHaveBeenCalledTimes(1);
   });
 
-  it('announces an expired session', async () => {
+  it.each(['refresh_rejected', 'refresh_unavailable', 'profile_erased'] as const)('announces an expired session for %s', async (reason) => {
     const { result } = await renderAuth();
 
     await act(() => {
-      expiredListener?.({ type: 'session-expired', reason: 'refresh_rejected' });
+      expiredListener?.({ type: 'session-expired', reason });
     });
 
     expect(result.current.sessionExpired).toBe(true);

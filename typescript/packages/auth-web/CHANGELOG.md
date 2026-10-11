@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add `profile_erased` to session-expired reasons and accept it in `clearSession`. Plain clearing stays silent.
+- Persist fresh OIDC authentication after erasure. The next sign-in requests `prompt=login` until a successful sign-in clears the marker.
+- Isolate session-expired listener errors in the provider adapters. Document Clerk and browser WorkOS re-onboarding requirements.
+
 ## 0.10.18
 
 ### Patch Changes

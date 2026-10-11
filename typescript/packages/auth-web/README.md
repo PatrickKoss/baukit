@@ -26,6 +26,10 @@ Pass a unique `storageKeyPrefix` when more than one client for the same issuer/c
 
 Terminal refresh rejection (`invalid_grant`, `invalid_token`, or HTTP 400/401) clears tokens, emits `subscribeSessionExpired()`, and resolves to `undefined`. Transient network/provider failures preserve the session and reject with a sanitized `OidcError` whose `retryable` property is `true`.
 
+`subscribeSessionExpired()` reports `refresh_rejected`, `refresh_unavailable`, or `profile_erased`. On a backend 401 with code `profile_erased`, call `clearSession({ reason: 'profile_erased' })`. It clears the local session and emits the reason once per call. Plain `clearSession()` emits nothing. OIDC persists a force-login marker under `storageKeyPrefix`, so the next `login()` requests `prompt=login` even after a reload. A failed or cancelled login keeps the marker; a successful sign-in removes it. Fresh authentication gives the provider a new `auth_time` for profile re-onboarding.
+
+The browser marker uses localStorage key `<storageKeyPrefix>:force-login` and is removed only after a successful callback token exchange stores the new session.
+
 Display `safeAuthErrorMessage(error)` at the UI boundary. It returns only library-owned allowlisted messages and never provider descriptions, response bodies, authorization codes, or token content.
 
 ## Boundaries
@@ -53,3 +57,9 @@ URI. Network refresh failures retain the session; terminal rejection emits the
 same session-expired event as OIDC. Both adapters implement `hasSession`,
 `handleCallback`, `login`, `accessToken`, `clearSession`, `logout` and
 `subscribeSessionExpired`.
+
+Clerk and browser WorkOS emit `profile_erased` and block local token access, but
+do not persist a force-login marker or force fresh provider authentication. Their
+SDK adapters do not expose that control through the current sign-in contract.
+Configure a JWT template with `auth_time` for re-onboarding and require fresh
+authentication in the provider integration before admitting an erased subject.

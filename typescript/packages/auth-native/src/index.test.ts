@@ -11,6 +11,7 @@ import {
   type FetchPort,
   type NativeOidcEnvironment,
   type NativeOidcConfig,
+  type OidcSession,
   type SecureStoragePort,
 } from './index.js';
 
@@ -72,6 +73,7 @@ class FakeBrowser implements BrowserFlowPort {
 
 interface Harness {
   readonly client: NativeOidcClient;
+  readonly environment: NativeOidcEnvironment;
   readonly storage: MemoryStorage;
   readonly browser: FakeBrowser;
   readonly requests: { readonly url: string; readonly init: RequestInit | undefined }[];
@@ -144,6 +146,7 @@ function makeHarness(options: HarnessOptions = {}): Harness {
       },
       environment,
     ),
+    environment,
     storage,
     browser,
     requests,
@@ -196,6 +199,91 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe('NativeOidcClient', () => {
+  it('clears silently without a reason and leaves normal sign-in unchanged', async () => {
+    const test = makeHarness();
+    await test.client.signIn();
+    const expired = vi.fn();
+    test.client.subscribeSessionExpired(expired);
+
+    await test.client.clearSession();
+
+    expect(test.client.session()).toBeUndefined();
+    expect(test.storage.values.has(sessionKey)).toBe(false);
+    expect(test.storage.values.has(forceLoginKey)).toBe(false);
+    expect(expired).not.toHaveBeenCalled();
+    await test.client.signIn();
+    expect(test.browser.authorizationRequests.at(-1)?.prompt).toBeUndefined();
+  });
+
+  it('persists fresh authentication after erasure across reload and cancellation', async () => {
+    const test = makeHarness();
+    await test.client.signIn();
+    const throwing = vi.fn(() => {
+      throw new Error('observer');
+    });
+    const observed: { session: OidcSession | undefined; marker: string | undefined }[] = [];
+    const expired = vi.fn(() => {
+      observed.push({
+        session: test.client.session(),
+        marker: test.storage.values.get(forceLoginKey),
+      });
+    });
+    test.client.subscribeSessionExpired(throwing);
+    test.client.subscribeSessionExpired(expired);
+
+    await expect(test.client.clearSession({ reason: 'profile_erased' })).resolves.toBeUndefined();
+
+    expect(test.storage.values.has(sessionKey)).toBe(false);
+    expect(throwing).toHaveBeenCalledTimes(1);
+    expect(expired).toHaveBeenCalledTimes(1);
+    expect(expired).toHaveBeenCalledWith({ type: 'session-expired', reason: 'profile_erased' });
+    expect(observed).toEqual([{ session: undefined, marker: '1' }]);
+    await test.client.clearSession();
+    expect(expired).toHaveBeenCalledTimes(1);
+    const reloaded = new NativeOidcClient(
+      {
+        issuer,
+        clientId: 'product-mobile',
+        redirectUri: 'product://oauth',
+        storageKeyPrefix: 'native-test',
+      },
+      test.environment,
+    );
+    test.browser.authorizationResults = [{ type: 'cancel' }];
+    await expect(reloaded.signIn()).resolves.toEqual({ status: 'cancelled', reason: 'cancel' });
+    expect(test.browser.authorizationRequests.at(-1)?.prompt).toBe('login');
+    expect(test.storage.values.get(forceLoginKey)).toBe('1');
+
+    await expect(reloaded.signIn()).resolves.toEqual({ status: 'success', subject: 'subject-123' });
+    expect(test.browser.authorizationRequests.at(-1)?.prompt).toBe('login');
+    expect(test.storage.values.has(forceLoginKey)).toBe(false);
+    await reloaded.signIn();
+    expect(test.browser.authorizationRequests.at(-1)?.prompt).toBeUndefined();
+  });
+
+  it.each(['exchange', 'state', 'provider', 'userinfo'] as const)(
+    'keeps fresh authentication after failed %s sign-in',
+    async (failure) => {
+      const test = makeHarness({
+        ...(failure === 'exchange' ? { tokenResponses: [{ access_token: false }] } : {}),
+        ...(failure === 'userinfo' ? { userInfo: { sub: '' } } : {}),
+      });
+      await test.client.clearSession({ reason: 'profile_erased' });
+      test.browser.authorizationResults = [
+        failure === 'provider'
+          ? { type: 'error' }
+          : successfulAuthorization(failure === 'state' ? { state: 'wrong' } : {}),
+      ];
+
+      await expect(test.client.signIn()).rejects.toBeInstanceOf(OidcError);
+
+      expect(test.browser.authorizationRequests.at(-1)?.prompt).toBe('login');
+      expect(test.storage.values.get(forceLoginKey)).toBe('1');
+      expect(test.storage.values.has(sessionKey)).toBe(false);
+      expect(test.client.session()).toBeUndefined();
+    },
+  );
+
   it.each([
     'app:oidc',
     '@baukit/auth',

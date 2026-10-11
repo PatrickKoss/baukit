@@ -145,3 +145,106 @@ it('uses WorkOS public-client PKCE, JSON exchange, refresh rotation and session 
     redirectUri: 'app://oauth',
   });
 });
+
+describe('Clerk native local clearing', () => {
+  it.each([undefined, 'profile_erased'] as const)(
+    'clears with reason %s and isolates expiry listeners',
+    async (reason) => {
+      const client = new ClerkNativeClient();
+      client.bind({
+        subject: () => 'user_123',
+        getToken: () => Promise.resolve(token()),
+        signIn: () => Promise.resolve(true),
+        signOut: () => Promise.resolve(),
+      });
+      await client.initialize();
+      const throwing = vi.fn(() => {
+        throw new Error('observer');
+      });
+      const expired = vi.fn();
+      client.subscribeSessionExpired(throwing);
+      client.subscribeSessionExpired(expired);
+      await expect(
+        client.clearSession(reason === undefined ? undefined : { reason }),
+      ).resolves.toBeUndefined();
+      expect(client.session()).toBeUndefined();
+      expect(await client.accessToken()).toBeUndefined();
+      expect(expired).toHaveBeenCalledTimes(reason === undefined ? 0 : 1);
+      expect(throwing).toHaveBeenCalledTimes(reason === undefined ? 0 : 1);
+      if (reason !== undefined)
+        expect(expired).toHaveBeenCalledWith({ type: 'session-expired', reason });
+    },
+  );
+});
+
+it('persists WorkOS fresh authentication across erasure, reload, failed exchange and success', async () => {
+  const values = new Map<string, string>();
+  const authorize = vi.fn<NativeOidcEnvironment['browser']['authorize']>().mockResolvedValue({
+    type: 'success',
+    code: 'code_123',
+    state: 'state',
+    expectedState: 'state',
+    codeVerifier: 'verifier',
+  });
+  const fetch = vi
+    .fn<NativeOidcEnvironment['fetch']>()
+    .mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ access_token: token(), refresh_token: 'refresh_1' })),
+      ),
+    );
+  const environment: NativeOidcEnvironment = {
+    fetch,
+    now: () => 1000,
+    browser: { authorize, endSession: () => Promise.resolve(true) },
+    storage: {
+      get: (key) => Promise.resolve(values.get(key) ?? null),
+      set: (key, value) => {
+        values.set(key, value);
+        return Promise.resolve();
+      },
+      delete: (key) => {
+        values.delete(key);
+        return Promise.resolve();
+      },
+    },
+  };
+  const config = {
+    issuer: 'https://api.workos.com/',
+    clientId: 'client_app',
+    redirectUri: 'app://oauth',
+    storageKeyPrefix: 'workos-test',
+  };
+  const client = createWorkOsNativeClient(config, environment);
+  await client.signIn();
+  const expired = vi.fn();
+  client.subscribeSessionExpired(() => {
+    throw new Error('observer');
+  });
+  client.subscribeSessionExpired(expired);
+  await client.clearSession();
+  expect(expired).not.toHaveBeenCalled();
+  expect(values.has('workos-test.session')).toBe(false);
+  expect(values.has('workos-test.force-login')).toBe(false);
+  await client.signIn();
+  expect(authorize.mock.calls.at(-1)?.[0].prompt).toBeUndefined();
+
+  await client.clearSession({ reason: 'profile_erased' });
+  expect(expired).toHaveBeenCalledTimes(1);
+  expect(expired).toHaveBeenCalledWith({ type: 'session-expired', reason: 'profile_erased' });
+  expect(client.session()).toBeUndefined();
+  expect(values.has('workos-test.session')).toBe(false);
+  expect(values.get('workos-test.force-login')).toBe('1');
+  const reloaded = createWorkOsNativeClient(config, environment);
+  fetch.mockResolvedValueOnce(
+    new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400 }),
+  );
+  await expect(reloaded.signIn()).rejects.toMatchObject({ code: 'token_exchange_failed' });
+  expect(authorize.mock.calls.at(-1)?.[0].prompt).toBe('login');
+  expect(values.get('workos-test.force-login')).toBe('1');
+  await expect(reloaded.signIn()).resolves.toEqual({ status: 'success', subject: 'user_123' });
+  expect(authorize.mock.calls.at(-1)?.[0].prompt).toBe('login');
+  expect(values.has('workos-test.force-login')).toBe(false);
+  await reloaded.signIn();
+  expect(authorize.mock.calls.at(-1)?.[0].prompt).toBeUndefined();
+});

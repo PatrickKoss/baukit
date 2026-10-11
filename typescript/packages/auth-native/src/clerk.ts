@@ -1,7 +1,9 @@
 import {
   OidcError,
+  type ClearSessionOptions,
   type OidcSession,
   type SessionExpiredEvent,
+  type SessionExpiredReason,
   type SignInResult,
   type SignOutResult,
 } from './index.js';
@@ -71,10 +73,8 @@ export class ClerkNativeClient {
     const token = await port.getToken(options.forceRefresh ?? false);
     if (token === null) {
       const hadSession = this.current !== undefined;
-      await this.clearSession();
-      if (hadSession)
-        for (const listener of this.expired)
-          listener({ type: 'session-expired', reason: 'refresh_rejected' });
+      if (hadSession) await this.expireSession('refresh_rejected');
+      else await this.clearSession();
       return undefined;
     }
     const timing = tokenTiming(token);
@@ -93,7 +93,8 @@ export class ClerkNativeClient {
     return { status: 'success', subject: this.current.subject };
   }
 
-  public clearSession(): Promise<void> {
+  public clearSession(options: ClearSessionOptions = {}): Promise<void> {
+    if (options.reason !== undefined) return this.expireSession(options.reason);
     this.cleared = true;
     this.setSession(undefined);
     return Promise.resolve();
@@ -115,5 +116,17 @@ export class ClerkNativeClient {
     if (session?.accessToken === this.current?.accessToken) return;
     this.current = session;
     for (const listener of this.listeners) listener(session);
+  }
+
+  private async expireSession(reason: SessionExpiredReason): Promise<void> {
+    await this.clearSession();
+    for (const listener of this.expired) {
+      try {
+        listener({ type: 'session-expired', reason });
+      } catch {
+        // Observers cannot interrupt session expiry.
+        continue;
+      }
+    }
   }
 }

@@ -105,7 +105,11 @@ interface TokenResponse {
   readonly id_token?: string;
 }
 
-export type SessionExpiredReason = 'refresh_rejected' | 'refresh_unavailable';
+export type SessionExpiredReason = 'refresh_rejected' | 'refresh_unavailable' | 'profile_erased';
+
+export interface ClearSessionOptions {
+  readonly reason?: 'profile_erased';
+}
 
 export interface SessionExpiredEvent {
   readonly type: 'session-expired';
@@ -147,6 +151,7 @@ export function buildAuthorizationUrl(
   >,
   authorizationEndpoint: string,
   pkce: PkceAuthorizationRequest,
+  prompt?: 'login',
 ): URL {
   const endpoint = new URL(authorizationEndpoint);
   endpoint.search = new URLSearchParams({
@@ -162,6 +167,7 @@ export function buildAuthorizationUrl(
     endpoint.searchParams.set('audience', requiredText(config.audience, 'OIDC audience'));
   if (config.resource !== undefined)
     endpoint.searchParams.set('resource', requiredText(config.resource, 'OIDC resource'));
+  if (prompt !== undefined) endpoint.searchParams.set('prompt', prompt);
   return endpoint;
 }
 
@@ -176,6 +182,7 @@ export class OidcClient {
   private readonly environment: OidcClientEnvironment;
   private readonly tokenStorageKey: string;
   private readonly transactionStorageKey: string;
+  private readonly forceLoginStorageKey: string;
   private readonly sessionExpiredListeners = new Set<SessionExpiredListener>();
   private metadataPromise: Promise<OidcProviderMetadata> | undefined;
   private callbackPromise: Promise<boolean> | undefined;
@@ -190,6 +197,7 @@ export class OidcClient {
     this.environment = environment;
     this.tokenStorageKey = `${this.config.storageKeyPrefix}:tokens`;
     this.transactionStorageKey = `${this.config.storageKeyPrefix}:transaction`;
+    this.forceLoginStorageKey = `${this.config.storageKeyPrefix}:force-login`;
   }
 
   public hasSession(): boolean {
@@ -222,10 +230,14 @@ export class OidcClient {
       this.transactionStorageKey,
       JSON.stringify({ state, verifier }),
     );
-    const authorizationUrl = buildAuthorizationUrl(this.config, metadata.authorizationEndpoint, {
-      state,
-      challenge,
-    });
+    const authorizationUrl = buildAuthorizationUrl(
+      this.config,
+      metadata.authorizationEndpoint,
+      { state, challenge },
+      this.environment.localStorage.getItem(this.forceLoginStorageKey) === null
+        ? undefined
+        : 'login',
+    );
     this.environment.navigate(authorizationUrl.toString());
   }
 
@@ -285,7 +297,11 @@ export class OidcClient {
   }
 
   /** Clears local authentication state without contacting the provider. */
-  public clearSession(): void {
+  public clearSession(options: ClearSessionOptions = {}): void {
+    if (options.reason !== undefined) {
+      this.expireSession(options.reason);
+      return;
+    }
     this.sessionRevision += 1;
     this.environment.localStorage.removeItem(this.tokenStorageKey);
     this.environment.sessionStorage.removeItem(this.transactionStorageKey);
@@ -334,6 +350,7 @@ export class OidcClient {
     );
     if (this.sessionRevision === sessionRevision) {
       this.writeTokens(tokens);
+      this.environment.localStorage.removeItem(this.forceLoginStorageKey);
     }
     return true;
   }
@@ -437,6 +454,9 @@ export class OidcClient {
 
   private expireSession(reason: SessionExpiredReason): void {
     this.clearSession();
+    if (reason === 'profile_erased') {
+      this.environment.localStorage.setItem(this.forceLoginStorageKey, '1');
+    }
     const event: SessionExpiredEvent = { type: 'session-expired', reason };
     for (const listener of this.sessionExpiredListeners) {
       try {

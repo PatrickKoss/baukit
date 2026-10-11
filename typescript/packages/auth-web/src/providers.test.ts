@@ -137,3 +137,44 @@ describe('WorkOS browser contract', () => {
     expect(expired).toHaveBeenCalledTimes(1);
   });
 });
+
+describe.each([
+  [
+    'Clerk',
+    () => new ClerkWebClient({ publishableKey: 'pk_test', redirectUri: 'https://app.test' }),
+  ],
+  [
+    'WorkOS',
+    () => new WorkOsWebClient({ clientId: 'client_app', redirectUri: 'https://app.test' }),
+  ],
+] as const)('%s local clearing', (_provider, create) => {
+  it('emits nothing without a reason and blocks token access', async () => {
+    const client = create();
+    await client.handleCallback();
+    const expired = vi.fn();
+    client.subscribeSessionExpired(expired);
+    client.clearSession();
+    expect(client.hasSession()).toBe(false);
+    expect(await client.accessToken()).toBeUndefined();
+    expect(expired).not.toHaveBeenCalled();
+  });
+
+  it('emits profile_erased once and isolates throwing listeners', async () => {
+    const client = create();
+    await client.handleCallback();
+    const throwing = vi.fn(() => {
+      throw new Error('observer');
+    });
+    const expired = vi.fn();
+    client.subscribeSessionExpired(throwing);
+    client.subscribeSessionExpired(expired);
+    expect(() => {
+      client.clearSession({ reason: 'profile_erased' });
+    }).not.toThrow();
+    expect(client.hasSession()).toBe(false);
+    expect(await client.accessToken()).toBeUndefined();
+    expect(throwing).toHaveBeenCalledTimes(1);
+    expect(expired).toHaveBeenCalledTimes(1);
+    expect(expired).toHaveBeenCalledWith({ type: 'session-expired', reason: 'profile_erased' });
+  });
+});

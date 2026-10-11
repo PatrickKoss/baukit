@@ -2,7 +2,7 @@ import { createApiRuntime } from '@baukit/api-runtime';
 import type { ApiEnvironmentConfig, ApiRuntime, FetchImplementation } from '@baukit/api-runtime';
 
 export interface AuthTokenClient {
-  clearSession(): void | Promise<void>;
+  clearSession(options?: { readonly reason?: 'profile_erased' }): void | Promise<void>;
   accessToken(options?: { readonly forceRefresh?: boolean }): Promise<string | undefined>;
 }
 
@@ -20,7 +20,7 @@ export function createAuthenticatedApiRuntime(options: AuthenticatedApiOptions):
     ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
     tokenProvider: async () => (await options.auth.accessToken()) ?? null,
     onProfileErased: async () => {
-      await options.auth.clearSession();
+      await options.auth.clearSession({ reason: 'profile_erased' });
       await options.onProfileErased?.();
     },
     onUnauthorized: async ({ canRetry }) => {

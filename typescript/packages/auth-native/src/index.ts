@@ -103,7 +103,11 @@ export type SignOutResult =
   | { readonly providerLogout: 'unavailable' }
   | { readonly providerLogout: 'failed' };
 
-export type SessionExpiredReason = 'refresh_rejected' | 'refresh_unavailable';
+export type SessionExpiredReason = 'refresh_rejected' | 'refresh_unavailable' | 'profile_erased';
+
+export interface ClearSessionOptions {
+  readonly reason?: 'profile_erased';
+}
 
 export interface SessionExpiredEvent {
   readonly type: 'session-expired';
@@ -397,7 +401,11 @@ export class NativeOidcClient {
   }
 
   /** Clears local authentication state without contacting the provider. */
-  public async clearSession(): Promise<void> {
+  public async clearSession(options: ClearSessionOptions = {}): Promise<void> {
+    if (options.reason !== undefined) {
+      await this.expireSession(options.reason);
+      return;
+    }
     this.setCurrentSession(undefined);
     try {
       await this.environment.storage.delete(this.sessionStorageKey);
@@ -556,6 +564,7 @@ export class NativeOidcClient {
 
   private async expireSession(reason: SessionExpiredReason): Promise<void> {
     await this.clearSession();
+    if (reason === 'profile_erased') await this.setForceLogin();
     const event: SessionExpiredEvent = { type: 'session-expired', reason };
     for (const listener of this.sessionExpiredListeners) {
       try {

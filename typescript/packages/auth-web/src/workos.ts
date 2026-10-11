@@ -1,5 +1,10 @@
 import { createClient, LoginRequiredError, RefreshError } from '@workos-inc/authkit-js';
-import { OidcError, type SessionExpiredEvent } from './index.js';
+import {
+  OidcError,
+  type ClearSessionOptions,
+  type SessionExpiredEvent,
+  type SessionExpiredReason,
+} from './index.js';
 
 export interface WorkOsWebConfig {
   readonly clientId: string;
@@ -21,7 +26,7 @@ export class WorkOsWebClient {
       redirectUri: this.config.redirectUri,
       ...(this.config.apiHostname === undefined ? {} : { apiHostname: this.config.apiHostname }),
       onRefreshFailure: () => {
-        this.expire();
+        this.expireSession('refresh_rejected');
       },
     }).then((sdk) => {
       this.sdk = sdk;
@@ -56,7 +61,7 @@ export class WorkOsWebClient {
         cause instanceof LoginRequiredError ||
         (cause instanceof RefreshError && !cause.isTransient)
       ) {
-        this.expire();
+        this.expireSession('refresh_rejected');
         return undefined;
       }
       throw new OidcError('refresh_failed', { retryable: true });
@@ -70,7 +75,11 @@ export class WorkOsWebClient {
     };
   }
 
-  public clearSession(): void {
+  public clearSession(options: ClearSessionOptions = {}): void {
+    if (options.reason !== undefined) {
+      this.expireSession(options.reason);
+      return;
+    }
     this.cleared = true;
   }
 
@@ -80,9 +89,15 @@ export class WorkOsWebClient {
     return true;
   }
 
-  private expire(): void {
+  private expireSession(reason: SessionExpiredReason): void {
     this.clearSession();
-    for (const listener of this.listeners)
-      listener({ type: 'session-expired', reason: 'refresh_rejected' });
+    for (const listener of this.listeners) {
+      try {
+        listener({ type: 'session-expired', reason });
+      } catch {
+        // Observers cannot interrupt session expiry.
+        continue;
+      }
+    }
   }
 }

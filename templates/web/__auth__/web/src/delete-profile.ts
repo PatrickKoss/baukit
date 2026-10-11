@@ -84,7 +84,7 @@ export function deleteProfile(options: {
       if (keyCleanupError !== undefined) throw keyCleanupError;
     },
     signOut: () => {
-      authClient.clearSession();
+      authClient.clearSession({ reason: 'profile_erased' });
       options.onSignedOut();
       return Promise.resolve();
     },

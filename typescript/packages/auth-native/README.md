@@ -28,6 +28,8 @@ The issuer is resolved only through `/.well-known/openid-configuration`; provide
 
 Terminal refresh rejection (`invalid_grant`, `invalid_token`, or HTTP 400/401) clears the session and resolves to `undefined`. Subscribe with `subscribeSessionExpired()` to stop schedulers and move UI to signed-out state. Network, malformed-response, rate-limit, and provider 5xx failures preserve the stored session and reject with a sanitized `OidcError` whose `retryable` property is `true`.
 
+`subscribeSessionExpired()` reports `refresh_rejected`, `refresh_unavailable`, or `profile_erased`. On a backend 401 with code `profile_erased`, call `clearSession({ reason: 'profile_erased' })`. It clears the local session and emits the reason once per call. Plain `clearSession()` emits nothing. OIDC persists a force-login marker under `storageKeyPrefix`, so the next `signIn()` requests `prompt=login` even after a reload. A failed or cancelled login keeps the marker; a successful sign-in removes it. Fresh authentication gives the provider a new `auth_time` for profile re-onboarding.
+
 `signOut()` deletes the local session before provider interaction. It then attempts the discovered end-session endpoint. A missing, cancelled, or failing provider logout persists a fail-safe flag so the next `signIn()` includes `prompt=login`; that flag is removed only after provider logout or a later successful sign-in. Corrupt secure-storage state is deleted and treated as signed out.
 
 Use `safeAuthErrorMessage(error)` at UI boundaries. Errors contain only allowlisted library codes/messages and optional HTTP status numbers. Provider bodies, authorization codes, tokens, and adapter exception messages are never copied into errors or logs.
@@ -107,3 +109,9 @@ JSON public-client API. It stores refresh tokens in secure storage and clears
 them before ending the provider session. No API key belongs in the app.
 Provider clients share `initialize`, `session`, `subscribe`, `accessToken`,
 `signIn`, `signOut`, `clearSession` and `subscribeSessionExpired` with OIDC.
+
+Native WorkOS uses `NativeOidcClient` and inherits the persisted `prompt=login`
+request. Clerk emits `profile_erased` and clears the local session, but its SDK
+bridge does not persist a force-login marker or force fresh authentication.
+Clerk needs a JWT template with `auth_time` for re-onboarding and fresh provider
+authentication before the backend can admit an erased subject.

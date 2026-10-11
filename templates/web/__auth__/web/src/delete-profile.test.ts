@@ -54,6 +54,8 @@ describe('delete profile service', () => {
       });
       expect(result.status).toBe(status === 200 ? 'erased' : 'pending');
       expect(localStorage.length).toBe(0);
+      expect(authClient.clearSession).toHaveBeenCalledOnce();
+      expect(authClient.clearSession).toHaveBeenCalledWith({ reason: 'profile_erased' });
     },
   );
 

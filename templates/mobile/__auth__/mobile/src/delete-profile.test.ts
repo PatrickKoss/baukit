@@ -6,14 +6,14 @@ const mockRemoveKey = jest.fn((key: string) => {
   return Promise.resolve();
 });
 const mockReadToken = jest.fn(() => Promise.resolve('token-before-deletion'));
-const mockClearSession = jest.fn(() => Promise.resolve());
+const mockClearSession = jest.fn<Promise<void>, [{ readonly reason?: 'profile_erased' }?]>(() => Promise.resolve());
 const mockDeletePreference = jest.fn(() => Promise.resolve());
 const mockCloseDatabase = jest.fn(() => Promise.resolve());
 
 jest.mock('./auth', () => ({
   authClient: {
     accessToken: () => mockReadToken(),
-    clearSession: () => mockClearSession(),
+    clearSession: (options?: { readonly reason?: 'profile_erased' }) => mockClearSession(options),
   },
 }));
 jest.mock('expo-crypto', () => {
@@ -88,6 +88,8 @@ describe('delete profile service', () => {
       const result = await deleteProfile(deps);
       expect(result.status).toBe(status === 200 ? 'erased' : 'pending');
       expect(mockKeys.size).toBe(0);
+      expect(mockClearSession).toHaveBeenCalledTimes(1);
+      expect(mockClearSession).toHaveBeenCalledWith({ reason: 'profile_erased' });
     },
   );
 

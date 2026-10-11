@@ -110,6 +110,6 @@ export function deleteProfile(options: {
       if (keyCleanupError !== undefined) failures.push(keyCleanupError);
       if (failures.length > 0) throw new AggregateError(failures, 'Local profile erasure failed.');
     },
-    signOut: () => authClient.clearSession(),
+    signOut: () => authClient.clearSession({ reason: 'profile_erased' }),
   });
 }

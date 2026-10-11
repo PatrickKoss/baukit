@@ -168,7 +168,8 @@ describe('authClient in the browser', () => {
 it('clears local tokens for profile erasure without a logout redirect', async () => {
   vi.stubGlobal('window', { location: { origin: 'https://app.example.test' } });
   const auth = await loadAuthClient();
-  auth.clearSession();
+  auth.clearSession({ reason: 'profile_erased' });
   expect(oidc.clearSession).toHaveBeenCalledOnce();
+  expect(oidc.clearSession).toHaveBeenCalledWith({ reason: 'profile_erased' });
   expect(oidc.logout).not.toHaveBeenCalled();
 });
