@@ -2,9 +2,19 @@
 
 ## Unreleased
 
+## 0.10.19
+
 - Add `profile_erased` to session-expired reasons and accept it in `clearSession`. Plain clearing stays silent.
 - Persist fresh OIDC authentication after erasure. The next sign-in requests `prompt=login` until a successful sign-in clears the marker.
 - Isolate session-expired listener errors in the Clerk adapter. Document Clerk re-onboarding requirements.
+
+### Minor Changes
+
+- 43021fe: Add the `profile_erased` session-expired reason to `clearSession`. OIDC persists a force-login marker and requests `prompt=login` until a successful sign-in. Clerk and browser WorkOS emit the reason; their provider integrations need fresh authentication and JWT `auth_time` for re-onboarding.
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.19 train.
 
 ## 0.10.18
 

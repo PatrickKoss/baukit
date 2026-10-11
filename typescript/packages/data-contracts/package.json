@@ -1,6 +1,6 @@
 {
   "name": "@baukit/data-contracts",
-  "version": "0.10.18",
+  "version": "0.10.19",
   "description": "Runtime-neutral data contracts, measurement helpers, and executable adapter conformance tests.",
   "license": "MIT",
   "author": "Patrick Koss",

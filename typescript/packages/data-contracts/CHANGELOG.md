@@ -2,7 +2,17 @@
 
 ## Unreleased
 
+## 0.10.19
+
 - Add `ScopedPersistenceLifecycle.handleProfileErased()` and blocked reason `profile-erased`. It erases the last selected partition even after session cleanup closes it, removes its registry entry, and blocks with any cleanup error. Transitions remain serialized, and concurrent selection cannot reopen the erased profile.
+
+### Minor Changes
+
+- 7662c50: Add `ScopedPersistenceLifecycle.handleProfileErased()` and blocked reason `profile-erased`. Erase the last selected partition even after session cleanup closes it, remove its registry entry, and keep cleanup errors in the blocked state. Serialize erasure with identity transitions so a concurrent selection cannot reopen the erased profile.
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.19 train.
 
 ## 0.10.18
 

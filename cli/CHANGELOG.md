@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.19] - 2026-10-11
+
 - Generated backends pass verified login times through fence checks and profile creation. Add the re-onboarding migration and test a fresh profile after retained-identity erasure. Worker erasure calls use an explicit missing login time.
 
 - Generated web and mobile apps use `ScopedPersistenceLifecycle.handleProfileErased()` for erasure cleanup. Data-contracts keeps the last partition context after token clearing closes storage and reports cleanup errors in the `profile-erased` blocked state.
