@@ -174,7 +174,8 @@ zero for every-request revocation checks, as SLS requires. A nonzero lifetime
 allows revoked sessions to remain usable until the cached result expires.
 
 A product policy can compose the introspection adapter with account service
-ports. Check erasure fences using the verified issuer and subject, call
+ports. Check erasure fences using the verified issuer and subject and pass
+`verified_identity().authenticated_at()` as the login time, call
 introspection, resolve an active linked account, and consume the product quota.
 Return `effective.with_subject(account_id)` to pass the product account ID to
 tools. `verified_identity()` retains the original identity for auditing and

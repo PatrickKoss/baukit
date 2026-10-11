@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The remote MCP guide tells product policies to pass `verified_identity().authenticated_at()` to erasure fence checks, so re-onboarded subjects can use MCP.
+
 ## [0.10.19] - 2026-10-11
 
 - Generated backends pass verified login times through fence checks and profile creation. Add the re-onboarding migration and test a fresh profile after retained-identity erasure. Worker erasure calls use an explicit missing login time.
