@@ -492,6 +492,7 @@ it('uses the body font in a standalone section picker', async () => {
 
 it.each([false, true])('selects a picker page with replace=%s in the browser', async (replace) => {
   const navigate = vi.fn();
+  const errors = vi.spyOn(console, 'error');
   host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);
@@ -507,11 +508,15 @@ it.each([false, true])('selects a picker page with replace=%s in the browser', a
     );
     return Promise.resolve();
   });
-  await userEvent.click(page.getByRole('button', { name: 'Progress, Overview' }));
+  await act(async () => {
+    await userEvent.click(page.getByRole('button', { name: 'Progress, Overview' }));
+  });
   await expect
     .element(page.getByRole('menuitem', { name: 'History' }))
     .not.toHaveAttribute('replace');
-  await userEvent.click(page.getByRole('menuitem', { name: 'History' }));
+  await act(async () => {
+    await userEvent.click(page.getByRole('menuitem', { name: 'History' }));
+  });
   if (replace) {
     expect(navigate).toHaveBeenCalledWith('/progress/history', expect.anything(), {
       replace: true,
@@ -522,6 +527,7 @@ it.each([false, true])('selects a picker page with replace=%s in the browser', a
   expect(navigate).toHaveBeenCalledTimes(1);
   await expect.element(page.getByRole('menu')).not.toBeInTheDocument();
   await expect.element(page.getByRole('button', { name: 'Progress, Overview' })).toHaveFocus();
+  expect(errors).not.toHaveBeenCalled();
 });
 
 function SlotFixture({
