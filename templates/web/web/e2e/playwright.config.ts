@@ -13,7 +13,7 @@ const webRoot = fileURLToPath(new URL('..', import.meta.url));
  */
 export default defineConfig({
   testDir: './tests',
-  fullyParallel: false,
+  fullyParallel: true,
   forbidOnly: Boolean(process.env['CI']),
   retries: process.env['CI'] === undefined ? 0 : 1,
   workers: process.env['E2E_WORKERS'] === undefined ? 2 : Number(process.env['E2E_WORKERS']),
