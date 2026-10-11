@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The generated web e2e helper `expectMinimumInteractiveTargetSize` measures all visible targets in one browser call instead of two round trips per target, so pages with many controls no longer exhaust the Playwright deadline on loaded machines. The assertions are unchanged.
+
 ## [0.10.15] - 2026-10-11
 
 - Breaking: rename the generated Dockerfile build argument `CARGO_TARGET_CACHE_KEY` to `CARGO_TARGET_CACHE_PREFIX`, because BuildKit's SecretsUsedInArgOrEnv check flagged the old name. Rerun `baukit generate dockerfile` and rename the build arg in image build scripts.

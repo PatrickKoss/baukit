@@ -177,7 +177,7 @@ bc7b4ee0c9b7f0eae40f76e5aff2bc2badbdc4bc11b326ca7e514b92bdf88b7d  web/README.md
 b58fb2922623cc7e38d35036b14128a9c8eb0e72afbf6cc261c5ccc0f95d9270  web/e2e/playwright.config.ts
 438a6475bcd77317a1a2dc2e12da095df807a665bd49d3eac0e68b698b292d89  web/e2e/qa.config.ts
 4530772259340013e1a274dfb86b39b13e76484ce1f160cdd9adf35cbe23f95f  web/e2e/tests/console-warnings.ts
-ce9e293f682f7888f39d7ba8ffab33c19e044ee46c7950df4ff29cda3edc39b3  web/e2e/tests/geometry.ts
+9596bc701aa73209823e3f69e30754abcdc8a067c59f8946408e1fe5e462a87f  web/e2e/tests/geometry.ts
 c6f6dc6c509e951e5985e2b664e16123ed5f4dd00df095f305a36455041de4f6  web/e2e/tests/qa-auth-expiry.spec.ts
 4279ef9b4eb81fa19319060684721f24ff6a8eb38c225beed11d23b0d82b1ed2  web/e2e/tests/qa-auth-isolation.spec.ts
 7084465ba7e6b40f251633cc79f02e77c431c0c70791eec313039e0d58299939  web/e2e/tests/qa-axe.spec.ts

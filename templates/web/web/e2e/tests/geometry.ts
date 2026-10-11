@@ -109,13 +109,16 @@ export async function expectMinimumInteractiveTargetSize(
 ): Promise<void> {
   const count = await targets.count();
   expect(count).toBeGreaterThan(0);
-  let visibleCount = 0;
+  const rectangles = await targets
+    .filter({ visible: true })
+    .evaluateAll((elements) =>
+      elements.map((element) => {
+        const { width, height } = element.getBoundingClientRect();
+        return { width, height };
+      }),
+    );
 
-  for (let index = 0; index < count; index += 1) {
-    const target = targets.nth(index);
-    if (!(await target.isVisible())) continue;
-    visibleCount += 1;
-    const rectangle = await visibleRectangle(target);
+  for (const [index, rectangle] of rectangles.entries()) {
     expect(
       rectangle.width,
       `interactive target ${String(index)} is too narrow`,
@@ -126,7 +129,7 @@ export async function expectMinimumInteractiveTargetSize(
     ).toBeGreaterThanOrEqual(minimumCssPixels);
   }
 
-  expect(visibleCount).toBeGreaterThan(0);
+  expect(rectangles.length).toBeGreaterThan(0);
 }
 
 async function visibleRectangle(locator: Locator): Promise<LayoutRectangle> {
