@@ -44,6 +44,11 @@ Success returns a completed receipt; failure returns durable acceptance.
 Copy `POSTGRES_MIGRATION_SQL` into product migrations after the three
 `baukit-jobs` migrations. Copy `POSTGRES_REONBOARDING_MIGRATION_SQL` after 0001
 erasure. It adds `erased_at TIMESTAMPTZ NOT NULL DEFAULT now()` to the fences.
+The default backfills existing fences with the migration time. Subjects erased
+before the upgrade can re-onboard with any login whose `auth_time` is after the
+migration, once every erasure operation completes. Their pre-erasure sessions
+stay fenced.
+
 Keep the hash key in `baukit_config::Secret<String>`.
 Use at least 32 random bytes and keep that key stable across deployments. Losing
 or replacing it breaks receipt authorization and fences.
@@ -74,9 +79,16 @@ receipts and never erase the new profile.
 After `profile_erased`, shared SSO clients must force a fresh login with
 `prompt=login`. Silent SSO and refresh keep the old `auth_time`. The auth-web and
 auth-native adapters use `clearSession({ reason: 'profile_erased' })` to request
-that fresh login. Clerk and WorkOS need a JWT template that adds the session's
-original numeric `auth_time`, unchanged on refresh. Without it, re-onboarding
-stays unavailable. Never substitute `iat`, which changes on refresh.
+that fresh login. Never substitute `iat`, which changes on refresh.
+
+Clerk session tokens have no `auth_time`, so a Retain-erased Clerk user stays
+fenced until the product adds the claim through a Clerk JWT template. It must
+be the time this session authenticated, as a numeric value unchanged on refresh.
+Never use user-level values such as `{{user.last_sign_in_at}}`. A sign-in on
+another device would advance the claim and admit an old pre-erasure session.
+Baukit does not map another Clerk claim automatically. WorkOS also needs a JWT
+template with the session's authentication time as `auth_time`; without it,
+re-onboarding stays unavailable.
 
 The database sets `erased_at`; the application never supplies that clock value.
 Clock skew fails closed only when the provider clock is behind the database:

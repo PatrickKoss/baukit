@@ -5,6 +5,7 @@ All notable changes to `baukit-auth` are documented here.
 ## [Unreleased]
 
 - Add `Principal::authenticated_at()` and `with_authenticated_at()` for verified login times. All token profiles validate numeric `auth_time` with the existing clock skew and reject malformed claims. API tokens and internal principals have no login time.
+- Clerk session tokens have no `auth_time`. A Retain-erased user stays fenced until the product adds it through a Clerk JWT template. The claim must be this session's authentication time and stay unchanged on refresh. Never use user-level values such as `{{user.last_sign_in_at}}`: a sign-in on another device would advance the claim and admit an old pre-erasure session. Baukit does not map another Clerk claim automatically.
 
 ## [0.10.18] - 2026-10-11
 

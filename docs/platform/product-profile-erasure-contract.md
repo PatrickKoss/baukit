@@ -229,8 +229,12 @@ immediately, so no row retains the raw subject after completion. Fences remain
 for the subject and record `erased_at` using the transaction's database `now()`.
 
 Copy `POSTGRES_REONBOARDING_MIGRATION_SQL` after the 0001 erasure migration.
-It adds `erased_at TIMESTAMPTZ NOT NULL DEFAULT now()`. Pass the verified
-`principal.authenticated_at()` to `guard_subject`, `is_fenced`,
+It adds `erased_at TIMESTAMPTZ NOT NULL DEFAULT now()`. The default backfills
+existing fences with the migration time. Subjects erased before the upgrade can
+re-onboard with any login whose `auth_time` is after the migration, once every
+erasure operation completes. Their pre-erasure sessions stay fenced.
+
+Pass the verified `principal.authenticated_at()` to `guard_subject`, `is_fenced`,
 `reject_fenced_subject`, and `ErasureService::erase`. A fenced session passes
 only when its `auth_time` is present and strictly greater than `erased_at`, and
 every erasure operation for that subject is `completed`. `None`, an equal or
@@ -251,10 +255,17 @@ three clocks; the timestamp comparison alone cannot remove this residual risk.
 Shared SSO clients must use `prompt=login` after `profile_erased`. A silent login
 or refresh returns the old `auth_time`. Use
 `clearSession({ reason: 'profile_erased' })` in auth-web and auth-native so the
-next login requires fresh authentication. Clerk and WorkOS need a JWT template
-that adds the original session login time as numeric `auth_time` and keeps it
-unchanged on refresh. Without that claim, re-onboarding stays unavailable. `iat`
-cannot replace it because refresh changes the token's issuance time.
+next login requires fresh authentication. `iat` cannot replace `auth_time`
+because refresh changes the token's issuance time.
+
+Clerk session tokens have no `auth_time`. A Retain-erased Clerk user stays fenced
+until the product adds it through a Clerk JWT template. The claim must be the
+time this session authenticated, as a numeric value unchanged on refresh. Never
+use user-level values such as `{{user.last_sign_in_at}}`. A sign-in on another
+device would advance the claim and admit an old pre-erasure session. Baukit does
+not map another Clerk claim automatically. WorkOS also needs a JWT template
+with this session's authentication time as `auth_time`; without it, re-onboarding
+stays unavailable.
 
 ### Keycloak account deletion
 

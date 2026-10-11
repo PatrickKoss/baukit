@@ -157,6 +157,13 @@ reserved and is not copied into selected profile claims. Trusted adapters can
 set it with `with_authenticated_at`. Use this session login time for erasure
 fences; refresh changes `iat` but keeps `auth_time`.
 
+Clerk session tokens have no `auth_time`. To permit re-onboarding after Retain
+erasure, a product must add it through a Clerk JWT template. Use the time this
+session authenticated and keep it unchanged on refresh. Never use user-level
+values such as `{{user.last_sign_in_at}}`. A sign-in on another device would
+advance that value and admit an old pre-erasure session. Baukit does not map
+another Clerk claim automatically.
+
 Map the provider's OAuth client claim when a route needs a client allowlist:
 
 ```rust
