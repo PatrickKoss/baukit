@@ -11,6 +11,7 @@ ARG BAUKIT_CONTEXT=.
 ARG BAUKIT_DESTINATION=/tmp/unused-baukit-context
 ARG LIMITS_FILE=limits.json
 ARG CARGO_BUILD_JOBS{% if context.image.cargo_build_jobs %}={{ context.image.cargo_build_jobs }}{% endif %}
+ARG CARGO_TARGET_CACHE_KEY={{ context.app_name }}
 ARG GIT_COMMIT=unknown
 ENV GIT_COMMIT=${GIT_COMMIT} SQLX_OFFLINE=true
 WORKDIR /workspace

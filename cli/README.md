@@ -126,6 +126,17 @@ builds `api` and `migrate` from `<app.name>-bin`, plus `worker` when
 and `/app/<binary>` entrypoint. The migrate stage also contains migrations and
 the bin crate's Cargo manifest at their compile-time paths.
 
+`CARGO_TARGET_CACHE_KEY` is a build arg for isolating Cargo target caches per
+checkout or worktree. It defaults to `app.name`, keeping the existing
+`<app>-target` and `<app>-target-<variant>` ids. The Cargo registry cache stays
+shared. Use a distinct key when checkouts build on the same Docker daemon to
+avoid stale artifacts caused by preserved source mtimes. For `my-app`:
+
+```sh
+docker build --target api -f backend/Dockerfile \
+  --build-arg CARGO_TARGET_CACHE_KEY="my-app-$(printf %s "$PWD" | sha256sum | cut -c1-12)" .
+```
+
 | Setting | Default and meaning |
 | --- | --- |
 | `binaries` | Capability defaults above. An explicit list replaces them. Every binary gets its own stage. |

@@ -220,6 +220,42 @@ fn copied_file(container: &str, source: &str, destination: &Path) -> Result<Vec<
     Ok(fs::read(destination)?)
 }
 
+fn build_image(
+    root: &Path,
+    builder: &str,
+    stage: &str,
+    tag: &str,
+    cache_key: Option<&str>,
+) -> Result<()> {
+    let mut command = Command::new("docker");
+    command.args([
+        "buildx",
+        "build",
+        "--builder",
+        builder,
+        "--load",
+        "--target",
+        stage,
+        "--tag",
+        tag,
+    ]);
+    if let Some(key) = cache_key {
+        command.args(["--build-arg", &format!("CARGO_TARGET_CACHE_KEY={key}")]);
+    }
+    let output = command
+        .arg("--file")
+        .arg(root.join("backend/Dockerfile"))
+        .arg(root)
+        .output()?;
+    ensure!(
+        output.status.success(),
+        "BuildKit stage {stage}, cache key {cache_key:?}: {}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    Ok(())
+}
+
 #[test]
 #[ignore = "requires Docker"]
 fn buildkit_builds_every_binary_with_stage_specific_files() -> Result<()> {
@@ -271,22 +307,7 @@ fn buildkit_builds_every_binary_with_stage_specific_files() -> Result<()> {
                     |variant| format!("{binary}-{variant}"),
                 );
                 let tag = format!("{builder}:{stage}");
-                docker(&[
-                    "buildx",
-                    "build",
-                    "--builder",
-                    &builder,
-                    "--load",
-                    "--target",
-                    &stage,
-                    "--tag",
-                    &tag,
-                    "--file",
-                    root.join("backend/Dockerfile")
-                        .to_str()
-                        .context("Dockerfile path")?,
-                    root.to_str().context("context path")?,
-                ])?;
+                build_image(&root, &builder, &stage, &tag, None)?;
                 resources.images.push(tag.clone());
                 verify_runtime_commands(&tag, binary, variant.is_some())?;
                 let container = String::from_utf8(docker(&["create", &tag])?.stdout)?
@@ -297,6 +318,11 @@ fn buildkit_builds_every_binary_with_stage_specific_files() -> Result<()> {
                 fs::create_dir(&output)?;
                 verify_runtime_stage(&container, binary, &output)?;
             }
+            let stage = variant.map_or_else(|| "api".to_owned(), |name| format!("api-{name}"));
+            let tag = format!("{builder}:{stage}-other");
+            build_image(&root, &builder, &stage, &tag, Some("other"))?;
+            resources.images.push(tag.clone());
+            verify_runtime_commands(&tag, "api", variant.is_some())?;
         }
         Ok(())
     })();
@@ -314,7 +340,7 @@ binaries = ["api", "migrate", "worker", "seed", "extra-proxy"]
 cargo_build_jobs = 6
 backend_context = "backend"
 build_inputs = [{source = "inputs/build.txt", destination = "/inputs/build.txt"}]
-pre_build = [{command = ["sh", "-c", "mkdir -p /generated && cp /inputs/build.txt /generated/output.txt"], outputs = ["/generated"]}]
+pre_build = [{command = ["sh", "-ec", 'if [ -f target/cache-key ]; then test "$(cat target/cache-key)" = "$CARGO_TARGET_CACHE_KEY"; fi; printf %s "$CARGO_TARGET_CACHE_KEY" > target/cache-key; mkdir -p /generated && cp /inputs/build.txt /generated/output.txt'], outputs = ["/generated"]}]
 runtime_files = [{stage = "api", source = "/generated/output.txt", destination = "/app/prebuilt.txt"}, {stage = "worker", source = "assets/worker.txt", destination = "/app/worker.txt"}]
 runtime_binaries = [{stage = "migrate", binary = "seed"}]
 runtime_packages = [{stage = "worker", packages = ["git"]}, {stage = "extra-proxy", packages = []}]

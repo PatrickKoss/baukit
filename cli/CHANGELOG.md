@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add `CARGO_TARGET_CACHE_KEY` to generated backend builders so checkouts can use separate Cargo target caches. Keep the current cache ids by default and share the registry cache.
+
 ## [0.10.13] - 2026-10-10
 
 ## [0.10.12] - 2026-10-10

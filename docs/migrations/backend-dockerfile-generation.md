@@ -6,6 +6,13 @@ matches the product's Baukit version. Add the image settings below, run
 manifest and Dockerfile together. After each Baukit update, regenerate the
 file instead of copying the template by hand.
 
+`baukit-cli` is not published to crates.io. Install the matching release tag,
+as described in the repository README:
+
+```sh
+cargo install --git https://github.com/PatrickKoss/baukit --tag vX.Y.Z --locked baukit-cli
+```
+
 Keep `schema_version = 1`. The new section is optional. Defaults build `api`
 and `migrate`, plus `worker` when `capabilities.worker` is true. Each binary
 has its own runtime stage and `/app/<binary>` entrypoint. Existing
@@ -226,6 +233,18 @@ directories, and entrypoint. Writable directories use ownership `65532:65532`
 on both runtime bases.
 
 ## Build and check
+
+`CARGO_TARGET_CACHE_KEY` selects the Cargo target cache for each builder stage.
+Its default is `app.name`, so cache ids stay `<app>-target` and
+`<app>-target-<variant>`. The Cargo registry cache stays shared.
+Set a different key per checkout or worktree on the same Docker daemon.
+Otherwise Cargo can reuse stale artifacts because BuildKit preserves source
+mtimes when it copies files. For an app named `my-app`, hash the checkout path:
+
+```sh
+docker build --target api -f backend/Dockerfile \
+  --build-arg CARGO_TARGET_CACHE_KEY="my-app-$(printf %s "$PWD" | sha256sum | cut -c1-12)" .
+```
 
 The renderer retains `BACKEND_CONTEXT`, `BAUKIT_CONTEXT`,
 `BAUKIT_DESTINATION`, `LIMITS_FILE` and `GIT_COMMIT`. The last two Baukit args
