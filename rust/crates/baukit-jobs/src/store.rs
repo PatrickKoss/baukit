@@ -5,14 +5,26 @@ use sqlx::{PgConnection, PgPool, Postgres, Row as _, Transaction};
 use uuid::Uuid;
 
 use crate::{
-    ClaimedJob, EnqueueOutcome, FailureDisposition, Job, JobFailureReason, JobStatus, NewJob,
-    StoreError, TerminalJobCleanupOutcome, TerminalJobCutoffs,
+    CancellationOutcome, ClaimedJob, EnqueueOutcome, FailureDisposition, Job, JobFailureReason,
+    JobStatus, NewJob, StoreError, TerminalJobCleanupOutcome, TerminalJobCutoffs,
 };
 
 const MAX_JOB_TYPE_LENGTH: usize = 200;
 const MAX_WORKER_ID_LENGTH: usize = 300;
 const MAX_IDEMPOTENCY_KEY_LENGTH: usize = 500;
 const MAX_ERROR_LENGTH: usize = 10_000;
+
+macro_rules! owned_lease_predicate {
+    () => {
+        "status = 'running' AND locked_by = $2 AND locked_until > $3 AND ($4 OR cancel_requested_at IS NULL)"
+    };
+}
+
+macro_rules! cancellation_assignments {
+    () => {
+        "status = CASE WHEN status = 'pending' THEN 'cancelled' ELSE status END, locked_by = CASE WHEN status = 'pending' THEN NULL ELSE locked_by END, locked_until = CASE WHEN status = 'pending' THEN NULL ELSE locked_until END, cancel_requested_at = CASE WHEN status = 'running' THEN $1 ELSE NULL END, updated_at = $1"
+    };
+}
 
 /// Largest terminal-job cleanup batch accepted by [`PostgresJobStore`].
 pub const MAX_TERMINAL_JOB_CLEANUP_BATCH_SIZE: u32 = 10_000;
@@ -165,6 +177,71 @@ impl PostgresJobStore {
             now,
         )
         .await
+    }
+
+    /// Checks lease ownership without completing the job, locking it until commit.
+    ///
+    /// Returns true only for a running job owned by `worker_id`, with a lease
+    /// strictly later than `now` and no cancellation request. `SELECT FOR UPDATE`
+    /// holds the row lock until the caller commits or rolls back. Concurrent
+    /// cancellation or reclaim waits for that lock; claim's `SKIP LOCKED`
+    /// selection skips the row. Time can still pass beyond the lease deadline,
+    /// so completion must check the lease again using a fresh timestamp.
+    pub async fn check_lease_in_transaction(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        job_id: Uuid,
+        worker_id: &str,
+        now: DateTime<Utc>,
+    ) -> Result<bool, StoreError> {
+        validate_worker_id(worker_id)?;
+        sqlx::query_scalar::<_, Uuid>(concat!(
+            "SELECT id FROM job_outbox WHERE id = $1 AND ",
+            owned_lease_predicate!(),
+            " FOR UPDATE"
+        ))
+        .bind(job_id)
+        .bind(worker_id)
+        .bind(now)
+        .bind(false)
+        .fetch_optional(&mut **transaction)
+        .await
+        .map(|row| row.is_some())
+        .map_err(StoreError::database)
+    }
+
+    /// Cancels jobs with an exact idempotency key inside the caller's transaction.
+    ///
+    /// Only `job_type` matches are changed. Pending jobs become cancelled with
+    /// locks cleared. Running jobs retain their lease and receive a cancellation
+    /// request for the runner to finish. Terminal jobs stay untouched.
+    pub async fn request_cancellation_by_key_in_transaction(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        job_type: &str,
+        key: &str,
+        now: DateTime<Utc>,
+    ) -> Result<CancellationOutcome, StoreError> {
+        validate_text("job_type", job_type, MAX_JOB_TYPE_LENGTH)?;
+        validate_text("idempotency_key", key, MAX_IDEMPOTENCY_KEY_LENGTH)?;
+        request_cancellation_by_key_on(transaction, job_type, key, false, now).await
+    }
+
+    /// Cancels jobs with a literal key prefix inside the caller's transaction.
+    ///
+    /// The prefix must contain 1 to 500 characters and cannot be blank. `%` and
+    /// `_` match literally. Only jobs of `job_type` are changed, using the same
+    /// lifecycle as [`Self::request_cancellation_by_key_in_transaction`].
+    pub async fn request_cancellation_by_key_prefix_in_transaction(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        job_type: &str,
+        prefix: &str,
+        now: DateTime<Utc>,
+    ) -> Result<CancellationOutcome, StoreError> {
+        validate_text("job_type", job_type, MAX_JOB_TYPE_LENGTH)?;
+        validate_text("idempotency_key_prefix", prefix, MAX_IDEMPOTENCY_KEY_LENGTH)?;
+        request_cancellation_by_key_on(transaction, job_type, prefix, true, now).await
     }
 
     /// Deletes at most one batch of terminal jobs.
@@ -371,11 +448,13 @@ impl JobStore for PostgresJobStore {
         now: DateTime<Utc>,
     ) -> StoreFuture<'_, Result<bool, StoreError>> {
         Box::pin(async move {
-            sqlx::query(
-                "UPDATE job_outbox SET status = CASE WHEN status = 'pending' THEN 'cancelled' ELSE status END, locked_by = CASE WHEN status = 'pending' THEN NULL ELSE locked_by END, locked_until = CASE WHEN status = 'pending' THEN NULL ELSE locked_until END, cancel_requested_at = CASE WHEN status = 'running' THEN $2 ELSE NULL END, updated_at = $2 WHERE id = $1 AND status IN ('pending', 'running')",
-            )
-            .bind(job_id)
+            sqlx::query(concat!(
+                "UPDATE job_outbox SET ",
+                cancellation_assignments!(),
+                " WHERE id = $2 AND status IN ('pending', 'running')"
+            ))
             .bind(now)
+            .bind(job_id)
             .execute(&self.pool)
             .await
             .map(|result| result.rows_affected() == 1)
@@ -498,19 +577,54 @@ async fn finish_on(
 ) -> Result<bool, StoreError> {
     let status = status_name(status);
     let allow_cancellation = status == "cancelled";
-    sqlx::query(
-        "UPDATE job_outbox SET status = $3, locked_by = NULL, locked_until = NULL, cancel_requested_at = NULL, last_error = $4, failure_reason = NULL, updated_at = $5 WHERE id = $1 AND status = 'running' AND locked_by = $2 AND locked_until > $5 AND ($6 OR cancel_requested_at IS NULL)",
-    )
-    .bind(job_id)
-    .bind(worker_id)
-    .bind(status)
-    .bind(error.map(bound_error))
-    .bind(now)
-    .bind(allow_cancellation)
-    .execute(connection)
-    .await
-    .map(|result| result.rows_affected() == 1)
-    .map_err(StoreError::database)
+    sqlx::query(concat!(
+        "UPDATE job_outbox SET status = $5, locked_by = NULL, locked_until = NULL, cancel_requested_at = NULL, last_error = $6, failure_reason = NULL, updated_at = $3 WHERE id = $1 AND ",
+        owned_lease_predicate!()
+    ))
+        .bind(job_id)
+        .bind(worker_id)
+        .bind(now)
+        .bind(allow_cancellation)
+        .bind(status)
+        .bind(error.map(bound_error))
+        .execute(connection)
+        .await
+        .map(|result| result.rows_affected() == 1)
+        .map_err(StoreError::database)
+}
+
+async fn request_cancellation_by_key_on(
+    connection: &mut PgConnection,
+    job_type: &str,
+    key: &str,
+    prefix: bool,
+    now: DateTime<Utc>,
+) -> Result<CancellationOutcome, StoreError> {
+    let statuses: Vec<String> = sqlx::query_scalar(concat!(
+        "UPDATE job_outbox SET ",
+        cancellation_assignments!(),
+        " WHERE job_type = $2 AND (CASE WHEN $4 THEN left(idempotency_key, char_length($3)) ELSE idempotency_key END) = $3 AND status IN ('pending', 'running') RETURNING status"
+    ))
+        .bind(now)
+        .bind(job_type)
+        .bind(key)
+        .bind(prefix)
+        .fetch_all(connection)
+        .await
+        .map_err(StoreError::database)?;
+    let mut outcome = CancellationOutcome::default();
+    for status in statuses {
+        match status.as_str() {
+            "cancelled" => outcome.cancelled_pending += 1,
+            "running" => outcome.cancellation_requested_running += 1,
+            value => {
+                return Err(StoreError::InvalidData(format!(
+                    "cancellation returned status `{value}`"
+                )));
+            }
+        }
+    }
+    Ok(outcome)
 }
 
 fn row_to_job(row: sqlx::postgres::PgRow) -> Result<Job, StoreError> {

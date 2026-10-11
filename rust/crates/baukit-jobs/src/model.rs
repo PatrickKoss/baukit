@@ -123,6 +123,17 @@ pub struct EnqueueOutcome {
     pub created: bool,
 }
 
+/// Counts changed by cancellation inside a caller-owned transaction.
+///
+/// The caller must commit the transaction to make these changes durable.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct CancellationOutcome {
+    /// Pending jobs moved to terminal cancellation.
+    pub cancelled_pending: u64,
+    /// Running jobs whose cancellation request was set, including repeat requests.
+    pub cancellation_requested_running: u64,
+}
+
 /// Durable disposition after recording a failed attempt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FailureDisposition {

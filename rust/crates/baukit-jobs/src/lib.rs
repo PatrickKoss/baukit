@@ -41,10 +41,10 @@ mod store;
 
 pub use error::{JobError, RunnerError, StoreError};
 pub use model::{
-    ClaimedJob, EnqueueOutcome, FailureDisposition, Job, JobFailureReason, JobStatus, NewJob,
-    TerminalJobCleanupOutcome, TerminalJobCutoffs,
+    CancellationOutcome, ClaimedJob, EnqueueOutcome, FailureDisposition, Job, JobFailureReason,
+    JobStatus, NewJob, TerminalJobCleanupOutcome, TerminalJobCutoffs,
 };
-pub use recurring::{FixedUtcInterval, FixedUtcIntervalError, FixedUtcSlot};
+pub use recurring::{FixedUtcInterval, FixedUtcIntervalError, FixedUtcJitter, FixedUtcSlot};
 pub use runner::{JobCancellation, JobFuture, JobHandler, WorkerConfig, WorkerRunner};
 pub use store::{JobStore, MAX_TERMINAL_JOB_CLEANUP_BATCH_SIZE, PostgresJobStore, StoreFuture};
 

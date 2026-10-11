@@ -121,6 +121,54 @@ The application still owns the interval, initial seed, job type, payload,
 catch-up policy, and decision to stop recurring work. `FixedUtcInterval` does
 not parse cron expressions or run a scheduler.
 
+## Per-key recurring jitter
+
+Create `FixedUtcJitter::new(fraction)` with a finite fraction in `(0, 1]`, then
+call `interval.run_at(slot, key, jitter)` for `run_after`. It adds whole seconds
+between zero and `floor(interval_seconds * fraction)`, inclusive. A bound below
+one second gives no offset. Timestamp overflow returns
+`FixedUtcIntervalError::OutOfRange`.
+
+The offset uses 64-bit FNV-1a over the key's UTF-8 bytes, with offset basis
+`14695981039346656037`, prime `1099511628211`, wrapping arithmetic, and modulo
+`bound + 1`. The bound uses IEEE 754 binary64 multiplication, capped at the
+interval. The algorithm stays fixed across releases, platforms, and restarts.
+A connection keeps the same offset in every slot. For an hourly interval and
+fraction `0.1`, `connection:1` runs 345 seconds after the boundary.
+
+`slot.identifier()` and `next_slot` still use the unshifted UTC boundary.
+For per-connection jobs, compose the connection key with `slot.identifier()`
+as the idempotency key. Jitter affects only `run_after`.
+
+## Cancellation in a domain transaction
+
+Use `request_cancellation_by_key_in_transaction` for an exact idempotency key,
+or `request_cancellation_by_key_prefix_in_transaction` for all keys with a
+literal prefix. Both take a caller-owned PostgreSQL transaction, job type,
+key or prefix, and timestamp. This lets a connection delete and cancellation
+of its poll jobs commit together. Prefixes must contain 1 to 500 characters
+and cannot be blank. `%` and `_` match literally.
+
+Pending jobs become cancelled with locks cleared. Running jobs keep their
+lease and receive `cancel_requested_at` for the runner's cancellation path.
+Terminal jobs and other job types stay untouched. `CancellationOutcome`
+reports `cancelled_pending` and `cancellation_requested_running` counts.
+Repeat requests count matching running jobs again. Changes become visible
+after commit; rollback preserves the jobs.
+
+## Lease checks before intermediate writes
+
+Call `check_lease_in_transaction(transaction, job_id, worker_id, now)` before
+writing intermediate product state. It returns true only when the job is
+running, the worker owns it, its lease expires strictly after `now`, and no
+cancellation was requested. It checks the same predicate as completion and
+leaves the lifecycle unchanged.
+
+The check uses `SELECT FOR UPDATE` and holds the row lock until commit or
+rollback. Concurrent cancellation and reclaim wait for the lock; claim's
+`SKIP LOCKED` selection skips the row. Keep the transaction short. The lock
+does not extend the lease deadline, so use a fresh timestamp when completing.
+
 ## Claiming by job type
 
 `JobStore::claim` takes the set of job types the caller can handle and claims
@@ -167,5 +215,5 @@ terminal cleanup when identity deletion failures need repair. The exclusion
 applies only to failed jobs. Successful and cancelled jobs still expire unless
 their kind is also passed to `retain_kinds`.
 
-Transactions passed to `enqueue_in_transaction` and `complete_in_transaction`
-stay owned by the caller. These methods do not start a transaction.
+Transactions passed to the store's transaction methods stay owned by the
+caller. These methods do not start or commit a transaction.
