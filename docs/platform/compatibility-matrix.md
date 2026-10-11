@@ -5,7 +5,7 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
-Last verified release train: `v0.10.15` (generated backend Dockerfiles take `CARGO_TARGET_CACHE_PREFIX`, renamed from `CARGO_TARGET_CACHE_KEY` because BuildKit's SecretsUsedInArgOrEnv check flagged it, to give each checkout its own Cargo target cache; the default cache ids stay `<app>-target` and `<app>-target-<variant>`; `@baukit/navigation` `SectionPicker` takes `replace` since v0.10.14).
+Last verified release train: `v0.10.16` (the generated web e2e helper `expectMinimumInteractiveTargetSize` measures all visible targets in one browser call; generated backend Dockerfiles take `CARGO_TARGET_CACHE_PREFIX` since v0.10.15, renamed from `CARGO_TARGET_CACHE_KEY` because BuildKit's SecretsUsedInArgOrEnv check flagged it; the default cache ids stay `<app>-target` and `<app>-target-<variant>`; `@baukit/navigation` `SectionPicker` takes `replace` since v0.10.14).
 
 ## Toolchain
 

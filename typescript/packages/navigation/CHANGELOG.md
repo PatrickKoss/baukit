@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## 0.10.16
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.16 train.
+- Updated dependencies
+  - @baukit/a11y-core@0.10.16
+  - @baukit/ui-tokens@0.10.16
+
 ## 0.10.15
 
 ### Patch Changes
