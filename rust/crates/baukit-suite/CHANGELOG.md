@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.20] - 2026-10-12
+
 - Check erasure admission before notifying peers. Old-key replays after re-onboarding, fenced sessions, invalid keys and foreign keys leave the current profile's suite links intact.
 
 ## [0.10.19] - 2026-10-11

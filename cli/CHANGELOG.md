@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+## [0.10.20] - 2026-10-12
+
+- `baukit doctor` skips Cargo manifests under `fixtures/` and `testdata/` when it discovers workspaces, matching the registry pin census, so a malformed test fixture no longer aborts the run.
 - The generated web e2e geometry helpers read both rectangles in one browser call, so a layout shift between two reads cannot produce a false intersection or containment failure.
 - Generate range policy entries with non-negative integer `minimum` and `maximum` bounds.
   Rust and TypeScript reject inverted bounds and bounds above JavaScript's safe integer limit.

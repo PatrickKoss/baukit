@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.10.20
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.20 train.
+
 ## 0.10.19
 
 - Add `profile_erased` to session-expired reasons and accept it in `clearSession`. Plain clearing stays silent.

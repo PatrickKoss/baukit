@@ -4,6 +4,8 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+## [0.10.20] - 2026-10-12
+
 ## [0.10.19] - 2026-10-11
 
 - Add `Principal::authenticated_at()` and `with_authenticated_at()` for verified login times. All token profiles validate numeric `auth_time` with the existing clock skew and reject malformed claims. API tokens and internal principals have no login time.

@@ -4,6 +4,8 @@ All notable changes to `baukit-core` are documented here.
 
 ## [Unreleased]
 
+## [0.10.20] - 2026-10-12
+
 ### Added
 
 - Add `check_range(measured, minimum, maximum)` with inclusive bounds, measurement accessors,

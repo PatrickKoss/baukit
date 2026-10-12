@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.10.20
+
+### Minor Changes
+
+- 178a4ea: Add inclusive `checkRange` checks and range entries in limits policy schemas. Reject inverted
+  bounds and invalid integers. Map failed range checks to `LimitRangeError` with the `out_of_range`
+  reason, field, measured value, minimum, and maximum.
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.20 train.
+
 ## 0.10.19
 
 - Add `ScopedPersistenceLifecycle.handleProfileErased()` and blocked reason `profile-erased`. It erases the last selected partition even after session cleanup closes it, removes its registry entry, and blocks with any cleanup error. Transitions remain serialized, and concurrent selection cannot reopen the erased profile.

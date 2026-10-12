@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.10.20
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.20 train.
+- Updated dependencies [178a4ea]
+- Updated dependencies
+  - @baukit/data-contracts@0.10.20
+
 ## 0.10.19
 
 ### Patch Changes
