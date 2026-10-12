@@ -364,6 +364,10 @@ re-authorization, and retrying it burns quota against an endpoint that will keep
 longer sent as early data. `retry_after_from_headers` parses both the delay-seconds and HTTP-date
 forms.
 
+Every `5xx`, including `500`, `502`, `503`, and `504`, becomes `RetryAfter` when a retry
+header supplies a valid delay. Without one, `504` stays `Timeout` and other `5xx` stay
+`Unavailable`. `429` uses `RetryAfter` with a usable delay and `RateLimited` otherwise.
+
 `401` and `403` are `Revoked` by default. For APIs such as GitHub, pass
 `RetryHeaderOptions::default().with_forbidden_rate_limit()` to `classify_http_status_with_options`.
 A `403` with a usable `Retry-After` or configured vendor retry header becomes `RetryAfter`.
@@ -386,7 +390,7 @@ let mut headers = HeaderMap::new();
 headers.insert(RETRY_AFTER, HeaderValue::from_static("86400"));
 let options = RetryHeaderOptions::default().with_max_retry_after(Duration::from_secs(300));
 assert_eq!(
-    classify_http_status_with_options(StatusCode::TOO_MANY_REQUESTS, &headers, options),
+    classify_http_status_with_options(StatusCode::SERVICE_UNAVAILABLE, &headers, options),
     RetryClass::RetryAfter(Duration::from_secs(300))
 );
 ```

@@ -15,7 +15,7 @@ use time::{OffsetDateTime, format_description::well_known::Rfc2822};
 pub enum RetryClass {
     /// The upstream asked for a specific wait before the next attempt.
     ///
-    /// This is a rate limit that came with a usable retry delay.
+    /// A rate limit or server failure came with a usable retry delay.
     RetryAfter(Duration),
     /// The upstream rate limited the request without saying for how long.
     ///
@@ -129,13 +129,15 @@ impl RetryClass {
 /// The mapping is:
 ///
 /// - `401` and `403` are [`RetryClass::Revoked`]; the credential needs renewing.
-/// - `408` and `504` are [`RetryClass::Timeout`].
+/// - `408` is [`RetryClass::Timeout`].
 /// - `425` is [`RetryClass::Unavailable`]. RFC 8470 section 5.2 lets a client
 ///   retry once the request is no longer sent as early data.
 /// - `429` is [`RetryClass::RetryAfter`] when a retry-after header parses, and
 ///   [`RetryClass::RateLimited`] otherwise. The delay is uncapped; see
 ///   [`RetryHeaderOptions::with_max_retry_after`].
-/// - Any other `5xx` is [`RetryClass::Unavailable`].
+/// - Any `5xx`, including `504`, is [`RetryClass::RetryAfter`] when a
+///   retry-after header parses. Without a usable delay, `504` is
+///   [`RetryClass::Timeout`] and other `5xx` are [`RetryClass::Unavailable`].
 /// - Everything else, success codes included, is [`RetryClass::Permanent`];
 ///   callers only reach this function for responses they already treat as
 ///   failures.
@@ -184,6 +186,8 @@ pub fn classify_http_status(
 /// comma-separated field is used, and the largest delay reported.
 /// [`RetryHeaderOptions::with_forbidden_rate_limit`] also recognizes rate
 /// limits on `403` responses. `401` always stays [`RetryClass::Revoked`].
+/// Usable retry headers on any `5xx` give [`RetryClass::RetryAfter`], capped
+/// by [`RetryHeaderOptions::with_max_retry_after`].
 pub fn classify_http_status_with_options(
     status: StatusCode,
     headers: &HeaderMap,
@@ -198,6 +202,7 @@ pub fn classify_http_status_with_options(
 /// `now` is the reference instant for HTTP-date retry headers and the
 /// `x-ratelimit-reset` epoch on opted-in `403` responses. Past deadlines
 /// yield [`Duration::ZERO`], and delays are clamped to the configured cap.
+/// Any `5xx` with a usable retry header gives [`RetryClass::RetryAfter`].
 pub fn classify_http_status_with_options_at(
     status: StatusCode,
     headers: &HeaderMap,
@@ -209,13 +214,21 @@ pub fn classify_http_status_with_options_at(
             classify_forbidden_rate_limit(headers, options, now)
         }
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => RetryClass::Revoked,
-        StatusCode::REQUEST_TIMEOUT | StatusCode::GATEWAY_TIMEOUT => RetryClass::Timeout,
+        StatusCode::REQUEST_TIMEOUT => RetryClass::Timeout,
         StatusCode::TOO_EARLY => RetryClass::Unavailable,
         StatusCode::TOO_MANY_REQUESTS => {
             retry_after_from_headers_with_options_at(headers, options, now)
                 .map_or(RetryClass::RateLimited, RetryClass::RetryAfter)
         }
-        _ if status.is_server_error() => RetryClass::Unavailable,
+        _ if status.is_server_error() => {
+            let fallback = if status == StatusCode::GATEWAY_TIMEOUT {
+                RetryClass::Timeout
+            } else {
+                RetryClass::Unavailable
+            };
+            retry_after_from_headers_with_options_at(headers, options, now)
+                .map_or(fallback, RetryClass::RetryAfter)
+        }
         _ => RetryClass::Permanent,
     }
 }
@@ -637,6 +650,67 @@ mod tests {
                 classify_http_status(status, &HeaderMap::new(), &[]),
                 RetryClass::Timeout
             );
+        }
+    }
+
+    #[test]
+    fn server_errors_honor_retry_after_seconds() {
+        for code in 500..=599 {
+            let status = StatusCode::from_u16(code).expect("server status is valid");
+            assert_eq!(
+                classify_http_status(status, &headers(&[("retry-after", "7")]), &[]),
+                RetryClass::RetryAfter(Duration::from_secs(7)),
+                "status {code}"
+            );
+        }
+    }
+
+    #[test]
+    fn service_unavailable_honors_retry_after_http_date() {
+        let now = at("Wed, 21 Oct 2026 07:28:00 GMT");
+        assert_eq!(
+            classify_http_status_with_options_at(
+                StatusCode::SERVICE_UNAVAILABLE,
+                &headers(&[("retry-after", "Wed, 21 Oct 2026 07:30:00 GMT")]),
+                RetryHeaderOptions::default(),
+                now,
+            ),
+            RetryClass::RetryAfter(Duration::from_secs(120))
+        );
+    }
+
+    #[test]
+    fn server_error_retry_after_is_capped() {
+        let options = RetryHeaderOptions::default().with_max_retry_after(Duration::from_secs(30));
+        for value in ["86400", "Thu, 22 Oct 2026 07:28:00 GMT"] {
+            assert_eq!(
+                classify_http_status_with_options_at(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    &headers(&[("retry-after", value)]),
+                    options,
+                    at("Wed, 21 Oct 2026 07:28:00 GMT"),
+                ),
+                RetryClass::RetryAfter(Duration::from_secs(30))
+            );
+        }
+    }
+
+    #[test]
+    fn server_errors_without_a_usable_retry_after_keep_their_class() {
+        for code in 500..=599 {
+            let status = StatusCode::from_u16(code).expect("server status is valid");
+            let expected = if status == StatusCode::GATEWAY_TIMEOUT {
+                RetryClass::Timeout
+            } else {
+                RetryClass::Unavailable
+            };
+            for map in [HeaderMap::new(), headers(&[("retry-after", "invalid")])] {
+                assert_eq!(
+                    classify_http_status(status, &map, &[]),
+                    expected,
+                    "status {code}"
+                );
+            }
         }
     }
 

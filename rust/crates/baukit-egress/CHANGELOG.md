@@ -4,6 +4,24 @@ All notable changes to `baukit-egress` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- `EgressOptions::with_error_body_limit(bytes)` captures bounded non-`2xx` bodies.
+  It is off by default. The limit must be nonzero and no larger than `max_response_bytes`.
+  Reads use the existing request timeout and stop at the limit without a size error.
+- `ErrorBody` exposes `bytes()`, `truncated()`, `content_type()`, and `problem_code()`.
+  The code comes from the shared Baukit error envelope. `EgressError::error_body()`
+  returns the captured body. `Display` omits bodies; `Debug` shows only their length,
+  truncation flag, and problem code. Failure telemetry logs the code without raw bytes.
+
+### Changed
+
+- Breaking: `EgressError::Status` adds `body: Option<ErrorBody>`. Add `..` to matches
+  that only need `status` and `class`.
+- Every `5xx` with a valid `Retry-After` now carries `RetryAfter`, capped by
+  `max_retry_after`. Without a usable header, `504` stays `Timeout` and other `5xx`
+  stay `Unavailable`.
+
 ## [0.10.23] - 2026-10-12
 
 ## [0.10.22] - 2026-10-12

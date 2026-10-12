@@ -220,7 +220,7 @@ must use an allowlist or an outbound proxy that enforces them.
 
 `baukit_egress::GuardedClient` implements the address, redirect, proxy, time,
 and body rules above and keeps the URL out of its errors and telemetry. It
-classifies non-`2xx` statuses with `classify_http_status`, which retries `425`
+classifies non-`2xx` statuses with `classify_http_status_with_options`, which retries `425`
 as `Unavailable`, and clamps the receiver's `Retry-After` to
 `EgressOptions::max_retry_after`, 300 seconds by default. A client built on
 `classify_http_status` directly gets the uncapped value and sets
@@ -230,6 +230,15 @@ other runtime that filters destinations. Send webhook requests with
 `EgressRequest::with_response_body(ResponseBody::Discard)`, so a receiver that
 answers `2xx` with a large body still counts as delivered. Under
 `AddressPolicy::AllowLoopback`, plain `http` reaches only loopback addresses.
+
+Every `5xx` with a valid `Retry-After` becomes `RetryAfter`, including `504`.
+Without a usable header, `504` stays `Timeout` and other `5xx` stay `Unavailable`.
+Non-`2xx` bodies are unread by default. `EgressOptions::with_error_body_limit(bytes)`
+opts in to capture within `max_response_bytes` and the request timeout. Reaching the
+limit truncates the body without a size error. Read `EgressError::error_body()` and
+`ErrorBody::problem_code()` for the Baukit error code. Error bytes can contain personal
+data, so log only the problem code. Error `Display`, body `Debug`, and client telemetry
+omit raw bytes.
 
 `ScriptedWebhookReceiver` supplies bounded loopback requests and queued
 responses for success, rate limit, permanent failure, timeout, and retry tests.

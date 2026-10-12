@@ -1,5 +1,6 @@
 //! Checks that errors, request debug output, and telemetry never carry URL
-//! secrets. Runs as its own test binary so its subscriber sees every callsite.
+//! secrets or raw error bodies. Runs as its own test binary so its subscriber
+//! sees every callsite.
 
 use std::{
     io,
@@ -13,10 +14,17 @@ use tokio::{io::AsyncWriteExt, net::TcpListener};
 use tracing_subscriber::fmt::format::FmtSpan;
 use url::Url;
 
-const SECRETS: [&str; 4] = ["url-secret", "path-secret", "query-secret", "header-secret"];
+const SECRETS: [&str; 7] = [
+    "url-secret",
+    "path-secret",
+    "query-secret",
+    "header-secret",
+    "body-secret",
+    "request-secret",
+    "content-type-secret",
+];
 const SECRET_PATH: &str = "/hook/path-secret?token=query-secret";
-const FAILURE: &[u8] =
-    b"HTTP/1.1 500 Internal Server Error\r\ncontent-length: 0\r\nconnection: close\r\n\r\n";
+const ERROR_BODY: &str = r#"{"error":{"code":"inventory_sequence_gap","message":"body-secret@example.com","requestId":"request-secret","details":{"email":"body-secret@example.com"}}}"#;
 
 #[derive(Clone, Default)]
 struct CapturedLogs(Arc<Mutex<Vec<u8>>>);
@@ -58,7 +66,11 @@ async fn failing_server() -> u16 {
         .port();
     tokio::spawn(async move {
         while let Ok((mut stream, _)) = listener.accept().await {
-            let _ = stream.write_all(FAILURE).await;
+            let response = format!(
+                "HTTP/1.1 409 Conflict\r\ncontent-length: {}\r\ncontent-type: application/content-type-secret\r\nconnection: close\r\n\r\n{ERROR_BODY}",
+                ERROR_BODY.len()
+            );
+            let _ = stream.write_all(response.as_bytes()).await;
             let _ = stream.shutdown().await;
         }
     });
@@ -91,7 +103,10 @@ async fn errors_and_telemetry_do_not_leak_url_secrets() {
     let _guard = tracing::subscriber::set_default(subscriber);
 
     let resolver = StaticResolver::new().with_host("hooks.test", [IpAddr::V4(Ipv4Addr::LOCALHOST)]);
-    let options = EgressOptions::default().with_policy(AddressPolicy::AllowLoopback);
+    let options = EgressOptions::default()
+        .with_policy(AddressPolicy::AllowLoopback)
+        .with_error_body_limit(1024)
+        .expect("error body limit is valid");
     let client = GuardedClient::with_resolver(Arc::new(resolver), options)
         .expect("guarded client should build");
     let mut headers = HeaderMap::new();
@@ -114,6 +129,11 @@ async fn errors_and_telemetry_do_not_leak_url_secrets() {
             .expect_err("each request should fail");
         assert_no_secret(&error.to_string());
         assert_no_secret(&format!("{error:?}"));
+        if let Some(body) = error.error_body() {
+            assert_eq!(body.bytes(), ERROR_BODY.as_bytes());
+            assert_eq!(body.problem_code(), Some("inventory_sequence_gap"));
+            assert_no_secret(&format!("{body:?}"));
+        }
     }
 
     let logs = logs.text();
@@ -126,5 +146,10 @@ async fn errors_and_telemetry_do_not_leak_url_secrets() {
         "failures were logged: {logs}"
     );
     assert!(logs.contains("hooks.test"), "the host is recorded: {logs}");
+    assert!(
+        logs.contains("problem_code=\"inventory_sequence_gap\""),
+        "problem code is recorded: {logs}"
+    );
+    assert!(!logs.contains("requestId"), "raw JSON leaked into: {logs}");
     assert_no_secret(&logs);
 }

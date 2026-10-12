@@ -4,6 +4,13 @@ All notable changes to `baukit-http` are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Every `5xx` response with a valid `Retry-After` now classifies as `RetryAfter`,
+  including `504`. Delta-seconds and HTTP dates respect the configured delay cap.
+  Without a usable delay, `504` stays `Timeout` and other `5xx` stay `Unavailable`.
+  `401` and `403` keep their existing behavior.
+
 ## [0.10.23] - 2026-10-12
 
 ## [0.10.22] - 2026-10-12

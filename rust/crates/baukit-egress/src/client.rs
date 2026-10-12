@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use axum::http::{HeaderMap, Method, StatusCode};
+use axum::http::{HeaderMap, Method, StatusCode, header::CONTENT_TYPE};
 use baukit_http::{RetryHeaderOptions, classify_http_status_with_options};
 use reqwest::{
     dns::{Addrs, Name, Resolve, Resolving},
@@ -16,8 +16,8 @@ use tracing::{Instrument, field::Empty};
 use url::{Host, Url};
 
 use crate::{
-    AddressPolicy, DestinationRejection, EgressError, EgressOptions, Resolver, SystemResolver,
-    resolve_destination,
+    AddressPolicy, DestinationRejection, EgressError, EgressOptions, ErrorBody, Resolver,
+    SystemResolver, resolve_destination,
 };
 
 const TARGET: &str = "baukit_egress";
@@ -230,7 +230,8 @@ impl GuardedClient {
     /// Sends `request` and reads the response body.
     ///
     /// A status outside `2xx` becomes [`EgressError::Status`], classified by
-    /// [`baukit_http::classify_http_status_with_options`] without reading its body.
+    /// [`baukit_http::classify_http_status_with_options`]. Its body is read only
+    /// when [`EgressOptions::with_error_body_limit`] is enabled.
     /// A `Retry-After` delay above [`EgressOptions::max_retry_after`] is clamped.
     /// `403` is revoked by default. [`EgressOptions::with_forbidden_rate_limit`]
     /// recognizes rate-limit headers on `403`; `401` always stays revoked.
@@ -254,7 +255,14 @@ impl GuardedClient {
                     span.record("http.response.status_code", status.as_u16());
                 }
                 span.record("error.type", error.code());
-                tracing::debug!(target: TARGET, parent: &span, code = error.code(), %error, "egress request failed");
+                tracing::debug!(
+                    target: TARGET,
+                    parent: &span,
+                    code = error.code(),
+                    problem_code = error.error_body().and_then(ErrorBody::problem_code),
+                    %error,
+                    "egress request failed"
+                );
             }
         }
         outcome
@@ -279,7 +287,15 @@ impl GuardedClient {
                 retry_headers = retry_headers.with_forbidden_rate_limit();
             }
             let class = classify_http_status_with_options(status, &headers, retry_headers);
-            return Err(EgressError::Status { status, class });
+            let body = match self.options.error_body_limit() {
+                Some(limit) => Some(read_error_body(response, limit).await?),
+                None => None,
+            };
+            return Err(EgressError::Status {
+                status,
+                class,
+                body,
+            });
         }
         let body = match request.response_body {
             ResponseBody::Read => read_body(response, self.options.max_response_bytes()).await?,
@@ -440,4 +456,26 @@ async fn read_body(mut response: reqwest::Response, limit: usize) -> Result<Vec<
         body.extend_from_slice(&chunk);
     }
     Ok(body)
+}
+
+async fn read_error_body(
+    mut response: reqwest::Response,
+    limit: usize,
+) -> Result<ErrorBody, EgressError> {
+    let content_type = response
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let length = response.content_length();
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(send_error)? {
+        let remaining = limit - body.len();
+        body.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+        if body.len() == limit {
+            let complete = length == u64::try_from(limit).ok();
+            return Ok(ErrorBody::new(body, !complete, content_type));
+        }
+    }
+    Ok(ErrorBody::new(body, false, content_type))
 }

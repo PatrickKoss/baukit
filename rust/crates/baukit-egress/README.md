@@ -85,7 +85,40 @@ assert!(delivered.body().is_empty());
 
 Any `2xx` then counts as delivered, whatever its size. The connection closes
 instead of returning to the pool. Non-`2xx` statuses are classified the same
-way in both modes, and their bodies are never read.
+way in both modes. Their bodies are read only when `with_error_body_limit` is enabled.
+
+To read a product error code, opt in to bounded error bodies:
+
+```rust,ignore
+use baukit_egress::{EgressError, EgressOptions, EgressRequest, GuardedClient};
+use axum::http::StatusCode;
+
+let options = EgressOptions::default().with_error_body_limit(4096)?;
+let client = GuardedClient::new(options)?;
+match client.execute(EgressRequest::post(url).with_body(body)).await {
+    Ok(response) => tracing::debug!(status = %response.status(), "request succeeded"),
+    Err(EgressError::Status { status: StatusCode::SERVICE_UNAVAILABLE, class, .. }) => {
+        tracing::warn!(retry_after = ?class.retry_after(), "service unavailable");
+    }
+    Err(EgressError::Status { status: StatusCode::CONFLICT, body, .. }) => {
+        let problem_code = body.as_ref().and_then(|body| body.problem_code());
+        tracing::warn!(problem_code, "upstream conflict");
+    }
+    Err(error) => return Err(error.into()),
+}
+```
+
+The limit must be nonzero and at most `max_response_bytes`. Both builders check that
+constraint, including when lowering `max_response_bytes` after enabling capture.
+`ErrorBody::bytes()` returns the captured bytes; `content_type()` returns the response's
+content type. `problem_code()` returns the code from Baukit's shared JSON error envelope,
+or `None` for other bodies or incomplete JSON.
+
+Reading stops when the limit is filled and sets `truncated()`, without returning
+`ResponseTooLarge`. A known-length body that fits exactly is complete. An unknown-length
+body that ends exactly at the limit is marked truncated because the client stops without
+waiting for more bytes. Reads share the whole request timeout. A read timeout or transport
+failure returns the corresponding `EgressError` rather than a status with partial bytes.
 
 ## Resolver port
 
@@ -111,14 +144,17 @@ example one backed by a DNS library with its own cache.
 | `Resolve` | `resolve_failed` | `Unavailable` |
 | `Timeout` | `timeout` | `Timeout` |
 | `Transport` | `transport_failed` | `Unavailable` |
-| `Status { status, class }` | `upstream_status` | `classify_http_status_with_options(status, headers, options)` |
+| `Status { status, class, body }` | `upstream_status` | `classify_http_status_with_options(status, headers, options)` |
 | `ResponseTooLarge { limit }` | `response_too_large` | `Permanent` |
 
 `Status` uses `baukit_http::classify_http_status_with_options`. A `429` with `Retry-After`
-comes back as `RetryClass::RetryAfter` and without it as `RateLimited`. `408`
-and `504` are `Timeout`, `425` and other `5xx` are `Unavailable`, `401` and
+comes back as `RetryClass::RetryAfter` and without it as `RateLimited`. Every `5xx`,
+including `504`, with a valid `Retry-After` also becomes `RetryAfter`. Without a usable
+header, `504` is `Timeout` and other `5xx` are `Unavailable`. `408` is `Timeout`,
+`425` is `Unavailable`, `401` and
 `403` are `Revoked` by default, and every other status, `3xx` included, is `Permanent`.
-The body of a non-`2xx` response is not read.
+The body of a non-`2xx` response is not read by default. `error_body()` returns it
+when capture is enabled.
 
 Enable `EgressOptions::with_forbidden_rate_limit()` for APIs such as GitHub that report
 rate limits with `403`. A usable `Retry-After` gives `RetryAfter`. Otherwise,
@@ -136,8 +172,13 @@ The delay in `RetryAfter` is the receiver's value, clamped to
 
 Every request runs inside an `egress.request` span with the method, the host,
 the port, the response status, and `error.type`. Failures log one debug event
-with the error code. Neither ever contains the path, the query, user info, or
+with the error code and, when captured, the Baukit problem code. Neither contains raw
+error bytes, the path, the query, user info, or
 header values, and `EgressRequest`'s `Debug` output shows only the method, the
 host, the header names, and the body length. Transport errors drop the URL
 before they are wrapped. Webhook URLs often embed tokens in the path or query,
 so keep it that way when you add fields.
+
+Error bodies may contain personal data. `EgressError`'s `Display` never includes the body.
+`ErrorBody`'s `Debug` shows only its length, truncation flag, and problem code, and
+`EgressError`'s `Debug` uses that representation. Log the problem code instead of the bytes.

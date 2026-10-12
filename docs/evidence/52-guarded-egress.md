@@ -144,8 +144,9 @@ envelope, or it would hide behind a feature. CI runs `cargo test` and `cargo cli
 
 `execute` validates the URL first. hyper skips the resolver for IP-literal hosts, so
 `validate_destination` checks literals itself. A non-`2xx` status becomes
-`EgressError::Status` with `classify_http_status(status, headers, &[])`, and its body is never
-read. A `2xx` body is read chunk by chunk and stops at `max_response_bytes`, with or without
+`EgressError::Status` with `classify_http_status_with_options`. Its body is unread by default.
+`with_error_body_limit(bytes)` opts in to bounded capture under the request timeout.
+A `2xx` body is read chunk by chunk and stops at `max_response_bytes`, with or without
 `Content-Length`.
 
 ### Tests
@@ -188,10 +189,13 @@ From `baukit-egress`:
 - `Resolver`, `ResolveFuture`, `ResolveError`, `SystemResolver`, `StaticResolver`,
   `resolve_destination`.
 - `EgressError` (`Destination`, `BlockedAddress`, `Resolve`, `Timeout`, `Transport`, `Status`,
-  `ResponseTooLarge`; `code`, `retry_class`, `is_retryable`), `DestinationRejection` (`Scheme`,
+  `ResponseTooLarge`; `code`, `retry_class`, `is_retryable`, `error_body`), `DestinationRejection` (`Scheme`,
   `Credentials`, `Fragment`, `MissingHost`; `code`).
 - `EgressOptions` (`with_policy`, `with_resolve_timeout`, `with_connect_timeout`,
-  `with_request_timeout`, `with_max_response_bytes`, getters) and `EgressOptionsError`.
+  `with_request_timeout`, `with_max_response_bytes`, `with_error_body_limit`, getters)
+  and `EgressOptionsError`.
+- `ErrorBody` (`bytes`, `truncated`, `content_type`, `problem_code`). It reuses
+  `baukit_http::ErrorEnvelope` to read the problem code.
 
 ## Supported runtimes
 
@@ -208,21 +212,26 @@ because the workspace `reqwest` pin has no HTTP/2 feature.
 | Lookup error or empty answer | `Resolve` | `Unavailable` |
 | Lookup, connect, or request timeout | `Timeout` | `Timeout` |
 | Connection refused or reset, TLS failure | `Transport` | `Unavailable` |
-| Non-`2xx` status, redirects included | `Status { status, class }` | `classify_http_status` |
+| Non-`2xx` status, redirects included | `Status { status, class, body }` | `classify_http_status_with_options` |
 | Body over the limit | `ResponseTooLarge { limit }` | `Permanent` |
 
 A timeout after the request was written is ambiguous: the receiver may have acted on it. The
 error is still `Timeout`, and callers that retry must reuse the same idempotency or delivery key.
-`RetryAfter` carries the receiver's value uncapped; the caller caps it.
+`RetryAfter` carries the receiver's delay capped at `max_retry_after`, 300 seconds by default.
+Every `5xx` with a valid `Retry-After` becomes `RetryAfter`. Without a usable header,
+`504` stays `Timeout` and other `5xx` stay `Unavailable`.
+Opted-in status bodies stop at the capture limit without `ResponseTooLarge`.
+Unknown-length bodies that fill the limit are marked truncated without waiting for more bytes.
 
 ## Privacy boundary
 
 No `EgressError` variant carries a URL. `Transport` wraps the reqwest error after `without_url()`.
 The `egress.request` span records the method, host, port, status, and `error.type`; the failure
-event adds the error code and its `Display`. `EgressRequest`'s `Debug` shows the method, host,
+event adds the error code, the captured problem code, and its `Display`. `EgressRequest`'s `Debug` shows the method, host,
 header names, and body length. The resolver logs the host at `debug` on a failed lookup. Paths,
-queries, user info, header values, and bodies never reach errors or telemetry, and the telemetry
-test pins that.
+queries, user info, and header values stay out of error messages and telemetry. Captured error
+bytes may contain personal data. `Display` omits them; `ErrorBody`'s `Debug` shows only length,
+truncation, and problem code. The client never logs raw bodies, and the telemetry test pins that.
 
 ## Breaks
 

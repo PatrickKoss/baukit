@@ -60,7 +60,7 @@ impl ReqwestSuitePeerClient {
                 status: response.status().as_u16(),
                 retry_after: None,
             }),
-            Err(EgressError::Status { status, class }) => Ok(SuitePeerResponse {
+            Err(EgressError::Status { status, class, .. }) => Ok(SuitePeerResponse {
                 status: status.as_u16(),
                 retry_after: class.retry_after(),
             }),

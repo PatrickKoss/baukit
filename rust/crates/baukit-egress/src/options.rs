@@ -14,6 +14,7 @@ const DEFAULT_MAX_RETRY_AFTER: Duration = Duration::from_secs(300);
 /// a 5 second connect timeout, a 10 second timeout for the whole request
 /// including the body, a 1 MiB response body limit, and a 300 second cap on
 /// the `Retry-After` delay reported in [`EgressError::Status`](crate::EgressError::Status).
+/// Error bodies are not read unless [`Self::with_error_body_limit`] is set.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EgressOptions {
     policy: AddressPolicy,
@@ -21,6 +22,7 @@ pub struct EgressOptions {
     connect_timeout: Duration,
     request_timeout: Duration,
     max_response_bytes: usize,
+    error_body_limit: Option<usize>,
     max_retry_after: Duration,
     forbidden_rate_limit: bool,
 }
@@ -34,6 +36,12 @@ pub enum EgressOptionsError {
     /// The response body limit was zero.
     #[error("egress response body limit must be greater than zero")]
     ZeroResponseLimit,
+    /// The error body limit was zero.
+    #[error("egress error body limit must be greater than zero")]
+    ZeroErrorBodyLimit,
+    /// The error body limit exceeded the response body limit.
+    #[error("egress error body limit must not exceed the response body limit")]
+    ErrorBodyLimitTooLarge,
     /// The `Retry-After` cap was zero.
     #[error("egress retry-after cap must be greater than zero")]
     ZeroRetryAfterCap,
@@ -47,6 +55,7 @@ impl Default for EgressOptions {
             connect_timeout: DEFAULT_CONNECT_TIMEOUT,
             request_timeout: DEFAULT_REQUEST_TIMEOUT,
             max_response_bytes: DEFAULT_MAX_RESPONSE_BYTES,
+            error_body_limit: None,
             max_retry_after: DEFAULT_MAX_RETRY_AFTER,
             forbidden_rate_limit: false,
         }
@@ -87,7 +96,27 @@ impl EgressOptions {
         if limit == 0 {
             return Err(EgressOptionsError::ZeroResponseLimit);
         }
+        if matches!(self.error_body_limit, Some(error_limit) if error_limit > limit) {
+            return Err(EgressOptionsError::ErrorBodyLimitTooLarge);
+        }
         self.max_response_bytes = limit;
+        Ok(self)
+    }
+
+    /// Reads up to `limit` bytes of non-`2xx` bodies within the request timeout.
+    ///
+    /// Disabled by default. The limit must be nonzero and no larger than
+    /// [`Self::max_response_bytes`]. Reaching it truncates the body without
+    /// failing the request. Bodies may contain personal data; log only the
+    /// [`ErrorBody::problem_code`](crate::ErrorBody::problem_code).
+    pub const fn with_error_body_limit(mut self, limit: usize) -> Result<Self, EgressOptionsError> {
+        if limit == 0 {
+            return Err(EgressOptionsError::ZeroErrorBodyLimit);
+        }
+        if limit > self.max_response_bytes {
+            return Err(EgressOptionsError::ErrorBodyLimitTooLarge);
+        }
+        self.error_body_limit = Some(limit);
         Ok(self)
     }
 
@@ -141,6 +170,12 @@ impl EgressOptions {
     #[must_use]
     pub const fn max_response_bytes(&self) -> usize {
         self.max_response_bytes
+    }
+
+    /// Returns the error body limit in bytes, or `None` when reading is disabled.
+    #[must_use]
+    pub const fn error_body_limit(&self) -> Option<usize> {
+        self.error_body_limit
     }
 
     /// Returns the largest `Retry-After` delay a status error reports.

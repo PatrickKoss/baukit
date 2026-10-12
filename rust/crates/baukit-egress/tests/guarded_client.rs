@@ -15,10 +15,11 @@ use baukit_egress::{
     EgressRequest, GuardedClient, ResolveFuture, Resolver, ResponseBody, StaticResolver,
 };
 use baukit_http::RetryClass;
+use time::{OffsetDateTime, format_description::well_known::Rfc2822};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    task::JoinHandle,
+    task::{JoinHandle, JoinSet},
 };
 use url::Url;
 
@@ -32,6 +33,7 @@ const SHORT: Duration = Duration::from_millis(200);
 #[derive(Clone)]
 enum Reply {
     Respond(Vec<u8>),
+    RespondThenWait(Vec<u8>),
     Hang,
 }
 
@@ -95,9 +97,11 @@ async fn accept_loop(
     connections: Arc<AtomicUsize>,
     requests: Arc<Mutex<Vec<String>>>,
 ) {
+    let mut tasks = JoinSet::new();
     while let Ok((stream, _)) = listener.accept().await {
         connections.fetch_add(1, Ordering::SeqCst);
-        tokio::spawn(answer(stream, reply.clone(), Arc::clone(&requests)));
+        tasks.spawn(answer(stream, reply.clone(), Arc::clone(&requests)));
+        while tasks.try_join_next().is_some() {}
     }
 }
 
@@ -111,6 +115,14 @@ async fn answer(mut stream: TcpStream, reply: Reply, requests: Arc<Mutex<Vec<Str
         Reply::Respond(bytes) => {
             let _ = stream.write_all(&bytes).await;
             let _ = stream.shutdown().await;
+        }
+        Reply::RespondThenWait(bytes) => {
+            stream
+                .write_all(&bytes)
+                .await
+                .expect("headers should write");
+            let mut buffer = [0_u8; 1];
+            let _ = stream.read(&mut buffer).await;
         }
         Reply::Hang => tokio::time::sleep(HANG).await,
     }
@@ -161,8 +173,12 @@ fn response(status: &str, headers: &[(&str, &str)], body: &str) -> Reply {
 }
 
 fn chunked_response(chunks: &[&str]) -> Reply {
+    chunked_status_response("200 OK", chunks)
+}
+
+fn chunked_status_response(status: &str, chunks: &[&str]) -> Reply {
     let mut text =
-        String::from("HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n");
+        format!("HTTP/1.1 {status}\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n");
     for chunk in chunks {
         text.push_str(&format!("{:x}\r\n{chunk}\r\n", chunk.len()));
     }
@@ -328,7 +344,8 @@ async fn redirects_are_returned_and_never_followed() {
                 error,
                 EgressError::Status {
                     status: StatusCode::FOUND,
-                    class: RetryClass::Permanent
+                    class: RetryClass::Permanent,
+                    ..
                 }
             ),
             "{error:?}"
@@ -451,7 +468,7 @@ async fn forbidden_rate_limit_requires_opt_in_and_keeps_the_delay_cap() {
             .expect_err("a 403 is an error");
 
         assert!(
-            matches!(error, EgressError::Status { status: StatusCode::FORBIDDEN, class } if class == expected),
+            matches!(error, EgressError::Status { status: StatusCode::FORBIDDEN, class, .. } if class == expected),
             "{error:?}"
         );
         assert_eq!(error.is_retryable(), expected.is_retryable());
@@ -589,11 +606,242 @@ async fn a_discarded_body_keeps_the_status_classification() {
             error,
             EgressError::Status {
                 status: StatusCode::SERVICE_UNAVAILABLE,
-                class: RetryClass::Unavailable
+                class: RetryClass::Unavailable,
+                ..
             }
         ),
         "{error:?}"
     );
+}
+
+#[tokio::test]
+async fn service_unavailable_honors_retry_after_seconds_and_http_date() {
+    let deadline = OffsetDateTime::now_utc() + time::Duration::minutes(2);
+    let date = deadline.format(&Rfc2822).expect("HTTP date should format");
+    for value in ["7", date.as_str()] {
+        let server = LocalServer::start(response(
+            "503 Service Unavailable",
+            &[("retry-after", value)],
+            "",
+        ))
+        .await;
+        let client = client(loopback_resolver(&["hooks.test"]), development());
+        let before = OffsetDateTime::now_utc();
+        let error = client
+            .execute(EgressRequest::get(server.url("hooks.test", "/")))
+            .await
+            .expect_err("a 503 is an error");
+        let after = OffsetDateTime::now_utc();
+        let delay = error
+            .retry_class()
+            .retry_after()
+            .expect("delay is retained");
+        if value == "7" {
+            assert_eq!(delay, Duration::from_secs(7));
+        } else {
+            let parsed = OffsetDateTime::parse(&date, &Rfc2822).expect("HTTP date should parse");
+            let lower: Duration = (parsed - after)
+                .try_into()
+                .expect("deadline is in the future");
+            let upper: Duration = (parsed - before)
+                .try_into()
+                .expect("deadline is in the future");
+            assert!(delay >= lower && delay <= upper, "delay {delay:?}");
+        }
+    }
+}
+
+#[test]
+fn error_body_limits_are_opt_in_and_validated_in_both_builder_orders() {
+    let options = EgressOptions::default();
+    assert_eq!(options.error_body_limit(), None);
+    assert_eq!(
+        options.with_error_body_limit(0),
+        Err(EgressOptionsError::ZeroErrorBodyLimit)
+    );
+    assert_eq!(
+        options.with_error_body_limit(options.max_response_bytes() + 1),
+        Err(EgressOptionsError::ErrorBodyLimitTooLarge)
+    );
+    let options = options.with_max_response_bytes(16).expect("limit is valid");
+    assert_eq!(
+        options.with_error_body_limit(17),
+        Err(EgressOptionsError::ErrorBodyLimitTooLarge)
+    );
+    let options = options
+        .with_error_body_limit(16)
+        .expect("equal limit is valid");
+    assert_eq!(options.error_body_limit(), Some(16));
+    assert_eq!(
+        options.with_max_response_bytes(15),
+        Err(EgressOptionsError::ErrorBodyLimitTooLarge)
+    );
+    assert_eq!(options.with_max_response_bytes(16), Ok(options));
+}
+
+#[tokio::test]
+async fn conflict_body_exposes_the_baukit_problem_code_and_redacts_personal_data() {
+    let bytes = r#"{"error":{"code":"inventory_sequence_gap","message":"email-secret@example.com","requestId":"request-secret","details":{"email":"email-secret@example.com"}}}"#;
+    let server = LocalServer::start(response(
+        "409 Conflict",
+        &[("content-type", "application/json; charset=utf-8")],
+        bytes,
+    ))
+    .await;
+    let options = development()
+        .with_error_body_limit(1024)
+        .expect("limit is valid");
+    let client = client(loopback_resolver(&["hooks.test"]), options);
+    let error = client
+        .execute(
+            EgressRequest::get(server.url("hooks.test", "/"))
+                .with_response_body(ResponseBody::Discard),
+        )
+        .await
+        .expect_err("a conflict is an error");
+
+    assert!(matches!(
+        error,
+        EgressError::Status {
+            status: StatusCode::CONFLICT,
+            class: RetryClass::Permanent,
+            ..
+        }
+    ));
+    let body = error.error_body().expect("body capture is enabled");
+    assert_eq!(body.bytes(), bytes.as_bytes());
+    assert!(!body.truncated());
+    assert_eq!(body.content_type(), Some("application/json; charset=utf-8"));
+    assert_eq!(body.problem_code(), Some("inventory_sequence_gap"));
+    assert_eq!(
+        error.to_string(),
+        "egress destination answered with status 409 Conflict"
+    );
+    assert_eq!(
+        format!("{body:?}"),
+        format!(
+            "ErrorBody {{ len: {}, truncated: false, problem_code: Some(\"inventory_sequence_gap\") }}",
+            bytes.len()
+        )
+    );
+    for text in [error.to_string(), format!("{error:?}"), format!("{body:?}")] {
+        for secret in [
+            "email-secret",
+            "request-secret",
+            "application/json",
+            "message",
+            "details",
+        ] {
+            assert!(!text.contains(secret), "{secret} leaked into {text}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn disabled_error_body_capture_does_not_read_an_incomplete_body() {
+    let server = LocalServer::start(Reply::Respond(
+        b"HTTP/1.1 409 Conflict\r\ncontent-length: 1024\r\nconnection: close\r\n\r\n".to_vec(),
+    ))
+    .await;
+    let client = client(loopback_resolver(&["hooks.test"]), development());
+    let error = client
+        .execute(EgressRequest::get(server.url("hooks.test", "/")))
+        .await
+        .expect_err("a conflict is an error");
+    assert!(matches!(
+        error,
+        EgressError::Status {
+            status: StatusCode::CONFLICT,
+            body: None,
+            ..
+        }
+    ));
+    assert!(error.error_body().is_none());
+}
+
+#[tokio::test]
+async fn error_bodies_stop_at_the_limit_with_and_without_content_length() {
+    let options = development()
+        .with_error_body_limit(16)
+        .expect("limit is valid");
+    let cases = [
+        (response("500 Internal Server Error", &[], "abcdefghijklmnopq"), "abcdefghijklmnop", true),
+        (chunked_status_response("500 Internal Server Error", &["abcdefgh", "ijklmnopq"]), "abcdefghijklmnop", true),
+        (response("500 Internal Server Error", &[], "abcdefghijklmnop"), "abcdefghijklmnop", false),
+        (chunked_status_response("500 Internal Server Error", &["abcdefghijklmnop"]), "abcdefghijklmnop", true),
+        (chunked_status_response("500 Internal Server Error", &["abcdefghijklmno"]), "abcdefghijklmno", false),
+        (Reply::RespondThenWait(b"HTTP/1.1 500 Internal Server Error\r\ncontent-length: 1024\r\n\r\nabcdefghijklmnop".to_vec()), "abcdefghijklmnop", true),
+    ];
+    for (reply, expected, truncated) in cases {
+        let server = LocalServer::start(reply).await;
+        let client = client(loopback_resolver(&["hooks.test"]), options);
+        let error = client
+            .execute(EgressRequest::get(server.url("hooks.test", "/")))
+            .await
+            .expect_err("a 500 is an error");
+        assert!(matches!(
+            error,
+            EgressError::Status {
+                class: RetryClass::Unavailable,
+                ..
+            }
+        ));
+        let body = error.error_body().expect("body should be captured");
+        assert_eq!(body.truncated(), truncated);
+        assert_eq!(body.bytes(), expected.as_bytes());
+        assert_eq!(body.problem_code(), None);
+        assert_eq!(body.content_type(), None);
+    }
+}
+
+#[tokio::test]
+async fn non_envelope_and_truncated_json_bodies_have_no_problem_code() {
+    let cases = [
+        ("plain text", 1024),
+        (r#"{"code":"inventory_sequence_gap"}"#, 1024),
+        (r#"{"error":{"code":42}}"#, 1024),
+        (
+            r#"{"error":{"code":"inventory_sequence_gap","message":"gap","requestId":"test","details":{}}}"#,
+            16,
+        ),
+        ("", 1024),
+    ];
+    for (bytes, limit) in cases {
+        let server = LocalServer::start(response("401 Unauthorized", &[], bytes)).await;
+        let options = development()
+            .with_error_body_limit(limit)
+            .expect("limit is valid");
+        let client = client(loopback_resolver(&["hooks.test"]), options);
+        let error = client
+            .execute(EgressRequest::get(server.url("hooks.test", "/")))
+            .await
+            .expect_err("a 401 is an error");
+        assert_eq!(error.retry_class(), RetryClass::Revoked);
+        assert_eq!(
+            error.error_body().expect("body is captured").problem_code(),
+            None
+        );
+    }
+}
+
+#[tokio::test]
+async fn reading_an_error_body_keeps_the_request_timeout() {
+    let server = LocalServer::start(Reply::RespondThenWait(
+        b"HTTP/1.1 503 Service Unavailable\r\ncontent-length: 1024\r\n\r\n".to_vec(),
+    ))
+    .await;
+    let options = development()
+        .with_error_body_limit(16)
+        .expect("limit is valid")
+        .with_request_timeout(SHORT)
+        .expect("timeout is valid");
+    let client = client(loopback_resolver(&["hooks.test"]), options);
+    let error = client
+        .execute(EgressRequest::get(server.url("hooks.test", "/")))
+        .await
+        .expect_err("body reading should time out");
+    assert!(matches!(error, EgressError::Timeout), "{error:?}");
+    assert!(error.error_body().is_none());
 }
 
 #[tokio::test]

@@ -3,6 +3,72 @@ use std::fmt;
 use axum::http::StatusCode;
 use baukit_http::{RetryClass, classify_transport_error};
 
+/// A bounded non-`2xx` response body, read only when explicitly enabled.
+///
+/// The bytes may contain personal data. `Debug` shows only their length,
+/// the truncation flag, and the problem code from Baukit's error envelope.
+#[derive(Clone, Eq, PartialEq)]
+pub struct ErrorBody {
+    bytes: Vec<u8>,
+    truncated: bool,
+    content_type: Option<String>,
+    problem_code: Option<String>,
+}
+
+impl ErrorBody {
+    pub(crate) fn new(bytes: Vec<u8>, truncated: bool, content_type: Option<String>) -> Self {
+        let problem_code = serde_json::from_slice::<baukit_http::ErrorEnvelope>(&bytes)
+            .ok()
+            .map(|envelope| envelope.error.code);
+        Self {
+            bytes,
+            truncated,
+            content_type,
+            problem_code,
+        }
+    }
+
+    /// Returns the captured bytes, which may contain personal data.
+    #[must_use]
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// Returns whether reading stopped at the limit without confirming the end.
+    ///
+    /// A body with an unknown length that ends exactly at the limit is marked
+    /// truncated, since the client stops without waiting for more bytes.
+    #[must_use]
+    pub const fn truncated(&self) -> bool {
+        self.truncated
+    }
+
+    /// Returns the response's `Content-Type`, if present and valid as text.
+    #[must_use]
+    pub fn content_type(&self) -> Option<&str> {
+        self.content_type.as_deref()
+    }
+
+    /// Returns the code if the captured bytes parse as Baukit's error envelope.
+    ///
+    /// Non-JSON, incomplete JSON, and other JSON shapes return `None`.
+    #[must_use]
+    pub fn problem_code(&self) -> Option<&str> {
+        self.problem_code.as_deref()
+    }
+}
+
+impl fmt::Debug for ErrorBody {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ErrorBody")
+            .field("len", &self.bytes.len())
+            .field("truncated", &self.truncated)
+            .field("problem_code", &self.problem_code())
+            .finish()
+    }
+}
+
 /// Why a destination URL was refused before any lookup.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DestinationRejection {
@@ -45,6 +111,8 @@ impl fmt::Display for DestinationRejection {
 ///
 /// No variant carries the destination URL, so messages and logs built from
 /// this error cannot leak a path, query, or credentials.
+/// Opted-in error bodies may contain personal data. `Display` omits them,
+/// and `Debug` uses [`ErrorBody`]'s redacted representation.
 #[derive(Debug, thiserror::Error)]
 pub enum EgressError {
     /// The URL was refused before any lookup.
@@ -76,6 +144,9 @@ pub enum EgressError {
         /// [`EgressOptions::with_forbidden_rate_limit`](crate::EgressOptions::with_forbidden_rate_limit)
         /// is enabled and recognizes a rate limit. `401` always stays revoked.
         class: RetryClass,
+        /// The captured body, if [`EgressOptions::with_error_body_limit`](crate::EgressOptions::with_error_body_limit)
+        /// is enabled. Truncation at that limit is not an error.
+        body: Option<ErrorBody>,
     },
     /// The response body was larger than the configured limit.
     #[error("egress response body exceeded {limit} bytes")]
@@ -86,6 +157,15 @@ pub enum EgressError {
 }
 
 impl EgressError {
+    /// Returns the captured status body, or `None` for other failures or when disabled.
+    #[must_use]
+    pub const fn error_body(&self) -> Option<&ErrorBody> {
+        match self {
+            Self::Status { body, .. } => body.as_ref(),
+            _ => None,
+        }
+    }
+
     /// Returns how a caller should react to this failure.
     ///
     /// Refused destinations and oversized responses are

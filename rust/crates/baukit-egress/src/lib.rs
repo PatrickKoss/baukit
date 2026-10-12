@@ -20,6 +20,10 @@
 //! `401` and `403` are revoked by default. Enable
 //! [`EgressOptions::with_forbidden_rate_limit`] to recognize rate-limit headers
 //! on `403` responses. `401` always stays revoked.
+//! Every `5xx` with a valid `Retry-After` reports the capped delay through
+//! [`EgressError::retry_class`]. Enable [`EgressOptions::with_error_body_limit`]
+//! to capture a bounded error body and read its [`ErrorBody::problem_code`].
+//! Bodies may contain personal data; error messages and debug output omit raw bytes.
 //!
 //! The address policy follows the IANA special-purpose address registries and
 //! is pinned by the shared vectors in `fixtures/egress/address-policy-v1.json`.
@@ -27,25 +31,28 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use baukit_egress::{EgressOptions, EgressRequest, GuardedClient};
+//! use baukit_egress::{EgressOptions, EgressRequest, GuardedClient, ErrorBody};
 //! use url::Url;
 //!
 //! # async fn deliver(body: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
-//! let client = GuardedClient::new(EgressOptions::default())?;
+//! let options = EgressOptions::default().with_error_body_limit(4096)?;
+//! let client = GuardedClient::new(options)?;
 //! let url = Url::parse("https://hooks.example.com/deliver")?;
 //! match client.execute(EgressRequest::post(url).with_body(body)).await {
-//!     Ok(_) => {}
-//!     Err(error) if error.is_retryable() => {
-//!         // Schedule another attempt, honoring `error.retry_class().retry_after()`.
-//!     }
+//!     Ok(response) => tracing::debug!(status = %response.status(), "request succeeded"),
 //!     Err(error) => {
-//!         // Record `error.code()` and stop.
-//!         let _ = error.code();
+//!         let retry_after = error.retry_class().retry_after();
+//!         let problem_code = error.error_body().and_then(ErrorBody::problem_code);
+//!         tracing::warn!(code = error.code(), problem_code, ?retry_after, "delivery failed");
+//!         return Err(error.into());
 //!     }
 //! }
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! The delivery scheduler honors `retry_after()` when retrying a `503` or `429`.
+//! A `409` is permanent; log its problem code, such as `inventory_sequence_gap`.
 
 #![deny(missing_docs)]
 
@@ -59,7 +66,7 @@ pub use client::{
     EgressClientError, EgressRequest, EgressResponse, GuardedClient, ResponseBody,
     validate_destination,
 };
-pub use error::{DestinationRejection, EgressError};
+pub use error::{DestinationRejection, EgressError, ErrorBody};
 pub use options::{EgressOptions, EgressOptionsError};
 pub use policy::{AddressPolicy, is_public_address};
 pub use resolver::{
