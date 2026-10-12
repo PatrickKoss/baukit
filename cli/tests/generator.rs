@@ -3960,6 +3960,7 @@ fn doctor_pin_census_ignores_fixture_trees() -> anyhow::Result<()> {
         let tree = root.join(format!("backend/crates/a/tests/{directory}/malformed"));
         fs::create_dir_all(&tree)?;
         fs::write(tree.join("package.json"), "{\n")?;
+        fs::write(tree.join("Cargo.toml"), "[workspace\n")?;
     }
     let findings = doctor(&root)?;
     assert!(

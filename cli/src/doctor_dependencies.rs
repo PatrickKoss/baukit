@@ -55,10 +55,7 @@ pub(super) fn validate_registry_pins(
                 continue;
             }
             let relative = path.strip_prefix(root)?;
-            if relative
-                .components()
-                .any(|part| matches!(part.as_os_str().to_str(), Some("fixtures" | "testdata")))
-            {
+            if doctor_layout::is_fixture_path(relative) {
                 continue;
             }
             let relative = relative.display().to_string();

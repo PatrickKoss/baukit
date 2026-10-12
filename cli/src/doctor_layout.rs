@@ -104,7 +104,14 @@ pub(super) fn cargo_manifests(root: &Path) -> Result<Vec<PathBuf>> {
     Ok(product_files(root, "toml")?
         .into_iter()
         .filter(|path| path.file_name().is_some_and(|name| name == "Cargo.toml"))
+        .filter(|path| !is_fixture_path(path.strip_prefix(root).unwrap_or(path)))
         .collect())
+}
+
+pub(super) fn is_fixture_path(relative: &Path) -> bool {
+    relative
+        .components()
+        .any(|part| matches!(part.as_os_str().to_str(), Some("fixtures" | "testdata")))
 }
 
 pub(super) fn cargo_workspaces(root: &Path, manifest: &Manifest) -> Result<Vec<PathBuf>> {
