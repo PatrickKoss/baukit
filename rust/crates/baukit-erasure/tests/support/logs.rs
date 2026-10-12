@@ -1,13 +1,20 @@
 use std::{
     io::Write,
-    sync::{Arc, Mutex},
+    sync::{Arc, LazyLock, Mutex},
 };
+use tracing::{Dispatch, subscriber::NoSubscriber};
+
+// A second live dispatcher stops tracing-core from caching callsite interest
+// from another test thread that has no subscriber.
+static INTEREST_GUARD: LazyLock<Dispatch> =
+    LazyLock::new(|| Dispatch::new(NoSubscriber::default()));
 
 #[derive(Clone, Default)]
 pub struct Logs(Arc<Mutex<Vec<u8>>>);
 
 impl Logs {
     pub fn subscriber(&self) -> impl tracing::Subscriber + Send + Sync + 'static {
+        LazyLock::force(&INTEREST_GUARD);
         tracing_subscriber::fmt()
             .without_time()
             .with_ansi(false)
