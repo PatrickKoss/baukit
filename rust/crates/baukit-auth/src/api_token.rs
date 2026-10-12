@@ -1029,7 +1029,7 @@ mod tests {
             .expect("verify token");
         let principal = Principal::from_api_token(verified);
         assert_eq!(principal.grants(), Some(&expected));
-        assert_eq!(principal.authenticated_at(), None);
+        assert_eq!(principal.authenticated_at(), Some(instant()));
         assert!(principal.scopes().is_empty());
     }
 

@@ -91,6 +91,7 @@ impl Principal {
     pub(crate) fn from_api_token(api_token: ApiToken) -> Self {
         let subject = api_token.owner_id.to_string();
         Self {
+            authenticated_at: Some(api_token.created_at),
             api_token: Some(api_token),
             ..Self::new(subject)
         }
@@ -112,7 +113,8 @@ impl Principal {
 
     /// Returns the verified `auth_time`, which stays unchanged on token refresh.
     ///
-    /// Absent claims, API tokens, and internal principals return `None`.
+    /// API tokens return their creation time. Absent claims and internal
+    /// principals return `None`.
     #[must_use]
     pub const fn authenticated_at(&self) -> Option<DateTime<Utc>> {
         self.authenticated_at

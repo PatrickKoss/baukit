@@ -4,6 +4,8 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+- API-token principals return the token's `created_at` from `authenticated_at()`. Before, they returned `None`, so after Retain re-onboarding every new token of the returning user stayed fenced. Tokens minted before the erasure stay fenced.
+
 ## [0.10.20] - 2026-10-12
 
 ## [0.10.19] - 2026-10-11

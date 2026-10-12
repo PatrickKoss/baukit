@@ -250,6 +250,12 @@ every erasure operation for that subject is `completed`. `None`, an equal or
 older login, and any pending or failed operation keep the session fenced.
 Unfenced subjects are admitted without `auth_time`.
 
+API-token principals use the token's `created_at` as their login time. The
+mint endpoint must check the fence with the minting session's login time, so
+a token issued before an erasure stays fenced and one issued after re-onboarding
+passes. A product that resolves a token owner to the identity subject passes
+`principal.authenticated_at()` to the fence like any other session.
+
 The returning subject gets a new, empty profile. A new erasure key updates the
 fence timestamp and rejects that session again. Old keys return their stored
 receipts without deleting the new profile or moving the fence.

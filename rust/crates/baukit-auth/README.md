@@ -151,7 +151,9 @@ context.
 
 `Principal::authenticated_at()` returns the verified numeric `auth_time` as a
 UTC timestamp for OIDC, Clerk, and WorkOS tokens. A missing claim returns `None`,
-as do API tokens and internal principals. A present claim must be a non-negative
+as do internal principals. API-token principals return the token's `created_at`.
+Minting a token needs an admitted session, so tokens issued before an erasure
+stay fenced and tokens issued after re-onboarding pass. A present claim must be a non-negative
 integer and cannot be in the future beyond the configured clock skew. It is
 reserved and is not copied into selected profile claims. Trusted adapters can
 set it with `with_authenticated_at`. Use this session login time for erasure
