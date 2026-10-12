@@ -64,9 +64,13 @@ apply unless the product configures a doctor waiver.
 - `web_preview`: `web/e2e/playwright.config.ts` must use the declared
   `E2E_WEB_PORT` default.
 - `metro`: every `expo start` or `expo run:*` command in `mobile/package.json`
-  must pass `--port`. Literal `adb reverse tcp:N tcp:N` and `RCT_METRO_PORT=N`
-  settings in `scripts/`, `mobile/scripts/`, and the root Makefile must agree.
-  Doctor reports the file and any mismatched port.
+  must pass `--port`. In `scripts/`, `mobile/scripts/`, and the root Makefile,
+  doctor checks literal ports in `adb ... reverse` lines only when the line
+  contains `metro`, in any letter case. This includes variables such as
+  `$METRO_PORT` and `${metro_port}`. API and Keycloak reversals without a Metro
+  name are skipped. `RCT_METRO_PORT=N` settings must also agree. The scan skips
+  `node_modules`, `.git`, `target`, and `__pycache__` directories. Doctor reports
+  the file and any mismatched port.
 
 Runtime environment overrides remain product-owned. Doctor compares the
 committed defaults with the manifest, not the environment of a running server.

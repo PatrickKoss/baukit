@@ -259,7 +259,7 @@ fn doctor_checks_metro_forwarding_and_environment_in_scripts_and_makefile() -> a
             String::new()
         };
         for command in [
-            "adb reverse tcp:8093 tcp:8093",
+            "adb reverse tcp:8093 tcp:8093 # Metro",
             "RCT_METRO_PORT=8093 expo start",
         ] {
             fs::write(&path, format!("{original}\n{command}\n"))?;
@@ -278,7 +278,9 @@ fn doctor_checks_metro_forwarding_and_environment_in_scripts_and_makefile() -> a
         }
         fs::write(
             &path,
-            format!("{original}\nadb reverse tcp:8093 tcp:8093 && adb reverse tcp:8081 tcp:8081\n"),
+            format!(
+                "{original}\nadb reverse tcp:8093 tcp:8093 && adb reverse tcp:8081 tcp:8081 # Metro\n"
+            ),
         )?;
         let error = doctor(root)
             .expect_err("each adb reverse command must agree")
@@ -289,6 +291,81 @@ fn doctor_checks_metro_forwarding_and_environment_in_scripts_and_makefile() -> a
         );
         fs::write(path, original)?;
     }
+    Ok(())
+}
+
+#[test]
+fn doctor_ignores_adb_reversals_without_a_metro_name() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = parent.path();
+    declared_product(root, "metro = { host = 8682 }\n")?;
+    fs::create_dir_all(root.join("scripts/qa"))?;
+    fs::write(
+        root.join("scripts/qa/android-env.sh"),
+        r#""$adb" -s "$serial" reverse tcp:8080 "tcp:$api_port" >/dev/null
+"$adb" -s "$serial" reverse tcp:8081 "tcp:$keycloak_port" >/dev/null
+"$adb" -s "$serial" reverse "tcp:$fake_provider_port" "tcp:$fake_provider_port" >/dev/null
+"#,
+    )?;
+    doctor(root)?;
+    Ok(())
+}
+
+#[test]
+fn doctor_checks_metro_names_before_resolving_makefile_variables() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = parent.path();
+    declared_product(root, "metro = { host = 8093 }\n")?;
+    let path = root.join("Makefile");
+    let original = fs::read_to_string(&path)?;
+    for command in [
+        "adb reverse tcp:8093 tcp:${METRO_PORT:-8093}",
+        "adb reverse tcp:8093 tcp:${metro_port}",
+        "adb reverse tcp:8093 tcp:8093 # mEtRo",
+        "METRO_PORT := 8093\nadb reverse tcp:8093 tcp:$(METRO_PORT)",
+    ] {
+        fs::write(&path, format!("{original}\n{command}\n"))?;
+        doctor(root)?;
+        fs::write(
+            &path,
+            format!("{original}\n{}\n", command.replace("8093", "8081")),
+        )?;
+        let error = doctor(root)
+            .expect_err("named Metro reversal must match the declared port")
+            .to_string();
+        assert!(
+            error.contains("Makefile")
+                && error.contains("ports.metro")
+                && error.contains("8093")
+                && error.contains("found port 8081"),
+            "{error}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn doctor_skips_dependency_and_cache_directories_in_metro_scan() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = parent.path();
+    declared_product(root, "metro = { host = 8093 }\n")?;
+    let stale_ports = "adb reverse tcp:8081 tcp:${METRO_PORT:-8081}\nRCT_METRO_PORT=8081\n";
+    for base in ["scripts", "mobile/scripts"] {
+        for name in ["node_modules", ".git", "target", "__pycache__"] {
+            let directory = root.join(base).join("nested").join(name).join("nested");
+            fs::create_dir_all(&directory)?;
+            fs::write(directory.join("metro.sh"), stale_ports)?;
+        }
+    }
+    doctor(root)?;
+    fs::write(root.join("scripts/nested/metro.sh"), stale_ports)?;
+    let error = doctor(root)
+        .expect_err("ordinary directories must still be checked")
+        .to_string();
+    assert!(
+        error.contains("scripts/nested/metro.sh") && error.contains("found port 8081"),
+        "{error}"
+    );
     Ok(())
 }
 

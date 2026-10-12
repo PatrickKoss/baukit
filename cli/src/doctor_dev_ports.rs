@@ -271,7 +271,11 @@ fn check_metro_directory(
     for entry in fs::read_dir(directory)? {
         let entry = entry?;
         let kind = entry.file_type()?;
-        if kind.is_dir() && entry.file_name() != "__pycache__" {
+        let skipped_directory = matches!(
+            entry.file_name().to_str(),
+            Some("node_modules" | ".git" | "target" | "__pycache__")
+        );
+        if kind.is_dir() && !skipped_directory {
             check_metro_directory(root, &entry.path(), port, failures)?;
         } else if kind.is_file() {
             check_metro_file(root, &entry.path(), port, failures)?;
@@ -288,9 +292,9 @@ fn check_metro_file(root: &Path, path: &Path, port: u16, failures: &mut Vec<Stri
     let Ok(source) = std::str::from_utf8(&bytes) else {
         return Ok(());
     };
-    let source = crate::resolve_makefile_variables(source);
+    let resolved_source = crate::resolve_makefile_variables(source);
     let relative = path.strip_prefix(root)?.to_string_lossy();
-    for line in source.lines() {
+    for (original_line, line) in source.lines().zip(resolved_source.lines()) {
         for (_, tail) in line
             .split("RCT_METRO_PORT")
             .skip(1)
@@ -300,7 +304,7 @@ fn check_metro_file(root: &Path, path: &Path, port: u16, failures: &mut Vec<Stri
                 check_port(&relative, "metro", port, Some(found), failures);
             }
         }
-        if line.contains("adb") {
+        if line.contains("adb") && original_line.to_ascii_lowercase().contains("metro") {
             for found in line
                 .split("reverse")
                 .skip(1)
