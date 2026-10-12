@@ -237,8 +237,19 @@ to `backend/migrations`. Dockerfile and .dockerignore default to the backend
 manifest directory. Keycloak inputs and tools are discovered by their
 content. Doctor reports ambiguous inputs instead of choosing one.
 
+Use `waive` when a product covers an expected-file check another way. Each
+entry has only `path` and `reason`. The reason should name where the product
+covers the check, such as a shared test fixture or a component test.
+Doctor prints a note with the reason for a waived missing file. It still
+runs all other checks. Empty reasons, duplicate paths, paths that exist and
+paths outside the product's active expected-file lists fail doctor. The
+active lists depend on the product's flavors, capabilities and quality profile.
+Waiver paths use forward slashes relative to the product root. Doctor
+normalizes separators and `.` components and rejects absolute paths and `..`.
+
 ```toml
 [doctor]
+waive = [{ path = "web/e2e/tests/qa-console.spec.ts", reason = "Every browser test uses the console fixture in web/e2e/tests/qa.ts" }]
 backend_manifest = "backend/Cargo.toml"
 backend_dockerfile = "backend/Dockerfile"
 backend_dockerignore = "backend/.dockerignore"

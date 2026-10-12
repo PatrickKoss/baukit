@@ -126,7 +126,11 @@ fn run() -> Result<()> {
         Commands::Doctor => {
             let current = env::current_dir()?;
             for result in doctor(&current)? {
-                println!("ok: {result}");
+                if result.starts_with("note: ") {
+                    println!("{result}");
+                } else {
+                    println!("ok: {result}");
+                }
             }
             println!("doctor: product is healthy");
         }

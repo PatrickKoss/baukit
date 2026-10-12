@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add `[doctor].waive` entries with `path` and `reason` for products that cover an expected-file check another way. The reason should name where the product covers the check. Doctor reports waived missing files as notes and rejects blank reasons, stale, unknown and duplicate paths.
+
 - The generated web e2e geometry helper drops a null check on `Locator.elementHandle()`, which never resolves to null and failed typed ESLint in products.
 
 ## [0.10.21] - 2026-10-12

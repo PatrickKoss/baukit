@@ -34,6 +34,15 @@ pub struct DoctorPaths {
     pub keycloak_reconcile_tool: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub sources: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub waive: Vec<DoctorWaiver>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DoctorWaiver {
+    pub path: String,
+    pub reason: String,
 }
 
 impl DoctorPaths {
@@ -469,26 +478,6 @@ pub(super) fn validate_backend_wiring(
     failures: &mut Vec<String>,
 ) -> Result<()> {
     let initial = failures.len();
-    let cargo = backend_manifest(root, manifest)?;
-    let directory = cargo.parent().context("backend manifest has no parent")?;
-    for (declared, name) in [
-        (manifest.doctor.backend_dockerfile.as_deref(), "Dockerfile"),
-        (
-            manifest.doctor.backend_dockerignore.as_deref(),
-            ".dockerignore",
-        ),
-    ] {
-        let path = match declared {
-            Some(relative) => product_path(root, relative)?,
-            None => directory.join(name),
-        };
-        if !path.is_file() {
-            failures.push(format!(
-                "missing expected backend file `{}`",
-                path.strip_prefix(root)?.display()
-            ));
-        }
-    }
     let dockerfile = crate::dockerfile::output_path(root, manifest)?;
     if dockerfile.is_file()
         && fs::read(&dockerfile)? != crate::render_dockerfile(manifest)?.as_bytes()

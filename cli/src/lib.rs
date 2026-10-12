@@ -1,5 +1,6 @@
 mod dockerfile;
 mod doctor_dependencies;
+mod doctor_files;
 mod doctor_layout;
 mod doctor_mcp;
 mod identity;
@@ -8,7 +9,7 @@ pub use dockerfile::{
     BackendImage, BackendManifest, BuildInput, Download, ImageVariant, PreBuildStep, RuntimeBinary,
     RuntimeFile, RuntimePackages, WritableDirectory, generate_dockerfile, render_dockerfile,
 };
-pub use doctor_layout::DoctorPaths;
+pub use doctor_layout::{DoctorPaths, DoctorWaiver};
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -1251,29 +1252,12 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
     doctor_layout::validate_paths(root, &manifest)?;
     let mut failures = Vec::new();
     let mut successes = Vec::new();
-    for relative in EXPECTED_COMMON_FILES {
-        if !root.join(relative).is_file() {
-            failures.push(format!("missing expected product file `{relative}`"));
-        }
-    }
-    validate_env_reconciliation_files(root, &mut successes, &mut failures);
-    if manifest.quality.profile == QualityProfile::Strict {
-        for relative in EXPECTED_STRICT_FILES {
-            if !root.join(relative).is_file() {
-                failures.push(format!("missing expected strict quality file `{relative}`"));
-            }
-        }
-        if manifest.capabilities.backend {
-            for relative in EXPECTED_STRICT_BACKEND_FILES {
-                if !root.join(relative).is_file() {
-                    failures.push(format!("missing expected strict backend file `{relative}`"));
-                }
-            }
-        }
-        if manifest.quality.full_stack_e2e && !root.join("scripts/full-stack-e2e.sh").is_file() {
-            failures.push("quality.full_stack_e2e requires `scripts/full-stack-e2e.sh`".to_owned());
-        }
-        validate_markdown_link_check_files(root, &mut successes, &mut failures);
+    doctor_files::validate(root, &manifest, &mut successes, &mut failures)?;
+    if manifest.quality.profile == QualityProfile::Strict
+        && manifest.quality.full_stack_e2e
+        && !root.join("scripts/full-stack-e2e.sh").is_file()
+    {
+        failures.push("quality.full_stack_e2e requires `scripts/full-stack-e2e.sh`".to_owned());
     }
     if !(1..=100).contains(&manifest.quality.backend_coverage_lines) {
         failures.push("quality.backend_coverage_lines must be between 1 and 100".to_owned());
@@ -1347,12 +1331,6 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
     validate_port_configuration(root, &manifest, &mut successes, &mut failures)?;
     if manifest.capabilities.backend {
         validate_openapi_paths(root, &manifest.openapi, &mut successes, &mut failures);
-        for expected in EXPECTED_BACKEND_FILES {
-            let relative = expected.replace("__APP__", &manifest.app.name);
-            if !root.join(&relative).is_file() {
-                failures.push(format!("missing expected backend file `{relative}`"));
-            }
-        }
         doctor_layout::validate_backend_wiring(root, &manifest, &mut successes, &mut failures)?;
         validate_migrations(root, &manifest, &mut successes, &mut failures)?;
         if manifest.capabilities.worker {
@@ -1424,14 +1402,7 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
         if manifest.capabilities.auth.is_some() {
             dependencies.extend(EXPECTED_MOBILE_AUTH_DEPENDENCIES);
         }
-        validate_frontend_capability(
-            root,
-            "mobile",
-            &frontend_files(EXPECTED_MOBILE_FILES, "mobile", &manifest),
-            &dependencies,
-            &mut successes,
-            &mut failures,
-        )?;
+        validate_frontend_capability(root, "mobile", &dependencies, &mut successes, &mut failures)?;
         validate_mobile_router_configuration(root, &mut successes, &mut failures)?;
         if manifest.capabilities.auth.is_some() {
             doctor_layout::validate_mobile_auth_wiring(root, &manifest, &mut failures)?;
@@ -1445,21 +1416,7 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
         if manifest.capabilities.auth.is_some() {
             dependencies.extend(EXPECTED_WEB_AUTH_DEPENDENCIES);
         }
-        validate_frontend_capability(
-            root,
-            "web",
-            &frontend_files(EXPECTED_WEB_FILES, "web", &manifest),
-            &dependencies,
-            &mut successes,
-            &mut failures,
-        )?;
-        if manifest.capabilities.auth == Some(AuthProvider::Oidc) {
-            for relative in EXPECTED_AUTH_WEB_FILES {
-                if !root.join(relative).is_file() {
-                    failures.push(format!("missing expected OIDC web file `{relative}`"));
-                }
-            }
-        }
+        validate_frontend_capability(root, "web", &dependencies, &mut successes, &mut failures)?;
     }
     if manifest.capabilities.pwa
         && let Some(app_directory) = pwa_app_directory(&manifest.capabilities)
@@ -1514,49 +1471,20 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
     if failures.is_empty() {
         Ok(successes)
     } else {
+        let mut findings = failures
+            .iter()
+            .map(|finding| format!("- {finding}"))
+            .collect::<Vec<_>>();
+        findings.extend(
+            successes
+                .into_iter()
+                .filter(|finding| finding.starts_with("note: ")),
+        );
         bail!(
-            "doctor found {} problem(s):\n- {}",
+            "doctor found {} problem(s):\n{}",
             failures.len(),
-            failures.join("\n- ")
+            findings.join("\n")
         )
-    }
-}
-
-fn validate_env_reconciliation_files(
-    root: &Path,
-    successes: &mut Vec<String>,
-    failures: &mut Vec<String>,
-) {
-    let mut complete = true;
-    for relative in ENV_RECONCILIATION_FILES {
-        if !root.join(relative).is_file() {
-            failures.push(format!(
-                "missing expected environment reconciliation file `{relative}`"
-            ));
-            complete = false;
-        }
-    }
-    if complete {
-        successes.push("environment reconciliation scripts are present".to_owned());
-    }
-}
-
-fn validate_markdown_link_check_files(
-    root: &Path,
-    successes: &mut Vec<String>,
-    failures: &mut Vec<String>,
-) {
-    let mut complete = true;
-    for relative in MARKDOWN_LINK_CHECK_FILES {
-        if !root.join(relative).is_file() {
-            failures.push(format!(
-                "missing expected Markdown link check file `{relative}`"
-            ));
-            complete = false;
-        }
-    }
-    if complete {
-        successes.push("strict Markdown link check scripts are present".to_owned());
     }
 }
 
@@ -2603,37 +2531,14 @@ fn validate_pnpm_workspace(
     Ok(())
 }
 
-fn frontend_files<'a>(
-    expected: &'a [&'a str],
-    capability: &str,
-    manifest: &Manifest,
-) -> Vec<&'a str> {
-    let mut files = expected.to_vec();
-    if manifest.capabilities.analytics != AnalyticsAdapter::None {
-        files.push(if capability == "mobile" {
-            "mobile/src/analytics.ts"
-        } else {
-            "web/src/analytics.ts"
-        });
-    }
-    files
-}
-
 fn validate_frontend_capability(
     root: &Path,
     capability: &str,
-    expected_files: &[&str],
     target_dependencies: &[&str],
     successes: &mut Vec<String>,
     failures: &mut Vec<String>,
 ) -> Result<()> {
     validate_pnpm_workspace(root, capability, failures)?;
-    for relative in expected_files {
-        if !root.join(relative).is_file() {
-            failures.push(format!("missing expected {capability} file `{relative}`"));
-        }
-    }
-
     let package_path = root.join(capability).join("package.json");
     if package_path.is_file() {
         let package = fs::read_to_string(&package_path)
