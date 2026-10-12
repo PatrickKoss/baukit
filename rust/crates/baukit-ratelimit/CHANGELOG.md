@@ -4,6 +4,8 @@ All notable changes to `baukit-ratelimit` are documented here.
 
 ## [Unreleased]
 
+## [0.10.22] - 2026-10-12
+
 ## [0.10.21] - 2026-10-12
 
 ## [0.10.20] - 2026-10-12

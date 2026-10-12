@@ -1,6 +1,6 @@
 [package]
 name = "baukit-cli"
-version = "0.10.21"
+version = "0.10.22"
 edition = "2024"
 rust-version = "1.95"
 publish = false
