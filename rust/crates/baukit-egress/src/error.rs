@@ -158,6 +158,8 @@ pub enum EgressError {
 
 impl EgressError {
     /// Returns the captured status body, or `None` for other failures or when disabled.
+    /// If reading fails or times out, the status and retry class are preserved
+    /// and this returns `None`.
     #[must_use]
     pub const fn error_body(&self) -> Option<&ErrorBody> {
         match self {

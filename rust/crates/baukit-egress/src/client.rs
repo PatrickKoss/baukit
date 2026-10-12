@@ -288,7 +288,7 @@ impl GuardedClient {
             }
             let class = classify_http_status_with_options(status, &headers, retry_headers);
             let body = match self.options.error_body_limit() {
-                Some(limit) => Some(read_error_body(response, limit).await?),
+                Some(limit) => read_error_body(response, limit).await,
                 None => None,
             };
             return Err(EgressError::Status {
@@ -458,10 +458,7 @@ async fn read_body(mut response: reqwest::Response, limit: usize) -> Result<Vec<
     Ok(body)
 }
 
-async fn read_error_body(
-    mut response: reqwest::Response,
-    limit: usize,
-) -> Result<ErrorBody, EgressError> {
+async fn read_error_body(mut response: reqwest::Response, limit: usize) -> Option<ErrorBody> {
     let content_type = response
         .headers()
         .get(CONTENT_TYPE)
@@ -469,13 +466,13 @@ async fn read_error_body(
         .map(str::to_owned);
     let length = response.content_length();
     let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(send_error)? {
+    while let Some(chunk) = response.chunk().await.ok()? {
         let remaining = limit - body.len();
         body.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
         if body.len() == limit {
             let complete = length == u64::try_from(limit).ok();
-            return Ok(ErrorBody::new(body, !complete, content_type));
+            return Some(ErrorBody::new(body, !complete, content_type));
         }
     }
-    Ok(ErrorBody::new(body, false, content_type))
+    Some(ErrorBody::new(body, false, content_type))
 }

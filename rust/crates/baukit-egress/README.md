@@ -117,8 +117,8 @@ or `None` for other bodies or incomplete JSON.
 Reading stops when the limit is filled and sets `truncated()`, without returning
 `ResponseTooLarge`. A known-length body that fits exactly is complete. An unknown-length
 body that ends exactly at the limit is marked truncated because the client stops without
-waiting for more bytes. Reads share the whole request timeout. A read timeout or transport
-failure returns the corresponding `EgressError` rather than a status with partial bytes.
+waiting for more bytes. Reads share the whole request timeout. If reading fails or times
+out, the status and retry class are preserved and the captured body is `None`.
 
 ## Resolver port
 

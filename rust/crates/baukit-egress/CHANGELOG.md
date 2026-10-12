@@ -4,6 +4,11 @@ All notable changes to `baukit-egress` are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Failed or timed-out error body reads preserve the HTTP status and retry class,
+  including the capped `Retry-After` delay, and return no captured body.
+
 ### Added
 
 - `EgressOptions::with_error_body_limit(bytes)` captures bounded non-`2xx` bodies.

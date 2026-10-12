@@ -6,7 +6,7 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use axum::http::StatusCode;
@@ -825,23 +825,77 @@ async fn non_envelope_and_truncated_json_bodies_have_no_problem_code() {
 }
 
 #[tokio::test]
-async fn reading_an_error_body_keeps_the_request_timeout() {
-    let server = LocalServer::start(Reply::RespondThenWait(
-        b"HTTP/1.1 503 Service Unavailable\r\ncontent-length: 1024\r\n\r\n".to_vec(),
+async fn a_failed_error_body_read_preserves_the_status_and_capped_retry_after() {
+    let server = LocalServer::start(Reply::Respond(
+        b"HTTP/1.1 503 Service Unavailable\r\nretry-after: 2\r\ncontent-length: 1024\r\nconnection: close\r\n\r\nbusy".to_vec(),
     ))
     .await;
     let options = development()
-        .with_error_body_limit(16)
-        .expect("limit is valid")
+        .with_max_retry_after(Duration::from_secs(1))
+        .expect("retry delay cap is valid");
+    for options in [
+        options,
+        options.with_error_body_limit(16).expect("limit is valid"),
+    ] {
+        let client = client(loopback_resolver(&["hooks.test"]), options);
+        let error = client
+            .execute(EgressRequest::get(server.url("hooks.test", "/")))
+            .await
+            .expect_err("a 503 is an error");
+        assert!(
+            matches!(error, EgressError::Status {
+                status: StatusCode::SERVICE_UNAVAILABLE,
+                class: RetryClass::RetryAfter(delay),
+                body: None,
+            } if delay == Duration::from_secs(1)),
+            "{error:?}"
+        );
+        assert_eq!(error.code(), "upstream_status");
+        assert!(error.is_retryable());
+        assert!(error.error_body().is_none());
+    }
+}
+
+#[tokio::test]
+async fn a_timed_out_error_body_read_preserves_the_status_and_capped_retry_after() {
+    let server = LocalServer::start(Reply::RespondThenWait(
+        b"HTTP/1.1 503 Service Unavailable\r\nretry-after: 2\r\ncontent-length: 1024\r\n\r\nbusy"
+            .to_vec(),
+    ))
+    .await;
+    let options = development()
+        .with_max_retry_after(Duration::from_secs(1))
+        .expect("retry delay cap is valid")
         .with_request_timeout(SHORT)
         .expect("timeout is valid");
-    let client = client(loopback_resolver(&["hooks.test"]), options);
-    let error = client
-        .execute(EgressRequest::get(server.url("hooks.test", "/")))
-        .await
-        .expect_err("body reading should time out");
-    assert!(matches!(error, EgressError::Timeout), "{error:?}");
-    assert!(error.error_body().is_none());
+    for options in [
+        options,
+        options.with_error_body_limit(16).expect("limit is valid"),
+    ] {
+        let client = client(loopback_resolver(&["hooks.test"]), options);
+        let start = Instant::now();
+        let error = client
+            .execute(EgressRequest::get(server.url("hooks.test", "/")))
+            .await
+            .expect_err("a 503 is an error");
+        if options.error_body_limit().is_some() {
+            assert!(
+                start.elapsed() >= SHORT,
+                "body reading should reach its timeout"
+            );
+        }
+        assert!(
+            matches!(error, EgressError::Status {
+                status: StatusCode::SERVICE_UNAVAILABLE,
+                class: RetryClass::RetryAfter(delay),
+                body: None,
+            } if delay == Duration::from_secs(1)),
+            "{error:?}"
+        );
+        assert_eq!(error.code(), "upstream_status");
+        assert!(error.is_retryable());
+        assert!(error.error_body().is_none());
+    }
 }
 
 #[tokio::test]

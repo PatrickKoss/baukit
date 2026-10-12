@@ -109,6 +109,8 @@ impl EgressOptions {
     /// [`Self::max_response_bytes`]. Reaching it truncates the body without
     /// failing the request. Bodies may contain personal data; log only the
     /// [`ErrorBody::problem_code`](crate::ErrorBody::problem_code).
+    /// If reading fails or times out, the status and retry class are preserved
+    /// and the captured body is `None`.
     pub const fn with_error_body_limit(mut self, limit: usize) -> Result<Self, EgressOptionsError> {
         if limit == 0 {
             return Err(EgressOptionsError::ZeroErrorBodyLimit);
