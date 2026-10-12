@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.21] - 2026-10-12
+
 ## [0.10.20] - 2026-10-12
 
 - `baukit doctor` skips Cargo manifests under `fixtures/` and `testdata/` when it discovers workspaces, matching the registry pin census, so a malformed test fixture no longer aborts the run.

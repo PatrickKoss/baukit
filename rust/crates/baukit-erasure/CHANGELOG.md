@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.21] - 2026-10-12
+
 ## [0.10.20] - 2026-10-12
 
 - Add read-only `ErasureService::preflight` to validate requests, return stored receipts and check session fences before external erasure notifications. `erase` still repeats every check under its locks.

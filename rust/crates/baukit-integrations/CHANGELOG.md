@@ -4,6 +4,8 @@ All notable changes to `baukit-integrations` are documented here.
 
 ## [Unreleased]
 
+## [0.10.21] - 2026-10-12
+
 ## [0.10.20] - 2026-10-12
 
 ## [0.10.19] - 2026-10-11

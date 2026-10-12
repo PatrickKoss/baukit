@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.10.21
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.21 train.
+- Updated dependencies
+  - @baukit/notifications-core@0.10.21
+
 ## 0.10.20
 
 ### Patch Changes
