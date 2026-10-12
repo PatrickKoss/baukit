@@ -88,8 +88,8 @@ pub use api_token::{
     ApiToken, ApiTokenError, ApiTokenFormat, ApiTokenFormatError, ApiTokenPolicyRejection,
     ApiTokenPolicyRejectionError, ApiTokenRecord, ApiTokenService, ApiTokenStore,
     ApiTokenStoreError, ApiTokenStoreFuture, ApiTokenVerifier, DEFAULT_API_TOKEN_MARKER,
-    IssuedApiToken, MAX_API_TOKEN_GRANT_LENGTH, MAX_API_TOKEN_GRANTS, NewApiToken, StoredApiToken,
-    hash_api_token,
+    GeneratedApiToken, IssuedApiToken, MAX_API_TOKEN_GRANT_LENGTH, MAX_API_TOKEN_GRANTS,
+    NewApiToken, StoredApiToken, hash_api_token,
 };
 pub use axum_integration::{AuthRejection, AuthState, establish_principal};
 pub use baukit_openapi::{BEARER_AUTH_SCHEME, OpenApiMetadata};

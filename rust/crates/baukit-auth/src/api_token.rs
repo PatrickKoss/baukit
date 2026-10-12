@@ -13,6 +13,7 @@ use aws_lc_rs::{
 use chrono::{DateTime, Utc};
 use thiserror::Error;
 use uuid::Uuid;
+use zeroize::Zeroize;
 
 use crate::{IdentityVerifier, Principal, VerificationError, constant_time_eq};
 
@@ -79,6 +80,64 @@ pub struct IssuedApiToken {
     pub token: ApiToken,
     /// The full presented token, including its marker.
     pub secret: String,
+}
+
+/// A token secret generated without a store, with its hash and display prefix.
+///
+/// Show the secret once in the creation response. Store only
+/// [`secret_hash()`](Self::secret_hash) and optionally
+/// [`display_prefix()`](Self::display_prefix). Look up presented credentials by
+/// `hash_api_token(presented)`, as [`ApiTokenVerifier`] does.
+///
+/// Debug output redacts the secret and hash. Dropping this value zeroizes the
+/// secret unless [`into_secret()`](Self::into_secret) transfers it to the caller.
+pub struct GeneratedApiToken {
+    secret: String,
+    secret_hash: Vec<u8>,
+    display_prefix: String,
+}
+
+impl GeneratedApiToken {
+    /// Returns the full secret, including its marker, to show once.
+    #[must_use]
+    pub fn secret(&self) -> &str {
+        &self.secret
+    }
+
+    /// Returns the [`hash_api_token`] digest to store for later lookups.
+    #[must_use]
+    pub fn secret_hash(&self) -> &[u8] {
+        &self.secret_hash
+    }
+
+    /// Returns the leading characters safe to store and display.
+    #[must_use]
+    pub fn display_prefix(&self) -> &str {
+        &self.display_prefix
+    }
+
+    /// Transfers the secret to the caller without copying or zeroizing it.
+    #[must_use]
+    pub fn into_secret(mut self) -> String {
+        std::mem::take(&mut self.secret)
+    }
+}
+
+impl fmt::Debug for GeneratedApiToken {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("GeneratedApiToken")
+            .field("secret", &"[REDACTED]")
+            .field("secret_hash", &"[REDACTED]")
+            .field("display_prefix", &self.display_prefix)
+            .finish()
+    }
+}
+
+impl Drop for GeneratedApiToken {
+    fn drop(&mut self) {
+        self.secret.zeroize();
+    }
 }
 
 /// Creation request for a personal access token.
@@ -451,6 +510,23 @@ impl ApiTokenFormat {
                 .all(|byte| BASE62.contains(&byte))
     }
 
+    /// Generates a token secret, hash, and display prefix without a store.
+    ///
+    /// Uses the system CSPRNG and rejection sampling. Show the secret once in
+    /// the creation response. Store only [`GeneratedApiToken::secret_hash`]
+    /// and optionally [`GeneratedApiToken::display_prefix`]. Look up presented
+    /// credentials by `hash_api_token(presented)`, as [`ApiTokenVerifier`] does.
+    pub fn generate_secret(&self) -> Result<GeneratedApiToken, ApiTokenError> {
+        let secret = self.generate(&SystemRandom::new())?;
+        let secret_hash = hash_api_token(&secret);
+        let display_prefix = self.display_prefix(&secret).to_owned();
+        Ok(GeneratedApiToken {
+            secret,
+            secret_hash,
+            display_prefix,
+        })
+    }
+
     /// Generates one token secret from the system CSPRNG.
     ///
     /// Bytes at or above the largest multiple of 62 are drawn again rather than
@@ -514,7 +590,6 @@ pub fn hash_api_token(presented: &str) -> Vec<u8> {
 pub struct ApiTokenService {
     store: Arc<dyn ApiTokenStore>,
     format: ApiTokenFormat,
-    random: Arc<SystemRandom>,
 }
 
 impl fmt::Debug for ApiTokenService {
@@ -536,11 +611,7 @@ impl ApiTokenService {
     /// Creates a service issuing tokens with a product-specific marker.
     #[must_use]
     pub fn with_format(store: Arc<dyn ApiTokenStore>, format: ApiTokenFormat) -> Self {
-        Self {
-            store,
-            format,
-            random: Arc::new(SystemRandom::new()),
-        }
+        Self { store, format }
     }
 
     /// Returns the token format this service issues and accepts.
@@ -574,22 +645,25 @@ impl ApiTokenService {
         }
         validate_grants(&request.grants)?;
 
-        let secret = self.format.generate(&self.random)?;
+        let generated = self.format.generate_secret()?;
         let token = self
             .store
             .create(ApiTokenRecord {
                 id: Uuid::now_v7(),
                 owner_id,
                 name: name.to_owned(),
-                secret_hash: hash_api_token(&secret),
-                display_prefix: self.format.display_prefix(&secret).to_owned(),
+                secret_hash: generated.secret_hash().to_vec(),
+                display_prefix: generated.display_prefix().to_owned(),
                 grants: request.grants,
                 created_at: now,
                 expires_at: request.expires_at,
             })
             .await
             .map_err(map_store_error)?;
-        Ok(IssuedApiToken { token, secret })
+        Ok(IssuedApiToken {
+            token,
+            secret: generated.into_secret(),
+        })
     }
 
     /// Lists the tokens belonging to one owner.
@@ -970,6 +1044,109 @@ mod tests {
             .await
             .expect("read response body");
         assert!(!String::from_utf8_lossy(&body).contains(private_detail));
+    }
+
+    #[test]
+    fn generated_secrets_use_a_custom_marker_and_a_base62_body() {
+        let format = ApiTokenFormat::new("ahpAgent_").expect("custom marker");
+        let generated = format.generate_secret().expect("generate secret");
+
+        assert!(format.is_well_formed(generated.secret()));
+        assert!(format.claims_format(generated.secret()));
+        assert!(!ApiTokenFormat::default().claims_format(generated.secret()));
+        assert_eq!(
+            generated.secret().len(),
+            format.marker().len() + SECRET_LENGTH
+        );
+    }
+
+    #[tokio::test]
+    async fn generated_metadata_matches_the_hash_and_prefix_stored_by_issue() {
+        for format in [
+            ApiTokenFormat::default(),
+            ApiTokenFormat::new("ahpAgent_").expect("custom marker"),
+        ] {
+            let generated = format.generate_secret().expect("generate secret");
+            let prefix_length = format.marker().len() + DISPLAY_PREFIX_LENGTH;
+            assert_eq!(generated.secret_hash(), hash_api_token(generated.secret()));
+            assert_eq!(
+                generated.display_prefix(),
+                &generated.secret()[..prefix_length]
+            );
+            assert!(generated.display_prefix().len() < generated.secret().len());
+
+            let store = Arc::new(MemoryStore::default());
+            let service = ApiTokenService::with_format(store.clone(), format);
+            let issued = service
+                .issue(Uuid::now_v7(), NewApiToken::new("Agent"))
+                .await
+                .expect("issue token");
+            assert_eq!(issued.token.display_prefix, issued.secret[..prefix_length]);
+            assert_eq!(
+                issued.token.display_prefix.len(),
+                generated.display_prefix().len()
+            );
+            assert_eq!(
+                store
+                    .hashes
+                    .lock()
+                    .expect("hash lock")
+                    .get(&hash_api_token(&issued.secret)),
+                Some(&issued.token.id)
+            );
+            assert_eq!(
+                store
+                    .tokens
+                    .lock()
+                    .expect("token lock")
+                    .get(&issued.token.id),
+                Some(&issued.token)
+            );
+        }
+    }
+
+    #[test]
+    fn two_generated_secrets_differ() {
+        let format = ApiTokenFormat::default();
+        let first = format.generate_secret().expect("generate first secret");
+        let second = format.generate_secret().expect("generate second secret");
+
+        assert_ne!(first.secret(), second.secret());
+    }
+
+    #[test]
+    fn generated_secret_debug_redacts_the_secret_and_hash() {
+        let generated = ApiTokenFormat::default()
+            .generate_secret()
+            .expect("generate secret");
+        let debug = format!("{generated:?}");
+        let hash_hex: String = generated
+            .secret_hash()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+
+        assert!(!debug.contains(generated.secret()));
+        assert!(!debug.contains(&hash_hex));
+        assert!(!debug.contains(&hash_hex.to_ascii_uppercase()));
+        assert!(!debug.contains(&format!("{:?}", generated.secret_hash())));
+        assert!(!debug.contains(&format!("{:02x?}", generated.secret_hash())));
+        assert!(debug.contains("secret: \"[REDACTED]\""));
+        assert!(debug.contains("secret_hash: \"[REDACTED]\""));
+    }
+
+    #[test]
+    fn into_secret_preserves_the_generated_secret() {
+        let generated = ApiTokenFormat::default()
+            .generate_secret()
+            .expect("generate secret");
+        let expected_secret = generated.secret().to_owned();
+        let expected_hash = generated.secret_hash().to_vec();
+
+        let secret = generated.into_secret();
+
+        assert_eq!(secret, expected_secret);
+        assert_eq!(hash_api_token(&secret), expected_hash);
     }
 
     #[tokio::test]

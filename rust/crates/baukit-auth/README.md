@@ -241,6 +241,27 @@ Those callers need a credential the user creates once and can revoke later.
 `ApiTokenService` issues one as a marker plus 32 base62 characters, stores only its SHA-256 digest,
 and verifies presented tokens in constant time against that digest.
 
+Products that keep tokens in their own tables can use `ApiTokenFormat::generate_secret()`
+without an `ApiTokenStore`. It returns a `GeneratedApiToken` with the secret, its hash, and
+display prefix. Show the secret once, store only `secret_hash()` and optionally
+`display_prefix()`, and look up credentials by `hash_api_token(presented)` as
+`ApiTokenVerifier` does. Debug output redacts the secret and hash. Dropping the value
+zeroizes the secret; `into_secret()` transfers the `String` to the caller.
+
+```rust
+use baukit_auth::{ApiTokenFormat, hash_api_token};
+
+# fn example() -> Result<(), Box<dyn std::error::Error>> {
+let generated = ApiTokenFormat::new("acme_")?.generate_secret()?;
+let secret_hash = generated.secret_hash().to_vec();
+let display_prefix = generated.display_prefix().to_owned();
+let secret = generated.into_secret();
+assert_eq!(hash_api_token(&secret), secret_hash);
+assert!(secret.starts_with(&display_prefix));
+# Ok(())
+# }
+```
+
 ```rust
 use std::sync::Arc;
 

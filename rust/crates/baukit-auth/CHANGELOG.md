@@ -4,6 +4,11 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+- Add `ApiTokenFormat::generate_secret()` for products that store tokens in their own tables.
+  `GeneratedApiToken` exposes the secret, its `hash_api_token` hash, and display prefix.
+  Debug output redacts the secret and hash, and drop zeroizes the secret unless
+  `into_secret()` transfers it to the caller. `ApiTokenService` uses the same generation path.
+
 ## [0.10.23] - 2026-10-12
 
 ## [0.10.22] - 2026-10-12
