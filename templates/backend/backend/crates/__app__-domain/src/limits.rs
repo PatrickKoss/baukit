@@ -1,14 +1,15 @@
-use std::sync::OnceLock;
+use std::{collections::BTreeMap, sync::OnceLock};
 
 use baukit_core::limits::{
-    CompactJsonLimitError, LimitExceeded, check_compact_json_utf8_bytes, check_measurement,
-    check_trimmed_unicode_scalars,
+    CompactJsonLimitError, InvalidLimitRange, LimitExceeded, LimitRangeError,
+    check_compact_json_utf8_bytes, check_measurement, check_trimmed_unicode_scalars,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
 const SUPPORTED_POLICY_VERSION: u32 = 1;
+const MAX_SAFE_INTEGER: u64 = (1_u64 << 53) - 1;
 const LIMITS_JSON: &str = include_str!("../../../../limits.json");
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -23,6 +24,8 @@ pub struct LimitsPolicy {
     pub rows: RowLimits,
     pub body: BodyLimits,
     pub batch: BatchLimits,
+    #[serde(default)]
+    pub ranges: BTreeMap<String, RangeBounds>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -61,6 +64,13 @@ pub struct BatchLimits {
     pub max_items: usize,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RangeBounds {
+    pub minimum: u64,
+    pub maximum: u64,
+}
+
 #[derive(Debug, Error)]
 pub enum LimitsPolicyError {
     #[error("limits policy is invalid: {0}")]
@@ -69,6 +79,8 @@ pub enum LimitsPolicyError {
     UnsupportedVersion(u32),
     #[error("limits policy value `{0}` must be greater than zero")]
     ZeroValue(&'static str),
+    #[error("limits policy range `{0}` must use ordered non-negative safe integers")]
+    InvalidRange(String),
 }
 
 pub fn parse_limits_policy(source: &str) -> Result<LimitsPolicy, LimitsPolicyError> {
@@ -94,6 +106,11 @@ impl LimitsPolicy {
                 return Err(LimitsPolicyError::ZeroValue(name));
             }
         }
+        for (name, bounds) in &self.ranges {
+            if bounds.minimum > bounds.maximum || bounds.maximum > MAX_SAFE_INTEGER {
+                return Err(LimitsPolicyError::InvalidRange(format!("ranges.{name}")));
+            }
+        }
         Ok(())
     }
 }
@@ -115,6 +132,7 @@ pub enum LimitReason {
     TooManyRows,
     BodyTooLarge,
     BatchTooLarge,
+    OutOfRange,
 }
 
 impl LimitReason {
@@ -126,21 +144,85 @@ impl LimitReason {
             Self::TooManyRows => "too_many_rows",
             Self::BodyTooLarge => "body_too_large",
             Self::BatchTooLarge => "batch_too_large",
+            Self::OutOfRange => "out_of_range",
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
-#[error("limit exceeded for {field}: {reason:?}")]
-pub struct LimitError {
-    pub reason: LimitReason,
-    pub field: &'static str,
+pub enum LimitError {
+    #[error("limit exceeded for {field}: {reason:?}")]
+    Exceeded {
+        reason: LimitReason,
+        field: &'static str,
+        measured: usize,
+        allowed: usize,
+    },
+    #[error("limit exceeded for {field}: out_of_range")]
+    OutOfRange {
+        field: &'static str,
+        measured: u64,
+        minimum: u64,
+        maximum: u64,
+    },
+    #[error(transparent)]
+    InvalidRange(#[from] InvalidLimitRange),
 }
 
 impl LimitError {
     pub const fn code(&self) -> &'static str {
-        self.reason.as_str()
+        match self {
+            Self::Exceeded { reason, .. } => reason.as_str(),
+            Self::OutOfRange { .. } => LimitReason::OutOfRange.as_str(),
+            Self::InvalidRange(_) => "internal",
+        }
     }
+
+    pub fn details(&self) -> BTreeMap<String, Value> {
+        match *self {
+            Self::Exceeded {
+                field,
+                measured,
+                allowed,
+                ..
+            } => BTreeMap::from([
+                ("field".to_owned(), Value::from(field)),
+                ("measured".to_owned(), Value::from(measured)),
+                ("allowed".to_owned(), Value::from(allowed)),
+            ]),
+            Self::OutOfRange {
+                field,
+                measured,
+                minimum,
+                maximum,
+            } => BTreeMap::from([
+                ("field".to_owned(), Value::from(field)),
+                ("measured".to_owned(), Value::from(measured)),
+                ("minimum".to_owned(), Value::from(minimum)),
+                ("maximum".to_owned(), Value::from(maximum)),
+            ]),
+            Self::InvalidRange(_) => BTreeMap::new(),
+        }
+    }
+}
+
+pub fn check_range(
+    field: &'static str,
+    measured: u64,
+    minimum: u64,
+    maximum: u64,
+) -> Result<(), LimitError> {
+    baukit_core::limits::check_range(measured, minimum, maximum)
+        .map(|_| ())
+        .map_err(|error| match error {
+            LimitRangeError::InvalidBounds(error) => LimitError::InvalidRange(error),
+            LimitRangeError::OutOfRange(error) => LimitError::OutOfRange {
+                field,
+                measured: error.measured(),
+                minimum: error.minimum(),
+                maximum: error.maximum(),
+            },
+        })
 }
 
 pub fn check_text(field: &'static str, value: &str) -> Result<(), LimitError> {
@@ -154,9 +236,11 @@ pub fn check_text(field: &'static str, value: &str) -> Result<(), LimitError> {
 pub fn check_json_document(field: &'static str, value: &Value) -> Result<(), LimitError> {
     match check_compact_json_utf8_bytes(value, limits_policy().document.max_bytes) {
         Ok(_) => Ok(()),
-        Err(CompactJsonLimitError::Limit(_)) => Err(LimitError {
+        Err(CompactJsonLimitError::Limit(error)) => Err(LimitError::Exceeded {
             reason: LimitReason::JsonbTooLarge,
             field,
+            measured: error.measured(),
+            allowed: error.allowed(),
         }),
         Err(CompactJsonLimitError::Encoding(_)) => {
             unreachable!("serde_json::Value must serialize")
@@ -214,7 +298,12 @@ fn map_limit_exceeded(
     reason: LimitReason,
     result: Result<baukit_core::limits::LimitMeasurement, LimitExceeded>,
 ) -> Result<(), LimitError> {
-    result.map(|_| ()).map_err(|_| LimitError { reason, field })
+    result.map(|_| ()).map_err(|error| LimitError::Exceeded {
+        reason,
+        field,
+        measured: error.measured(),
+        allowed: error.allowed(),
+    })
 }
 
 #[cfg(test)]
@@ -222,6 +311,90 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[derive(Deserialize)]
+    struct Corpus {
+        range_policies: Vec<PolicyFixture>,
+    }
+
+    #[derive(Deserialize)]
+    struct PolicyFixture {
+        name: String,
+        bounds: Value,
+        valid: bool,
+    }
+
+    #[test]
+    fn shared_range_policies_validate_bounds_at_parse_time() {
+        let corpus: Corpus = serde_json::from_str(include_str!(
+            "../../../../tests/fixtures/resource-budget-measurements-v1.json"
+        ))
+        .expect("shared fixture should parse");
+        assert!(!corpus.range_policies.is_empty());
+        for fixture in corpus.range_policies {
+            let mut policy: Value = serde_json::from_str(LIMITS_JSON).expect("policy should parse");
+            policy["ranges"] = json!({"interval_seconds": fixture.bounds});
+            let parsed = parse_limits_policy(&policy.to_string());
+            assert_eq!(
+                parsed.is_ok(),
+                fixture.valid,
+                "{}: {parsed:?}",
+                fixture.name
+            );
+            if let Ok(parsed) = parsed {
+                let bounds = parsed.ranges["interval_seconds"];
+                assert_eq!(
+                    json!({"minimum": bounds.minimum, "maximum": bounds.maximum}),
+                    fixture.bounds
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn maximum_only_policies_keep_working() {
+        let mut policy: Value = serde_json::from_str(LIMITS_JSON).expect("policy should parse");
+        policy
+            .as_object_mut()
+            .expect("policy is an object")
+            .remove("ranges");
+        let parsed =
+            parse_limits_policy(&policy.to_string()).expect("maximum-only policy should parse");
+        assert!(parsed.ranges.is_empty());
+        assert_eq!(parsed.text.max_characters, 200);
+    }
+
+    #[test]
+    fn range_errors_preserve_details_and_reject_inverted_bounds() {
+        let bounds = limits_policy().ranges["interval_seconds"];
+        for measured in [bounds.minimum, 86400, bounds.maximum] {
+            assert_eq!(
+                check_range("intervalSeconds", measured, bounds.minimum, bounds.maximum),
+                Ok(())
+            );
+        }
+        for measured in [bounds.minimum - 1, bounds.maximum + 1] {
+            let error = check_range("intervalSeconds", measured, bounds.minimum, bounds.maximum)
+                .expect_err("value outside the range should fail");
+            assert_eq!(error.code(), "out_of_range");
+            assert_eq!(
+                serde_json::to_value(error.details()).expect("details should serialize"),
+                json!({
+                    "field": "intervalSeconds", "measured": measured,
+                    "minimum": bounds.minimum, "maximum": bounds.maximum,
+                })
+            );
+        }
+        assert!(matches!(
+            check_range("intervalSeconds", 3600, 2678400, 3600),
+            Err(LimitError::InvalidRange(_))
+        ));
+        assert_eq!(
+            serde_json::from_str::<LimitReason>("\"out_of_range\"")
+                .expect("reason should deserialize"),
+            LimitReason::OutOfRange
+        );
+    }
 
     #[test]
     fn loads_the_shared_product_fixture() {
@@ -264,34 +437,36 @@ mod tests {
         );
         assert_eq!(
             check_text("title", &"é".repeat(policy.text.max_characters + 1)),
-            Err(LimitError {
+            Err(LimitError::Exceeded {
                 reason: LimitReason::TextTooLong,
                 field: "title",
+                measured: policy.text.max_characters + 1,
+                allowed: policy.text.max_characters,
             })
         );
         assert_eq!(
             check_collection("entries", policy.collection.max_elements + 1)
                 .expect_err("oversized collection should fail")
-                .reason,
-            LimitReason::TooManyElements
+                .code(),
+            LimitReason::TooManyElements.as_str()
         );
         assert_eq!(
             check_rows("records", policy.rows.max_count + 1)
                 .expect_err("too many rows should fail")
-                .reason,
-            LimitReason::TooManyRows
+                .code(),
+            LimitReason::TooManyRows.as_str()
         );
         assert_eq!(
             check_body("request", policy.body.max_bytes + 1)
                 .expect_err("oversized body should fail")
-                .reason,
-            LimitReason::BodyTooLarge
+                .code(),
+            LimitReason::BodyTooLarge.as_str()
         );
         assert_eq!(
             check_batch("changes", policy.batch.max_items + 1)
                 .expect_err("oversized batch should fail")
-                .reason,
-            LimitReason::BatchTooLarge
+                .code(),
+            LimitReason::BatchTooLarge.as_str()
         );
 
         let reasons = [
@@ -301,6 +476,7 @@ mod tests {
             LimitReason::TooManyRows,
             LimitReason::BodyTooLarge,
             LimitReason::BatchTooLarge,
+            LimitReason::OutOfRange,
         ];
         assert_eq!(
             reasons.map(LimitReason::as_str),
@@ -310,7 +486,8 @@ mod tests {
                 "too_many_elements",
                 "too_many_rows",
                 "body_too_large",
-                "batch_too_large"
+                "batch_too_large",
+                "out_of_range"
             ]
         );
         assert_eq!(
@@ -321,7 +498,8 @@ mod tests {
                 "too_many_elements",
                 "too_many_rows",
                 "body_too_large",
-                "batch_too_large"
+                "batch_too_large",
+                "out_of_range"
             ])
         );
     }
@@ -333,11 +511,16 @@ mod tests {
         let oversized = json!({ "value": "x".repeat(limits_policy().document.max_bytes) });
 
         assert!(byte_length > value.to_string().chars().count());
+        let error =
+            check_json_document("metadata", &oversized).expect_err("oversized JSON should fail");
+        assert_eq!(error.code(), LimitReason::JsonbTooLarge.as_str());
         assert_eq!(
-            check_json_document("metadata", &oversized)
-                .expect_err("oversized JSON should fail")
-                .reason,
-            LimitReason::JsonbTooLarge
+            serde_json::to_value(error.details()).expect("details should serialize"),
+            json!({
+                "field": "metadata",
+                "measured": oversized.to_string().len(),
+                "allowed": limits_policy().document.max_bytes,
+            })
         );
     }
 }

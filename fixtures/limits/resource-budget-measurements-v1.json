@@ -72,5 +72,228 @@
   "collections": [
     { "name": "empty collection", "value": [], "elements": 0 },
     { "name": "mixed JSON collection", "value": [null, true, "é", 4], "elements": 4 }
+  ],
+  "ranges": [
+    {
+      "name": "below minimum",
+      "measured": 3599,
+      "minimum": 3600,
+      "maximum": 2678400,
+      "outcome": "out_of_range"
+    },
+    {
+      "name": "at minimum",
+      "measured": 3600,
+      "minimum": 3600,
+      "maximum": 2678400,
+      "outcome": "ok"
+    },
+    {
+      "name": "inside",
+      "measured": 86400,
+      "minimum": 3600,
+      "maximum": 2678400,
+      "outcome": "ok"
+    },
+    {
+      "name": "at maximum",
+      "measured": 2678400,
+      "minimum": 3600,
+      "maximum": 2678400,
+      "outcome": "ok"
+    },
+    {
+      "name": "above maximum",
+      "measured": 2678401,
+      "minimum": 3600,
+      "maximum": 2678400,
+      "outcome": "out_of_range"
+    },
+    {
+      "name": "inverted bounds",
+      "measured": 3600,
+      "minimum": 2678400,
+      "maximum": 3600,
+      "outcome": "invalid_bounds"
+    },
+    {
+      "name": "zero equal bounds",
+      "measured": 0,
+      "minimum": 0,
+      "maximum": 0,
+      "outcome": "ok"
+    },
+    {
+      "name": "below equal bounds",
+      "measured": 6,
+      "minimum": 7,
+      "maximum": 7,
+      "outcome": "out_of_range"
+    },
+    {
+      "name": "above equal bounds",
+      "measured": 8,
+      "minimum": 7,
+      "maximum": 7,
+      "outcome": "out_of_range"
+    },
+    {
+      "name": "above 32-bit seconds",
+      "measured": 4294967296,
+      "minimum": 4294967296,
+      "maximum": 4294967297,
+      "outcome": "ok"
+    },
+    {
+      "name": "largest safe integer",
+      "measured": 9007199254740991,
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "outcome": "ok"
+    }
+  ],
+  "range_policies": [
+    {
+      "name": "duration range",
+      "bounds": {
+        "minimum": 3600,
+        "maximum": 2678400
+      },
+      "valid": true
+    },
+    {
+      "name": "zero range",
+      "bounds": {
+        "minimum": 0,
+        "maximum": 0
+      },
+      "valid": true
+    },
+    {
+      "name": "equal bounds",
+      "bounds": {
+        "minimum": 7,
+        "maximum": 7
+      },
+      "valid": true
+    },
+    {
+      "name": "largest safe integer",
+      "bounds": {
+        "minimum": 0,
+        "maximum": 9007199254740991
+      },
+      "valid": true
+    },
+    {
+      "name": "inverted bounds",
+      "bounds": {
+        "minimum": 2678400,
+        "maximum": 3600
+      },
+      "valid": false
+    },
+    {
+      "name": "negative minimum",
+      "bounds": {
+        "minimum": -1,
+        "maximum": 3600
+      },
+      "valid": false
+    },
+    {
+      "name": "negative maximum",
+      "bounds": {
+        "minimum": 0,
+        "maximum": -1
+      },
+      "valid": false
+    },
+    {
+      "name": "fractional minimum",
+      "bounds": {
+        "minimum": 0.5,
+        "maximum": 3600
+      },
+      "valid": false
+    },
+    {
+      "name": "fractional maximum",
+      "bounds": {
+        "minimum": 0,
+        "maximum": 3600.5
+      },
+      "valid": false
+    },
+    {
+      "name": "unsafe minimum",
+      "bounds": {
+        "minimum": 9007199254740992,
+        "maximum": 9007199254740992
+      },
+      "valid": false
+    },
+    {
+      "name": "unsafe maximum",
+      "bounds": {
+        "minimum": 0,
+        "maximum": 9007199254740992
+      },
+      "valid": false
+    },
+    {
+      "name": "string bound",
+      "bounds": {
+        "minimum": "3600",
+        "maximum": 2678400
+      },
+      "valid": false
+    },
+    {
+      "name": "boolean bound",
+      "bounds": {
+        "minimum": false,
+        "maximum": 2678400
+      },
+      "valid": false
+    },
+    {
+      "name": "missing minimum",
+      "bounds": {
+        "maximum": 2678400
+      },
+      "valid": false
+    },
+    {
+      "name": "missing maximum",
+      "bounds": {
+        "minimum": 3600
+      },
+      "valid": false
+    },
+    {
+      "name": "unknown field",
+      "bounds": {
+        "minimum": 0,
+        "maximum": 3600,
+        "extra": 1
+      },
+      "valid": false
+    },
+    {
+      "name": "numeric maximum entry",
+      "bounds": 2678400,
+      "valid": false
+    },
+    {
+      "name": "null entry",
+      "bounds": null,
+      "valid": false
+    },
+    {
+      "name": "array entry",
+      "bounds": [],
+      "valid": false
+    }
   ]
 }

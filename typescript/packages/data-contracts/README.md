@@ -72,6 +72,22 @@ with `trimmedUnicodeScalarCount(value)`, and replace a `JSON.stringify` plus `Te
 with `compactJsonUtf8Bytes(value)`. Unlike raw `JSON.stringify`, the helper rejects values that JSON
 would omit or replace with `null`.
 
+`checkRange(measured: number, minimum: number, maximum: number): LimitRange` checks inclusive
+bounds and returns `{ measured, minimum, maximum }`. Values below the minimum or above the
+maximum throw `LimitOutOfRangeError` with those fields. All arguments must be non-negative safe
+integers. Inverted bounds throw `RangeError`. Zero and equal bounds are valid.
+
+```ts
+import { checkRange, enforceLimit } from '@baukit/data-contracts/limits';
+
+enforceLimit('intervalSeconds', 'out_of_range', () => checkRange(3600, 3600, 2678400));
+```
+
+`enforceLimit` maps `LimitOutOfRangeError` to `LimitRangeError`, a subclass of `LimitError`.
+It carries `reason: 'out_of_range'`, `field`, `measured`, `minimum`, and `maximum`. Its inherited
+`allowed` equals `maximum` for callers that already read maximum limit errors. Invalid arguments
+and inverted bounds remain `RangeError` and pass through without becoming policy rejections.
+
 ### Limits policy files
 
 `parseLimitsPolicy(value, schema)` validates a product's limits policy file, such as the
@@ -79,10 +95,28 @@ would omit or replace with `null`.
 section. The parser requires a string `$comment`, the exact version, the exact section and key sets,
 and positive safe integers. Keys listed in `allowZero` as `section.key` also accept zero. Any other
 shape throws `LimitsPolicyError`, whose message names the failing path but never a value. Pass the
-schema `as const` so the result type has one `number` property per declared key.
+schema `as const` so the result type follows the declared keys. Add range paths to `rangeKeys`
+as `section.key`. Those entries contain exactly `{ minimum, maximum }`, with non-negative safe
+integer bounds and `minimum <= maximum`. A range key cannot also appear in `allowZero`.
 
-`enforceLimit(field, reason, check)` runs one check and turns `LimitExceededError` into
-`LimitError`, which carries `reason`, `field`, `measured`, and `allowed`. Other errors pass through.
+```ts
+const schema = {
+  version: 1,
+  sections: { text: ['max_characters'], ranges: ['interval_seconds'] },
+  rangeKeys: ['ranges.interval_seconds'],
+} as const;
+const policy = parseLimitsPolicy({
+  $comment: 'Reviewed limits.',
+  version: 1,
+  text: { max_characters: 200 },
+  ranges: { interval_seconds: { minimum: 3600, maximum: 2678400 } },
+}, schema);
+// policy.ranges.interval_seconds has minimum and maximum number properties.
+```
+
+`enforceLimit(field, reason, check)` maps `LimitExceededError` into `LimitError`, which carries
+`reason`, `field`, `measured`, and `allowed`. It maps range failures to `LimitRangeError` as
+described above. Other errors pass through.
 
 ```ts
 import { checkTrimmedUnicodeScalars, enforceLimit, parseLimitsPolicy } from '@baukit/data-contracts/limits';

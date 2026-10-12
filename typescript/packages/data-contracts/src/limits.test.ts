@@ -4,12 +4,14 @@ import fixtureCorpus from '../../../../fixtures/limits/resource-budget-measureme
 
 import {
   LimitExceededError,
+  LimitOutOfRangeError,
   ResourceMeasurementError,
   byteLength,
   checkBytes,
   checkCollection,
   checkCompactJsonUtf8Bytes,
   checkMeasurement,
+  checkRange,
   checkTrimmedUnicodeScalars,
   collectionLength,
   compactJsonUtf8Bytes,
@@ -42,6 +44,45 @@ interface FixtureCorpus {
 }
 
 const fixtures = fixtureCorpus as FixtureCorpus;
+
+describe('whole-number ranges', () => {
+  it.each(fixtureCorpus.ranges)('$name', ({ measured, minimum, maximum, outcome }) => {
+    if (outcome === 'ok') {
+      expect(checkRange(measured, minimum, maximum)).toEqual({ measured, minimum, maximum });
+      return;
+    }
+    if (outcome === 'invalid_bounds') {
+      expect(() => checkRange(measured, minimum, maximum)).toThrow(RangeError);
+      expect(() => checkRange(measured, minimum, maximum)).toThrow(
+        'minimum must not exceed maximum',
+      );
+      return;
+    }
+    expect(outcome).toBe('out_of_range');
+    try {
+      checkRange(measured, minimum, maximum);
+    } catch (error) {
+      expect(error).toBeInstanceOf(LimitOutOfRangeError);
+      expect(error).toMatchObject({ measured, minimum, maximum });
+      return;
+    }
+    throw new Error('Expected LimitOutOfRangeError');
+  });
+
+  it('rejects invalid whole-number arguments', () => {
+    for (const value of [
+      -1,
+      0.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.MAX_SAFE_INTEGER + 1,
+    ]) {
+      expect(() => checkRange(value, 0, 10)).toThrow(RangeError);
+      expect(() => checkRange(1, value, 10)).toThrow(RangeError);
+      expect(() => checkRange(1, 0, value)).toThrow(RangeError);
+    }
+  });
+});
 
 describe('resource-budget measurements', () => {
   it('counts ASCII, composed, decomposed, and joined emoji scalars', () => {

@@ -84,6 +84,25 @@ Trimming uses Rust's Unicode whitespace definition. It does not normalize text, 
 scalar and `e` followed by a combining acute accent is two. Compact JSON uses `serde_json` without
 pretty printing.
 
+`check_range(measured: u64, minimum: u64, maximum: u64)` checks inclusive bounds and returns
+`Result<LimitRange, LimitRangeError>`. `LimitRange` and `LimitOutOfRange` expose `measured()`,
+`minimum()`, and `maximum()`. `LimitRangeError::OutOfRange` carries a measurement outside the
+range. `LimitRangeError::InvalidBounds` carries `InvalidLimitRange` when the minimum exceeds the
+maximum, even if the measurement also falls outside those bounds.
+
+```rust
+use baukit_core::limits::check_range;
+use std::time::Duration;
+
+let interval = check_range(Duration::from_secs(3600).as_secs(), 3600, 2678400)?;
+assert_eq!(interval.minimum(), 3600);
+assert_eq!(interval.maximum(), 2678400);
+# Ok::<(), baukit_core::limits::LimitRangeError>(())
+```
+
+Range checks use `u64` because duration seconds do not depend on pointer width. The existing
+length and count checks keep `usize`. Range checks accept zero and equal bounds.
+
 ### Migration from `baukit-test`
 
 Production code should replace `baukit_test::trimmed_text_length` with

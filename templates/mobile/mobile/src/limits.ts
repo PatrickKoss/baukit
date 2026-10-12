@@ -2,6 +2,7 @@ import limitsFixture from '../../limits.json';
 import {
   checkCompactJsonUtf8Bytes,
   checkMeasurement,
+  checkRange as checkRangeMeasurement,
   checkTrimmedUnicodeScalars,
   enforceLimit,
   parseLimitsPolicy,
@@ -17,7 +18,9 @@ export const LIMITS_POLICY_SCHEMA = {
     rows: ['max_count'],
     body: ['max_bytes'],
     batch: ['max_items'],
+    ranges: ['interval_seconds'],
   },
+  rangeKeys: ['ranges.interval_seconds'],
 } as const;
 
 export type LimitsPolicy = SchemaLimitsPolicy<typeof LIMITS_POLICY_SCHEMA>;
@@ -28,7 +31,8 @@ export type LimitReason =
   | 'too_many_elements'
   | 'too_many_rows'
   | 'body_too_large'
-  | 'batch_too_large';
+  | 'batch_too_large'
+  | 'out_of_range';
 
 export type JsonValue =
   null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue };
@@ -61,6 +65,10 @@ export function checkBody(field: string, byteLength: number): void {
 
 export function checkBatch(field: string, count: number): void {
   checkCount(field, count, LIMITS_POLICY.batch.max_items, 'batch_too_large');
+}
+
+export function checkRange(field: string, measured: number, minimum: number, maximum: number): void {
+  enforceLimit(field, 'out_of_range', () => checkRangeMeasurement(measured, minimum, maximum));
 }
 
 function checkCount(field: string, count: number, allowed: number, reason: LimitReason): void {

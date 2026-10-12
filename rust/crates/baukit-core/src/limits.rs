@@ -46,6 +46,96 @@ impl LimitExceeded {
     }
 }
 
+/// A whole-number measurement within inclusive caller-provided bounds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LimitRange {
+    measured: u64,
+    minimum: u64,
+    maximum: u64,
+}
+
+impl LimitRange {
+    /// Returns the measured amount.
+    #[must_use]
+    pub const fn measured(self) -> u64 {
+        self.measured
+    }
+
+    /// Returns the inclusive minimum.
+    #[must_use]
+    pub const fn minimum(self) -> u64 {
+        self.minimum
+    }
+
+    /// Returns the inclusive maximum.
+    #[must_use]
+    pub const fn maximum(self) -> u64 {
+        self.maximum
+    }
+}
+
+/// A whole-number measurement outside inclusive caller-provided bounds.
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+#[error("measured {measured} is outside {minimum}..={maximum}")]
+pub struct LimitOutOfRange {
+    measured: u64,
+    minimum: u64,
+    maximum: u64,
+}
+
+impl LimitOutOfRange {
+    /// Returns the measured amount.
+    #[must_use]
+    pub const fn measured(self) -> u64 {
+        self.measured
+    }
+
+    /// Returns the inclusive minimum.
+    #[must_use]
+    pub const fn minimum(self) -> u64 {
+        self.minimum
+    }
+
+    /// Returns the inclusive maximum.
+    #[must_use]
+    pub const fn maximum(self) -> u64 {
+        self.maximum
+    }
+}
+
+/// Caller-provided bounds whose minimum exceeds their maximum.
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+#[error("minimum {minimum} exceeds maximum {maximum}")]
+pub struct InvalidLimitRange {
+    minimum: u64,
+    maximum: u64,
+}
+
+impl InvalidLimitRange {
+    /// Returns the caller-provided minimum.
+    #[must_use]
+    pub const fn minimum(self) -> u64 {
+        self.minimum
+    }
+
+    /// Returns the caller-provided maximum.
+    #[must_use]
+    pub const fn maximum(self) -> u64 {
+        self.maximum
+    }
+}
+
+/// An invalid range or a measurement outside a valid range.
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum LimitRangeError {
+    /// The caller supplied inverted bounds.
+    #[error(transparent)]
+    InvalidBounds(#[from] InvalidLimitRange),
+    /// The measurement is below the minimum or above the maximum.
+    #[error(transparent)]
+    OutOfRange(#[from] LimitOutOfRange),
+}
+
 /// An error from encoding and checking compact JSON.
 #[derive(Debug, Error)]
 pub enum CompactJsonLimitError {
@@ -89,6 +179,35 @@ pub const fn check_measurement(
         return Err(LimitExceeded { measured, allowed });
     }
     Ok(LimitMeasurement { measured, allowed })
+}
+
+/// Checks a whole-number measurement against inclusive bounds.
+///
+/// Uses `u64` so seconds from [`std::time::Duration::as_secs`] fit on every target.
+/// Inverted bounds return [`LimitRangeError::InvalidBounds`] before checking the measurement.
+pub const fn check_range(
+    measured: u64,
+    minimum: u64,
+    maximum: u64,
+) -> Result<LimitRange, LimitRangeError> {
+    if minimum > maximum {
+        return Err(LimitRangeError::InvalidBounds(InvalidLimitRange {
+            minimum,
+            maximum,
+        }));
+    }
+    if measured < minimum || measured > maximum {
+        return Err(LimitRangeError::OutOfRange(LimitOutOfRange {
+            measured,
+            minimum,
+            maximum,
+        }));
+    }
+    Ok(LimitRange {
+        measured,
+        minimum,
+        maximum,
+    })
 }
 
 /// Measures trimmed Unicode scalar values and checks the result.
@@ -135,6 +254,7 @@ mod tests {
         json: Vec<JsonFixture>,
         bytes: Vec<BytesFixture>,
         collections: Vec<CollectionFixture>,
+        ranges: Vec<RangeFixture>,
     }
 
     #[derive(Debug, Deserialize)]
@@ -166,11 +286,70 @@ mod tests {
         elements: usize,
     }
 
+    #[derive(Debug, Deserialize)]
+    struct RangeFixture {
+        name: String,
+        measured: u64,
+        minimum: u64,
+        maximum: u64,
+        outcome: String,
+    }
+
     fn fixtures() -> FixtureCorpus {
         serde_json::from_str(include_str!(
             "../../../../fixtures/limits/resource-budget-measurements-v1.json"
         ))
         .expect("resource-budget fixture should parse")
+    }
+
+    #[test]
+    fn shared_ranges_check_inclusive_bounds_and_distinguish_invalid_bounds() {
+        let ranges = fixtures().ranges;
+        assert_eq!(ranges.len(), 11);
+        for fixture in ranges {
+            let result = check_range(fixture.measured, fixture.minimum, fixture.maximum);
+            match fixture.outcome.as_str() {
+                "ok" => {
+                    let measurement = result.expect(&fixture.name);
+                    assert_eq!(measurement.measured(), fixture.measured, "{}", fixture.name);
+                    assert_eq!(measurement.minimum(), fixture.minimum, "{}", fixture.name);
+                    assert_eq!(measurement.maximum(), fixture.maximum, "{}", fixture.name);
+                }
+                "out_of_range" => {
+                    let Err(LimitRangeError::OutOfRange(error)) = result else {
+                        panic!(
+                            "{}: expected out-of-range error, got {result:?}",
+                            fixture.name
+                        );
+                    };
+                    assert_eq!(error.measured(), fixture.measured, "{}", fixture.name);
+                    assert_eq!(error.minimum(), fixture.minimum, "{}", fixture.name);
+                    assert_eq!(error.maximum(), fixture.maximum, "{}", fixture.name);
+                }
+                "invalid_bounds" => {
+                    let Err(LimitRangeError::InvalidBounds(error)) = result else {
+                        panic!("{}: expected invalid bounds, got {result:?}", fixture.name);
+                    };
+                    assert_eq!(error.minimum(), fixture.minimum, "{}", fixture.name);
+                    assert_eq!(error.maximum(), fixture.maximum, "{}", fixture.name);
+                }
+                outcome => panic!("unknown range fixture outcome {outcome}"),
+            }
+        }
+    }
+
+    #[test]
+    fn range_checks_accept_the_full_duration_seconds_width() {
+        assert_eq!(
+            check_range(u64::MAX, 0, u64::MAX)
+                .expect("full-width duration should fit")
+                .measured(),
+            u64::MAX
+        );
+        assert!(matches!(
+            check_range(0, u64::MAX, 0),
+            Err(LimitRangeError::InvalidBounds(_))
+        ));
     }
 
     #[test]

@@ -4,6 +4,13 @@ All notable changes to `baukit-core` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Add `check_range(measured, minimum, maximum)` with inclusive bounds, measurement accessors,
+  and separate errors for inverted bounds and values outside a valid range. It uses `u64` to
+  accept `Duration::as_secs()` on every target, including seconds above the 32-bit `usize` limit.
+  Existing length and count helpers keep `usize`.
+
 ## [0.10.19] - 2026-10-11
 
 ## [0.10.18] - 2026-10-11

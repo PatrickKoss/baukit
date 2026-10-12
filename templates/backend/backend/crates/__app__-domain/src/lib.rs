@@ -31,9 +31,7 @@ impl Item {
         if name.is_empty() {
             return Err(DomainError::EmptyName);
         }
-        if limits::check_text("item.name", name).is_err() {
-            return Err(DomainError::NameTooLong);
-        }
+        limits::check_text("item.name", name)?;
         Ok(Self {
             id,
             name: name.to_owned(),
@@ -45,8 +43,8 @@ impl Item {
 pub enum DomainError {
     #[error("item name must not be empty")]
     EmptyName,
-    #[error("item name must contain at most 200 characters")]
-    NameTooLong,
+    #[error(transparent)]
+    Limit(#[from] limits::LimitError),
 }
 
 #[cfg(test)]

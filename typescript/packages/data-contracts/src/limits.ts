@@ -15,6 +15,29 @@ export class LimitExceededError extends Error implements LimitMeasurement {
   }
 }
 
+export interface LimitBounds {
+  readonly minimum: number;
+  readonly maximum: number;
+}
+
+export interface LimitRange extends LimitBounds {
+  readonly measured: number;
+}
+
+export class LimitOutOfRangeError extends Error implements LimitRange {
+  readonly measured: number;
+  readonly minimum: number;
+  readonly maximum: number;
+
+  constructor(measured: number, minimum: number, maximum: number) {
+    super(`Measured ${String(measured)} is outside ${String(minimum)}..=${String(maximum)}`);
+    this.name = 'LimitOutOfRangeError';
+    this.measured = measured;
+    this.minimum = minimum;
+    this.maximum = maximum;
+  }
+}
+
 export type ResourceMeasurementErrorCode =
   'invalid_unicode' | 'unsupported_json_value' | 'non_finite_json_number' | 'circular_json_value';
 
@@ -66,6 +89,17 @@ export function checkMeasurement(measured: number, allowed: number): LimitMeasur
   return { measured, allowed };
 }
 
+export function checkRange(measured: number, minimum: number, maximum: number): LimitRange {
+  assertNonNegativeSafeInteger(measured, 'measured');
+  assertNonNegativeSafeInteger(minimum, 'minimum');
+  assertNonNegativeSafeInteger(maximum, 'maximum');
+  if (minimum > maximum) throw new RangeError('minimum must not exceed maximum');
+  if (measured < minimum || measured > maximum) {
+    throw new LimitOutOfRangeError(measured, minimum, maximum);
+  }
+  return { measured, minimum, maximum };
+}
+
 export function checkTrimmedUnicodeScalars(value: string, allowed: number): LimitMeasurement {
   return checkMeasurement(trimmedUnicodeScalarCount(value), allowed);
 }
@@ -86,15 +120,27 @@ export interface LimitsPolicySchema {
   readonly version: number;
   readonly sections: Readonly<Record<string, readonly string[]>>;
   readonly allowZero?: readonly string[];
+  readonly rangeKeys?: readonly string[];
 }
+
+type PolicyValue<Schema extends LimitsPolicySchema, Path extends string> = Schema extends {
+  readonly rangeKeys: readonly (infer RangePath)[];
+}
+  ? Path extends RangePath
+    ? LimitBounds
+    : number
+  : number;
 
 export type LimitsPolicy<Schema extends LimitsPolicySchema> = {
   readonly $comment: string;
   readonly version: number;
 } & {
-  readonly [Section in keyof Schema['sections']]: Readonly<
-    Record<Schema['sections'][Section][number], number>
-  >;
+  readonly [Section in keyof Schema['sections']]: {
+    readonly [Key in Schema['sections'][Section][number]]: PolicyValue<
+      Schema,
+      `${Section & string}.${Key}`
+    >;
+  };
 };
 
 export class LimitsPolicyError extends Error {
@@ -120,6 +166,18 @@ export class LimitError<Reason extends string = string> extends Error implements
   }
 }
 
+export class LimitRangeError extends LimitError<'out_of_range'> implements LimitRange {
+  readonly minimum: number;
+  readonly maximum: number;
+
+  constructor(field: string, measurement: LimitRange) {
+    super('out_of_range', field, { measured: measurement.measured, allowed: measurement.maximum });
+    this.name = 'LimitRangeError';
+    this.minimum = measurement.minimum;
+    this.maximum = measurement.maximum;
+  }
+}
+
 const POLICY_ROOT = 'limits';
 const RESERVED_POLICY_KEYS: readonly string[] = ['$comment', 'version'];
 
@@ -137,21 +195,23 @@ export function parseLimitsPolicy<const Schema extends LimitsPolicySchema>(
     throw new LimitsPolicyError(`Unsupported limits policy version ${String(policy['version'])}`);
   }
   const allowZero = new Set(schema.allowZero ?? []);
+  const rangeKeys = new Set(schema.rangeKeys ?? []);
   for (const [section, keys] of Object.entries(schema.sections)) {
-    checkPolicySection(policy, section, keys, allowZero);
+    checkPolicySection(policy, section, keys, allowZero, rangeKeys);
   }
   return policy as LimitsPolicy<Schema>;
 }
 
-export function enforceLimit(
+export function enforceLimit<Measurement extends LimitMeasurement | LimitRange>(
   field: string,
   reason: string,
-  check: () => LimitMeasurement,
-): LimitMeasurement {
+  check: () => Measurement,
+): Measurement {
   try {
     return check();
   } catch (error) {
     if (error instanceof LimitExceededError) throw new LimitError(reason, field, error);
+    if (error instanceof LimitOutOfRangeError) throw new LimitRangeError(field, error);
     throw error;
   }
 }
@@ -167,6 +227,12 @@ function assertPolicySchema(schema: LimitsPolicySchema): void {
   for (const path of schema.allowZero ?? []) {
     if (!known.has(path)) throw new TypeError(`Limits policy allowZero names unknown ${path}`);
   }
+  for (const path of schema.rangeKeys ?? []) {
+    if (!known.has(path)) throw new TypeError(`Limits policy rangeKeys names unknown ${path}`);
+    if (schema.allowZero?.includes(path)) {
+      throw new TypeError(`Limits policy range key ${path} cannot also use allowZero`);
+    }
+  }
 }
 
 function checkPolicySection(
@@ -174,17 +240,36 @@ function checkPolicySection(
   section: string,
   keys: readonly string[],
   allowZero: ReadonlySet<string>,
+  rangeKeys: ReadonlySet<string>,
 ): void {
   const path = `${POLICY_ROOT}.${section}`;
   const values = expectPolicyObject(policy[section], path);
   expectExactKeys(values, keys, path);
   for (const key of keys) {
+    if (rangeKeys.has(`${section}.${key}`)) {
+      checkPolicyRange(values[key], `${path}.${key}`);
+      continue;
+    }
     const minimum = allowZero.has(`${section}.${key}`) ? 0 : 1;
     const limit = values[key];
     if (typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < minimum) {
       const expected = minimum === 0 ? 'a non-negative integer' : 'a positive integer';
       throw new LimitsPolicyError(`${path}.${key} must be ${expected}`);
     }
+  }
+}
+
+function checkPolicyRange(value: unknown, path: string): void {
+  const bounds = expectPolicyObject(value, path);
+  expectExactKeys(bounds, ['minimum', 'maximum'], path);
+  for (const key of ['minimum', 'maximum']) {
+    const bound = bounds[key];
+    if (typeof bound !== 'number' || !Number.isSafeInteger(bound) || bound < 0) {
+      throw new LimitsPolicyError(`${path}.${key} must be a non-negative integer`);
+    }
+  }
+  if (Number(bounds['minimum']) > Number(bounds['maximum'])) {
+    throw new LimitsPolicyError(`${path}.minimum must not exceed maximum`);
   }
 }
 

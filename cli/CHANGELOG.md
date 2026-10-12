@@ -3,6 +3,13 @@
 ## [Unreleased]
 
 - The generated web e2e geometry helpers read both rectangles in one browser call, so a layout shift between two reads cannot produce a false intersection or containment failure.
+- Generate range policy entries with non-negative integer `minimum` and `maximum` bounds.
+  Rust and TypeScript reject inverted bounds and bounds above JavaScript's safe integer limit.
+- Generate `out_of_range` checks for backend, web, and mobile. HTTP errors carry the field,
+  measured value, minimum, and maximum. Existing maximum checks also retain their measurements.
+  Item name limit failures now return `text_too_long` instead of losing the reason in `validation_failed`.
+- Include the shared resource-budget fixture in generated products so their limit tests use the
+  same range and policy cases as the toolkit tests.
 
 - The remote MCP guide tells product policies to pass `verified_identity().authenticated_at()` to erasure fence checks, so re-onboarded subjects can use MCP.
 

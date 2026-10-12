@@ -1,4 +1,5 @@
 import limitsFixture from '../../limits.json';
+import fixtureCorpus from '../../tests/fixtures/resource-budget-measurements-v1.json';
 import {
   LimitError,
   LimitsPolicyError,
@@ -14,11 +15,55 @@ import {
   checkCollection,
   checkJsonDocument,
   checkRows,
+  checkRange,
   checkText,
   type LimitReason,
 } from './limits';
 
 describe('limits policy call site', () => {
+  it.each(fixtureCorpus.ranges)('checks range: $name', ({ measured, minimum, maximum, outcome }) => {
+    if (outcome === 'ok') {
+      expect(() => {
+        checkRange('intervalSeconds', measured, minimum, maximum);
+      }).not.toThrow();
+      return;
+    }
+    if (outcome === 'invalid_bounds') {
+      expect(() => {
+        checkRange('intervalSeconds', measured, minimum, maximum);
+      }).toThrow(RangeError);
+      return;
+    }
+    expect(outcome).toBe('out_of_range');
+    let caught: unknown;
+    try {
+      checkRange('intervalSeconds', measured, minimum, maximum);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(LimitError);
+    expect(caught).toMatchObject({ reason: 'out_of_range', field: 'intervalSeconds', measured, minimum, maximum });
+  });
+
+  it.each(fixtureCorpus.range_policies)('parses range: $name', ({ bounds, valid }) => {
+    const value = { ...limitsFixture, ranges: { interval_seconds: bounds } };
+    if (valid) {
+      expect(parseLimitsPolicy(value, LIMITS_POLICY_SCHEMA).ranges.interval_seconds).toEqual(bounds);
+    } else {
+      expect(() => parseLimitsPolicy(value, LIMITS_POLICY_SCHEMA)).toThrow(LimitsPolicyError);
+    }
+  });
+
+  it('checks the range declared in the shared policy', () => {
+    const { minimum, maximum } = LIMITS_POLICY.ranges.interval_seconds;
+    expect(() => {
+      checkRange('intervalSeconds', minimum, minimum, maximum);
+    }).not.toThrow();
+    expect(() => {
+      checkRange('intervalSeconds', maximum + 1, minimum, maximum);
+    }).toThrow(LimitError);
+  });
+
   it('loads the product-root fixture', () => {
     expect(LIMITS_POLICY).toEqual(limitsFixture);
   });

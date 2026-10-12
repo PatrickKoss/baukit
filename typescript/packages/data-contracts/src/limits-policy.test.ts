@@ -1,10 +1,14 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
+import fixtureCorpus from '../../../../fixtures/limits/resource-budget-measurements-v1.json' with { type: 'json' };
+
 import {
   LimitError,
   LimitExceededError,
+  LimitRangeError,
   LimitsPolicyError,
   checkMeasurement,
+  checkRange,
   checkTrimmedUnicodeScalars,
   enforceLimit,
   parseLimitsPolicy,
@@ -27,6 +31,33 @@ const policy = {
 };
 
 describe('parseLimitsPolicy', () => {
+  const rangeSchema = {
+    ...schema,
+    sections: { ...schema.sections, ranges: ['interval_seconds'] },
+    rangeKeys: ['ranges.interval_seconds'],
+  } as const;
+
+  it.each(fixtureCorpus.range_policies)('validates range policy: $name', ({ bounds, valid }) => {
+    const value = { ...policy, ranges: { interval_seconds: bounds } };
+    if (!valid) {
+      expect(() => parseLimitsPolicy(value, rangeSchema)).toThrow(LimitsPolicyError);
+      return;
+    }
+    const parsed = parseLimitsPolicy(value, rangeSchema);
+    expect(parsed.ranges.interval_seconds).toEqual(bounds);
+    expectTypeOf(parsed.ranges.interval_seconds.minimum).toEqualTypeOf<number>();
+    expectTypeOf(parsed.text.max_characters).toEqualTypeOf<number>();
+  });
+
+  it('rejects unknown range keys and allowZero on a range', () => {
+    expect(() => parseLimitsPolicy(policy, { ...schema, rangeKeys: ['text.unknown'] })).toThrow(
+      TypeError,
+    );
+    expect(() =>
+      parseLimitsPolicy(policy, { ...schema, rangeKeys: ['transport.daily_budget'] }),
+    ).toThrow(TypeError);
+  });
+
   it('returns the policy typed by the schema', () => {
     const parsed = parseLimitsPolicy(policy, schema);
 
@@ -103,6 +134,38 @@ describe('parseLimitsPolicy', () => {
 });
 
 describe('enforceLimit', () => {
+  it('returns range measurements without losing their bounds', () => {
+    const result = enforceLimit('intervalSeconds', 'out_of_range', () =>
+      checkRange(3600, 3600, 2678400),
+    );
+    expect(result).toEqual({ measured: 3600, minimum: 3600, maximum: 2678400 });
+    expectTypeOf(result.minimum).toEqualTypeOf<number>();
+  });
+
+  it.each([3599, 2678401])('maps %s to out_of_range with both bounds', (measured) => {
+    let caught: unknown;
+    try {
+      enforceLimit('intervalSeconds', 'out_of_range', () => checkRange(measured, 3600, 2678400));
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(LimitError);
+    expect(caught).toBeInstanceOf(LimitRangeError);
+    expect(caught).toMatchObject({
+      reason: 'out_of_range',
+      field: 'intervalSeconds',
+      measured,
+      minimum: 3600,
+      maximum: 2678400,
+    });
+  });
+
+  it('passes inverted range failures through', () => {
+    expect(() =>
+      enforceLimit('intervalSeconds', 'out_of_range', () => checkRange(1, 10, 0)),
+    ).toThrow(RangeError);
+  });
+
   it('returns the measurement when the value fits', () => {
     expect(
       enforceLimit('title', 'text_too_long', () => checkTrimmedUnicodeScalars(' ab ', 2)),

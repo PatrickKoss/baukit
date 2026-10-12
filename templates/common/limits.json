@@ -18,5 +18,11 @@
   },
   "batch": {
     "max_items": 500
+  },
+  "ranges": {
+    "interval_seconds": {
+      "minimum": 3600,
+      "maximum": 2678400
+    }
   }
 }

@@ -6,6 +6,7 @@ mod erasure;
 use axum::{
     body::{Body, to_bytes},
     http::{Method, Request, StatusCode, header},
+    response::IntoResponse as _,
 };
 {% if context.auth_enabled %}use baukit_auth::{AuthState, OidcConfig, OidcVerifier};
 {% endif %}use baukit_config::HttpConfig;
@@ -16,10 +17,12 @@ use serde_json::Value;
 use tower::ServiceExt as _;
 
 use {{ context.app_crate }}_api::ApiState;
+use {{ context.app_crate }}_api::map_limit_error;
 use {{ context.app_crate }}_api::router;
 use {{ context.app_crate }}_bin::InMemoryItemRepository;
 {% if context.auth_enabled %}use {{ context.app_crate }}_bin::InMemoryUserRepository;
 {% endif %}use {{ context.app_crate }}_bin::operations_router;
+use {{ context.app_crate }}_domain::limits::{LimitError, check_range};
 {% if context.auth_enabled %}use {{ context.app_crate }}_services::ItemService;
 use {{ context.app_crate }}_services::UserService;
 {% else %}use {{ context.app_crate }}_services::ItemService;
@@ -144,5 +147,48 @@ use {{ context.app_crate }}_services::UserService;
         assert_eq!(response_body["error"]["code"], code);
     }
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn limit_errors_keep_measurements_in_http_responses() -> Result<(), Box<dyn Error>> {
+    for measured in [3599, 2678401] {
+        let error = check_range("intervalSeconds", measured, 3600, 2678400)
+            .expect_err("value should be outside the range");
+        let response = map_limit_error(error).into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body: Value = serde_json::from_slice(&to_bytes(response.into_body(), 1024).await?)?;
+        assert_eq!(body["error"]["code"], "out_of_range");
+        assert_eq!(
+            body["error"]["details"],
+            serde_json::json!({
+                "field": "intervalSeconds", "measured": measured, "minimum": 3600, "maximum": 2678400,
+            })
+        );
+    }
+    let response = map_limit_error(LimitError::Exceeded {
+        reason: {{ context.app_crate }}_domain::limits::LimitReason::TextTooLong,
+        field: "item.name",
+        measured: 201,
+        allowed: 200,
+    })
+    .into_response();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body: Value = serde_json::from_slice(&to_bytes(response.into_body(), 1024).await?)?;
+    assert_eq!(body["error"]["code"], "text_too_long");
+    assert_eq!(
+        body["error"]["details"],
+        serde_json::json!({
+            "field": "item.name", "measured": 201, "allowed": 200,
+        })
+    );
+
+    let error = check_range("intervalSeconds", 3600, 2678400, 3600)
+        .expect_err("inverted bounds should fail");
+    let response = map_limit_error(error).into_response();
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let body: Value = serde_json::from_slice(&to_bytes(response.into_body(), 1024).await?)?;
+    assert_eq!(body["error"]["code"], "internal");
+    assert_eq!(body["error"]["details"], serde_json::json!({}));
     Ok(())
 }

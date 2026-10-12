@@ -861,6 +861,10 @@ fn render_product(
     if let Some(guide) = rendered.get(Path::new("CLAUDE.md")).cloned() {
         rendered.insert(PathBuf::from("AGENTS.md"), guide);
     }
+    rendered.insert(
+        PathBuf::from("tests/fixtures/resource-budget-measurements-v1.json"),
+        include_bytes!("../../fixtures/limits/resource-budget-measurements-v1.json").to_vec(),
+    );
     if options.backend {
         render_directory(
             &BACKEND_TEMPLATE,

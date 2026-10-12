@@ -27,7 +27,7 @@ use serde_json::Value;
 use utoipa::{OpenApi, ToSchema};
 use uuid::Uuid;
 
-use {{ context.app_crate }}_domain::Item;
+use {{ context.app_crate }}_domain::{DomainError, Item, limits::LimitError};
 use {{ context.app_crate }}_ports::RepositoryError;
 use {{ context.app_crate }}_services::ItemService;
 use {{ context.app_crate }}_services::ServiceError;
@@ -404,6 +404,7 @@ fn map_service_error(error: ServiceError) -> ApiError {
             "The profile has been erased",
         ),
 {% endif %}        ServiceError::NotFound => ApiError::not_found("Item not found"),
+        ServiceError::Invalid(DomainError::Limit(error)) => map_limit_error(error),
         ServiceError::Invalid(error) => {
             let details = BTreeMap::from([("name".to_owned(), Value::String(error.to_string()))]);
             ApiError::validation(details)
@@ -415,6 +416,18 @@ fn map_service_error(error: ServiceError) -> ApiError {
             ApiError::internal(error)
         }
     }
+}
+
+pub fn map_limit_error(error: LimitError) -> ApiError {
+    if let LimitError::InvalidRange(error) = error {
+        return ApiError::internal(error);
+    }
+    ApiError::new(
+        StatusCode::BAD_REQUEST,
+        error.code(),
+        "The request is invalid",
+    )
+    .with_details(error.details())
 }
 
 #[must_use]
@@ -481,3 +494,25 @@ fn error_response_rules() -> ErrorResponseRules {
     )
 )]
 struct ApiDoc;
+
+#[cfg(test)]
+mod tests {
+    use {{ context.app_crate }}_domain::limits::check_range;
+
+    use super::*;
+
+    #[test]
+    fn service_limit_errors_keep_their_reason_codes() {
+        let error = check_range("intervalSeconds", 3599, 3600, 2678400)
+            .expect_err("value should be below the minimum");
+        let error = map_service_error(ServiceError::Invalid(DomainError::Limit(error)));
+        assert_eq!(error.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(error.code(), "out_of_range");
+
+        let error =
+            Item::new(Uuid::nil(), "x".repeat(201)).expect_err("name should exceed the limit");
+        let error = map_service_error(ServiceError::Invalid(error));
+        assert_eq!(error.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(error.code(), "text_too_long");
+    }
+}
