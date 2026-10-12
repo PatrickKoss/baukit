@@ -137,7 +137,6 @@ async function visibleRectangles(
   await expect(first).toBeVisible();
   await expect(second).toBeVisible();
   const secondElement = await second.elementHandle();
-  if (secondElement === null) throw new Error('visible element has no layout rectangle');
   try {
     return await first.evaluate((element, other): readonly [LayoutRectangle, LayoutRectangle] => {
       function rectangle(target: Element): LayoutRectangle {

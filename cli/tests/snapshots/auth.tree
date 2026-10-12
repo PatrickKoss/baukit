@@ -202,7 +202,7 @@ a10805461fbba838655c2cb610336f6d9351de2a862c4b5c21f643b8bd00177a  web/e2e/stack/
 170b7b7ebcac26d4d7d98a05b3dad71b014ed76c50d28ceb7660c389f5edb826  web/e2e/stack/keycloak.ts
 c02b90dbe39519057d73e6042c967bd1b53b30615d39c9cb21cbc395b0364b9a  web/e2e/stack/sign-in.spec.ts
 4530772259340013e1a274dfb86b39b13e76484ce1f160cdd9adf35cbe23f95f  web/e2e/tests/console-warnings.ts
-501ed797df8f1b70c70682c3caaf78f2b26ffa657ab571a5aa103bf469f63780  web/e2e/tests/geometry.ts
+78a53809f065490da77e23c6fd84c348ecff4287f5f6ce55909562ba170cb89f  web/e2e/tests/geometry.ts
 c6f6dc6c509e951e5985e2b664e16123ed5f4dd00df095f305a36455041de4f6  web/e2e/tests/qa-auth-expiry.spec.ts
 4279ef9b4eb81fa19319060684721f24ff6a8eb38c225beed11d23b0d82b1ed2  web/e2e/tests/qa-auth-isolation.spec.ts
 7084465ba7e6b40f251633cc79f02e77c431c0c70791eec313039e0d58299939  web/e2e/tests/qa-axe.spec.ts

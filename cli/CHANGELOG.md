@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The generated web e2e geometry helper drops a null check on `Locator.elementHandle()`, which never resolves to null and failed typed ESLint in products.
+
 ## [0.10.21] - 2026-10-12
 
 ## [0.10.20] - 2026-10-12
