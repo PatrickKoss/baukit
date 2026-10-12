@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.23] - 2026-10-12
+
 - Add host-only `[ports]` declarations for `web`, `web_preview`, and `metro`.
   Re-rendering reads ports from the destination manifest. Templates use declared
   Vite, Playwright, Keycloak web origins, and Expo ports. Doctor checks these

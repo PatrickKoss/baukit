@@ -4,6 +4,8 @@ All notable changes to `baukit-sync` are documented here.
 
 ## [Unreleased]
 
+## [0.10.23] - 2026-10-12
+
 ## [0.10.22] - 2026-10-12
 
 ## [0.10.21] - 2026-10-12
