@@ -36,7 +36,13 @@ The Baukit packages come from {{ context.baukit_typescript_dependency_descriptio
 
 Run `corepack pnpm@12.9.1 build`, `corepack pnpm@12.9.1 lint`, and `corepack pnpm@12.9.1 test` before shipping.
 
-## Browser quality gate
+{% if context.dev_ports_declared %}
+Declare `web = { host = {{ context.web_port }} }` and `web_preview = { host = {{ context.web_preview_port }} }`
+in the root `baukit.toml` under `[ports]`. They set Vite dev and preview ports.
+The hermetic Playwright server uses the preview port unless `E2E_WEB_PORT`
+overrides it. These ports do not follow `port_offset`. Re-render the affected
+files after changing the manifest, then run `baukit doctor`.
+{% endif %}## Browser quality gate
 
 {% if context.auth_oidc %}Run `corepack pnpm@12.9.1 test:e2e` after installing Chromium and WebKit with `corepack pnpm@12.9.1 exec playwright install --with-deps chromium webkit`. The generated QA configuration uses a synthetic OIDC token and stubs `/me` and `/items`; it does not contact Keycloak or the backend. Routes, overlays, submit targets, route states, and protected routes are marked authenticated so both identity startup and user-scoped rendering run in the browser gate.
 
@@ -62,7 +68,7 @@ corepack pnpm@12.9.1 exec playwright install chromium
 E2E_WEB_PORT=5183 corepack pnpm@12.9.1 exec playwright test --config e2e/playwright.stack.config.ts
 ```
 
-`E2E_WEB_PORT` sets the Vite port and defaults to 5173, the only origin the realm file lists. Before the specs run, global setup adds the chosen origin to the `{{ context.app_name }}-web` client's redirect URIs and web origins through the admin API if the client lacks it. The config reuses a server that already listens on the port, so pick a free port when another process holds 5173. `E2E_KEYCLOAK_URL`, `E2E_KEYCLOAK_REALM`, `E2E_KEYCLOAK_ADMIN_USERNAME`, `E2E_KEYCLOAK_ADMIN_PASSWORD`, and `E2E_KEYCLOAK_WEB_CLIENT_ID` override the development defaults. Each run leaves its users and any added origin in the realm, so point it only at a disposable development realm. The hermetic browser gate never runs these specs.
+`E2E_WEB_PORT` sets the Vite port and defaults to {{ context.web_port }}, the only origin the realm file lists. Before the specs run, global setup adds the chosen origin to the `{{ context.app_name }}-web` client's redirect URIs and web origins through the admin API if the client lacks it. The config reuses a server that already listens on the port, so pick a free port when another process holds {{ context.web_port }}. `E2E_KEYCLOAK_URL`, `E2E_KEYCLOAK_REALM`, `E2E_KEYCLOAK_ADMIN_USERNAME`, `E2E_KEYCLOAK_ADMIN_PASSWORD`, and `E2E_KEYCLOAK_WEB_CLIENT_ID` override the development defaults. Each run leaves its users and any added origin in the realm, so point it only at a disposable development realm. The hermetic browser gate never runs these specs.
 
 The template has no automated full-stack lifecycle or image cache. Its browser gate stubs the API, and this single stack test checks real UI sign-in. Per-project Docker stacks and API-seeded sessions suit a larger suite with many authenticated flows. Adding them here would require a new runner, backend image, realm lifecycle, and cleanup protocol.
 

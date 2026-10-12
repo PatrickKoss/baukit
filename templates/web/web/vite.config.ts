@@ -4,6 +4,9 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   plugins: [react()],
   server: {
-    port: 5173,
+    port: {{ context.web_port }},
   },
-});
+{% if context.web_preview_declared %}  preview: {
+    port: {{ context.web_preview_port }},
+  },
+{% endif %}});

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 const webRoot = fileURLToPath(new URL('..', import.meta.url));
 // The realm ships with this port. Global setup registers any other port with
 // the web client before the specs run.
-const port = Number(process.env['E2E_WEB_PORT'] ?? '5173');
+const port = Number(process.env['E2E_WEB_PORT'] ?? '{{ context.web_port }}');
 const baseURL = `http://localhost:${String(port)}`;
 
 /**

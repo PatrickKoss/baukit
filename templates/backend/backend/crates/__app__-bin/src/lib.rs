@@ -117,7 +117,7 @@ impl Default for AuthConfig {
             provider: AuthProvider::{{ "Oidc" if context.auth_oidc else "Clerk" if context.auth_clerk else "Workos" }},
             client_id: String::new(),
             publishable_key: String::new(),
-            authorized_parties: vec!["http://localhost:5173".into()],
+            authorized_parties: vec!["http://localhost:{{ context.web_port }}".into()],
             jwks_uri: None,
             issuer: {% if context.auth_oidc %}format!("http://localhost:{{ context.keycloak_host_port }}/realms/{PRODUCT}"),{% elif context.auth_workos %}"https://api.workos.com/".into(),{% else %}String::new(),{% endif %}
             audience: format!("{PRODUCT}-backend"),

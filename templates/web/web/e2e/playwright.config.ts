@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 
-const port = Number(process.env['E2E_WEB_PORT'] ?? '4173');
+const port = Number(process.env['E2E_WEB_PORT'] ?? '{{ context.web_preview_port }}');
 const baseURL = `http://127.0.0.1:${String(port)}`;
 const webRoot = fileURLToPath(new URL('..', import.meta.url));
 

@@ -63,7 +63,13 @@ The Vitest acceptance tests cover keyboard focus wrapping and visibility, modal 
 
 `pnpm test:coverage` enforces the thresholds in `vitest.config.ts`. Raise them as the product grows; lowering one to make a red build green defeats the gate.
 
-## Browser quality gate
+{% if context.dev_ports_declared %}
+Declare `web = { host = {{ context.web_port }} }` and `web_preview = { host = {{ context.web_preview_port }} }`
+in the root `baukit.toml` under `[ports]`. They set Vite dev and preview ports.
+The hermetic Playwright server uses the preview port unless `E2E_WEB_PORT`
+overrides it. These ports do not follow `port_offset`. Re-render the affected
+files after changing the manifest, then run `baukit doctor`.
+{% endif %}## Browser quality gate
 
 `pnpm test:e2e` builds the app, serves it with `vite preview`, and runs the `qa-*` Playwright specs against Chromium and WebKit at desktop and mobile viewports. The specs stub every API path themselves, so the gate needs no backend, database, or identity provider.
 

@@ -86,8 +86,8 @@
       "publicClient": true,
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
-      "redirectUris": ["http://localhost:5173/*"],
-      "webOrigins": ["http://localhost:5173"],
+      "redirectUris": ["http://localhost:{{ context.web_port }}/*"],
+      "webOrigins": ["http://localhost:{{ context.web_port }}"],
       "attributes": { "pkce.code.challenge.method": "S256" },
       "protocol": "openid-connect",
       "protocolMappers": [

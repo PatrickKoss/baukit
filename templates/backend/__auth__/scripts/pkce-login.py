@@ -185,7 +185,7 @@ def main() -> None:
     parser.add_argument("--client-id", required=True)
     parser.add_argument("--username", default="test")
     parser.add_argument("--password", default="password")
-    parser.add_argument("--redirect-uri", default="http://localhost:5173/")
+    parser.add_argument("--redirect-uri", default="http://localhost:{{ context.web_port }}/")
     parser.add_argument("--scope", default="openid profile email offline_access")
     parser.add_argument("--check-url", default="http://localhost:{{ context.api_host_port }}/me")
     args = parser.parse_args()

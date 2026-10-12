@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Add host-only `[ports]` declarations for `web`, `web_preview`, and `metro`.
+  Re-rendering reads ports from the destination manifest. Templates use declared
+  Vite, Playwright, Keycloak web origins, and Expo ports. Doctor checks these
+  references and rejects duplicate effective host ports. Undeclared dev ports
+  retain the existing output and are not checked.
+
 ## [0.10.22] - 2026-10-12
 
 - Add `[doctor].waive` entries with `path` and `reason` for products that cover an expected-file check another way. The reason should name where the product covers the check. Doctor reports waived missing files as notes and rejects blank reasons, stale, unknown and duplicate paths.

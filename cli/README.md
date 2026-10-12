@@ -37,7 +37,7 @@ and token binding.
 
 Use `--port-offset N` when several generated products run on one development
 machine. The CLI adds `N` to each generated PostgreSQL, API, operations,
-Keycloak, and fake-provider host port, then records the offset in `baukit.toml`.
+Keycloak, Redis, and fake-provider host port, then records the offset in `baukit.toml`.
 An offset of zero keeps the default ports and is omitted from the manifest.
 `baukit doctor` checks the generated port references against the recorded
 offset.
@@ -72,6 +72,9 @@ api = { host = 17001, container = 8080, service = "backend" }
 ops = { host = 17002, container = 9090, service = "backend" }
 postgres = { host = 17003, container = 5432 }
 keycloak = { host = 17004, container = 8080 }
+web = { host = 5673 }
+web_preview = { host = 4773 }
+metro = { host = 8093 }
 ```
 
 The other supported names are `redis` and `fake_provider`. `service` overrides
@@ -80,6 +83,20 @@ PostgreSQL, Keycloak, and Redis must keep container ports 5432, 8080, and 6379
 for the generated images. Doctor checks literal Compose mappings and parameter
 defaults against declarations, and checks loopback source URLs against host
 ports. Runtime environment overrides remain product-owned.
+
+`web`, `web_preview`, and `metro` accept only `host`. They have no container
+port or Compose service. They are independent of `port_offset`. Without a
+declaration, Vite dev uses 5173, preview uses 4173, and Expo chooses its own
+Metro port. Doctor skips undeclared dev ports. Declared hosts must differ from
+all other declared hosts and the effective service ports, including Keycloak
+on 8081 plus the offset.
+
+When `baukit new --force` or `baukit new --into-existing` finds `baukit.toml`
+in the destination, it renders with that manifest's ports and keeps the manifest
+unchanged. Existing files remain untouched and differences appear in
+`baukit-conflicts.txt`. Render into an empty directory with a copy of the
+manifest to review and copy the changed files. There is no `upgrade` command.
+See [dev ports](../docs/dev-ports.md) for the checks and re-rendering steps.
 
 Doctor checks identity where code consumes it. Analytics context names must match `app.name`. It follows local constants and relative
 named imports, including renamed bindings. Expo's slug can use a product's

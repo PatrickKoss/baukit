@@ -1,9 +1,14 @@
 mod dockerfile;
 mod doctor_dependencies;
+mod doctor_dev_ports;
 mod doctor_files;
 mod doctor_layout;
 mod doctor_mcp;
 mod identity;
+mod ports;
+
+use ports::PortConfiguration;
+pub use ports::PortMapping;
 
 pub use dockerfile::{
     BackendImage, BackendManifest, BuildInput, Download, ImageVariant, PreBuildStep, RuntimeBinary,
@@ -39,12 +44,6 @@ const REMOTE_MCP_CLIENT_SCOPES: &str = include_str!("../resources/remote-mcp-cli
 pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
 pub const TEMPLATE_VERSION: &str = include_str!("../../templates/VERSION").trim_ascii();
 
-const POSTGRES_HOST_PORT: u32 = 5432;
-const API_HOST_PORT: u32 = 8080;
-const OPS_HOST_PORT: u32 = 9090;
-const KEYCLOAK_HOST_PORT: u32 = 8081;
-const FAKE_PROVIDER_HOST_PORT: u32 = 18081;
-const REDIS_HOST_PORT: u32 = 6379;
 const OPENAPI_TYPESCRIPT_PACKAGE: &str = "openapi-typescript@7.13.0";
 const MAX_APPLICATION_NAME_LEN: usize = 41;
 
@@ -239,15 +238,6 @@ pub struct Manifest {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct PortMapping {
-    pub host: u16,
-    pub container: u16,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub service: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AppManifest {
     pub name: String,
 }
@@ -380,95 +370,18 @@ struct TemplateContext {
     keycloak_host_port: u16,
     fake_provider_host_port: u16,
     redis_host_port: u16,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct PortConfiguration {
-    postgres: u16,
-    api: u16,
-    ops: u16,
-    keycloak: u16,
-    fake_provider: u16,
-    redis: u16,
-}
-
-impl PortConfiguration {
-    fn from_manifest(manifest: &Manifest) -> Result<Self> {
-        let mut ports = Self::new(manifest.port_offset)?;
-        for (name, mapping) in &manifest.ports {
-            if mapping.host == 0 || mapping.container == 0 {
-                bail!("ports.{name} must use nonzero host and container ports");
-            }
-            let (host, fixed_container) = match name.as_str() {
-                "postgres" => (&mut ports.postgres, Some(5432)),
-                "api" => (&mut ports.api, None),
-                "ops" => (&mut ports.ops, None),
-                "keycloak" => (&mut ports.keycloak, Some(8080)),
-                "fake_provider" => (&mut ports.fake_provider, None),
-                "redis" => (&mut ports.redis, Some(6379)),
-                _ => bail!("unknown port declaration `ports.{name}`"),
-            };
-            if fixed_container.is_some_and(|port| port != mapping.container) {
-                bail!(
-                    "ports.{name}.container must be {} for the generated image",
-                    fixed_container.expect("fixed container port")
-                );
-            }
-            *host = mapping.host;
-        }
-        Ok(ports)
-    }
-
-    fn new(offset: u32) -> Result<Self> {
-        let shifted = [
-            ("PostgreSQL", POSTGRES_HOST_PORT),
-            ("API", API_HOST_PORT),
-            ("operations", OPS_HOST_PORT),
-            ("Keycloak", KEYCLOAK_HOST_PORT),
-            ("fake provider", FAKE_PROVIDER_HOST_PORT),
-            ("Redis", REDIS_HOST_PORT),
-        ]
-        .map(|(name, base)| {
-            base.checked_add(offset)
-                .filter(|port| *port <= u16::MAX.into())
-                .map(|port| (name, port as u16))
-                .ok_or_else(|| {
-                    anyhow!(
-                        "--port-offset {offset} puts the {name} port above {}",
-                        u16::MAX
-                    )
-                })
-        });
-        let [postgres, api, ops, keycloak, fake_provider, redis] = shifted
-            .into_iter()
-            .collect::<Result<Vec<_>>>()?
-            .try_into()
-            .expect("fixed port list has six entries");
-        let ports = [
-            postgres.1,
-            api.1,
-            ops.1,
-            keycloak.1,
-            fake_provider.1,
-            redis.1,
-        ];
-        if ports.into_iter().collect::<BTreeSet<_>>().len() != ports.len() {
-            bail!("--port-offset {offset} makes generated host ports collide");
-        }
-        Ok(Self {
-            postgres: postgres.1,
-            api: api.1,
-            ops: ops.1,
-            keycloak: keycloak.1,
-            fake_provider: fake_provider.1,
-            redis: redis.1,
-        })
-    }
+    web_port: u16,
+    web_preview_port: u16,
+    metro_port: Option<u16>,
+    dev_ports_declared: bool,
+    web_preview_declared: bool,
+    service_ports_declared: bool,
+    api_container_port: u16,
+    ops_container_port: u16,
 }
 
 pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
     validate_name(&options.name)?;
-    let ports = PortConfiguration::new(options.port_offset)?;
     if options.worker && !options.backend {
         bail!("--worker requires --backend because it is generated in the backend workspace");
     }
@@ -485,6 +398,7 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
     } else {
         options.directory.join(&options.name)
     };
+    let (ports, existing_manifest) = ports::generation_ports(&destination, options.port_offset)?;
     let non_empty = destination.exists()
         && fs::read_dir(&destination)
             .with_context(|| format!("could not inspect {}", destination.display()))?
@@ -539,15 +453,28 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
             None => "",
         },
         quality_strict: options.quality == QualityProfile::Strict,
-        port_offset: options.port_offset,
+        port_offset: ports.offset,
         postgres_host_port: ports.postgres,
         api_host_port: ports.api,
         ops_host_port: ports.ops,
         keycloak_host_port: ports.keycloak,
         fake_provider_host_port: ports.fake_provider,
         redis_host_port: ports.redis,
+        web_port: ports.web.unwrap_or(ports::WEB_PORT),
+        web_preview_port: ports.web_preview.unwrap_or(ports::WEB_PREVIEW_PORT),
+        metro_port: ports.metro,
+        web_preview_declared: ports.web_preview.is_some(),
+        service_ports_declared: ports.service_ports_declared,
+        api_container_port: ports.api_container,
+        ops_container_port: ports.ops_container,
+        dev_ports_declared: ports.web.is_some()
+            || ports.web_preview.is_some()
+            || ports.metro.is_some(),
     };
-    let rendered = render_product(&context, options)?;
+    let mut rendered = render_product(&context, options)?;
+    if let Some(source) = existing_manifest {
+        rendered.insert(PathBuf::from("baukit.toml"), source.into_bytes());
+    }
     let mut conflicts = Vec::new();
 
     fs::create_dir_all(&destination)
@@ -1620,7 +1547,8 @@ fn validate_port_configuration(
             return Ok(());
         }
     };
-    if manifest.port_offset == 0 && manifest.ports.is_empty() {
+    doctor_dev_ports::validate(root, manifest, &ports, successes, failures)?;
+    if manifest.port_offset == 0 && manifest.ports.keys().all(|name| ports::is_dev_port(name)) {
         successes.push("no port offset is configured".to_owned());
         return Ok(());
     }
@@ -1638,7 +1566,8 @@ fn validate_port_configuration(
                     manifest
                         .ports
                         .get("api")
-                        .map_or(ports.api, |port| port.container)
+                        .and_then(|port| port.container)
+                        .unwrap_or(ports.api)
                 ),
             ),
             (
@@ -1648,7 +1577,8 @@ fn validate_port_configuration(
                     manifest
                         .ports
                         .get("ops")
-                        .map_or(ports.ops, |port| port.container)
+                        .and_then(|port| port.container)
+                        .unwrap_or(ports.ops)
                 ),
             ),
         ]);
@@ -1930,6 +1860,9 @@ fn validate_compose_ports(
         mappings.push(("redis", 6379, ports.redis));
     }
     for (name, mapping) in &manifest.ports {
+        let Some(container) = mapping.container else {
+            continue;
+        };
         let default_service = match name.as_str() {
             "api" | "ops" => {
                 if compose.services.contains_key("backend") {
@@ -1953,13 +1886,13 @@ fn validate_compose_ports(
                     .or_else(|| port.parameterized_default_mapping())
             })
             .collect::<Vec<_>>();
-        let expected = (mapping.container, mapping.host);
+        let expected = (container, mapping.host);
         if !actual.contains(&expected)
-            || actual.iter().any(|port| {
-                (port.0 == mapping.container || port.1 == mapping.host) && *port != expected
-            })
+            || actual
+                .iter()
+                .any(|port| (port.0 == container || port.1 == mapping.host) && *port != expected)
         {
-            failures.push(format!("compose.yaml service `{service_name}` must publish declared ports.{} host {} to container {}", name, mapping.host, mapping.container));
+            failures.push(format!("compose.yaml service `{service_name}` must publish declared ports.{} host {} to container {}", name, mapping.host, container));
         }
     }
     for (service_name, target, expected) in mappings {
@@ -2797,6 +2730,14 @@ mod generator_tests {
             keycloak_host_port: 8081,
             fake_provider_host_port: 18081,
             redis_host_port: 6379,
+            web_port: 5173,
+            web_preview_port: 4173,
+            metro_port: None,
+            dev_ports_declared: false,
+            web_preview_declared: false,
+            service_ports_declared: false,
+            api_container_port: 8080,
+            ops_container_port: 9090,
         };
         let mut rendered = BTreeMap::new();
 

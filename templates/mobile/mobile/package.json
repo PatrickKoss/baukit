@@ -6,9 +6,9 @@
   "main": "expo-router/entry",
   "scripts": {
     "setup": "sh ../scripts/setup.sh",
-    "start": "pnpm run tokens && expo start",
-    "android": "bash scripts/android-java.sh expo run:android",
-    "ios": "expo run:ios",
+    "start": "pnpm run tokens && expo start{% if context.metro_port %} --port {{ context.metro_port }}{% endif %}",
+    "android": "bash scripts/android-java.sh expo run:android{% if context.metro_port %} --port {{ context.metro_port }}{% endif %}",
+    "ios": "expo run:ios{% if context.metro_port %} --port {{ context.metro_port }}{% endif %}",
     "tokens": "node scripts/generate-tokens.mjs",
     "build:sw": "node scripts/build-sw.mjs{% if context.pwa and not context.web %} --output-dir dist{% endif %}",
     "build:sw:check": "node scripts/build-sw.mjs{% if context.pwa and not context.web %} --output-dir dist{% endif %} --check",

@@ -29,8 +29,8 @@
     }{% endif %}{% if context.web %},
     {
       "clientId": "{{ context.app_name }}-web",
-      "activeOrigins": ["http://localhost:5173"],
-      "activeRedirectUris": ["http://localhost:5173/*"]
+      "activeOrigins": ["http://localhost:{{ context.web_port }}"],
+      "activeRedirectUris": ["http://localhost:{{ context.web_port }}/*"]
     }{% endif %}{% if context.mobile %},
     {
       "clientId": "{{ context.app_name }}-mobile",
