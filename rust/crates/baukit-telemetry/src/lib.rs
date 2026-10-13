@@ -728,6 +728,7 @@ mod tests {
             (ProcessKind::Worker, "worker"),
             (ProcessKind::Migrate, "migrate"),
             (ProcessKind::Seed, "seed"),
+            (ProcessKind::Agent, "agent"),
         ] {
             let identity = ServiceIdentity::new(
                 "fitness-tracker",

@@ -58,7 +58,9 @@ assert_eq!(identity.service_name(), "orders-api");
 
 The API and worker processes of one product are separate services in logs, metrics, and traces, and
 deriving the name from a shared type is what keeps them from disagreeing. `ProcessKind` covers
-`Api`, `Worker`, `Migrate`, and `Seed`. `BuildInfo` carries version, commit, and the Rust version
+`Api`, `Worker`, `Migrate`, `Seed`, and `Agent`. Use `Agent` for a second binary that runs apart from
+the product's services, such as an in-cluster collector, so it reports `<product>-agent` instead of
+sharing the worker's `service.name`. `BuildInfo` carries version, commit, and the Rust version
 used to compile the process; `baukit-runtime`'s `build_info!` macro fills it from the binary crate's
 own Cargo metadata.
 

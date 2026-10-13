@@ -4,6 +4,8 @@ All notable changes to `baukit-core` are documented here.
 
 ## [Unreleased]
 
+- Add `ProcessKind::Agent` for a product binary that runs apart from its services, such as an in-cluster collector. Its `service.name` is `<product>-agent`.
+
 ## [0.10.25] - 2026-10-13
 
 ## [0.10.24] - 2026-10-13

@@ -121,6 +121,8 @@ pub enum ProcessKind {
     Migrate,
     /// A data seeding process.
     Seed,
+    /// A long-running process deployed apart from the product's own services, such as an in-cluster collector.
+    Agent,
 }
 
 impl ProcessKind {
@@ -130,6 +132,7 @@ impl ProcessKind {
             Self::Worker => "worker",
             Self::Migrate => "migrate",
             Self::Seed => "seed",
+            Self::Agent => "agent",
         }
     }
 }

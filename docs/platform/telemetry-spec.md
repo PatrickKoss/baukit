@@ -11,7 +11,7 @@ Every process sets, via `baukit-telemetry`:
 
 | Attribute | Example | Rule |
 |---|---|---|
-| `service.name` | `fitness-tracker-api` | `<product>-<process>`; process is one of `api`, `worker`, `migrate`, `seed` |
+| `service.name` | `fitness-tracker-api` | `<product>-<process>`; process is one of `api`, `worker`, `migrate`, `seed`, `agent` |
 | `service.version` | `1.4.2` | Cargo package version |
 | `service.commit` (custom) | `a1b2c3d` | short git SHA, injected at build time |
 | `deployment.environment.name` | `production` | one of `local`, `testing`, `staging`, `production` |
