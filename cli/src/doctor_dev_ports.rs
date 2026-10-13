@@ -13,6 +13,7 @@ pub(crate) fn validate(
 ) -> Result<()> {
     if let Some(port) = ports.web {
         let before = failures.len();
+        let browser_ports = browser_ports(ports);
         check_vite(root, port, failures)?;
         check_e2e_default(
             root,
@@ -22,9 +23,9 @@ pub(crate) fn validate(
             failures,
         )?;
         if crate::uses_bundled_keycloak(root, manifest)? {
-            check_keycloak_origins(root, manifest, port, failures)?;
+            check_keycloak_origins(root, manifest, &browser_ports, failures)?;
         }
-        check_authorized_parties(root, manifest, port, failures)?;
+        check_authorized_parties(root, manifest, &browser_ports, failures)?;
         check_redirect_default(root, port, failures)?;
         record_success("web", port, before, successes, failures);
     }
@@ -49,6 +50,16 @@ pub(crate) fn validate(
         record_success("metro", port, before, successes, failures);
     }
     Ok(())
+}
+
+fn browser_ports(ports: &PortConfiguration) -> Vec<u16> {
+    let mut accepted: Vec<_> = [ports.web, ports.web_preview, ports.metro]
+        .into_iter()
+        .flatten()
+        .chain(ports.web_extra.iter().copied())
+        .collect();
+    accepted.sort_unstable();
+    accepted
 }
 
 fn record_success(
@@ -123,7 +134,7 @@ fn check_port(
 fn check_keycloak_origins(
     root: &Path,
     manifest: &Manifest,
-    port: u16,
+    ports: &[u16],
     failures: &mut Vec<String>,
 ) -> Result<()> {
     let mcp_client = format!("{}-mcp", manifest.app.name);
@@ -148,7 +159,7 @@ fn check_keycloak_origins(
             for field in fields {
                 if let Some(origins) = client[field].as_array() {
                     for origin in origins.iter().filter_map(serde_json::Value::as_str) {
-                        check_origins(relative, origin, port, failures);
+                        check_browser_origins(relative, origin, ports, failures);
                     }
                 }
             }
@@ -160,7 +171,7 @@ fn check_keycloak_origins(
 fn check_authorized_parties(
     root: &Path,
     manifest: &Manifest,
-    port: u16,
+    ports: &[u16],
     failures: &mut Vec<String>,
 ) -> Result<()> {
     for krate in crate::doctor_layout::rust_crates(root, manifest)? {
@@ -178,12 +189,22 @@ fn check_authorized_parties(
                 }
                 let field = delimited_field(section, "", '[', ']');
                 if let Some(field) = field {
-                    check_origins(&relative, field, port, failures);
+                    check_browser_origins(&relative, field, ports, failures);
                 }
             }
         }
     }
     Ok(())
+}
+
+fn check_browser_origins(relative: &str, source: &str, ports: &[u16], failures: &mut Vec<String>) {
+    for found in crate::loopback_ports(source, false) {
+        if !ports.contains(&found) {
+            failures.push(format!(
+                "generated file `{relative}` does not match declared ports.web browser origins (accepted ports {ports:?}, found port {found})"
+            ));
+        }
+    }
 }
 
 fn check_redirect_default(root: &Path, port: u16, failures: &mut Vec<String>) -> Result<()> {

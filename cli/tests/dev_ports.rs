@@ -4,7 +4,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use baukit_cli::{AuthProvider, NewOptions, QualityProfile, doctor, generate_new};
+use baukit_cli::{
+    AuthProvider, NewOptions, PortDeclaration, QualityProfile, doctor, generate_new, read_manifest,
+};
 
 fn options(directory: &Path) -> NewOptions {
     NewOptions {
@@ -198,6 +200,255 @@ fn doctor_rejects_drift_in_every_web_port_consumer() -> anyhow::Result<()> {
         );
         fs::write(path, source)?;
     }
+    Ok(())
+}
+
+const BROWSER_PORTS: &str = "web = { host = 5673 }\nweb_preview = { host = 4773 }\nmetro = { host = 8093 }\nweb_extra = [8082, 19006]\n";
+
+#[test]
+fn doctor_accepts_all_declared_browser_ports_in_keycloak() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = parent.path();
+    declared_product(root, BROWSER_PORTS)?;
+    for (relative, fields) in [
+        ("keycloak/realm.json", ["webOrigins", "redirectUris"]),
+        (
+            "keycloak/reconcile.json",
+            ["activeOrigins", "activeRedirectUris"],
+        ),
+    ] {
+        let path = root.join(relative);
+        let mut json: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path)?)?;
+        let client = json["clients"]
+            .as_array_mut()
+            .expect("clients")
+            .iter_mut()
+            .find(|client| client["clientId"] == "dev-ports-product-web")
+            .expect("web client");
+        for (field, suffix) in fields.into_iter().zip(["", "/*"]) {
+            client[field] = [5673, 4773, 8093, 8082, 19006]
+                .into_iter()
+                .zip(["localhost", "127.0.0.1", "[::1]"].into_iter().cycle())
+                .map(|(port, host)| format!("http://{host}:{port}{suffix}"))
+                .collect::<Vec<_>>()
+                .into();
+        }
+        fs::write(path, serde_json::to_string_pretty(&json)?)?;
+    }
+    doctor(root)?;
+    Ok(())
+}
+
+#[test]
+fn doctor_lists_accepted_browser_ports_for_undeclared_origins() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = parent.path();
+    declared_product(root, BROWSER_PORTS)?;
+    for (relative, correct) in [
+        ("keycloak/realm.json", "localhost:5673\""),
+        ("keycloak/realm.json", "localhost:5673/*"),
+        ("keycloak/reconcile.json", "localhost:5673\""),
+        ("keycloak/reconcile.json", "localhost:5673/*"),
+        (
+            "backend/crates/dev-ports-product-bin/src/lib.rs",
+            "localhost:5673",
+        ),
+    ] {
+        let path = root.join(relative);
+        let source = fs::read_to_string(&path)?;
+        assert!(source.contains(correct), "{relative}: {correct}");
+        fs::write(
+            &path,
+            source.replace(correct, &correct.replace("5673", "5674")),
+        )?;
+        let error = doctor(root)
+            .expect_err("undeclared browser port must fail")
+            .to_string();
+        assert!(error.contains(relative), "{error}");
+        assert!(error.contains("found port 5674"), "{error}");
+        assert!(
+            error.contains("accepted ports [4773, 5673, 8082, 8093, 19006]"),
+            "{error}"
+        );
+        fs::write(path, source)?;
+    }
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_web_extra_authorized_parties() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = parent.path();
+    declared_product(root, BROWSER_PORTS)?;
+    let path = root.join("backend/crates/dev-ports-product-bin/src/lib.rs");
+    let source = fs::read_to_string(&path)?;
+    let original = "authorized_parties: vec![\"http://localhost:5673\"";
+    assert!(source.contains(original));
+    fs::write(
+        path,
+        source.replace(
+            original,
+            "authorized_parties: vec![\"http://localhost:8082\", \"http://127.0.0.1:19006\"",
+        ),
+    )?;
+    doctor(root)?;
+    Ok(())
+}
+
+#[test]
+fn exact_web_defaults_reject_other_accepted_browser_ports() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = parent.path();
+    declared_product(root, BROWSER_PORTS)?;
+    for (relative, original) in [
+        ("web/vite.config.ts", "port: 5673"),
+        ("web/e2e/playwright.stack.config.ts", "'5673'"),
+        ("scripts/pkce-login.py", "localhost:5673"),
+    ] {
+        let path = root.join(relative);
+        let source = fs::read_to_string(&path)?;
+        assert!(source.contains(original), "{relative}: {original}");
+        for port in [4773, 8093, 8082, 19006] {
+            fs::write(
+                &path,
+                source.replace(original, &original.replace("5673", &port.to_string())),
+            )?;
+            let error = doctor(root)
+                .expect_err("exact web defaults must use ports.web")
+                .to_string();
+            assert!(error.contains(relative), "{error}");
+            assert!(
+                error.contains(&format!("expected port 5673, found port {port}")),
+                "{error}"
+            );
+        }
+        fs::write(path, source)?;
+    }
+    Ok(())
+}
+
+#[test]
+fn web_extra_parses_without_changing_rendered_files() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let baseline = parent.path().join("baseline");
+    let root = parent.path().join("extra");
+    declared_product(&baseline, "web = { host = 5673 }\n")?;
+    declared_product(&root, "web = { host = 5673 }\nweb_extra = [8082, 19006]\n")?;
+    let manifest = read_manifest(&root)?;
+    assert!(matches!(
+        manifest.ports.get("web_extra"),
+        Some(PortDeclaration::HostList(hosts)) if hosts == &[8082, 19006]
+    ));
+    let round_trip: baukit_cli::Manifest = toml::from_str(&toml::to_string(&manifest)?)?;
+    assert!(matches!(
+        round_trip.ports.get("web_extra"),
+        Some(PortDeclaration::HostList(hosts)) if hosts == &[8082, 19006]
+    ));
+    for relative in RENDERED_FILES {
+        assert_eq!(
+            fs::read(baseline.join(relative))?,
+            fs::read(root.join(relative))?,
+            "{relative}"
+        );
+    }
+    doctor(&root)?;
+    Ok(())
+}
+
+#[test]
+fn web_extra_rejects_empty_duplicate_zero_and_missing_web() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = parent.path();
+    generate_new(&options(root))?;
+    let path = root.join("baukit.toml");
+    let original = fs::read_to_string(&path)?;
+    for (declarations, message) in [
+        (
+            "web = { host = 5673 }\nweb_extra = []",
+            "ports.web_extra must not be empty",
+        ),
+        (
+            "web = { host = 5673 }\nweb_extra = [8082, 8082]",
+            "ports.web_extra contains duplicate host port 8082",
+        ),
+        (
+            "web = { host = 5673 }\nweb_extra = [0]",
+            "ports.web_extra must use nonzero host ports",
+        ),
+        ("web_extra = [8082]", "ports.web_extra requires ports.web"),
+        (
+            "web = { host = 5673 }\nweb_extra = { host = 8082 }",
+            "ports.web_extra must be a list of host ports",
+        ),
+        (
+            "web = [5673]",
+            "ports.web must declare `host` in a port mapping",
+        ),
+    ] {
+        fs::write(&path, format!("{original}\n[ports]\n{declarations}\n"))?;
+        let error = doctor(root).expect_err("invalid web_extra").to_string();
+        assert!(error.contains(message), "{error}");
+        let error = generate_new(&options(root))
+            .expect_err("invalid ports must prevent generation")
+            .to_string();
+        assert!(error.contains(message), "{error}");
+    }
+    for hosts in ["[65536]", "[-1]", "[\"8082\"]"] {
+        fs::write(
+            &path,
+            format!("{original}\n[ports]\nweb = {{ host = 5673 }}\nweb_extra = {hosts}\n"),
+        )?;
+        assert!(
+            read_manifest(root).is_err(),
+            "{hosts} must be u16 host ports"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn web_extra_collides_with_every_effective_host_port() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = parent.path();
+    generate_new(&options(root))?;
+    let path = root.join("baukit.toml");
+    let original = fs::read_to_string(&path)?;
+    for (name, port) in [
+        ("postgres", 5432),
+        ("api", 8080),
+        ("ops", 9090),
+        ("keycloak", 8081),
+        ("fake_provider", 18081),
+        ("redis", 6379),
+        ("web", 5673),
+        ("web_preview", 4773),
+        ("metro", 8093),
+    ] {
+        fs::write(
+            &path,
+            format!(
+                "{original}\n[ports]\nweb = {{ host = 5673 }}\nweb_preview = {{ host = 4773 }}\nmetro = {{ host = 8093 }}\nweb_extra = [19006, {port}]\n"
+            ),
+        )?;
+        let error = doctor(root).expect_err("host collision").to_string();
+        assert!(
+            error.contains(&format!(
+                "ports.web_extra and ports.{name} collide on effective host port {port}"
+            )),
+            "{error}"
+        );
+    }
+    fs::write(
+        &path,
+        format!(
+            "port_offset = 100\n{original}\n[ports]\nweb = {{ host = 5673 }}\nweb_extra = [8181]\n"
+        ),
+    )?;
+    let error = doctor(root).expect_err("offset host collision").to_string();
+    assert!(
+        error.contains("ports.keycloak collide on effective host port 8181"),
+        "{error}"
+    );
     Ok(())
 }
 

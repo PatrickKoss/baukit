@@ -75,6 +75,7 @@ keycloak = { host = 17004, container = 8080 }
 web = { host = 5673 }
 web_preview = { host = 4773 }
 metro = { host = 8093 }
+web_extra = [8082, 19006]
 ```
 
 The other supported names are `redis` and `fake_provider`. `service` overrides
@@ -90,6 +91,14 @@ declaration, Vite dev uses 5173, preview uses 4173, and Expo chooses its own
 Metro port. Doctor skips undeclared dev ports. Declared hosts must differ from
 all other declared hosts and the effective service ports, including Keycloak
 on 8081 plus the offset.
+
+`web_extra` lists host ports for other browser clients. It requires `web`, must
+not be empty, and cannot contain duplicates or collide with another effective
+host port. Templates do not render it. When `web` is declared, doctor accepts
+loopback Keycloak origins and redirects and backend `authorized_parties` on
+`web`, declared `web_preview` and `metro` ports, and every `web_extra` port.
+Vite's dev port, the stack Playwright default, and the PKCE redirect default
+must still use `web`.
 
 When `baukit new --force` or `baukit new --into-existing` finds `baukit.toml`
 in the destination, it renders with that manifest's ports and keeps the manifest

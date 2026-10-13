@@ -18,7 +18,23 @@ pub struct PortMapping {
     pub service: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum PortDeclaration {
+    HostList(Vec<u16>),
+    Mapping(PortMapping),
+}
+
+impl PortDeclaration {
+    pub fn as_mapping(&self) -> Option<&PortMapping> {
+        match self {
+            Self::Mapping(mapping) => Some(mapping),
+            Self::HostList(_) => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct PortConfiguration {
     pub postgres: u16,
     pub api: u16,
@@ -28,6 +44,7 @@ pub(crate) struct PortConfiguration {
     pub redis: u16,
     pub web: Option<u16>,
     pub web_preview: Option<u16>,
+    pub web_extra: Vec<u16>,
     pub metro: Option<u16>,
     pub offset: u32,
     pub service_ports_declared: bool,
@@ -36,13 +53,29 @@ pub(crate) struct PortConfiguration {
 }
 
 pub(crate) fn is_dev_port(name: &str) -> bool {
-    matches!(name, "web" | "web_preview" | "metro")
+    matches!(name, "web" | "web_preview" | "web_extra" | "metro")
 }
 
 impl PortConfiguration {
     pub fn from_manifest(manifest: &Manifest) -> Result<Self> {
         let mut ports = Self::new(manifest.port_offset)?;
-        for (name, mapping) in &manifest.ports {
+        for (name, declaration) in &manifest.ports {
+            if name == "web_extra" {
+                let PortDeclaration::HostList(hosts) = declaration else {
+                    bail!("ports.web_extra must be a list of host ports");
+                };
+                if hosts.is_empty() {
+                    bail!("ports.web_extra must not be empty");
+                }
+                if hosts.contains(&0) {
+                    bail!("ports.web_extra must use nonzero host ports");
+                }
+                ports.web_extra.clone_from(hosts);
+                continue;
+            }
+            let PortDeclaration::Mapping(mapping) = declaration else {
+                bail!("ports.{name} must declare `host` in a port mapping");
+            };
             if is_dev_port(name) {
                 ports.set_dev_port(name, mapping)?;
                 continue;
@@ -74,6 +107,9 @@ impl PortConfiguration {
                 "ops" => ports.ops_container = container,
                 _ => {}
             }
+        }
+        if !ports.web_extra.is_empty() && ports.web.is_none() {
+            bail!("ports.web_extra requires ports.web");
         }
         ports.validate_unique_hosts()?;
         Ok(ports)
@@ -118,6 +154,7 @@ impl PortConfiguration {
             redis: shifted("Redis", 6379)?,
             web: None,
             web_preview: None,
+            web_extra: Vec::new(),
             metro: None,
             offset,
             service_ports_declared: false,
@@ -143,6 +180,14 @@ impl PortConfiguration {
                 && let Some(previous) = seen.insert(port, name)
             {
                 bail!("ports.{name} and ports.{previous} collide on effective host port {port}");
+            }
+        }
+        for port in &self.web_extra {
+            if let Some(previous) = seen.insert(*port, "web_extra") {
+                if previous == "web_extra" {
+                    bail!("ports.web_extra contains duplicate host port {port}");
+                }
+                bail!("ports.web_extra and ports.{previous} collide on effective host port {port}");
             }
         }
         Ok(())

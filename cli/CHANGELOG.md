@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Accept loopback browser origins on declared `web`, `web_preview`, and `metro`
+  ports, plus a new `[ports] web_extra = [8082, 19006]` list. The list requires
+  `web` and rejects empty lists, duplicates, zero ports, and host collisions.
+  Doctor lists all accepted ports when an origin fails. Vite's dev port, the
+  stack Playwright default, and the PKCE redirect default still use `web`.
+  Templates do not render `web_extra`.
+
 ## [0.10.23] - 2026-10-12
 
 - Add host-only `[ports]` declarations for `web`, `web_preview`, and `metro`.

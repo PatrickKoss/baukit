@@ -8,7 +8,7 @@ mod identity;
 mod ports;
 
 use ports::PortConfiguration;
-pub use ports::PortMapping;
+pub use ports::{PortDeclaration, PortMapping};
 
 pub use dockerfile::{
     BackendImage, BackendManifest, BuildInput, Download, ImageVariant, PreBuildStep, RuntimeBinary,
@@ -224,7 +224,7 @@ pub struct Manifest {
     #[serde(default)]
     pub port_offset: u32,
     #[serde(default)]
-    pub ports: BTreeMap<String, PortMapping>,
+    pub ports: BTreeMap<String, PortDeclaration>,
     pub app: AppManifest,
     #[serde(default)]
     pub quality: QualityManifest,
@@ -1566,6 +1566,7 @@ fn validate_port_configuration(
                     manifest
                         .ports
                         .get("api")
+                        .and_then(PortDeclaration::as_mapping)
                         .and_then(|port| port.container)
                         .unwrap_or(ports.api)
                 ),
@@ -1577,6 +1578,7 @@ fn validate_port_configuration(
                     manifest
                         .ports
                         .get("ops")
+                        .and_then(PortDeclaration::as_mapping)
                         .and_then(|port| port.container)
                         .unwrap_or(ports.ops)
                 ),
@@ -1859,7 +1861,10 @@ fn validate_compose_ports(
     if doctor_layout::uses_redis(root, manifest)? {
         mappings.push(("redis", 6379, ports.redis));
     }
-    for (name, mapping) in &manifest.ports {
+    for (name, declaration) in &manifest.ports {
+        let Some(mapping) = declaration.as_mapping() else {
+            continue;
+        };
         let Some(container) = mapping.container else {
             continue;
         };
@@ -1923,6 +1928,7 @@ fn validate_compose_ports(
             manifest
                 .ports
                 .get("redis")
+                .and_then(PortDeclaration::as_mapping)
                 .and_then(|mapping| mapping.service.as_deref())
                 .unwrap_or("redis"),
         )

@@ -7,18 +7,25 @@ Declare local dev servers in the product's `baukit.toml`:
 web = { host = 5673 }
 web_preview = { host = 4773 }
 metro = { host = 8093 }
+web_extra = [8082, 19006]
 keycloak = { host = 8091, container = 8080 }
 ```
 
-Each dev-server key is optional and accepts only `host`. `container` and
-`service` are errors for these keys. Existing service declarations keep their
-host, container, and optional service fields.
+`web`, `web_preview`, and `metro` are optional and accept only `host`.
+`container` and `service` are errors for these keys. `web_extra` is an optional
+list of nonzero host ports for other browser clients. It requires `web`, must
+not be empty, and must not contain duplicates. Existing service declarations
+keep their host, container, and optional service fields.
 
 `web` sets Vite's dev port, bundled Keycloak web origins and redirect URIs,
 the backend's authorized web origin, the PKCE helper's redirect default, and
 the Keycloak stack test's `E2E_WEB_PORT` default. `web_preview` sets Vite's
 preview port and the hermetic Playwright server's `E2E_WEB_PORT` default.
 `metro` adds `--port` to mobile scripts that start Expo or run a native app.
+Templates do not render `web_extra` into generated files. When `web` is
+declared, doctor accepts loopback browser origins on `web`, declared
+`web_preview` and `metro` ports, and every `web_extra` port. Metro is included
+because `expo start --web` serves through Metro.
 
 Absent declarations retain Vite dev 5173, preview 4173, and Expo's unpinned
 Metro port. `port_offset` shifts PostgreSQL, API, operations, Keycloak, Redis,
@@ -56,9 +63,12 @@ relocate or remove a template file. Its separate expected-file checks still
 apply unless the product configures a doctor waiver.
 
 - `web`: `web/vite.config.ts` must set `server.port`. The stack Playwright
-  config must have the same `E2E_WEB_PORT` default. For bundled Keycloak,
-  localhost dev origins in `keycloak/realm.json`, `keycloak/reconcile.json`,
-  backend `authorized_parties`, and `scripts/pkce-login.py` must use this port.
+  config must have the same `E2E_WEB_PORT` default, and `scripts/pkce-login.py`
+  must use this port for its redirect default. For bundled Keycloak, loopback
+  origins and redirects in `keycloak/realm.json` and `keycloak/reconcile.json`
+  accept the browser ports listed above. Backend `authorized_parties` accepts
+  the same ports, including when the product uses an external OIDC provider.
+  An undeclared origin port fails with a message listing all accepted ports.
   Production origins, mobile callback schemes, and the MCP client's separate
   OAuth callback do not affect this check.
 - `web_preview`: `web/e2e/playwright.config.ts` must use the declared
