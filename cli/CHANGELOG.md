@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Generated mobile apps pin Expo 57.0.28, expo-auth-session 57.0.15, expo-crypto 57.0.4,
+  expo-router 57.0.26 and jest-expo 57.0.6, so `expo install --check` passes again.
 - Generated `scripts/qa/android-sdk.sh` skips `sdkmanager` license and install calls when every
   required SDK package already has a `package.xml`, so reruns work offline and no longer fail when
   the Android repository fetch stalls.
