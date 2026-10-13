@@ -2,8 +2,14 @@
 
 ## Unreleased
 
+## 0.10.25
+
 - Cap the refresh window at half the access token lifetime so short-lived tokens do not refresh on every call.
 - Store `issuedAt` in epoch milliseconds and reject persisted profiles without it as corrupt cache data.
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.25 train.
 
 ## 0.10.24
 

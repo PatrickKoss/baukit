@@ -4,6 +4,8 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+## [0.10.25] - 2026-10-13
+
 ## [0.10.24] - 2026-10-13
 
 - `Principal::from_api_token(subject, token)` is public. Products whose token owner is not the

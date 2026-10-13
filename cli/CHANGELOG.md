@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.25] - 2026-10-13
+
 ## [0.10.24] - 2026-10-13
 
 - Generated mobile apps pin Expo 57.0.28, expo-auth-session 57.0.15, expo-crypto 57.0.4,
