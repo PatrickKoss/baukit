@@ -4,6 +4,8 @@ All notable changes to `baukit-egress` are documented here.
 
 ## [Unreleased]
 
+## [0.10.24] - 2026-10-13
+
 ### Fixed
 
 - Failed or timed-out error body reads preserve the HTTP status and retry class,

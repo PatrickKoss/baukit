@@ -4,6 +4,8 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+## [0.10.24] - 2026-10-13
+
 - `Principal::from_api_token(subject, token)` is public. Products whose token owner is not the
   OIDC subject build API-token principals with the resolved subject and keep the token's grants
   and `created_at` as `authenticated_at()`. `ApiTokenVerifier` still uses the owner id.

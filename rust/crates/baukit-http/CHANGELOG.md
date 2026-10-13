@@ -4,6 +4,8 @@ All notable changes to `baukit-http` are documented here.
 
 ## [Unreleased]
 
+## [0.10.24] - 2026-10-13
+
 ### Changed
 
 - Every `5xx` response with a valid `Retry-After` now classifies as `RetryAfter`,
