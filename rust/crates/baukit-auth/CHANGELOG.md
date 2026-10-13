@@ -4,6 +4,9 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+- `Principal::from_api_token(subject, token)` is public. Products whose token owner is not the
+  OIDC subject build API-token principals with the resolved subject and keep the token's grants
+  and `created_at` as `authenticated_at()`. `ApiTokenVerifier` still uses the owner id.
 - Add `ApiTokenFormat::generate_secret()` for products that store tokens in their own tables.
   `GeneratedApiToken` exposes the secret, its `hash_api_token` hash, and display prefix.
   Debug output redacts the secret and hash, and drop zeroizes the secret unless

@@ -153,7 +153,9 @@ context.
 UTC timestamp for OIDC, Clerk, and WorkOS tokens. A missing claim returns `None`,
 as do internal principals. API-token principals return the token's `created_at`.
 Minting a token needs an admitted session, so tokens issued before an erasure
-stay fenced and tokens issued after re-onboarding pass. A present claim must be a non-negative
+stay fenced and tokens issued after re-onboarding pass. `ApiTokenVerifier` uses the token
+owner id as the subject; products that store tokens against an internal user id build the
+principal with `Principal::from_api_token(resolved_subject, token)`. A present claim must be a non-negative
 integer and cannot be in the future beyond the configured clock skew. It is
 reserved and is not copied into selected profile claims. Trusted adapters can
 set it with `with_authenticated_at`. Use this session login time for erasure

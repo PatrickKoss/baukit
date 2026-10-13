@@ -88,8 +88,14 @@ impl Principal {
         }
     }
 
-    pub(crate) fn from_api_token(api_token: ApiToken) -> Self {
-        let subject = api_token.owner_id.to_string();
+    /// Builds the principal for a verified API token.
+    ///
+    /// [`ApiTokenVerifier`](crate::ApiTokenVerifier) passes the owner id as the
+    /// subject. Products whose token owner is not the OIDC subject pass the
+    /// subject they resolved for the owner, so authorization and erasure fences
+    /// see the same subject as for an OIDC login.
+    #[must_use]
+    pub fn from_api_token(subject: impl Into<String>, api_token: ApiToken) -> Self {
         Self {
             authenticated_at: Some(api_token.created_at),
             api_token: Some(api_token),

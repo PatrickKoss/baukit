@@ -769,7 +769,7 @@ impl ApiTokenVerifier {
             return self.fallback.verify(presented).await;
         }
         match self.tokens.verify(presented).await {
-            Ok(token) => Ok(Principal::from_api_token(token)),
+            Ok(token) => Ok(Principal::from_api_token(token.owner_id.to_string(), token)),
             Err(ApiTokenError::Expired) => Err(VerificationError::Expired),
             Err(_) => Err(VerificationError::InvalidSignature),
         }
@@ -1204,10 +1204,18 @@ mod tests {
             .verify_at(&issued.secret, instant())
             .await
             .expect("verify token");
-        let principal = Principal::from_api_token(verified);
+        let principal = Principal::from_api_token(verified.owner_id.to_string(), verified);
         assert_eq!(principal.grants(), Some(&expected));
         assert_eq!(principal.authenticated_at(), Some(instant()));
         assert!(principal.scopes().is_empty());
+
+        let resolved = Principal::from_api_token(
+            "oidc-subject",
+            principal.api_token().cloned().expect("token"),
+        );
+        assert_eq!(resolved.subject(), "oidc-subject");
+        assert_eq!(resolved.grants(), Some(&expected));
+        assert_eq!(resolved.authenticated_at(), Some(instant()));
     }
 
     #[tokio::test]
