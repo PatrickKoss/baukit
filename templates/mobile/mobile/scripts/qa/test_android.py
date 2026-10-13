@@ -167,6 +167,29 @@ esac
             "build-tools;36.0.0 system-images;android-36;google_apis;x86_64",
         ])
 
+    def test_installed_packages_skip_sdkmanager(self) -> None:
+        tools = self.sdk / "cmdline-tools/16111833/bin"
+        self.executable(tools / "sdkmanager", 'printf "sdk %s\\n" "$*" >> "$EVENTS"\n')
+        self.executable(tools / "avdmanager", 'echo "Name: test-qa"\n')
+        installed = [
+            "platform-tools", "emulator", "platforms/android-36", "build-tools/36.0.0",
+        ]
+        for directory in installed:
+            (self.sdk / directory).mkdir(parents=True)
+            (self.sdk / directory / "package.xml").write_text("<package/>")
+        self.run_script("android-sdk.sh")
+        self.assertEqual(self.events.read_text().splitlines(), [
+            f"sdk --sdk_root={self.sdk} --licenses",
+            f"sdk --sdk_root={self.sdk} system-images;android-36;google_apis;x86_64",
+        ])
+
+        image = self.sdk / "system-images/android-36/google_apis/x86_64"
+        image.mkdir(parents=True)
+        (image / "package.xml").write_text("<package/>")
+        self.events.unlink()
+        self.run_script("android-sdk.sh")
+        self.assertFalse(self.events.exists())
+
     def test_download_uses_the_host_platform_and_cpu(self) -> None:
         for system, machine, platform in (
             ("Linux", "x86_64", "linux"),

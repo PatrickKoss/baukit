@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Generated `scripts/qa/android-sdk.sh` skips `sdkmanager` license and install calls when every
+  required SDK package already has a `package.xml`, so reruns work offline and no longer fail when
+  the Android repository fetch stalls.
 - Use a stock `pixel_6` AVD for generated Android QA and disable emulator audio.
   Replace older devices and AVDs with the old forced RAM, keyboard, and CPU settings.
   Set `BAUKIT_QA_AVD_CONFIG` to whitespace-separated `key=value` entries to opt in to custom settings.

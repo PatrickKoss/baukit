@@ -63,22 +63,34 @@ export ANDROID_SDK_ROOT="$sdk_root"
 export ANDROID_AVD_HOME="$avd_home"
 export PATH="$sdk_root/cmdline-tools/$command_tools_version/bin:$sdk_root/emulator:$sdk_root/platform-tools:$PATH"
 
-set +o pipefail
-yes | sdkmanager --sdk_root="$sdk_root" --licenses >/dev/null
-license_status=$?
-set -o pipefail
-if [[ $license_status -ne 0 ]]; then
-  echo "qa: Android SDK license acceptance failed" >&2
-  exit "$license_status"
-fi
-
 system_image="system-images;android-${api_level};${image_tag};${architecture}"
-sdkmanager --sdk_root="$sdk_root" \
-  platform-tools \
-  emulator \
-  "platforms;android-${api_level}" \
-  "build-tools;${api_level}.0.0" \
+sdk_packages=(
+  platform-tools
+  emulator
+  "platforms;android-${api_level}"
+  "build-tools;${api_level}.0.0"
   "$system_image"
+)
+missing_packages=()
+missing_count=0
+for package in "${sdk_packages[@]}"; do
+  if [[ ! -f "$sdk_root/${package//;//}/package.xml" ]]; then
+    missing_packages+=("$package")
+    missing_count=$((missing_count + 1))
+  fi
+done
+
+if [[ $missing_count -gt 0 ]]; then
+  set +o pipefail
+  yes | sdkmanager --sdk_root="$sdk_root" --licenses >/dev/null
+  license_status=$?
+  set -o pipefail
+  if [[ $license_status -ne 0 ]]; then
+    echo "qa: Android SDK license acceptance failed" >&2
+    exit "$license_status"
+  fi
+  sdkmanager --sdk_root="$sdk_root" "${missing_packages[@]}"
+fi
 
 mkdir -p "$avd_home"
 avd_config="$avd_home/$avd_name.avd/config.ini"
