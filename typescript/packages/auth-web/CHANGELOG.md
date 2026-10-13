@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.10.26
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.26 train.
+
 ## 0.10.25
 
 - Cap the refresh window at half the access token lifetime so short-lived tokens do not refresh on every call.
