@@ -186,6 +186,7 @@ function storedSession(overrides: Record<string, unknown> = {}): string {
     accessToken: 'stored-access',
     refreshToken: 'stored-refresh',
     idToken: 'stored-id',
+    issuedAt: 0,
     expiresAt: 61_000,
     ...overrides,
   });
@@ -199,6 +200,63 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe('NativeOidcClient', () => {
+  it.each([
+    { expiresIn: 10, leeway: undefined, refreshAt: 6_000 },
+    { expiresIn: 3600, leeway: undefined, refreshAt: 3_571_000 },
+    { expiresIn: 10, leeway: 0, refreshAt: 11_000 },
+    { expiresIn: 10, leeway: 2, refreshAt: 9_000 },
+  ])(
+    'refreshes a $expiresIn s token with leeway $leeway at $refreshAt',
+    async ({ expiresIn, leeway, refreshAt }) => {
+      const test = makeHarness({
+        config: {
+          issuer,
+          clientId: 'product-mobile',
+          redirectUri: 'product://oauth',
+          storageKeyPrefix: 'native-test',
+          ...(leeway === undefined ? {} : { refreshLeewaySeconds: leeway }),
+        },
+        tokenResponses: [
+          defaultTokens({ expires_in: expiresIn }),
+          defaultTokens({ access_token: 'refreshed-access', expires_in: expiresIn }),
+        ],
+      });
+      await test.client.signIn();
+
+      for (const now of [1_000, 2_000, 3_000, refreshAt - 1]) {
+        test.setNow(now);
+        await expect(test.client.accessToken()).resolves.toBe('access-secret');
+      }
+      expect(test.requests.filter(({ url }) => url.endsWith('/token'))).toHaveLength(1);
+      expect(test.client.session()).toMatchObject({
+        issuedAt: 1_000,
+        expiresAt: 1_000 + expiresIn * 1000,
+      });
+
+      test.setNow(refreshAt);
+      await expect(
+        Promise.all([test.client.accessToken(), test.client.accessToken()]),
+      ).resolves.toEqual(['refreshed-access', 'refreshed-access']);
+      await expect(test.client.accessToken()).resolves.toBe('refreshed-access');
+      expect(test.requests.filter(({ url }) => url.endsWith('/token'))).toHaveLength(2);
+      expect(JSON.parse(test.storage.values.get(sessionKey) ?? 'null')).toMatchObject({
+        issuedAt: refreshAt,
+        expiresAt: refreshAt + expiresIn * 1000,
+      });
+    },
+  );
+
+  it('discards a persisted session without issuedAt', async () => {
+    const test = makeHarness();
+    test.storage.values.set(sessionKey, storedSession({ issuedAt: undefined }));
+
+    await expect(test.client.initialize()).resolves.toBeUndefined();
+    await expect(test.client.accessToken()).resolves.toBeUndefined();
+    expect(test.storage.values.has(sessionKey)).toBe(false);
+    expect(test.storage.deletes).toContain(sessionKey);
+    expect(test.requests).toHaveLength(0);
+  });
+
   it('clears silently without a reason and leaves normal sign-in unchanged', async () => {
     const test = makeHarness();
     await test.client.signIn();
@@ -399,6 +457,7 @@ describe('NativeOidcClient', () => {
       accessToken: 'access-secret',
       refreshToken: 'refresh-secret',
       idToken: 'identity-secret',
+      issuedAt: 1_000,
       expiresAt: 61_000,
     });
     expect(Object.isFrozen(test.client.session())).toBe(true);
@@ -482,7 +541,7 @@ describe('NativeOidcClient', () => {
 
     await test.client.signIn();
 
-    expect(test.client.session()?.expiresAt).toBe(61_000);
+    expect(test.client.session()).toMatchObject({ issuedAt: 1_000, expiresAt: 61_000 });
   });
 
   it('forwards the state decoration to the browser flow', async () => {

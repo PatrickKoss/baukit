@@ -41,6 +41,8 @@ const token = await auth.accessToken();
 
 `accessToken()` checks the injected environment-token source first. It then reads the selected cache profile and refreshes near-expiry tokens. Refreshes share one promise in a process and hold an adjacent `.lock` file while reading and replacing the cache.
 
+`refreshLeewaySeconds` defaults to 60 seconds; the refresh window is the smaller of that value and half the token lifetime, measured as `expiresAt - issuedAt`.
+
 Pass an `AbortSignal` to `login`, `accessToken`, or `logout`. Discovery and token requests have a 15-second default timeout. A login has a 10-minute total timeout. Both limits are configurable.
 
 ## Endpoint policy
@@ -103,6 +105,8 @@ Every admin call takes `{ fetch, timeoutMs }`; the timeout defaults to `DEFAULT_
 ## Cache contract
 
 The JSON cache holds named profiles under one namespace. `defaultTokenCachePath(namespace)` resolves to `$XDG_CONFIG_HOME/<namespace>/tokens.json`, or `~/.config/<namespace>/tokens.json` when `XDG_CONFIG_HOME` is unset.
+
+Profiles record `issuedAt` and `expiresAt` in epoch milliseconds; a profile without `issuedAt` fails with `cache_corrupt`.
 
 On POSIX systems the cache file must have mode `0600` and its immediate directory must have mode `0700`. Existing unsafe permissions fail with `cache_permission`. The cache rejects symlink path components. Writes use a new temporary file, sync it, and atomically rename it, so a write failure before rename leaves the old file intact. Windows skips POSIX mode checks and relies on host ACLs.
 

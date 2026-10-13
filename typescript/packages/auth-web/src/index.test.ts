@@ -105,6 +105,7 @@ function storedTokens(overrides: Record<string, unknown> = {}): string {
     accessToken: 'stored-access',
     refreshToken: 'stored-refresh',
     idToken: 'stored-id',
+    issuedAt: 0,
     expiresAt: 900,
     ...overrides,
   });
@@ -123,6 +124,83 @@ function makeClient(test: TestEnvironment): OidcClient {
 }
 
 describe('OidcClient', () => {
+  it.each([
+    { expiresIn: 10, leeway: undefined, refreshAt: 1_005_000 },
+    { expiresIn: 3600, leeway: undefined, refreshAt: 4_570_000 },
+    { expiresIn: 10, leeway: 0, refreshAt: 1_010_000 },
+    { expiresIn: 10, leeway: 2, refreshAt: 1_008_000 },
+  ])(
+    'refreshes a $expiresIn s token with leeway $leeway at $refreshAt',
+    async ({ expiresIn, leeway, refreshAt }) => {
+      let refreshCalls = 0;
+      const test = makeEnvironment((input, init) => {
+        const url = input instanceof Request ? input.url : input.toString();
+        if (url.includes('.well-known')) return Promise.resolve(discoveryResponse());
+        if (!(init?.body instanceof URLSearchParams)) throw new Error('Expected a token request.');
+        const refresh = init.body.get('grant_type') === 'refresh_token';
+        if (refresh) refreshCalls += 1;
+        return Promise.resolve(
+          jsonResponse({
+            access_token: refresh ? 'refreshed-access' : 'access-secret',
+            refresh_token: 'refresh-secret',
+            expires_in: expiresIn,
+          }),
+        );
+      });
+      const client = new OidcClient(
+        {
+          issuer: 'https://identity.example.test/tenant',
+          clientId: 'product-web',
+          redirectUri: 'https://app.example.test/callback',
+          storageKeyPrefix: 'lifecycle',
+          ...(leeway === undefined ? {} : { refreshLeewaySeconds: leeway }),
+        },
+        test.environment,
+      );
+      await client.login();
+      const state = required(new URL(required(test.navigations.at(-1))).searchParams.get('state'));
+      test.setCurrentUrl(`https://app.example.test/callback?code=one-time-code&state=${state}`);
+      await expect(client.handleCallback()).resolves.toBe(true);
+
+      for (const now of [1_000_000, 1_001_000, 1_002_000, refreshAt - 1]) {
+        test.setNow(now);
+        await expect(client.accessToken()).resolves.toBe('access-secret');
+      }
+      expect(refreshCalls).toBe(0);
+      expect(JSON.parse(required(test.localStorage.getItem('lifecycle:tokens')))).toMatchObject({
+        issuedAt: 1_000_000,
+        expiresAt: 1_000_000 + expiresIn * 1000,
+      });
+
+      test.setNow(refreshAt);
+      await expect(Promise.all([client.accessToken(), client.accessToken()])).resolves.toEqual([
+        'refreshed-access',
+        'refreshed-access',
+      ]);
+      await expect(client.accessToken()).resolves.toBe('refreshed-access');
+      expect(refreshCalls).toBe(1);
+      expect(JSON.parse(required(test.localStorage.getItem('lifecycle:tokens')))).toMatchObject({
+        issuedAt: refreshAt,
+        expiresAt: refreshAt + expiresIn * 1000,
+      });
+    },
+  );
+
+  it('discards persisted tokens without issuedAt', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const test = makeEnvironment(fetch);
+    test.localStorage.setItem(
+      'lifecycle:tokens',
+      storedTokens({ issuedAt: undefined, expiresAt: 2_000_000 }),
+    );
+    const client = makeClient(test);
+
+    expect(client.hasSession()).toBe(false);
+    await expect(client.accessToken()).resolves.toBeUndefined();
+    expect(test.localStorage.getItem('lifecycle:tokens')).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('clears silently without a reason and leaves normal login unchanged', async () => {
     const test = makeEnvironment(() => Promise.resolve(discoveryResponse()));
     const client = makeClient(test);

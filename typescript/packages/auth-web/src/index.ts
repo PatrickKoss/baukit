@@ -90,6 +90,7 @@ interface StoredTokens {
   readonly accessToken: string;
   readonly refreshToken?: string;
   readonly idToken?: string;
+  readonly issuedAt: number;
   readonly expiresAt: number;
 }
 
@@ -254,10 +255,12 @@ export class OidcClient {
     if (tokens === undefined) {
       return undefined;
     }
-    if (
-      options.forceRefresh !== true &&
-      tokens.expiresAt > this.environment.now() + this.config.refreshLeewayMs
-    ) {
+    const leewayMs = refreshWindowMs(
+      tokens.issuedAt,
+      tokens.expiresAt,
+      this.config.refreshLeewayMs,
+    );
+    if (options.forceRefresh !== true && tokens.expiresAt > this.environment.now() + leewayMs) {
       return tokens.accessToken;
     }
     if (tokens.refreshToken === undefined) {
@@ -440,6 +443,7 @@ export class OidcClient {
     const idToken = payload.id_token ?? existingTokens?.idToken;
     const tokens: StoredTokens = {
       accessToken: payload.access_token,
+      issuedAt: receivedAt,
       expiresAt: receivedAt + payload.expires_in * 1000,
       ...(refreshToken === undefined ? {} : { refreshToken }),
       ...(idToken === undefined ? {} : { idToken }),
@@ -654,11 +658,17 @@ function readTransaction(raw: string | null): LoginTransaction | undefined {
   }
 }
 
+function refreshWindowMs(issuedAt: number, expiresAt: number, configuredLeewayMs: number): number {
+  return Math.min(configuredLeewayMs, (expiresAt - issuedAt) / 2);
+}
+
 function isStoredTokens(value: unknown): value is StoredTokens {
   return (
     isObject(value) &&
     typeof value['accessToken'] === 'string' &&
     value['accessToken'].length > 0 &&
+    typeof value['issuedAt'] === 'number' &&
+    Number.isFinite(value['issuedAt']) &&
     typeof value['expiresAt'] === 'number' &&
     Number.isFinite(value['expiresAt']) &&
     (value['refreshToken'] === undefined || typeof value['refreshToken'] === 'string') &&

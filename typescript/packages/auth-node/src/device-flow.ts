@@ -37,6 +37,7 @@ export interface DeviceFlowClientConfig {
   readonly maxResponseBytes?: number;
   readonly requestTimeoutMs?: number;
   readonly loginTimeoutMs?: number;
+  /** Defaults to 60 seconds. */
   readonly refreshLeewaySeconds?: number;
 }
 
@@ -118,6 +119,10 @@ interface TokenResponse {
 }
 
 const refreshFlights = new Map<string, Promise<CachedTokenProfile>>();
+
+function refreshWindowMs(issuedAt: number, expiresAt: number, configuredLeewayMs: number): number {
+  return Math.min(configuredLeewayMs, (expiresAt - issuedAt) / 2);
+}
 
 /** Node OIDC device-flow client. It never writes to stdout, stderr, or a logger. */
 export class DeviceFlowClient {
@@ -362,12 +367,14 @@ export class DeviceFlowClient {
 
   #toCachedProfile(token: TokenResponse, previousRefreshToken?: string): CachedTokenProfile {
     const refreshToken = token.refreshToken ?? previousRefreshToken;
+    const issuedAt = this.#environment.now();
     return {
       accessToken: token.accessToken,
       ...(refreshToken === undefined ? {} : { refreshToken }),
       ...(token.idToken === undefined ? {} : { idToken: token.idToken }),
       tokenType: token.tokenType,
-      expiresAt: this.#environment.now() + token.expiresIn * 1000,
+      issuedAt,
+      expiresAt: issuedAt + token.expiresIn * 1000,
       issuer: this.#config.issuer,
       clientId: this.#config.clientId,
       scopes: this.#config.scopes,
@@ -376,7 +383,12 @@ export class DeviceFlowClient {
   }
 
   #isFresh(profile: CachedTokenProfile): boolean {
-    return profile.expiresAt > this.#environment.now() + this.#config.refreshLeewayMs;
+    const leewayMs = refreshWindowMs(
+      profile.issuedAt,
+      profile.expiresAt,
+      this.#config.refreshLeewayMs,
+    );
+    return profile.expiresAt > this.#environment.now() + leewayMs;
   }
 
   #matchesConfig(profile: CachedTokenProfile): boolean {

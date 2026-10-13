@@ -22,6 +22,7 @@ export interface CachedTokenProfile {
   readonly refreshToken?: string;
   readonly idToken?: string;
   readonly tokenType: string;
+  readonly issuedAt: number;
   readonly expiresAt: number;
   readonly issuer: string;
   readonly clientId: string;
@@ -261,6 +262,8 @@ function validateProfile(value: unknown): asserts value is CachedTokenProfile {
     (value['refreshToken'] !== undefined && !nonEmptyString(value['refreshToken'])) ||
     (value['idToken'] !== undefined && !nonEmptyString(value['idToken'])) ||
     !nonEmptyString(value['tokenType']) ||
+    typeof value['issuedAt'] !== 'number' ||
+    !Number.isFinite(value['issuedAt']) ||
     typeof value['expiresAt'] !== 'number' ||
     !Number.isFinite(value['expiresAt']) ||
     value['expiresAt'] <= 0 ||

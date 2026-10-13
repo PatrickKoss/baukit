@@ -24,6 +24,10 @@ Pass a unique `storageKeyPrefix` when more than one client for the same issuer/c
 
 `offlineAccess` defaults to `false`; enable it deliberately only for providers configured to issue refresh tokens for that scope. Concurrent `accessToken()` calls share one refresh. `accessToken({ forceRefresh: true })` bypasses the proactive window after a 401 while joining any refresh already in flight. Refresh rotation retains the previous refresh or ID token when a response omits a replacement, and expiry is anchored to local token receipt time.
 
+`refreshLeewaySeconds` defaults to 30 seconds; the refresh window is the smaller of that value and half the token lifetime, measured as `expiresAt - issuedAt`.
+
+Stored tokens record `issuedAt` and `expiresAt` in epoch milliseconds; tokens without `issuedAt` are discarded as corrupt state.
+
 Terminal refresh rejection (`invalid_grant`, `invalid_token`, or HTTP 400/401) clears tokens, emits `subscribeSessionExpired()`, and resolves to `undefined`. Transient network/provider failures preserve the session and reject with a sanitized `OidcError` whose `retryable` property is `true`.
 
 `subscribeSessionExpired()` reports `refresh_rejected`, `refresh_unavailable`, or `profile_erased`. On a backend 401 with code `profile_erased`, call `clearSession({ reason: 'profile_erased' })`. It clears the local session and emits the reason once per call. Plain `clearSession()` emits nothing. OIDC persists a force-login marker under `storageKeyPrefix`, so the next `login()` requests `prompt=login` even after a reload. A failed or cancelled login keeps the marker; a successful sign-in removes it. Fresh authentication gives the provider a new `auth_time` for profile re-onboarding.

@@ -105,6 +105,7 @@ function profile(overrides: Partial<CachedTokenProfile> = {}): CachedTokenProfil
     accessToken: 'old-access-secret',
     refreshToken: 'old-refresh-secret',
     tokenType: 'Bearer',
+    issuedAt: 0,
     expiresAt: 1,
     issuer: ISSUER,
     clientId: 'example-cli',
@@ -113,6 +114,68 @@ function profile(overrides: Partial<CachedTokenProfile> = {}): CachedTokenProfil
     ...overrides,
   };
 }
+
+describe('refresh window', () => {
+  it.each([
+    { expiresIn: 10, leeway: undefined, refreshAt: 6_000 },
+    { expiresIn: 3600, leeway: undefined, refreshAt: 3_541_000 },
+    { expiresIn: 10, leeway: 0, refreshAt: 11_000 },
+    { expiresIn: 10, leeway: 2, refreshAt: 9_000 },
+  ])(
+    'refreshes a $expiresIn s token with leeway $leeway at $refreshAt',
+    async ({ expiresIn, leeway, refreshAt }) => {
+      const path = await cachePath();
+      let now = 1_000;
+      let refreshCalls = 0;
+      const authFetch: typeof fetch = (input, init) => {
+        const url = requestUrl(input);
+        if (url.includes('.well-known')) return Promise.resolve(discovery());
+        if (url === DEVICE_ENDPOINT) return Promise.resolve(device());
+        const refresh = form(init).get('grant_type') === 'refresh_token';
+        if (refresh) refreshCalls += 1;
+        return Promise.resolve(
+          json({
+            access_token: refresh ? 'refreshed-access' : 'access-secret',
+            refresh_token: 'refresh-secret',
+            expires_in: expiresIn,
+          }),
+        );
+      };
+      const auth = new DeviceFlowClient(
+        {
+          issuer: ISSUER,
+          clientId: 'example-cli',
+          cache: { namespace: 'example-cli', path },
+          ...(leeway === undefined ? {} : { refreshLeewaySeconds: leeway }),
+        },
+        { fetch: authFetch, now: () => now, sleep: () => Promise.resolve() },
+      );
+      await auth.login();
+      const cache = new NodeTokenCache({ namespace: 'example-cli', path });
+
+      for (now of [1_000, 2_000, 3_000, refreshAt - 1]) {
+        await expect(auth.accessToken()).resolves.toBe('access-secret');
+      }
+      expect(refreshCalls).toBe(0);
+      expect(await cache.read()).toMatchObject({
+        issuedAt: 1_000,
+        expiresAt: 1_000 + expiresIn * 1000,
+      });
+
+      now = refreshAt;
+      await expect(Promise.all([auth.accessToken(), auth.accessToken()])).resolves.toEqual([
+        'refreshed-access',
+        'refreshed-access',
+      ]);
+      await expect(auth.accessToken()).resolves.toBe('refreshed-access');
+      expect(refreshCalls).toBe(1);
+      expect(await cache.read()).toMatchObject({
+        issuedAt: refreshAt,
+        expiresAt: refreshAt + expiresIn * 1000,
+      });
+    },
+  );
+});
 
 describe('device authorization', () => {
   it('uses S256 PKCE, handles pending and slow-down, and accepts an optional refresh token', async () => {
@@ -454,6 +517,26 @@ describe('refresh lifecycle', () => {
 });
 
 describe('cache safety', () => {
+  it('rejects a persisted profile without issuedAt as corrupt', async () => {
+    const path = await cachePath();
+    await writeFile(
+      path,
+      JSON.stringify({
+        version: 1,
+        namespace: 'example-cli',
+        profiles: { default: { ...profile({ expiresAt: 100_000 }), issuedAt: undefined } },
+      }),
+      { mode: 0o600 },
+    );
+    const cache = new NodeTokenCache({ namespace: 'example-cli', path });
+    await expect(cache.read()).rejects.toMatchObject({ code: 'cache_corrupt' });
+    const authFetch = vi.fn<typeof fetch>();
+    await expect(
+      client(path, authFetch, { now: () => 10_000 }).accessToken(),
+    ).rejects.toMatchObject({ code: 'cache_corrupt' });
+    expect(authFetch).not.toHaveBeenCalled();
+  });
+
   it('stores separate profiles and logs out only the selected profile', async () => {
     const path = await cachePath();
     const cache = new NodeTokenCache({ namespace: 'example-cli', path });

@@ -22,6 +22,27 @@ it('rejects missing and malformed scheduling claims without exposing token text'
 });
 
 describe('Clerk native contract', () => {
+  it('records the token receipt time in the session', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    try {
+      const client = new ClerkNativeClient();
+      client.bind({
+        subject: () => 'user_123',
+        getToken: () => Promise.resolve(token()),
+        signIn: () => Promise.resolve(true),
+        signOut: () => Promise.resolve(),
+      });
+
+      await expect(client.initialize()).resolves.toMatchObject({
+        issuedAt: 1_000,
+        expiresAt: 300_000,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('waits for the SDK bridge, refreshes, emits expiry and signs out', async () => {
     const client = new ClerkNativeClient();
     const initialize = client.initialize();

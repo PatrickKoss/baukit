@@ -86,6 +86,7 @@ export interface OidcSession {
   readonly accessToken: string;
   readonly refreshToken?: string;
   readonly idToken?: string;
+  readonly issuedAt: number;
   readonly expiresAt: number;
 }
 
@@ -326,7 +327,12 @@ export class NativeOidcClient {
     if (session === undefined) {
       return undefined;
     }
-    const expiresSoon = session.expiresAt <= this.environment.now() + this.config.refreshLeewayMs;
+    const leewayMs = refreshWindowMs(
+      session.issuedAt,
+      session.expiresAt,
+      this.config.refreshLeewayMs,
+    );
+    const expiresSoon = session.expiresAt <= this.environment.now() + leewayMs;
     if (options.forceRefresh !== true && !expiresSoon) {
       return session.accessToken;
     }
@@ -736,6 +742,10 @@ function requiredUrl(value: string, label: string): string {
   }
 }
 
+function refreshWindowMs(issuedAt: number, expiresAt: number, configuredLeewayMs: number): number {
+  return Math.min(configuredLeewayMs, (expiresAt - issuedAt) / 2);
+}
+
 function makeSession(
   tokens: ReceivedTokenResponse,
   subject: string,
@@ -746,6 +756,7 @@ function makeSession(
   return Object.freeze({
     subject,
     accessToken: tokens.access_token,
+    issuedAt: tokens.receivedAt,
     expiresAt: tokens.receivedAt + tokens.expires_in * 1000,
     ...(refreshToken === undefined ? {} : { refreshToken }),
     ...(idToken === undefined ? {} : { idToken }),
@@ -806,6 +817,8 @@ function isSession(value: unknown): value is OidcSession {
     value['subject'].length > 0 &&
     typeof value['accessToken'] === 'string' &&
     value['accessToken'].length > 0 &&
+    typeof value['issuedAt'] === 'number' &&
+    Number.isFinite(value['issuedAt']) &&
     typeof value['expiresAt'] === 'number' &&
     Number.isFinite(value['expiresAt']) &&
     (value['refreshToken'] === undefined ||

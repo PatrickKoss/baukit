@@ -301,6 +301,7 @@ export const qaConfig: QaConfig = {
         key: `${PRODUCT_NAME}:oidc:tokens`,
         value: JSON.stringify({
           accessToken: 'qa-access-token',
+          issuedAt: Date.now(),
           expiresAt: Date.now() + 60 * 60 * 1000,
         }),
       },

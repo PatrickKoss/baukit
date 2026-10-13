@@ -22,7 +22,9 @@ if (result.status === 'cancelled') {
 
 The issuer is resolved only through `/.well-known/openid-configuration`; provider-specific paths are never manufactured. A successful authorization-code exchange is followed by an authenticated UserInfo request. Its non-empty `sub` is the authoritative subject stored in the immutable session. The package does not trust an unverified, locally decoded ID-token claim as identity.
 
-`session()` exposes the subject, access token, optional refresh and ID tokens, and absolute expiry. Refresh responses retain the previous refresh token or ID token when the provider omits either. When a session inside the configured refresh window has no refresh token, `accessToken()` clears it and returns `undefined`; callers should present sign-in again.
+`session()` exposes the subject, access token, optional refresh and ID tokens, and the `issuedAt` and `expiresAt` timestamps in epoch milliseconds. Refresh responses retain the previous refresh token or ID token when the provider omits either. When a session inside the configured refresh window has no refresh token, `accessToken()` clears it and returns `undefined`; callers should present sign-in again.
+
+`refreshLeewaySeconds` defaults to 30 seconds; the refresh window is the smaller of that value and half the token lifetime, measured as `expiresAt - issuedAt`.
 
 `offlineAccess` deliberately defaults to `false`; set it to `true` only when the provider is configured to issue refresh tokens for `offline_access`. `accessToken()` shares one refresh across concurrent callers. Pass `{ forceRefresh: true }` after a 401 to bypass the proactive expiry window while still joining any refresh already in flight.
 
@@ -30,7 +32,7 @@ Terminal refresh rejection (`invalid_grant`, `invalid_token`, or HTTP 400/401) c
 
 `subscribeSessionExpired()` reports `refresh_rejected`, `refresh_unavailable`, or `profile_erased`. On a backend 401 with code `profile_erased`, call `clearSession({ reason: 'profile_erased' })`. It clears the local session and emits the reason once per call. Plain `clearSession()` emits nothing. OIDC persists a force-login marker under `storageKeyPrefix`, so the next `signIn()` requests `prompt=login` even after a reload. A failed or cancelled login keeps the marker; a successful sign-in removes it. Fresh authentication gives the provider a new `auth_time` for profile re-onboarding.
 
-`signOut()` deletes the local session before provider interaction. It then attempts the discovered end-session endpoint. A missing, cancelled, or failing provider logout persists a fail-safe flag so the next `signIn()` includes `prompt=login`; that flag is removed only after provider logout or a later successful sign-in. Corrupt secure-storage state is deleted and treated as signed out.
+`signOut()` deletes the local session before provider interaction. It then attempts the discovered end-session endpoint. A missing, cancelled, or failing provider logout persists a fail-safe flag so the next `signIn()` includes `prompt=login`; that flag is removed only after provider logout or a later successful sign-in. Corrupt secure-storage state, including sessions without `issuedAt`, is deleted and treated as signed out.
 
 Use `safeAuthErrorMessage(error)` at UI boundaries. Errors contain only allowlisted library codes/messages and optional HTTP status numbers. Provider bodies, authorization codes, tokens, and adapter exception messages are never copied into errors or logs.
 

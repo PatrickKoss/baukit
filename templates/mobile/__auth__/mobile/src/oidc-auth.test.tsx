@@ -53,6 +53,7 @@ function session(overrides: Partial<OidcSession> = {}): OidcSession {
   return {
     subject: 'subject-123',
     accessToken: 'access-token',
+    issuedAt: Date.now(),
     expiresAt: Date.now() + 5 * 60_000,
     ...overrides,
   };

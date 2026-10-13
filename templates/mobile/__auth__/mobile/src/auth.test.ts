@@ -55,6 +55,7 @@ function seedExpiredSession(storage: MemoryStorage): void {
       subject: 'subject-123',
       accessToken: 'expired-access',
       refreshToken: 'refresh-token',
+      issuedAt: 0,
       expiresAt: 900,
     }),
   );

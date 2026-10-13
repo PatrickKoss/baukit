@@ -71,6 +71,7 @@ export class ClerkNativeClient {
       return undefined;
     }
     const token = await port.getToken(options.forceRefresh ?? false);
+    const issuedAt = Date.now();
     if (token === null) {
       const hadSession = this.current !== undefined;
       if (hadSession) await this.expireSession('refresh_rejected');
@@ -79,7 +80,12 @@ export class ClerkNativeClient {
     }
     const timing = tokenTiming(token);
     if (timing.subject !== port.subject()) throw new OidcError('invalid_token_response');
-    this.setSession({ subject: timing.subject, accessToken: token, expiresAt: timing.expiresAt });
+    this.setSession({
+      subject: timing.subject,
+      accessToken: token,
+      issuedAt,
+      expiresAt: timing.expiresAt,
+    });
     return token;
   }
 
