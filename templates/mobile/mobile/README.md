@@ -81,6 +81,8 @@ make qa-ios-down
 
 Android setup supports Linux and Intel or Apple silicon macOS. It installs Android API 36 command-line tools, chooses the host's emulator architecture, and creates the persistent `{{ context.app_name }}-qa` AVD. iOS setup requires macOS, Xcode with an iOS Simulator runtime, CocoaPods, and Node.js with Corepack. Both paths require Maestro for the `e2e-*` targets. The first build downloads dependencies and takes longer than later runs.
 
+Android QA uses a stock `pixel_6` AVD without editing `config.ini` by default. Set `BAUKIT_QA_AVD_CONFIG` to whitespace-separated `key=value` overrides, such as `hw.ramSize=4096 hw.cpu.ncore=4`, if the host needs custom settings.
+
 QA state and logs live under `mobile/.qa/`. Android build output lives under `mobile/android/`; iOS build output lives under `mobile/ios-build/`. Generated native projects and QA output are ignored by Git. The local services use PostgreSQL on `15432`, Redis on `16379`, the API on `18080`, its operations listener on `19090`, and Keycloak on `18081` when OIDC is enabled. Override them with the matching `BAUKIT_QA_*_PORT` variables if a port is occupied. The QA compose project has its own volumes, so `qa-down` does not remove normal development data.
 
 The generated smoke flow signs in with the local test account when OIDC is enabled, reaches the main screen, and persists analytics consent. Extend `.maestro/` with the product's critical workflows. Keep selectors stable and store only test credentials there.

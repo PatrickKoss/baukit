@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Use a stock `pixel_6` AVD for generated Android QA and disable emulator audio.
+  Replace older devices and AVDs with the old forced RAM, keyboard, and CPU settings.
+  Set `BAUKIT_QA_AVD_CONFIG` to whitespace-separated `key=value` entries to opt in to custom settings.
+
 - Accept loopback browser origins on declared `web`, `web_preview`, and `metro`
   ports, plus a new `[ports] web_extra = [8082, 19006]` list. The list requires
   `web` and rejects empty lists, duplicates, zero ports, and host collisions.

@@ -79,6 +79,9 @@ the repository root:
 
 Mobile-only products run the same commands with `make -C mobile`. The Android
 compatibility aliases are `qa-setup`, `e2e-mobile`, and `e2e-mobile-live`.
+Android QA uses a stock `pixel_6` AVD without editing `config.ini` by default.
+Set `BAUKIT_QA_AVD_CONFIG` to whitespace-separated `key=value` overrides, such
+as `hw.ramSize=4096 hw.cpu.ncore=4`, when the host needs custom settings.
 `BAUKIT_QA_SKIP_BUILD=1` reuses the last platform build during an exploratory
 session. Do not use it after JavaScript, native dependency, or app configuration
 changes.

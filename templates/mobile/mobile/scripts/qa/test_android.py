@@ -31,6 +31,28 @@ class AndroidScriptsTest(unittest.TestCase):
             "BAUKIT_QA_SKIP_BUILD": "1",
             "EVENTS": str(self.events),
         }
+        self.environment.pop("BAUKIT_QA_AVD_CONFIG", None)
+
+    def prepare_sdk(self) -> Path:
+        tools = self.sdk / "cmdline-tools/16111833/bin"
+        self.executable(tools / "sdkmanager", "exit 0\n")
+        self.executable(tools / "avdmanager", r'''
+printf '%s\n' "$*" >> "$EVENTS"
+config="$ANDROID_AVD_HOME/test-qa.avd/config.ini"
+case "$1" in
+  delete) rm -f "$config" ;;
+  list) if [[ -f "$config" ]]; then echo "Name: test-qa"; fi ;;
+  create)
+    while [[ "$1" != --package ]]; do shift; done
+    image="${2//;/\/}"
+    mkdir -p "$(dirname "$config")"
+    printf 'image.sysdir.1=%s/\nhw.device.name=pixel_6\nhw.ramSize=1536\nhw.keyboard=no\nhw.cpu.ncore=2\n' "$image" > "$config"
+    ;;
+esac
+''')
+        config = self.avds / "test-qa.avd/config.ini"
+        config.parent.mkdir(parents=True)
+        return config
 
     def executable(self, path: Path, content: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -44,14 +66,28 @@ class AndroidScriptsTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_avd_keys_with_whitespace_are_replaced_once(self) -> None:
-        tools = self.sdk / "cmdline-tools/16111833/bin"
-        self.executable(tools / "sdkmanager", "exit 0\n")
-        self.executable(tools / "avdmanager", 'echo "Name: test-qa"\n')
-        config = self.avds / "test-qa.avd/config.ini"
-        config.parent.mkdir(parents=True)
+    def test_default_avd_config_is_untouched(self) -> None:
+        config = self.prepare_sdk()
+        original = (
+            b"image.sysdir.1=system-images/android-36/google_apis/x86_64/\r\n"
+            b"hw.device.name = pixel_6\r\nhw.ramSize = 1536\r\n"
+            b"hw.keyboard=no\r\nhw.cpu.ncore=2"
+        )
+        config.write_bytes(original)
+        for _ in range(2):
+            self.run_script("android-sdk.sh")
+            self.assertEqual(config.read_bytes(), original)
+        self.assertEqual(self.events.read_text().splitlines(), ["list avd", "list avd"])
+
+    def test_avd_overrides_replace_keys_with_whitespace_once(self) -> None:
+        config = self.prepare_sdk()
+        self.environment["BAUKIT_QA_AVD_CONFIG"] = (
+            "hw.ramSize=4096\thw.keyboard=yes\nhw.cpu.ncore=4 hw.gpu.mode=swiftshader "
+            "hw.ramSize=8192"
+        )
         config.write_text(
             "image.sysdir.1=system-images/android-36/google_apis/x86_64/\n"
+            "hw.device.name=pixel_6\n"
             "abi.type=x86_64\nhw.ramSize = 1024\n hw.ramSize=2048\n"
             "hw.keyboard = no\n\thw.keyboard\t= no\nhw.gpu.mode=auto\nhw.cpu.ncore = 1\n\thw.cpu.ncore\t= 2\n"
         )
@@ -59,9 +95,64 @@ class AndroidScriptsTest(unittest.TestCase):
             self.run_script("android-sdk.sh")
             self.assertEqual(config.read_text().splitlines(), [
                 "image.sysdir.1=system-images/android-36/google_apis/x86_64/",
-                "abi.type=x86_64", "hw.gpu.mode=auto",
-                "hw.ramSize=4096", "hw.keyboard=yes", "hw.cpu.ncore=4",
+                "hw.device.name=pixel_6", "abi.type=x86_64",
+                "hw.ramSize=8192", "hw.keyboard=yes", "hw.cpu.ncore=4",
+                "hw.gpu.mode=swiftshader",
             ])
+        self.assertEqual(self.events.read_text().splitlines(), ["list avd", "list avd"])
+
+    def test_malformed_avd_overrides_fail_before_sdk_setup(self) -> None:
+        for value in ("hw.ramSize", "=4096", "hw.ramSize=", "hw.ramSize==4096", "hw.ramSize=4096 bad/key=1"):
+            with self.subTest(value=value):
+                result = subprocess.run(
+                    ["bash", str(self.scripts / "android-sdk.sh")],
+                    env={**self.environment, "BAUKIT_QA_AVD_CONFIG": value},
+                    capture_output=True, text=True, check=False, timeout=5,
+                )
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn("BAUKIT_QA_AVD_CONFIG must be a whitespace-separated list of key=value entries", result.stderr)
+                self.assertFalse(self.sdk.exists())
+
+    def test_new_avd_uses_stock_pixel_6(self) -> None:
+        config = self.prepare_sdk()
+        self.run_script("android-sdk.sh")
+        self.assertEqual(self.events.read_text().splitlines(), [
+            "list avd",
+            "create avd --force --name test-qa --package system-images;android-36;google_apis;x86_64 --device pixel_6",
+        ])
+        self.assertIn("hw.ramSize=1536\nhw.keyboard=no\nhw.cpu.ncore=2\n", config.read_text())
+
+    def test_legacy_avd_is_recreated_once(self) -> None:
+        config = self.prepare_sdk()
+        for device in ("pixel_7", "pixel_6"):
+            with self.subTest(device=device):
+                config.write_text(
+                    "image.sysdir.1=system-images/android-36/google_apis/x86_64/\n"
+                    f"hw.device.name = {device}\n"
+                    "hw.ramSize = 4096\nhw.keyboard = yes\nhw.cpu.ncore = 4\n"
+                )
+                self.events.unlink(missing_ok=True)
+                self.run_script("android-sdk.sh")
+                self.assertEqual(self.events.read_text().splitlines(), [
+                    "delete avd --name test-qa", "list avd",
+                    "create avd --force --name test-qa --package system-images;android-36;google_apis;x86_64 --device pixel_6",
+                ])
+                self.assertIn("hw.device.name=pixel_6\nhw.ramSize=1536\nhw.keyboard=no\nhw.cpu.ncore=2\n", config.read_text())
+                self.events.unlink()
+                self.run_script("android-sdk.sh")
+                self.assertEqual(self.events.read_text().splitlines(), ["list avd"])
+
+    def test_opt_in_preserves_old_values_on_pixel_6(self) -> None:
+        config = self.prepare_sdk()
+        self.environment["BAUKIT_QA_AVD_CONFIG"] = "hw.ramSize=4096 hw.keyboard=yes hw.cpu.ncore=4"
+        original = (
+            "image.sysdir.1=system-images/android-36/google_apis/x86_64/\n"
+            "hw.device.name=pixel_6\nhw.ramSize=4096\nhw.keyboard=yes\nhw.cpu.ncore=4\n"
+        )
+        config.write_text(original)
+        self.run_script("android-sdk.sh")
+        self.assertEqual(config.read_text(), original)
+        self.assertEqual(self.events.read_text().splitlines(), ["list avd"])
 
     def test_sdk_uses_pinned_tools_even_when_latest_exists(self) -> None:
         tools = self.sdk / "cmdline-tools/16111833/bin"
@@ -142,31 +233,14 @@ touch "$apk"
                 self.assertEqual(result.returncode, expected_status, result.stdout + result.stderr)
 
     def test_avd_is_recreated_when_api_tag_or_architecture_changes(self) -> None:
-        tools = self.sdk / "cmdline-tools/16111833/bin"
-        self.executable(tools / "sdkmanager", "exit 0\n")
-        self.executable(tools / "avdmanager", r'''
-printf '%s\n' "$*" >> "$EVENTS"
-config="$ANDROID_AVD_HOME/test-qa.avd/config.ini"
-case "$1" in
-  delete) rm -f "$config" ;;
-  list) if [[ -f "$config" ]]; then echo "Name: test-qa"; fi ;;
-  create)
-    while [[ "$1" != --package ]]; do shift; done
-    image="${2//;/\/}"
-    mkdir -p "$(dirname "$config")"
-    printf 'image.sysdir.1=%s/\n' "$image" > "$config"
-    ;;
-esac
-''')
-        config = self.avds / "test-qa.avd/config.ini"
-        config.parent.mkdir(parents=True)
+        config = self.prepare_sdk()
         for old_image in (
             "system-images/android-35/google_apis/x86_64/",
             "system-images/android-36/google_apis_playstore/x86_64/",
             "system-images/android-36/google_apis/arm64-v8a/",
         ):
             with self.subTest(old_image=old_image):
-                config.write_text(f"image.sysdir.1 = {old_image}\n")
+                config.write_text(f"image.sysdir.1 = {old_image}\nhw.device.name=pixel_6\n")
                 self.events.unlink(missing_ok=True)
                 self.run_script("android-sdk.sh")
                 self.assertIn("delete avd --name test-qa", self.events.read_text())
@@ -303,12 +377,14 @@ fi
                     self.assertFalse(self.events.exists())
 
     def test_android_setup_is_idempotent_and_prepares_oidc_browser(self) -> None:
+        emulator_args = self.root / "emulator-args"
+        self.environment["EMULATOR_ARGS"] = str(emulator_args)
         self.executable(self.sdk / "platform-tools/adb", r'''
 printf '%s\n' "$*" >> "$EVENTS"
 if [[ "$*" == devices ]]; then printf 'List of devices attached\n'; fi
-if [[ "$*" == *'getprop sys.boot_completed' ]]; then echo 1; fi
+if [[ "$*" == *'getprop sys.boot_completed' && -f "$EMULATOR_ARGS" ]]; then echo 1; fi
 ''')
-        self.executable(self.sdk / "emulator/emulator", "exit 0\n")
+        self.executable(self.sdk / "emulator/emulator", 'printf "%s\\n" "$@" > "$EMULATOR_ARGS"\n')
         self.executable(self.scripts / "services.sh", "exit 0\n")
         apk = self.root / "mobile/android/app/build/outputs/apk/release/app-release.apk"
         apk.parent.mkdir(parents=True)
@@ -316,9 +392,18 @@ if [[ "$*" == *'getprop sys.boot_completed' ]]; then echo 1; fi
 {% if context.auth_oidc %}        flags = '-s emulator-5556 shell echo "chrome --disable-fre --no-first-run --no-default-browser-check" > /data/local/tmp/chrome-command-line'
         debug = '-s emulator-5556 shell settings put global debug_app com.android.chrome'
         stop = '-s emulator-5556 shell am force-stop com.android.chrome'
-{% endif %}        for _ in range(2):
+{% endif %}        for headless in ("0", "1"):
+            self.environment["BAUKIT_QA_HEADLESS"] = headless
             self.events.unlink(missing_ok=True)
+            emulator_args.unlink(missing_ok=True)
             self.run_script("android-env.sh")
+            expected_args = [
+                "-avd", "test-qa", "-port", "5556", "-no-snapshot-load",
+                "-no-snapshot-save", "-no-audio", "-no-boot-anim", "-gpu", "swiftshader",
+            ]
+            if headless == "1":
+                expected_args.append("-no-window")
+            self.assertEqual(emulator_args.read_text().splitlines(), expected_args)
             events = self.events.read_text().splitlines()
             command = "-s emulator-5556 shell am start -n dev.baukit.{{ context.app_crate }}/.MainActivity -W"
             self.assertEqual(events.count(command), 1)

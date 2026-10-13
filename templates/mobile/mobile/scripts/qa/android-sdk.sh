@@ -9,6 +9,19 @@ avd_name="${BAUKIT_QA_ANDROID_AVD:-{{ context.app_name }}-qa}"
 api_level="${BAUKIT_QA_ANDROID_API_LEVEL:-36}"
 image_tag="${BAUKIT_QA_ANDROID_IMAGE_TAG:-google_apis}"
 command_tools_version="16111833"
+avd_overrides="${BAUKIT_QA_AVD_CONFIG:-}"
+
+if [[ -n "$avd_overrides" ]]; then
+  python3 - "$avd_overrides" <<'PYCONFIG'
+import re
+import sys
+
+for entry in sys.argv[1].split():
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+=[^\s=]+", entry):
+        print("qa: BAUKIT_QA_AVD_CONFIG must be a whitespace-separated list of key=value entries", file=sys.stderr)
+        raise SystemExit(2)
+PYCONFIG
+fi
 
 case "$(uname -m)" in
   arm64 | aarch64) default_architecture=arm64-v8a ;;
@@ -70,17 +83,32 @@ sdkmanager --sdk_root="$sdk_root" \
 mkdir -p "$avd_home"
 avd_config="$avd_home/$avd_name.avd/config.ini"
 image_directory="system-images/android-${api_level}/${image_tag}/${architecture}/"
-if [[ -f "$avd_config" ]] && ! python3 - "$avd_config" "$image_directory" <<'PYIMAGE'
+if [[ -f "$avd_config" ]]; then
+  replacement_reason="$(python3 - "$avd_config" "$image_directory" "${BAUKIT_QA_AVD_CONFIG+x}" <<'PYIMAGE'
 from pathlib import Path
 import sys
 
-settings = dict(line.split("=", 1) for line in Path(sys.argv[1]).read_text().splitlines() if "=" in line)
-actual = next((value.strip() for key, value in settings.items() if key.strip() == "image.sysdir.1"), "")
-raise SystemExit(0 if actual == sys.argv[2] else 1)
+settings = {
+    key.strip(): value.strip()
+    for line in Path(sys.argv[1]).read_text().splitlines()
+    if "=" in line
+    for key, value in [line.split("=", 1)]
+}
+if settings.get("image.sysdir.1") != sys.argv[2]:
+    print("its system image does not match the requested image")
+elif settings.get("hw.device.name") != "pixel_6":
+    print("its device is not pixel_6")
+elif not sys.argv[3] and all(
+    settings.get(key) == value
+    for key, value in {"hw.ramSize": "4096", "hw.keyboard": "yes", "hw.cpu.ncore": "4"}.items()
+):
+    print("it still has the old forced RAM, keyboard, and CPU settings")
 PYIMAGE
-then
-  echo "qa: replacing '$avd_name' because its system image does not match $system_image"
-  avdmanager delete avd --name "$avd_name" >/dev/null
+  )"
+  if [[ -n "$replacement_reason" ]]; then
+    echo "qa: replacing '$avd_name' because $replacement_reason"
+    avdmanager delete avd --name "$avd_name" >/dev/null
+  fi
 fi
 avd_list="$(avdmanager list avd)"
 if ! grep -Fq "Name: $avd_name" <<< "$avd_list"; then
@@ -88,21 +116,22 @@ if ! grep -Fq "Name: $avd_name" <<< "$avd_list"; then
     --force \
     --name "$avd_name" \
     --package "$system_image" \
-    --device pixel_7 >/dev/null <<< no
+    --device pixel_6 >/dev/null <<< no
 fi
 
-if [[ -f "$avd_config" ]]; then
-  python3 - "$avd_config" <<'PY'
+if [[ -n "$avd_overrides" && -f "$avd_config" ]]; then
+  python3 - "$avd_config" "$avd_overrides" <<'PY'
 from pathlib import Path
 import sys
 
 path = Path(sys.argv[1])
+overrides = dict(entry.split("=", 1) for entry in sys.argv[2].split())
 lines = [
     line
     for line in path.read_text().splitlines()
-    if line.partition("=")[0].strip() not in {"hw.ramSize", "hw.keyboard", "hw.cpu.ncore"}
+    if line.partition("=")[0].strip() not in overrides
 ]
-lines.extend(("hw.ramSize=4096", "hw.keyboard=yes", "hw.cpu.ncore=4"))
+lines.extend(f"{key}={value}" for key, value in overrides.items())
 path.write_text("\n".join(lines) + "\n")
 PY
 fi

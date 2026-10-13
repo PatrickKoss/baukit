@@ -100,6 +100,7 @@ emulator_args=(
   -port "$emulator_port"
   -no-snapshot-load
   -no-snapshot-save
+  -no-audio
   -no-boot-anim
   -gpu swiftshader
 )

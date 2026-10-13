@@ -24,6 +24,8 @@ Do not replace project targets with ad hoc Expo commands unless the targets are 
 
 Android emulator testing works on Linux and macOS when hardware virtualization, Java, and the Android SDK are available. Baukit's setup target installs its pinned SDK components and creates a dedicated QA AVD.
 
+The default is a stock `pixel_6` AVD with no `config.ini` edits. Set `BAUKIT_QA_AVD_CONFIG` to whitespace-separated `key=value` overrides, such as `hw.ramSize=4096 hw.cpu.ncore=4`, if the host needs custom settings.
+
 iOS Simulator testing requires macOS, Xcode, an installed iOS Simulator runtime, CocoaPods, and Node.js with Corepack. It does not require EAS. A local Simulator build is free apart from the Mac and developer time. Do not report iOS as passed when the audit ran only on Linux, Android, Expo web, or a browser's mobile viewport.
 
 Maestro must be installed for automated flows. The interactive targets still support manual testing without it.
