@@ -12,7 +12,8 @@ use std::{
 use axum::http::StatusCode;
 use baukit_egress::{
     AddressPolicy, DestinationRejection, EgressError, EgressOptions, EgressOptionsError,
-    EgressRequest, GuardedClient, ResolveFuture, Resolver, ResponseBody, StaticResolver,
+    EgressRequest, GuardedClient, PrivateNetworks, ResolveFuture, Resolver, ResponseBody,
+    StaticResolver, validate_destination,
 };
 use baukit_http::RetryClass;
 use time::{OffsetDateTime, format_description::well_known::Rfc2822};
@@ -242,6 +243,99 @@ fn loopback_resolver(hosts: &[&str]) -> Arc<StaticResolver> {
     }))
 }
 
+fn private_options() -> EgressOptions {
+    let networks = PrivateNetworks::new(["10.255.255.0/24".parse().expect("valid network")])
+        .expect("non-empty networks");
+    EgressOptions::default()
+        .with_policy(AddressPolicy::AllowPrivate(networks))
+        .with_connect_timeout(SHORT)
+        .expect("valid timeout")
+        .with_request_timeout(Duration::from_secs(1))
+        .expect("valid timeout")
+}
+
+#[tokio::test]
+async fn listed_private_answers_reach_connect_and_unlisted_answers_are_blocked() {
+    for scheme in ["http", "https"] {
+        for address in ["10.255.255.1", "::ffff:10.255.255.1", "10.44.0.1"] {
+            let resolver = StaticResolver::new().with_host(
+                "prometheus.monitoring.svc",
+                [address.parse().expect("valid address")],
+            );
+            let client = client(Arc::new(resolver), private_options());
+            let url = Url::parse(&format!("{scheme}://prometheus.monitoring.svc:9/metrics"))
+                .expect("valid URL");
+            let error = client
+                .execute(EgressRequest::get(url))
+                .await
+                .expect_err("destination is unreachable");
+            if address == "10.44.0.1" {
+                assert!(
+                    matches!(error, EgressError::BlockedAddress),
+                    "{scheme} {address}: {error:?}"
+                );
+            } else {
+                assert!(
+                    matches!(error, EgressError::Transport(_) | EgressError::Timeout),
+                    "{scheme} {address}: {error:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn private_address_literals_pass_the_same_destination_checks() {
+    let options = private_options();
+    for scheme in ["http", "https"] {
+        for host in ["10.255.255.1", "[::ffff:10.255.255.1]"] {
+            let url = Url::parse(&format!("{scheme}://{host}/metrics")).expect("valid URL");
+            assert!(validate_destination(&url, options.policy()).is_ok());
+        }
+        let url = Url::parse(&format!("{scheme}://10.44.0.1/metrics")).expect("valid URL");
+        assert!(matches!(
+            validate_destination(&url, options.policy()),
+            Err(EgressError::BlockedAddress)
+        ));
+    }
+    let url = Url::parse("http://8.8.8.8/metrics").expect("valid URL");
+    assert!(matches!(
+        validate_destination(&url, options.policy()),
+        Err(EgressError::Destination(DestinationRejection::Scheme))
+    ));
+}
+
+#[tokio::test]
+async fn private_plain_http_names_reject_public_and_mixed_answers() {
+    let listed = "10.255.255.1".parse().expect("valid address");
+    for (answers, expected_scheme) in [
+        (vec![PUBLIC], true),
+        (vec![listed, PUBLIC], true),
+        (vec![PUBLIC, listed], true),
+        (vec![listed, PRIVATE], false),
+        (vec![PRIVATE, listed], false),
+    ] {
+        let resolver = StaticResolver::new().with_host("prometheus.monitoring.svc", answers);
+        let client = client(Arc::new(resolver), private_options());
+        let url = Url::parse("http://prometheus.monitoring.svc/metrics").expect("valid URL");
+        let error = client
+            .execute(EgressRequest::get(url))
+            .await
+            .expect_err("lookup must be refused");
+        if expected_scheme {
+            assert!(
+                matches!(
+                    error,
+                    EgressError::Destination(DestinationRejection::Scheme)
+                ),
+                "{error:?}"
+            );
+        } else {
+            assert!(matches!(error, EgressError::BlockedAddress), "{error:?}");
+        }
+    }
+}
+
 #[tokio::test]
 async fn posts_to_the_address_the_resolver_returned() {
     let server = LocalServer::start(response("200 OK", &[], "ok")).await;
@@ -445,11 +539,12 @@ async fn forbidden_rate_limit_requires_opt_in_and_keeps_the_delay_cap() {
     let options = development();
     assert!(!options.forbidden_rate_limit());
     let capped = options
+        .clone()
         .with_forbidden_rate_limit()
         .with_max_retry_after(Duration::from_secs(3))
         .expect("cap is valid");
     let cases = [
-        (options, RetryClass::Revoked),
+        (options.clone(), RetryClass::Revoked),
         (
             options.with_forbidden_rate_limit(),
             RetryClass::RetryAfter(Duration::from_secs(7)),
@@ -534,7 +629,7 @@ async fn the_response_body_limit_is_enforced() {
 
     for (reply, fits) in cases {
         let server = LocalServer::start(reply).await;
-        let client = client(loopback_resolver(&["hooks.test"]), options);
+        let client = client(loopback_resolver(&["hooks.test"]), options.clone());
 
         let outcome = client
             .execute(EgressRequest::get(server.url("hooks.test", "/")))
@@ -572,7 +667,7 @@ async fn a_discarded_success_body_is_never_too_large() {
 
     for reply in replies {
         let server = LocalServer::start(reply).await;
-        let client = client(loopback_resolver(&["hooks.test"]), options);
+        let client = client(loopback_resolver(&["hooks.test"]), options.clone());
 
         let delivered = client
             .execute(
@@ -656,16 +751,18 @@ fn error_body_limits_are_opt_in_and_validated_in_both_builder_orders() {
     let options = EgressOptions::default();
     assert_eq!(options.error_body_limit(), None);
     assert_eq!(
-        options.with_error_body_limit(0),
+        options.clone().with_error_body_limit(0),
         Err(EgressOptionsError::ZeroErrorBodyLimit)
     );
     assert_eq!(
-        options.with_error_body_limit(options.max_response_bytes() + 1),
+        options
+            .clone()
+            .with_error_body_limit(options.max_response_bytes() + 1),
         Err(EgressOptionsError::ErrorBodyLimitTooLarge)
     );
     let options = options.with_max_response_bytes(16).expect("limit is valid");
     assert_eq!(
-        options.with_error_body_limit(17),
+        options.clone().with_error_body_limit(17),
         Err(EgressOptionsError::ErrorBodyLimitTooLarge)
     );
     let options = options
@@ -673,10 +770,10 @@ fn error_body_limits_are_opt_in_and_validated_in_both_builder_orders() {
         .expect("equal limit is valid");
     assert_eq!(options.error_body_limit(), Some(16));
     assert_eq!(
-        options.with_max_response_bytes(15),
+        options.clone().with_max_response_bytes(15),
         Err(EgressOptionsError::ErrorBodyLimitTooLarge)
     );
-    assert_eq!(options.with_max_response_bytes(16), Ok(options));
+    assert_eq!(options.clone().with_max_response_bytes(16), Ok(options));
 }
 
 #[tokio::test]
@@ -774,7 +871,7 @@ async fn error_bodies_stop_at_the_limit_with_and_without_content_length() {
     ];
     for (reply, expected, truncated) in cases {
         let server = LocalServer::start(reply).await;
-        let client = client(loopback_resolver(&["hooks.test"]), options);
+        let client = client(loopback_resolver(&["hooks.test"]), options.clone());
         let error = client
             .execute(EgressRequest::get(server.url("hooks.test", "/")))
             .await
@@ -834,7 +931,7 @@ async fn a_failed_error_body_read_preserves_the_status_and_capped_retry_after() 
         .with_max_retry_after(Duration::from_secs(1))
         .expect("retry delay cap is valid");
     for options in [
-        options,
+        options.clone(),
         options.with_error_body_limit(16).expect("limit is valid"),
     ] {
         let client = client(loopback_resolver(&["hooks.test"]), options);
@@ -869,10 +966,10 @@ async fn a_timed_out_error_body_read_preserves_the_status_and_capped_retry_after
         .with_request_timeout(SHORT)
         .expect("timeout is valid");
     for options in [
-        options,
+        options.clone(),
         options.with_error_body_limit(16).expect("limit is valid"),
     ] {
-        let client = client(loopback_resolver(&["hooks.test"]), options);
+        let client = client(loopback_resolver(&["hooks.test"]), options.clone());
         let start = Instant::now();
         let error = client
             .execute(EgressRequest::get(server.url("hooks.test", "/")))

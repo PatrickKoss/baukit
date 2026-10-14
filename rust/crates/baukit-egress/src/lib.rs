@@ -27,6 +27,14 @@
 //!
 //! The address policy follows the IANA special-purpose address registries and
 //! is pinned by the shared vectors in `fixtures/egress/address-policy-v1.json`.
+//! [`AddressPolicy::PublicOnly`] is the default. For in-cluster services such
+//! as Prometheus, use [`AddressPolicy::AllowPrivate`] with a non-empty
+//! [`PrivateNetworks`] list. [`PrivateNetwork`] accepts private or shared CIDR
+//! ranges with no host bits, such as `10.43.0.0/16` or `fd12:3456::/48`.
+//! HTTPS can reach public and listed addresses; plain HTTP reaches listed
+//! addresses only. Every DNS answer must pass, including [`StaticResolver`]
+//! answers. Cloud metadata stays blocked, even inside a listed network.
+//! [`AddressPolicy::AllowLoopback`] is for local development and tests.
 //!
 //! # Example
 //!
@@ -53,6 +61,23 @@
 //!
 //! The delivery scheduler honors `retry_after()` when retrying a `503` or `429`.
 //! A `409` is permanent; log its problem code, such as `inventory_sequence_gap`.
+//!
+//! # In-cluster services
+//!
+//! ```rust,no_run
+//! use baukit_egress::{AddressPolicy, EgressOptions, EgressRequest, GuardedClient, PrivateNetworks};
+//! use url::Url;
+//!
+//! # async fn collect() -> Result<(), Box<dyn std::error::Error>> {
+//! let networks = PrivateNetworks::new(["10.43.0.0/16".parse()?])?;
+//! let options = EgressOptions::default().with_policy(AddressPolicy::AllowPrivate(networks));
+//! let client = GuardedClient::new(options)?;
+//! let url = Url::parse("http://prometheus.monitoring.svc:9090/api/v1/query?query=up")?;
+//! let response = client.execute(EgressRequest::get(url)).await?;
+//! # let _ = response;
+//! # Ok(())
+//! # }
+//! ```
 
 #![deny(missing_docs)]
 
@@ -68,7 +93,9 @@ pub use client::{
 };
 pub use error::{DestinationRejection, EgressError, ErrorBody};
 pub use options::{EgressOptions, EgressOptionsError};
-pub use policy::{AddressPolicy, is_public_address};
+pub use policy::{
+    AddressPolicy, PrivateNetwork, PrivateNetworkError, PrivateNetworks, is_public_address,
+};
 pub use resolver::{
     ResolveError, ResolveFuture, Resolver, StaticResolver, SystemResolver, resolve_destination,
 };

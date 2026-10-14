@@ -4,6 +4,25 @@ All notable changes to `baukit-egress` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- `PrivateNetwork` constructs and parses CIDR networks inside private or shared
+  address space. `PrivateNetworkError` reports invalid notation, prefixes,
+  host bits, ranges, mapped IPv6 input, and empty lists without echoing input.
+- `PrivateNetworks` holds a non-empty network list. `AddressPolicy::AllowPrivate`
+  permits HTTPS to public and listed addresses and plain HTTP to listed addresses
+  only. Every DNS answer must pass. Cloud metadata and private NAT64 answers stay
+  blocked. IPv4-mapped answers match listed IPv4 networks and connect as IPv4.
+
+### Changed
+
+- Breaking: `AddressPolicy` and `EgressOptions` implement `Clone`, but no longer
+  `Copy`. Policy methods borrow `self`. `EgressOptions::policy()` returns
+  `&AddressPolicy`. `validate_destination` and `resolve_destination` take
+  `&AddressPolicy`.
+- Breaking: `EgressOptions::with_policy`, `with_max_response_bytes`,
+  `with_error_body_limit`, and `with_max_retry_after` are no longer `const`.
+
 ## [0.10.26] - 2026-10-13
 
 ## [0.10.25] - 2026-10-13

@@ -182,8 +182,9 @@ impl EgressResponse {
 /// rejects the lookup when any answer is disallowed, and connects only to the
 /// answers it checked. Redirects are never followed, proxies from the
 /// environment are ignored, and every request is bounded by the timeouts and
-/// the response body limit in [`EgressOptions`]. Plain `http` is sent only
-/// under [`AddressPolicy::AllowLoopback`] and only to loopback answers.
+/// the response body limit in [`EgressOptions`]. Plain `http` reaches only
+/// loopback under [`AddressPolicy::AllowLoopback`] or listed networks under
+/// [`AddressPolicy::AllowPrivate`].
 /// Cloning is cheap and shares the connection pools.
 #[derive(Clone)]
 pub struct GuardedClient {
@@ -208,11 +209,11 @@ impl GuardedClient {
         resolver: Arc<dyn Resolver>,
         options: EgressOptions,
     ) -> Result<Self, EgressClientError> {
-        let https = build_client(Arc::clone(&resolver), options, Transport::Https)?;
+        let https = build_client(Arc::clone(&resolver), &options, Transport::Https)?;
         let plain_http = options
             .policy()
             .allows_plain_http()
-            .then(|| build_client(resolver, options, Transport::PlainHttp))
+            .then(|| build_client(resolver, &options, Transport::PlainHttp))
             .transpose()?;
         Ok(Self {
             https,
@@ -322,10 +323,10 @@ impl GuardedClient {
 ///
 /// The scheme must be `https`, or `http` when the policy allows plain HTTP.
 /// The URL must have a host and no credentials or fragment. A host written as
-/// an IP address must pass the policy, so an address literal never reaches a
-/// connection, and a plain `http` literal must be loopback. Host names are
-/// checked when they resolve.
-pub fn validate_destination(url: &Url, policy: AddressPolicy) -> Result<(), EgressError> {
+/// an IP address must pass the policy before the client connects.
+/// A plain `http` literal must pass
+/// [`AddressPolicy::permits_plain_http`]. Host names are checked when they resolve.
+pub fn validate_destination(url: &Url, policy: &AddressPolicy) -> Result<(), EgressError> {
     let plain_http = url.scheme() == HTTP_SCHEME;
     let scheme_allowed = url.scheme() == HTTPS_SCHEME || (plain_http && policy.allows_plain_http());
     if !scheme_allowed {
@@ -360,12 +361,12 @@ enum Transport {
 
 fn build_client(
     resolver: Arc<dyn Resolver>,
-    options: EgressOptions,
+    options: &EgressOptions,
     transport: Transport,
 ) -> Result<reqwest::Client, EgressClientError> {
     let pinned = PinnedResolver {
         resolver,
-        policy: options.policy(),
+        policy: options.policy().clone(),
         timeout: options.resolve_timeout(),
         transport,
     };
@@ -391,12 +392,12 @@ struct PinnedResolver {
 impl Resolve for PinnedResolver {
     fn resolve(&self, name: Name) -> Resolving {
         let resolver = Arc::clone(&self.resolver);
-        let policy = self.policy;
+        let policy = self.policy.clone();
         let timeout = self.timeout;
         let transport = self.transport;
         let host = name.as_str().to_owned();
         Box::pin(async move {
-            let answers = resolve_destination(resolver.as_ref(), &host, policy, timeout).await?;
+            let answers = resolve_destination(resolver.as_ref(), &host, &policy, timeout).await?;
             let plain_http_refused = transport == Transport::PlainHttp
                 && !answers
                     .iter()

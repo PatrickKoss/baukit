@@ -3,8 +3,8 @@
 `baukit-egress` sends HTTP requests to destinations that users supply, such as
 webhook URLs and provider endpoints. A plain client can be pointed at
 `169.254.169.254`, a database on the private network, or a host name whose DNS
-answer flips to a private address after the check. `GuardedClient` refuses all
-three.
+answer flips to a private address after the check. `GuardedClient` blocks
+unapproved addresses and connects only to the DNS answers it checked.
 
 The crate is opt-in. It is not part of the generated backend template and is not
 wired into `baukit_config::BaukitConfig`.
@@ -22,10 +22,10 @@ let response = client
 
 | Check | Behavior |
 |---|---|
-| Scheme | `https` only. `http` only under `AddressPolicy::AllowLoopback`, and then only to loopback addresses. |
+| Scheme | `https` to allowed addresses. `http` only to loopback under `AllowLoopback` or listed networks under `AllowPrivate`. |
 | URL shape | No user info, no fragment, a host is required. |
 | Address literals | `https://10.0.0.1/`, `https://[::ffff:127.0.0.1]/` and `https://2130706433/` are checked before any connection. |
-| DNS answers | Every answer must pass the policy. One private answer among public ones rejects the lookup. |
+| DNS answers | Every answer must pass the policy. One denied answer rejects the lookup. |
 | Pinning | The connection uses the answers that passed the check. A new connection runs a new lookup and a new check. |
 | Redirects | Never followed. A `3xx` comes back as `EgressError::Status`. |
 | Proxies | `HTTP_PROXY`, `HTTPS_PROXY` and friends are ignored. |
@@ -63,8 +63,44 @@ so a public host is still reached over `https` only.
 Never enable the policy in a deployed environment.
 
 `fixtures/egress/address-policy-v1.json` pins every decision with address,
-URL, and multi-lookup cases, including a DNS answer that changes between two
-lookups. Other runtimes that filter addresses should run the same file.
+URL, network-construction, and multi-lookup cases, including a DNS answer that
+changes between two lookups. Other runtimes that filter addresses should run
+the same file.
+
+## In-cluster services
+
+Use `AddressPolicy::AllowPrivate` for services such as Prometheus or OpenCost
+on explicitly listed cluster networks:
+
+```rust,no_run
+use baukit_egress::{AddressPolicy, EgressOptions, EgressRequest, GuardedClient, PrivateNetworks};
+use url::Url;
+
+# async fn collect() -> Result<(), Box<dyn std::error::Error>> {
+let networks = PrivateNetworks::new(["10.43.0.0/16".parse()?])?;
+let options = EgressOptions::default().with_policy(AddressPolicy::AllowPrivate(networks));
+let client = GuardedClient::new(options)?;
+let url = Url::parse("http://prometheus.monitoring.svc:9090/api/v1/query?query=up")?;
+let response = client.execute(EgressRequest::get(url)).await?;
+# let _ = response;
+# Ok(())
+# }
+```
+
+`PrivateNetwork::new(address, prefix)` and CIDR parsing reject host bits,
+invalid prefixes, IPv4-mapped network definitions, and networks outside
+`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, or
+`fc00::/7`. `PrivateNetworks::new` rejects an empty list and `as_slice()`
+returns its networks. Use the smallest network that covers the service.
+
+HTTPS reaches public and listed addresses. Plain HTTP reaches listed
+addresses only, so every answer for an HTTP host name must be listed.
+`StaticResolver` answers pass the same checks. IPv4-mapped answers match
+listed IPv4 networks and connect as IPv4. NAT64 answers carrying private IPv4
+addresses stay blocked. Loopback, link-local, and other special ranges stay
+blocked, as do `169.254.169.254`, its IPv4-mapped form, and `fd00:ec2::254`,
+even with `fc00::/7` listed. DNS pinning, timeouts, response caps, redirect
+refusal, and proxy settings stay the same.
 
 ## Response bodies
 

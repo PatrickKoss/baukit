@@ -15,7 +15,7 @@ const DEFAULT_MAX_RETRY_AFTER: Duration = Duration::from_secs(300);
 /// including the body, a 1 MiB response body limit, and a 300 second cap on
 /// the `Retry-After` delay reported in [`EgressError::Status`](crate::EgressError::Status).
 /// Error bodies are not read unless [`Self::with_error_body_limit`] is set.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EgressOptions {
     policy: AddressPolicy,
     resolve_timeout: Duration,
@@ -65,7 +65,7 @@ impl Default for EgressOptions {
 impl EgressOptions {
     /// Sets which resolved addresses may be reached.
     #[must_use]
-    pub const fn with_policy(mut self, policy: AddressPolicy) -> Self {
+    pub fn with_policy(mut self, policy: AddressPolicy) -> Self {
         self.policy = policy;
         self
     }
@@ -89,10 +89,7 @@ impl EgressOptions {
     }
 
     /// Sets the largest response body the client reads.
-    pub const fn with_max_response_bytes(
-        mut self,
-        limit: usize,
-    ) -> Result<Self, EgressOptionsError> {
+    pub fn with_max_response_bytes(mut self, limit: usize) -> Result<Self, EgressOptionsError> {
         if limit == 0 {
             return Err(EgressOptionsError::ZeroResponseLimit);
         }
@@ -111,7 +108,7 @@ impl EgressOptions {
     /// [`ErrorBody::problem_code`](crate::ErrorBody::problem_code).
     /// If reading fails or times out, the status and retry class are preserved
     /// and the captured body is `None`.
-    pub const fn with_error_body_limit(mut self, limit: usize) -> Result<Self, EgressOptionsError> {
+    pub fn with_error_body_limit(mut self, limit: usize) -> Result<Self, EgressOptionsError> {
         if limit == 0 {
             return Err(EgressOptionsError::ZeroErrorBodyLimit);
         }
@@ -125,7 +122,7 @@ impl EgressOptions {
     /// Sets the largest `Retry-After` delay a status error reports.
     ///
     /// Longer delays from the upstream are clamped to `max`.
-    pub const fn with_max_retry_after(mut self, max: Duration) -> Result<Self, EgressOptionsError> {
+    pub fn with_max_retry_after(mut self, max: Duration) -> Result<Self, EgressOptionsError> {
         if max.is_zero() {
             return Err(EgressOptionsError::ZeroRetryAfterCap);
         }
@@ -146,8 +143,8 @@ impl EgressOptions {
 
     /// Returns the address policy.
     #[must_use]
-    pub const fn policy(&self) -> AddressPolicy {
-        self.policy
+    pub const fn policy(&self) -> &AddressPolicy {
+        &self.policy
     }
 
     /// Returns the DNS lookup timeout.

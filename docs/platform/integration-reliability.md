@@ -230,6 +230,17 @@ other runtime that filters destinations. Send webhook requests with
 `EgressRequest::with_response_body(ResponseBody::Discard)`, so a receiver that
 answers `2xx` with a large body still counts as delivered. Under
 `AddressPolicy::AllowLoopback`, plain `http` reaches only loopback addresses.
+`AddressPolicy::PublicOnly` is the default for user-supplied webhook URLs.
+For an in-cluster service such as Prometheus or OpenCost, use
+`AddressPolicy::AllowPrivate` with a non-empty `PrivateNetworks` list, for
+example `PrivateNetworks::new(["10.43.0.0/16".parse()?])?`. HTTPS reaches public
+and listed addresses; plain HTTP reaches listed addresses only. Every DNS
+answer, including a `StaticResolver` answer, must pass. Network construction
+accepts only subnets of `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`,
+`100.64.0.0/10`, and `fc00::/7`, with no host bits. Cloud metadata stays blocked
+even inside a listed network. IPv4-mapped answers match listed IPv4 networks;
+private NAT64 answers stay blocked. The client keeps DNS pinning, timeouts,
+response caps, redirect refusal, and disabled environment proxies.
 
 Every `5xx` with a valid `Retry-After` becomes `RetryAfter`, including `504`.
 Without a usable header, `504` stays `Timeout` and other `5xx` stay `Unavailable`.

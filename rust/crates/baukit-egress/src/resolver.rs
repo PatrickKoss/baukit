@@ -113,7 +113,7 @@ impl Resolver for StaticResolver {
 pub async fn resolve_destination(
     resolver: &dyn Resolver,
     host: &str,
-    policy: AddressPolicy,
+    policy: &AddressPolicy,
     timeout: Duration,
 ) -> Result<Vec<IpAddr>, EgressError> {
     let answers = tokio::time::timeout(timeout, resolver.resolve(host))
