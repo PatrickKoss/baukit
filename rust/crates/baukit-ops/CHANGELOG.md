@@ -4,6 +4,8 @@ All notable changes to `baukit-ops` are documented here.
 
 ## [Unreleased]
 
+## [0.10.27] - 2026-10-14
+
 ## [0.10.26] - 2026-10-13
 
 ## [0.10.25] - 2026-10-13

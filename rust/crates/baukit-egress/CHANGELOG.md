@@ -4,6 +4,8 @@ All notable changes to `baukit-egress` are documented here.
 
 ## [Unreleased]
 
+## [0.10.27] - 2026-10-14
+
 ### Added
 
 - `PrivateNetwork` constructs and parses CIDR networks inside private or shared
