@@ -4,6 +4,12 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+- Enable testcontainers cleanup on SIGINT, SIGTERM, and SIGQUIT.
+- Label container fixtures with their process, binary, worktree, and start time. Expose
+  `container_labels()` for containers started directly by tests.
+- Add `scripts/reap-test-containers.sh` to remove labelled orphan containers after SIGKILL
+  or other interrupted cleanup, with a dry run and hourly systemd timer example.
+
 ## [0.10.27] - 2026-10-14
 
 ## [0.10.26] - 2026-10-13

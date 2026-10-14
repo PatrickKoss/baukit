@@ -157,6 +157,7 @@ impl PostgresTestOptions {
             .with_env_var("POSTGRES_USER", "postgres")
             .with_env_var("POSTGRES_PASSWORD", "postgres")
             .with_env_var("POSTGRES_DB", "postgres")
+            .with_labels(crate::container_labels())
             .start()
             .await?;
         let host = container.get_host().await?;

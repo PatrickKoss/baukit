@@ -126,6 +126,7 @@ async fn real_keycloak_audience_expiry_protocol_introspection_and_logout()
             "--http-enabled=true",
             "--hostname-strict=false",
         ])
+        .with_labels(baukit_test::container_labels())
         .start()
         .await?;
     let base = format!(

@@ -34,6 +34,7 @@
 mod api_token;
 mod auth;
 mod connector;
+mod container_labels;
 mod credential_probe;
 mod erasure;
 #[cfg(test)]
@@ -69,6 +70,7 @@ pub use connector::{
     FAKE_SIGNATURE_HEADER, FakeConnector, FakeConnectorResponse, FakeConnectorScenario,
     UnknownScenario,
 };
+pub use container_labels::container_labels;
 pub use credential_probe::{
     CredentialProbeConformanceCases, CredentialProbeConformanceError, ScriptedCredentialProbeHttp,
     ScriptedCredentialProbeResponse, assert_credential_probe_conformance,

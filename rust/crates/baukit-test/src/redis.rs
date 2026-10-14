@@ -361,7 +361,11 @@ fn sentinel_has_new_master(reply: &[String], previous_address: &str) -> bool {
 ///
 /// Docker is contacted only when this function is called.
 pub async fn start_redis() -> Result<RedisTestContainer, RedisTestError> {
-    let container = redis_image().with_tag(REDIS_IMAGE_TAG).start().await?;
+    let container = redis_image()
+        .with_tag(REDIS_IMAGE_TAG)
+        .with_labels(crate::container_labels())
+        .start()
+        .await?;
     let host = container.get_host().await?;
     let port = container.get_host_port_ipv4(REDIS_PORT).await?;
     let connection_url = format!("redis://{host}:{port}/");
@@ -398,6 +402,7 @@ pub async fn start_redis_sentinel() -> Result<RedisSentinelTestContainer, RedisT
             "no",
         ])
         .with_network(&network)
+        .with_labels(crate::container_labels())
         .start()
         .await?;
     let master_ip = master.get_bridge_ip_address().await?;
@@ -420,6 +425,7 @@ pub async fn start_redis_sentinel() -> Result<RedisSentinelTestContainer, RedisT
             REDIS_PORT.to_string(),
         ])
         .with_network(&network)
+        .with_labels(crate::container_labels())
         .start()
         .await?;
 
@@ -439,6 +445,7 @@ pub async fn start_redis_sentinel() -> Result<RedisSentinelTestContainer, RedisT
         .with_copy_to(SENTINEL_CONFIG_PATH, sentinel_configuration.into_bytes())
         .with_cmd(["redis-sentinel", SENTINEL_CONFIG_PATH])
         .with_network(&network)
+        .with_labels(crate::container_labels())
         .start()
         .await?;
     let host = sentinel.get_host().await?;

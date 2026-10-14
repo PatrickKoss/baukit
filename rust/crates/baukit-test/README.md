@@ -14,12 +14,13 @@ Products must replace testcontainers-modules with `GenericImage` to use this
 version of baukit-test. The advanced fixture guards also use `GenericImage`.
 
 ```rust,no_run
-use testcontainers::{GenericImage, core::{IntoContainerPort, WaitFor}, runners::AsyncRunner};
+use testcontainers::{GenericImage, ImageExt, core::{IntoContainerPort, WaitFor}, runners::AsyncRunner};
 
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 let container = GenericImage::new("redis", "8.10.2-alpine")
     .with_exposed_port(6379_u16.tcp())
     .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
+    .with_labels(baukit_test::container_labels())
     .start()
     .await?;
 let port = container.get_host_port_ipv4(6379).await?;
@@ -168,6 +169,67 @@ let pool = sqlx::PgPool::connect(postgres.connection_url()).await?;
 host ports and hand back a container that lives until the value drops, so tests run in parallel
 without fighting over ports. The Sentinel fixture builds a real master/replica/sentinel topology on
 its own network, which is the only way to test failover behavior honestly.
+
+### Leaked containers
+
+Baukit enables the testcontainers watchdog to stop and remove registered containers on
+SIGINT, SIGTERM, and SIGQUIT. Normal fixture drops also remove containers. SIGKILL and OOM
+kills cannot be caught. The watchdog can fail if Docker is unavailable or a registered
+container was removed outside testcontainers.
+
+Every Baukit container fixture has these labels:
+
+- `dev.baukit.test=true` marks a test container.
+- `dev.baukit.test.pid` identifies the owning process.
+- `dev.baukit.test.binary` contains the executable's file name, when available.
+- `dev.baukit.test.manifest-dir` contains `CARGO_MANIFEST_DIR` from the test process's
+  environment, when set. It identifies the crate and worktree.
+- `dev.baukit.test.started-at` records Unix seconds.
+
+For a container started directly with testcontainers, apply `baukit_test::container_labels()`
+with `ImageExt::with_labels` before `.start()`.
+
+Run [`scripts/reap-test-containers.sh`](../../../scripts/reap-test-containers.sh) on the
+local Linux Docker host to remove running or stopped containers whose owning process is
+gone, or whose PID now belongs to a different binary. It touches only containers labelled
+`dev.baukit.test=true`. It preserves containers when the PID is missing or invalid, or a
+live process's executable cannot be checked. Preview the candidates first:
+
+```sh
+./scripts/reap-test-containers.sh --dry-run
+```
+
+For hourly cleanup, put these units in `/etc/systemd/system/`. Replace the script path
+with your checkout's absolute path. The service needs Docker access and permission to
+read the owning processes' `/proc/<pid>/exe` links. It must use the same host PID namespace
+as the tests and a local Docker daemon.
+
+`baukit-reap-test-containers.service`:
+
+```ini
+[Unit]
+Description=Remove orphaned Baukit test containers
+
+[Service]
+Type=oneshot
+ExecStart=/absolute/path/to/baukit/scripts/reap-test-containers.sh
+```
+
+`baukit-reap-test-containers.timer`:
+
+```ini
+[Unit]
+Description=Check for orphaned Baukit test containers hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+Enable the timer with `sudo systemctl enable --now baukit-reap-test-containers.timer`.
 
 ### PostgreSQL options
 
