@@ -181,6 +181,9 @@ Every Baukit container fixture has these labels:
 
 - `dev.baukit.test=true` marks a test container.
 - `dev.baukit.test.pid` identifies the owning process.
+- `dev.baukit.test.pid-ns` contains the target of `/proc/self/ns/pid`, when readable.
+- `dev.baukit.test.host` contains `/proc/sys/kernel/hostname`, or `/etc/hostname` as a
+  fallback, when readable.
 - `dev.baukit.test.binary` contains the executable's file name, when available.
 - `dev.baukit.test.manifest-dir` contains `CARGO_MANIFEST_DIR` from the test process's
   environment, when set. It identifies the crate and worktree.
@@ -192,8 +195,13 @@ with `ImageExt::with_labels` before `.start()`.
 Run [`scripts/reap-test-containers.sh`](../../../scripts/reap-test-containers.sh) on the
 local Linux Docker host to remove running or stopped containers whose owning process is
 gone, or whose PID now belongs to a different binary. It touches only containers labelled
-`dev.baukit.test=true`. It preserves containers when the PID is missing or invalid, or a
-live process's executable cannot be checked. Preview the candidates first:
+`dev.baukit.test=true` whose host and PID namespace labels both match the reaper's own.
+It skips containers with missing or mismatched host or namespace labels, including tests
+in other devcontainers or on another host sharing the daemon. It also skips cleanup and
+reports why on stderr when `DOCKER_HOST` is set to anything other than a Unix socket, or
+its own host name or PID namespace is unreadable. It preserves containers when the PID
+is missing or invalid, or a live process's executable cannot be checked. Preview the
+candidates first:
 
 ```sh
 ./scripts/reap-test-containers.sh --dry-run
@@ -202,7 +210,7 @@ live process's executable cannot be checked. Preview the candidates first:
 For hourly cleanup, put these units in `/etc/systemd/system/`. Replace the script path
 with your checkout's absolute path. The service needs Docker access and permission to
 read the owning processes' `/proc/<pid>/exe` links. It must use the same host PID namespace
-as the tests and a local Docker daemon.
+as the tests, have the same host name, and use a local Docker daemon.
 
 `baukit-reap-test-containers.service`:
 

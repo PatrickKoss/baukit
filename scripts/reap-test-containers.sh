@@ -9,9 +9,25 @@ elif [[ $# != 0 ]]; then
     exit 2
 fi
 
+if [[ ${DOCKER_HOST+x} && ${DOCKER_HOST:-} != unix://* ]]; then
+    printf 'Skipping cleanup: DOCKER_HOST is not a unix socket; local PIDs cannot identify remote containers.\n' >&2
+    exit 0
+fi
+
 if [[ ! -d /proc/self ]]; then
     printf 'This script requires the local Linux /proc filesystem.\n' >&2
     exit 1
+fi
+
+if ! pid_namespace=$(readlink /proc/self/ns/pid 2>/dev/null) || [[ -z $pid_namespace ]]; then
+    printf 'Skipping cleanup: the local PID namespace is unreadable.\n' >&2
+    exit 0
+fi
+if ! hostname=$(cat /proc/sys/kernel/hostname 2>/dev/null) || [[ -z $hostname ]]; then
+    if ! hostname=$(cat /etc/hostname 2>/dev/null) || [[ -z $hostname ]]; then
+        printf 'Skipping cleanup: the local host name is unreadable.\n' >&2
+        exit 0
+    fi
 fi
 
 is_orphan() {
@@ -40,7 +56,7 @@ container_age() {
 ids=$(docker ps --all --quiet --filter label=dev.baukit.test=true)
 [[ -n $ids ]] || exit 0
 now=$(date +%s)
-format='{{printf "%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s" (index .Config.Labels "dev.baukit.test") (index .Config.Labels "dev.baukit.test.pid") (index .Config.Labels "dev.baukit.test.binary") (index .Config.Labels "dev.baukit.test.manifest-dir") (index .Config.Labels "dev.baukit.test.started-at") .Config.Image}}'
+format='{{printf "%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s" (index .Config.Labels "dev.baukit.test") (index .Config.Labels "dev.baukit.test.pid") (index .Config.Labels "dev.baukit.test.binary") (index .Config.Labels "dev.baukit.test.manifest-dir") (index .Config.Labels "dev.baukit.test.started-at") .Config.Image (index .Config.Labels "dev.baukit.test.pid-ns") (index .Config.Labels "dev.baukit.test.host")}}'
 
 while IFS= read -r id; do
     if ! details=$(docker inspect --format "$format" "$id" 2>&1); then
@@ -49,8 +65,9 @@ while IFS= read -r id; do
         printf 'Could not inspect test container %s: %s\n' "$id" "$details" >&2
         exit 1
     fi
-    IFS=$'\x1f' read -r marker pid binary manifest started image <<< "$details"
+    IFS=$'\x1f' read -r marker pid binary manifest started image namespace host <<< "$details"
     [[ $marker == true ]] || continue
+    [[ $namespace == "$pid_namespace" && $host == "$hostname" ]] || continue
     is_orphan "$pid" "$binary" || continue
     printf '%s image=%s manifest-dir=%s binary=%s age=%s\n' \
         "$id" "$image" "$manifest" "$binary" "$(container_age "$started")"

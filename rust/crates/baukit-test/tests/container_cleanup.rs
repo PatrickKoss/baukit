@@ -36,6 +36,20 @@ async fn postgres_has_cleanup_labels() -> Result<(), Box<dyn Error>> {
         labels.get("dev.baukit.test.manifest-dir"),
         std::env::var("CARGO_MANIFEST_DIR").ok().as_ref()
     );
+    #[cfg(target_os = "linux")]
+    {
+        let namespace = std::fs::read_link("/proc/self/ns/pid")?;
+        assert_eq!(
+            labels["dev.baukit.test.pid-ns"],
+            namespace.to_str().ok_or("namespace text")?
+        );
+        let hostname = std::fs::read_to_string("/proc/sys/kernel/hostname")
+            .or_else(|_| std::fs::read_to_string("/etc/hostname"))?;
+        assert_eq!(
+            labels["dev.baukit.test.host"],
+            hostname.trim_end_matches('\n')
+        );
+    }
     let started: u64 = labels["dev.baukit.test.started-at"].parse()?;
     let after = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)?
