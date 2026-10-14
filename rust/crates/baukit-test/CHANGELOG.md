@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+## [0.10.28] - 2026-10-14
+
 - Enable testcontainers cleanup on SIGINT, SIGTERM, and SIGQUIT.
 - Label container fixtures with their process, PID namespace, host, binary, worktree,
   and start time. Expose `container_labels()` for containers started directly by tests.
