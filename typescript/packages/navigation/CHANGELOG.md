@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Allow six main navigation items plus an optional profile. Keep long labels
+  inside compact web targets with ellipsis at 320 CSS pixels.
+
 ## 0.10.28
 
 ### Patch Changes

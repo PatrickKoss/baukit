@@ -128,6 +128,8 @@ export const NAVIGATION_DIMENSIONS = {
   androidTarget: 48,
 } as const;
 
+export const NAVIGATION_MAX_MAIN_ITEMS = 6;
+
 export function getNavigationLayout(width: number): 'bar' | 'rail' {
   return getLayoutMode(width, { medium: 600, expanded: 1024 }) === 'expanded' ? 'rail' : 'bar';
 }
@@ -223,8 +225,10 @@ export function validateNavigation(
   items: readonly NavigationItem[],
   profile?: NavigationProfile,
 ): void {
-  if (items.length > 5)
-    throw new RangeError('Navigation supports at most five main items plus profile.');
+  if (items.length > NAVIGATION_MAX_MAIN_ITEMS)
+    throw new RangeError(
+      `Navigation supports at most ${String(NAVIGATION_MAX_MAIN_ITEMS)} main items plus profile.`,
+    );
   const ids = new Set<string>();
   for (const item of items.flatMap((parent) => [parent, ...(parent.children ?? [])])) {
     if (item.id.trim() === '' || ids.has(item.id))

@@ -308,48 +308,58 @@ it('keeps a long compact section menu between its picker and the bottom bar', as
   await expect.element(page.getByRole('menu')).not.toBeInTheDocument();
 });
 
-it('ellipsizes long labels inside all six compact targets at 320 pixels', async () => {
-  await page.viewport(320, 568);
-  styles = document.createElement('style');
-  styles.textContent = `${toCssVariables(exampleTokens)} ${stylesheet} body{margin:0}`;
-  document.head.append(styles);
-  host = document.createElement('div');
-  document.body.append(host);
-  root = createRoot(host);
-  await act(() => {
-    root?.render(
-      <AppNavigation
-        {...labels}
-        items={Array.from({ length: 5 }, (_, index) => ({
-          id: `section-${String(index)}`,
-          label: `Arbeitsbereich mit langem Namen ${String(index)}`,
-          href: `/section/${String(index)}`,
-          icon,
-        }))}
-        pathname="/section/0"
-        profile={{ label: 'Profil und persönliche Daten', initials: 'AB', href: '/profile' }}
-      />,
-    );
-    return Promise.resolve();
-  });
-  const targets = host.querySelectorAll<HTMLElement>('.bk-navigation-item');
-  expect(targets).toHaveLength(6);
-  for (const target of targets) {
-    const label = target.querySelector<HTMLElement>('.bk-navigation-label');
-    if (label === null) throw new Error('Target label did not render');
-    const box = target.getBoundingClientRect();
-    const labelBox = label.getBoundingClientRect();
-    expect(box.width).toBeGreaterThanOrEqual(44);
-    expect(box.height).toBeGreaterThanOrEqual(44);
-    expect(labelBox.left).toBeGreaterThanOrEqual(box.left);
-    expect(labelBox.right).toBeLessThanOrEqual(box.right);
-    expect(label.scrollWidth).toBeGreaterThan(label.clientWidth);
-    expect(getComputedStyle(label).textOverflow).toBe('ellipsis');
-    expect(getComputedStyle(label).overflow).toBe('hidden');
-    expect(target.getAttribute('aria-label')).toBe(label.textContent);
-  }
-  expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320);
-});
+it.each([1, 2])(
+  'ellipsizes long labels inside all seven compact targets at 320 pixels and font scale %s',
+  async (scale) => {
+    await page.viewport(320, 568);
+    styles = document.createElement('style');
+    styles.textContent = `${toCssVariables(exampleTokens)} ${stylesheet} html{font-size:${String(16 * scale)}px} body{margin:0}`;
+    document.head.append(styles);
+    host = document.createElement('div');
+    document.body.append(host);
+    root = createRoot(host);
+    await act(() => {
+      root?.render(
+        <AppNavigation
+          {...labels}
+          items={Array.from({ length: 6 }, (_, index) => ({
+            id: `section-${String(index)}`,
+            label: `Arbeitsbereich mit langem Namen ${String(index)}`,
+            href: `/section/${String(index)}`,
+            icon,
+          }))}
+          pathname="/section/0"
+          profile={{ label: 'Profil und persönliche Daten', initials: 'AB', href: '/profile' }}
+        />,
+      );
+      return Promise.resolve();
+    });
+    const targets = host.querySelectorAll<HTMLElement>('.bk-navigation-item');
+    expect(targets).toHaveLength(7);
+    let previousRight = 0;
+    for (const target of targets) {
+      const label = target.querySelector<HTMLElement>('.bk-navigation-label');
+      if (label === null) throw new Error('Target label did not render');
+      const box = target.getBoundingClientRect();
+      const labelBox = label.getBoundingClientRect();
+      expect(box.width).toBeGreaterThanOrEqual(44);
+      expect(box.height).toBeGreaterThanOrEqual(44);
+      expect(box.left).toBeGreaterThanOrEqual(previousRight);
+      expect(box.right).toBeLessThanOrEqual(320);
+      previousRight = box.right;
+      expect(labelBox.left).toBeGreaterThanOrEqual(box.left);
+      expect(labelBox.right).toBeLessThanOrEqual(box.right);
+      expect(labelBox.top).toBeGreaterThanOrEqual(box.top);
+      expect(labelBox.bottom).toBeLessThanOrEqual(box.bottom);
+      expect(label.scrollWidth).toBeGreaterThan(label.clientWidth);
+      expect(getComputedStyle(label).textOverflow).toBe('ellipsis');
+      expect(getComputedStyle(label).overflow).toBe('hidden');
+      expect(getComputedStyle(label).whiteSpace).toBe('nowrap');
+      expect(target.getAttribute('aria-label')).toBe(label.textContent);
+    }
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320);
+  },
+);
 
 it('keeps custom profile avatars decorative and preserves subtitles and menu focus', async () => {
   const errors: unknown[][] = [];

@@ -141,17 +141,33 @@ describe('validation', () => {
       });
     }).toThrow(/empty/);
   });
-  it('rejects more than five main items', () => {
+  it.each([undefined, { label: 'Account', initials: 'AB', href: '/profile' }])(
+    'accepts six main items with profile %j',
+    (profile) => {
+      expect(() => {
+        validateNavigation(
+          Array.from({ length: 6 }, (_, i) => ({
+            id: String(i),
+            href: `/${String(i)}`,
+            label: 'Page',
+            icon: 'page',
+          })),
+          profile,
+        );
+      }).not.toThrow();
+    },
+  );
+  it('rejects seven main items', () => {
     expect(() => {
       validateNavigation(
-        Array.from({ length: 6 }, (_, i) => ({
+        Array.from({ length: 7 }, (_, i) => ({
           id: String(i),
           href: `/${String(i)}`,
           label: 'Page',
           icon: 'page',
         })),
       );
-    }).toThrow(/five/);
+    }).toThrow(new RangeError('Navigation supports at most 6 main items plus profile.'));
   });
 });
 it('uses the token layout helper at the rail boundary', () => {

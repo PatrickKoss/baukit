@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { createRoot, type Root } from 'react-dom/client';
 import { act } from 'react';
-import { Text, View } from 'react-native';
+import { Platform, Text, View } from 'react-native';
 import { AppNavigation, SectionPicker, type NavigationTheme } from './native.js';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -30,8 +30,8 @@ afterEach(async () => {
   });
   host?.remove();
 });
-async function mount(children: React.ReactNode) {
-  await page.viewport(320, 568);
+async function mount(children: React.ReactNode, width = 320) {
+  await page.viewport(width, 568);
   host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);
@@ -70,6 +70,68 @@ function expectVisibleMenu() {
     expect(hit !== null && entry.contains(hit)).toBe(true);
   }
 }
+it.each(
+  [320, 360].flatMap((width) =>
+    (['ios', 'android'] as const).map((platform) => ({ width, platform })),
+  ),
+)(
+  'keeps six items and profile apart at $width px with $platform target sizing',
+  async ({ width, platform }) => {
+    const originalPlatform = Platform.OS;
+    Platform.OS = platform;
+    try {
+      await mount(
+        <View style={{ width, height: 568, overflow: 'hidden', justifyContent: 'flex-end' }}>
+          <AppNavigation
+            items={Array.from({ length: 6 }, (_, index) => ({
+              id: `page-${String(index)}`,
+              label: `Page ${String(index)}`,
+              href: `/page/${String(index)}`,
+              icon,
+            }))}
+            label="Primary"
+            collapseLabel="Collapse"
+            expandLabel="Expand"
+            closeLabel="Close"
+            width={width}
+            pathname="/page/0"
+            theme={theme}
+            onNavigate={vi.fn()}
+            profile={{ label: 'Account', initials: 'AB', href: '/profile' }}
+          />
+        </View>,
+        width,
+      );
+      const navigation = page.getByTestId('primary-navigation').element();
+      const scroll = page.getByTestId('navigation-items').element();
+      const targets = navigation.querySelectorAll<HTMLElement>('[role="link"]');
+      expect(targets).toHaveLength(7);
+      const minimumTarget = platform === 'android' ? 48 : 44;
+      let previousRight = scroll.getBoundingClientRect().left;
+      for (const target of targets) {
+        const box = target.getBoundingClientRect();
+        expect(box.width).toBeGreaterThanOrEqual(minimumTarget);
+        expect(box.height).toBeGreaterThanOrEqual(minimumTarget);
+        expect(box.left).toBeGreaterThanOrEqual(previousRight);
+        previousRight = box.right;
+      }
+      expect(navigation.getBoundingClientRect().width).toBe(width);
+      if (platform === 'android' && width === 320)
+        expect(scroll.scrollWidth).toBeGreaterThan(scroll.clientWidth);
+      scroll.scrollLeft = scroll.scrollWidth;
+      const profile = page.getByRole('link', { name: 'Account' }).element().getBoundingClientRect();
+      const scrollBox = scroll.getBoundingClientRect();
+      expect(profile.left).toBeGreaterThanOrEqual(scrollBox.left);
+      expect(profile.right).toBeLessThanOrEqual(scrollBox.right);
+      for (const target of Array.from(targets).slice(0, 6))
+        expect(target.getBoundingClientRect().right).toBeLessThanOrEqual(profile.left);
+      expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+    } finally {
+      Platform.OS = originalPlatform;
+    }
+  },
+);
+
 it('presents an unclipped compact profile menu at 320 px', async () => {
   const navigate = vi.fn();
   await mount(

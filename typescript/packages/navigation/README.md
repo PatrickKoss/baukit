@@ -55,8 +55,10 @@ search parameters or hashes. A missing match selects nothing. `nextSectionHref`
 returns the first child for a missing match and wraps at the last child.
 
 Below 1024 pixels the component renders a bottom bar with icons above labels.
-It supports five main items plus an optional profile. Keep labels short enough
-for the compact bar. Longer labels ellipsize inside their buttons; accessible labels retain the full text. At 1024 pixels it renders a 280-pixel rail. Collapse reduces
+It supports six main items plus an optional profile. At 320 CSS pixels, the web
+bar has 310 pixels after 5 pixels of padding on each side. Seven 44-pixel targets
+need 308 pixels. Longer labels ellipsize inside their buttons; accessible labels
+retain the full text. At 1024 pixels it renders a 280-pixel rail. Collapse reduces
 it to 76 pixels. The active section starts open. Clicking a collapsed disclosure
 expands the rail and opens that section.
 
