@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## [0.10.29] - 2026-10-15
+
+- Document and test explicit cleanup outcomes for erased profiles so successful erasure does not imply a cleanup failure.
+
 ## [0.10.28] - 2026-10-14
 
 ## [0.10.27] - 2026-10-14

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## [0.10.29] - 2026-10-15
+
+- Generated mobile apps pin Expo 57.0.30, expo-auth-session 57.0.16, expo-constants 57.0.22,
+  expo-linking 57.0.13, expo-router 57.0.28 and @expo/metro-runtime 57.0.17.
+- Document and test explicit cleanup outcomes for erased profiles so successful erasure does not imply a cleanup failure.
+
 ## [0.10.28] - 2026-10-14
 
 ## [0.10.27] - 2026-10-14

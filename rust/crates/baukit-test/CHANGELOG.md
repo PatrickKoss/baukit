@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+## [0.10.29] - 2026-10-15
+
 ## [0.10.28] - 2026-10-14
 
 - Enable testcontainers cleanup on SIGINT, SIGTERM, and SIGQUIT.

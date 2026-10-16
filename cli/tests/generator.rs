@@ -4675,7 +4675,7 @@ fn mobile_pwa_host_generates_expo_web_export_configuration() -> anyhow::Result<(
             serde_json::from_slice(&fs::read(root.join("mobile/package.json"))?)?;
         let mobile_hosts_pwa = pwa && !web;
         for (dependency, version) in [
-            ("@expo/metro-runtime", "57.0.16"),
+            ("@expo/metro-runtime", "57.0.17"),
             ("react-dom", "19.2.3"),
             ("react-native-web", "0.21.2"),
         ] {

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.10.29
+
+- Add `cleanup` to `profile-erased` lifecycle states so consumers can distinguish
+  pending cleanup, successful erasure, and cleanup failures, including when the
+  erased subject is selected again.
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.29 train.
+
 ## 0.10.28
 
 ### Patch Changes

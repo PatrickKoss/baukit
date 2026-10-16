@@ -2,8 +2,17 @@
 
 ## [Unreleased]
 
+## 0.10.29
+
 - Allow six main navigation items plus an optional profile. Keep long labels
   inside compact web targets with ellipsis at 320 CSS pixels.
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.29 train.
+- Updated dependencies
+  - @baukit/a11y-core@0.10.29
+  - @baukit/ui-tokens@0.10.29
 
 ## 0.10.28
 
