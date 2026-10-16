@@ -185,7 +185,7 @@ describe('authenticated local data', () => {
     await rerender({ profileId: undefined, sessionExpiredReason: 'profile_erased' });
 
     await waitFor(() => {
-      expect(result.current.state).toMatchObject({ status: 'blocked', reason: 'profile-erased' });
+      expect(result.current.state).toMatchObject({ status: 'blocked', reason: 'profile-erased', cleanup: 'complete' });
     });
     expect(mockStoreClose).toHaveBeenCalledTimes(1);
     expect(mockDeleteDatabase).toHaveBeenCalledTimes(1);
@@ -202,7 +202,7 @@ describe('authenticated local data', () => {
     await rerender({ profileId: undefined, sessionExpiredReason: 'profile_erased' });
 
     await waitFor(() => {
-      expect(result.current.state).toEqual({ status: 'blocked', reason: 'profile-erased', error: failure });
+      expect(result.current.state).toEqual({ status: 'blocked', reason: 'profile-erased', cleanup: 'failed', error: failure });
     });
     const registry = [...mockSecureStore.entries()].find(([key]) => key.endsWith('.local-data-registry.v1'));
     expect(registry?.[1]).toContain('profile-delete-failed');
@@ -214,12 +214,12 @@ describe('authenticated local data', () => {
     await rerender({ profileId: 'profile-repeated-expiry', sessionExpiredReason: 'profile_erased' });
     await waitFor(() => {
       expect(mockDeleteDatabase).toHaveBeenCalledTimes(1);
-      expect(result.current.state).toMatchObject({ status: 'blocked', reason: 'profile-erased' });
+      expect(result.current.state).toMatchObject({ status: 'blocked', reason: 'profile-erased', cleanup: 'complete' });
     });
     await rerender({ profileId: undefined, sessionExpiredReason: 'profile_erased' });
 
     expect(mockDeleteDatabase).toHaveBeenCalledTimes(1);
-    expect(result.current.state).toMatchObject({ status: 'blocked', reason: 'profile-erased' });
+    expect(result.current.state).toMatchObject({ status: 'blocked', reason: 'profile-erased', cleanup: 'complete' });
   });
 
   it('does not reopen the erased profile during cleanup', async () => {
@@ -228,13 +228,14 @@ describe('authenticated local data', () => {
     mockDeleteDatabase.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
     await rerender({ profileId: undefined, sessionExpiredReason: 'profile_erased' });
     await waitFor(() => { expect(mockDeleteDatabase).toHaveBeenCalledTimes(1); });
+    expect(result.current.state).toMatchObject({ status: 'blocked', reason: 'profile-erased', cleanup: 'pending' });
     mockOpenDatabase.mockClear();
 
     await rerender({ profileId: 'profile-concurrent-erasure', sessionExpiredReason: undefined });
     await act(() => { finish?.(); });
 
     await waitFor(() => {
-      expect(result.current.state).toMatchObject({ status: 'blocked', reason: 'profile-erased' });
+      expect(result.current.state).toMatchObject({ status: 'blocked', reason: 'profile-erased', cleanup: 'complete' });
     });
     expect(mockOpenDatabase).not.toHaveBeenCalled();
     expect(mockDeleteDatabase).toHaveBeenCalledTimes(1);

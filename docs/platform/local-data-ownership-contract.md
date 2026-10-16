@@ -73,9 +73,14 @@ Auth integration must pass the session-expired reason to local-data cleanup.
 For `profile_erased`, call `handleProfileErased()` to close and erase the last
 selected partition and remove its registry entry. The lifecycle keeps that
 partition's context after `clear()` or `handleSessionExpired()`, so token clearing
-can close storage before the erasure reason arrives. The transition ends blocked
-with reason `profile-erased`. A cleanup failure stays in that blocked state and
-preserves the registry entry. Other expiry reasons only close and block.
+can close storage before the erasure reason arrives. The state has reason
+`profile-erased` and `cleanup: 'pending'` while the transition is queued or running.
+It becomes `cleanup: 'complete'` after erasure or when no partition needs erasing.
+If closing or erasing fails, or no erase hook is configured, it becomes
+`cleanup: 'failed'` and keeps the cleanup error and registry entry. Otherwise,
+`error` holds the generic sign-in reminder. Show cleanup-failure alerts only for
+`cleanup === 'failed'`. Selecting the erased subject again preserves the cleanup
+outcome and error. Other expiry reasons only close and block.
 
 A device that never receives `profile_erased` retains the old partition on disk.
 A new profile ID prevents that partition's data and outbox from being adopted,
@@ -171,9 +176,10 @@ Other production exports used by this contract include
 `isPersistenceIdentityMismatchError`. The lifecycle state statuses are
 `signed-out`, `initializing`, `ready`, and `blocked`. Blocked reasons are
 `identity-mismatch`, `initialization-failed`, `session-expired`, and
-`profile-erased`. The lifecycle hides an old handle immediately, waits for close
-and user-memory reset, and publishes the new partition only after the injected
-open/migrate/hydrate hook finishes. Product auth integration calls
+`profile-erased`. Only `profile-erased` states have a `cleanup` field with values
+`pending`, `complete`, or `failed`. The lifecycle hides an old handle immediately,
+waits for close and user-memory reset, and publishes the new partition only after
+the injected open/migrate/hydrate hook finishes. Product auth integration calls
 `handleProfileErased()` for `profile_erased`. Other terminal expiry reasons call
 `handleSessionExpired()` directly. That method closes and blocks; it does not
 erase retained data.

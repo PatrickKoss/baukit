@@ -232,7 +232,11 @@ describe('scoped persistence lifecycle', () => {
 
         const erasure = lifecycle.handleProfileErased();
         expect(lifecycle.current()).toBeUndefined();
-        expect(lifecycle.state).toMatchObject({ status: 'blocked', reason: 'profile-erased' });
+        expect(lifecycle.state).toMatchObject({
+          status: 'blocked',
+          reason: 'profile-erased',
+          cleanup: 'pending',
+        });
         await erasure;
 
         expect(close).toHaveBeenCalledOnce();
@@ -244,10 +248,25 @@ describe('scoped persistence lifecycle', () => {
           erase.mock.invocationCallOrder[0] ?? 0,
         );
         await expect(registry.read()).resolves.toBe('{"version":1,"namespaces":[]}');
-        expect(lifecycle.state).toMatchObject({ status: 'blocked', reason: 'profile-erased' });
+        expect(lifecycle.state).toMatchObject({
+          status: 'blocked',
+          reason: 'profile-erased',
+          cleanup: 'complete',
+        });
+        const completed = lifecycle.state;
+        if (completed.status !== 'blocked') throw new Error('Expected a blocked lifecycle.');
+        expect(completed.error.message).toBe(
+          'The server profile was erased; sign in again to continue.',
+        );
+
+        await expect(lifecycle.selectSubject('account-e')).resolves.toBeUndefined();
+        expect(lifecycle.state).toEqual(completed);
+        if (lifecycle.state.status !== 'blocked') throw new Error('Expected a blocked lifecycle.');
+        expect(lifecycle.state.error).toBe(completed.error);
 
         await lifecycle.handleProfileErased();
         expect(erase).toHaveBeenCalledOnce();
+        expect(lifecycle.state).toMatchObject({ cleanup: 'complete' });
       },
     );
 
@@ -256,7 +275,11 @@ describe('scoped persistence lifecycle', () => {
 
       await lifecycle.handleProfileErased();
 
-      expect(lifecycle.state).toMatchObject({ status: 'blocked', reason: 'profile-erased' });
+      expect(lifecycle.state).toMatchObject({
+        status: 'blocked',
+        reason: 'profile-erased',
+        cleanup: 'complete',
+      });
       expect(lifecycle.current()).toBeUndefined();
       expect(close).not.toHaveBeenCalled();
       expect(erase).not.toHaveBeenCalled();
@@ -277,6 +300,12 @@ describe('scoped persistence lifecycle', () => {
       const message = 'Active partition erasure requires a configured persistence erase hook.';
 
       await expect(lifecycle.handleProfileErased()).rejects.toThrow(message);
+      expect(lifecycle.state).toMatchObject({
+        status: 'blocked',
+        reason: 'profile-erased',
+        cleanup: 'failed',
+        error: new Error(message),
+      });
       await lifecycle.selectSubject('account-e');
       await expect(lifecycle.eraseActivePartition()).rejects.toThrow(message);
       await expect(lifecycle.handleProfileErased()).rejects.toThrow(message);
@@ -285,6 +314,7 @@ describe('scoped persistence lifecycle', () => {
       expect(lifecycle.state).toMatchObject({
         status: 'blocked',
         reason: 'profile-erased',
+        cleanup: 'failed',
         error: new Error(message),
       });
     });
@@ -297,14 +327,60 @@ describe('scoped persistence lifecycle', () => {
 
       await expect(lifecycle.handleProfileErased()).rejects.toBe(error);
 
-      expect(lifecycle.state).toEqual({ status: 'blocked', reason: 'profile-erased', error });
+      expect(lifecycle.state).toEqual({
+        status: 'blocked',
+        reason: 'profile-erased',
+        cleanup: 'failed',
+        error,
+      });
       expect(lifecycle.current()).toBeUndefined();
       await expect(registry.read()).resolves.toContain('account-e');
       await expect(lifecycle.selectSubject('account-e')).resolves.toBeUndefined();
-      expect(lifecycle.state).toEqual({ status: 'blocked', reason: 'profile-erased', error });
+      expect(lifecycle.state).toEqual({
+        status: 'blocked',
+        reason: 'profile-erased',
+        cleanup: 'failed',
+        error,
+      });
+      if (lifecycle.state.status !== 'blocked') throw new Error('Expected a blocked lifecycle.');
+      expect(lifecycle.state.error).toBe(error);
 
       await lifecycle.handleProfileErased();
       expect(erase).toHaveBeenCalledTimes(2);
+      await expect(registry.read()).resolves.not.toContain('account-e');
+      const completed = lifecycle.state;
+      expect(completed).toMatchObject({
+        status: 'blocked',
+        reason: 'profile-erased',
+        cleanup: 'complete',
+        error: new Error('The server profile was erased; sign in again to continue.'),
+      });
+      await expect(lifecycle.selectSubject('account-e')).resolves.toBeUndefined();
+      expect(lifecycle.state).toEqual(completed);
+    });
+
+    it('blocks with a close failure and retains the partition for another cleanup attempt', async () => {
+      const { lifecycle, registry, close, erase } = createLifecycle();
+      await lifecycle.selectSubject('account-e');
+      const error = new Error('close failed');
+      close.mockRejectedValueOnce(error);
+
+      await expect(lifecycle.handleProfileErased()).rejects.toBe(error);
+
+      expect(lifecycle.state).toEqual({
+        status: 'blocked',
+        reason: 'profile-erased',
+        cleanup: 'failed',
+        error,
+      });
+      expect(lifecycle.current()).toBeUndefined();
+      expect(erase).not.toHaveBeenCalled();
+      await expect(registry.read()).resolves.toContain('account-e');
+      await expect(lifecycle.selectSubject('account-e')).resolves.toBeUndefined();
+      expect(lifecycle.state).toMatchObject({ cleanup: 'failed', error });
+
+      await lifecycle.handleProfileErased();
+      expect(lifecycle.state).toMatchObject({ cleanup: 'complete' });
       await expect(registry.read()).resolves.not.toContain('account-e');
     });
 
@@ -323,6 +399,11 @@ describe('scoped persistence lifecycle', () => {
         await vi.waitFor(() => {
           expect(erase).toHaveBeenCalledOnce();
         });
+        expect(lifecycle.state).toMatchObject({
+          status: 'blocked',
+          reason: 'profile-erased',
+          cleanup: 'pending',
+        });
 
         const selection = lifecycle.selectSubject(subject);
         expect(lifecycle.current()).toBeUndefined();
@@ -333,7 +414,11 @@ describe('scoped persistence lifecycle', () => {
         if (subject === 'account-e') {
           await expect(selection).resolves.toBeUndefined();
           expect(open).toHaveBeenCalledOnce();
-          expect(lifecycle.state).toMatchObject({ status: 'blocked', reason: 'profile-erased' });
+          expect(lifecycle.state).toMatchObject({
+            status: 'blocked',
+            reason: 'profile-erased',
+            cleanup: 'complete',
+          });
         } else {
           const next = await selection;
           expect(next?.subject).toBe('account-f');
@@ -355,8 +440,52 @@ describe('scoped persistence lifecycle', () => {
 
       await expect(selection).resolves.toBeUndefined();
       expect(open).toHaveBeenCalledOnce();
-      expect(lifecycle.state).toMatchObject({ status: 'blocked', reason: 'profile-erased' });
+      expect(lifecycle.state).toMatchObject({
+        status: 'blocked',
+        reason: 'profile-erased',
+        cleanup: 'complete',
+      });
     });
+
+    it.each(['account-e', 'account-f'])(
+      'preserves a concurrent selection of %s when erasure fails',
+      async (subject) => {
+        const { lifecycle, open, erase, registry } = createLifecycle();
+        await lifecycle.selectSubject('account-e');
+        const error = new Error('disk unavailable');
+        let failErase: ((cause: Error) => void) | undefined;
+        erase.mockReturnValueOnce(
+          new Promise<void>((_resolve, reject) => {
+            failErase = reject;
+          }),
+        );
+        const erasure = expect(lifecycle.handleProfileErased()).rejects.toBe(error);
+        await vi.waitFor(() => {
+          expect(erase).toHaveBeenCalledOnce();
+        });
+
+        const selection = lifecycle.selectSubject(subject);
+        failErase?.(error);
+        await erasure;
+
+        if (subject === 'account-e') {
+          await expect(selection).resolves.toBeUndefined();
+          expect(open).toHaveBeenCalledOnce();
+          expect(lifecycle.state).toEqual({
+            status: 'blocked',
+            reason: 'profile-erased',
+            cleanup: 'failed',
+            error,
+          });
+        } else {
+          const next = await selection;
+          expect(next?.subject).toBe('account-f');
+          expect(open).toHaveBeenCalledTimes(2);
+          expect(lifecycle.state).toMatchObject({ status: 'ready', partition: next });
+        }
+        await expect(registry.read()).resolves.toContain('account-e');
+      },
+    );
 
     it('opens a new profile after erasure and retains that profile for later cleanup', async () => {
       const { lifecycle, erase } = createLifecycle();
@@ -408,7 +537,11 @@ describe('scoped persistence lifecycle', () => {
       await erasure;
       expect(close).toHaveBeenCalledOnce();
       expect(erase.mock.calls[0]?.[0].subject).toBe('account-e');
-      expect(lifecycle.state).toMatchObject({ status: 'blocked', reason: 'profile-erased' });
+      expect(lifecycle.state).toMatchObject({
+        status: 'blocked',
+        reason: 'profile-erased',
+        cleanup: 'complete',
+      });
     });
   });
 

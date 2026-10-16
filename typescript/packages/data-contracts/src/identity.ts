@@ -420,6 +420,8 @@ export interface ScopedPersistencePartition<
   readonly persistence: TPersistence;
 }
 
+export type ProfileErasureCleanup = 'pending' | 'complete' | 'failed';
+
 export type ScopedPersistenceLifecycleState<TPersistence extends ClosableScopedPersistence> =
   | { readonly status: 'signed-out' }
   | { readonly status: 'initializing'; readonly subject: string }
@@ -429,8 +431,13 @@ export type ScopedPersistenceLifecycleState<TPersistence extends ClosableScopedP
     }
   | {
       readonly status: 'blocked';
-      readonly reason:
-        'identity-mismatch' | 'initialization-failed' | 'session-expired' | 'profile-erased';
+      readonly reason: 'identity-mismatch' | 'initialization-failed' | 'session-expired';
+      readonly error: Error;
+    }
+  | {
+      readonly status: 'blocked';
+      readonly reason: 'profile-erased';
+      readonly cleanup: ProfileErasureCleanup;
       readonly error: Error;
     };
 
@@ -452,7 +459,8 @@ export interface ScopedPersistenceLifecycleOptions<
 export class ScopedPersistenceLifecycle<TPersistence extends ClosableScopedPersistence> {
   private activePartition: ScopedPersistencePartition<TPersistence> | undefined;
   private lastSelectedPartition: OpenScopedPersistenceContext | undefined;
-  private erasedProfile: { readonly subject: string; error: Error } | undefined;
+  private erasedProfile:
+    { readonly subject: string; cleanup: ProfileErasureCleanup; error: Error } | undefined;
   private transitionTail: Promise<void> = Promise.resolve();
   private revision = 0;
   private lifecycleState: ScopedPersistenceLifecycleState<TPersistence> = {
@@ -517,27 +525,31 @@ export class ScopedPersistenceLifecycle<TPersistence extends ClosableScopedPersi
   public handleProfileErased(): Promise<void> {
     const erase = this.options.erase;
     const revision = ++this.revision;
+    let cleanup: ProfileErasureCleanup = 'pending';
     let error = new Error('The server profile was erased; sign in again to continue.');
-    this.lifecycleState = { status: 'blocked', reason: 'profile-erased', error };
+    this.lifecycleState = { status: 'blocked', reason: 'profile-erased', cleanup, error };
     return this.enqueue(async () => {
       const partition = this.lastSelectedPartition;
-      if (partition !== undefined) this.erasedProfile = { subject: partition.subject, error };
+      if (partition !== undefined)
+        this.erasedProfile = { subject: partition.subject, cleanup, error };
       try {
         if (partition !== undefined) await this.closeAndReset();
         if (erase === undefined) {
           throw new Error('Active partition erasure requires a configured persistence erase hook.');
         }
-        if (partition === undefined) return;
-        await this.erasePartition(partition, erase);
+        if (partition !== undefined) await this.erasePartition(partition, erase);
+        cleanup = 'complete';
       } catch (cause) {
+        cleanup = 'failed';
         error = cause instanceof Error ? cause : new Error('Local profile erasure failed.');
-        if (this.erasedProfile !== undefined && this.erasedProfile.subject === partition?.subject) {
-          this.erasedProfile.error = error;
-        }
         throw cause;
       } finally {
+        if (this.erasedProfile !== undefined && this.erasedProfile.subject === partition?.subject) {
+          this.erasedProfile.cleanup = cleanup;
+          this.erasedProfile.error = error;
+        }
         if (revision === this.revision) {
-          this.lifecycleState = { status: 'blocked', reason: 'profile-erased', error };
+          this.lifecycleState = { status: 'blocked', reason: 'profile-erased', cleanup, error };
         }
       }
     });
@@ -588,6 +600,7 @@ export class ScopedPersistenceLifecycle<TPersistence extends ClosableScopedPersi
         this.lifecycleState = {
           status: 'blocked',
           reason: 'profile-erased',
+          cleanup: this.erasedProfile.cleanup,
           error: this.erasedProfile.error,
         };
         return undefined;

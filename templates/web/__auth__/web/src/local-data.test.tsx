@@ -112,7 +112,7 @@ describe('useAuthenticatedLocalData', () => {
     rerender({ profileId: undefined, sessionExpiredReason: 'profile_erased' });
 
     await waitFor(() => {
-      expect(result.current.state).toMatchObject({ status: 'blocked', reason: 'profile-erased' });
+      expect(result.current.state).toMatchObject({ status: 'blocked', reason: 'profile-erased', cleanup: 'complete' });
     });
     expect(queryClient.getQueryData(['private'])).toBeUndefined();
     const registry = Object.keys(localStorage).find((key) => key.endsWith(':local-data-registry:v1'));
@@ -131,7 +131,7 @@ describe('useAuthenticatedLocalData', () => {
 
     rerender({ profileId: 'erased-profile', sessionExpiredReason: 'profile_erased' });
     await waitFor(() => {
-      expect(result.current.state).toMatchObject({ status: 'blocked', reason: 'profile-erased' });
+      expect(result.current.state).toMatchObject({ status: 'blocked', reason: 'profile-erased', cleanup: 'complete' });
     });
     clear.mockClear();
     await act(async () => {
