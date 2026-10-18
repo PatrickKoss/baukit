@@ -57,6 +57,10 @@ impl KeycloakIntrospectionConfig {
 }
 
 /// RFC 7662 introspection with bounded successful-result caching and no stale fallback.
+///
+/// API-token principals return [`PolicyDenial::Inactive`] without sending their
+/// bearer tokens to Keycloak. Products accepting both credential kinds must
+/// route verified API-token principals through their own policy branch.
 pub struct KeycloakIntrospectionPolicy {
     config: KeycloakIntrospectionConfig,
     endpoint: String,
@@ -173,6 +177,9 @@ impl KeycloakIntrospectionPolicy {
         principal: &VerifiedPrincipal,
         token: &str,
     ) -> Result<Principal, PolicyDenial> {
+        if principal.api_token().is_some() {
+            return Err(PolicyDenial::Inactive);
+        }
         let hash = digest::digest(&digest::SHA256, token.as_bytes());
         let mut key = [0; 32];
         key.copy_from_slice(hash.as_ref());

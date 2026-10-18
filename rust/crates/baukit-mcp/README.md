@@ -28,7 +28,7 @@ same HTTP scope challenges as tools. `service_schema(&services)` exports all
 registered definitions for drift checks.
 
 Pass a baukit-ratelimit store and an `AuthenticationPolicy` to `router`.
-`JwtOnlyPolicy` preserves verified JWT identity and grants.
+`JwtOnlyPolicy` preserves the verified identity and its scopes or API-token grants.
 `KeycloakIntrospectionPolicy` checks live token state with a timeout and a
 bounded token-hash cache. Disable caching for per-request revocation checks.
 Product policies can add account lookups, erasure fences and quotas, then
@@ -38,6 +38,32 @@ Use Redis across replicas and the bounded memory store in local development. `to
 registered schemas and scopes for a product's committed drift artifact.
 
 See [remote MCP](../../../docs/remote-mcp.md) for template setup and client configuration.
+
+To accept personal access tokens, pass
+`Arc::new(baukit_auth::ApiTokenVerifier::new(tokens, oidc))` as the router's
+verifier, where `tokens` is the product's `ApiTokenService` and `oidc` is its
+MCP-bound `Arc<dyn IdentityVerifier>`. Clients send the PAT in
+`Authorization: Bearer <token>`. Issue it with grants matching the registered
+tool, resource and prompt scopes. Converting the verified identity to an MCP
+`Principal` uses those grants as effective scopes. `with_scopes` can only
+intersect them and cannot restore a scope removed by an earlier call.
+`baukit_auth::Principal::scopes()` remains OIDC-only.
+
+The router calls the verifier before the policy on every request.
+`ApiTokenVerifier` reads the current token store and rejects revoked or expired
+tokens, including with `JwtOnlyPolicy`. Neither the router nor that policy
+caches authenticated principals. A custom verifier must perform the same live
+checks; reusing a cached principal does not revalidate its token. Requests
+already authorized when revocation occurs may finish.
+
+`KeycloakIntrospectionPolicy` rejects API-token principals with
+`PolicyDenial::Inactive` without sending their secrets to Keycloak. A product
+accepting both kinds must branch on `principal.api_token().is_some()` in its
+policy, convert verified PATs with `Principal::from(principal.clone())`, and
+introspect only OIDC tokens. Run account checks and erasure fences for both
+branches on every request. `ApiTokenVerifier` uses the owner UUID as subject;
+resolve a different product subject in a trusted verifier with
+`baukit_auth::Principal::from_api_token` when needed.
 
 Products set server identity and instructions on `McpServices`:
 

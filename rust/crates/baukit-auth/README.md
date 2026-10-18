@@ -303,9 +303,22 @@ A token can carry grants: opaque permission strings the product defines and chec
 `NewApiToken::with_grants` sets them at issue time, and `Principal::grants` returns them after
 verification. It returns `None` for OIDC and internal principals, so "no grants" and "not an API
 token" stay distinct. Each grant is an RFC 6749 scope token of at most 128 bytes, and a token carries
-at most 64. Anything else fails with `ApiTokenError::InvalidGrants` before the store is called. Baukit
-never interprets a grant, so the names, and any mapping from OIDC scopes to grants, stay in the
-product.
+at most 64. Anything else fails with `ApiTokenError::InvalidGrants` before the store is called.
+The product defines grant names. `baukit-auth` does not map them to OIDC scopes;
+`Principal::scopes()` remains empty for API-token principals.
+
+For a remote MCP endpoint, pass an `Arc<ApiTokenVerifier>` wrapping the product's
+MCP-bound OIDC verifier to `baukit_mcp::router`. MCP's `Principal::from` uses
+`Principal::grants()` as effective scopes for API tokens, so issue grants matching
+the registered MCP scopes. MCP policies can narrow those scopes with
+`with_scopes` but cannot add scopes. The router verifies each request, and
+`ApiTokenVerifier` checks revocation and expiry against the current store each
+time. A custom verifier must also check the current token state before calling
+`Principal::from_api_token`; that constructor does not verify or revalidate a token.
+Keycloak introspection rejects PATs, so a policy accepting both kinds must branch
+before introspection and apply account checks to both. See the
+[MCP authentication guide](../../../docs/remote-mcp.md#personal-access-tokens)
+for wiring and subject mapping.
 
 ```rust
 use baukit_auth::{ApiTokenService, NewApiToken, Principal};
