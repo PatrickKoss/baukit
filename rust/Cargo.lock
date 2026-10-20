@@ -337,6 +337,7 @@ dependencies = [
  "baukit-test",
  "chrono",
  "pem",
+ "reqwest",
  "serde",
  "serde_json",
  "sqlx",

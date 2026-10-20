@@ -20,3 +20,5 @@ pub const CLIENT_NOT_ALLOWED: &str = "data_subject_client_not_allowed";
 pub const INSUFFICIENT_SCOPE: &str = "insufficient_scope";
 /// Accepted work exhausted its attempts, recorded in a failed operation resource.
 pub const OPERATION_FAILED: &str = "data_subject_operation_failed";
+/// A record with its JSON wrapper exceeds the part limit, in a failed operation resource.
+pub const EXPORT_RECORD_TOO_LARGE: &str = "data_subject_export_record_too_large";

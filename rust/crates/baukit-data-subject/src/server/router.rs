@@ -3,7 +3,10 @@ use std::sync::Arc;
 use axum::{
     Extension, Json, Router,
     extract::{Path, State, rejection::JsonRejection},
-    http::{HeaderMap, StatusCode, header::CACHE_CONTROL},
+    http::{
+        HeaderMap, StatusCode,
+        header::{CACHE_CONTROL, CONTENT_TYPE},
+    },
     response::{IntoResponse, Response},
     routing::{get, post},
 };
@@ -22,19 +25,31 @@ struct RouterState {
     product: Arc<dyn DataSubjectProduct>,
 }
 
-/// Erasure POST and GET routes. Mount behind the product's authentication middleware.
+/// Enabled operation POST, status and part routes. Mount behind the product's authentication middleware.
 /// Missing principals are still rejected with the standard 401 envelope.
 pub fn authenticated_routes(
     store: PostgresDataSubjectStore,
     product: Arc<dyn DataSubjectProduct>,
 ) -> Router {
-    Router::new()
+    let mut router = Router::new()
         .route("/api/v1/data-subject/erasures", post(start_erasure))
         .route(
             "/api/v1/data-subject/erasures/{operationId}",
             get(erasure_status),
-        )
-        .with_state(RouterState { store, product })
+        );
+    if store.config.export_product.is_some() {
+        router = router
+            .route("/api/v1/data-subject/exports", post(start_export))
+            .route(
+                "/api/v1/data-subject/exports/{operationId}",
+                get(export_status),
+            )
+            .route(
+                "/api/v1/data-subject/exports/{operationId}/parts/{partNumber}",
+                get(export_part),
+            );
+    }
+    router.with_state(RouterState { store, product })
 }
 
 /// Unauthenticated discovery with `Cache-Control: public, max-age=300`.
@@ -54,6 +69,7 @@ async fn discovery(State(store): State<PostgresDataSubjectStore>) -> impl IntoRe
 fn authorize(
     store: &PostgresDataSubjectStore,
     principal: Option<Extension<Principal>>,
+    kind: OperationKind,
 ) -> Result<String, ApiError> {
     let Extension(principal) = principal.ok_or_else(ApiError::unauthenticated)?;
     let client = principal
@@ -66,7 +82,11 @@ fn authorize(
             "The machine client is not allowed",
         ));
     }
-    if !principal.scopes().contains("data-subject.erase") {
+    let scope = match kind {
+        OperationKind::Erasure => "data-subject.erase",
+        OperationKind::Export => "data-subject.export",
+    };
+    if !principal.scopes().contains(scope) {
         return Err(ApiError::new(
             StatusCode::FORBIDDEN,
             codes::INSUFFICIENT_SCOPE,
@@ -82,7 +102,26 @@ async fn start_erasure(
     headers: HeaderMap,
     body: Result<Json<DataSubjectRequest>, JsonRejection>,
 ) -> Result<Response, ApiError> {
-    let client = authorize(&state.store, principal)?;
+    start_operation(state, principal, headers, body, OperationKind::Erasure).await
+}
+
+async fn start_export(
+    State(state): State<RouterState>,
+    principal: Option<Extension<Principal>>,
+    headers: HeaderMap,
+    body: Result<Json<DataSubjectRequest>, JsonRejection>,
+) -> Result<Response, ApiError> {
+    start_operation(state, principal, headers, body, OperationKind::Export).await
+}
+
+async fn start_operation(
+    state: RouterState,
+    principal: Option<Extension<Principal>>,
+    headers: HeaderMap,
+    body: Result<Json<DataSubjectRequest>, JsonRejection>,
+    kind: OperationKind,
+) -> Result<Response, ApiError> {
+    let client = authorize(&state.store, principal, kind)?;
     let values = headers.get_all("Idempotency-Key");
     let key = values.iter().next().and_then(|header| header.to_str().ok());
     if values.iter().count() != 1 || validate_idempotency_key(key).is_err() {
@@ -111,16 +150,17 @@ async fn start_erasure(
             "The data subject request is invalid",
         )
     })?;
-    let operation = state
-        .store
-        .start_erasure(
-            &client,
-            key.expect("validated key"),
-            &request,
-            state.product.as_ref(),
-        )
-        .await
-        .map_err(api_error)?;
+    let key = key.expect("validated key");
+    let operation = match kind {
+        OperationKind::Erasure => {
+            state
+                .store
+                .start_erasure(&client, key, &request, state.product.as_ref())
+                .await
+        }
+        OperationKind::Export => state.store.start_export(&client, key, &request).await,
+    }
+    .map_err(api_error)?;
     let status = if operation.status.is_terminal() {
         StatusCode::OK
     } else {
@@ -134,15 +174,56 @@ async fn erasure_status(
     principal: Option<Extension<Principal>>,
     Path(id): Path<String>,
 ) -> Result<Response, ApiError> {
-    let client = authorize(&state.store, principal)?;
+    operation_status(state, principal, id, OperationKind::Erasure).await
+}
+
+async fn export_status(
+    State(state): State<RouterState>,
+    principal: Option<Extension<Principal>>,
+    Path(id): Path<String>,
+) -> Result<Response, ApiError> {
+    operation_status(state, principal, id, OperationKind::Export).await
+}
+
+async fn operation_status(
+    state: RouterState,
+    principal: Option<Extension<Principal>>,
+    id: String,
+    kind: OperationKind,
+) -> Result<Response, ApiError> {
+    let client = authorize(&state.store, principal, kind)?;
     let id = Uuid::parse_str(&id).map_err(|_| not_found())?;
     let operation = state
         .store
-        .status(&client, OperationKind::Erasure, id)
+        .status(&client, kind, id)
         .await
         .map_err(api_error)?
         .ok_or_else(not_found)?;
     Ok(Json(operation).into_response())
+}
+
+async fn export_part(
+    State(state): State<RouterState>,
+    principal: Option<Extension<Principal>>,
+    Path((id, number)): Path<(String, String)>,
+) -> Result<Response, ApiError> {
+    let client = authorize(&state.store, principal, OperationKind::Export)?;
+    let id = Uuid::parse_str(&id).map_err(|_| not_found())?;
+    let number = number.parse::<u32>().map_err(|_| not_found())?;
+    let bytes = state
+        .store
+        .export_part(&client, id, number, chrono::Utc::now())
+        .await
+        .map_err(api_error)?
+        .ok_or_else(not_found)?;
+    Ok((
+        [
+            (CONTENT_TYPE, "application/json"),
+            (CACHE_CONTROL, "no-store"),
+        ],
+        bytes,
+    )
+        .into_response())
 }
 
 fn not_found() -> ApiError {
@@ -154,18 +235,26 @@ fn not_found() -> ApiError {
 }
 
 fn api_error(error: DataSubjectError) -> ApiError {
-    if error == DataSubjectError::Conflict {
-        ApiError::new(
+    match error {
+        DataSubjectError::Conflict => ApiError::new(
             StatusCode::CONFLICT,
             codes::IDEMPOTENCY_CONFLICT,
             "The key was used with a different request",
-        )
-    } else {
-        // Product database errors can contain lookup values. Never retain their causes.
-        ApiError::new(
+        ),
+        DataSubjectError::ExportNotReady => ApiError::new(
+            StatusCode::CONFLICT,
+            codes::EXPORT_NOT_READY,
+            "The export is not ready",
+        ),
+        DataSubjectError::ExportExpired => ApiError::new(
+            StatusCode::GONE,
+            codes::EXPORT_EXPIRED,
+            "The export part has expired",
+        ),
+        _ => ApiError::new(
             StatusCode::INTERNAL_SERVER_ERROR,
             "internal",
             "An internal error occurred",
-        )
+        ),
     }
 }

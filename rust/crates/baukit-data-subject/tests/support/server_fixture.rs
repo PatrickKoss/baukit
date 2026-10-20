@@ -58,6 +58,10 @@ fn lookup_hash(value: &str) -> Vec<u8> {
 pub struct Product {
     pub resolves: AtomicUsize,
     pub erases: AtomicUsize,
+    pub exports: AtomicUsize,
+    pub fail_export: AtomicBool,
+    pub oversized_export: AtomicBool,
+    pub mutate_export: AtomicBool,
     pub fail_resolve: AtomicBool,
     pub fail_subject: AtomicBool,
 }
@@ -136,6 +140,60 @@ impl DataSubjectProduct for Product {
     }
 }
 
+impl DataSubjectExportProduct for Product {
+    fn export<'a>(
+        &'a self,
+        connection: &'a mut PgConnection,
+        subject: &'a LocalSubject,
+    ) -> DataSubjectFuture<'a, Result<Vec<ExportCategory>, sqlx::Error>> {
+        Box::pin(async move {
+            self.exports.fetch_add(1, Ordering::SeqCst);
+            let id: Option<String> =
+                sqlx::query_scalar("SELECT id FROM product_subjects WHERE id = $1")
+                    .bind(&subject.subject_id)
+                    .fetch_optional(&mut *connection)
+                    .await?;
+            if self.mutate_export.load(Ordering::SeqCst) {
+                sqlx::query("DELETE FROM product_subjects WHERE id = $1")
+                    .bind(&subject.subject_id)
+                    .execute(&mut *connection)
+                    .await?;
+            }
+            if self.fail_export.load(Ordering::SeqCst)
+                && subject.subject_id == "internal-restricted"
+            {
+                return Err(sqlx::Error::Protocol("restricted@example.invalid".into()));
+            }
+            let Some(id) = id else {
+                return Ok(vec![]);
+            };
+            let value = if self.oversized_export.load(Ordering::SeqCst)
+                && subject.subject_id == "internal-restricted"
+            {
+                "a".repeat(200)
+            } else {
+                "a".repeat(12)
+            };
+            Ok(vec![
+                ExportCategory {
+                    name: "profiles".into(),
+                    records: vec![json!({"id": id})],
+                },
+                ExportCategory {
+                    name: "activity".into(),
+                    records: (1..=4)
+                        .map(|number| json!({"number":number,"value":value}))
+                        .collect(),
+                },
+                ExportCategory {
+                    name: "empty".into(),
+                    records: vec![],
+                },
+            ])
+        })
+    }
+}
+
 pub struct Fixture {
     pub _container: PostgresTestContainer,
     pub pool: PgPool,
@@ -157,6 +215,20 @@ impl Fixture {
         delete_identity: bool,
         configure: impl FnOnce(&mut DataSubjectConfig),
     ) -> Result<Self, Box<dyn Error>> {
+        Self::configured(delete_identity, false, configure).await
+    }
+
+    pub async fn with_exports(
+        configure: impl FnOnce(&mut DataSubjectConfig),
+    ) -> Result<Self, Box<dyn Error>> {
+        Self::configured(true, true, configure).await
+    }
+
+    async fn configured(
+        delete_identity: bool,
+        exports: bool,
+        configure: impl FnOnce(&mut DataSubjectConfig),
+    ) -> Result<Self, Box<dyn Error>> {
         let container = baukit_test::start_postgres().await?;
         let pool = PgPool::connect(container.connection_url()).await?;
         for sql in [
@@ -166,6 +238,7 @@ impl Fixture {
             baukit_erasure::POSTGRES_MIGRATION_SQL,
             baukit_erasure::POSTGRES_REONBOARDING_MIGRATION_SQL,
             POSTGRES_MIGRATION_SQL,
+            POSTGRES_EXPORTS_MIGRATION_SQL,
             "CREATE TABLE product_subjects (id TEXT PRIMARY KEY, authentication_subject TEXT, lookup_hash BYTEA NOT NULL); CREATE TABLE legal_records (subject_id TEXT NOT NULL); INSERT INTO legal_records VALUES ('internal-restricted');",
         ] {
             sqlx::raw_sql(sql).execute(&pool).await?;
@@ -198,6 +271,7 @@ impl Fixture {
             IdentityRetention::Retain
         };
         let erasure = ErasureService::new(erasure_store, retention)?;
+        let product = Arc::new(Product::default());
         let mut config = DataSubjectConfig::new(
             Service {
                 name: "fixture".into(),
@@ -215,10 +289,12 @@ impl Fixture {
             Secret::new("fixture-operation-key-with-at-least-32-bytes".into()),
             erasure.clone(),
         );
+        if exports {
+            config = config.with_export(product.clone());
+        }
         config.max_attempts = 2;
         configure(&mut config);
         let store = PostgresDataSubjectStore::new(pool.clone(), config)?;
-        let product = Arc::new(Product::default());
         let issuer = MockOidcServer::start().await?;
         let verifier = OidcVerifier::from_jwks_uri(
             OidcConfig::new(issuer.issuer(), "fixture")?.with_principal_claims(
@@ -387,9 +463,14 @@ impl Fixture {
             },
         )
         .await?;
+        let kind: String =
+            sqlx::query_scalar("SELECT kind FROM data_subject_operations WHERE id = $1")
+                .bind(id)
+                .fetch_one(&self.pool)
+                .await?;
         Ok(self
             .store
-            .status("privacy", OperationKind::Erasure, id)
+            .status("privacy", serde_json::from_value(json!(kind))?, id)
             .await?
             .ok_or("missing operation")?)
     }
@@ -478,7 +559,7 @@ impl Fixture {
     pub async fn assert_no_stored_values(&self, forbidden: &[&str]) -> Result<(), Box<dyn Error>> {
         let tables: Vec<(String, String)> = sqlx::query_as("SELECT quote_ident(table_name), string_agg(quote_ident(column_name), ', ' ORDER BY ordinal_position) FROM information_schema.columns WHERE table_schema = 'public' GROUP BY table_name ORDER BY table_name")
             .fetch_all(&self.pool).await?;
-        assert_eq!(tables.len(), 7);
+        assert_eq!(tables.len(), 8);
         for (table, columns) in tables {
             let mut query =
                 sqlx::QueryBuilder::new("SELECT row_to_json(record)::text FROM (SELECT ");
@@ -488,10 +569,16 @@ impl Fixture {
                 .push(table)
                 .push(") AS record");
             let rows: Vec<String> = query.build_query_scalar().fetch_all(&self.pool).await?;
-            assert!(
-                rows.iter()
-                    .all(|row| forbidden.iter().all(|value| !row.contains(value)))
-            );
+            assert!(rows.iter().all(|row| forbidden.iter().all(|value| {
+                !row.contains(value)
+                    && !row.contains(
+                        &value
+                            .as_bytes()
+                            .iter()
+                            .map(|byte| format!("{byte:02x}"))
+                            .collect::<String>(),
+                    )
+            })));
         }
         Ok(())
     }

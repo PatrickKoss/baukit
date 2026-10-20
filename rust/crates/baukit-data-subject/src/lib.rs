@@ -1,7 +1,7 @@
 //! Data subject v1 wire types, identifier normalization, and Ed25519 DSSE receipts.
 //!
 //! The core is available with `default-features = false`. The default `server`
-//! feature adds HTTP routes, a PostgreSQL store, and durable erasure execution.
+//! feature adds HTTP routes, a PostgreSQL store, and durable erasure and export execution.
 #![deny(missing_docs)]
 
 pub mod codes;

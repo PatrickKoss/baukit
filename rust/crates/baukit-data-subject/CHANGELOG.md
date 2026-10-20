@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+- Add opt-in exports through `DataSubjectExportProduct`, using the existing
+  acceptance, operation store and lease-aware worker.
+- Store bounded JSON parts and their signed digests atomically. Reject oversized
+  records with `data_subject_export_record_too_large` and no receipt.
+- Add scope-isolated export status and download routes, seven-day default part
+  retention and bounded part purge independent of operation retention.
+- Add the exports migration with completed-export ownership constraints and
+  exact byte and digest checks. Products manage table access through their own grants.
+
 - Add the default `server` feature with PostgreSQL operations, authenticated
   erasure routes, public discovery, transactional jobs and signed results.
 - Resolve lookup identifiers during acceptance and queue only internal subject
