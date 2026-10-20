@@ -36,6 +36,8 @@ mod auth;
 mod connector;
 mod container_labels;
 mod credential_probe;
+#[cfg(feature = "data-subject")]
+mod data_subject;
 mod erasure;
 #[cfg(test)]
 mod fixture_tests;
@@ -75,6 +77,12 @@ pub use credential_probe::{
     CredentialProbeConformanceCases, CredentialProbeConformanceError, ScriptedCredentialProbeHttp,
     ScriptedCredentialProbeResponse, assert_credential_probe_conformance,
     check_credential_probe_conformance,
+};
+#[cfg(feature = "data-subject")]
+pub use data_subject::{
+    DataSubjectFault, DataSubjectOutcome, DataSubjectScript, DataSubjectScriptError,
+    DataSubjectTargetOptions, DataSubjectTargetServer, DataSubjectTokenId,
+    ReceivedDataSubjectRequest,
 };
 pub use erasure::{
     CleanupKind, ErasureConformanceError, OwnedResourceCheck, ProductProfileErasureAdapter,

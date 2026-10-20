@@ -4,6 +4,10 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+- Add the `data-subject` feature with a controlled HTTP target for client tests,
+  signed receipts, scripted outcomes and faults, export parts, key rotation and
+  private in-memory request observations.
+
 ## [0.10.31] - 2026-10-20
 
 - Release the coordinated baukit 0.10.31 train.

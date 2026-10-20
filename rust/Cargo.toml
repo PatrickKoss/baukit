@@ -43,7 +43,7 @@ baukit-auth = { version = "=0.10.31", path = "crates/baukit-auth" }
 baukit-config = { version = "=0.10.31", path = "crates/baukit-config" }
 baukit-core = { version = "=0.10.31", path = "crates/baukit-core" }
 baukit-credential-vault = { version = "=0.10.31", path = "crates/baukit-credential-vault" }
-baukit-data-subject = { version = "=0.10.31", path = "crates/baukit-data-subject" }
+baukit-data-subject = { version = "=0.10.31", path = "crates/baukit-data-subject", default-features = false }
 baukit-egress = { version = "=0.10.31", path = "crates/baukit-egress" }
 baukit-erasure = { version = "=0.10.31", path = "crates/baukit-erasure" }
 baukit-events = { version = "=0.10.31", path = "crates/baukit-events" }
