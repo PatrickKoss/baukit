@@ -4,6 +4,10 @@ All notable changes to `baukit-ops` are documented here.
 
 ## [Unreleased]
 
+## [0.10.31] - 2026-10-20
+
+- Release the coordinated baukit 0.10.31 train.
+
 ## [0.10.30] - 2026-10-20
 
 - Release the coordinated baukit 0.10.30 train.

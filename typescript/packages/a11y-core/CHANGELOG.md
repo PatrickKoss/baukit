@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.10.31
+
+### Patch Changes
+
+- f8c3af4: Keep the original overlay opener across StrictMode effect replays and focus ref changes so closing
+  the overlay restores focus to its trigger. Capture a new opener for each separate opening.
+- Release the coordinated baukit 0.10.31 train.
+
 ## 0.10.30
 
 ### Patch Changes
