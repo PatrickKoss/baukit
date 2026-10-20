@@ -1,7 +1,8 @@
 # Data subject contract
 
-**Status:** Version 1 contract. Core types and receipt verification are implemented;
-server adapters and conformance helpers follow in D2, D3, T1 and T2.
+**Status:** Version 1 contract. Core types, receipt verification and the erasure
+server adapter are implemented. Export and conformance helpers follow in D3,
+T1 and T2.
 **Applies to:** Services accepting machine-initiated erasure and export requests,
 including services implemented without Baukit.
 **Related:** [product-profile erasure](./product-profile-erasure-contract.md),
@@ -18,7 +19,8 @@ identity before making the request; identity verification is outside this contra
 Implementations outside Baukit follow the paths, JSON fields, authentication,
 errors and signing rules below. Baukit products can use the crate's core without
 its default features. The core has no Axum or SQLx dependency. The `server`
-feature is currently empty and reserves the future router, store and job adapters.
+feature adds the erasure router, PostgreSQL store and durable job handler.
+The current server advertises only `operations: ["erasure"]`.
 
 ## 1. Discovery
 
@@ -100,6 +102,16 @@ text, place them in a job payload or put them in a receipt. The operation store
 keeps only an HMAC of the normalized request for conflict detection. Keep the
 HMAC key stable and secret. Neither an unkeyed digest nor a signed receipt is a
 safe place for low-entropy lookup values.
+
+The Baukit server resolves normalized identifiers inside the POST transaction.
+It queues only `LocalSubject` values, each containing an internal product subject
+ID and an optional authentication subject. Products must use opaque internal
+IDs, never copy lookup values into these fields. No request identifier is needed
+after acceptance, including on retries. Resolution does not erase records.
+The product must make erasure safe when a resolved record disappeared meanwhile.
+Duplicate local subjects are erased once. Job payloads are removed on success;
+terminal failure keeps only the operation ID. A resolver failure occurs before
+acceptance and returns a safe HTTP 500 `internal` envelope.
 
 ## 3. Operations and idempotency
 
@@ -330,6 +342,7 @@ Every HTTP error uses the `baukit-http` envelope:
 | `data_subject_export_expired` | 410 | Part is past retention. |
 | `data_subject_client_not_allowed` | 403 | Principal is not an allowed machine client. |
 | `insufficient_scope` | 403 | Principal lacks the operation scope. |
+| `data_subject_operation_failed` | 200, in `error.code` on a failed operation | Accepted work exhausted attempts, failed permanently or exceeded its identity-deletion deadline. No receipt is issued. |
 
 Messages are safe fallback copy, `details` is a safe JSON object, and `requestId`
 connects the response to diagnostics. Never include identifiers, credentials,
@@ -351,13 +364,68 @@ secret configuration and publish only the derived public discovery entry.
 `ReceiptVerifier::from_discovery` checks key IDs, unique keys and exactly one
 current key before accepting envelopes.
 
-The planned server adapter runs product resolution, erasure and export methods
-inside its database transaction. Product methods must not commit or contact
-external systems. Maintain a deletion inventory and return accurate category
-reports and legal restrictions. When matching yields an authentication subject,
-the server work must also apply the product-profile erasure fence and identity
-retention mode. The core delivered in D1 does not supply these server adapters.
-The crate README demonstrates the core available now.
+The server uses a stable secret of at least 32 bytes for HMAC-SHA256. Key hashes
+use the `data-subject-key\0` domain followed by length-prefixed client ID, kind
+and idempotency key. Request hashes use `data-subject-request\0` followed by the
+length-prefixed serialized `NormalizedRequest`. Lengths are unsigned 64-bit
+big-endian byte counts. Each hash is 32 bytes. A database uniqueness constraint
+and transaction advisory lock serialize concurrent requests for the same client,
+kind and key. The pending operation and job enqueue commit together.
+
+`DataSubjectProduct::resolve` runs during POST. The durable worker runs `erase`
+for every resolved subject in one transaction with the category report, fence
+and successful lease-owned job transition. With retain mode or no authentication
+subject it signs the result in that same transaction. Product methods must not
+commit or contact external systems. A product failure rolls back every subject,
+fence and result, then the job runner retries with its normal backoff. The
+migration's job failure trigger also handles runner timeouts and expired final
+leases. Maintain a deletion inventory and return safe, accurate category reports
+and legal restrictions. Subjects without authentication accounts need no fence.
+
+For authentication subjects the worker calls
+`ErasureService::fence_as_operator_in_transaction` in that same transaction.
+It uses the same keyed subject lock, fence and `IdentityRetention` as profile
+erasure. Products must continue enforcing `reject_fenced_subject` on sessions
+and `guard_subject` when resolving or creating profiles. Old or undated sessions
+fail with `profile_erased`; another subject's sessions remain valid. In retain
+mode, a login strictly after the fence can re-onboard after completion.
+
+Delete mode durably queues the existing `identity.account.delete` job and
+requires the product's `IdentityDeletionHandler`. The operator entry point
+does not make an inline provider call because its caller owns the transaction.
+The data subject operation stays `pending` without a receipt while any linked
+identity deletion is pending. Its safe category report may already describe
+committed product deletion. A `data-subject.finalize` job checks the linked
+profile-erasure operations after one second, then doubles the delay between
+checks up to 60 seconds. Its payload contains only the operation ID and check
+count. Waiting schedules the next check and succeeds; a database failure uses
+normal job retries. Polling does not consume the attempts reserved for failures.
+
+`DataSubjectConfig::identity_deletion_timeout` defaults to 24 hours and must be
+positive and no longer than 30 days. The local erasure transaction records the
+wait's start when erasure finishes. Every check uses that timestamp for the
+deadline, and no check is scheduled beyond it. A check at or after the deadline
+makes the operation `failed` with `data_subject_operation_failed` and no receipt,
+including when the product never registered an identity deletion worker.
+
+Only after all linked identity deletions complete does finalization sign and
+commit the terminal result. A failed identity operation makes the data subject
+operation `failed` with `data_subject_operation_failed` and no receipt. The
+product rows stay erased after provider failure or timeout; the fence remains
+active. Identity deletion jobs remain queued after a timeout. Later provider
+success cannot change the failed data subject operation. Retain failed identity
+jobs for operator repair. This separate signing transaction is necessary in
+delete mode. The provider cannot see the queued job before product
+erasure commits, and a completed receipt must not precede provider success.
+The existing self-service DELETE route is unchanged.
+
+Schedule `PostgresDataSubjectStore::purge_expired` in a product recurring job.
+Each call accepts 1 to 10,000 rows, removes only operations whose `purge_after`
+is before the supplied time, and removes their erasure and finalization payloads
+in the same transaction. Use `baukit_jobs::FixedUtcInterval` and slot idempotency
+keys to schedule recurring batches. Receipt retention starts at acceptance.
+Identity fences and identity deletion jobs follow the separate profile-erasure
+policy and are not removed by this purge. The crate README has a mounting example.
 
 ## 8. Conformance
 

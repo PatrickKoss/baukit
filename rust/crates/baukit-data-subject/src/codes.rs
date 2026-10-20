@@ -18,3 +18,5 @@ pub const EXPORT_EXPIRED: &str = "data_subject_export_expired";
 pub const CLIENT_NOT_ALLOWED: &str = "data_subject_client_not_allowed";
 /// Principal lacks the operation scope, HTTP 403.
 pub const INSUFFICIENT_SCOPE: &str = "insufficient_scope";
+/// Accepted work exhausted its attempts, recorded in a failed operation resource.
+pub const OPERATION_FAILED: &str = "data_subject_operation_failed";
