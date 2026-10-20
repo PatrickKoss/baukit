@@ -1,4 +1,4 @@
-import { useEffect, useRef, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react';
 import {
   AccessibilityInfo,
   InteractionManager,
@@ -9,7 +9,7 @@ import {
 
 import type { HostRef } from './dom-boundary.js';
 import { nativeNodeHandle } from './native-focus.js';
-import { useFocusTrap, type FocusTrapProps } from './use-focus-trap.js';
+import { useFocusTrap, type FocusTrapOptions, type FocusTrapProps } from './use-focus-trap.js';
 import { useInert } from './use-inert.js';
 
 /**
@@ -18,7 +18,7 @@ import { useInert } from './use-inert.js';
  */
 export type DeferFocus = (task: () => void) => { cancel: () => void };
 
-export interface OverlayA11yOptions {
+export interface OverlayA11yOptions extends Pick<FocusTrapOptions, 'restoreFocus' | 'returnFocus'> {
   active: boolean;
   containerRef: RefObject<View | null>;
   /** Overrides how the native focus request waits for layout. */
@@ -61,17 +61,30 @@ export function useOverlayA11y({
   inertContainerRef,
   initialFocusRef,
   onEscape,
+  restoreFocus,
+  returnFocus,
   triggerHandle,
   triggerRef,
 }: OverlayA11yOptions): OverlayA11yResult {
-  const triggerHandleRef = useRef<number | null>(null);
-  const containerProps = useFocusTrap({ active, containerRef, initialFocusRef, onEscape });
+  const restoreFocusRef = useRef(restoreFocus);
+  const returnFocusRef = useRef(returnFocus);
+  useLayoutEffect(() => {
+    restoreFocusRef.current = restoreFocus;
+    returnFocusRef.current = returnFocus;
+  }, [restoreFocus, returnFocus]);
+  const containerProps = useFocusTrap({
+    active,
+    containerRef,
+    initialFocusRef,
+    onEscape,
+    restoreFocus,
+    returnFocus,
+  });
   useInert(inertContainerRef ?? containerRef, active);
 
   useEffect(() => {
     if (Platform.OS === 'web' || !active) return;
 
-    triggerHandleRef.current = triggerHandle ?? nativeNodeHandle(triggerRef);
     const task = deferFocus(() => {
       const containerHandle = nativeNodeHandle(containerRef);
       if (containerHandle !== null) AccessibilityInfo.setAccessibilityFocus(containerHandle);
@@ -79,9 +92,11 @@ export function useOverlayA11y({
 
     return () => {
       task.cancel();
-      const openerHandle = triggerHandleRef.current;
-      triggerHandleRef.current = null;
-      if (openerHandle !== null) AccessibilityInfo.setAccessibilityFocus(openerHandle);
+      const restoreOpener = restoreFocusRef.current?.() ?? true;
+      const openerHandle = restoreOpener ? (triggerHandle ?? nativeNodeHandle(triggerRef)) : null;
+      const targetHandle =
+        openerHandle ?? nativeNodeHandle({ current: returnFocusRef.current?.() ?? null });
+      if (targetHandle !== null) AccessibilityInfo.setAccessibilityFocus(targetHandle);
     };
   }, [active, containerRef, deferFocus, triggerHandle, triggerRef]);
 

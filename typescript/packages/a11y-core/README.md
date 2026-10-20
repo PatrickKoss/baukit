@@ -39,14 +39,39 @@ const { backgroundProps, containerProps } = useOverlayA11y({
 });
 ```
 
-On web it moves focus into the overlay, contains Tab and Shift+Tab, calls `onEscape`, makes
-everything outside `inertContainerRef` inert, and restores focus to whatever had it before. The
-restore runs on the next task because the browser rejects focus on a still-inert trigger.
+On web it moves focus into the overlay, contains Tab and Shift+Tab, calls `onEscape`, and makes
+everything outside `inertContainerRef` inert. On close it checks focus on the next task so
+`useInert` can release the background first. It keeps focus on a connected element outside the
+closing container unless that element is in an `inert`, `hidden`, or `aria-hidden="true"` subtree.
+Otherwise it restores the opener if the opener is still connected. Reopening before the task
+runs cancels the pending restore.
+
+Both `useFocusTrap` and `useOverlayA11y` accept two optional callbacks:
+
+- `restoreFocus?: () => boolean` decides whether to restore the opener. It defaults to true.
+- `returnFocus?: () => FocusTarget | null` supplies a fallback when the opener is disconnected
+  or `restoreFocus` returns false. A `FocusTarget` has a `focus()` method, so an element or native
+  view can be returned directly. Web only focuses a connected fallback.
+
+The callbacks run when restoration is needed, after the outside-focus check on web. Changes to
+either callback do not restart the trap. To leave focus alone, pass `restoreFocus: () => false`
+without a fallback. To return to a route heading when an action removes the opener:
+
+```ts
+useFocusTrap({
+  active: visible,
+  containerRef: panelRef,
+  restoreFocus: () => !navigatingRef.current,
+  returnFocus: () => headingRef.current,
+});
+```
 
 On native it waits before requesting accessibility focus, so no focus lands before layout. On
 close it returns focus to `triggerRef`. Native cannot discover what previously held accessibility
-focus, so the caller owns that ref. Pass `triggerHandle` instead when the node tag is already
-resolved.
+focus, so the caller owns that ref. The hook resolves the ref again on close and uses
+`returnFocus` if the trigger has unmounted or `restoreFocus` returns false. Native cannot inspect
+current accessibility focus, so it cannot apply the web outside-focus check. Pass `triggerHandle`
+instead when the node tag is already resolved; the caller must keep that tag valid until close.
 
 The wait defaults to `InteractionManager.runAfterInteractions`, which React Native 0.86 deprecates
 without offering a replacement for "after the overlay presented". Products with a real

@@ -4,6 +4,7 @@ import {
   activeFocusTarget,
   asFocusContainer,
   asFocusTarget,
+  hostElement,
   type FocusContainer,
   type FocusableElement,
   type FocusTarget,
@@ -35,6 +36,10 @@ export interface FocusTrapOptions {
   containerRef: HostRef;
   initialFocusRef?: HostRef | undefined;
   onEscape?: (() => void) | undefined;
+  /** Whether to restore the opener. Defaults to true; false still allows `returnFocus`. */
+  restoreFocus?: (() => boolean) | undefined;
+  /** Fallback when the opener is gone or `restoreFocus` returns false. */
+  returnFocus?: (() => FocusTarget | null) | undefined;
 }
 
 export interface FocusTrapProps {
@@ -71,7 +76,6 @@ export function wrapFocusAtBoundary(
   return true;
 }
 
-/** Contains web Tab order inside an overlay and restores focus to its opener. */
 /** Focuses the requested target, else the first focusable child, else the container. */
 export function focusOverlayEntry(
   container: FocusContainer | null,
@@ -112,18 +116,48 @@ export function applyFocusTrapKey(
   return 'wrapped';
 }
 
+function hasOutsideFocus(container: object | null): boolean {
+  const active = document.activeElement;
+  if (
+    active === null ||
+    active === document.body ||
+    !active.isConnected ||
+    active.closest('[inert], [hidden], [aria-hidden="true"]') !== null
+  ) {
+    return false;
+  }
+  for (let element: Element | null = active; element !== null; element = element.parentElement) {
+    if (element === container) return false;
+  }
+  return true;
+}
+
+function isConnected(target: FocusTarget | null | undefined): target is FocusTarget {
+  return target != null && 'isConnected' in target && target.isConnected === true;
+}
+
+/** Contains web Tab order inside an overlay and restores focus when needed on close. */
 export function useFocusTrap({
   active,
   containerRef,
   initialFocusRef,
   onEscape,
+  restoreFocus,
+  returnFocus,
 }: FocusTrapOptions): FocusTrapProps {
   const onEscapeRef = useRef(onEscape);
+  const restoreFocusRef = useRef(restoreFocus);
+  const returnFocusRef = useRef(returnFocus);
   const restoreTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     onEscapeRef.current = onEscape;
   }, [onEscape]);
+
+  useEffect(() => {
+    restoreFocusRef.current = restoreFocus;
+    returnFocusRef.current = returnFocus;
+  }, [restoreFocus, returnFocus]);
 
   useEffect(() => {
     if (!hasDocument() || !active) return;
@@ -133,6 +167,7 @@ export function useFocusTrap({
     }
 
     const previouslyFocused = activeFocusTarget();
+    const container = hostElement(containerRef);
     focusOverlayEntry(asFocusContainer(containerRef), asFocusTarget(initialFocusRef));
 
     return () => {
@@ -140,7 +175,13 @@ export function useFocusTrap({
       // the next task so the browser does not reject focus on a still-inert trigger.
       restoreTimerRef.current = setTimeout(() => {
         restoreTimerRef.current = undefined;
-        previouslyFocused?.focus({ preventScroll: true });
+        if (hasOutsideFocus(container)) return;
+        const restoreOpener = restoreFocusRef.current?.() ?? true;
+        const target =
+          restoreOpener && isConnected(previouslyFocused)
+            ? previouslyFocused
+            : returnFocusRef.current?.();
+        if (isConnected(target)) target.focus({ preventScroll: true });
       }, 0);
     };
   }, [active, containerRef, initialFocusRef]);

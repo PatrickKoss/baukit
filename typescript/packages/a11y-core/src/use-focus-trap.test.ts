@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, renderHook } from '@testing-library/react';
 import { createElement, useRef } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { FocusContainer, FocusTarget, HostRef } from './dom-boundary.js';
 import {
@@ -11,7 +11,7 @@ import {
   useFocusTrap,
   wrapFocusAtBoundary,
   type FocusTrapKeyEvent,
-} from './use-focus-trap.js';
+} from './web.js';
 
 function mount(html: string): HTMLElement {
   const host = document.createElement('div');
@@ -48,8 +48,14 @@ function keyEvent(key: string, extras: { shiftKey?: boolean; target?: unknown } 
   return event;
 }
 
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
 afterEach(() => {
   cleanup();
+  vi.clearAllTimers();
+  vi.useRealTimers();
   document.body.innerHTML = '';
 });
 
@@ -250,7 +256,7 @@ describe('useFocusTrap', () => {
     expect(document.activeElement?.id).toBe('first');
   });
 
-  it('restores focus to the opener on the next task', async () => {
+  it('restores focus to the opener on the next task', () => {
     const opener = mount('<button id="opener">open</button>')
       .firstElementChild as HTMLButtonElement;
     opener.focus();
@@ -263,10 +269,216 @@ describe('useFocusTrap', () => {
     // The restore is deliberately deferred so useInert can release the trigger.
     expect(document.activeElement?.id).toBe('inside');
 
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 1));
+    act(() => {
+      vi.runOnlyPendingTimers();
     });
     expect(document.activeElement?.id).toBe('opener');
+  });
+
+  it('keeps focus moved outside after closing', () => {
+    const opener = mount('<button>open</button>').firstElementChild as HTMLButtonElement;
+    opener.focus();
+    const host = mount('<button>inside</button>');
+    const destination = mount('<h1 tabindex="-1">new route</h1>').firstElementChild as HTMLElement;
+    const restoreFocus = vi.fn(() => true);
+    const returnFocus = vi.fn(() => opener);
+    const view = renderHook(() =>
+      useFocusTrap({ active: true, containerRef: containerRef(host), restoreFocus, returnFocus }),
+    );
+
+    view.unmount();
+    destination.focus();
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+
+    expect(document.activeElement).toBe(destination);
+    expect(restoreFocus).not.toHaveBeenCalled();
+    expect(returnFocus).not.toHaveBeenCalled();
+  });
+
+  it.each(['body', 'container', 'removed container'])(
+    'restores when focus is on %s',
+    (location) => {
+      const opener = mount('<button>open</button>').firstElementChild as HTMLButtonElement;
+      opener.focus();
+      const host = mount('<button>inside</button>');
+      host.tabIndex = -1;
+      const ref = containerRef(host);
+      const view = renderHook(() => useFocusTrap({ active: true, containerRef: ref }));
+
+      view.unmount();
+      ref.current = null;
+      if (location === 'body') (document.activeElement as HTMLElement).blur();
+      if (location === 'container') host.focus();
+      if (location === 'removed container') host.remove();
+      expect(document.activeElement).toBe(location === 'container' ? host : document.body);
+      act(() => {
+        vi.runOnlyPendingTimers();
+      });
+
+      expect(document.activeElement).toBe(opener);
+    },
+  );
+
+  it.each(['inert', 'hidden', 'aria-hidden'])(
+    'restores when outside focus is in a %s subtree',
+    (attribute) => {
+      const opener = mount('<button>open</button>').firstElementChild as HTMLButtonElement;
+      opener.focus();
+      const host = mount('<button>inside</button>');
+      const outside = mount('<button>outside</button>');
+      const destination = outside.firstElementChild as HTMLButtonElement;
+      const view = renderHook(() =>
+        useFocusTrap({ active: true, containerRef: containerRef(host) }),
+      );
+
+      view.unmount();
+      destination.focus();
+      outside.setAttribute(attribute, 'true');
+      expect(document.activeElement).toBe(destination);
+      act(() => {
+        vi.runOnlyPendingTimers();
+      });
+
+      expect(document.activeElement).toBe(opener);
+    },
+  );
+
+  it('does not focus a disconnected opener', () => {
+    const opener = mount('<button>open</button>').firstElementChild as HTMLButtonElement;
+    opener.focus();
+    const focus = vi.spyOn(opener, 'focus');
+    const host = mount('<button>inside</button>');
+    const view = renderHook(() => useFocusTrap({ active: true, containerRef: containerRef(host) }));
+
+    view.unmount();
+    opener.remove();
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+
+    expect(focus).not.toHaveBeenCalled();
+  });
+
+  it('resolves a fallback at restore time when the opener was disconnected', () => {
+    const opener = mount('<button>open</button>').firstElementChild as HTMLButtonElement;
+    opener.focus();
+    const host = mount('<button>inside</button>');
+    let fallback: HTMLElement | null = null;
+    const returnFocus = vi.fn(() => fallback);
+    const view = renderHook(() =>
+      useFocusTrap({ active: true, containerRef: containerRef(host), returnFocus }),
+    );
+
+    view.unmount();
+    opener.remove();
+    fallback = mount('<h1 tabindex="-1">fallback</h1>').firstElementChild as HTMLElement;
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+
+    expect(returnFocus).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(fallback);
+  });
+
+  it('does not focus a disconnected fallback', () => {
+    const host = mount('<button>inside</button>');
+    const fallback = document.createElement('button');
+    const focus = vi.spyOn(fallback, 'focus');
+    const view = renderHook(() =>
+      useFocusTrap({
+        active: true,
+        containerRef: containerRef(host),
+        restoreFocus: () => false,
+        returnFocus: () => fallback,
+      }),
+    );
+
+    view.unmount();
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+
+    expect(focus).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when restoration is declined without a fallback', () => {
+    const opener = mount('<button>open</button>').firstElementChild as HTMLButtonElement;
+    opener.focus();
+    const focus = vi.spyOn(opener, 'focus');
+    const host = mount('<button>inside</button>');
+    const restoreFocus = vi.fn(() => false);
+    const view = renderHook(() =>
+      useFocusTrap({ active: true, containerRef: containerRef(host), restoreFocus }),
+    );
+
+    view.unmount();
+    host.remove();
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+
+    expect(restoreFocus).toHaveBeenCalledTimes(1);
+    expect(focus).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('uses the latest restoration callbacks without re-entering the trap', () => {
+    const opener = mount('<button>open</button>').firstElementChild as HTMLButtonElement;
+    opener.focus();
+    const host = mount('<button>first</button><button>second</button>');
+    const ref = containerRef(host);
+    const fallback = mount('<h1 tabindex="-1">fallback</h1>').firstElementChild as HTMLElement;
+    const firstRestore = vi.fn(() => true);
+    const firstReturn = vi.fn<() => FocusTarget | null>(() => null);
+    const view = renderHook(
+      ({
+        restoreFocus,
+        returnFocus,
+      }: {
+        restoreFocus: () => boolean;
+        returnFocus: () => FocusTarget | null;
+      }) => useFocusTrap({ active: true, containerRef: ref, restoreFocus, returnFocus }),
+      { initialProps: { restoreFocus: firstRestore, returnFocus: firstReturn } },
+    );
+    const second = host.lastElementChild as HTMLButtonElement;
+    second.focus();
+    const latestRestore = vi.fn(() => false);
+    const latestReturn = vi.fn<() => FocusTarget | null>(() => fallback);
+
+    view.rerender({ restoreFocus: latestRestore, returnFocus: latestReturn });
+    expect(document.activeElement).toBe(second);
+    view.unmount();
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+
+    expect(firstRestore).not.toHaveBeenCalled();
+    expect(firstReturn).not.toHaveBeenCalled();
+    expect(latestRestore).toHaveBeenCalledTimes(1);
+    expect(latestReturn).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(fallback);
+  });
+
+  it('cancels the pending restore when reopened before the next task', () => {
+    const opener = mount('<button>open</button>').firstElementChild as HTMLButtonElement;
+    opener.focus();
+    const focus = vi.spyOn(opener, 'focus');
+    const host = mount('<button>inside</button>');
+    const ref = containerRef(host);
+    const view = renderHook(({ active }) => useFocusTrap({ active, containerRef: ref }), {
+      initialProps: { active: true },
+    });
+
+    view.rerender({ active: false });
+    view.rerender({ active: true });
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+
+    expect(focus).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(host.firstElementChild);
   });
 
   it('prefers the requested initial focus target', () => {
