@@ -13,7 +13,7 @@ bump; compatible changes normally use a patch bump.
 ## Tool ownership
 
 - `rust/release-plz.toml` defines the Rust version group, per-crate changelogs,
-  and the single `v{{ version }}` tag emitter. The eighteen library crates
+  and the single `v{{ version }}` tag emitter. The twenty-one library crates
   publish to crates.io; the `baukit` CLI keeps `publish = false`.
 - Changesets records TypeScript changes. Its fixed group advances all twenty-one
   packages together, creates package changelogs, and emits no package tags.
@@ -128,7 +128,7 @@ and never allows reusing the version number afterwards. Run the dry run first.
 
 ## Publish the Rust crates
 
-The eighteen library crates publish to crates.io, MIT licensed. The
+The twenty-one library crates publish to crates.io, MIT licensed. The
 `baukit` CLI keeps `publish = false` and stays a Git-tag install.
 `scripts/check-version-coherence.py` fails the train if a library crate regains
 that flag or the workspace loses its licence.
@@ -139,8 +139,9 @@ Crates must go up in dependency order, because each one's internal
 ```text
 baukit-core, baukit-events, baukit-openapi, baukit-sync, baukit-config,
 baukit-runtime, baukit-telemetry, baukit-credential-vault, baukit-http,
-baukit-egress, baukit-jobs, baukit-ops, baukit-auth, baukit-erasure, baukit-integrations,
-baukit-push, baukit-ratelimit, baukit-test
+baukit-egress, baukit-jobs, baukit-ops, baukit-auth, baukit-erasure,
+baukit-data-subject, baukit-integrations,
+baukit-push, baukit-ratelimit, baukit-mcp, baukit-suite, baukit-test
 ```
 
 Several crates dev-depend on siblings for test fixtures, and those edges form a
@@ -153,7 +154,7 @@ which makes `cargo package` strip them from the published manifest while local
 train if one regains a version or `workspace = true`.
 
 crates.io rate-limits new crate names: an initial burst, then roughly one new
-crate every ten minutes. A first release of all eighteen therefore cannot run
+crate every ten minutes. A first release of all twenty-one therefore cannot run
 straight through. `scripts/publish-crates.sh` skips crates already on the
 registry and waits out a 429 instead of failing the run:
 

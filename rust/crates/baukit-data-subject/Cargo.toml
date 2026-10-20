@@ -1,0 +1,31 @@
+[package]
+name = "baukit-data-subject"
+description = "Data subject contract, identifier normalization, and signed DSSE receipts."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+license.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
+
+[lints]
+workspace = true
+
+[features]
+default = ["server"]
+server = []
+
+[dependencies]
+aws-lc-rs.workspace = true
+base64.workspace = true
+chrono.workspace = true
+pem.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+zeroize.workspace = true
