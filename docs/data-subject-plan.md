@@ -172,7 +172,7 @@ Release wiring for a new crate touches `rust/Cargo.toml` (member and exact-versi
 | D1 | done | eea53d8a |
 | D2 | in progress | |
 | D3 | todo | |
-| T1 | in progress | |
+| T1 | done | 59fd4b66 |
 | T2 | todo | |
 | R | todo | |
 
@@ -181,3 +181,4 @@ Release wiring for a new crate touches `rust/Cargo.toml` (member and exact-versi
 - 2026-10-20: plan written. Baukit main CI fails `cargo deny` on RUSTSEC-2026-0381 to 0383 since the jingle commit, so D0 goes first.
 - 2026-10-20: D0 bumped webpki-roots and webpki-root-certs to 1.0.10 and rustls-webpki to 0.103.16; `cargo deny` passes and 822 workspace tests pass.
 - 2026-10-20: D1 merged on the first pass. The contract document, the core crate and the vectors match the plan; OpenSSL verifies the positive vectors independently. An identifier type with invalid syntax fails during JSON parsing, so D2 must answer 422 `data_subject_request_invalid` for any body that fails to deserialize. D2 and T1 started in parallel.
+- 2026-10-21: T1 merged after one fix by Claude. CI runs `cargo test` without features, so the target's tests behind `baukit-test/data-subject` never ran; `baukit-data-subject` now enables the feature as a dev-dependency. The workspace dependency on `baukit-data-subject` disables default features, so D2 must enable `server` explicitly.
