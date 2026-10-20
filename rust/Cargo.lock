@@ -327,6 +327,7 @@ version = "0.10.31"
 dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
+ "baukit-test",
  "chrono",
  "pem",
  "serde",
@@ -638,6 +639,7 @@ dependencies = [
  "base64 0.23.1",
  "baukit-auth",
  "baukit-core",
+ "baukit-data-subject",
  "baukit-erasure",
  "baukit-http",
  "baukit-integrations",

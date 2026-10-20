@@ -479,6 +479,57 @@ execution order, which is a miserable afternoon to debug from the symptom.
 This crate provides fixtures and contract checks. Products still decide their limits, persistence,
 error types, and policy. The helpers only check the behavior a product declares.
 
+## Data subject client tests
+
+Enable the `data-subject` feature for `DataSubjectTargetServer`. It binds an
+ephemeral loopback port and uses the real `ReceiptSigner`. Register bearer
+credentials with a client ID and scopes, then configure outcomes by opaque
+subject reference. Every new POST returns pending; ordinary outcomes finish on
+the first status GET. `PendingFor` adds pending polls without advancing on replay.
+
+```rust,no_run
+# #[cfg(feature = "data-subject")]
+# async fn example() -> Result<(), Box<dyn std::error::Error>> {
+use baukit_test::{DataSubjectOutcome, DataSubjectScript, DataSubjectFault, DataSubjectTargetServer};
+use std::time::Duration;
+
+let target = DataSubjectTargetServer::start().await?;
+let token = target.register_token("test-bearer", "privacy-tool", ["data-subject.erase"]);
+target.set_script("opaque-subject-reference", DataSubjectScript::new(
+    DataSubjectOutcome::NotFound,
+).with_fault(DataSubjectFault::ServerError { status: 503, times: 1 }))?;
+
+let discovery = target.discovery();
+let verifier = baukit_data_subject::ReceiptVerifier::from_discovery(&discovery)?;
+let client_base_url = target.base_url();
+# let _ = (token, verifier, client_base_url);
+target.advance_time(Duration::from_secs(7 * 24 * 60 * 60))?;
+# Ok(())
+# }
+```
+
+Pass `base_url()` to the client under test. `set_default_script` sets the fallback.
+Outcomes include category completion, no match, legal retention, failure, pending
+polls and JSON exports. Export parts are numbered starting at one and include
+signed digests and byte lengths. `DataSubjectTargetOptions` configures discovery
+bounds, service identity and retention. `advance_time` exercises expiry and purge
+without sleeping.
+
+`DataSubjectFault` also supports rate limits with `Retry-After`, response delays,
+unadvertised signing keys, incorrect key IDs, payload tampering, a signed wrong
+subject reference and export digest mismatches. `push_fault` adds a fault to an
+explicit subject script after POST to test polling or download retries. Delays
+apply after processing, so retrying a timed-out POST reconciles the accepted
+operation. `rotate_key` publishes a new current key, retains previous keys and
+signs later completions with the new key.
+
+`received_requests()` returns method, path, idempotency key, parsed JSON body and
+the `DataSubjectTokenId` returned by registration. It never captures the bearer
+credential. Observations have no `Debug` or serialization implementation; keep
+their private bodies in memory. Tokens for the same client ID share operations
+and replay records. Dropping the server shuts down its listener, connections and
+delayed responses.
+
 ## Mock OAuth grants
 
 `MockOidcServer` supports `refresh_token`, `authorization_code`, and

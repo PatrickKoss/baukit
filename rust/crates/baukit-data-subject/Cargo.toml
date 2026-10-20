@@ -29,3 +29,6 @@ serde_json.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
 zeroize.workspace = true
+
+[dev-dependencies]
+baukit-test = { path = "../baukit-test", default-features = false, features = ["data-subject"] }

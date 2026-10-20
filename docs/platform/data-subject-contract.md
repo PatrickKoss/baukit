@@ -1,7 +1,8 @@
 # Data subject contract
 
-**Status:** Version 1 contract. Core types and receipt verification are implemented;
-server adapters and conformance helpers follow in D2, D3, T1 and T2.
+**Status:** Version 1 contract. Core types, receipt verification and the controlled
+client-test target are implemented. Server adapters and service conformance follow
+in D2, D3 and T2.
 **Applies to:** Services accepting machine-initiated erasure and export requests,
 including services implemented without Baukit.
 **Related:** [product-profile erasure](./product-profile-erasure-contract.md),
@@ -368,11 +369,33 @@ Python and OpenSSL generate these fixtures independently of the Rust signer.
 An additional signed payload changes field order and whitespace to catch a
 verifier that re-serializes. Other implementations should run the same fixtures.
 
-The `baukit-test` entry points `DataSubjectTestServer` and
-`check_data_subject_conformance` are planned in T1 and T2, respectively. These
-names are reserved here for the controlled client-test target and service-side
-conformance check; they are not available APIs yet. T2 updates this section with
-their final signatures and product adapter requirements.
+Enable `baukit-test`'s `data-subject` feature for the controlled client-test target
+`DataSubjectTargetServer`. `start()` binds an ephemeral loopback socket;
+`base_url()`, `discovery()` and `receipt_key()` expose the connection and public
+verification inputs. `register_token(bearer, client_id, scopes)` returns a
+`DataSubjectTokenId` for request observations. Tokens for the same client share
+operation visibility and idempotency records.
+
+`set_script(subject_reference, script)` and `set_default_script(script)` accept
+`DataSubjectOutcome` directly or a `DataSubjectScript` with `DataSubjectFault`s.
+New POSTs return pending. The first status GET completes an ordinary outcome;
+`PendingFor { polls, then }` adds pending status GETs. Replays and downloads do
+not advance work. `push_fault(subject_reference, fault)` adds faults to an
+explicit script after acceptance for polling and download tests. Receipt faults
+use the real signer, so verification fails at the intended check. A signed wrong
+reference still passes cryptographic verification and must fail the client's
+operation matching.
+
+`rotate_key()` publishes a new current key and retains previous keys for old
+receipts. `start_with_options(DataSubjectTargetOptions)` configures advertised
+bounds and retention; `advance_time(duration)` tests expiry and purge without
+sleeping. `received_requests()` returns method, path, idempotency key, token
+registration handle and parsed body. These private observations stay in memory
+and omit `Debug` and serialization. Dropping the target shuts down the socket
+and delayed responses. See the [`baukit-test` usage example](../../rust/crates/baukit-test/README.md#data-subject-client-tests).
+
+The service-side `check_data_subject_conformance` entry point is planned in T2.
+T2 will document its final signature and product adapter requirements here.
 
 ## 9. Acceptance checks
 
