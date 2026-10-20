@@ -171,9 +171,9 @@ Release wiring for a new crate touches `rust/Cargo.toml` (member and exact-versi
 | D0 | done | 26126192 |
 | D1 | done | eea53d8a |
 | D2 | done | 0f5e6f4e |
-| D3 | in progress | |
+| D3 | done | 4492a062 |
 | T1 | done | 59fd4b66 |
-| T2 | todo | |
+| T2 | in progress | |
 | R | todo | |
 
 ### Orchestration log
@@ -183,3 +183,4 @@ Release wiring for a new crate touches `rust/Cargo.toml` (member and exact-versi
 - 2026-10-20: D1 merged on the first pass. The contract document, the core crate and the vectors match the plan; OpenSSL verifies the positive vectors independently. An identifier type with invalid syntax fails during JSON parsing, so D2 must answer 422 `data_subject_request_invalid` for any body that fails to deserialize. D2 and T1 started in parallel.
 - 2026-10-21: T1 merged after one fix by Claude. CI runs `cargo test` without features, so the target's tests behind `baukit-test/data-subject` never ran; `baukit-data-subject` now enables the feature as a dev-dependency. The workspace dependency on `baukit-data-subject` disables default features, so D2 must enable `server` explicitly.
 - 2026-10-21: D2 merged after one rework. POST resolves identifiers inside its transaction and jobs carry only internal subject IDs. The first pass polled pending identity deletions every second without an end; the rework adds backoff capped at 60 seconds and a 24-hour default deadline that fails the operation without a receipt. D3 started.
+- 2026-10-21: D3 merged after one rework that removed a forced RLS policy limited to the migration role; it would have locked out a separate application role. Claude had committed build artifacts in the D2 merge; the unpushed merge was rewritten without them. T2 started.
