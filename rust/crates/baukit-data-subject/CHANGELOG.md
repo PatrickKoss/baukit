@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Run the shared service conformance check against the PostgreSQL fixture
+  product with erasure only and with exports, using real authentication and jobs.
+
 - Add opt-in exports through `DataSubjectExportProduct`, using the existing
   acceptance, operation store and lease-aware worker.
 - Store bounded JSON parts and their signed digests atomically. Reject oversized

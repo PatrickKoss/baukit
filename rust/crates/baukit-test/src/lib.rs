@@ -38,6 +38,8 @@ mod container_labels;
 mod credential_probe;
 #[cfg(feature = "data-subject")]
 mod data_subject;
+#[cfg(feature = "data-subject")]
+mod data_subject_conformance;
 mod erasure;
 #[cfg(test)]
 mod fixture_tests;
@@ -83,6 +85,12 @@ pub use data_subject::{
     DataSubjectFault, DataSubjectOutcome, DataSubjectScript, DataSubjectScriptError,
     DataSubjectTargetOptions, DataSubjectTargetServer, DataSubjectTokenId,
     ReceivedDataSubjectRequest,
+};
+#[cfg(feature = "data-subject")]
+pub use data_subject_conformance::{
+    DataSubjectConformanceAdapter, DataSubjectConformanceError, DataSubjectEndpoint,
+    DataSubjectTestClient, DataSubjectTestSubject, assert_data_subject_conformance,
+    check_data_subject_conformance,
 };
 pub use erasure::{
     CleanupKind, ErasureConformanceError, OwnedResourceCheck, ProductProfileErasureAdapter,

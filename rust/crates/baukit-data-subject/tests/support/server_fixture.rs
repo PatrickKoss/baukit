@@ -306,7 +306,8 @@ impl Fixture {
         let api_token = tokens
             .issue(
                 Uuid::now_v7(),
-                NewApiToken::new("fixture").with_grants(["data-subject.erase"]),
+                NewApiToken::new("fixture")
+                    .with_grants(["data-subject.erase", "data-subject.export"]),
             )
             .await?
             .secret;
@@ -631,5 +632,64 @@ impl std::io::Write for Logs {
     }
     fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl baukit_test::DataSubjectConformanceAdapter for Fixture {
+    type Error = std::io::Error;
+
+    async fn mint_token(
+        &mut self,
+        client: baukit_test::DataSubjectTestClient,
+        scopes: &[&str],
+    ) -> Result<String, Self::Error> {
+        use baukit_test::DataSubjectTestClient;
+        let client = match client {
+            DataSubjectTestClient::Allowed => "privacy",
+            DataSubjectTestClient::OtherAllowed => "privacy-other",
+            DataSubjectTestClient::Disallowed => "unlisted-client",
+            DataSubjectTestClient::ApiToken => return Ok(self.api_token.clone()),
+        };
+        self.token(client, &scopes.join(" "))
+            .map_err(|_| std::io::Error::other("fixture token failed"))
+    }
+
+    async fn seed_subject(
+        &mut self,
+        _kind: OperationKind,
+        case: baukit_test::DataSubjectTestSubject,
+        _reference: &str,
+    ) -> Result<Option<Vec<Identifier>>, Self::Error> {
+        use baukit_test::DataSubjectTestSubject;
+        let id = Uuid::new_v4().to_string();
+        let value = format!("lookup-{}@example.invalid", Uuid::new_v4());
+        if case != DataSubjectTestSubject::Unmatched {
+            sqlx::query("INSERT INTO product_subjects (id, authentication_subject, lookup_hash) VALUES ($1, NULL, $2)")
+                .bind(&id).bind(lookup_hash(&value)).execute(&self.pool).await
+                .map_err(|_| std::io::Error::other("fixture subject failed"))?;
+        }
+        if case == DataSubjectTestSubject::Restricted {
+            sqlx::query("INSERT INTO legal_records (subject_id) VALUES ($1)")
+                .bind(id)
+                .execute(&self.pool)
+                .await
+                .map_err(|_| std::io::Error::other("fixture restriction failed"))?;
+        }
+        Ok(Some(vec![Identifier {
+            identifier_type: IdentifierType::Email,
+            value,
+        }]))
+    }
+
+    async fn run_pending_work(&mut self) -> Result<(), Self::Error> {
+        self.run_handler_until(
+            Arc::new(DataSubjectHandler::new(self.store.clone(), self.product.clone())),
+            || async {
+                let pending: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM data_subject_operations WHERE status = 'pending')")
+                    .fetch_one(&self.pool).await?;
+                Ok(!pending)
+            },
+        ).await.map_err(|_| std::io::Error::other("fixture worker failed"))
     }
 }

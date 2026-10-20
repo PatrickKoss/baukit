@@ -820,9 +820,22 @@ fn read(state: &TargetState, operation: &mut Operation, part: Option<&str>) -> R
         return (fault, delay);
     }
     if let Some(part) = part {
-        if operation.resource.status != OperationStatus::Completed {
+        if operation.resource.status == OperationStatus::Pending {
             return (error(StatusCode::CONFLICT, codes::EXPORT_NOT_READY), delay);
         }
+        if operation.resource.status != OperationStatus::Completed {
+            return (not_found(), delay);
+        }
+        let index = part.parse::<u32>().ok().and_then(|number| {
+            operation
+                .resource
+                .parts
+                .iter()
+                .position(|part| part.part_number == number)
+        });
+        let Some(index) = index else {
+            return (not_found(), delay);
+        };
         let completed = operation
             .resource
             .completed_at
@@ -835,12 +848,7 @@ fn read(state: &TargetState, operation: &mut Operation, part: Option<&str>) -> R
         {
             return (error(StatusCode::GONE, codes::EXPORT_EXPIRED), delay);
         }
-        let bytes = part
-            .parse::<usize>()
-            .ok()
-            .and_then(|number| number.checked_sub(1))
-            .and_then(|index| operation.parts.get(index));
-        let Some(bytes) = bytes else {
+        let Some(bytes) = operation.parts.get(index) else {
             return (not_found(), delay);
         };
         return (
