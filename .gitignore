@@ -21,6 +21,7 @@ coverage/
 *.swp
 
 # Tool output
+/out/
 .cache/
 *.log
 **/__pycache__/**
