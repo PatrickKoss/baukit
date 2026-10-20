@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## [0.10.30] - 2026-10-20
+
+- Release the coordinated baukit 0.10.30 train.
+
 ## [0.10.29] - 2026-10-15
 
 - Document and test explicit cleanup outcomes for erased profiles so successful erasure does not imply a cleanup failure.

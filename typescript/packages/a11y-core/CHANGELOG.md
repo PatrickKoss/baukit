@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.10.30
+
+### Patch Changes
+
+- 95087b9: Keep focus moved outside a closing overlay and avoid disconnected openers. Add `restoreFocus` and
+  `returnFocus` callbacks to `useFocusTrap` and `useOverlayA11y` for opting out or choosing a fallback.
+- Release the coordinated baukit 0.10.30 train.
+
 ## 0.10.29
 
 ### Patch Changes

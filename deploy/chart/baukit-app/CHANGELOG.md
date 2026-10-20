@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.10.30] - 2026-10-20
+
+- Release the coordinated baukit 0.10.30 train.
+
 ## [0.10.29] - 2026-10-15
 
 ## [0.10.28] - 2026-10-14

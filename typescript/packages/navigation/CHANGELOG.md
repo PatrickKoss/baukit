@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## 0.10.30
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.30 train.
+
 ## 0.10.29
 
 - Allow six main navigation items plus an optional profile. Keep long labels

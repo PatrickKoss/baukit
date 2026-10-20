@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.10.30] - 2026-10-20
+
+- Release the coordinated baukit 0.10.30 train.
+
 ## [0.10.29] - 2026-10-15
 
 - Generated mobile apps pin Expo 57.0.30, expo-auth-session 57.0.16, expo-constants 57.0.22,
