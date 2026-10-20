@@ -1768,3 +1768,34 @@ async fn receipt_write_failure_rolls_back_part_bytes_and_every_product_change() 
     assert_eq!(payload, json!({"operationId": pending.operation_id}));
     Ok(())
 }
+
+#[tokio::test]
+#[ignore = "requires Docker"]
+async fn service_conformance_erasure_only() -> TestResult {
+    let mut fixture = Fixture::new(false).await?;
+    let router = fixture.router.clone();
+    baukit_test::check_data_subject_conformance(
+        baukit_test::DataSubjectEndpoint::Router(&router),
+        &mut fixture,
+    )
+    .await?;
+    assert_eq!(fixture.product.erases.load(Ordering::SeqCst), 2);
+    assert_eq!(fixture.product.exports.load(Ordering::SeqCst), 0);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker"]
+async fn service_conformance_erasure_and_export() -> TestResult {
+    let mut fixture =
+        Fixture::with_exports(|config| config.limits.max_export_part_bytes = 100).await?;
+    let router = fixture.router.clone();
+    baukit_test::check_data_subject_conformance(
+        baukit_test::DataSubjectEndpoint::Router(&router),
+        &mut fixture,
+    )
+    .await?;
+    assert_eq!(fixture.product.erases.load(Ordering::SeqCst), 2);
+    assert_eq!(fixture.product.exports.load(Ordering::SeqCst), 1);
+    Ok(())
+}

@@ -1,8 +1,8 @@
 # Data subject contract
 
 **Status:** Version 1 contract. Core types, receipt verification, the erasure
-and export server adapters and the controlled client-test target are implemented.
-Service conformance follows in T2.
+and export server adapters, controlled client-test target and service conformance
+check are implemented.
 **Applies to:** Services accepting machine-initiated erasure and export requests,
 including services implemented without Baukit.
 **Related:** [product-profile erasure](./product-profile-erasure-contract.md),
@@ -512,8 +512,59 @@ registration handle and parsed body. These private observations stay in memory
 and omit `Debug` and serialization. Dropping the target shuts down the socket
 and delayed responses. See the [`baukit-test` usage example](../../rust/crates/baukit-test/README.md#data-subject-client-tests).
 
-The service-side `check_data_subject_conformance` entry point is planned in T2.
-T2 will document its final signature and product adapter requirements here.
+Services enable the same `data-subject` feature and call:
+
+```rust,ignore
+pub async fn check_data_subject_conformance<A: DataSubjectConformanceAdapter>(
+    endpoint: DataSubjectEndpoint<'_>,
+    adapter: &mut A,
+) -> Result<(), DataSubjectConformanceError>;
+```
+
+`DataSubjectEndpoint::Router(&router)` exercises the complete product router,
+including authentication middleware. `DataSubjectEndpoint::BaseUrl(base_url)`
+uses an already listening service. `assert_data_subject_conformance` has the
+same arguments and panics with the failed requirement. Errors are typed variants
+such as `CacheControl`, `InvalidBody`, `Receipt`, `ReceiptFields`, `ExportPart`
+and `IdentifierLeak`. They never contain response bodies, tokens, lookup values
+or adapter errors.
+
+Implement `DataSubjectConformanceAdapter` with `#[async_trait::async_trait]`:
+
+- `type Error: std::error::Error + Send + Sync + 'static` identifies setup failures.
+- `mint_token(client: DataSubjectTestClient, scopes: &[&str]) -> Result<String, Self::Error>`
+  asynchronously mints verified tokens for `Allowed`, `OtherAllowed`, `Disallowed`
+  and `ApiToken`. The first two must represent different allowed clients. Give
+  OAuth tokens exactly the requested scopes and API tokens the requested grants.
+- `seed_subject(kind: OperationKind, case: DataSubjectTestSubject, reference: &str)
+  -> Result<Option<Vec<Identifier>>, Self::Error>` asynchronously prepares
+  `Matched`, `Unmatched` and `Restricted` fixtures. Only unsupported restrictions
+  may return `None`. Each call needs independent lookup values and product
+  subjects, because earlier erasures consume their fixtures. Matched exports
+  must produce at least one part. The reference lets controlled test servers
+  select their outcome without exposing lookup values.
+- `run_pending_work() -> Result<(), Self::Error>` asynchronously drains all work
+  needed for terminal results, including configured identity deletion workers.
+  The checker then fetches status once. It does not sleep or retry pending work.
+
+Use a fresh, isolated service fixture. Keep background workers under adapter
+control so the initial POST and export-readiness checks observe pending work.
+Identifiers must satisfy the advertised types and limits. Use distinctive
+lookup values absent from exported record content so the response privacy check
+can detect accidental echoes. The checker scans raw response bytes, decoded
+JSON strings and decoded receipt payloads for submitted values and their trimmed
+or email-normalized forms. Blank invalid inputs are excluded from substring
+matching. This test does not inspect database storage or logs; products still
+need those checks for their deletion inventory.
+
+The checker covers only operations listed in discovery. For each, it checks
+route availability, authentication, operation scopes, request validation and
+limits, idempotent replay and conflict, client and kind isolation, terminal
+receipt verification and field matching, and signed `notFound` results. Erasure
+also checks legal restrictions when seeded. Export checks pending-part rejection
+and every part's JSON, signed digest, length and advertised byte bound. The
+PostgreSQL fixture product runs both erasure-only and erasure-plus-export checks;
+the controlled target runs the same checker over HTTP.
 
 ## 9. Acceptance checks
 

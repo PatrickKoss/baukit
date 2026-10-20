@@ -38,6 +38,7 @@ uuid.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
+async-trait = "0.1.92"
 baukit-runtime = { path = "../baukit-runtime" }
 baukit-test = { path = "../baukit-test", features = ["data-subject"] }
 reqwest.workspace = true

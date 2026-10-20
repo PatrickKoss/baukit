@@ -325,6 +325,7 @@ dependencies = [
 name = "baukit-data-subject"
 version = "0.10.31"
 dependencies = [
+ "async-trait",
  "aws-lc-rs",
  "axum",
  "base64 0.23.1",

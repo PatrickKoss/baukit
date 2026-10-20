@@ -611,6 +611,18 @@ async fn exports_sign_exact_parts_and_enforce_readiness_expiry_and_retention() -
         "data_subject_export_expired",
     )
     .await?;
+    for part in ["0", "3", "invalid"] {
+        error(
+            client
+                .get(format!("{url}/parts/{part}"))
+                .bearer_auth(TOKEN)
+                .send()
+                .await?,
+            StatusCode::NOT_FOUND,
+            "data_subject_operation_not_found",
+        )
+        .await?;
+    }
     assert_eq!(poll(&client, &url).await?, done);
     server.advance_time(Duration::from_secs(400 * 24 * 60 * 60))?;
     error(
@@ -938,5 +950,41 @@ async fn drop_closes_listener_keep_alive_and_delayed_requests() -> Result {
     })
     .await?;
     assert!(client.get(discovery_url).send().await.is_err());
+    Ok(())
+}
+
+#[tokio::test]
+async fn terminal_exports_without_parts_return_not_found() -> Result {
+    for outcome in [
+        Outcome::NotFound,
+        Outcome::Failed {
+            code: "product_unavailable".into(),
+        },
+    ] {
+        let server = target().await?;
+        let client = client();
+        server.set_script(SUBJECT, outcome)?;
+        let pending = start(&client, &server, EXPORT, SUBJECT).await?;
+        let url = operation_url(&server, EXPORT, &pending);
+        let done = poll(&client, &url).await?;
+        assert!(matches!(
+            done.status,
+            OperationStatus::NotFound | OperationStatus::Failed
+        ));
+        assert!(done.parts.is_empty());
+        for part in ["1", "0", "invalid"] {
+            error(
+                client
+                    .get(format!("{url}/parts/{part}"))
+                    .bearer_auth(TOKEN)
+                    .send()
+                    .await?,
+                StatusCode::NOT_FOUND,
+                "data_subject_operation_not_found",
+            )
+            .await?;
+        }
+        assert_eq!(poll(&client, &url).await?, done);
+    }
     Ok(())
 }

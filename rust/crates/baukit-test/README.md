@@ -479,6 +479,46 @@ execution order, which is a miserable afternoon to debug from the symptom.
 This crate provides fixtures and contract checks. Products still decide their limits, persistence,
 error types, and policy. The helpers only check the behavior a product declares.
 
+## Data subject service conformance
+
+Enable `data-subject` and implement `DataSubjectConformanceAdapter` for an
+isolated product fixture. Run the complete router, including authentication:
+
+```rust,no_run
+# #[cfg(feature = "data-subject")]
+# async fn example<A: baukit_test::DataSubjectConformanceAdapter>(
+#     router: &axum::Router, adapter: &mut A,
+# ) -> Result<(), baukit_test::DataSubjectConformanceError> {
+use baukit_test::{DataSubjectEndpoint, check_data_subject_conformance};
+
+check_data_subject_conformance(DataSubjectEndpoint::Router(router), adapter).await?;
+# Ok(())
+# }
+```
+
+Use `DataSubjectEndpoint::BaseUrl(base_url)` for a listening service.
+`assert_data_subject_conformance` takes the same arguments and panics on failure.
+`DataSubjectConformanceError` names the failed requirement without exposing
+lookup values, credentials, responses or adapter error messages.
+
+The adapter uses `#[async_trait::async_trait]`. Its `mint_token` method accepts
+`DataSubjectTestClient` and requested scopes. Supply a primary allowed OAuth
+client, another allowed client, a disallowed client and an API token. Its
+`seed_subject` method accepts the operation kind, `DataSubjectTestSubject` and
+an opaque reference. Return independent identifiers for matched subjects,
+unmatched identifiers and subjects with legal restrictions. Return `None` only
+when restrictions are unsupported. Matched exports must produce at least one
+part. Use distinctive lookup values absent from export content.
+
+`run_pending_work` drains the product's workers until the requests finish.
+Keep workers under fixture control until this call so pending export downloads
+can be tested. The checker never sleeps or polls for completion. It checks the
+advertised operations through HTTP, including auth and scopes, validation,
+replay, conflict, ownership, signed receipts and export digests. It scans every
+response and decoded receipt for submitted lookup values. Unlisted operation
+kinds are skipped. See the [adapter requirements](../../../docs/platform/data-subject-contract.md#8-conformance)
+for the full contract. Storage and log privacy need separate product tests.
+
 ## Data subject client tests
 
 Enable the `data-subject` feature for `DataSubjectTargetServer`. It binds an
