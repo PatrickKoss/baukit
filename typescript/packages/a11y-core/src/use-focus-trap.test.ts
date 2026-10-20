@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, renderHook } from '@testing-library/react';
-import { createElement, useRef } from 'react';
+import { createElement, StrictMode, useRef, type RefObject } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { FocusContainer, FocusTarget, HostRef } from './dom-boundary.js';
@@ -248,6 +248,173 @@ describe('applyFocusTrapKey', () => {
 });
 
 describe('useFocusTrap', () => {
+  function Dialog({
+    active = true,
+    containerRef,
+    initialFocusRef,
+  }: {
+    active?: boolean;
+    containerRef?: RefObject<HTMLDivElement | null> | undefined;
+    initialFocusRef?: RefObject<HTMLInputElement | null> | undefined;
+  }) {
+    const localRef = useRef<HTMLDivElement>(null);
+    const ref = containerRef ?? localRef;
+    useFocusTrap({ active, containerRef: ref, initialFocusRef });
+    return active
+      ? createElement(
+          'div',
+          { ref },
+          createElement('button', { id: 'first' }, 'first'),
+          createElement('input', { id: 'initial', ref: initialFocusRef }),
+        )
+      : null;
+  }
+
+  it.each([false, true])(
+    'restores the opener after StrictMode effect replay with initialFocusRef = %s',
+    (withInitialFocus) => {
+      const opener = mount('<button>open</button>').firstElementChild as HTMLButtonElement;
+      opener.focus();
+      const initialFocusRef = withInitialFocus ? { current: null } : undefined;
+      const view = render(
+        createElement(StrictMode, null, createElement(Dialog, { initialFocusRef })),
+      );
+      expect(document.activeElement?.id).toBe(withInitialFocus ? 'initial' : 'first');
+
+      view.unmount();
+      expect(document.activeElement).toBe(document.body);
+      act(() => {
+        vi.runOnlyPendingTimers();
+      });
+
+      expect(document.activeElement).toBe(opener);
+    },
+  );
+
+  it.each(['initialFocusRef', 'containerRef'] as const)(
+    'keeps the opener when %s changes while open under StrictMode',
+    (changedRef) => {
+      const opener = mount('<button>open</button>').firstElementChild as HTMLButtonElement;
+      opener.focus();
+      const view = render(
+        createElement(StrictMode, null, createElement(Dialog, { [changedRef]: { current: null } })),
+      );
+      const focus = vi.spyOn(opener, 'focus');
+
+      view.rerender(
+        createElement(StrictMode, null, createElement(Dialog, { [changedRef]: { current: null } })),
+      );
+      act(() => {
+        vi.runOnlyPendingTimers();
+      });
+      expect(document.activeElement?.id).toBe(
+        changedRef === 'initialFocusRef' ? 'initial' : 'first',
+      );
+      expect(focus).not.toHaveBeenCalled();
+
+      view.unmount();
+      act(() => {
+        vi.runOnlyPendingTimers();
+      });
+
+      expect(document.activeElement).toBe(opener);
+    },
+  );
+
+  it('captures a different opener for a separate opening under StrictMode', () => {
+    const triggers = mount('<button>first opener</button><button>second opener</button>');
+    const first = triggers.firstElementChild as HTMLButtonElement;
+    const second = triggers.lastElementChild as HTMLButtonElement;
+    first.focus();
+    const view = render(createElement(StrictMode, null, createElement(Dialog)));
+
+    view.rerender(createElement(StrictMode, null, createElement(Dialog, { active: false })));
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+    expect(document.activeElement).toBe(first);
+
+    second.focus();
+    view.rerender(createElement(StrictMode, null, createElement(Dialog)));
+    expect(document.activeElement?.id).toBe('first');
+    view.rerender(createElement(StrictMode, null, createElement(Dialog, { active: false })));
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+
+    expect(document.activeElement).toBe(second);
+  });
+
+  it.each([false, true])(
+    'does not reuse a previous opener after autoFocus with fallback = %s',
+    (withFallback) => {
+      const triggers = mount('<button>first opener</button><button>second opener</button>');
+      const first = triggers.firstElementChild as HTMLButtonElement;
+      const second = triggers.lastElementChild as HTMLButtonElement;
+      const fallback = mount('<h1 tabindex="-1">fallback</h1>').firstElementChild as HTMLElement;
+
+      function AutoFocusDialog({ active, autoFocus }: { active: boolean; autoFocus: boolean }) {
+        const ref = useRef<HTMLDivElement>(null);
+        useFocusTrap({
+          active,
+          containerRef: ref,
+          returnFocus: withFallback ? () => fallback : undefined,
+        });
+        return active ? createElement('div', { ref }, createElement('input', { autoFocus })) : null;
+      }
+
+      first.focus();
+      const view = render(createElement(AutoFocusDialog, { active: true, autoFocus: false }));
+      view.rerender(createElement(AutoFocusDialog, { active: false, autoFocus: false }));
+      act(() => {
+        vi.runOnlyPendingTimers();
+      });
+      expect(document.activeElement).toBe(first);
+
+      second.focus();
+      view.rerender(createElement(AutoFocusDialog, { active: true, autoFocus: true }));
+      expect(document.activeElement).toBe(view.container.querySelector('input'));
+      view.unmount();
+      act(() => {
+        vi.runOnlyPendingTimers();
+      });
+
+      expect(document.activeElement).toBe(withFallback ? fallback : document.body);
+    },
+  );
+
+  it('captures fresh focus after a declined restore under StrictMode', () => {
+    const opener = mount('<button>open</button>').firstElementChild as HTMLButtonElement;
+    opener.focus();
+    const host = mount('<button>inside</button>');
+    const ref = containerRef(host);
+    let restoreOpener = false;
+    const view = renderHook(
+      ({ active }) =>
+        useFocusTrap({ active, containerRef: ref, restoreFocus: () => restoreOpener }),
+      {
+        initialProps: { active: true },
+        wrapper: ({ children }) => createElement(StrictMode, null, children),
+      },
+    );
+
+    view.rerender({ active: false });
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+    expect(document.activeElement).toBe(host.firstElementChild);
+
+    restoreOpener = true;
+    view.rerender({ active: true });
+    view.unmount();
+    host.remove();
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+
+    expect(document.activeElement).toBe(document.body);
+  });
+
   it('moves focus to the first control when the overlay opens', () => {
     const host = mount('<button id="first">first</button><button id="second">second</button>');
 
@@ -461,25 +628,39 @@ describe('useFocusTrap', () => {
     expect(document.activeElement).toBe(fallback);
   });
 
-  it('cancels the pending restore when reopened before the next task', () => {
-    const opener = mount('<button>open</button>').firstElementChild as HTMLButtonElement;
-    opener.focus();
-    const focus = vi.spyOn(opener, 'focus');
-    const host = mount('<button>inside</button>');
-    const ref = containerRef(host);
-    const view = renderHook(({ active }) => useFocusTrap({ active, containerRef: ref }), {
-      initialProps: { active: true },
-    });
+  it.each([false, true])(
+    'cancels the pending restore when reopened before the next task with outside focus = %s',
+    (withOutsideFocus) => {
+      const opener = mount('<button>open</button>').firstElementChild as HTMLButtonElement;
+      opener.focus();
+      const focus = vi.spyOn(opener, 'focus');
+      const host = mount('<button>inside</button>');
+      const ref = containerRef(host);
+      const view = renderHook(({ active }) => useFocusTrap({ active, containerRef: ref }), {
+        initialProps: { active: true },
+      });
 
-    view.rerender({ active: false });
-    view.rerender({ active: true });
-    act(() => {
-      vi.runOnlyPendingTimers();
-    });
+      view.rerender({ active: false });
+      if (withOutsideFocus) {
+        const outside = mount('<button>outside</button>').firstElementChild as HTMLButtonElement;
+        outside.focus();
+      }
+      view.rerender({ active: true });
+      act(() => {
+        vi.runOnlyPendingTimers();
+      });
 
-    expect(focus).not.toHaveBeenCalled();
-    expect(document.activeElement).toBe(host.firstElementChild);
-  });
+      expect(focus).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(host.firstElementChild);
+
+      view.unmount();
+      host.remove();
+      act(() => {
+        vi.runOnlyPendingTimers();
+      });
+      expect(document.activeElement).toBe(opener);
+    },
+  );
 
   it('prefers the requested initial focus target', () => {
     const host = mount('<button id="first">first</button><button id="wanted">wanted</button>');

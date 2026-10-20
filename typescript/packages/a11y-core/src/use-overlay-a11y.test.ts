@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook } from '@testing-library/react';
-import type { RefObject } from 'react';
+import { createElement, StrictMode, type RefObject } from 'react';
 import type { View } from 'react-native';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -92,6 +92,23 @@ describe('useOverlayA11y on native', () => {
 
     expect(cancel).toHaveBeenCalled();
     expect(setAccessibilityFocus).toHaveBeenCalledWith(3);
+  });
+
+  it('keeps the explicit trigger after StrictMode effect replay', () => {
+    findNodeHandle.mockImplementation((target) =>
+      target === CONTAINER ? 7 : target === TRIGGER ? 3 : null,
+    );
+    const containerRef = ref(CONTAINER);
+    const triggerRef = ref(TRIGGER);
+    const view = renderHook(() => useOverlayA11y({ active: true, containerRef, triggerRef }), {
+      wrapper: ({ children }) => createElement(StrictMode, null, children),
+    });
+    act(flushInteractions);
+    setAccessibilityFocus.mockReset();
+
+    view.unmount();
+
+    expect(setAccessibilityFocus).toHaveBeenCalledExactlyOnceWith(3);
   });
 
   it('prefers a trigger handle the caller already resolved', () => {

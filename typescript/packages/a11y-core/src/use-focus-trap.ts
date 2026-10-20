@@ -116,6 +116,17 @@ export function applyFocusTrapKey(
   return 'wrapped';
 }
 
+function containsFocus(container: object | null): boolean {
+  for (
+    let element: Element | null = document.activeElement;
+    element !== null;
+    element = element.parentElement
+  ) {
+    if (element === container) return true;
+  }
+  return false;
+}
+
 function hasOutsideFocus(container: object | null): boolean {
   const active = document.activeElement;
   if (
@@ -126,10 +137,7 @@ function hasOutsideFocus(container: object | null): boolean {
   ) {
     return false;
   }
-  for (let element: Element | null = active; element !== null; element = element.parentElement) {
-    if (element === container) return false;
-  }
-  return true;
+  return !containsFocus(container);
 }
 
 function isConnected(target: FocusTarget | null | undefined): target is FocusTarget {
@@ -148,6 +156,7 @@ export function useFocusTrap({
   const onEscapeRef = useRef(onEscape);
   const restoreFocusRef = useRef(restoreFocus);
   const returnFocusRef = useRef(returnFocus);
+  const openerRef = useRef<FocusTarget | null | undefined>(undefined);
   const restoreTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
@@ -161,13 +170,19 @@ export function useFocusTrap({
 
   useEffect(() => {
     if (!hasDocument() || !active) return;
+    const container = hostElement(containerRef);
+    if (
+      openerRef.current === undefined ||
+      (restoreTimerRef.current === undefined && !containsFocus(container))
+    ) {
+      openerRef.current = activeFocusTarget();
+    }
     if (restoreTimerRef.current !== undefined) {
       clearTimeout(restoreTimerRef.current);
       restoreTimerRef.current = undefined;
     }
 
-    const previouslyFocused = activeFocusTarget();
-    const container = hostElement(containerRef);
+    const previouslyFocused = openerRef.current;
     focusOverlayEntry(asFocusContainer(containerRef), asFocusTarget(initialFocusRef));
 
     return () => {
@@ -175,6 +190,7 @@ export function useFocusTrap({
       // the next task so the browser does not reject focus on a still-inert trigger.
       restoreTimerRef.current = setTimeout(() => {
         restoreTimerRef.current = undefined;
+        openerRef.current = undefined;
         if (hasOutsideFocus(container)) return;
         const restoreOpener = restoreFocusRef.current?.() ?? true;
         const target =
