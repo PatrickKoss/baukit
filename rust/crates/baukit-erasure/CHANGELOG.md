@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Add `ErasureService::fence_as_operator_in_transaction` for authorized machine
+  erasure with the same subject fence and identity retention policy.
+
 ## [0.10.31] - 2026-10-20
 
 - Release the coordinated baukit 0.10.31 train.

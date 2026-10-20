@@ -312,6 +312,55 @@ impl ErasureService {
     pub fn store(&self) -> &PostgresErasureStore {
         &self.store
     }
+    /// Fences an operator-selected subject inside the caller's transaction.
+    ///
+    /// The caller erases product rows in this same transaction and commits it.
+    /// Retain mode completes immediately. Delete mode queues identity deletion;
+    /// register `IdentityDeletionHandler` to process it. No provider call runs here.
+    /// Existing fences do not prevent an authorized operator from erasing again.
+    pub async fn fence_as_operator_in_transaction(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        subject: &str,
+    ) -> Result<ErasureOutcome, ErasureError> {
+        if subject.is_empty() {
+            return Err(ErasureError::Configuration);
+        }
+        let subject_hash = self.store.subject_hash(subject);
+        lock(transaction, &subject_hash).await?;
+        let outcome = ErasureOutcome {
+            status: ErasureState::Pending,
+            operation_id: Uuid::now_v7(),
+            completed_at: None,
+        };
+        let key_hash = self
+            .store
+            .hash(b"erasure-operator-key\0", &outcome.operation_id.to_string());
+        sqlx::query("INSERT INTO erasure_operations (id, subject_hash, key_hash, state, response) VALUES ($1, $2, $3, 'pending', $4)")
+            .bind(outcome.operation_id).bind(&subject_hash).bind(key_hash)
+            .bind(serde_json::to_value(&outcome)?)
+            .execute(&mut **transaction).await?;
+        sqlx::query("INSERT INTO erasure_fences (subject_hash, erased_at) VALUES ($1, now()) ON CONFLICT (subject_hash) DO UPDATE SET erased_at = now()")
+            .bind(subject_hash).execute(&mut **transaction).await?;
+        if let IdentityRetention::Delete {
+            provider_id,
+            max_attempts,
+            ..
+        } = &self.identity_retention
+        {
+            PostgresJobStore::new(self.store.pool.clone()).enqueue_in_transaction(
+                transaction,
+                NewJob::new(
+                    IDENTITY_DELETE_JOB_TYPE,
+                    serde_json::json!({"subject": subject, "providerId": provider_id, "operationId": outcome.operation_id}),
+                    *max_attempts,
+                ).idempotency_key(outcome.operation_id.to_string()),
+            ).await?;
+            Ok(outcome)
+        } else {
+            self.store.complete(transaction, outcome.operation_id).await
+        }
+    }
     /// Checks the key, subject, replay receipt and session fence without writes or locks.
     ///
     /// Use this before external notifications. `erase` repeats every check under
