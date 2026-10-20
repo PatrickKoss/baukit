@@ -1,0 +1,23 @@
+DSSEv1 51 application/vnd.baukit.data-subject.receipt.v1+json 527 {
+  "parts": [],
+  "restrictions": [],
+  "categories": [
+    {
+      "category": "records",
+      "action": "erased",
+      "count": 3
+    }
+  ],
+  "completedAt": "2026-10-20T10:00:01Z",
+  "createdAt": "2026-10-20T10:00:00Z",
+  "service": {
+    "name": "fixture-service",
+    "version": "1.0.0"
+  },
+  "subjectReference": "fixture-reference-01",
+  "status": "completed",
+  "kind": "erasure",
+  "operationId": "00000000-0000-4000-8000-000000000001",
+  "contractVersion": "1",
+  "receiptType": "baukit.data-subject.receipt.v1"
+}

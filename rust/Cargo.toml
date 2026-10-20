@@ -4,6 +4,7 @@ members = [
   "crates/baukit-auth",
   "crates/baukit-core",
   "crates/baukit-credential-vault",
+  "crates/baukit-data-subject",
   "crates/baukit-egress",
   "crates/baukit-events",
   "crates/baukit-erasure",
@@ -42,6 +43,7 @@ baukit-auth = { version = "=0.10.31", path = "crates/baukit-auth" }
 baukit-config = { version = "=0.10.31", path = "crates/baukit-config" }
 baukit-core = { version = "=0.10.31", path = "crates/baukit-core" }
 baukit-credential-vault = { version = "=0.10.31", path = "crates/baukit-credential-vault" }
+baukit-data-subject = { version = "=0.10.31", path = "crates/baukit-data-subject" }
 baukit-egress = { version = "=0.10.31", path = "crates/baukit-egress" }
 baukit-erasure = { version = "=0.10.31", path = "crates/baukit-erasure" }
 baukit-events = { version = "=0.10.31", path = "crates/baukit-events" }

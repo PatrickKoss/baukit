@@ -2,7 +2,8 @@
 
 **Status:** Contract and conformance boundary.
 **Applies to:** Authenticated products that erase a user's product data.
-**Related:** [local-data ownership](./local-data-ownership-contract.md),
+**Related:** [data subject requests](./data-subject-contract.md),
+[local-data ownership](./local-data-ownership-contract.md),
 [analytics privacy](./analytics-privacy-contract.md), and
 [`@baukit/api-runtime`](../../typescript/packages/api-runtime/README.md).
 

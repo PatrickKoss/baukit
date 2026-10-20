@@ -322,6 +322,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "baukit-data-subject"
+version = "0.10.31"
+dependencies = [
+ "aws-lc-rs",
+ "base64 0.23.1",
+ "chrono",
+ "pem",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
 name = "baukit-egress"
 version = "0.10.31"
 dependencies = [
