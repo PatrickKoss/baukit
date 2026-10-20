@@ -40,6 +40,7 @@ zeroize.workspace = true
 [dev-dependencies]
 baukit-runtime = { path = "../baukit-runtime" }
 baukit-test = { path = "../baukit-test", features = ["data-subject"] }
+reqwest.workspace = true
 tokio.workspace = true
 tower = { workspace = true, features = ["util"] }
 tracing.workspace = true

@@ -1,4 +1,7 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashSet},
+    sync::Arc,
+};
 
 use baukit_erasure::ErasureState;
 use baukit_jobs::{
@@ -6,20 +9,21 @@ use baukit_jobs::{
 };
 use chrono::{DateTime, SubsecRound, TimeDelta, Utc};
 use serde::Deserialize;
-use sqlx::PgConnection;
+use sqlx::{Acquire, PgConnection, Postgres, Transaction};
 use uuid::Uuid;
 
 use super::{
-    DataSubjectError, DataSubjectProduct, ERASURE_JOB_TYPE, FINALIZATION_JOB_TYPE, LocalSubject,
-    PostgresDataSubjectStore, store::load_for_execution,
+    DataSubjectError, DataSubjectProduct, ERASURE_JOB_TYPE, EXPORT_JOB_TYPE, FINALIZATION_JOB_TYPE,
+    LocalSubject, PostgresDataSubjectStore, store::load_for_execution,
 };
 use crate::{
-    CONTRACT_VERSION, OperationResource, OperationStatus, RECEIPT_TYPE, ReceiptPayload, codes,
+    CONTRACT_VERSION, OperationKind, OperationResource, OperationStatus, RECEIPT_TYPE,
+    ReceiptPayload, codes,
 };
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ErasurePayload {
+struct ExecutionPayload {
     operation_id: Uuid,
     subjects: Vec<LocalSubject>,
 }
@@ -32,7 +36,7 @@ struct FinalizationPayload {
     check_count: u32,
 }
 
-/// Lease-aware erasure and identity-completion worker.
+/// Lease-aware erasure, export and identity-completion worker.
 /// Register with the product's `baukit_jobs::WorkerRunner`.
 #[derive(Clone)]
 pub struct DataSubjectHandler {
@@ -71,7 +75,17 @@ impl DataSubjectHandler {
         if let Some(mut operation) = load_for_execution(&mut transaction, id).await?
             && operation.status == OperationStatus::Pending
         {
-            if let Some(subjects) = subjects {
+            if operation.kind == OperationKind::Export {
+                if job.job_type != EXPORT_JOB_TYPE {
+                    return Err(DataSubjectError::Result);
+                }
+                self.export_result(
+                    &mut transaction,
+                    operation,
+                    subjects.ok_or(DataSubjectError::Result)?,
+                )
+                .await?;
+            } else if let Some(subjects) = subjects {
                 let mut fenced = HashSet::new();
                 let mut waiting = false;
                 for subject in &subjects {
@@ -165,12 +179,68 @@ impl DataSubjectHandler {
         Ok(())
     }
 
+    async fn export_result(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        mut operation: OperationResource,
+        subjects: Vec<LocalSubject>,
+    ) -> Result<(), DataSubjectError> {
+        let product = self
+            .store
+            .config
+            .export_product
+            .as_ref()
+            .ok_or(DataSubjectError::Configuration)?;
+        let mut execution = transaction.begin().await?;
+        let mut categories = BTreeMap::new();
+        for subject in &subjects {
+            for category in product.export(&mut execution, subject).await? {
+                categories
+                    .entry(category.name)
+                    .or_insert_with(Vec::new)
+                    .extend(category.records);
+            }
+        }
+        let split =
+            super::export::split(categories, self.store.config.limits.max_export_part_bytes);
+        let (categories, parts) = match split {
+            Ok(result) => result,
+            Err(DataSubjectError::ExportRecordTooLarge) => {
+                execution.rollback().await?;
+                sqlx::query("UPDATE data_subject_operations SET status = 'failed', completed_at = now(), error_code = $2 WHERE id = $1")
+                    .bind(operation.operation_id).bind(codes::EXPORT_RECORD_TOO_LARGE)
+                    .execute(&mut **transaction).await?;
+                return Ok(());
+            }
+            Err(error) => return Err(error),
+        };
+        operation.categories = categories;
+        operation.status = result_status(subjects.is_empty(), &operation);
+        operation.parts = parts.iter().map(|part| part.metadata.clone()).collect();
+        let completed_at = Utc::now().trunc_subsecs(6);
+        operation.completed_at = Some(completed_at);
+        let expires_at = completed_at
+            .checked_add_signed(self.store.config.export_retention)
+            .ok_or(DataSubjectError::Configuration)?;
+        for part in parts {
+            sqlx::query("INSERT INTO data_subject_export_parts (operation_id, part_number, json_bytes, sha256, bytes, expires_at) VALUES ($1, $2, $3, $4, $5, $6)")
+                .bind(operation.operation_id).bind(i64::from(part.metadata.part_number))
+                .bind(part.bytes).bind(part.metadata.sha256).bind(part.metadata.bytes as i64).bind(expires_at)
+                .execute(&mut *execution).await?;
+        }
+        self.sign_result(&mut execution, operation).await?;
+        execution.commit().await?;
+        Ok(())
+    }
+
     async fn sign_result(
         &self,
         connection: &mut PgConnection,
         operation: OperationResource,
     ) -> Result<(), DataSubjectError> {
-        let completed_at = Utc::now().trunc_subsecs(6);
+        let completed_at = operation
+            .completed_at
+            .unwrap_or_else(|| Utc::now().trunc_subsecs(6));
         let receipt = self
             .store
             .config
@@ -187,13 +257,17 @@ impl DataSubjectHandler {
                 completed_at,
                 categories: operation.categories.clone(),
                 restrictions: operation.restrictions.clone(),
-                parts: operation.parts,
+                parts: operation.parts.clone(),
             })
             .map_err(|_| DataSubjectError::Result)?;
-        sqlx::query("UPDATE data_subject_operations SET status = $2, completed_at = $3, categories = $4, restrictions = $5, receipt = $6 WHERE id = $1")
+        sqlx::query("UPDATE data_subject_operations SET status = $2, completed_at = $3, categories = $4, restrictions = $5, receipt = $6, parts = $7, export_expires_at = $8 WHERE id = $1")
             .bind(operation.operation_id).bind(serde_json::to_value(operation.status)?.as_str().ok_or(DataSubjectError::Result)?)
             .bind(completed_at).bind(serde_json::to_value(operation.categories)?)
             .bind(serde_json::to_value(operation.restrictions)?).bind(serde_json::to_value(receipt)?)
+            .bind(serde_json::to_value(operation.parts)?)
+            .bind(if operation.kind == OperationKind::Export && operation.status == OperationStatus::Completed {
+                Some(completed_at.checked_add_signed(self.store.config.export_retention).ok_or(DataSubjectError::Configuration)?)
+            } else { None })
             .execute(connection).await?;
         Ok(())
     }
@@ -211,7 +285,7 @@ fn result_status(not_found: bool, operation: &OperationResource) -> OperationSta
 
 impl JobHandler for DataSubjectHandler {
     fn job_types(&self) -> &'static [&'static str] {
-        &[ERASURE_JOB_TYPE, FINALIZATION_JOB_TYPE]
+        &[ERASURE_JOB_TYPE, EXPORT_JOB_TYPE, FINALIZATION_JOB_TYPE]
     }
 
     fn handle<'a>(
@@ -221,9 +295,11 @@ impl JobHandler for DataSubjectHandler {
     ) -> JobFuture<'a, Result<(), JobError>> {
         Box::pin(async move {
             let (id, subjects, check_count) = match job.job_type.as_str() {
-                ERASURE_JOB_TYPE => {
-                    let payload: ErasurePayload = serde_json::from_value(job.payload.clone())
-                        .map_err(|_| JobError::permanent("invalid data subject erasure payload"))?;
+                ERASURE_JOB_TYPE | EXPORT_JOB_TYPE => {
+                    let payload: ExecutionPayload = serde_json::from_value(job.payload.clone())
+                        .map_err(|_| {
+                            JobError::permanent("invalid data subject execution payload")
+                        })?;
                     (payload.operation_id, Some(payload.subjects), 0)
                 }
                 FINALIZATION_JOB_TYPE => {

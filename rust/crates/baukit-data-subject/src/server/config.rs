@@ -9,6 +9,8 @@ use crate::{
     ReceiptKeyStatus, ReceiptSigner, ReceiptVerifier, Scopes, Service,
 };
 
+use super::DataSubjectExportProduct;
+
 /// Explicit product configuration. Secrets have no debug representation here.
 pub struct DataSubjectConfig {
     /// Service identity signed into every receipt.
@@ -25,6 +27,9 @@ pub struct DataSubjectConfig {
     pub previous_receipt_keys: Vec<ReceiptKey>,
     /// Stable secret with at least 32 bytes for domain-separated request hashes.
     pub hash_key: Secret<String>,
+    pub(super) export_product: Option<Arc<dyn DataSubjectExportProduct>>,
+    /// Export part retention after completion, default seven days.
+    pub export_retention: TimeDelta,
     /// Operation and receipt retention, default 400 days.
     pub operation_retention: TimeDelta,
     /// Maximum erasure job attempts, default five.
@@ -54,10 +59,18 @@ impl DataSubjectConfig {
             previous_receipt_keys: Vec::new(),
             hash_key,
             operation_retention: TimeDelta::days(400),
+            export_product: None,
+            export_retention: TimeDelta::days(7),
             max_attempts: 5,
             identity_deletion_timeout: TimeDelta::days(1),
             erasure,
         }
+    }
+
+    /// Enables export discovery and routes using a product that implements the export port.
+    pub fn with_export(mut self, product: Arc<dyn DataSubjectExportProduct>) -> Self {
+        self.export_product = Some(product);
+        self
     }
 
     pub(super) fn validate(&self) -> Result<(), DataSubjectError> {
@@ -78,6 +91,11 @@ impl DataSubjectConfig {
             || self.limits.max_identifiers == 0
             || self.limits.max_identifier_length == 0
             || self.limits.max_export_part_bytes == 0
+            || self.limits.max_export_part_bytes > i64::MAX as u64
+            || self.export_retention <= TimeDelta::zero()
+            || chrono::Utc::now()
+                .checked_add_signed(self.export_retention)
+                .is_none()
             || self.hash_key.expose().len() < 32
             || self.operation_retention <= TimeDelta::zero()
             || chrono::Utc::now()
@@ -105,7 +123,11 @@ impl DataSubjectConfig {
         DiscoveryDocument {
             contract_version: CONTRACT_VERSION.into(),
             service: self.service.clone(),
-            operations: vec![OperationKind::Erasure],
+            operations: if self.export_product.is_some() {
+                vec![OperationKind::Erasure, OperationKind::Export]
+            } else {
+                vec![OperationKind::Erasure]
+            },
             identifier_types: self.identifier_types.clone(),
             scopes: Scopes::default(),
             limits: self.limits,
@@ -129,6 +151,15 @@ pub enum DataSubjectError {
     /// Stored data or receipt signing failed.
     #[error("invalid data subject stored result")]
     Result,
+    /// A serialized record with its category wrapper exceeds the export part limit.
+    #[error("data subject export record exceeds part limit")]
+    ExportRecordTooLarge,
+    /// Part requested while the export is pending.
+    #[error("data subject export not ready")]
+    ExportNotReady,
+    /// The requested part has passed retention.
+    #[error("data subject export expired")]
+    ExportExpired,
     /// Same client, kind and idempotency key with a different normalized request.
     #[error("data subject idempotency conflict")]
     Conflict,

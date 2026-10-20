@@ -1,8 +1,9 @@
 # baukit-data-subject
 
 Data subject v1 wire types, identifier normalization and Ed25519 DSSE receipts.
-The core has no HTTP or database dependencies. The default `server` feature adds public discovery, authenticated erasure routes,
-a PostgreSQL operation store and a durable erasure worker. Export follows in D3.
+The core has no HTTP or database dependencies. The default `server` feature adds
+public discovery, authenticated erasure and opt-in export routes, a PostgreSQL
+operation store and a durable worker.
 
 ```toml
 [dependencies]
@@ -43,11 +44,15 @@ include independent OpenSSL signatures. Never deploy their test private key.
 ## Mounting the erasure server
 
 Copy the jobs migrations, both erasure migrations and this crate's
-`migrations/0001_data_subject.sql` into the product's migration sequence, in
-that order. `0001_data_subject.sql` adds a trigger to `job_outbox` and references
+`migrations/0001_data_subject.sql` and `migrations/0002_data_subject_exports.sql`
+into the product's migration sequence, in that order. `0001_data_subject.sql`
+adds a trigger to `job_outbox` and references
 `erasure_operations`, so it must run after the `baukit-jobs` and `baukit-erasure`
-migrations. `POSTGRES_MIGRATION_SQL` exposes the data subject migration. Apply
+migrations. `POSTGRES_MIGRATION_SQL` and `POSTGRES_EXPORTS_MIGRATION_SQL` expose
+these migrations. Apply both even for erasure-only products. Apply
 migrations at deploy time. All stores below must point to the same database.
+Products grant their application role access to `data_subject_operations` and
+`data_subject_export_parts` like any other table.
 
 Implement `DataSubjectProduct` against the product's tables. `resolve` receives
 transient normalized identifiers and returns opaque internal subject IDs.
@@ -111,7 +116,8 @@ fn mount(
 Configure `PrincipalClaimMapping::client_id_claim` for the provider's machine
 client claim. Tokens need `data-subject.erase` and an allowed client ID. API
 tokens cannot call these routes. Discovery stays outside authentication and
-advertises only erasure. Serve `app` through the product's HTTP runtime and run
+advertises erasure and any configured export support. Serve `app` through the
+product's HTTP runtime and run
 `worker.run(shutdown)` through its worker supervision.
 
 Keep both hash keys stable with at least 32 bytes of secret material each.
@@ -160,4 +166,72 @@ job. Use `baukit_jobs::FixedUtcInterval` for daily slots, include the slot
 identifier in that job's idempotency key, and enqueue its next slot through
 `PostgresJobStore::enqueue_in_transaction`. Each purge call deletes at most the
 specified number of expired operations and their execution and finalization
-jobs. It keeps unexpired operations, identity fences and identity deletion jobs.
+jobs. It also deletes at most that many expired export parts independently of
+operation retention. Its return value counts operations. It keeps unexpired
+operations and receipts, identity fences and identity deletion jobs.
+
+## Enabling exports
+
+Erasure-only products still implement `DataSubjectProduct` without an export
+method. Add the separate `DataSubjectExportProduct` implementation to the
+product's existing adapter, here named `BillingProduct`, and enable it before
+constructing the store:
+
+```rust,no_run
+use std::sync::Arc;
+use baukit_data_subject::{
+    DataSubjectConfig, DataSubjectExportProduct, DataSubjectFuture, ExportCategory,
+    LocalSubject,
+};
+use sqlx::PgConnection;
+
+impl DataSubjectExportProduct for BillingProduct {
+    fn export<'a>(
+        &'a self,
+        connection: &'a mut PgConnection,
+        subject: &'a LocalSubject,
+    ) -> DataSubjectFuture<'a, Result<Vec<ExportCategory>, sqlx::Error>> {
+        Box::pin(async move {
+            let records = sqlx::query_scalar::<_, serde_json::Value>(
+                "SELECT jsonb_build_object('invoiceId', id, 'total', total) \
+                 FROM invoices WHERE subject_id = $1 ORDER BY id",
+            )
+            .bind(&subject.subject_id)
+            .fetch_all(connection)
+            .await?;
+            Ok(vec![ExportCategory { name: "invoices".into(), records }])
+        })
+    }
+}
+
+fn enable_exports(config: DataSubjectConfig, product: Arc<BillingProduct>) -> DataSubjectConfig {
+    let mut config = config.with_export(product);
+    config.limits.max_export_part_bytes = 8_388_608;
+    config.export_retention = chrono::TimeDelta::days(7);
+    config
+}
+```
+
+Use the same product instance in `with_export`, `authenticated_routes` and
+`DataSubjectHandler`. Export uses the configured export product's resolver.
+`with_export` requires the export trait at compile time. Without it, discovery
+omits export and all export routes return 404. Clients need the allowed machine
+identity and `data-subject.export` scope to start, poll or download an export.
+An erasure scope alone grants no export access.
+
+The existing handler exports all resolved subjects in one transaction and signs
+the part list with the stored bytes. Each part is compact JSON shaped as
+`{"category":"invoices","records":[...]}`. Categories sort by name; records
+keep product order. Whole records fill each part greedily within the byte limit,
+including JSON wrapper bytes. An empty category emits an empty array part.
+A record or wrapper that cannot fit fails with
+`data_subject_export_record_too_large`, rolls back product work and stores no
+parts or receipt. Export does not apply erasure fences or delete identity accounts.
+
+Download each part at
+`GET /api/v1/data-subject/exports/{operationId}/parts/{partNumber}` after completion.
+Verify the receipt with `ReceiptVerifier::from_discovery`, then hash each part's
+exact response bytes and compare its length and SHA-256 with the signed `parts`
+entry. Every part parses independently as JSON. Pending downloads return 409;
+known expired parts return 410, including after purge. Unknown numbers return 404.
+Receipts remain available until operation retention ends.

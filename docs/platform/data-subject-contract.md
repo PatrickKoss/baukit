@@ -1,8 +1,8 @@
 # Data subject contract
 
 **Status:** Version 1 contract. Core types, receipt verification, the erasure
-server adapter and the controlled client-test target are implemented. Export
-and service conformance follow in D3 and T2.
+and export server adapters and the controlled client-test target are implemented.
+Service conformance follows in T2.
 **Applies to:** Services accepting machine-initiated erasure and export requests,
 including services implemented without Baukit.
 **Related:** [product-profile erasure](./product-profile-erasure-contract.md),
@@ -19,8 +19,9 @@ identity before making the request; identity verification is outside this contra
 Implementations outside Baukit follow the paths, JSON fields, authentication,
 errors and signing rules below. Baukit products can use the crate's core without
 its default features. The core has no Axum or SQLx dependency. The `server`
-feature adds the erasure router, PostgreSQL store and durable job handler.
-The current server advertises only `operations: ["erasure"]`.
+feature adds operation routes, a PostgreSQL store and a durable job handler.
+Erasure is enabled by default. Export is opt-in through `DataSubjectConfig::with_export`;
+discovery lists it only when enabled, and disabled export routes return 404.
 
 ## 1. Discovery
 
@@ -109,7 +110,7 @@ ID and an optional authentication subject. Products must use opaque internal
 IDs, never copy lookup values into these fields. No request identifier is needed
 after acceptance, including on retries. Resolution does not erase records.
 The product must make erasure safe when a resolved record disappeared meanwhile.
-Duplicate local subjects are erased once. Job payloads are removed on success;
+Duplicate local subjects are processed once. Job payloads are removed on success;
 terminal failure keeps only the operation ID. A resolver failure occurs before
 acceptance and returns a safe HTTP 500 `internal` envelope.
 
@@ -204,10 +205,31 @@ the same part metadata. Verify the receipt first, then compare each downloaded
 part's byte length and digest against its signed entry before using it. Do not
 parse and re-serialize a part before hashing it.
 
-Before completion, part GET returns HTTP 409 `data_subject_export_not_ready`.
+The Baukit server combines categories with the same name across all matched
+subjects and sorts category names lexicographically. It processes subjects in
+stable order by authentication subject, then internal subject ID, and
+preserves each product's record order. Products return records in a stable order,
+for example with an explicit SQL `ORDER BY`. Each part is compact UTF-8 JSON
+with the shape `{"category":"name","records":[...]}`, in that field order.
+Parts contain one category each. The splitter adds whole records greedily until
+the next record would exceed the limit, counting the wrapper, commas and JSON
+escaping. Part numbers start at 1 and increase across categories. An empty
+category emits one part with an empty records array; no categories emit no parts.
+The operation and receipt combine each category's count with action `exported`.
+
+A single record that cannot fit with its category wrapper fails the operation
+with `data_subject_export_record_too_large`. A wrapper that cannot fit also
+uses this code. The worker rolls back all product work for that attempt and
+stores no parts, categories or receipt. It does not truncate or fragment a record.
+The default limit is 8 MiB, configured through `limits.max_export_part_bytes`.
+
+While pending, part GET returns HTTP 409 `data_subject_export_not_ready`.
 Expired parts return HTTP 410 `data_subject_export_expired`. Unknown operations,
 operations of the other kind and operations owned by another client return
-HTTP 404 `data_subject_operation_not_found`, including on the part route. A
+HTTP 404 `data_subject_operation_not_found`, including on the part route.
+An unknown part number also returns this 404, including after expiry. A known
+part returns 410 even after purge removes its bytes. Failed and `notFound`
+operations have no parts and return 404 for part requests. A
 `notFound` export has a signed receipt and no parts. A failed export has no
 receipt and offers no completed export proof.
 
@@ -340,6 +362,7 @@ Every HTTP error uses the `baukit-http` envelope:
 | `data_subject_operation_not_found` | 404 | Operation is unknown, another kind or another client's. |
 | `data_subject_export_not_ready` | 409 | Part requested before completion. |
 | `data_subject_export_expired` | 410 | Part is past retention. |
+| `data_subject_export_record_too_large` | 200, in `error.code` on a failed operation | One JSON record with its category wrapper exceeds the part limit. No parts or receipt are issued. |
 | `data_subject_client_not_allowed` | 403 | Principal is not an allowed machine client. |
 | `insufficient_scope` | 403 | Principal lacks the operation scope. |
 | `data_subject_operation_failed` | 200, in `error.code` on a failed operation | Accepted work exhausted attempts, failed permanently or exceeded its identity-deletion deadline. No receipt is issued. |
@@ -372,7 +395,30 @@ big-endian byte counts. Each hash is 32 bytes. A database uniqueness constraint
 and transaction advisory lock serialize concurrent requests for the same client,
 kind and key. The pending operation and job enqueue commit together.
 
-`DataSubjectProduct::resolve` runs during POST. The durable worker runs `erase`
+`DataSubjectProduct::resolve` runs during POST for both kinds. Erasure-only
+products need no export method. To enable exports, implement the separate
+`DataSubjectExportProduct: DataSubjectProduct` trait with `export`, returning
+`Vec<ExportCategory>`, each with `name` and JSON `records`, and pass that product
+to `DataSubjectConfig::with_export`. This requires export support at compile time.
+The configured export product supplies both export resolution and execution.
+The existing router and handler still take the erasure product as before.
+
+The worker runs `export` for every resolved subject in one transaction, then
+stores exact part bytes, their SHA-256, sizes, expiry, operation metadata and
+signed receipt with its lease-owned job completion. Export does not erase or
+fence subjects and never queues identity deletion. A product error rolls back
+all export work and uses the same retry and terminal failure rules as erasure.
+Parts expire at completion plus `export_retention`, which defaults to seven days.
+Both retention periods must be positive and fit the timestamp range. Apply
+`POSTGRES_EXPORTS_MIGRATION_SQL` after the first data subject migration, even
+for erasure-only deployments using the updated worker.
+
+The migrations leave database access control to the product. Products grant
+their application, worker and purge roles the needed table privileges on
+`data_subject_operations` and `data_subject_export_parts`. The store enforces
+HTTP client and kind isolation before revealing part availability.
+
+The durable worker runs `erase`
 for every resolved subject in one transaction with the category report, fence
 and successful lease-owned job transition. With retain mode or no authentication
 subject it signs the result in that same transaction. Product methods must not
@@ -420,10 +466,15 @@ erasure commits, and a completed receipt must not precede provider success.
 The existing self-service DELETE route is unchanged.
 
 Schedule `PostgresDataSubjectStore::purge_expired` in a product recurring job.
-Each call accepts 1 to 10,000 rows, removes only operations whose `purge_after`
-is before the supplied time, and removes their erasure and finalization payloads
-in the same transaction. Use `baukit_jobs::FixedUtcInterval` and slot idempotency
-keys to schedule recurring batches. Receipt retention starts at acceptance.
+Each call accepts a batch size of 1 to 10,000, removes at most that many
+operations whose `purge_after` is before the supplied time, and removes their
+erasure, export and finalization payloads in the same transaction. Separately,
+it removes at most that many expired parts, including when no operation is due
+for purge. The return value counts removed operations. Part expiry does not
+remove the operation or signed metadata. Operation purge cascades to any parts
+that remain, even if their separate retention has not elapsed.
+Use `baukit_jobs::FixedUtcInterval` and slot idempotency keys to schedule recurring
+batches. Receipt retention starts at acceptance.
 Identity fences and identity deletion jobs follow the separate profile-erasure
 policy and are not removed by this purge. The crate README has a mounting example.
 

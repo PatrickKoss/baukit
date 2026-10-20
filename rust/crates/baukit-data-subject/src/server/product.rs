@@ -51,3 +51,29 @@ pub trait DataSubjectProduct: Send + Sync {
         subject: &'a LocalSubject,
     ) -> DataSubjectFuture<'a, Result<ErasureReport, sqlx::Error>>;
 }
+
+/// Product export support, required before exports can be enabled in configuration.
+pub trait DataSubjectExportProduct: DataSubjectProduct {
+    /// Exports records using the operation transaction without committing or external calls.
+    /// Return categories and records in a stable order; category names contain no subject data.
+    fn export<'a>(
+        &'a self,
+        connection: &'a mut PgConnection,
+        subject: &'a LocalSubject,
+    ) -> DataSubjectFuture<'a, Result<Vec<ExportCategory>, sqlx::Error>>;
+}
+
+/// Product records in one named export category. Debug output omits record content.
+#[derive(Clone)]
+pub struct ExportCategory {
+    /// Stable category name, without identifiers or record content.
+    pub name: String,
+    /// JSON records in product-defined order.
+    pub records: Vec<serde_json::Value>,
+}
+
+impl fmt::Debug for ExportCategory {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("ExportCategory { .. }")
+    }
+}
