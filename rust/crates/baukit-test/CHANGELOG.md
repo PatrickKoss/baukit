@@ -4,6 +4,18 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+- Fix part responses in the controlled target for terminal exports without parts
+  and unknown parts after expiry. Both return the contract's 404 instead of 409 or 410.
+
+- Add HTTP service conformance checks behind `data-subject`, with router and
+  base URL transports, product fixture controls, typed requirement failures and
+  an assertion wrapper. Check auth, validation, replay, receipts, export parts
+  and response privacy against the controlled target and deliberate faults.
+
+- Add the `data-subject` feature with a controlled HTTP target for client tests,
+  signed receipts, scripted outcomes and faults, export parts, key rotation and
+  private in-memory request observations.
+
 ## [0.10.31] - 2026-10-20
 
 - Release the coordinated baukit 0.10.31 train.

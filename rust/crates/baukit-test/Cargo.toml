@@ -18,6 +18,7 @@ workspace = true
 [features]
 default = ["sqlx-postgres"]
 suite = ["dep:baukit-suite", "baukit-core/webhook-signature"]
+data-subject = ["dep:baukit-data-subject"]
 sqlx-postgres = ["dep:sqlx"]
 
 [dependencies]
@@ -27,6 +28,7 @@ base64.workspace = true
 baukit-suite = { workspace = true, optional = true }
 baukit-auth.workspace = true
 baukit-core.workspace = true
+baukit-data-subject = { workspace = true, default-features = false, optional = true }
 baukit-erasure.workspace = true
 baukit-http.workspace = true
 baukit-integrations.workspace = true

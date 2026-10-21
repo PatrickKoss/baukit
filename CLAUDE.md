@@ -14,8 +14,8 @@ free of product-specific logic.
 ## Layout
 
 ```text
-rust/crates/        baukit-auth, -config, -core, -credential-vault, -egress, -erasure, -events,
-                     -http, -integrations, -jobs, -openapi, -ops, -push, -ratelimit,
+rust/crates/        baukit-auth, -config, -core, -credential-vault, -data-subject, -egress, -erasure, -events,
+                     -http, -integrations, -jobs, -mcp, -openapi, -ops, -push, -ratelimit,
                      -runtime, -suite, -sync, -telemetry, -test
 typescript/packages/ a11y-core, analytics-core, analytics-posthog-{web,native},
                      api-runtime, auth-{native,node,web},

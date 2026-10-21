@@ -7,7 +7,7 @@
 
 The boring 80% of a Rust backend and its TypeScript clients, already built and already tested.
 
-*Baukit* is German for a construction kit, and that is the whole idea. Twenty Rust crates and twenty-two npm packages, each small enough to adopt on its own, plus a CLI that wires them into a working product when you want the whole thing.
+*Baukit* is German for a construction kit, and that is the whole idea. Twenty-one Rust crates and twenty-two npm packages, each small enough to adopt on its own, plus a CLI that wires them into a working product when you want the whole thing.
 
 > [!WARNING]
 > **Under heavy development. Expect breaking changes.**
@@ -120,6 +120,7 @@ Nothing here depends on the CLI, and no crate drags in the rest. Take the error 
 | [`baukit-credential-vault`](rust/crates/baukit-credential-vault) | Versioned AES-256-GCM encryption behind a storage-neutral port |
 | [`baukit-push`](rust/crates/baukit-push) | Provider-neutral push delivery with an Expo adapter, a device registry, and daily delivery claims |
 | [`baukit-egress`](rust/crates/baukit-egress) | Outbound HTTP client for user-supplied URLs that pins DNS answers to public addresses |
+| [`baukit-data-subject`](rust/crates/baukit-data-subject) | Data subject wire types, identifier normalization, and Ed25519 DSSE receipts |
 | [`baukit-erasure`](rust/crates/baukit-erasure) | Transactional profile erasure, keyed receipts and fences, durable identity account deletion |
 | [`baukit-core`](rust/crates/baukit-core) | Dependency-light vocabulary shared by the others, plus optional keyset pagination |
 | [`baukit-suite`](rust/crates/baukit-suite) | Peer linking, signed event delivery and transactional ingestion |
