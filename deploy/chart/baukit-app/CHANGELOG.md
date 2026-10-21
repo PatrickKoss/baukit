@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.32] - 2026-10-21
+
 ## [0.10.31] - 2026-10-20
 
 - Release the coordinated baukit 0.10.31 train.

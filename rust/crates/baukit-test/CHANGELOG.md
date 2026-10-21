@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+## [0.10.32] - 2026-10-21
+
 - Fix part responses in the controlled target for terminal exports without parts
   and unknown parts after expiry. Both return the contract's 404 instead of 409 or 410.
 

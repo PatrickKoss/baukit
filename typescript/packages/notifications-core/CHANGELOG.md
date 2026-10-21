@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.10.32
+
+### Patch Changes
+
+- Release the coordinated baukit 0.10.32 train.
+- Updated dependencies
+  - @baukit/localization-core@0.10.32
+
 ## 0.10.31
 
 ### Patch Changes

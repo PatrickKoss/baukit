@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.32] - 2026-10-21
+
 - Add `ErasureService::fence_as_operator_in_transaction` for authorized machine
   erasure with the same subject fence and identity retention policy.
 

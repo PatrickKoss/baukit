@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.32] - 2026-10-21
+
 - Run the shared service conformance check against the PostgreSQL fixture
   product with erasure only and with exports, using real authentication and jobs.
 
