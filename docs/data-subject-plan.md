@@ -1,6 +1,6 @@
 # Data subject contract implementation plan
 
-**Status:** In progress. Claude orchestrates; codex agents (gpt-6.1-sol, xhigh) implement in `ds-<task>` worktrees on branches cut from `feature/data-subject`. Claude reviews every diff, merges into `feature/data-subject`, runs the CI-equivalent gate, then merges to `main` and cuts a release train.
+**Status:** Done, released in `v0.10.32`. Claude orchestrates; codex agents (gpt-6.1-sol, xhigh) implement in `ds-<task>` worktrees on branches cut from `feature/data-subject`. Claude reviews every diff, merges into `feature/data-subject`, runs the CI-equivalent gate, then merges to `main` and cuts a release train.
 
 **Prepared:** 2026-10-20
 
@@ -174,7 +174,7 @@ Release wiring for a new crate touches `rust/Cargo.toml` (member and exact-versi
 | D3 | done | 4492a062 |
 | T1 | done | 59fd4b66 |
 | T2 | done | efc2fc72 |
-| R | in progress | |
+| R | done | f80739ea |
 
 ### Orchestration log
 
@@ -185,3 +185,4 @@ Release wiring for a new crate touches `rust/Cargo.toml` (member and exact-versi
 - 2026-10-21: D2 merged after one rework. POST resolves identifiers inside its transaction and jobs carry only internal subject IDs. The first pass polled pending identity deletions every second without an end; the rework adds backoff capped at 60 seconds and a 24-hour default deadline that fails the operation without a receipt. D3 started.
 - 2026-10-21: D3 merged after one rework that removed a forced RLS policy limited to the migration role; it would have locked out a separate application role. Claude had committed build artifacts in the D2 merge; the unpushed merge was rewritten without them. T2 started.
 - 2026-10-21: T2 merged on the first pass. The check passes against the erasure and export server and the controlled target, and targeted faults fail with the matching variant. It aligned the target's part errors with the contract. Gate started.
+- 2026-10-21: released as `v0.10.32`. The gate passed except the TypeScript browser tests, which failed locally on dynamic imports and iframe readiness while the branch changed no TypeScript; main's CI TypeScript job passed. Trusted publishing cannot create a crate, so the crates job stopped at `baukit-data-subject`. Claude published that crate once by hand and reran the job, which published the rest. Every later release publishes it through trusted publishing once the crate has a trusted publisher on crates.io.
