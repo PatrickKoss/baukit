@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Baukit music, voiceovers, and video effects from docs/JINGLE.md."""
+"""Generate and mix Baukit music, voiceovers, and video effects from docs/JINGLE.md."""
 
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ import http.client
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -22,7 +24,8 @@ APP_SLUG = "baukit"
 API_BASE = "https://api.elevenlabs.io"
 LANGUAGES = ("en", "de")
 VERSIONS = ("short", "long")
-PARTS = ("music", "voice", "sfx")
+PARTS = ("music", "voice", "sfx", "mix")
+PAID_PARTS = ("music", "voice", "sfx")
 TTS_MODEL = "eleven_v4"
 TTS_OUTPUT_FORMAT = "mp3_44100_128"
 TTS_SEED = 2050150
@@ -41,6 +44,16 @@ SFX_INFLUENCE_RANGE = (0, 1)
 MUSIC_BPM = 150
 BEATS_PER_BAR = 4
 RESPONSE_HEADERS = ("song-id", "request-id", "character-cost")
+MIX_GAP_SECONDS = 0.3
+MIX_SAMPLE_RATE = 44100
+MIX_BITRATE = "192k"
+MIX_SFX_GAIN = 0.7
+MIX_LIMIT = 0.89
+MIX_LOUDNESS_LUFS = -14
+MIX_TRUE_PEAK_DB = -1.5
+MIX_LOUDNESS_RANGE = 11
+FFMPEG_TIMEOUT_S = 300
+FFMPEG_MISSING = "ffmpeg is required to mix; install it or leave mix out of --parts"
 BILL_VOICE = {
     "voice_id": "pqHfZKP75CvOlQylNhV4",
     "name": "Bill",
@@ -206,7 +219,7 @@ def storyboard_rows(text: str, version: str) -> list[list[str]]:
     return rows[2:]
 
 
-def validate_storyboard(text: str, version: str) -> None:
+def validate_storyboard(text: str, version: str) -> list[list[str]]:
     rows = storyboard_rows(text, version)
     chunks = MUSIC[version]["chunks"]
     if len(rows) != len(chunks):
@@ -227,17 +240,19 @@ def validate_storyboard(text: str, version: str) -> None:
         if row[4] != "none" and row[4] not in SOUND_EFFECTS:
             raise ValueError(f"unknown storyboard sound effect: {row[4]}")
         start_ms = end_ms
+    return rows
 
 
 def validate_document(text: str) -> dict:
     blocks = parse_document(text)
+    storyboards = {}
     for version in VERSIONS:
         chunks = MUSIC[version]["chunks"]
         for language in LANGUAGES:
             names = [name for name, _ in parse_sections(blocks["lyrics", language, version])]
             if names != [chunk["section"] for chunk in chunks]:
                 raise ValueError(f"{language} {version} lyric sections differ from music plan")
-        validate_storyboard(text, version)
+        storyboards[version] = validate_storyboard(text, version)
     for language in LANGUAGES:
         for part in ("intro", "outro"):
             spoken = blocks["voiceover", language, part]
@@ -247,6 +262,7 @@ def validate_document(text: str) -> dict:
                     f"{language} {part} voiceover must be nonempty, "
                     f"under {VOICEOVER_CHARACTER_LIMIT} characters, without SSML"
                 )
+    blocks["storyboards"] = storyboards
     return blocks
 
 
@@ -288,9 +304,14 @@ def sfx_payload(effect_id: str) -> dict:
     return {"model_id": SFX_MODEL, **SOUND_EFFECTS[effect_id]}
 
 
-def build_jobs(blocks: dict, args: argparse.Namespace) -> list[Job]:
+def selection(args: argparse.Namespace) -> tuple[tuple[str, ...], tuple[str, ...]]:
     languages = LANGUAGES if args.language == "both" else (args.language,)
     versions = VERSIONS if args.version == "both" else (args.version,)
+    return languages, versions
+
+
+def build_jobs(blocks: dict, args: argparse.Namespace) -> list[Job]:
+    languages, versions = selection(args)
     jobs = []
     for language in languages:
         if "music" in args.parts:
@@ -425,10 +446,98 @@ def generate(jobs: list[Job], out_dir: Path, doc_hash: str, api_key: str,
     print(f"Manifest: {manifest_path}")
 
 
+def mix_plan(blocks: dict, language: str, version: str) -> dict:
+    return {
+        "filename": f"{APP_SLUG}-jingle-{version}-{language}-final.mp3",
+        "intro": f"{APP_SLUG}-voiceover-intro-{language}.mp3",
+        "music": f"{APP_SLUG}-jingle-{version}-{language}.mp3",
+        "outro": f"{APP_SLUG}-voiceover-outro-{language}.mp3",
+        "effects": [
+            (f"{APP_SLUG}-sfx-{effect}.mp3", float(start))
+            for _, start, _, _, effect in blocks["storyboards"][version]
+            if effect != "none"
+        ],
+    }
+
+
+def mix_inputs(plan: dict) -> list[str]:
+    return [plan["intro"], plan["music"], plan["outro"], *(name for name, _ in plan["effects"])]
+
+
+def ffmpeg_command(plan: dict, out_dir: Path, target: Path) -> list[str]:
+    command = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"]
+    for name in mix_inputs(plan):
+        command += ["-i", str(out_dir / name)]
+    audio_format = f"aformat=sample_rates={MIX_SAMPLE_RATE}:channel_layouts=stereo"
+    loudness = (f"loudnorm=I={MIX_LOUDNESS_LUFS}:TP={MIX_TRUE_PEAK_DB}"
+                f":LRA={MIX_LOUDNESS_RANGE},{audio_format}")
+    filters = [f"[{index}]{audio_format}[a{index}]" for index in range(3)]
+    bed = ["[a1]"]
+    for index, (_, start) in enumerate(plan["effects"], start=3):
+        delay_ms = round(start * 1000)
+        filters.append(
+            f"[{index}]{audio_format},volume={MIX_SFX_GAIN},adelay={delay_ms}:all=1[a{index}]"
+        )
+        bed.append(f"[a{index}]")
+    filters.append(
+        f"{''.join(bed)}amix=inputs={len(bed)}:duration=first:normalize=0,{loudness}[bed]"
+    )
+    filters += [f"[a0]{loudness}[intro]", f"[a2]{loudness}[outro]"]
+    gap = f"anullsrc=r={MIX_SAMPLE_RATE}:cl=stereo,atrim=duration={MIX_GAP_SECONDS}"
+    filters += [f"{gap}[g0]", f"{gap}[g1]"]
+    filters.append(
+        f"[intro][g0][bed][g1][outro]concat=n=5:v=0:a=1,alimiter=limit={MIX_LIMIT}[out]"
+    )
+    return command + [
+        "-filter_complex", ";".join(filters), "-map", "[out]", "-b:a", MIX_BITRATE,
+        "-f", "mp3", str(target),
+    ]
+
+
+def run_ffmpeg(command: list[str]) -> None:
+    if shutil.which(command[0]) is None:
+        raise RuntimeError(FFMPEG_MISSING)
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=FFMPEG_TIMEOUT_S)
+    except subprocess.TimeoutExpired as error:
+        detail = error.stderr or b""
+        if isinstance(detail, bytes):
+            detail = detail.decode("utf-8", errors="replace")
+        raise RuntimeError(
+            f"ffmpeg timed out after {FFMPEG_TIMEOUT_S} seconds: {detail.strip()[-500:]}"
+        ) from None
+    if result.returncode:
+        raise RuntimeError(f"ffmpeg failed: {result.stderr.strip()[-500:]}")
+
+
+def mix(blocks: dict, args: argparse.Namespace, out_dir: Path, mixer) -> None:
+    languages, versions = selection(args)
+    plans = [mix_plan(blocks, language, version) for language in languages for version in versions]
+    if args.dry_run:
+        for plan in plans:
+            print(f"Plan {out_dir / plan['filename']} (mix of {', '.join(mix_inputs(plan))})")
+        return
+    missing = sorted({
+        name for plan in plans for name in mix_inputs(plan) if not (out_dir / name).is_file()
+    })
+    if missing:
+        raise ValueError(f"Mix needs {', '.join(missing)}; generate them with --parts music,voice,sfx")
+    for plan in plans:
+        path = out_dir / plan["filename"]
+        temporary = path.with_suffix(path.suffix + ".tmp")
+        try:
+            mixer(ffmpeg_command(plan, out_dir, temporary))
+            temporary.chmod(0o644)
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
+        print(f"Mixed: {path}")
+
+
 def parse_parts(value: str) -> tuple[str, ...]:
     parts = tuple(part.strip() for part in value.split(","))
     if not parts or any(part not in PARTS for part in parts):
-        raise argparse.ArgumentTypeError("parts must be a comma list of music,voice,sfx")
+        raise argparse.ArgumentTypeError("parts must be a comma list of music,voice,sfx,mix")
     return parts
 
 
@@ -446,19 +555,27 @@ def argument_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None, transport=None) -> int:
+def main(argv: list[str] | None = None, transport=None, mixer=None) -> int:
     args = argument_parser().parse_args(argv)
     api_key = (args.api_key or os.environ.get("ELEVENLABS_API_KEY", "")).strip()
-    if not args.dry_run and not api_key:
+    paid = any(part in PAID_PARTS for part in args.parts)
+    if paid and not args.dry_run and not api_key:
         print("error: --api-key or ELEVENLABS_API_KEY is required unless --dry-run is set",
               file=sys.stderr)
         return 1
     try:
         source = DOC.read_bytes()
         blocks = validate_document(source.decode("utf-8"))
-        jobs = build_jobs(blocks, args)
-        generate(jobs, args.out_dir.resolve(), hashlib.sha256(source).hexdigest(),
-                 api_key, args.dry_run, args.force, transport or http_request)
+        out_dir = args.out_dir.resolve()
+        mixer = mixer or run_ffmpeg
+        if "mix" in args.parts and not args.dry_run and mixer is run_ffmpeg:
+            if shutil.which("ffmpeg") is None:
+                raise RuntimeError(FFMPEG_MISSING)
+        if paid:
+            generate(build_jobs(blocks, args), out_dir, hashlib.sha256(source).hexdigest(),
+                     api_key, args.dry_run, args.force, transport or http_request)
+        if "mix" in args.parts:
+            mix(blocks, args, out_dir, mixer)
         return 0
     except (OSError, ValueError, RuntimeError) as error:
         message = str(error).replace(api_key, "[redacted]") if api_key else str(error)

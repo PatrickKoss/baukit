@@ -163,7 +163,7 @@ Tipp baukit new. Bau was draus!
 
 ## Video storyboard
 
-Times are relative to the start of the music in either language. Put the intro voiceover before 0.0 and the outro voiceover after the music ends; their generated lengths are separate. Sound effects start at the beginning of the indicated section. An effect appears only where its ID is listed; "none" means no added effect. These are edit timings based on the requested chunk lengths. Check the rendered audio before locking the video cut.
+Times are relative to the start of the music in either language. The `mix` part puts the intro voiceover before 0.0 and the outro voiceover after the music ends, with 0.3 seconds of silence between each voiceover and the music. Sound effects start at the beginning of the indicated section. An effect appears only where its ID is listed; "none" means no added effect. These timings follow the requested chunk lengths. Check the rendered audio before locking the video cut.
 
 ### Short version
 
@@ -192,11 +192,11 @@ Times are relative to the start of the music in either language. Put the intro v
 - `blueprint`: a paper blueprint snap with a short socket-wrench click at the short verse and long first verse.
 - `relay`: a mechanical relay stepping into a firm latch, under retries and the stored job in the first chorus of either cut.
 
-Prompts live in `SOUND_EFFECTS` in the script. Mix the effects below the lyrics; the script exports separate files so the editor controls their placement and level.
+Prompts live in `SOUND_EFFECTS` in the script. The `mix` part overlays effects on the music at 0.7 volume, using the section starts in the storyboard. It normalizes the mixed music and each voiceover separately to -14 LUFS, with a -1.5 dBTP true-peak target and a loudness range of 11 LU. A final limiter uses a 0.89 peak limit. The finished MP3 uses 44.1 kHz stereo at 192 kbit/s.
 
 ## Regenerate
 
-Run from the repository root. Python 3 and its standard library are enough. The dry run checks lyrics against the section plan, validates voiceovers and storyboard timings, then saves the exact request bodies without contacting ElevenLabs:
+Run from the repository root. Python 3 and its standard library are enough for generation; `mix` also needs `ffmpeg` on `PATH`. The script checks for ffmpeg before any paid request when mixing is selected. The dry run checks lyrics against the section plan, validates voiceovers and storyboard timings, saves the exact request bodies, and prints mix plans without contacting ElevenLabs:
 
 ```bash
 python3 scripts/generate-jingle.py --dry-run
@@ -217,13 +217,16 @@ The CLI also accepts `--api-key KEY`, but the environment variable keeps the key
 python3 scripts/generate-jingle.py --dry-run --language en --version short --parts music
 python3 scripts/generate-jingle.py --dry-run --language de --version long --parts music,voice
 python3 scripts/generate-jingle.py --dry-run --parts sfx
+python3 scripts/generate-jingle.py --language en --version short --parts mix
 python3 scripts/generate-jingle.py --dry-run --parts voice --tts-model eleven_v3
 python3 scripts/generate-jingle.py --dry-run --music-model music_v2_5 --out-dir out/jingle-review
 python3 scripts/generate-jingle.py --dry-run --language both --version both --force
 ```
 
-Remove `--dry-run` for the chosen real run after setting the key. `--version` selects music only. `--language` selects music and voiceovers; effects are generated once. Defaults select both languages, both cuts, and all parts. `--force` regenerates existing audio and spends credits again. Without it, audio files are skipped even if the document or model has changed. There are no automatic paid retries.
+Remove `--dry-run` for the chosen generation run after setting the key. `--version` selects music and mixes. `--language` selects music, voiceovers, and mixes; effects are generated once. Defaults select both languages, both cuts, and all parts (`music,voice,sfx,mix`). Generation finishes before mixing starts. `--force` regenerates existing source audio and spends credits again. Without it, source audio files are skipped even if the document or model has changed. There are no automatic paid retries.
 
 The default destination is `out/jingle/`, resolved against the repository root even when invoked elsewhere. An explicit relative `--out-dir` starts at your current working directory. Music files are `baukit-jingle-<short|long>-<en|de>.mp3`; voiceovers are `baukit-voiceover-<intro|outro>-<en|de>.mp3`; effects are `baukit-sfx-<id>.mp3`. Dry runs write matching `*.request.json` files containing only the JSON bodies. `manifest.json` describes audio files, with endpoints, bodies, models, seeds, document hashes, response headers, and audio hashes and sizes. Dry runs preserve its audio records and add no entries for planned audio. Skipped files keep their existing entries unchanged.
+
+The finished soundtrack is `baukit-jingle-<version>-<lang>-final.mp3`: intro voiceover, 0.3 seconds of silence, music with storyboard effects, 0.3 seconds of silence, outro voiceover. Its duration is the two generated voiceover lengths plus the music length plus 0.6 seconds. The requested music lengths are 44.8 seconds for short and 76.8 seconds for long. Mixing is free and always rebuilds the final file. `--parts mix` reuses earlier audio without an API key or network calls and lists every missing input if any are absent. Mixed files get no manifest entry, and mixing alone leaves the manifest untouched. `--dry-run --parts mix` only prints plans and writes nothing.
 
 All selected voices are checked before any paid request. The v4 speech model receives stability and similarity settings; its pacing comes from punctuation and audio tags. The v3 override receives the full voice preset. Fixed seeds and saved bodies make the inputs repeatable; ElevenLabs may change model behavior, so identical audio bytes are not guaranteed. The document SHA-256 identifies the copy used for each generation.

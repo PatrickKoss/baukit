@@ -9,6 +9,7 @@ import io
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -45,6 +46,7 @@ class JingleTests(unittest.TestCase):
         self.out_dir = self.directory / "audio"
         self.source = jingle.DOC.read_text(encoding="utf-8")
         self.blocks = jingle.validate_document(self.source)
+        self.mixer = mock.Mock(side_effect=lambda command: Path(command[-1]).write_bytes(b"mixed audio"))
         patcher = mock.patch.object(
             jingle.urllib.request, "urlopen", side_effect=AssertionError("network forbidden")
         )
@@ -54,10 +56,13 @@ class JingleTests(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def run_main(self, *arguments: str, transport=None) -> tuple[int, str, str]:
+    def run_main(self, *arguments: str, transport=None, mixer=None) -> tuple[int, str, str]:
         stdout, stderr = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            status = jingle.main(["--out-dir", str(self.out_dir), *arguments], transport=transport)
+            status = jingle.main(
+                ["--out-dir", str(self.out_dir), *arguments], transport=transport,
+                mixer=self.mixer if mixer is None else mixer,
+            )
         return status, stdout.getvalue(), stderr.getvalue()
 
     def manifest(self) -> dict:
@@ -537,6 +542,243 @@ class JingleTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertTrue((expected / "manifest.json").exists())
             self.assertIn(str(expected), result.stdout)
+
+    def test_mix_command_uses_storyboard_effects_and_delays_for_every_selection(self) -> None:
+        for language in jingle.LANGUAGES:
+            for version in jingle.VERSIONS:
+                with self.subTest(language=language, version=version):
+                    plan = jingle.mix_plan(self.blocks, language, version)
+                    self.assertEqual(plan["filename"], f"baukit-jingle-{version}-{language}-final.mp3")
+                    cues = [(row[4], float(row[1])) for row in jingle.storyboard_rows(self.source, version)
+                            if row[4] != "none"]
+                    names = [f"baukit-voiceover-intro-{language}.mp3",
+                             f"baukit-jingle-{version}-{language}.mp3",
+                             f"baukit-voiceover-outro-{language}.mp3",
+                             *(f"baukit-sfx-{effect}.mp3" for effect, _ in cues)]
+                    self.assertEqual(jingle.mix_inputs(plan), names)
+                    expected_cues = {"short": [("anvil", 0.0), ("blueprint", 6.4), ("relay", 19.2), ("anvil", 38.4)],
+                                     "long": [("anvil", 0.0), ("blueprint", 6.4), ("relay", 19.2), ("anvil", 64.0)]}
+                    self.assertEqual(cues, expected_cues[version])
+                    target = self.out_dir / (plan["filename"] + ".tmp")
+                    command = jingle.ffmpeg_command(plan, self.out_dir, target)
+                    self.assertEqual(command[:5], ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"])
+                    inputs = [command[index + 1] for index, item in enumerate(command) if item == "-i"]
+                    self.assertEqual(inputs, [str(self.out_dir / name) for name in names])
+                    graph = command[command.index("-filter_complex") + 1]
+                    audio_format = "aformat=sample_rates=44100:channel_layouts=stereo"
+                    loudness = f"loudnorm=I=-14:TP=-1.5:LRA=11,{audio_format}"
+                    for index in range(3):
+                        self.assertIn(f"[{index}]{audio_format}[a{index}]", graph)
+                    for index, (_, start) in enumerate(cues, start=3):
+                        self.assertIn(f"[{index}]{audio_format},volume=0.7,"
+                                      f"adelay={round(start * 1000)}:all=1[a{index}]", graph)
+                    self.assertEqual([int(value) for value in re.findall(r"adelay=(\d+):all=1", graph)],
+                                     [round(start * 1000) for _, start in cues])
+                    bed = "[a1]" + "".join(f"[a{index}]" for index in range(3, len(names)))
+                    self.assertIn(f"{bed}amix=inputs={len(cues) + 1}:duration=first:normalize=0,"
+                                  f"{loudness}[bed]", graph)
+                    self.assertIn(f"[a0]{loudness}[intro]", graph)
+                    self.assertIn(f"[a2]{loudness}[outro]", graph)
+                    self.assertEqual(graph.count("loudnorm="), 3)
+                    for index in range(2):
+                        self.assertIn(f"anullsrc=r=44100:cl=stereo,atrim=duration=0.3[g{index}]", graph)
+                    self.assertTrue(graph.endswith(
+                        "[intro][g0][bed][g1][outro]concat=n=5:v=0:a=1,alimiter=limit=0.89[out]"
+                    ))
+                    self.assertEqual(command[-7:], ["-map", "[out]", "-b:a", "192k", "-f", "mp3", str(target)])
+
+    def test_mix_omits_none_effects_and_rejects_empty_cells(self) -> None:
+        source = self.source
+        for effect in jingle.SOUND_EFFECTS:
+            source = source.replace(f"| {effect} |", "| none |")
+        blocks = jingle.validate_document(source)
+        for version in jingle.VERSIONS:
+            plan = jingle.mix_plan(blocks, "en", version)
+            self.assertEqual(plan["effects"], [])
+            command = jingle.ffmpeg_command(plan, self.out_dir, self.out_dir / "final.mp3")
+            graph = command[command.index("-filter_complex") + 1]
+            self.assertNotIn("adelay", graph)
+            self.assertIn("[a1]amix=inputs=1:duration=first:normalize=0", graph)
+        with self.assertRaisesRegex(ValueError, "unknown storyboard sound effect"):
+            jingle.validate_document(self.source.replace("| relay |", "|  |", 1))
+
+    def test_mix_alone_needs_no_key_or_network_and_lists_all_missing_inputs(self) -> None:
+        transport = self.fake_transport()
+        status, stdout, stderr = self.run_main("--parts", "mix", transport=transport)
+        self.assertEqual(status, 1)
+        self.assertEqual(stdout, "")
+        names = sorted({job.filename for job in self.jobs()})
+        self.assertIn(f"Mix needs {', '.join(names)}; generate them with --parts music,voice,sfx", stderr)
+        self.assertFalse(self.out_dir.exists())
+        self.mixer.assert_not_called()
+        transport.assert_not_called()
+        self.network.assert_not_called()
+
+    def test_mix_checks_all_selected_inputs_before_writing_any_final(self) -> None:
+        self.out_dir.mkdir()
+        for job in self.jobs():
+            if job.filename != "baukit-jingle-long-de.mp3":
+                (self.out_dir / job.filename).write_bytes(b"earlier audio")
+        status, _, stderr = self.run_main("--parts", "mix")
+        self.assertEqual(status, 1)
+        self.assertIn("Mix needs baukit-jingle-long-de.mp3;", stderr)
+        self.mixer.assert_not_called()
+        self.assertEqual(list(self.out_dir.glob("*-final.mp3")), [])
+
+    def test_mix_alone_rebuilds_without_creating_or_changing_a_manifest(self) -> None:
+        self.out_dir.mkdir()
+        for job in self.jobs("--language", "de", "--version", "long"):
+            (self.out_dir / job.filename).write_bytes(b"earlier audio")
+        manifest = self.out_dir / "manifest.json"
+        final = self.out_dir / "baukit-jingle-long-de-final.mp3"
+        for existing_manifest in (None, b"an unrelated manifest that must not be read or written\n"):
+            if existing_manifest is not None:
+                manifest.write_bytes(existing_manifest)
+            final.write_bytes(b"old final")
+            transport = self.fake_transport()
+            status, _, stderr = self.run_main(
+                "--parts", "mix", "--language", "de", "--version", "long", transport=transport,
+            )
+            self.assertEqual(status, 0, stderr)
+            self.assertEqual(final.read_bytes(), b"mixed audio")
+            self.assertEqual(manifest.read_bytes() if manifest.exists() else None, existing_manifest)
+            transport.assert_not_called()
+        self.assertEqual(self.mixer.call_count, 2)
+        self.assertEqual(list(self.out_dir.glob("*-final.mp3")), [final])
+        self.assertEqual(list(self.out_dir.glob("*.tmp")), [])
+        self.network.assert_not_called()
+
+    def test_mix_dry_run_prints_exact_plans_without_writing(self) -> None:
+        for language, version in (("both", "both"), ("en", "long"), ("de", "short")):
+            with self.subTest(language=language, version=version):
+                with mock.patch.object(jingle.shutil, "which", return_value=None):
+                    status, stdout, stderr = self.run_main(
+                        "--dry-run", "--parts", "mix", "--language", language, "--version", version,
+                        mixer=jingle.run_ffmpeg,
+                    )
+                self.assertEqual(status, 0, stderr)
+                plans = [jingle.mix_plan(self.blocks, lang, cut)
+                         for lang in (jingle.LANGUAGES if language == "both" else (language,))
+                         for cut in (jingle.VERSIONS if version == "both" else (version,))]
+                self.assertEqual(stdout.splitlines(), [
+                    f"Plan {self.out_dir / plan['filename']} (mix of {', '.join(jingle.mix_inputs(plan))})"
+                    for plan in plans
+                ])
+                self.assertFalse(self.out_dir.exists())
+        self.mixer.assert_not_called()
+        self.network.assert_not_called()
+
+    def test_full_run_generates_before_mixing_every_selection_and_dry_run_only_plans(self) -> None:
+        status, stdout, stderr = self.run_main("--dry-run")
+        self.assertEqual(status, 0, stderr)
+        self.assertEqual(len([line for line in stdout.splitlines() if line.startswith("Plan ")]), 4)
+        self.mixer.assert_not_called()
+        self.assertEqual(list(self.out_dir.glob("*-final.mp3")), [])
+        transport = self.fake_transport()
+
+        def mixer(command):
+            self.assertEqual(transport.call_count, len(self.jobs()) + 1)
+            self.assertEqual(set(self.manifest()["files"]), {job.filename for job in self.jobs()})
+            self.assertTrue(all((self.out_dir / job.filename).is_file() for job in self.jobs()))
+            self.mixer(command)
+
+        status, _, stderr = self.run_main("--api-key", "test-key", transport=transport, mixer=mixer)
+        self.assertEqual(status, 0, stderr)
+        self.assertEqual(self.mixer.call_count, 4)
+        self.assertEqual(sorted(path.name for path in self.out_dir.glob("*-final.mp3")), sorted(
+            f"baukit-jingle-{version}-{language}-final.mp3"
+            for language in jingle.LANGUAGES for version in jingle.VERSIONS
+        ))
+        self.assertEqual(list(self.out_dir.glob("*.tmp")), [])
+
+    def test_missing_ffmpeg_stops_before_any_paid_call(self) -> None:
+        for mixer in (None, jingle.run_ffmpeg):
+            transport = self.fake_transport()
+            stderr = io.StringIO()
+            with mock.patch.object(jingle.shutil, "which", return_value=None), \
+                    contextlib.redirect_stderr(stderr):
+                status = jingle.main(
+                    ["--out-dir", str(self.out_dir), "--api-key", "test-key"],
+                    transport=transport, mixer=mixer,
+                )
+            self.assertEqual(status, 1)
+            self.assertIn(jingle.FFMPEG_MISSING, stderr.getvalue())
+            self.assertFalse(self.out_dir.exists())
+            transport.assert_not_called()
+        self.network.assert_not_called()
+
+    def test_ffmpeg_failure_and_timeout_report_stderr_and_remove_temporary_output(self) -> None:
+        self.out_dir.mkdir()
+        for job in self.jobs("--language", "en", "--version", "short"):
+            (self.out_dir / job.filename).write_bytes(b"earlier audio")
+        final = self.out_dir / "baukit-jingle-short-en-final.mp3"
+        final.write_bytes(b"old final")
+        manifest = self.out_dir / "manifest.json"
+        manifest.write_bytes(b"untouched manifest")
+        detail = "discarded-prefix" + "x" * 600 + "useful error tail"
+        outcomes = (
+            subprocess.CompletedProcess([], 1, "", detail),
+            subprocess.TimeoutExpired("ffmpeg", jingle.FFMPEG_TIMEOUT_S, stderr=detail.encode()),
+        )
+        for outcome in outcomes:
+            def runner(command, **kwargs):
+                self.assertEqual(kwargs, {
+                    "capture_output": True, "text": True, "timeout": jingle.FFMPEG_TIMEOUT_S,
+                })
+                self.assertEqual(Path(command[-1]), final.with_suffix(".mp3.tmp"))
+                Path(command[-1]).write_bytes(b"partial mix")
+                if isinstance(outcome, Exception):
+                    raise outcome
+                return outcome
+
+            with mock.patch.object(jingle.shutil, "which", return_value="/test/ffmpeg"), \
+                    mock.patch.object(jingle.subprocess, "run", side_effect=runner):
+                status, _, stderr = self.run_main(
+                    "--parts", "mix", "--language", "en", "--version", "short", mixer=jingle.run_ffmpeg,
+                )
+            self.assertEqual(status, 1)
+            self.assertIn("useful error tail", stderr)
+            self.assertNotIn("discarded-prefix", stderr)
+            self.assertIn("timed out" if isinstance(outcome, Exception) else "ffmpeg failed", stderr)
+            self.assertNotIn("Traceback", stderr)
+            self.assertEqual(final.read_bytes(), b"old final")
+            self.assertEqual(manifest.read_bytes(), b"untouched manifest")
+            self.assertEqual(list(self.out_dir.glob("*.tmp")), [])
+
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "ffmpeg/ffprobe absent")
+    def test_real_ffmpeg_mix_duration_with_generated_sine_inputs(self) -> None:
+        self.out_dir.mkdir()
+        for version in jingle.VERSIONS:
+            with self.subTest(version=version):
+                plan = jingle.mix_plan(self.blocks, "en", version)
+                music_seconds = float(jingle.storyboard_rows(self.source, version)[-1][2])
+                lengths = {plan["intro"]: 1.0, plan["music"]: music_seconds, plan["outro"]: 2.0}
+                lengths.update({name: 0.5 for name, _ in plan["effects"]})
+                for name, seconds in lengths.items():
+                    subprocess.run([
+                        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi",
+                        "-i", f"sine=duration={seconds}:sample_rate=48000", str(self.out_dir / name),
+                    ], check=True, capture_output=True, timeout=60)
+                status, _, stderr = self.run_main(
+                    "--parts", "mix", "--language", "en", "--version", version, mixer=jingle.run_ffmpeg,
+                )
+                self.assertEqual(status, 0, stderr)
+                probe = subprocess.run([
+                    "ffprobe", "-v", "error", "-show_entries",
+                    "format=duration:stream=sample_rate,channels,bit_rate", "-of", "json",
+                    str(self.out_dir / plan["filename"]),
+                ], capture_output=True, text=True, check=True, timeout=60)
+                audio = json.loads(probe.stdout)
+                expected = 1.0 + music_seconds + 2 * jingle.MIX_GAP_SECONDS + 2.0
+                self.assertAlmostEqual(float(audio["format"]["duration"]), expected, delta=0.2)
+                self.assertEqual(audio["streams"][0], {
+                    "sample_rate": "44100", "channels": 2, "bit_rate": "192000",
+                })
+                self.assertEqual(stat.S_IMODE((self.out_dir / plan["filename"]).stat().st_mode), 0o644)
+                self.assertEqual(list(self.out_dir.glob("*.tmp")), [])
+                self.assertFalse((self.out_dir / "manifest.json").exists())
+        self.mixer.assert_not_called()
+        self.network.assert_not_called()
 
     def test_invalid_cli_values_and_manifest_fail_before_network(self) -> None:
         for value in ("", "music,unknown", "music,,voice"):
