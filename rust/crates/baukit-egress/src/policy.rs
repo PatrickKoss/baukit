@@ -10,6 +10,18 @@ use std::{
     str::FromStr,
 };
 
+use crate::AllowedEndpoint;
+
+pub(crate) fn is_endpoint_address(address: IpAddr) -> bool {
+    let address = address.to_canonical();
+    !CLOUD_METADATA_ADDRESSES.contains(&address)
+        && (is_public_address(address)
+            || address.is_loopback()
+            || ALLOWLISTABLE_NETWORKS
+                .iter()
+                .any(|network| network.contains(address)))
+}
+
 /// An IPv4 or IPv6 network wholly inside private or shared address space.
 ///
 /// Accepted ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`,
@@ -171,9 +183,11 @@ const ALLOWLISTABLE_NETWORKS: [PrivateNetwork; 5] = [
     },
 ];
 
-const CLOUD_METADATA_ADDRESSES: [IpAddr; 2] = [
+const CLOUD_METADATA_ADDRESSES: [IpAddr; 4] = [
     IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254)),
+    IpAddr::V4(Ipv4Addr::new(100, 100, 100, 200)),
     IpAddr::V6(Ipv6Addr::new(0xfd00, 0xec2, 0, 0, 0, 0, 0, 0x254)),
+    IpAddr::V6(Ipv6Addr::new(0xfd20, 0x00ce, 0, 0, 0, 0, 0, 0x254)),
 ];
 
 /// Decides which resolved addresses a guarded client may connect to.
@@ -181,10 +195,13 @@ const CLOUD_METADATA_ADDRESSES: [IpAddr; 2] = [
 /// Every DNS answer must pass the policy. Cloud metadata addresses are always
 /// denied. IPv4-mapped answers are judged and connected as plain IPv4.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum AddressPolicy {
     /// Only globally reachable unicast addresses, over HTTPS.
     #[default]
     PublicOnly,
+    /// Public addresses over HTTP or HTTPS, with the same address checks.
+    PublicHttp,
     /// Public addresses plus loopback, and plain HTTP to loopback only.
     ///
     /// Meant for local development and tests against servers on the same
@@ -196,6 +213,10 @@ pub enum AddressPolicy {
     /// host name must be inside the list. Loopback and link-local stay blocked.
     /// NAT64 addresses carrying private IPv4 addresses do not pass the list.
     AllowPrivate(PrivateNetworks),
+    /// Reach only one exact host and port, including its private or loopback
+    /// DNS answers. Link-local, metadata and reserved addresses stay blocked.
+    /// The endpoint's HTTP flag selects HTTP only or HTTPS only.
+    OnlyEndpoint(AllowedEndpoint),
 }
 
 impl AddressPolicy {
@@ -207,9 +228,10 @@ impl AddressPolicy {
         }
         is_public_address(address)
             || match self {
-                Self::PublicOnly => false,
+                Self::PublicOnly | Self::PublicHttp => false,
                 Self::AllowLoopback => address.to_canonical().is_loopback(),
                 Self::AllowPrivate(networks) => networks.permits(address),
+                Self::OnlyEndpoint(endpoint) => endpoint.permits(address),
             }
     }
 
@@ -221,25 +243,36 @@ impl AddressPolicy {
         !answers.is_empty() && answers.iter().all(|address| self.permits(*address))
     }
 
-    /// Returns whether the policy accepts plain `http` for any destination.
+    /// Returns whether the policy can accept plain `http`.
     ///
-    /// [`AddressPolicy::permits_plain_http`] limits it to loopback or listed networks.
+    /// [`AddressPolicy::permits_plain_http`] checks the address under the selected
+    /// policy. `OnlyEndpoint` also requires its HTTP flag; the client checks the
+    /// exact host and port separately.
     #[must_use]
     pub const fn allows_plain_http(&self) -> bool {
-        matches!(self, Self::AllowLoopback | Self::AllowPrivate(_))
+        match self {
+            Self::PublicOnly => false,
+            Self::PublicHttp | Self::AllowLoopback | Self::AllowPrivate(_) => true,
+            Self::OnlyEndpoint(endpoint) => endpoint.allows_http(),
+        }
     }
 
     /// Returns whether a plain `http` connection to `address` is allowed.
     ///
     /// [`AddressPolicy::AllowLoopback`] permits loopback only.
     /// [`AddressPolicy::AllowPrivate`] permits listed networks only, excluding
-    /// cloud metadata. Both accept IPv4-mapped forms of allowed IPv4 addresses.
+    /// cloud metadata. [`AddressPolicy::PublicHttp`] permits public addresses.
+    /// [`AddressPolicy::OnlyEndpoint`] requires its HTTP flag and an allowed
+    /// address; the client also checks its host and port. IPv4-mapped forms
+    /// follow the same rules.
     #[must_use]
     pub fn permits_plain_http(&self, address: IpAddr) -> bool {
         match self {
             Self::PublicOnly => false,
+            Self::PublicHttp => self.permits(address),
             Self::AllowLoopback => address.to_canonical().is_loopback(),
             Self::AllowPrivate(networks) => networks.permits(address),
+            Self::OnlyEndpoint(endpoint) => endpoint.allows_http() && endpoint.permits(address),
         }
     }
 }

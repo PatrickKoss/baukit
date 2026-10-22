@@ -4,6 +4,24 @@ All notable changes to `baukit-push` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Add `ExpoPushSender::with_guarded_client(GuardedClient)` for ticket requests
+  and immediate or deferred receipt requests through `baukit-egress`. The
+  dependency is direct and needs no feature flag. Guarded failures retain the
+  guard's retry classification and omit provider response bodies.
+
+### Changed
+
+- Keep accepted tickets as `PushDeliveryStatus::Accepted` when an immediate
+  receipt fetch fails, on both transports. Callers can persist the ticket and
+  poll later instead of sending the notification again. Deferred receipt calls
+  still report failures.
+- Use a manual `ExpoPushSender` debug formatter that omits endpoint URLs and
+  credentials.
+- Log failed immediate receipt fetches at debug level with retryability and no
+  notification data. Mark guarded authorization headers sensitive.
+
 ## [0.10.32] - 2026-10-21
 
 ## [0.10.31] - 2026-10-20

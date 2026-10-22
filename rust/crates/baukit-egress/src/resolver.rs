@@ -116,6 +116,11 @@ pub async fn resolve_destination(
     policy: &AddressPolicy,
     timeout: Duration,
 ) -> Result<Vec<IpAddr>, EgressError> {
+    if let AddressPolicy::OnlyEndpoint(endpoint) = policy
+        && !endpoint.permits_host(host)
+    {
+        return Err(EgressError::BlockedAddress);
+    }
     let answers = tokio::time::timeout(timeout, resolver.resolve(host))
         .await
         .map_err(|_| EgressError::Timeout)?

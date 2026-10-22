@@ -4,6 +4,32 @@ All notable changes to `baukit-egress` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Add `GuardedClient::execute_stream` and `EgressStreamResponse` with `status`,
+  `headers` and chunked reads. Both response modes share the guarded send path,
+  request tracing, timeouts and byte limits.
+- Add `AllowedEndpoint`, `AllowedEndpointError` and `AddressPolicy::OnlyEndpoint`
+  for an exact scheme, host and effective port. The HTTP flag selects HTTP only
+  when true and HTTPS only when false.
+- Add `AddressPolicy::PublicHttp` and `EgressOptions::with_redirect_responses`.
+  Opted-in redirects return status and headers with an empty body and are never
+  followed. Defaults still require public HTTPS and reject redirects.
+
+### Fixed
+
+- Block metadata addresses `100.100.100.200` and `fd20:ce::254` under every
+  policy, including IPv4-mapped and well-known NAT64 forms where applicable.
+- Give timeout tests time to receive headers under concurrent workspace load,
+  while keeping a short bound on reads after the streaming deadline expires.
+
+### Breaking
+
+- `AddressPolicy` gains `PublicHttp` and `OnlyEndpoint`.
+  `DestinationRejection` gains `Endpoint`. Both enums are now
+  `#[non_exhaustive]`; downstream matches need a fallback arm. This requires
+  a minor release during 0.x.
+
 ## [0.10.32] - 2026-10-21
 
 ## [0.10.31] - 2026-10-20

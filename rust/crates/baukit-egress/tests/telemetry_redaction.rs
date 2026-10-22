@@ -6,10 +6,13 @@ use std::{
     io,
     net::{IpAddr, Ipv4Addr},
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use axum::http::{HeaderMap, HeaderValue, header::AUTHORIZATION};
-use baukit_egress::{AddressPolicy, EgressOptions, EgressRequest, GuardedClient, StaticResolver};
+use baukit_egress::{
+    AddressPolicy, EgressError, EgressOptions, EgressRequest, GuardedClient, StaticResolver,
+};
 use tokio::{io::AsyncWriteExt, net::TcpListener};
 use tracing_subscriber::fmt::format::FmtSpan;
 use url::Url;
@@ -77,6 +80,22 @@ async fn failing_server() -> u16 {
     port
 }
 
+async fn incomplete_server() -> (u16, tokio::task::JoinHandle<()>) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .expect("bind");
+    let port = listener.local_addr().expect("address").port();
+    let task = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.expect("accept");
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\n\r\nb\r\nbody-secret\r\n")
+            .await
+            .expect("write partial body");
+        std::future::pending::<()>().await;
+    });
+    (port, task)
+}
+
 async fn closed_port() -> u16 {
     TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
         .await
@@ -123,17 +142,59 @@ async fn errors_and_telemetry_do_not_leak_url_secrets() {
     for url in urls {
         let request = EgressRequest::post(url).with_headers(headers.clone());
         assert_no_secret(&format!("{request:?}"));
-        let error = client
-            .execute(request)
-            .await
-            .expect_err("each request should fail");
-        assert_no_secret(&error.to_string());
-        assert_no_secret(&format!("{error:?}"));
-        if let Some(body) = error.error_body() {
-            assert_eq!(body.bytes(), ERROR_BODY.as_bytes());
-            assert_eq!(body.problem_code(), Some("inventory_sequence_gap"));
-            assert_no_secret(&format!("{body:?}"));
+        for streaming in [false, true] {
+            let error = if streaming {
+                client
+                    .execute_stream(request.clone())
+                    .await
+                    .err()
+                    .expect("stream request fails")
+            } else {
+                client
+                    .execute(request.clone())
+                    .await
+                    .expect_err("each request should fail")
+            };
+            assert_no_secret(&error.to_string());
+            assert_no_secret(&format!("{error:?}"));
+            if let Some(body) = error.error_body() {
+                assert_eq!(body.bytes(), ERROR_BODY.as_bytes());
+                assert_eq!(body.problem_code(), Some("inventory_sequence_gap"));
+                assert_no_secret(&format!("{body:?}"));
+            }
         }
+    }
+
+    for oversized in [false, true] {
+        let (port, task) = incomplete_server().await;
+        let limit = if oversized { 3 } else { 100 };
+        let options = EgressOptions::default()
+            .with_policy(AddressPolicy::AllowLoopback)
+            .with_max_response_bytes(limit)
+            .expect("limit")
+            .with_request_timeout(Duration::from_secs(2))
+            .expect("timeout");
+        let client = GuardedClient::new(options).expect("client");
+        let mut response = client
+            .execute_stream(EgressRequest::get(secret_url(&format!("127.0.0.1:{port}"))))
+            .await
+            .expect("headers");
+        let error = if oversized {
+            let error = response.chunk().await.expect_err("too large");
+            assert!(matches!(error, EgressError::ResponseTooLarge { limit: 3 }));
+            error
+        } else {
+            assert_eq!(
+                response.chunk().await.expect("first chunk"),
+                Some(b"body-secret".to_vec())
+            );
+            let error = response.chunk().await.expect_err("timeout");
+            assert!(matches!(error, EgressError::Timeout));
+            error
+        };
+        assert_no_secret(&format!("{error:?}"));
+        drop(response);
+        task.abort();
     }
 
     let logs = logs.text();
@@ -150,6 +211,12 @@ async fn errors_and_telemetry_do_not_leak_url_secrets() {
         logs.contains("problem_code=\"inventory_sequence_gap\""),
         "problem code is recorded: {logs}"
     );
+    for code in ["timeout", "response_too_large"] {
+        assert!(
+            logs.contains(&format!("error.type=\"{code}\"")),
+            "stream failure was traced: {logs}"
+        );
+    }
     assert!(!logs.contains("requestId"), "raw JSON leaked into: {logs}");
     assert_no_secret(&logs);
 }

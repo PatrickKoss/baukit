@@ -626,3 +626,144 @@ async fn a_slow_endpoint_is_cut_off_by_the_request_timeout()
     ));
     Ok(())
 }
+
+fn guarded_client() -> baukit_egress::GuardedClient {
+    baukit_egress::GuardedClient::new(
+        baukit_egress::EgressOptions::default()
+            .with_policy(baukit_egress::AddressPolicy::AllowLoopback),
+    )
+    .expect("guarded client")
+}
+
+#[tokio::test]
+async fn accepted_tickets_survive_immediate_receipt_failures_on_both_transports()
+-> Result<(), Box<dyn std::error::Error>> {
+    for guarded in [false, true] {
+        for malformed in [false, true] {
+            let server = start(
+                Router::new()
+                    .route("/push/send", post(tickets_for_every_token))
+                    .route(
+                        "/push/getReceipts",
+                        post(move || async move {
+                            if malformed {
+                                (StatusCode::OK, "provider-body-secret")
+                            } else {
+                                (StatusCode::SERVICE_UNAVAILABLE, "provider-body-secret")
+                            }
+                        }),
+                    )
+                    .with_state(Arc::new(RecordedRequests::default())),
+            )
+            .await;
+            let sender = sender(&server, 1)?;
+            let sender = if guarded {
+                sender.with_guarded_client(guarded_client())
+            } else {
+                sender
+            };
+            let outcomes = by_token(sender.send(vec![message("one"), message("two")]).await?);
+            assert_eq!(
+                outcomes["one"],
+                PushDeliveryStatus::Accepted(ticket("ticket-one"))
+            );
+            assert_eq!(
+                outcomes["two"],
+                PushDeliveryStatus::Accepted(ticket("ticket-two"))
+            );
+            let error = sender
+                .receipts(vec![ticket("ticket-one")])
+                .await
+                .expect_err("deferred polling reports failures");
+            assert_eq!(error.is_retryable(), !malformed);
+            assert!(!format!("{error:?}").contains("provider-body-secret"));
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn guarded_requests_send_bearer_auth_for_tickets_and_receipts()
+-> Result<(), Box<dyn std::error::Error>> {
+    async fn check_tickets(headers: HeaderMap, Json(payload): Json<Vec<Value>>) -> Json<Value> {
+        assert_eq!(headers["authorization"], "Bearer expo-secret");
+        assert_eq!(headers["content-type"], "application/json");
+        assert_eq!(payload[0]["to"], "token");
+        Json(json!({"data": [{"status": "ok", "id": "ticket-one"}]}))
+    }
+    async fn check_receipts(headers: HeaderMap, Json(payload): Json<Value>) -> Json<Value> {
+        assert_eq!(headers["authorization"], "Bearer expo-secret");
+        assert_eq!(headers["content-type"], "application/json");
+        assert_eq!(payload["ids"], json!(["ticket-one"]));
+        Json(json!({"data": {"ticket-one": {"status": "ok"}}}))
+    }
+    let server = start(
+        Router::new()
+            .route("/push/send", post(check_tickets))
+            .route("/push/getReceipts", post(check_receipts)),
+    )
+    .await;
+    let sender = ExpoPushSender::with_options(
+        PushOptions::new(server.send_endpoint())?.with_access_token("expo-secret")?,
+    )?
+    .with_guarded_client(guarded_client());
+    assert_eq!(
+        sender.send(vec![message("token")]).await?[0].status,
+        PushDeliveryStatus::Delivered
+    );
+    assert_eq!(
+        sender.receipts(vec![ticket("ticket-one")]).await?[&ticket("ticket-one")],
+        PushReceipt::Delivered
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn guarded_errors_keep_retry_classification_and_omit_provider_bodies()
+-> Result<(), Box<dyn std::error::Error>> {
+    let server = start(Router::new().route(
+        "/push/send",
+        post(|| async {
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                [(RETRY_AFTER, "12")],
+                "provider-body-secret",
+            )
+        }),
+    ))
+    .await;
+    let guard = baukit_egress::GuardedClient::new(
+        baukit_egress::EgressOptions::default()
+            .with_policy(baukit_egress::AddressPolicy::AllowLoopback)
+            .with_error_body_limit(100)?,
+    )?;
+    let sender = sender(&server, 1)?.with_guarded_client(guard);
+    let error = sender
+        .send(vec![message("token")])
+        .await
+        .expect_err("status failure");
+    assert_eq!(error.retry_after(), Some(Duration::from_secs(12)));
+    assert!(!format!("{error:?}").contains("provider-body-secret"));
+    Ok(())
+}
+
+#[test]
+fn sender_debug_omits_credentials_and_endpoint_secrets() -> Result<(), Box<dyn std::error::Error>> {
+    let options =
+        PushOptions::new("https://url-secret@example.com/path-secret/send?key=query-secret")?
+            .with_access_token("access-secret")?;
+    for guarded in [false, true] {
+        let sender = ExpoPushSender::with_options(options.clone())?;
+        let sender = if guarded {
+            sender.with_guarded_client(guarded_client())
+        } else {
+            sender
+        };
+        let debug = format!("{sender:?}");
+        assert!(debug.contains("ExpoPushSender"));
+        for secret in ["url-secret", "path-secret", "query-secret", "access-secret"] {
+            assert!(!debug.contains(secret), "{debug}");
+        }
+    }
+    Ok(())
+}

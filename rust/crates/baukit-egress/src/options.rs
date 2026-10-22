@@ -25,6 +25,7 @@ pub struct EgressOptions {
     error_body_limit: Option<usize>,
     max_retry_after: Duration,
     forbidden_rate_limit: bool,
+    redirect_responses: bool,
 }
 
 /// A rejected [`EgressOptions`] value.
@@ -58,11 +59,27 @@ impl Default for EgressOptions {
             error_body_limit: None,
             max_retry_after: DEFAULT_MAX_RETRY_AFTER,
             forbidden_rate_limit: false,
+            redirect_responses: false,
         }
     }
 }
 
 impl EgressOptions {
+    /// Returns redirect status and headers with an empty body, without following.
+    ///
+    /// The caller must send each next URL through the guard again.
+    #[must_use]
+    pub const fn with_redirect_responses(mut self) -> Self {
+        self.redirect_responses = true;
+        self
+    }
+
+    /// Returns whether redirects are returned with an empty body.
+    #[must_use]
+    pub const fn redirect_responses(&self) -> bool {
+        self.redirect_responses
+    }
+
     /// Sets which resolved addresses may be reached.
     #[must_use]
     pub fn with_policy(mut self, policy: AddressPolicy) -> Self {

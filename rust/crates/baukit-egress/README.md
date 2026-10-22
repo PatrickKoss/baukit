@@ -22,12 +22,12 @@ let response = client
 
 | Check | Behavior |
 |---|---|
-| Scheme | `https` to allowed addresses. `http` only to loopback under `AllowLoopback` or listed networks under `AllowPrivate`. |
+| Scheme | `https` to allowed addresses. Plain HTTP only where the selected policy explicitly permits it. |
 | URL shape | No user info, no fragment, a host is required. |
 | Address literals | `https://10.0.0.1/`, `https://[::ffff:127.0.0.1]/` and `https://2130706433/` are checked before any connection. |
 | DNS answers | Every answer must pass the policy. One denied answer rejects the lookup. |
 | Pinning | The connection uses the answers that passed the check. A new connection runs a new lookup and a new check. |
-| Redirects | Never followed. A `3xx` comes back as `EgressError::Status`. |
+| Redirects | Never followed. A `3xx` comes back as `EgressError::Status` unless `with_redirect_responses()` returns its status and headers with an empty body. |
 | Proxies | `HTTP_PROXY`, `HTTPS_PROXY` and friends are ignored. |
 | Time | Separate bounds for the lookup, the TCP and TLS connect, and the whole request including the body. |
 | Response size | The body is read in chunks and stops at the limit, with or without `Content-Length`. `ResponseBody::Discard` skips it. |
@@ -98,9 +98,63 @@ addresses only, so every answer for an HTTP host name must be listed.
 `StaticResolver` answers pass the same checks. IPv4-mapped answers match
 listed IPv4 networks and connect as IPv4. NAT64 answers carrying private IPv4
 addresses stay blocked. Loopback, link-local, and other special ranges stay
-blocked, as do `169.254.169.254`, its IPv4-mapped form, and `fd00:ec2::254`,
-even with `fc00::/7` listed. DNS pinning, timeouts, response caps, redirect
-refusal, and proxy settings stay the same.
+blocked. Metadata addresses `169.254.169.254`, `100.100.100.200`,
+`fd00:ec2::254` and `fd20:ce::254` stay blocked, along with their IPv4-mapped
+forms where applicable, even when the containing private or shared range is
+listed. DNS pinning, timeouts, response caps, redirect refusal, and proxy
+settings stay the same.
+
+## One configured endpoint
+
+Use `AddressPolicy::OnlyEndpoint(AllowedEndpoint::new(host, port, allow_http)?)`
+for one configured service. The allowance matches the scheme, normalized host
+and effective port exactly. It accepts public, private, shared and loopback DNS
+answers, but every answer must pass. Metadata, link-local, multicast,
+unspecified and reserved addresses stay blocked. IPv4-mapped forms follow the
+same rules. NAT64 addresses carrying non-public IPv4 addresses stay blocked.
+
+`AllowedEndpoint::new("service.internal", 8080, true)` allows only plain HTTP to
+that host and port. Set the last argument to `false` for HTTPS only. IPv6
+literals need brackets. Paths are unrestricted; credentials and fragments remain
+forbidden. `host()`, `port()` and `matches(&url)` expose the validated allowance.
+DNS pinning, disabled proxies and unfollowed redirects still apply.
+
+`AddressPolicy::PublicHttp` accepts HTTP and HTTPS to the same public addresses
+as `PublicOnly`. It checks literal addresses and every DNS answer before
+connecting. Private addresses and metadata remain blocked.
+
+## Streaming responses
+
+`execute_stream` returns headers before reading the body. Its
+`EgressStreamResponse` has `status()`, `headers()` and
+`chunk().await -> Result<Option<Vec<u8>>, EgressError>`:
+
+```rust,no_run
+use baukit_egress::{EgressOptions, EgressRequest, GuardedClient};
+use url::Url;
+
+# async fn read_events() -> Result<(), Box<dyn std::error::Error>> {
+let client = GuardedClient::new(EgressOptions::default())?;
+let url = Url::parse("https://events.example.com/stream")?;
+let mut response = client.execute_stream(EgressRequest::get(url)).await?;
+while let Some(chunk) = response.chunk().await? {
+    // Pass these bytes to the consumer's incremental parser.
+    # let _ = chunk;
+}
+# Ok(())
+# }
+```
+
+Chunk boundaries depend on the transport and may split UTF-8 or application
+messages. The whole-request timeout keeps running between reads. The total
+byte limit applies across all chunks. A timeout, transport failure or size
+error closes the body; later reads return `None`. Dropping the response also
+cancels the body. `ResponseBody::Discard` returns no chunks.
+
+Both response modes share destination checks, DNS pinning, status
+classification and request tracing. With `with_redirect_responses()`, both
+return redirect status and headers without reading the body or following the
+redirect. Send each next URL through the guard again.
 
 ## Response bodies
 
