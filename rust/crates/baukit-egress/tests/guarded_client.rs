@@ -969,6 +969,8 @@ async fn a_failed_error_body_read_preserves_the_status_and_capped_retry_after() 
 
 #[tokio::test]
 async fn a_timed_out_error_body_read_preserves_the_status_and_capped_retry_after() {
+    const REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
+
     let server = LocalServer::start(Reply::RespondThenWait(
         b"HTTP/1.1 503 Service Unavailable\r\nretry-after: 2\r\ncontent-length: 1024\r\n\r\nbusy"
             .to_vec(),
@@ -977,7 +979,7 @@ async fn a_timed_out_error_body_read_preserves_the_status_and_capped_retry_after
     let options = development()
         .with_max_retry_after(Duration::from_secs(1))
         .expect("retry delay cap is valid")
-        .with_request_timeout(SHORT)
+        .with_request_timeout(REQUEST_TIMEOUT)
         .expect("timeout is valid");
     for options in [
         options.clone(),
@@ -991,7 +993,7 @@ async fn a_timed_out_error_body_read_preserves_the_status_and_capped_retry_after
             .expect_err("a 503 is an error");
         if options.error_body_limit().is_some() {
             assert!(
-                start.elapsed() >= SHORT,
+                start.elapsed() >= REQUEST_TIMEOUT,
                 "body reading should reach its timeout"
             );
         }
@@ -1167,7 +1169,7 @@ async fn redirect_response_opt_in_exposes_location_without_reading_body_or_follo
         loopback_resolver(&["hooks.test", "internal.test"]),
         development()
             .with_redirect_responses()
-            .with_request_timeout(SHORT)
+            .with_request_timeout(Duration::from_secs(2))
             .expect("timeout"),
     );
     let result = client
@@ -1248,13 +1250,18 @@ async fn streaming_returns_headers_and_chunks_before_the_body_finishes() {
 
 #[tokio::test]
 async fn streaming_keeps_the_whole_request_timeout_after_a_chunk() {
+    const REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
+    const POST_DEADLINE_POLL_TIMEOUT: Duration = Duration::from_millis(200);
+
     let server = LocalServer::start(Reply::RespondThenWait(
         b"HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\n\r\n5\r\nfirst\r\n".to_vec(),
     ))
     .await;
     let client = client(
         loopback_resolver(&["stream.test"]),
-        development().with_request_timeout(SHORT).expect("timeout"),
+        development()
+            .with_request_timeout(REQUEST_TIMEOUT)
+            .expect("timeout"),
     );
     let mut response = client
         .execute_stream(EgressRequest::get(server.url("stream.test", "/events")))
@@ -1265,12 +1272,13 @@ async fn streaming_keeps_the_whole_request_timeout_after_a_chunk() {
         Some(b"first".to_vec())
     );
     // The deadline also runs while the consumer is not polling the body.
-    tokio::time::sleep(SHORT).await;
-    let started = Instant::now();
-    let error = response.chunk().await.expect_err("body timed out");
+    tokio::time::sleep(REQUEST_TIMEOUT).await;
+    let error = tokio::time::timeout(POST_DEADLINE_POLL_TIMEOUT, response.chunk())
+        .await
+        .expect("the expired deadline is observed promptly")
+        .expect_err("body timed out");
     assert!(matches!(error, EgressError::Timeout));
     assert_eq!(error.retry_class(), RetryClass::Timeout);
-    assert!(started.elapsed() < SHORT);
     assert!(
         response
             .chunk()

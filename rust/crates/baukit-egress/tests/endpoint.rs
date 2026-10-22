@@ -91,6 +91,35 @@ fn endpoint_policy_requires_exact_host_port_and_separate_http_opt_in() -> Result
     Ok(())
 }
 
+#[test]
+fn endpoint_policy_pins_the_selected_scheme() -> Result<(), Box<dyn Error>> {
+    for (http, accepted, rejected) in [
+        (
+            false,
+            "https://proxy.internal:4000",
+            "http://proxy.internal:4000",
+        ),
+        (
+            true,
+            "http://proxy.internal:4000",
+            "https://proxy.internal:4000",
+        ),
+    ] {
+        let endpoint = AllowedEndpoint::new("proxy.internal", 4000, http)?;
+        let accepted = Url::parse(accepted)?;
+        let rejected = Url::parse(rejected)?;
+        assert!(endpoint.matches(&accepted));
+        assert!(!endpoint.matches(&rejected));
+        let allowed = AddressPolicy::OnlyEndpoint(endpoint);
+        assert!(validate_destination(&accepted, &allowed).is_ok());
+        assert!(matches!(
+            validate_destination(&rejected, &allowed),
+            Err(EgressError::Destination(DestinationRejection::Endpoint))
+        ));
+    }
+    Ok(())
+}
+
 struct ChangingResolver(Mutex<VecDeque<Vec<IpAddr>>>);
 impl ChangingResolver {
     fn new(answers: &[&[&str]]) -> Self {

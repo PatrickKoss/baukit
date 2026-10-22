@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use baukit_http::{classify_http_status, classify_transport_error};
 use serde::{Deserialize, Serialize};
 
@@ -155,7 +155,14 @@ impl ExpoPushSender {
         let ids = pending.iter().map(|(id, _)| id.clone()).collect::<Vec<_>>();
         // Accepted tickets must survive a failed immediate receipt request.
         // The durable receipt job settles them without sending again.
-        let mut receipts = self.fetch_receipts(&ids).await.unwrap_or_default();
+        let mut receipts = self.fetch_receipts(&ids).await.unwrap_or_else(|error| {
+            tracing::debug!(
+                target: "baukit_push",
+                retryable = error.is_retryable(),
+                "immediate receipt fetch failed; tickets stay accepted"
+            );
+            HashMap::new()
+        });
         outcomes.extend(pending.into_iter().map(|(id, token)| {
             let status = match receipts.remove(&id) {
                 Some(receipt) => receipt.into(),
@@ -230,16 +237,15 @@ impl ExpoPushSender {
             .map_err(|_| PushError::InvalidResponse("invalid endpoint".into()))?;
         let mut headers = HeaderMap::new();
         headers.insert(
-            "content-type",
-            axum::http::HeaderValue::from_static("application/json"),
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
         );
         if let Some(token) = self.options.access_token() {
-            headers.insert(
-                "authorization",
-                format!("Bearer {token}")
-                    .parse()
-                    .map_err(|_| PushError::InvalidResponse("invalid credential".into()))?,
-            );
+            let mut authorization: HeaderValue = format!("Bearer {token}")
+                .parse()
+                .map_err(|_| PushError::InvalidResponse("invalid credential".into()))?;
+            authorization.set_sensitive(true);
+            headers.insert(header::AUTHORIZATION, authorization);
         }
         let body = serde_json::to_vec(payload)
             .map_err(|_| PushError::InvalidResponse("invalid request".into()))?;

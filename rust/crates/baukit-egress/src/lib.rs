@@ -36,9 +36,10 @@
 //! answers. Cloud metadata stays blocked, even inside a listed network.
 //! [`AddressPolicy::AllowLoopback`] is for local development and tests.
 //! [`AddressPolicy::PublicHttp`] opts into HTTP to public addresses.
-//! [`AddressPolicy::OnlyEndpoint`] accepts one exact host and effective port,
-//! including private and loopback answers. [`AllowedEndpoint::new`] validates
-//! that allowance and takes a separate HTTP flag. Metadata stays blocked.
+//! [`AddressPolicy::OnlyEndpoint`] accepts one exact scheme, host and effective
+//! port, including private and loopback answers. [`AllowedEndpoint::new`]
+//! validates that allowance; its HTTP flag selects HTTP only or HTTPS only.
+//! Metadata stays blocked.
 //!
 //! [`GuardedClient::execute_stream`] returns an [`EgressStreamResponse`] with
 //! status, headers and chunked body reads under the same whole-request timeout,

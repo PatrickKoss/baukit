@@ -10,7 +10,8 @@ All notable changes to `baukit-egress` are documented here.
   `headers` and chunked reads. Both response modes share the guarded send path,
   request tracing, timeouts and byte limits.
 - Add `AllowedEndpoint`, `AllowedEndpointError` and `AddressPolicy::OnlyEndpoint`
-  for an exact host and effective port, with a separate HTTP opt-in.
+  for an exact scheme, host and effective port. The HTTP flag selects HTTP only
+  when true and HTTPS only when false.
 - Add `AddressPolicy::PublicHttp` and `EgressOptions::with_redirect_responses`.
   Opted-in redirects return status and headers with an empty body and are never
   followed. Defaults still require public HTTPS and reject redirects.
@@ -19,6 +20,8 @@ All notable changes to `baukit-egress` are documented here.
 
 - Block metadata addresses `100.100.100.200` and `fd20:ce::254` under every
   policy, including IPv4-mapped and well-known NAT64 forms where applicable.
+- Give timeout tests time to receive headers under concurrent workspace load,
+  while keeping a short bound on reads after the streaming deadline expires.
 
 ### Breaking
 

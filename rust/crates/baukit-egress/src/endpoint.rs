@@ -4,11 +4,11 @@ use url::{Host, Url};
 
 use crate::policy::is_endpoint_address;
 
-/// An exact host and port allowed to reach a configured service.
+/// An exact scheme, host and port allowed to reach a configured service.
 ///
 /// Private and loopback addresses are accepted. Link-local, cloud metadata,
-/// multicast and other reserved addresses stay blocked. HTTP needs a separate
-/// opt-in. No wildcard, suffix or network matching is performed.
+/// multicast and other reserved addresses stay blocked. The HTTP flag selects
+/// HTTP only or HTTPS only. No wildcard, suffix or network matching is performed.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AllowedEndpoint {
     host: String,
@@ -26,6 +26,7 @@ pub struct AllowedEndpointError;
 impl AllowedEndpoint {
     /// Validates an exact DNS host or IP literal and port.
     /// IPv6 literals must be bracketed. URLs and wildcards are rejected.
+    /// `allow_http` selects HTTP only when true and HTTPS only when false.
     pub fn new(host: &str, port: u16, allow_http: bool) -> Result<Self, AllowedEndpointError> {
         if port == 0
             || host.is_empty()
@@ -40,7 +41,7 @@ impl AllowedEndpoint {
             Host::Ipv4(address) => Some(IpAddr::V4(address)),
             Host::Ipv6(address) => Some(IpAddr::V6(address)),
             Host::Domain(ref name) => {
-                if name.contains(':') || name.starts_with('.') || name.ends_with('.') {
+                if name.starts_with('.') || name.ends_with('.') {
                     return Err(AllowedEndpointError);
                 }
                 None
@@ -56,10 +57,13 @@ impl AllowedEndpoint {
         })
     }
 
-    /// Returns whether the URL has exactly this host and effective port.
+    /// Returns whether the URL has exactly this scheme, host and effective port.
     #[must_use]
     pub fn matches(&self, url: &Url) -> bool {
-        url.host_str() == Some(self.host.as_str()) && url.port_or_known_default() == Some(self.port)
+        let scheme = if self.allow_http { "http" } else { "https" };
+        url.scheme() == scheme
+            && url.host_str() == Some(self.host.as_str())
+            && url.port_or_known_default() == Some(self.port)
     }
 
     /// Returns the normalized host, with brackets around IPv6 literals.

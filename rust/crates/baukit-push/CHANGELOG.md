@@ -19,6 +19,8 @@ All notable changes to `baukit-push` are documented here.
   still report failures.
 - Use a manual `ExpoPushSender` debug formatter that omits endpoint URLs and
   credentials.
+- Log failed immediate receipt fetches at debug level with retryability and no
+  notification data. Mark guarded authorization headers sensitive.
 
 ## [0.10.32] - 2026-10-21
 

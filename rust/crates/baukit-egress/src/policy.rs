@@ -215,7 +215,7 @@ pub enum AddressPolicy {
     AllowPrivate(PrivateNetworks),
     /// Reach only one exact host and port, including its private or loopback
     /// DNS answers. Link-local, metadata and reserved addresses stay blocked.
-    /// Plain HTTP requires the endpoint's explicit opt-in.
+    /// The endpoint's HTTP flag selects HTTP only or HTTPS only.
     OnlyEndpoint(AllowedEndpoint),
 }
 
@@ -251,11 +251,9 @@ impl AddressPolicy {
     #[must_use]
     pub const fn allows_plain_http(&self) -> bool {
         match self {
+            Self::PublicOnly => false,
+            Self::PublicHttp | Self::AllowLoopback | Self::AllowPrivate(_) => true,
             Self::OnlyEndpoint(endpoint) => endpoint.allows_http(),
-            _ => matches!(
-                self,
-                Self::PublicHttp | Self::AllowLoopback | Self::AllowPrivate(_)
-            ),
         }
     }
 

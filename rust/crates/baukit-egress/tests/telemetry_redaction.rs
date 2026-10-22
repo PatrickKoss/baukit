@@ -172,7 +172,7 @@ async fn errors_and_telemetry_do_not_leak_url_secrets() {
             .with_policy(AddressPolicy::AllowLoopback)
             .with_max_response_bytes(limit)
             .expect("limit")
-            .with_request_timeout(Duration::from_millis(200))
+            .with_request_timeout(Duration::from_secs(2))
             .expect("timeout");
         let client = GuardedClient::new(options).expect("client");
         let mut response = client
@@ -180,18 +180,18 @@ async fn errors_and_telemetry_do_not_leak_url_secrets() {
             .await
             .expect("headers");
         let error = if oversized {
-            response.chunk().await.expect_err("too large")
+            let error = response.chunk().await.expect_err("too large");
+            assert!(matches!(error, EgressError::ResponseTooLarge { limit: 3 }));
+            error
         } else {
             assert_eq!(
                 response.chunk().await.expect("first chunk"),
                 Some(b"body-secret".to_vec())
             );
-            response.chunk().await.expect_err("timeout")
+            let error = response.chunk().await.expect_err("timeout");
+            assert!(matches!(error, EgressError::Timeout));
+            error
         };
-        assert!(matches!(
-            error,
-            EgressError::Timeout | EgressError::ResponseTooLarge { .. }
-        ));
         assert_no_secret(&format!("{error:?}"));
         drop(response);
         task.abort();
