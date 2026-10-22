@@ -1,6 +1,21 @@
 #!/bin/sh
 set -eu
 
+case "${1:-}" in
+  -h|--help)
+    cat <<'USAGE'
+Usage: sh scripts/docker.sh <docker arguments...>
+Only compose, build and buildx build receive the checkout cache prefix.
+Set CARGO_TARGET_CACHE_PREFIX to override it.
+Other commands pass through unchanged.
+USAGE
+    exit 0
+    ;;
+  compose|build) ;;
+  buildx) [ "${2:-}" = build ] || exec docker "$@" ;;
+  *) exec docker "$@" ;;
+esac
+
 repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
 if [ -z "${CARGO_TARGET_CACHE_PREFIX:-}" ]; then
   if command -v sha256sum >/dev/null 2>&1; then

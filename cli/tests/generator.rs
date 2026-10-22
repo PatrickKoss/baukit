@@ -621,7 +621,7 @@ fn docker_callers_isolate_checkouts_and_preserve_overrides() -> anyhow::Result<(
     let docker = tools.join("docker");
     fs::write(
         &docker,
-        "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$CARGO_TARGET_CACHE_PREFIX\" \"$@\"\n",
+        "#!/bin/sh\nset -eu\nprintf '%s\\n' \"${CARGO_TARGET_CACHE_PREFIX:-unset}\" \"$@\"\n",
     )?;
     fs::set_permissions(&docker, fs::Permissions::from_mode(0o755))?;
     for tool in ["dirname", "shasum"] {
@@ -690,8 +690,29 @@ fn docker_callers_isolate_checkouts_and_preserve_overrides() -> anyhow::Result<(
             }
         }
         let makefile = fs::read_to_string(root.join("Makefile"))?;
-        assert!(!makefile.contains("\tdocker compose"));
-        assert!(makefile.contains("sh scripts/docker.sh compose up -d postgres"));
+        assert!(makefile.contains("\tdocker compose up -d postgres"));
+        for args in [vec!["ps"], vec!["buildx", "inspect"]] {
+            let output = Command::new("sh")
+                .arg(root.join("scripts/docker.sh"))
+                .args(&args)
+                .env(
+                    "PATH",
+                    format!("{}:{}", tools.display(), std::env::var("PATH")?),
+                )
+                .env_remove("CARGO_TARGET_CACHE_PREFIX")
+                .output()?;
+            assert!(output.status.success());
+            assert_eq!(
+                String::from_utf8(output.stdout)?,
+                format!("unset\n{}\n", args.join("\n"))
+            );
+        }
+        let help = Command::new("sh")
+            .arg(root.join("scripts/docker.sh"))
+            .arg("--help")
+            .output()?;
+        assert!(help.status.success());
+        assert!(String::from_utf8(help.stdout)?.contains("Only compose, build and buildx build"));
         let runner = fs::read_to_string(root.join("scripts/quality-gate.sh"))?;
         let start = runner
             .find("if [ -f backend/Dockerfile ]; then")
@@ -778,13 +799,36 @@ fn generated_compose_receives_the_checkout_cache_prefix() -> anyhow::Result<()> 
             override_prefix.unwrap_or(&expected)
         );
     }
-    let output = Command::new("docker")
-        .args(["compose", "--profile", "backend", "config"])
-        .current_dir(&root)
-        .env_remove("CARGO_TARGET_CACHE_PREFIX")
-        .output()?;
-    assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("Use sh scripts/docker.sh compose"));
+    for prefix in [None, Some(""), Some("custom-plain-cache")] {
+        let mut command = Command::new("docker");
+        command
+            .args([
+                "compose",
+                "--profile",
+                "backend",
+                "config",
+                "--format",
+                "json",
+            ])
+            .current_dir(&root)
+            .env_remove("CARGO_TARGET_CACHE_PREFIX");
+        if let Some(prefix) = prefix {
+            command.env("CARGO_TARGET_CACHE_PREFIX", prefix);
+        }
+        let output = command.output()?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let config: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+        assert_eq!(
+            config["services"]["backend"]["build"]["args"]["CARGO_TARGET_CACHE_PREFIX"],
+            prefix
+                .filter(|prefix| !prefix.is_empty())
+                .unwrap_or("compose-cache")
+        );
+    }
     Ok(())
 }
 

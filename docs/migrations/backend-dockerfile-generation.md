@@ -237,10 +237,9 @@ on both runtime bases.
 `CARGO_TARGET_CACHE_PREFIX` selects the Cargo target cache for each builder stage.
 The generated `scripts/docker.sh` uses `<app>-<hash>`, where `<hash>` is the
 first 12 hexadecimal digits of the SHA-256 of the checkout's absolute physical
-path. It uses `sha256sum` on Linux and `shasum -a 256` on macOS. Make targets,
-mobile QA and the strict quality gate use this script. Compose requires the
-prefix in its environment when it declares a backend build. Invoke it through
-the script too:
+path. It uses `sha256sum` on Linux and `shasum -a 256` on macOS. The strict
+quality gate uses this script for image builds. Use it to isolate builds by
+checkout:
 
 ```sh
 sh scripts/docker.sh compose --profile backend build
@@ -252,10 +251,11 @@ sh scripts/docker.sh buildx build --target api -f backend/Dockerfile \
 
 Set `CARGO_TARGET_CACHE_PREFIX` in the environment to override the computed
 value. The wrapper passes it as a build arg for `build` and `buildx build`,
-and exports it for Compose. The Dockerfile still defaults to `app.name` for
-callers that supply their own build command. The Cargo registry cache stays
-shared. Separate checkout prefixes prevent Cargo from reusing stale artifacts
-when BuildKit preserves source mtimes.
+and exports it for Compose. Compose and the Dockerfile default to `app.name`
+when the prefix is unset. Plain Compose builds share the app-wide target cache
+across checkouts, as before. The Cargo registry cache stays shared. Separate
+checkout prefixes prevent Cargo from reusing stale artifacts when BuildKit
+preserves source mtimes.
 
 Existing products must copy `scripts/docker.sh`, update their Compose build args
 and route image builds through the script. Regenerating only the Dockerfile

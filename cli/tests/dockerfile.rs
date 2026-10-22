@@ -254,10 +254,15 @@ fn build_image(
     tag: &str,
     cache_prefix: Option<&str>,
 ) -> Result<()> {
-    let mut command = Command::new("sh");
-    command
-        .arg(root.join("scripts/docker.sh"))
-        .env_remove("CARGO_TARGET_CACHE_PREFIX");
+    let mut command = if let Some(prefix) = cache_prefix {
+        let mut command = Command::new("sh");
+        command
+            .arg(root.join("scripts/docker.sh"))
+            .env("CARGO_TARGET_CACHE_PREFIX", prefix);
+        command
+    } else {
+        Command::new("docker")
+    };
     command.args([
         "buildx",
         "build",
@@ -269,9 +274,6 @@ fn build_image(
         "--tag",
         tag,
     ]);
-    if let Some(prefix) = cache_prefix {
-        command.env("CARGO_TARGET_CACHE_PREFIX", prefix);
-    }
     let output = command
         .arg("--file")
         .arg(root.join("backend/Dockerfile"))

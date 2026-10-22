@@ -48,7 +48,7 @@ services:
         condition: service_healthy
 ```
 
-Run it with `sh scripts/docker.sh compose -f compose.yaml -f compose.fake-providers.yaml up -d`
+Run it with `docker compose -f compose.yaml -f compose.fake-providers.yaml up -d`
 and tear it down with the same file list plus `down`.
 
 Two URL families, and mixing them up is the usual first failure:

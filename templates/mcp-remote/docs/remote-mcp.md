@@ -25,7 +25,7 @@ For bundled Keycloak, the generated Compose `backend` profile uses
 `http://keycloak:8080/realms/NAME/protocol/openid-connect/certs` internally.
 The issuer remains the browser-visible URL. Replace `NAME` with the product
 name. Configure hosted providers in `config/local.toml` or `.env` before
-starting `sh scripts/docker.sh compose --profile backend up backend`, and run migrations
+starting `docker compose --profile backend up backend`, and run migrations
 first. The backend service expects registry dependencies; local path builds
 need the documented Docker build-context overrides.
 

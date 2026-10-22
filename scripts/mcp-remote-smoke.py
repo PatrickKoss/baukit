@@ -266,7 +266,7 @@ def run(fixture: Path, repository: Path) -> None:
     cpus: 2
     mem_limit: 1g
 """)
-        compose = ["sh", str(fixture / "scripts/docker.sh"), "compose", "--project-name", project, "--file", str(fixture / "compose.yaml"), "--file", str(override)]
+        compose = ["docker", "compose", "--project-name", project, "--file", str(fixture / "compose.yaml"), "--file", str(override)]
         try:
             subprocess.run([*compose, "up", "--detach", "--wait", "postgres", "keycloak", "redis"], check=True)
             subprocess.run([*compose, "exec", "--no-TTY", "smoke", "python3", str(Path(__file__).resolve()), str(fixture), "--inside"], check=True)
