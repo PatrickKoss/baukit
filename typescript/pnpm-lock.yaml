@@ -298,6 +298,10 @@ importers:
         version: 6.0.3
 
   packages/auth-web:
+    dependencies:
+      jose:
+        specifier: 6.2.12
+        version: 6.2.12
     devDependencies:
       '@clerk/clerk-js':
         specifier: 6.38.0
@@ -305,6 +309,9 @@ importers:
       '@workos-inc/authkit-js':
         specifier: 0.20.4
         version: 0.20.4
+      jsdom:
+        specifier: 30.1.1
+        version: 30.1.1(@noble/hashes@1.8.0)
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -3349,6 +3356,9 @@ packages:
 
   jju@1.4.0:
     resolution: {integrity: sha512-8wb9Yw966OSxApiCt0K3yNJL8pnNeIv+OEq2YMidz4FKP6nonSRoOXc80iXY4JaN2FC11B9qsNmDsm+ZOfMROA==}
+
+  jose@6.2.12:
+    resolution: {integrity: sha512-9NiFmJEex0sy2Dk58j2UGBSHgUs2ypF9eZSu4L6vjOX3Dp96Sw1F3uL+H+D1sx02jZZdzUT0HgvCy59CuvXcWw==}
 
   js-cookie@3.0.8:
     resolution: {integrity: sha512-yeJd4aNAdYZQjaon2bpD/Gb0B/omw7HQOsynXXcOiWVCacbBcPlgn8S/d1X6blFSaHao7ozqtW7NZW19xpCtIw==}
@@ -8421,6 +8431,8 @@ snapshots:
   jimp-compact@0.16.1: {}
 
   jju@1.4.0: {}
+
+  jose@6.2.12: {}
 
   js-cookie@3.0.8: {}
 

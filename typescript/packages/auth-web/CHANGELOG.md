@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add `SilentTokenBroker` for silent multi-product OIDC authorization with in-memory tokens, remembered failures, account binding and explicit popup login.
+- Add `completeSilentTokenCallback` for dedicated callback pages.
+
 ## 0.10.32
 
 ### Patch Changes
