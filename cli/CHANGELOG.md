@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 - Generated OIDC REST verifiers apply `auth.authorized_parties` as an optional `azp` allowlist. OIDC and WorkOS defaults are empty; Clerk keeps its development origin default. MCP verification retains its separate resource audience.
+- Generated mobile apps pin Expo 57.0.31 and expo-router 57.0.29 to match Expo dependency checks.
+- Generated backend image builds use `scripts/docker.sh` to key Cargo target caches by checkout. Plain Compose retains the app-name default. Override either with `CARGO_TARGET_CACHE_PREFIX`.
 
 ## [0.10.32] - 2026-10-21
 

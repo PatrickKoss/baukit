@@ -152,17 +152,32 @@ builds `api` and `migrate` from `<app.name>-bin`, plus `worker` when
 and `/app/<binary>` entrypoint. The migrate stage also contains migrations and
 the bin crate's Cargo manifest at their compile-time paths.
 
-`CARGO_TARGET_CACHE_PREFIX` is a build arg for isolating Cargo target caches per
-checkout or worktree. It defaults to `app.name`, keeping the existing
-`<app>-target` and `<app>-target-<variant>` ids. The Cargo registry cache stays
-shared. Use a distinct prefix when checkouts build on the same Docker daemon to
-avoid stale artifacts caused by preserved source mtimes. For `my-app`:
+`CARGO_TARGET_CACHE_PREFIX` selects the Cargo target cache for each builder stage.
+The generated `scripts/docker.sh` uses `<app>-<hash>`, where `<hash>` is the
+first 12 hexadecimal digits of the SHA-256 of the checkout's absolute physical
+path. It uses `sha256sum` on Linux and `shasum -a 256` on macOS. The strict
+quality gate uses this script for image builds. Use it to isolate builds by
+checkout:
 
 ```sh
-docker build --target api -f backend/Dockerfile \
-  --build-arg BACKEND_CONTEXT=backend \
-  --build-arg CARGO_TARGET_CACHE_PREFIX="my-app-$(printf %s "$PWD" | sha256sum | cut -c1-12)" .
+sh scripts/docker.sh compose --profile backend build
+sh scripts/docker.sh build --target api -f backend/Dockerfile \
+  --build-arg BACKEND_CONTEXT=backend .
+sh scripts/docker.sh buildx build --target api -f backend/Dockerfile \
+  --build-arg BACKEND_CONTEXT=backend .
 ```
+
+Set `CARGO_TARGET_CACHE_PREFIX` in the environment to override the computed
+value. The wrapper passes it as a build arg for `build` and `buildx build`,
+and exports it for Compose. Compose and the Dockerfile default to `app.name`
+when the prefix is unset. Plain Compose builds share the app-wide target cache
+across checkouts, as before. The Cargo registry cache stays shared. Separate
+checkout prefixes prevent Cargo from reusing stale artifacts when BuildKit
+preserves source mtimes.
+
+Existing products must copy `scripts/docker.sh`, update their Compose build args
+and route image builds through the script. Regenerating only the Dockerfile
+does not update these callers.
 
 | Setting | Default and meaning |
 | --- | --- |

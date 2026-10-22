@@ -30,7 +30,7 @@ Migrations are never run during API startup. The public API listens on port {{ c
 
 `backend/Dockerfile` has separate `api`, `migrate`{% if context.worker %}, and
 `worker`{% endif %} runtime targets. Build each process from the backend context,
-for example `docker build --target api -t {{ context.app_name }}-api:local backend`.
+for example `sh scripts/docker.sh build --target api -t {{ context.app_name }}-api:local backend`.
 Pass `--build-arg GIT_COMMIT=$(git rev-parse --short=12 HEAD)` to record the
 source revision in `build_info`; omitted build args retain the `unknown` default.
 For a checkout generated with `--baukit-path`, use the Baukit repository root as

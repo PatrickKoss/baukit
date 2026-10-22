@@ -174,14 +174,14 @@ if [ -f backend/Dockerfile ]; then
     tar -C backend --exclude target -cf - . | tar -C "$build_context/backend" -xf -
     tar -C "$baukit_path" --exclude target -cf - . | tar -C "$build_context/baukit" -xf -
     cp limits.json "$build_context/limits.json"
-    docker build -f backend/Dockerfile \
+    sh scripts/docker.sh build -f backend/Dockerfile \
       --build-arg BACKEND_CONTEXT=backend \
       --build-arg BAUKIT_CONTEXT=baukit \
       --build-arg BAUKIT_DESTINATION="$baukit_path" \
       "$build_context"
     rm -rf "$build_context"
   else
-    docker build -f backend/Dockerfile --build-arg BACKEND_CONTEXT=backend .
+    sh scripts/docker.sh build -f backend/Dockerfile --build-arg BACKEND_CONTEXT=backend .
   fi
 fi
 {% endif %}

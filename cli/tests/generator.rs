@@ -612,6 +612,226 @@ done
     Ok(())
 }
 
+#[cfg(unix)]
+#[test]
+fn docker_callers_isolate_checkouts_and_preserve_overrides() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let tools = parent.path().join("tools");
+    fs::create_dir(&tools)?;
+    let docker = tools.join("docker");
+    fs::write(
+        &docker,
+        "#!/bin/sh\nset -eu\nprintf '%s\\n' \"${CARGO_TARGET_CACHE_PREFIX:-unset}\" \"$@\"\n",
+    )?;
+    fs::set_permissions(&docker, fs::Permissions::from_mode(0o755))?;
+    for tool in ["dirname", "shasum"] {
+        let output = Command::new("sh")
+            .args(["-c", &format!("command -v {tool}")])
+            .output()?;
+        assert!(output.status.success(), "missing {tool}");
+        std::os::unix::fs::symlink(String::from_utf8(output.stdout)?.trim(), tools.join(tool))?;
+    }
+    let mut prefixes = Vec::new();
+    for checkout in ["first checkout", "second checkout"] {
+        let mut opts = options(&parent.path().join(checkout), "cache-product");
+        opts.quality = QualityProfile::Strict;
+        let root = generate_new(&opts)?;
+        let digest = sha256_hex(fs::canonicalize(&root)?.to_string_lossy().as_bytes());
+        let expected = format!("cache-product-{:.12}", digest);
+        prefixes.push(expected.clone());
+        for portable_path in [false, true] {
+            let path = if portable_path {
+                tools.display().to_string()
+            } else {
+                format!("{}:{}", tools.display(), std::env::var("PATH")?)
+            };
+            for (arguments, expected_args) in [
+                (vec!["compose", "build"], vec!["compose", "build"]),
+                (
+                    vec!["build", "."],
+                    vec!["build", "--build-arg", "PREFIX", "."],
+                ),
+                (
+                    vec!["buildx", "build", "."],
+                    vec!["buildx", "build", "--build-arg", "PREFIX", "."],
+                ),
+            ] {
+                for prefix in [None, Some("custom-cache")] {
+                    let mut command = Command::new("/bin/sh");
+                    command
+                        .arg(root.join("scripts/docker.sh"))
+                        .args(&arguments)
+                        .current_dir(parent.path())
+                        .env("PATH", &path)
+                        .env_remove("CARGO_TARGET_CACHE_PREFIX");
+                    if let Some(prefix) = prefix {
+                        command.env("CARGO_TARGET_CACHE_PREFIX", prefix);
+                    }
+                    let output = command.output()?;
+                    assert!(
+                        output.status.success(),
+                        "{}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                    let prefix = prefix.unwrap_or(&expected);
+                    let mut lines = vec![prefix.to_owned()];
+                    lines.extend(expected_args.iter().map(|arg| {
+                        if *arg == "PREFIX" {
+                            format!("CARGO_TARGET_CACHE_PREFIX={prefix}")
+                        } else {
+                            (*arg).to_owned()
+                        }
+                    }));
+                    assert_eq!(
+                        String::from_utf8(output.stdout)?,
+                        format!("{}\n", lines.join("\n"))
+                    );
+                }
+            }
+        }
+        let makefile = fs::read_to_string(root.join("Makefile"))?;
+        assert!(makefile.contains("\tdocker compose up -d postgres"));
+        for args in [vec!["ps"], vec!["buildx", "inspect"]] {
+            let output = Command::new("sh")
+                .arg(root.join("scripts/docker.sh"))
+                .args(&args)
+                .env(
+                    "PATH",
+                    format!("{}:{}", tools.display(), std::env::var("PATH")?),
+                )
+                .env_remove("CARGO_TARGET_CACHE_PREFIX")
+                .output()?;
+            assert!(output.status.success());
+            assert_eq!(
+                String::from_utf8(output.stdout)?,
+                format!("unset\n{}\n", args.join("\n"))
+            );
+        }
+        let help = Command::new("sh")
+            .arg(root.join("scripts/docker.sh"))
+            .arg("--help")
+            .output()?;
+        assert!(help.status.success());
+        assert!(String::from_utf8(help.stdout)?.contains("Only compose, build and buildx build"));
+        let runner = fs::read_to_string(root.join("scripts/quality-gate.sh"))?;
+        let start = runner
+            .find("if [ -f backend/Dockerfile ]; then")
+            .expect("image build gate");
+        let end = runner[start..]
+            .find("\nif [ -f deploy/observability")
+            .expect("next gate")
+            + start;
+        let baukit = parent.path().join("baukit");
+        fs::create_dir_all(&baukit)?;
+        fs::write(baukit.join("Cargo.toml"), "fixture")?;
+        for source in ["registry", "path"] {
+            let commands = format!(
+                "set -eu\ntemporary_paths=\nmanifest_value() {{ case $1 in dependencies.baukit.source) echo {source};; dependencies.baukit.path) printf %s \"$TEST_BAUKIT_PATH\";; esac; }}\n{}",
+                &runner[start..end]
+            );
+            let output = Command::new("sh")
+                .args(["-c", &commands])
+                .current_dir(&root)
+                .env(
+                    "PATH",
+                    format!("{}:{}", tools.display(), std::env::var("PATH")?),
+                )
+                .env("TEST_BAUKIT_PATH", &baukit)
+                .env_remove("CARGO_TARGET_CACHE_PREFIX")
+                .output()?;
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let output = String::from_utf8(output.stdout)?;
+            assert!(
+                output.starts_with(&format!(
+                    "{expected}\nbuild\n--build-arg\nCARGO_TARGET_CACHE_PREFIX={expected}\n"
+                )),
+                "{output}"
+            );
+            assert!(output.contains("BACKEND_CONTEXT=backend\n"));
+            assert_eq!(output.contains("BAUKIT_CONTEXT=baukit\n"), source == "path");
+        }
+    }
+    assert_ne!(prefixes[0], prefixes[1]);
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+#[ignore = "requires Docker Compose"]
+fn generated_compose_receives_the_checkout_cache_prefix() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut opts = options(parent.path(), "compose-cache");
+    opts.mcp = true;
+    opts.auth = Some(AuthProvider::Oidc);
+    let root = generate_new(&opts)?;
+    for override_prefix in [None, Some("custom-compose-cache")] {
+        let mut command = Command::new("sh");
+        command
+            .arg(root.join("scripts/docker.sh"))
+            .args([
+                "compose",
+                "--profile",
+                "backend",
+                "config",
+                "--format",
+                "json",
+            ])
+            .current_dir(&root)
+            .env_remove("CARGO_TARGET_CACHE_PREFIX");
+        if let Some(prefix) = override_prefix {
+            command.env("CARGO_TARGET_CACHE_PREFIX", prefix);
+        }
+        let output = command.output()?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let config: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+        let digest = sha256_hex(fs::canonicalize(&root)?.to_string_lossy().as_bytes());
+        let expected = format!("compose-cache-{:.12}", digest);
+        assert_eq!(
+            config["services"]["backend"]["build"]["args"]["CARGO_TARGET_CACHE_PREFIX"],
+            override_prefix.unwrap_or(&expected)
+        );
+    }
+    for prefix in [None, Some(""), Some("custom-plain-cache")] {
+        let mut command = Command::new("docker");
+        command
+            .args([
+                "compose",
+                "--profile",
+                "backend",
+                "config",
+                "--format",
+                "json",
+            ])
+            .current_dir(&root)
+            .env_remove("CARGO_TARGET_CACHE_PREFIX");
+        if let Some(prefix) = prefix {
+            command.env("CARGO_TARGET_CACHE_PREFIX", prefix);
+        }
+        let output = command.output()?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let config: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+        assert_eq!(
+            config["services"]["backend"]["build"]["args"]["CARGO_TARGET_CACHE_PREFIX"],
+            prefix
+                .filter(|prefix| !prefix.is_empty())
+                .unwrap_or("compose-cache")
+        );
+    }
+    Ok(())
+}
+
 #[test]
 fn strict_generation_is_capability_driven_and_matches_golden_tree() -> anyhow::Result<()> {
     let cases = [
