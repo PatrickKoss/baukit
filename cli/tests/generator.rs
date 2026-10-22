@@ -6169,6 +6169,32 @@ fn platform_flavors_keep_domain_free_of_transport_and_wire_the_receiver() -> any
 }
 
 #[test]
+fn platform_generation_matches_golden_trees() -> anyhow::Result<()> {
+    for (expected, auth, worker) in [
+        (
+            include_str!("snapshots/platform-standalone.tree"),
+            None,
+            false,
+        ),
+        (
+            include_str!("snapshots/platform.tree"),
+            Some(AuthProvider::Oidc),
+            true,
+        ),
+    ] {
+        let parent = tempfile::tempdir()?;
+        let mut generated = options(parent.path(), "snapshot-app");
+        generated.web = true;
+        generated.platform = true;
+        generated.auth = auth;
+        generated.worker = worker;
+        let root = generate_new(&generated)?;
+        assert_eq!(render_hash_snapshot(&read_tree(&root)?), expected);
+    }
+    Ok(())
+}
+
+#[test]
 fn platform_existing_product_uses_the_next_free_migration_number() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     for highest in [8_u64, 12, 9999] {
