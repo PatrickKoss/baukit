@@ -18,6 +18,7 @@ fn options(directory: &Path) -> NewOptions {
         web: true,
         pwa: false,
         mcp: true,
+        platform: false,
         auth: Some(AuthProvider::Oidc),
         force: true,
         into_existing: true,

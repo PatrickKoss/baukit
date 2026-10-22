@@ -185,3 +185,11 @@ Run the Docker endpoint conformance test with
 See the Baukit product-profile erasure contract for analytics deletion and
 migration of existing product receipts.
 {% endif -%}
+{% if context.platform %}
+## Platform receiver
+
+Run `make setup` to copy the backend runtime settings into `.env`, start
+PostgreSQL with `make db-up`, then run `make migrate` and `make run`. The product
+starts in standalone mode with free entitlements. Follow [platform setup](docs/platform.md)
+to configure a hub, implement the product event port and schedule receipt cleanup.
+{% endif %}

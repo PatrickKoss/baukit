@@ -17,6 +17,7 @@ fn product(parent: &Path) -> Result<PathBuf> {
         web: false,
         pwa: false,
         mcp: false,
+        platform: false,
         auth: None,
         force: false,
         into_existing: false,

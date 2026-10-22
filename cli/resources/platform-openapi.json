@@ -1,0 +1,79 @@
+{
+  "post": {
+    "description": "Authenticates raw JSON using the X-Suite signature headers. Duplicate and unknown events are acknowledged. Unavailable handlers or storage return 503 for retry.",
+    "operationId": "platform_inbound",
+    "parameters": [
+      {
+        "description": "Configured hub source",
+        "in": "header",
+        "name": "x-suite-source",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "description": "Canonical Unix seconds within 300 seconds",
+        "in": "header",
+        "name": "x-suite-timestamp",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "description": "Delivery attempt ID",
+        "in": "header",
+        "name": "x-suite-delivery-id",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "description": "HMAC-SHA256 signature",
+        "in": "header",
+        "name": "x-suite-signature",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "requestBody": {
+      "content": {
+        "application/json": {
+          "schema": {}
+        }
+      },
+      "required": true
+    },
+    "responses": {
+      "204": {
+        "description": "Applied, duplicate or unknown event"
+      },
+      "401": {
+        "description": "Invalid signature headers"
+      },
+      "409": {
+        "description": "Event ID reused with changed bytes"
+      },
+      "413": {
+        "description": "Body too large"
+      },
+      "415": {
+        "description": "JSON content type required"
+      },
+      "422": {
+        "description": "Invalid event"
+      },
+      "503": {
+        "description": "Retry after handler or storage failure"
+      }
+    },
+    "summary": "Receive a signed hub event",
+    "tags": [
+      "platform"
+    ]
+  }
+}

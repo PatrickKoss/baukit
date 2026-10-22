@@ -47,6 +47,42 @@ worker:
   allowedHosts: [mcp.example.com]
   allowedOrigins: []
 
+{% endif %}{% if context.platform %}platform:
+  receiverSecretRef:
+    name: ""
+    key: current
+    previousKey: ""
+
+# Hub mode: merge these keys into config.overrides above and enable the Secret.
+# config:
+#   overrides:
+#     PLATFORM__HUB_ISSUER: https://hub.example
+#     PLATFORM__JWKS_URL: https://hub.example/keys.json
+#     PLATFORM__PRODUCT_ID: {{ context.app_crate }}
+#     PLATFORM__SOURCE_APP: identity_hub
+#     PLATFORM_HUB__TICKET_URL: https://hub.example/platform/v1/entitlements/tickets
+# platform:
+#   receiverSecretRef:
+#     name: {{ context.app_name }}-platform-receiver
+#     key: current
+#     previousKey: "" # Set to previous only while rotating.
+# migration:
+#   env:
+#     - name: {{ context.app_env }}__PLATFORM__RECEIVER_SECRET
+#       valueFrom:
+#         secretKeyRef:
+#           name: {{ context.app_name }}-platform-receiver
+#           key: current
+{% if context.worker %}# worker:
+#   env:
+#     - name: {{ context.app_env }}__PLATFORM__RECEIVER_SECRET
+#       valueFrom:
+#         secretKeyRef:
+#           name: {{ context.app_name }}-platform-receiver
+#           key: current
+{% endif %}# Worker and migration commands validate the same hub configuration as the API.
+# Put PLATFORM_HUB__SERVICE_TOKEN in the runtime Secret with the product prefix.
+
 {% endif %}ingress:
   enabled: false{% if context.mcp %}
   hosts:

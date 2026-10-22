@@ -5,6 +5,17 @@ peer links. It adds no account, plan, billing or product-specific access rules.
 Configure the expected `sourceApp` and event type prefix for the hub. The payload
 rules match the mirrored v1 contract; Baukit does not choose a hub name.
 
+## Generate the receiver
+
+Run `baukit new my-product --backend --platform` to generate the receiver,
+PostgreSQL migration, free standalone reads, verified hub ticket source, product
+handler port and receipt retention. With `--worker`, daily fixed-slot jobs purge
+receipts. Other flavors provide a `platform-purge` command for an external
+scheduler. Add `--auth oidc` for the generated account erasure flow. The generated
+`docs/platform.md` describes runtime settings and adoption work. See the [CLI guide](../../cli/README.md#platform-receiver).
+Existing products can re-render with `new --into-existing`; review the conflicts
+and copy the wiring into their own composition.
+
 ## Adopt the receiver
 
 Enable `features = ["platform", "postgres"]` on `baukit-suite`. Copy
@@ -29,8 +40,14 @@ external call. Erasure remains a product handler responsibility. Call
 `PostgresEntitlementCache::forget_in_transaction(subject, connection).await?` on
 `context.postgres()` during that erasure transaction. Outside a transaction, use
 `EntitlementCache::forget(subject).await?`. Both remove every product snapshot and
-revision cursor for the subject. Report completed erasure through the hub API
-after product erasure finishes.
+revision cursor for the subject. A late `entitlements.changed` can therefore pull
+and store a fresh row for an erased subject. Check that the subject still exists
+before forwarding to `EntitlementEventHandler::prepare_at`, and acknowledge events
+for unknown or erased subjects without refreshing. A filter inside the wrapped
+product handler runs too late because entitlement events bypass it. Apply the
+same existence check before read-through entitlement calls. The product owns
+this check and its suite-subject mapping. Report completed erasure through the hub
+API after product erasure finishes.
 
 Call `settings.platform.receiver(inbox, handler)?`. If it returns `Some(receiver)`,
 merge `platform::router(receiver)` into the public router at its root. It exposes
@@ -42,10 +59,14 @@ timestamp within 300 seconds, and `Content-Type: application/json`.
 `with_clock(Arc<dyn PlatformClock>)` supplies a clock for tests.
 
 The inbox calls `PlatformEventHandler::prepare(event)` before opening a receipt
-transaction. Its optional returned handler applies prepared data inside the
-transaction. Put network calls in `prepare`; use `handle` for transactional
-writes. A custom inbox must follow the same order. It can construct
-`EventContext::detached()` or `EventContext::with_postgres(&mut connection)`.
+transaction. The receiver forwards its clock through
+`PlatformEventHandler::prepare_at(event, now)`, which defaults to `prepare(event)`
+for existing handlers. Use that hook when preparation needs time. Its optional
+returned handler applies prepared data inside the transaction. Put network calls
+in `prepare`; use `handle` for transactional writes. A custom inbox must follow the same order. Skipping preparation on an
+entitlement event returns `Unavailable` and HTTP 503 so the hub can retry. An inbox
+can construct `EventContext::detached()` or
+`EventContext::with_postgres(&mut connection)`.
 `PlatformOpenApi` describes the endpoint for inclusion in product OpenAPI docs.
 
 The PostgreSQL inbox inserts its event receipt and runs the selected handler in

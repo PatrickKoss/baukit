@@ -80,6 +80,13 @@ git diff --stat cli/tests/snapshots/
 
 ### Generated-fixture check
 
+`make generated-fixture-gate` runs all fixture flavors from CI: backend, web,
+mobile, mobile-pwa, combined, mcp, auth, clerk, workos, platform-standalone and
+platform. `make platform-fixture-gate` checks standalone and OIDC platform
+backends with web clients, including signed-event PostgreSQL tests and the daily
+worker purge. Use `FIXTURE_FLAVORS="backend platform"` with the full target for a
+subset.
+
 CI scaffolds a product with the CLI and verifies the output builds clean. If
 you changed `cli/`, `templates/`, or a public API that generated code consumes:
 
@@ -113,5 +120,6 @@ cargo test --manifest-path ".generated-fixture/$fixture_name/backend/Cargo.toml"
 - Metric names must pass `deploy/observability/lint/check-metric-names.py`;
   dashboards/alerts/recording rules reference those names, keep them in sync.
 - Templates in `templates/` generate downstream products: any template change
-  must keep the generated fixture green in all three CI flavors
-  (backend, web, combined).
+  must keep the generated fixture green in all CI flavors
+  (backend, web, mobile, mobile-pwa, combined, mcp, auth, clerk, workos,
+  platform-standalone, platform).

@@ -338,6 +338,20 @@ jobs:
             mobile: true
             web: true
             mcp: true
+          - flavor: platform-standalone
+            product_name: platform-standalone-fixture
+            flags: --backend --platform --web
+            backend: true
+            mobile: false
+            web: true
+            mcp: false
+          - flavor: platform
+            product_name: platform-fixture
+            flags: --backend --platform --worker --web --auth oidc
+            backend: true
+            mobile: false
+            web: true
+            mcp: false
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: dtolnay/rust-toolchain@stable
@@ -398,6 +412,19 @@ jobs:
         run: |
           cargo test --manifest-path .generated-fixture/${{ matrix.product_name }}/backend/Cargo.toml -- --include-ignored
           cargo test --manifest-path .generated-fixture/${{ matrix.product_name }}/backend/Cargo.toml -p ${{ matrix.product_name }}-bin --test openapi_drift
+      - name: Verify platform TypeScript client drift and standalone deployment
+        if: startsWith(matrix.flavor, 'platform')
+        working-directory: .generated-fixture/${{ matrix.product_name }}
+        run: |
+          before=$(mktemp)
+          cp generated/openapi.d.ts "$before"
+          sh scripts/openapi-client.sh
+          diff -u "$before" generated/openapi.d.ts
+          helm template fixture ../../deploy/chart/baukit-app -f deploy/values.yaml > platform-rendered.yaml
+          if grep -q 'PLATFORM__RECEIVER_SECRET\|PLATFORM__PREVIOUS_RECEIVER_SECRET' platform-rendered.yaml; then
+            echo "standalone platform values unexpectedly inject receiver secrets" >&2
+            exit 1
+          fi
       - name: Install and verify generated web app
         if: matrix.web
         working-directory: .generated-fixture/${{ matrix.product_name }}/web

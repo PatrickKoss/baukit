@@ -1,4 +1,7 @@
-{% if context.auth_enabled %}use std::{collections::BTreeMap, sync::Arc};
+{% if context.platform %}mod platform;
+pub use platform::*;
+
+{% endif %}{% if context.auth_enabled %}use std::{collections::BTreeMap, sync::Arc};
 
 use axum::{
     Json, Router,
@@ -442,7 +445,8 @@ pub fn openapi_document() -> utoipa::openapi::OpenApi {
 {% if context.auth_enabled %}    let metadata = metadata.bearer_auth();
 {% endif %}    metadata.apply_to(&mut document);
     error_response_rules().apply(&mut document);
-    document
+{% if context.platform %}    document.merge(baukit_suite::platform::PlatformOpenApi::openapi());
+{% endif %}    document
 }
 
 fn error_response_rules() -> ErrorResponseRules {

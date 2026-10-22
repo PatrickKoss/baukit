@@ -1350,3 +1350,88 @@ async fn source_failure_is_retryable_and_duplicate_receipts_need_no_pull() {
     );
     assert_eq!(source.calls.load(Ordering::SeqCst), 2);
 }
+
+struct SkipsPreparation;
+#[async_trait]
+impl PlatformInbox for SkipsPreparation {
+    async fn receive(
+        &self,
+        event: &PlatformEvent,
+        _: [u8; 32],
+        handler: &dyn PlatformEventHandler,
+    ) -> Result<ReceiptOutcome, PlatformError> {
+        handler.handle(event, &mut EventContext::detached()).await?;
+        Ok(ReceiptOutcome::Applied)
+    }
+}
+
+#[tokio::test]
+async fn skipped_entitlement_preparation_returns_retryable_503() {
+    let handler = EntitlementEventHandler::new(
+        "hebkit".into(),
+        Arc::new(InMemoryEntitlementCache::default()),
+        Arc::new(Pull {
+            snapshot: snapshot(7, i64::MAX),
+        }),
+        Arc::new(Handler::default()),
+    );
+    let receiver = PlatformReceiver::new(
+        decoder(),
+        Secret::new("current".into()),
+        None,
+        Arc::new(SkipsPreparation),
+        Arc::new(handler),
+    )
+    .expect("receiver")
+    .with_clock(Arc::new(Clock));
+    let body = serde_json::to_string(&event()).expect("event");
+    let response = router(receiver)
+        .oneshot(request(&body, "current", Clock.now().timestamp()))
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+}
+
+struct NoGrant;
+#[async_trait]
+impl EntitlementSource for NoGrant {
+    async fn pull(&self, _: &str, _: &str) -> Result<EntitlementSnapshot, EntitlementSourceError> {
+        Err(EntitlementSourceError::NoEntitlements)
+    }
+}
+
+#[tokio::test]
+async fn receiver_clock_controls_prepared_free_snapshot_deadline() {
+    let cache = Arc::new(InMemoryEntitlementCache::default());
+    let handler = EntitlementEventHandler::new(
+        "hebkit".into(),
+        cache.clone(),
+        Arc::new(NoGrant),
+        Arc::new(Handler::default()),
+    );
+    let receiver = PlatformReceiver::new(
+        decoder(),
+        Secret::new("current".into()),
+        None,
+        Arc::new(InMemoryPlatformInbox::default()),
+        Arc::new(handler),
+    )
+    .expect("receiver")
+    .with_clock(Arc::new(Clock));
+    let body = serde_json::to_string(&event()).expect("event");
+    let response = router(receiver)
+        .oneshot(request(&body, "current", Clock.now().timestamp()))
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    let snapshot = cache
+        .get("suite|person-123", "hebkit", Clock.now().timestamp())
+        .await
+        .expect("cache")
+        .expect("free snapshot");
+    assert_eq!(snapshot.tier, "free");
+    assert_eq!(
+        snapshot.valid_until,
+        Clock.now().timestamp() + FREE_CACHE_TTL_SECONDS
+    );
+}

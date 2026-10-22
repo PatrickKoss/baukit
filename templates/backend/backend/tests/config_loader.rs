@@ -22,7 +22,16 @@ fn parses_json_array_environment_values() -> Result<(), Box<dyn Error>> {
             vec!["https://app.example.com", "http://127.0.0.1:5173"]
         };
         assert_eq!(config.http.cors_allowed_origins, origins);
-{% if context.auth_enabled %}        assert_eq!(config.product.auth.authorized_parties, origins);
+{% if context.platform %}        let features = if mode == "empty" {
+            Vec::new()
+        } else {
+            vec!["export", "offline"]
+        };
+        assert_eq!(
+            config.product.platform.standalone_default.features,
+            features
+        );
+{% endif %}{% if context.auth_enabled %}        assert_eq!(config.product.auth.authorized_parties, origins);
 {% endif %}{% if context.mcp %}        assert_eq!(config.product.mcp.allowed_origins, origins);
         let hosts = if mode == "empty" {
             Vec::new()
@@ -95,5 +104,13 @@ fn shared_mcp_environment_reaches_database_setup_in_every_command() -> Result<()
     command
         .env(format!("{ENV_PREFIX}__MCP__ALLOWED_HOSTS"), hosts)
         .env(format!("{ENV_PREFIX}__MCP__ALLOWED_ORIGINS"), origins);
+{% endif %}{% if context.platform %}    command.env(
+        format!("{ENV_PREFIX}__PLATFORM__STANDALONE_DEFAULT__FEATURES"),
+        if mode == "empty" {
+            "[]"
+        } else {
+            r#"["export","offline"]"#
+        },
+    );
 {% endif %}    command
 }

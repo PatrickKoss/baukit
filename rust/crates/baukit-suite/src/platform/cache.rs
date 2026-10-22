@@ -60,6 +60,8 @@ pub trait EntitlementCache: Send + Sync {
     /// The retained revision cursor, including expired snapshots.
     async fn revision(&self, subject: &str, product_id: &str) -> Result<u64, PlatformError>;
     /// Remove every product snapshot and revision cursor for this subject.
+    /// Late events can recreate rows. Products must filter erased subjects
+    /// before entitlement preparation and before read-through calls.
     async fn forget(&self, subject: &str) -> Result<(), PlatformError>;
     /// Ignore older revisions and shorter-lived repeats of the same revision.
     async fn store(&self, snapshot: &EntitlementSnapshot) -> Result<(), PlatformError>;
@@ -363,6 +365,13 @@ impl PlatformEventHandler for EntitlementEventHandler {
         &self,
         event: &PlatformEvent,
     ) -> Result<Option<Arc<dyn PlatformEventHandler>>, PlatformError> {
+        self.prepare_at(event, SystemPlatformClock.now()).await
+    }
+    async fn prepare_at(
+        &self,
+        event: &PlatformEvent,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Option<Arc<dyn PlatformEventHandler>>, PlatformError> {
         if let PlatformEventKind::EntitlementsChanged(changed) = event.kind() {
             if changed.product != self.product_id {
                 return Err(PlatformError::Invalid);
@@ -377,7 +386,7 @@ impl PlatformEventHandler for EntitlementEventHandler {
                 &changed.suite_subject,
                 &self.product_id,
                 revision,
-                chrono::Utc::now().timestamp(),
+                now.timestamp(),
             )
             .await?;
             return Ok(Some(Arc::new(PreparedEntitlements {
@@ -385,7 +394,7 @@ impl PlatformEventHandler for EntitlementEventHandler {
                 snapshot,
             })));
         }
-        self.next.prepare(event).await
+        self.next.prepare_at(event, now).await
     }
     async fn handle(
         &self,
@@ -393,8 +402,8 @@ impl PlatformEventHandler for EntitlementEventHandler {
         context: &mut EventContext<'_>,
     ) -> Result<(), PlatformError> {
         if matches!(event.kind(), PlatformEventKind::EntitlementsChanged(_)) {
-            // Inbox implementations must call prepare before claiming a receipt.
-            return Err(PlatformError::Invalid);
+            // A custom inbox that skipped preparation must leave the event retryable.
+            return Err(PlatformError::Unavailable);
         }
         self.next.handle(event, context).await
     }

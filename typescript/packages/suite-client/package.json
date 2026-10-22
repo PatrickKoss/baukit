@@ -57,7 +57,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node scripts/build-cjs.mjs",
     "prepare": "pnpm run build",
-    "test": "tsc -p tsconfig.test.json && vitest run --config ../../vitest.config.ts --maxWorkers=4 && node --test scripts/peers.test.cjs && node ../../scripts/test-packed-exports.mjs --load ./peers",
+    "test": "tsc -p tsconfig.test.json && vitest run --config ../../vitest.config.ts --maxWorkers=4 && node --test scripts/peers.test.cjs && node ../../scripts/test-packed-exports.mjs --load ./peers --load ./entitlements",
     "lint": "eslint src --max-warnings=0",
     "format:check": "prettier --check src scripts package.json turbo.json tsconfig.json tsconfig.test.json tsconfig.cjs.json"
   },

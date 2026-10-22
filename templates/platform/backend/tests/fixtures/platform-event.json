@@ -1,0 +1,13 @@
+{
+  "eventId": "platform-fixture-1",
+  "type": "identity_hub.entitlements.changed",
+  "userId": "suite|person-123",
+  "occurredAt": "2026-10-18T10:00:00Z",
+  "sourceApp": "identity_hub",
+  "schemaVersion": 1,
+  "payload": {
+    "suiteSubject": "suite|person-123",
+    "product": "{{ context.app_crate }}",
+    "revision": 7
+  }
+}

@@ -25,7 +25,8 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 mod config;
-pub use config::config_loader;
+{% if context.platform %}pub mod platform;
+{% endif %}pub use config::config_loader;
 
 {% if context.auth_enabled %}mod identity;
 {% if context.mcp %}pub use identity::{auth_verifier, mcp_policy, mcp_verifier};
@@ -35,21 +36,29 @@ const PRODUCT: &str = "{{ context.app_name }}";
 
 {% endif %}#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
-{% if context.auth_enabled or context.worker %}pub struct ProductConfig {
+{% if context.auth_enabled or context.worker or context.platform %}pub struct ProductConfig {
 {% if context.auth_enabled %}    pub auth: AuthConfig,
 {% if context.mcp %}    pub mcp: baukit_mcp::McpConfig,
 {% endif %}{% endif %}{% if context.worker %}    pub worker: WorkerProductConfig,
+{% endif %}{% if context.platform %}    pub platform: baukit_suite::platform::PlatformConfig,
+    pub platform_hub: {{ context.app_crate }}_api::PlatformHubConfig,
 {% endif %}}
 {% else %}pub struct ProductConfig {}
 {% endif %}
 impl Validate for ProductConfig {
     fn validate(&self) -> Result<(), ValidationErrors> {
-{% if context.auth_enabled or context.worker %}        let mut errors = Vec::new();
+{% if context.auth_enabled or context.worker or context.platform %}        let mut errors = Vec::new();
 {% if context.auth_enabled %}        if let Err(auth) = self.auth.validate() {
             errors.extend(auth.into_errors());
         }
 {% endif %}{% if context.worker %}        if let Err(worker) = self.worker.validate() {
             errors.extend(worker.into_errors());
+        }
+{% endif %}{% if context.platform %}        if let Err(platform) = self.platform.validate() {
+            errors.extend(platform.into_errors());
+        }
+        if let Err(hub) = self.platform_hub.validate_for(&self.platform) {
+            errors.extend(hub.into_errors());
         }
 {% endif %}{% if context.mcp %}        if self.auth.provider != AuthProvider::Oidc
             && (self.mcp.introspection_client_id.is_some()

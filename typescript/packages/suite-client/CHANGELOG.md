@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Load the packed entitlements export under CommonJS with its declared runtime dependencies.
+
 - Add `suiteAuthorizeUrl` and `validateSuiteAuthorizePeer` for per-peer hosted consent URLs with preserved paths and unchanged suite query parameters.
 - Trim trailing slashes from the default peer web URL before appending `/suite/authorize`.
 - Publish the entitlement verifier for CommonJS consumers as well as ES modules.

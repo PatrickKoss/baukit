@@ -9,7 +9,10 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-baukit-jobs.workspace = true
+{% if context.platform %}baukit-suite = { workspace = true, features = ["platform", "postgres"] }
+chrono.workspace = true
+sqlx.workspace = true
+{% endif %}baukit-jobs.workspace = true
 baukit-telemetry.workspace = true
 {{ context.app_crate }}-domain.workspace = true
 serde_json.workspace = true
