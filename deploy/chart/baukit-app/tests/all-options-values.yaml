@@ -1,6 +1,12 @@
 product: chart-options
 fullnameOverride: chart-options
 
+platform:
+  receiverSecretRef:
+    name: chart-options-platform
+    key: current
+    previousKey: previous
+
 api:
   env:
     - name: API_CACHE_DIR

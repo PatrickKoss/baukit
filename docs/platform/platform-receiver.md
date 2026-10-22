@@ -1,0 +1,217 @@
+# Platform receiver and entitlement tickets
+
+`baukit-suite/platform` receives service-level hub notifications independently of
+peer links. It adds no account, plan, billing or product-specific access rules.
+Configure the expected `sourceApp` and event type prefix for the hub. The payload
+rules match the mirrored v1 contract; Baukit does not choose a hub name.
+
+## Adopt the receiver
+
+Enable `features = ["platform", "postgres"]` on `baukit-suite`. Copy
+`rust/crates/baukit-suite/migrations/004_platform.sql` into the product's next
+forward migration. Its SQL is also exported as `platform::PLATFORM_MIGRATION_SQL`.
+Run it through the product's migration command before starting the API. It has no
+jobs or peer-link migration dependency. The library never runs migrations.
+
+Embed `platform::PlatformConfig` as `platform` in the product settings. Call its
+`Validate::validate` implementation from the product settings validator. Construct
+`PostgresPlatformInbox::new(pool.clone())` and
+`PostgresEntitlementCache::new(pool.clone())` with the same database.
+
+Implement `PlatformEventHandler::handle(&self, event: &PlatformEvent, context:
+&mut EventContext<'_>) -> Result<(), PlatformError>`. Match `event.kind()` to get
+typed payloads for entitlement, account, erasure, preference, onboarding, family,
+organization and seat events. Use `context.postgres()` for product writes that
+must commit with receipt of the event. Return `PlatformError::Unavailable` when
+the hub should retry. Return `PlatformError::Invalid` for permanent rejection.
+External effects must tolerate retries, including cancellation after a successful
+external call. Erasure remains a product handler responsibility. Call
+`PostgresEntitlementCache::forget_in_transaction(subject, connection).await?` on
+`context.postgres()` during that erasure transaction. Outside a transaction, use
+`EntitlementCache::forget(subject).await?`. Both remove every product snapshot and
+revision cursor for the subject. Report completed erasure through the hub API
+after product erasure finishes.
+
+Call `settings.platform.receiver(inbox, handler)?`. If it returns `Some(receiver)`,
+merge `platform::router(receiver)` into the public router at its root. It exposes
+`POST /platform/inbound`. Do not put it behind user-token authentication. HMAC
+verification authenticates the raw request bytes with the current or previous
+secret. Requests must have one of each signature header, a canonical Unix-second
+timestamp within 300 seconds, and `Content-Type: application/json`.
+`PlatformReceiver::with_body_limit(bytes)` changes the default 16 KiB limit.
+`with_clock(Arc<dyn PlatformClock>)` supplies a clock for tests.
+
+The inbox calls `PlatformEventHandler::prepare(event)` before opening a receipt
+transaction. Its optional returned handler applies prepared data inside the
+transaction. Put network calls in `prepare`; use `handle` for transactional
+writes. A custom inbox must follow the same order. It can construct
+`EventContext::detached()` or `EventContext::with_postgres(&mut connection)`.
+`PlatformOpenApi` describes the endpoint for inclusion in product OpenAPI docs.
+
+The PostgreSQL inbox inserts its event receipt and runs the selected handler in
+one transaction. Concurrent copies of an event wait for that transaction, then
+return success without calling the handler again. Handler failure or cancellation rolls
+back both writes and receipt. Reusing an event ID with different raw bytes returns
+409. Retain receipts for at least 30 days to match the hub's delivery retention.
+For a longer operational replay window, keep them longer. Schedule
+`inbox.purge_received_before(Utc::now() - TimeDelta::days(30), 1000).await?`
+in a maintenance job, repeating batches until it returns zero. The cutoff is
+exclusive and the batch must be positive. An index on `received_at` supports the
+cleanup. Pruning receipts allows replay. Receipt rows retain only the event ID,
+body hash and receipt timestamp.
+The memory inbox is a test adapter and loses receipts on restart.
+
+| Response | Hub behavior |
+| --- | --- |
+| 204 | Applied, duplicate or unknown event type. Stop delivery. |
+| 401 | Missing, malformed, stale or invalid signature. Mark receiver for attention. |
+| 409 | Event ID reused with changed body. Permanent rejection. |
+| 413, 415, 422 | Body too large, wrong content type, or invalid known event. Permanent rejection. |
+| 503 | Handler or storage unavailable. Retry. |
+
+Unknown types are acknowledged and deduplicated without dispatch. Known payloads
+reject unknown fields, nulls, unsupported schemas and mismatched subjects through
+the mirrored catalog. Events may be older than seven days because delivery retries
+can span longer outages. `occurredAt` cannot exceed the receiver clock by more
+than `MAX_EVENT_FUTURE_SECONDS` (300 seconds). The signed attempt timestamp must
+still be fresh. `PlatformEventDecoder::new(source_app, event_type_prefix)` also
+provides these checks outside the router. Its `decode(body, now)` returns a typed
+event; serializing that event preserves the original envelope. Event-kind serde
+tags contain the suffix, such as `entitlements.changed`. The catalog is parsed
+once per process.
+
+## Refresh and read entitlements
+
+Implement `EntitlementSource::pull(subject, product_id)` using the product's
+service credentials and the hub entitlement or ticket endpoint. Return a bound
+`EntitlementSnapshot` with the hub revision and an exclusive `valid_until`
+deadline. A verified `TicketClaims` converts into a snapshot with `.into()`.
+The return type is `Result<EntitlementSnapshot, EntitlementSourceError>`. For an
+HTTP error response, return
+`EntitlementSourceError::from_hub_response(status.as_u16(), error_code)`.
+Only `404 platform_subject_not_found` and `403 account_inactive` map to
+`NoEntitlements`. An explicitly absent snapshot also maps to `NoEntitlements`.
+Other errors, including `product_unavailable`, `scope_missing`, `product_mismatch`
+and an unrelated `404 not_found`, remain failures.
+No service credentials belong in a web or mobile client.
+
+Wrap the product handler in `EntitlementEventHandler::new(product_id, cache,
+source, product_handler)`. Entitlement events pull current state before opening
+the receipt transaction, then store it inside the transaction. Other events go to
+the product handler. A pull with the wrong subject or product, or a revision
+below the notification, fails and the hub retries. Invalid pull responses also return 503, since the signed
+notification itself may be valid. Delayed events cannot overwrite a newer cache
+revision.
+Equal revisions only replace snapshots when their deadline increases. Refresh
+once a day as well as on events, and pull current state after enabling a receiver
+because the hub does not backfill notifications emitted while it was disabled.
+
+`settings.platform.entitlements(cache, Some(source))?` returns the shared
+`Entitlements` read API in hub mode. The direct constructor is
+`Entitlements::hub(product_id, cache, source)`. `current(subject, now)` reads an
+unexpired snapshot. On a miss or expiry, it pulls through the source, validates
+the subject, product, revision and deadline, stores the result and reads it back.
+Clones of the service share one in-flight pull per subject. Concurrent subjects
+do not block each other. A newer revision arriving during the pull wins.
+`has_entitlement(subject, feature, now)` checks a feature key;
+`has_tier(subject, tier, now)` compares the tier exactly. Neither method infers a
+tier hierarchy. When the source reports `NoEntitlements`, the API caches a
+`free` tier with no features for `FREE_CACHE_TTL_SECONDS` (60 seconds), keeping
+the previous revision cursor. A missing hub snapshot therefore grants the free
+tier on first use. Other source or storage failures fail closed: the read returns
+an error and never serves an expired paid grant or silently substitutes free.
+Expired rows retain revision cursors so older grants cannot return.
+`EntitlementCache::revision(subject, product_id)` reads that cursor without
+returning an expired grant.
+
+Without `hub_issuer`, the same API returns `standalone_default` for every subject
+and makes no hub calls. Use `settings.platform.entitlements(cache, None)?`. Set
+its tier and feature keys to the product's desired self-hosted policy. The library
+default is `free` with no feature keys.
+
+## Verify tickets
+
+Construct `TicketVerifier` through `settings.platform.ticket_verifier(client)?`
+with a `baukit_egress::GuardedClient`. Its address policy controls public, loopback
+or explicitly allowed private-network JWKS access. Redirects are rejected and
+network deadlines and response size limits come from that client. The verifier
+also rejects JWKS bodies above 64 KiB and sets above 64 keys.
+
+`verify(ticket).await` checks Ed25519, key metadata, the exact issuer and product
+audience, the claim schema and a seven-day maximum lifetime. `verify_at(ticket,
+now)` accepts an explicit Unix-second clock. Expiry is exclusive with no allowance;
+`iat` may be at most 60 seconds ahead. Revisions cannot exceed 2^53 - 1, matching
+the TypeScript verifier. Verify that the returned `sub` is the subject requesting
+access before storing or using the result.
+
+Keys are cached by `kid` for 300 seconds. An unknown key triggers a refresh even
+while the cache is fresh. Unknown-key refreshes have a shared five-second cooldown
+and concurrent refreshes share a lock. Verification of fresh cached keys does
+not wait for a network refresh. Failed fetches also have a five-second
+cooldown. An unavailable JWKS never extends the cache lifetime. The stable ticket
+errors are `ticket_invalid`, `ticket_expired`, `ticket_wrong_audience` and
+`ticket_keys_unavailable`. `verify_ticket(ticket, jwks, issuer, audience, now)`
+provides the same checks offline with trusted keys. `TicketJwksSource` permits a
+product-owned key source or a test double.
+
+For web and React Native:
+
+```ts
+import { verifyTicket } from '@baukit/suite-client/entitlements';
+
+const claims = verifyTicket(ticket, trustedJwks, {
+  issuer: configuredHubIssuer,
+  audience: productId,
+  now: Math.floor(Date.now() / 1000),
+});
+if (claims.sub !== currentSuiteSubject) throw new Error('ticket subject mismatch');
+```
+
+The client verifier is synchronous and offline. Products fetch or embed trusted
+public keys and own refresh and persistence. It uses `@noble/curves` 1.9.7, already
+present in the workspace lockfile, for pure JavaScript Ed25519 and SHA-512. The
+[upstream release](https://github.com/paulmillr/noble-curves/releases/tag/1.9.7)
+predates this change by more than two weeks. It needs neither WebCrypto Ed25519 nor
+Node globals, `atob`, `TextEncoder` or `TextDecoder`, so the same implementation can
+run on Hermes. Both languages run the hub's positive and negative ticket fixtures.
+
+## Configure and deploy
+
+With product prefix `APP`, these settings load through `baukit-config`:
+
+| Environment key | Meaning |
+| --- | --- |
+| `APP__PLATFORM__HUB_ISSUER` | Exact ticket issuer. Absent selects standalone mode. |
+| `APP__PLATFORM__JWKS_URL` | Explicit hub public-key endpoint. Required in hub mode. |
+| `APP__PLATFORM__PRODUCT_ID` | Product audience. Required in hub mode. |
+| `APP__PLATFORM__SOURCE_APP` | Expected envelope `sourceApp` and `X-Suite-Source`. Required in hub mode. |
+| `APP__PLATFORM__EVENT_TYPE_PREFIX` | Optional event prefix when it differs from `source_app`. |
+| `APP__PLATFORM__RECEIVER_SECRET` | Current receiver HMAC secret, held as `Secret<String>`. |
+| `APP__PLATFORM__PREVIOUS_RECEIVER_SECRET` | Optional previous HMAC secret during rotation. |
+| `APP__PLATFORM__STANDALONE_DEFAULT__TIER` | Default standalone tier, initially `free`. |
+
+Configure `standalone_default.features` as an array in the product settings file.
+Partial hub settings fail validation. No secret value appears in settings debug
+output. During rotation, install the previous secret alongside the current secret,
+then remove it after in-flight attempts and the timestamp window have drained.
+
+The Helm chart can mount an existing Kubernetes Secret only into the API:
+
+```yaml
+config:
+  overrides:
+    PLATFORM__HUB_ISSUER: https://hub.example
+    PLATFORM__JWKS_URL: https://hub.example/keys.json
+    PLATFORM__PRODUCT_ID: alpha
+    PLATFORM__SOURCE_APP: identity_hub
+platform:
+  receiverSecretRef:
+    name: alpha-platform-receiver
+    key: current
+    previousKey: previous
+```
+
+`previousKey` is optional. Create that Secret through the deployment's secret
+manager. The chart stores references only. Add network-policy egress to the hub
+and expose `/platform/inbound` through the product ingress. Products may instead
+use `config.existingSecretRefs` with fully prefixed environment keys.

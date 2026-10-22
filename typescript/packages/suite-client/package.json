@@ -36,6 +36,16 @@
         "types": "./dist/cjs/peers.d.ts",
         "default": "./dist/cjs/peers.js"
       }
+    },
+    "./entitlements": {
+      "import": {
+        "types": "./dist/entitlements.d.ts",
+        "default": "./dist/entitlements.js"
+      },
+      "require": {
+        "types": "./dist/cjs/entitlements.d.ts",
+        "default": "./dist/cjs/entitlements.js"
+      }
     }
   },
   "files": [
@@ -61,5 +71,8 @@
   "peerDependencies": {
     "@baukit/integrations-client": "^0.10.32",
     "@baukit/localization-core": "^0.10.32"
+  },
+  "dependencies": {
+    "@noble/curves": "1.9.7"
   }
 }

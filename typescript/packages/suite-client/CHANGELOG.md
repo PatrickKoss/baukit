@@ -4,6 +4,8 @@
 
 - Add `suiteAuthorizeUrl` and `validateSuiteAuthorizePeer` for per-peer hosted consent URLs with preserved paths and unchanged suite query parameters.
 - Trim trailing slashes from the default peer web URL before appending `/suite/authorize`.
+- Publish the entitlement verifier for CommonJS consumers as well as ES modules.
+- Add `@baukit/suite-client/entitlements` for offline Ed25519 ticket verification on web and Hermes.
 
 ## 0.10.32
 

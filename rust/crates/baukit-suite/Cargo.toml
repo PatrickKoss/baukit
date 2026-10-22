@@ -22,8 +22,10 @@ http = ["runtime", "dep:axum", "dep:utoipa", "dep:baukit-http"]
 jobs = ["runtime"]
 runtime = ["postgres", "dep:baukit-core", "dep:baukit-credential-vault", "dep:baukit-ratelimit", "dep:rand", "dep:tokio"]
 delivery = ["runtime", "dep:baukit-egress", "dep:reqwest"]
+platform = ["dep:utoipa", "dep:axum", "dep:baukit-http", "dep:baukit-core", "dep:baukit-egress", "dep:reqwest", "dep:tokio", "dep:aws-lc-rs"]
 
 [dependencies]
+aws-lc-rs = { workspace = true, optional = true }
 async-trait = "0.1.92"
 base64.workspace = true
 baukit-config.workspace = true
@@ -53,7 +55,7 @@ utoipa = { workspace = true, optional = true, features = ["uuid", "chrono"] }
 
 [dev-dependencies]
 baukit-core = { path = "../baukit-core", features = ["webhook-signature"] }
-baukit-suite = { path = ".", features = ["postgres", "http", "jobs", "delivery"] }
+baukit-suite = { path = ".", features = ["postgres", "http", "jobs", "delivery", "platform"] }
 baukit-test = { path = "../baukit-test", features = ["suite"] }
 baukit-runtime = { path = "../baukit-runtime" }
 tower = { workspace = true, features = ["util"] }

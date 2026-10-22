@@ -2,7 +2,11 @@
   "extends": ["//"],
   "tasks": {
     "test": {
-      "inputs": ["$TURBO_DEFAULT$", "../../../fixtures/suite-events/v1/**"]
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "../../../fixtures/suite-events/v1/**",
+        "../../../fixtures/entitlement-tickets/v1/**"
+      ]
     }
   }
 }

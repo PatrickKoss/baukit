@@ -1,0 +1,206 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "types"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "types": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "naturalKey",
+          "fields"
+        ],
+        "properties": {
+          "type": {
+            "enum": [
+              "schluesselbund.entitlements.changed",
+              "schluesselbund.account.updated",
+              "schluesselbund.account.erasure_requested",
+              "schluesselbund.preferences.changed",
+              "schluesselbund.onboarding.shared",
+              "schluesselbund.family.membership_changed",
+              "schluesselbund.organization.membership_changed",
+              "schluesselbund.seat.changed"
+            ]
+          },
+          "naturalKey": {
+            "const": "suiteSubject"
+          },
+          "fields": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "required",
+                    "type",
+                    "maxLength"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-zA-Z0-9]*$"
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "type": {
+                      "const": "string"
+                    },
+                    "maxLength": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "required",
+                    "type",
+                    "maxLength"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-zA-Z0-9]*$"
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "type": {
+                      "const": "identifier"
+                    },
+                    "maxLength": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "required",
+                    "type",
+                    "minimum",
+                    "maximum"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-zA-Z0-9]*$"
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "type": {
+                      "const": "integer"
+                    },
+                    "minimum": {
+                      "type": "integer"
+                    },
+                    "maximum": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "required",
+                    "type",
+                    "values"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-zA-Z0-9]*$"
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "type": {
+                      "const": "enum"
+                    },
+                    "values": {
+                      "type": "array",
+                      "minItems": 1,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "required",
+                    "type"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-zA-Z0-9]*$"
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "type": {
+                      "const": "uuid"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "required",
+                    "type"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-zA-Z0-9]*$"
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "type": {
+                      "const": "boolean"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

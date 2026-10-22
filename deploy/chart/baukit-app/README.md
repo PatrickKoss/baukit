@@ -83,6 +83,9 @@ Most CNIs can apply the pod-selected CoreDNS rule. K3s installations may enforce
 | `config.otlpEndpoint` | `""` | Value for `OTEL_EXPORTER_OTLP_ENDPOINT`; omitted when empty. |
 | `config.overrides` | `{}` | Non-secret config suffix/value map rendered with the `<APP>__` prefix. |
 | `config.existingSecretRefs` | `[]` | `envFrom.secretRef` objects with required `name` and optional `optional`. |
+| `platform.receiverSecretRef.name` | `""` | Existing receiver HMAC Secret. Empty disables injection; only the API receives it. |
+| `platform.receiverSecretRef.key` | `receiver-secret` | Secret key injected as `<APP>__PLATFORM__RECEIVER_SECRET`. |
+| `platform.receiverSecretRef.previousKey` | `""` | Optional previous secret key injected as `<APP>__PLATFORM__PREVIOUS_RECEIVER_SECRET`. |
 
 The pod and container security-context maps can be replaced when an image needs a numeric `runAsUser`, writable volume mounts, or another seccomp policy; weakening them should be a deliberate product decision.
 
@@ -229,3 +232,12 @@ leaves key discovery to the provider.
 Set the Keycloak MCP audience mapper to the same resource URL. The endpoint
 shares the API HTTP listener. Use TLS on the ingress and shared Redis for
 rate limiting across replicas.
+
+## Platform receiver secret
+
+`platform.receiverSecretRef.name` optionally mounts a pre-existing receiver Secret
+into the API as `<PREFIX>__PLATFORM__RECEIVER_SECRET`. `key` defaults to
+`receiver-secret`. Set `previousKey` to mount the rotation secret as
+`<PREFIX>__PLATFORM__PREVIOUS_RECEIVER_SECRET`. Workers and migration jobs do not
+receive these references. Keep secret values in the deployment's secret manager.
+See [platform adoption](../../../docs/platform/platform-receiver.md) for hub settings.

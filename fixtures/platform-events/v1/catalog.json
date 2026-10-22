@@ -1,0 +1,220 @@
+{
+  "schemaVersion": 1,
+  "types": [
+    {
+      "type": "schluesselbund.entitlements.changed",
+      "naturalKey": "suiteSubject",
+      "fields": [
+        {
+          "name": "suiteSubject",
+          "required": true,
+          "type": "string",
+          "maxLength": 256
+        },
+        {
+          "name": "product",
+          "required": true,
+          "type": "identifier",
+          "maxLength": 64
+        },
+        {
+          "name": "revision",
+          "required": true,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      ]
+    },
+    {
+      "type": "schluesselbund.account.updated",
+      "naturalKey": "suiteSubject",
+      "fields": [
+        {
+          "name": "suiteSubject",
+          "required": true,
+          "type": "string",
+          "maxLength": 256
+        },
+        {
+          "name": "revision",
+          "required": true,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      ]
+    },
+    {
+      "type": "schluesselbund.account.erasure_requested",
+      "naturalKey": "suiteSubject",
+      "fields": [
+        {
+          "name": "suiteSubject",
+          "required": true,
+          "type": "string",
+          "maxLength": 256
+        },
+        {
+          "name": "erasureId",
+          "required": true,
+          "type": "uuid"
+        }
+      ]
+    },
+    {
+      "type": "schluesselbund.preferences.changed",
+      "naturalKey": "suiteSubject",
+      "fields": [
+        {
+          "name": "suiteSubject",
+          "required": true,
+          "type": "string",
+          "maxLength": 256
+        },
+        {
+          "name": "revision",
+          "required": true,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      ]
+    },
+    {
+      "type": "schluesselbund.onboarding.shared",
+      "naturalKey": "suiteSubject",
+      "fields": [
+        {
+          "name": "suiteSubject",
+          "required": true,
+          "type": "string",
+          "maxLength": 256
+        },
+        {
+          "name": "profileVersion",
+          "required": true,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        {
+          "name": "revision",
+          "required": true,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      ]
+    },
+    {
+      "type": "schluesselbund.family.membership_changed",
+      "naturalKey": "suiteSubject",
+      "fields": [
+        {
+          "name": "familyId",
+          "required": true,
+          "type": "uuid"
+        },
+        {
+          "name": "suiteSubject",
+          "required": true,
+          "type": "string",
+          "maxLength": 256
+        },
+        {
+          "name": "status",
+          "required": true,
+          "type": "enum",
+          "values": [
+            "active",
+            "removed",
+            "left"
+          ]
+        },
+        {
+          "name": "familyRole",
+          "required": true,
+          "type": "enum",
+          "values": [
+            "organizer",
+            "member"
+          ]
+        },
+        {
+          "name": "revision",
+          "required": true,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      ]
+    },
+    {
+      "type": "schluesselbund.organization.membership_changed",
+      "naturalKey": "suiteSubject",
+      "fields": [
+        {
+          "name": "organizationId",
+          "required": true,
+          "type": "uuid"
+        },
+        {
+          "name": "suiteSubject",
+          "required": true,
+          "type": "string",
+          "maxLength": 256
+        },
+        {
+          "name": "status",
+          "required": true,
+          "type": "enum",
+          "values": [
+            "active",
+            "suspended",
+            "removed"
+          ]
+        },
+        {
+          "name": "accountRole",
+          "required": true,
+          "type": "enum",
+          "values": [
+            "owner",
+            "admin",
+            "billing",
+            "member"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "schluesselbund.seat.changed",
+      "naturalKey": "suiteSubject",
+      "fields": [
+        {
+          "name": "organizationId",
+          "required": true,
+          "type": "uuid"
+        },
+        {
+          "name": "product",
+          "required": true,
+          "type": "identifier",
+          "maxLength": 64
+        },
+        {
+          "name": "suiteSubject",
+          "required": true,
+          "type": "string",
+          "maxLength": 256
+        },
+        {
+          "name": "assigned",
+          "required": true,
+          "type": "boolean"
+        }
+      ]
+    }
+  ]
+}

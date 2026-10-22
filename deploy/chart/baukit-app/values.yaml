@@ -290,3 +290,10 @@ mcp:
   allowedOrigins: []
   maxRequestBodyBytes: 32768
   requestsPerMinute: 60
+
+# Optional API-only hub receiver secret. Values contain references, never secrets.
+platform:
+  receiverSecretRef:
+    name: ""
+    key: receiver-secret
+    previousKey: ""

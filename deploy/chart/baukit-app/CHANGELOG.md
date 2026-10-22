@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add optional API-only existing Secret references for current and previous platform receiver secrets.
+
 ## [0.10.32] - 2026-10-21
 
 ## [0.10.31] - 2026-10-20

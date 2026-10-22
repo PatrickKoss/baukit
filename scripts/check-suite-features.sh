@@ -10,7 +10,7 @@ if grep -E '^(sqlx(-[^ ]+)?|tokio(-[^ ]+)?|reqwest|axum(-[^ ]+)?|utoipa(-[^ ]+)?
   exit 1
 fi
 
-for feature in none postgres runtime delivery http jobs all; do
+for feature in none postgres runtime delivery http jobs platform all; do
   args=(--manifest-path rust/Cargo.toml -p baukit-suite --lib --no-default-features)
   case "$feature" in
     none) ;;
