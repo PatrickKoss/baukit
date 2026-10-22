@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add per-peer hosted `authorize_url` overrides with config and registry validation. The full path and suite protocol query parameters are preserved.
+- Breaking: `PeerUrls`, `PeerRegistrySettings` and `SuiteConfig` are non-exhaustive. Replace external struct literals with `PeerUrls::new`, `PeerRegistrySettings::default` and their builders, or mutate defaults. `ActivePeer` gains `authorize_url: Option<url::Url>`, parsed during registry validation. This requires a minor release.
+- Add the read-only `SuiteLinksRead` service port, implemented by `SuiteLinkService`.
+
 ## [0.10.32] - 2026-10-21
 
 ## [0.10.31] - 2026-10-20

@@ -39,6 +39,11 @@ baukit-suite = { version = "0.10.0", default-features = false }
 baukit-suite = { version = "0.10.0", features = ["http", "jobs", "delivery"] }
 ```
 
+## Hosted authorize pages
+
+See [hosted authorize pages](../../../docs/platform/suite-events.md#hosted-authorize-pages)
+for per-peer URL settings, validation, builders and deployment requirements.
+
 ## Product contracts
 
 Implement `SuiteEventApplier`, `SuiteReplaySource` and `SuiteIdentitySource`.

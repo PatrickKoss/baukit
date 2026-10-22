@@ -77,3 +77,26 @@ stop pending work. The token signals HTTP disconnects and authenticated
 `notifications/cancelled` messages for that request. Request IDs belong to
 the verified issuer, subject and OAuth client. Unknown and completed IDs
 are ignored. Concurrent requests from the same caller must use distinct IDs.
+
+## Suite links
+
+Enable the optional `suite` feature and call
+`McpServices::with_suite_links(service, owners)` to add
+`list_suite_links` alongside product tools. `SuiteLinksTool::new` also accepts
+an `Arc<dyn SuiteLinksRead>` and the required `Arc<dyn SuiteOwnerResolver>` as a
+standalone `ToolService`. The feature adds
+the suite runtime dependencies; it is off by default.
+
+The tool requires `links:read` and returns link IDs, peer IDs, directional event
+scopes, status and timestamps. It never returns credentials or identity claims.
+Use `{}` for the first page and `{"after":"<nextCursor>"}` for later pages.
+Responses contain at most 100 links. Each call uses the existing owner-scoped
+suite list read, which still loads that owner's full list.
+
+Implement `SuiteOwnerResolver` in the product's account adapter to resolve
+`Principal::verified_identity()` to an admitted product owner UUID, including
+erasure checks. Return `None` for an unmapped identity. The tool then returns an
+`unauthenticated` error without reading links, even if the IdP subject is a UUID.
+Tool arguments cannot select another account. Include `SuiteLinksTool::definition()`
+in the product's committed tool manifest when adopting it.
+See the [JSON contract and adoption steps](../../../docs/remote-mcp.md#read-suite-links-with-mcp-tokens).

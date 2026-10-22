@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 /// Put this section in the product settings as `suite` to load `<PREFIX>__SUITE__*`.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(default)]
+#[non_exhaustive]
 pub struct SuiteConfig {
     #[serde(deserialize_with = "empty_string_as_none")]
     pub public_api_url: Option<String>,
@@ -79,6 +80,16 @@ impl SuiteConfig {
 impl Validate for SuiteConfig {
     fn validate(&self) -> Result<(), ValidationErrors> {
         let mut errors = Vec::new();
+        for (peer, urls) in &self.peers {
+            if let Some(value) = &urls.authorize_url
+                && crate::domain::validate_authorize_url(value, self.allow_loopback, peer).is_err()
+            {
+                errors.push(ValidationError::new(
+                    format!("suite.peers.{peer}.authorize_url"),
+                    "must be absolute HTTPS or enabled loopback HTTP, without credentials, query or fragment",
+                ));
+            }
+        }
         if self.initial_replay_days > SUITE_MAX_REPLAY_DAYS {
             errors.push(ValidationError::new(
                 "suite.initial_replay_days",
@@ -172,6 +183,10 @@ mod tests {
                         "SUITE_CONFIG_TEST__SUITE__PEERS__BETA__WEB_URL",
                         "https://beta.example",
                     )
+                    .env(
+                        "SUITE_CONFIG_TEST__SUITE__PEERS__BETA__AUTHORIZE_URL",
+                        "https://account.example/portal/suite/authorize/beta/",
+                    )
                     .env("SUITE_CONFIG_TEST__SUITE__ALLOW_LOOPBACK", "")
                     .env("SUITE_CONFIG_TEST__SUITE__SHARE_XP", "")
                     .env("SUITE_CONFIG_TEST__SUITE__INITIAL_REPLAY_DAYS", "42")
@@ -196,6 +211,10 @@ mod tests {
         .load::<Product>()
         .expect("load");
         let suite = config.product.suite;
+        assert_eq!(
+            suite.peers["beta"].authorize_url.as_deref(),
+            Some("https://account.example/portal/suite/authorize/beta/")
+        );
         assert_eq!(suite.initial_replay_days, 42);
         assert!(!suite.share_xp);
         assert!(!suite.allow_loopback);
@@ -211,6 +230,96 @@ mod tests {
                 .standalone()
         );
     }
+    #[test]
+    fn config_load_rejects_invalid_hosted_urls_including_inactive_peers() {
+        const CHILD: &str = "BAUKIT_SUITE_INVALID_URL_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            for url in [
+                "/suite/authorize/beta",
+                "//account.example/suite/authorize/beta",
+                "https:account.example/suite/authorize/beta",
+                "http://account.example/suite/authorize/beta",
+                "ftp://account.example/suite/authorize/beta",
+                "https://user:secret@account.example/suite/authorize/beta",
+                "https://user@account.example/suite/authorize/beta",
+                "https://@account.example/suite/authorize/beta",
+                "https://account.example/suite/authorize/beta?",
+                "https://account.example/suite/authorize/beta?existing=value",
+                "https://account.example/suite/authorize/beta#",
+                "https://account.example/suite/authorize/beta#fragment",
+                " https://account.example/suite/authorize/beta",
+                "https://account.example/\nsuite/authorize/beta",
+            ] {
+                let result = std::process::Command::new(std::env::current_exe().expect("test executable"))
+                    .args(["--exact", "config::tests::config_load_rejects_invalid_hosted_urls_including_inactive_peers"])
+                    .env(CHILD, "1")
+                    .env("SUITE_INVALID_TEST__SUITE__PEERS__BETA__AUTHORIZE_URL", url)
+                    .output().expect("child test");
+                assert!(
+                    result.status.success(),
+                    "URL {url:?}: {}",
+                    String::from_utf8_lossy(&result.stdout)
+                );
+                assert!(
+                    String::from_utf8_lossy(&result.stdout)
+                        .lines()
+                        .any(|line| line == "running 1 test"),
+                    "child must run exactly one test for URL {url:?}"
+                );
+            }
+            return;
+        }
+        let result = baukit_config::ConfigLoader::new(
+            "suite-invalid-test",
+            baukit_config::Environment::Local,
+        )
+        .expect("loader")
+        .without_dotenv()
+        .without_local_file()
+        .load::<Product>();
+        let error = match result {
+            Ok(_) => panic!("accepted invalid hosted URL"),
+            Err(error) => error,
+        };
+        assert!(
+            error.to_string().contains("suite.peers.beta.authorize_url"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn hosted_urls_preserve_paths_and_require_explicit_loopback_http() {
+        for (url, loopback, valid) in [
+            (
+                "https://account.example/portal/suite/authorize/beta/",
+                false,
+                true,
+            ),
+            ("http://localhost:4100/suite/authorize/beta", false, false),
+            ("http://localhost:4100/suite/authorize/beta", true, true),
+            ("http://127.5.4.3:4100/suite/authorize/beta", true, true),
+            ("http://[::1]:4100/suite/authorize/beta", true, true),
+            ("http://account.example/suite/authorize/beta", true, false),
+        ] {
+            let config: SuiteConfig = serde_json::from_value(serde_json::json!({
+                "allow_loopback": loopback,
+                "peers":{"beta":{"authorize_url":url}}
+            }))
+            .expect("config");
+            assert_eq!(config.validate().is_ok(), valid, "{url}");
+            assert_eq!(
+                config
+                    .registry(
+                        "alpha",
+                        include_str!("../../../../fixtures/suite-events/v1/peers.json")
+                    )
+                    .is_ok(),
+                valid,
+                "{url}"
+            );
+        }
+    }
+
     #[test]
     fn booleans_accept_empty_strings_and_preserve_boolean_values() {
         for (value, expected) in [
@@ -278,6 +387,7 @@ mod tests {
                 PeerUrls {
                     api_url: Some("https://beta.example/api/v1".into()),
                     web_url: Some("https://beta.example".into()),
+                    authorize_url: None,
                 },
             )]),
             ..SuiteConfig::default()

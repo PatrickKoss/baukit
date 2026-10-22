@@ -15,7 +15,13 @@ readme = "README.md"
 [lints]
 workspace = true
 
+[features]
+default = []
+suite = ["dep:baukit-suite", "dep:uuid"]
+
 [dependencies]
+baukit-suite = { workspace = true, optional = true, features = ["runtime"] }
+uuid = { workspace = true, optional = true }
 aws-lc-rs.workspace = true
 axum.workspace = true
 baukit-auth.workspace = true
@@ -34,6 +40,8 @@ tracing.workspace = true
 url.workspace = true
 
 [dev-dependencies]
+baukit-mcp = { path = ".", features = ["suite"] }
+async-trait = "0.1.92"
 jsonschema.workspace = true
 baukit-test = { path = "../baukit-test", default-features = false }
 metrics-util.workspace = true

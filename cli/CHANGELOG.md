@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Generated OIDC REST verifiers apply `auth.authorized_parties` as an optional `azp` allowlist. OIDC and WorkOS defaults are empty; Clerk keeps its development origin default. MCP verification retains its separate resource audience.
+
 ## [0.10.32] - 2026-10-21
 
 ## [0.10.31] - 2026-10-20

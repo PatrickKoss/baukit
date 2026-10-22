@@ -141,7 +141,7 @@ baukit-core, baukit-events, baukit-openapi, baukit-sync, baukit-config,
 baukit-runtime, baukit-telemetry, baukit-credential-vault, baukit-http,
 baukit-egress, baukit-jobs, baukit-ops, baukit-auth, baukit-erasure,
 baukit-data-subject, baukit-integrations,
-baukit-push, baukit-ratelimit, baukit-mcp, baukit-suite, baukit-test
+baukit-push, baukit-ratelimit, baukit-suite, baukit-mcp, baukit-test
 ```
 
 Several crates dev-depend on siblings for test fixtures, and those edges form a

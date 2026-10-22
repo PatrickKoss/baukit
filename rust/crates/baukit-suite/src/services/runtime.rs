@@ -210,6 +210,19 @@ pub struct SuiteServiceConfig {
     pub share_xp: bool,
 }
 
+/// Read-only suite service port. The owner comes from a verified product identity.
+#[async_trait]
+pub trait SuiteLinksRead: Send + Sync + 'static {
+    async fn list(&self, owner: Uuid) -> Result<Vec<SuiteLink>, SuiteServiceError>;
+}
+
+#[async_trait]
+impl SuiteLinksRead for SuiteLinkService {
+    async fn list(&self, owner: Uuid) -> Result<Vec<SuiteLink>, SuiteServiceError> {
+        SuiteLinkService::list(self, owner).await
+    }
+}
+
 #[async_trait]
 pub trait SuiteApi: Send + Sync {
     async fn peers(&self, user: Uuid) -> Result<Vec<SuitePeerView>, SuiteServiceError>;

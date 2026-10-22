@@ -92,18 +92,19 @@ fn registry(own: &str, peer: &str, own_port: u16, peer_port: u16) -> Arc<PeerReg
         PeerRegistry::new(
             own,
             PEERS,
-            PeerRegistrySettings {
-                public_api_url: Some(format!("http://127.0.0.1:{own_port}/api/v1")),
-                public_web_url: Some(format!("http://127.0.0.1:{own_port}")),
-                peers: BTreeMap::from([(
-                    peer.to_owned(),
-                    PeerUrls {
-                        api_url: Some(format!("http://127.0.0.1:{peer_port}/api/v1")),
-                        web_url: Some(format!("http://127.0.0.1:{peer_port}")),
-                    },
-                )]),
-                allow_loopback: true,
-            },
+            PeerRegistrySettings::default()
+                .with_public_urls(
+                    format!("http://127.0.0.1:{own_port}/api/v1"),
+                    format!("http://127.0.0.1:{own_port}"),
+                )
+                .with_peer(
+                    peer,
+                    PeerUrls::new(
+                        format!("http://127.0.0.1:{peer_port}/api/v1"),
+                        format!("http://127.0.0.1:{peer_port}"),
+                    ),
+                )
+                .with_allow_loopback(true),
         )
         .expect("valid test value"),
     )
@@ -186,19 +187,20 @@ fn registry_with_hebkit() -> Result<Arc<PeerRegistry>, Box<dyn Error>> {
     hebkit["scheme"] = json!("hebkit");
     hebkit["displayName"] = json!("Hebkit");
     peers["peers"].as_array_mut().expect("peers").push(hebkit);
-    let urls = |port| PeerUrls {
-        api_url: Some(format!("http://127.0.0.1:{port}/api/v1")),
-        web_url: Some(format!("http://127.0.0.1:{port}")),
+    let urls = |port| {
+        PeerUrls::new(
+            format!("http://127.0.0.1:{port}/api/v1"),
+            format!("http://127.0.0.1:{port}"),
+        )
     };
     Ok(Arc::new(PeerRegistry::new(
         "alpha",
         &peers.to_string(),
-        PeerRegistrySettings {
-            public_api_url: Some("http://127.0.0.1:12340/api/v1".into()),
-            public_web_url: Some("http://127.0.0.1:12340".into()),
-            peers: BTreeMap::from([("beta".into(), urls(12341)), ("hebkit".into(), urls(12342))]),
-            allow_loopback: true,
-        },
+        PeerRegistrySettings::default()
+            .with_public_urls("http://127.0.0.1:12340/api/v1", "http://127.0.0.1:12340")
+            .with_peer("beta", urls(12341))
+            .with_peer("hebkit", urls(12342))
+            .with_allow_loopback(true),
     )?))
 }
 
@@ -3804,5 +3806,98 @@ async fn cleanup_does_not_wait_for_an_owner_without_cleanup_work() -> TestResult
         LinkStatus::Active
     );
     busy.rollback().await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL for suite link requests"]
+async fn start_preserves_default_and_hosted_authorize_paths_and_protocol_parameters() -> TestResult
+{
+    let db = common::postgres_database().await?;
+    let owner = user(&db.pool, "hosted-owner").await?;
+    for hosted in [
+        None,
+        Some("https://account.example/portal/suite/authorize/beta/"),
+    ] {
+        let mut peer = PeerUrls::new("https://beta.example/api/v1", "https://beta.example");
+        if let Some(url) = hosted {
+            peer = peer.with_authorize_url(url);
+        }
+        let registry = Arc::new(PeerRegistry::new(
+            "alpha",
+            PEERS,
+            PeerRegistrySettings::default()
+                .with_public_urls("https://alpha.example/api/v1", "https://alpha.example")
+                .with_peer("beta", peer),
+        )?);
+        let context = make_context(&db.pool, registry);
+        let service = SuiteLinkService::new(context.clone());
+        let response = service
+            .start(
+                SuiteUser {
+                    id: owner,
+                    suite_subject: Some("shared|subject-17".into()),
+                    display_name: None,
+                },
+                LinkStartRequest {
+                    peer_app: "beta".into(),
+                    state_nonce: "client-nonce".into(),
+                    return_url: "https://alpha.example/suite/linked".into(),
+                },
+                Utc::now(),
+            )
+            .await?;
+        let url = Url::parse(&response.authorize_url)?;
+        let state = query(&response.authorize_url, "state");
+        let request = context
+            .store
+            .find_request_by_state_hash({
+                use sha2::Digest as _;
+                sha2::Sha256::digest(state.as_bytes()).into()
+            })
+            .await?
+            .ok_or("missing request")?;
+        let verifier = cipher().decrypt(&EncryptedCredentials {
+            scope_id: response.request_id,
+            key_version: request.verifier.key_version,
+            fields: BTreeMap::from([(
+                "pkce_verifier".into(),
+                EncryptedField {
+                    ciphertext: request.verifier.ciphertext,
+                    nonce: request.verifier.nonce,
+                },
+            )]),
+        })?;
+        let verifier =
+            std::str::from_utf8(verifier.get("pkce_verifier").ok_or("missing verifier")?)?;
+        let mut expected = Url::parse(hosted.unwrap_or("https://beta.example/suite/authorize"))?;
+        expected
+            .query_pairs_mut()
+            .append_pair("client", "alpha")
+            .append_pair("state", &state)
+            .append_pair("code_challenge", &pkce_challenge(verifier)?)
+            .append_pair("hint", &hint_for("shared|subject-17"))
+            .append_pair("hint_domain", "shared");
+        assert_eq!(response.authorize_url, expected.as_str());
+        assert_eq!(url.query_pairs().count(), 5);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL for owner-scoped suite reads"]
+async fn read_only_link_service_port_keeps_owner_isolation() -> TestResult {
+    let (db, context, owner) = authorizer_fixture().await?;
+    let other = user(&db.pool, "reader-other-owner").await?;
+    let service = SuiteLinkService::new(context);
+    let (owned, _) = exchange_link(&service, owner, None, None).await?;
+    let (foreign, _) = exchange_link(&service, other, None, None).await?;
+    let reader: &dyn SuiteLinksRead = &service;
+    for (owner, id) in [(owner, owned.id), (other, foreign.id)] {
+        let links = reader.list(owner).await?;
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].id, id);
+        assert_eq!(links[0].user_id, owner);
+    }
     Ok(())
 }

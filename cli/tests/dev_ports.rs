@@ -56,6 +56,20 @@ fn declared_product(root: &Path, declarations: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn configure_authorized_origins(root: &Path) -> anyhow::Result<()> {
+    let path = root.join("backend/crates/dev-ports-product-bin/src/lib.rs");
+    let source = fs::read_to_string(&path)?;
+    assert!(source.contains("authorized_parties: Vec::new()"));
+    fs::write(
+        path,
+        source.replace(
+            "authorized_parties: Vec::new()",
+            "authorized_parties: vec![\"http://localhost:5673\".into()]",
+        ),
+    )?;
+    Ok(())
+}
+
 #[test]
 fn declared_dev_ports_render_all_consumers_and_pass_doctor() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
@@ -75,7 +89,7 @@ fn declared_dev_ports_render_all_consumers_and_pass_doctor() -> anyhow::Result<(
         ("keycloak/reconcile.json", "http://localhost:5673\""),
         (
             "backend/crates/dev-ports-product-bin/src/lib.rs",
-            "authorized_parties: vec![\"http://localhost:5673\"",
+            "authorized_parties: Vec::new()",
         ),
         (
             "scripts/pkce-login.py",
@@ -121,6 +135,7 @@ fn doctor_rejects_drift_in_every_web_port_consumer() -> anyhow::Result<()> {
         root,
         "web = { host = 5673 }\nweb_preview = { host = 4773 }\n",
     )?;
+    configure_authorized_origins(root)?;
     for (relative, correct, wrong, declaration) in [
         ("web/vite.config.ts", "port: 5673", "port: 5674", "web"),
         (
@@ -244,6 +259,7 @@ fn doctor_lists_accepted_browser_ports_for_undeclared_origins() -> anyhow::Resul
     let parent = tempfile::tempdir()?;
     let root = parent.path();
     declared_product(root, BROWSER_PORTS)?;
+    configure_authorized_origins(root)?;
     for (relative, correct) in [
         ("keycloak/realm.json", "localhost:5673\""),
         ("keycloak/realm.json", "localhost:5673/*"),
@@ -282,13 +298,13 @@ fn doctor_accepts_web_extra_authorized_parties() -> anyhow::Result<()> {
     declared_product(root, BROWSER_PORTS)?;
     let path = root.join("backend/crates/dev-ports-product-bin/src/lib.rs");
     let source = fs::read_to_string(&path)?;
-    let original = "authorized_parties: vec![\"http://localhost:5673\"";
+    let original = "authorized_parties: Vec::new()";
     assert!(source.contains(original));
     fs::write(
         path,
         source.replace(
             original,
-            "authorized_parties: vec![\"http://localhost:8082\", \"http://127.0.0.1:19006\"",
+            "authorized_parties: vec![\"http://localhost:8082\".into(), \"http://127.0.0.1:19006\".into()]",
         ),
     )?;
     doctor(root)?;
@@ -918,10 +934,11 @@ fn seeded_manifest_renders_dev_ports_and_keycloak_without_backend_offset() -> an
 }
 
 #[test]
-fn external_oidc_still_checks_declared_backend_web_origins() -> anyhow::Result<()> {
+fn external_oidc_still_checks_explicit_backend_browser_origins() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let root = parent.path();
     declared_product(root, "web = { host = 5673 }\n")?;
+    configure_authorized_origins(root)?;
     fs::write(
         root.join("config/local.toml"),
         "[auth]\nissuer = \"https://identity.example.com/realms/dev-ports-product\"\n",

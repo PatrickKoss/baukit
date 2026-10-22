@@ -1485,3 +1485,7 @@ async fn verifier_failures_use_flat_errors_without_a_login_challenge() -> Result
     }
     Ok(())
 }
+
+#[cfg(feature = "suite")]
+#[path = "support/suite.rs"]
+mod suite;

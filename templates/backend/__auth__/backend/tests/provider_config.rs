@@ -57,6 +57,51 @@ async fn external_issuer_configuration_selects_the_verifier_end_to_end()
     Ok(())
 }
 
+#[tokio::test]
+async fn oidc_authorized_parties_restrict_rest_sessions_only_when_configured()
+-> Result<(), Box<dyn Error>> {
+    let server = baukit_test::MockOidcServer::start().await?;
+    for allowed in ["[]", "[\"product-web\", \"product-mobile\"]"] {
+        let file = tempfile::Builder::new().suffix(".toml").tempfile()?;
+        std::fs::write(
+            file.path(),
+            format!(
+                "[auth]\nprovider = \"oidc\"\nissuer = {:?}\naudience = \"api\"\nauthorized_parties = {allowed}\n",
+                server.issuer(),
+            ),
+        )?;
+        let loaded: BaukitConfig<ProductConfig> =
+            ConfigLoader::new("azp-test", Environment::Local)?
+                .local_file(file.path())
+                .without_dotenv()
+                .load()?;
+        let verifier = auth_verifier(&loaded.product.auth).await?;
+        for azp in [
+            None,
+            Some("product-web"),
+            Some("product-mobile"),
+            Some("foreign-client"),
+        ] {
+            let mut claims = server.claims("user_123", "api", Duration::from_secs(300))?;
+            if let Some(azp) = azp {
+                claims = claims.claim("azp", azp);
+            }
+            assert_eq!(
+                verifier.verify(&server.mint(&claims)?).await.is_ok(),
+                allowed == "[]" || matches!(azp, Some("product-web" | "product-mobile")),
+                "allowlist {allowed}, azp {azp:?}",
+            );
+        }
+    }
+    let defaults = {{ context.app_crate }}_bin::AuthConfig {
+        provider: AuthProvider::Oidc,
+        ..Default::default()
+    };
+{% if not context.auth_clerk %}    assert!(defaults.authorized_parties.is_empty());
+{% else %}    assert!(!defaults.authorized_parties.is_empty());
+{% endif %}    Ok(())
+}
+
 {% if context.mcp %}#[tokio::test]
 async fn mcp_enforces_provider_token_binding_and_introspection_is_restricted()
 -> Result<(), Box<dyn Error>> {

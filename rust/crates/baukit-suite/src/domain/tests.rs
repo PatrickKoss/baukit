@@ -167,6 +167,7 @@ fn protocol_authorizer_registry() -> PeerRegistry {
                 PeerUrls {
                     api_url: Some("https://alpha.example/api/v1".into()),
                     web_url: Some("https://alpha.example".into()),
+                    authorize_url: None,
                 },
             )]),
             allow_loopback: false,
@@ -1489,6 +1490,7 @@ fn configured_registry() -> PeerRegistry {
                 PeerUrls {
                     api_url: Some("https://beta.example/api/v1".into()),
                     web_url: Some("https://beta.example".into()),
+                    authorize_url: None,
                 },
             )]
             .into_iter()
@@ -1697,6 +1699,7 @@ fn registry_requires_both_public_urls_and_a_configured_peer_with_event_flow() {
             PeerUrls {
                 api_url: Some("https://beta.example/api/v1".into()),
                 web_url: Some("https://beta.example".into()),
+                authorize_url: None,
             },
         )]),
         allow_loopback: false,

@@ -198,6 +198,102 @@ pass its shared definitions into that export and test, then review the committed
 `mcp-tools.json` diff. Changes to resource metadata, URI templates, prompt
 arguments or scopes must change the committed contract.
 
+## Read suite links with MCP tokens
+
+Enable `baukit-mcp`'s optional `suite` feature in a product that uses suite links.
+It adds `baukit-suite`'s runtime dependencies. Register the tool alongside the
+product's existing tools:
+
+```rust
+let services = baukit_mcp::McpServices::new(product_tools)
+    .with_suite_links(suite_link_service, suite_owner_resolver);
+```
+
+Pass an `Arc<SuiteLinkService>` or an `Arc<dyn SuiteLinksRead>` adapter. The
+supplied `SuiteLinkService` implementation calls its existing owner-scoped
+`list` read. Both registration methods require an `Arc<dyn SuiteOwnerResolver>`.
+`SuiteLinksTool::new(service, owners)` also works as a standalone `ToolService`.
+No tool is registered by default.
+
+Implement `SuiteOwnerResolver` in the product's account adapter:
+
+```rust
+fn resolve<'a>(&'a self, principal: &'a Principal) -> SuiteOwnerFuture<'a>;
+```
+
+The future returns `Result<Option<Uuid>, ToolError>`.
+Use `principal.verified_identity()` to look up the local account from its verified
+issuer and subject, and check account admission and erasure fences. Return
+`Some(owner_uuid)` only for an admitted account. Return `None` when the identity
+has no local account. Resolver errors must use client-safe codes and messages.
+
+The tool never treats a UUID-shaped IdP subject as a product account ID and does
+not rely on `Principal::with_subject`. An unmapped identity returns an `isError`
+tool result with `{"code":"unauthenticated","message":"Product account identity required"}`
+before the link reader runs. Never copy an owner UUID from tool arguments or an
+unsigned claim. The tool also rejects foreign-owner rows from a faulty read adapter.
+
+`list_suite_links` requires `links:read` through the ordinary MCP scope checks.
+It accepts `{}` or `{"after":"<last link UUID>"}`. It sorts by link UUID and
+returns at most 100 links per page. Pass `nextCursor` as `after` until it is
+null. Paging uses the existing suite list read on each call, so it bounds the
+response but still loads the owner's full link list. It does not provide a
+snapshot across concurrent link changes. Revoked links follow the suite read
+service's visibility rules; the PostgreSQL store omits them.
+
+The stable camelCase result is:
+
+```json
+{
+  "links": [{
+    "id": "0199ba71-6000-7000-8000-000000000001",
+    "peerApp": "beta",
+    "sends": ["alpha.activity.completed"],
+    "receives": ["beta.activity.completed"],
+    "status": "active",
+    "createdAt": "2026-10-06T09:00:00Z",
+    "updatedAt": "2026-10-06T09:00:00Z"
+  }],
+  "nextCursor": null
+}
+```
+
+`sends` and `receives` are event scopes from this product's direction.
+`status` is `active`, `needs_attention` or `revoked`. Timestamps are RFC 3339 UTC.
+Results contain no tokens, secrets, remote subjects or shared identity claims.
+Tool failures use `{code,message}` with `isError`; codes are
+`invalid_arguments`, `unauthenticated`, `cancelled`, `service_unavailable`
+and `unknown_tool`; resolver errors retain their client-safe codes and messages.
+Missing scopes receive the existing HTTP 403
+`insufficient_scope` challenge before the service runs.
+
+Register `links:read` with the provider for the product MCP resource. Keep
+assistant tokens restricted to that MCP audience. Giving them a REST audience
+also grants access to ordinary product session routes unless the REST verifier
+restricts their clients.
+
+Generated OIDC REST wiring uses `auth.authorized_parties` as the access-token
+`azp` allowlist. It is empty by default, which preserves audience-only client
+acceptance. Set it to the product's session client IDs to reject tokens from
+foreign clients even when those tokens include the REST audience:
+
+```toml
+[auth]
+authorized_parties = ["product-web", "product-mobile"]
+```
+
+The environment key is `<PREFIX>__AUTH__AUTHORIZED_PARTIES`, a JSON array.
+A configured OIDC allowlist requires `azp`; a missing or foreign `azp` fails
+authentication. Use client IDs, not web origins. Clerk retains its provider's
+origin-based authorized-party checks. MCP uses its separate verifier and does
+not inherit the REST list.
+
+When adopting the optional tool in a generated product, include
+`SuiteLinksTool::definition()` in the same definitions used by `mcp-tools` and
+`tool_drift`, or export `service_schema(&services)` from the actual registration.
+Re-export and review `backend/mcp-tools.json`. The generated sample manifest
+remains tools-only until the product opts in.
+
 ## Connect clients
 
 For Claude Code, register a public client with the selected provider and a fixed
