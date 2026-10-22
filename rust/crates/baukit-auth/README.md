@@ -338,16 +338,21 @@ through to the OIDC verifier, including during an outage. Unknown, revoked, and
 expired tokens still fail authentication.
 
 The Axum extractor and `establish_principal` return HTTP 503 with error code
-`unavailable` and `Retry-After: 1` for infrastructure failures. They omit
+`unavailable` and `Retry-After: 5` for temporary infrastructure failures. They omit
 `WWW-Authenticate`, so clients can retry without replacing their credentials.
 Infrastructure failures are logged separately from authentication failures,
-without token material or private store diagnostics. OIDC network and JWKS
-fetch failures also get this response through `VerificationError::is_unavailable()`.
+without token material or private store diagnostics. OIDC discovery and JWKS
+timeouts, connection failures, and 5xx responses also get this response
+through `VerificationError::is_unavailable()`. Invalid provider metadata and
+JWKS documents, 4xx responses, and server configuration errors return HTTP 500
+with code `internal` and no `Retry-After`. `is_misconfigured()` identifies these
+failures. Both kinds are logged at error level with a safe cause.
 
-Custom verifiers should return `VerificationError::Unavailable` for database,
-network, or provider failures. Use `AuthRejection::from(error)` to preserve
-this behavior in a product transport. `VerificationError` is non-exhaustive;
-include a wildcard arm in downstream matches.
+Custom verifiers should return `VerificationError::Unavailable` for temporary
+database, network, or provider failures. Use `AuthRejection::from(error)` to preserve
+this behavior in a product transport. The conversion does not log.
+`VerificationError` and `AuthRejection` are non-exhaustive; include a wildcard
+arm in downstream matches.
 
 ## PostgreSQL token store
 
@@ -382,10 +387,13 @@ let _tokens = ApiTokenService::new(Arc::new(store));
 
 ### Insert in a caller-owned transaction
 
-Use `ApiTokenService::prepare` to validate a request and generate a record and a
-`GeneratedApiToken` without writing. `prepare_at` accepts an explicit instant.
+Use `ApiTokenService::prepare` to validate a request and generate a
+`PreparedApiToken` and a `GeneratedApiToken` without writing. The prepared token
+has private fields and exposes its record through the read-only `record()` accessor.
+`into_record()` transfers the record to a custom store adapter. `prepare_at`
+accepts an explicit instant.
 With `sqlx-postgres`, `insert_api_token` accepts a `PgExecutor`, including
-`&mut *transaction` or `&mut PgConnection`.
+`&mut *transaction` or `&mut PgConnection`, and requires `&PreparedApiToken`.
 
 Take your owner lock, count active tokens, and insert in that same transaction.
 Every creation path for that owner must use the same locking rule. Preparation
@@ -412,7 +420,7 @@ let owner: Option<uuid::Uuid> = sqlx::query_scalar("SELECT id FROM users WHERE i
 if owner.is_none() {
     return Err("owner not found".into());
 }
-let (record, generated) = tokens.prepare(
+let (prepared, generated) = tokens.prepare(
     owner_id,
     NewApiToken::new("Nightly export").with_grants(["records:read"]),
 )?;
@@ -421,13 +429,13 @@ let active: i64 = sqlx::query_scalar(
      AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > $2)",
 )
 .bind(owner_id)
-.bind(record.created_at)
+.bind(prepared.record().created_at)
 .fetch_one(&mut *transaction)
 .await?;
 if active >= i64::from(maximum.get()) {
     return Err("active token limit reached".into());
 }
-let token = insert_api_token(&mut *transaction, &record).await?;
+let token = insert_api_token(&mut *transaction, &prepared).await?;
 transaction.commit().await?;
 Ok(IssuedApiToken { token, secret: generated.into_secret() })
 # }

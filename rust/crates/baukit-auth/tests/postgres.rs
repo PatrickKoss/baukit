@@ -361,12 +361,31 @@ async fn a_caller_owned_transaction_can_roll_back_a_prepared_token() -> Result<(
     let (_container, pool) = fixture().await?;
     let tokens = service(&pool);
     let owner_id = owner(&pool).await?;
-    let (record, generated) = tokens.prepare(
+    let (prepared, generated) = tokens.prepare(
         owner_id,
         NewApiToken::new("Rollback").with_grants(["records:read"]),
     )?;
+    let store = PostgresApiTokenStore::new(pool.clone());
+    let mut invalid_name = prepared.record().clone();
+    invalid_name.name.clear();
+    let mut invalid_grants = prepared.record().clone();
+    invalid_grants.grants = BTreeSet::from(["invalid scope".to_owned()]);
+    let mut invalid_expiry = prepared.record().clone();
+    invalid_expiry.expires_at = Some(invalid_expiry.created_at);
+    for (invalid, expected) in [
+        (invalid_name, ApiTokenError::InvalidName),
+        (invalid_grants, ApiTokenError::InvalidGrants),
+        (invalid_expiry, ApiTokenError::InvalidExpiry),
+    ] {
+        assert_eq!(
+            store.create(invalid).await.expect_err("invalid token"),
+            baukit_auth::ApiTokenStoreError::internal(expected),
+        );
+    }
+    assert_eq!(token_count(&pool).await?, 0);
     let mut transaction = pool.begin().await?;
-    let inserted = insert_api_token(&mut *transaction, &record).await?;
+    let record = prepared.record();
+    let inserted = insert_api_token(&mut *transaction, &prepared).await?;
     assert_eq!(inserted.id, record.id);
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM api_tokens WHERE id = $1")
         .bind(record.id)
@@ -399,14 +418,15 @@ async fn a_caller_owned_transaction_commits_a_verifiable_token() -> Result<(), T
         .fetch_one(&mut *transaction)
         .await?;
     assert_eq!(count, 0);
-    let (record, generated) = tokens.prepare_at(
+    let (prepared, generated) = tokens.prepare_at(
         owner_id,
         NewApiToken::new("  Commit  ")
             .with_grants(["records:read"])
             .expiring_at(instant() + TimeDelta::hours(1)),
         instant(),
     )?;
-    let inserted = insert_api_token(&mut *transaction, &record).await?;
+    let record = prepared.record();
+    let inserted = insert_api_token(&mut *transaction, &prepared).await?;
     transaction.commit().await?;
     let verified = tokens
         .verify_at(&generated.into_secret(), instant())
@@ -453,7 +473,7 @@ async fn a_closed_postgres_pool_returns_503_without_an_oauth_challenge() -> Resu
     pool.close().await;
     let response = app.oneshot(request()).await?;
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(response.headers()[header::RETRY_AFTER], "1");
+    assert_eq!(response.headers()[header::RETRY_AFTER], "5");
     assert!(!response.headers().contains_key(header::WWW_AUTHENTICATE));
     let body = to_bytes(response.into_body(), usize::MAX).await?;
     let body: serde_json::Value = serde_json::from_slice(&body)?;

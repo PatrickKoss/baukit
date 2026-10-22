@@ -2,10 +2,12 @@
 
 ## [Unreleased]
 
-- Return HTTP 503 with the standard `unavailable` envelope and `Retry-After: 1`
-  when identity verification fails because storage or OIDC infrastructure is
-  unavailable. Omit the OAuth challenge so clients can retry without signing in
-  again. Invalid credentials still return 401.
+- Return HTTP 503 with the flat `{"error":"identity_unavailable"}` body and
+  `Retry-After: 5` for temporary identity-verification failures. Invalid provider
+  metadata or JWKS documents, provider 4xx responses, and server configuration
+  errors return HTTP 500 with `{"error":"identity_misconfigured"}` and no
+  `Retry-After`. Both responses omit the OAuth challenge and log a safe cause at
+  error level. Invalid credentials still return 401.
 
 ## [0.10.32] - 2026-10-21
 

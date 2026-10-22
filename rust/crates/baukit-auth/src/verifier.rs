@@ -1189,19 +1189,19 @@ pub enum VerificationError {
     #[error("identity verification is temporarily unavailable")]
     Unavailable,
     /// The HTTP client could not be created.
-    #[error("could not create OIDC HTTP client: {0}")]
+    #[error("could not create OIDC HTTP client")]
     Client(#[source] reqwest::Error),
     /// OIDC discovery exceeded the configured timeout.
     #[error("OIDC discovery timed out")]
     DiscoveryTimeout,
     /// OIDC discovery could not be requested.
-    #[error("OIDC discovery request failed: {0}")]
+    #[error("OIDC discovery request failed")]
     DiscoveryRequest(#[source] reqwest::Error),
     /// OIDC discovery returned a non-success status.
     #[error("OIDC discovery returned HTTP {0}")]
     DiscoveryStatus(StatusCode),
     /// OIDC discovery returned invalid JSON.
-    #[error("OIDC discovery document was invalid: {0}")]
+    #[error("OIDC discovery document was invalid")]
     InvalidDiscoveryDocument(#[source] reqwest::Error),
     /// Discovery metadata did not report the configured issuer exactly.
     #[error("OIDC discovery issuer did not match configuration")]
@@ -1213,13 +1213,13 @@ pub enum VerificationError {
     #[error("JWKS request timed out")]
     JwksTimeout,
     /// JWKS could not be requested.
-    #[error("JWKS request failed: {0}")]
+    #[error("JWKS request failed")]
     JwksRequest(#[source] reqwest::Error),
     /// JWKS returned a non-success status.
     #[error("JWKS returned HTTP {0}")]
     JwksStatus(StatusCode),
     /// JWKS returned invalid JSON.
-    #[error("JWKS document was invalid: {0}")]
+    #[error("JWKS document was invalid")]
     InvalidJwksDocument(#[source] reqwest::Error),
     /// The JWT did not have three valid base64url-encoded segments.
     #[error("access token was malformed")]
@@ -1291,32 +1291,46 @@ pub enum VerificationError {
 }
 
 impl VerificationError {
-    /// Returns whether verification failed because its infrastructure failed.
+    /// Returns whether verification failed because infrastructure is temporarily unavailable.
     ///
     /// Retry these failures without asking the caller to replace its credentials.
     #[must_use]
-    pub const fn is_unavailable(&self) -> bool {
-        matches!(
-            self,
+    pub fn is_unavailable(&self) -> bool {
+        match self {
             Self::Unavailable
-                | Self::Client(_)
-                | Self::DiscoveryTimeout
-                | Self::DiscoveryRequest(_)
-                | Self::DiscoveryStatus(_)
-                | Self::InvalidDiscoveryDocument(_)
-                | Self::DiscoveryIssuerMismatch
-                | Self::InvalidJwksUri
-                | Self::JwksTimeout
-                | Self::JwksRequest(_)
-                | Self::JwksStatus(_)
-                | Self::InvalidJwksDocument(_)
-                | Self::Clock
-        )
+            | Self::DiscoveryTimeout
+            | Self::DiscoveryRequest(_)
+            | Self::JwksTimeout
+            | Self::JwksRequest(_) => true,
+            Self::DiscoveryStatus(status) | Self::JwksStatus(status) => status.is_server_error(),
+            _ => false,
+        }
+    }
+
+    /// Returns whether verification failed because of server or provider configuration.
+    ///
+    /// These failures need operator attention rather than a client retry or sign-in.
+    #[must_use]
+    pub fn is_misconfigured(&self) -> bool {
+        match self {
+            Self::Client(_)
+            | Self::InvalidDiscoveryDocument(_)
+            | Self::DiscoveryIssuerMismatch
+            | Self::InvalidJwksUri
+            | Self::InvalidJwksDocument(_)
+            | Self::InvalidJwk
+            | Self::MissingClientId
+            | Self::Clock => true,
+            Self::DiscoveryStatus(status) | Self::JwksStatus(status) => !status.is_server_error(),
+            _ => false,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn infrastructure_failures_are_retryable_and_bad_credentials_are_not() {
         use super::VerificationError as E;
@@ -1325,9 +1339,19 @@ mod tests {
             E::JwksTimeout,
             E::JwksStatus(reqwest::StatusCode::SERVICE_UNAVAILABLE),
             E::DiscoveryTimeout,
-            E::Clock,
         ] {
             assert!(error.is_unavailable(), "{error:?}");
+            assert!(!error.is_misconfigured(), "{error:?}");
+        }
+        for error in [
+            E::DiscoveryIssuerMismatch,
+            E::InvalidJwksUri,
+            E::JwksStatus(reqwest::StatusCode::NOT_FOUND),
+            E::DiscoveryStatus(reqwest::StatusCode::UNAUTHORIZED),
+            E::Clock,
+        ] {
+            assert!(error.is_misconfigured(), "{error:?}");
+            assert!(!error.is_unavailable(), "{error:?}");
         }
         for error in [
             E::Expired,
@@ -1337,10 +1361,55 @@ mod tests {
             E::WrongAudience,
         ] {
             assert!(!error.is_unavailable(), "{error:?}");
+            assert!(!error.is_misconfigured(), "{error:?}");
         }
     }
 
-    use super::*;
+    #[tokio::test]
+    async fn http_error_displays_do_not_expose_urls_or_credentials() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                axum::Router::new().route("/", axum::routing::get(|| async { "invalid JSON" })),
+            )
+            .await
+            .expect("server");
+        });
+        let secret = "private-token-material";
+        let url = format!("http://{address}/?token={secret}");
+        let variants = [
+            VerificationError::Client,
+            VerificationError::DiscoveryRequest,
+            VerificationError::InvalidDiscoveryDocument,
+            VerificationError::JwksRequest,
+            VerificationError::InvalidJwksDocument,
+        ];
+        for variant in variants {
+            let source = reqwest::get(&url)
+                .await
+                .expect("response")
+                .json::<Value>()
+                .await
+                .expect_err("invalid JSON");
+            let error = variant(source);
+            assert!(!error.to_string().contains(secret));
+            assert!(!error.to_string().contains(&address.to_string()));
+            if matches!(
+                error,
+                VerificationError::Client(_)
+                    | VerificationError::InvalidDiscoveryDocument(_)
+                    | VerificationError::InvalidJwksDocument(_)
+            ) {
+                assert!(error.is_misconfigured());
+                assert!(!error.is_unavailable());
+            }
+        }
+        server.abort();
+    }
 
     #[test]
     fn unsigned_and_malformed_tokens_are_rejected_before_key_lookup() {

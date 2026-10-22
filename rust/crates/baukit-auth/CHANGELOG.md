@@ -4,18 +4,25 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
-- Breaking: `VerificationError` is now non-exhaustive and adds `Unavailable`.
-  Downstream matches need a wildcard arm. `AuthRejection` also adds `Unavailable`.
-  Store failures and OIDC infrastructure failures return HTTP 503 with the standard
-  `unavailable` envelope and `Retry-After: 1`, without an OAuth challenge. Invalid,
-  revoked, unknown, and expired credentials still return 401. Infrastructure failures
-  are logged separately without credential material.
-- Add `VerificationError::is_unavailable()` and `From<VerificationError>` for
-  `AuthRejection` so transports and product adapters can preserve retryable failures.
-- Add `MAX_API_TOKEN_NAME_LENGTH`, `ApiTokenService::prepare` and `prepare_at`, and
-  the `sqlx-postgres` helper `insert_api_token`. Products can validate and generate
-  a token, then insert it under their own lock in the same transaction as policy
-  checks and other writes. The store uses the same INSERT helper.
+- Breaking: `VerificationError` and `AuthRejection` are now non-exhaustive.
+  Both add `Unavailable`; `AuthRejection` also adds `Misconfigured`. Downstream
+  matches need a wildcard arm. Store failures, OIDC connection failures, timeouts,
+  and provider 5xx responses return HTTP 503 with the standard `unavailable`
+  envelope and `Retry-After: 5`. Invalid provider metadata or JWKS documents,
+  provider 4xx responses, and server configuration errors return HTTP 500 without
+  `Retry-After`. Neither response sends an OAuth challenge. Invalid, revoked,
+  unknown, and expired credentials still return 401.
+- Add `VerificationError::is_unavailable()` and `is_misconfigured()`, plus a pure
+  `From<VerificationError>` conversion for `AuthRejection`. Request handling logs
+  infrastructure failures at error level with safe causes. Store errors log only
+  their variant kind. HTTP error displays omit URLs and private diagnostics.
+- Add `MAX_API_TOKEN_NAME_LENGTH`, `ApiTokenService::prepare` and `prepare_at`,
+  and the `sqlx-postgres` helper `insert_api_token`. Preparation returns an opaque
+  `PreparedApiToken` and the one-time `GeneratedApiToken`. The insert helper
+  requires a prepared token, so callers cannot bypass validation with a raw
+  `ApiTokenRecord`. Products can insert under their own lock in the same
+  transaction as policy checks and other writes. The store validates records
+  through the same prepared type and uses the same INSERT helper.
 
 ## [0.10.32] - 2026-10-21
 

@@ -211,6 +211,48 @@ pub struct ApiTokenRecord {
     pub expires_at: Option<DateTime<Utc>>,
 }
 
+/// A validated token ready to insert, created by [`ApiTokenService::prepare`].
+///
+/// The record is read-only so callers cannot change validated fields before insertion.
+/// Custom store adapters can consume it with [`into_record()`](Self::into_record).
+///
+/// ```compile_fail
+/// use baukit_auth::{ApiTokenRecord, PreparedApiToken};
+/// fn bypass_validation(record: ApiTokenRecord) -> PreparedApiToken {
+///     PreparedApiToken { record }
+/// }
+/// ```
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PreparedApiToken {
+    record: ApiTokenRecord,
+}
+
+impl PreparedApiToken {
+    /// Returns the validated record without allowing changes.
+    #[must_use]
+    pub const fn record(&self) -> &ApiTokenRecord {
+        &self.record
+    }
+
+    /// Transfers the record to a custom store adapter.
+    #[must_use]
+    pub fn into_record(self) -> ApiTokenRecord {
+        self.record
+    }
+
+    #[cfg(feature = "sqlx-postgres")]
+    pub(crate) fn from_record(mut record: ApiTokenRecord) -> Result<Self, ApiTokenError> {
+        record.name = record.name.trim().to_owned();
+        validate_token_fields(
+            &record.name,
+            &record.grants,
+            record.expires_at,
+            record.created_at,
+        )?;
+        Ok(Self { record })
+    }
+}
+
 /// A stored token together with the hash it was looked up by.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StoredApiToken {
@@ -426,6 +468,21 @@ fn validate_grants(grants: &BTreeSet<String>) -> Result<(), ApiTokenError> {
     Ok(())
 }
 
+fn validate_token_fields(
+    name: &str,
+    grants: &BTreeSet<String>,
+    expires_at: Option<DateTime<Utc>>,
+    now: DateTime<Utc>,
+) -> Result<(), ApiTokenError> {
+    if name.is_empty() || name.chars().count() > MAX_NAME_LENGTH {
+        return Err(ApiTokenError::InvalidName);
+    }
+    if expires_at.is_some_and(|expiry| expiry <= now) {
+        return Err(ApiTokenError::InvalidExpiry);
+    }
+    validate_grants(grants)
+}
+
 fn is_valid_grant(grant: &str) -> bool {
     !grant.is_empty()
         && grant.len() <= MAX_API_TOKEN_GRANT_LENGTH
@@ -638,8 +695,12 @@ impl ApiTokenService {
         request: NewApiToken,
         now: DateTime<Utc>,
     ) -> Result<IssuedApiToken, ApiTokenError> {
-        let (record, generated) = self.prepare_at(owner_id, request, now)?;
-        let token = self.store.create(record).await.map_err(map_store_error)?;
+        let (prepared, generated) = self.prepare_at(owner_id, request, now)?;
+        let token = self
+            .store
+            .create(prepared.into_record())
+            .await
+            .map_err(map_store_error)?;
         Ok(IssuedApiToken {
             token,
             secret: generated.into_secret(),
@@ -656,7 +717,7 @@ impl ApiTokenService {
         &self,
         owner_id: Uuid,
         request: NewApiToken,
-    ) -> Result<(ApiTokenRecord, GeneratedApiToken), ApiTokenError> {
+    ) -> Result<(PreparedApiToken, GeneratedApiToken), ApiTokenError> {
         self.prepare_at(owner_id, request, Utc::now())
     }
 
@@ -666,27 +727,23 @@ impl ApiTokenService {
         owner_id: Uuid,
         request: NewApiToken,
         now: DateTime<Utc>,
-    ) -> Result<(ApiTokenRecord, GeneratedApiToken), ApiTokenError> {
+    ) -> Result<(PreparedApiToken, GeneratedApiToken), ApiTokenError> {
         let name = request.name.trim();
-        if name.is_empty() || name.chars().count() > MAX_NAME_LENGTH {
-            return Err(ApiTokenError::InvalidName);
-        }
-        if request.expires_at.is_some_and(|expiry| expiry <= now) {
-            return Err(ApiTokenError::InvalidExpiry);
-        }
-        validate_grants(&request.grants)?;
+        validate_token_fields(name, &request.grants, request.expires_at, now)?;
 
         let generated = self.format.generate_secret()?;
         Ok((
-            ApiTokenRecord {
-                id: Uuid::now_v7(),
-                owner_id,
-                name: name.to_owned(),
-                secret_hash: generated.secret_hash().to_vec(),
-                display_prefix: generated.display_prefix().to_owned(),
-                grants: request.grants,
-                created_at: now,
-                expires_at: request.expires_at,
+            PreparedApiToken {
+                record: ApiTokenRecord {
+                    id: Uuid::now_v7(),
+                    owner_id,
+                    name: name.to_owned(),
+                    secret_hash: generated.secret_hash().to_vec(),
+                    display_prefix: generated.display_prefix().to_owned(),
+                    grants: request.grants,
+                    created_at: now,
+                    expires_at: request.expires_at,
+                },
             },
             generated,
         ))
@@ -797,7 +854,17 @@ impl ApiTokenVerifier {
         match self.tokens.verify(presented).await {
             Ok(token) => Ok(Principal::from_api_token(token.owner_id.to_string(), token)),
             Err(ApiTokenError::Expired) => Err(VerificationError::Expired),
-            Err(ApiTokenError::Storage(_)) => Err(VerificationError::Unavailable),
+            Err(ApiTokenError::Storage(error)) => {
+                let kind = match error {
+                    ApiTokenStoreError::Internal(_) => "internal",
+                    ApiTokenStoreError::PolicyRejected(_) => "policy_rejected",
+                };
+                tracing::error!(
+                    store_error_kind = kind,
+                    "API token store verification failed"
+                );
+                Err(VerificationError::Unavailable)
+            }
             Err(_) => Err(VerificationError::InvalidSignature),
         }
     }
@@ -1609,7 +1676,7 @@ mod tests {
         );
         let owner_id = Uuid::now_v7();
         let expires_at = instant() + chrono::Duration::hours(1);
-        let (record, generated) = service
+        let (prepared, generated) = service
             .prepare_at(
                 owner_id,
                 NewApiToken::new(format!("  {}  ", "é".repeat(MAX_API_TOKEN_NAME_LENGTH)))
@@ -1618,6 +1685,7 @@ mod tests {
                 instant(),
             )
             .expect("prepare token");
+        let record = prepared.record();
         assert_eq!(record.owner_id, owner_id);
         assert_eq!(record.name.chars().count(), MAX_API_TOKEN_NAME_LENGTH);
         assert_eq!(record.created_at, instant());
@@ -1655,11 +1723,27 @@ mod tests {
         let (current, _) = service
             .prepare(owner_id, NewApiToken::new("Current"))
             .expect("prepare now");
-        assert!(current.created_at <= Utc::now());
+        assert!(current.record().created_at <= Utc::now());
+        assert_eq!(prepared.clone().into_record(), *record);
     }
 
     #[tokio::test]
     async fn store_failures_during_lookup_or_touch_never_fall_through() {
+        use tracing::instrument::WithSubscriber as _;
+
+        #[derive(Clone)]
+        struct Captured(Arc<Mutex<Vec<u8>>>);
+
+        impl std::io::Write for Captured {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().expect("capture lock").write(bytes)
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
         for fail_on_touch in [false, true] {
             let (store, service) = service();
             let issued = service
@@ -1679,13 +1763,28 @@ mod tests {
                 seen: Mutex::new(Vec::new()),
             });
             let verifier = ApiTokenVerifier::new(service, fallback.clone());
+            let output = Arc::new(Mutex::new(Vec::<u8>::new()));
+            let writer = Captured(output.clone());
+            let subscriber = tracing_subscriber::fmt()
+                .without_time()
+                .with_ansi(false)
+                .with_target(false)
+                .with_writer(move || writer.clone())
+                .finish();
             let error = verifier
                 .verify(&issued.secret)
+                .with_subscriber(subscriber)
                 .await
                 .expect_err("store unavailable");
             assert!(matches!(error, VerificationError::Unavailable));
             assert!(!format!("{error:?}: {error}").contains(&issued.secret));
             assert!(fallback.seen.lock().expect("seen lock").is_empty());
+            let logs =
+                String::from_utf8(output.lock().expect("capture lock").clone()).expect("logs");
+            assert!(logs.contains("ERROR API token store verification failed"));
+            assert!(logs.contains("store_error_kind=\"internal\""));
+            assert!(!logs.contains(&issued.secret));
+            assert!(!logs.contains("database failure with private material"));
         }
     }
 
