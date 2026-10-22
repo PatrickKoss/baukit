@@ -42,7 +42,8 @@ function fixture(products = [product]) {
     }).toString();
     return Promise.resolve(callback(result).toString());
   });
-  const open = vi.fn(() => ({ receive, close }));
+  const authorizationWindow = { receive, close, closed: false };
+  const open = vi.fn(() => authorizationWindow);
   const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
     expect(init).toMatchObject({ credentials: 'omit', cache: 'no-store', redirect: 'error' });
     expect(init?.signal).toBeInstanceOf(AbortSignal);
@@ -121,6 +122,7 @@ function fixture(products = [product]) {
     open,
     receive,
     close,
+    authorizationWindow,
     fetch,
     authorizations,
     advance: (ms: number) => {
@@ -546,6 +548,119 @@ it('opens explicit login synchronously and latches popup blocking', async () => 
   expect((await f.broker.login('one')).status).toBe('ok');
 });
 
+it.each(['login_required', 'interaction_required', 'consent_required'] as const)(
+  'preserves remembered %s when an explicit popup is blocked',
+  async (reason) => {
+    const f = fixture();
+    f.callback((url) => {
+      url.searchParams.delete('code');
+      url.searchParams.set('error', reason);
+      return url;
+    });
+    const failure = await f.broker.getToken('one');
+    f.open.mockImplementationOnce(() => {
+      throw new SilentTokenError('popup_blocked');
+    });
+    expect(await f.broker.login('one')).toMatchObject({
+      status: 'error',
+      error: { code: 'popup_blocked' },
+    });
+    expect(await f.broker.getToken('one')).toBe(failure);
+    expect(f.open).toHaveBeenCalledTimes(2);
+    expect(f.fetch).toHaveBeenCalledTimes(1);
+    f.callback((url) => url);
+    expect((await f.broker.login('one')).status).toBe('ok');
+    expect((await f.broker.getToken('one')).status).toBe('ok');
+  },
+);
+
+it.each(['discovery', 'callback', 'exchange'] as const)(
+  'cancels a closed popup during %s and lets another click start login',
+  async (phase) => {
+    vi.useFakeTimers();
+    const f = fixture();
+    let resume: (() => void) | undefined;
+    let paused = false;
+    const wait = () =>
+      new Promise<void>((resolve) => {
+        resume = resolve;
+      });
+    if (phase === 'callback') {
+      const receive = required(f.receive.getMockImplementation());
+      f.receive.mockImplementationOnce(async (...args) => {
+        await wait();
+        return receive(...args);
+      });
+    } else {
+      const fetch = required(f.fetch.getMockImplementation());
+      f.fetch.mockImplementation(async (...args) => {
+        const url = requestUrl(args[0]);
+        if (
+          !paused &&
+          ((phase === 'discovery' && url.endsWith('openid-configuration')) ||
+            (phase === 'exchange' && url.endsWith('/token')))
+        ) {
+          paused = true;
+          await wait();
+        }
+        return fetch(...args);
+      });
+    }
+    const pending = f.broker.login('one');
+    expect(f.broker.login('one')).toBe(pending);
+    await vi.waitFor(() => {
+      expect(resume).toBeTypeOf('function');
+    });
+    const signal = f.fetch.mock.calls[0]?.[1]?.signal;
+    f.authorizationWindow.closed = true;
+    await vi.advanceTimersByTimeAsync(250);
+    const result = await pending;
+    expect(result).toMatchObject({
+      status: 'login_required',
+      reason: 'interaction_cancelled',
+    });
+    expect(signal?.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(f.close).toHaveBeenCalledTimes(1);
+    expect(await f.broker.getToken('one')).toBe(result);
+    expect(f.open).toHaveBeenCalledTimes(1);
+    required(resume)();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await f.broker.getToken('one')).toBe(result);
+    f.authorizationWindow.closed = false;
+    const retry = f.broker.login('one');
+    expect(retry).not.toBe(pending);
+    expect((await retry).status).toBe('ok');
+    expect(f.open).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  },
+);
+
+it.each(['success', 'error', 'dispose'] as const)(
+  'clears popup polling after %s',
+  async (outcome) => {
+    vi.useFakeTimers();
+    const f = fixture();
+    if (outcome === 'error') f.fetch.mockRejectedValueOnce(new Error('network'));
+    if (outcome === 'dispose') f.fetch.mockImplementationOnce(() => new Promise(() => undefined));
+    const pending = f.broker.login('one');
+    if (outcome === 'dispose') f.broker.dispose();
+    expect((await pending).status).toBe(outcome === 'success' ? 'ok' : 'error');
+    expect(vi.getTimerCount()).toBe(0);
+    expect(f.close).toHaveBeenCalledTimes(1);
+  },
+);
+
+it('reports an unsupported environment with a typed error', () => {
+  vi.stubGlobal('window', undefined);
+  const create = () =>
+    new SilentTokenBroker([product], {
+      accountBinding: { claim: 'account_id', value: 'session-user' },
+    });
+  expect(create).toThrow(SilentTokenError);
+  expect(create).toThrow('unsupported_environment');
+});
+
 it('caps expiry skew at half a short token lifetime and honors the signed expiry', async () => {
   const f = fixture();
   f.accessClaims({ exp: Math.floor(f.environment.now() / 1000) + 10 });
@@ -656,6 +771,7 @@ it('bounds explicit login at three minutes', async () => {
   await vi.advanceTimersByTimeAsync(1_000);
   expect(await pending).toMatchObject({ status: 'login_required', reason: 'timeout' });
   expect(f.close).toHaveBeenCalledTimes(1);
+  expect(vi.getTimerCount()).toBe(0);
 });
 
 it.each([

@@ -28,7 +28,8 @@ export interface SilentTokenBrokerOptions {
   readonly accountBinding: { readonly claim: string; readonly value: string };
 }
 
-export type SilentLoginReason = 'login_required' | 'interaction_required' | 'timeout';
+export type SilentLoginReason =
+  'login_required' | 'interaction_required' | 'interaction_cancelled' | 'timeout';
 
 export type SilentTokenResult =
   | {
@@ -55,6 +56,8 @@ class AuthorizationError extends Error {
 }
 
 export interface SilentAuthorizationWindow {
+  /** True when the interactive popup has closed. Omit if closure cannot be observed. */
+  readonly closed?: boolean;
   receive(url: URL, signal: AbortSignal): Promise<string>;
   close(): void;
 }
@@ -76,9 +79,15 @@ interface CachedToken {
   readonly result: Extract<SilentTokenResult, { status: 'ok' }>;
   readonly renewAt: number;
 }
+interface TokenResponse {
+  readonly accessToken: string;
+  readonly idToken: string;
+  readonly responseExpiresAt: number;
+}
 
 const SILENT_TIMEOUT_MS = 15_000;
 const INTERACTIVE_TIMEOUT_MS = 180_000;
+const POPUP_POLL_INTERVAL_MS = 250;
 const EXPIRY_LEEWAY_MS = 30_000;
 const RESERVED_PARAMETERS = new Set([
   'client_id',
@@ -202,7 +211,9 @@ export class SilentTokenBroker {
           });
           this.failures.delete(product.id);
         } else {
-          this.failures.set(product.id, result);
+          const previous = this.failures.get(product.id);
+          if (!previous || result.status !== 'error' || result.error.code !== 'popup_blocked')
+            this.failures.set(product.id, result);
         }
         return result;
       })
@@ -226,8 +237,14 @@ export class SilentTokenBroker {
       interactive ? INTERACTIVE_TIMEOUT_MS : SILENT_TIMEOUT_MS,
     );
     let target: SilentAuthorizationWindow | undefined;
+    let popupPoll: ReturnType<typeof setInterval> | undefined;
     try {
       target = this.environment.open(interactive);
+      if (interactive) {
+        popupPoll = setInterval(() => {
+          if (target?.closed) controller.abort(new AuthorizationError('interaction_cancelled'));
+        }, POPUP_POLL_INTERVAL_MS);
+      }
       return await abortable(
         this.request(product, interactive, target, controller.signal),
         controller.signal,
@@ -239,6 +256,7 @@ export class SilentTokenBroker {
       );
     } finally {
       clearTimeout(timer);
+      clearInterval(popupPoll);
       this.controllers.delete(controller);
       target?.close();
     }
@@ -280,7 +298,7 @@ export class SilentTokenBroker {
     transaction: { code: string; verifier: string; nonce: string },
     signal: AbortSignal,
   ): Promise<Extract<SilentTokenResult, { status: 'ok' }>> {
-    const { value: tokens, receivedAt } = await this.json(metadata.tokenEndpoint, signal, {
+    const { value, receivedAt } = await this.json(metadata.tokenEndpoint, signal, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -291,20 +309,28 @@ export class SilentTokenBroker {
         code_verifier: transaction.verifier,
       }),
     });
-    if (
-      typeof tokens['access_token'] !== 'string' ||
-      !tokens['access_token'] ||
-      typeof tokens['id_token'] !== 'string' ||
-      !tokens['id_token'] ||
-      typeof tokens['expires_in'] !== 'number' ||
-      !Number.isFinite(tokens['expires_in']) ||
-      tokens['expires_in'] <= 0 ||
-      !Number.isFinite(receivedAt + tokens['expires_in'] * 1000) ||
-      tokens['token_type'] !== 'Bearer'
-    ) {
-      throw new SilentTokenError('invalid_tokens');
-    }
-    const { value: jwks } = await this.json(metadata.jwksUri, signal);
+    const tokens = validateTokenResponse(value, receivedAt);
+    const signedExpiresAt = await this.verifyTokenClaims(
+      product,
+      metadata.jwksUri,
+      tokens,
+      transaction.nonce,
+      signal,
+    );
+    signal.throwIfAborted();
+    const expiresAt = Math.min(tokens.responseExpiresAt, signedExpiresAt);
+    if (expiresAt <= this.environment.now()) throw new SilentTokenError('invalid_tokens');
+    return { status: 'ok', productId: product.id, accessToken: tokens.accessToken, expiresAt };
+  }
+
+  private async verifyTokenClaims(
+    product: SilentTokenProduct,
+    jwksUri: string,
+    tokens: TokenResponse,
+    nonce: string,
+    signal: AbortSignal,
+  ): Promise<number> {
+    const { value: jwks } = await this.json(jwksUri, signal);
     const keys = createLocalJWKSet(jwks as unknown as JSONWebKeySet);
     const options = {
       issuer: product.issuer,
@@ -312,17 +338,17 @@ export class SilentTokenBroker {
       currentDate: new Date(this.environment.now()),
       requiredClaims: ['exp', 'iat', 'sub'],
     };
-    const { payload: id } = await jwtVerify(tokens['id_token'], keys, {
+    const { payload: id } = await jwtVerify(tokens.idToken, keys, {
       ...options,
       audience: product.clientId,
     });
-    if (id['nonce'] !== transaction.nonce) throw new SilentTokenError('invalid_nonce');
+    if (id['nonce'] !== nonce) throw new SilentTokenError('invalid_nonce');
     if (
       (Array.isArray(id.aud) && id.aud.length > 1 && id['azp'] !== product.clientId) ||
       (id['azp'] !== undefined && id['azp'] !== product.clientId)
     )
       throw new SilentTokenError('invalid_client');
-    const { payload: access } = await jwtVerify(tokens['access_token'], keys, {
+    const { payload: access } = await jwtVerify(tokens.accessToken, keys, {
       ...options,
       audience: product.audience,
     });
@@ -333,10 +359,7 @@ export class SilentTokenBroker {
       access[this.accountBinding.claim] !== this.accountBinding.value
     )
       throw new AuthorizationError('account_mismatch');
-    signal.throwIfAborted();
-    const expiresAt = Math.min(receivedAt + tokens['expires_in'] * 1000, (access.exp ?? 0) * 1000);
-    if (expiresAt <= this.environment.now()) throw new SilentTokenError('invalid_tokens');
-    return { status: 'ok', productId: product.id, accessToken: tokens['access_token'], expiresAt };
+    return (access.exp ?? 0) * 1000;
   }
 
   private async metadata(product: SilentTokenProduct, signal: AbortSignal): Promise<Metadata> {
@@ -384,6 +407,27 @@ export class SilentTokenBroker {
       throw new SilentTokenError('invalid_response');
     return { value: value as Record<string, unknown>, receivedAt };
   }
+}
+
+function validateTokenResponse(tokens: Record<string, unknown>, receivedAt: number): TokenResponse {
+  if (
+    typeof tokens['access_token'] !== 'string' ||
+    !tokens['access_token'] ||
+    typeof tokens['id_token'] !== 'string' ||
+    !tokens['id_token'] ||
+    typeof tokens['expires_in'] !== 'number' ||
+    !Number.isFinite(tokens['expires_in']) ||
+    tokens['expires_in'] <= 0 ||
+    !Number.isFinite(receivedAt + tokens['expires_in'] * 1000) ||
+    tokens['token_type'] !== 'Bearer'
+  ) {
+    throw new SilentTokenError('invalid_tokens');
+  }
+  return {
+    accessToken: tokens['access_token'],
+    idToken: tokens['id_token'],
+    responseExpiresAt: receivedAt + tokens['expires_in'] * 1000,
+  };
 }
 
 function callbackCode(callback: string, product: SilentTokenProduct, state: string): string {
@@ -473,8 +517,7 @@ function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
 }
 
 function browserEnvironment(): SilentTokenEnvironment {
-  if (typeof window === 'undefined')
-    throw new Error('SilentTokenBroker requires a browser or an explicit environment.');
+  if (typeof window === 'undefined') throw new SilentTokenError('unsupported_environment');
   return {
     fetch: globalThis.fetch.bind(globalThis),
     crypto: globalThis.crypto,

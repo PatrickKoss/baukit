@@ -1,7 +1,8 @@
 import type { SilentAuthorizationWindow } from './silent-token-broker.js';
 import { SilentTokenError } from './silent-token-errors.js';
 
-const CALLBACK_MESSAGE = 'baukit-silent-token-callback';
+export const CALLBACK_MESSAGE = 'baukit-silent-token-callback';
+const POPUP_FEATURES = 'popup,width=520,height=720';
 
 /** Run on a dedicated same-origin callback page with no application initialization. */
 export function completeSilentTokenCallback(browser: Window = window): boolean {
@@ -24,9 +25,7 @@ export function openSilentAuthorizationWindow(
     frame.title = 'Authorization';
     browser.document.body.append(frame);
   }
-  const popup = interactive
-    ? browser.open('about:blank', '_blank', 'popup,width=520,height=720')
-    : null;
+  const popup = interactive ? browser.open('about:blank', '_blank', POPUP_FEATURES) : null;
   const target = frame?.contentWindow ?? popup;
   if (!target) {
     frame?.remove();
@@ -35,6 +34,9 @@ export function openSilentAuthorizationWindow(
   let cleanup: () => void = () => undefined;
   let cancel: () => void = () => undefined;
   return {
+    get closed() {
+      return popup?.closed ?? false;
+    },
     receive: (url, signal) =>
       new Promise<string>((resolve, reject) => {
         const finish = (value?: string) => {

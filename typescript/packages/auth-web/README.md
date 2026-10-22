@@ -82,10 +82,11 @@ Create one broker per authenticated session and share it across callers.
 `accountBinding.claim` names a signed access token claim that must equal
 `accountBinding.value`, taken from the active verified session. A provider must
 protect this claim against user edits. The broker also requires matching ID and
-access token subjects and the configured authorized client. It verifies RS256
-signatures through the issuer's JWKS, token expiry, issuer, audience and ID token
-nonce. Discovery endpoints must share the configured issuer's origin. HTTPS is
-required except for HTTP loopback addresses used during development.
+access token subjects. Both tokens must be JWTs signed with RS256. The access
+token must have an `azp` claim equal to the configured client ID. The broker
+verifies signatures through the issuer's JWKS, token expiry, issuer, audience and
+ID token nonce. Discovery endpoints must share the configured issuer's origin.
+HTTPS is required except for HTTP loopback addresses used during development.
 
 Optional per-product `authorizationParams` pass provider options such as an identity
 provider hint. They cannot replace the broker's OIDC parameters. The broker has no
@@ -94,23 +95,30 @@ configured audience when the optional audience is supplied.
 
 `SilentTokenResult` has these outcomes:
 
-| Status             | Fields and next step                                                            |
-| ------------------ | ------------------------------------------------------------------------------- |
-| `ok`               | `accessToken`, `expiresAt` in epoch milliseconds and `productId`                |
-| `login_required`   | `productId` and `reason`: `login_required`, `interaction_required` or `timeout` |
-| `consent_required` | `productId`; offer explicit login                                               |
-| `account_mismatch` | `productId`; the verified account or authorized client did not match            |
-| `error`            | `productId` and a sanitized `SilentTokenError` with a library-owned `code`      |
+| Status             | Fields and next step                                                                                     |
+| ------------------ | -------------------------------------------------------------------------------------------------------- |
+| `ok`               | `accessToken`, `expiresAt` in epoch milliseconds and `productId`                                         |
+| `login_required`   | `productId` and `reason`: `login_required`, `interaction_required`, `interaction_cancelled` or `timeout` |
+| `consent_required` | `productId`; offer explicit login                                                                        |
+| `account_mismatch` | `productId`; the verified account or authorized client did not match                                     |
+| `error`            | `productId` and a sanitized `SilentTokenError` with a library-owned `code`                               |
 
 Every failed result stays remembered until `resetFailure(productId)` or a
 successful `login(productId)`. `invalidate()` clears only the cached token.
 Repeated requests for one product share a promise, including calls to `login()`
 while authorization is already in flight. Call `login()` directly from a user
 gesture after the pending flow finishes. Popup blocking returns an `error` result
-with code `popup_blocked`. Silent flows time out after 15 seconds; interactive
-flows time out after three minutes. Provider descriptions and response bodies
-never appear in results. Invalid configuration, unknown products, a different
-requested audience and calls after disposal throw synchronously.
+with code `popup_blocked`, while `getToken()` keeps any earlier remembered
+failure. Closing the popup returns `login_required` with reason
+`interaction_cancelled` and lets the next click start a new login. The broker
+checks for closure every 250 milliseconds, including during discovery and token
+exchange. Custom environments can expose the live popup state through
+`SilentAuthorizationWindow.closed`. Silent flows time out after 15 seconds;
+interactive flows time out after three minutes. Provider descriptions and
+response bodies never appear in results. Invalid configuration, unknown
+products, a different requested audience and calls after disposal throw
+synchronously. Constructing a broker outside a browser without an explicit
+environment throws `SilentTokenError` with code `unsupported_environment`.
 
 Tokens, failures, state, nonce and PKCE verifiers remain in memory. The broker
 never reads or writes browser storage and discards refresh tokens. It renews by
@@ -134,6 +142,13 @@ import { completeSilentTokenCallback } from '@baukit/auth-web';
 
 completeSilentTokenCallback();
 ```
+
+`CALLBACK_MESSAGE` is also exported from `@baukit/auth-web`. Its value is
+`"baukit-silent-token-callback"`. When generating an unbundled callback page,
+import this constant in the code that generates the page and inject its value as
+the message's `type`. Post `{ type: CALLBACK_MESSAGE, url: callbackUrl }` to the
+same-origin parent or opener with `location.origin` as the target origin. Capture
+`location.href` before stripping the callback query with `history.replaceState`.
 
 Keep the callback page free of application startup and third-party assets. Set a
 `no-referrer` policy and a content security policy that permits only its script.

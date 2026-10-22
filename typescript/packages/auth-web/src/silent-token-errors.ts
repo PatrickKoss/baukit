@@ -2,6 +2,7 @@ export type SilentTokenErrorCode =
   | 'invalid_product'
   | 'invalid_account_binding'
   | 'invalid_url'
+  | 'unsupported_environment'
   | 'unknown_product_or_audience'
   | 'disposed'
   | 'popup_blocked'

@@ -10,7 +10,7 @@ import {
 
 export { buildAuthorizationUrl, normalizeIssuer } from './oidc-helpers.js';
 export * from './silent-token-broker.js';
-export { completeSilentTokenCallback } from './silent-token-browser.js';
+export { CALLBACK_MESSAGE, completeSilentTokenCallback } from './silent-token-browser.js';
 
 export type OidcErrorCode =
   | 'authorization_failed'

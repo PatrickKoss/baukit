@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
-import { completeSilentTokenCallback } from './index.js';
+import { CALLBACK_MESSAGE, completeSilentTokenCallback } from './index.js';
 import { openSilentAuthorizationWindow } from './silent-token-browser.js';
 
 afterEach(() => {
@@ -84,6 +84,16 @@ it('opens an explicit window synchronously and aborts its message listener', asy
   expect(popup.close).toHaveBeenCalled();
 });
 
+it('exposes the live popup closed state', () => {
+  const popup = { closed: false, close: vi.fn() };
+  vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window);
+  const target = openSilentAuthorizationWindow(window, true);
+  expect(target.closed).toBe(false);
+  popup.closed = true;
+  expect(target.closed).toBe(true);
+  target.close();
+});
+
 it('reports blocked popups and handles pre-aborted authorization without navigating', async () => {
   vi.spyOn(window, 'open').mockReturnValue(null);
   expect(() => openSilentAuthorizationWindow(window, true)).toThrow('popup_blocked');
@@ -126,9 +136,10 @@ it.each(['opener', 'parent'] as const)(
       parent: { postMessage },
     };
     expect(completeSilentTokenCallback(browser as unknown as Window)).toBe(true);
+    expect(CALLBACK_MESSAGE).toBe('baukit-silent-token-callback');
     expect(replaceState).toHaveBeenCalledWith(null, '', '/callback');
     expect(postMessage).toHaveBeenCalledWith(
-      { type: 'baukit-silent-token-callback', url: browser.location.href },
+      { type: CALLBACK_MESSAGE, url: browser.location.href },
       'https://app.example',
     );
     expect(replaceState.mock.invocationCallOrder[0]).toBeLessThan(
