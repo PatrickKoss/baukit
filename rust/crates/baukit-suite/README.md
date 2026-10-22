@@ -19,8 +19,19 @@ The platform receiver operates independently of peer links.
 
 The inbox passes `EventContext` to the product's `PlatformEventHandler`. With the
 PostgreSQL inbox, use `context.postgres()` for writes that must commit with the
-receipt. `EntitlementEventHandler` pulls snapshots through `EntitlementSource` and
-stores them through the same transaction. Other events go to the product handler.
+receipt. `EntitlementEventHandler` pulls snapshots through `EntitlementSource`
+before opening that transaction, then stores them within it. Other events go to
+the product handler. Hub reads pull on a cache miss or expiry, share in-flight
+requests per subject and cache the contract's free fallback. Source failures
+return errors. Configure the hub source and optional distinct event prefix in
+`PlatformConfig`; neither has a product-specific default.
+
+Use `EntitlementCache::forget(subject)` for erasure, or
+`PostgresEntitlementCache::forget_in_transaction(subject, connection)` within the
+product's erasure transaction. Keep receipts for at least 30 days, then prune with
+`PostgresPlatformInbox::purge_received_before(cutoff, batch)`. Custom inboxes can
+construct `EventContext::detached()` or `EventContext::with_postgres(connection)`
+and must call `PlatformEventHandler::prepare` before claiming a receipt.
 
 See [platform adoption](../../../docs/platform/platform-receiver.md) for migration,
 configuration, secret rotation and offline ticket verification.

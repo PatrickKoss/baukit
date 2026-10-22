@@ -102,3 +102,19 @@ it('loads the published subpath', async () => {
   const exported = await import('@baukit/suite-client/entitlements');
   expect(typeof exported.verifyTicket).toBe('function');
 });
+
+it('rejects an unsigned ticket with alg none', () => {
+  const v = fixture.vectors[0];
+  if (!v) throw new Error('missing vector');
+  const header = Buffer.from(
+    JSON.stringify({ alg: 'none', kid: fixture.jwks.keys[0]?.kid }),
+  ).toString('base64url');
+  const ticket = [header, ...v.ticket.split('.').slice(1)].join('.');
+  expect(() =>
+    verifyTicket(ticket, fixture.jwks, {
+      issuer: fixture.issuer,
+      audience: v.audience,
+      now: v.now,
+    }),
+  ).toThrow('ticket_invalid');
+});

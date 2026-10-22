@@ -1,6 +1,6 @@
 use super::{
-    PlatformError, PlatformEventHandler, PlatformInbox, PlatformReceiver, StandaloneEntitlements,
-    TicketVerifier,
+    PlatformEventDecoder, PlatformEventHandler, PlatformInbox, PlatformReceiver,
+    StandaloneEntitlements, TicketVerifier,
 };
 use baukit_config::{Secret, Validate, ValidationError, ValidationErrors};
 use serde::Deserialize;
@@ -19,6 +19,8 @@ pub struct PlatformConfig {
     #[serde(deserialize_with = "crate::config::empty_string_as_none")]
     pub jwks_url: Option<String>,
     pub product_id: String,
+    pub source_app: String,
+    pub event_type_prefix: Option<String>,
     pub receiver_secret: Option<Secret<String>>,
     pub previous_receiver_secret: Option<Secret<String>>,
     pub standalone_default: StandaloneEntitlements,
@@ -31,6 +33,14 @@ impl Validate for PlatformConfig {
             invalid("platform.standalone_default.tier", "must not be empty");
         }
         if let Some(issuer) = &self.hub_issuer {
+            if PlatformEventDecoder::new(self.source_app.clone(), self.event_type_prefix.clone())
+                .is_err()
+            {
+                invalid(
+                    "platform.source_app",
+                    "source_app and event_type_prefix must be valid hub identifiers",
+                );
+            }
             if !http_url(issuer) {
                 invalid(
                     "platform.hub_issuer",
@@ -59,7 +69,9 @@ impl Validate for PlatformConfig {
             {
                 invalid("platform.receiver_secret", "is required in hub mode");
             }
-        } else if self.jwks_url.is_some()
+        } else if !self.source_app.is_empty()
+            || self.event_type_prefix.is_some()
+            || self.jwks_url.is_some()
             || self.receiver_secret.is_some()
             || self.previous_receiver_secret.is_some()
         {
@@ -89,6 +101,7 @@ impl PlatformConfig {
     pub fn entitlements(
         &self,
         cache: Arc<dyn super::EntitlementCache>,
+        source: Option<Arc<dyn super::EntitlementSource>>,
     ) -> Result<super::Entitlements, ValidationErrors> {
         self.validate()?;
         Ok(if self.standalone() {
@@ -97,7 +110,16 @@ impl PlatformConfig {
                 self.standalone_default.clone(),
             )
         } else {
-            super::Entitlements::hub(self.product_id.clone(), cache)
+            super::Entitlements::hub(
+                self.product_id.clone(),
+                cache,
+                source.ok_or_else(|| {
+                    ValidationErrors::new(vec![ValidationError::new(
+                        "platform.entitlement_source",
+                        "is required in hub mode",
+                    )])
+                })?,
+            )
         })
     }
     pub fn receiver(
@@ -109,7 +131,18 @@ impl PlatformConfig {
         self.receiver_secret
             .clone()
             .map(|secret| {
+                let decoder = PlatformEventDecoder::new(
+                    self.source_app.clone(),
+                    self.event_type_prefix.clone(),
+                )
+                .map_err(|_| {
+                    ValidationErrors::new(vec![ValidationError::new(
+                        "platform.source_app",
+                        "invalid hub identifiers",
+                    )])
+                })?;
                 PlatformReceiver::new(
+                    decoder,
                     secret,
                     self.previous_receiver_secret.clone(),
                     inbox,
@@ -128,13 +161,18 @@ impl PlatformConfig {
     pub fn ticket_verifier(
         &self,
         client: baukit_egress::GuardedClient,
-    ) -> Result<Option<TicketVerifier>, PlatformError> {
-        self.validate().map_err(|_| PlatformError::Invalid)?;
+    ) -> Result<Option<TicketVerifier>, ValidationErrors> {
+        self.validate()?;
         match (&self.hub_issuer, &self.jwks_url) {
             (Some(issuer), Some(jwks)) => {
                 TicketVerifier::new(issuer.clone(), self.product_id.clone(), jwks, client)
                     .map(Some)
-                    .map_err(|_| PlatformError::Invalid)
+                    .map_err(|_| {
+                        ValidationErrors::new(vec![ValidationError::new(
+                            "platform.jwks_url",
+                            "invalid ticket verifier settings",
+                        )])
+                    })
             }
             _ => Ok(None),
         }

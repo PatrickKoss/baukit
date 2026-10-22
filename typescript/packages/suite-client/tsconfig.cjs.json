@@ -7,5 +7,5 @@
     "outDir": "dist/cjs",
     "verbatimModuleSyntax": false
   },
-  "include": ["src/peers.ts"]
+  "include": ["src/peers.ts", "src/entitlements.ts"]
 }

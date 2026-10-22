@@ -5,6 +5,8 @@ CREATE TABLE platform_inbound_receipts (
     received_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE INDEX platform_inbound_receipts_received_at_idx ON platform_inbound_receipts(received_at, event_id);
+
 CREATE TABLE platform_entitlement_cache (
     subject text NOT NULL,
     product_id text NOT NULL,

@@ -124,11 +124,16 @@ class PackedDependenciesTest(unittest.TestCase):
                 ["node", "--input-type=module", "-e", """
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { verifyTicket } from '@baukit/suite-client/entitlements';
 const fixture = JSON.parse(readFileSync(process.argv[1], 'utf8'));
 const vector = fixture.vectors[0];
 assert.equal(vector.expected, 'ok');
 assert.deepEqual(verifyTicket(vector.ticket, fixture.jwks, {
+  issuer: fixture.issuer, audience: vector.audience, now: vector.now,
+}), vector.claims);
+const cjs = createRequire(import.meta.url)('@baukit/suite-client/entitlements');
+assert.deepEqual(cjs.verifyTicket(vector.ticket, fixture.jwks, {
   issuer: fixture.issuer, audience: vector.audience, now: vector.now,
 }), vector.claims);
 """, str(check.ROOT / "fixtures/entitlement-tickets/v1/vectors.json")],

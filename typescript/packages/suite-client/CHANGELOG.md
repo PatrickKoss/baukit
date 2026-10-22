@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Publish the entitlement verifier for CommonJS consumers as well as ES modules.
+
 - Add `@baukit/suite-client/entitlements` for offline Ed25519 ticket verification on web and Hermes.
 
 ## 0.10.32

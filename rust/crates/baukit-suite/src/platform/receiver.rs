@@ -19,6 +19,7 @@ const MAX_DELIVERY_ID_BYTES: usize = 256;
 
 #[derive(Clone)]
 pub struct PlatformReceiver {
+    decoder: PlatformEventDecoder,
     current_secret: Secret<String>,
     previous_secret: Option<Secret<String>>,
     inbox: Arc<dyn PlatformInbox>,
@@ -28,6 +29,7 @@ pub struct PlatformReceiver {
 }
 impl PlatformReceiver {
     pub fn new(
+        decoder: PlatformEventDecoder,
         current_secret: Secret<String>,
         previous_secret: Option<Secret<String>>,
         inbox: Arc<dyn PlatformInbox>,
@@ -41,6 +43,7 @@ impl PlatformReceiver {
             return Err(PlatformError::Invalid);
         }
         Ok(Self {
+            decoder,
             current_secret,
             previous_secret,
             inbox,
@@ -68,6 +71,34 @@ pub fn router(state: PlatformReceiver) -> Router {
         .with_state(state)
 }
 
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(inbound))]
+pub struct PlatformOpenApi;
+
+#[utoipa::path(
+    post,
+    path = "/platform/inbound",
+    operation_id = "platform_inbound",
+    summary = "Receive a signed hub event",
+    description = "Authenticates raw JSON using the X-Suite signature headers. Duplicate and unknown events are acknowledged. Unavailable handlers or storage return 503 for retry.",
+    request_body(content = serde_json::Value, content_type = "application/json"),
+    params(
+        ("x-suite-source" = String, Header, description = "Configured hub source"),
+        ("x-suite-timestamp" = String, Header, description = "Canonical Unix seconds within 300 seconds"),
+        ("x-suite-delivery-id" = String, Header, description = "Delivery attempt ID"),
+        ("x-suite-signature" = String, Header, description = "HMAC-SHA256 signature")
+    ),
+    responses(
+        (status = 204, description = "Applied, duplicate or unknown event"),
+        (status = 401, description = "Invalid signature headers"),
+        (status = 409, description = "Event ID reused with changed bytes"),
+        (status = 413, description = "Body too large"),
+        (status = 415, description = "JSON content type required"),
+        (status = 422, description = "Invalid event"),
+        (status = 503, description = "Retry after handler or storage failure")
+    ),
+    tag = "platform"
+)]
 async fn inbound(
     State(state): State<PlatformReceiver>,
     headers: HeaderMap,
@@ -97,7 +128,7 @@ async fn inbound(
         || delivery_id.is_empty()
         || delivery_id.len() > MAX_DELIVERY_ID_BYTES
         || delivery_id.chars().any(char::is_control)
-        || required("x-suite-source")? != PLATFORM_SOURCE_APP
+        || required("x-suite-source")? != state.decoder.source_app()
         || !verify_webhook_hmac_sha256(
             std::iter::once(state.current_secret.expose().as_bytes()).chain(
                 state
@@ -123,7 +154,10 @@ async fn inbound(
             "The request content type must be JSON",
         ));
     }
-    let event = PlatformEvent::decode(&body).map_err(api_error)?;
+    let event = state
+        .decoder
+        .decode(&body, state.clock.now())
+        .map_err(api_error)?;
     state
         .inbox
         .receive(&event, Sha256::digest(&body).into(), state.handler.as_ref())

@@ -41,11 +41,20 @@ pub struct EventContext<'a> {
     connection: Option<&'a mut sqlx::PgConnection>,
     marker: std::marker::PhantomData<&'a ()>,
 }
-impl EventContext<'_> {
-    pub(crate) fn memory() -> Self {
+impl<'a> EventContext<'a> {
+    /// A context for an inbox without a shared database transaction.
+    pub fn detached() -> Self {
         Self {
             #[cfg(feature = "postgres")]
             connection: None,
+            marker: std::marker::PhantomData,
+        }
+    }
+    /// Wrap the connection owned by the caller's receipt transaction.
+    #[cfg(feature = "postgres")]
+    pub fn with_postgres(connection: &'a mut sqlx::PgConnection) -> Self {
+        Self {
+            connection: Some(connection),
             marker: std::marker::PhantomData,
         }
     }
@@ -57,6 +66,14 @@ impl EventContext<'_> {
 
 #[async_trait]
 pub trait PlatformEventHandler: Send + Sync {
+    /// Perform network work before claiming the receipt or opening a transaction.
+    /// When present, the returned handler applies the prepared result instead.
+    async fn prepare(
+        &self,
+        _event: &PlatformEvent,
+    ) -> Result<Option<std::sync::Arc<dyn PlatformEventHandler>>, PlatformError> {
+        Ok(None)
+    }
     /// Return `Unavailable` for a retry, or `Invalid` for permanent rejection.
     /// Use `context.postgres()` for writes that must commit with the receipt.
     async fn handle(
@@ -75,7 +92,8 @@ pub enum ReceiptOutcome {
 #[async_trait]
 pub trait PlatformInbox: Send + Sync {
     /// Serialize concurrent receipt of an event ID, reject a changed body and
-    /// record completion only after the handler succeeds. Unknown types are
+    /// call `handler.prepare` before opening the receipt transaction, and record
+    /// completion only after the selected handler succeeds. Unknown types are
     /// recorded without calling the handler. Cancellation must release the claim.
     async fn receive(
         &self,

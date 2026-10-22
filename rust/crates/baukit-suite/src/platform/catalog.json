@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "types": [
     {
-      "type": "schluesselbund.entitlements.changed",
+      "type": "platform.entitlements.changed",
       "naturalKey": "suiteSubject",
       "fields": [
         {
@@ -27,7 +27,7 @@
       ]
     },
     {
-      "type": "schluesselbund.account.updated",
+      "type": "platform.account.updated",
       "naturalKey": "suiteSubject",
       "fields": [
         {
@@ -46,7 +46,7 @@
       ]
     },
     {
-      "type": "schluesselbund.account.erasure_requested",
+      "type": "platform.account.erasure_requested",
       "naturalKey": "suiteSubject",
       "fields": [
         {
@@ -63,7 +63,7 @@
       ]
     },
     {
-      "type": "schluesselbund.preferences.changed",
+      "type": "platform.preferences.changed",
       "naturalKey": "suiteSubject",
       "fields": [
         {
@@ -82,7 +82,7 @@
       ]
     },
     {
-      "type": "schluesselbund.onboarding.shared",
+      "type": "platform.onboarding.shared",
       "naturalKey": "suiteSubject",
       "fields": [
         {
@@ -108,7 +108,7 @@
       ]
     },
     {
-      "type": "schluesselbund.family.membership_changed",
+      "type": "platform.family.membership_changed",
       "naturalKey": "suiteSubject",
       "fields": [
         {
@@ -151,7 +151,7 @@
       ]
     },
     {
-      "type": "schluesselbund.organization.membership_changed",
+      "type": "platform.organization.membership_changed",
       "naturalKey": "suiteSubject",
       "fields": [
         {
@@ -189,7 +189,7 @@
       ]
     },
     {
-      "type": "schluesselbund.seat.changed",
+      "type": "platform.seat.changed",
       "naturalKey": "suiteSubject",
       "fields": [
         {

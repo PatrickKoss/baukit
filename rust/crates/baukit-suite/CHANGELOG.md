@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Add read-through entitlement refresh with per-subject single-flight, explicit free fallback, transactional cache erasure and batched receipt retention. Configure the hub source and event prefix, prepare pulls before receipt transactions, and keep cached ticket verification available during JWKS refresh.
+- Revise the unreleased platform API: public event context constructors, `PlatformEventDecoder`, `PlatformEventHandler::prepare`, cache revision and erasure methods, a required source for hub reads, `EntitlementSourceError`, and detailed configuration errors from `ticket_verifier`.
+
 - Add the optional `platform` feature with typed hub events, a signed receiver, transactional PostgreSQL receipts, entitlement caches, standalone reads and a cached Ed25519 ticket verifier.
 
 ## [0.10.32] - 2026-10-21

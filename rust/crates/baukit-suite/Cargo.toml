@@ -22,7 +22,7 @@ http = ["runtime", "dep:axum", "dep:utoipa", "dep:baukit-http"]
 jobs = ["runtime"]
 runtime = ["postgres", "dep:baukit-core", "dep:baukit-credential-vault", "dep:baukit-ratelimit", "dep:rand", "dep:tokio"]
 delivery = ["runtime", "dep:baukit-egress", "dep:reqwest"]
-platform = ["dep:axum", "dep:baukit-http", "dep:baukit-core", "dep:baukit-egress", "dep:reqwest", "dep:tokio", "dep:aws-lc-rs"]
+platform = ["dep:utoipa", "dep:axum", "dep:baukit-http", "dep:baukit-core", "dep:baukit-egress", "dep:reqwest", "dep:tokio", "dep:aws-lc-rs"]
 
 [dependencies]
 aws-lc-rs = { workspace = true, optional = true }

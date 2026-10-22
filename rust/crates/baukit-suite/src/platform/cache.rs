@@ -1,8 +1,13 @@
 use super::*;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, sync::Arc};
-use tokio::sync::RwLock;
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Weak},
+};
+use tokio::sync::{Mutex, RwLock};
+
+pub const FREE_CACHE_TTL_SECONDS: i64 = 60;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -34,7 +39,7 @@ impl EntitlementSnapshot {
         if self.subject.is_empty()
             || self.product_id.is_empty()
             || self.tier.is_empty()
-            || self.revision > i64::MAX as u64
+            || self.revision > MAX_TICKET_REVISION
             || self.valid_until < 0
         {
             return Err(PlatformError::Invalid);
@@ -52,6 +57,10 @@ pub trait EntitlementCache: Send + Sync {
         product_id: &str,
         now: i64,
     ) -> Result<Option<EntitlementSnapshot>, PlatformError>;
+    /// The retained revision cursor, including expired snapshots.
+    async fn revision(&self, subject: &str, product_id: &str) -> Result<u64, PlatformError>;
+    /// Remove every product snapshot and revision cursor for this subject.
+    async fn forget(&self, subject: &str) -> Result<(), PlatformError>;
     /// Ignore older revisions and shorter-lived repeats of the same revision.
     async fn store(&self, snapshot: &EntitlementSnapshot) -> Result<(), PlatformError>;
     /// A PostgreSQL adapter uses the receipt transaction when available. Other
@@ -84,6 +93,21 @@ impl EntitlementCache for InMemoryEntitlementCache {
             .get(&(subject.into(), product_id.into()))
             .filter(|s| now < s.valid_until)
             .cloned())
+    }
+    async fn revision(&self, subject: &str, product_id: &str) -> Result<u64, PlatformError> {
+        Ok(self
+            .entries
+            .read()
+            .await
+            .get(&(subject.into(), product_id.into()))
+            .map_or(0, |s| s.revision))
+    }
+    async fn forget(&self, subject: &str) -> Result<(), PlatformError> {
+        self.entries
+            .write()
+            .await
+            .retain(|(entry_subject, _), _| entry_subject != subject);
+        Ok(())
     }
     async fn store(&self, snapshot: &EntitlementSnapshot) -> Result<(), PlatformError> {
         snapshot.validate()?;
@@ -121,14 +145,26 @@ pub struct Entitlements {
 }
 #[derive(Clone)]
 enum EntitlementMode {
-    Hub(Arc<dyn EntitlementCache>),
+    Hub {
+        cache: Arc<dyn EntitlementCache>,
+        source: Arc<dyn EntitlementSource>,
+        flights: Arc<Mutex<BTreeMap<String, Weak<Mutex<()>>>>>,
+    },
     Standalone(StandaloneEntitlements),
 }
 impl Entitlements {
-    pub fn hub(product_id: String, cache: Arc<dyn EntitlementCache>) -> Self {
+    pub fn hub(
+        product_id: String,
+        cache: Arc<dyn EntitlementCache>,
+        source: Arc<dyn EntitlementSource>,
+    ) -> Self {
         Self {
             product_id,
-            mode: EntitlementMode::Hub(cache),
+            mode: EntitlementMode::Hub {
+                cache,
+                source,
+                flights: Arc::default(),
+            },
         }
     }
     pub fn standalone(product_id: String, default: StandaloneEntitlements) -> Self {
@@ -143,7 +179,45 @@ impl Entitlements {
         now: i64,
     ) -> Result<Option<EntitlementSnapshot>, PlatformError> {
         match &self.mode {
-            EntitlementMode::Hub(cache) => cache.get(subject, &self.product_id, now).await,
+            EntitlementMode::Hub {
+                cache,
+                source,
+                flights,
+            } => {
+                if let Some(snapshot) = cache.get(subject, &self.product_id, now).await? {
+                    return Ok(Some(snapshot));
+                }
+                let flight = {
+                    let mut flights = flights.lock().await;
+                    flights.retain(|_, lock| lock.strong_count() > 0);
+                    match flights.get(subject).and_then(Weak::upgrade) {
+                        Some(lock) => lock,
+                        None => {
+                            let lock = Arc::new(Mutex::new(()));
+                            flights.insert(subject.into(), Arc::downgrade(&lock));
+                            lock
+                        }
+                    }
+                };
+                let _guard = flight.lock().await;
+                if let Some(snapshot) = cache.get(subject, &self.product_id, now).await? {
+                    return Ok(Some(snapshot));
+                }
+                let revision = cache.revision(subject, &self.product_id).await?;
+                let snapshot =
+                    pull_snapshot(source.as_ref(), subject, &self.product_id, revision, now)
+                        .await?;
+                if snapshot.valid_until <= now {
+                    return Err(PlatformError::Unavailable);
+                }
+                cache.store(&snapshot).await?;
+                // A concurrent event may have stored a newer revision during the pull.
+                cache
+                    .get(subject, &self.product_id, now)
+                    .await?
+                    .map(Some)
+                    .ok_or(PlatformError::Unavailable)
+            }
             EntitlementMode::Standalone(default) => Ok(Some(EntitlementSnapshot {
                 subject: subject.into(),
                 product_id: self.product_id.clone(),
@@ -186,11 +260,68 @@ pub trait EntitlementSource: Send + Sync {
         &self,
         subject: &str,
         product_id: &str,
-    ) -> Result<EntitlementSnapshot, PlatformError>;
+    ) -> Result<EntitlementSnapshot, EntitlementSourceError>;
 }
 
-/// Composes entitlement refresh with a product handler for all other events.
-/// Pull failure leaves the receipt uncommitted, so the hub retries the event.
+/// Only these two hub responses mean no entitlements. Other HTTP failures
+/// remain errors, including product availability and service authorization errors.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum EntitlementSourceError {
+    #[error("no_entitlements")]
+    NoEntitlements,
+    #[error("entitlement_source_unavailable")]
+    Unavailable,
+    #[error("entitlement_source_invalid")]
+    Invalid,
+}
+impl EntitlementSourceError {
+    pub fn from_hub_response(status: u16, code: &str) -> Self {
+        match (status, code) {
+            (404, "platform_subject_not_found") | (403, "account_inactive") => Self::NoEntitlements,
+            _ => Self::Unavailable,
+        }
+    }
+}
+impl From<EntitlementSourceError> for PlatformError {
+    fn from(_: EntitlementSourceError) -> Self {
+        // A bad pull must not permanently reject an otherwise valid notification.
+        Self::Unavailable
+    }
+}
+async fn pull_snapshot(
+    source: &dyn EntitlementSource,
+    subject: &str,
+    product_id: &str,
+    revision: u64,
+    now: i64,
+) -> Result<EntitlementSnapshot, PlatformError> {
+    let snapshot = match source.pull(subject, product_id).await {
+        Ok(snapshot) => snapshot,
+        Err(EntitlementSourceError::NoEntitlements) => EntitlementSnapshot {
+            subject: subject.into(),
+            product_id: product_id.into(),
+            tier: "free".into(),
+            features: Vec::new(),
+            revision,
+            valid_until: now.saturating_add(FREE_CACHE_TTL_SECONDS),
+            grace_until: None,
+        },
+        Err(error) => return Err(error.into()),
+    };
+    snapshot
+        .validate()
+        .map_err(|_| PlatformError::Unavailable)?;
+    if snapshot.subject != subject
+        || snapshot.product_id != product_id
+        || snapshot.revision < revision
+    {
+        return Err(PlatformError::Unavailable);
+    }
+    Ok(snapshot)
+}
+
+/// Pulls before the receipt transaction; applies the revision-checked snapshot
+/// inside it. Pull failure leaves the receipt uncommitted for a hub retry.
 pub struct EntitlementEventHandler {
     product_id: String,
     cache: Arc<dyn EntitlementCache>,
@@ -212,28 +343,58 @@ impl EntitlementEventHandler {
         }
     }
 }
+struct PreparedEntitlements {
+    cache: Arc<dyn EntitlementCache>,
+    snapshot: EntitlementSnapshot,
+}
+#[async_trait]
+impl PlatformEventHandler for PreparedEntitlements {
+    async fn handle(
+        &self,
+        _: &PlatformEvent,
+        context: &mut EventContext<'_>,
+    ) -> Result<(), PlatformError> {
+        self.cache.store_in_context(&self.snapshot, context).await
+    }
+}
 #[async_trait]
 impl PlatformEventHandler for EntitlementEventHandler {
+    async fn prepare(
+        &self,
+        event: &PlatformEvent,
+    ) -> Result<Option<Arc<dyn PlatformEventHandler>>, PlatformError> {
+        if let PlatformEventKind::EntitlementsChanged(changed) = event.kind() {
+            if changed.product != self.product_id {
+                return Err(PlatformError::Invalid);
+            }
+            let revision = self
+                .cache
+                .revision(&changed.suite_subject, &self.product_id)
+                .await?
+                .max(changed.revision);
+            let snapshot = pull_snapshot(
+                self.source.as_ref(),
+                &changed.suite_subject,
+                &self.product_id,
+                revision,
+                chrono::Utc::now().timestamp(),
+            )
+            .await?;
+            return Ok(Some(Arc::new(PreparedEntitlements {
+                cache: self.cache.clone(),
+                snapshot,
+            })));
+        }
+        self.next.prepare(event).await
+    }
     async fn handle(
         &self,
         event: &PlatformEvent,
         context: &mut EventContext<'_>,
     ) -> Result<(), PlatformError> {
-        if let PlatformEventKind::EntitlementsChanged(changed) = event.kind() {
-            if changed.product != self.product_id {
-                return Err(PlatformError::Invalid);
-            }
-            let snapshot = self
-                .source
-                .pull(&changed.suite_subject, &self.product_id)
-                .await?;
-            if snapshot.subject != changed.suite_subject
-                || snapshot.product_id != self.product_id
-                || snapshot.revision < changed.revision
-            {
-                return Err(PlatformError::Unavailable);
-            }
-            return self.cache.store_in_context(&snapshot, context).await;
+        if matches!(event.kind(), PlatformEventKind::EntitlementsChanged(_)) {
+            // Inbox implementations must call prepare before claiming a receipt.
+            return Err(PlatformError::Invalid);
         }
         self.next.handle(event, context).await
     }

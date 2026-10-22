@@ -17,6 +17,23 @@ impl PlatformInbox for InMemoryPlatformInbox {
         body_hash: [u8; 32],
         handler: &dyn PlatformEventHandler,
     ) -> Result<ReceiptOutcome, PlatformError> {
+        {
+            let receipts = self.receipts.lock().await;
+            if let Some(previous) = receipts.get(&event.envelope().event_id) {
+                return if *previous == body_hash {
+                    Ok(ReceiptOutcome::Duplicate)
+                } else {
+                    Err(PlatformError::EventIdConflict)
+                };
+            }
+        }
+        let known = !matches!(event.kind(), PlatformEventKind::Unknown);
+        let prepared = if known {
+            handler.prepare(event).await?
+        } else {
+            None
+        };
+        let handler = prepared.as_deref().unwrap_or(handler);
         let mut receipts = self.receipts.lock().await;
         if let Some(previous) = receipts.get(&event.envelope().event_id) {
             return if *previous == body_hash {
@@ -25,8 +42,8 @@ impl PlatformInbox for InMemoryPlatformInbox {
                 Err(PlatformError::EventIdConflict)
             };
         }
-        if !matches!(event.kind(), PlatformEventKind::Unknown) {
-            handler.handle(event, &mut EventContext::memory()).await?;
+        if known {
+            handler.handle(event, &mut EventContext::detached()).await?;
         }
         receipts.insert(event.envelope().event_id.clone(), body_hash);
         Ok(ReceiptOutcome::Applied)

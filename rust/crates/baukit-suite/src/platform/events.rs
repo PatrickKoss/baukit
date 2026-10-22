@@ -1,14 +1,19 @@
 use baukit_events::{EventEnvelope, validate_event_envelope};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
 use uuid::Uuid;
 
 use super::PlatformError;
 use crate::domain::{PayloadCatalog, PayloadError};
 
-/// Required by the immutable v1 hub wire contract.
-pub const PLATFORM_SOURCE_APP: &str = "schluesselbund";
+/// Payload rules use a neutral prefix; the decoder supplies the configured prefix.
 pub const PLATFORM_CATALOG_JSON: &str = include_str!("catalog.json");
+pub const MAX_EVENT_FUTURE_SECONDS: i64 = 300;
+const MAX_HUB_IDENTIFIER_BYTES: usize = 64;
+static CATALOG: LazyLock<Result<PayloadCatalog, PlatformError>> = LazyLock::new(|| {
+    PayloadCatalog::from_json(PLATFORM_CATALOG_JSON).map_err(|_| PlatformError::Invalid)
+});
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -93,39 +98,34 @@ pub struct SeatChanged {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum PlatformEventKind {
-    #[serde(rename = "schluesselbund.entitlements.changed")]
+    #[serde(rename = "entitlements.changed")]
     EntitlementsChanged(EntitlementsChanged),
-    #[serde(rename = "schluesselbund.account.updated")]
+    #[serde(rename = "account.updated")]
     AccountUpdated(SubjectRevision),
-    #[serde(rename = "schluesselbund.account.erasure_requested")]
+    #[serde(rename = "account.erasure_requested")]
     ErasureRequested(ErasureRequested),
-    #[serde(rename = "schluesselbund.preferences.changed")]
+    #[serde(rename = "preferences.changed")]
     PreferencesChanged(SubjectRevision),
-    #[serde(rename = "schluesselbund.onboarding.shared")]
+    #[serde(rename = "onboarding.shared")]
     OnboardingShared(OnboardingShared),
-    #[serde(rename = "schluesselbund.family.membership_changed")]
+    #[serde(rename = "family.membership_changed")]
     FamilyMembershipChanged(FamilyMembershipChanged),
-    #[serde(rename = "schluesselbund.organization.membership_changed")]
+    #[serde(rename = "organization.membership_changed")]
     OrganizationMembershipChanged(OrganizationMembershipChanged),
-    #[serde(rename = "schluesselbund.seat.changed")]
+    #[serde(rename = "seat.changed")]
     SeatChanged(SeatChanged),
     #[serde(other)]
     Unknown,
 }
 
 /// Validated envelope and typed payload. Unknown types retain their raw envelope.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "EventEnvelope", into = "EventEnvelope")]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(into = "EventEnvelope")]
 pub struct PlatformEvent {
     envelope: EventEnvelope,
     kind: PlatformEventKind,
 }
 impl PlatformEvent {
-    pub fn decode(body: &[u8]) -> Result<Self, PlatformError> {
-        let envelope: EventEnvelope =
-            serde_json::from_slice(body).map_err(|_| PlatformError::Invalid)?;
-        Self::try_from(envelope)
-    }
     pub fn envelope(&self) -> &EventEnvelope {
         &self.envelope
     }
@@ -133,36 +133,80 @@ impl PlatformEvent {
         &self.kind
     }
 }
-impl TryFrom<EventEnvelope> for PlatformEvent {
-    type Error = PlatformError;
-    fn try_from(envelope: EventEnvelope) -> Result<Self, Self::Error> {
-        // Hub deliveries can retry for longer than the suite's seven-day event age.
-        validate_event_envelope(&envelope, &envelope.user_id, envelope.occurred_at)
-            .map_err(|_| PlatformError::Invalid)?;
-        if envelope.source_app != PLATFORM_SOURCE_APP {
+/// A hub's source and event prefix are deployment settings, not payload rules.
+#[derive(Clone, Debug)]
+pub struct PlatformEventDecoder {
+    source_app: String,
+    event_type_prefix: String,
+}
+impl PlatformEventDecoder {
+    pub fn new(
+        source_app: String,
+        event_type_prefix: Option<String>,
+    ) -> Result<Self, PlatformError> {
+        let event_type_prefix = event_type_prefix.unwrap_or_else(|| source_app.clone());
+        if source_app.is_empty()
+            || source_app.trim() != source_app
+            || source_app.chars().any(char::is_control)
+            || source_app.len() > MAX_HUB_IDENTIFIER_BYTES
+            || event_type_prefix.is_empty()
+            || event_type_prefix.len() > MAX_HUB_IDENTIFIER_BYTES
+            || !event_type_prefix.as_bytes()[0].is_ascii_lowercase()
+            || !event_type_prefix
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+        {
             return Err(PlatformError::Invalid);
         }
-        let catalog =
-            PayloadCatalog::from_json(PLATFORM_CATALOG_JSON).map_err(|_| PlatformError::Invalid)?;
-        let kind = match catalog.validate(&envelope.event_type, envelope.payload.clone()) {
-            Err(PayloadError::UnsupportedType(_)) => PlatformEventKind::Unknown,
-            Err(_) => return Err(PlatformError::Invalid),
-            Ok(_) => {
-                if envelope
-                    .payload
-                    .get("suiteSubject")
-                    .and_then(|v| v.as_str())
-                    != Some(envelope.user_id.as_str())
-                {
-                    return Err(PlatformError::Invalid);
+        Ok(Self {
+            source_app,
+            event_type_prefix,
+        })
+    }
+    pub fn source_app(&self) -> &str {
+        &self.source_app
+    }
+    pub fn decode(&self, body: &[u8], now: DateTime<Utc>) -> Result<PlatformEvent, PlatformError> {
+        let envelope: EventEnvelope =
+            serde_json::from_slice(body).map_err(|_| PlatformError::Invalid)?;
+        // Deliveries may retry beyond the suite's seven-day event age.
+        validate_event_envelope(&envelope, &envelope.user_id, envelope.occurred_at)
+            .map_err(|_| PlatformError::Invalid)?;
+        if envelope.source_app != self.source_app
+            || envelope.occurred_at.signed_duration_since(now)
+                > chrono::TimeDelta::seconds(MAX_EVENT_FUTURE_SECONDS)
+        {
+            return Err(PlatformError::Invalid);
+        }
+        let suffix = envelope
+            .event_type
+            .strip_prefix(&self.event_type_prefix)
+            .and_then(|suffix| suffix.strip_prefix('.'));
+        let catalog = CATALOG.as_ref().map_err(|error| *error)?;
+        let kind = match suffix {
+            None => PlatformEventKind::Unknown,
+            Some(suffix) => {
+                match catalog.validate(&format!("platform.{suffix}"), envelope.payload.clone()) {
+                    Err(PayloadError::UnsupportedType(_)) => PlatformEventKind::Unknown,
+                    Err(_) => return Err(PlatformError::Invalid),
+                    Ok(_) => {
+                        if envelope
+                            .payload
+                            .get("suiteSubject")
+                            .and_then(|v| v.as_str())
+                            != Some(envelope.user_id.as_str())
+                        {
+                            return Err(PlatformError::Invalid);
+                        }
+                        serde_json::from_value(
+                            serde_json::json!({"type": suffix, "payload": envelope.payload}),
+                        )
+                        .map_err(|_| PlatformError::Invalid)?
+                    }
                 }
-                serde_json::from_value(serde_json::json!({
-                    "type": envelope.event_type, "payload": envelope.payload
-                }))
-                .map_err(|_| PlatformError::Invalid)?
             }
         };
-        Ok(Self { envelope, kind })
+        Ok(PlatformEvent { envelope, kind })
     }
 }
 impl From<PlatformEvent> for EventEnvelope {

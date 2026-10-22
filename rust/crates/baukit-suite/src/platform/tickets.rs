@@ -7,6 +7,7 @@ use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time::Instant};
 use url::Url;
 
+pub const MAX_TICKET_REVISION: u64 = 9_007_199_254_740_991;
 pub const MAX_TICKET_LIFETIME_SECONDS: i64 = 7 * 24 * 60 * 60;
 pub const TICKET_IAT_LEEWAY_SECONDS: i64 = 60;
 const JWKS_TTL: Duration = Duration::from_secs(300);
@@ -55,6 +56,7 @@ impl TicketClaims {
             || self.sub.is_empty()
             || self.aud.is_empty()
             || self.tier.is_empty()
+            || self.rev > MAX_TICKET_REVISION
             || self.iat < 0
             || self.iat > now.saturating_add(TICKET_IAT_LEEWAY_SECONDS)
             || self.exp <= self.iat
@@ -246,6 +248,7 @@ pub struct TicketVerifier {
     product_id: String,
     source: Arc<dyn TicketJwksSource>,
     cache: Arc<Mutex<KeyCache>>,
+    refresh: Arc<Mutex<()>>,
 }
 impl TicketVerifier {
     pub fn new(
@@ -273,50 +276,65 @@ impl TicketVerifier {
             product_id,
             source,
             cache: Arc::default(),
+            refresh: Arc::default(),
         })
+    }
+    async fn cached_key(&self, kid: &str) -> Option<TicketJwk> {
+        let cache = self.cache.lock().await;
+        cache
+            .fetched_at
+            .filter(|at| at.elapsed() < JWKS_TTL)
+            .and_then(|_| cache.keys.get(kid).cloned())
     }
     pub async fn verify(&self, ticket: &str) -> Result<TicketClaims, TicketError> {
         self.verify_at(ticket, chrono::Utc::now().timestamp()).await
     }
     pub async fn verify_at(&self, ticket: &str, now: i64) -> Result<TicketClaims, TicketError> {
         let parsed = ParsedTicket::parse(ticket)?;
-        let key = {
+        if let Some(key) = self.cached_key(&parsed.kid).await {
+            return parsed.verify(&key, &self.issuer, &self.product_id, now);
+        }
+        let _refresh = self.refresh.lock().await;
+        // Another caller may have refreshed while this caller waited.
+        if let Some(key) = self.cached_key(&parsed.kid).await {
+            return parsed.verify(&key, &self.issuer, &self.product_id, now);
+        }
+        {
             let mut cache = self.cache.lock().await;
             let fresh = cache.fetched_at.is_some_and(|at| at.elapsed() < JWKS_TTL);
-            if fresh && let Some(key) = cache.keys.get(&parsed.kid) {
-                key.clone()
-            } else {
-                // A global cooldown bounds unknown-kid floods and failed fetches.
-                // Holding the mutex coalesces concurrent refreshes.
-                if fresh {
-                    if cache
-                        .unknown_attempted_at
-                        .is_some_and(|at| at.elapsed() < REFRESH_COOLDOWN)
-                    {
-                        return Err(TicketError::Invalid);
-                    }
-                    cache.unknown_attempted_at = Some(Instant::now());
-                } else if cache
-                    .attempted_at
+            if fresh {
+                if cache
+                    .unknown_attempted_at
                     .is_some_and(|at| at.elapsed() < REFRESH_COOLDOWN)
                 {
-                    return Err(TicketError::KeysUnavailable);
+                    return Err(TicketError::Invalid);
                 }
-                cache.attempted_at = Some(Instant::now());
-                let keys = self
-                    .source
-                    .fetch()
-                    .await?
-                    .by_kid()
-                    .map_err(|_| TicketError::KeysUnavailable)?;
-                cache.keys = keys;
-                cache.fetched_at = Some(Instant::now());
-                cache
-                    .keys
-                    .get(&parsed.kid)
-                    .cloned()
-                    .ok_or(TicketError::Invalid)?
+                cache.unknown_attempted_at = Some(Instant::now());
+            } else if cache
+                .attempted_at
+                .is_some_and(|at| at.elapsed() < REFRESH_COOLDOWN)
+            {
+                return Err(TicketError::KeysUnavailable);
             }
+            cache.attempted_at = Some(Instant::now());
+        }
+        // The refresh lock coalesces fetches, but cached-key reads need only
+        // the short cache lock and remain available during this network call.
+        let keys = self
+            .source
+            .fetch()
+            .await?
+            .by_kid()
+            .map_err(|_| TicketError::KeysUnavailable)?;
+        let key = {
+            let mut cache = self.cache.lock().await;
+            cache.keys = keys;
+            cache.fetched_at = Some(Instant::now());
+            cache
+                .keys
+                .get(&parsed.kid)
+                .cloned()
+                .ok_or(TicketError::Invalid)?
         };
         parsed.verify(&key, &self.issuer, &self.product_id, now)
     }
