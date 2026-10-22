@@ -113,10 +113,10 @@ openapi-client:
 	sh scripts/openapi-client.sh
 
 db-up:
-	docker compose up -d postgres
+	sh scripts/docker.sh compose up -d postgres
 
 {% if context.auth_enabled and not context.auth_oidc %}dev:
-	docker compose up -d redis
+	sh scripts/docker.sh compose up -d redis
 
 {% endif %}{% if context.auth_oidc %}keycloak-policy:
 	python3 scripts/keycloak_policy.py --environment-class development
@@ -135,15 +135,15 @@ keycloak-theme-test:
 {% endif %}
 
 keycloak-reconcile: keycloak-policy
-	docker compose up -d --wait keycloak
+	sh scripts/docker.sh compose up -d --wait keycloak
 	python3 scripts/reconcile_keycloak.py
 
 dev: keycloak-reconcile
-	docker compose up -d --wait redis
+	sh scripts/docker.sh compose up -d --wait redis
 
 {% endif %}
 db-down:
-	docker compose down
+	sh scripts/docker.sh compose down
 
 lockfiles: preflight
 	sh scripts/lockfiles.sh

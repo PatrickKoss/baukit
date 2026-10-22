@@ -36,6 +36,11 @@ class AndroidQaTests(unittest.TestCase):
         self.scripts.mkdir(parents=True)
         for name in ("android-env.sh", "services.sh", "android-adb.py", "run-maestro.sh"):
             (self.scripts / name).write_text(render((TEMPLATES / "scripts/qa" / name).read_text(), True))
+        docker_wrapper = self.root / "scripts/docker.sh"
+        docker_wrapper.parent.mkdir()
+        docker_wrapper.write_text(render(
+            (TEMPLATES.parents[1] / "backend/scripts/docker.sh").read_text(), True,
+        ))
         self.state = self.mobile / ".qa"
         self.state.mkdir()
         self.sdk = self.root / "sdk"

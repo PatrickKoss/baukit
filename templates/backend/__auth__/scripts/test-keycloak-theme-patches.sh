@@ -16,7 +16,7 @@ services:
 YAML
 
 compose() {
-  KEYCLOAK_IMAGE="$keycloak_image" docker compose \
+  KEYCLOAK_IMAGE="$keycloak_image" sh scripts/docker.sh compose \
     -f compose.yaml -f "$theme_compose" -p "$theme_project" "$@"
 }
 

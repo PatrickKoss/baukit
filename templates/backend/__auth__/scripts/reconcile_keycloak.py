@@ -699,7 +699,10 @@ class ComposeRecovery:
         self.service = service
 
     def command(self, arguments: list[str], environment: dict[str, str] | None = None) -> None:
-        command = ["docker", "compose", "-f", str(self.compose_file), *arguments]
+        command = [
+            "sh", str(Path(__file__).with_name("docker.sh")),
+            "compose", "-f", str(self.compose_file), *arguments,
+        ]
         result = subprocess.run(
             command,
             env=environment,

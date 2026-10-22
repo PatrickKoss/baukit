@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Generated mobile apps pin Expo 57.0.31 and expo-router 57.0.29 to match Expo dependency checks.
+
 ## [0.10.32] - 2026-10-21
 
 ## [0.10.31] - 2026-10-20

@@ -63,7 +63,7 @@ Remove the `keycloak` service, its volume and `keycloak/` tree when using an
 external issuer. If you use the optional Compose backend profile, also remove
 its Keycloak dependency and set `AUTH__JWKS_URI` and `MCP__JWKS_URI` under the
 product prefix to that provider's key endpoints. Keep both issuers public.
-Start Redis with `docker compose up -d redis` and PostgreSQL
+Start Redis with `sh scripts/docker.sh compose up -d redis` and PostgreSQL
 with `make db-up`. Do not run the Keycloak reconciliation targets. The generated
 `provider_config` test loads an external issuer from TOML and calls the verifier
 and authenticated product route with its signed token.

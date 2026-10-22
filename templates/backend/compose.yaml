@@ -60,6 +60,7 @@ services:
       dockerfile: backend/Dockerfile
       target: api
       args:
+        CARGO_TARGET_CACHE_PREFIX: ${CARGO_TARGET_CACHE_PREFIX:?Use sh scripts/docker.sh compose to set the checkout cache prefix}
         BACKEND_CONTEXT: backend
         LIMITS_FILE: limits.json
     env_file:

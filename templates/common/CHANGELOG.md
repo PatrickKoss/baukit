@@ -2,7 +2,10 @@
 
 ## [Unreleased]
 
-## [0.10.32] - 2026-10-21
+{% if context.backend or context.mobile %}{% if context.mobile %}- Generated mobile apps pin Expo 57.0.31 and expo-router 57.0.29 to match Expo dependency checks.
+{% endif %}{% if context.backend %}- Generated backend Docker callers use a checkout path hash for the Cargo target cache. Override it with `CARGO_TARGET_CACHE_PREFIX`.
+{% endif %}
+{% endif %}## [0.10.32] - 2026-10-21
 
 ## [0.10.31] - 2026-10-20
 

@@ -12,8 +12,9 @@ ops_port="${BAUKIT_QA_OPS_PORT:-19090}"
 {% if context.auth_oidc %}keycloak_port="${BAUKIT_QA_KEYCLOAK_PORT:-18081}"
 {% endif %}
 compose=(
-  docker compose
-  --project-name "$compose_project"
+{% if context.backend %}  sh "$root/scripts/docker.sh" compose
+{% else %}  docker compose
+{% endif %}  --project-name "$compose_project"
   --project-directory "$root"
   -f "$root/compose.yaml"
   -f "$root/mobile/scripts/qa/docker-compose.qa.yml"

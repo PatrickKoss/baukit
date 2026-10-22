@@ -221,7 +221,8 @@ fn copied_file(container: &str, source: &str, destination: &Path) -> Result<Vec<
 }
 
 fn check_dockerfile(root: &Path, builder: &str) -> Result<()> {
-    let output = Command::new("docker")
+    let output = Command::new("sh")
+        .arg(root.join("scripts/docker.sh"))
         .args([
             "buildx",
             "build",
@@ -253,7 +254,10 @@ fn build_image(
     tag: &str,
     cache_prefix: Option<&str>,
 ) -> Result<()> {
-    let mut command = Command::new("docker");
+    let mut command = Command::new("sh");
+    command
+        .arg(root.join("scripts/docker.sh"))
+        .env_remove("CARGO_TARGET_CACHE_PREFIX");
     command.args([
         "buildx",
         "build",
@@ -266,10 +270,7 @@ fn build_image(
         tag,
     ]);
     if let Some(prefix) = cache_prefix {
-        command.args([
-            "--build-arg",
-            &format!("CARGO_TARGET_CACHE_PREFIX={prefix}"),
-        ]);
+        command.env("CARGO_TARGET_CACHE_PREFIX", prefix);
     }
     let output = command
         .arg("--file")
