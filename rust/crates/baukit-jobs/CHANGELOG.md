@@ -4,6 +4,15 @@ All notable changes to `baukit-jobs` are documented here.
 
 ## [Unreleased]
 
+- Add `PostgresJobStore::enqueue_deduplicated` and
+  `enqueue_deduplicated_in_transaction` to share a key only while a job is
+  pending or running. Existing idempotency behavior and public structs stay
+  unchanged.
+- Add `migrations/0004_baukit_jobs_active_deduplication.sql` and
+  `POSTGRES_MIGRATION_0004_SQL`. Products must copy it as a new ordered
+  migration before using active-job deduplication. Worker and authenticated
+  backend templates include it as migration 0007.
+
 ## [0.10.32] - 2026-10-21
 
 ## [0.10.31] - 2026-10-20

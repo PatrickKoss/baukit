@@ -11,8 +11,9 @@ defines the compatibility and migration requirements for that later change.
 ## Migration
 
 Copy `migrations/0001_baukit_jobs.sql`,
-`migrations/0002_baukit_jobs_failure_reason.sql`, and
-`migrations/0003_baukit_jobs_claim_by_type.sql` into the product's own
+`migrations/0002_baukit_jobs_failure_reason.sql`,
+`migrations/0003_baukit_jobs_claim_by_type.sql`, and
+`migrations/0004_baukit_jobs_active_deduplication.sql` into the product's own
 migrations in that order. Do not point a production service at this crate
 directory and do not run schema changes during application startup. A product
 may add foreign keys or indexes in a later migration, but the lifecycle columns
@@ -52,6 +53,21 @@ rows, so a claim reads only rows of the types it asks for. The migration drops
 and recreates the index in one transaction, which blocks reads and writes on
 `job_outbox` until it commits.
 
+Products with migrations 0001 through 0003 already applied must copy
+`rust/crates/baukit-jobs/migrations/0004_baukit_jobs_active_deduplication.sql`
+from the Baukit repository as their next ordered migration. The same SQL is
+available as `POSTGRES_MIGRATION_0004_SQL`. Apply it before using active-job
+deduplication. It adds nullable `dedupe_key` and the partial unique index
+`job_outbox_active_dedupe_idx` on `(job_type, dedupe_key)` for `pending` and
+`running` rows with a non-null dedupe key. Existing rows keep a null dedupe key.
+No keys are backfilled, and the permanent idempotency index stays unchanged.
+The migration locks `job_outbox` until commit while adding the column and
+building the index.
+
+New worker and authenticated backend templates include the same SQL in
+`backend/migrations/0007_baukit_jobs_active_deduplication.sql`. Existing products
+must add their own migration, without editing one they already applied.
+
 The terminal cleanup and fixed UTC slot APIs added after 0.2.1 need no schema
 migration. Cleanup is a `PostgresJobStore` method, so custom `JobStore`
 implementations also need no code change.
@@ -72,6 +88,52 @@ or `JobError::retryable_after`. The last form preserves a provider's
 job's `max_attempts` remains authoritative. Terminal jobs keep status `failed`
 and expose `failure_reason` as `permanent` or `attempts_exhausted` alongside
 the bounded diagnostic `last_error`.
+
+## Deduplicate against active jobs
+
+Use `PostgresJobStore::enqueue_deduplicated(job, dedupe_key)` when only one
+pending or running job of a type should exist for a key. For a domain mutation
+and enqueue that must commit together, call
+`enqueue_deduplicated_in_transaction(&mut transaction, job, dedupe_key)`.
+
+```rust,no_run
+use baukit_jobs::NewJob;
+use serde_json::json;
+
+let outcome = jobs
+    .enqueue_deduplicated(
+        NewJob::new("cache.refresh", json!({"resource_id": 42}), 3),
+        "resource:42",
+    )
+    .await?;
+```
+
+The key is scoped to `job_type`, must contain 1 to 500 characters, and cannot
+be blank. Pass a `NewJob` without an idempotency key. Combining the two modes
+returns `StoreError::InvalidInput`. `enqueue` and `enqueue_in_transaction`
+still deduplicate by idempotency key across every status, for as long as that
+row exists. The two kinds of key are independent.
+
+| Existing job with the same type and dedupe key | Result |
+| --- | --- |
+| Pending, including a future schedule or retry | Return it with `created = false` |
+| Running, including an expired lease or cancellation request | Return it with `created = false` |
+| Succeeded, failed, or cancelled | Insert a new job with `created = true` |
+| None | Insert a new job with `created = true` |
+
+A duplicate returns the existing job's payload, schedule, attempt budget, and
+lease without changing them. Concurrent enqueues cannot insert two active
+rows. The store locks an existing active row until commit and retries if a
+conflicting row becomes terminal before the lookup. Keep caller-owned
+transactions short. At repeatable read or serializable isolation, callers
+must retry the whole transaction after a PostgreSQL serialization failure.
+
+Retries and lease recovery keep the dedupe key. Requesting cancellation of a
+running job keeps the key occupied until the job becomes terminal. Cancelling
+a pending job releases it immediately. The existing cancellation methods that
+take a key match permanent idempotency keys; use the returned job ID to cancel
+an active-deduplicated job. `Job` and `NewJob` keep their existing fields, so
+retain the dedupe key in producer code when needed.
 
 ## Terminal-job cleanup
 

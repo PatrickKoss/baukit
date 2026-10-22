@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Include the forward active-job deduplication migration in generated worker
+  and authenticated backends as `0007_baukit_jobs_active_deduplication.sql`.
+
 ## [0.10.32] - 2026-10-21
 
 ## [0.10.31] - 2026-10-20

@@ -114,10 +114,10 @@ impl NewJob {
     }
 }
 
-/// Result of an idempotent enqueue operation.
+/// Result of an enqueue operation.
 #[derive(Clone, Debug, PartialEq)]
 pub struct EnqueueOutcome {
-    /// The inserted job or the previously inserted idempotent equivalent.
+    /// The inserted job or the existing job matching the enqueue's key.
     pub job: Job,
     /// Whether this call inserted the row.
     pub created: bool,
