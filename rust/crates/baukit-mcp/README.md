@@ -2,6 +2,14 @@
 
 Mount an OAuth-protected MCP resource at `/mcp` in an Axum backend.
 `router` takes an `Arc<dyn IdentityVerifier>` and verifies every request with it.
+If the verifier reports a temporary infrastructure failure, the transport returns
+HTTP 503 with `{"error":"identity_unavailable"}` and `Retry-After: 5`. This
+includes OIDC body-read failures and provider 408, 429, or 5xx responses. Fully
+received but invalid provider metadata or JWKS documents, other provider 4xx
+responses, and server configuration errors return HTTP 500 with
+`{"error":"identity_misconfigured"}` and no `Retry-After`. Both responses omit
+the OAuth challenge. Clients can retry temporary failures without signing in
+again.
 The caller selects the provider and enforces the resource audience or the
 provider's documented token binding. `McpConfig::issuer` names the authorization
 server in RFC 9728 metadata. HTTP is allowed only for loopback development.

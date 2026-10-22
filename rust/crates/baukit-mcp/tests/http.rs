@@ -1410,3 +1410,78 @@ async fn product_identity_instructions_and_success_prefix_preserve_structured_co
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn verifier_failures_use_flat_errors_without_a_login_challenge() -> Result<(), Box<dyn Error>>
+{
+    use baukit_auth::VerificationError;
+
+    struct FailingVerifier(fn() -> VerificationError);
+    impl baukit_auth::IdentityVerifier for FailingVerifier {
+        fn verify<'a>(
+            &'a self,
+            _token: &'a str,
+        ) -> Pin<
+            Box<dyn Future<Output = Result<baukit_auth::Principal, VerificationError>> + Send + 'a>,
+        > {
+            Box::pin(std::future::ready(Err((self.0)())))
+        }
+    }
+    let issuer = MockOidcServer::start().await?;
+    let unavailable: fn() -> VerificationError = || VerificationError::Unavailable;
+    let failures = [
+        (unavailable, true),
+        (|| VerificationError::JwksTimeout, true),
+        (
+            || VerificationError::JwksStatus(StatusCode::SERVICE_UNAVAILABLE),
+            true,
+        ),
+        (
+            || VerificationError::JwksStatus(StatusCode::TOO_MANY_REQUESTS),
+            true,
+        ),
+        (
+            || VerificationError::JwksStatus(StatusCode::REQUEST_TIMEOUT),
+            true,
+        ),
+        (
+            || VerificationError::DiscoveryStatus(StatusCode::TOO_MANY_REQUESTS),
+            true,
+        ),
+        (
+            || VerificationError::DiscoveryStatus(StatusCode::REQUEST_TIMEOUT),
+            true,
+        ),
+        (|| VerificationError::DiscoveryIssuerMismatch, false),
+        (|| VerificationError::InvalidJwksUri, false),
+        (
+            || VerificationError::JwksStatus(StatusCode::NOT_FOUND),
+            false,
+        ),
+    ];
+    for (failure, transient) in failures {
+        let app = router(
+            config(&issuer),
+            Arc::new(FailingVerifier(failure)),
+            McpServices::new(Arc::new(IdentityTool)),
+            Arc::new(InMemoryRateLimitStore::default()),
+            Arc::new(JwtOnlyPolicy),
+        )
+        .await?;
+        let (status, headers, body) = send(&app, Some("private-token-material"),
+            json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"identity","arguments":{}}})).await?;
+        if transient {
+            assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+            assert_eq!(headers[header::RETRY_AFTER], "5");
+            assert_eq!(body, json!({"error": "identity_unavailable"}));
+        } else {
+            assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+            assert!(!headers.contains_key(header::RETRY_AFTER));
+            assert_eq!(body, json!({"error": "identity_misconfigured"}));
+        }
+        assert_eq!(headers[header::CACHE_CONTROL], "no-store");
+        assert!(!headers.contains_key(header::WWW_AUTHENTICATE));
+        assert!(!body.to_string().contains("private-token-material"));
+    }
+    Ok(())
+}

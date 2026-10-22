@@ -2,8 +2,8 @@ use std::{collections::BTreeSet, error::Error, num::NonZeroU32, path::PathBuf, s
 
 use baukit_auth::{
     ApiTokenError, ApiTokenPolicyRejection, ApiTokenService, ApiTokenStore, ApiTokenVerifier,
-    IdentityVerifier, NewApiToken, PostgresApiTokenStore, Principal, VerificationError,
-    erase_owner_api_tokens, purge_inactive_api_tokens,
+    AuthState, IdentityVerifier, NewApiToken, PostgresApiTokenStore, Principal, VerificationError,
+    erase_owner_api_tokens, insert_api_token, purge_inactive_api_tokens,
 };
 use baukit_test::PostgresTestContainer;
 use chrono::{DateTime, TimeDelta, TimeZone as _, Utc};
@@ -352,5 +352,132 @@ async fn purge_removes_only_tokens_inactive_before_the_cutoff() -> Result<(), Te
         ])
     );
     assert!(!remaining.contains(&expired_long_ago.token.id));
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn a_caller_owned_transaction_can_roll_back_a_prepared_token() -> Result<(), TestError> {
+    let (_container, pool) = fixture().await?;
+    let tokens = service(&pool);
+    let owner_id = owner(&pool).await?;
+    let (prepared, generated) = tokens.prepare(
+        owner_id,
+        NewApiToken::new("Rollback").with_grants(["records:read"]),
+    )?;
+    let store = PostgresApiTokenStore::new(pool.clone());
+    let mut invalid_name = prepared.record().clone();
+    invalid_name.name.clear();
+    let mut invalid_grants = prepared.record().clone();
+    invalid_grants.grants = BTreeSet::from(["invalid scope".to_owned()]);
+    let mut invalid_expiry = prepared.record().clone();
+    invalid_expiry.expires_at = Some(invalid_expiry.created_at);
+    for (invalid, expected) in [
+        (invalid_name, ApiTokenError::InvalidName),
+        (invalid_grants, ApiTokenError::InvalidGrants),
+        (invalid_expiry, ApiTokenError::InvalidExpiry),
+    ] {
+        assert_eq!(
+            store.create(invalid).await.expect_err("invalid token"),
+            baukit_auth::ApiTokenStoreError::internal(expected),
+        );
+    }
+    assert_eq!(token_count(&pool).await?, 0);
+    let mut transaction = pool.begin().await?;
+    let record = prepared.record();
+    let inserted = insert_api_token(&mut *transaction, &prepared).await?;
+    assert_eq!(inserted.id, record.id);
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM api_tokens WHERE id = $1")
+        .bind(record.id)
+        .fetch_one(&mut *transaction)
+        .await?;
+    assert_eq!(count, 1);
+    assert_eq!(token_count(&pool).await?, 0);
+    transaction.rollback().await?;
+    assert_eq!(token_count(&pool).await?, 0);
+    assert!(matches!(
+        tokens.verify(generated.secret()).await,
+        Err(ApiTokenError::Invalid)
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn a_caller_owned_transaction_commits_a_verifiable_token() -> Result<(), TestError> {
+    let (_container, pool) = fixture().await?;
+    let tokens = service(&pool);
+    let owner_id = owner(&pool).await?;
+    let mut transaction = pool.begin().await?;
+    sqlx::query("SELECT id FROM owners WHERE id = $1 FOR UPDATE")
+        .bind(owner_id)
+        .execute(&mut *transaction)
+        .await?;
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM api_tokens WHERE owner_id = $1")
+        .bind(owner_id)
+        .fetch_one(&mut *transaction)
+        .await?;
+    assert_eq!(count, 0);
+    let (prepared, generated) = tokens.prepare_at(
+        owner_id,
+        NewApiToken::new("  Commit  ")
+            .with_grants(["records:read"])
+            .expiring_at(instant() + TimeDelta::hours(1)),
+        instant(),
+    )?;
+    let record = prepared.record();
+    let inserted = insert_api_token(&mut *transaction, &prepared).await?;
+    transaction.commit().await?;
+    let verified = tokens
+        .verify_at(&generated.into_secret(), instant())
+        .await?;
+    assert_eq!(verified, inserted);
+    assert_eq!(verified.name, "Commit");
+    assert_eq!(verified.grants, BTreeSet::from(["records:read".to_owned()]));
+    assert_eq!(verified.expires_at, record.expires_at);
+    assert_eq!(token_count(&pool).await?, 1);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn a_closed_postgres_pool_returns_503_without_an_oauth_challenge() -> Result<(), TestError> {
+    use axum::{
+        Router,
+        body::{Body, to_bytes},
+        http::{Request, StatusCode, header},
+        routing::get,
+    };
+    use tower::ServiceExt as _;
+
+    let (_container, pool) = fixture().await?;
+    let tokens = service(&pool);
+    let owner_id = owner(&pool).await?;
+    let issued = tokens
+        .issue(owner_id, NewApiToken::new("Automation"))
+        .await?;
+    let auth = AuthState::new(ApiTokenVerifier::new(tokens, Arc::new(RejectingVerifier)));
+    let app = Router::new()
+        .route("/", get(|_: Principal| async { StatusCode::NO_CONTENT }))
+        .with_state(auth);
+    let request = || {
+        Request::builder()
+            .header(header::AUTHORIZATION, format!("Bearer {}", issued.secret))
+            .body(Body::empty())
+            .expect("request")
+    };
+    assert_eq!(
+        app.clone().oneshot(request()).await?.status(),
+        StatusCode::NO_CONTENT
+    );
+    pool.close().await;
+    let response = app.oneshot(request()).await?;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(response.headers()[header::RETRY_AFTER], "5");
+    assert!(!response.headers().contains_key(header::WWW_AUTHENTICATE));
+    let body = to_bytes(response.into_body(), usize::MAX).await?;
+    let body: serde_json::Value = serde_json::from_slice(&body)?;
+    assert_eq!(body["error"]["code"], "unavailable");
+    assert!(!body.to_string().contains(&issued.secret));
     Ok(())
 }

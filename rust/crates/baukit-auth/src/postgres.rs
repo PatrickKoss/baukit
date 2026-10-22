@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::{
     ApiToken, ApiTokenPolicyRejection, ApiTokenRecord, ApiTokenStore, ApiTokenStoreError,
-    ApiTokenStoreFuture, StoredApiToken,
+    ApiTokenStoreFuture, PreparedApiToken, StoredApiToken,
 };
 
 macro_rules! token_columns {
@@ -62,9 +62,13 @@ impl PostgresApiTokenStore {
         self
     }
 
-    async fn create_token(&self, record: ApiTokenRecord) -> Result<ApiToken, ApiTokenStoreError> {
+    async fn create_token(
+        &self,
+        prepared: PreparedApiToken,
+    ) -> Result<ApiToken, ApiTokenStoreError> {
+        let record = prepared.record();
         let Some(limit) = &self.active_limit else {
-            return insert_token(&self.pool, &record)
+            return insert_api_token(&self.pool, &prepared)
                 .await
                 .map_err(ApiTokenStoreError::internal);
         };
@@ -79,7 +83,7 @@ impl PostgresApiTokenStore {
         if active >= i64::from(limit.maximum.get()) {
             return Err(ApiTokenStoreError::PolicyRejected(limit.rejection.clone()));
         }
-        let token = insert_token(&mut *transaction, &record)
+        let token = insert_api_token(&mut *transaction, &prepared)
             .await
             .map_err(ApiTokenStoreError::internal)?;
         transaction
@@ -166,7 +170,11 @@ impl ApiTokenStore for PostgresApiTokenStore {
         &self,
         record: ApiTokenRecord,
     ) -> ApiTokenStoreFuture<'_, Result<ApiToken, ApiTokenStoreError>> {
-        Box::pin(self.create_token(record))
+        Box::pin(async move {
+            let prepared =
+                PreparedApiToken::from_record(record).map_err(ApiTokenStoreError::internal)?;
+            self.create_token(prepared).await
+        })
     }
 
     fn find_by_hash<'a>(
@@ -277,10 +285,24 @@ async fn lock_and_count_active(
     .await
 }
 
-async fn insert_token<'e, E>(executor: E, record: &ApiTokenRecord) -> Result<ApiToken, sqlx::Error>
+/// Inserts a prepared token through a pool or caller-owned transaction.
+///
+/// Pass a token from [`ApiTokenService::prepare`](crate::ApiTokenService::prepare)
+/// and `&mut *transaction` to commit the token with the caller's other writes.
+/// This function does not take a lock or enforce the store's active token limit.
+/// The caller must check its policy in the same transaction before inserting.
+///
+/// # Errors
+///
+/// Returns any database error unchanged.
+pub async fn insert_api_token<'e, E>(
+    executor: E,
+    prepared: &PreparedApiToken,
+) -> Result<ApiToken, sqlx::Error>
 where
     E: PgExecutor<'e>,
 {
+    let record = prepared.record();
     let row = sqlx::query(concat!(
         "INSERT INTO api_tokens
              (id, owner_id, name, token_hash, token_prefix, grants, created_at, expires_at)

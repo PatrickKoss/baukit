@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet, btree_map::Entry},
+    error::Error as _,
     future::Future,
     pin::Pin,
     sync::Arc,
@@ -508,10 +509,13 @@ impl OidcVerifier {
         if !response.status().is_success() {
             return Err(VerificationError::DiscoveryStatus(response.status()));
         }
-        let metadata: DiscoveryDocument = response
-            .json()
-            .await
-            .map_err(VerificationError::InvalidDiscoveryDocument)?;
+        let metadata: DiscoveryDocument = response.json().await.map_err(|error| {
+            if is_json_parse_error(&error) {
+                VerificationError::InvalidDiscoveryDocument(error)
+            } else {
+                discovery_request_error(error)
+            }
+        })?;
         if metadata.issuer != config.issuer.as_str() {
             return Err(VerificationError::DiscoveryIssuerMismatch);
         }
@@ -659,10 +663,13 @@ impl OidcVerifier {
         if !response.status().is_success() {
             return Err(VerificationError::JwksStatus(response.status()));
         }
-        response
-            .json()
-            .await
-            .map_err(VerificationError::InvalidJwksDocument)
+        response.json().await.map_err(|error| {
+            if is_json_parse_error(&error) {
+                VerificationError::InvalidJwksDocument(error)
+            } else {
+                jwks_request_error(error)
+            }
+        })
     }
 }
 
@@ -1165,6 +1172,13 @@ fn mapped_claim(
     }
 }
 
+fn is_json_parse_error(error: &reqwest::Error) -> bool {
+    // Reqwest also reports interrupted body reads as decode errors.
+    error
+        .source()
+        .is_some_and(|source| source.is::<serde_json::Error>())
+}
+
 fn discovery_request_error(error: reqwest::Error) -> VerificationError {
     if error.is_timeout() {
         VerificationError::DiscoveryTimeout
@@ -1183,21 +1197,25 @@ fn jwks_request_error(error: reqwest::Error) -> VerificationError {
 
 /// Failure while discovering an issuer or verifying an access token.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum VerificationError {
+    /// Verification could not complete because a backing service is unavailable.
+    #[error("identity verification is temporarily unavailable")]
+    Unavailable,
     /// The HTTP client could not be created.
-    #[error("could not create OIDC HTTP client: {0}")]
+    #[error("could not create OIDC HTTP client")]
     Client(#[source] reqwest::Error),
     /// OIDC discovery exceeded the configured timeout.
     #[error("OIDC discovery timed out")]
     DiscoveryTimeout,
-    /// OIDC discovery could not be requested.
-    #[error("OIDC discovery request failed: {0}")]
+    /// OIDC discovery failed while sending the request or reading the response.
+    #[error("OIDC discovery request failed")]
     DiscoveryRequest(#[source] reqwest::Error),
     /// OIDC discovery returned a non-success status.
     #[error("OIDC discovery returned HTTP {0}")]
     DiscoveryStatus(StatusCode),
     /// OIDC discovery returned invalid JSON.
-    #[error("OIDC discovery document was invalid: {0}")]
+    #[error("OIDC discovery document was invalid")]
     InvalidDiscoveryDocument(#[source] reqwest::Error),
     /// Discovery metadata did not report the configured issuer exactly.
     #[error("OIDC discovery issuer did not match configuration")]
@@ -1208,14 +1226,14 @@ pub enum VerificationError {
     /// A JWKS request exceeded the configured timeout.
     #[error("JWKS request timed out")]
     JwksTimeout,
-    /// JWKS could not be requested.
-    #[error("JWKS request failed: {0}")]
+    /// JWKS failed while sending the request or reading the response.
+    #[error("JWKS request failed")]
     JwksRequest(#[source] reqwest::Error),
     /// JWKS returned a non-success status.
     #[error("JWKS returned HTTP {0}")]
     JwksStatus(StatusCode),
     /// JWKS returned invalid JSON.
-    #[error("JWKS document was invalid: {0}")]
+    #[error("JWKS document was invalid")]
     InvalidJwksDocument(#[source] reqwest::Error),
     /// The JWT did not have three valid base64url-encoded segments.
     #[error("access token was malformed")]
@@ -1286,9 +1304,206 @@ pub enum VerificationError {
     InvalidPrincipalContext,
 }
 
+impl VerificationError {
+    /// Returns whether verification failed because infrastructure is temporarily unavailable.
+    ///
+    /// Retry these failures without asking the caller to replace its credentials.
+    #[must_use]
+    pub fn is_unavailable(&self) -> bool {
+        match self {
+            Self::Unavailable
+            | Self::DiscoveryTimeout
+            | Self::DiscoveryRequest(_)
+            | Self::JwksTimeout
+            | Self::JwksRequest(_) => true,
+            Self::DiscoveryStatus(status) | Self::JwksStatus(status) => {
+                is_transient_status(*status)
+            }
+            _ => false,
+        }
+    }
+
+    /// Returns whether verification failed because of server or provider configuration.
+    ///
+    /// These failures need operator attention rather than a client retry or sign-in.
+    #[must_use]
+    pub fn is_misconfigured(&self) -> bool {
+        match self {
+            Self::Client(_)
+            | Self::InvalidDiscoveryDocument(_)
+            | Self::DiscoveryIssuerMismatch
+            | Self::InvalidJwksUri
+            | Self::InvalidJwksDocument(_)
+            | Self::InvalidJwk
+            | Self::MissingClientId
+            | Self::Clock => true,
+            Self::DiscoveryStatus(status) | Self::JwksStatus(status) => {
+                !is_transient_status(*status)
+            }
+            _ => false,
+        }
+    }
+}
+
+fn is_transient_status(status: StatusCode) -> bool {
+    status.is_server_error()
+        || matches!(
+            status,
+            StatusCode::TOO_MANY_REQUESTS | StatusCode::REQUEST_TIMEOUT
+        )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn infrastructure_failures_are_retryable_and_bad_credentials_are_not() {
+        use super::VerificationError as E;
+        for error in [
+            E::Unavailable,
+            E::JwksTimeout,
+            E::JwksStatus(reqwest::StatusCode::SERVICE_UNAVAILABLE),
+            E::JwksStatus(reqwest::StatusCode::TOO_MANY_REQUESTS),
+            E::JwksStatus(reqwest::StatusCode::REQUEST_TIMEOUT),
+            E::DiscoveryTimeout,
+            E::DiscoveryStatus(reqwest::StatusCode::SERVICE_UNAVAILABLE),
+            E::DiscoveryStatus(reqwest::StatusCode::TOO_MANY_REQUESTS),
+            E::DiscoveryStatus(reqwest::StatusCode::REQUEST_TIMEOUT),
+        ] {
+            assert!(error.is_unavailable(), "{error:?}");
+            assert!(!error.is_misconfigured(), "{error:?}");
+        }
+        for error in [
+            E::DiscoveryIssuerMismatch,
+            E::InvalidJwksUri,
+            E::JwksStatus(reqwest::StatusCode::NOT_FOUND),
+            E::DiscoveryStatus(reqwest::StatusCode::UNAUTHORIZED),
+            E::Clock,
+        ] {
+            assert!(error.is_misconfigured(), "{error:?}");
+            assert!(!error.is_unavailable(), "{error:?}");
+        }
+        for error in [
+            E::Expired,
+            E::MalformedToken,
+            E::InvalidSignature,
+            E::UnknownKeyId,
+            E::WrongAudience,
+        ] {
+            assert!(!error.is_unavailable(), "{error:?}");
+            assert!(!error.is_misconfigured(), "{error:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn interrupted_document_bodies_are_retryable_but_invalid_json_is_not() {
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+        for truncated in [true, false] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("listener");
+            let issuer = format!("http://{}", listener.local_addr().expect("address"));
+            let server = tokio::spawn(async move {
+                let body = "{";
+                let length = body.len() + usize::from(truncated);
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n{body}"
+                );
+                for _ in 0..2 {
+                    let (mut stream, _) = listener.accept().await.expect("connection");
+                    let mut request = Vec::new();
+                    while !request.ends_with(b"\r\n\r\n") {
+                        assert_ne!(stream.read_buf(&mut request).await.expect("request"), 0);
+                    }
+                    stream
+                        .write_all(response.as_bytes())
+                        .await
+                        .expect("response");
+                    stream.shutdown().await.expect("shutdown");
+                }
+            });
+            let config = OidcConfig::new(&issuer, "api").expect("config");
+            let discovery_error = OidcVerifier::discover(config.clone())
+                .await
+                .map(|_| ())
+                .expect_err("invalid discovery response");
+            let verifier =
+                OidcVerifier::from_jwks_uri(config, format!("{issuer}/jwks")).expect("verifier");
+            let jwks_error = verifier
+                .fetch_jwks()
+                .await
+                .expect_err("invalid JWKS response");
+            if truncated {
+                assert!(matches!(
+                    discovery_error,
+                    VerificationError::DiscoveryRequest(_)
+                ));
+                assert!(matches!(jwks_error, VerificationError::JwksRequest(_)));
+            } else {
+                assert!(matches!(
+                    discovery_error,
+                    VerificationError::InvalidDiscoveryDocument(_)
+                ));
+                assert!(matches!(
+                    jwks_error,
+                    VerificationError::InvalidJwksDocument(_)
+                ));
+            }
+            for error in [discovery_error, jwks_error] {
+                assert_eq!(error.is_unavailable(), truncated, "{error:?}");
+                assert_eq!(error.is_misconfigured(), !truncated, "{error:?}");
+            }
+            server.await.expect("server");
+        }
+    }
+
+    #[tokio::test]
+    async fn http_error_displays_do_not_expose_urls_or_credentials() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                axum::Router::new().route("/", axum::routing::get(|| async { "invalid JSON" })),
+            )
+            .await
+            .expect("server");
+        });
+        let secret = "private-token-material";
+        let url = format!("http://{address}/?token={secret}");
+        let variants = [
+            VerificationError::Client,
+            VerificationError::DiscoveryRequest,
+            VerificationError::InvalidDiscoveryDocument,
+            VerificationError::JwksRequest,
+            VerificationError::InvalidJwksDocument,
+        ];
+        for variant in variants {
+            let source = reqwest::get(&url)
+                .await
+                .expect("response")
+                .json::<Value>()
+                .await
+                .expect_err("invalid JSON");
+            let error = variant(source);
+            assert!(!error.to_string().contains(secret));
+            assert!(!error.to_string().contains(&address.to_string()));
+            if matches!(
+                error,
+                VerificationError::Client(_)
+                    | VerificationError::InvalidDiscoveryDocument(_)
+                    | VerificationError::InvalidJwksDocument(_)
+            ) {
+                assert!(error.is_misconfigured());
+                assert!(!error.is_unavailable());
+            }
+        }
+        server.abort();
+    }
 
     #[test]
     fn unsigned_and_malformed_tokens_are_rejected_before_key_lookup() {

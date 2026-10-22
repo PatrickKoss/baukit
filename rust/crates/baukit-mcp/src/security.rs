@@ -22,6 +22,7 @@ use crate::{
 };
 
 const MAX_BEARER_TOKEN_BYTES: usize = 16 * 1024;
+const IDENTITY_UNAVAILABLE_RETRY_AFTER_SECONDS: u64 = 5;
 
 #[derive(Clone)]
 struct Security {
@@ -163,6 +164,19 @@ async fn authorize_inner(state: &Security, mut request: Request, next: Next) -> 
     };
     let principal = match state.verifier.verify(token).await {
         Ok(principal) => principal,
+        Err(cause) if cause.is_unavailable() => {
+            tracing::error!(error = %cause, "identity verification infrastructure failed");
+            let mut response = error(StatusCode::SERVICE_UNAVAILABLE, "identity_unavailable");
+            response.headers_mut().insert(
+                header::RETRY_AFTER,
+                HeaderValue::from(IDENTITY_UNAVAILABLE_RETRY_AFTER_SECONDS),
+            );
+            return response;
+        }
+        Err(cause) if cause.is_misconfigured() => {
+            tracing::error!(error = %cause, "identity verification infrastructure failed");
+            return error(StatusCode::INTERNAL_SERVER_ERROR, "identity_misconfigured");
+        }
         Err(_) => {
             return challenge(
                 state,

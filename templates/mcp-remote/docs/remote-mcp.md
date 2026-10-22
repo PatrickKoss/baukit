@@ -163,6 +163,14 @@ The adapter posts the token with HTTP Basic client authentication. It verifies
 active status, subject, expiry, and any returned issuer and client ID. It
 intersects returned scopes with verified JWT grants; an omitted scope grants
 nothing. Errors and timeouts return 503 `authentication_policy_unavailable`.
+Identity-verifier outages instead return HTTP 503 with the flat body
+`{"error":"identity_unavailable"}` and `Retry-After: 5`. This covers API token
+store outages, OIDC connection and body-read failures, discovery and JWKS
+timeouts, and provider 408, 429, or 5xx responses. Fully received but invalid
+provider metadata or JWKS documents, other provider 4xx responses, and server
+configuration errors return HTTP 500 with `{"error":"identity_misconfigured"}`
+and no `Retry-After`. Both responses omit `WWW-Authenticate`, so a verifier outage
+does not prompt another sign-in.
 There is no fallback to JWT grants on provider failure. Inactive or revoked
 tokens return 401 `invalid_token` with protected resource metadata.
 
