@@ -87,3 +87,17 @@ config plugin that preserves existing entries.
 
 See [suite adoption](../../../docs/platform/suite-events.md) for server wiring
 and the protocol contract. This package adds no CLI template capability.
+
+## Offline entitlement tickets
+
+Import `verifyTicket` and `TicketVerificationError` from
+`@baukit/suite-client/entitlements`. Pass the compact ticket, trusted `TicketJwks`
+and `{ issuer, audience, now }`, with `now` in Unix seconds. The result is
+`TicketClaims`; compare its `sub` with the current suite subject before granting
+access. Products own public-key refresh and ticket storage.
+
+Verification uses pure JavaScript Ed25519 on web and Hermes, without WebCrypto or
+Node globals. It enforces the hub's strict expiry, seven-day maximum lifetime,
+60-second issue-time allowance and exact claims schema. See
+[platform adoption](../../../docs/platform/platform-receiver.md) for server setup
+and stable error codes.

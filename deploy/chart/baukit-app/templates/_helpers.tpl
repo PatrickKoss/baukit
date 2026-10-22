@@ -99,6 +99,20 @@ baukit.dev/process: {{ .process }}
 {{- $_ := set $overrides "MCP__MAX_REQUEST_BODY_BYTES" (toString $root.Values.mcp.maxRequestBodyBytes) -}}
 {{- $_ := set $overrides "MCP__REQUESTS_PER_MINUTE" (toString $root.Values.mcp.requestsPerMinute) -}}
 {{- end }}
+{{- with $root.Values.platform.receiverSecretRef.name }}
+- name: {{ printf "%s__PLATFORM__RECEIVER_SECRET" $prefix }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ . | quote }}
+      key: {{ required "platform.receiverSecretRef.key is required" $root.Values.platform.receiverSecretRef.key | quote }}
+{{- with $root.Values.platform.receiverSecretRef.previousKey }}
+- name: {{ printf "%s__PLATFORM__PREVIOUS_RECEIVER_SECRET" $prefix }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ $root.Values.platform.receiverSecretRef.name | quote }}
+      key: {{ . | quote }}
+{{- end }}
+{{- end }}
 {{- $_ := set $overrides "HTTP__PORT" (toString $root.Values.api.ports.http) -}}
 {{- $_ := set $overrides "OPS__PORT" (toString $root.Values.api.ports.ops) -}}
 {{- $_ := set $overrides "SHUTDOWN__DRAIN_TIMEOUT" (toString $root.Values.api.terminationGracePeriodSeconds) -}}

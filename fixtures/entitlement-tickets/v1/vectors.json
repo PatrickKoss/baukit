@@ -1,0 +1,258 @@
+{
+  "schemaVersion": 1,
+  "issuer": "https://accounts.example.test",
+  "testSeedHex": "2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a",
+  "jwks": {
+    "keys": [
+      {
+        "crv": "Ed25519",
+        "x": "GX9rI-FshTLGq8g4-s1ep4m-DHaykgM0A5v6iz02jWE",
+        "kty": "OKP",
+        "kid": "00000000-0000-4000-8000-000000000042",
+        "use": "sig",
+        "alg": "EdDSA"
+      }
+    ]
+  },
+  "vectors": [
+    {
+      "name": "premium-seven-days",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJoZWJraXQiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImV4cG9ydCJdLCJyZXYiOjE3LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MH0.d_hi3_ljzZwrdn0TKni9NTfC78G_NZR3IxyUsOmErqPf3SN-ClKBkJTNpNNEyR8ylSeW0_EgOUO7iy3FIq8gBw",
+      "audience": "hebkit",
+      "now": 1800000000,
+      "expected": "ok",
+      "claims": {
+        "iss": "https://accounts.example.test",
+        "sub": "suite-test|alice",
+        "aud": "hebkit",
+        "tier": "premium",
+        "features": [
+          "export"
+        ],
+        "rev": 17,
+        "iat": 1799999940,
+        "exp": 1800604740
+      }
+    },
+    {
+      "name": "free",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJoZWJraXQiLCJ0aWVyIjoiZnJlZSIsImZlYXR1cmVzIjpbXSwicmV2IjowLCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MH0.dhkc8Yi16Y2ukh1rDuWkUFeZxnOOvg85JjHMAcNz8bh5BoLDkRjDjj84enhFY-IjO18wjGzUM3bS0BkYTr5KDA",
+      "audience": "hebkit",
+      "now": 1800000000,
+      "expected": "ok",
+      "claims": {
+        "iss": "https://accounts.example.test",
+        "sub": "suite-test|alice",
+        "aud": "hebkit",
+        "tier": "free",
+        "features": [],
+        "rev": 0,
+        "iat": 1799999940,
+        "exp": 1800604740
+      }
+    },
+    {
+      "name": "billing-grace",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJoZWJraXQiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImV4cG9ydCJdLCJyZXYiOjE3LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MCwiZ3JhY2UiOjE4MDAwMDM2MDB9.5VtcgPNnJtNErRz2HrfsxyxE_mlIzJGm-8wgmigmCJYXxhLNKn3f92-W2W0J70jdmne5vY4jf01yfDNP8ZCNDQ",
+      "audience": "hebkit",
+      "now": 1800000000,
+      "expected": "ok",
+      "claims": {
+        "iss": "https://accounts.example.test",
+        "sub": "suite-test|alice",
+        "aud": "hebkit",
+        "tier": "premium",
+        "features": [
+          "export"
+        ],
+        "rev": 17,
+        "iat": 1799999940,
+        "exp": 1800604740,
+        "grace": 1800003600
+      }
+    },
+    {
+      "name": "expired",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJoZWJraXQiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImV4cG9ydCJdLCJyZXYiOjE3LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MH0.d_hi3_ljzZwrdn0TKni9NTfC78G_NZR3IxyUsOmErqPf3SN-ClKBkJTNpNNEyR8ylSeW0_EgOUO7iy3FIq8gBw",
+      "audience": "hebkit",
+      "now": 1800604741,
+      "expected": "ticket_expired"
+    },
+    {
+      "name": "expiry-boundary",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJoZWJraXQiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImV4cG9ydCJdLCJyZXYiOjE3LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MH0.d_hi3_ljzZwrdn0TKni9NTfC78G_NZR3IxyUsOmErqPf3SN-ClKBkJTNpNNEyR8ylSeW0_EgOUO7iy3FIq8gBw",
+      "audience": "hebkit",
+      "now": 1800604740,
+      "expected": "ticket_expired"
+    },
+    {
+      "name": "wrong-audience",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJoZWJraXQiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImV4cG9ydCJdLCJyZXYiOjE3LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MH0.d_hi3_ljzZwrdn0TKni9NTfC78G_NZR3IxyUsOmErqPf3SN-ClKBkJTNpNNEyR8ylSeW0_EgOUO7iy3FIq8gBw",
+      "audience": "eigenruhe",
+      "now": 1800000000,
+      "expected": "ticket_wrong_audience"
+    },
+    {
+      "name": "expired-wrong-audience",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJoZWJraXQiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImV4cG9ydCJdLCJyZXYiOjE3LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MH0.d_hi3_ljzZwrdn0TKni9NTfC78G_NZR3IxyUsOmErqPf3SN-ClKBkJTNpNNEyR8ylSeW0_EgOUO7iy3FIq8gBw",
+      "audience": "eigenruhe",
+      "now": 1800604740,
+      "expected": "ticket_expired"
+    },
+    {
+      "name": "audience-array",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOlsiaGVia2l0Il0sInRpZXIiOiJwcmVtaXVtIiwiZmVhdHVyZXMiOlsiZXhwb3J0Il0sInJldiI6MTcsImlhdCI6MTc5OTk5OTk0MCwiZXhwIjoxODAwNjA0NzQwfQ.GExUlrd6R5razPQ81-4Ukl1Kqnd4X5OHV-6doGtt94c7p_QWQwCYB9SH6GlrFPg33EeaFkc-Qsxsul_NuEqdCQ",
+      "audience": "hebkit",
+      "now": 1800000000,
+      "expected": "ticket_invalid"
+    },
+    {
+      "name": "empty-audience",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiIiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImV4cG9ydCJdLCJyZXYiOjE3LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MH0.Ow1wYKyU-mzpH5aE7R3WaxQC4yjS8HNgs92vUZS9MJSw9TJ-9CDXzSIqcT6JmQEeDNFfYF8Dlvvt-gUEmlt4Aw",
+      "audience": "hebkit",
+      "now": 1800000000,
+      "expected": "ticket_invalid"
+    },
+    {
+      "name": "null-grace",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJoZWJraXQiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImV4cG9ydCJdLCJyZXYiOjE3LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MCwiZ3JhY2UiOm51bGx9.Hdwbb_KnFP8QMj-IZU6kJI5Peevlw6NFzEGHg1iU4wOFU5fymatgc7MKuZzLHPrSrMC1xX0ULN27ZGm9wk6KBw",
+      "audience": "hebkit",
+      "now": 1800000000,
+      "expected": "ticket_invalid"
+    },
+    {
+      "name": "wrong-key",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJoZWJraXQiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImV4cG9ydCJdLCJyZXYiOjE3LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MH0.p9FiiGz1BTEOWOsTNmSRZxEUYbxg1ZC-duUjH3Cnla_yRMhoDZ2RffF5ry0Gbelk_h_UqQGI1WQLENWgmIXLDw",
+      "audience": "hebkit",
+      "now": 1800000000,
+      "expected": "ticket_invalid"
+    },
+    {
+      "name": "tampered-payload",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJoZWJraXQiLCJ0aWVyIjoiZW50ZXJwcmlzZSIsImZlYXR1cmVzIjpbImV4cG9ydCJdLCJyZXYiOjE3LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MH0.d_hi3_ljzZwrdn0TKni9NTfC78G_NZR3IxyUsOmErqPf3SN-ClKBkJTNpNNEyR8ylSeW0_EgOUO7iy3FIq8gBw",
+      "audience": "hebkit",
+      "now": 1800000000,
+      "expected": "ticket_invalid"
+    },
+    {
+      "name": "overlong-lifetime",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJoZWJraXQiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImV4cG9ydCJdLCJyZXYiOjE3LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MX0.Uwhv6OqdsoqTLOCpYtJU4FtgwwvTOS9RWrL3189uK5ZaAFf_Eha5fRYCpAIlvbiyW-TAUQQ6jbTlNxbETcXXDg",
+      "audience": "hebkit",
+      "now": 1800000000,
+      "expected": "ticket_invalid"
+    },
+    {
+      "name": "future-issued-1",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJoZWJraXQiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImV4cG9ydCJdLCJyZXYiOjE3LCJpYXQiOjE4MDAwMDAwMDEsImV4cCI6MTgwMDYwNDc0MH0.0rtieB5cNnEZ5N1p8VoFSz8TfvMXSbKGX5c7ZvoO23o0wkDCcnWZX8NEV-WKRAxjKbPRht1GxHiPmxPEHkWjDg",
+      "audience": "hebkit",
+      "now": 1800000000,
+      "expected": "ok",
+      "claims": {
+        "iss": "https://accounts.example.test",
+        "sub": "suite-test|alice",
+        "aud": "hebkit",
+        "tier": "premium",
+        "features": [
+          "export"
+        ],
+        "rev": 17,
+        "iat": 1800000001,
+        "exp": 1800604740
+      }
+    },
+    {
+      "name": "future-issued-59",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJoZWJraXQiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImV4cG9ydCJdLCJyZXYiOjE3LCJpYXQiOjE4MDAwMDAwNTksImV4cCI6MTgwMDYwNDc0MH0.88hFbmNG_--jK3lLkcS_OUWvB49MO51lFGmjh6BvM8eEQbEzcRVjissfNNrRAo9z8I-6iVcGHdgo10_oNvChAw",
+      "audience": "hebkit",
+      "now": 1800000000,
+      "expected": "ok",
+      "claims": {
+        "iss": "https://accounts.example.test",
+        "sub": "suite-test|alice",
+        "aud": "hebkit",
+        "tier": "premium",
+        "features": [
+          "export"
+        ],
+        "rev": 17,
+        "iat": 1800000059,
+        "exp": 1800604740
+      }
+    },
+    {
+      "name": "future-issued-60",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJoZWJraXQiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImV4cG9ydCJdLCJyZXYiOjE3LCJpYXQiOjE4MDAwMDAwNjAsImV4cCI6MTgwMDYwNDc0MH0.InFszuFBUCjUw5R4ikGE6EybbxjlH68cgan591mhw9LUlvGaFL7Av3PXORO49PWR2Qc6GK4-FHRuWh_R4LJKDg",
+      "audience": "hebkit",
+      "now": 1800000000,
+      "expected": "ok",
+      "claims": {
+        "iss": "https://accounts.example.test",
+        "sub": "suite-test|alice",
+        "aud": "hebkit",
+        "tier": "premium",
+        "features": [
+          "export"
+        ],
+        "rev": 17,
+        "iat": 1800000060,
+        "exp": 1800604740
+      }
+    },
+    {
+      "name": "future-issued-outside-leeway",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJoZWJraXQiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImV4cG9ydCJdLCJyZXYiOjE3LCJpYXQiOjE4MDAwMDAwNjEsImV4cCI6MTgwMDYwNDc0MH0.s4RjrhHElkDSKa4nBnVKf22bqjq9satSJo3L0Pz8jtgetDw8Gc3y0xFa3qLnJTIsxQJkHOcoAwYKAoqxVHQpDw",
+      "audience": "hebkit",
+      "now": 1800000000,
+      "expected": "ticket_invalid"
+    },
+    {
+      "name": "wrong-issuer",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2F0dGFja2VyLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJoZWJraXQiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImV4cG9ydCJdLCJyZXYiOjE3LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MH0.sG1yx3YxhZUUsreos2BKoUiO8_ByeZ9LYkhU08Gg_2dyoAfiFRUc-m6hdqnjrA46ayOkwcjGScyLB-dxTA9BDw",
+      "audience": "hebkit",
+      "now": 1800000000,
+      "expected": "ticket_invalid"
+    },
+    {
+      "name": "unknown-kid",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6Im1pc3NpbmcifQ.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJoZWJraXQiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImV4cG9ydCJdLCJyZXYiOjE3LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MH0.FrHO_n3ddEANQQxg-_v9zY4AfVOL1WINgyRjxgPmFtlAJMntAcVisLLsEdODzn4vkhH_c_HF7I5ruvPvczvuAQ",
+      "audience": "hebkit",
+      "now": 1800000000,
+      "expected": "ticket_invalid"
+    },
+    {
+      "name": "wrong-algorithm",
+      "ticket": "eyJhbGciOiJIUzI1NiIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJoZWJraXQiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImV4cG9ydCJdLCJyZXYiOjE3LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MH0.z_JvXk4CSVXvUBDiP5tLoVnjINC6AMbnN9DxUdn39hpKfYt_Smp2qJAQ5NiSKKDdxyDX534t9WI-J0rt8rBRDQ",
+      "audience": "hebkit",
+      "now": 1800000000,
+      "expected": "ticket_invalid"
+    },
+    {
+      "name": "malformed",
+      "ticket": "not.a.ticket",
+      "audience": "hebkit",
+      "now": 1800000000,
+      "expected": "ticket_invalid"
+    },
+    {
+      "name": "empty-subject",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6IiIsImF1ZCI6ImhlYmtpdCIsInRpZXIiOiJwcmVtaXVtIiwiZmVhdHVyZXMiOlsiZXhwb3J0Il0sInJldiI6MTcsImlhdCI6MTc5OTk5OTk0MCwiZXhwIjoxODAwNjA0NzQwfQ.XlrzPxgokMBDuMjVpoxR_iZ-QqQVdxvQyw5reY2-sIx8YghgDjRtPA1Ch-t7RXNLeCn5sLC2nO0BD7l_z7FLBQ",
+      "audience": "hebkit",
+      "now": 1800000000,
+      "expected": "ticket_invalid"
+    },
+    {
+      "name": "reversed-lifetime",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJoZWJraXQiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImV4cG9ydCJdLCJyZXYiOjE3LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTc5OTk5OTk0MH0.CekQCkOV_KYsrBPkvS6ZPY_M2brIwy8ZRYgBS7EJhc23NPkIT9_LhuWwDLUOIx33Z71FgF7YHpIhXiyRePk4CQ",
+      "audience": "hebkit",
+      "now": 1800000000,
+      "expected": "ticket_invalid"
+    },
+    {
+      "name": "unexpected-claim",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJoZWJraXQiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImV4cG9ydCJdLCJyZXYiOjE3LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MCwicm9sZSI6ImFkbWluIn0.RXlPzyZ5qDG5lmFVyx1sc6bmM9qSnuGFdi1OCTHPkBT0BJuCOvr7OKtPmGwbJnnggotA4OylcMQUIsQ9pCXvAg",
+      "audience": "hebkit",
+      "now": 1800000000,
+      "expected": "ticket_invalid"
+    }
+  ]
+}

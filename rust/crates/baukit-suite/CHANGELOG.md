@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add the optional `platform` feature with typed hub events, a signed receiver, transactional PostgreSQL receipts, entitlement caches, standalone reads and a cached Ed25519 ticket verifier.
+
 ## [0.10.32] - 2026-10-21
 
 ## [0.10.31] - 2026-10-20

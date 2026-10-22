@@ -1,0 +1,107 @@
+[
+  {
+    "eventId": "platform-fixture-1",
+    "type": "schluesselbund.entitlements.changed",
+    "userId": "suite|person-123",
+    "occurredAt": "2026-10-18T10:00:00Z",
+    "sourceApp": "schluesselbund",
+    "schemaVersion": 1,
+    "payload": {
+      "suiteSubject": "suite|person-123",
+      "product": "hebkit",
+      "revision": 7
+    }
+  },
+  {
+    "eventId": "platform-fixture-2",
+    "type": "schluesselbund.account.updated",
+    "userId": "suite|person-123",
+    "occurredAt": "2026-10-18T10:00:00Z",
+    "sourceApp": "schluesselbund",
+    "schemaVersion": 1,
+    "payload": {
+      "suiteSubject": "suite|person-123",
+      "revision": 7
+    }
+  },
+  {
+    "eventId": "platform-fixture-3",
+    "type": "schluesselbund.account.erasure_requested",
+    "userId": "suite|person-123",
+    "occurredAt": "2026-10-18T10:00:00Z",
+    "sourceApp": "schluesselbund",
+    "schemaVersion": 1,
+    "payload": {
+      "suiteSubject": "suite|person-123",
+      "erasureId": "018f1234-5678-7abc-8def-012345678901"
+    }
+  },
+  {
+    "eventId": "platform-fixture-4",
+    "type": "schluesselbund.preferences.changed",
+    "userId": "suite|person-123",
+    "occurredAt": "2026-10-18T10:00:00Z",
+    "sourceApp": "schluesselbund",
+    "schemaVersion": 1,
+    "payload": {
+      "suiteSubject": "suite|person-123",
+      "revision": 7
+    }
+  },
+  {
+    "eventId": "platform-fixture-5",
+    "type": "schluesselbund.onboarding.shared",
+    "userId": "suite|person-123",
+    "occurredAt": "2026-10-18T10:00:00Z",
+    "sourceApp": "schluesselbund",
+    "schemaVersion": 1,
+    "payload": {
+      "suiteSubject": "suite|person-123",
+      "profileVersion": 2,
+      "revision": 7
+    }
+  },
+  {
+    "eventId": "platform-fixture-6",
+    "type": "schluesselbund.family.membership_changed",
+    "userId": "suite|person-123",
+    "occurredAt": "2026-10-18T10:00:00Z",
+    "sourceApp": "schluesselbund",
+    "schemaVersion": 1,
+    "payload": {
+      "familyId": "018f1234-5678-7abc-8def-012345678901",
+      "suiteSubject": "suite|person-123",
+      "status": "active",
+      "familyRole": "member",
+      "revision": 7
+    }
+  },
+  {
+    "eventId": "platform-fixture-7",
+    "type": "schluesselbund.organization.membership_changed",
+    "userId": "suite|person-123",
+    "occurredAt": "2026-10-18T10:00:00Z",
+    "sourceApp": "schluesselbund",
+    "schemaVersion": 1,
+    "payload": {
+      "organizationId": "018f1234-5678-7abc-8def-012345678901",
+      "suiteSubject": "suite|person-123",
+      "status": "active",
+      "accountRole": "admin"
+    }
+  },
+  {
+    "eventId": "platform-fixture-8",
+    "type": "schluesselbund.seat.changed",
+    "userId": "suite|person-123",
+    "occurredAt": "2026-10-18T10:00:00Z",
+    "sourceApp": "schluesselbund",
+    "schemaVersion": 1,
+    "payload": {
+      "organizationId": "018f1234-5678-7abc-8def-012345678901",
+      "product": "hebkit",
+      "suiteSubject": "suite|person-123",
+      "assigned": true
+    }
+  }
+]

@@ -9,6 +9,7 @@
 //! | `runtime` | Link, ingest, delivery and erasure services, credential validation and rate limits | `postgres` |
 //! | `delivery` | Guarded `ReqwestSuitePeerClient` | `runtime` |
 //! | `http` | Axum router and OpenAPI definitions | `runtime` |
+//! | `platform` | Hub receiver, tickets and entitlement caches | None |
 //! | `jobs` | Job handler and hourly cleanup | `runtime` |
 //!
 //! Enable `http`, `jobs` and `delivery` for all supplied production adapters.
@@ -37,6 +38,8 @@ pub mod adapters;
 pub mod config;
 pub mod domain;
 mod error_codes;
+#[cfg(feature = "platform")]
+pub mod platform;
 pub mod ports;
 #[cfg(feature = "runtime")]
 mod secret_cipher;

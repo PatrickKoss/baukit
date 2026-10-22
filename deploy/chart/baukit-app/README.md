@@ -229,3 +229,12 @@ leaves key discovery to the provider.
 Set the Keycloak MCP audience mapper to the same resource URL. The endpoint
 shares the API HTTP listener. Use TLS on the ingress and shared Redis for
 rate limiting across replicas.
+
+## Platform receiver secret
+
+`platform.receiverSecretRef.name` optionally mounts a pre-existing receiver Secret
+into the API as `<PREFIX>__PLATFORM__RECEIVER_SECRET`. `key` defaults to
+`receiver-secret`. Set `previousKey` to mount the rotation secret as
+`<PREFIX>__PLATFORM__PREVIOUS_RECEIVER_SECRET`. Workers and migration jobs do not
+receive these references. Keep secret values in the deployment's secret manager.
+See [platform adoption](../../../docs/platform/platform-receiver.md) for hub settings.

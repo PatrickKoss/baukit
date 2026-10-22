@@ -82,13 +82,29 @@ class PackedDependenciesTest(unittest.TestCase):
     def test_suite_client_installs_with_its_peers_from_npm_archives(self) -> None:
         manifests = check.typescript_manifests(check.ROOT)
         names = ("@baukit/integrations-client", "@baukit/localization-core", "@baukit/suite-client")
+        packed_manifests = {name: manifests[name] for name in names}
+        pending = list(packed_manifests.values())
+        while pending:
+            manifest = pending.pop()
+            for name in json.loads(manifest.read_text()).get("dependencies", {}):
+                if name in packed_manifests:
+                    continue
+                candidates = (
+                    parent / "node_modules" / name / "package.json"
+                    for parent in (manifest.parent, *manifest.parent.parents)
+                )
+                dependency = next((path.resolve() for path in candidates if path.is_file()), None)
+                self.assertIsNotNone(dependency, f"install {name} before running package checks")
+                packed_manifests[name] = dependency
+                pending.append(dependency)
         with tempfile.TemporaryDirectory() as temporary:
             consumer = Path(temporary)
             archives = []
-            for name in names:
+            # Include installed runtime dependencies without relying on npm's registry cache.
+            for manifest in packed_manifests.values():
                 packed = subprocess.run(
                     ["npm", "pack", "--json", "--ignore-scripts", "--pack-destination", temporary],
-                    cwd=manifests[name].parent, capture_output=True, text=True,
+                    cwd=manifest.parent, capture_output=True, text=True,
                 )
                 self.assertEqual(packed.returncode, 0, packed.stdout + packed.stderr)
                 archives.append(str(consumer / check.packed_filename(packed.stdout, consumer)))
@@ -100,7 +116,22 @@ class PackedDependenciesTest(unittest.TestCase):
                 cwd=consumer, capture_output=True, text=True,
             )
             self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
-            for name in names:
+            for name, manifest in packed_manifests.items():
                 package = json.loads((consumer / "node_modules" / name / "package.json").read_text())
                 self.assertEqual(package["name"], name)
-                self.assertEqual(package["version"], json.loads(manifests[name].read_text())["version"])
+                self.assertEqual(package["version"], json.loads(manifest.read_text())["version"])
+            verified = subprocess.run(
+                ["node", "--input-type=module", "-e", """
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { verifyTicket } from '@baukit/suite-client/entitlements';
+const fixture = JSON.parse(readFileSync(process.argv[1], 'utf8'));
+const vector = fixture.vectors[0];
+assert.equal(vector.expected, 'ok');
+assert.deepEqual(verifyTicket(vector.ticket, fixture.jwks, {
+  issuer: fixture.issuer, audience: vector.audience, now: vector.now,
+}), vector.claims);
+""", str(check.ROOT / "fixtures/entitlement-tickets/v1/vectors.json")],
+                cwd=consumer, capture_output=True, text=True,
+            )
+            self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)

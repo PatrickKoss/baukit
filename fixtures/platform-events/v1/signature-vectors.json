@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "vectors": [
+    {
+      "secret": "platform-vector-secret-0123456789",
+      "timestamp": 1792317600,
+      "deliveryId": "platform-delivery-1",
+      "body": "{\"eventId\":\"platform-fixture-1\",\"type\":\"schluesselbund.entitlements.changed\",\"userId\":\"suite|person-123\",\"occurredAt\":\"2026-10-18T10:00:00Z\",\"sourceApp\":\"schluesselbund\",\"schemaVersion\":1,\"payload\":{\"suiteSubject\":\"suite|person-123\",\"product\":\"hebkit\",\"revision\":7}}",
+      "headers": {
+        "content-type": "application/json",
+        "x-suite-source": "schluesselbund",
+        "x-suite-timestamp": "1792317600",
+        "x-suite-delivery-id": "platform-delivery-1",
+        "x-suite-signature": "v1=0cZK4DlSFbNNe7j-m51-8bLxl7sYf-xTTpVFBjIgG8k"
+      }
+    },
+    {
+      "secret": "platform-vector-secret-0123456789",
+      "timestamp": 1792317600,
+      "deliveryId": "platform-delivery-2",
+      "body": "{\n  \"message\": \"Grüße\"\n}\n",
+      "headers": {
+        "content-type": "application/json",
+        "x-suite-source": "schluesselbund",
+        "x-suite-timestamp": "1792317600",
+        "x-suite-delivery-id": "platform-delivery-2",
+        "x-suite-signature": "v1=4djvarad3QnjUEytdKk2zkvVzfJok0-P3_ts5YKrGhc"
+      }
+    },
+    {
+      "secret": "platform-vector-secret-0123456789",
+      "timestamp": 1792317600,
+      "deliveryId": "platform-delivery-3",
+      "body": "",
+      "headers": {
+        "content-type": "application/json",
+        "x-suite-source": "schluesselbund",
+        "x-suite-timestamp": "1792317600",
+        "x-suite-delivery-id": "platform-delivery-3",
+        "x-suite-signature": "v1=cMPEXlKtjbwWQ0VLwi8vM6X5BIUD2qHPns-4liNxZMg"
+      }
+    }
+  ]
+}

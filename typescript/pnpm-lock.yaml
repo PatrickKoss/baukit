@@ -521,6 +521,10 @@ importers:
         version: 5.0.3(@types/node@24.19.1)(@vitest/browser-playwright@5.0.3)(@vitest/ui@5.0.3)(jsdom@30.1.1(@noble/hashes@1.8.0))(vite@8.3.2(@types/node@24.19.1)(terser@5.51.2)(yaml@2.9.1))
 
   packages/suite-client:
+    dependencies:
+      '@noble/curves':
+        specifier: 1.9.7
+        version: 1.9.7
     devDependencies:
       '@baukit/integrations-client':
         specifier: workspace:*

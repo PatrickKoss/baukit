@@ -1,0 +1,86 @@
+//! Service-level hub notifications and offline entitlement tickets.
+//!
+//! Enable `platform` for HTTP, memory adapters and ticket verification. Add
+//! `postgres` for durable receipts and entitlement snapshots. These do not use
+//! peer links or require user consent. The v1 wire names remain unchanged.
+
+mod cache;
+mod config;
+mod events;
+mod memory;
+#[cfg(feature = "postgres")]
+mod postgres;
+mod receiver;
+mod tickets;
+
+pub use cache::*;
+pub use config::PlatformConfig;
+pub use events::*;
+pub use memory::InMemoryPlatformInbox;
+#[cfg(feature = "postgres")]
+pub use postgres::{PLATFORM_MIGRATION_SQL, PostgresEntitlementCache, PostgresPlatformInbox};
+pub use receiver::*;
+pub use tickets::*;
+
+use async_trait::async_trait;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum PlatformError {
+    #[error("platform_unavailable")]
+    Unavailable,
+    #[error("platform_event_invalid")]
+    Invalid,
+    #[error("platform_event_id_conflict")]
+    EventIdConflict,
+}
+
+/// A handler's database writes can share the inbox receipt transaction.
+/// External calls and memory adapters must tolerate replay after a failed attempt.
+pub struct EventContext<'a> {
+    #[cfg(feature = "postgres")]
+    connection: Option<&'a mut sqlx::PgConnection>,
+    marker: std::marker::PhantomData<&'a ()>,
+}
+impl EventContext<'_> {
+    pub(crate) fn memory() -> Self {
+        Self {
+            #[cfg(feature = "postgres")]
+            connection: None,
+            marker: std::marker::PhantomData,
+        }
+    }
+    #[cfg(feature = "postgres")]
+    pub fn postgres(&mut self) -> Option<&mut sqlx::PgConnection> {
+        self.connection.as_deref_mut()
+    }
+}
+
+#[async_trait]
+pub trait PlatformEventHandler: Send + Sync {
+    /// Return `Unavailable` for a retry, or `Invalid` for permanent rejection.
+    /// Use `context.postgres()` for writes that must commit with the receipt.
+    async fn handle(
+        &self,
+        event: &PlatformEvent,
+        context: &mut EventContext<'_>,
+    ) -> Result<(), PlatformError>;
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReceiptOutcome {
+    Applied,
+    Duplicate,
+}
+
+#[async_trait]
+pub trait PlatformInbox: Send + Sync {
+    /// Serialize concurrent receipt of an event ID, reject a changed body and
+    /// record completion only after the handler succeeds. Unknown types are
+    /// recorded without calling the handler. Cancellation must release the claim.
+    async fn receive(
+        &self,
+        event: &PlatformEvent,
+        body_hash: [u8; 32],
+        handler: &dyn PlatformEventHandler,
+    ) -> Result<ReceiptOutcome, PlatformError>;
+}

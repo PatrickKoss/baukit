@@ -10,6 +10,21 @@ The crate has no event builders, reward rules, account tables or UI.
 metadata for the own app or any peer, including inactive peers. Use `scheme`
 when building product action links. `metadata()` keeps the full embedded list.
 
+## Platform receiver and entitlements
+
+Enable `platform` for `platform::router(PlatformReceiver)`, the v1 hub event types,
+`TicketVerifier`, `EntitlementCache` and `Entitlements`. Add `postgres` for
+`PostgresPlatformInbox`, `PostgresEntitlementCache` and `PLATFORM_MIGRATION_SQL`.
+The platform receiver operates independently of peer links.
+
+The inbox passes `EventContext` to the product's `PlatformEventHandler`. With the
+PostgreSQL inbox, use `context.postgres()` for writes that must commit with the
+receipt. `EntitlementEventHandler` pulls snapshots through `EntitlementSource` and
+stores them through the same transaction. Other events go to the product handler.
+
+See [platform adoption](../../../docs/platform/platform-receiver.md) for migration,
+configuration, secret rotation and offline ticket verification.
+
 ## Features
 
 The default build contains the domain, payload catalog and validation, link protocol,
@@ -22,6 +37,7 @@ Use `default-features = false` in domain and ports crates.
 | `runtime` | Link, ingest, delivery and erasure services, credential validation, rate limits and Tokio timeouts | `postgres` |
 | `delivery` | `ReqwestSuitePeerClient` with guarded HTTP egress | `runtime` |
 | `http` | Axum router and `SuiteOpenApi` with the suite routes | `runtime` |
+| `platform` | Hub receiver, typed events, ticket verification, memory adapters and entitlement reads. PostgreSQL adapters also require `postgres`. | None |
 | `jobs` | `SuiteJobHandler` and `run_hourly_cleanup` | `runtime` |
 
 Ports that name `PgConnection` require `postgres`. Other ports and serde types

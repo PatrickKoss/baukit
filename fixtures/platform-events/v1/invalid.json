@@ -1,0 +1,228 @@
+[
+  {
+    "name": "missing required field",
+    "envelope": {
+      "eventId": "platform-fixture-1",
+      "type": "schluesselbund.entitlements.changed",
+      "userId": "suite|person-123",
+      "occurredAt": "2026-10-18T10:00:00Z",
+      "sourceApp": "schluesselbund",
+      "schemaVersion": 1,
+      "payload": {
+        "product": "hebkit",
+        "revision": 7
+      }
+    }
+  },
+  {
+    "name": "null value",
+    "envelope": {
+      "eventId": "platform-fixture-1",
+      "type": "schluesselbund.entitlements.changed",
+      "userId": "suite|person-123",
+      "occurredAt": "2026-10-18T10:00:00Z",
+      "sourceApp": "schluesselbund",
+      "schemaVersion": 1,
+      "payload": {
+        "suiteSubject": "suite|person-123",
+        "product": "hebkit",
+        "revision": null
+      }
+    }
+  },
+  {
+    "name": "unknown field",
+    "envelope": {
+      "eventId": "platform-fixture-1",
+      "type": "schluesselbund.entitlements.changed",
+      "userId": "suite|person-123",
+      "occurredAt": "2026-10-18T10:00:00Z",
+      "sourceApp": "schluesselbund",
+      "schemaVersion": 1,
+      "payload": {
+        "suiteSubject": "suite|person-123",
+        "product": "hebkit",
+        "revision": 7,
+        "email": "private@example.org"
+      }
+    }
+  },
+  {
+    "name": "snake_case key",
+    "envelope": {
+      "eventId": "platform-fixture-1",
+      "type": "schluesselbund.entitlements.changed",
+      "userId": "suite|person-123",
+      "occurredAt": "2026-10-18T10:00:00Z",
+      "sourceApp": "schluesselbund",
+      "schemaVersion": 1,
+      "payload": {
+        "suiteSubject": "suite|person-123",
+        "product": "hebkit",
+        "revision": 7,
+        "suite_subject": "bad"
+      }
+    }
+  },
+  {
+    "name": "wrong type",
+    "envelope": {
+      "eventId": "platform-fixture-1",
+      "type": "schluesselbund.entitlements.changed",
+      "userId": "suite|person-123",
+      "occurredAt": "2026-10-18T10:00:00Z",
+      "sourceApp": "schluesselbund",
+      "schemaVersion": 1,
+      "payload": {
+        "suiteSubject": "suite|person-123",
+        "product": "hebkit",
+        "revision": "7"
+      }
+    }
+  },
+  {
+    "name": "negative revision",
+    "envelope": {
+      "eventId": "platform-fixture-1",
+      "type": "schluesselbund.entitlements.changed",
+      "userId": "suite|person-123",
+      "occurredAt": "2026-10-18T10:00:00Z",
+      "sourceApp": "schluesselbund",
+      "schemaVersion": 1,
+      "payload": {
+        "suiteSubject": "suite|person-123",
+        "product": "hebkit",
+        "revision": -1
+      }
+    }
+  },
+  {
+    "name": "unsafe integer",
+    "envelope": {
+      "eventId": "platform-fixture-1",
+      "type": "schluesselbund.entitlements.changed",
+      "userId": "suite|person-123",
+      "occurredAt": "2026-10-18T10:00:00Z",
+      "sourceApp": "schluesselbund",
+      "schemaVersion": 1,
+      "payload": {
+        "suiteSubject": "suite|person-123",
+        "product": "hebkit",
+        "revision": 9007199254740992
+      }
+    }
+  },
+  {
+    "name": "too many keys",
+    "envelope": {
+      "eventId": "platform-fixture-1",
+      "type": "schluesselbund.entitlements.changed",
+      "userId": "suite|person-123",
+      "occurredAt": "2026-10-18T10:00:00Z",
+      "sourceApp": "schluesselbund",
+      "schemaVersion": 1,
+      "payload": {
+        "suiteSubject": "suite|person-123",
+        "product": "hebkit",
+        "revision": 7,
+        "key0": 0,
+        "key1": 1,
+        "key2": 2,
+        "key3": 3,
+        "key4": 4,
+        "key5": 5,
+        "key6": 6,
+        "key7": 7,
+        "key8": 8,
+        "key9": 9,
+        "key10": 10,
+        "key11": 11,
+        "key12": 12,
+        "key13": 13,
+        "key14": 14,
+        "key15": 15,
+        "key16": 16,
+        "key17": 17,
+        "key18": 18,
+        "key19": 19,
+        "key20": 20,
+        "key21": 21,
+        "key22": 22,
+        "key23": 23,
+        "key24": 24,
+        "key25": 25,
+        "key26": 26,
+        "key27": 27,
+        "key28": 28,
+        "key29": 29,
+        "key30": 30,
+        "key31": 31,
+        "key32": 32
+      }
+    }
+  },
+  {
+    "name": "unknown event",
+    "envelope": {
+      "eventId": "platform-fixture-1",
+      "type": "schluesselbund.unknown.changed",
+      "userId": "suite|person-123",
+      "occurredAt": "2026-10-18T10:00:00Z",
+      "sourceApp": "schluesselbund",
+      "schemaVersion": 1,
+      "payload": {
+        "suiteSubject": "suite|person-123",
+        "product": "hebkit",
+        "revision": 7
+      }
+    }
+  },
+  {
+    "name": "unsupported schema",
+    "envelope": {
+      "eventId": "platform-fixture-1",
+      "type": "schluesselbund.entitlements.changed",
+      "userId": "suite|person-123",
+      "occurredAt": "2026-10-18T10:00:00Z",
+      "sourceApp": "schluesselbund",
+      "schemaVersion": 2,
+      "payload": {
+        "suiteSubject": "suite|person-123",
+        "product": "hebkit",
+        "revision": 7
+      }
+    }
+  },
+  {
+    "name": "wrong source",
+    "envelope": {
+      "eventId": "platform-fixture-1",
+      "type": "schluesselbund.entitlements.changed",
+      "userId": "suite|person-123",
+      "occurredAt": "2026-10-18T10:00:00Z",
+      "sourceApp": "hebkit",
+      "schemaVersion": 1,
+      "payload": {
+        "suiteSubject": "suite|person-123",
+        "product": "hebkit",
+        "revision": 7
+      }
+    }
+  },
+  {
+    "name": "owner mismatch",
+    "envelope": {
+      "eventId": "platform-fixture-1",
+      "type": "schluesselbund.entitlements.changed",
+      "userId": "someone-else",
+      "occurredAt": "2026-10-18T10:00:00Z",
+      "sourceApp": "schluesselbund",
+      "schemaVersion": 1,
+      "payload": {
+        "suiteSubject": "suite|person-123",
+        "product": "hebkit",
+        "revision": 7
+      }
+    }
+  }
+]

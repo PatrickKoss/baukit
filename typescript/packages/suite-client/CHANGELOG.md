@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add `@baukit/suite-client/entitlements` for offline Ed25519 ticket verification on web and Hermes.
+
 ## 0.10.32
 
 ### Patch Changes
