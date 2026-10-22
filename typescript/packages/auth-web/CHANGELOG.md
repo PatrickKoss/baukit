@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add `SilentTokenBroker` for silent multi-product OIDC authorization with in-memory tokens, remembered failures, account binding and explicit popup login. A blocked popup preserves earlier failures, and closing a popup returns `login_required` with reason `interaction_cancelled`.
+- Add `completeSilentTokenCallback` and the `CALLBACK_MESSAGE` constant for dedicated callback pages.
+- Add optional `SilentAuthorizationWindow.closed` for custom popup environments and the `unsupported_environment` error code for construction outside a browser without an explicit environment.
+
 ## 0.10.32
 
 ### Patch Changes
