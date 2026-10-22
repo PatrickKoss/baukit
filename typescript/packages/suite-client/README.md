@@ -64,6 +64,34 @@ Register `suiteMessages` with `@baukit/localization-core`. Products replace
 `{product}` and render labels for their own event types. Message key and interpolation
 parity is checked across `en`, `de` and `es`.
 
+## Hosted authorize URLs
+
+Use `validateSuiteAuthorizePeer(peer, options)` when loading peer configuration.
+`peer` has `webUrl` and optional `authorizeUrl`. The latter is the full hosted
+page URL, including the authorizing product ID. HTTPS is required; enable
+`options.allowLoopback` for loopback HTTP development. Credentials, queries and
+fragments are rejected.
+
+```ts
+import { suiteAuthorizeUrl, validateSuiteAuthorizePeer } from '@baukit/suite-client';
+
+const peer = {
+  webUrl: 'https://beta.example',
+  authorizeUrl: 'https://account.example/suite/authorize/beta',
+};
+validateSuiteAuthorizePeer(peer);
+const url = suiteAuthorizeUrl(peer, {
+  client: 'alpha', state, codeChallenge, hint, hintDomain,
+});
+```
+
+The configured path is preserved, including a trailing slash. The query uses
+`client`, `state`, `code_challenge`, optional `hint` and `hint_domain`.
+Without `authorizeUrl`, the endpoint stays `${webUrl}/suite/authorize`.
+`SuiteClient.start` already returns the server's configured `authorizeUrl`;
+`SuiteSession` uses it directly. Products building URLs themselves can use the
+helper. Keep the local authorize page for deployments without hosted consent.
+
 ## Peer metadata at config time
 
 The dependency-free `@baukit/suite-client/peers` subpath has ESM and CommonJS

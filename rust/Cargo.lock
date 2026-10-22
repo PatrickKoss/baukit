@@ -469,11 +469,14 @@ dependencies = [
 name = "baukit-mcp"
 version = "0.10.32"
 dependencies = [
+ "async-trait",
  "aws-lc-rs",
  "axum",
  "baukit-auth",
  "baukit-config",
+ "baukit-mcp",
  "baukit-ratelimit",
+ "baukit-suite",
  "baukit-test",
  "http",
  "jsonschema",
@@ -489,6 +492,7 @@ dependencies = [
  "tokio-util",
  "tower",
  "url",
+ "uuid",
 ]
 
 [[package]]

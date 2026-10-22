@@ -68,7 +68,10 @@ impl SuiteLinkService {
             consumed_at: None,
             created_at: now,
         };
-        let mut url = endpoint(&peer.web_url, "/suite/authorize")?;
+        let mut url = match &peer.authorize_url {
+            Some(value) => Url::parse(value).map_err(|_| SuiteServiceError::PayloadInvalid)?,
+            None => endpoint(&peer.web_url, "/suite/authorize")?,
+        };
         {
             let mut pairs = url.query_pairs_mut();
             pairs

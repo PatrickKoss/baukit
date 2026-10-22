@@ -120,14 +120,34 @@ struct PeerFile {
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(default)]
+#[non_exhaustive]
 pub struct PeerUrls {
     #[serde(deserialize_with = "crate::config::empty_string_as_none")]
     pub api_url: Option<String>,
     #[serde(deserialize_with = "crate::config::empty_string_as_none")]
     pub web_url: Option<String>,
+    /// Full hosted consent page URL, including the authorizing product ID.
+    #[serde(deserialize_with = "crate::config::empty_string_as_none")]
+    pub authorize_url: Option<String>,
+}
+
+impl PeerUrls {
+    pub fn new(api_url: impl Into<String>, web_url: impl Into<String>) -> Self {
+        Self {
+            api_url: Some(api_url.into()),
+            web_url: Some(web_url.into()),
+            authorize_url: None,
+        }
+    }
+
+    pub fn with_authorize_url(mut self, url: impl Into<String>) -> Self {
+        self.authorize_url = Some(url.into());
+        self
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
 pub struct PeerRegistrySettings {
     pub public_api_url: Option<String>,
     pub public_web_url: Option<String>,
@@ -135,11 +155,34 @@ pub struct PeerRegistrySettings {
     pub allow_loopback: bool,
 }
 
+impl PeerRegistrySettings {
+    pub fn with_public_urls(
+        mut self,
+        api_url: impl Into<String>,
+        web_url: impl Into<String>,
+    ) -> Self {
+        self.public_api_url = Some(api_url.into());
+        self.public_web_url = Some(web_url.into());
+        self
+    }
+
+    pub fn with_peer(mut self, id: impl Into<String>, urls: PeerUrls) -> Self {
+        self.peers.insert(id.into(), urls);
+        self
+    }
+
+    pub fn with_allow_loopback(mut self, allow: bool) -> Self {
+        self.allow_loopback = allow;
+        self
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ActivePeer {
     pub metadata: PeerMetadata,
     pub api_url: String,
     pub web_url: String,
+    pub authorize_url: Option<String>,
     pub sends: Vec<String>,
     pub receives: Vec<String>,
 }
@@ -200,6 +243,11 @@ impl PeerRegistry {
                 .as_deref()
                 .map(|value| configured_url(value, settings.allow_loopback, true, &id))
                 .transpose()?;
+            let authorize_url = urls
+                .authorize_url
+                .as_deref()
+                .map(|value| validate_authorize_url(value, settings.allow_loopback, &id))
+                .transpose()?;
             let sends = intersect(&own.emits, &peer.accepts);
             let receives = intersect(&peer.emits, &own.accepts);
             if let (Some(api_url), Some(web_url)) = (api, web)
@@ -209,6 +257,7 @@ impl PeerRegistry {
                     metadata: peer.clone(),
                     api_url,
                     web_url,
+                    authorize_url,
                     sends,
                     receives,
                 });
@@ -297,6 +346,28 @@ fn configured_url(
         return Err(invalid());
     }
     Ok(url.as_str().trim_end_matches('/').to_owned())
+}
+
+/// Validate a hosted consent URL without changing its configured path.
+pub(crate) fn validate_authorize_url(
+    value: &str,
+    allow_loopback: bool,
+    peer: &str,
+) -> Result<String, SuiteDataError> {
+    let authority = value
+        .split_once("://")
+        .map(|(_, rest)| rest.split(['/', '?', '#']).next().unwrap_or_default());
+    if authority.is_none_or(|value| value.contains('@'))
+        || value
+            .chars()
+            .any(|c| c.is_ascii_whitespace() || c.is_control() || c == '\\')
+    {
+        return Err(SuiteDataError::InvalidUrl(peer.to_owned()));
+    }
+    configured_url(value, allow_loopback, false, peer)?;
+    Ok(Url::parse(value)
+        .map_err(|_| SuiteDataError::InvalidUrl(peer.to_owned()))?
+        .into())
 }
 
 pub fn validate_return_url(

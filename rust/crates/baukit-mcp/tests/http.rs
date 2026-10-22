@@ -1410,3 +1410,7 @@ async fn product_identity_instructions_and_success_prefix_preserve_structured_co
     );
     Ok(())
 }
+
+#[cfg(feature = "suite")]
+#[path = "support/suite.rs"]
+mod suite;

@@ -155,6 +155,7 @@ def run_backend(fixture: Path, repository: Path) -> None:
     environment[f"{prefix}__RATE_LIMIT__REDIS_URL"] = "redis://redis:6379/"
     internal_jwks = f"http://smoke:8081/realms/{name}/protocol/openid-connect/certs"
     environment[f"{prefix}__AUTH__JWKS_URI"] = internal_jwks
+    environment[f"{prefix}__AUTH__AUTHORIZED_PARTIES"] = json.dumps([f"{name}-web"])
     backend = None
     with tempfile.TemporaryFile(mode="w+") as output:
         try:
@@ -208,7 +209,21 @@ def run_backend(fixture: Path, repository: Path) -> None:
                 item = json.load(response)
                 if response.status != 201 or item["name"] != item_name:
                     raise RuntimeError("REST did not create the smoke item")
-            print("REST: created MCP smoke item with a backend-audience web token", flush=True)
+            # The same valid backend token must fail when its client is absent from the allowlist.
+            backend.terminate()
+            backend.wait(timeout=30)
+            environment[f"{prefix}__AUTH__AUTHORIZED_PARTIES"] = json.dumps(["another-product-client"])
+            backend = subprocess.Popen([str(fixture / "backend/target/debug/api")], env=environment, stdout=output, stderr=subprocess.STDOUT)
+            wait_ready("http://localhost:9090/readyz", backend)
+            denied = urllib.request.Request("http://localhost:8080/me", headers={"Authorization": f"Bearer {web_token}"})
+            try:
+                urllib.request.urlopen(denied, timeout=5).close()
+            except urllib.error.HTTPError as error:
+                if error.code != 401:
+                    raise
+            else:
+                raise RuntimeError("REST accepted a token from a client outside authorized_parties")
+            print("REST: accepted the allowed web azp and rejected it outside the allowlist", flush=True)
             print("OAuth: authorization code + PKCE S256, scope items:read, resource http://localhost:8080/mcp", flush=True)
             with urllib.request.urlopen("http://localhost:8080/.well-known/oauth-protected-resource", timeout=5) as response:
                 metadata = json.load(response)
@@ -234,7 +249,7 @@ def run_backend(fixture: Path, repository: Path) -> None:
 
 def run(fixture: Path, repository: Path) -> None:
     subprocess.run(["cargo", "build", "--manifest-path", str(repository / "rust/Cargo.toml"), "-p", "baukit-mcp", "--example", "connect"], check=True)
-    project = f"baukit-mcp-smoke-{os.getpid()}"
+    project = os.environ.get("COMPOSE_PROJECT_NAME", f"baukit-mcp-smoke-{os.getpid()}")
     with tempfile.TemporaryDirectory(prefix="baukit-mcp-compose-") as temporary:
         override = Path(temporary) / "compose.yaml"
         mounts = [f"{repository}:{repository}:ro", f"{fixture}:{fixture}:ro"]

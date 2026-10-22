@@ -7,8 +7,11 @@ pub async fn auth_verifier(
 ) -> Result<Arc<dyn IdentityVerifier>, Box<dyn Error>> {
     match config.provider {
         AuthProvider::Oidc => {
-            let oidc =
+            let mut oidc =
                 OidcConfig::new(&config.issuer, &config.audience)?.with_clock_skew(Duration::ZERO);
+            if !config.authorized_parties.is_empty() {
+                oidc = oidc.with_allowed_clients(config.authorized_parties.clone())?;
+            }
             let verifier = match &config.jwks_uri {
                 Some(uri) => OidcVerifier::from_jwks_uri(oidc, uri)?,
                 None => OidcVerifier::discover(oidc).await?,

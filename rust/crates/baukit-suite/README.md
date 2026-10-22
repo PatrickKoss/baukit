@@ -39,6 +39,48 @@ baukit-suite = { version = "0.10.0", default-features = false }
 baukit-suite = { version = "0.10.0", features = ["http", "jobs", "delivery"] }
 ```
 
+## Hosted authorize pages
+
+Set a full consent URL per authorizing peer. This matches hubs whose route ends
+in the authorizer's product ID, and lets each peer move to hosted consent separately:
+
+```toml
+[suite.peers.beta]
+api_url = "https://beta.example/api/v1"
+web_url = "https://beta.example"
+authorize_url = "https://account.example/portal/suite/authorize/beta/"
+```
+
+The environment key is `<PREFIX>__SUITE__PEERS__BETA__AUTHORIZE_URL`.
+`SuiteConfig::validate` rejects invalid URLs during config loading, including
+inactive peers. `PeerRegistry::new` repeats the check for programmatic settings.
+URLs must be absolute HTTPS, without credentials, query or fragment. HTTP is
+allowed only for loopback hosts with `suite.allow_loopback = true`.
+The configured path, including a trailing slash, stays intact. `start` appends
+`client`, `state`, `code_challenge`, and optional `hint` and `hint_domain`.
+Without the override it still returns `<peer web origin>/suite/authorize` with
+the same query encoding and ordering.
+
+For programmatic configuration, use
+`PeerUrls::new(api_url, web_url).with_authorize_url(full_url)` inside
+`PeerRegistrySettings::default().with_public_urls(api_url, web_url).with_peer(id, urls)`.
+`with_allow_loopback(true)` enables local HTTP. `SuiteConfig`, `PeerUrls` and
+`PeerRegistrySettings` are non-exhaustive; mutate defaults for individual fields.
+
+Products retain their local authorize page and all preview, approve, deny and
+callback endpoints. A hosted page calls the authorizer with a product token.
+Allow its origin in the product's CORS policy and register its exact token
+callback with the product's public OAuth client before switching the URL.
+The hosted registry and product registry must agree on product IDs, API bases
+and event directions. Callbacks and PKCE exchange still belong to the products.
+
+`@baukit/suite-client` exports `suiteAuthorizeUrl(peer, input, options)` and
+`validateSuiteAuthorizePeer(peer, options)`. The peer uses `webUrl` and optional
+`authorizeUrl`; input uses `client`, `state`, `codeChallenge`, optional `hint`
+and `hintDomain`. Set `options.allowLoopback` only for local development.
+Validate peer configuration when loading it. `suiteAuthorizeUrl` repeats the
+validation and appends the same protocol parameters as Rust.
+
 ## Product contracts
 
 Implement `SuiteEventApplier`, `SuiteReplaySource` and `SuiteIdentitySource`.

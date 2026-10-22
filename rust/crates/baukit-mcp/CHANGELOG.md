@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add the optional `suite` feature and `McpServices::with_suite_links` to register `list_suite_links`. It requires `links:read`, reads the effective product owner through `SuiteLinksRead`, and returns credential-free link metadata in pages of 100.
+
 ## [0.10.32] - 2026-10-21
 
 ## [0.10.31] - 2026-10-20

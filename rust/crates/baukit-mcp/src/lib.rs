@@ -7,6 +7,10 @@ mod introspection;
 mod policy;
 mod security;
 mod server;
+#[cfg(feature = "suite")]
+mod suite;
+#[cfg(feature = "suite")]
+pub use suite::SuiteLinksTool;
 
 pub use capabilities::{
     CapabilityError, CapabilityFuture, McpServices, Prompt, PromptArgument, PromptFuture,
