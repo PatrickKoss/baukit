@@ -73,6 +73,8 @@ pub enum AuthRejection {
     InvalidToken,
     /// A bearer token was supplied but has expired.
     ExpiredToken,
+    /// Verification could not complete because a backing service is unavailable.
+    Unavailable,
     /// The identity is valid but is not allowed to perform the operation.
     PermissionDenied,
 }
@@ -98,6 +100,17 @@ impl IntoResponse for AuthRejection {
             }
             Self::InvalidToken => invalid_token_response(INVALID_TOKEN_CHALLENGE),
             Self::ExpiredToken => invalid_token_response(EXPIRED_TOKEN_CHALLENGE),
+            Self::Unavailable => baukit_http::ApiError::new(
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                "unavailable",
+                "Identity verification is temporarily unavailable",
+            )
+            .with_retry_after(UNAVAILABLE_RETRY_AFTER_SECONDS)
+            .with_header(
+                header::CACHE_CONTROL,
+                header::HeaderValue::from_static("no-store"),
+            )
+            .into_response(),
             Self::PermissionDenied => baukit_http::ApiError::permission_denied().into_response(),
         }
     }
@@ -107,6 +120,7 @@ const EXPIRED_TOKEN_CHALLENGE: &str =
     "Bearer error=\"invalid_token\", error_description=\"expired\"";
 const INVALID_TOKEN_CHALLENGE: &str =
     "Bearer error=\"invalid_token\", error_description=\"invalid\"";
+const UNAVAILABLE_RETRY_AFTER_SECONDS: u64 = 1;
 
 fn invalid_token_response(challenge: &'static str) -> Response {
     let mut response = baukit_http::ApiError::unauthenticated().into_response();
@@ -146,11 +160,21 @@ fn bearer_token(headers: &axum::http::HeaderMap) -> Option<&str> {
 }
 
 fn log_verification_failure(error: VerificationError) -> AuthRejection {
+    if error.is_unavailable() {
+        tracing::error!("identity verification infrastructure failed");
+        return AuthRejection::Unavailable;
+    }
     tracing::debug!(error = %error, "bearer authentication failed");
     if matches!(error, VerificationError::Expired) {
         AuthRejection::ExpiredToken
     } else {
         AuthRejection::InvalidToken
+    }
+}
+
+impl From<VerificationError> for AuthRejection {
+    fn from(error: VerificationError) -> Self {
+        log_verification_failure(error)
     }
 }
 
@@ -201,6 +225,7 @@ mod tests {
             Box::pin(ready(match token {
                 "valid" => Ok(Principal::new("fixture")),
                 "expired" => Err(VerificationError::Expired),
+                "unavailable" => Err(VerificationError::Unavailable),
                 _ => Err(VerificationError::MalformedToken),
             }))
         }
@@ -286,6 +311,45 @@ mod tests {
             )
             .expect("JSON response");
             assert_eq!(json["error"]["code"], "unauthenticated");
+        }
+    }
+
+    #[tokio::test]
+    async fn unavailable_verification_returns_a_retryable_envelope_for_both_paths() {
+        for use_middleware in [false, true] {
+            let auth = AuthState::new(AcceptFixture::new());
+            let mut app = Router::new()
+                .route("/", get(handler))
+                .with_state(auth.clone());
+            if use_middleware {
+                app = app.layer(middleware::from_fn_with_state(auth, establish_principal));
+            }
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .header(header::AUTHORIZATION, "Bearer unavailable")
+                        .body(Body::empty())
+                        .expect("request"),
+                )
+                .await
+                .expect("response");
+            assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+            assert_eq!(response.headers()[header::RETRY_AFTER], "1");
+            assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+            assert!(!response.headers().contains_key(header::WWW_AUTHENTICATE));
+            let body: Value = serde_json::from_slice(
+                &to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .expect("body"),
+            )
+            .expect("JSON");
+            assert_eq!(body["error"]["code"], "unavailable");
+            assert_eq!(
+                body["error"]["message"],
+                "Identity verification is temporarily unavailable"
+            );
+            assert!(body["error"]["requestId"].is_string());
+            assert_eq!(body["error"]["details"], serde_json::json!({}));
         }
     }
 
@@ -412,6 +476,25 @@ mod tests {
         let output = String::from_utf8(output.lock().expect("capture lock").clone())
             .expect("UTF-8 tracing output");
         assert!(output.contains("bearer authentication failed"));
+        assert!(!output.contains(secret));
+
+        let infrastructure = Arc::new(Mutex::new(Vec::new()));
+        let writer = Captured(infrastructure.clone());
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_target(false)
+            .with_max_level(tracing::Level::DEBUG)
+            .with_writer(move || writer.clone())
+            .finish();
+        let rejection = tracing::subscriber::with_default(subscriber, || {
+            AuthRejection::from(VerificationError::Unavailable)
+        });
+        assert_eq!(rejection, AuthRejection::Unavailable);
+        let output = String::from_utf8(infrastructure.lock().expect("capture lock").clone())
+            .expect("UTF-8 tracing output");
+        assert!(output.contains("ERROR identity verification infrastructure failed"));
+        assert!(!output.contains("bearer authentication failed"));
         assert!(!output.contains(secret));
     }
 

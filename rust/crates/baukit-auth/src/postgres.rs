@@ -64,7 +64,7 @@ impl PostgresApiTokenStore {
 
     async fn create_token(&self, record: ApiTokenRecord) -> Result<ApiToken, ApiTokenStoreError> {
         let Some(limit) = &self.active_limit else {
-            return insert_token(&self.pool, &record)
+            return insert_api_token(&self.pool, &record)
                 .await
                 .map_err(ApiTokenStoreError::internal);
         };
@@ -79,7 +79,7 @@ impl PostgresApiTokenStore {
         if active >= i64::from(limit.maximum.get()) {
             return Err(ApiTokenStoreError::PolicyRejected(limit.rejection.clone()));
         }
-        let token = insert_token(&mut *transaction, &record)
+        let token = insert_api_token(&mut *transaction, &record)
             .await
             .map_err(ApiTokenStoreError::internal)?;
         transaction
@@ -277,7 +277,20 @@ async fn lock_and_count_active(
     .await
 }
 
-async fn insert_token<'e, E>(executor: E, record: &ApiTokenRecord) -> Result<ApiToken, sqlx::Error>
+/// Inserts a prepared token through a pool or caller-owned transaction.
+///
+/// Pass a record from [`ApiTokenService::prepare`](crate::ApiTokenService::prepare)
+/// and `&mut *transaction` to commit the token with the caller's other writes.
+/// This function does not take a lock or enforce the store's active token limit.
+/// The caller must check its policy in the same transaction before inserting.
+///
+/// # Errors
+///
+/// Returns any database error unchanged.
+pub async fn insert_api_token<'e, E>(
+    executor: E,
+    record: &ApiTokenRecord,
+) -> Result<ApiToken, sqlx::Error>
 where
     E: PgExecutor<'e>,
 {

@@ -4,6 +4,19 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+- Breaking: `VerificationError` is now non-exhaustive and adds `Unavailable`.
+  Downstream matches need a wildcard arm. `AuthRejection` also adds `Unavailable`.
+  Store failures and OIDC infrastructure failures return HTTP 503 with the standard
+  `unavailable` envelope and `Retry-After: 1`, without an OAuth challenge. Invalid,
+  revoked, unknown, and expired credentials still return 401. Infrastructure failures
+  are logged separately without credential material.
+- Add `VerificationError::is_unavailable()` and `From<VerificationError>` for
+  `AuthRejection` so transports and product adapters can preserve retryable failures.
+- Add `MAX_API_TOKEN_NAME_LENGTH`, `ApiTokenService::prepare` and `prepare_at`, and
+  the `sqlx-postgres` helper `insert_api_token`. Products can validate and generate
+  a token, then insert it under their own lock in the same transaction as policy
+  checks and other writes. The store uses the same INSERT helper.
+
 ## [0.10.32] - 2026-10-21
 
 ## [0.10.31] - 2026-10-20

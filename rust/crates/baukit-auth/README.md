@@ -326,6 +326,29 @@ fn can_read(principal: &Principal) -> bool {
 Storage sits behind the `ApiTokenStore` port. An adapter must write a record's grants in the same
 write as its digest, so a token never exists without them.
 
+An API token name may contain at most `MAX_API_TOKEN_NAME_LENGTH` characters
+after trimming. `ApiTokenService` validates the name, grants, and expiry before
+generating a secret.
+
+## Verification outages
+
+`ApiTokenVerifier` returns `VerificationError::Unavailable` if lookup or the
+last-use update fails because the store is down. A marked API token never falls
+through to the OIDC verifier, including during an outage. Unknown, revoked, and
+expired tokens still fail authentication.
+
+The Axum extractor and `establish_principal` return HTTP 503 with error code
+`unavailable` and `Retry-After: 1` for infrastructure failures. They omit
+`WWW-Authenticate`, so clients can retry without replacing their credentials.
+Infrastructure failures are logged separately from authentication failures,
+without token material or private store diagnostics. OIDC network and JWKS
+fetch failures also get this response through `VerificationError::is_unavailable()`.
+
+Custom verifiers should return `VerificationError::Unavailable` for database,
+network, or provider failures. Use `AuthRejection::from(error)` to preserve
+this behavior in a product transport. `VerificationError` is non-exhaustive;
+include a wildcard arm in downstream matches.
+
 ## PostgreSQL token store
 
 The `sqlx-postgres` feature adds `PostgresApiTokenStore`. Copy `POSTGRES_API_TOKENS_MIGRATION_SQL`
@@ -356,6 +379,63 @@ let _tokens = ApiTokenService::new(Arc::new(store));
 # Ok(())
 # }
 ```
+
+### Insert in a caller-owned transaction
+
+Use `ApiTokenService::prepare` to validate a request and generate a record and a
+`GeneratedApiToken` without writing. `prepare_at` accepts an explicit instant.
+With `sqlx-postgres`, `insert_api_token` accepts a `PgExecutor`, including
+`&mut *transaction` or `&mut PgConnection`.
+
+Take your owner lock, count active tokens, and insert in that same transaction.
+Every creation path for that owner must use the same locking rule. Preparation
+and insertion do not run the store's `with_active_token_limit` policy. The
+caller owns that check, as well as any grant allowlist or expiry bounds beyond
+Baukit's validation. The example uses an owner row lock and a caller-supplied
+maximum:
+
+```rust,no_run
+# #[cfg(feature = "sqlx-postgres")]
+# async fn example(
+#     pool: sqlx::PgPool,
+#     tokens: baukit_auth::ApiTokenService,
+#     owner_id: uuid::Uuid,
+#     maximum: std::num::NonZeroU32,
+# ) -> Result<baukit_auth::IssuedApiToken, Box<dyn std::error::Error>> {
+use baukit_auth::{IssuedApiToken, NewApiToken, insert_api_token};
+
+let mut transaction = pool.begin().await?;
+let owner: Option<uuid::Uuid> = sqlx::query_scalar("SELECT id FROM users WHERE id = $1 FOR UPDATE")
+    .bind(owner_id)
+    .fetch_optional(&mut *transaction)
+    .await?;
+if owner.is_none() {
+    return Err("owner not found".into());
+}
+let (record, generated) = tokens.prepare(
+    owner_id,
+    NewApiToken::new("Nightly export").with_grants(["records:read"]),
+)?;
+let active: i64 = sqlx::query_scalar(
+    "SELECT count(*) FROM api_tokens WHERE owner_id = $1
+     AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > $2)",
+)
+.bind(owner_id)
+.bind(record.created_at)
+.fetch_one(&mut *transaction)
+.await?;
+if active >= i64::from(maximum.get()) {
+    return Err("active token limit reached".into());
+}
+let token = insert_api_token(&mut *transaction, &record).await?;
+transaction.commit().await?;
+Ok(IssuedApiToken { token, secret: generated.into_secret() })
+# }
+```
+
+Return the secret only after commit succeeds. On an error, dropping
+`GeneratedApiToken` zeroizes the secret. A rollback removes the token and its
+grants along with the caller's other writes.
 
 The store keeps four promises:
 

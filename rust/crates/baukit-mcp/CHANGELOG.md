@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Return HTTP 503 with the standard `unavailable` envelope and `Retry-After: 1`
+  when identity verification fails because storage or OIDC infrastructure is
+  unavailable. Omit the OAuth challenge so clients can retry without signing in
+  again. Invalid credentials still return 401.
+
 ## [0.10.32] - 2026-10-21
 
 ## [0.10.31] - 2026-10-20

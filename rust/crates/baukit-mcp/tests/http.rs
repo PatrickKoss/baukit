@@ -1410,3 +1410,49 @@ async fn product_identity_instructions_and_success_prefix_preserve_structured_co
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn verifier_infrastructure_failures_are_retryable_without_a_login_challenge()
+-> Result<(), Box<dyn Error>> {
+    struct UnavailableVerifier {
+        jwks: bool,
+    }
+    impl baukit_auth::IdentityVerifier for UnavailableVerifier {
+        fn verify<'a>(
+            &'a self,
+            _token: &'a str,
+        ) -> Pin<
+            Box<
+                dyn Future<Output = Result<baukit_auth::Principal, baukit_auth::VerificationError>>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            Box::pin(std::future::ready(Err(if self.jwks {
+                baukit_auth::VerificationError::JwksTimeout
+            } else {
+                baukit_auth::VerificationError::Unavailable
+            })))
+        }
+    }
+    let issuer = MockOidcServer::start().await?;
+    for jwks in [false, true] {
+        let app = router(
+            config(&issuer),
+            Arc::new(UnavailableVerifier { jwks }),
+            McpServices::new(Arc::new(IdentityTool)),
+            Arc::new(InMemoryRateLimitStore::default()),
+            Arc::new(JwtOnlyPolicy),
+        )
+        .await?;
+        let (status, headers, body) = send(&app, Some("private-token-material"),
+            json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"identity","arguments":{}}})).await?;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(headers[header::RETRY_AFTER], "1");
+        assert_eq!(headers[header::CACHE_CONTROL], "no-store");
+        assert!(!headers.contains_key(header::WWW_AUTHENTICATE));
+        assert_eq!(body["error"]["code"], "unavailable");
+        assert!(!body.to_string().contains("private-token-material"));
+    }
+    Ok(())
+}

@@ -2,6 +2,9 @@
 
 Mount an OAuth-protected MCP resource at `/mcp` in an Axum backend.
 `router` takes an `Arc<dyn IdentityVerifier>` and verifies every request with it.
+If the verifier reports an infrastructure failure, the transport returns HTTP
+503 with the standard `unavailable` envelope and `Retry-After: 1`. It omits the
+OAuth challenge so clients can retry without signing in again.
 The caller selects the provider and enforces the resource audience or the
 provider's documented token binding. `McpConfig::issuer` names the authorization
 server in RFC 9728 metadata. HTTP is allowed only for loopback development.

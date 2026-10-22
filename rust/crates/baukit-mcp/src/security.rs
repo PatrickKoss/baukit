@@ -9,7 +9,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use baukit_auth::IdentityVerifier;
+use baukit_auth::{AuthRejection, IdentityVerifier};
 use baukit_ratelimit::{Quota, RateLimitStore};
 use rmcp::transport::streamable_http_server::{
     StreamableHttpServerConfig, StreamableHttpService, session::never::NeverSessionManager,
@@ -163,6 +163,7 @@ async fn authorize_inner(state: &Security, mut request: Request, next: Next) -> 
     };
     let principal = match state.verifier.verify(token).await {
         Ok(principal) => principal,
+        Err(error) if error.is_unavailable() => return AuthRejection::from(error).into_response(),
         Err(_) => {
             return challenge(
                 state,

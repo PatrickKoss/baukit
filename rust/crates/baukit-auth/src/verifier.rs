@@ -1183,7 +1183,11 @@ fn jwks_request_error(error: reqwest::Error) -> VerificationError {
 
 /// Failure while discovering an issuer or verifying an access token.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum VerificationError {
+    /// Verification could not complete because a backing service is unavailable.
+    #[error("identity verification is temporarily unavailable")]
+    Unavailable,
     /// The HTTP client could not be created.
     #[error("could not create OIDC HTTP client: {0}")]
     Client(#[source] reqwest::Error),
@@ -1286,8 +1290,56 @@ pub enum VerificationError {
     InvalidPrincipalContext,
 }
 
+impl VerificationError {
+    /// Returns whether verification failed because its infrastructure failed.
+    ///
+    /// Retry these failures without asking the caller to replace its credentials.
+    #[must_use]
+    pub const fn is_unavailable(&self) -> bool {
+        matches!(
+            self,
+            Self::Unavailable
+                | Self::Client(_)
+                | Self::DiscoveryTimeout
+                | Self::DiscoveryRequest(_)
+                | Self::DiscoveryStatus(_)
+                | Self::InvalidDiscoveryDocument(_)
+                | Self::DiscoveryIssuerMismatch
+                | Self::InvalidJwksUri
+                | Self::JwksTimeout
+                | Self::JwksRequest(_)
+                | Self::JwksStatus(_)
+                | Self::InvalidJwksDocument(_)
+                | Self::Clock
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn infrastructure_failures_are_retryable_and_bad_credentials_are_not() {
+        use super::VerificationError as E;
+        for error in [
+            E::Unavailable,
+            E::JwksTimeout,
+            E::JwksStatus(reqwest::StatusCode::SERVICE_UNAVAILABLE),
+            E::DiscoveryTimeout,
+            E::Clock,
+        ] {
+            assert!(error.is_unavailable(), "{error:?}");
+        }
+        for error in [
+            E::Expired,
+            E::MalformedToken,
+            E::InvalidSignature,
+            E::UnknownKeyId,
+            E::WrongAudience,
+        ] {
+            assert!(!error.is_unavailable(), "{error:?}");
+        }
+    }
+
     use super::*;
 
     #[test]

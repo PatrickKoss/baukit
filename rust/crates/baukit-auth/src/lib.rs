@@ -89,13 +89,15 @@ pub use api_token::{
     ApiTokenPolicyRejectionError, ApiTokenRecord, ApiTokenService, ApiTokenStore,
     ApiTokenStoreError, ApiTokenStoreFuture, ApiTokenVerifier, DEFAULT_API_TOKEN_MARKER,
     GeneratedApiToken, IssuedApiToken, MAX_API_TOKEN_GRANT_LENGTH, MAX_API_TOKEN_GRANTS,
-    NewApiToken, StoredApiToken, hash_api_token,
+    MAX_API_TOKEN_NAME_LENGTH, NewApiToken, StoredApiToken, hash_api_token,
 };
 pub use axum_integration::{AuthRejection, AuthState, establish_principal};
 pub use baukit_openapi::{BEARER_AUTH_SCHEME, OpenApiMetadata};
 pub use config::{OidcConfig, OidcConfigError, PrincipalClaimMapping, SigningAlgorithm};
 #[cfg(feature = "sqlx-postgres")]
-pub use postgres::{PostgresApiTokenStore, erase_owner_api_tokens, purge_inactive_api_tokens};
+pub use postgres::{
+    PostgresApiTokenStore, erase_owner_api_tokens, insert_api_token, purge_inactive_api_tokens,
+};
 pub use providers::{ClerkOAuthVerifier, ClerkVerifier, ProviderVerifierError, WorkOsVerifier};
 pub use secret::constant_time_eq;
 pub use verifier::{
