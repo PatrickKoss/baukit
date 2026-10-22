@@ -10,10 +10,11 @@ checks and client setup. Existing products must follow the
 [migration guide](../migrations/mcp-stdio-to-remote.md).
 
 Products using suite links can enable `baukit-mcp`'s `suite` feature and call
-`McpServices::with_suite_links(Arc<SuiteLinkService>)`. The opt-in
-`list_suite_links` tool requires `links:read` and returns only the effective
-product owner's link metadata in pages of 100. The authentication policy must
-map the verified identity to the product account UUID before tool dispatch.
+`McpServices::with_suite_links(service, owners)`. Pass an `Arc<SuiteLinkService>`
+and an `Arc<dyn SuiteOwnerResolver>` that resolves the verified identity to an
+admitted product account. The opt-in `list_suite_links` tool requires `links:read`
+and returns only that owner's link metadata in pages of 100. Unmapped identities
+receive an `unauthenticated` tool error before any links are read.
 See the [links tool contract](../remote-mcp.md#read-suite-links-with-mcp-tokens)
 for the JSON shape, cursor and manifest export.
 

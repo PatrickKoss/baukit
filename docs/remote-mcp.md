@@ -206,20 +206,32 @@ product's existing tools:
 
 ```rust
 let services = baukit_mcp::McpServices::new(product_tools)
-    .with_suite_links(suite_link_service);
+    .with_suite_links(suite_link_service, suite_owner_resolver);
 ```
 
 Pass an `Arc<SuiteLinkService>` or an `Arc<dyn SuiteLinksRead>` adapter. The
 supplied `SuiteLinkService` implementation calls its existing owner-scoped
-`list` read. `SuiteLinksTool::new(service)` also works as a standalone
-`ToolService`. No tool is registered by default.
+`list` read. Both registration methods require an `Arc<dyn SuiteOwnerResolver>`.
+`SuiteLinksTool::new(service, owners)` also works as a standalone `ToolService`.
+No tool is registered by default.
 
-The product authentication policy must resolve the verified issuer and subject
-to the local account, check account admission and erasure fences, then return
-`principal.with_subject(owner_uuid.to_string())`. Never copy an account UUID
-from tool arguments or an unsigned claim. The tool parses this effective subject
-as a UUID and rejects unmapped identities. It also rejects any foreign-owner row
-returned by a faulty adapter.
+Implement `SuiteOwnerResolver` in the product's account adapter:
+
+```rust
+fn resolve<'a>(&'a self, principal: &'a Principal) -> SuiteOwnerFuture<'a>;
+```
+
+The future returns `Result<Option<Uuid>, ToolError>`.
+Use `principal.verified_identity()` to look up the local account from its verified
+issuer and subject, and check account admission and erasure fences. Return
+`Some(owner_uuid)` only for an admitted account. Return `None` when the identity
+has no local account. Resolver errors must use client-safe codes and messages.
+
+The tool never treats a UUID-shaped IdP subject as a product account ID and does
+not rely on `Principal::with_subject`. An unmapped identity returns an `isError`
+tool result with `{"code":"unauthenticated","message":"Product account identity required"}`
+before the link reader runs. Never copy an owner UUID from tool arguments or an
+unsigned claim. The tool also rejects foreign-owner rows from a faulty read adapter.
 
 `list_suite_links` requires `links:read` through the ordinary MCP scope checks.
 It accepts `{}` or `{"after":"<last link UUID>"}`. It sorts by link UUID and
@@ -250,8 +262,9 @@ The stable camelCase result is:
 `status` is `active`, `needs_attention` or `revoked`. Timestamps are RFC 3339 UTC.
 Results contain no tokens, secrets, remote subjects or shared identity claims.
 Tool failures use `{code,message}` with `isError`; codes are
-`invalid_arguments`, `invalid_identity`, `cancelled`, `service_unavailable`
-and `unknown_tool`. Missing scopes receive the existing HTTP 403
+`invalid_arguments`, `unauthenticated`, `cancelled`, `service_unavailable`
+and `unknown_tool`; resolver errors retain their client-safe codes and messages.
+Missing scopes receive the existing HTTP 403
 `insufficient_scope` challenge before the service runs.
 
 Register `links:read` with the provider for the product MCP resource. Keep

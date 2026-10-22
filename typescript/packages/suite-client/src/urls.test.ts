@@ -12,6 +12,14 @@ const query =
   'client=alpha&state=request+state&code_challenge=pkce-challenge&hint=subject%2Bhint&hint_domain=shared';
 
 describe('suite authorize URLs', () => {
+  it.each(['https://x/', 'https://x///'])('trims trailing slashes from %s', (webUrl) => {
+    const peer = { webUrl };
+    expect(() => {
+      validateSuiteAuthorizePeer(peer);
+    }).not.toThrow();
+    expect(suiteAuthorizeUrl(peer, input)).toBe(`https://x/suite/authorize?${query}`);
+  });
+
   it('keeps the default endpoint and protocol query unchanged', () => {
     expect(suiteAuthorizeUrl({ webUrl: 'https://beta.example' }, input)).toBe(
       `https://beta.example/suite/authorize?${query}`,

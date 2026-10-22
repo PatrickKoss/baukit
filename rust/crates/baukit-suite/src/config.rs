@@ -260,6 +260,12 @@ mod tests {
                     "URL {url:?}: {}",
                     String::from_utf8_lossy(&result.stdout)
                 );
+                assert!(
+                    String::from_utf8_lossy(&result.stdout)
+                        .lines()
+                        .any(|line| line == "running 1 test"),
+                    "child must run exactly one test for URL {url:?}"
+                );
             }
             return;
         }

@@ -1,5 +1,5 @@
 ---
-"@baukit/suite-client": patch
+"@baukit/suite-client": minor
 ---
 
 Add validated per-peer hosted consent URLs with `suiteAuthorizeUrl` and

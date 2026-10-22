@@ -10,7 +10,7 @@ mod server;
 #[cfg(feature = "suite")]
 mod suite;
 #[cfg(feature = "suite")]
-pub use suite::SuiteLinksTool;
+pub use suite::{SuiteLinksTool, SuiteOwnerFuture, SuiteOwnerResolver};
 
 pub use capabilities::{
     CapabilityError, CapabilityFuture, McpServices, Prompt, PromptArgument, PromptFuture,

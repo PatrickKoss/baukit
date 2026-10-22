@@ -2,7 +2,8 @@
 
 ## [Unreleased]
 
-- Add the optional `suite` feature and `McpServices::with_suite_links` to register `list_suite_links`. It requires `links:read`, reads the effective product owner through `SuiteLinksRead`, and returns credential-free link metadata in pages of 100.
+- Add the optional `suite` feature and `McpServices::with_suite_links` to register `list_suite_links`. It requires `links:read`, resolves the admitted product owner through `SuiteOwnerResolver`, reads through `SuiteLinksRead`, and returns credential-free link metadata in pages of 100.
+- `SuiteLinksTool::new` and `McpServices::with_suite_links` require an explicit owner resolver. Unmapped identities receive an `unauthenticated` tool error before links are read. This changes the constructor signatures introduced in this unreleased change.
 
 ## [0.10.32] - 2026-10-21
 

@@ -68,8 +68,14 @@ export function validateSuiteAuthorizePeer(
   peer: SuiteAuthorizePeer,
   options: { readonly allowLoopback?: boolean } = {},
 ): void {
-  if (peer.authorizeUrl !== undefined) authorizeEndpoint(peer.authorizeUrl, options.allowLoopback);
-  else authorizeEndpoint(`${peer.webUrl}/suite/authorize`, options.allowLoopback);
+  peerAuthorizeEndpoint(peer, options.allowLoopback);
+}
+
+function peerAuthorizeEndpoint(peer: SuiteAuthorizePeer, allowLoopback = false): URL {
+  return authorizeEndpoint(
+    peer.authorizeUrl ?? `${peer.webUrl.replace(/\/+$/, '')}/suite/authorize`,
+    allowLoopback,
+  );
 }
 
 function hasInvalidUrlCharacters(value: string): boolean {
@@ -89,7 +95,6 @@ function authorizeEndpoint(value: string, allowLoopback = false): URL {
   if (
     authority === undefined ||
     authority.includes('@') ||
-    value.trim() !== value ||
     hasInvalidUrlCharacters(value) ||
     url.username !== '' ||
     url.password !== '' ||
@@ -114,10 +119,7 @@ export function suiteAuthorizeUrl(
   },
   options: { readonly allowLoopback?: boolean } = {},
 ): string {
-  const url = authorizeEndpoint(
-    peer.authorizeUrl ?? `${peer.webUrl}/suite/authorize`,
-    options.allowLoopback,
-  );
+  const url = peerAuthorizeEndpoint(peer, options.allowLoopback);
   url.searchParams.append('client', input.client);
   url.searchParams.append('state', input.state);
   url.searchParams.append('code_challenge', input.codeChallenge);

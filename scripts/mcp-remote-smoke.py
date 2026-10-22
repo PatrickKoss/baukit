@@ -249,7 +249,7 @@ def run_backend(fixture: Path, repository: Path) -> None:
 
 def run(fixture: Path, repository: Path) -> None:
     subprocess.run(["cargo", "build", "--manifest-path", str(repository / "rust/Cargo.toml"), "-p", "baukit-mcp", "--example", "connect"], check=True)
-    project = os.environ.get("COMPOSE_PROJECT_NAME", f"baukit-mcp-smoke-{os.getpid()}")
+    project = f"baukit-mcp-smoke-{os.getpid()}"
     with tempfile.TemporaryDirectory(prefix="baukit-mcp-compose-") as temporary:
         override = Path(temporary) / "compose.yaml"
         mounts = [f"{repository}:{repository}:ro", f"{fixture}:{fixture}:ro"]

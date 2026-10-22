@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use std::{future::Future, pin::Pin, sync::Arc};
 
-use baukit_suite::services::SuiteLinksRead;
+use baukit_suite::{domain::SuiteLink, services::SuiteLinksRead};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -12,14 +12,32 @@ use crate::{
 const NAME: &str = "list_suite_links";
 const PAGE_SIZE: usize = 100;
 
-/// Read-only links for the product owner UUID in the effective principal's subject.
+pub type SuiteOwnerFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Option<Uuid>, ToolError>> + Send + 'a>>;
+
+/// Resolves a verified identity to an admitted product account, including erasure checks.
+pub trait SuiteOwnerResolver: Send + Sync + 'static {
+    /// Return `None` for an unmapped account, and only client-safe errors on failure.
+    fn resolve<'a>(&'a self, principal: &'a Principal) -> SuiteOwnerFuture<'a>;
+}
+
+/// Read-only links for the product account returned by the required owner resolver.
 pub struct SuiteLinksTool {
     service: Arc<dyn SuiteLinksRead>,
+    owners: Arc<dyn SuiteOwnerResolver>,
 }
 
 impl SuiteLinksTool {
-    pub fn new(service: Arc<dyn SuiteLinksRead>) -> Self {
-        Self { service }
+    pub fn new(service: Arc<dyn SuiteLinksRead>, owners: Arc<dyn SuiteOwnerResolver>) -> Self {
+        Self { service, owners }
+    }
+
+    async fn list(&self, principal: &Principal, arguments: Arguments) -> Result<Value, ToolError> {
+        let owner = self.owners.resolve(principal).await?.ok_or_else(|| {
+            ToolError::new("unauthenticated", "Product account identity required")
+        })?;
+        let links = self.service.list(owner).await.map_err(|_| unavailable())?;
+        link_page(links, owner, arguments.after)
     }
 
     /// Include this definition in a product's committed MCP tool manifest.
@@ -66,6 +84,47 @@ struct Arguments {
     after: Option<Uuid>,
 }
 
+impl Arguments {
+    fn parse(value: Value) -> Result<Self, ToolError> {
+        let invalid = || {
+            ToolError::new(
+                "invalid_arguments",
+                "Expected an optional UUID after cursor",
+            )
+        };
+        if !value.is_object() || value.get("after").is_some_and(|value| !value.is_string()) {
+            return Err(invalid());
+        }
+        serde_json::from_value(value).map_err(|_| invalid())
+    }
+}
+
+fn unavailable() -> ToolError {
+    ToolError::new("service_unavailable", "Suite links are unavailable")
+}
+
+fn link_page(
+    mut links: Vec<SuiteLink>,
+    owner: Uuid,
+    after: Option<Uuid>,
+) -> Result<Value, ToolError> {
+    if links.iter().any(|link| link.user_id != owner) {
+        return Err(unavailable());
+    }
+    links.sort_unstable_by_key(|link| link.id);
+    links.retain(|link| after.is_none_or(|after| link.id > after));
+    let next = (links.len() > PAGE_SIZE).then(|| links[PAGE_SIZE - 1].id);
+    let links: Vec<_> = links.into_iter().take(PAGE_SIZE).map(link_view).collect();
+    Ok(json!({"links":links,"nextCursor":next}))
+}
+
+fn link_view(link: SuiteLink) -> Value {
+    json!({
+        "id":link.id, "peerApp":link.peer_app, "sends":link.sends, "receives":link.receives,
+        "status":link.status, "createdAt":link.created_at, "updatedAt":link.updated_at
+    })
+}
+
 impl ToolService for SuiteLinksTool {
     fn tools(&self) -> Vec<ScopedTool> {
         vec![Self::definition()]
@@ -82,44 +141,11 @@ impl ToolService for SuiteLinksTool {
             if name != NAME {
                 return Err(ToolError::new("unknown_tool", "Unknown tool"));
             }
-            let invalid = || {
-                ToolError::new(
-                    "invalid_arguments",
-                    "Expected an optional UUID after cursor",
-                )
-            };
-            if !arguments.is_object()
-                || arguments
-                    .get("after")
-                    .is_some_and(|value| !value.is_string())
-            {
-                return Err(invalid());
-            }
-            let arguments: Arguments = serde_json::from_value(arguments).map_err(|_| invalid())?;
-            let owner = Uuid::parse_str(principal.subject()).map_err(|_| {
-                ToolError::new("invalid_identity", "Product account identity required")
-            })?;
-            let mut links = cancellation
-                .run_until_cancelled(self.service.list(owner))
+            let arguments = Arguments::parse(arguments)?;
+            cancellation
+                .run_until_cancelled(self.list(principal, arguments))
                 .await
                 .ok_or_else(|| ToolError::new("cancelled", "Request cancelled"))?
-                .map_err(|_| {
-                    ToolError::new("service_unavailable", "Suite links are unavailable")
-                })?;
-            if links.iter().any(|link| link.user_id != owner) {
-                return Err(ToolError::new(
-                    "service_unavailable",
-                    "Suite links are unavailable",
-                ));
-            }
-            links.sort_unstable_by_key(|link| link.id);
-            links.retain(|link| arguments.after.is_none_or(|after| link.id > after));
-            let next = (links.len() > PAGE_SIZE).then(|| links[PAGE_SIZE - 1].id);
-            let links: Vec<_> = links.into_iter().take(PAGE_SIZE).map(|link| json!({
-                "id":link.id, "peerApp":link.peer_app, "sends":link.sends, "receives":link.receives,
-                "status":link.status, "createdAt":link.created_at, "updatedAt":link.updated_at
-            })).collect();
-            Ok(json!({"links":links,"nextCursor":next}))
         })
     }
 }
@@ -153,10 +179,14 @@ impl ToolService for WithSuiteLinks {
 
 impl McpServices {
     /// Adds the opt-in `links:read` tool alongside the product's existing tools.
-    pub fn with_suite_links(mut self, service: Arc<dyn SuiteLinksRead>) -> Self {
+    pub fn with_suite_links(
+        mut self,
+        service: Arc<dyn SuiteLinksRead>,
+        owners: Arc<dyn SuiteOwnerResolver>,
+    ) -> Self {
         self.tools = Arc::new(WithSuiteLinks {
             product: self.tools,
-            suite: SuiteLinksTool::new(service),
+            suite: SuiteLinksTool::new(service, owners),
         });
         self
     }

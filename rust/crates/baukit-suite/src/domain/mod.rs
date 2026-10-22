@@ -182,7 +182,7 @@ pub struct ActivePeer {
     pub metadata: PeerMetadata,
     pub api_url: String,
     pub web_url: String,
-    pub authorize_url: Option<String>,
+    pub authorize_url: Option<Url>,
     pub sends: Vec<String>,
     pub receives: Vec<String>,
 }
@@ -353,7 +353,7 @@ pub(crate) fn validate_authorize_url(
     value: &str,
     allow_loopback: bool,
     peer: &str,
-) -> Result<String, SuiteDataError> {
+) -> Result<Url, SuiteDataError> {
     let authority = value
         .split_once("://")
         .map(|(_, rest)| rest.split(['/', '?', '#']).next().unwrap_or_default());
@@ -365,9 +365,7 @@ pub(crate) fn validate_authorize_url(
         return Err(SuiteDataError::InvalidUrl(peer.to_owned()));
     }
     configured_url(value, allow_loopback, false, peer)?;
-    Ok(Url::parse(value)
-        .map_err(|_| SuiteDataError::InvalidUrl(peer.to_owned()))?
-        .into())
+    Url::parse(value).map_err(|_| SuiteDataError::InvalidUrl(peer.to_owned()))
 }
 
 pub fn validate_return_url(

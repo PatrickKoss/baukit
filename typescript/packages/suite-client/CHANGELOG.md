@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - Add `suiteAuthorizeUrl` and `validateSuiteAuthorizePeer` for per-peer hosted consent URLs with preserved paths and unchanged suite query parameters.
+- Trim trailing slashes from the default peer web URL before appending `/suite/authorize`.
 
 ## 0.10.32
 
