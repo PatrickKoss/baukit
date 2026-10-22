@@ -77,23 +77,33 @@ transaction. Finish all steps before upgrading producers or workers.
 Existing rows keep null dedupe keys. The first deduplicated enqueue can create
 a duplicate beside an existing pending row after deployment. For idempotent
 handlers, a product can accept that extra run. Otherwise pause producers and
-workers, resolve existing duplicate pending rows, and backfill the chosen
-mode's key in a product migration before switching producers. For example,
-if `cache.refresh` has at most one pending row per `resource_id`:
+workers and backfill the chosen mode's key in a product migration before
+switching producers. For example, key only the newest pending `cache.refresh`
+row per `resource_id`, even when legacy rows share that key:
 
 ```sql
 -- Run after 0004, inside the product migration's transaction.
 LOCK TABLE job_outbox IN SHARE ROW EXCLUSIVE MODE;
-UPDATE job_outbox
-SET pending_dedupe_key = 'resource:' || (payload->>'resource_id')
-WHERE job_type = 'cache.refresh' AND status = 'pending'
-    AND payload->>'resource_id' IS NOT NULL;
+WITH newest AS (
+    SELECT DISTINCT ON (payload->>'resource_id')
+        id, 'resource:' || (payload->>'resource_id') AS dedupe_key
+    FROM job_outbox
+    WHERE job_type = 'cache.refresh' AND status = 'pending'
+        AND payload->>'resource_id' IS NOT NULL
+    ORDER BY payload->>'resource_id', created_at DESC, id DESC
+)
+UPDATE job_outbox AS job
+SET pending_dedupe_key = newest.dedupe_key
+FROM newest
+WHERE job.id = newest.id;
 ```
 
-The key expression must match the product's producer exactly. Use `dedupe_key`
-for active-job mode and include running rows when backfilling that mode.
-Resolve any duplicate keys in its wider set first. Unkeyed legacy rows remain
-outside deduplication until the product backfills them or they finish.
+Older pending rows remain unkeyed and will still run unless the product
+cancels them. The key expression must match the product's producer exactly.
+Use `dedupe_key` for active-job mode and include running rows when backfilling
+that mode. Resolve any duplicate keys in its wider set first. Unkeyed legacy
+rows remain outside deduplication until the product backfills them or they
+finish.
 Upgrade workers before enabling pending-only producers so every claim clears
 the pending key.
 
@@ -144,8 +154,9 @@ let outcome = jobs
 The key is scoped to `job_type`, must contain 1 to 500 characters, and cannot
 be blank. Pass a `NewJob` without an idempotency key. Combining an idempotency
 key with deduplication returns `StoreError::InvalidInput`. `enqueue` and
-`enqueue_in_transaction` still deduplicate by idempotency key across every status, for as long as that
-row exists. Permanent, active-job, and pending-only keys are independent.
+`enqueue_in_transaction` still deduplicate by idempotency key across every
+status, for as long as that row exists. Permanent, active-job, and pending-only
+keys are independent.
 
 | Existing job with the same type and dedupe key | Result |
 | --- | --- |

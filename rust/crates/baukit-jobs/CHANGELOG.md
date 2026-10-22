@@ -20,6 +20,8 @@ All notable changes to `baukit-jobs` are documented here.
   `POSTGRES_MIGRATION_0004_SQL`. Products must copy it as a new ordered
   migration before upgrading the store. Worker and authenticated
   backend templates include it as migration 0007.
+- Document migration 0004 deployment order in the upgrade skill and backfill
+  only the newest legacy pending row per key in the adoption example.
 
 ## [0.10.32] - 2026-10-21
 

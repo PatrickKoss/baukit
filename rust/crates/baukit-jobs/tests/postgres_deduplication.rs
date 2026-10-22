@@ -696,8 +696,11 @@ async fn pending_transaction_rolls_back_and_locks_duplicates_until_commit()
 
 #[tokio::test]
 #[ignore = "requires Docker; mandatory in the full local gate"]
-async fn product_backfill_reuses_legacy_pending_rows() -> Result<(), Box<dyn Error>> {
+async fn product_backfill_keys_only_the_newest_legacy_pending_row() -> Result<(), Box<dyn Error>> {
     let (_fixture, pool, store) = fixture().await?;
+    let mut older_job = new_job().idempotency_key("legacy:older");
+    older_job.created_at -= TimeDelta::minutes(1);
+    let older = store.enqueue(older_job).await?;
     let legacy = store.enqueue(new_job().idempotency_key(KEY)).await?;
     assert!(legacy.job.pending_dedupe_key.is_none());
     let extra = store.enqueue_pending_deduplicated(new_job(), KEY).await?;
@@ -708,12 +711,34 @@ async fn product_backfill_reuses_legacy_pending_rows() -> Result<(), Box<dyn Err
     sqlx::query("LOCK TABLE job_outbox IN SHARE ROW EXCLUSIVE MODE")
         .execute(&mut *transaction)
         .await?;
-    sqlx::query(
-        "UPDATE job_outbox SET pending_dedupe_key = 'resource:' || (payload->>'resource_id') WHERE job_type = 'cache.refresh' AND status = 'pending' AND payload->>'resource_id' IS NOT NULL",
+    let backfilled = sqlx::query(
+        "WITH newest AS (
+            SELECT DISTINCT ON (payload->>'resource_id')
+                id, 'resource:' || (payload->>'resource_id') AS dedupe_key
+            FROM job_outbox
+            WHERE job_type = 'cache.refresh' AND status = 'pending'
+                AND payload->>'resource_id' IS NOT NULL
+            ORDER BY payload->>'resource_id', created_at DESC, id DESC
+        )
+        UPDATE job_outbox AS job
+        SET pending_dedupe_key = newest.dedupe_key
+        FROM newest
+        WHERE job.id = newest.id",
     )
     .execute(&mut *transaction)
     .await?;
     transaction.commit().await?;
+    assert_eq!(backfilled.rows_affected(), 1);
+    let older_unkeyed: bool = sqlx::query_scalar(
+        "SELECT status = 'pending' AND pending_dedupe_key IS NULL FROM job_outbox WHERE id = $1",
+    )
+    .bind(older.job.id)
+    .fetch_one(&pool)
+    .await?;
+    assert!(
+        older_unkeyed,
+        "older pending rows remain outside deduplication"
+    );
 
     let duplicate = store.enqueue_pending_deduplicated(new_job(), KEY).await?;
     assert!(!duplicate.created);
