@@ -6,12 +6,13 @@ All notable changes to `baukit-auth` are documented here.
 
 - Breaking: `VerificationError` and `AuthRejection` are now non-exhaustive.
   Both add `Unavailable`; `AuthRejection` also adds `Misconfigured`. Downstream
-  matches need a wildcard arm. Store failures, OIDC connection failures, timeouts,
-  and provider 5xx responses return HTTP 503 with the standard `unavailable`
-  envelope and `Retry-After: 5`. Invalid provider metadata or JWKS documents,
-  provider 4xx responses, and server configuration errors return HTTP 500 without
-  `Retry-After`. Neither response sends an OAuth challenge. Invalid, revoked,
-  unknown, and expired credentials still return 401.
+  matches need a wildcard arm. Store failures, OIDC connection and body-read
+  failures, timeouts, and provider 408, 429, or 5xx responses return HTTP 503 with
+  the standard `unavailable` envelope and `Retry-After: 5`. Fully received but
+  invalid provider metadata or JWKS documents, other provider 4xx responses, and
+  server configuration errors return HTTP 500 without `Retry-After`. Neither
+  response sends an OAuth challenge. Invalid, revoked, unknown, and expired
+  credentials still return 401.
 - Add `VerificationError::is_unavailable()` and `is_misconfigured()`, plus a pure
   `From<VerificationError>` conversion for `AuthRejection`. Request handling logs
   infrastructure failures at error level with safe causes. Store errors log only

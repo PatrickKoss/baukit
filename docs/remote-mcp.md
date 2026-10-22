@@ -266,9 +266,10 @@ These requirements follow [MCP authorization 2026-07-28](https://modelcontextpro
 
 Temporary identity-verification failures return HTTP 503 with the flat body
 `{"error":"identity_unavailable"}` and `Retry-After: 5`. This includes API token
-store outages, OIDC connection failures, JWKS timeouts, and provider 5xx
-responses. Invalid provider metadata or JWKS documents, provider 4xx responses,
-and server configuration errors return HTTP 500 with
+store outages, OIDC connection and body-read failures, discovery and JWKS
+timeouts, and provider 408, 429, or 5xx responses. Fully received but invalid
+provider metadata or JWKS documents, other provider 4xx responses, and server
+configuration errors return HTTP 500 with
 `{"error":"identity_misconfigured"}` and no `Retry-After`. Neither response
 sends `WWW-Authenticate` or asks the client to sign in again.
 

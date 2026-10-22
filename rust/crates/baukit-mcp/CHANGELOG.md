@@ -3,11 +3,13 @@
 ## [Unreleased]
 
 - Return HTTP 503 with the flat `{"error":"identity_unavailable"}` body and
-  `Retry-After: 5` for temporary identity-verification failures. Invalid provider
-  metadata or JWKS documents, provider 4xx responses, and server configuration
-  errors return HTTP 500 with `{"error":"identity_misconfigured"}` and no
-  `Retry-After`. Both responses omit the OAuth challenge and log a safe cause at
-  error level. Invalid credentials still return 401.
+  `Retry-After: 5` for temporary identity-verification failures, including OIDC
+  body-read failures and provider 408, 429, or 5xx responses. Fully received but
+  invalid provider metadata or JWKS documents, other provider 4xx responses, and
+  server configuration errors return HTTP 500 with
+  `{"error":"identity_misconfigured"}` and no `Retry-After`. Both responses omit
+  the OAuth challenge and log a safe cause at error level. Invalid credentials
+  still return 401.
 
 ## [0.10.32] - 2026-10-21
 

@@ -1436,6 +1436,22 @@ async fn verifier_failures_use_flat_errors_without_a_login_challenge() -> Result
             || VerificationError::JwksStatus(StatusCode::SERVICE_UNAVAILABLE),
             true,
         ),
+        (
+            || VerificationError::JwksStatus(StatusCode::TOO_MANY_REQUESTS),
+            true,
+        ),
+        (
+            || VerificationError::JwksStatus(StatusCode::REQUEST_TIMEOUT),
+            true,
+        ),
+        (
+            || VerificationError::DiscoveryStatus(StatusCode::TOO_MANY_REQUESTS),
+            true,
+        ),
+        (
+            || VerificationError::DiscoveryStatus(StatusCode::REQUEST_TIMEOUT),
+            true,
+        ),
         (|| VerificationError::DiscoveryIssuerMismatch, false),
         (|| VerificationError::InvalidJwksUri, false),
         (

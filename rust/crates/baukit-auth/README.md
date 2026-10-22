@@ -342,11 +342,12 @@ The Axum extractor and `establish_principal` return HTTP 503 with error code
 `WWW-Authenticate`, so clients can retry without replacing their credentials.
 Infrastructure failures are logged separately from authentication failures,
 without token material or private store diagnostics. OIDC discovery and JWKS
-timeouts, connection failures, and 5xx responses also get this response
-through `VerificationError::is_unavailable()`. Invalid provider metadata and
-JWKS documents, 4xx responses, and server configuration errors return HTTP 500
-with code `internal` and no `Retry-After`. `is_misconfigured()` identifies these
-failures. Both kinds are logged at error level with a safe cause.
+timeouts, connection and body-read failures, and 408, 429, or 5xx responses also
+get this response through `VerificationError::is_unavailable()`. Fully received
+but invalid provider metadata and JWKS documents, other 4xx responses, and server
+configuration errors return HTTP 500 with code `internal` and no `Retry-After`.
+`is_misconfigured()` identifies these failures. Both kinds are logged at error
+level with a safe cause.
 
 Custom verifiers should return `VerificationError::Unavailable` for temporary
 database, network, or provider failures. Use `AuthRejection::from(error)` to preserve
