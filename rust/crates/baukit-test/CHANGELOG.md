@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-22
+
 ## [0.10.32] - 2026-10-21
 
 - Fix part responses in the controlled target for terminal exports without parts

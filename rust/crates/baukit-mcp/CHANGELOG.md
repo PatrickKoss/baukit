@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-22
+
 - Return HTTP 503 with the flat `{"error":"identity_unavailable"}` body and
   `Retry-After: 5` for temporary identity-verification failures, including OIDC
   body-read failures and provider 408, 429, or 5xx responses. Fully received but

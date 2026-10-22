@@ -4,6 +4,8 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-22
+
 - Breaking: `VerificationError` and `AuthRejection` are now non-exhaustive.
   Both add `Unavailable`; `AuthRejection` also adds `Misconfigured`. Downstream
   matches need a wildcard arm. Store failures, OIDC connection and body-read

@@ -4,6 +4,8 @@ All notable changes to `baukit-jobs` are documented here.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-22
+
 - Add `PostgresJobStore::enqueue_deduplicated` and
   `enqueue_deduplicated_in_transaction` to share a key only while a job is
   pending or running. Existing idempotency behavior stays unchanged.

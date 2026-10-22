@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-22
+
 - Clarify that handlers overriding `prepare_at` must delegate `prepare` to it.
 
 - Keep entitlement events retryable when a custom inbox skips preparation. Pass the receiver clock to `PlatformEventHandler::prepare_at` for deterministic free-cache deadlines.

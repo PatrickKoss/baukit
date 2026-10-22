@@ -2,12 +2,28 @@
 
 ## [Unreleased]
 
+## 0.11.0
+
 - Load the packed entitlements export under CommonJS with its declared runtime dependencies.
 
 - Add `suiteAuthorizeUrl` and `validateSuiteAuthorizePeer` for per-peer hosted consent URLs with preserved paths and unchanged suite query parameters.
 - Trim trailing slashes from the default peer web URL before appending `/suite/authorize`.
 - Publish the entitlement verifier for CommonJS consumers as well as ES modules.
 - Add `@baukit/suite-client/entitlements` for offline Ed25519 ticket verification on web and Hermes.
+
+### Minor Changes
+
+- f6c8a8f: Add validated per-peer hosted consent URLs with `suiteAuthorizeUrl` and
+  `validateSuiteAuthorizePeer`. Preserve configured paths and existing suite query
+  parameters. Local consent remains the default.
+- 68d0db3: Add the entitlements subpath for offline hub ticket verification on web and React Native without WebCrypto.
+- Release the coordinated baukit 0.11.0 train.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/integrations-client@0.11.0
+  - @baukit/localization-core@0.11.0
 
 ## 0.10.32
 

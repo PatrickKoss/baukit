@@ -2,9 +2,16 @@
 
 ## Unreleased
 
+## 0.11.0
+
 - Add `SilentTokenBroker` for silent multi-product OIDC authorization with in-memory tokens, remembered failures, account binding and explicit popup login. A blocked popup preserves earlier failures, and closing a popup returns `login_required` with reason `interaction_cancelled`.
 - Add `completeSilentTokenCallback` and the `CALLBACK_MESSAGE` constant for dedicated callback pages.
 - Add optional `SilentAuthorizationWindow.closed` for custom popup environments and the `unsupported_environment` error code for construction outside a browser without an explicit environment.
+
+### Minor Changes
+
+- Release the coordinated baukit 0.11.0 train.
+- 7fdf020: Add `SilentTokenBroker` for silent authorization against multiple OIDC realms with PKCE, verified account claims, in-memory token caches and explicit popup login. Blocked popups preserve earlier remembered failures; closed popups return `login_required` with reason `interaction_cancelled`. Custom environments can expose popup closure through optional `SilentAuthorizationWindow.closed`. Construction outside a browser without an explicit environment throws `SilentTokenError` with code `unsupported_environment`. Add `completeSilentTokenCallback` and the `CALLBACK_MESSAGE` constant for same-origin callback pages.
 
 ## 0.10.32
 

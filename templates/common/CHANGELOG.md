@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-22
+
 {% if context.backend or context.mobile %}{% if context.mobile %}- Generated mobile apps pin Expo 57.0.31 and expo-router 57.0.29 to match Expo dependency checks.
 {% endif %}{% if context.backend %}- Generated backend image builds use `scripts/docker.sh` to key Cargo target caches by checkout. Plain Compose retains the app-name default. Override either with `CARGO_TARGET_CACHE_PREFIX`.
 {% endif %}
