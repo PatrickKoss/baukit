@@ -301,6 +301,39 @@ pending tickets hold instead of leaving them until `purge`. Without the
 foreign key, call `PendingReceiptStore::erase_owner`, or
 `erase_owner_pending_receipts` with the product's erasure transaction.
 
+## Guarded transport
+
+Route ticket requests and immediate or deferred receipt requests through
+`baukit-egress` with `ExpoPushSender::with_guarded_client`:
+
+```rust,no_run
+use baukit_egress::{EgressOptions, GuardedClient};
+use baukit_push::{ExpoPushSender, PushOptions};
+
+# fn build() -> Result<ExpoPushSender, Box<dyn std::error::Error>> {
+let options = PushOptions::default();
+let egress = EgressOptions::default()
+    .with_request_timeout(options.request_timeout())?;
+let sender = ExpoPushSender::with_options(options)?
+    .with_guarded_client(GuardedClient::new(egress)?);
+# Ok(sender)
+# }
+```
+
+The supplied client's policy, timeouts, response limits and retry classification
+apply to every provider request. Its defaults require public HTTPS. Set the
+egress request timeout explicitly to use the push timeout, as above.
+Guarded errors omit provider bodies. The sender's `Debug` output omits
+credentials and endpoint URLs. The existing transport remains available when
+no guarded client is supplied. The egress dependency is always available;
+there is no extra feature flag.
+
+If an immediate receipt fetch fails after Expo accepts a ticket, `send` returns
+`PushDeliveryStatus::Accepted(ticket)` for it. Store these tickets with
+`PendingReceiptStore::record_accepted` and poll them later. Retrying the send
+would duplicate notifications. Explicit `PushReceiptSource::receipts` calls
+still return receipt-fetch failures.
+
 ## Retries
 
 A failure that stops the whole request is a `PushError::Transport` carrying a

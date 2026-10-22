@@ -35,6 +35,16 @@
 //! addresses only. Every DNS answer must pass, including [`StaticResolver`]
 //! answers. Cloud metadata stays blocked, even inside a listed network.
 //! [`AddressPolicy::AllowLoopback`] is for local development and tests.
+//! [`AddressPolicy::PublicHttp`] opts into HTTP to public addresses.
+//! [`AddressPolicy::OnlyEndpoint`] accepts one exact host and effective port,
+//! including private and loopback answers. [`AllowedEndpoint::new`] validates
+//! that allowance and takes a separate HTTP flag. Metadata stays blocked.
+//!
+//! [`GuardedClient::execute_stream`] returns an [`EgressStreamResponse`] with
+//! status, headers and chunked body reads under the same whole-request timeout,
+//! total byte limit and request tracing as [`GuardedClient::execute`]. Opt into
+//! empty-body redirect responses with [`EgressOptions::with_redirect_responses`].
+//! Send each next URL through the guard again; redirects are never followed.
 //!
 //! # Example
 //!
@@ -82,15 +92,17 @@
 #![deny(missing_docs)]
 
 mod client;
+mod endpoint;
 mod error;
 mod options;
 mod policy;
 mod resolver;
 
 pub use client::{
-    EgressClientError, EgressRequest, EgressResponse, GuardedClient, ResponseBody,
-    validate_destination,
+    EgressClientError, EgressRequest, EgressResponse, EgressStreamResponse, GuardedClient,
+    ResponseBody, validate_destination,
 };
+pub use endpoint::{AllowedEndpoint, AllowedEndpointError};
 pub use error::{DestinationRejection, EgressError, ErrorBody};
 pub use options::{EgressOptions, EgressOptionsError};
 pub use policy::{

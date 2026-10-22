@@ -524,6 +524,7 @@ version = "0.10.32"
 dependencies = [
  "axum",
  "baukit-config",
+ "baukit-egress",
  "baukit-http",
  "baukit-push",
  "baukit-test",

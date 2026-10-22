@@ -12,7 +12,7 @@ use reqwest::{
     dns::{Addrs, Name, Resolve, Resolving},
     redirect::Policy,
 };
-use tracing::{Instrument, field::Empty};
+use tracing::{Instrument, Span, field::Empty};
 use url::{Host, Url};
 
 use crate::{
@@ -141,8 +141,8 @@ impl fmt::Debug for EgressRequest {
     }
 }
 
-/// A `2xx` response whose body was read within the configured limit, or
-/// dropped under [`ResponseBody::Discard`].
+/// A successful or opted-in redirect response. The body stays within the
+/// configured limit, or is dropped under [`ResponseBody::Discard`].
 #[derive(Clone, Debug)]
 pub struct EgressResponse {
     status: StatusCode,
@@ -182,9 +182,8 @@ impl EgressResponse {
 /// rejects the lookup when any answer is disallowed, and connects only to the
 /// answers it checked. Redirects are never followed, proxies from the
 /// environment are ignored, and every request is bounded by the timeouts and
-/// the response body limit in [`EgressOptions`]. Plain `http` reaches only
-/// loopback under [`AddressPolicy::AllowLoopback`] or listed networks under
-/// [`AddressPolicy::AllowPrivate`].
+/// the response body limit in [`EgressOptions`]. Plain `http` requires an
+/// explicit opt-in through [`AddressPolicy`].
 /// Cloning is cheap and shares the connection pools.
 #[derive(Clone)]
 pub struct GuardedClient {
@@ -232,11 +231,34 @@ impl GuardedClient {
     ///
     /// A status outside `2xx` becomes [`EgressError::Status`], classified by
     /// [`baukit_http::classify_http_status_with_options`]. Its body is read only
-    /// when [`EgressOptions::with_error_body_limit`] is enabled.
+    /// when [`EgressOptions::with_error_body_limit`] is enabled. Redirects return
+    /// empty bodies when [`EgressOptions::with_redirect_responses`] is enabled.
     /// A `Retry-After` delay above [`EgressOptions::max_retry_after`] is clamped.
     /// `403` is revoked by default. [`EgressOptions::with_forbidden_rate_limit`]
     /// recognizes rate-limit headers on `403`; `401` always stays revoked.
     pub async fn execute(&self, request: EgressRequest) -> Result<EgressResponse, EgressError> {
+        let mut response = self.execute_stream(request).await?;
+        let mut body = Vec::new();
+        while let Some(chunk) = response.chunk().await? {
+            body.extend_from_slice(&chunk);
+        }
+        Ok(EgressResponse {
+            status: response.status(),
+            headers: response.headers().clone(),
+            body,
+        })
+    }
+
+    /// Opens a guarded response without buffering its body.
+    ///
+    /// Uses the same destination checks, DNS pinning and status classification as
+    /// [`Self::execute`]. The whole-request timeout includes body reads. Each
+    /// chunk counts toward the total byte limit. Dropping the response cancels
+    /// the body. [`ResponseBody::Discard`] and opted-in redirects return no body.
+    pub async fn execute_stream(
+        &self,
+        request: EgressRequest,
+    ) -> Result<EgressStreamResponse, EgressError> {
         let span = tracing::info_span!(
             target: TARGET,
             "egress.request",
@@ -246,30 +268,43 @@ impl GuardedClient {
             http.response.status_code = Empty,
             error.type = Empty,
         );
-        let outcome = self.send(request).instrument(span.clone()).await;
-        match &outcome {
-            Ok(response) => {
-                span.record("http.response.status_code", response.status.as_u16());
-            }
+        let discard = request.response_body == ResponseBody::Discard;
+        let response = match self.send_headers(request).instrument(span.clone()).await {
+            Ok(response) => response,
             Err(error) => {
-                if let EgressError::Status { status, .. } = error {
-                    span.record("http.response.status_code", status.as_u16());
-                }
-                span.record("error.type", error.code());
-                tracing::debug!(
-                    target: TARGET,
-                    parent: &span,
-                    code = error.code(),
-                    problem_code = error.error_body().and_then(ErrorBody::problem_code),
-                    %error,
-                    "egress request failed"
-                );
+                record_error(&span, &error);
+                return Err(error);
             }
+        };
+        let status = response.status();
+        let headers = response.headers().clone();
+        span.record("http.response.status_code", status.as_u16());
+        let response = if discard || status.is_redirection() {
+            None
+        } else {
+            Some(response)
+        };
+        let limit = self.options.max_response_bytes();
+        if response.as_ref().is_some_and(|response| {
+            response
+                .content_length()
+                .is_some_and(|length| length > u64::try_from(limit).unwrap_or(u64::MAX))
+        }) {
+            let error = EgressError::ResponseTooLarge { limit };
+            record_error(&span, &error);
+            return Err(error);
         }
-        outcome
+        Ok(EgressStreamResponse {
+            response,
+            status,
+            headers,
+            remaining: limit,
+            limit,
+            span,
+        })
     }
 
-    async fn send(&self, request: EgressRequest) -> Result<EgressResponse, EgressError> {
+    async fn send_headers(&self, request: EgressRequest) -> Result<reqwest::Response, EgressError> {
         validate_destination(&request.url, self.options.policy())?;
         let client = self.client_for(&request.url)?;
         let response = client
@@ -280,31 +315,22 @@ impl GuardedClient {
             .await
             .map_err(send_error)?;
         let status = response.status();
-        let headers = response.headers().clone();
-        if !status.is_success() {
-            let mut retry_headers =
-                RetryHeaderOptions::default().with_max_retry_after(self.options.max_retry_after());
-            if self.options.forbidden_rate_limit() {
-                retry_headers = retry_headers.with_forbidden_rate_limit();
-            }
-            let class = classify_http_status_with_options(status, &headers, retry_headers);
-            let body = match self.options.error_body_limit() {
-                Some(limit) => read_error_body(response, limit).await,
-                None => None,
-            };
-            return Err(EgressError::Status {
-                status,
-                class,
-                body,
-            });
+        if status.is_success() || (status.is_redirection() && self.options.redirect_responses()) {
+            return Ok(response);
         }
-        let body = match request.response_body {
-            ResponseBody::Read => read_body(response, self.options.max_response_bytes()).await?,
-            ResponseBody::Discard => Vec::new(),
+        let mut retry_headers =
+            RetryHeaderOptions::default().with_max_retry_after(self.options.max_retry_after());
+        if self.options.forbidden_rate_limit() {
+            retry_headers = retry_headers.with_forbidden_rate_limit();
+        }
+        let class = classify_http_status_with_options(status, response.headers(), retry_headers);
+        let body = match self.options.error_body_limit() {
+            Some(limit) => read_error_body(response, limit).await,
+            None => None,
         };
-        Ok(EgressResponse {
+        Err(EgressError::Status {
             status,
-            headers,
+            class,
             body,
         })
     }
@@ -327,6 +353,11 @@ impl GuardedClient {
 /// A plain `http` literal must pass
 /// [`AddressPolicy::permits_plain_http`]. Host names are checked when they resolve.
 pub fn validate_destination(url: &Url, policy: &AddressPolicy) -> Result<(), EgressError> {
+    if let AddressPolicy::OnlyEndpoint(endpoint) = policy
+        && !endpoint.matches(url)
+    {
+        return Err(EgressError::Destination(DestinationRejection::Endpoint));
+    }
     let plain_http = url.scheme() == HTTP_SCHEME;
     let scheme_allowed = url.scheme() == HTTPS_SCHEME || (plain_http && policy.allows_plain_http());
     if !scheme_allowed {
@@ -441,22 +472,19 @@ fn resolution_error(error: &(dyn StdError + 'static)) -> Option<EgressError> {
     None
 }
 
-async fn read_body(mut response: reqwest::Response, limit: usize) -> Result<Vec<u8>, EgressError> {
-    let too_large = EgressError::ResponseTooLarge { limit };
-    if response
-        .content_length()
-        .is_some_and(|length| length > u64::try_from(limit).unwrap_or(u64::MAX))
-    {
-        return Err(too_large);
+fn record_error(span: &Span, error: &EgressError) {
+    if let EgressError::Status { status, .. } = error {
+        span.record("http.response.status_code", status.as_u16());
     }
-    let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(send_error)? {
-        if body.len() + chunk.len() > limit {
-            return Err(too_large);
-        }
-        body.extend_from_slice(&chunk);
-    }
-    Ok(body)
+    span.record("error.type", error.code());
+    tracing::debug!(
+        target: TARGET,
+        parent: span,
+        code = error.code(),
+        problem_code = error.error_body().and_then(ErrorBody::problem_code),
+        %error,
+        "egress request failed"
+    );
 }
 
 async fn read_error_body(mut response: reqwest::Response, limit: usize) -> Option<ErrorBody> {
@@ -476,4 +504,63 @@ async fn read_error_body(mut response: reqwest::Response, limit: usize) -> Optio
         }
     }
     Some(ErrorBody::new(body, false, content_type))
+}
+
+/// A live response whose body stays under the client's timeout and byte limit.
+///
+/// It does not implement `Debug` because responses can contain private content.
+/// Redirects returned by [`EgressOptions::with_redirect_responses`] have no body.
+pub struct EgressStreamResponse {
+    response: Option<reqwest::Response>,
+    status: StatusCode,
+    headers: HeaderMap,
+    remaining: usize,
+    limit: usize,
+    span: Span,
+}
+
+impl EgressStreamResponse {
+    /// Returns the response status.
+    #[must_use]
+    pub const fn status(&self) -> StatusCode {
+        self.status
+    }
+
+    /// Returns the response headers.
+    #[must_use]
+    pub const fn headers(&self) -> &HeaderMap {
+        &self.headers
+    }
+
+    /// Reads the next body chunk, rejecting bytes above the total response limit.
+    ///
+    /// Chunk boundaries depend on the transport. After the body ends or a read
+    /// fails, further calls return `None`.
+    pub async fn chunk(&mut self) -> Result<Option<Vec<u8>>, EgressError> {
+        let Some(response) = &mut self.response else {
+            return Ok(None);
+        };
+        let outcome = response
+            .chunk()
+            .instrument(self.span.clone())
+            .await
+            .map_err(send_error)
+            .and_then(|chunk| match chunk {
+                Some(chunk) if chunk.len() > self.remaining => {
+                    Err(EgressError::ResponseTooLarge { limit: self.limit })
+                }
+                Some(chunk) => {
+                    self.remaining -= chunk.len();
+                    Ok(Some(chunk.to_vec()))
+                }
+                None => Ok(None),
+            });
+        if !matches!(outcome, Ok(Some(_))) {
+            self.response = None;
+        }
+        if let Err(error) = &outcome {
+            record_error(&self.span, error);
+        }
+        outcome
+    }
 }

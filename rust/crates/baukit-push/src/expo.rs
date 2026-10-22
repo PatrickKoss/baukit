@@ -25,9 +25,10 @@ const OK_STATUS: &str = "ok";
 /// [`MAX_RECEIPT_BATCH_SIZE`] IDs per request.
 ///
 /// Cloning is cheap; the inner `reqwest` client shares its connection pool.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ExpoPushSender {
     client: reqwest::Client,
+    guarded: Option<baukit_egress::GuardedClient>,
     options: PushOptions,
 }
 
@@ -71,6 +72,16 @@ struct ExpoErrorDetails {
     error: Option<String>,
 }
 
+impl std::fmt::Debug for ExpoPushSender {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExpoPushSender")
+            .field("batch_size", &self.options.batch_size())
+            .field("request_timeout", &self.options.request_timeout())
+            .field("guarded", &self.guarded.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
 impl ExpoPushSender {
     /// Builds a sender against the public Expo API with default options.
     pub fn new() -> Result<Self, PushOptionsError> {
@@ -83,7 +94,21 @@ impl ExpoPushSender {
             .timeout(options.request_timeout())
             .build()
             .map_err(|error| PushOptionsError::InvalidEndpoint(error.to_string()))?;
-        Ok(Self { client, options })
+        Ok(Self {
+            client,
+            options,
+            guarded: None,
+        })
+    }
+
+    /// Sends ticket requests and immediate or deferred receipt requests through `client`.
+    ///
+    /// The client's policy, timeouts and response limits apply. Configure its
+    /// request timeout explicitly if it should match [`PushOptions::request_timeout`].
+    #[must_use]
+    pub fn with_guarded_client(mut self, client: baukit_egress::GuardedClient) -> Self {
+        self.guarded = Some(client);
+        self
     }
 
     /// Returns the options this sender was built from.
@@ -128,7 +153,9 @@ impl ExpoPushSender {
         }
 
         let ids = pending.iter().map(|(id, _)| id.clone()).collect::<Vec<_>>();
-        let mut receipts = self.fetch_receipts(&ids).await?;
+        // Accepted tickets must survive a failed immediate receipt request.
+        // The durable receipt job settles them without sending again.
+        let mut receipts = self.fetch_receipts(&ids).await.unwrap_or_default();
         outcomes.extend(pending.into_iter().map(|(id, token)| {
             let status = match receipts.remove(&id) {
                 Some(receipt) => receipt.into(),
@@ -170,6 +197,9 @@ impl ExpoPushSender {
         endpoint: &str,
         payload: &impl Serialize,
     ) -> Result<T, PushError> {
+        if let Some(client) = &self.guarded {
+            return self.post_guarded(client, endpoint, payload).await;
+        }
         let mut request = self.client.post(endpoint).json(payload);
         if let Some(token) = self.options.access_token() {
             request = request.bearer_auth(token);
@@ -187,6 +217,44 @@ impl ExpoPushSender {
         response.json::<T>().await.map_err(|error| {
             PushError::InvalidResponse(format!("{endpoint} response did not parse: {error}"))
         })
+    }
+
+    async fn post_guarded<T: serde::de::DeserializeOwned>(
+        &self,
+        client: &baukit_egress::GuardedClient,
+        endpoint: &str,
+        payload: &impl Serialize,
+    ) -> Result<T, PushError> {
+        let url = endpoint
+            .parse()
+            .map_err(|_| PushError::InvalidResponse("invalid endpoint".into()))?;
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "content-type",
+            axum::http::HeaderValue::from_static("application/json"),
+        );
+        if let Some(token) = self.options.access_token() {
+            headers.insert(
+                "authorization",
+                format!("Bearer {token}")
+                    .parse()
+                    .map_err(|_| PushError::InvalidResponse("invalid credential".into()))?,
+            );
+        }
+        let body = serde_json::to_vec(payload)
+            .map_err(|_| PushError::InvalidResponse("invalid request".into()))?;
+        let response = client
+            .execute(
+                baukit_egress::EgressRequest::post(url)
+                    .with_headers(headers)
+                    .with_body(body),
+            )
+            .await
+            .map_err(|error| PushError::Transport {
+                class: error.retry_class(),
+            })?;
+        serde_json::from_slice(response.body())
+            .map_err(|_| PushError::InvalidResponse("invalid response".into()))
     }
 }
 
@@ -345,5 +413,124 @@ mod tests {
             }
         ));
         assert!(!transport_error(StatusCode::BAD_REQUEST, &HeaderMap::new()).is_retryable());
+    }
+}
+
+#[cfg(test)]
+mod guarded_transport_tests {
+    use super::*;
+    use axum::{Json, Router, routing::post};
+    use serde_json::{Value, json};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    };
+
+    #[tokio::test]
+    async fn guarded_batches_keep_accepted_tickets_when_receipts_fail()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let sends = Arc::new(AtomicUsize::new(0));
+        let receipt_requests = Arc::new(AtomicUsize::new(0));
+        let ready = Arc::new(AtomicBool::new(false));
+        let app = Router::new()
+            .route(
+                "/push/send",
+                post({
+                    let sends = sends.clone();
+                    move |Json(messages): Json<Vec<Value>>| {
+                        let sends = sends.clone();
+                        async move {
+                            assert_eq!(messages.len(), 1, "configured batch size");
+                            let id = sends.fetch_add(1, Ordering::SeqCst);
+                            Json(json!({"data":[{"status":"ok","id":format!("guarded-{id}")}]}))
+                        }
+                    }
+                }),
+            )
+            .route(
+                "/push/getReceipts",
+                post({
+                    let ready = ready.clone();
+                    let receipt_requests = receipt_requests.clone();
+                    move |Json(request): Json<Value>| {
+                        let ready = ready.clone();
+                        let receipt_requests = receipt_requests.clone();
+                        async move {
+                            receipt_requests.fetch_add(1, Ordering::SeqCst);
+                            if !ready.load(Ordering::SeqCst) {
+                                return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({})));
+                            }
+                            let data = request["ids"]
+                                .as_array()
+                                .expect("ids")
+                                .iter()
+                                .map(|id| (
+                                    id.as_str().expect("ticket ID").to_owned(),
+                                    json!({"status":"error","details":{"error":"DeviceNotRegistered"}}),
+                                ))
+                                .collect::<serde_json::Map<_,_>>();
+                            (StatusCode::OK, Json(json!({"data":data})))
+                        }
+                    }
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let endpoint = format!("http://{}/push/send", listener.local_addr()?);
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("Expo fixture");
+        });
+        let options = PushOptions::new(&endpoint)?.with_batch_size(1)?;
+        let sender = ExpoPushSender::with_options(options.clone())?.with_guarded_client(
+            baukit_egress::GuardedClient::new(
+                baukit_egress::EgressOptions::default()
+                    .with_policy(baukit_egress::AddressPolicy::AllowLoopback),
+            )?,
+        );
+        let messages = ["first", "second"]
+            .into_iter()
+            .map(|value| {
+                PushMessage::new(
+                    crate::DeviceToken::new(value).expect("token"),
+                    "Reminder",
+                    "Ready",
+                )
+            })
+            .collect();
+        let outcomes = sender.send(messages).await?;
+        assert_eq!(sends.load(Ordering::SeqCst), 2);
+        let tickets = outcomes
+            .iter()
+            .map(|outcome| match &outcome.status {
+                PushDeliveryStatus::Accepted(id) => id.clone(),
+                other => panic!("accepted ticket lost after receipt failure: {other:?}"),
+            })
+            .collect::<Vec<_>>();
+        ready.store(true, Ordering::SeqCst);
+        let receipts = sender.receipts(tickets.clone()).await?;
+        assert_eq!(receipts.len(), 2);
+        for id in &tickets {
+            assert_eq!(
+                receipts[id],
+                PushReceipt::Rejected(PushRejection::DeviceNotRegistered)
+            );
+        }
+        let blocked = ExpoPushSender::with_options(options)?.with_guarded_client(
+            baukit_egress::GuardedClient::new(baukit_egress::EgressOptions::default())?,
+        );
+        assert!(
+            blocked
+                .send(vec![PushMessage::new(
+                    crate::DeviceToken::new("blocked")?,
+                    "Reminder",
+                    "Ready"
+                )])
+                .await
+                .is_err()
+        );
+        assert!(blocked.receipts(tickets).await.is_err());
+        assert_eq!(sends.load(Ordering::SeqCst), 2);
+        assert_eq!(receipt_requests.load(Ordering::SeqCst), 3);
+        task.abort();
+        Ok(())
     }
 }

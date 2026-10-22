@@ -36,6 +36,10 @@ enum Reply {
     Respond(Vec<u8>),
     RespondThenWait(Vec<u8>),
     Hang,
+    GatedChunks {
+        parts: Vec<Vec<u8>>,
+        advance: Arc<tokio::sync::Semaphore>,
+    },
 }
 
 struct LocalServer {
@@ -126,6 +130,16 @@ async fn answer(mut stream: TcpStream, reply: Reply, requests: Arc<Mutex<Vec<Str
             let _ = stream.read(&mut buffer).await;
         }
         Reply::Hang => tokio::time::sleep(HANG).await,
+        Reply::GatedChunks { parts, advance } => {
+            for (index, part) in parts.iter().enumerate() {
+                if index > 0 {
+                    advance.acquire().await.expect("stream gate").forget();
+                }
+                if stream.write_all(part).await.is_err() {
+                    return;
+                }
+            }
+        }
     }
 }
 
@@ -1105,4 +1119,392 @@ async fn lookup_and_connection_failures_are_retryable() {
         .expect_err("a closed port should fail");
     assert!(matches!(refused, EgressError::Transport(_)), "{refused:?}");
     assert_eq!(refused.retry_class(), RetryClass::Unavailable);
+}
+
+#[test]
+fn public_http_opt_in_preserves_default_https_policy_and_address_guards() {
+    assert!(
+        validate_destination(
+            &Url::parse("http://public.test/story").expect("URL"),
+            &AddressPolicy::PublicOnly
+        )
+        .is_err()
+    );
+    assert!(
+        validate_destination(
+            &Url::parse("http://public.test/story").expect("URL"),
+            &AddressPolicy::PublicHttp
+        )
+        .is_ok()
+    );
+    for target in [
+        "http://127.0.0.1",
+        "http://10.0.0.1",
+        "http://169.254.169.254",
+        "http://[::ffff:127.0.0.1]",
+        "ftp://public.test/file",
+    ] {
+        assert!(
+            validate_destination(
+                &Url::parse(target).expect("URL"),
+                &AddressPolicy::PublicHttp
+            )
+            .is_err()
+        );
+    }
+}
+
+#[tokio::test]
+async fn redirect_response_opt_in_exposes_location_without_reading_body_or_following() {
+    let internal = LocalServer::start(response("200 OK", &[], "private")).await;
+    let target = internal.url("internal.test", "/private").to_string();
+    let redirecting = LocalServer::start(Reply::RespondThenWait(
+        format!("HTTP/1.1 302 Found\r\nLocation: {target}\r\nContent-Length: 999999999\r\n\r\n")
+            .into_bytes(),
+    ))
+    .await;
+    let client = client(
+        loopback_resolver(&["hooks.test", "internal.test"]),
+        development()
+            .with_redirect_responses()
+            .with_request_timeout(SHORT)
+            .expect("timeout"),
+    );
+    let result = client
+        .execute(EgressRequest::get(redirecting.url("hooks.test", "/story")))
+        .await
+        .expect("redirect headers without a body read");
+    assert_eq!(result.status(), StatusCode::FOUND);
+    assert_eq!(
+        result.headers().get("location").expect("location"),
+        target.as_str()
+    );
+    assert!(result.body().is_empty());
+    assert_eq!(internal.connections(), 0);
+}
+
+#[tokio::test]
+async fn public_http_opt_in_still_rejects_private_dns_answers() {
+    let resolver = loopback_resolver(&["rebound.test"]);
+    let guarded = client(
+        resolver,
+        EgressOptions::default().with_policy(AddressPolicy::PublicHttp),
+    );
+    let error = guarded
+        .execute(EgressRequest::get(
+            Url::parse("http://rebound.test/story").expect("URL"),
+        ))
+        .await
+        .expect_err("private DNS answer");
+    assert!(matches!(error, EgressError::BlockedAddress));
+}
+
+#[tokio::test]
+async fn streaming_returns_headers_and_chunks_before_the_body_finishes() {
+    let advance = Arc::new(tokio::sync::Semaphore::new(0));
+    let chunks: [&[u8]; 3] = [b"\xe2", b"\x82\xac", b" done"];
+    let mut parts = vec![b"HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\r\n".to_vec()];
+    for chunk in chunks {
+        let mut part = format!("{:x}\r\n", chunk.len()).into_bytes();
+        part.extend_from_slice(chunk);
+        part.extend_from_slice(b"\r\n");
+        parts.push(part);
+    }
+    parts.push(b"0\r\n\r\n".to_vec());
+    let server = LocalServer::start(Reply::GatedChunks {
+        parts,
+        advance: advance.clone(),
+    })
+    .await;
+    let client = client(loopback_resolver(&["stream.test"]), development());
+    let mut response = client
+        .execute_stream(EgressRequest::get(server.url("stream.test", "/events")))
+        .await
+        .expect("headers arrive before any body bytes");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["content-type"], "text/event-stream");
+    let mut received = Vec::new();
+    for expected in chunks {
+        advance.add_permits(1);
+        let mut received_chunk = Vec::new();
+        while received_chunk.len() < expected.len() {
+            received_chunk.extend(
+                tokio::time::timeout(Duration::from_secs(2), response.chunk())
+                    .await
+                    .expect("chunk arrives before the rest of the body")
+                    .expect("read chunk")
+                    .expect("body is incomplete"),
+            );
+        }
+        assert_eq!(received_chunk, expected);
+        received.extend(received_chunk);
+    }
+    advance.add_permits(1);
+    assert!(response.chunk().await.expect("end of body").is_none());
+    assert!(response.chunk().await.expect("body stays ended").is_none());
+    assert_eq!(received, "€ done".as_bytes());
+    assert_eq!(server.connections(), 1);
+}
+
+#[tokio::test]
+async fn streaming_keeps_the_whole_request_timeout_after_a_chunk() {
+    let server = LocalServer::start(Reply::RespondThenWait(
+        b"HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\n\r\n5\r\nfirst\r\n".to_vec(),
+    ))
+    .await;
+    let client = client(
+        loopback_resolver(&["stream.test"]),
+        development().with_request_timeout(SHORT).expect("timeout"),
+    );
+    let mut response = client
+        .execute_stream(EgressRequest::get(server.url("stream.test", "/events")))
+        .await
+        .expect("headers");
+    assert_eq!(
+        response.chunk().await.expect("first chunk"),
+        Some(b"first".to_vec())
+    );
+    // The deadline also runs while the consumer is not polling the body.
+    tokio::time::sleep(SHORT).await;
+    let started = Instant::now();
+    let error = response.chunk().await.expect_err("body timed out");
+    assert!(matches!(error, EgressError::Timeout));
+    assert_eq!(error.retry_class(), RetryClass::Timeout);
+    assert!(started.elapsed() < SHORT);
+    assert!(
+        response
+            .chunk()
+            .await
+            .expect("failed body is closed")
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn streaming_enforces_total_size_and_closes_after_an_oversized_chunk() {
+    let server = LocalServer::start(chunked_response(&["abc", "def", "ghi"])).await;
+    let client = client(
+        loopback_resolver(&["stream.test"]),
+        development().with_max_response_bytes(5).expect("limit"),
+    );
+    let mut response = client
+        .execute_stream(EgressRequest::get(server.url("stream.test", "/events")))
+        .await
+        .expect("chunked response headers");
+    let mut received = Vec::new();
+    loop {
+        match response.chunk().await {
+            Ok(Some(chunk)) => received.extend(chunk),
+            Err(EgressError::ResponseTooLarge { limit: 5 }) => break,
+            other => panic!("expected size error, got {other:?}"),
+        }
+    }
+    assert!(received.len() <= 5);
+    assert!(
+        response
+            .chunk()
+            .await
+            .expect("failed body is closed")
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn streaming_rejects_declared_oversize_but_discard_does_not_read() {
+    let server = LocalServer::start(Reply::RespondThenWait(
+        b"HTTP/1.1 200 OK\r\ncontent-length: 999999999\r\n\r\n".to_vec(),
+    ))
+    .await;
+    let client = client(loopback_resolver(&["stream.test"]), development());
+    let request = EgressRequest::get(server.url("stream.test", "/events"));
+    assert!(matches!(
+        client.execute_stream(request.clone()).await,
+        Err(EgressError::ResponseTooLarge { .. })
+    ));
+    let mut response = client
+        .execute_stream(request.with_response_body(ResponseBody::Discard))
+        .await
+        .expect("discard ignores the body");
+    assert!(response.chunk().await.expect("discarded body").is_none());
+}
+
+#[tokio::test]
+async fn streaming_rejects_redirects_and_returns_empty_opted_in_redirects() {
+    let internal = LocalServer::start(response("200 OK", &[], "private")).await;
+    let target = internal.url("internal.test", "/private").to_string();
+    let redirecting = LocalServer::start(Reply::RespondThenWait(
+        format!("HTTP/1.1 307 Temporary Redirect\r\nLocation: {target}\r\nContent-Length: 999999999\r\n\r\n").into_bytes(),
+    )).await;
+    for opt_in in [false, true] {
+        let options = development()
+            .with_request_timeout(Duration::from_secs(5))
+            .expect("timeout");
+        let options = if opt_in {
+            options.with_redirect_responses()
+        } else {
+            options
+        };
+        let client = client(
+            loopback_resolver(&["stream.test", "internal.test"]),
+            options,
+        );
+        let result = client
+            .execute_stream(EgressRequest::get(
+                redirecting.url("stream.test", "/events"),
+            ))
+            .await;
+        if opt_in {
+            let mut response = result.expect("redirect headers");
+            assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
+            assert_eq!(response.headers()["location"], target);
+            assert!(
+                response
+                    .chunk()
+                    .await
+                    .expect("redirect body discarded")
+                    .is_none()
+            );
+        } else {
+            assert!(
+                matches!(
+                    result,
+                    Err(EgressError::Status {
+                        status: StatusCode::TEMPORARY_REDIRECT,
+                        class: RetryClass::Permanent,
+                        ..
+                    })
+                ),
+                "unexpected response: {:?}",
+                result.as_ref().err()
+            );
+        }
+    }
+    assert_eq!(internal.connections(), 0);
+}
+
+#[tokio::test]
+async fn streaming_uses_the_connecting_resolver_and_status_options() {
+    let server = LocalServer::start(response(
+        "503 Service Unavailable",
+        &[("retry-after", "7")],
+        "private error",
+    ))
+    .await;
+    let resolver = CountingResolver::new(vec![vec![LOOPBACK], vec![METADATA]]);
+    let client = client(
+        resolver.clone(),
+        development()
+            .with_max_retry_after(Duration::from_secs(3))
+            .expect("cap")
+            .with_error_body_limit(20)
+            .expect("error limit"),
+    );
+    let request = EgressRequest::get(server.url("stream.test", "/events"));
+    let error = client
+        .execute_stream(request.clone())
+        .await
+        .err()
+        .expect("status error");
+    assert_eq!(
+        error.retry_class(),
+        RetryClass::RetryAfter(Duration::from_secs(3))
+    );
+    assert_eq!(
+        error.error_body().expect("captured body").bytes(),
+        b"private error"
+    );
+    assert!(matches!(
+        client.execute_stream(request).await,
+        Err(EgressError::BlockedAddress)
+    ));
+    assert_eq!(resolver.calls(), 2);
+    assert_eq!(server.connections(), 1);
+}
+
+#[test]
+fn public_http_accepts_only_the_public_address_set() {
+    let policy = AddressPolicy::PublicHttp;
+    assert!(policy.allows_plain_http());
+    for address in [
+        "8.8.8.8",
+        "2606:4700::1111",
+        "::ffff:8.8.8.8",
+        "64:ff9b::808:808",
+    ] {
+        let address = address.parse().expect("IP address");
+        assert!(policy.permits(address));
+        assert!(policy.permits_plain_http(address));
+    }
+    for addresses in [
+        vec![PUBLIC, PRIVATE],
+        vec![LOOPBACK, PUBLIC],
+        vec![METADATA],
+        vec![],
+    ] {
+        assert!(!policy.permits_all(&addresses));
+    }
+}
+
+#[tokio::test]
+async fn interrupted_streams_report_transport_failure_after_delivering_bytes() {
+    let server = LocalServer::start(Reply::Respond(
+        b"HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\n\r\n5\r\nfirst\r\n".to_vec(),
+    ))
+    .await;
+    let client = client(loopback_resolver(&["stream.test"]), development());
+    let mut response = client
+        .execute_stream(EgressRequest::get(server.url("stream.test", "/events")))
+        .await
+        .expect("headers");
+    assert_eq!(
+        response.chunk().await.expect("first chunk"),
+        Some(b"first".to_vec())
+    );
+    let error = response.chunk().await.expect_err("incomplete transfer");
+    assert!(matches!(error, EgressError::Transport(_)));
+    assert_eq!(error.retry_class(), RetryClass::Unavailable);
+    assert!(
+        response
+            .chunk()
+            .await
+            .expect("failed body closed")
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn dropping_a_stream_cancels_the_body_connection() {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .expect("bind");
+    let port = listener.local_addr().expect("address").port();
+    let task = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.expect("accept");
+        read_request(&mut stream).await;
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\n\r\n5\r\nfirst\r\n")
+            .await
+            .expect("write chunk");
+        let mut byte = [0];
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(2), stream.read(&mut byte))
+                .await
+                .expect("client closes after drop")
+                .expect("read EOF"),
+            0
+        );
+    });
+    let client = client(loopback_resolver(&["stream.test"]), development());
+    let mut response = client
+        .execute_stream(EgressRequest::get(
+            Url::parse(&format!("http://stream.test:{port}/events")).expect("URL"),
+        ))
+        .await
+        .expect("headers");
+    assert_eq!(
+        response.chunk().await.expect("first chunk"),
+        Some(b"first".to_vec())
+    );
+    drop(response);
+    task.await.expect("server observed cancellation");
 }

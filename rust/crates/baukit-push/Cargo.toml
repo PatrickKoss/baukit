@@ -22,6 +22,7 @@ test-support = ["dep:tokio"]
 [dependencies]
 axum.workspace = true
 baukit-config.workspace = true
+baukit-egress.workspace = true
 baukit-http.workspace = true
 chrono.workspace = true
 reqwest.workspace = true

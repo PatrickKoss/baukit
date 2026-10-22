@@ -71,9 +71,10 @@ impl fmt::Debug for ErrorBody {
 
 /// Why a destination URL was refused before any lookup.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum DestinationRejection {
-    /// The scheme is not `https`, or not `http` under
-    /// [`AddressPolicy::AllowLoopback`](crate::AddressPolicy::AllowLoopback).
+    /// The scheme is not `https`, or is `http` without the policy
+    /// allowing plain HTTP.
     Scheme,
     /// The URL carries a user name or password.
     Credentials,
@@ -81,6 +82,8 @@ pub enum DestinationRejection {
     Fragment,
     /// The URL has no host.
     MissingHost,
+    /// The URL does not match the client's exact endpoint allowance.
+    Endpoint,
 }
 
 impl DestinationRejection {
@@ -92,6 +95,7 @@ impl DestinationRejection {
             Self::Credentials => "credentials",
             Self::Fragment => "fragment",
             Self::MissingHost => "missing_host",
+            Self::Endpoint => "endpoint",
         }
     }
 }
@@ -103,6 +107,7 @@ impl fmt::Display for DestinationRejection {
             Self::Credentials => "the URL carries credentials",
             Self::Fragment => "the URL carries a fragment",
             Self::MissingHost => "the URL has no host",
+            Self::Endpoint => "the URL does not match the allowed endpoint",
         })
     }
 }
@@ -132,7 +137,8 @@ pub enum EgressError {
     Transport(#[source] Box<dyn std::error::Error + Send + Sync>),
     /// The destination answered with a status outside `2xx`.
     ///
-    /// Redirects land here too; the client never follows them.
+    /// Redirects land here unless redirect responses are enabled. The client
+    /// never follows them.
     #[error("egress destination answered with status {status}")]
     Status {
         /// The status the destination returned.
