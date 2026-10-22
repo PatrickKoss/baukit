@@ -3,8 +3,8 @@ use std::{collections::HashSet, error::Error, path::PathBuf, sync::Arc, time::Du
 use baukit_jobs::{
     CancellationOutcome, FailureDisposition, FixedUtcInterval, JobFailureReason, JobStatus,
     JobStore as _, MAX_TERMINAL_JOB_CLEANUP_BATCH_SIZE, NewJob, POSTGRES_MIGRATION_0002_SQL,
-    POSTGRES_MIGRATION_SQL, PostgresJobStore, StoreError, TerminalJobCleanupOutcome,
-    TerminalJobCutoffs,
+    POSTGRES_MIGRATION_0003_SQL, POSTGRES_MIGRATION_0004_SQL, POSTGRES_MIGRATION_SQL,
+    PostgresJobStore, StoreError, TerminalJobCleanupOutcome, TerminalJobCutoffs,
 };
 use chrono::{TimeDelta, Utc};
 use serde_json::json;
@@ -1245,6 +1245,9 @@ async fn postgres_v051_schema_upgrades_to_failure_reasons() -> Result<(), Box<dy
             .fetch_all(&pool)
             .await?;
     assert_eq!(reasons, ["attempts_exhausted", "permanent"]);
+    for migration in [POSTGRES_MIGRATION_0003_SQL, POSTGRES_MIGRATION_0004_SQL] {
+        sqlx::raw_sql(migration).execute(&pool).await?;
+    }
 
     let store = PostgresJobStore::new(pool.clone());
     let current = store

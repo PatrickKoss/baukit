@@ -4,6 +4,25 @@ All notable changes to `baukit-jobs` are documented here.
 
 ## [Unreleased]
 
+- Add `PostgresJobStore::enqueue_deduplicated` and
+  `enqueue_deduplicated_in_transaction` to share a key only while a job is
+  pending or running. Existing idempotency behavior stays unchanged.
+- Add `enqueue_pending_deduplicated` and
+  `enqueue_pending_deduplicated_in_transaction` for one pending follow-up while
+  another job runs. Claiming clears the pending key so retries cannot collide
+  with a follow-up. The two deduplication modes use independent keys.
+- Breaking: add public `Job::dedupe_key` and `Job::pending_dedupe_key` fields.
+  Custom stores and tests that construct `Job` must set them, usually to `None`.
+  Keep `Job` constructible for custom `JobStore` implementations. Enqueue and
+  claim now require migration 0004, including calls to existing methods,
+  because returned jobs include both columns.
+- Add `migrations/0004_baukit_jobs_active_deduplication.sql` and
+  `POSTGRES_MIGRATION_0004_SQL`. Products must copy it as a new ordered
+  migration before upgrading the store. Worker and authenticated
+  backend templates include it as migration 0007.
+- Document migration 0004 deployment order in the upgrade skill and backfill
+  only the newest legacy pending row per key in the adoption example.
+
 ## [0.10.32] - 2026-10-21
 
 ## [0.10.31] - 2026-10-20

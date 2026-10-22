@@ -12,7 +12,14 @@ use crate::{
 const MAX_JOB_TYPE_LENGTH: usize = 200;
 const MAX_WORKER_ID_LENGTH: usize = 300;
 const MAX_IDEMPOTENCY_KEY_LENGTH: usize = 500;
+const MAX_DEDUPE_KEY_LENGTH: usize = 500;
 const MAX_ERROR_LENGTH: usize = 10_000;
+
+#[derive(Clone, Copy)]
+enum Deduplication {
+    Active,
+    Pending,
+}
 
 macro_rules! owned_lease_predicate {
     () => {
@@ -154,6 +161,91 @@ impl PostgresJobStore {
     ) -> Result<EnqueueOutcome, StoreError> {
         validate_new_job(&job)?;
         enqueue_on(transaction, job).await
+    }
+
+    /// Enqueues or returns the pending or running job with the same type and key.
+    ///
+    /// Succeeded, failed, and cancelled jobs allow a new row. A duplicate keeps
+    /// the original payload, schedule, and attempt budget. `dedupe_key` must
+    /// contain 1 to 500 characters and cannot be blank. The job must not have
+    /// an idempotency key. Apply migration 0004 before using this method.
+    ///
+    /// The store commits its transaction even if the caller is cancelled.
+    pub async fn enqueue_deduplicated(
+        &self,
+        job: NewJob,
+        dedupe_key: &str,
+    ) -> Result<EnqueueOutcome, StoreError> {
+        self.enqueue_with_deduplication(job, dedupe_key, Deduplication::Active)
+            .await
+    }
+
+    /// Enqueues or returns the pending job with the same type and key.
+    ///
+    /// Running jobs allow one pending follow-up. Claiming clears the pending
+    /// key, so retries of an already claimed job do not occupy it. This mode
+    /// uses a separate key column from [`Self::enqueue_deduplicated`]; the same
+    /// type and key in different modes do not deduplicate each other.
+    /// Key validation and transaction ownership follow that method's rules.
+    pub async fn enqueue_pending_deduplicated(
+        &self,
+        job: NewJob,
+        dedupe_key: &str,
+    ) -> Result<EnqueueOutcome, StoreError> {
+        self.enqueue_with_deduplication(job, dedupe_key, Deduplication::Pending)
+            .await
+    }
+
+    async fn enqueue_with_deduplication(
+        &self,
+        job: NewJob,
+        dedupe_key: &str,
+        deduplication: Deduplication,
+    ) -> Result<EnqueueOutcome, StoreError> {
+        validate_deduplicated_job(&job, dedupe_key)?;
+        let pool = self.pool.clone();
+        let dedupe_key = dedupe_key.to_owned();
+        owned_operation(async move {
+            let mut transaction = pool.begin().await.map_err(StoreError::database)?;
+            let outcome =
+                enqueue_deduplicated_on(&mut transaction, job, &dedupe_key, deduplication).await?;
+            transaction.commit().await.map_err(StoreError::database)?;
+            Ok(outcome)
+        })
+        .await
+    }
+
+    /// Enqueues with active-job deduplication in a caller-owned transaction.
+    ///
+    /// Uses the same rules as [`Self::enqueue_deduplicated`]. A returned
+    /// existing row stays locked until the caller commits or rolls back, so
+    /// keep the transaction short. The caller owns transaction completion.
+    /// At repeatable read or serializable isolation, retry the whole transaction
+    /// if PostgreSQL reports a serialization failure.
+    pub async fn enqueue_deduplicated_in_transaction(
+        &self,
+        transaction: &mut PgConnection,
+        job: NewJob,
+        dedupe_key: &str,
+    ) -> Result<EnqueueOutcome, StoreError> {
+        validate_deduplicated_job(&job, dedupe_key)?;
+        enqueue_deduplicated_on(transaction, job, dedupe_key, Deduplication::Active).await
+    }
+
+    /// Enqueues with pending-only deduplication in a caller-owned transaction.
+    ///
+    /// Uses [`Self::enqueue_pending_deduplicated`] rules and holds an existing
+    /// pending row locked until commit or rollback. Keep the transaction short.
+    /// At repeatable read or serializable isolation, retry the whole transaction
+    /// if PostgreSQL reports a serialization failure.
+    pub async fn enqueue_pending_deduplicated_in_transaction(
+        &self,
+        transaction: &mut PgConnection,
+        job: NewJob,
+        dedupe_key: &str,
+    ) -> Result<EnqueueOutcome, StoreError> {
+        validate_deduplicated_job(&job, dedupe_key)?;
+        enqueue_deduplicated_on(transaction, job, dedupe_key, Deduplication::Pending).await
     }
 
     /// Marks a job successful inside a caller-owned transaction.
@@ -360,7 +452,7 @@ impl JobStore for PostgresJobStore {
             .map_err(StoreError::database)?;
 
             let row = sqlx::query(
-                "WITH candidate AS (SELECT id FROM job_outbox WHERE attempts < max_attempts AND cancel_requested_at IS NULL AND job_type = ANY($4) AND ((status = 'pending' AND run_after <= $1) OR (status = 'running' AND locked_until <= $1)) ORDER BY run_after, created_at, id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE job_outbox AS job SET status = 'running', attempts = job.attempts + 1, locked_by = $2, locked_until = $3, last_error = NULL, failure_reason = NULL, updated_at = $1 FROM candidate WHERE job.id = candidate.id RETURNING job.id, job.job_type, job.payload, job.status, job.attempts, job.max_attempts, job.run_after, job.locked_by, job.locked_until, job.idempotency_key, job.last_error, job.failure_reason, job.cancel_requested_at, job.created_at, job.updated_at",
+                "WITH candidate AS (SELECT id FROM job_outbox WHERE attempts < max_attempts AND cancel_requested_at IS NULL AND job_type = ANY($4) AND ((status = 'pending' AND run_after <= $1) OR (status = 'running' AND locked_until <= $1)) ORDER BY run_after, created_at, id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE job_outbox AS job SET status = 'running', pending_dedupe_key = NULL, attempts = job.attempts + 1, locked_by = $2, locked_until = $3, last_error = NULL, failure_reason = NULL, updated_at = $1 FROM candidate WHERE job.id = candidate.id RETURNING job.id, job.job_type, job.payload, job.status, job.attempts, job.max_attempts, job.run_after, job.locked_by, job.locked_until, job.idempotency_key, job.dedupe_key, job.pending_dedupe_key, job.last_error, job.failure_reason, job.cancel_requested_at, job.created_at, job.updated_at",
             )
                 .bind(now)
                 .bind(worker_id)
@@ -531,7 +623,7 @@ async fn enqueue_on(
         StoreError::InvalidInput("max_attempts exceeds PostgreSQL INTEGER".to_owned())
     })?;
     let inserted = sqlx::query(
-        "INSERT INTO job_outbox (id, job_type, payload, status, attempts, max_attempts, run_after, idempotency_key, created_at, updated_at) VALUES ($1, $2, $3, 'pending', 0, $4, $5, $6, $7, $7) ON CONFLICT (job_type, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING RETURNING id, job_type, payload, status, attempts, max_attempts, run_after, locked_by, locked_until, idempotency_key, last_error, failure_reason, cancel_requested_at, created_at, updated_at",
+        "INSERT INTO job_outbox (id, job_type, payload, status, attempts, max_attempts, run_after, idempotency_key, created_at, updated_at) VALUES ($1, $2, $3, 'pending', 0, $4, $5, $6, $7, $7) ON CONFLICT (job_type, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING RETURNING id, job_type, payload, status, attempts, max_attempts, run_after, locked_by, locked_until, idempotency_key, dedupe_key, pending_dedupe_key, last_error, failure_reason, cancel_requested_at, created_at, updated_at",
     )
         .bind(job.id)
         .bind(&job.job_type)
@@ -554,7 +646,7 @@ async fn enqueue_on(
         StoreError::InvalidData("non-idempotent enqueue unexpectedly conflicted".to_owned())
     })?;
     let row = sqlx::query(
-        "SELECT id, job_type, payload, status, attempts, max_attempts, run_after, locked_by, locked_until, idempotency_key, last_error, failure_reason, cancel_requested_at, created_at, updated_at FROM job_outbox WHERE job_type = $1 AND idempotency_key = $2",
+        "SELECT id, job_type, payload, status, attempts, max_attempts, run_after, locked_by, locked_until, idempotency_key, dedupe_key, pending_dedupe_key, last_error, failure_reason, cancel_requested_at, created_at, updated_at FROM job_outbox WHERE job_type = $1 AND idempotency_key = $2",
     )
         .bind(job.job_type)
         .bind(key)
@@ -565,6 +657,68 @@ async fn enqueue_on(
         job: row_to_job(row)?,
         created: false,
     })
+}
+
+async fn enqueue_deduplicated_on(
+    connection: &mut PgConnection,
+    job: NewJob,
+    dedupe_key: &str,
+    deduplication: Deduplication,
+) -> Result<EnqueueOutcome, StoreError> {
+    let max_attempts = i32::try_from(job.max_attempts).map_err(|_| {
+        StoreError::InvalidInput("max_attempts exceeds PostgreSQL INTEGER".to_owned())
+    })?;
+    let insert_sql = match deduplication {
+        Deduplication::Active => {
+            "INSERT INTO job_outbox (id, job_type, payload, status, attempts, max_attempts, run_after, dedupe_key, created_at, updated_at) VALUES ($1, $2, $3, 'pending', 0, $4, $5, $6, $7, $7) ON CONFLICT (job_type, dedupe_key) WHERE status IN ('pending', 'running') AND dedupe_key IS NOT NULL DO NOTHING RETURNING id, job_type, payload, status, attempts, max_attempts, run_after, locked_by, locked_until, idempotency_key, dedupe_key, pending_dedupe_key, last_error, failure_reason, cancel_requested_at, created_at, updated_at"
+        }
+        Deduplication::Pending => {
+            "INSERT INTO job_outbox (id, job_type, payload, status, attempts, max_attempts, run_after, pending_dedupe_key, created_at, updated_at) VALUES ($1, $2, $3, 'pending', 0, $4, $5, $6, $7, $7) ON CONFLICT (job_type, pending_dedupe_key) WHERE status = 'pending' AND pending_dedupe_key IS NOT NULL DO NOTHING RETURNING id, job_type, payload, status, attempts, max_attempts, run_after, locked_by, locked_until, idempotency_key, dedupe_key, pending_dedupe_key, last_error, failure_reason, cancel_requested_at, created_at, updated_at"
+        }
+    };
+    let select_sql = match deduplication {
+        Deduplication::Active => {
+            "SELECT id, job_type, payload, status, attempts, max_attempts, run_after, locked_by, locked_until, idempotency_key, dedupe_key, pending_dedupe_key, last_error, failure_reason, cancel_requested_at, created_at, updated_at FROM job_outbox WHERE job_type = $1 AND dedupe_key = $2 AND status IN ('pending', 'running') AND dedupe_key IS NOT NULL FOR UPDATE"
+        }
+        Deduplication::Pending => {
+            "SELECT id, job_type, payload, status, attempts, max_attempts, run_after, locked_by, locked_until, idempotency_key, dedupe_key, pending_dedupe_key, last_error, failure_reason, cancel_requested_at, created_at, updated_at FROM job_outbox WHERE job_type = $1 AND pending_dedupe_key = $2 AND status = 'pending' AND pending_dedupe_key IS NOT NULL FOR UPDATE"
+        }
+    };
+    loop {
+        let inserted = sqlx::query(insert_sql)
+            .bind(job.id)
+            .bind(&job.job_type)
+            .bind(&job.payload)
+            .bind(max_attempts)
+            .bind(job.run_after)
+            .bind(dedupe_key)
+            .bind(job.created_at)
+            .fetch_optional(&mut *connection)
+            .await
+            .map_err(StoreError::database)?;
+        if let Some(row) = inserted {
+            return Ok(EnqueueOutcome {
+                job: row_to_job(row)?,
+                created: true,
+            });
+        }
+
+        // Use a fresh statement snapshot to see a concurrent insert's commit.
+        // If that row left the deduplicated statuses meanwhile, retry the
+        // insert. Lock an existing row until this transaction commits.
+        let existing = sqlx::query(select_sql)
+            .bind(&job.job_type)
+            .bind(dedupe_key)
+            .fetch_optional(&mut *connection)
+            .await
+            .map_err(StoreError::database)?;
+        if let Some(row) = existing {
+            return Ok(EnqueueOutcome {
+                job: row_to_job(row)?,
+                created: false,
+            });
+        }
+    }
 }
 
 async fn finish_on(
@@ -666,6 +820,8 @@ fn row_to_job(row: sqlx::postgres::PgRow) -> Result<Job, StoreError> {
         locked_by: row.try_get("locked_by")?,
         locked_until: row.try_get("locked_until")?,
         idempotency_key: row.try_get("idempotency_key")?,
+        dedupe_key: row.try_get("dedupe_key")?,
+        pending_dedupe_key: row.try_get("pending_dedupe_key")?,
         last_error: row.try_get("last_error")?,
         failure_reason: row
             .try_get::<Option<String>, _>("failure_reason")?
@@ -676,6 +832,17 @@ fn row_to_job(row: sqlx::postgres::PgRow) -> Result<Job, StoreError> {
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
     })
+}
+
+fn validate_deduplicated_job(job: &NewJob, dedupe_key: &str) -> Result<(), StoreError> {
+    validate_new_job(job)?;
+    validate_text("dedupe_key", dedupe_key, MAX_DEDUPE_KEY_LENGTH)?;
+    if job.idempotency_key.is_some() {
+        return Err(StoreError::InvalidInput(
+            "job deduplication cannot be combined with an idempotency key".to_owned(),
+        ));
+    }
+    Ok(())
 }
 
 fn validate_new_job(job: &NewJob) -> Result<(), StoreError> {
@@ -806,6 +973,26 @@ mod tests {
         assert_eq!(job.max_attempts, 3);
         assert!(job.idempotency_key.is_none());
         assert!(job.run_after >= job.created_at);
+    }
+
+    #[test]
+    fn active_deduplication_validates_keys_and_rejects_mixed_modes() {
+        let job = NewJob::new("cache.refresh", json!({}), 3);
+        for key in ["", " \t", &"x".repeat(MAX_DEDUPE_KEY_LENGTH + 1)] {
+            assert!(matches!(
+                validate_deduplicated_job(&job, key),
+                Err(StoreError::InvalidInput(_))
+            ));
+        }
+        assert!(validate_deduplicated_job(&job, &"é".repeat(MAX_DEDUPE_KEY_LENGTH)).is_ok());
+        assert!(matches!(
+            validate_deduplicated_job(&job.idempotency_key("permanent"), "active"),
+            Err(StoreError::InvalidInput(_))
+        ));
+        assert!(validate_deduplicated_job(&NewJob::new(" ", json!({}), 3), "key").is_err());
+        assert!(
+            validate_deduplicated_job(&NewJob::new("cache.refresh", json!({}), 0), "key").is_err()
+        );
     }
 
     #[test]

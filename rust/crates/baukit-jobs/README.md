@@ -11,8 +11,9 @@ defines the compatibility and migration requirements for that later change.
 ## Migration
 
 Copy `migrations/0001_baukit_jobs.sql`,
-`migrations/0002_baukit_jobs_failure_reason.sql`, and
-`migrations/0003_baukit_jobs_claim_by_type.sql` into the product's own
+`migrations/0002_baukit_jobs_failure_reason.sql`,
+`migrations/0003_baukit_jobs_claim_by_type.sql`, and
+`migrations/0004_baukit_jobs_active_deduplication.sql` into the product's own
 migrations in that order. Do not point a production service at this crate
 directory and do not run schema changes during application startup. A product
 may add foreign keys or indexes in a later migration, but the lifecycle columns
@@ -52,6 +53,64 @@ rows, so a claim reads only rows of the types it asks for. The migration drops
 and recreates the index in one transaction, which blocks reads and writes on
 `job_outbox` until it commits.
 
+Products with migrations 0001 through 0003 already applied must copy
+`rust/crates/baukit-jobs/migrations/0004_baukit_jobs_active_deduplication.sql`
+from the Baukit repository as their next ordered migration. The same SQL is
+available as `POSTGRES_MIGRATION_0004_SQL`. Apply it before upgrading the
+store, including callers that only use existing enqueue and claim methods.
+Returned `Job` values now read both new columns. This is a breaking change for
+custom stores or tests that construct `Job`: set `dedupe_key` and
+`pending_dedupe_key`, usually to `None`. `Job` remains constructible for custom
+`JobStore` implementations. `NewJob` and existing method signatures are unchanged.
+
+The migration adds nullable `dedupe_key` and `pending_dedupe_key` columns. Its
+independent partial unique indexes cover pending or running jobs with a
+non-null `dedupe_key`, and pending jobs with a non-null `pending_dedupe_key`.
+The permanent idempotency index stays unchanged. The CHECK constraints scan
+`job_outbox` under `ACCESS EXCLUSIVE`, and the index builds also scan the table
+while the migration holds that lock until commit. On a large outbox, split
+this into product-owned rollout steps: add the columns and CHECK constraints
+with `NOT VALID` in a short transaction, run `VALIDATE CONSTRAINT` separately,
+and build each index with `CREATE UNIQUE INDEX CONCURRENTLY` outside a
+transaction. Finish all steps before upgrading producers or workers.
+
+Existing rows keep null dedupe keys. The first deduplicated enqueue can create
+a duplicate beside an existing pending row after deployment. For idempotent
+handlers, a product can accept that extra run. Otherwise pause producers and
+workers and backfill the chosen mode's key in a product migration before
+switching producers. For example, key only the newest pending `cache.refresh`
+row per `resource_id`, even when legacy rows share that key:
+
+```sql
+-- Run after 0004, inside the product migration's transaction.
+LOCK TABLE job_outbox IN SHARE ROW EXCLUSIVE MODE;
+WITH newest AS (
+    SELECT DISTINCT ON (payload->>'resource_id')
+        id, 'resource:' || (payload->>'resource_id') AS dedupe_key
+    FROM job_outbox
+    WHERE job_type = 'cache.refresh' AND status = 'pending'
+        AND payload->>'resource_id' IS NOT NULL
+    ORDER BY payload->>'resource_id', created_at DESC, id DESC
+)
+UPDATE job_outbox AS job
+SET pending_dedupe_key = newest.dedupe_key
+FROM newest
+WHERE job.id = newest.id;
+```
+
+Older pending rows remain unkeyed and will still run unless the product
+cancels them. The key expression must match the product's producer exactly.
+Use `dedupe_key` for active-job mode and include running rows when backfilling
+that mode. Resolve any duplicate keys in its wider set first. Unkeyed legacy
+rows remain outside deduplication until the product backfills them or they
+finish.
+Upgrade workers before enabling pending-only producers so every claim clears
+the pending key.
+
+New worker and authenticated backend templates include the same SQL in
+`backend/migrations/0007_baukit_jobs_active_deduplication.sql`. Existing products
+must add their own migration, without editing one they already applied.
+
 The terminal cleanup and fixed UTC slot APIs added after 0.2.1 need no schema
 migration. Cleanup is a `PostgresJobStore` method, so custom `JobStore`
 implementations also need no code change.
@@ -72,6 +131,84 @@ or `JobError::retryable_after`. The last form preserves a provider's
 job's `max_attempts` remains authoritative. Terminal jobs keep status `failed`
 and expose `failure_reason` as `permanent` or `attempts_exhausted` alongside
 the bounded diagnostic `last_error`.
+
+## Deduplicate against active jobs
+
+Use `PostgresJobStore::enqueue_deduplicated(job, dedupe_key)` when only one
+pending or running job of a type should exist for a key. For a domain mutation
+and enqueue that must commit together, call
+`enqueue_deduplicated_in_transaction(&mut transaction, job, dedupe_key)`.
+
+```rust,no_run
+use baukit_jobs::NewJob;
+use serde_json::json;
+
+let outcome = jobs
+    .enqueue_deduplicated(
+        NewJob::new("cache.refresh", json!({"resource_id": 42}), 3),
+        "resource:42",
+    )
+    .await?;
+```
+
+The key is scoped to `job_type`, must contain 1 to 500 characters, and cannot
+be blank. Pass a `NewJob` without an idempotency key. Combining an idempotency
+key with deduplication returns `StoreError::InvalidInput`. `enqueue` and
+`enqueue_in_transaction` still deduplicate by idempotency key across every
+status, for as long as that row exists. Permanent, active-job, and pending-only
+keys are independent.
+
+| Existing job with the same type and dedupe key | Result |
+| --- | --- |
+| Pending, including a future schedule or retry | Return it with `created = false` |
+| Running, including an expired lease or cancellation request | Return it with `created = false` |
+| Succeeded, failed, or cancelled | Insert a new job with `created = true` |
+| None | Insert a new job with `created = true` |
+
+A duplicate returns the existing job's payload, schedule, attempt budget, and
+lease without changing them. Concurrent enqueues cannot insert two active
+rows. The store locks an existing active row until commit and retries if a
+conflicting row becomes terminal before the lookup. Keep caller-owned
+transactions short. At repeatable read or serializable isolation, callers
+must retry the whole transaction after a PostgreSQL serialization failure.
+
+Retries and lease recovery keep the dedupe key. Requesting cancellation of a
+running job keeps the key occupied until the job becomes terminal. Cancelling
+a pending job releases it immediately. The existing cancellation methods that
+take a key match permanent idempotency keys; use the returned job ID to cancel
+an active-deduplicated job. `Job::dedupe_key` exposes the key, including on
+terminal jobs, for inspection and product-owned queries.
+
+## Deduplicate against pending jobs
+
+Use `PostgresJobStore::enqueue_pending_deduplicated(job, dedupe_key)` when an
+update during a running job needs a follow-up. The running job may have read
+state before the update. Repeated updates share one pending follow-up without
+changing its payload, schedule, or attempt budget. The caller-owned transaction
+variant is
+`enqueue_pending_deduplicated_in_transaction(&mut transaction, job, dedupe_key)`.
+A separate method pair keeps existing signatures and active-job behavior intact.
+
+| Existing pending-only job with the same type and key | Result |
+| --- | --- |
+| Pending, including a future schedule | Return it with `created = false` |
+| Running, with no pending follow-up | Insert one pending job with `created = true` |
+| Running, with a pending follow-up | Return the follow-up with `created = false` |
+| Succeeded, failed, cancelled, or none | Insert a new job with `created = true` |
+
+`Job::pending_dedupe_key` holds this reservation until the first claim. Claiming
+clears it atomically, so another enqueue can create the next follow-up. A claimed
+job's retries and lease recovery keep its ID and attempt budget but have no
+pending key. A retry can therefore coexist with the keyed pending follow-up;
+it does not replace or deduplicate that follow-up. Handlers must tolerate repeat
+runs, as they already do for lease recovery. Cancelling a pending job releases
+its key immediately. Use the returned job ID for cancellation.
+
+Both method pairs use the same key validation, row locking, concurrency, and
+transaction rules. They use separate columns and indexes, so the same type and
+key can have one active-job row and one pending-only reservation at once.
+Neither mode returns a row created in the other mode. Pick one mode for each
+producer flow; changing modes requires a product rollout decision about old jobs.
 
 ## Terminal-job cleanup
 

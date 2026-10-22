@@ -8,11 +8,11 @@
 //! # Outbox composition
 //!
 //! Products must copy [`POSTGRES_MIGRATION_SQL`],
-//! [`POSTGRES_MIGRATION_0002_SQL`], and [`POSTGRES_MIGRATION_0003_SQL`] into
-//! their own ordered SQLx migrations. The crate never runs migrations at
-//! process startup. Use
-//! [`PostgresJobStore::enqueue_in_transaction`] when a domain write and its job
-//! need to commit atomically. Likewise, a handler which writes PostgreSQL can
+//! [`POSTGRES_MIGRATION_0002_SQL`], [`POSTGRES_MIGRATION_0003_SQL`], and
+//! [`POSTGRES_MIGRATION_0004_SQL`] into their own ordered SQLx migrations.
+//! The crate never runs migrations at process startup. Use
+//! [`PostgresJobStore::enqueue_in_transaction`] when a domain write and its
+//! job need to commit atomically. Likewise, a handler which writes PostgreSQL can
 //! use [`PostgresJobStore::complete_in_transaction`] as the last statement in
 //! the same transaction. After that transaction commits, call
 //! [`JobCancellation::mark_completed_in_transaction`] before returning success
@@ -70,3 +70,13 @@ pub const POSTGRES_MIGRATION_0002_SQL: &str =
 /// declare.
 pub const POSTGRES_MIGRATION_0003_SQL: &str =
     include_str!("../migrations/0003_baukit_jobs_claim_by_type.sql");
+
+/// Adds independent keys for active-job and pending-only deduplication.
+///
+/// Apply this SQL as a new product-owned migration after
+/// [`POSTGRES_MIGRATION_0003_SQL`] before using any store operation with this
+/// version. Existing rows keep null dedupe keys
+/// and their permanent idempotency semantics. Products may backfill their own
+/// keys before switching producers to either deduplicated enqueue method.
+pub const POSTGRES_MIGRATION_0004_SQL: &str =
+    include_str!("../migrations/0004_baukit_jobs_active_deduplication.sql");

@@ -235,6 +235,7 @@ impl Fixture {
             baukit_jobs::POSTGRES_MIGRATION_SQL,
             baukit_jobs::POSTGRES_MIGRATION_0002_SQL,
             baukit_jobs::POSTGRES_MIGRATION_0003_SQL,
+            baukit_jobs::POSTGRES_MIGRATION_0004_SQL,
             baukit_erasure::POSTGRES_MIGRATION_SQL,
             baukit_erasure::POSTGRES_REONBOARDING_MIGRATION_SQL,
             POSTGRES_MIGRATION_SQL,

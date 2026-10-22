@@ -42,6 +42,15 @@ with `job_type` first. Check that every custom `JobStore` passes the new
 `job_types` claim argument through, and that each worker handler's
 `job_types()` lists every type that worker should run.
 
+When the target train ships
+`rust/crates/baukit-jobs/migrations/0004_baukit_jobs_active_deduplication.sql`,
+copy it as another new product-owned migration and apply it before deploying
+the new crate. Every enqueue and claim reads the new columns, including calls
+to existing methods. Upgrade workers before switching producers to
+pending-only mode so every claim clears the pending key. Add
+`dedupe_key: None, pending_dedupe_key: None` to any `Job` struct literal,
+including those in product tests.
+
 ## Validate and verify
 
 Run from the product root:

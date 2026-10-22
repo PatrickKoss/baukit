@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Apply job migration 0004 in PostgreSQL fixtures for the store's new key columns.
+
 ## [0.10.32] - 2026-10-21
 
 - Add `ErasureService::fence_as_operator_in_transaction` for authorized machine

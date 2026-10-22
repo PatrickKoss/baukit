@@ -52,6 +52,10 @@ pub struct Job {
     pub locked_until: Option<DateTime<Utc>>,
     /// Optional key unique within `job_type`.
     pub idempotency_key: Option<String>,
+    /// Key reserved while this job is pending or running, retained after completion.
+    pub dedupe_key: Option<String>,
+    /// Key reserved until the first claim. Claiming clears it, including for retries.
+    pub pending_dedupe_key: Option<String>,
     /// Bounded diagnostic text for the most recent failure.
     pub last_error: Option<String>,
     /// Stable terminal failure reason; set only while status is `failed`.
@@ -114,10 +118,10 @@ impl NewJob {
     }
 }
 
-/// Result of an idempotent enqueue operation.
+/// Result of an enqueue operation.
 #[derive(Clone, Debug, PartialEq)]
 pub struct EnqueueOutcome {
-    /// The inserted job or the previously inserted idempotent equivalent.
+    /// The inserted job or the existing job matching the enqueue's key.
     pub job: Job,
     /// Whether this call inserted the row.
     pub created: bool,

@@ -1033,6 +1033,8 @@ mod tests {
             locked_by: Some("test-worker".to_owned()),
             locked_until: Some(now + TimeDelta::minutes(1)),
             idempotency_key: None,
+            dedupe_key: None,
+            pending_dedupe_key: None,
             last_error: None,
             failure_reason: None,
             cancel_requested_at: None,
