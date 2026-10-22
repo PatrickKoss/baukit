@@ -1732,6 +1732,7 @@ mod common {
             baukit_jobs::POSTGRES_MIGRATION_SQL,
             baukit_jobs::POSTGRES_MIGRATION_0002_SQL,
             baukit_jobs::POSTGRES_MIGRATION_0003_SQL,
+            baukit_jobs::POSTGRES_MIGRATION_0004_SQL,
             SUITE_MIGRATION_SQL,
             SUITE_RUNTIME_MIGRATION_SQL,
         ] {

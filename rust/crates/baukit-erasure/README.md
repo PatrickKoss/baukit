@@ -41,9 +41,10 @@ connection. Its budget includes token acquisition and deletion. Inline failure
 warnings contain the operation ID and error class without the subject.
 Success returns a completed receipt; failure returns durable acceptance.
 
-Copy `POSTGRES_MIGRATION_SQL` into product migrations after the three
-`baukit-jobs` migrations. Copy `POSTGRES_REONBOARDING_MIGRATION_SQL` after 0001
-erasure. It adds `erased_at TIMESTAMPTZ NOT NULL DEFAULT now()` to the fences.
+Copy `POSTGRES_MIGRATION_SQL` into product migrations after the `baukit-jobs`
+migrations. Apply job migration 0004 before upgrading this crate. Copy
+`POSTGRES_REONBOARDING_MIGRATION_SQL` after 0001 erasure. It adds
+`erased_at TIMESTAMPTZ NOT NULL DEFAULT now()` to the fences.
 The default backfills existing fences with the migration time. Subjects erased
 before the upgrade can re-onboard with any login whose `auth_time` is after the
 migration, once every erasure operation completes. Their pre-erasure sessions

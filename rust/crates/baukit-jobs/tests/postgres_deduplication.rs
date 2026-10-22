@@ -339,10 +339,16 @@ async fn forward_migration_preserves_legacy_keys_and_keeps_modes_independent()
         sqlx::raw_sql(migration).execute(&pool).await?;
     }
     let store = PostgresJobStore::new(pool.clone());
-    let legacy = store.enqueue(new_job().idempotency_key(KEY)).await?;
+    let legacy_id = uuid::Uuid::now_v7();
+    sqlx::query("INSERT INTO job_outbox (id, job_type, payload, max_attempts, idempotency_key) VALUES ($1, $2, '{}', 3, $3)")
+        .bind(legacy_id)
+        .bind(KIND)
+        .bind(KEY)
+        .execute(&pool)
+        .await?;
     let before: serde_json::Value =
         sqlx::query_scalar("SELECT to_jsonb(job_outbox) FROM job_outbox WHERE id = $1")
-            .bind(legacy.job.id)
+            .bind(legacy_id)
             .fetch_one(&pool)
             .await?;
     sqlx::raw_sql(POSTGRES_MIGRATION_0004_SQL)
@@ -350,7 +356,7 @@ async fn forward_migration_preserves_legacy_keys_and_keeps_modes_independent()
         .await?;
     let mut after: serde_json::Value =
         sqlx::query_scalar("SELECT to_jsonb(job_outbox) FROM job_outbox WHERE id = $1")
-            .bind(legacy.job.id)
+            .bind(legacy_id)
             .fetch_one(&pool)
             .await?;
     assert_eq!(
@@ -360,24 +366,372 @@ async fn forward_migration_preserves_legacy_keys_and_keeps_modes_independent()
             .remove("dedupe_key"),
         Some(serde_json::Value::Null)
     );
-    assert_eq!(before, after);
-    assert!(
-        store
-            .request_cancellation(legacy.job.id, Utc::now())
-            .await?
+    assert_eq!(
+        after
+            .as_object_mut()
+            .expect("row object")
+            .remove("pending_dedupe_key"),
+        Some(serde_json::Value::Null)
     );
+    assert_eq!(before, after);
+    assert!(store.request_cancellation(legacy_id, Utc::now()).await?);
     let duplicate = store.enqueue(new_job().idempotency_key(KEY)).await?;
     assert!(!duplicate.created, "legacy idempotency is permanent");
-    assert_eq!(duplicate.job.id, legacy.job.id);
+    assert_eq!(duplicate.job.id, legacy_id);
     let active = store.enqueue_deduplicated(new_job(), KEY).await?;
     assert!(active.created, "the key modes are independent");
     assert!(active.job.idempotency_key.is_none());
+    assert_eq!(active.job.dedupe_key.as_deref(), Some(KEY));
+    assert!(active.job.pending_dedupe_key.is_none());
     let other_type = store
         .enqueue_deduplicated(NewJob::new("other.refresh", json!({}), 3), KEY)
         .await?;
     assert!(other_type.created, "keys are scoped by type");
     let unkeyed = store.enqueue(new_job()).await?;
     assert!(unkeyed.created, "unkeyed jobs do not occupy a dedupe key");
+    pool.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn pending_jobs_allow_one_followup_per_claim() -> Result<(), Box<dyn Error>> {
+    let (_fixture, pool, store) = fixture().await?;
+    let original = store.enqueue_pending_deduplicated(new_job(), KEY).await?;
+    assert!(original.created);
+    assert_eq!(original.job.pending_dedupe_key.as_deref(), Some(KEY));
+    assert!(original.job.dedupe_key.is_none());
+    let running = store
+        .claim("worker-a", &[KIND], Utc::now(), LEASE)
+        .await?
+        .expect("claimed");
+    assert_eq!(running.id, original.job.id);
+    assert!(
+        running.pending_dedupe_key.is_none(),
+        "claim releases the reservation"
+    );
+
+    let followup = store.enqueue_pending_deduplicated(new_job(), KEY).await?;
+    assert!(followup.created);
+    assert_ne!(followup.job.id, running.id);
+    let duplicate = store
+        .enqueue_pending_deduplicated(
+            NewJob::new(KIND, json!({"ignored": true}), 99)
+                .run_after(Utc::now() + TimeDelta::hours(1)),
+            KEY,
+        )
+        .await?;
+    assert!(!duplicate.created);
+    assert_eq!(
+        duplicate.job, followup.job,
+        "a duplicate preserves the original input"
+    );
+    let second = store
+        .claim("worker-b", &[KIND], Utc::now(), LEASE)
+        .await?
+        .expect("follow-up claimed");
+    assert_eq!(second.id, followup.job.id);
+    assert!(second.pending_dedupe_key.is_none());
+    let third = store.enqueue_pending_deduplicated(new_job(), KEY).await?;
+    assert!(
+        third.created,
+        "claiming the follow-up permits the next enqueue"
+    );
+    assert_ne!(third.job.id, second.id);
+    let counts: (i64, i64) = sqlx::query_as(
+        "SELECT count(*) FILTER (WHERE status = 'running'), count(*) FILTER (WHERE status = 'pending') FROM job_outbox"
+    ).fetch_one(&pool).await?;
+    assert_eq!(counts, (2, 1));
+
+    assert!(store.complete(running.id, "worker-a", Utc::now()).await?);
+    let now = Utc::now();
+    assert_eq!(
+        store
+            .record_failure(second.id, "worker-b", false, now, "permanent", now)
+            .await?,
+        Some(FailureDisposition::Failed)
+    );
+    assert!(store.request_cancellation(third.job.id, Utc::now()).await?);
+    assert!(
+        store
+            .enqueue_pending_deduplicated(new_job(), KEY)
+            .await?
+            .created,
+        "succeeded, failed, and cancelled jobs do not reserve the key"
+    );
+    pool.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn concurrent_pending_enqueues_create_one_followup_during_a_run() -> Result<(), Box<dyn Error>>
+{
+    let (_fixture, pool, store) = fixture().await?;
+    store.enqueue_pending_deduplicated(new_job(), KEY).await?;
+    let running = store
+        .claim("worker", &[KIND], Utc::now(), LEASE)
+        .await?
+        .expect("claimed");
+    const PRODUCERS: usize = 8;
+    let barrier = Arc::new(Barrier::new(PRODUCERS + 1));
+    let mut tasks = Vec::new();
+    for producer in 0..PRODUCERS {
+        let store = store.clone();
+        let barrier = barrier.clone();
+        tasks.push(tokio::spawn(async move {
+            barrier.wait().await;
+            store
+                .enqueue_pending_deduplicated(
+                    NewJob::new(KIND, json!({"producer": producer}), 3),
+                    KEY,
+                )
+                .await
+        }));
+    }
+    barrier.wait().await;
+    tokio::time::timeout(WAIT_LIMIT, async {
+        let mut created = 0;
+        let mut followup = None;
+        for task in tasks {
+            let outcome = task.await??;
+            created += usize::from(outcome.created);
+            assert_ne!(outcome.job.id, running.id);
+            assert_eq!(outcome.job.status, JobStatus::Pending);
+            assert_eq!(outcome.job.pending_dedupe_key.as_deref(), Some(KEY));
+            if let Some(followup) = &followup {
+                assert_eq!(&outcome.job, followup);
+            } else {
+                followup = Some(outcome.job);
+            }
+        }
+        assert_eq!(created, 1);
+        Ok::<(), Box<dyn Error>>(())
+    })
+    .await??;
+    let counts: (i64, i64) = sqlx::query_as(
+        "SELECT count(*), count(*) FILTER (WHERE status = 'pending' AND pending_dedupe_key = $1) FROM job_outbox"
+    ).bind(KEY).fetch_one(&pool).await?;
+    assert_eq!(counts, (2, 1));
+    pool.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn pending_retries_and_lease_recovery_do_not_collide_with_followups()
+-> Result<(), Box<dyn Error>> {
+    let (_fixture, pool, store) = fixture().await?;
+    let original = store.enqueue_pending_deduplicated(new_job(), KEY).await?;
+    let now = Utc::now();
+    let running = store
+        .claim("worker-a", &[KIND], now, LEASE)
+        .await?
+        .expect("claimed");
+    let followup = store
+        .enqueue_pending_deduplicated(new_job().run_after(now + TimeDelta::hours(1)), KEY)
+        .await?;
+    let retry_at = now + TimeDelta::seconds(2);
+    assert_eq!(
+        store
+            .record_failure(running.id, "worker-a", true, retry_at, "temporary", now)
+            .await?,
+        Some(FailureDisposition::Retry)
+    );
+    let duplicate = store.enqueue_pending_deduplicated(new_job(), KEY).await?;
+    assert!(!duplicate.created);
+    assert_eq!(duplicate.job, followup.job);
+    let retried = store
+        .claim("worker-b", &[KIND], retry_at, Duration::from_secs(1))
+        .await?
+        .expect("retry claimed");
+    assert_eq!(retried.id, original.job.id);
+    assert_eq!(retried.attempts, 2);
+    assert!(retried.pending_dedupe_key.is_none());
+    let recovered_at = retry_at + TimeDelta::seconds(2);
+    let recovered = store
+        .claim("worker-c", &[KIND], recovered_at, Duration::from_secs(1))
+        .await?
+        .expect("lease recovered");
+    assert_eq!(recovered.id, original.job.id);
+    assert_eq!(recovered.attempts, 3);
+    assert!(recovered.pending_dedupe_key.is_none());
+    assert!(
+        store
+            .claim(
+                "worker-d",
+                &[KIND],
+                recovered_at + TimeDelta::seconds(2),
+                LEASE
+            )
+            .await?
+            .is_none()
+    );
+    let status: String = sqlx::query_scalar("SELECT status FROM job_outbox WHERE id = $1")
+        .bind(original.job.id)
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(status, "failed");
+    assert_eq!(
+        store
+            .enqueue_pending_deduplicated(new_job(), KEY)
+            .await?
+            .job,
+        followup.job
+    );
+    pool.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn mixed_deduplication_modes_reserve_independent_keys() -> Result<(), Box<dyn Error>> {
+    let (_fixture, pool, store) = fixture().await?;
+    let active = store.enqueue_deduplicated(new_job(), KEY).await?;
+    let pending = store.enqueue_pending_deduplicated(new_job(), KEY).await?;
+    assert!(active.created && pending.created);
+    assert_ne!(active.job.id, pending.job.id);
+    assert_eq!(
+        store.enqueue_deduplicated(new_job(), KEY).await?.job,
+        active.job
+    );
+    assert_eq!(
+        store
+            .enqueue_pending_deduplicated(new_job(), KEY)
+            .await?
+            .job,
+        pending.job
+    );
+    let running_active = store
+        .claim("worker-a", &[KIND], Utc::now(), LEASE)
+        .await?
+        .expect("active claimed");
+    assert_eq!(running_active.id, active.job.id);
+    assert_eq!(running_active.dedupe_key.as_deref(), Some(KEY));
+    let running_pending = store
+        .claim("worker-b", &[KIND], Utc::now(), LEASE)
+        .await?
+        .expect("pending claimed");
+    assert_eq!(running_pending.id, pending.job.id);
+    let followup = store.enqueue_pending_deduplicated(new_job(), KEY).await?;
+    assert!(
+        followup.created,
+        "the active-mode index does not block the follow-up"
+    );
+    let duplicate = store.enqueue_deduplicated(new_job(), KEY).await?;
+    assert!(!duplicate.created);
+    assert_eq!(duplicate.job, running_active);
+    assert!(
+        store
+            .complete(running_active.id, "worker-a", Utc::now())
+            .await?
+    );
+    let replacement = store.enqueue_deduplicated(new_job(), KEY).await?;
+    assert!(
+        replacement.created,
+        "pending-only jobs do not block active-mode replacement"
+    );
+    assert_eq!(
+        store
+            .enqueue_pending_deduplicated(new_job(), KEY)
+            .await?
+            .job,
+        followup.job
+    );
+    let other_type = store
+        .enqueue_pending_deduplicated(NewJob::new("other.refresh", json!({}), 3), KEY)
+        .await?;
+    assert!(other_type.created, "pending keys are scoped by type");
+    pool.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn pending_transaction_rolls_back_and_locks_duplicates_until_commit()
+-> Result<(), Box<dyn Error>> {
+    let (_fixture, pool, store) = fixture().await?;
+    let mut transaction = pool.begin().await?;
+    let rolled_back = store
+        .enqueue_pending_deduplicated_in_transaction(&mut transaction, new_job(), KEY)
+        .await?;
+    let visible: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM job_outbox WHERE id = $1)")
+            .bind(rolled_back.job.id)
+            .fetch_one(&pool)
+            .await?;
+    assert!(!visible);
+    transaction.rollback().await?;
+    let original = store.enqueue_pending_deduplicated(new_job(), KEY).await?;
+    assert!(original.created);
+    assert_ne!(original.job.id, rolled_back.job.id);
+    let mut transaction = pool.begin().await?;
+    let duplicate = store
+        .enqueue_pending_deduplicated_in_transaction(&mut transaction, new_job(), KEY)
+        .await?;
+    assert!(!duplicate.created);
+    assert_eq!(duplicate.job, original.job);
+    assert!(
+        store
+            .claim("worker", &[KIND], Utc::now(), LEASE)
+            .await?
+            .is_none(),
+        "claim skips the locked pending duplicate"
+    );
+    transaction.commit().await?;
+    let claimed = store
+        .claim("worker", &[KIND], Utc::now(), LEASE)
+        .await?
+        .expect("claim after commit");
+    assert_eq!(claimed.id, original.job.id);
+    assert!(
+        store
+            .enqueue_pending_deduplicated(new_job(), KEY)
+            .await?
+            .created
+    );
+    pool.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn product_backfill_reuses_legacy_pending_rows() -> Result<(), Box<dyn Error>> {
+    let (_fixture, pool, store) = fixture().await?;
+    let legacy = store.enqueue(new_job().idempotency_key(KEY)).await?;
+    assert!(legacy.job.pending_dedupe_key.is_none());
+    let extra = store.enqueue_pending_deduplicated(new_job(), KEY).await?;
+    assert!(extra.created, "unkeyed legacy rows do not deduplicate");
+    assert!(store.request_cancellation(extra.job.id, Utc::now()).await?);
+
+    let mut transaction = pool.begin().await?;
+    sqlx::query("LOCK TABLE job_outbox IN SHARE ROW EXCLUSIVE MODE")
+        .execute(&mut *transaction)
+        .await?;
+    sqlx::query(
+        "UPDATE job_outbox SET pending_dedupe_key = 'resource:' || (payload->>'resource_id') WHERE job_type = 'cache.refresh' AND status = 'pending' AND payload->>'resource_id' IS NOT NULL",
+    )
+    .execute(&mut *transaction)
+    .await?;
+    transaction.commit().await?;
+
+    let duplicate = store.enqueue_pending_deduplicated(new_job(), KEY).await?;
+    assert!(!duplicate.created);
+    assert_eq!(duplicate.job.id, legacy.job.id);
+    assert_eq!(duplicate.job.pending_dedupe_key.as_deref(), Some(KEY));
+    assert_eq!(duplicate.job.idempotency_key.as_deref(), Some(KEY));
+    assert!(
+        store
+            .request_cancellation(duplicate.job.id, Utc::now())
+            .await?
+    );
+    let permanent = store.enqueue(new_job().idempotency_key(KEY)).await?;
+    assert!(
+        !permanent.created,
+        "backfill preserves permanent idempotency"
+    );
+    assert_eq!(permanent.job.pending_dedupe_key.as_deref(), Some(KEY));
+    assert_eq!(permanent.job.status, JobStatus::Cancelled);
     pool.close().await;
     Ok(())
 }
