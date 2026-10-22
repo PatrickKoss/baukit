@@ -53,6 +53,9 @@ struct NewCommand {
     /// Generate an MCP server for the backend.
     #[arg(long, requires = "backend")]
     mcp: bool,
+    /// Wire the platform receiver and entitlement cache into the backend.
+    #[arg(long, requires = "backend")]
+    platform: bool,
     /// Add an authentication capability.
     #[arg(long, value_enum)]
     auth: Option<AuthProvider>,
@@ -113,6 +116,7 @@ fn run() -> Result<()> {
                 web: command.web,
                 pwa: command.pwa,
                 mcp: command.mcp,
+                platform: command.platform,
                 auth: command.auth,
                 force: command.force,
                 into_existing: command.into_existing,

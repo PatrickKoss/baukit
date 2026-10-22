@@ -9,7 +9,11 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-axum.workspace = true
+{% if context.platform %}baukit-suite = { workspace = true, features = ["platform", "postgres"] }
+async-trait.workspace = true
+baukit-egress.workspace = true
+url.workspace = true
+{% endif %}axum.workspace = true
 {% if context.auth_enabled %}baukit-auth.workspace = true
 baukit-erasure.workspace = true
 {% endif %}baukit-config.workspace = true

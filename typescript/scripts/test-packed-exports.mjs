@@ -47,6 +47,29 @@ async function installPacked() {
     installed,
     '--strip-components=1',
   ]);
+  const dependencies =
+    JSON.parse(await readFile(join(installed, 'package.json'), 'utf8')).dependencies ?? {};
+  if (loadedSubpaths.length > 0 && Object.keys(dependencies).length > 0) {
+    await writeFile(
+      join(workDirectory, 'package.json'),
+      JSON.stringify({ private: true, dependencies }),
+    );
+    const pnpmCli = process.env['npm_execpath'];
+    const isScript = /\.[cm]?js$/.test(pnpmCli);
+    const [command, prefix] = isScript ? [process.execPath, [pnpmCli]] : [pnpmCli, []];
+    execFileSync(
+      command,
+      [
+        ...prefix,
+        'install',
+        '--prod',
+        '--ignore-scripts',
+        '--no-lockfile',
+        '--config.auto-install-peers=false',
+      ],
+      { cwd: workDirectory, stdio: 'pipe' },
+    );
+  }
   return installed;
 }
 

@@ -275,6 +275,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - flavor: platform
+            product_name: platform-fixture
+            flags: --backend --platform --worker --auth oidc
+            backend: true
+            mobile: false
+            web: false
+            mcp: false
           - flavor: backend
             product_name: fixture
             flags: --backend

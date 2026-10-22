@@ -5,8 +5,12 @@ use baukit_cli::{AuthProvider, NewOptions, QualityProfile};
 type ConfigureFlavor = fn(&mut NewOptions);
 
 pub fn snapshot_flavors(parent: &Path) -> impl Iterator<Item = (&'static str, NewOptions)> {
-    let flavors: [(&str, ConfigureFlavor); 11] = [
+    let flavors: [(&str, ConfigureFlavor); 12] = [
         ("backend", |_| {}),
+        ("platform", |o| {
+            o.platform = true;
+            o.auth = Some(AuthProvider::Oidc);
+        }),
         ("worker", |o| o.worker = true),
         ("mobile", |o| {
             o.backend = false;
@@ -62,6 +66,7 @@ pub fn snapshot_flavors(parent: &Path) -> impl Iterator<Item = (&'static str, Ne
             web: false,
             pwa: false,
             mcp: false,
+            platform: false,
             auth: None,
             force: false,
             into_existing: false,

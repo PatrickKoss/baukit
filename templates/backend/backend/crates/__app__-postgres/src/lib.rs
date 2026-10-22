@@ -1,4 +1,7 @@
-{% if context.worker %}use baukit_jobs::{NewJob, PostgresJobStore};
+{% if context.platform %}mod platform;
+pub use platform::*;
+
+{% endif %}{% if context.worker %}use baukit_jobs::{NewJob, PostgresJobStore};
 
 {% endif %}use sqlx::PgPool;
 use uuid::Uuid;
@@ -220,7 +223,12 @@ impl baukit_erasure::ProductErasure for PostgresProfileErasure {
         subject: &'a str,
     ) -> baukit_erasure::ErasureFuture<'a, Result<(), sqlx::Error>> {
         Box::pin(async move {
-            sqlx::query("DELETE FROM user_identities WHERE subject = $1")
+{% if context.platform %}            baukit_suite::platform::PostgresEntitlementCache::forget_in_transaction(
+                subject, connection,
+            )
+            .await
+            .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+{% endif %}            sqlx::query("DELETE FROM user_identities WHERE subject = $1")
                 .bind(subject)
                 .execute(connection)
                 .await?;

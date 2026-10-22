@@ -31,6 +31,7 @@ fn options(parent: &Path, name: &str) -> NewOptions {
         web: false,
         pwa: false,
         mcp: false,
+        platform: false,
         auth: None,
         force: false,
         into_existing: false,
@@ -51,6 +52,7 @@ fn frontend_options(parent: &Path, name: &str, mobile: bool, web: bool) -> NewOp
         web,
         pwa: false,
         mcp: false,
+        platform: false,
         auth: None,
         force: false,
         into_existing: false,
@@ -6020,5 +6022,130 @@ fn authenticated_backends_copy_the_reonboarding_migration() -> anyhow::Result<()
             )
         );
     }
+    Ok(())
+}
+
+#[test]
+fn platform_requires_backend_and_rejects_runtime_settings_in_generation_manifest()
+-> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut generated = options(parent.path(), "platform-config");
+    generated.platform = true;
+    generated.backend = false;
+    generated.web = true;
+    assert!(
+        generate_new(&generated)
+            .expect_err("platform without backend")
+            .to_string()
+            .contains("--platform requires --backend")
+    );
+    generated.backend = true;
+    let root = generate_new(&generated)?;
+    let path = root.join("baukit.toml");
+    let source = fs::read_to_string(&path)?;
+    fs::write(
+        &path,
+        format!("{source}hub_issuer = \"https://hub.example\"\n"),
+    )?;
+    assert!(
+        baukit_cli::read_manifest(&root)
+            .expect_err("runtime settings in generation manifest")
+            .to_string()
+            .contains("could not parse")
+    );
+    Ok(())
+}
+
+#[test]
+fn platform_flavors_keep_domain_free_of_transport_and_wire_the_receiver() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    for (name, auth, worker) in [
+        ("platform-standalone", None, false),
+        ("platform-worker", None, true),
+        ("platform-oidc", Some(AuthProvider::Oidc), false),
+        ("platform-clerk", Some(AuthProvider::Clerk), true),
+    ] {
+        let mut generated = options(parent.path(), name);
+        generated.platform = true;
+        generated.auth = auth;
+        generated.worker = worker;
+        generated.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+        let root = generate_new(&generated)?;
+        let manifest = baukit_cli::read_manifest(&root)?;
+        assert!(manifest.capabilities.platform);
+        let migration = manifest.platform.as_ref().expect("platform metadata");
+        assert_eq!(
+            fs::read_to_string(root.join(&migration.migration))?,
+            include_str!("../../rust/crates/baukit-suite/migrations/004_platform.sql")
+        );
+        let domain =
+            fs::read_to_string(root.join(format!("backend/crates/{name}-domain/Cargo.toml")))?;
+        assert!(!domain.contains("baukit-suite"));
+        assert!(!domain.contains("sqlx"));
+        assert!(!domain.contains("axum"));
+        let schema: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(root.join("backend/openapi.json"))?)?;
+        assert!(schema.pointer("/paths/~1platform~1inbound/post").is_some());
+        let api =
+            fs::read_to_string(root.join(format!("backend/crates/{name}-bin/src/bin/api.rs")))?;
+        assert!(api.contains(".merge(platform.router)"));
+        if auth.is_some() {
+            let erasure = fs::read_to_string(
+                root.join(format!("backend/crates/{name}-postgres/src/lib.rs")),
+            )?;
+            assert!(erasure.contains("forget_in_transaction"));
+        }
+        doctor(&root)?;
+    }
+    Ok(())
+}
+
+#[test]
+fn doctor_rejects_missing_platform_migration_and_capability_mismatch() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut generated = options(parent.path(), "platform-doctor");
+    generated.platform = true;
+    generated.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&generated)?;
+    fs::remove_file(root.join("backend/migrations/0008_platform.sql"))?;
+    let error = doctor(&root)
+        .expect_err("missing platform migration")
+        .to_string();
+    assert!(
+        error.contains("must create platform_inbound_receipts"),
+        "{error}"
+    );
+    let path = root.join("baukit.toml");
+    fs::write(
+        &path,
+        fs::read_to_string(&path)?.replace("platform = true", "platform = false"),
+    )?;
+    assert!(
+        doctor(&root)
+            .expect_err("platform capability mismatch")
+            .to_string()
+            .contains("must be set together")
+    );
+    Ok(())
+}
+
+#[test]
+fn platform_rerender_uses_the_declared_product_migration_path() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut generated = options(parent.path(), "platform-rerender");
+    generated.platform = true;
+    let root = generate_new(&generated)?;
+    let manifest_path = root.join("baukit.toml");
+    let source =
+        fs::read_to_string(&manifest_path)?.replace("0008_platform.sql", "0012_platform.sql");
+    fs::remove_dir_all(&root)?;
+    fs::create_dir(&root)?;
+    fs::write(&manifest_path, &source)?;
+    generated.into_existing = true;
+    generated.directory = root.clone();
+    assert_eq!(generate_new(&generated)?, root);
+    assert_eq!(fs::read_to_string(&manifest_path)?, source);
+    assert!(root.join("backend/migrations/0012_platform.sql").is_file());
+    assert!(!root.join("backend/migrations/0008_platform.sql").exists());
     Ok(())
 }

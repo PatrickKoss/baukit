@@ -23,6 +23,7 @@ fn options(parent: &Path) -> NewOptions {
         web: true,
         pwa: false,
         mcp: false,
+        platform: false,
         auth: None,
         force: false,
         into_existing: false,

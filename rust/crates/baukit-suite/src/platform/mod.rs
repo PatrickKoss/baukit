@@ -74,6 +74,15 @@ pub trait PlatformEventHandler: Send + Sync {
     ) -> Result<Option<std::sync::Arc<dyn PlatformEventHandler>>, PlatformError> {
         Ok(None)
     }
+    /// Prepare using the receiver's request time. Custom handlers that do not
+    /// need a clock can keep implementing `prepare` alone.
+    async fn prepare_at(
+        &self,
+        event: &PlatformEvent,
+        _now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Option<std::sync::Arc<dyn PlatformEventHandler>>, PlatformError> {
+        self.prepare(event).await
+    }
     /// Return `Unavailable` for a retry, or `Invalid` for permanent rejection.
     /// Use `context.postgres()` for writes that must commit with the receipt.
     async fn handle(

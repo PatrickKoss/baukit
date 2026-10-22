@@ -121,10 +121,11 @@ async fn inbound(
     let required = |name| single_header(&headers, name).ok_or_else(invalid_signature);
     let timestamp = required("x-suite-timestamp")?;
     let parsed = timestamp.parse::<i64>().map_err(|_| invalid_signature())?;
+    let now = state.clock.now();
     let delivery_id = required("x-suite-delivery-id")?;
     if parsed < 0
         || parsed.to_string() != timestamp
-        || !signature_timestamp_valid(parsed, state.clock.now().timestamp())
+        || !signature_timestamp_valid(parsed, now.timestamp())
         || delivery_id.is_empty()
         || delivery_id.len() > MAX_DELIVERY_ID_BYTES
         || delivery_id.chars().any(char::is_control)
@@ -154,13 +155,14 @@ async fn inbound(
             "The request content type must be JSON",
         ));
     }
-    let event = state
-        .decoder
-        .decode(&body, state.clock.now())
-        .map_err(api_error)?;
+    let event = state.decoder.decode(&body, now).map_err(api_error)?;
+    let handler = TimedHandler {
+        inner: state.handler.as_ref(),
+        now,
+    };
     state
         .inbox
-        .receive(&event, Sha256::digest(&body).into(), state.handler.as_ref())
+        .receive(&event, Sha256::digest(&body).into(), &handler)
         .await
         .map_err(api_error)?;
     Ok(StatusCode::NO_CONTENT)
@@ -181,4 +183,25 @@ fn api_error(error: PlatformError) -> ApiError {
         error.to_string(),
         "The platform event could not be received",
     )
+}
+
+struct TimedHandler<'a> {
+    inner: &'a dyn PlatformEventHandler,
+    now: chrono::DateTime<chrono::Utc>,
+}
+#[async_trait::async_trait]
+impl PlatformEventHandler for TimedHandler<'_> {
+    async fn prepare(
+        &self,
+        event: &PlatformEvent,
+    ) -> Result<Option<Arc<dyn PlatformEventHandler>>, PlatformError> {
+        self.inner.prepare_at(event, self.now).await
+    }
+    async fn handle(
+        &self,
+        event: &PlatformEvent,
+        context: &mut EventContext<'_>,
+    ) -> Result<(), PlatformError> {
+        self.inner.handle(event, context).await
+    }
 }

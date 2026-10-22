@@ -47,6 +47,12 @@ worker:
   allowedHosts: [mcp.example.com]
   allowedOrigins: []
 
+{% endif %}{% if context.platform %}platform:
+  receiverSecretRef:
+    name: {{ context.app_name }}-platform-receiver
+    key: current
+    previousKey: previous
+
 {% endif %}ingress:
   enabled: false{% if context.mcp %}
   hosts:

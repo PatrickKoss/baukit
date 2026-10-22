@@ -1,4 +1,7 @@
-use std::{future::Future, pin::Pin};
+{% if context.platform %}mod platform;
+pub use platform::*;
+
+{% endif %}use std::{future::Future, pin::Pin};
 
 {% if context.auth_enabled %}use {{ context.app_crate }}_domain::InternalUser;
 use {{ context.app_crate }}_domain::Item;

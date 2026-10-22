@@ -344,3 +344,47 @@ split router, configuration and tool-definition modules. Override individual
 checks under `[doctor.sources]` with `mcp_router`, `mcp_config`, `mcp_tools`, or
 `mcp_drift`. Each value is a path relative to the product root. Doctor checks
 symbols in those files and continues to report missing wiring.
+
+## Platform receiver
+
+```sh
+baukit new my-product --backend --platform
+baukit new my-product --backend --platform --auth oidc --worker --web --mobile
+```
+
+`--platform` requires `--backend`. It adds `capabilities.platform = true` and a
+`[platform]` section containing only the product migration path. Doctor uses
+that path to check the schema. Hub URLs, source identifiers, receiver secrets,
+JWKS settings and service tokens are backend runtime configuration, so the same
+source tree can run standalone or connect to different deployments. The generated
+`.env.example` and `docs/platform.md` list those settings. Without hub settings,
+reads return free entitlements and the receiver route is disabled.
+
+The binary composes `PostgresPlatformInbox`, `PostgresEntitlementCache`, the
+verified HTTP ticket source and the product's `PlatformEvents` port. Authenticated
+products also delete entitlement cache rows in the account-erasure transaction.
+The template has no scheduler. Run its `platform-purge` command daily using the
+deployment's scheduler to retain at least 30 days of delivery receipts.
+
+Existing products use the same `new --into-existing` conflict workflow described
+above. Add the capability and next migration path to the product manifest:
+
+```toml
+[capabilities]
+platform = true
+
+[platform]
+migration = "backend/migrations/0012_platform.sql"
+```
+
+Generate a reference product with the same flags in an empty directory, then copy
+the migration under that next number and review the config, adapters, binary
+composition, erasure, OpenAPI and deployment changes. `--into-existing --platform`
+adds missing files and reports modified files; it preserves the existing manifest
+and uses its recorded platform migration path. There is no capability mutation
+command. Run `baukit doctor` after applying the changes.
+
+Web and mobile templates have no entitlement checks, so this option adds no
+frontend code. The generated guide shows `verifyTicket` from
+`@baukit/suite-client/entitlements` for products that add offline checks.
+See [receiver adoption](../docs/platform/platform-receiver.md).

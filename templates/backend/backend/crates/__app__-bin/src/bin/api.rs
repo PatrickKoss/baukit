@@ -4,7 +4,7 @@ use std::{env, error::Error, net::SocketAddr, sync::Arc, time::Duration};
 use baukit_auth::{AuthState, Principal};
 {% endif %}use baukit_config::{BaukitConfig, Environment};
 {% if context.auth_enabled %}use baukit_jobs::{PostgresJobStore, WorkerConfig, WorkerRunner};
-{% endif %}{% if not context.auth_enabled %}use baukit_ops::PoolMetricsSampler;
+{% endif %}{% if not context.auth_enabled and not context.platform %}use baukit_ops::PoolMetricsSampler;
 {% endif %}use baukit_ops::{TrafficGate, spawn_pool_metrics_sampler};
 {% if context.auth_enabled %}use baukit_ratelimit::{
     AuthenticatedRouteGroupOptions, Quota, RateLimitOptions, RedisRateLimitStore,
@@ -35,11 +35,11 @@ use {{ context.app_crate }}_services::UserService;
 {% else %}use {{ context.app_crate }}_api::ApiState;
 use {{ context.app_crate }}_api::finalize_api;
 use {{ context.app_crate }}_api::routes;
-use {{ context.app_crate }}_bin::InMemoryItemRepository;
+{% if not context.platform %}use {{ context.app_crate }}_bin::InMemoryItemRepository;{% endif %}
 use {{ context.app_crate }}_bin::ProductConfig;
 use {{ context.app_crate }}_bin::config_loader;
 use {{ context.app_crate }}_bin::operations_router;
-use {{ context.app_crate }}_ports::ItemRepository;
+{% if not context.platform %}use {{ context.app_crate }}_ports::ItemRepository;{% endif %}
 use {{ context.app_crate }}_postgres::PostgresItemRepository;
 use {{ context.app_crate }}_services::ItemService;
 {% endif %}
@@ -100,11 +100,26 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
     )?;
     let item_service = ItemService::new(Arc::new(PostgresItemRepository::new(pool.clone())));
     let user_service = UserService::new(Arc::new(PostgresUserRepository::new(
-        pool,
+        pool{% if context.platform %}.clone(){% endif %},
         erasure_service.store().clone(),
     )));
     let verifier = auth_verifier(&config.product.auth).await?;
     let auth = AuthState::from_shared(verifier.clone());
+{% elif context.platform %}    let database = config
+        .database
+        .as_ref()
+        .ok_or("platform backend requires database configuration")?;
+    let pool = PgPoolOptions::new()
+        .max_connections(database.max_connections)
+        .min_connections(database.min_connections)
+        .acquire_timeout(database.acquire_timeout)
+        .connect(database.url.expose())
+        .await?;
+    let pool_metrics = Some(spawn_pool_metrics_sampler(
+        pool.clone(),
+        Duration::from_secs(15),
+    )?);
+    let item_service = ItemService::new(Arc::new(PostgresItemRepository::new(pool.clone())));
 {% else %}    let (repository, pool_metrics): (Arc<dyn ItemRepository>, Option<PoolMetricsSampler>) =
         if let Some(database) = &config.database {
             let pool = PgPoolOptions::new()
@@ -187,6 +202,10 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
     )
     .await?;
     let api = api.merge(mcp);
+{% endif %}{% if context.platform %}    let platform = {{ context.app_crate }}_bin::platform::compose(pool, &config.product)?;
+    let api = api
+        .merge(platform.router)
+        .layer(axum::Extension(platform.entitlements));
 {% endif %}    let api = finalize_api(api, &config.http)?;
     let shutdown = ShutdownToken::new(config.shutdown.drain_timeout);
     let traffic_gate = TrafficGate::new();

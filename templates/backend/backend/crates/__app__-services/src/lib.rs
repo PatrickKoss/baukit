@@ -1,4 +1,7 @@
-use std::sync::Arc;
+{% if context.platform %}mod platform;
+pub use platform::*;
+
+{% endif %}use std::sync::Arc;
 
 use thiserror::Error;
 use uuid::Uuid;

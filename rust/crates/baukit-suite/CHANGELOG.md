@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Keep entitlement events retryable when a custom inbox skips preparation. Pass the receiver clock to `PlatformEventHandler::prepare_at` for deterministic free-cache deadlines.
+- Document that erasure removes revision cursors and products must filter late events for erased subjects.
+
 - Add per-peer hosted `authorize_url` overrides with config and registry validation. The full path and suite protocol query parameters are preserved.
 - Breaking: `PeerUrls`, `PeerRegistrySettings` and `SuiteConfig` are non-exhaustive. Replace external struct literals with `PeerUrls::new`, `PeerRegistrySettings::default` and their builders, or mutate defaults. `ActivePeer` gains `authorize_url: Option<url::Url>`, parsed during registry validation. This requires a minor release.
 - Add the read-only `SuiteLinksRead` service port, implemented by `SuiteLinkService`.

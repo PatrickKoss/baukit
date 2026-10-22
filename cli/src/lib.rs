@@ -4,6 +4,7 @@ mod doctor_dev_ports;
 mod doctor_files;
 mod doctor_layout;
 mod doctor_mcp;
+mod doctor_platform;
 mod identity;
 mod ports;
 
@@ -38,6 +39,7 @@ static COMMON_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates
 static MOBILE_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/mobile");
 static MCP_REMOTE_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/mcp-remote");
 static WEB_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/web");
+static PLATFORM_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/platform");
 static WORKER_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/worker");
 const REMOTE_MCP_CLIENT_SCOPES: &str = include_str!("../resources/remote-mcp-client-scopes.json");
 
@@ -46,6 +48,7 @@ pub const TEMPLATE_VERSION: &str = include_str!("../../templates/VERSION").trim_
 
 const OPENAPI_TYPESCRIPT_PACKAGE: &str = "openapi-typescript@7.13.0";
 const MAX_APPLICATION_NAME_LEN: usize = 41;
+const PLATFORM_MIGRATION_PATH: &str = "backend/migrations/0008_platform.sql";
 
 const EXPECTED_BACKEND_FILES: &[&str] = &[
     "README.md",
@@ -182,6 +185,7 @@ pub struct NewOptions {
     pub web: bool,
     pub pwa: bool,
     pub mcp: bool,
+    pub platform: bool,
     pub auth: Option<AuthProvider>,
     pub force: bool,
     pub into_existing: bool,
@@ -229,12 +233,21 @@ pub struct Manifest {
     #[serde(default)]
     pub quality: QualityManifest,
     pub capabilities: Capabilities,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform: Option<PlatformManifest>,
     pub dependencies: Dependencies,
     pub openapi: OpenApiPaths,
     #[serde(default, skip_serializing_if = "DoctorPaths::is_empty")]
     pub doctor: DoctorPaths,
     #[serde(default, skip_serializing_if = "BackendManifest::is_empty")]
     pub backend: BackendManifest,
+}
+
+/// Generation metadata only. Hub settings belong in backend runtime config.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlatformManifest {
+    pub migration: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -292,6 +305,8 @@ pub struct Capabilities {
     pub pwa: bool,
     #[serde(default)]
     pub mcp: bool,
+    #[serde(default)]
+    pub platform: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth: Option<AuthProvider>,
 }
@@ -356,6 +371,8 @@ struct TemplateContext {
     web: bool,
     pwa: bool,
     mcp: bool,
+    platform: bool,
+    platform_migration: String,
     remote_mcp_client_scopes: &'static str,
     auth_enabled: bool,
     auth_oidc: bool,
@@ -388,6 +405,9 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
     if options.pwa && !options.mobile && !options.web {
         bail!("--pwa requires --mobile or --web to serve the worker");
     }
+    if options.platform && !options.backend {
+        bail!("--platform requires --backend because the receiver uses PostgreSQL");
+    }
     validate_mcp_options(options)?;
     if !options.backend && !options.mobile && !options.web {
         bail!("select at least one capability: --backend, --mobile, or --web");
@@ -399,6 +419,21 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         options.directory.join(&options.name)
     };
     let (ports, existing_manifest) = ports::generation_ports(&destination, options.port_offset)?;
+    let platform_migration = existing_manifest
+        .as_deref()
+        .map(toml::from_str::<Manifest>)
+        .transpose()?
+        .and_then(|manifest| manifest.platform.map(|platform| platform.migration))
+        .unwrap_or_else(|| PLATFORM_MIGRATION_PATH.to_owned());
+    if options.platform {
+        doctor_layout::product_path(&destination, &platform_migration)?;
+        if Path::new(&platform_migration)
+            .extension()
+            .is_none_or(|extension| extension != "sql")
+        {
+            bail!("platform.migration must name a forward SQL migration");
+        }
+    }
     let non_empty = destination.exists()
         && fs::read_dir(&destination)
             .with_context(|| format!("could not inspect {}", destination.display()))?
@@ -413,15 +448,7 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
     }
 
     let auth_enabled = options.auth.is_some();
-    let dependency = dependency_context(
-        options.baukit_path.as_deref(),
-        options.mobile,
-        options.web,
-        options.pwa,
-        auth_enabled,
-        options.worker,
-        options.mcp,
-    )?;
+    let dependency = dependency_context(options)?;
     let context = TemplateContext {
         app_name: options.name.clone(),
         app_crate: options.name.replace('-', "_"),
@@ -441,6 +468,8 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         web: options.web,
         pwa: options.pwa,
         mcp: options.mcp,
+        platform: options.platform,
+        platform_migration,
         remote_mcp_client_scopes: REMOTE_MCP_CLIENT_SCOPES,
         auth_enabled,
         auth_oidc: options.auth == Some(AuthProvider::Oidc),
@@ -593,15 +622,11 @@ struct DependencyContext {
     typescript_description: String,
 }
 
-fn dependency_context(
-    path: Option<&Path>,
-    mobile: bool,
-    web: bool,
-    pwa: bool,
-    auth_enabled: bool,
-    worker: bool,
-    mcp: bool,
-) -> Result<DependencyContext> {
+fn dependency_context(options: &NewOptions) -> Result<DependencyContext> {
+    let path = options.baukit_path.as_deref();
+    let (mobile, web, pwa) = (options.mobile, options.web, options.pwa);
+    let auth_enabled = options.auth.is_some();
+    let (worker, mcp, platform) = (options.worker, options.mcp, options.platform);
     let mut web_packages = typescript_packages(false, false, web && auth_enabled);
     if pwa && web {
         web_packages.push("@baukit/pwa-web");
@@ -648,6 +673,9 @@ fn dependency_context(
         }
         if mcp {
             names.push("baukit-mcp");
+        }
+        if platform {
+            names.extend(["baukit-suite", "baukit-egress"]);
         }
         let cargo = names
             .iter()
@@ -723,6 +751,9 @@ fn dependency_context(
         }
         if mcp {
             names.push("baukit-mcp");
+        }
+        if platform {
+            names.extend(["baukit-suite", "baukit-egress"]);
         }
         let cargo = names
             .iter()
@@ -858,6 +889,35 @@ fn render_product(
             false,
         )?;
     }
+    if context.platform {
+        render_directory(
+            &PLATFORM_TEMPLATE,
+            &environment,
+            context,
+            &mut rendered,
+            false,
+        )?;
+        let schema_path = Path::new("backend/openapi.json");
+        let mut schema: serde_json::Value = serde_json::from_slice(
+            rendered
+                .get(schema_path)
+                .ok_or_else(|| anyhow!("backend OpenAPI schema is missing"))?,
+        )?;
+        rendered
+            .get_mut(Path::new("generated/openapi.d.ts"))
+            .ok_or_else(|| anyhow!("backend TypeScript declarations are missing"))?
+            .extend_from_slice(include_bytes!("../resources/platform-openapi.d.ts"));
+        schema["paths"]["/platform/inbound"] =
+            serde_json::from_str(include_str!("../resources/platform-openapi.json"))?;
+        rendered.insert(
+            schema_path.to_path_buf(),
+            format!("{}\n", serde_json::to_string_pretty(&schema)?).into_bytes(),
+        );
+        rendered.insert(
+            PathBuf::from(&context.platform_migration),
+            include_bytes!("../../rust/crates/baukit-suite/migrations/004_platform.sql").to_vec(),
+        );
+    }
     let source = render_manifest(context, options);
     if options.backend {
         let manifest: Manifest = toml::from_str(&source)?;
@@ -883,6 +943,20 @@ fn render_manifest(context: &TemplateContext, options: &NewOptions) -> String {
         format!("port_offset = {}\n", options.port_offset)
     };
     let mcp = if options.mcp { "mcp = true\n" } else { "" };
+    let platform_capability = if options.platform {
+        "platform = true\n"
+    } else {
+        ""
+    };
+    let platform_manifest = if options.platform {
+        format!(
+            "\n[platform]\nmigration = {}\n",
+            toml::Value::String(context.platform_migration.clone())
+        )
+    } else {
+        String::new()
+    };
+    let optional_capabilities = format!("{mcp}{platform_capability}");
     let consumers = "[\"generated/openapi.d.ts\"]";
     format!(
         "schema_version = {MANIFEST_SCHEMA_VERSION}\n\
@@ -915,7 +989,7 @@ pwa = {}\n\
 \n\
 [openapi]\n\
 schema = \"backend/openapi.json\"\n\
-consumers = {}\n",
+consumers = {}\n{}",
         context.template_version,
         port_offset,
         context.app_name,
@@ -930,10 +1004,11 @@ consumers = {}\n",
         options.mobile,
         options.web,
         options.pwa,
-        mcp,
+        optional_capabilities,
         auth,
         context.baukit_manifest,
         consumers,
+        platform_manifest,
     )
 }
 
@@ -1225,6 +1300,14 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
     if manifest.capabilities.pwa && pwa_app_directory(&manifest.capabilities).is_none() {
         failures.push("the PWA capability requires the web or mobile capability".to_owned());
     }
+    if manifest.capabilities.platform && !manifest.capabilities.backend {
+        failures.push("the platform capability requires the backend capability".to_owned());
+    }
+    if manifest.capabilities.platform != manifest.platform.is_some() {
+        failures.push(
+            "capabilities.platform and the [platform] migration must be set together".to_owned(),
+        );
+    }
     if manifest.capabilities.mcp && !manifest.capabilities.backend {
         failures.push("the MCP capability requires the backend capability".to_owned());
     }
@@ -1271,6 +1354,9 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
                 &mut successes,
                 &mut failures,
             )?;
+        }
+        if manifest.capabilities.platform {
+            doctor_platform::validate(root, &manifest, &mut successes, &mut failures)?;
         }
         if manifest.capabilities.mcp {
             validate_remote_mcp(root, &manifest, &mut successes, &mut failures)?;
@@ -2722,6 +2808,8 @@ mod generator_tests {
             web: false,
             pwa: false,
             mcp: false,
+            platform: false,
+            platform_migration: super::PLATFORM_MIGRATION_PATH.to_owned(),
             remote_mcp_client_scopes: REMOTE_MCP_CLIENT_SCOPES,
             auth_enabled: false,
             auth_oidc: false,
@@ -2891,6 +2979,7 @@ mod doctor_tests {
             web,
             pwa: true,
             mcp: false,
+            platform: false,
             auth: None,
         };
 

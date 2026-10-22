@@ -28,10 +28,16 @@ return errors. Configure the hub source and optional distinct event prefix in
 
 Use `EntitlementCache::forget(subject)` for erasure, or
 `PostgresEntitlementCache::forget_in_transaction(subject, connection)` within the
-product's erasure transaction. Keep receipts for at least 30 days, then prune with
+product's erasure transaction. These calls also delete revision cursors. Filter
+late events for erased or unknown subjects before entitlement preparation, and
+check subject existence before read-through calls, to prevent recreating erased
+cache rows. The wrapped product handler does not receive entitlement events.
+Keep receipts for at least 30 days, then prune with
 `PostgresPlatformInbox::purge_received_before(cutoff, batch)`. Custom inboxes can
 construct `EventContext::detached()` or `EventContext::with_postgres(connection)`
-and must call `PlatformEventHandler::prepare` before claiming a receipt.
+and must call `PlatformEventHandler::prepare` before claiming a receipt. The
+receiver passes its clock through the additive `prepare_at(event, now)` hook;
+its default calls existing `prepare` implementations.
 
 See [platform adoption](../../../docs/platform/platform-receiver.md) for migration,
 configuration, secret rotation and offline ticket verification.
