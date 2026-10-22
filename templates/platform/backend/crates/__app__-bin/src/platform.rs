@@ -12,10 +12,10 @@ use {{ context.app_crate }}_services::LoggingPlatformEvents;
 use sqlx::PgPool;
 
 use crate::ProductConfig;
-
+{% if not context.worker %}
 const RECEIPT_RETENTION_DAYS: i64 = 30;
 const PURGE_BATCH: u32 = 1000;
-
+{% endif %}
 pub struct PlatformServices {
     pub router: Router,
     pub entitlements: Entitlements,
@@ -67,7 +67,7 @@ pub fn compose_with(
         router,
         entitlements,
     })
-}
+}{% if not context.worker %}
 
 /// Daily scheduler hook. The cutoff keeps at least 30 days of delivery receipts.
 pub async fn purge_receipts(pool: PgPool) -> Result<u64, baukit_suite::platform::PlatformError> {
@@ -82,3 +82,5 @@ pub async fn purge_receipts(pool: PgPool) -> Result<u64, baukit_suite::platform:
         }
     }
 }
+{% else %}
+{% endif -%}

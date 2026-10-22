@@ -76,6 +76,8 @@ pub trait PlatformEventHandler: Send + Sync {
     }
     /// Prepare using the receiver's request time. Custom handlers that do not
     /// need a clock can keep implementing `prepare` alone.
+    /// Overrides must also override `prepare` and delegate to `prepare_at`,
+    /// so inboxes calling `prepare` directly use the same preparation.
     async fn prepare_at(
         &self,
         event: &PlatformEvent,

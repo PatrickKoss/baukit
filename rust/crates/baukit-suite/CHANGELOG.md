@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Clarify that handlers overriding `prepare_at` must delegate `prepare` to it.
+
 - Keep entitlement events retryable when a custom inbox skips preparation. Pass the receiver clock to `PlatformEventHandler::prepare_at` for deterministic free-cache deadlines.
 - Document that erasure removes revision cursors and products must filter late events for erased subjects.
 

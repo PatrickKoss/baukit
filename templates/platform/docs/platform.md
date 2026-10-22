@@ -87,29 +87,46 @@ read-through calls. The product owns its suite-subject mapping and this filter.
 
 ## Receipt retention
 
-The template has a worker option but no scheduler. Schedule this command daily
-with the deployment's scheduler, using the same runtime database settings:
+{% if context.worker %}The durable worker registers `PlatformJobHandler` alongside the demo job handler.
+At startup, every replica calls `enqueue_initial(now)`. A daily `FixedUtcInterval`
+slot supplies the idempotency key, so replicas and restarts share one job per
+UTC day. After purging bounded batches, the handler commits the next slot and
+current job completion in one transaction. Delayed jobs skip missed days.
+Monitor failed `platform.receipts.purge` jobs and retry them through the job
+operations API after fixing the failure. The worker must be running for retention
+to advance.
+
+`RECEIPT_RETENTION_DAYS` lives in the worker crate's `platform` module. Increase
+it for a longer replay window; never lower it below 30 days.
+{% else %}This flavor has no durable worker. Schedule this command daily with the
+deployment's scheduler, using the same runtime database settings:
 
 ```sh
 cargo run --manifest-path backend/Cargo.toml -p {{ context.app_name }}-bin --bin platform-purge
 ```
 
 `platform::purge_receipts(pool)` is the equivalent hook for a product maintenance
-job. It deletes bounded batches older than 30 days until none remain. Keep at
-least 30 days to cover hub retries. Increase the constant for a longer replay
-window. Pruning receipts permits replay, so external effects must tolerate it.
-The generated Dockerfile can include the command by adding `platform-purge` to
-`backend.image.binaries` and running `baukit generate dockerfile`.
+job. It deletes bounded batches until none remain. `RECEIPT_RETENTION_DAYS` lives
+in the binary crate's `platform` module. Increase it for a longer replay window;
+never lower it below 30 days. The generated Dockerfile can include the command
+by adding `platform-purge` to `backend.image.binaries` and running
+`baukit generate dockerfile`.
+{% endif %}
+Pruning receipts permits replay, so external effects must tolerate it.
 
 ## Deploy and client checks
 
 Generated Helm values use the chart's `platform.receiverSecretRef` keys `name`,
-`key` and `previousKey`. For a standalone deployment, set
-`platform.receiverSecretRef.name` to `""` and omit receiver secrets. In hub mode,
-create that Secret through the secret manager and omit `previousKey` when not
-rotating. Put the other runtime values, including
-`PLATFORM_HUB__SERVICE_TOKEN`, in the product runtime Secret. Allow network egress
-to the hub and expose `/platform/inbound` through the API ingress.
+`key` and `previousKey`. The generated defaults leave `name` and `previousKey`
+empty, so a standalone deployment needs no receiver Secret. The commented hub example in
+`deploy/values.yaml` supplies the issuer, JWKS URL, product, source and ticket URL
+through `config.overrides`. In hub mode, create the receiver Secret through the
+secret manager. Keep `previousKey` empty unless rotating. Put
+`PLATFORM_HUB__SERVICE_TOKEN` in the product runtime Secret. Migration and worker
+commands load the same runtime configuration. The hub example gives them an
+explicit reference to the current receiver secret so validation also succeeds
+in those processes. Allow network egress to the hub and expose `/platform/inbound`
+through the API ingress.
 
 Web and mobile templates have no entitlement-check location. When adding one,
 install `@baukit/suite-client` and use its offline verifier with trusted public

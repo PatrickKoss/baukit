@@ -13,8 +13,9 @@ use tokio::net::TcpListener;
 use {{ context.app_crate }}_bin::ProductConfig;
 use {{ context.app_crate }}_bin::config_loader;
 use {{ context.app_crate }}_bin::worker_operations_router;
-use {{ context.app_crate }}_worker::DemoJobHandler;
-
+{% if context.platform %}use {{ context.app_crate }}_worker::platform::PlatformJobHandler;
+{% else %}use {{ context.app_crate }}_worker::DemoJobHandler;
+{% endif %}
 const PRODUCT: &str = "{{ context.app_name }}";
 
 #[tokio::main]
@@ -56,12 +57,14 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         .connect(database.url.expose())
         .await?;
     let pool_metrics = spawn_pool_metrics_sampler(pool.clone(), Duration::from_secs(15))?;
-    let runner = WorkerRunner::new(
+{% if context.platform %}    let handler = Arc::new(PlatformJobHandler::new(pool.clone())?);
+    handler.enqueue_initial(chrono::Utc::now()).await?;
+{% endif %}    let runner = WorkerRunner::new(
         {% if context.auth_enabled %}Arc::new(
             PostgresJobStore::new(pool.clone())
                 .retain_failed_kinds(&[baukit_erasure::IDENTITY_DELETE_JOB_TYPE]),
         ),{% else %}Arc::new(PostgresJobStore::new(pool.clone())),{% endif %}
-        Arc::new(DemoJobHandler::new()),
+        {% if context.platform %}handler,{% else %}Arc::new(DemoJobHandler::new()),{% endif %}
         WorkerConfig {
             concurrency: config.product.worker.concurrency,
             poll_interval: Duration::from_millis(config.product.worker.poll_interval_milliseconds),

@@ -23,11 +23,15 @@ const packageRoot = process.cwd();
 const manifest = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8'));
 const workDirectory = await mkdtemp(join(tmpdir(), 'baukit-packed-exports-'));
 
-function pack(destination) {
+function pnpmCommand() {
   const pnpmCli = process.env['npm_execpath'];
   assert.ok(pnpmCli, 'run this through a pnpm script so npm_execpath is set');
   const isScript = /\.[cm]?js$/.test(pnpmCli);
-  const [command, prefix] = isScript ? [process.execPath, [pnpmCli]] : [pnpmCli, []];
+  return isScript ? [process.execPath, [pnpmCli]] : [pnpmCli, []];
+}
+
+function pack(destination) {
+  const [command, prefix] = pnpmCommand();
   execFileSync(command, [...prefix, 'pack', '--pack-destination', destination], {
     cwd: packageRoot,
     stdio: 'pipe',
@@ -54,14 +58,13 @@ async function installPacked() {
       join(workDirectory, 'package.json'),
       JSON.stringify({ private: true, dependencies }),
     );
-    const pnpmCli = process.env['npm_execpath'];
-    const isScript = /\.[cm]?js$/.test(pnpmCli);
-    const [command, prefix] = isScript ? [process.execPath, [pnpmCli]] : [pnpmCli, []];
+    const [command, prefix] = pnpmCommand();
     execFileSync(
       command,
       [
         ...prefix,
         'install',
+        '--prefer-offline',
         '--prod',
         '--ignore-scripts',
         '--no-lockfile',

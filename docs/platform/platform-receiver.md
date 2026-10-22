@@ -9,9 +9,10 @@ rules match the mirrored v1 contract; Baukit does not choose a hub name.
 
 Run `baukit new my-product --backend --platform` to generate the receiver,
 PostgreSQL migration, free standalone reads, verified hub ticket source, product
-handler port and receipt-purge command. Add `--auth oidc` for the generated account
-erasure flow. The generated `docs/platform.md` describes runtime settings and
-adoption work. See the [CLI guide](../../cli/README.md#platform-receiver).
+handler port and receipt retention. With `--worker`, daily fixed-slot jobs purge
+receipts. Other flavors provide a `platform-purge` command for an external
+scheduler. Add `--auth oidc` for the generated account erasure flow. The generated
+`docs/platform.md` describes runtime settings and adoption work. See the [CLI guide](../../cli/README.md#platform-receiver).
 Existing products can re-render with `new --into-existing`; review the conflicts
 and copy the wiring into their own composition.
 

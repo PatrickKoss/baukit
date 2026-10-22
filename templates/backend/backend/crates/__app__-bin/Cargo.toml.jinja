@@ -97,10 +97,11 @@ name = "provider_config"
 path = "../../tests/provider_config.rs"
 {% endif -%}
 {% if context.platform %}
+{% if not context.worker %}
 [[bin]]
 name = "platform-purge"
 path = "src/bin/platform-purge.rs"
-
+{% endif %}
 [[test]]
 name = "platform_integration"
 path = "../../tests/platform_integration.rs"

@@ -15,10 +15,8 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 
 use {{ context.app_crate }}_api::HubTicketSource;
-use {{ context.app_crate }}_bin::{
-    ProductConfig,
-    platform::{compose, purge_receipts},
-};
+{% if not context.worker %}use {{ context.app_crate }}_bin::platform::purge_receipts;
+{% endif %}use {{ context.app_crate }}_bin::{ProductConfig, platform::compose};
 
 const SUBJECT: &str = "suite|person-123";
 const PRODUCT: &str = "{{ context.app_crate }}";
@@ -163,8 +161,9 @@ async fn signed_fixture_event_reads_entitlements_and_retains_receipts() -> Resul
         .await?;
     assert_eq!(receipts, 1);
     sqlx::query("INSERT INTO platform_inbound_receipts(event_id,body_hash,received_at) VALUES('old',decode(repeat('00',32),'hex'),now()-interval '31 days'),('recent',decode(repeat('00',32),'hex'),now()-interval '29 days')").execute(&pool).await?;
-    assert_eq!(purge_receipts(pool.clone()).await?, 1);
-    let receipts: i64 = sqlx::query_scalar("SELECT count(*) FROM platform_inbound_receipts")
+{% if context.worker %}    run_receipt_purge(pool.clone()).await?;
+{% else %}    assert_eq!(purge_receipts(pool.clone()).await?, 1);
+{% endif %}    let receipts: i64 = sqlx::query_scalar("SELECT count(*) FROM platform_inbound_receipts")
         .fetch_one(&pool)
         .await?;
     assert_eq!(receipts, 2);
@@ -184,8 +183,77 @@ async fn signed_fixture_event_reads_entitlements_and_retains_receipts() -> Resul
     assert!(cache.get(SUBJECT, PRODUCT, now).await?.is_none());
 {% endif %}    pool.close().await;
     Ok(())
-}
+}{% if context.worker %}
 
+async fn run_receipt_purge(pool: sqlx::PgPool) -> Result<(), Box<dyn Error>> {
+    use baukit_jobs::{FixedUtcInterval, PostgresJobStore, WorkerConfig, WorkerRunner};
+    use baukit_runtime::ShutdownToken;
+    use {{ context.app_crate }}_worker::platform::{PURGE_JOB_TYPE, PlatformJobHandler};
+    use std::time::Duration;
+
+    let now = chrono::Utc::now();
+    let interval = FixedUtcInterval::new(Duration::from_secs(24 * 60 * 60))?;
+    let slot = interval.slot_at(now)?;
+    let handler = Arc::new(PlatformJobHandler::new(pool.clone())?);
+    let initial = handler.enqueue_initial(now).await?;
+    assert!(initial.created);
+    assert_eq!(initial.job.idempotency_key, Some(slot.identifier()));
+    let replica = PlatformJobHandler::new(pool.clone())?;
+    let duplicate = replica.enqueue_initial(now).await?;
+    assert!(!duplicate.created);
+    assert_eq!(duplicate.job.id, initial.job.id);
+    let runner = WorkerRunner::new(
+        Arc::new(PostgresJobStore::new(pool.clone())),
+        handler,
+        WorkerConfig {
+            worker_id: "platform-purge-test".into(),
+            concurrency: 1,
+            poll_interval: Duration::from_millis(10),
+            ..WorkerConfig::default()
+        },
+    )?;
+    let shutdown = ShutdownToken::new(Duration::from_secs(2));
+    let task = tokio::spawn(runner.run(shutdown.clone()));
+    let finished = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let status: String = sqlx::query_scalar("SELECT status FROM job_outbox WHERE id = $1")
+                .bind(initial.job.id)
+                .fetch_one(&pool)
+                .await?;
+            if status == "succeeded" {
+                return Ok::<_, sqlx::Error>(());
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    shutdown.trigger();
+    task.await??;
+    finished??;
+    let next = interval.next_slot(slot, chrono::Utc::now())?;
+    let pending: Vec<(String, chrono::DateTime<chrono::Utc>, Value)> = sqlx::query_as(
+        "SELECT idempotency_key, run_after, payload FROM job_outbox WHERE job_type = $1 AND status = 'pending'",
+    ).bind(PURGE_JOB_TYPE).fetch_all(&pool).await?;
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].0, next.identifier());
+    assert_eq!(pending[0].1, next.starts_at());
+    assert_eq!(pending[0].2["slot"], json!(next.starts_at()));
+    assert!(!replica.enqueue_initial(now).await?.created);
+    let old: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM platform_inbound_receipts WHERE event_id = 'old')",
+    )
+    .fetch_one(&pool)
+    .await?;
+    let recent: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM platform_inbound_receipts WHERE event_id = 'recent')",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert!(!old);
+    assert!(recent);
+    Ok(())
+}
+{% endif %}
 #[tokio::test]
 async fn standalone_is_free_and_partial_hub_settings_fail() -> Result<(), Box<dyn Error>> {
     let config = ProductConfig::default();

@@ -363,8 +363,10 @@ reads return free entitlements and the receiver route is disabled.
 The binary composes `PostgresPlatformInbox`, `PostgresEntitlementCache`, the
 verified HTTP ticket source and the product's `PlatformEvents` port. Authenticated
 products also delete entitlement cache rows in the account-erasure transaction.
-The template has no scheduler. Run its `platform-purge` command daily using the
-deployment's scheduler to retain at least 30 days of delivery receipts.
+With `--worker`, the generated worker schedules daily `platform.receipts.purge`
+jobs using `FixedUtcInterval` slot keys. Without a worker, schedule the generated
+`platform-purge` command daily using the deployment's scheduler. Increase
+`RECEIPT_RETENTION_DAYS` for a longer replay window; never lower it below 30 days.
 
 Existing products use the same `new --into-existing` conflict workflow described
 above. Add the capability and next migration path to the product manifest:
@@ -381,7 +383,10 @@ Generate a reference product with the same flags in an empty directory, then cop
 the migration under that next number and review the config, adapters, binary
 composition, erasure, OpenAPI and deployment changes. `--into-existing --platform`
 adds missing files and reports modified files; it preserves the existing manifest
-and uses its recorded platform migration path. There is no capability mutation
+and uses its recorded platform migration path. Without a `[platform]` entry, it
+allocates the next free migration number in the migration directory, including
+any `doctor.migrations` override. Add that path to the preserved manifest when
+applying the capability changes. There is no capability mutation
 command. Run `baukit doctor` after applying the changes.
 
 Web and mobile templates have no entitlement checks, so this option adds no

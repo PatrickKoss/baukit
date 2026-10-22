@@ -14,7 +14,7 @@ cargo build --manifest-path cli/Cargo.toml --bin baukit --target-dir cli/target
 corepack pnpm --dir typescript install --frozen-lockfile
 corepack pnpm --dir typescript --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/auth-native --filter @baukit/auth-node --filter @baukit/data-contracts --filter @baukit/ui-tokens --filter @baukit/navigation --filter @baukit/pwa-web run build
 
-flavors=(backend web mobile mobile-pwa combined mcp auth clerk workos platform)
+flavors=(backend web mobile mobile-pwa combined mcp auth clerk workos platform-standalone platform)
 if (($#)); then flavors=("$@"); fi
 for flavor in "${flavors[@]}"; do
     backend=false mobile=false web=false mcp=false
@@ -28,7 +28,8 @@ for flavor in "${flavors[@]}"; do
         mcp) flags=(--backend --mcp --auth oidc); backend=true mcp=true ;;
         auth) flags=(--backend --mobile --web --auth oidc --mcp); name=long-product-name-fixture; backend=true mobile=true web=true mcp=true ;;
         clerk|workos) flags=(--backend --mobile --web --auth "$flavor" --mcp); name="$flavor-provider-fixture"; backend=true mobile=true web=true mcp=true ;;
-        platform) flags=(--backend --platform --worker --auth oidc); name=platform-fixture; backend=true ;;
+        platform-standalone) flags=(--backend --platform --web); name=platform-standalone-fixture; backend=true web=true ;;
+        platform) flags=(--backend --platform --worker --web --auth oidc); name=platform-fixture; backend=true web=true ;;
         *) echo "unknown fixture flavor: $flavor" >&2; exit 2 ;;
     esac
     echo "Checking generated fixture: $flavor"
@@ -39,6 +40,16 @@ for flavor in "${flavors[@]}"; do
         cargo clippy --manifest-path "$fixture/backend/Cargo.toml" --all-targets -- -D warnings
         cargo test --manifest-path "$fixture/backend/Cargo.toml" -- --include-ignored
         cargo test --manifest-path "$fixture/backend/Cargo.toml" -p "$name-bin" --test openapi_drift
+    fi
+    if [[ "$flavor" == platform* ]]; then
+        cp "$fixture/generated/openapi.d.ts" "$fixture_parent/openapi-before.d.ts"
+        (cd "$fixture" && sh scripts/openapi-client.sh)
+        diff -u "$fixture_parent/openapi-before.d.ts" "$fixture/generated/openapi.d.ts"
+        helm template "$name" deploy/chart/baukit-app -f "$fixture/deploy/values.yaml" > "$fixture_parent/platform-rendered.yaml"
+        if grep -q 'PLATFORM__RECEIVER_SECRET\|PLATFORM__PREVIOUS_RECEIVER_SECRET' "$fixture_parent/platform-rendered.yaml"; then
+            echo "standalone platform values unexpectedly inject receiver secrets" >&2
+            exit 1
+        fi
     fi
     if "$web"; then
         corepack pnpm --dir "$fixture/web" install --frozen-lockfile

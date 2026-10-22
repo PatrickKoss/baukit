@@ -49,6 +49,7 @@ pub const TEMPLATE_VERSION: &str = include_str!("../../templates/VERSION").trim_
 const OPENAPI_TYPESCRIPT_PACKAGE: &str = "openapi-typescript@7.13.0";
 const MAX_APPLICATION_NAME_LEN: usize = 41;
 const PLATFORM_MIGRATION_PATH: &str = "backend/migrations/0008_platform.sql";
+const LAST_TEMPLATE_MIGRATION_VERSION: u64 = 7;
 
 const EXPECTED_BACKEND_FILES: &[&str] = &[
     "README.md",
@@ -419,12 +420,15 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         options.directory.join(&options.name)
     };
     let (ports, existing_manifest) = ports::generation_ports(&destination, options.port_offset)?;
-    let platform_migration = existing_manifest
+    let manifest = existing_manifest
         .as_deref()
         .map(toml::from_str::<Manifest>)
-        .transpose()?
-        .and_then(|manifest| manifest.platform.map(|platform| platform.migration))
-        .unwrap_or_else(|| PLATFORM_MIGRATION_PATH.to_owned());
+        .transpose()?;
+    let platform_migration = if options.platform {
+        platform_migration_path(&destination, manifest.as_ref())?
+    } else {
+        PLATFORM_MIGRATION_PATH.to_owned()
+    };
     if options.platform {
         doctor_layout::product_path(&destination, &platform_migration)?;
         if Path::new(&platform_migration)
@@ -620,6 +624,38 @@ struct DependencyContext {
     manifest: String,
     description: String,
     typescript_description: String,
+}
+
+fn platform_migration_path(destination: &Path, manifest: Option<&Manifest>) -> Result<String> {
+    if let Some(platform) = manifest.and_then(|manifest| manifest.platform.as_ref()) {
+        return Ok(platform.migration.clone());
+    }
+    let directory = manifest
+        .and_then(|manifest| manifest.doctor.migrations.as_deref())
+        .unwrap_or("backend/migrations");
+    let path = doctor_layout::product_path(destination, directory)?;
+    let mut version = LAST_TEMPLATE_MIGRATION_VERSION;
+    if path.exists() {
+        for entry in fs::read_dir(&path)? {
+            let entry = entry?;
+            let path = entry.path();
+            if !path.is_file() || path.extension().is_none_or(|extension| extension != "sql") {
+                continue;
+            }
+            if let Some(number) = entry
+                .file_name()
+                .to_str()
+                .and_then(|name| name.split('_').next())
+                .and_then(|prefix| prefix.parse::<u64>().ok())
+            {
+                version = version.max(number);
+            }
+        }
+    }
+    let next = version
+        .checked_add(1)
+        .ok_or_else(|| anyhow!("no platform migration number remains after {version}"))?;
+    Ok(format!("{directory}/{next:04}_platform.sql"))
 }
 
 fn dependency_context(options: &NewOptions) -> Result<DependencyContext> {
@@ -897,16 +933,23 @@ fn render_product(
             &mut rendered,
             false,
         )?;
+        if context.auth_enabled
+            && let Some(overlay) = PLATFORM_TEMPLATE.get_dir("__auth__")
+        {
+            render_directory(overlay, &environment, context, &mut rendered, true)?;
+        }
+        if context.worker {
+            rendered.remove(Path::new(&format!(
+                "backend/crates/{}-bin/src/bin/platform-purge.rs",
+                context.app_name
+            )));
+        }
         let schema_path = Path::new("backend/openapi.json");
         let mut schema: serde_json::Value = serde_json::from_slice(
             rendered
                 .get(schema_path)
                 .ok_or_else(|| anyhow!("backend OpenAPI schema is missing"))?,
         )?;
-        rendered
-            .get_mut(Path::new("generated/openapi.d.ts"))
-            .ok_or_else(|| anyhow!("backend TypeScript declarations are missing"))?
-            .extend_from_slice(include_bytes!("../resources/platform-openapi.d.ts"));
         schema["paths"]["/platform/inbound"] =
             serde_json::from_str(include_str!("../resources/platform-openapi.json"))?;
         rendered.insert(

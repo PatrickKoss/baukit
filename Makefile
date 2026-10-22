@@ -66,13 +66,13 @@ scripts-test:
 example-lockfiles-check:
 	python3 scripts/check-example-lockfiles.py
 
-# backend, web, mobile, mobile-pwa, combined, mcp, auth, clerk, workos, platform
+# backend, web, mobile, mobile-pwa, combined, mcp, auth, clerk, workos, platform-standalone, platform
 # Override with FIXTURE_FLAVORS="backend platform" for a targeted check.
 generated-fixture-gate:
 	./scripts/generated-fixture-gate.sh $(FIXTURE_FLAVORS)
 
 platform-fixture-gate:
-	./scripts/generated-fixture-gate.sh platform
+	./scripts/generated-fixture-gate.sh platform-standalone platform
 
 mcp-fixture-gate:
 	./scripts/mcp-remote-fixture.sh

@@ -6064,6 +6064,7 @@ fn platform_flavors_keep_domain_free_of_transport_and_wire_the_receiver() -> any
         ("platform-worker", None, true),
         ("platform-oidc", Some(AuthProvider::Oidc), false),
         ("platform-clerk", Some(AuthProvider::Clerk), true),
+        ("platform-workos", Some(AuthProvider::Workos), false),
     ] {
         let mut generated = options(parent.path(), name);
         generated.platform = true;
@@ -6086,6 +6087,73 @@ fn platform_flavors_keep_domain_free_of_transport_and_wire_the_receiver() -> any
         let schema: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(root.join("backend/openapi.json"))?)?;
         assert!(schema.pointer("/paths/~1platform~1inbound/post").is_some());
+        let declarations = fs::read_to_string(root.join("generated/openapi.d.ts"))?;
+        assert_eq!(
+            declarations,
+            if auth.is_some() {
+                include_str!("../../templates/platform/__auth__/generated/openapi.d.ts")
+            } else {
+                include_str!("../../templates/platform/generated/openapi.d.ts")
+            }
+        );
+        assert_eq!(declarations.matches("export interface paths {").count(), 1);
+        assert_eq!(
+            declarations
+                .matches("export interface operations {")
+                .count(),
+            1
+        );
+        let values_source = fs::read_to_string(root.join("deploy/values.yaml"))?;
+        let values: serde_yaml_ng::Value = serde_yaml_ng::from_str(&values_source)?;
+        let secret = &values["platform"]["receiverSecretRef"];
+        assert_eq!(secret["name"].as_str(), Some(""));
+        assert_eq!(secret["key"].as_str(), Some("current"));
+        assert_eq!(secret["previousKey"].as_str(), Some(""));
+        let example = values_source
+            .lines()
+            .skip_while(|line| *line != "# config:")
+            .take_while(|line| !line.starts_with("# Worker and migration"))
+            .map(|line| line.strip_prefix("# ").unwrap_or(line))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let hub_values: serde_yaml_ng::Value = serde_yaml_ng::from_str(&example)?;
+        for key in [
+            "PLATFORM__HUB_ISSUER",
+            "PLATFORM__JWKS_URL",
+            "PLATFORM__PRODUCT_ID",
+            "PLATFORM__SOURCE_APP",
+            "PLATFORM_HUB__TICKET_URL",
+        ] {
+            assert!(hub_values["config"]["overrides"][key].is_string());
+        }
+        for process in if worker {
+            &["migration", "worker"][..]
+        } else {
+            &["migration"][..]
+        } {
+            let reference = &hub_values[process]["env"][0]["valueFrom"]["secretKeyRef"];
+            assert_eq!(
+                reference["name"].as_str(),
+                Some(format!("{name}-platform-receiver").as_str())
+            );
+            assert_eq!(reference["key"].as_str(), Some("current"));
+        }
+        for layer in ["ports", "services"] {
+            let cargo: toml::Value = toml::from_str(&fs::read_to_string(
+                root.join(format!("backend/crates/{name}-{layer}/Cargo.toml")),
+            )?)?;
+            assert_eq!(
+                cargo["dependencies"]["baukit-suite"]["features"].as_array(),
+                Some(&vec![toml::Value::String("platform".into())])
+            );
+        }
+        let purge_binary = root.join(format!(
+            "backend/crates/{name}-bin/src/bin/platform-purge.rs"
+        ));
+        assert_eq!(purge_binary.exists(), !worker);
+        let docs = fs::read_to_string(root.join("docs/platform.md"))?;
+        assert!(docs.contains("never lower it below 30 days"));
+        assert_eq!(docs.contains("PlatformJobHandler"), worker);
         let api =
             fs::read_to_string(root.join(format!("backend/crates/{name}-bin/src/bin/api.rs")))?;
         assert!(api.contains(".merge(platform.router)"));
@@ -6097,6 +6165,67 @@ fn platform_flavors_keep_domain_free_of_transport_and_wire_the_receiver() -> any
         }
         doctor(&root)?;
     }
+    Ok(())
+}
+
+#[test]
+fn platform_existing_product_uses_the_next_free_migration_number() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    for highest in [8_u64, 12, 9999] {
+        let root = parent.path().join(format!("existing-{highest}"));
+        fs::create_dir_all(root.join("backend/migrations"))?;
+        let existing = root.join(format!("backend/migrations/{highest:04}_product.sql"));
+        fs::write(&existing, "-- product-owned migration\n")?;
+        let mut generated = options(&root, "existing-platform");
+        generated.platform = true;
+        generated.into_existing = true;
+        assert_eq!(generate_new(&generated)?, root);
+        assert_eq!(
+            fs::read_to_string(existing)?,
+            "-- product-owned migration\n"
+        );
+        let path = format!("backend/migrations/{:04}_platform.sql", highest + 1);
+        assert_eq!(
+            baukit_cli::read_manifest(&root)?
+                .platform
+                .expect("platform metadata")
+                .migration,
+            path
+        );
+        assert!(root.join(path).is_file());
+        assert!(!root.join("backend/migrations/0008_platform.sql").exists());
+    }
+    Ok(())
+}
+
+#[test]
+fn platform_existing_manifest_uses_its_migration_directory_without_platform_metadata()
+-> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut generated = options(parent.path(), "existing-platform");
+    let root = generate_new(&generated)?;
+    let mut manifest = baukit_cli::read_manifest(&root)?;
+    assert!(manifest.platform.is_none());
+    manifest.doctor.migrations = Some("backend/schema".into());
+    let source = toml::to_string(&manifest)?;
+    fs::remove_dir_all(&root)?;
+    fs::create_dir_all(root.join("backend/schema"))?;
+    fs::write(root.join("baukit.toml"), &source)?;
+    fs::write(
+        root.join("backend/schema/0012_product.sql"),
+        "-- product migration\n",
+    )?;
+    fs::write(
+        root.join("backend/schema/9999_notes.txt"),
+        "not a migration\n",
+    )?;
+    generated.platform = true;
+    generated.into_existing = true;
+    generated.directory = root.clone();
+    assert_eq!(generate_new(&generated)?, root);
+    assert_eq!(fs::read_to_string(root.join("baukit.toml"))?, source);
+    assert!(root.join("backend/schema/0013_platform.sql").is_file());
+    assert!(!root.join("backend/migrations/0008_platform.sql").exists());
     Ok(())
 }
 
