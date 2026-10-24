@@ -108,8 +108,34 @@ rmcp 3.5.1 serves stateless HTTP and supports the 2026-07-28 protocol, which use
 `server/discover` and per-request metadata. It also accepts the 2025-11-25 and
 2025-06-18 revisions with `initialize`. Tokens are verified for every request;
 there is no authenticated session cookie. The generated `authentication_policy`
-function returns `JwtOnlyPolicy`, so revocation takes effect at JWT expiry.
+function returns `JwtOnlyPolicy`, so OIDC revocation takes effect at JWT expiry.
 Use the policy port below when a product needs live checks.
+
+## Personal access tokens
+
+The generated MCP verifier accepts provider JWTs. To accept PATs too, pass
+`Arc::new(baukit_auth::ApiTokenVerifier::new(tokens, mcp_verifier))` to
+`baukit_mcp::router`, where `tokens` is the product's `ApiTokenService` and
+`mcp_verifier` is the MCP-bound provider verifier. Clients send
+`Authorization: Bearer <token>`. Issue grants matching the registered MCP scopes;
+MCP uses those grants as effective scopes. `baukit_auth::Principal::scopes()`
+stays OIDC-only. `with_scopes` can only narrow either credential's scopes.
+
+The router verifies every request. `ApiTokenVerifier` reads the current store
+and rejects revoked or expired tokens, even with `JwtOnlyPolicy`. A custom
+verifier must do the same; returning a cached PAT principal does not check its
+current state. Requests already authorized may finish. The default PAT subject
+is the owner UUID. Resolve another subject in a trusted verifier with
+`Principal::from_api_token` if the product's account or erasure checks need it.
+
+`KeycloakIntrospectionPolicy` rejects PAT principals without forwarding their
+secrets. For mixed authentication, branch on `principal.api_token().is_some()`
+before introspection, convert verified PATs with
+`baukit_mcp::Principal::from(principal.clone())`, and introspect only OIDC tokens.
+If introspection credentials are configured, replace the generated bin crate's
+`mcp_policy` wiring to return this composed policy.
+Run account checks and erasure fences for both branches on every request.
+See [PAT wiring and policy composition](https://github.com/PatrickKoss/baukit/blob/main/docs/remote-mcp.md#personal-access-tokens).
 
 ## Authentication policy
 
@@ -119,7 +145,8 @@ policy. `AuthenticationPolicy::authenticate` receives the verified
 `baukit_auth::Principal` and bearer token on every authenticated request.
 It returns the effective `baukit_mcp::Principal`, or `PolicyDenial`.
 Both `tools/list` and `tools/call` use its effective scopes. Scope reductions
-cannot grant rights absent from the JWT or restore rights a prior policy removed.
+cannot grant rights absent from the verified OIDC scopes or API-token grants,
+or restore rights a prior policy removed.
 
 For Keycloak introspection, add `baukit-config.workspace = true` to the product
 MCP crate and load a confidential client's credentials from product config:

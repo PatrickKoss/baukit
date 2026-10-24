@@ -2,7 +2,11 @@
 
 ## [Unreleased]
 
-## [0.11.0] - 2026-10-22
+{% if context.mcp %}- Document PAT verification, owner mapping, and mixed PAT/OIDC policies for
+  remote MCP. Verified PAT grants now permit matching MCP tools. Review existing
+  grants when upgrading a product that already accepts PATs at `/mcp`.
+
+{% endif %}## [0.11.0] - 2026-10-22
 
 {% if context.backend or context.mobile %}{% if context.mobile %}- Generated mobile apps pin Expo 57.0.31 and expo-router 57.0.29 to match Expo dependency checks.
 {% endif %}{% if context.backend %}- Generated backend image builds use `scripts/docker.sh` to key Cargo target caches by checkout. Plain Compose retains the app-name default. Override either with `CARGO_TARGET_CACHE_PREFIX`.

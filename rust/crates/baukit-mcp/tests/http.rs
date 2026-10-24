@@ -20,9 +20,11 @@ use baukit_mcp::{
 use baukit_ratelimit::{
     InMemoryRateLimitStore, Quota, RateLimitDecision, RateLimitStore, RateLimitStoreError,
 };
-use baukit_test::MockOidcServer;
+use baukit_test::{InMemoryApiTokenStore, MockOidcServer};
 use serde_json::{Value, json};
 use tower::ServiceExt;
+
+const API_TOKEN_OWNER: &str = "00000000-0000-4000-8000-000000000001";
 
 struct IdentityTool;
 impl ToolService for IdentityTool {
@@ -157,6 +159,398 @@ fn list() -> Value {
 }
 fn call() -> Value {
     json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"identity","arguments":{}}})
+}
+
+struct ApiTokenTools;
+
+impl ToolService for ApiTokenTools {
+    fn tools(&self) -> Vec<ScopedTool> {
+        let mut tools = IdentityTool.tools();
+        let mut write = tools[0].clone();
+        write.name = "write".into();
+        write.required_scopes = vec!["account:write".into()];
+        tools.push(write);
+        tools
+    }
+
+    fn call<'a>(
+        &'a self,
+        principal: &'a Principal,
+        name: &'a str,
+        arguments: Value,
+        cancellation: baukit_mcp::CancellationToken,
+    ) -> ToolFuture<'a> {
+        IdentityTool.call(principal, name, arguments, cancellation)
+    }
+}
+
+struct NarrowApiTokenScopes;
+
+impl baukit_mcp::AuthenticationPolicy for NarrowApiTokenScopes {
+    fn authenticate<'a>(
+        &'a self,
+        principal: &'a baukit_mcp::VerifiedPrincipal,
+        _token: &'a str,
+    ) -> baukit_mcp::PolicyFuture<'a> {
+        Box::pin(async move {
+            let effective = Principal::from(principal.clone())
+                .with_scopes(["identity:read".into(), "injected:write".into()])
+                .with_scopes([
+                    "identity:read".into(),
+                    "account:read".into(),
+                    "injected:write".into(),
+                ]);
+            assert_eq!(
+                effective.scopes(),
+                &std::collections::BTreeSet::from(["identity:read".into()])
+            );
+            assert_eq!(effective.verified_identity(), principal);
+            Ok(effective)
+        })
+    }
+}
+
+#[tokio::test]
+async fn api_token_grants_filter_tools_and_policies_can_only_narrow() -> Result<(), Box<dyn Error>>
+{
+    use baukit_auth::{ApiTokenService, ApiTokenVerifier, IdentityVerifier, NewApiToken};
+
+    let issuer = MockOidcServer::start().await?;
+    let config = config(&issuer);
+    let tokens = ApiTokenService::new(Arc::new(InMemoryApiTokenStore::new()));
+    let issued = tokens
+        .issue(
+            API_TOKEN_OWNER.parse()?,
+            NewApiToken::new("MCP").with_grants(["identity:read", "account:read"]),
+        )
+        .await?;
+    let verifier = Arc::new(ApiTokenVerifier::new(
+        tokens.clone(),
+        verifier(&config).await?,
+    ));
+    let verified = verifier.verify(&issued.secret).await?;
+    assert!(verified.scopes().is_empty());
+    assert_eq!(verified.grants(), Some(&issued.token.grants));
+    assert_eq!(
+        Principal::from(verified.clone()).scopes(),
+        &issued.token.grants
+    );
+
+    for (policy, narrowed) in [
+        (
+            Arc::new(JwtOnlyPolicy) as Arc<dyn baukit_mcp::AuthenticationPolicy>,
+            false,
+        ),
+        (Arc::new(NarrowApiTokenScopes), true),
+    ] {
+        let app = router(
+            config.clone(),
+            verifier.clone(),
+            McpServices::new(Arc::new(ApiTokenTools)),
+            Arc::new(InMemoryRateLimitStore::default()),
+            policy,
+        )
+        .await?;
+        let (status, _, body) = send(&app, Some(&issued.secret), list()).await?;
+        assert_eq!(status, StatusCode::OK);
+        let names = body["result"]["tools"]
+            .as_array()
+            .ok_or("tools")?
+            .iter()
+            .map(|tool| tool["name"].as_str().expect("tool name"))
+            .collect::<Vec<_>>();
+        assert_eq!(names, if narrowed { vec![] } else { vec!["identity"] });
+
+        let (status, headers, body) = send(&app, Some(&issued.secret), call()).await?;
+        if narrowed {
+            assert_eq!(status, StatusCode::FORBIDDEN);
+            assert_eq!(body, json!({"error":"insufficient_scope"}));
+            assert!(
+                headers[header::WWW_AUTHENTICATE]
+                    .to_str()?
+                    .contains("insufficient_scope")
+            );
+        } else {
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(
+                body["result"]["structuredContent"]["scopes"],
+                json!(["account:read", "identity:read"])
+            );
+            assert_eq!(
+                body["result"]["structuredContent"]["subject"],
+                issued.token.owner_id.to_string()
+            );
+        }
+
+        let mut write = call();
+        write["params"]["name"] = json!("write");
+        let (status, headers, body) = send(&app, Some(&issued.secret), write).await?;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(body, json!({"error":"insufficient_scope"}));
+        assert!(
+            headers[header::WWW_AUTHENTICATE]
+                .to_str()?
+                .contains("scope=\"account:write\"")
+        );
+    }
+
+    let no_grants = tokens
+        .issue(API_TOKEN_OWNER.parse()?, NewApiToken::new("No grants"))
+        .await?;
+    let app = router(
+        config.clone(),
+        verifier,
+        McpServices::new(Arc::new(ApiTokenTools)),
+        Arc::new(InMemoryRateLimitStore::default()),
+        Arc::new(JwtOnlyPolicy),
+    )
+    .await?;
+    let (status, _, body) = send(&app, Some(&no_grants.secret), list()).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["result"]["tools"], json!([]));
+    assert_eq!(
+        send(&app, Some(&no_grants.secret), call()).await?.0,
+        StatusCode::FORBIDDEN
+    );
+    let oidc = issuer.mint(
+        &issuer
+            .claims("alice", &config.resource_url, Duration::from_secs(300))?
+            .claim("scope", "identity:read account:read"),
+    )?;
+    let (status, _, body) = send(&app, Some(&oidc), call()).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["result"]["structuredContent"]["subject"], "alice");
+    assert_eq!(
+        body["result"]["structuredContent"]["scopes"],
+        json!(["account:read", "identity:read"])
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn api_tokens_are_rechecked_for_revocation_and_expiry_on_every_request()
+-> Result<(), Box<dyn Error>> {
+    use baukit_auth::{
+        ApiTokenRecord, ApiTokenService, ApiTokenStore, ApiTokenVerifier, NewApiToken,
+        hash_api_token,
+    };
+
+    let issuer = MockOidcServer::start().await?;
+    let config = config(&issuer);
+    for revoked in [true, false] {
+        let store = Arc::new(InMemoryApiTokenStore::new());
+        let tokens = ApiTokenService::new(store.clone());
+        let issued = tokens
+            .issue(
+                API_TOKEN_OWNER.parse()?,
+                NewApiToken::new("MCP").with_grants(["identity:read", "account:read"]),
+            )
+            .await?;
+        let app = router(
+            config.clone(),
+            Arc::new(ApiTokenVerifier::new(
+                tokens.clone(),
+                verifier(&config).await?,
+            )),
+            McpServices::new(Arc::new(IdentityTool)),
+            Arc::new(InMemoryRateLimitStore::default()),
+            Arc::new(JwtOnlyPolicy),
+        )
+        .await?;
+        for request in [list(), call()] {
+            assert_eq!(
+                send(&app, Some(&issued.secret), request).await?.0,
+                StatusCode::OK
+            );
+        }
+        if revoked {
+            tokens
+                .revoke(issued.token.owner_id, issued.token.id)
+                .await?;
+        } else {
+            store
+                .create(ApiTokenRecord {
+                    id: issued.token.id,
+                    owner_id: issued.token.owner_id,
+                    name: issued.token.name.clone(),
+                    secret_hash: hash_api_token(&issued.secret),
+                    display_prefix: issued.token.display_prefix.clone(),
+                    grants: issued.token.grants.clone(),
+                    created_at: issued.token.created_at,
+                    expires_at: Some(SystemTime::now().into()),
+                })
+                .await?;
+        }
+        for request in [list(), call()] {
+            let (status, headers, body) = send(&app, Some(&issued.secret), request).await?;
+            assert_eq!(status, StatusCode::UNAUTHORIZED);
+            assert_eq!(body, json!({"error":"invalid_token"}));
+            assert!(
+                headers[header::WWW_AUTHENTICATE]
+                    .to_str()?
+                    .contains("invalid_token")
+            );
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn keycloak_introspection_rejects_api_tokens_without_contacting_provider()
+-> Result<(), Box<dyn Error>> {
+    use baukit_auth::{ApiTokenService, ApiTokenVerifier, NewApiToken};
+    use baukit_mcp::{KeycloakIntrospectionConfig, KeycloakIntrospectionPolicy};
+
+    // A connection queued on this listener would expose a PAT to the provider.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let issuer = MockOidcServer::start().await?;
+    let config = config(&issuer);
+    let tokens = ApiTokenService::new(Arc::new(InMemoryApiTokenStore::new()));
+    let issued = tokens
+        .issue(
+            API_TOKEN_OWNER.parse()?,
+            NewApiToken::new("MCP").with_grants(["identity:read", "account:read"]),
+        )
+        .await?;
+    let policy = KeycloakIntrospectionPolicy::new(KeycloakIntrospectionConfig::new(
+        format!("http://{}", listener.local_addr()?),
+        "resource",
+        baukit_config::Secret::new("secret".into()),
+    ))?;
+    let app = router(
+        config.clone(),
+        Arc::new(ApiTokenVerifier::new(tokens, verifier(&config).await?)),
+        McpServices::new(Arc::new(IdentityTool)),
+        Arc::new(InMemoryRateLimitStore::default()),
+        Arc::new(policy),
+    )
+    .await?;
+    for request in [list(), call()] {
+        let (status, _, body) = send(&app, Some(&issued.secret), request).await?;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_eq!(body, json!({"error":"invalid_token"}));
+    }
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), listener.accept())
+            .await
+            .is_err()
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn api_tokens_work_alongside_oidc_client_and_audience_restrictions()
+-> Result<(), Box<dyn Error>> {
+    use baukit_auth::{ApiTokenService, ApiTokenVerifier, NewApiToken, OidcConfig, OidcVerifier};
+
+    let issuer = MockOidcServer::start().await?;
+    let config = config(&issuer);
+    let tokens = ApiTokenService::new(Arc::new(InMemoryApiTokenStore::new()));
+    let issued = tokens
+        .issue(
+            API_TOKEN_OWNER.parse()?,
+            NewApiToken::new("MCP").with_grants(["identity:read", "account:read"]),
+        )
+        .await?;
+    let oidc = OidcVerifier::discover(
+        OidcConfig::new(&config.issuer, &config.resource_url)?
+            .with_allowed_clients(["mcp-client"])?
+            .with_principal_claims(
+                baukit_auth::PrincipalClaimMapping::new().client_id_claim("azp"),
+            ),
+    )
+    .await?;
+    let app = router(
+        config.clone(),
+        Arc::new(ApiTokenVerifier::new(tokens, Arc::new(oidc))),
+        McpServices::new(Arc::new(IdentityTool)),
+        Arc::new(InMemoryRateLimitStore::default()),
+        Arc::new(JwtOnlyPolicy),
+    )
+    .await?;
+    let (status, _, body) = send(&app, Some(&issued.secret), call()).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["result"]["structuredContent"],
+        json!({"subject":API_TOKEN_OWNER,"issuer":null,"client":null,
+            "scopes":["account:read","identity:read"]})
+    );
+    for (audience, client, allowed) in [
+        (config.resource_url.as_str(), Some("mcp-client"), true),
+        (config.resource_url.as_str(), Some("other-client"), false),
+        (config.resource_url.as_str(), None, false),
+        ("product-rest", Some("mcp-client"), false),
+    ] {
+        let mut claims = issuer
+            .claims("alice", audience, Duration::from_secs(300))?
+            .claim("scope", "identity:read account:read");
+        if let Some(client) = client {
+            claims = claims.claim("azp", client);
+        }
+        let token = issuer.mint(&claims)?;
+        for request in [list(), call()] {
+            let (status, _, body) = send(&app, Some(&token), request).await?;
+            assert_eq!(
+                status,
+                if allowed {
+                    StatusCode::OK
+                } else {
+                    StatusCode::UNAUTHORIZED
+                }
+            );
+            if !allowed {
+                assert_eq!(body, json!({"error":"invalid_token"}));
+            } else if body["result"].get("structuredContent").is_some() {
+                assert_eq!(body["result"]["structuredContent"]["client"], "mcp-client");
+                assert_eq!(
+                    body["result"]["structuredContent"]["scopes"],
+                    json!(["account:read", "identity:read"])
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn api_token_store_failures_return_unavailable_without_a_login_challenge()
+-> Result<(), Box<dyn Error>> {
+    use baukit_auth::{ApiTokenStoreError, ApiTokenVerifier, NewApiToken};
+
+    let issuer = MockOidcServer::start().await?;
+    let config = config(&issuer);
+    let (store, tokens) = InMemoryApiTokenStore::with_service();
+    let issued = tokens
+        .issue(
+            API_TOKEN_OWNER.parse()?,
+            NewApiToken::new("MCP").with_grants(["identity:read", "account:read"]),
+        )
+        .await?;
+    let app = router(
+        config.clone(),
+        Arc::new(ApiTokenVerifier::new(tokens, verifier(&config).await?)),
+        McpServices::new(Arc::new(IdentityTool)),
+        Arc::new(InMemoryRateLimitStore::default()),
+        Arc::new(JwtOnlyPolicy),
+    )
+    .await?;
+    assert_eq!(
+        send(&app, Some(&issued.secret), call()).await?.0,
+        StatusCode::OK
+    );
+    store.fail_with(ApiTokenStoreError::internal(format!(
+        "private store diagnostic {}",
+        issued.secret
+    )));
+    for request in [list(), call()] {
+        let (status, headers, body) = send(&app, Some(&issued.secret), request).await?;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body, json!({"error":"identity_unavailable"}));
+        assert_eq!(headers[header::RETRY_AFTER], "5");
+        assert_eq!(headers[header::CACHE_CONTROL], "no-store");
+        assert!(!headers.contains_key(header::WWW_AUTHENTICATE));
+    }
+    Ok(())
 }
 
 struct CancellableService {

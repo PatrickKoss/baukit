@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- Seed effective MCP scopes from verified API-token grants. Policies can only narrow
+  them; OIDC scopes and `baukit-auth::Principal::scopes()` keep their existing behavior.
+- Behavior change: a product that already routes API tokens to `/mcp` grants each token the MCP
+  tools its stored grants match after upgrading. Before, every such token had no scopes. Check
+  that issued grants use MCP scope names only where tool access is intended.
+- Reject API-token principals in Keycloak introspection without forwarding their secrets.
+  Document PAT verifier wiring, subject mapping and per-request revocation checks.
+
 ## [0.11.0] - 2026-10-22
 
 - Return HTTP 503 with the flat `{"error":"identity_unavailable"}` body and

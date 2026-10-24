@@ -4,6 +4,10 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+- Clarify that `Principal::from_api_token` requires a token verified against the
+  current store on every request. API-token grants stay separate from OIDC scopes;
+  MCP uses the grants as its effective scopes.
+
 ## [0.11.0] - 2026-10-22
 
 - Breaking: `VerificationError` and `AuthRejection` are now non-exhaustive.

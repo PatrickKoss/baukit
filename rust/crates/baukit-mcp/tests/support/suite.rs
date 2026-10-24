@@ -168,6 +168,101 @@ async fn suite_tool_rejects_unmapped_uuid_subjects_without_reading_links()
     Ok(())
 }
 
+#[tokio::test]
+async fn suite_tool_uses_api_token_grants_and_resolves_the_product_owner()
+-> Result<(), Box<dyn Error>> {
+    use baukit_auth::{ApiTokenVerifier, NewApiToken};
+
+    let issuer = MockOidcServer::start().await?;
+    let config = config(&issuer);
+    let (_, tokens) = InMemoryApiTokenStore::with_service();
+    let token_owner: Uuid = API_TOKEN_OWNER.parse()?;
+    let owner = Uuid::from_u128(101);
+    let id = Uuid::from_u128(1);
+    let links = reader(vec![
+        test_link(owner, id),
+        test_link(token_owner, Uuid::from_u128(2)),
+    ]);
+    let owners = owners(&[(API_TOKEN_OWNER, owner)]);
+    let app = router(
+        config.clone(),
+        Arc::new(ApiTokenVerifier::new(
+            tokens.clone(),
+            verifier(&config).await?,
+        )),
+        McpServices::new(Arc::new(IdentityTool)).with_suite_links(links.clone(), owners.clone()),
+        Arc::new(InMemoryRateLimitStore::default()),
+        Arc::new(JwtOnlyPolicy),
+    )
+    .await?;
+    let message = json!({"jsonrpc":"2.0","id":20,"method":"tools/call",
+        "params":{"name":"list_suite_links","arguments":{}}});
+    for grants in [vec![], vec!["items:read"]] {
+        let denied = tokens
+            .issue(token_owner, NewApiToken::new("Denied").with_grants(grants))
+            .await?;
+        let (status, _, body) = send(&app, Some(&denied.secret), list()).await?;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["result"]["tools"], json!([]));
+        let (status, headers, body) = send(&app, Some(&denied.secret), message.clone()).await?;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(body, json!({"error":"insufficient_scope"}));
+        assert!(
+            headers[header::WWW_AUTHENTICATE]
+                .to_str()?
+                .contains("scope=\"links:read\"")
+        );
+    }
+    assert!(links.owners.lock().expect("owners").is_empty());
+    assert!(owners.principals.lock().expect("principals").is_empty());
+
+    let issued = tokens
+        .issue(
+            token_owner,
+            NewApiToken::new("Links").with_grants(["links:read"]),
+        )
+        .await?;
+    let (status, _, body) = send(&app, Some(&issued.secret), list()).await?;
+    assert_eq!(status, StatusCode::OK);
+    let listed = body["result"]["tools"].as_array().ok_or("tools")?;
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0]["name"], "list_suite_links");
+    let (status, _, body) = send(&app, Some(&issued.secret), message.clone()).await?;
+    assert_eq!(status, StatusCode::OK);
+    let returned = body["result"]["structuredContent"]["links"]
+        .as_array()
+        .ok_or("links")?;
+    assert_eq!(returned.len(), 1);
+    assert_eq!(returned[0]["id"], id.to_string());
+    assert_eq!(*links.owners.lock().expect("owners"), [owner]);
+    let resolved = owners.principals.lock().expect("principals").clone();
+    assert_eq!(resolved.len(), 1);
+    assert_eq!(resolved[0].subject(), API_TOKEN_OWNER);
+    assert_eq!(resolved[0].issuer(), None);
+    assert_eq!(resolved[0].client_id(), None);
+    assert_eq!(resolved[0].scopes(), &issued.token.grants);
+    let identity = resolved[0].verified_identity();
+    assert_eq!(identity.api_token().ok_or("API token")?.id, issued.token.id);
+    assert!(identity.scopes().is_empty());
+    assert_eq!(identity.authenticated_at(), Some(issued.token.created_at));
+
+    let unmapped = tokens
+        .issue(
+            Uuid::from_u128(102),
+            NewApiToken::new("Unmapped").with_grants(["links:read"]),
+        )
+        .await?;
+    let (status, _, body) = send(&app, Some(&unmapped.secret), message).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["result"]["isError"], true);
+    assert_eq!(
+        body["result"]["structuredContent"]["code"],
+        "unauthenticated"
+    );
+    assert_eq!(*links.owners.lock().expect("owners"), [owner]);
+    Ok(())
+}
+
 struct UnavailableOwners;
 
 impl SuiteOwnerResolver for UnavailableOwners {

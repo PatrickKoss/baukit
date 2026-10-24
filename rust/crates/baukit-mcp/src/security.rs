@@ -37,8 +37,10 @@ struct Security {
 
 /// Mounts `/mcp` and both RFC 9728 discovery paths using the supplied verifier.
 ///
-/// The caller must enforce a resource audience or the documented provider
-/// equivalent. `config.issuer` names the authorization server in discovery.
+/// For OIDC tokens, the caller must enforce a resource audience or the documented
+/// provider equivalent. API-token verifiers must check the current token store
+/// for revocation and expiry on every request. `config.issuer` names the OAuth
+/// authorization server in discovery.
 /// The rate-limit store may be shared Redis.
 pub async fn router(
     config: McpConfig,

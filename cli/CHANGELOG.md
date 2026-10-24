@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Document PAT verification, effective MCP scopes, owner mapping, and mixed
+  PAT/OIDC policies in generated remote MCP guidance. Products already accepting
+  PATs at `/mcp` must review grants that now permit matching MCP tools.
+
 ## [0.11.0] - 2026-10-22
 
 - Correct platform client declarations for every auth mode and verify regeneration in standalone and OIDC web fixtures. Keep generated Helm values standalone-safe, allocate the next free platform migration for existing products, and schedule daily receipt purges through the durable worker when enabled.

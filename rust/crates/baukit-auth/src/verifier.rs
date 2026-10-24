@@ -95,6 +95,10 @@ impl Principal {
     /// subject. Products whose token owner is not the OIDC subject pass the
     /// subject they resolved for the owner, so authorization and erasure fences
     /// see the same subject as for an OIDC login.
+    ///
+    /// This constructor does not check revocation or expiry. The caller must
+    /// verify the token against the current store on every request. Stored grants
+    /// remain in [`Self::grants`]; [`Self::scopes`] stays empty for API tokens.
     #[must_use]
     pub fn from_api_token(subject: impl Into<String>, api_token: ApiToken) -> Self {
         Self {

@@ -380,8 +380,62 @@ rmcp 3.5.1 serves stateless HTTP and supports the 2026-07-28 protocol, which use
 `server/discover` and per-request metadata. It also accepts the 2025-11-25 and
 2025-06-18 revisions with `initialize`. Tokens are verified for every request;
 there is no authenticated session cookie. The generated `authentication_policy`
-function returns `JwtOnlyPolicy`, so revocation takes effect at JWT expiry.
+function returns `JwtOnlyPolicy`, so OIDC revocation takes effect at JWT expiry.
 Use the policy port below when a product needs live checks.
+
+## Personal access tokens
+
+The generated MCP verifier accepts provider JWTs. To also accept PATs, wrap it
+with `baukit_auth::ApiTokenVerifier` before passing it to `baukit_mcp::router`:
+
+```rust
+let verifier = Arc::new(baukit_auth::ApiTokenVerifier::new(
+    tokens,
+    mcp_verifier(&config.product.auth, &config.product.mcp).await?,
+));
+let mcp = baukit_mcp::router(config.product.mcp.clone(), verifier, services, store, policy).await?;
+```
+
+Here `tokens` is the product's `ApiTokenService`, backed by its `ApiTokenStore`.
+Clients send `Authorization: Bearer <token>` on every request. Issue PATs with
+grants matching the registered tool, resource and prompt scopes. MCP converts
+those grants into effective scopes; a PAT with no grants sees no scoped tools.
+`baukit_auth::Principal::scopes()` stays empty for API-token identities.
+
+`ApiTokenVerifier` uses the token owner's UUID as the subject and has no issuer
+or OAuth client ID. If the product's account or erasure checks need another
+subject, implement an `IdentityVerifier` that verifies through
+`ApiTokenService::verify`, resolves the owner to the product subject, and calls
+`baukit_auth::Principal::from_api_token(resolved_subject, token)`. Delegate OIDC
+tokens to the MCP-bound provider verifier. Do not require an OAuth client ID on
+the PAT policy branch unless the product explicitly rejects PATs.
+
+The router verifies every HTTP request before running the policy and retains
+no authenticated session. With `ApiTokenVerifier`, revocation or expiry is
+observed on the next request, even with `JwtOnlyPolicy`. Requests already
+authorized may finish. A cached principal is only a snapshot; neither
+`Principal::from_api_token` nor `JwtOnlyPolicy` checks its current token state.
+A custom verifier must read the current store on each request and reject revoked
+or expired tokens. Do not return cached PAT principals without those checks.
+
+`KeycloakIntrospectionPolicy` rejects PAT principals with `PolicyDenial::Inactive`
+before any provider request. For mixed authentication, branch in the product
+policy before invoking introspection:
+
+```rust
+let effective = if principal.api_token().is_some() {
+    baukit_mcp::Principal::from(principal.clone())
+} else {
+    introspection.authenticate(principal, bearer_token).await?
+};
+```
+
+The PAT branch trusts that request's live verifier check. Apply account lookups,
+erasure fences and product quotas to both branches on every request. Keep those
+checks outside any introspection cache. Policies can narrow effective scopes
+with `with_scopes`, including PAT grants, but cannot add or restore scopes.
+If introspection credentials are configured, replace the generated bin crate's
+`mcp_policy` wiring to return this composed policy.
 
 ## Authentication policy
 
@@ -397,7 +451,8 @@ by default. Replace that function to select a different policy. `AuthenticationP
 `baukit_auth::Principal` and bearer token on every authenticated request.
 It returns the effective `baukit_mcp::Principal`, or `PolicyDenial`.
 Both `tools/list` and `tools/call` use its effective scopes. Scope reductions
-cannot grant rights absent from the JWT or restore rights a prior policy removed.
+cannot grant rights absent from the verified OIDC scopes or API-token grants,
+or restore rights a prior policy removed.
 
 For Keycloak introspection, configure `mcp.introspection_client_id` and
 `mcp.introspection_client_secret` through the existing configuration and secret
