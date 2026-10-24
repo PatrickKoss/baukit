@@ -438,6 +438,121 @@ async fn keycloak_introspection_rejects_api_tokens_without_contacting_provider()
     Ok(())
 }
 
+#[tokio::test]
+async fn api_tokens_work_alongside_oidc_client_and_audience_restrictions()
+-> Result<(), Box<dyn Error>> {
+    use baukit_auth::{ApiTokenService, ApiTokenVerifier, NewApiToken, OidcConfig, OidcVerifier};
+
+    let issuer = MockOidcServer::start().await?;
+    let config = config(&issuer);
+    let tokens = ApiTokenService::new(Arc::new(InMemoryApiTokenStore::new()));
+    let issued = tokens
+        .issue(
+            API_TOKEN_OWNER.parse()?,
+            NewApiToken::new("MCP").with_grants(["identity:read", "account:read"]),
+        )
+        .await?;
+    let oidc = OidcVerifier::discover(
+        OidcConfig::new(&config.issuer, &config.resource_url)?
+            .with_allowed_clients(["mcp-client"])?
+            .with_principal_claims(
+                baukit_auth::PrincipalClaimMapping::new().client_id_claim("azp"),
+            ),
+    )
+    .await?;
+    let app = router(
+        config.clone(),
+        Arc::new(ApiTokenVerifier::new(tokens, Arc::new(oidc))),
+        McpServices::new(Arc::new(IdentityTool)),
+        Arc::new(InMemoryRateLimitStore::default()),
+        Arc::new(JwtOnlyPolicy),
+    )
+    .await?;
+    let (status, _, body) = send(&app, Some(&issued.secret), call()).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["result"]["structuredContent"],
+        json!({"subject":API_TOKEN_OWNER,"issuer":null,"client":null,
+            "scopes":["account:read","identity:read"]})
+    );
+    for (audience, client, allowed) in [
+        (config.resource_url.as_str(), Some("mcp-client"), true),
+        (config.resource_url.as_str(), Some("other-client"), false),
+        (config.resource_url.as_str(), None, false),
+        ("product-rest", Some("mcp-client"), false),
+    ] {
+        let mut claims = issuer
+            .claims("alice", audience, Duration::from_secs(300))?
+            .claim("scope", "identity:read account:read");
+        if let Some(client) = client {
+            claims = claims.claim("azp", client);
+        }
+        let token = issuer.mint(&claims)?;
+        for request in [list(), call()] {
+            let (status, _, body) = send(&app, Some(&token), request).await?;
+            assert_eq!(
+                status,
+                if allowed {
+                    StatusCode::OK
+                } else {
+                    StatusCode::UNAUTHORIZED
+                }
+            );
+            if !allowed {
+                assert_eq!(body, json!({"error":"invalid_token"}));
+            } else if body["result"].get("structuredContent").is_some() {
+                assert_eq!(body["result"]["structuredContent"]["client"], "mcp-client");
+                assert_eq!(
+                    body["result"]["structuredContent"]["scopes"],
+                    json!(["account:read", "identity:read"])
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn api_token_store_failures_return_unavailable_without_a_login_challenge()
+-> Result<(), Box<dyn Error>> {
+    use baukit_auth::{ApiTokenStoreError, ApiTokenVerifier, NewApiToken};
+
+    let issuer = MockOidcServer::start().await?;
+    let config = config(&issuer);
+    let (store, tokens) = InMemoryApiTokenStore::with_service();
+    let issued = tokens
+        .issue(
+            API_TOKEN_OWNER.parse()?,
+            NewApiToken::new("MCP").with_grants(["identity:read", "account:read"]),
+        )
+        .await?;
+    let app = router(
+        config.clone(),
+        Arc::new(ApiTokenVerifier::new(tokens, verifier(&config).await?)),
+        McpServices::new(Arc::new(IdentityTool)),
+        Arc::new(InMemoryRateLimitStore::default()),
+        Arc::new(JwtOnlyPolicy),
+    )
+    .await?;
+    assert_eq!(
+        send(&app, Some(&issued.secret), call()).await?.0,
+        StatusCode::OK
+    );
+    store.fail_with(ApiTokenStoreError::internal(format!(
+        "private store diagnostic {}",
+        issued.secret
+    )));
+    for request in [list(), call()] {
+        let (status, headers, body) = send(&app, Some(&issued.secret), request).await?;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body, json!({"error":"identity_unavailable"}));
+        assert_eq!(headers[header::RETRY_AFTER], "5");
+        assert_eq!(headers[header::CACHE_CONTROL], "no-store");
+        assert!(!headers.contains_key(header::WWW_AUTHENTICATE));
+    }
+    Ok(())
+}
+
 struct CancellableService {
     started: tokio::sync::mpsc::UnboundedSender<baukit_mcp::CancellationToken>,
     observed: tokio::sync::Notify,

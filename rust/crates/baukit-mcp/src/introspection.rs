@@ -496,6 +496,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn api_token_principals_are_inactive_even_with_a_cached_active_result()
+    -> Result<(), Box<dyn Error>> {
+        use baukit_auth::NewApiToken;
+        use baukit_test::InMemoryApiTokenStore;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let policy = KeycloakIntrospectionPolicy::new(KeycloakIntrospectionConfig::new(
+            format!("http://{}", listener.local_addr()?),
+            "resource",
+            Secret::new("secret".into()),
+        ))?;
+        let (_, tokens) = InMemoryApiTokenStore::with_service();
+        let issued = tokens
+            .issue(
+                "00000000-0000-4000-8000-000000000001".parse()?,
+                NewApiToken::new("MCP").with_grants(["read"]),
+            )
+            .await?;
+        let identity = VerifiedPrincipal::from_api_token("alice", issued.token);
+        let hash = digest::digest(&digest::SHA256, issued.secret.as_bytes());
+        let mut key = [0; 32];
+        key.copy_from_slice(hash.as_ref());
+        let mut response = active();
+        response
+            .as_object_mut()
+            .ok_or("object")?
+            .remove("client_id");
+        policy
+            .remember(
+                key,
+                serde_json::from_value(response)?,
+                Duration::from_secs(5),
+            )
+            .await;
+        assert_eq!(
+            policy.authenticate(&identity, &issued.secret).await,
+            Err(PolicyDenial::Inactive)
+        );
+        assert!(policy.cached(&key).await.is_some());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), listener.accept())
+                .await
+                .is_err()
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn oauth_client_credentials_are_encoded_before_basic_auth() -> Result<(), Box<dyn Error>>
     {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
