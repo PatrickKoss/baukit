@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## 0.11.1
+
+### Patch Changes
+
+- Release the coordinated baukit 0.11.1 train.
+- Updated dependencies
+  - @baukit/integrations-client@0.11.1
+  - @baukit/localization-core@0.11.1
+
 ## 0.11.0
 
 - Load the packed entitlements export under CommonJS with its declared runtime dependencies.

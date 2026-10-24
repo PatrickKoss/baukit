@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-10-24
+
 - Seed effective MCP scopes from verified API-token grants. Policies can only narrow
   them; OIDC scopes and `baukit-auth::Principal::scopes()` keep their existing behavior.
 - Behavior change: a product that already routes API tokens to `/mcp` grants each token the MCP

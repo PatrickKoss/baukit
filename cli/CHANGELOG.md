@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-10-24
+
 - Document PAT verification, effective MCP scopes, owner mapping, and mixed
   PAT/OIDC policies in generated remote MCP guidance. Products already accepting
   PATs at `/mcp` must review grants that now permit matching MCP tools.

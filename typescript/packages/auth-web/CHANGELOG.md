@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.11.1
+
+### Patch Changes
+
+- Release the coordinated baukit 0.11.1 train.
+
 ## 0.11.0
 
 - Add `SilentTokenBroker` for silent multi-product OIDC authorization with in-memory tokens, remembered failures, account binding and explicit popup login. A blocked popup preserves earlier failures, and closing a popup returns `login_required` with reason `interaction_cancelled`.

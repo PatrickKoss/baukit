@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-10-24
+
 ## [0.11.0] - 2026-10-22
 
 - Apply job migration 0004 in PostgreSQL fixtures for the store's new key columns.

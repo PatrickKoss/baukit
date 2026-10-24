@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-10-24
+
 {% if context.mcp %}- Document PAT verification, owner mapping, and mixed PAT/OIDC policies for
   remote MCP. Verified PAT grants now permit matching MCP tools. Review existing
   grants when upgrading a product that already accepts PATs at `/mcp`.

@@ -4,6 +4,8 @@ All notable changes to `baukit-jobs` are documented here.
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-10-24
+
 ## [0.11.0] - 2026-10-22
 
 - Add `PostgresJobStore::enqueue_deduplicated` and

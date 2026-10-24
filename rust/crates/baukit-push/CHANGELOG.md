@@ -4,6 +4,8 @@ All notable changes to `baukit-push` are documented here.
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-10-24
+
 ## [0.11.0] - 2026-10-22
 
 ### Added
