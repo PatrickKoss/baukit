@@ -13,7 +13,10 @@ use axum::http::{HeaderMap, HeaderValue, header::AUTHORIZATION};
 use baukit_egress::{
     AddressPolicy, EgressError, EgressOptions, EgressRequest, GuardedClient, StaticResolver,
 };
-use tokio::{io::AsyncWriteExt, net::TcpListener};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
+};
 use tracing_subscriber::fmt::format::FmtSpan;
 use url::Url;
 
@@ -59,6 +62,15 @@ fn assert_no_secret(text: &str) {
     }
 }
 
+async fn read_request_head(stream: &mut TcpStream) {
+    let mut request = Vec::new();
+    while !request.ends_with(b"\r\n\r\n") {
+        if stream.read_buf(&mut request).await.unwrap_or(0) == 0 {
+            return;
+        }
+    }
+}
+
 async fn failing_server() -> u16 {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
         .await
@@ -69,6 +81,7 @@ async fn failing_server() -> u16 {
         .port();
     tokio::spawn(async move {
         while let Ok((mut stream, _)) = listener.accept().await {
+            read_request_head(&mut stream).await;
             let response = format!(
                 "HTTP/1.1 409 Conflict\r\ncontent-length: {}\r\ncontent-type: application/content-type-secret\r\nconnection: close\r\n\r\n{ERROR_BODY}",
                 ERROR_BODY.len()
@@ -87,6 +100,7 @@ async fn incomplete_server() -> (u16, tokio::task::JoinHandle<()>) {
     let port = listener.local_addr().expect("address").port();
     let task = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.expect("accept");
+        read_request_head(&mut stream).await;
         stream
             .write_all(b"HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\n\r\nb\r\nbody-secret\r\n")
             .await
@@ -134,12 +148,18 @@ async fn errors_and_telemetry_do_not_leak_url_secrets() {
         HeaderValue::from_static("Bearer header-secret"),
     );
     let urls = [
-        secret_url(&format!("hooks.test:{}", failing_server().await)),
-        secret_url(&format!("hooks.test:{}", closed_port().await)),
-        secret_url("user:url-secret@hooks.test"),
+        (
+            secret_url(&format!("hooks.test:{}", failing_server().await)),
+            true,
+        ),
+        (
+            secret_url(&format!("hooks.test:{}", closed_port().await)),
+            false,
+        ),
+        (secret_url("user:url-secret@hooks.test"), false),
     ];
 
-    for url in urls {
+    for (url, returns_error_body) in urls {
         let request = EgressRequest::post(url).with_headers(headers.clone());
         assert_no_secret(&format!("{request:?}"));
         for streaming in [false, true] {
@@ -157,6 +177,7 @@ async fn errors_and_telemetry_do_not_leak_url_secrets() {
             };
             assert_no_secret(&error.to_string());
             assert_no_secret(&format!("{error:?}"));
+            assert_eq!(error.error_body().is_some(), returns_error_body, "{error}");
             if let Some(body) = error.error_body() {
                 assert_eq!(body.bytes(), ERROR_BODY.as_bytes());
                 assert_eq!(body.problem_code(), Some("inventory_sequence_gap"));
