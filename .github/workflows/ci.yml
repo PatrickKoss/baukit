@@ -215,7 +215,14 @@ jobs:
         with:
           node-version-file: typescript/.nvmrc
       - name: Enable pinned pnpm for release train tests
-        run: npm install --global corepack@0.36.0
+        working-directory: typescript
+        run: |
+          npm install --global corepack@0.36.0
+          corepack enable
+          corepack install
+      - name: Install TypeScript dependencies for package checks
+        working-directory: typescript
+        run: pnpm install --frozen-lockfile
       - run: python3 -m unittest discover -s scripts -p 'test_*.py'
 
   media-grants:
