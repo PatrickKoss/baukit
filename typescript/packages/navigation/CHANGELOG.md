@@ -2,10 +2,19 @@
 
 ## [Unreleased]
 
+## 0.11.3
+
 - Pad the native profile menu and section picker modal by the safe-area
   insets, so the sheet clears edge-to-edge system bars on Android.
   `SectionPicker` accepts optional `insets`.
 - Add `NavigationTypography.activeFontFamily` for selected native entries.
+
+### Patch Changes
+
+- Release the coordinated baukit 0.11.3 train.
+- Updated dependencies
+  - @baukit/a11y-core@0.11.3
+  - @baukit/ui-tokens@0.11.3
 
 ## 0.11.2
 

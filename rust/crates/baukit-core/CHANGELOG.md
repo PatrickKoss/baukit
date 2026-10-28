@@ -4,6 +4,8 @@ All notable changes to `baukit-core` are documented here.
 
 ## [Unreleased]
 
+## [0.11.3] - 2026-10-28
+
 ## [0.11.2] - 2026-10-28
 
 ## [0.11.1] - 2026-10-24
