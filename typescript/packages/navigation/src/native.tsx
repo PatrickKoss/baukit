@@ -127,6 +127,11 @@ type FocusablePressableProps = Omit<ComponentPropsWithRef<typeof Pressable>, 'st
   readonly unfocusedBorderColor?: string;
   readonly style?: StyleProp<ViewStyle>;
 };
+function showsFocusRing(event: NativeSyntheticEvent<unknown>): boolean {
+  if (Platform.OS !== 'web') return true;
+  const target: unknown = (event.nativeEvent as { target?: unknown } | undefined)?.target;
+  return !(target instanceof Element) || target.matches(':focus-visible');
+}
 function FocusablePressable({
   theme,
   selected = false,
@@ -141,7 +146,7 @@ function FocusablePressable({
     <Pressable
       {...props}
       onFocus={(event) => {
-        setFocused(true);
+        setFocused(showsFocusRing(event));
         onFocus?.(event);
       }}
       onBlur={(event) => {
