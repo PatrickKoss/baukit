@@ -290,3 +290,37 @@ it('preserves the compact brand width when accessory text wraps', async () => {
   expect(accessory.right).toBeLessThanOrEqual(navigation.getBoundingClientRect().right);
   expect(navigation.getBoundingClientRect().height).toBeGreaterThan(75);
 });
+
+it('rings a web navigation target for keyboard focus but not after a pointer click', async () => {
+  await mount(
+    <View style={{ width: 320, height: 568, justifyContent: 'flex-end' }}>
+      <AppNavigation
+        items={['Home', 'Inbox'].map((label) => ({
+          id: label,
+          label,
+          href: `/${label.toLowerCase()}`,
+          icon,
+        }))}
+        label="Primary"
+        collapseLabel="Collapse"
+        expandLabel="Expand"
+        closeLabel="Close"
+        width={320}
+        pathname="/home"
+        theme={theme}
+        onNavigate={vi.fn()}
+      />
+    </View>,
+  );
+  const inbox = page.getByRole('link', { name: 'Inbox' }).element() as HTMLElement;
+  const resting = getComputedStyle(inbox).borderTopColor;
+  await click(inbox);
+  expect(inbox.matches(':focus-visible')).toBe(false);
+  expect(getComputedStyle(inbox).borderTopColor).toBe(resting);
+  await act(async () => {
+    await userEvent.tab();
+    inbox.focus();
+  });
+  expect(inbox.matches(':focus-visible')).toBe(true);
+  expect(getComputedStyle(inbox).borderTopColor).toBe('rgb(0, 95, 204)');
+});

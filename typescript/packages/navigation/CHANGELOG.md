@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Show the native navigation focus ring on web only for keyboard focus
+  (`:focus-visible`), not after a pointer click.
+
 ## 0.11.1
 
 ### Patch Changes
