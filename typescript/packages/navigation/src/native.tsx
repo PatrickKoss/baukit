@@ -64,6 +64,7 @@ export interface NavigationIconState {
 export type NavigationIcon = (state: NavigationIconState) => ReactNode;
 export interface NavigationTypography {
   readonly fontFamily?: string;
+  readonly activeFontFamily?: string;
   readonly fontSize?: number;
   readonly barFontSize?: number;
   readonly subtitleFontSize?: number;
@@ -101,7 +102,9 @@ function barMetrics(theme?: NavigationTheme): NavigationBarMetrics {
 function textStyle(theme: NavigationTheme, selected = false, bar = false): TextStyle {
   const typography = theme.typography;
   return {
-    fontFamily: typography?.fontFamily,
+    fontFamily: selected
+      ? (typography?.activeFontFamily ?? typography?.fontFamily)
+      : typography?.fontFamily,
     fontSize: bar
       ? (typography?.barFontSize ?? NAVIGATION_BAR_DIMENSIONS.labelFontSize)
       : (typography?.fontSize ?? 14),
@@ -333,6 +336,17 @@ interface MenuProps {
   readonly triggerRef: React.RefObject<View | null>;
   readonly theme: NavigationTheme;
   readonly id: string;
+  readonly insets?: NavigationInsets | undefined;
+}
+function menuModalPadding(insets: NavigationInsets = {}): ViewStyle {
+  const native = Platform.OS !== 'web';
+  const edge = (inset: number | undefined) => MENU_EDGE + (native ? (inset ?? 0) : 0);
+  return {
+    paddingTop: edge(insets.top),
+    paddingBottom: edge(insets.bottom),
+    paddingLeft: edge(insets.left),
+    paddingRight: edge(insets.right),
+  };
 }
 function Menu({
   subtitle,
@@ -347,6 +361,7 @@ function Menu({
   triggerRef,
   theme,
   id,
+  insets,
 }: MenuProps) {
   const activeEntry = resolveActiveMenuEntry(entries, pathname);
   const containerRef = useRef<View>(null);
@@ -597,7 +612,7 @@ function Menu({
           if (Platform.OS === 'web') setWebPresented(true);
         }}
       >
-        <View style={styles.modal}>{menu}</View>
+        <View style={[styles.modal, menuModalPadding(insets)]}>{menu}</View>
       </Modal>
     </>
   );
@@ -1040,6 +1055,7 @@ export function AppNavigation(props: AppNavigationProps) {
       subtitle={profile.subtitle}
       triggerRef={profileTriggerRef}
       theme={theme}
+      insets={insets}
       onClose={() => {
         setProfileOpen(false);
       }}
@@ -1055,6 +1071,7 @@ export interface SectionPickerProps {
   readonly pathname: string;
   readonly onNavigate: Navigate;
   readonly theme: NavigationTheme;
+  readonly insets?: NavigationInsets;
 }
 export function SectionPicker({
   replace = false,
@@ -1063,6 +1080,7 @@ export function SectionPicker({
   onNavigate,
   theme,
   closeLabel,
+  insets,
 }: SectionPickerProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<View>(null);
@@ -1119,6 +1137,7 @@ export function SectionPicker({
       id={id}
       triggerRef={triggerRef}
       theme={theme}
+      insets={insets}
       onClose={() => {
         setOpen(false);
       }}
@@ -1163,7 +1182,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  modal: { flex: 1, justifyContent: 'flex-end', padding: 8 },
+  modal: { flex: 1, justifyContent: 'flex-end' },
   menu: { borderWidth: 1, padding: 8, maxHeight: '80%' },
   menuItem: {
     justifyContent: 'center',

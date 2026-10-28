@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Pad the native profile menu and section picker modal by the safe-area
+  insets, so the sheet clears edge-to-edge system bars on Android.
+  `SectionPicker` accepts optional `insets`.
+- Add `NavigationTypography.activeFontFamily` for selected native entries.
+
 ## 0.11.2
 
 - Show the native navigation focus ring on web only for keyboard focus

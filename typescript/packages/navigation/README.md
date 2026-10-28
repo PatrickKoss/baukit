@@ -163,6 +163,11 @@ trigger and above the compact bottom bar. Long sections scroll inside that
 space. It updates the limit when the viewport, content layout, or scroll
 position changes.
 
+On native, the profile menu and section picker open in a transparent modal that
+draws under edge-to-edge system bars. `AppNavigation` pads that modal by its
+`insets` plus 8 units. Pass the same `insets` to the native `SectionPicker`.
+Without insets, both keep the 8-unit padding.
+
 For compact native content, `useNavigationBarHeight(bottomInset, theme)` reserves
 space using the current font scale and the bar's typography and spacing. Pass the
 same theme as `AppNavigation` when you customize it. The default height is 75 dp
@@ -192,9 +197,12 @@ A profile can supply `subtitle` for a name or sync status. The expanded rail and
 profile menu display it below the label. The profile button includes both lines
 in its accessible label, including in collapsed and compact navigation.
 
-Native `NavigationTheme.typography` can set `fontFamily`, `fontSize`,
+Native `NavigationTheme.typography` can set `fontFamily`, `activeFontFamily`, `fontSize`,
 `barFontSize`, `subtitleFontSize`, `fontWeight`, `activeFontWeight`, `lineHeight`
-and `letterSpacing`. Sizes and line height use React Native units. Omitted fields
+and `letterSpacing`. Selected entries use `activeFontFamily` when set and `fontFamily`
+otherwise. Set it when the font ships one file per weight, such as
+`IBMPlexSans_600SemiBold` from Expo Google Fonts, so Android renders a real
+semibold. Sizes and line height use React Native units. Omitted fields
 keep the default sizes and weights. The font family also applies to menu entries,
 initials and section pickers, as the web navigation inherits its CSS font family.
 
