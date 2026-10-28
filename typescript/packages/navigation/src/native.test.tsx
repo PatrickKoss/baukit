@@ -1,5 +1,13 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react-native';
-import { AccessibilityInfo, Platform, ScrollView, Text } from 'react-native';
+import {
+  AccessibilityInfo,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import {
   AppNavigation,
   useNavigationBarHeight,
@@ -779,6 +787,102 @@ it('renders the profile subtitle in its menu and applies product typography', as
     fontWeight: '800',
   });
   expect(screen.getByText('Close')).toHaveStyle({ fontFamily: 'ProductSans', fontWeight: '500' });
+});
+
+function menuModalStyle() {
+  const modal = screen.container.queryAll((node) => typeof node.props['onShow'] === 'function')[0];
+  const sheet = modal?.children[0];
+  if (sheet === undefined || typeof sheet === 'string') throw new Error('Menu modal is missing');
+  return StyleSheet.flatten(sheet.props['style'] as StyleProp<ViewStyle>);
+}
+
+it('pads the profile menu modal by the safe-area insets', async () => {
+  await render(
+    <AppNavigation
+      {...labels}
+      items={items}
+      width={320}
+      pathname="/"
+      theme={theme}
+      insets={{ top: 24, bottom: 48, left: 4, right: 6 }}
+      onNavigate={jest.fn()}
+      profile={{
+        label: 'Account',
+        initials: 'AB',
+        menu: [{ id: 'settings', label: 'Settings', href: '/settings' }],
+      }}
+    />,
+  );
+  await fireEvent.press(screen.getByRole('button', { name: 'Account' }), event());
+  expect(menuModalStyle()).toMatchObject({
+    paddingTop: 32,
+    paddingBottom: 56,
+    paddingLeft: 12,
+    paddingRight: 14,
+  });
+});
+
+it('keeps the default menu modal padding without insets', async () => {
+  await render(
+    <SectionPicker
+      closeLabel="Close"
+      item={section}
+      pathname="/progress/history"
+      theme={theme}
+      onNavigate={jest.fn()}
+    />,
+  );
+  await fireEvent.press(screen.getByRole('button', { name: 'Progress, History' }), event());
+  expect(menuModalStyle()).toMatchObject({
+    paddingTop: 8,
+    paddingBottom: 8,
+    paddingLeft: 8,
+    paddingRight: 8,
+  });
+});
+
+it('pads the section picker modal by the safe-area insets', async () => {
+  await render(
+    <SectionPicker
+      closeLabel="Close"
+      item={section}
+      pathname="/progress/history"
+      theme={theme}
+      insets={{ bottom: 30 }}
+      onNavigate={jest.fn()}
+    />,
+  );
+  await fireEvent.press(screen.getByRole('button', { name: 'Progress, History' }), event());
+  expect(menuModalStyle()).toMatchObject({ paddingTop: 8, paddingBottom: 38 });
+});
+
+it('uses activeFontFamily for the selected menu entry only', async () => {
+  const themed: NavigationTheme = {
+    ...theme,
+    typography: { fontFamily: 'Plex_400Regular', activeFontFamily: 'Plex_600SemiBold' },
+  };
+  await render(
+    <AppNavigation
+      {...labels}
+      items={items}
+      width={1024}
+      pathname="/settings"
+      theme={themed}
+      onNavigate={jest.fn()}
+      profile={{
+        label: 'Account',
+        initials: 'AD',
+        menu: [
+          { id: 'settings', label: 'Settings', href: '/settings' },
+          { id: 'help', label: 'Help', href: '/help' },
+        ],
+      }}
+    />,
+  );
+  await fireEvent.press(screen.getByRole('button', { name: 'Account' }), event());
+  expect(screen.getByText('Settings')).toHaveStyle({ fontFamily: 'Plex_600SemiBold' });
+  expect(screen.getByText('Help')).toHaveStyle({ fontFamily: 'Plex_400Regular' });
+  expect(screen.getByText('Close')).toHaveStyle({ fontFamily: 'Plex_400Regular' });
 });
 
 it('uses product typography for compact labels and section pickers', async () => {
