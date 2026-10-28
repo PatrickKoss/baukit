@@ -4,6 +4,8 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-10-28
+
 ## [0.11.1] - 2026-10-24
 
 - Clarify that `Principal::from_api_token` requires a token verified against the

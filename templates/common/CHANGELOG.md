@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-10-28
+
 ## [0.11.1] - 2026-10-24
 
 {% if context.mcp %}- Document PAT verification, owner mapping, and mixed PAT/OIDC policies for

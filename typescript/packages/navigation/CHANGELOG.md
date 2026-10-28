@@ -2,8 +2,17 @@
 
 ## [Unreleased]
 
+## 0.11.2
+
 - Show the native navigation focus ring on web only for keyboard focus
   (`:focus-visible`), not after a pointer click.
+
+### Patch Changes
+
+- Release the coordinated baukit 0.11.2 train.
+- Updated dependencies
+  - @baukit/a11y-core@0.11.2
+  - @baukit/ui-tokens@0.11.2
 
 ## 0.11.1
 
