@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.12.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.12.0 train.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/data-contracts@0.12.0
+
 ## 0.11.3
 
 ### Patch Changes

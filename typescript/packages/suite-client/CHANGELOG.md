@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## 0.12.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.12.0 train.
+
+### Patch Changes
+
+- 5e4c629: Add platform event type and payload types, including `organization.updated` and `credits.changed`, plus credit balance, reservation and organization summary types matching the hub's `/platform/v1` responses.
+- Updated dependencies
+  - @baukit/integrations-client@0.12.0
+  - @baukit/localization-core@0.12.0
+
 ## 0.11.3
 
 ### Patch Changes

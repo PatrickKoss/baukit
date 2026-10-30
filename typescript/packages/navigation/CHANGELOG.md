@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## 0.12.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.12.0 train.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/a11y-core@0.12.0
+  - @baukit/ui-tokens@0.12.0
+
 ## 0.11.3
 
 - Pad the native profile menu and section picker modal by the safe-area

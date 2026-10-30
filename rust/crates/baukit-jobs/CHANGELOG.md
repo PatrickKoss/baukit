@@ -4,6 +4,8 @@ All notable changes to `baukit-jobs` are documented here.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-30
+
 - Fix `WorkerRunner::run` reusing one timestamp for every claim in a poll loop. A job enqueued during the loop could be claimed with `updated_at` before its `created_at`, which violates the outbox check. Each claim now takes a fresh time.
 
 ## [0.11.3] - 2026-10-28
