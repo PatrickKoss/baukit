@@ -109,6 +109,15 @@ impl PayloadCatalog {
         Ok(catalog)
     }
 
+    /// The payload field naming the envelope owner of `event_type`.
+    #[cfg(feature = "platform")]
+    pub(crate) fn natural_key(&self, event_type: &str) -> Option<&str> {
+        self.events
+            .iter()
+            .find(|event| event.event_type == event_type)
+            .map(|event| event.natural_key.as_str())
+    }
+
     /// Checks a payload against its event definition. Optional fields must be omitted.
     pub fn validate(
         &self,

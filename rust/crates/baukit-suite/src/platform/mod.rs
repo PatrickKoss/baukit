@@ -1,4 +1,5 @@
-//! Service-level hub notifications and offline entitlement tickets.
+//! Service-level hub notifications, offline entitlement tickets, credits and
+//! organization summaries.
 //!
 //! Enable `platform` for HTTP, memory adapters and ticket verification. Add
 //! `postgres` for durable receipts and entitlement snapshots. These do not use
@@ -6,8 +7,11 @@
 
 mod cache;
 mod config;
+mod credits;
 mod events;
+mod hub;
 mod memory;
+mod organizations;
 #[cfg(feature = "postgres")]
 mod postgres;
 mod receiver;
@@ -15,8 +19,11 @@ mod tickets;
 
 pub use cache::*;
 pub use config::PlatformConfig;
+pub use credits::*;
 pub use events::*;
+pub use hub::*;
 pub use memory::InMemoryPlatformInbox;
+pub use organizations::*;
 #[cfg(feature = "postgres")]
 pub use postgres::{PLATFORM_MIGRATION_SQL, PostgresEntitlementCache, PostgresPlatformInbox};
 pub use receiver::*;

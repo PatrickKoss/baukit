@@ -32,7 +32,7 @@ Embed `platform::PlatformConfig` as `platform` in the product settings. Call its
 Implement `PlatformEventHandler::handle(&self, event: &PlatformEvent, context:
 &mut EventContext<'_>) -> Result<(), PlatformError>`. Match `event.kind()` to get
 typed payloads for entitlement, account, erasure, preference, onboarding, family,
-organization and seat events. Use `context.postgres()` for product writes that
+organization membership, seat, organization update and credit change events. Use `context.postgres()` for product writes that
 must commit with receipt of the event. Return `PlatformError::Unavailable` when
 the hub should retry. Return `PlatformError::Invalid` for permanent rejection.
 External effects must tolerate retries, including cancellation after a successful
@@ -91,8 +91,10 @@ The memory inbox is a test adapter and loses receipts on restart.
 | 503 | Handler or storage unavailable. Retry. |
 
 Unknown types are acknowledged and deduplicated without dispatch. Known payloads
-reject unknown fields, nulls, unsupported schemas and mismatched subjects through
-the mirrored catalog. Events may be older than seven days because delivery retries
+reject unknown fields, nulls, unsupported schemas and mismatched owners through
+the mirrored catalog. The envelope `userId` must equal the type's natural key:
+`suiteSubject` for every type except `organization.updated`, whose owner is
+`organizationId`. Events may be older than seven days because delivery retries
 can span longer outages. `occurredAt` cannot exceed the receiver clock by more
 than `MAX_EVENT_FUTURE_SECONDS` (300 seconds). The signed attempt timestamp must
 still be fresh. `PlatformEventDecoder::new(source_app, event_type_prefix)` also
@@ -149,6 +151,88 @@ Without `hub_issuer`, the same API returns `standalone_default` for every subjec
 and makes no hub calls. Use `settings.platform.entitlements(cache, None)?`. Set
 its tier and feature keys to the product's desired self-hosted policy. The library
 default is `free` with no feature keys.
+
+## Call the hub API
+
+`HubClient` calls the hub's `/platform/v1` routes with the product's
+`platform-<product>` service client. Embed `HubClientConfig` in the product
+settings, for example as `platform_client`, and call its `Validate`
+implementation. `HubClient::new(&settings.platform_client, &product_id, client)`
+takes a `baukit_egress::GuardedClient` built with
+`EgressOptions::with_error_body_limit`, so hub error codes reach typed errors.
+Construction fails without it.
+
+The client requests a token from `token_url` with `grant_type=client_credentials`,
+the client ID and the client secret, and keeps it in memory. Clones share the
+cache, and one token request serves concurrent callers. The cached token is
+replaced `TOKEN_REFRESH_MARGIN` (30 seconds) before `expires_in` elapses, or at
+half its lifetime when that is shorter. A 401 from the API drops that token,
+fetches a new one and repeats the request once. A second 401 returns
+`HubError::Unauthorized`, as does a token endpoint that refuses the credentials.
+The secret lives in `Secret<String>`, so settings debug output redacts it. No
+error variant carries a URL, token or secret. `get_json` and `post_json` are
+available for other platform routes; use `post_json` only on idempotent routes,
+because of the 401 retry.
+
+`HubError::Unavailable` covers transport failures, timeouts, 408, 429 and 5xx.
+`InvalidResponse` means a 2xx body that breaks the contract. Other statuses
+return `Rejected { status, code }` with the Baukit error envelope code.
+
+### Credits
+
+The `Credits` port has `reserve(subject, amount, idempotency_key)`,
+`settle(reservation_id, actual_amount)`, `release(reservation_id)` and
+`balance(subject)`. The hub always spends the calling product's wallet. Name the
+product's credit actions and keep each action's cost in product configuration,
+such as `limits.json`, defaulting to zero. A zero amount returns
+`CreditHold::Free` and makes no ledger call. A paid amount returns
+`CreditHold::Reserved(reservation)`. Settle or release that reservation when the
+action finishes. A repeat with the same key and amount returns the first
+reservation, so retries are safe.
+
+`settings.platform.credits(Some(hub))?` returns `HubCredits` in hub mode and
+`ZeroCostCredits` in standalone mode, where `hub` may be `None`. `ZeroCostCredits`
+accepts every zero-cost action. A configured cost fails with
+`CreditsError::WalletUnknown`, because a standalone product has no wallet. Its
+balance is zero, and settle and release return `ReservationNotFound`.
+`HubCredits` needs the `credits:read` and `credits:spend` scopes. It rejects a
+response for another wallet, subject, reservation or amount as
+`HubError::InvalidResponse`.
+
+| Hub response | `CreditsError` |
+| --- | --- |
+| 409 `credits_insufficient` | `Insufficient` |
+| 409 `credits_idempotency_conflict` | `IdempotencyConflict` |
+| 409 `credits_reservation_expired` | `ReservationExpired` |
+| 404 `credits_reservation_not_found` | `ReservationNotFound` |
+| 404 `credits_wallet_unknown` | `WalletUnknown` |
+| 400 `credits_amount_invalid` | `AmountInvalid` |
+| 400 `credits_idempotency_key_invalid` | `IdempotencyKeyInvalid` |
+| 404 `platform_subject_not_found` | `SubjectNotFound` |
+| 403 `account_inactive` | `AccountInactive` |
+| 503 `platform_credits_unavailable`, other 5xx, 408, 429, transport | `Unavailable` |
+| Anything else | `Hub(HubError)` |
+
+Amounts above `MAX_CREDIT_AMOUNT` (2^53 - 1) fail locally with `AmountInvalid`.
+The balance `revision` counts `credits.changed` events. Plain reserve, settle and
+release calls do not emit one. On `PlatformEventKind::CreditsChanged`, call
+`balance` before the receipt transaction if the product caches balances.
+
+### Organizations
+
+`HubOrganizations::new(hub)` implements `OrganizationDirectory::summary(id)` with
+`GET /platform/v1/organizations/{id}` and the `organizations:read` scope.
+`OrganizationSummary` holds `status`, the caller product's `tier`, `features`,
+`paid_quantity` (`None` without a seat limit), `assigned_seats` and `revision`.
+An unknown or invisible organization returns `OrganizationError::NotFound`. A
+summary for another organization or product is `HubError::InvalidResponse`.
+`organization.updated` carries only `organizationId` and `revision`, so read the
+summary for current values when it arrives.
+
+The contract tests in `tests/platform_hub.rs` serve the recorded hub bodies from
+[`fixtures/platform-api/v1`](../../fixtures/platform-api/README.md) on a local mock
+server. `@baukit/suite-client` exports the matching `CreditBalance`,
+`CreditReservation`, `OrganizationSummary` and `PlatformEventPayloads` types.
 
 ## Verify tickets
 
@@ -210,6 +294,10 @@ With product prefix `APP`, these settings load through `baukit-config`:
 | `APP__PLATFORM__RECEIVER_SECRET` | Current receiver HMAC secret, held as `Secret<String>`. |
 | `APP__PLATFORM__PREVIOUS_RECEIVER_SECRET` | Optional previous HMAC secret during rotation. |
 | `APP__PLATFORM__STANDALONE_DEFAULT__TIER` | Default standalone tier, initially `free`. |
+| `APP__PLATFORM_CLIENT__API_URL` | Hub API base URL, when embedded as `platform_client`. |
+| `APP__PLATFORM_CLIENT__TOKEN_URL` | Hub token endpoint, such as `<hub>/realms/suite/protocol/openid-connect/token`. |
+| `APP__PLATFORM_CLIENT__CLIENT_ID` | Optional. Defaults to `platform-<product_id>`. |
+| `APP__PLATFORM_CLIENT__CLIENT_SECRET` | Service client secret. Server-side only. |
 
 Configure `standalone_default.features` as an array in the product settings file.
 Partial hub settings fail validation. No secret value appears in settings debug

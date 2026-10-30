@@ -7,3 +7,4 @@ export * from './messages.js';
 export * from './navigation.js';
 export * from './linked.js';
 export * from './error-codes.js';
+export * from './platform.js';

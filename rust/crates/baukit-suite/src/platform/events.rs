@@ -94,6 +94,19 @@ pub struct SeatChanged {
     pub suite_subject: String,
     pub assigned: bool,
 }
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OrganizationUpdated {
+    pub organization_id: Uuid,
+    pub revision: u64,
+}
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreditsChanged {
+    pub suite_subject: String,
+    pub wallet: String,
+    pub revision: u64,
+}
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "type", content = "payload")]
@@ -114,6 +127,11 @@ pub enum PlatformEventKind {
     OrganizationMembershipChanged(OrganizationMembershipChanged),
     #[serde(rename = "seat.changed")]
     SeatChanged(SeatChanged),
+    /// The envelope `userId` is the organization ID.
+    #[serde(rename = "organization.updated")]
+    OrganizationUpdated(OrganizationUpdated),
+    #[serde(rename = "credits.changed")]
+    CreditsChanged(CreditsChanged),
     #[serde(other)]
     Unknown,
 }
@@ -186,14 +204,15 @@ impl PlatformEventDecoder {
         let kind = match suffix {
             None => PlatformEventKind::Unknown,
             Some(suffix) => {
-                match catalog.validate(&format!("platform.{suffix}"), envelope.payload.clone()) {
+                let event_type = format!("platform.{suffix}");
+                match catalog.validate(&event_type, envelope.payload.clone()) {
                     Err(PayloadError::UnsupportedType(_)) => PlatformEventKind::Unknown,
                     Err(_) => return Err(PlatformError::Invalid),
                     Ok(_) => {
-                        if envelope
-                            .payload
-                            .get("suiteSubject")
-                            .and_then(|v| v.as_str())
+                        let owner = catalog
+                            .natural_key(&event_type)
+                            .ok_or(PlatformError::Invalid)?;
+                        if envelope.payload.get(owner).and_then(|v| v.as_str())
                             != Some(envelope.user_id.as_str())
                         {
                             return Err(PlatformError::Invalid);

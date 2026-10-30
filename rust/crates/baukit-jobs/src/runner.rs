@@ -181,17 +181,17 @@ impl WorkerRunner {
                 break;
             }
 
-            let now = Utc::now();
-            let age = self.store.oldest_pending_age(now).await?;
+            let age = self.store.oldest_pending_age(Utc::now()).await?;
             metrics::set_queue_age(self.config.queue, age);
             while running.len() < self.config.concurrency && !shutdown.is_cancelled() {
                 let store = Arc::clone(&self.store);
                 let worker_id = self.config.worker_id.clone();
                 let job_types = self.handler.job_types();
                 let lease_duration = self.config.lease_duration;
+                // Jobs enqueued during this loop must not be claimed before their creation time.
                 let claim = tokio::spawn(async move {
                     store
-                        .claim(&worker_id, job_types, now, lease_duration)
+                        .claim(&worker_id, job_types, Utc::now(), lease_duration)
                         .await
                 });
                 let claimed = tokio::select! {
@@ -589,6 +589,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn each_claim_uses_a_fresh_time_for_jobs_enqueued_during_the_poll_loop() {
+        let store = Arc::new(FakeStore::with_jobs(1));
+        store.enqueue_during_claim.store(true, Ordering::SeqCst);
+        let handler = Arc::new(BlockingHandler::default());
+        let shutdown = ShutdownToken::new(Duration::from_secs(1));
+        let runner = WorkerRunner::new(
+            store.clone(),
+            handler.clone(),
+            WorkerConfig {
+                concurrency: 2,
+                poll_interval: Duration::from_secs(60),
+                ..test_config()
+            },
+        )
+        .expect("valid runner");
+        let task = tokio::spawn(runner.run(shutdown.clone()));
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while handler.maximum.load(Ordering::SeqCst) < 2 && !task.is_finished() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("both jobs claimed in one poll loop");
+        assert!(!task.is_finished(), "the second claim must not fail");
+        shutdown.trigger();
+        handler.release.notify_waiters();
+        task.await.expect("runner task").expect("clean drain");
+        assert_eq!(store.completed.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
     async fn every_claim_passes_the_handler_job_types() {
         let store = Arc::new(FakeStore::with_jobs(1));
         store
@@ -792,6 +824,7 @@ mod tests {
         transition: Notify,
         recorded_retry_delay: Mutex<Option<chrono::Duration>>,
         claimed_job_types: Mutex<Vec<Vec<String>>>,
+        enqueue_during_claim: AtomicBool,
     }
 
     impl FakeStore {
@@ -808,6 +841,7 @@ mod tests {
                 transition: Notify::new(),
                 recorded_retry_delay: Mutex::new(None),
                 claimed_job_types: Mutex::new(Vec::new()),
+                enqueue_during_claim: AtomicBool::new(false),
             }
         }
 
@@ -832,7 +866,7 @@ mod tests {
             &'a self,
             _worker_id: &'a str,
             job_types: &'a [&'a str],
-            _now: chrono::DateTime<Utc>,
+            now: chrono::DateTime<Utc>,
             _lease_for: Duration,
         ) -> StoreFuture<'a, Result<Option<ClaimedJob>, StoreError>> {
             Box::pin(async move {
@@ -847,7 +881,17 @@ mod tests {
                 let position = jobs
                     .iter()
                     .position(|job| job_types.contains(&job.job_type.as_str()));
-                Ok(position.and_then(|position| jobs.remove(position)))
+                let claimed = position.and_then(|position| jobs.remove(position));
+                if claimed.as_ref().is_some_and(|job| job.created_at > now) {
+                    return Err(StoreError::InvalidInput(
+                        "updated_at would precede created_at".to_owned(),
+                    ));
+                }
+                if self.enqueue_during_claim.swap(false, Ordering::SeqCst) {
+                    std::thread::sleep(Duration::from_millis(2));
+                    jobs.push_back(fake_job(100));
+                }
+                Ok(claimed)
             })
         }
 

@@ -1,0 +1,248 @@
+{
+  "schemaVersion": 1,
+  "hubCommit": "74fe77bc2f9d07ed3534ad9f7773de814f443f4c",
+  "responses": {
+    "token": {
+      "status": 200,
+      "source": "docs/platform-api.md#get-a-token and e2e/fake-product/unit.rs token mock (Keycloak 26.8.0 client-credentials response)",
+      "body": {
+        "access_token": "recorded-platform-token",
+        "expires_in": 300,
+        "refresh_expires_in": 0,
+        "token_type": "Bearer",
+        "not-before-policy": 0,
+        "scope": "credits:read credits:spend organizations:read"
+      }
+    },
+    "creditBalance": {
+      "status": 200,
+      "source": "backend/tests/platform.rs credit_routes_spend_only_the_caller_wallet_and_map_ledger_errors (hebkit balance after a 10-credit pack) and PlatformCreditBalanceDto in backend/crates/schluesselbund-api/src/routes/platform_credits.rs",
+      "body": {
+        "suiteSubject": "suite-dev|alice",
+        "wallet": "hebkit",
+        "available": 10,
+        "revision": 0,
+        "pools": [],
+        "grant": {
+          "granted": 0,
+          "used": 0,
+          "available": 0
+        },
+        "packs": [
+          {
+            "remaining": 10,
+            "expiresAt": 1795392000
+          }
+        ]
+      }
+    },
+    "reservationPending": {
+      "status": 200,
+      "source": "backend/tests/platform.rs credit_routes_spend_only_the_caller_wallet_and_map_ledger_errors (reserve job-1) and PlatformCreditReservationDto in backend/crates/schluesselbund-api/src/routes/platform_credits.rs",
+      "body": {
+        "id": "018f1234-5678-7abc-8def-012345678901",
+        "wallet": "hebkit",
+        "amount": 4,
+        "charged": null,
+        "status": "pending",
+        "expiresAt": 1792800900
+      }
+    },
+    "reservationSettled": {
+      "status": 200,
+      "source": "backend/tests/platform.rs credit_routes_spend_only_the_caller_wallet_and_map_ledger_errors (settle actualAmount 9, charged 4)",
+      "body": {
+        "id": "018f1234-5678-7abc-8def-012345678901",
+        "wallet": "hebkit",
+        "amount": 4,
+        "charged": 4,
+        "status": "settled",
+        "expiresAt": 1792800900
+      }
+    },
+    "reservationReleased": {
+      "status": 200,
+      "source": "backend/tests/platform.rs credit_routes_spend_only_the_caller_wallet_and_map_ledger_errors (release job-2)",
+      "body": {
+        "id": "018f1234-5678-7abc-8def-012345678902",
+        "wallet": "hebkit",
+        "amount": 2,
+        "charged": null,
+        "status": "released",
+        "expiresAt": 1792800900
+      }
+    },
+    "creditsInsufficient": {
+      "status": 409,
+      "source": "backend/crates/schluesselbund-api/src/routes/platform_credits.rs map_credit_error; asserted in backend/tests/platform.rs",
+      "body": {
+        "error": {
+          "code": "credits_insufficient",
+          "message": "Not enough credits",
+          "requestId": "9b2f3c1e-4d5a-4b6c-8d7e-0f1a2b3c4d5e",
+          "details": {}
+        }
+      }
+    },
+    "creditsIdempotencyConflict": {
+      "status": 409,
+      "source": "backend/crates/schluesselbund-api/src/routes/platform_credits.rs map_credit_error; asserted in backend/tests/platform.rs",
+      "body": {
+        "error": {
+          "code": "credits_idempotency_conflict",
+          "message": "The request conflicts with an earlier one",
+          "requestId": "9b2f3c1e-4d5a-4b6c-8d7e-0f1a2b3c4d5e",
+          "details": {}
+        }
+      }
+    },
+    "creditsReservationExpired": {
+      "status": 409,
+      "source": "backend/crates/schluesselbund-api/src/routes/platform_credits.rs map_credit_error; asserted in backend/tests/platform.rs",
+      "body": {
+        "error": {
+          "code": "credits_reservation_expired",
+          "message": "The reservation expired",
+          "requestId": "9b2f3c1e-4d5a-4b6c-8d7e-0f1a2b3c4d5e",
+          "details": {}
+        }
+      }
+    },
+    "creditsReservationNotFound": {
+      "status": 404,
+      "source": "backend/crates/schluesselbund-api/src/routes/platform_credits.rs map_credit_error; asserted in backend/tests/platform.rs",
+      "body": {
+        "error": {
+          "code": "credits_reservation_not_found",
+          "message": "Reservation not found",
+          "requestId": "9b2f3c1e-4d5a-4b6c-8d7e-0f1a2b3c4d5e",
+          "details": {}
+        }
+      }
+    },
+    "creditsWalletUnknown": {
+      "status": 404,
+      "source": "backend/crates/schluesselbund-api/src/routes/platform_credits.rs map_credit_error",
+      "body": {
+        "error": {
+          "code": "credits_wallet_unknown",
+          "message": "The calling product has no wallet",
+          "requestId": "9b2f3c1e-4d5a-4b6c-8d7e-0f1a2b3c4d5e",
+          "details": {}
+        }
+      }
+    },
+    "creditsAmountInvalid": {
+      "status": 400,
+      "source": "backend/crates/schluesselbund-api/src/routes/platform_credits.rs map_credit_error; asserted in backend/tests/platform.rs",
+      "body": {
+        "error": {
+          "code": "credits_amount_invalid",
+          "message": "Invalid credit amount",
+          "requestId": "9b2f3c1e-4d5a-4b6c-8d7e-0f1a2b3c4d5e",
+          "details": {}
+        }
+      }
+    },
+    "creditsIdempotencyKeyInvalid": {
+      "status": 400,
+      "source": "backend/crates/schluesselbund-api/src/routes/platform_credits.rs map_credit_error; asserted in backend/tests/platform.rs",
+      "body": {
+        "error": {
+          "code": "credits_idempotency_key_invalid",
+          "message": "Invalid idempotency key",
+          "requestId": "9b2f3c1e-4d5a-4b6c-8d7e-0f1a2b3c4d5e",
+          "details": {}
+        }
+      }
+    },
+    "creditsUnavailable": {
+      "status": 503,
+      "source": "backend/crates/schluesselbund-api/src/routes/platform_credits.rs map",
+      "body": {
+        "error": {
+          "code": "platform_credits_unavailable",
+          "message": "Credits are unavailable",
+          "requestId": "9b2f3c1e-4d5a-4b6c-8d7e-0f1a2b3c4d5e",
+          "details": {}
+        }
+      }
+    },
+    "subjectNotFound": {
+      "status": 404,
+      "source": "backend/crates/schluesselbund-api/src/routes/platform.rs map_error",
+      "body": {
+        "error": {
+          "code": "platform_subject_not_found",
+          "message": "Subject not found",
+          "requestId": "9b2f3c1e-4d5a-4b6c-8d7e-0f1a2b3c4d5e",
+          "details": {}
+        }
+      }
+    },
+    "accountInactive": {
+      "status": 403,
+      "source": "backend/crates/schluesselbund-api/src/routes/platform.rs map_error",
+      "body": {
+        "error": {
+          "code": "account_inactive",
+          "message": "Account is inactive",
+          "requestId": "9b2f3c1e-4d5a-4b6c-8d7e-0f1a2b3c4d5e",
+          "details": {}
+        }
+      }
+    },
+    "scopeMissing": {
+      "status": 403,
+      "source": "docs/platform-api.md#limits-and-errors; asserted in backend/tests/platform.rs",
+      "body": {
+        "error": {
+          "code": "platform_scope_missing",
+          "message": "The required scope is missing",
+          "requestId": "9b2f3c1e-4d5a-4b6c-8d7e-0f1a2b3c4d5e",
+          "details": {
+            "scope": "credits:spend"
+          }
+        }
+      }
+    },
+    "unauthenticated": {
+      "status": 401,
+      "source": "docs/platform-api.md#limits-and-errors (Baukit ApiError::unauthenticated)",
+      "body": {
+        "error": {
+          "code": "unauthenticated",
+          "message": "Authentication is required",
+          "requestId": "9b2f3c1e-4d5a-4b6c-8d7e-0f1a2b3c4d5e",
+          "details": {}
+        }
+      }
+    },
+    "organizationSummary": {
+      "status": 200,
+      "source": "backend/tests/platform.rs organization summary test (business.runtime_analyzer.professional, quantity 4, one seat) and PlatformOrganizationDto in backend/openapi.json",
+      "body": {
+        "organizationId": "018f1234-5678-7abc-8def-012345678901",
+        "status": "active",
+        "productId": "runtime_analyzer",
+        "tier": "professional",
+        "features": [],
+        "paidQuantity": 4,
+        "assignedSeats": 1,
+        "revision": 1
+      }
+    },
+    "organizationNotFound": {
+      "status": 404,
+      "source": "backend/crates/schluesselbund-api/src/routes/platform.rs map_error; asserted in backend/tests/platform.rs",
+      "body": {
+        "error": {
+          "code": "platform_organization_not_found",
+          "message": "Organization not found",
+          "requestId": "9b2f3c1e-4d5a-4b6c-8d7e-0f1a2b3c4d5e",
+          "details": {}
+        }
+      }
+    }
+  }
+}
