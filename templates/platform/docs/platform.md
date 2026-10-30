@@ -48,7 +48,13 @@ HTTPS by default, rejects redirects and limits responses to 64 KiB. Adapt its
 address policy for an explicitly allowed private hub. The token is an injected
 credential. Rotate it before expiry, or replace the source through
 `platform::compose_with(pool, config, source, events)` with an adapter that
-refreshes client-credentials tokens. Never put this token in a browser or app.
+refreshes client-credentials tokens, such as one built on
+`baukit_suite::platform::HubClient`. Never put this token in a browser or app.
+
+`HubClient` caches its client-credentials token and refreshes it before expiry
+or once after a 401. `PlatformConfig::credits` returns `ZeroCostCredits` in
+standalone mode and `HubCredits` in hub mode for metered actions, and
+`HubOrganizations` reads organization summaries after `organization.updated`.
 
 Run migrations before starting the API. On cache miss or expiry, reads pull
 current state. Entitlement notifications also pull before their receipt

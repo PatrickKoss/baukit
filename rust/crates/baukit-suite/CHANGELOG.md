@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Add the `organization.updated` and `credits.changed` platform events from the hub contract. Breaking: `PlatformEventKind` gains `OrganizationUpdated` and `CreditsChanged`, so exhaustive matches need new arms, and handlers now receive these events instead of having them recorded as unknown. The decoder checks the envelope `userId` against each type's natural key, which is `organizationId` for organization updates.
+- Add `HubClient` and `HubClientConfig` for `/platform/v1` calls with a cached client-credentials token. The client refreshes a token 30 seconds before expiry, or at half its lifetime when that is shorter, and retries once after a 401.
+- Add the `Credits` port with reserve, settle, release and balance, `ZeroCostCredits` for standalone mode, `HubCredits` for the hub, `CreditsError` for the hub credit error codes and `PlatformConfig::credits`.
+- Add the `OrganizationDirectory` port and `HubOrganizations` for `GET /platform/v1/organizations/{id}`.
+
 ## [0.11.3] - 2026-10-28
 
 ## [0.11.2] - 2026-10-28

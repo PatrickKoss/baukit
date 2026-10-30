@@ -122,6 +122,31 @@ impl PlatformConfig {
             )
         })
     }
+    /// `ZeroCostCredits` in standalone mode, otherwise `HubCredits` through `hub`.
+    pub fn credits(
+        &self,
+        hub: Option<Arc<super::HubClient>>,
+    ) -> Result<Arc<dyn super::Credits>, ValidationErrors> {
+        self.validate()?;
+        if self.standalone() {
+            return Ok(Arc::new(super::ZeroCostCredits::new(
+                self.product_id.clone(),
+            )));
+        }
+        let hub = hub.ok_or_else(|| {
+            ValidationErrors::new(vec![ValidationError::new(
+                "platform_client",
+                "is required for credits in hub mode",
+            )])
+        })?;
+        if hub.product_id() != self.product_id {
+            return Err(ValidationErrors::new(vec![ValidationError::new(
+                "platform_client",
+                "must use platform.product_id",
+            )]));
+        }
+        Ok(Arc::new(super::HubCredits::new(hub)))
+    }
     pub fn receiver(
         &self,
         inbox: Arc<dyn PlatformInbox>,

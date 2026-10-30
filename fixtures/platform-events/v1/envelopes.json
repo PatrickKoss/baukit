@@ -103,5 +103,30 @@
       "suiteSubject": "suite|person-123",
       "assigned": true
     }
+  },
+  {
+    "eventId": "platform-fixture-9",
+    "type": "schluesselbund.organization.updated",
+    "userId": "018f1234-5678-7abc-8def-012345678901",
+    "occurredAt": "2026-10-18T10:00:00Z",
+    "sourceApp": "schluesselbund",
+    "schemaVersion": 1,
+    "payload": {
+      "organizationId": "018f1234-5678-7abc-8def-012345678901",
+      "revision": 7
+    }
+  },
+  {
+    "eventId": "platform-fixture-10",
+    "type": "schluesselbund.credits.changed",
+    "userId": "suite|person-123",
+    "occurredAt": "2026-10-18T10:00:00Z",
+    "sourceApp": "schluesselbund",
+    "schemaVersion": 1,
+    "payload": {
+      "suiteSubject": "suite|person-123",
+      "wallet": "hebkit",
+      "revision": 4
+    }
   }
 ]
