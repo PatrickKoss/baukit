@@ -20,6 +20,11 @@ ORDER=(
   notifications-core notifications-expo
 )
 
+PUBLISH_ATTEMPTS=3
+RETRY_BACKOFF_SECONDS=20
+REGISTRY_POLLS=6
+REGISTRY_POLL_SECONDS=10
+
 version=$(python3 -c "
 import json
 print(json.load(open('typescript/packages/a11y-core/package.json'))['version'])
@@ -37,6 +42,33 @@ except Exception:
 " | grep -q yes
 }
 
+# npm can reject a publish whose upload the registry already committed, and
+# its read side lags, so poll before deciding the version is missing.
+landed_after_failure() {
+  local name=$1 poll
+  for (( poll = 1; poll <= REGISTRY_POLLS; poll++ )); do
+    already_published "$name" && return 0
+    sleep "$REGISTRY_POLL_SECONDS"
+  done
+  return 1
+}
+
+publish_package() {
+  local name=$1 dir=$2 attempt
+  for (( attempt = 1; attempt <= PUBLISH_ATTEMPTS; attempt++ )); do
+    ( cd "$dir" && npm publish --access public --ignore-scripts ) && return 0
+    if landed_after_failure "$name"; then
+      echo "== @baukit/$name $version reached npm despite the error, continuing"
+      return 0
+    fi
+    (( attempt < PUBLISH_ATTEMPTS )) || break
+    echo "== retrying @baukit/$name in $(( RETRY_BACKOFF_SECONDS * attempt ))s (attempt $(( attempt + 1 ))/$PUBLISH_ATTEMPTS)" >&2
+    sleep $(( RETRY_BACKOFF_SECONDS * attempt ))
+  done
+  echo "publishing @baukit/$name $version failed after $PUBLISH_ATTEMPTS attempts; see the output above" >&2
+  return 1
+}
+
 for pkg in "${ORDER[@]}"; do
   dir="typescript/packages/$pkg"
   [[ -d $dir ]] || { echo "unknown package directory: $dir" >&2; exit 1; }
@@ -50,7 +82,7 @@ for pkg in "${ORDER[@]}"; do
   echo "== publishing @baukit/$pkg $version"
   # --ignore-scripts: dist/ is already built by the caller; `prepare` would
   # rebuild it once per package and roughly double the job runtime.
-  ( cd "$dir" && npm publish --access public --ignore-scripts )
+  publish_package "$pkg" "$dir"
 done
 
 echo "all ${#ORDER[@]} packages published at $version"
