@@ -88,6 +88,14 @@ pub enum HubError {
     Rejected { status: u16, code: Option<String> },
 }
 
+/// Encodes every byte except ASCII alphanumerics and `*-._`, so `|` in a
+/// suite subject becomes `%7C`.
+fn encode_segment(segment: &str) -> String {
+    url::form_urlencoded::byte_serialize(segment.as_bytes())
+        .map(|part| if part == "+" { "%20" } else { part })
+        .collect()
+}
+
 struct CachedToken {
     value: Secret<String>,
     refresh_at: Instant,
@@ -192,11 +200,15 @@ impl HubClient {
     }
     fn url(&self, segments: &[&str]) -> Result<Url, HubError> {
         let mut url = self.api_url.clone();
-        url.path_segments_mut()
-            .map_err(|_| HubError::InvalidResponse)?
-            .pop_if_empty()
-            .extend(["platform", "v1"])
-            .extend(segments);
+        if url.cannot_be_a_base() {
+            return Err(HubError::InvalidResponse);
+        }
+        let mut path = url.path().trim_end_matches('/').to_owned();
+        for segment in ["platform", "v1"].iter().chain(segments) {
+            path.push('/');
+            path.push_str(&encode_segment(segment));
+        }
+        url.set_path(&path);
         Ok(url)
     }
     fn url_with_query(&self, segments: &[&str], query: &[(&str, &str)]) -> Result<Url, HubError> {
@@ -394,6 +406,12 @@ mod tests {
         assert_eq!(
             plain.as_str(),
             "https://hub.example/api/platform/v1/organizations/a%2Fb%20c/members"
+        );
+        assert_eq!(
+            hub.url(&["accounts", "suite-dev|alice", "organizations"])
+                .expect("url")
+                .path(),
+            "/api/platform/v1/accounts/suite-dev%7Calice/organizations"
         );
     }
 }

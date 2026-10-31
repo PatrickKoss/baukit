@@ -90,6 +90,8 @@ export interface CreditBalance {
 export type OrganizationStatus = 'active' | 'suspended';
 export interface OrganizationSummary {
   readonly organizationId: string;
+  /** Display name. Absent from a hub before Schlüsselbund C16. */
+  readonly name?: string;
   readonly status: OrganizationStatus;
   readonly productId: string;
   readonly tier: string;
@@ -99,6 +101,19 @@ export interface OrganizationSummary {
   readonly assignedSeats: number;
   /** Matches the latest `organization.updated` event, or 0 before the first. */
   readonly revision: number;
+}
+
+export type OrganizationRole = 'owner' | 'admin' | 'billing' | 'member';
+/** An organization in which a subject can use the calling product. */
+export interface SubjectOrganization {
+  readonly organizationId: string;
+  readonly accountRole: OrganizationRole;
+}
+/** `GET /platform/v1/accounts/{suiteSubject}/organizations`, sorted by organization ID. */
+export interface SubjectOrganizationPage {
+  readonly items: readonly SubjectOrganization[];
+  /** `null` on the last page. */
+  readonly nextCursor: string | null;
 }
 
 /** Hub error codes the Rust credits port maps to typed errors. */

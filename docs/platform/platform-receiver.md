@@ -222,14 +222,19 @@ release calls do not emit one. On `PlatformEventKind::CreditsChanged`, call
 
 `HubOrganizations::new(hub)` implements `OrganizationDirectory::summary(id)` with
 `GET /platform/v1/organizations/{id}` and the `organizations:read` scope.
-`OrganizationSummary` holds `status`, the caller product's `tier`, `features`,
-`paid_quantity` (`None` without a seat limit), `assigned_seats` and `revision`.
+`OrganizationSummary` holds the display `name`, `status`, the caller product's
+`tier`, `features`, `paid_quantity` (`None` without a seat limit),
+`assigned_seats` and `revision`. `name` is `None` from a hub before
+Schlüsselbund C16. Membership products have no seats, so `assigned_seats` is 0
+for them.
 An unknown or invisible organization returns `OrganizationError::NotFound`. A
 summary for another organization or product is `HubError::InvalidResponse`.
 `organization.updated` carries only `organizationId` and `revision`, so read the
 summary for current values when it arrives.
 
-`HubOrganizations::members(id, cursor)` reads one page of the seat directory,
+`HubOrganizations::members(id, cursor)` reads one page of the members who can
+use the calling product. For a business product these are the seat holders. For
+a membership product every active member counts. The route is
 `GET /platform/v1/organizations/{id}/members?product=<caller>&cursor=<cursor>`.
 The product comes from the hub client. Start with `None` and pass each
 `next_cursor` until it is `None`:
@@ -249,6 +254,18 @@ loop {
 Each `OrganizationMember` has `suite_subject` and `account_role` (`owner`,
 `admin`, `billing` or `member`). A malformed or foreign cursor returns
 `HubError::Rejected` with code `invalid_pagination`.
+
+`HubOrganizations::organizations_for_subject(suite_subject, cursor)` lists the
+organizations where one subject can use the calling product,
+`GET /platform/v1/accounts/{suiteSubject}/organizations?product=<caller>&cursor=<cursor>`.
+It needs the hub from Schlüsselbund C16 on. The client percent-encodes the
+subject, so `suite-dev|alice` goes out as `suite-dev%7Calice`. Each
+`SubjectOrganization` has `organization_id` and the subject's `account_role`.
+Pages sort by organization ID and follow `next_cursor` like `members`. An
+unknown subject gets an empty page, not an error. A 401 after the token refresh
+is `HubError::Unauthorized`, a missing scope or a foreign product is
+`HubError::Rejected` with status 403, a bad cursor is `HubError::Rejected` with
+`invalid_pagination`, and 408, 429 and 5xx map to `OrganizationError::Unavailable`.
 
 For other routes with query parameters, call
 `hub.get_json_with_query(&segments, &[(name, value)])`. Names and values are

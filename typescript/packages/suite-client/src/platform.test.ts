@@ -6,6 +6,7 @@ import {
   type CreditBalance,
   type CreditReservation,
   type OrganizationSummary,
+  type SubjectOrganizationPage,
   type PlatformEventPayloads,
 } from './index.js';
 
@@ -72,6 +73,7 @@ it('matches recorded hub credit and organization responses', () => {
   };
   const summary: OrganizationSummary = {
     organizationId: '018f1234-5678-7abc-8def-012345678901',
+    name: 'Summary',
     status: 'active',
     productId: 'runtime_analyzer',
     tier: 'professional',
@@ -84,6 +86,35 @@ it('matches recorded hub credit and organization responses', () => {
   expect(body('reservationPending')).toEqual(pending);
   expect(body('reservationSettled')).toEqual({ ...pending, charged: 4, status: 'settled' });
   expect(body('organizationSummary')).toEqual(summary);
+  const withoutName: OrganizationSummary = {
+    organizationId: summary.organizationId,
+    status: summary.status,
+    productId: summary.productId,
+    tier: summary.tier,
+    features: summary.features,
+    paidQuantity: summary.paidQuantity,
+    assignedSeats: summary.assignedSeats,
+    revision: summary.revision,
+  };
+  expect(body('organizationSummaryWithoutName')).toStrictEqual(withoutName);
+});
+
+it('matches recorded subject organization pages', () => {
+  const first: SubjectOrganizationPage = {
+    items: [
+      { organizationId: '018f1234-5678-7abc-8def-012345678901', accountRole: 'owner' },
+      { organizationId: '018f1234-5678-7abc-8def-012345678902', accountRole: 'member' },
+    ],
+    nextCursor: 'b3Jncy1wYWdlLTI',
+  };
+  const last: SubjectOrganizationPage = {
+    items: [{ organizationId: '018f1234-5678-7abc-8def-012345678903', accountRole: 'admin' }],
+    nextCursor: null,
+  };
+  const empty: SubjectOrganizationPage = { items: [], nextCursor: null };
+  expect(body('subjectOrganizationsFirstPage')).toEqual(first);
+  expect(body('subjectOrganizationsLastPage')).toEqual(last);
+  expect(body('subjectOrganizationsEmpty')).toEqual(empty);
 });
 
 it('lists the recorded credit error codes', () => {
