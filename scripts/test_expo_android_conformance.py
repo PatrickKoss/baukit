@@ -120,7 +120,7 @@ expo_android_install
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.read_events()[0],
-            f"gradle -p {self.example}/android --no-daemon --stacktrace "
+            f"gradle -p {self.example}/android --no-daemon --stacktrace --warning-mode all "
             "-PreactNativeDevServerIp=127.0.0.1 assembleDebug")
 
     def test_preparation_failures_stop_both_all_and_prepare_phases(self) -> None:

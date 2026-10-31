@@ -3,6 +3,7 @@
 # shellcheck shell=bash
 
 EMULATOR_EXIT_SECONDS=30
+EXPO_ANDROID_SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 expo_android_init() {
   example_dir="$1"
@@ -168,7 +169,9 @@ expo_android_boot() {
 
 expo_android_install() {
   JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+$JAVA_TOOL_OPTIONS }--enable-native-access=ALL-UNNAMED" \
-    "$example_dir/android/gradlew" -p "$example_dir/android" --no-daemon --stacktrace -PreactNativeDevServerIp=127.0.0.1 assembleDebug
+    "$example_dir/android/gradlew" -p "$example_dir/android" --no-daemon --stacktrace --warning-mode all -PreactNativeDevServerIp=127.0.0.1 assembleDebug \
+    2>&1 | tee "$artifacts/assemble.log"
+  python3 "$EXPO_ANDROID_SCRIPTS/check-gradle-deprecations.py" --project "$example_dir" "$artifacts/assemble.log"
   expo_adb install -r "$example_dir/android/app/build/outputs/apk/debug/app-debug.apk"
   expo_adb reverse tcp:8081 "tcp:$METRO_PORT"
   expo_adb shell "run-as $app_id sh -c 'mkdir -p shared_prefs && printf %s \"<?xml version=\\\"1.0\\\" encoding=\\\"utf-8\\\" standalone=\\\"yes\\\" ?><map><string name=\\\"debug_http_host\\\">localhost:8081</string></map>\" > shared_prefs/${app_id}_preferences.xml'"

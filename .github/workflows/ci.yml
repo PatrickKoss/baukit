@@ -36,6 +36,7 @@ jobs:
               - 'scripts/android-sdk-setup.sh'
               - 'scripts/ci-free-disk.sh'
               - 'scripts/ci-android-ndk.sh'
+              - 'scripts/check-gradle-deprecations.py'
               - 'cli/**'
               - 'templates/common/.github/**'
               - 'templates/mobile/**'
@@ -56,6 +57,7 @@ jobs:
               - 'scripts/android-sdk-setup.sh'
               - 'scripts/ci-free-disk.sh'
               - 'scripts/ci-android-ndk.sh'
+              - 'scripts/check-gradle-deprecations.py'
               - 'scripts/expo-android-conformance.sh'
               - 'examples/expo-sqlite-conformance/**'
               - 'typescript/pnpm-lock.yaml'
@@ -67,6 +69,7 @@ jobs:
               - 'scripts/android-sdk-setup.sh'
               - 'scripts/ci-free-disk.sh'
               - 'scripts/ci-android-ndk.sh'
+              - 'scripts/check-gradle-deprecations.py'
               - 'scripts/expo-android-conformance.sh'
               - 'examples/expo-notifications-conformance/**'
               - 'fixtures/zoned-time/**'
@@ -554,7 +557,9 @@ jobs:
         working-directory: .generated-native-fixture/fixture/mobile
         run: |
           set -o pipefail
-          bash scripts/android-java.sh ./android/gradlew -p android --no-daemon --stacktrace -PreactNativeDevServerIp=127.0.0.1 assembleDebug 2>&1 | tee native-assemble.log
+          bash scripts/android-java.sh ./android/gradlew -p android --no-daemon --stacktrace --warning-mode all -PreactNativeDevServerIp=127.0.0.1 assembleDebug 2>&1 | tee native-assemble.log
+      - name: Check Gradle deprecations from Baukit-owned files
+        run: python3 scripts/check-gradle-deprecations.py --project .generated-native-fixture/fixture/mobile .generated-native-fixture/fixture/mobile/native-assemble.log
       - name: Upload native failure diagnostics
         if: ${{ failure() }}
         uses: actions/upload-artifact@v7.0.1
