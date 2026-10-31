@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-10-31
+
 ## [0.12.0] - 2026-10-30
 
 - Add the `organization.updated` and `credits.changed` platform events from the hub contract. Breaking: `PlatformEventKind` gains `OrganizationUpdated` and `CreditsChanged`, so exhaustive matches need new arms, and handlers now receive these events instead of having them recorded as unknown. The decoder checks the envelope `userId` against each type's natural key, which is `organizationId` for organization updates.

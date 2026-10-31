@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-10-31
+
 - Generated mobile apps depend on `@baukit/purchases-core`, `@baukit/purchases-revenuecat` and `react-native-purchases` 10.14.0. `EXPO_PUBLIC_REVENUECAT_IOS_API_KEY`, `EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY` and `EXPO_PUBLIC_REVENUECAT_OFFERING_ID` reach `extra.revenueCat`. Without a key the app uses the no-op port. `AppShell` provides the purchase flow and resets it on sign-out. Doctor does not require the new dependencies in existing products.
 
 ## [0.12.0] - 2026-10-30
