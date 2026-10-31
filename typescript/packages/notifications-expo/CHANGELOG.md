@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.12.2
+
+### Patch Changes
+
+- Release the coordinated baukit 0.12.2 train.
+- Updated dependencies
+  - @baukit/notifications-core@0.12.2
+
 ## 0.12.1
 
 ### Patch Changes

@@ -3,7 +3,7 @@
 Install the CLI from the release tag:
 
 ```sh
-cargo install --git https://github.com/PatrickKoss/baukit --tag v0.12.1 --locked baukit-cli
+cargo install --git https://github.com/PatrickKoss/baukit --tag v0.12.2 --locked baukit-cli
 baukit --version
 ```
 
