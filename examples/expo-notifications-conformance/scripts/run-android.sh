@@ -15,14 +15,14 @@ expo_android_boot
 expo_android_install
 expo_android_start_metro
 
-adb shell pm grant "$app_id" "$permission"
+expo_adb shell pm grant "$app_id" "$permission"
 expo_android_launch
 expo_android_await_markers "$fail_marker" BAUKIT_HERMES_VECTORS_PASS BAUKIT_NOTIFICATIONS_GRANTED_PASS
 cp "$artifacts/logcat.txt" "$artifacts/logcat-granted.txt"
 
 # user-fixed makes the runtime request answer "denied" without showing a prompt.
-adb shell am force-stop "$app_id"
-adb shell pm revoke "$app_id" "$permission"
-adb shell pm set-permission-flags "$app_id" "$permission" user-fixed
+expo_adb shell am force-stop "$app_id"
+expo_adb shell pm revoke "$app_id" "$permission"
+expo_adb shell pm set-permission-flags "$app_id" "$permission" user-fixed
 expo_android_launch
 expo_android_await_markers "$fail_marker" BAUKIT_HERMES_VECTORS_PASS BAUKIT_NOTIFICATIONS_DENIED_PASS

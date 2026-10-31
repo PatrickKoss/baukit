@@ -168,5 +168,56 @@ printf 'caller-options %s\n' "${JAVA_TOOL_OPTIONS:-}" >> "$EVENTS"
                 self.assertEqual(self.read_events()[-1], f"caller-options {options}")
 
 
+class ExpoAndroidSerialTest(unittest.TestCase):
+    def run_driver(self, body: str, serial: str = "") -> subprocess.CompletedProcess[str]:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        example = Path(directory.name) / "examples/conformance"
+        example.mkdir(parents=True)
+        driver = 'set -euo pipefail\nsource "$1"\nexpo_android_init "$2" dev.baukit.conformance\ntrap - EXIT\n' + body
+        environment = os.environ.copy()
+        environment.pop("ANDROID_SERIAL", None)
+        if serial:
+            environment["ANDROID_SERIAL"] = serial
+        return subprocess.run(
+            ["bash", "-c", driver, "test", str(SCRIPT), str(example)],
+            env=environment, text=True, capture_output=True, check=False,
+        )
+
+    def test_picks_the_first_port_no_attached_device_uses(self) -> None:
+        result = self.run_driver(
+            "adb() { printf 'List of devices attached\\nemulator-5554\\tdevice\\nemulator-5556\\tdevice\\n'; }\n"
+            "expo_android_pick_serial\necho \"$android_serial\"\n"
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "emulator-5558")
+
+    def test_honors_android_serial_and_pins_every_adb_call(self) -> None:
+        result = self.run_driver(
+            "adb() { echo \"adb $*\"; }\nexpo_android_pick_serial\nexpo_adb emu kill\n",
+            serial="emulator-5590",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "adb -s emulator-5590 emu kill")
+
+    def test_rejects_a_non_emulator_serial(self) -> None:
+        result = self.run_driver("", serial="R58M12345")
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ANDROID_SERIAL must name an emulator", result.stderr)
+
+    def test_cleanup_kills_an_emulator_that_ignores_emu_kill(self) -> None:
+        result = self.run_driver(
+            "EMULATOR_EXIT_SECONDS=1\nadb() { :; }\nsleep 600 &\nemulator_pid=$!\n"
+            "android_serial=emulator-5554\nstart=$SECONDS\nexpo_android_cleanup\n"
+            "kill -0 \"$emulator_pid\" 2>/dev/null && exit 3\necho $((SECONDS - start))\n"
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertLess(int(result.stdout.strip()), 10)
+
+
 if __name__ == "__main__":
     unittest.main()
