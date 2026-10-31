@@ -34,6 +34,9 @@ jobs:
               - '.github/workflows/ci.yml'
               - 'Makefile'
               - 'scripts/android-sdk-setup.sh'
+              - 'scripts/ci-free-disk.sh'
+              - 'scripts/ci-android-ndk.sh'
+              - 'scripts/check-gradle-deprecations.py'
               - 'cli/**'
               - 'templates/common/.github/**'
               - 'templates/mobile/**'
@@ -52,6 +55,9 @@ jobs:
               - '.github/workflows/ci.yml'
               - 'Makefile'
               - 'scripts/android-sdk-setup.sh'
+              - 'scripts/ci-free-disk.sh'
+              - 'scripts/ci-android-ndk.sh'
+              - 'scripts/check-gradle-deprecations.py'
               - 'scripts/expo-android-conformance.sh'
               - 'examples/expo-sqlite-conformance/**'
               - 'typescript/pnpm-lock.yaml'
@@ -61,6 +67,9 @@ jobs:
               - '.github/workflows/ci.yml'
               - 'Makefile'
               - 'scripts/android-sdk-setup.sh'
+              - 'scripts/ci-free-disk.sh'
+              - 'scripts/ci-android-ndk.sh'
+              - 'scripts/check-gradle-deprecations.py'
               - 'scripts/expo-android-conformance.sh'
               - 'examples/expo-notifications-conformance/**'
               - 'fixtures/zoned-time/**'
@@ -483,6 +492,8 @@ jobs:
             flags: --auth workos
     steps:
       - uses: actions/checkout@v7.0.1
+      - name: Free runner disk
+        run: bash scripts/ci-free-disk.sh
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-node@v7.0.0
         with:
@@ -529,6 +540,15 @@ jobs:
         run: |
           set -o pipefail
           CI=1 pnpm exec expo prebuild --clean --platform android 2>&1 | tee native-prebuild.log
+      - name: Find pinned Android NDK
+        id: native-ndk
+        run: bash scripts/ci-android-ndk.sh version .generated-native-fixture/fixture/mobile >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ${{ steps.native-ndk.outputs.path }}
+          key: ${{ runner.os }}-android-ndk-${{ steps.native-ndk.outputs.version }}
+      - name: Install pinned Android NDK
+        run: bash scripts/ci-android-ndk.sh install "${{ steps.native-ndk.outputs.version }}"
       - uses: gradle/actions/setup-gradle@v6.4.0
         with:
           cache-provider: basic
@@ -537,7 +557,9 @@ jobs:
         working-directory: .generated-native-fixture/fixture/mobile
         run: |
           set -o pipefail
-          bash scripts/android-java.sh ./android/gradlew -p android --no-daemon --stacktrace -PreactNativeDevServerIp=127.0.0.1 assembleDebug 2>&1 | tee native-assemble.log
+          bash scripts/android-java.sh ./android/gradlew -p android --no-daemon --stacktrace --warning-mode all -PreactNativeDevServerIp=127.0.0.1 assembleDebug 2>&1 | tee native-assemble.log
+      - name: Check Gradle deprecations from Baukit-owned files
+        run: python3 scripts/check-gradle-deprecations.py --project .generated-native-fixture/fixture/mobile .generated-native-fixture/fixture/mobile/native-assemble.log
       - name: Upload native failure diagnostics
         if: ${{ failure() }}
         uses: actions/upload-artifact@v7.0.1
@@ -579,6 +601,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
+      - name: Free runner disk
+        run: bash scripts/ci-free-disk.sh
       - uses: actions/setup-node@v7.0.0
         with:
           node-version-file: typescript/.nvmrc
@@ -609,6 +633,15 @@ jobs:
             ${{ runner.os }}-pnpm-
       - name: Prepare Expo SQLite Android project
         run: make expo-sqlite-conformance-prepare
+      - name: Find pinned Android NDK
+        id: sqlite-ndk
+        run: bash scripts/ci-android-ndk.sh version examples/expo-sqlite-conformance >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ${{ steps.sqlite-ndk.outputs.path }}
+          key: ${{ runner.os }}-android-ndk-${{ steps.sqlite-ndk.outputs.version }}
+      - name: Install pinned Android NDK
+        run: bash scripts/ci-android-ndk.sh install "${{ steps.sqlite-ndk.outputs.version }}"
       - uses: gradle/actions/setup-gradle@v6.4.0
         with:
           cache-provider: basic
@@ -656,6 +689,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
+      - name: Free runner disk
+        run: bash scripts/ci-free-disk.sh
       - uses: actions/setup-node@v7.0.0
         with:
           node-version-file: typescript/.nvmrc
@@ -686,6 +721,15 @@ jobs:
             ${{ runner.os }}-pnpm-
       - name: Prepare Expo notifications Android project
         run: make expo-notifications-conformance-prepare
+      - name: Find pinned Android NDK
+        id: notifications-ndk
+        run: bash scripts/ci-android-ndk.sh version examples/expo-notifications-conformance >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ${{ steps.notifications-ndk.outputs.path }}
+          key: ${{ runner.os }}-android-ndk-${{ steps.notifications-ndk.outputs.version }}
+      - name: Install pinned Android NDK
+        run: bash scripts/ci-android-ndk.sh install "${{ steps.notifications-ndk.outputs.version }}"
       - uses: gradle/actions/setup-gradle@v6.4.0
         with:
           cache-provider: basic

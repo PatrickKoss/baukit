@@ -58,6 +58,23 @@ hardware virtualization and an API 36 x86_64 emulator image. Locally,
 `$HOME/Android/Sdk`; `make native-android-gate` compiles a clean generated
 fixture and `make expo-sqlite-conformance` boots the emulator.
 
+Gradle downloads the NDK that React Native pins in
+`node_modules/react-native/gradle/libs.versions.toml`, 27.1.12297006 for React
+Native 0.86.3. The hosted runner image does not ship that version. Baukit CI
+reads it with `scripts/ci-android-ndk.sh`, restores it from the Actions cache,
+and installs it with `sdkmanager` on a cache miss. A clean generated fixture
+build takes about 10.5 GB for the project tree plus about 4.5 GB of Gradle user home
+on a cold cache, so `scripts/ci-free-disk.sh` first removes .NET, Swift,
+Haskell, Boost, PowerShell, Julia, CodeQL, and the cached Docker images from the
+runner. Both scripts refuse to run outside GitHub Actions.
+
+Baukit's Android builds run Gradle with `--warning-mode all`.
+`scripts/check-gradle-deprecations.py` then fails the build when a Gradle
+deprecation comes from a file Baukit owns. It counts lines of the generated
+`android/` project that match the Expo template as Expo's, and anything under
+`node_modules/` or inside AGP and the Kotlin Gradle plugin as third-party. Those
+third-party deprecations still block `--warning-mode fail`.
+
 iOS requires macOS, Xcode, CocoaPods as selected by Expo, and available
 Simulator runtime capacity. It is deliberately scheduled/manual because its
 runner is slower and more expensive. A developer on Linux or WSL2 must record

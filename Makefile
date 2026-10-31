@@ -85,7 +85,8 @@ android-sdk-setup:
 	./scripts/android-sdk-setup.sh
 
 native-android-gate: android-sdk-setup
-	@fixture_parent="$$(mktemp -d)"; \
+	@set -e; \
+	fixture_parent="$$(mktemp -d)"; \
 	trap 'rm -rf "$$fixture_parent"' EXIT; \
 	corepack pnpm@12.9.1 --dir $(TS_DIR) install --frozen-lockfile --ignore-scripts; \
 	corepack pnpm@12.9.1 --dir $(TS_DIR) --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/data-contracts --filter @baukit/data-contracts-expo-sqlite --filter @baukit/localization-core --filter @baukit/ui-tokens --filter @baukit/navigation --filter @baukit/purchases-core --filter @baukit/purchases-revenuecat run build; \
@@ -95,7 +96,11 @@ native-android-gate: android-sdk-setup
 	corepack pnpm@12.9.1 --dir "$$fixture_parent/fixture/mobile" exec expo install --check; \
 	(cd "$$fixture_parent/fixture/mobile" && BAUKIT_QA_BUILD=1 CI=1 ./node_modules/.bin/expo prebuild --clean --platform android --no-install); \
 	ANDROID_HOME="$${ANDROID_HOME:-$$HOME/Android/Sdk}" ANDROID_SDK_ROOT="$${ANDROID_SDK_ROOT:-$${ANDROID_HOME:-$$HOME/Android/Sdk}}" \
-		bash "$$fixture_parent/fixture/mobile/scripts/android-java.sh" "$$fixture_parent/fixture/mobile/android/gradlew" -p "$$fixture_parent/fixture/mobile/android" --no-daemon --stacktrace -PreactNativeDevServerIp=127.0.0.1 assembleDebug
+		bash "$$fixture_parent/fixture/mobile/scripts/android-java.sh" "$$fixture_parent/fixture/mobile/android/gradlew" -p "$$fixture_parent/fixture/mobile/android" --no-daemon --stacktrace --warning-mode all -PreactNativeDevServerIp=127.0.0.1 assembleDebug \
+		> "$$fixture_parent/assemble.log" 2>&1 || build_status=$$?; \
+	cat "$$fixture_parent/assemble.log"; \
+	test "$${build_status:-0}" -eq 0; \
+	python3 scripts/check-gradle-deprecations.py --project "$$fixture_parent/fixture/mobile" "$$fixture_parent/assemble.log"
 
 expo-sqlite-conformance:
 	./examples/expo-sqlite-conformance/scripts/run-android.sh
