@@ -229,6 +229,35 @@ summary for another organization or product is `HubError::InvalidResponse`.
 `organization.updated` carries only `organizationId` and `revision`, so read the
 summary for current values when it arrives.
 
+`HubOrganizations::members(id, cursor)` reads one page of the seat directory,
+`GET /platform/v1/organizations/{id}/members?product=<caller>&cursor=<cursor>`.
+The product comes from the hub client. Start with `None` and pass each
+`next_cursor` until it is `None`:
+
+```rust
+let mut cursor = None;
+loop {
+    let page = organizations.members(id, cursor.as_deref()).await?;
+    store_seats(page.items);
+    cursor = page.next_cursor;
+    if cursor.is_none() {
+        break;
+    }
+}
+```
+
+Each `OrganizationMember` has `suite_subject` and `account_role` (`owner`,
+`admin`, `billing` or `member`). A malformed or foreign cursor returns
+`HubError::Rejected` with code `invalid_pagination`.
+
+For other routes with query parameters, call
+`hub.get_json_with_query(&segments, &[(name, value)])`. Names and values are
+form-encoded in the given order, path segments are percent-encoded as in
+`get_json`, and an empty slice sends no `?`. The call uses the same cached token,
+single 401 retry and `HubError` mapping. Runtime Analyzer and
+architecture-health-platform can drop their own client-credentials token fetch
+and page the seat directory through the shared `HubClient`.
+
 The contract tests in `tests/platform_hub.rs` serve the recorded hub bodies from
 [`fixtures/platform-api/v1`](../../fixtures/platform-api/README.md) on a local mock
 server. `@baukit/suite-client` exports the matching `CreditBalance`,

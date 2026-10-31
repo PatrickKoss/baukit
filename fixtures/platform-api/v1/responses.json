@@ -243,6 +243,48 @@
           "details": {}
         }
       }
+    },
+    "organizationMembersFirstPage": {
+      "status": 200,
+      "source": "docs/platform-api.md#business-seat-directory, BusinessMemberPageDto and MembersQuery in backend/crates/schluesselbund-api/src/routes/platform.rs, and the two-page members test in backend/tests/platform.rs. Hand-recorded: subjects and cursor are illustrative (first page, query product=runtime_analyzer)",
+      "body": {
+        "items": [
+          {
+            "suiteSubject": "suite-dev|alice",
+            "accountRole": "owner"
+          },
+          {
+            "suiteSubject": "suite-dev|bob",
+            "accountRole": "member"
+          }
+        ],
+        "nextCursor": "c2VhdHMtcGFnZS0y"
+      }
+    },
+    "organizationMembersLastPage": {
+      "status": 200,
+      "source": "docs/platform-api.md#business-seat-directory, BusinessMemberPageDto and MembersQuery in backend/crates/schluesselbund-api/src/routes/platform.rs, and the two-page members test in backend/tests/platform.rs. Hand-recorded: subjects and cursor are illustrative (last page, query product=runtime_analyzer&cursor=c2VhdHMtcGFnZS0y)",
+      "body": {
+        "items": [
+          {
+            "suiteSubject": "suite-dev|carol",
+            "accountRole": "billing"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    "invalidPagination": {
+      "status": 400,
+      "source": "backend/crates/schluesselbund-api/src/routes/platform.rs business_members (invalid limit or cursor)",
+      "body": {
+        "error": {
+          "code": "invalid_pagination",
+          "message": "Invalid limit or cursor",
+          "requestId": "9b2f3c1e-4d5a-4b6c-8d7e-0f1a2b3c4d5e",
+          "details": {}
+        }
+      }
     }
   }
 }
