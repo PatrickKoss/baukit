@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## 0.13.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.13.0 train.
+- 1d2c3b4: `OrganizationSummary` gains an optional `name`, the organization's display name. A hub before Schlüsselbund C16 omits it. New `OrganizationRole`, `SubjectOrganization` and `SubjectOrganizationPage` types mirror `GET /platform/v1/accounts/{suiteSubject}/organizations`.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/integrations-client@0.13.0
+  - @baukit/localization-core@0.13.0
+
 ## 0.12.2
 
 ### Patch Changes

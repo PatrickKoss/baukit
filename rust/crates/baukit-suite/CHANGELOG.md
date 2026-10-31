@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-31
+
 - Breaking: `OrganizationSummary` gains `name: Option<String>`, the organization's display name. The struct is not `#[non_exhaustive]`, so struct literals and exhaustive patterns outside the crate need the new field, and the train takes a minor bump. Decoding still accepts a summary without `name` from a hub before Schlüsselbund C16.
 - Add `HubOrganizations::organizations_for_subject` for `GET /platform/v1/accounts/{suiteSubject}/organizations`, returning `SubjectOrganizationPage` with `SubjectOrganization` items and `next_cursor`. It needs Schlüsselbund C16.
 - `HubClient` path segments now percent-encode every byte except ASCII alphanumerics and `*-._`, so `|` in a suite subject goes out as `%7C`. The credit balance path changes accordingly; the hub decodes both forms.
