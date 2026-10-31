@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.13.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.13.0 train.
+
+### Patch Changes
+
+- 096ff16: `useFocusTrap` no longer throws when the document goes away before its deferred focus restore runs, for example after a Jest test resets `globalThis.document`.
+
 ## 0.12.2
 
 ### Patch Changes
