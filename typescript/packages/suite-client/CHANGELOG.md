@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## 0.12.2
+
+### Patch Changes
+
+- Release the coordinated baukit 0.12.2 train.
+- Updated dependencies
+  - @baukit/integrations-client@0.12.2
+  - @baukit/localization-core@0.12.2
+
 ## 0.12.1
 
 ### Patch Changes
