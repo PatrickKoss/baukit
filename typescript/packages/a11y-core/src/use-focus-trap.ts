@@ -191,7 +191,7 @@ export function useFocusTrap({
       restoreTimerRef.current = setTimeout(() => {
         restoreTimerRef.current = undefined;
         openerRef.current = undefined;
-        if (hasOutsideFocus(container)) return;
+        if (!hasDocument() || hasOutsideFocus(container)) return;
         const restoreOpener = restoreFocusRef.current?.() ?? true;
         const target =
           restoreOpener && isConnected(previouslyFocused)
