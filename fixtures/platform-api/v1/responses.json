@@ -220,7 +220,22 @@
     },
     "organizationSummary": {
       "status": 200,
-      "source": "backend/tests/platform.rs organization summary test (business.runtime_analyzer.professional, quantity 4, one seat) and PlatformOrganizationDto in backend/openapi.json",
+      "source": "backend/tests/platform.rs organization summary test (business.runtime_analyzer.professional, quantity 4, one seat) and PlatformOrganizationDto in backend/openapi.json; name from Schlüsselbund task/c16 51805a34 docs/platform-api.md#business-organizations and the summary test in backend/tests/platform.rs",
+      "body": {
+        "organizationId": "018f1234-5678-7abc-8def-012345678901",
+        "name": "Summary",
+        "status": "active",
+        "productId": "runtime_analyzer",
+        "tier": "professional",
+        "features": [],
+        "paidQuantity": 4,
+        "assignedSeats": 1,
+        "revision": 1
+      }
+    },
+    "organizationSummaryWithoutName": {
+      "status": 200,
+      "source": "Hub before Schlüsselbund task/c16 51805a34: the same summary without name",
       "body": {
         "organizationId": "018f1234-5678-7abc-8def-012345678901",
         "status": "active",
@@ -281,6 +296,56 @@
         "error": {
           "code": "invalid_pagination",
           "message": "Invalid limit or cursor",
+          "requestId": "9b2f3c1e-4d5a-4b6c-8d7e-0f1a2b3c4d5e",
+          "details": {}
+        }
+      }
+    },
+    "subjectOrganizationsFirstPage": {
+      "status": 200,
+      "source": "docs/platform-api.md#subject-organizations and subject_organizations_list_enabled_memberships_and_seats in backend/tests/platform.rs at Schlüsselbund task/c16 51805a34. Hand-recorded: organization IDs and cursor are illustrative (first page, query product=hebkit)",
+      "body": {
+        "items": [
+          {
+            "organizationId": "018f1234-5678-7abc-8def-012345678901",
+            "accountRole": "owner"
+          },
+          {
+            "organizationId": "018f1234-5678-7abc-8def-012345678902",
+            "accountRole": "member"
+          }
+        ],
+        "nextCursor": "b3Jncy1wYWdlLTI"
+      }
+    },
+    "subjectOrganizationsLastPage": {
+      "status": 200,
+      "source": "docs/platform-api.md#subject-organizations and subject_organizations_list_enabled_memberships_and_seats in backend/tests/platform.rs at Schlüsselbund task/c16 51805a34. Hand-recorded: organization IDs and cursor are illustrative (last page, query product=hebkit&cursor=b3Jncy1wYWdlLTI)",
+      "body": {
+        "items": [
+          {
+            "organizationId": "018f1234-5678-7abc-8def-012345678903",
+            "accountRole": "admin"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    "subjectOrganizationsEmpty": {
+      "status": 200,
+      "source": "docs/platform-api.md#subject-organizations and subject_organizations_list_enabled_memberships_and_seats in backend/tests/platform.rs at Schlüsselbund task/c16 51805a34. Hand-recorded: organization IDs and cursor are illustrative (unknown subject or no visible organizations)",
+      "body": {
+        "items": [],
+        "nextCursor": null
+      }
+    },
+    "productMismatch": {
+      "status": 403,
+      "source": "backend/tests/platform.rs subject organizations test at Schlüsselbund task/c16 51805a34 (product other than the caller)",
+      "body": {
+        "error": {
+          "code": "platform_product_mismatch",
+          "message": "The product must match the caller",
           "requestId": "9b2f3c1e-4d5a-4b6c-8d7e-0f1a2b3c4d5e",
           "details": {}
         }

@@ -215,7 +215,7 @@ async fn hub_credits_round_trip_recorded_responses() -> TestResult {
     assert_eq!(
         calls,
         vec![
-            ("GET", "/api/platform/v1/credits/suite-dev|alice", None),
+            ("GET", "/api/platform/v1/credits/suite-dev%7Calice", None),
             (
                 "POST",
                 "/api/platform/v1/credits/reservations",
@@ -444,6 +444,7 @@ async fn organization_summary_reads_recorded_responses() -> TestResult {
     let organizations = HubOrganizations::new(hub.client("runtime_analyzer")?);
     hub.state.script(&[
         "organizationSummary",
+        "organizationSummaryWithoutName",
         "organizationNotFound",
         "creditsUnavailable",
     ]);
@@ -452,6 +453,7 @@ async fn organization_summary_reads_recorded_responses() -> TestResult {
         summary,
         OrganizationSummary {
             organization_id: id,
+            name: Some("Summary".into()),
             status: OrganizationStatus::Active,
             product_id: "runtime_analyzer".into(),
             tier: "professional".into(),
@@ -459,6 +461,15 @@ async fn organization_summary_reads_recorded_responses() -> TestResult {
             paid_quantity: Some(4),
             assigned_seats: 1,
             revision: 1,
+        }
+    );
+    let older = organizations.summary(id).await?;
+    assert_eq!(older.name, None);
+    assert_eq!(
+        older,
+        OrganizationSummary {
+            name: None,
+            ..summary
         }
     );
     assert_eq!(
@@ -580,6 +591,130 @@ async fn organization_members_map_hub_errors() -> TestResult {
     ));
     assert_eq!(
         organizations.members(id, None).await,
+        Err(OrganizationError::Hub(HubError::InvalidResponse))
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn subject_organizations_page_through_recorded_responses() -> TestResult {
+    let hub = MockHub::start().await?;
+    let organizations = HubOrganizations::new(hub.client("hebkit")?);
+    hub.state.script(&[
+        "subjectOrganizationsFirstPage",
+        "subjectOrganizationsLastPage",
+        "subjectOrganizationsEmpty",
+    ]);
+    let mut cursor = None;
+    let mut listed = Vec::new();
+    loop {
+        let page = organizations
+            .organizations_for_subject(SUBJECT, cursor.as_deref())
+            .await?;
+        listed.extend(page.items);
+        cursor = page.next_cursor;
+        if cursor.is_none() {
+            break;
+        }
+    }
+    let item = |id: &str, role| -> Result<SubjectOrganization, uuid::Error> {
+        Ok(SubjectOrganization {
+            organization_id: Uuid::parse_str(id)?,
+            account_role: role,
+        })
+    };
+    assert_eq!(
+        listed,
+        vec![
+            item(ORGANIZATION, OrganizationRole::Owner)?,
+            item(
+                "018f1234-5678-7abc-8def-012345678902",
+                OrganizationRole::Member
+            )?,
+            item(
+                "018f1234-5678-7abc-8def-012345678903",
+                OrganizationRole::Admin
+            )?,
+        ]
+    );
+    let empty = organizations
+        .organizations_for_subject("suite-dev|nobody", None)
+        .await?;
+    assert_eq!(
+        empty,
+        SubjectOrganizationPage {
+            items: Vec::new(),
+            next_cursor: None,
+        }
+    );
+    let requests = hub.state.requests();
+    let calls: Vec<_> = requests
+        .iter()
+        .map(|r| (r.method.as_str(), r.path.as_str(), r.query.as_deref()))
+        .collect();
+    let path = "/api/platform/v1/accounts/suite-dev%7Calice/organizations";
+    assert_eq!(
+        calls,
+        vec![
+            ("GET", path, Some("product=hebkit")),
+            ("GET", path, Some("product=hebkit&cursor=b3Jncy1wYWdlLTI")),
+            (
+                "GET",
+                "/api/platform/v1/accounts/suite-dev%7Cnobody/organizations",
+                Some("product=hebkit")
+            ),
+        ]
+    );
+    assert_eq!(hub.state.token_calls(), 1, "all pages share one token");
+    Ok(())
+}
+
+#[tokio::test]
+async fn subject_organizations_map_hub_errors() -> TestResult {
+    let hub = MockHub::start().await?;
+    let organizations = HubOrganizations::new(hub.client("hebkit")?);
+    hub.state.script(&[
+        "unauthenticated",
+        "unauthenticated",
+        "scopeMissing",
+        "productMismatch",
+        "invalidPagination",
+        "creditsUnavailable",
+    ]);
+    assert_eq!(
+        organizations.organizations_for_subject(SUBJECT, None).await,
+        Err(OrganizationError::Hub(HubError::Unauthorized))
+    );
+    let rejected = |status, code: &str| {
+        Err(OrganizationError::Hub(HubError::Rejected {
+            status,
+            code: Some(code.into()),
+        }))
+    };
+    assert_eq!(
+        organizations.organizations_for_subject(SUBJECT, None).await,
+        rejected(403, "platform_scope_missing")
+    );
+    assert_eq!(
+        organizations.organizations_for_subject(SUBJECT, None).await,
+        rejected(403, "platform_product_mismatch")
+    );
+    assert_eq!(
+        organizations
+            .organizations_for_subject(SUBJECT, Some("forged"))
+            .await,
+        rejected(400, "invalid_pagination")
+    );
+    assert_eq!(
+        organizations.organizations_for_subject(SUBJECT, None).await,
+        Err(OrganizationError::Unavailable)
+    );
+    hub.state.script.lock().expect("script").push_back((
+        200,
+        json!({"items": [{"organizationId": "not-a-uuid", "accountRole": "owner"}]}),
+    ));
+    assert_eq!(
+        organizations.organizations_for_subject(SUBJECT, None).await,
         Err(OrganizationError::Hub(HubError::InvalidResponse))
     );
     Ok(())
