@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Add `HubClient::get_json_with_query` for paged `/platform/v1` routes. It form-encodes query names and values and shares `get_json`'s cached token, single 401 retry and error mapping. `get_json` is unchanged.
+- Add `HubOrganizations::members` for `GET /platform/v1/organizations/{id}/members`, returning `OrganizationMemberPage` with `OrganizationMember` items and `next_cursor`. Products no longer need their own client-credentials token for the seat directory.
+
 ## [0.12.1] - 2026-10-31
 
 ## [0.12.0] - 2026-10-30

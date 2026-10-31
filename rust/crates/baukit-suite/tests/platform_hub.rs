@@ -42,6 +42,7 @@ fn recorded(name: &str) -> (u16, Value) {
 struct Recorded {
     method: String,
     path: String,
+    query: Option<String>,
     authorization: Option<String>,
     body: Option<Value>,
 }
@@ -97,6 +98,7 @@ async fn platform(State(state): State<Arc<HubState>>, request: Request) -> Respo
     state.requests.lock().expect("requests").push(Recorded {
         method: parts.method.to_string(),
         path: parts.uri.path().to_owned(),
+        query: parts.uri.query().map(str::to_owned),
         authorization: parts
             .headers
             .get(header::AUTHORIZATION)
@@ -487,6 +489,150 @@ async fn organization_summary_reads_recorded_responses() -> TestResult {
     let invalid = Err(OrganizationError::Hub(HubError::InvalidResponse));
     assert_eq!(foreign.summary(id).await, invalid);
     assert_eq!(organizations.summary(Uuid::new_v4()).await, invalid);
+    Ok(())
+}
+
+#[tokio::test]
+async fn organization_members_page_through_recorded_responses() -> TestResult {
+    let hub = MockHub::start().await?;
+    let id = Uuid::parse_str(ORGANIZATION)?;
+    let organizations = HubOrganizations::new(hub.client("runtime_analyzer")?);
+    hub.state.script(&[
+        "organizationMembersFirstPage",
+        "organizationMembersLastPage",
+    ]);
+    let mut cursor = None;
+    let mut members = Vec::new();
+    loop {
+        let page = organizations.members(id, cursor.as_deref()).await?;
+        members.extend(page.items);
+        cursor = page.next_cursor;
+        if cursor.is_none() {
+            break;
+        }
+    }
+    let member = |subject: &str, role| OrganizationMember {
+        suite_subject: subject.into(),
+        account_role: role,
+    };
+    assert_eq!(
+        members,
+        vec![
+            member("suite-dev|alice", OrganizationRole::Owner),
+            member("suite-dev|bob", OrganizationRole::Member),
+            member("suite-dev|carol", OrganizationRole::Billing),
+        ]
+    );
+    let requests = hub.state.requests();
+    let path = format!("/api/platform/v1/organizations/{ORGANIZATION}/members");
+    let calls: Vec<_> = requests
+        .iter()
+        .map(|r| (r.method.as_str(), r.path.clone(), r.query.as_deref()))
+        .collect();
+    assert_eq!(
+        calls,
+        vec![
+            ("GET", path.clone(), Some("product=runtime_analyzer")),
+            (
+                "GET",
+                path,
+                Some("product=runtime_analyzer&cursor=c2VhdHMtcGFnZS0y")
+            ),
+        ]
+    );
+    assert!(
+        requests
+            .iter()
+            .all(|r| r.authorization.as_deref() == Some("Bearer recorded-platform-token-1"))
+    );
+    assert_eq!(hub.state.token_calls(), 1, "both pages share one token");
+    Ok(())
+}
+
+#[tokio::test]
+async fn organization_members_map_hub_errors() -> TestResult {
+    let hub = MockHub::start().await?;
+    let id = Uuid::parse_str(ORGANIZATION)?;
+    let organizations = HubOrganizations::new(hub.client("runtime_analyzer")?);
+    hub.state.script(&[
+        "organizationNotFound",
+        "invalidPagination",
+        "creditsUnavailable",
+    ]);
+    assert_eq!(
+        organizations.members(id, None).await,
+        Err(OrganizationError::NotFound)
+    );
+    assert_eq!(
+        organizations.members(id, Some("forged")).await,
+        Err(OrganizationError::Hub(HubError::Rejected {
+            status: 400,
+            code: Some("invalid_pagination".into()),
+        }))
+    );
+    assert_eq!(
+        organizations.members(id, None).await,
+        Err(OrganizationError::Unavailable)
+    );
+    hub.state.script.lock().expect("script").push_back((
+        200,
+        json!({"items": [{"suiteSubject": SUBJECT, "accountRole": "guest"}]}),
+    ));
+    assert_eq!(
+        organizations.members(id, None).await,
+        Err(OrganizationError::Hub(HubError::InvalidResponse))
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn hub_client_refreshes_once_after_401_with_a_query() -> TestResult {
+    let hub = MockHub::start().await?;
+    let client = hub.client("runtime_analyzer")?;
+    let query = [("product", "runtime_analyzer"), ("cursor", "a+b/c=")];
+    hub.state
+        .script(&["unauthenticated", "organizationMembersLastPage"]);
+    let page: OrganizationMemberPage = client
+        .get_json_with_query(&["organizations", ORGANIZATION, "members"], &query)
+        .await?;
+    assert_eq!(page.next_cursor, None);
+    let requests = hub.state.requests();
+    assert_eq!(requests.len(), 2);
+    for (request, token) in requests.iter().zip(["1", "2"]) {
+        assert_eq!(
+            request.query.as_deref(),
+            Some("product=runtime_analyzer&cursor=a%2Bb%2Fc%3D")
+        );
+        assert_eq!(
+            request.authorization.as_deref(),
+            Some(format!("Bearer recorded-platform-token-{token}").as_str())
+        );
+    }
+
+    hub.state.script(&["unauthenticated", "unauthenticated"]);
+    let result: Result<OrganizationMemberPage, _> = client
+        .get_json_with_query(&["organizations", ORGANIZATION, "members"], &query)
+        .await;
+    assert_eq!(result.err(), Some(HubError::Unauthorized));
+    assert_eq!(hub.state.requests().len(), 4, "only one retry per call");
+    assert_eq!(hub.state.token_calls(), 3);
+    Ok(())
+}
+
+#[tokio::test]
+async fn get_json_sends_no_query() -> TestResult {
+    let hub = MockHub::start().await?;
+    let client = hub.client("runtime_analyzer")?;
+    hub.state
+        .script(&["organizationSummary", "organizationSummary"]);
+    let plain: Value = client.get_json(&["organizations", ORGANIZATION]).await?;
+    let empty: Value = client
+        .get_json_with_query(&["organizations", ORGANIZATION], &[])
+        .await?;
+    assert_eq!(plain, empty);
+    let requests = hub.state.requests();
+    assert!(requests.iter().all(|r| r.query.is_none()));
+    assert_eq!(requests[0].path, requests[1].path);
     Ok(())
 }
 

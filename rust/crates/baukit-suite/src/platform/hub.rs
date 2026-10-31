@@ -169,6 +169,16 @@ impl HubClient {
     pub async fn get_json<T: DeserializeOwned>(&self, segments: &[&str]) -> Result<T, HubError> {
         self.send(EgressRequest::get(self.url(segments)?)).await
     }
+    /// `GET <api_url>/platform/v1/<segments>?<query>`. Names and values are
+    /// form-encoded in the given order. An empty `query` sends no `?`.
+    pub async fn get_json_with_query<T: DeserializeOwned>(
+        &self,
+        segments: &[&str],
+        query: &[(&str, &str)],
+    ) -> Result<T, HubError> {
+        self.send(EgressRequest::get(self.url_with_query(segments, query)?))
+            .await
+    }
     /// `POST <api_url>/platform/v1/<segments>` with a JSON body. A 401 retry
     /// repeats the request, so use it only for idempotent routes.
     pub async fn post_json<B: Serialize + Sync, T: DeserializeOwned>(
@@ -187,6 +197,13 @@ impl HubClient {
             .pop_if_empty()
             .extend(["platform", "v1"])
             .extend(segments);
+        Ok(url)
+    }
+    fn url_with_query(&self, segments: &[&str], query: &[(&str, &str)]) -> Result<Url, HubError> {
+        let mut url = self.url(segments)?;
+        if !query.is_empty() {
+            url.query_pairs_mut().extend_pairs(query);
+        }
         Ok(url)
     }
     async fn send<T: DeserializeOwned>(&self, request: EgressRequest) -> Result<T, HubError> {
@@ -314,4 +331,69 @@ fn base_url(value: &str) -> Option<Url> {
             && url.query().is_none()
             && url.fragment().is_none()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn client() -> HubClient {
+        let config = HubClientConfig {
+            api_url: "https://hub.example/api/".into(),
+            token_url: "https://hub.example/token".into(),
+            client_id: None,
+            client_secret: Some(Secret::new("secret".into())),
+        };
+        let guarded = GuardedClient::new(
+            baukit_egress::EgressOptions::default()
+                .with_error_body_limit(1024)
+                .expect("limit"),
+        )
+        .expect("client");
+        HubClient::new(&config, "runtime_analyzer", guarded).expect("hub client")
+    }
+
+    fn query_of(query: &[(&str, &str)]) -> Option<String> {
+        client()
+            .url_with_query(&["organizations", "a/b c", "members"], query)
+            .expect("url")
+            .query()
+            .map(str::to_owned)
+    }
+
+    #[test]
+    fn query_values_are_form_encoded_in_order() {
+        assert_eq!(
+            query_of(&[
+                ("product", "runtime_analyzer"),
+                ("cursor", "a+b/c=d&e?f#g%h"),
+            ])
+            .as_deref(),
+            Some("product=runtime_analyzer&cursor=a%2Bb%2Fc%3Dd%26e%3Ff%23g%25h")
+        );
+    }
+
+    #[test]
+    fn query_encodes_spaces_non_ascii_empty_values_and_names() {
+        assert_eq!(
+            query_of(&[("q", "Schlüssel bund"), ("empty", ""), ("a&b=c", "1")]).as_deref(),
+            Some("q=Schl%C3%BCssel+bund&empty=&a%26b%3Dc=1")
+        );
+        assert_eq!(
+            query_of(&[("product", "x"), ("product", "y")]).as_deref(),
+            Some("product=x&product=y")
+        );
+    }
+
+    #[test]
+    fn an_empty_query_keeps_the_get_json_url() {
+        let hub = client();
+        let segments = ["organizations", "a/b c", "members"];
+        let plain = hub.url(&segments).expect("url");
+        assert_eq!(hub.url_with_query(&segments, &[]).expect("url"), plain);
+        assert_eq!(
+            plain.as_str(),
+            "https://hub.example/api/platform/v1/organizations/a%2Fb%20c/members"
+        );
+    }
 }

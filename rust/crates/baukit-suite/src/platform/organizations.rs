@@ -28,6 +28,34 @@ pub struct OrganizationSummary {
     pub revision: u64,
 }
 
+/// A member's role in the organization, independent of the product.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OrganizationRole {
+    Owner,
+    Admin,
+    Billing,
+    Member,
+}
+
+/// A seat holder for the calling product.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrganizationMember {
+    pub suite_subject: String,
+    pub account_role: OrganizationRole,
+}
+
+/// One page of seat holders, sorted by the hub's account order.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrganizationMemberPage {
+    pub items: Vec<OrganizationMember>,
+    /// Pass to the next `members` call. `None` on the last page.
+    #[serde(default)]
+    pub next_cursor: Option<String>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum OrganizationError {
     /// `platform_organization_not_found`: unknown, or invisible to this product.
@@ -68,6 +96,24 @@ pub struct HubOrganizations {
 impl HubOrganizations {
     pub fn new(hub: Arc<HubClient>) -> Self {
         Self { hub }
+    }
+    /// Reads `GET /platform/v1/organizations/{id}/members?product=<caller>&cursor=`.
+    /// Start with `None` and pass each `next_cursor` until it is `None`. A
+    /// malformed or foreign cursor is `HubError::Rejected` with `invalid_pagination`.
+    pub async fn members(
+        &self,
+        organization_id: Uuid,
+        cursor: Option<&str>,
+    ) -> Result<OrganizationMemberPage, OrganizationError> {
+        let id = organization_id.to_string();
+        let mut query = vec![("product", self.hub.product_id())];
+        if let Some(cursor) = cursor {
+            query.push(("cursor", cursor));
+        }
+        Ok(self
+            .hub
+            .get_json_with_query(&["organizations", &id, "members"], &query)
+            .await?)
     }
 }
 #[async_trait]
