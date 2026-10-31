@@ -739,4 +739,40 @@ describe('useFocusTrap', () => {
 
     expect(document.activeElement?.id).toBe('confirm');
   });
+  it('does not throw when the document goes away before the restore runs', () => {
+    const opener = mount('<button>open</button>').firstElementChild as HTMLButtonElement;
+    opener.focus();
+    const host = mount('<button>inside</button>');
+    const view = renderHook(() => useFocusTrap({ active: true, containerRef: containerRef(host) }));
+
+    view.unmount();
+    vi.stubGlobal('document', undefined);
+    try {
+      expect(() => {
+        vi.runOnlyPendingTimers();
+      }).not.toThrow();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('cancels a pending restore when the trap reopens first', () => {
+    const opener = mount('<button>open</button>').firstElementChild as HTMLButtonElement;
+    opener.focus();
+    const host = mount('<button id="inside">inside</button>');
+    const view = renderHook(
+      ({ active }) => useFocusTrap({ active, containerRef: containerRef(host) }),
+      { initialProps: { active: true } },
+    );
+    const focus = vi.spyOn(opener, 'focus');
+
+    view.rerender({ active: false });
+    view.rerender({ active: true });
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+
+    expect(focus).not.toHaveBeenCalled();
+    expect(document.activeElement?.id).toBe('inside');
+  });
 });
