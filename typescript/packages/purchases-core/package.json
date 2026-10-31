@@ -1,6 +1,6 @@
 {
   "name": "@baukit/purchases-core",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "description": "Store-neutral mobile purchases: a purchases port, a no-op client, a purchase flow that waits for suite identity and the refreshed entitlement, and feature-key gating hooks.",
   "license": "MIT",
   "author": "Patrick Koss",
