@@ -9,6 +9,7 @@ module.exports = {
     'src/**/*.{ts,tsx}',
     '!src/**/*.test.{ts,tsx}',
     '!src/analytics.ts',
+    '!src/purchases.ts',
     '!src/app-shell.tsx',
     '!src/api.ts',
     '!src/action-button.tsx',

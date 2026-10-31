@@ -59,6 +59,10 @@ The product-root `limits.json` is the resource policy shared by backend, web, an
 
 Before claiming native accessibility, follow the VoiceOver and TalkBack release protocol in Baukit's `docs/platform/accessibility-contract.md`. Lint and Jest cannot validate spoken copy, traversal, gesture operation, or focus behavior on a real release binary.
 
+## Purchases
+
+`src/purchases.ts` builds one `PurchaseFlow` from `@baukit/purchases-core`. With `EXPO_PUBLIC_REVENUECAT_IOS_API_KEY` or `EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY` set it uses RevenueCat. Without them it uses the no-op port and the app behaves as before. `AppShell` provides the flow and resets it on sign-out. Call `purchaseFlow().identify(suiteSubject)` after sign-in and replace the standalone entitlement backend when the product joins the suite. Baukit's `docs/platform/mobile-purchases.md` has the full order.
+
 ## Native smoke guidance
 
 Android builds require Java 25. `corepack pnpm android` and the QA targets grant native access to Android's Prefab tool. Use `bash scripts/android-java.sh ./android/gradlew` with your Gradle arguments for direct builds.

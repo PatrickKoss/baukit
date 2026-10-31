@@ -91,6 +91,10 @@ Use `make e2e-android` or `make e2e-ios` for one disposable automated run. Mobil
 
 The Baukit packages come from {{ context.baukit_typescript_dependency_description }} and the generated lockfile makes the first install reproducible. Native compilation is outside the portable CI gates; run `corepack pnpm@12.9.1 typecheck`, `corepack pnpm@12.9.1 lint`, and `corepack pnpm@12.9.1 test`.
 
+## Purchases
+
+`src/purchases.ts` builds one `PurchaseFlow` from `@baukit/purchases-core`. With `EXPO_PUBLIC_REVENUECAT_IOS_API_KEY` or `EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY` set it uses RevenueCat. Without them it uses the no-op port and the app behaves as before. `AppShell` provides the flow and resets it on sign-out. Call `purchaseFlow().identify(suiteSubject)` after sign-in and replace the standalone entitlement backend when the product joins the suite. Baukit's `docs/platform/mobile-purchases.md` has the full order.
+
 ## Delete profile
 
 The Identity section links to `/delete-profile`. The screen requires a second explicit
