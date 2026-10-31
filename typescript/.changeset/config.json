@@ -22,6 +22,8 @@
       "@baukit/notifications-core",
       "@baukit/notifications-expo",
       "@baukit/preferences-core",
+      "@baukit/purchases-core",
+      "@baukit/purchases-revenuecat",
       "@baukit/pwa-web",
       "@baukit/suite-client",
       "@baukit/sync-client",

@@ -107,7 +107,7 @@ cargo test --manifest-path ".generated-fixture/$fixture_name/backend/Cargo.toml"
 ```
 
 (For web/mobile flavors, first build the local TS deps:
-`corepack pnpm --dir typescript install --frozen-lockfile && corepack pnpm --dir typescript --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/auth-native --filter @baukit/auth-node --filter @baukit/data-contracts --filter @baukit/ui-tokens --filter @baukit/navigation run build`.)
+`corepack pnpm --dir typescript install --frozen-lockfile && corepack pnpm --dir typescript --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/auth-native --filter @baukit/auth-node --filter @baukit/data-contracts --filter @baukit/ui-tokens --filter @baukit/navigation --filter @baukit/purchases-core --filter @baukit/purchases-revenuecat run build`.)
 
 ## Conventions
 

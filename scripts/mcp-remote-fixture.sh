@@ -9,7 +9,7 @@ fixture="$fixture_parent/$fixture_name"
 
 cargo build --manifest-path cli/Cargo.toml --bin baukit
 corepack pnpm --dir typescript install --frozen-lockfile
-corepack pnpm --dir typescript --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/auth-native --filter @baukit/auth-node --filter @baukit/data-contracts --filter @baukit/ui-tokens --filter @baukit/navigation run build
+corepack pnpm --dir typescript --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/auth-native --filter @baukit/auth-node --filter @baukit/data-contracts --filter @baukit/ui-tokens --filter @baukit/navigation --filter @baukit/purchases-core --filter @baukit/purchases-revenuecat run build
 cli/target/debug/baukit new "$fixture_name" --backend --web --mobile --worker --mcp --auth oidc --dir "$fixture_parent" --baukit-path rust
 cargo fmt --manifest-path "$fixture/backend/Cargo.toml" --all --check
 cargo clippy --manifest-path "$fixture/backend/Cargo.toml" --all-targets -- -D warnings

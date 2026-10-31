@@ -172,6 +172,10 @@ const EXPECTED_MOBILE_TYPESCRIPT_DEPENDENCIES: &[&str] = &[
     "@baukit/preferences-core",
 ];
 
+/// Generated with every mobile app; doctor does not require them in existing products.
+const MOBILE_PURCHASES_DEPENDENCIES: &[&str] =
+    &["@baukit/purchases-core", "@baukit/purchases-revenuecat"];
+
 const EXPECTED_MOBILE_AUTH_DEPENDENCIES: &[&str] = &["@baukit/auth-native"];
 const EXPECTED_WEB_AUTH_DEPENDENCIES: &[&str] = &["@baukit/auth-web"];
 const EXPECTED_WEB_AUTH_DEV_DEPENDENCIES: &[&str] = &["@baukit/auth-node"];
@@ -829,6 +833,7 @@ fn typescript_packages(mobile: bool, mobile_auth: bool, web_auth: bool) -> Vec<&
     if mobile {
         packages.extend(EXPECTED_MOBILE_TYPESCRIPT_DEPENDENCIES);
         packages.push("@baukit/analytics-posthog-native");
+        packages.extend(MOBILE_PURCHASES_DEPENDENCIES);
     }
     if mobile_auth {
         packages.extend(EXPECTED_MOBILE_AUTH_DEPENDENCIES);

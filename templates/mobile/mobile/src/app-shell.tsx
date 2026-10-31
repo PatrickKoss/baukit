@@ -11,6 +11,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import * as SQLite from 'expo-sqlite';
 import type { AnalyticsClient, ConsentState } from '@baukit/analytics-core';
 import { InMemoryRecordStore, type RecordStore } from '@baukit/data-contracts';
+import { PurchasesProvider } from '@baukit/purchases-core/react';
 
 import { loadAnalytics } from './analytics';
 import type { ProductEvent } from './analytics-client';
@@ -22,6 +23,7 @@ import {
   type ThemePreference,
 } from './app-preferences';
 import { initializeI18n } from './localization/i18n';
+import { purchaseFlow } from './purchases';
 import { createAppPreferenceRecordStore } from './record-store';
 import { AppThemeProvider, lightTheme } from './theme';
 import { PRODUCT_NAME } from './product';
@@ -60,6 +62,13 @@ export function AppShell({ children, preferenceSubjectId }: AppShellProps) {
   const [analytics, setAnalytics] = useState<AnalyticsClient<ProductEvent>>();
   const [preferences, setPreferences] = useState(defaultAppPreferences);
   const [ready, setReady] = useState(false);
+  const purchases = purchaseFlow();
+
+  useEffect(() => {
+    if (preferenceSubjectId === null) {
+      void purchases.signOut().catch(() => undefined);
+    }
+  }, [preferenceSubjectId, purchases]);
 
   useEffect(() => {
     let active = true;
@@ -199,7 +208,7 @@ export function AppShell({ children, preferenceSubjectId }: AppShellProps) {
   return (
     <AppPreferencesContext.Provider value={contextValue}>
       <AppThemeProvider mode={preferences.theme} persistMode={persistThemeMode}>
-        {children}
+        <PurchasesProvider flow={purchases}>{children}</PurchasesProvider>
       </AppThemeProvider>
     </AppPreferencesContext.Provider>
   );

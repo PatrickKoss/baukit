@@ -7,7 +7,7 @@
 
 The boring 80% of a Rust backend and its TypeScript clients, already built and already tested.
 
-*Baukit* is German for a construction kit, and that is the whole idea. Twenty-one Rust crates and twenty-two npm packages, each small enough to adopt on its own, plus a CLI that wires them into a working product when you want the whole thing.
+*Baukit* is German for a construction kit, and that is the whole idea. Twenty-one Rust crates and twenty-four npm packages, each small enough to adopt on its own, plus a CLI that wires them into a working product when you want the whole thing.
 
 > [!WARNING]
 > **Under heavy development. Expect breaking changes.**
@@ -144,6 +144,7 @@ Nothing here depends on the CLI, and no crate drags in the rest. Take the error 
 | [`@baukit/analytics-core`](typescript/packages/analytics-core) | Typed events with consent and privacy controls, PostHog transports for [web](typescript/packages/analytics-posthog-web) and [native](typescript/packages/analytics-posthog-native) |
 | [`@baukit/localization-core`](typescript/packages/localization-core) | Locale resolution, formatting policy, timezone-safe civil-date math |
 | [`@baukit/notifications-core`](typescript/packages/notifications-core) · [`-expo`](typescript/packages/notifications-expo) | Local notification planning across DST and time zones, and replacement that touches only the requests one namespace owns |
+| [`@baukit/purchases-core`](typescript/packages/purchases-core) · [`-revenuecat`](typescript/packages/purchases-revenuecat) | Mobile purchases that wait for the suite login, confirm through the backend-verified entitlement, and gate on its feature keys |
 | [`@baukit/preferences-core`](typescript/packages/preferences-core) | Identity-guarded preference controller |
 | [`@baukit/pwa-web`](typescript/packages/pwa-web) | Request classification and cache strategies for a service worker you own |
 | [`@baukit/events`](typescript/packages/events) | Zod schemas for the same envelope `baukit-events` speaks |

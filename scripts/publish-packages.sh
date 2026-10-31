@@ -18,6 +18,7 @@ ORDER=(
   analytics-posthog-native analytics-posthog-web
   data-contracts-dexie data-contracts-expo-sqlite
   notifications-core notifications-expo
+  purchases-core purchases-revenuecat
 )
 
 PUBLISH_ATTEMPTS=3

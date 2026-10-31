@@ -12,7 +12,7 @@ export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$fixture_parent/target}"
 
 cargo build --manifest-path cli/Cargo.toml --bin baukit --target-dir cli/target
 corepack pnpm --dir typescript install --frozen-lockfile
-corepack pnpm --dir typescript --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/auth-native --filter @baukit/auth-node --filter @baukit/data-contracts --filter @baukit/ui-tokens --filter @baukit/navigation --filter @baukit/pwa-web run build
+corepack pnpm --dir typescript --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/auth-native --filter @baukit/auth-node --filter @baukit/data-contracts --filter @baukit/ui-tokens --filter @baukit/navigation --filter @baukit/purchases-core --filter @baukit/purchases-revenuecat --filter @baukit/pwa-web run build
 
 flavors=(backend web mobile mobile-pwa combined mcp auth clerk workos platform-standalone platform)
 if (($#)); then flavors=("$@"); fi

@@ -9,7 +9,7 @@
 - Everything is private-first: repositories live under `github.com/patrickkoss` and nothing is published to public registries until the go-public decision (Phase 4 of the analysis). Optionally register the free reservations early as squatting protection (the `@baukit` npm organization, which also confirms scope availability, and the GitHub organization), but publish nothing under them.
 - At the go-public decision: create/activate the GitHub and npm organizations, publish the crates.io names, check `baukit.dev`, and add license files.
 - Rust crate names live in [`rust/crates/*/Cargo.toml`](../../rust/crates/). The [README crate table](../../README.md#rust) describes all twenty-one, including `baukit-data-subject`.
-- npm package names live in [`typescript/packages/*/package.json`](../../typescript/packages/). The [README package table](../../README.md#typescript) describes all twenty-one, including `@baukit/navigation`.
+- npm package names live in [`typescript/packages/*/package.json`](../../typescript/packages/). The [README package table](../../README.md#typescript) describes all twenty-four, including `@baukit/purchases-core` and `@baukit/purchases-revenuecat`.
 - CLI binary: `baukit`.
 
 ## Wire names
