@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+- Breaking: the aliases `trimmed_text_length` and `compact_document_bytes` are gone. Use `trimmed_unicode_scalar_count` and `compact_json_utf8_bytes` from `baukit_core::limits`. The train takes a minor bump.
+
 ## [0.13.0] - 2026-10-31
 
 ## [0.12.2] - 2026-10-31

@@ -110,8 +110,8 @@ product.
 Use `baukit-test` in product tests:
 
 - `check_limit_boundaries` checks payloads built at `limit - 1`, `limit`, and `limit + 1`.
-- `trimmed_text_length` and `compact_document_bytes` use the contract's text and document
-  measurements.
+- `baukit_core::limits::trimmed_unicode_scalar_count` and `compact_json_utf8_bytes` use the
+  contract's text and document measurements.
 - `LiveRowLimitAdapter` with `check_update_at_capacity` proves updates do not consume capacity.
 - `LiveRowLimitAdapter` with `check_soft_delete_capacity_reuse` proves soft deletion releases a slot.
 - `NamedIngress` with `check_ingress_reason_code_parity` invokes each write path and compares the

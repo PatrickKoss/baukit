@@ -115,7 +115,7 @@ pub use limits::{
     assert_ingress_reason_code_parity, assert_limit_boundaries, assert_reason_code_conformance,
     assert_soft_delete_capacity_reuse, assert_update_at_capacity, check_ingress_reason_code_parity,
     check_limit_boundaries, check_reason_code_conformance, check_soft_delete_capacity_reuse,
-    check_update_at_capacity, compact_document_bytes, trimmed_text_length,
+    check_update_at_capacity,
 };
 pub use live_row_cap::{
     LiveRowCapConformanceCases, LiveRowCapConformanceError, PostgresLiveRowCapAdapter,

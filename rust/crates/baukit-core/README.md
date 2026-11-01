@@ -105,13 +105,6 @@ assert_eq!(interval.maximum(), 2678400);
 Range checks use `u64` because duration seconds do not depend on pointer width. The existing
 length and count checks keep `usize`. Range checks accept zero and equal bounds.
 
-### Migration from `baukit-test`
-
-Production code should replace `baukit_test::trimmed_text_length` with
-`baukit_core::limits::trimmed_unicode_scalar_count`, and replace
-`baukit_test::compact_document_bytes` with `baukit_core::limits::compact_json_utf8_bytes`. The old
-`baukit-test` names remain available and delegate to these functions.
-
 ## CSV export
 
 `export::encode_csv` writes RFC 4180 CSV for user-facing exports. Every record ends with CRLF, and a

@@ -212,9 +212,6 @@ pub struct ShutdownToken {
     drain_timeout: Duration,
 }
 
-/// A concise alias for [`ShutdownToken`].
-pub type Shutdown = ShutdownToken;
-
 impl ShutdownToken {
     /// Creates a shutdown handle with the maximum duration allowed for draining.
     pub fn new(drain_timeout: Duration) -> Self {

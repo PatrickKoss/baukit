@@ -442,9 +442,7 @@ check_limit_boundaries(
 # }
 ```
 
-Production code should import measurements and checks from `baukit_core::limits`. The
-`trimmed_text_length` and `compact_document_bytes` names remain as compatibility aliases in
-`baukit-test`, but both now call the `baukit-core` implementation.
+Import measurements and checks from `baukit_core::limits`.
 
 Implement `LiveRowLimitAdapter` around a fresh owner or parent fixture. Run
 `check_update_at_capacity` and `check_soft_delete_capacity_reuse` separately because each helper fills
