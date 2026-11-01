@@ -7,7 +7,7 @@ use axum::{
 };
 use serde::de::DeserializeOwned;
 
-use crate::{ApiError, options::JsonRejectionMode};
+use crate::{ApiError, JsonRejectionCodes};
 
 /// A JSON body extractor whose rejections use Baukit's standard error envelope.
 ///
@@ -28,15 +28,15 @@ where
     type Rejection = ApiError;
 
     async fn from_request(request: Request, state: &S) -> Result<Self, Self::Rejection> {
-        let rejection_mode = request
+        let codes = request
             .extensions()
-            .get::<JsonRejectionMode>()
+            .get::<JsonRejectionCodes>()
             .cloned()
-            .unwrap_or_else(|| JsonRejectionMode::Legacy("validation_failed".to_owned()));
+            .unwrap_or_default();
         Json::<T>::from_request(request, state)
             .await
             .map(|Json(value)| Self(value))
-            .map_err(|rejection| ApiError::json_rejection(&rejection, &rejection_mode))
+            .map_err(|rejection| ApiError::json_rejection(&rejection, &codes))
     }
 }
 

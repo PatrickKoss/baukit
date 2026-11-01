@@ -17,8 +17,7 @@
 //!
 //! let options = HttpOptions::default()
 //!     .with_allowed_origins(["https://app.example.com"])?
-//!     .with_additional_allowed_headers(["accept", "x-webhook-secret"])?
-//!     .with_json_rejection_code("invalid_json")?;
+//!     .with_additional_allowed_headers(["accept", "x-webhook-secret"])?;
 //! let app = finalize(Router::new().route("/hello", get(hello)), options);
 //! # let _: Router = app;
 //! # Ok::<(), baukit_http::HttpOptionsError>(())

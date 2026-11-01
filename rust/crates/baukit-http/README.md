@@ -109,7 +109,7 @@ clients then need two parsers for one API.
 
 ### JSON rejection classes
 
-`ApiJson<T>` can retain the reason Axum rejected a JSON body. Enable this behavior with
+`ApiJson<T>` keeps the reason Axum rejected a JSON body. Replace the codes with
 `HttpOptions::with_json_rejection_codes`. The default class codes are:
 
 | Rejection | Status | Default code | Safe detail |
@@ -139,17 +139,7 @@ Baukit never copies the submitted body, Axum rejection text, or serde parser det
 response or request logs. Products map the stable codes to their own user-facing text. Products also
 set route-specific body limits, for example with Axum's `DefaultBodyLimit`.
 
-### Migration from one JSON rejection code
-
-No change is required for current consumers. `HttpOptions::default()` and
-`with_json_rejection_code("invalid_json")` keep the previous behavior: every `ApiJson<T>` rejection
-returns status 400 with the one configured code. This compatibility mode remains available for this
-release cycle.
-
-To distinguish oversized bodies and content-type failures, replace `with_json_rejection_code` with
-`with_json_rejection_codes`. Review clients for the new 413, 415, and 422 statuses before making the
-switch. The global `HttpOptions::body_size_limit` uses the configured body-too-large code in
-class-specific mode.
+The global `HttpOptions::body_size_limit` uses the configured body-too-large code.
 
 ## Request locale extraction
 

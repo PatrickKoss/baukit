@@ -11,9 +11,8 @@ const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Stable error codes for each JSON extractor rejection class.
 ///
-/// Supplying this through [`HttpOptions::with_json_rejection_codes`] enables
-/// class-specific statuses and codes. Products still choose route body limits
-/// and the text shown to users.
+/// [`HttpOptions::with_json_rejection_codes`] replaces the default set.
+/// Products still choose route body limits and the text shown to users.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct JsonRejectionCodes {
     body_too_large: String,
@@ -87,12 +86,6 @@ pub enum ResponseCachePolicy {
     HandlerOwned,
 }
 
-#[derive(Clone, Debug)]
-pub(crate) enum JsonRejectionMode {
-    Legacy(String),
-    Classified(JsonRejectionCodes),
-}
-
 /// Configuration for the shared HTTP layer stack.
 ///
 /// CORS denies cross-origin access until explicit origins are supplied through
@@ -112,7 +105,7 @@ pub struct HttpOptions {
     pub(crate) additional_allowed_headers: Vec<HeaderName>,
     pub(crate) additional_exposed_headers: Vec<HeaderName>,
     pub(crate) response_cache_policy: ResponseCachePolicy,
-    pub(crate) json_rejection_mode: JsonRejectionMode,
+    pub(crate) json_rejection_codes: JsonRejectionCodes,
 }
 
 impl HttpOptions {
@@ -195,49 +188,20 @@ impl HttpOptions {
         self.response_cache_policy
     }
 
-    /// Overrides the error code returned when [`crate::ApiJson`] rejects a body.
+    /// Replaces the class-specific JSON rejection codes.
     ///
-    /// The default is `validation_failed`. The replacement must be a non-empty
-    /// snake_case identifier.
-    pub fn with_json_rejection_code(
-        mut self,
-        code: impl Into<String>,
-    ) -> Result<Self, HttpOptionsError> {
-        self.json_rejection_mode =
-            JsonRejectionMode::Legacy(valid_json_rejection_code(code.into())?);
-        Ok(self)
-    }
-
-    /// Enables class-specific JSON rejection statuses and codes.
-    ///
-    /// This preserves Axum's protocol statuses, including `413 Payload Too
+    /// Rejections keep Axum's protocol statuses, including `413 Payload Too
     /// Large`, `415 Unsupported Media Type`, and `422 Unprocessable Entity`.
     #[must_use]
     pub fn with_json_rejection_codes(mut self, codes: JsonRejectionCodes) -> Self {
-        self.json_rejection_mode = JsonRejectionMode::Classified(codes);
+        self.json_rejection_codes = codes;
         self
     }
 
-    /// Returns the single JSON rejection code in compatibility mode.
-    ///
-    /// In class-specific mode this returns the data-shape code to preserve the
-    /// existing return type. Use [`HttpOptions::json_rejection_codes`] to read
-    /// all four codes.
+    /// Returns the class-specific JSON rejection codes.
     #[must_use]
-    pub fn json_rejection_code(&self) -> &str {
-        match &self.json_rejection_mode {
-            JsonRejectionMode::Legacy(code) => code,
-            JsonRejectionMode::Classified(codes) => codes.data_shape(),
-        }
-    }
-
-    /// Returns the class-specific JSON rejection codes when that mode is active.
-    #[must_use]
-    pub fn json_rejection_codes(&self) -> Option<&JsonRejectionCodes> {
-        match &self.json_rejection_mode {
-            JsonRejectionMode::Legacy(_) => None,
-            JsonRejectionMode::Classified(codes) => Some(codes),
-        }
+    pub fn json_rejection_codes(&self) -> &JsonRejectionCodes {
+        &self.json_rejection_codes
     }
 
     /// Builds options from Baukit's standard public-listener configuration.
@@ -254,7 +218,7 @@ impl HttpOptions {
             additional_allowed_headers: Vec::new(),
             additional_exposed_headers: Vec::new(),
             response_cache_policy: ResponseCachePolicy::default(),
-            json_rejection_mode: JsonRejectionMode::Legacy("validation_failed".to_owned()),
+            json_rejection_codes: JsonRejectionCodes::default(),
         }
         .validate()
     }
@@ -284,7 +248,7 @@ impl Default for HttpOptions {
             additional_allowed_headers: Vec::new(),
             additional_exposed_headers: Vec::new(),
             response_cache_policy: ResponseCachePolicy::default(),
-            json_rejection_mode: JsonRejectionMode::Legacy("validation_failed".to_owned()),
+            json_rejection_codes: JsonRejectionCodes::default(),
         }
     }
 }
