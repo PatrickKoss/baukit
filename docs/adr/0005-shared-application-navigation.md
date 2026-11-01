@@ -4,11 +4,9 @@
 
 Accepted, 2026-10-03.
 
-Supersedes the navigation ownership decision in [ADR 0001](0001-product-experience-package-boundaries.md),
-the [next improvements plan](../next-improvements-plan.md) at its product-owned navigation exclusion,
-the [Expo UI and accessibility study](../studies/31-expo-ui-and-headless-accessibility.md), and the introduction to
-the [accessibility contract](../platform/accessibility-contract.md). Their other package boundaries and
-accessibility requirements still apply.
+Supersedes the navigation ownership decision in [ADR 0001](0001-product-experience-package-boundaries.md)
+and the introduction to the [accessibility contract](../platform/accessibility-contract.md). Their other
+package boundaries and accessibility requirements still apply.
 
 ## Context
 

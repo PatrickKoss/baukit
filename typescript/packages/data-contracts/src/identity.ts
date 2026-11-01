@@ -16,26 +16,18 @@ export interface ScopedPersistenceRegistryStore {
 /** A digest seam for runtimes that install their Web Crypto implementation explicitly. */
 export type ScopedPersistenceDigest = (value: string) => Promise<string>;
 
-export type LegacyStoreOwnership = 'claimable' | 'current-subject' | 'other-subject' | 'ambiguous';
-
-export type LegacyStoreInspection =
-  { readonly exists: false } | { readonly exists: true; readonly ownership: LegacyStoreOwnership };
-
 export interface ResolveScopedStoreOptions {
   readonly namespace: string;
   readonly subject: string;
   readonly registry: ScopedPersistenceRegistryStore;
   readonly digest?: ScopedPersistenceDigest;
-  readonly inspectLegacy?: (subject: string) => Promise<LegacyStoreInspection>;
-  readonly legacyStoreName?: string;
 }
 
 export interface ResolvedScopedStore {
   readonly storeName: string;
-  readonly claimedLegacy: boolean;
 }
 
-/** Product compatibility resolver used when older ownership metadata already exists. */
+/** Product-owned resolver that replaces the derived scoped store name. */
 export type ScopedPersistenceResolver = (subject: string) => MaybePromise<ResolvedScopedStore>;
 
 /** Stable blocking failure for corrupt ownership metadata or a subject mismatch. */
@@ -65,12 +57,10 @@ export function isPersistenceIdentityMismatchError(
 interface RegistryEntry {
   readonly subject: string;
   readonly storeName: string;
-  readonly claimedLegacy: boolean;
 }
 
 interface RegistryNamespace {
   readonly namespace: string;
-  legacyClaimedBySubject: string | null;
   readonly subjects: RegistryEntry[];
 }
 
@@ -230,14 +220,11 @@ function validateRegistryNamespace(
     throw new TypeError('invalid namespace entry');
   }
   const namespace: unknown = Reflect.get(candidate, 'namespace');
-  const legacyClaimedBySubject: unknown = Reflect.get(candidate, 'legacyClaimedBySubject');
   const subjects: unknown = Reflect.get(candidate, 'subjects');
   if (
     typeof namespace !== 'string' ||
     namespace.trim().length === 0 ||
     names.has(namespace) ||
-    (legacyClaimedBySubject !== null &&
-      (typeof legacyClaimedBySubject !== 'string' || legacyClaimedBySubject.trim().length === 0)) ||
     !Array.isArray(subjects)
   ) {
     throw new TypeError('invalid namespace metadata');
@@ -245,36 +232,24 @@ function validateRegistryNamespace(
   names.add(namespace);
 
   const subjectNames = new Set<string>();
-  const claimed: RegistryEntry[] = [];
   for (const entry of subjects) {
     if (typeof entry !== 'object' || entry === null) {
       throw new TypeError('invalid subject entry');
     }
     const subject: unknown = Reflect.get(entry, 'subject');
     const storeName: unknown = Reflect.get(entry, 'storeName');
-    const claimedLegacy: unknown = Reflect.get(entry, 'claimedLegacy');
     if (
       typeof subject !== 'string' ||
       subject.trim().length === 0 ||
       subjectNames.has(subject) ||
       typeof storeName !== 'string' ||
       storeName.trim().length === 0 ||
-      typeof claimedLegacy !== 'boolean' ||
       storeNames.has(storeName)
     ) {
       throw new TypeError('invalid subject metadata');
     }
     subjectNames.add(subject);
     storeNames.add(storeName);
-    if (claimedLegacy) claimed.push(entry as RegistryEntry);
-  }
-  if (
-    (legacyClaimedBySubject === null && claimed.length !== 0) ||
-    (legacyClaimedBySubject !== null &&
-      (claimed.length > 1 ||
-        (claimed.length === 1 && claimed[0]?.subject !== legacyClaimedBySubject)))
-  ) {
-    throw new TypeError('inconsistent legacy ownership metadata');
   }
 }
 
@@ -303,13 +278,6 @@ function findNamespace(
   return registry.namespaces.find((candidate) => candidate.namespace === namespace);
 }
 
-function canClaimLegacy(inspection: LegacyStoreInspection): boolean {
-  return (
-    inspection.exists &&
-    (inspection.ownership === 'claimable' || inspection.ownership === 'current-subject')
-  );
-}
-
 async function resolveScopedStoreLocked(
   options: ResolveScopedStoreOptions,
 ): Promise<ResolvedScopedStore> {
@@ -317,40 +285,16 @@ async function resolveScopedStoreLocked(
   const subject = requiredIdentityPart(options.subject, 'Authenticated subject');
   const registry = parseRegistry(await options.registry.read());
   let namespace = findNamespace(registry, namespaceName);
+  const storeName = await deriveScopedStoreName(namespaceName, subject, options.digest ?? sha256);
   const existing = namespace?.subjects.find((entry) => entry.subject === subject);
   if (existing !== undefined) {
-    if (existing.claimedLegacy) {
-      if (options.legacyStoreName === undefined || existing.storeName !== options.legacyStoreName) {
-        throw corruptRegistry();
-      }
-    } else if (
-      existing.storeName !==
-      (await deriveScopedStoreName(namespaceName, subject, options.digest ?? sha256))
-    ) {
-      throw corruptRegistry();
-    }
-    return { storeName: existing.storeName, claimedLegacy: existing.claimedLegacy };
+    if (existing.storeName !== storeName) throw corruptRegistry();
+    return { storeName };
   }
 
   if (namespace === undefined) {
-    namespace = { namespace: namespaceName, legacyClaimedBySubject: null, subjects: [] };
+    namespace = { namespace: namespaceName, subjects: [] };
     registry.namespaces.push(namespace);
-  }
-
-  let storeName = await deriveScopedStoreName(namespaceName, subject, options.digest ?? sha256);
-  let claimedLegacy = false;
-  if (
-    namespace.legacyClaimedBySubject === null &&
-    options.legacyStoreName !== undefined &&
-    options.inspectLegacy !== undefined
-  ) {
-    requiredIdentityPart(options.legacyStoreName, 'Legacy store name');
-    const inspection = await options.inspectLegacy(subject);
-    if (canClaimLegacy(inspection)) {
-      storeName = options.legacyStoreName;
-      claimedLegacy = true;
-      namespace.legacyClaimedBySubject = subject;
-    }
   }
 
   const storeAlreadyRegistered = registry.namespaces.some((candidate) =>
@@ -358,9 +302,9 @@ async function resolveScopedStoreLocked(
   );
   if (storeAlreadyRegistered) throw corruptRegistry();
 
-  namespace.subjects.push({ subject, storeName, claimedLegacy });
+  namespace.subjects.push({ subject, storeName });
   await options.registry.write(JSON.stringify(registry));
-  return { storeName, claimedLegacy };
+  return { storeName };
 }
 
 /** Resolves or atomically records one authenticated subject's local partition. */
@@ -388,7 +332,7 @@ async function removeScopedPersistenceRegistryEntryLocked(
   const entryIndex = namespace.subjects.findIndex((entry) => entry.subject === subject);
   if (entryIndex === -1) return false;
   namespace.subjects.splice(entryIndex, 1);
-  if (namespace.subjects.length === 0 && namespace.legacyClaimedBySubject === null) {
+  if (namespace.subjects.length === 0) {
     const namespaceIndex = registry.namespaces.indexOf(namespace);
     registry.namespaces.splice(namespaceIndex, 1);
   }

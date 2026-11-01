@@ -97,8 +97,6 @@ product domain or service code when possible.
 `baukit-test` provides these checks:
 
 - `check_limit_boundaries` builds and validates inputs at `limit - 1`, `limit`, and `limit + 1`.
-- `trimmed_text_length` and `compact_document_bytes` remain as compatibility aliases to the
-  `baukit-core` production measurements.
 - `check_update_at_capacity` fills a scoped fixture to its live-row cap, rejects one extra create, and
   requires an update to succeed.
 - `check_soft_delete_capacity_reuse` fills a fixture, rejects one extra create, soft-deletes one row,
@@ -125,9 +123,8 @@ update and soft-delete helpers on separate fixtures because each helper fills th
 
 ## 6. Migration
 
-Rust production code should replace `baukit_test::trimmed_text_length` and
-`baukit_test::compact_document_bytes` with the corresponding `baukit_core::limits` functions. The old
-`baukit-test` names remain available and call the production implementation.
+Rust code measures text and documents with `baukit_core::limits::trimmed_unicode_scalar_count` and
+`baukit_core::limits::compact_json_utf8_bytes`.
 
 TypeScript callers should replace local `Array.from(value.trim()).length` and
 `TextEncoder().encode(JSON.stringify(value)).byteLength` helpers with the `/limits` subpath. The new

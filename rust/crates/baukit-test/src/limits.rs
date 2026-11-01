@@ -1,10 +1,5 @@
 use std::{collections::BTreeSet, fmt, future::Future, pin::Pin};
 
-pub use baukit_core::limits::{
-    compact_json_utf8_bytes as compact_document_bytes,
-    trimmed_unicode_scalar_count as trimmed_text_length,
-};
-
 type IngressFuture<'a, Output> = Pin<Box<dyn Future<Output = Output> + 'a>>;
 
 /// One named write ingress used by the parity check.
@@ -375,8 +370,7 @@ fn failure<Output>(message: impl Into<String>) -> Result<Output, LimitsConforman
 
 #[cfg(test)]
 mod tests {
-    use baukit_core::limits::{compact_json_utf8_bytes, trimmed_unicode_scalar_count};
-    use serde_json::json;
+    use baukit_core::limits::trimmed_unicode_scalar_count;
 
     use super::*;
 
@@ -439,36 +433,13 @@ mod tests {
         }
     }
 
-    #[test]
-    fn measures_trimmed_unicode_text_and_compact_document_bytes() {
-        assert_eq!(trimmed_text_length("  é界  "), 2);
-        assert_eq!(
-            compact_document_bytes(&json!({"value": "é"})).expect("document should serialize"),
-            r#"{"value":"é"}"#.len()
-        );
-    }
-
-    #[test]
-    fn compatibility_names_call_the_production_measurements() {
-        let document = json!({"value": "é"});
-
-        assert_eq!(
-            trimmed_text_length("  e\u{301}  "),
-            trimmed_unicode_scalar_count("  e\u{301}  ")
-        );
-        assert_eq!(
-            compact_document_bytes(&document).expect("compatibility alias should encode"),
-            compact_json_utf8_bytes(&document).expect("production helper should encode")
-        );
-    }
-
     #[tokio::test]
     async fn boundary_check_exercises_below_at_and_above() {
         let result = check_limit_boundaries(
             2,
             |length| "é".repeat(length),
             |text| async move {
-                if trimmed_text_length(&text) <= 2 {
+                if trimmed_unicode_scalar_count(&text) <= 2 {
                     Ok(())
                 } else {
                     Err("text_too_long")

@@ -29,8 +29,6 @@ export interface SyncStatusSnapshot<TAttention = SyncAttentionItem> {
   status: SyncStatus;
   lastAttemptAt: string | null;
   lastSuccessAt: string | null;
-  /** @deprecated Use `lastSuccessAt`. This field will be removed after one release cycle. */
-  lastSyncAt: string | null;
   error: string | null;
   failure: SyncFailure | null;
   retrying: boolean;
@@ -76,7 +74,6 @@ function initialSnapshot<TAttention>(): SyncStatusSnapshot<TAttention> {
     status: 'idle',
     lastAttemptAt: null,
     lastSuccessAt: null,
-    lastSyncAt: null,
     error: null,
     failure: null,
     retrying: false,
@@ -238,33 +235,8 @@ export class SyncStatusStore<TAttention = SyncAttentionItem> {
     });
   }
 
-  /** @deprecated Use `setFailure` with typed metadata. */
-  setError(message: string, pendingCount?: number): void {
-    this.setFailure(
-      { kind: 'network' },
-      message,
-      pendingCount === undefined ? {} : { pendingCount },
-    );
-  }
-
   /** Restores persisted status on a cold start, before the first run. */
-  hydrate(hydration: SyncStatusHydration<TAttention>): void;
-  /** @deprecated Pass a `SyncStatusHydration` object with both timestamps. */
-  hydrate(lastSyncAt: string | null, items?: readonly TAttention[], pendingCount?: number): void;
-  hydrate(
-    hydrationOrLastSyncAt: SyncStatusHydration<TAttention> | string | null,
-    legacyItems: readonly TAttention[] = [],
-    legacyPendingCount = 0,
-  ): void {
-    const hydration: SyncStatusHydration<TAttention> =
-      typeof hydrationOrLastSyncAt === 'object' && hydrationOrLastSyncAt !== null
-        ? hydrationOrLastSyncAt
-        : {
-            lastAttemptAt: hydrationOrLastSyncAt,
-            lastSuccessAt: hydrationOrLastSyncAt,
-            attention: legacyItems,
-            pendingCount: legacyPendingCount,
-          };
+  hydrate(hydration: SyncStatusHydration<TAttention>): void {
     const items = hydration.attention ?? [];
     const pendingCount = hydration.pendingCount ?? 0;
     this.set((state) => ({
@@ -317,8 +289,7 @@ export class SyncStatusStore<TAttention = SyncAttentionItem> {
   private set(
     update: (state: SyncStatusSnapshot<TAttention>) => Partial<SyncStatusSnapshot<TAttention>>,
   ): void {
-    const next = { ...this.snapshot, ...update(this.snapshot) };
-    this.snapshot = { ...next, lastSyncAt: next.lastSuccessAt };
+    this.snapshot = { ...this.snapshot, ...update(this.snapshot) };
     this.listeners.forEach((listener) => {
       listener(this.snapshot);
     });

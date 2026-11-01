@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Breaking: `baukit doctor` no longer explains the retired MCP manifest shapes (`[mcp]` tables, TypeScript MCP selections) and the old MCP selection flags have no dedicated error. A manifest that still carries them fails to parse like any other unknown key. The stdio-to-remote MCP migration guide is gone; `docs/platform/remote-mcp.md` describes the current setup.
+
 ## [0.13.0] - 2026-10-31
 
 ## [0.12.2] - 2026-10-31

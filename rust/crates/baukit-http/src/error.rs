@@ -10,9 +10,7 @@ use baukit_core::pagination::PaginationError;
 use serde_json::Value;
 
 use crate::{
-    ErrorBody, ErrorEnvelope,
-    middleware::current_request_id,
-    options::{JsonRejectionCodes, JsonRejectionMode},
+    ErrorBody, ErrorEnvelope, middleware::current_request_id, options::JsonRejectionCodes,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -223,44 +221,11 @@ impl ApiError {
         )
     }
 
-    pub(crate) fn payload_too_large() -> Self {
-        Self::body_too_large("payload_too_large")
+    pub(crate) fn configured_payload_too_large(codes: &JsonRejectionCodes) -> Self {
+        Self::body_too_large(codes.body_too_large())
     }
 
-    pub(crate) fn configured_payload_too_large(mode: &JsonRejectionMode) -> Self {
-        match mode {
-            JsonRejectionMode::Legacy(_) => Self::payload_too_large(),
-            JsonRejectionMode::Classified(codes) => Self::body_too_large(codes.body_too_large()),
-        }
-    }
-
-    pub(crate) fn json_rejection(rejection: &JsonRejection, mode: &JsonRejectionMode) -> Self {
-        match mode {
-            JsonRejectionMode::Legacy(code) => Self::legacy_json_rejection(code),
-            JsonRejectionMode::Classified(codes) => {
-                Self::classified_json_rejection(rejection, codes)
-            }
-        }
-    }
-
-    fn body_too_large(code: impl Into<String>) -> Self {
-        Self::new(
-            StatusCode::PAYLOAD_TOO_LARGE,
-            code,
-            "The request body is too large",
-        )
-    }
-
-    fn legacy_json_rejection(code: impl Into<String>) -> Self {
-        Self::new(StatusCode::BAD_REQUEST, code, "The request is invalid").with_details(
-            BTreeMap::from([(
-                "body".to_owned(),
-                Value::String("must be valid JSON matching the request schema".to_owned()),
-            )]),
-        )
-    }
-
-    fn classified_json_rejection(rejection: &JsonRejection, codes: &JsonRejectionCodes) -> Self {
+    pub(crate) fn json_rejection(rejection: &JsonRejection, codes: &JsonRejectionCodes) -> Self {
         match JsonRejectionClass::from_rejection(rejection) {
             JsonRejectionClass::BodyTooLarge => Self::body_too_large(codes.body_too_large()),
             JsonRejectionClass::ContentType => Self::new(
@@ -285,6 +250,14 @@ impl ApiError {
                 Value::String("must match the request schema".to_owned()),
             )])),
         }
+    }
+
+    fn body_too_large(code: impl Into<String>) -> Self {
+        Self::new(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            code,
+            "The request body is too large",
+        )
     }
 
     pub(crate) fn query_rejection() -> Self {
@@ -313,8 +286,8 @@ impl ApiError {
 }
 
 impl From<JsonRejection> for ApiError {
-    fn from(_rejection: JsonRejection) -> Self {
-        Self::legacy_json_rejection("validation_failed")
+    fn from(rejection: JsonRejection) -> Self {
+        Self::json_rejection(&rejection, &JsonRejectionCodes::default())
     }
 }
 

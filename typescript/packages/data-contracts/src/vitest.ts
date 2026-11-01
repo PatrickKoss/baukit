@@ -479,53 +479,6 @@ export function describeScopedPersistenceContract(
       await lifecycle.clear();
     });
 
-    it('claims an explicitly unowned legacy store once and rejects implicit cross-account use', async () => {
-      const adapter = await makeAdapter();
-      const legacy = await adapter.open('legacy-store');
-      await legacy.records.put({ id: 'legacy', label: 'legacy E', payload: null });
-      await legacy.close();
-      const registry = new InMemoryScopedPersistenceRegistryStore();
-      const lifecycle = new ScopedPersistenceLifecycle<ContractPersistence>({
-        namespace: 'legacy-contract',
-        registry,
-        digest: identityDigest,
-        legacyStoreName: 'legacy-store',
-        inspectLegacy: () => Promise.resolve({ exists: true, ownership: 'claimable' }),
-        open: async ({ storeName }) => {
-          const store = await adapter.open(storeName);
-          return { store, close: () => store.close() };
-        },
-        resetUserScopedState: () => undefined,
-      });
-
-      const accountE = await lifecycle.selectSubject('account-e');
-      expect(accountE?.storeName).toBe('legacy-store');
-      expect(await accountE?.persistence.store.records.get('legacy')).toMatchObject({
-        label: 'legacy E',
-      });
-      const accountF = await lifecycle.selectSubject('account-f');
-      expect(accountF?.storeName).not.toBe('legacy-store');
-      expect(await accountF?.persistence.store.records.get('legacy')).toBeUndefined();
-      await lifecycle.clear();
-
-      const otherOwned = new ScopedPersistenceLifecycle<ContractPersistence>({
-        namespace: 'other-owned-contract',
-        registry: new InMemoryScopedPersistenceRegistryStore(),
-        digest: identityDigest,
-        legacyStoreName: 'legacy-store',
-        inspectLegacy: () => Promise.resolve({ exists: true, ownership: 'other-subject' }),
-        open: async ({ storeName }) => {
-          const store = await adapter.open(storeName);
-          return { store, close: () => store.close() };
-        },
-        resetUserScopedState: () => undefined,
-      });
-      const blockedClaim = await otherOwned.selectSubject('account-f');
-      expect(blockedClaim?.storeName).not.toBe('legacy-store');
-      expect(await blockedClaim?.persistence.store.records.get('legacy')).toBeUndefined();
-      await otherOwned.clear();
-    });
-
     it('blocks corrupt registry metadata before opening a domain store', async () => {
       const adapter = await makeAdapter();
       let opens = 0;

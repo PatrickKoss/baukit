@@ -256,13 +256,9 @@ const status = new SyncStatusStore<ProductAttention>();
 status.setAttention(items, pendingCount);
 ```
 
-### Timestamp migration
+### Cold start
 
-`lastSyncAt` is a deprecated compatibility field for one release cycle. It is derived from
-`lastSuccessAt`. New code must not write or persist it as an attempt timestamp.
-
-Replace `snapshot.lastSyncAt` with `snapshot.lastSuccessAt`. Persist both attempt and success
-timestamps, then hydrate with an object:
+Persist both attempt and success timestamps, then hydrate with an object:
 
 ```ts
 status.hydrate({
@@ -272,10 +268,6 @@ status.hydrate({
   pendingCount: persisted.pendingCount,
 });
 ```
-
-The deprecated `hydrate(lastSyncAt, attention, pendingCount)` overload treats the old value as
-both the last attempt and last success. Remove that overload call when the persisted schema has
-both fields.
 
 ## Push batch ranking
 
@@ -395,12 +387,3 @@ Existing adapters can omit `fullResync`; their types and cases are unchanged. A 
 enables finite tombstone retention should add the callbacks as one unit. Keep its current cursor
 type and HTTP envelope, decode the horizon into `SyncConformanceStaleCursor`, and replace any split
 "clear rows, then set cursor" path with one local transaction before enabling these cases.
-
-### Conformance adapter migration
-
-Existing adapter objects still type-check because `applySubmittedBatchOutcome` and `pendingId` are
-optional, and the old `markAcknowledged` and `recordRejected` callbacks remain in the interface.
-The expanded suite stops with a conformance error until the two new callbacks are present.
-Implement atomic settlement with the same transaction used by the production sync path, return
-rejected server rows from `decodePush`, then remove split settlement calls from the product engine.
-Do not emulate the new callback by calling the two old callbacks in sequence.

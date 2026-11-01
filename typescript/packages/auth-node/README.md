@@ -125,5 +125,3 @@ Replace local discovery, device polling, refresh, and cache functions with one `
 - CLI text and browser-launch behavior;
 - API base URL and bearer-token wiring; and
 - cache namespace, path, and profile selection.
-
-Older product caches do not have the versioned profile document used here. Sign out or remove the old file, then run the product's login command once. The package intentionally does not guess which product-owned legacy shape it received.

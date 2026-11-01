@@ -364,7 +364,7 @@ async fn standardized_extractors_map_json_path_and_query_rejections() {
             .route("/query", get(query_handler)),
         HttpOptions::default(),
     );
-    for (request, detail) in [
+    for (request, detail, code) in [
         (
             Request::builder()
                 .method(Method::POST)
@@ -374,6 +374,7 @@ async fn standardized_extractors_map_json_path_and_query_rejections() {
                 .body(Body::from("not-json"))
                 .expect("request"),
             "body",
+            "invalid_json",
         ),
         (
             Request::builder()
@@ -382,6 +383,7 @@ async fn standardized_extractors_map_json_path_and_query_rejections() {
                 .body(Body::empty())
                 .expect("request"),
             "path",
+            "validation_failed",
         ),
         (
             Request::builder()
@@ -390,12 +392,13 @@ async fn standardized_extractors_map_json_path_and_query_rejections() {
                 .body(Body::empty())
                 .expect("request"),
             "query",
+            "validation_failed",
         ),
     ] {
         let response = app.clone().oneshot(request).await.expect("response");
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let body = response_json(response).await;
-        assert_eq!(body["error"]["code"], "validation_failed");
+        assert_eq!(body["error"]["code"], code);
         assert!(body["error"]["details"].get(detail).is_some());
         assert!(
             body["error"]["requestId"]
@@ -691,74 +694,6 @@ async fn validation_field_helpers_build_standard_details() {
     );
 }
 
-#[tokio::test]
-async fn legacy_json_rejection_code_remains_compatible() {
-    #[derive(serde::Deserialize)]
-    struct Input {
-        count: usize,
-    }
-
-    async fn json_handler(ApiJson(input): ApiJson<Input>) -> String {
-        input.count.to_string()
-    }
-    async fn query_handler(ApiQuery(input): ApiQuery<Input>) -> String {
-        input.count.to_string()
-    }
-
-    let options = HttpOptions::default()
-        .with_json_rejection_code("invalid_json")
-        .expect("valid error code");
-    let app = finalize(
-        Router::new()
-            .route("/json", post(json_handler))
-            .route("/query", get(query_handler)),
-        options,
-    );
-
-    let json_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method(Method::POST)
-                .uri("/json")
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from("not-json"))
-                .expect("request"),
-        )
-        .await
-        .expect("response");
-    assert_eq!(json_response.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(
-        response_json(json_response).await["error"]["code"],
-        "invalid_json"
-    );
-
-    let query_response = app
-        .oneshot(
-            Request::builder()
-                .uri("/query?count=not-a-number")
-                .body(Body::empty())
-                .expect("request"),
-        )
-        .await
-        .expect("response");
-    assert_eq!(query_response.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(
-        response_json(query_response).await["error"]["code"],
-        "validation_failed"
-    );
-}
-
-#[test]
-fn json_rejection_code_must_be_snake_case() {
-    assert_eq!(
-        HttpOptions::default()
-            .with_json_rejection_code("Invalid JSON")
-            .expect_err("invalid code"),
-        HttpOptionsError::InvalidJsonRejectionCode("Invalid JSON".to_owned())
-    );
-}
-
 #[test]
 fn class_specific_json_rejection_codes_must_be_snake_case() {
     assert_eq!(
@@ -785,7 +720,7 @@ fn default_json_rejection_codes_are_stable() {
         HttpOptions::default()
             .with_json_rejection_codes(codes.clone())
             .json_rejection_codes(),
-        Some(&codes)
+        &codes
     );
 }
 

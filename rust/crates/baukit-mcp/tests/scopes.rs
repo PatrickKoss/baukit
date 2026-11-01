@@ -2,10 +2,7 @@ use baukit_mcp::{McpConfig, ScopedTool, tool_schema};
 use serde_json::json;
 
 #[test]
-fn migration_scope_instructions_match_the_configuration_and_registry() {
-    let guide = include_str!("../../../../docs/migrations/mcp-stdio-to-remote.md");
-    assert!(!guide.contains("`mcp.scopes_supported`"));
-    assert!(guide.contains("Empty required-scopes lists are rejected"));
+fn scope_configuration_matches_the_registry() {
     assert!(serde_json::from_value::<McpConfig>(json!({"scopes_supported": []})).is_err());
     let mut tool = ScopedTool {
         name: "read".into(),

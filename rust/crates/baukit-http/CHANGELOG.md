@@ -4,6 +4,8 @@ All notable changes to `baukit-http` are documented here.
 
 ## [Unreleased]
 
+- Breaking: `JsonRejectionMode`, `HttpOptions::with_json_rejection_code` and the single-code `json_rejection_code()` are gone. `HttpOptions` always classifies JSON body rejections, and `json_rejection_codes()` returns `&JsonRejectionCodes`. Without configured codes `ApiJson` now answers `400 invalid_json`, `413 payload_too_large`, `415 unsupported_media_type` and `422 validation_failed`. Products that called `with_json_rejection_code` use `with_json_rejection_codes` or the defaults. The train takes a minor bump.
+
 ## [0.13.0] - 2026-10-31
 
 ## [0.12.2] - 2026-10-31

@@ -1,7 +1,7 @@
 import { expect, type Locator, type Page, type TestInfo } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
-import { qaConfig, type QaApiStub, type QaSubmitField, type QaSubmitTarget } from '../qa.config';
+import { qaConfig, type QaApiStub } from '../qa.config';
 
 /** Serves every configured API path from a fixture, so no backend is required. */
 export async function stubApi(page: Page, stubs: readonly QaApiStub[]): Promise<void> {
@@ -45,14 +45,6 @@ export async function openRoute(page: Page, path: string, authenticated = false)
     }, authentication.localStorage);
   }
   await page.goto(path);
-}
-
-export function submitFields(target: QaSubmitTarget): readonly QaSubmitField[] {
-  return 'fields' in target ? target.fields : [{ field: target.field, value: target.value }];
-}
-
-export function invalidSubmitField(target: QaSubmitTarget): string {
-  return 'invalidField' in target ? target.invalidField : target.field;
 }
 
 /**

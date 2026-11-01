@@ -1009,74 +1009,10 @@ CREATE TABLE raw_children (
       },
     },
     {
-      name: "real SQLite legacy claim and corrupt-registry blocking",
+      name: "real SQLite corrupt-registry blocking",
       run: async () => {
-        const legacyName = "baukit-identity-legacy";
-        await SQLite.deleteDatabaseAsync(`${legacyName}.db`).catch(
-          () => undefined,
-        );
-        const legacyConnection = await SQLite.openDatabaseAsync(
-          `${legacyName}.db`,
-        );
-        const legacy = new ExpoSqliteStore<ContractRecord>(
-          legacyConnection,
-          "identity",
-          { closeDatabase: true },
-        );
-        await legacy.initialize();
-        await legacy.records.put({
-          id: "legacy",
-          label: "legacy account E",
-          payload: null,
-        });
-        await legacy.close();
-        const databaseNames = new Set<string>([legacyName]);
-        const lifecycle = new ScopedPersistenceLifecycle<
-          ExpoSqliteStore<ContractRecord>
-        >({
-          namespace: "expo-legacy-conformance",
-          registry: new InMemoryScopedPersistenceRegistryStore(),
-          digest: identityDigest,
-          legacyStoreName: legacyName,
-          inspectLegacy: () =>
-            Promise.resolve({ exists: true, ownership: "claimable" }),
-          open: async ({ storeName }) => {
-            databaseNames.add(storeName);
-            const connection = await SQLite.openDatabaseAsync(
-              `${storeName}.db`,
-            );
-            const store = new ExpoSqliteStore<ContractRecord>(
-              connection,
-              "identity",
-              { closeDatabase: true },
-            );
-            await store.initialize();
-            return store;
-          },
-          resetUserScopedState: () => undefined,
-        });
+        const databaseNames = new Set<string>();
         try {
-          const accountE = await lifecycle.selectSubject("account-e");
-          assert(
-            accountE?.storeName === legacyName,
-            "claimable legacy store was not selected",
-          );
-          assert(
-            (await accountE.persistence.records.get("legacy")) !== undefined,
-            "legacy record was not preserved",
-          );
-          const accountF = await lifecycle.selectSubject("account-f");
-          assert(accountF !== undefined, "account F partition was not ready");
-          assert(
-            accountF.storeName !== legacyName,
-            "legacy store was claimed more than once",
-          );
-          assert(
-            (await accountF.persistence.records.get("legacy")) === undefined,
-            "second account read the legacy partition",
-          );
-          await lifecycle.clear();
-
           let opens = 0;
           const corrupt = new ScopedPersistenceLifecycle<
             ExpoSqliteStore<ContractRecord>

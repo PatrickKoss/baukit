@@ -1200,27 +1200,8 @@ pub fn read_manifest(root: &Path) -> Result<Manifest> {
             path.display()
         )
     })?;
-    let value: toml::Value =
+    let manifest: Manifest =
         toml::from_str(&source).with_context(|| format!("could not parse {}", path.display()))?;
-    if value
-        .get("capabilities")
-        .and_then(|capabilities| capabilities.get("mcp"))
-        .is_some_and(|mcp| !mcp.is_bool())
-    {
-        bail!(
-            "baukit.toml uses the retired MCP capability table; migrate tools to backend/crates/{{name}}-mcp and set capabilities.mcp = true. Follow docs/migrations/mcp-stdio-to-remote.md"
-        );
-    }
-    if root.join("mcp/package.json").is_file()
-        || !doctor_layout::files(&root.join("mcp/src"), "ts")?.is_empty()
-    {
-        bail!(
-            "retired TypeScript MCP server found in mcp/; port its tools to backend/crates/{{name}}-mcp and delete mcp/. Follow docs/migrations/mcp-stdio-to-remote.md"
-        );
-    }
-    let manifest: Manifest = value
-        .try_into()
-        .with_context(|| format!("could not parse {}", path.display()))?;
     dockerfile::validate(&manifest)?;
     Ok(manifest)
 }

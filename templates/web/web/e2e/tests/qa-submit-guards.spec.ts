@@ -1,8 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import { qaConfig } from '../qa.config';
-import { invalidSubmitField, openRoute, rapidDoubleClick, stubApi, submitFields } from './qa';
-import type { QaSubmitTarget } from '../qa.config';
+import { openRoute, rapidDoubleClick, stubApi } from './qa';
 
 test.describe('submit guards', () => {
   test.beforeEach(async ({ page }) => {
@@ -16,7 +15,7 @@ test.describe('submit guards', () => {
       if (target.open !== undefined) {
         await page.getByRole('button', { name: target.open }).click();
       }
-      for (const field of submitFields(target)) {
+      for (const field of target.fields) {
         await page.getByLabel(field.field, { exact: true }).fill(field.value);
       }
 
@@ -31,12 +30,11 @@ test.describe('submit guards', () => {
       if (target.open !== undefined) {
         await page.getByRole('button', { name: target.open }).click();
       }
-      const fields = submitFields(target);
-      for (const item of fields) {
+      for (const item of target.fields) {
         await page.getByLabel(item.field, { exact: true }).fill(item.value);
       }
-      const invalidField = invalidSubmitField(target);
-      const invalidValue = fields.find(({ field }) => field === invalidField)?.value;
+      const invalidField = target.invalidField;
+      const invalidValue = target.fields.find(({ field }) => field === invalidField)?.value;
       if (invalidValue === undefined) {
         throw new Error(`Submit target ${target.name} has no value for ${invalidField}.`);
       }
@@ -51,28 +49,9 @@ test.describe('submit guards', () => {
       await field.fill(invalidValue);
       await page.getByRole('button', { name: target.submit }).click();
       await expect(page.getByText(target.result, { exact: true })).toHaveCount(1);
-      for (const item of fields) {
+      for (const item of target.fields) {
         await expect(page.getByLabel(item.field, { exact: true })).toHaveValue(item.value);
       }
     });
   }
-
-  test('legacy single-field submit targets remain supported', ({ browserName }, testInfo) => {
-    test.skip(
-      testInfo.project.name !== 'desktop-chromium',
-      'The compatibility mapping is browser-independent and runs once.',
-    );
-    const legacy: QaSubmitTarget = {
-      name: 'legacy',
-      path: '/',
-      field: 'Legacy field',
-      value: 'Legacy value',
-      submit: 'Save',
-      result: 'Saved',
-    };
-
-    expect(browserName).toBe('chromium');
-    expect(submitFields(legacy)).toEqual([{ field: 'Legacy field', value: 'Legacy value' }]);
-    expect(invalidSubmitField(legacy)).toBe('Legacy field');
-  });
 });
