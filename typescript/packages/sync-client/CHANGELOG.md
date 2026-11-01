@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.14.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.14.0 train.
+- 165c1de: Breaking: the sync snapshot drops `lastSyncAt`, `setError` and the positional `hydrate` overload are gone, and conformance adapters must provide `pendingId` and `applySubmittedBatchOutcome`. `markAcknowledged` and `recordRejected` are no longer called; delete them from adapters.
+
 ## 0.13.0
 
 ### Minor Changes

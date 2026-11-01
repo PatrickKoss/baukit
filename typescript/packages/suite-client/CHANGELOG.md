@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## 0.14.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.14.0 train.
+- d905e54: Breaking: `verifyTicket` accepts the optional `billing` claim from Schlüsselbund C18 and returns it as `TicketClaims.billing` with `BillingChannel` and `BillingClaim`. A `null` claim, unknown fields, `soldBy` outside `app_store` and `play_store`, and `manageUrl` outside `web` or without an HTTP(S) host fail as `ticket_invalid`. Code that builds `TicketClaims` literals needs the new optional field in mind.
+- a51da45: Breaking: `CreditBalance` mirrors the bucketed balance of Schlüsselbund C21: `suiteSubject`, `wallet`, `revision`, `total`, `grant: { available, expiresAt: number | null }` and `packs: { available, expiresAt }[]`. `available`, `pools`, `CreditPool`, `grant.granted`, `grant.used` and `packs[].remaining` are removed. Read `total` instead of `available` and `packs[].available` instead of `remaining`.
+- 4b3b6ac: Adds `catalogFeatureKeys`, `featureKeyDrift`, `assertFeatureKeysMatch` and `PlanCatalogError`, which compare a product's declared feature keys with the recorded hub plan catalog in `fixtures/plans/v1/catalog.json`, matching the `baukit-suite` helper.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/integrations-client@0.14.0
+  - @baukit/localization-core@0.14.0
+
 ## 0.13.0
 
 ### Minor Changes
