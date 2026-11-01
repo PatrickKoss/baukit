@@ -22,13 +22,14 @@ const context = { productId: 'eigenruhe', feature: 'eigenruhe.studio' };
 const link = `${PLANS}?from=eigenruhe&feature=eigenruhe.studio`;
 
 describe('plansLink', () => {
-  it('adds the product and feature to the C17 plans URL', () => {
+  it('adds the product and feature to the Schlüsselbund C17 plans URL', () => {
     expect(plansLink(PLANS, { from: 'eigenruhe', feature: 'eigenruhe.studio' })).toBe(link);
     expect(plansLink(PLANS, { from: 'hebkit' })).toBe(`${PLANS}?from=hebkit`);
     expect(plansLink(PLANS)).toBe(PLANS);
-    expect(plansLink(`${PLANS}?lang=de`, { feature: 'a b&c' })).toBe(
-      `${PLANS}?lang=de&feature=a%20b%26c`,
+    expect(plansLink(`${PLANS}?lang=de`, { from: 'hebkit', feature: 'a b&c' })).toBe(
+      `${PLANS}?lang=de&from=hebkit&feature=a%20b%26c`,
     );
+    expect(plansLink(PLANS, { feature: 'eigenruhe.studio' })).toBe(PLANS);
   });
 
   it('refuses a URL that is not HTTP(S)', () => {

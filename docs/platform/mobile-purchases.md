@@ -50,7 +50,7 @@ A failed refresh keeps the last verified entitlement, as the backend keeps its c
 | `family`, `organization` | `covered`, no purchase |
 | standalone mode | `none` |
 
-`plansLink(plansUrl, {from, feature})` builds `<plansUrl>?from=<product id>&feature=<feature key>`, both optional. This follows the C17 plans URL as planned; C17 had not merged when BK11 shipped.
+`plansLink(plansUrl, {from, feature})` builds `<plansUrl>?from=<product id>&feature=<feature key>`, the Plans page contract of Schlüsselbund C17 (`1cb82e6`, docs/billing.md, "Plans page with product context"). Both parameters are optional. The builder drops `feature` without `from`, because the hub ignores it there. The hub matches values exactly and falls back to the normal page for a bad value, so pass the product ID and the catalog feature key unchanged.
 
 ## Ticket refresh
 
