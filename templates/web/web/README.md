@@ -75,7 +75,7 @@ files after changing the manifest, then run `baukit doctor`.
 
 `e2e/qa.config.ts` is the only file a product edits. It lists routes, overlays, submit targets, deep links that must land in a route state, protected routes, geometry selectors, authentication state, and API stubs. Cases can add their own stubs, mark an authenticated load, use a regular expression for a heading, select a control role, override the screen selector, or opt out of the scroll check. Each spec reads that file. Add product routes and selectors there instead of editing a spec.
 
-Submit targets accept `fields` plus `invalidField`, so the failed-submit check fills every required field, clears the named field, and confirms that all values survive validation. `recoveryRole` accepts `button` or `link`. Existing single-field submit entries with `field` and `value`, and route-state entries without `recoveryRole`, remain supported.
+Submit targets accept `fields` plus `invalidField`, so the failed-submit check fills every required field, clears the named field, and confirms that all values survive validation. `recoveryRole` accepts `button` or `link` and defaults to `button`.
 
 When updating QA files generated before this template version, replace `field` and `value` with a `fields` array and set `invalidField`. Add `authentication.localStorage` before marking any case `authenticated`; the gate throws a setup error if authenticated state is missing. Keep credentials out of this hermetic fixture. Use synthetic, non-production tokens and stub every identity API call.
 

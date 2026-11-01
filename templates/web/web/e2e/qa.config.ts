@@ -75,18 +75,10 @@ export interface QaSubmitField {
   readonly value: string;
 }
 
-interface QaMultipleSubmitFields {
+export interface QaSubmitTarget extends QaSubmitTargetBase {
   readonly fields: readonly QaSubmitField[];
   readonly invalidField: string;
 }
-
-interface QaLegacySubmitField {
-  readonly field: string;
-  readonly value: string;
-}
-
-export type QaSubmitTarget = QaSubmitTargetBase &
-  (QaMultipleSubmitFields | QaLegacySubmitField);
 
 export interface QaRouteState {
   readonly name: string;
