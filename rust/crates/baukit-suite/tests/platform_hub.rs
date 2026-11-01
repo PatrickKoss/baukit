@@ -38,6 +38,11 @@ fn recorded(name: &str) -> (u16, Value) {
     )
 }
 
+fn recorded_request(name: &str) -> Value {
+    let fixture: Value = serde_json::from_str(RESPONSES).expect("recorded responses");
+    fixture["requests"][name]["body"].clone()
+}
+
 #[derive(Clone, Debug)]
 struct Recorded {
     method: String,
@@ -906,5 +911,33 @@ fn organization_and_credit_events_decode_with_their_owner() -> TestResult {
             revision: 4,
         })
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn platform_ticket_source_posts_the_subject_and_product() -> TestResult {
+    let hub = MockHub::start().await?;
+    let source = PlatformTicketSource::new(hub.client("hebkit")?);
+    hub.state.script(&["entitlementTicket"]);
+    let ticket = source.ticket(SUBJECT).await?;
+    assert_eq!(
+        Some(ticket.as_str()),
+        recorded("entitlementTicket").1["ticket"].as_str()
+    );
+    let request = hub.state.requests().pop().ok_or("request")?;
+    assert_eq!(
+        (request.method.as_str(), request.path.as_str()),
+        ("POST", "/api/platform/v1/entitlements/tickets")
+    );
+    assert_eq!(request.body, Some(recorded_request("entitlementTicket")));
+    for (name, expected) in [
+        ("subjectNotFound", EntitlementSourceError::NoEntitlements),
+        ("accountInactive", EntitlementSourceError::NoEntitlements),
+        ("creditsUnavailable", EntitlementSourceError::Unavailable),
+        ("scopeMissing", EntitlementSourceError::Unavailable),
+    ] {
+        hub.state.script(&[name]);
+        assert_eq!(source.ticket(SUBJECT).await, Err(expected), "{name}");
+    }
     Ok(())
 }

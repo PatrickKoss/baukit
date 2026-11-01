@@ -118,3 +118,28 @@ it('rejects an unsigned ticket with alg none', () => {
     }),
   ).toThrow('ticket_invalid');
 });
+
+const billingFixture = JSON.parse(
+  readFileSync(
+    new URL('../../../../fixtures/entitlement-tickets/v1/billing-vectors.json', import.meta.url),
+    'utf8',
+  ),
+) as Omit<Fixture, 'testSeedHex'>;
+
+describe('billing claim vectors', () => {
+  it.each(billingFixture.vectors)('$name', (v) => {
+    const run = () =>
+      verifyTicket(v.ticket, billingFixture.jwks, {
+        issuer: billingFixture.issuer,
+        audience: v.audience,
+        now: v.now,
+      });
+    if (v.expected === 'ok') {
+      expect(run()).toEqual(v.claims);
+      expect(run().billing).toBeDefined();
+    } else
+      expect(run).toThrow(
+        new TicketVerificationError(v.expected as TicketVerificationError['code']),
+      );
+  });
+});

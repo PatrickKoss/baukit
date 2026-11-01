@@ -217,7 +217,15 @@ describe('createRevenueCatPurchasesPort', () => {
       port: createRevenueCatPurchasesPort(module, { apiKey: API_KEY }),
       backend: {
         refreshEntitlement: () =>
-          Promise.resolve({ suiteSubject: SUBJECT, tier: 'premium', features: [], revision }),
+          Promise.resolve({
+            mode: 'hub',
+            suiteSubject: SUBJECT,
+            tier: 'premium',
+            features: [],
+            revision,
+            plansUrl: null,
+            billing: null,
+          }),
       },
       sleep: () => {
         revision = 2;

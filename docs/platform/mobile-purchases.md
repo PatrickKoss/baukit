@@ -31,11 +31,30 @@ An identify for a new user cancels work for the previous one. A late result for 
 
 `flow.offerings()` returns `{ current, all }`. Use `selectOffering(offerings, purchasesConfig.offeringId)` to honor the configured offering. Each package carries `priceLabel` from the store, so the app shows store prices and never hard-codes them.
 
-Gate UI with `useFeature('feature.key')` from `@baukit/purchases-core/react`. It reads `features` from the verified entitlement. `useEntitlement()` returns the whole entitlement with `tier` and `revision`.
+Wrap the app in `<PurchasesProvider flow={flow} productId="hebkit">`. Gate UI with `useFeature('feature.key')` from `@baukit/purchases-core/react`, or with `<LockedFeature feature="feature.key" locked={(paywall) => ...}>`. `useFeature` returns a `FeatureAccess`:
+
+- `loading` while the first refresh for the signed-in subject runs. Show neither the feature nor a paywall.
+- `unavailable` when the refresh failed and no verified entitlement exists. Show a retry, never a purchase. This matches the backend's 503 `entitlements_unavailable`.
+- `granted` when the verified entitlement lists the key.
+- `locked` with a `paywall` otherwise, also when signed out.
+
+A failed refresh keeps the last verified entitlement, as the backend keeps its cached ticket. `LockedFeature` renders `loading` and `unavailable` props, or nothing.
+
+`paywallFor(entitlement, {productId, feature})` picks the paywall from the `billing` claim:
+
+| Billing | Paywall |
+| --- | --- |
+| none or `promo` | `purchase` with the Plans link |
+| `web` | `manage` with the Plans link, or the claim's `manageUrl` without a plans URL |
+| `app_store`, `play_store` | `manage` with `soldBy`; open the store's subscription settings, never a second purchase |
+| `family`, `organization` | `covered`, no purchase |
+| standalone mode | `none` |
+
+`plansLink(plansUrl, {from, feature})` builds `<plansUrl>?from=<product id>&feature=<feature key>`, the Plans page contract of Schlüsselbund C17 (`1cb82e6`, docs/billing.md, "Plans page with product context"). Both parameters are optional. The builder drops `feature` without `from`, because the hub ignores it there. The hub matches values exactly and falls back to the normal page for a bad value, so pass the product ID and the catalog feature key unchanged.
 
 ## Ticket refresh
 
-The product backend owns the hub client. Give the flow an `EntitlementBackend` whose `refreshEntitlement` calls a product route that fetches a fresh ticket from the hub and returns its claims, then pass them through `entitlementFromTicket`. The product backend also updates its entitlement cache from `entitlements.changed` events, as `platform-receiver.md` describes.
+The product backend owns the hub client and serves `GET /me/entitlement` and `GET /me/credits` through `account_plan_router`, as `platform-receiver.md` describes. `createAccountPlanBackend({ baseUrl, fetch, headers })` is the matching `EntitlementBackend`. It maps `suite_identity_missing` to no entitlement and raises `AccountPlanError` with `code` and `retryAfterSeconds` for the other errors. A client that verifies tickets itself passes the claims through `entitlementFromTicket(claims, plansUrl)`. The product backend also updates its entitlement cache from `entitlements.changed` events, as `platform-receiver.md` describes.
 
 After a purchase the flow reads the revision first, buys, then polls `refreshEntitlement` until the revision is newer. The default is 5 reads, 2 seconds apart. The outcome is `granted` with the new entitlement, or `pending` when the webhook has not arrived yet. Show a pending state and let a later customer update or app resume refresh it. RevenueCat customer updates trigger a quiet refresh.
 
@@ -43,7 +62,7 @@ After a purchase the flow reads the revision first, buys, then polls `refreshEnt
 
 ## Credit packs
 
-Credit packs are RevenueCat non-subscription products. The hub receives them as `NON_RENEWING_PURCHASE` and matches `product_id` to the catalog pack. They change the credit balance, not the entitlement, so `EntitlementBackend.creditBalance` must return `{ suiteSubject, available, revision }` from a product route backed by `credits.changed`. `purchaseCreditPack` accepts only `one_time` packages and reports `credited` once the balance revision advances, or `pending`.
+Credit packs are RevenueCat non-subscription products. The hub receives them as `NON_RENEWING_PURCHASE` and matches `product_id` to the catalog pack. They change the credit balance, not the entitlement, so `EntitlementBackend.creditBalance` must return the bucketed balance `{ suiteSubject, wallet, revision, total, grant, packs }` from `GET /me/credits`, backed by `credits.changed`. `purchaseCreditPack` accepts only `one_time` packages and reports `credited` once the balance revision advances, or `pending`.
 
 ## Errors
 
@@ -51,4 +70,4 @@ Every failure is a `PurchaseError`. Treat `cancelled` as silent. `pending` means
 
 ## No-op mode
 
-Without keys the app uses `createNoopPurchasesPort()`. Identify and sign-out succeed, offerings are empty and purchases reject with `unavailable`. Standalone builds keep working, and `useFeature` reads whatever the backend returns. The generated standalone backend returns no entitlement.
+Without keys the app uses `createNoopPurchasesPort()`. Identify and sign-out succeed, offerings are empty and purchases reject with `unavailable`. Standalone builds keep working, and `useFeature` reads whatever the backend returns. The generated standalone backend returns no entitlement, so every feature is `locked` with a `none` paywall until the product wires `createAccountPlanBackend`.

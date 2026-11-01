@@ -45,6 +45,60 @@ pub struct TicketClaims {
         deserialize_with = "grace"
     )]
     pub grace: Option<i64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "billing"
+    )]
+    pub billing: Option<BillingClaim>,
+}
+/// Where the hub says the product's paid access is managed.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BillingChannel {
+    Web,
+    AppStore,
+    PlayStore,
+    Family,
+    Organization,
+    Promo,
+}
+impl BillingChannel {
+    pub const fn is_store(self) -> bool {
+        matches!(self, Self::AppStore | Self::PlayStore)
+    }
+}
+/// The optional `billing` ticket claim. `sold_by` names the selling app for
+/// store channels; `manage_url` is the hub plans page for `web`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BillingClaim {
+    pub channel: BillingChannel,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sold_by: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manage_url: Option<String>,
+}
+impl BillingClaim {
+    fn valid(&self) -> bool {
+        let sold_by_valid = self
+            .sold_by
+            .as_deref()
+            .is_none_or(|product| self.channel.is_store() && !product.is_empty());
+        let manage_url_valid = self.manage_url.as_deref().is_none_or(|value| {
+            self.channel == BillingChannel::Web
+                && Url::parse(value).is_ok_and(|url| {
+                    matches!(url.scheme(), "http" | "https")
+                        && url.host_str().is_some()
+                        && url.username().is_empty()
+                        && url.password().is_none()
+                })
+        });
+        sold_by_valid && manage_url_valid
+    }
+}
+fn billing<'de, D: Deserializer<'de>>(d: D) -> Result<Option<BillingClaim>, D::Error> {
+    BillingClaim::deserialize(d).map(Some)
 }
 fn grace<'de, D: Deserializer<'de>>(d: D) -> Result<Option<i64>, D::Error> {
     i64::deserialize(d).map(Some)
@@ -57,6 +111,10 @@ impl TicketClaims {
             || self.aud.is_empty()
             || self.tier.is_empty()
             || self.rev > MAX_TICKET_REVISION
+            || self
+                .billing
+                .as_ref()
+                .is_some_and(|billing| !billing.valid())
             || self.iat < 0
             || self.iat > now.saturating_add(TICKET_IAT_LEEWAY_SECONDS)
             || self.exp <= self.iat

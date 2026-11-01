@@ -9,6 +9,16 @@ export class TicketVerificationError extends Error {
   }
 }
 
+export type BillingChannel =
+  'web' | 'app_store' | 'play_store' | 'family' | 'organization' | 'promo';
+
+/** Where the hub says paid access is managed. `soldBy` only for stores, `manageUrl` only for web. */
+export interface BillingClaim {
+  readonly channel: BillingChannel;
+  readonly soldBy?: string;
+  readonly manageUrl?: string;
+}
+
 export interface TicketClaims {
   readonly iss: string;
   readonly sub: string;
@@ -19,6 +29,7 @@ export interface TicketClaims {
   readonly iat: number;
   readonly exp: number;
   readonly grace?: number;
+  readonly billing?: BillingClaim;
 }
 
 export interface TicketJwk {
@@ -85,8 +96,50 @@ function json(value: string): Record<string, unknown> {
   ).join('');
   return record(JSON.parse(decodeURIComponent(escaped)) as unknown);
 }
+const billingChannels: readonly string[] = [
+  'web',
+  'app_store',
+  'play_store',
+  'family',
+  'organization',
+  'promo',
+];
+// Hermes has no complete URL class, so the check stays a pattern.
+const httpUrlPattern = /^https?:\/\/[^\s/?#@]+(?:[/?#]\S*)?$/u;
+function httpUrl(value: string): boolean {
+  return httpUrlPattern.test(value);
+}
+function validBilling(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const claim = value as Record<string, unknown>;
+  const channel = claim['channel'];
+  if (
+    Object.keys(claim).some((key) => !['channel', 'soldBy', 'manageUrl'].includes(key)) ||
+    typeof channel !== 'string' ||
+    !billingChannels.includes(channel)
+  )
+    return false;
+  const store = channel === 'app_store' || channel === 'play_store';
+  if ('soldBy' in claim && !(store && nonempty(claim['soldBy']))) return false;
+  const manageUrl = claim['manageUrl'];
+  return (
+    !('manageUrl' in claim) ||
+    (channel === 'web' && typeof manageUrl === 'string' && httpUrl(manageUrl))
+  );
+}
 function claims(value: Record<string, unknown>, options: TicketVerificationOptions): TicketClaims {
-  const allowed = ['iss', 'sub', 'aud', 'tier', 'features', 'rev', 'iat', 'exp', 'grace'];
+  const allowed = [
+    'iss',
+    'sub',
+    'aud',
+    'tier',
+    'features',
+    'rev',
+    'iat',
+    'exp',
+    'grace',
+    'billing',
+  ];
   if (
     Object.keys(value).some((key) => !allowed.includes(key)) ||
     !nonempty(value['iss']) ||
@@ -100,7 +153,8 @@ function claims(value: Record<string, unknown>, options: TicketVerificationOptio
     !integer(value['iat']) ||
     value['iat'] < 0 ||
     !integer(value['exp']) ||
-    ('grace' in value && !integer(value['grace']))
+    ('grace' in value && !integer(value['grace'])) ||
+    ('billing' in value && !validBilling(value['billing']))
   )
     invalid();
   const result = value as unknown as TicketClaims;

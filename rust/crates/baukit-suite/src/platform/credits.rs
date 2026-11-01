@@ -30,14 +30,14 @@ pub struct CreditReservation {
 }
 
 /// Pools, rollover, the own or free grant and extra credits.
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreditGrant {
     pub available: u64,
     /// Unix seconds; `None` when the bucket is empty.
     pub expires_at: Option<i64>,
 }
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreditPack {
     pub available: u64,
@@ -45,7 +45,7 @@ pub struct CreditPack {
     pub expires_at: i64,
 }
 /// The bucketed balance of Schlüsselbund C21 and later.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreditBalance {
     pub suite_subject: String,

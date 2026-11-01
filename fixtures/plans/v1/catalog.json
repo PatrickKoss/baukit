@@ -1,0 +1,1205 @@
+{
+  "schemaVersion": 2,
+  "tierOrder": {
+    "sololeveling": [
+      "free",
+      "premium"
+    ],
+    "eigenruhe": [
+      "free",
+      "premium",
+      "trainer"
+    ],
+    "hebkit": [
+      "free",
+      "premium"
+    ],
+    "leitbild": [
+      "free",
+      "premium"
+    ],
+    "tiefgang": [
+      "free",
+      "premium"
+    ],
+    "redemut": [
+      "free",
+      "premium"
+    ],
+    "schlauzug": [
+      "free",
+      "premium"
+    ],
+    "runtime_analyzer": [
+      "starter",
+      "professional",
+      "enterprise"
+    ],
+    "architecture_health_platform": [
+      "starter",
+      "professional",
+      "enterprise"
+    ],
+    "lesezeichen": [
+      "free",
+      "premium"
+    ],
+    "kassensturz": [
+      "free",
+      "premium"
+    ]
+  },
+  "tierLabels": {
+    "free": {
+      "en": "Free",
+      "de": "Kostenlos",
+      "es": "Gratis"
+    },
+    "premium": {
+      "en": "Premium",
+      "de": "Premium",
+      "es": "Premium"
+    },
+    "starter": {
+      "en": "Starter",
+      "de": "Starter",
+      "es": "Inicial"
+    },
+    "professional": {
+      "en": "Professional",
+      "de": "Professional",
+      "es": "Profesional"
+    },
+    "enterprise": {
+      "en": "Enterprise",
+      "de": "Enterprise",
+      "es": "Empresa"
+    },
+    "trainer": {
+      "en": "Trainer",
+      "de": "Trainer",
+      "es": "Entrenador"
+    }
+  },
+  "plans": [
+    {
+      "id": "app.sololeveling",
+      "line": "self_improvement",
+      "storefront": "consumer",
+      "includedProducts": [
+        {
+          "productId": "sololeveling",
+          "tier": "premium",
+          "features": [
+            "sololeveling.ai_quest_generation",
+            "sololeveling.ai_coaching",
+            "sololeveling.hunter_reports",
+            "sololeveling.lifegraph_narration",
+            "sololeveling.goal_milestone_suggestions"
+          ]
+        }
+      ],
+      "creditGrants": [],
+      "familySize": null,
+      "seatModel": "per_org",
+      "providerPriceIds": {
+        "development": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.sololeveling.development",
+          "stripe": null
+        },
+        "staging": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.sololeveling.staging",
+          "stripe": null
+        },
+        "production": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.sololeveling.production",
+          "stripe": null
+        }
+      },
+      "displayPrice": null
+    },
+    {
+      "id": "app.eigenruhe",
+      "line": "self_improvement",
+      "storefront": "consumer",
+      "includedProducts": [
+        {
+          "productId": "eigenruhe",
+          "tier": "premium",
+          "features": [
+            "eigenruhe.custom_programs",
+            "eigenruhe.insights_extended",
+            "eigenruhe.nachtruhe"
+          ]
+        }
+      ],
+      "creditGrants": [],
+      "familySize": null,
+      "seatModel": "per_org",
+      "providerPriceIds": {
+        "development": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.eigenruhe.development",
+          "stripe": null
+        },
+        "staging": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.eigenruhe.staging",
+          "stripe": null
+        },
+        "production": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.eigenruhe.production",
+          "stripe": null
+        }
+      },
+      "displayPrice": null
+    },
+    {
+      "id": "app.hebkit",
+      "line": "self_improvement",
+      "storefront": "consumer",
+      "includedProducts": [
+        {
+          "productId": "hebkit",
+          "tier": "premium",
+          "features": [
+            "hebkit.advanced_stats",
+            "hebkit.integrations_sync",
+            "hebkit.nutrition_recommendations"
+          ]
+        }
+      ],
+      "creditGrants": [],
+      "familySize": null,
+      "seatModel": "per_org",
+      "providerPriceIds": {
+        "development": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.hebkit.development",
+          "stripe": null
+        },
+        "staging": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.hebkit.staging",
+          "stripe": null
+        },
+        "production": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.hebkit.production",
+          "stripe": null
+        }
+      },
+      "displayPrice": null
+    },
+    {
+      "id": "app.leitbild",
+      "line": "self_improvement",
+      "storefront": "consumer",
+      "includedProducts": [
+        {
+          "productId": "leitbild",
+          "tier": "premium",
+          "features": [
+            "leitbild.ai_reflections",
+            "leitbild.weekly_reflections"
+          ]
+        }
+      ],
+      "creditGrants": [],
+      "familySize": null,
+      "seatModel": "per_org",
+      "providerPriceIds": {
+        "development": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.leitbild.development",
+          "stripe": null
+        },
+        "staging": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.leitbild.staging",
+          "stripe": null
+        },
+        "production": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.leitbild.production",
+          "stripe": null
+        }
+      },
+      "displayPrice": null
+    },
+    {
+      "id": "app.tiefgang",
+      "line": "self_improvement",
+      "storefront": "consumer",
+      "includedProducts": [
+        {
+          "productId": "tiefgang",
+          "tier": "premium",
+          "features": [
+            "tiefgang.browser_extension",
+            "tiefgang.integrations",
+            "tiefgang.webhooks",
+            "tiefgang.advanced_rules",
+            "tiefgang.weekly_review",
+            "tiefgang.mcp"
+          ]
+        }
+      ],
+      "creditGrants": [],
+      "familySize": null,
+      "seatModel": "per_org",
+      "providerPriceIds": {
+        "development": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.tiefgang.development",
+          "stripe": null
+        },
+        "staging": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.tiefgang.staging",
+          "stripe": null
+        },
+        "production": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.tiefgang.production",
+          "stripe": null
+        }
+      },
+      "displayPrice": null
+    },
+    {
+      "id": "app.redemut",
+      "line": "self_improvement",
+      "storefront": "consumer",
+      "includedProducts": [
+        {
+          "productId": "redemut",
+          "tier": "premium",
+          "features": [
+            "redemut.conversation_coach",
+            "redemut.speech_to_text"
+          ]
+        }
+      ],
+      "creditGrants": [],
+      "familySize": null,
+      "seatModel": "per_org",
+      "providerPriceIds": {
+        "development": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.redemut.development",
+          "stripe": null
+        },
+        "staging": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.redemut.staging",
+          "stripe": null
+        },
+        "production": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.redemut.production",
+          "stripe": null
+        }
+      },
+      "displayPrice": null
+    },
+    {
+      "id": "app.schlauzug",
+      "line": "self_improvement",
+      "storefront": "consumer",
+      "includedProducts": [
+        {
+          "productId": "schlauzug",
+          "tier": "premium",
+          "features": [
+            "schlauzug.extra_open_rooms",
+            "schlauzug.extra_question_sets"
+          ]
+        }
+      ],
+      "creditGrants": [],
+      "familySize": null,
+      "seatModel": "per_org",
+      "providerPriceIds": {
+        "development": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.schlauzug.development",
+          "stripe": null
+        },
+        "staging": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.schlauzug.staging",
+          "stripe": null
+        },
+        "production": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.schlauzug.production",
+          "stripe": null
+        }
+      },
+      "displayPrice": null
+    },
+    {
+      "id": "suite.individual",
+      "line": "self_improvement",
+      "storefront": "consumer",
+      "includedProducts": [
+        {
+          "productId": "sololeveling",
+          "tier": "premium",
+          "features": [
+            "sololeveling.ai_quest_generation",
+            "sololeveling.ai_coaching",
+            "sololeveling.hunter_reports",
+            "sololeveling.lifegraph_narration",
+            "sololeveling.goal_milestone_suggestions"
+          ]
+        },
+        {
+          "productId": "eigenruhe",
+          "tier": "premium",
+          "features": [
+            "eigenruhe.custom_programs",
+            "eigenruhe.insights_extended",
+            "eigenruhe.nachtruhe"
+          ]
+        },
+        {
+          "productId": "hebkit",
+          "tier": "premium",
+          "features": [
+            "hebkit.advanced_stats",
+            "hebkit.integrations_sync",
+            "hebkit.nutrition_recommendations"
+          ]
+        },
+        {
+          "productId": "leitbild",
+          "tier": "premium",
+          "features": [
+            "leitbild.ai_reflections",
+            "leitbild.weekly_reflections"
+          ]
+        },
+        {
+          "productId": "tiefgang",
+          "tier": "premium",
+          "features": [
+            "tiefgang.browser_extension",
+            "tiefgang.integrations",
+            "tiefgang.webhooks",
+            "tiefgang.advanced_rules",
+            "tiefgang.weekly_review",
+            "tiefgang.mcp"
+          ]
+        },
+        {
+          "productId": "redemut",
+          "tier": "premium",
+          "features": [
+            "redemut.conversation_coach",
+            "redemut.speech_to_text"
+          ]
+        },
+        {
+          "productId": "schlauzug",
+          "tier": "premium",
+          "features": [
+            "schlauzug.extra_open_rooms",
+            "schlauzug.extra_question_sets"
+          ]
+        },
+        {
+          "productId": "lesezeichen",
+          "tier": "premium",
+          "features": [
+            "lesezeichen.extended_generation",
+            "lesezeichen.book_generation",
+            "lesezeichen.daily_briefings",
+            "lesezeichen.extended_storage"
+          ]
+        },
+        {
+          "productId": "kassensturz",
+          "tier": "premium",
+          "features": [
+            "kassensturz.unlimited_connections",
+            "kassensturz.unlimited_history",
+            "kassensturz.forecast",
+            "kassensturz.budgets",
+            "kassensturz.net_worth",
+            "kassensturz.depots",
+            "kassensturz.household",
+            "kassensturz.tax_exports",
+            "kassensturz.mcp_access"
+          ]
+        }
+      ],
+      "creditGrants": [
+        {
+          "wallet": "kompass",
+          "monthlyCredits": 2500,
+          "memberMonthlyCap": null,
+          "perSeat": false
+        }
+      ],
+      "familySize": null,
+      "highlight": true,
+      "seatModel": "per_org",
+      "providerPriceIds": {
+        "development": {
+          "paddle": null,
+          "revenuecat": {
+            "apps": {
+              "sololeveling": "de.schluesselbund.suite.individual.sololeveling.development",
+              "eigenruhe": "de.schluesselbund.suite.individual.eigenruhe.development",
+              "hebkit": "de.schluesselbund.suite.individual.hebkit.development",
+              "leitbild": "de.schluesselbund.suite.individual.leitbild.development",
+              "tiefgang": "de.schluesselbund.suite.individual.tiefgang.development",
+              "redemut": "de.schluesselbund.suite.individual.redemut.development",
+              "schlauzug": "de.schluesselbund.suite.individual.schlauzug.development",
+              "lesezeichen": "de.schluesselbund.suite.individual.lesezeichen.development",
+              "kassensturz": "de.schluesselbund.suite.individual.kassensturz.development"
+            }
+          },
+          "stripe": null
+        },
+        "staging": {
+          "paddle": null,
+          "revenuecat": {
+            "apps": {
+              "sololeveling": "de.schluesselbund.suite.individual.sololeveling.staging",
+              "eigenruhe": "de.schluesselbund.suite.individual.eigenruhe.staging",
+              "hebkit": "de.schluesselbund.suite.individual.hebkit.staging",
+              "leitbild": "de.schluesselbund.suite.individual.leitbild.staging",
+              "tiefgang": "de.schluesselbund.suite.individual.tiefgang.staging",
+              "redemut": "de.schluesselbund.suite.individual.redemut.staging",
+              "schlauzug": "de.schluesselbund.suite.individual.schlauzug.staging",
+              "lesezeichen": "de.schluesselbund.suite.individual.lesezeichen.staging",
+              "kassensturz": "de.schluesselbund.suite.individual.kassensturz.staging"
+            }
+          },
+          "stripe": null
+        },
+        "production": {
+          "paddle": null,
+          "revenuecat": {
+            "apps": {
+              "sololeveling": "de.schluesselbund.suite.individual.sololeveling.production",
+              "eigenruhe": "de.schluesselbund.suite.individual.eigenruhe.production",
+              "hebkit": "de.schluesselbund.suite.individual.hebkit.production",
+              "leitbild": "de.schluesselbund.suite.individual.leitbild.production",
+              "tiefgang": "de.schluesselbund.suite.individual.tiefgang.production",
+              "redemut": "de.schluesselbund.suite.individual.redemut.production",
+              "schlauzug": "de.schluesselbund.suite.individual.schlauzug.production",
+              "lesezeichen": "de.schluesselbund.suite.individual.lesezeichen.production",
+              "kassensturz": "de.schluesselbund.suite.individual.kassensturz.production"
+            }
+          },
+          "stripe": null
+        }
+      },
+      "displayPrice": null
+    },
+    {
+      "id": "suite.family",
+      "line": "self_improvement",
+      "storefront": "consumer",
+      "includedProducts": [
+        {
+          "productId": "sololeveling",
+          "tier": "premium",
+          "features": [
+            "sololeveling.ai_quest_generation",
+            "sololeveling.ai_coaching",
+            "sololeveling.hunter_reports",
+            "sololeveling.lifegraph_narration",
+            "sololeveling.goal_milestone_suggestions"
+          ]
+        },
+        {
+          "productId": "eigenruhe",
+          "tier": "premium",
+          "features": [
+            "eigenruhe.custom_programs",
+            "eigenruhe.insights_extended",
+            "eigenruhe.nachtruhe"
+          ]
+        },
+        {
+          "productId": "hebkit",
+          "tier": "premium",
+          "features": [
+            "hebkit.advanced_stats",
+            "hebkit.integrations_sync",
+            "hebkit.nutrition_recommendations"
+          ]
+        },
+        {
+          "productId": "leitbild",
+          "tier": "premium",
+          "features": [
+            "leitbild.ai_reflections",
+            "leitbild.weekly_reflections"
+          ]
+        },
+        {
+          "productId": "tiefgang",
+          "tier": "premium",
+          "features": [
+            "tiefgang.browser_extension",
+            "tiefgang.integrations",
+            "tiefgang.webhooks",
+            "tiefgang.advanced_rules",
+            "tiefgang.weekly_review",
+            "tiefgang.mcp"
+          ]
+        },
+        {
+          "productId": "redemut",
+          "tier": "premium",
+          "features": [
+            "redemut.conversation_coach",
+            "redemut.speech_to_text"
+          ]
+        },
+        {
+          "productId": "schlauzug",
+          "tier": "premium",
+          "features": [
+            "schlauzug.extra_open_rooms",
+            "schlauzug.extra_question_sets"
+          ]
+        },
+        {
+          "productId": "lesezeichen",
+          "tier": "premium",
+          "features": [
+            "lesezeichen.extended_generation",
+            "lesezeichen.book_generation",
+            "lesezeichen.daily_briefings",
+            "lesezeichen.extended_storage"
+          ]
+        },
+        {
+          "productId": "kassensturz",
+          "tier": "premium",
+          "features": [
+            "kassensturz.unlimited_connections",
+            "kassensturz.unlimited_history",
+            "kassensturz.forecast",
+            "kassensturz.budgets",
+            "kassensturz.net_worth",
+            "kassensturz.depots",
+            "kassensturz.household",
+            "kassensturz.tax_exports",
+            "kassensturz.mcp_access"
+          ]
+        }
+      ],
+      "creditGrants": [
+        {
+          "wallet": "kompass",
+          "monthlyCredits": 7500,
+          "memberMonthlyCap": 2500,
+          "perSeat": false
+        }
+      ],
+      "familySize": 6,
+      "seatModel": "per_org",
+      "providerPriceIds": {
+        "development": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "staging": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "production": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        }
+      },
+      "displayPrice": null
+    },
+    {
+      "id": "kompass.extra",
+      "line": "self_improvement",
+      "storefront": "consumer",
+      "includedProducts": [],
+      "creditGrants": [
+        {
+          "wallet": "kompass",
+          "monthlyCredits": 2500,
+          "memberMonthlyCap": null,
+          "perSeat": false
+        }
+      ],
+      "familySize": null,
+      "seatModel": "per_org",
+      "providerPriceIds": {
+        "development": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "staging": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "production": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        }
+      },
+      "displayPrice": null,
+      "addOnFor": [
+        "suite.individual",
+        "suite.family"
+      ]
+    },
+    {
+      "id": "business.runtime_analyzer.starter",
+      "line": "software_engineering",
+      "storefront": "business",
+      "includedProducts": [
+        {
+          "productId": "runtime_analyzer",
+          "tier": "starter",
+          "features": []
+        }
+      ],
+      "creditGrants": [],
+      "familySize": null,
+      "seatModel": "per_seat",
+      "providerPriceIds": {
+        "development": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "staging": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "production": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        }
+      },
+      "displayPrice": null
+    },
+    {
+      "id": "business.runtime_analyzer.professional",
+      "line": "software_engineering",
+      "storefront": "business",
+      "includedProducts": [
+        {
+          "productId": "runtime_analyzer",
+          "tier": "professional",
+          "features": [
+            "runtime_analyzer.advanced_analytics"
+          ]
+        }
+      ],
+      "creditGrants": [],
+      "familySize": null,
+      "seatModel": "per_seat",
+      "providerPriceIds": {
+        "development": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "staging": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "production": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        }
+      },
+      "displayPrice": null
+    },
+    {
+      "id": "business.runtime_analyzer.enterprise",
+      "line": "software_engineering",
+      "storefront": "business",
+      "includedProducts": [
+        {
+          "productId": "runtime_analyzer",
+          "tier": "enterprise",
+          "features": [
+            "runtime_analyzer.advanced_analytics",
+            "runtime_analyzer.compliance_suite"
+          ]
+        }
+      ],
+      "creditGrants": [],
+      "familySize": null,
+      "seatModel": "per_seat",
+      "providerPriceIds": {
+        "development": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "staging": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "production": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        }
+      },
+      "displayPrice": null
+    },
+    {
+      "id": "business.architecture_health_platform.starter",
+      "line": "software_engineering",
+      "storefront": "business",
+      "includedProducts": [
+        {
+          "productId": "architecture_health_platform",
+          "tier": "starter",
+          "features": []
+        }
+      ],
+      "creditGrants": [],
+      "familySize": null,
+      "seatModel": "per_seat",
+      "providerPriceIds": {
+        "development": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "staging": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "production": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        }
+      },
+      "displayPrice": null
+    },
+    {
+      "id": "business.architecture_health_platform.professional",
+      "line": "software_engineering",
+      "storefront": "business",
+      "includedProducts": [
+        {
+          "productId": "architecture_health_platform",
+          "tier": "professional",
+          "features": [
+            "architecture_health_platform.privacy",
+            "architecture_health_platform.automation"
+          ]
+        }
+      ],
+      "creditGrants": [],
+      "familySize": null,
+      "seatModel": "per_seat",
+      "providerPriceIds": {
+        "development": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "staging": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "production": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        }
+      },
+      "displayPrice": null
+    },
+    {
+      "id": "business.architecture_health_platform.enterprise",
+      "line": "software_engineering",
+      "storefront": "business",
+      "includedProducts": [
+        {
+          "productId": "architecture_health_platform",
+          "tier": "enterprise",
+          "features": [
+            "architecture_health_platform.privacy",
+            "architecture_health_platform.automation"
+          ]
+        }
+      ],
+      "creditGrants": [],
+      "familySize": null,
+      "seatModel": "per_seat",
+      "providerPriceIds": {
+        "development": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "staging": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "production": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        }
+      },
+      "displayPrice": null
+    },
+    {
+      "id": "business.bundle.starter",
+      "line": "software_engineering",
+      "storefront": "business",
+      "includedProducts": [
+        {
+          "productId": "runtime_analyzer",
+          "tier": "starter",
+          "features": []
+        },
+        {
+          "productId": "architecture_health_platform",
+          "tier": "starter",
+          "features": []
+        }
+      ],
+      "creditGrants": [],
+      "familySize": null,
+      "seatModel": "per_seat",
+      "providerPriceIds": {
+        "development": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "staging": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "production": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        }
+      },
+      "displayPrice": null
+    },
+    {
+      "id": "business.bundle.professional",
+      "line": "software_engineering",
+      "storefront": "business",
+      "includedProducts": [
+        {
+          "productId": "runtime_analyzer",
+          "tier": "professional",
+          "features": [
+            "runtime_analyzer.advanced_analytics"
+          ]
+        },
+        {
+          "productId": "architecture_health_platform",
+          "tier": "professional",
+          "features": [
+            "architecture_health_platform.privacy",
+            "architecture_health_platform.automation"
+          ]
+        }
+      ],
+      "creditGrants": [],
+      "familySize": null,
+      "seatModel": "per_seat",
+      "providerPriceIds": {
+        "development": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "staging": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "production": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        }
+      },
+      "displayPrice": null
+    },
+    {
+      "id": "business.bundle.enterprise",
+      "line": "software_engineering",
+      "storefront": "business",
+      "includedProducts": [
+        {
+          "productId": "runtime_analyzer",
+          "tier": "enterprise",
+          "features": [
+            "runtime_analyzer.advanced_analytics",
+            "runtime_analyzer.compliance_suite"
+          ]
+        },
+        {
+          "productId": "architecture_health_platform",
+          "tier": "enterprise",
+          "features": [
+            "architecture_health_platform.privacy",
+            "architecture_health_platform.automation"
+          ]
+        }
+      ],
+      "creditGrants": [],
+      "familySize": null,
+      "seatModel": "per_seat",
+      "providerPriceIds": {
+        "development": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "staging": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "production": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        }
+      },
+      "displayPrice": null
+    },
+    {
+      "id": "promo.hebkit.preview",
+      "line": "self_improvement",
+      "storefront": "consumer",
+      "includedProducts": [
+        {
+          "productId": "hebkit",
+          "tier": "premium",
+          "features": [
+            "hebkit.advanced_stats",
+            "hebkit.integrations_sync",
+            "hebkit.nutrition_recommendations"
+          ]
+        }
+      ],
+      "creditGrants": [],
+      "familySize": null,
+      "seatModel": "per_org",
+      "providerPriceIds": {
+        "development": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "staging": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "production": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        }
+      },
+      "displayPrice": null
+    },
+    {
+      "id": "app.lesezeichen",
+      "line": "self_improvement",
+      "storefront": "consumer",
+      "includedProducts": [
+        {
+          "productId": "lesezeichen",
+          "tier": "premium",
+          "features": [
+            "lesezeichen.extended_generation",
+            "lesezeichen.book_generation",
+            "lesezeichen.daily_briefings",
+            "lesezeichen.extended_storage"
+          ]
+        }
+      ],
+      "creditGrants": [],
+      "familySize": null,
+      "seatModel": "per_org",
+      "providerPriceIds": {
+        "development": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.lesezeichen.development",
+          "stripe": null
+        },
+        "staging": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.lesezeichen.staging",
+          "stripe": null
+        },
+        "production": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.lesezeichen.production",
+          "stripe": null
+        }
+      },
+      "displayPrice": null
+    },
+    {
+      "id": "app.kassensturz",
+      "line": "self_improvement",
+      "storefront": "consumer",
+      "includedProducts": [
+        {
+          "productId": "kassensturz",
+          "tier": "premium",
+          "features": [
+            "kassensturz.unlimited_connections",
+            "kassensturz.unlimited_history",
+            "kassensturz.forecast",
+            "kassensturz.budgets",
+            "kassensturz.net_worth",
+            "kassensturz.depots",
+            "kassensturz.household",
+            "kassensturz.tax_exports",
+            "kassensturz.mcp_access"
+          ]
+        }
+      ],
+      "creditGrants": [],
+      "familySize": null,
+      "seatModel": "per_org",
+      "providerPriceIds": {
+        "development": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.kassensturz.development",
+          "stripe": null
+        },
+        "staging": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.kassensturz.staging",
+          "stripe": null
+        },
+        "production": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.kassensturz.production",
+          "stripe": null
+        }
+      },
+      "displayPrice": null
+    },
+    {
+      "id": "app.eigenruhe.trainer",
+      "line": "self_improvement",
+      "storefront": "consumer",
+      "includedProducts": [
+        {
+          "productId": "eigenruhe",
+          "tier": "trainer",
+          "features": [
+            "eigenruhe.custom_programs",
+            "eigenruhe.insights_extended",
+            "eigenruhe.nachtruhe",
+            "eigenruhe.studio"
+          ]
+        }
+      ],
+      "creditGrants": [],
+      "familySize": null,
+      "seatModel": "per_org",
+      "providerPriceIds": {
+        "development": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.eigenruhe.trainer.development",
+          "stripe": null
+        },
+        "staging": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.eigenruhe.trainer.staging",
+          "stripe": null
+        },
+        "production": {
+          "paddle": null,
+          "revenuecat": "de.schluesselbund.app.eigenruhe.trainer.production",
+          "stripe": null
+        }
+      },
+      "displayPrice": null,
+      "addOnFor": [
+        "app.eigenruhe",
+        "suite.individual",
+        "suite.family"
+      ]
+    }
+  ],
+  "freePlans": [
+    {
+      "id": "free.self_improvement",
+      "line": "self_improvement",
+      "creditGrants": [
+        {
+          "wallet": "sololeveling",
+          "monthlyCredits": 100,
+          "memberMonthlyCap": null,
+          "perSeat": false
+        },
+        {
+          "wallet": "leitbild",
+          "monthlyCredits": 100,
+          "memberMonthlyCap": null,
+          "perSeat": false
+        },
+        {
+          "wallet": "redemut",
+          "monthlyCredits": 100,
+          "memberMonthlyCap": null,
+          "perSeat": false
+        },
+        {
+          "wallet": "lesezeichen",
+          "monthlyCredits": 100,
+          "memberMonthlyCap": null,
+          "perSeat": false
+        },
+        {
+          "wallet": "kassensturz",
+          "monthlyCredits": 100,
+          "memberMonthlyCap": null,
+          "perSeat": false
+        }
+      ]
+    }
+  ]
+}

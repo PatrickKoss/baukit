@@ -1,0 +1,232 @@
+{
+  "schemaVersion": 1,
+  "issuer": "https://accounts.example.test",
+  "jwks": {
+    "keys": [
+      {
+        "crv": "Ed25519",
+        "x": "GX9rI-FshTLGq8g4-s1ep4m-DHaykgM0A5v6iz02jWE",
+        "kty": "OKP",
+        "kid": "00000000-0000-4000-8000-000000000042",
+        "use": "sig",
+        "alg": "EdDSA"
+      }
+    ]
+  },
+  "claimSource": "schluesselbund c48f8af backend/crates/schluesselbund-domain/src/consumer_plans.rs BillingClaim and docs/platform-api.md#billing-claim",
+  "vectors": [
+    {
+      "name": "billing-web",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJlaWdlbnJ1aGUiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwicmV2Ijo5LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MCwiYmlsbGluZyI6eyJjaGFubmVsIjoid2ViIiwibWFuYWdlVXJsIjoiaHR0cHM6Ly9hY2NvdW50cy5leGFtcGxlLnRlc3QvcGxhbnMifX0.WRJece_UDx6yHwmeepa3KI5ccgKd47-HWNlSdRbf3wqigzcS0wlPFLdftxoruQVfiTuko04z-LaEtt-x6YTXBA",
+      "audience": "eigenruhe",
+      "now": 1800000000,
+      "expected": "ok",
+      "claims": {
+        "iss": "https://accounts.example.test",
+        "sub": "suite-test|alice",
+        "aud": "eigenruhe",
+        "tier": "premium",
+        "features": [
+          "eigenruhe.custom_programs"
+        ],
+        "rev": 9,
+        "iat": 1799999940,
+        "exp": 1800604740,
+        "billing": {
+          "channel": "web",
+          "manageUrl": "https://accounts.example.test/plans"
+        }
+      }
+    },
+    {
+      "name": "billing-app-store",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJlaWdlbnJ1aGUiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwicmV2Ijo5LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MCwiYmlsbGluZyI6eyJjaGFubmVsIjoiYXBwX3N0b3JlIiwic29sZEJ5IjoiZWlnZW5ydWhlIn19.sF35BuoFs8VwOebHjYTJT3wzh-5Q99NLEDymU8z17VTDHLFXBY94PMkvfqAyCU71T3KXKYtvLyMvNR_DrU0ICQ",
+      "audience": "eigenruhe",
+      "now": 1800000000,
+      "expected": "ok",
+      "claims": {
+        "iss": "https://accounts.example.test",
+        "sub": "suite-test|alice",
+        "aud": "eigenruhe",
+        "tier": "premium",
+        "features": [
+          "eigenruhe.custom_programs"
+        ],
+        "rev": 9,
+        "iat": 1799999940,
+        "exp": 1800604740,
+        "billing": {
+          "channel": "app_store",
+          "soldBy": "eigenruhe"
+        }
+      }
+    },
+    {
+      "name": "billing-play-store-other-app",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJlaWdlbnJ1aGUiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwicmV2Ijo5LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MCwiYmlsbGluZyI6eyJjaGFubmVsIjoicGxheV9zdG9yZSIsInNvbGRCeSI6ImhlYmtpdCJ9fQ.SX6W0O0xVtUqjmSgDyLM6mXX6K9ytuGxiaPrjSZv38b2Q80Z0Sb7KP_Ev7d5E6Xy0FqsrFc-D1E6o2D7Opt_CA",
+      "audience": "eigenruhe",
+      "now": 1800000000,
+      "expected": "ok",
+      "claims": {
+        "iss": "https://accounts.example.test",
+        "sub": "suite-test|alice",
+        "aud": "eigenruhe",
+        "tier": "premium",
+        "features": [
+          "eigenruhe.custom_programs"
+        ],
+        "rev": 9,
+        "iat": 1799999940,
+        "exp": 1800604740,
+        "billing": {
+          "channel": "play_store",
+          "soldBy": "hebkit"
+        }
+      }
+    },
+    {
+      "name": "billing-store-unknown-seller",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJlaWdlbnJ1aGUiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwicmV2Ijo5LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MCwiYmlsbGluZyI6eyJjaGFubmVsIjoiYXBwX3N0b3JlIn19.UW7z2SYpO8DJfLfdM2whQApFoeNknxlZCVqlGUGW8f84bVib-E3BGv-7-4dpook0rGGzafR7L-bnb__lZKOJCw",
+      "audience": "eigenruhe",
+      "now": 1800000000,
+      "expected": "ok",
+      "claims": {
+        "iss": "https://accounts.example.test",
+        "sub": "suite-test|alice",
+        "aud": "eigenruhe",
+        "tier": "premium",
+        "features": [
+          "eigenruhe.custom_programs"
+        ],
+        "rev": 9,
+        "iat": 1799999940,
+        "exp": 1800604740,
+        "billing": {
+          "channel": "app_store"
+        }
+      }
+    },
+    {
+      "name": "billing-family",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJlaWdlbnJ1aGUiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwicmV2Ijo5LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MCwiYmlsbGluZyI6eyJjaGFubmVsIjoiZmFtaWx5In19.lN6T9jZ0gbsWpIsbLoAWJgvOlD11rln94PDYClCLHxV1gUdk7QeXeHxUnCHW0SLOQiGQLHH2C5OHx1g7EA8rCQ",
+      "audience": "eigenruhe",
+      "now": 1800000000,
+      "expected": "ok",
+      "claims": {
+        "iss": "https://accounts.example.test",
+        "sub": "suite-test|alice",
+        "aud": "eigenruhe",
+        "tier": "premium",
+        "features": [
+          "eigenruhe.custom_programs"
+        ],
+        "rev": 9,
+        "iat": 1799999940,
+        "exp": 1800604740,
+        "billing": {
+          "channel": "family"
+        }
+      }
+    },
+    {
+      "name": "billing-organization",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJlaWdlbnJ1aGUiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwicmV2Ijo5LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MCwiYmlsbGluZyI6eyJjaGFubmVsIjoib3JnYW5pemF0aW9uIn19.g6_K9PZjPmSE-WHdHHeqFQ3sm6Qw4oevnzFotIhVshJdxrz1bQVs7agAXqCDbR0Fqp_qc2UzA0Tj-qJrRO94Aw",
+      "audience": "eigenruhe",
+      "now": 1800000000,
+      "expected": "ok",
+      "claims": {
+        "iss": "https://accounts.example.test",
+        "sub": "suite-test|alice",
+        "aud": "eigenruhe",
+        "tier": "premium",
+        "features": [
+          "eigenruhe.custom_programs"
+        ],
+        "rev": 9,
+        "iat": 1799999940,
+        "exp": 1800604740,
+        "billing": {
+          "channel": "organization"
+        }
+      }
+    },
+    {
+      "name": "billing-promo",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJlaWdlbnJ1aGUiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwicmV2Ijo5LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MCwiYmlsbGluZyI6eyJjaGFubmVsIjoicHJvbW8ifX0.dy-NL5-W1RqmUz7mKw7OhYluyeZpBbIg7Cx7-6tdjwFFJCCEgN3M8sQZo-IQZL6g9gKauUyk5AQgLzhZCymcCQ",
+      "audience": "eigenruhe",
+      "now": 1800000000,
+      "expected": "ok",
+      "claims": {
+        "iss": "https://accounts.example.test",
+        "sub": "suite-test|alice",
+        "aud": "eigenruhe",
+        "tier": "premium",
+        "features": [
+          "eigenruhe.custom_programs"
+        ],
+        "rev": 9,
+        "iat": 1799999940,
+        "exp": 1800604740,
+        "billing": {
+          "channel": "promo"
+        }
+      }
+    },
+    {
+      "name": "billing-null",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJlaWdlbnJ1aGUiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwicmV2Ijo5LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MCwiYmlsbGluZyI6bnVsbH0.xVggVnDKdMXeygxgfpVa7yqMJVid3DyC-7E3UX9m_kJmTho-11lVXSZy8xti_32QI3UrBWOXK-2S8ZxuPjT0Cw",
+      "audience": "eigenruhe",
+      "now": 1800000000,
+      "expected": "ticket_invalid"
+    },
+    {
+      "name": "billing-unknown-channel",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJlaWdlbnJ1aGUiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwicmV2Ijo5LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MCwiYmlsbGluZyI6eyJjaGFubmVsIjoicGF5cGFsIn19.hjg5u5SYrjcuGJ676GTE8gf4HT9e-YruSB3DcuvE6sJUH7p8tAMhjFPpAZRHnycYjuDVrLslcA2NNtU8bhANBQ",
+      "audience": "eigenruhe",
+      "now": 1800000000,
+      "expected": "ticket_invalid"
+    },
+    {
+      "name": "billing-missing-channel",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJlaWdlbnJ1aGUiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwicmV2Ijo5LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MCwiYmlsbGluZyI6eyJzb2xkQnkiOiJlaWdlbnJ1aGUifX0.ONe4C4TZI3DspXUBa7tvnl0rOd34TXVYmzLNa5Kzg0uGTPIsDnpNV4Ojsmd3caUGa0dS2btMhAyl5SzBMTUoAw",
+      "audience": "eigenruhe",
+      "now": 1800000000,
+      "expected": "ticket_invalid"
+    },
+    {
+      "name": "billing-sold-by-on-web",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJlaWdlbnJ1aGUiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwicmV2Ijo5LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MCwiYmlsbGluZyI6eyJjaGFubmVsIjoid2ViIiwic29sZEJ5IjoiZWlnZW5ydWhlIn19.yNLEFg_LSbhLdihSmZ8GRswZYhWGf4bir49F6LHvAsD1ZrNsEvV6cnyIXfRf7sT-KthDeg_v_6wCZ4B_PhJjAg",
+      "audience": "eigenruhe",
+      "now": 1800000000,
+      "expected": "ticket_invalid"
+    },
+    {
+      "name": "billing-empty-sold-by",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJlaWdlbnJ1aGUiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwicmV2Ijo5LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MCwiYmlsbGluZyI6eyJjaGFubmVsIjoiYXBwX3N0b3JlIiwic29sZEJ5IjoiIn19.gDO9IF22K_za1MRP_PtDDUpxr-tHL1xxv56iMK007oC02foVSjbw_-K5rzAIJStO9D9mXsqCcuwPqoQ5psgfBA",
+      "audience": "eigenruhe",
+      "now": 1800000000,
+      "expected": "ticket_invalid"
+    },
+    {
+      "name": "billing-manage-url-on-store",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJlaWdlbnJ1aGUiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwicmV2Ijo5LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MCwiYmlsbGluZyI6eyJjaGFubmVsIjoiYXBwX3N0b3JlIiwibWFuYWdlVXJsIjoiaHR0cHM6Ly9hY2NvdW50cy5leGFtcGxlLnRlc3QvcGxhbnMifX0.INw52prdeWKLd6SXM-r-shwsB9LtDd1j8LYDDSPG14Ew4qYRj3-vgcsJOvqW2K_IebN__wPcktrUSsfFTYX0AA",
+      "audience": "eigenruhe",
+      "now": 1800000000,
+      "expected": "ticket_invalid"
+    },
+    {
+      "name": "billing-manage-url-not-http",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJlaWdlbnJ1aGUiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwicmV2Ijo5LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MCwiYmlsbGluZyI6eyJjaGFubmVsIjoid2ViIiwibWFuYWdlVXJsIjoiamF2YXNjcmlwdDphbGVydCgxKSJ9fQ.vc72qsVa7gEzet_d_k4AluNjFt0pLLAOKPtqn0pI-HhQY7_j5JZzF6fBFLt2wSiq5FFIZf6wP84LZuSmDDhhAQ",
+      "audience": "eigenruhe",
+      "now": 1800000000,
+      "expected": "ticket_invalid"
+    },
+    {
+      "name": "billing-unknown-field",
+      "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJlaWdlbnJ1aGUiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwicmV2Ijo5LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MCwiYmlsbGluZyI6eyJjaGFubmVsIjoiZmFtaWx5IiwiZmFtaWx5SWQiOiJmLTEifX0.zXjuVBck_ueI90eEmrqg18C0ib4TmUjaBECviw13_ep-ZPDjrYW_b_p6O-lRq5OVZ3O1TqlMNZMuYM0o6QCwBg",
+      "audience": "eigenruhe",
+      "now": 1800000000,
+      "expected": "ticket_invalid"
+    }
+  ]
+}
