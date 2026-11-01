@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add optional API and worker PodDisruptionBudgets through `api.podDisruptionBudget` and `worker.podDisruptionBudget`, off by default. Each takes exactly one of `minAvailable` or `maxUnavailable`.
+
 ## [0.13.0] - 2026-10-31
 
 ## [0.12.2] - 2026-10-31

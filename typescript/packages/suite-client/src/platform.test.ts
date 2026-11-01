@@ -57,11 +57,10 @@ it('matches recorded hub credit and organization responses', () => {
   const balance: CreditBalance = {
     suiteSubject: 'suite-dev|alice',
     wallet: 'hebkit',
-    available: 10,
     revision: 0,
-    pools: [],
-    grant: { granted: 0, used: 0, available: 0 },
-    packs: [{ remaining: 10, expiresAt: 1795392000 }],
+    total: 10,
+    grant: { available: 0, expiresAt: null },
+    packs: [{ available: 10, expiresAt: 1795392000 }],
   };
   const pending: CreditReservation = {
     id: '018f1234-5678-7abc-8def-012345678901',

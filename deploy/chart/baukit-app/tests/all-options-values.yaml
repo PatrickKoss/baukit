@@ -8,6 +8,9 @@ platform:
     previousKey: previous
 
 api:
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
   env:
     - name: API_CACHE_DIR
       value: /var/cache/api
@@ -37,6 +40,9 @@ api:
 
 worker:
   enabled: true
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 50%
   env:
     - name: TMPDIR
       value: /work

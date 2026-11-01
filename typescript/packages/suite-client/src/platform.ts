@@ -61,29 +61,27 @@ export interface CreditReservation {
   /** Unix seconds. */
   readonly expiresAt: number;
 }
-export interface CreditPool {
-  /** `family` or `organization`. */
-  readonly ownerKind: string;
-  readonly available: number;
-}
+/** Pools, rollover, the own or free grant and extra credits. */
 export interface CreditGrant {
-  readonly granted: number;
-  readonly used: number;
   readonly available: number;
+  /** Unix seconds; `null` when the bucket is empty. */
+  readonly expiresAt: number | null;
 }
 export interface CreditPack {
-  readonly remaining: number;
+  readonly available: number;
   /** Unix seconds. */
   readonly expiresAt: number;
 }
+/** The bucketed balance of Schlüsselbund C21 and later. */
 export interface CreditBalance {
   readonly suiteSubject: string;
   readonly wallet: string;
-  readonly available: number;
   /** Counts `credits.changed` events for this wallet. */
   readonly revision: number;
-  readonly pools: readonly CreditPool[];
+  /** The grant plus every pack: what a reserve can take now. */
+  readonly total: number;
   readonly grant: CreditGrant;
+  /** Earliest expiry first, the order a spend takes them. */
   readonly packs: readonly CreditPack[];
 }
 

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Breaking: `CreditBalance` reads the bucketed balance of Schlüsselbund C21: `suite_subject`, `wallet`, `revision`, `total`, `grant` with `available` and `expires_at: Option<i64>`, and `packs` with `available` and `expires_at`. `available`, `pools`, `CreditPool`, `grant.granted`, `grant.used` and `packs[].remaining` are gone, and a balance in the old shape fails as `HubError::InvalidResponse`. Products read `total` instead of `available` and `packs[].available` instead of `remaining`, and need the hub at C21 or later. The train takes a minor bump.
+
 ## [0.13.0] - 2026-10-31
 
 - Breaking: `OrganizationSummary` gains `name: Option<String>`, the organization's display name. The struct is not `#[non_exhaustive]`, so struct literals and exhaustive patterns outside the crate need the new field, and the train takes a minor bump. Decoding still accepts a summary without `name` from a hub before Schlüsselbund C16.

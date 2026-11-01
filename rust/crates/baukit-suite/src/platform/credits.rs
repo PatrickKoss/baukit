@@ -29,37 +29,33 @@ pub struct CreditReservation {
     pub expires_at: i64,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreditPool {
-    /// `family` or `organization`.
-    pub owner_kind: String,
-    pub available: u64,
-}
+/// Pools, rollover, the own or free grant and extra credits.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreditGrant {
-    pub granted: u64,
-    pub used: u64,
     pub available: u64,
+    /// Unix seconds; `None` when the bucket is empty.
+    pub expires_at: Option<i64>,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreditPack {
-    pub remaining: u64,
+    pub available: u64,
     /// Unix seconds.
     pub expires_at: i64,
 }
+/// The bucketed balance of Schlüsselbund C21 and later.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreditBalance {
     pub suite_subject: String,
     pub wallet: String,
-    pub available: u64,
     /// Counts `credits.changed` events for this wallet.
     pub revision: u64,
-    pub pools: Vec<CreditPool>,
+    /// The grant plus every pack: what a reserve can take now.
+    pub total: u64,
     pub grant: CreditGrant,
+    /// Earliest expiry first, the order a spend takes them.
     pub packs: Vec<CreditPack>,
 }
 
@@ -182,9 +178,8 @@ impl Credits for ZeroCostCredits {
         Ok(CreditBalance {
             suite_subject: suite_subject.into(),
             wallet: self.product_id.clone(),
-            available: 0,
             revision: 0,
-            pools: Vec::new(),
+            total: 0,
             grant: CreditGrant::default(),
             packs: Vec::new(),
         })
