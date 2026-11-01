@@ -208,7 +208,9 @@ export function AppShell({ children, preferenceSubjectId }: AppShellProps) {
   return (
     <AppPreferencesContext.Provider value={contextValue}>
       <AppThemeProvider mode={preferences.theme} persistMode={persistThemeMode}>
-        <PurchasesProvider flow={purchases}>{children}</PurchasesProvider>
+        <PurchasesProvider flow={purchases} productId={PRODUCT_NAME}>
+          {children}
+        </PurchasesProvider>
       </AppThemeProvider>
     </AppPreferencesContext.Provider>
   );

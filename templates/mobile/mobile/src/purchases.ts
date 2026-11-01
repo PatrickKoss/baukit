@@ -8,7 +8,7 @@ import { createPurchasesPort, readPurchasesConfig } from './purchases-config';
 
 export const purchasesConfig = readPurchasesConfig(Constants.expoConfig?.extra, Platform.OS);
 
-// Replace with the product backend's entitlement and credit routes when the product joins the suite.
+// Replace with createAccountPlanBackend once the backend mounts account_plan_router.
 const standaloneBackend: EntitlementBackend = {
   refreshEntitlement: () => Promise.resolve(null),
 };

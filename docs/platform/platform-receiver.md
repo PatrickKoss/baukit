@@ -152,6 +152,39 @@ and makes no hub calls. Use `settings.platform.entitlements(cache, None)?`. Set
 its tier and feature keys to the product's desired self-hosted policy. The library
 default is `free` with no feature keys.
 
+## Serve the account plan
+
+`AccountPlan` is the port every product gates on. Pick one adapter in the binary crate:
+
+- `StandaloneAccountPlan::new(product_id, StandaloneEntitlements)` returns the configured tier and features for every subject. Credits read as an empty wallet, because standalone actions cost nothing.
+- `HubAccountPlan::new(product_id, VerifiedTicketSource::new(Arc::new(PlatformTicketSource::new(hub)), verifier), cache, credits, plans_url)?` fetches a ticket through `POST /platform/v1/entitlements/tickets`, verifies it and stores the snapshot. `plans_url` is the hub web `/plans` page and must be an absolute HTTP(S) URL. `VerifiedTicketSource` also implements `EntitlementSource`, so the same value feeds `EntitlementEventHandler`.
+
+`refresh(subject)` verifies a fresh ticket. `current(subject)` reads through the entitlement cache and is the one to use for request gating. `require_feature(&plan, subject, "product.feature")` returns the entitlement or a `PlanError`.
+
+Mount `account_plan_router(plan)` under the API prefix. The authentication layer inserts `PlanSubject(Some(suite_subject))` as a request extension, or `PlanSubject(None)` when the session has no suite link. The router serves:
+
+| Route | Body |
+| --- | --- |
+| `GET /me/entitlement` | `{mode: "hub" \| "standalone", suiteSubject, tier, features, revision, plansUrl \| null, billing \| null}` |
+| `GET /me/credits` | the bucketed `CreditBalance` |
+
+`AccountPlanOpenApi` documents both routes for the product's OpenAPI document. Every product returns the same errors:
+
+| Code | Status | When |
+| --- | --- | --- |
+| `suite_identity_missing` | 403 | the session has no suite subject |
+| `entitlements_unavailable` | 503, `Retry-After: 5` | the ticket, JWKS or cache read failed |
+| `credits_unavailable` | 503, `Retry-After: 5` | the wallet read failed |
+| `feature_not_entitled` | 403, `details.feature` | `require_feature` found the plan without the key |
+
+Gating fails closed. A failed read is `unavailable`, never a grant and never the free tier, so clients show a retry instead of a paywall. `NoEntitlements` from the hub is the free tier, as in `Entitlements`.
+
+`billing` is set only by `refresh`, and only when the hub included the claim. The platform ticket route never adds it, so a product that wants it must fetch tickets through the user ticket route with `includeBilling` in its own `TicketSource`. The cache does not keep `billing`, so `current` returns `null`.
+
+### Check feature keys against the hub catalog
+
+`fixtures/plans/v1/catalog.json` is a recorded copy of the hub plan catalog; its README names the hub commit. A product contract test copies it and calls `assert_feature_keys_match(catalog, "hebkit", HEBKIT_FEATURE_KEYS)`, which panics with both lists when the product declares a key the catalog lacks or the catalog grants a key the product never checks. `feature_key_drift` returns the same lists as `FeatureKeyDrift` for a custom assertion.
+
 ## Call the hub API
 
 `HubClient` calls the hub's `/platform/v1` routes with the product's
@@ -339,6 +372,8 @@ present in the workspace lockfile, for pure JavaScript Ed25519 and SHA-512. The
 predates this change by more than two weeks. It needs neither WebCrypto Ed25519 nor
 Node globals, `atob`, `TextEncoder` or `TextDecoder`, so the same implementation can
 run on Hermes. Both languages run the hub's positive and negative ticket fixtures.
+
+Tickets may carry the optional `billing` claim from Schlüsselbund C18 (`c48f8af` or later): `{channel, soldBy?, manageUrl?}`. `channel` is `web`, `app_store`, `play_store`, `family`, `organization` or `promo`. `soldBy` names the product that sold a store plan and appears only for `app_store` and `play_store`. `manageUrl` is an absolute HTTP(S) URL and appears only for `web`. Both verifiers reject a ticket whose claim breaks these rules, has unknown fields or is `null`. `fixtures/entitlement-tickets/v1/billing-vectors.json` holds the shared vectors.
 
 ## Configure and deploy
 
