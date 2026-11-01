@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.14.0
+
+### Minor Changes
+
+- 1ff4ecb: Breaking: the scoped-store registry no longer claims unowned legacy stores. `LegacyStoreOwnership`, `LegacyStoreInspection`, `inspectLegacy` and `legacyStoreName` are gone, and `ResolvedScopedStore` is `{ storeName }` without `claimedLegacy` or `legacyClaimedBySubject`.
+- Release the coordinated baukit 0.14.0 train.
+
 ## 0.13.0
 
 ### Minor Changes

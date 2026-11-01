@@ -4,6 +4,8 @@ All notable changes to `baukit-runtime` are documented here.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-01
+
 - Breaking: the `Shutdown` alias for `ShutdownToken` is gone. The train takes a minor bump.
 
 ## [0.13.0] - 2026-10-31
