@@ -157,7 +157,7 @@ default is `free` with no feature keys.
 `AccountPlan` is the port every product gates on. Pick one adapter in the binary crate:
 
 - `StandaloneAccountPlan::new(product_id, StandaloneEntitlements)` returns the configured tier and features for every subject. Credits read as an empty wallet, because standalone actions cost nothing.
-- `HubAccountPlan::new(product_id, VerifiedTicketSource::new(Arc::new(PlatformTicketSource::new(hub)), verifier), cache, credits, plans_url)?` fetches a ticket through `POST /platform/v1/entitlements/tickets`, verifies it and stores the snapshot. `plans_url` is the hub web `/plans` page and must be an absolute HTTP(S) URL. `VerifiedTicketSource` also implements `EntitlementSource`, so the same value feeds `EntitlementEventHandler`.
+- `HubAccountPlan::new(product_id, VerifiedTicketSource::new(Arc::new(PlatformTicketSource::new(hub)), verifier), cache, credits, plans_url)?` fetches a ticket through `POST /platform/v1/entitlements/tickets` with `includeBilling: true`, verifies it and stores the snapshot. `plans_url` is the hub web `/plans` page and must be an absolute HTTP(S) URL. `VerifiedTicketSource` also implements `EntitlementSource`, so the same value feeds `EntitlementEventHandler`.
 
 `refresh(subject)` verifies a fresh ticket. `current(subject)` reads through the entitlement cache and is the one to use for request gating. `require_feature(&plan, subject, "product.feature")` returns the entitlement or a `PlanError`.
 
@@ -179,11 +179,11 @@ Mount `account_plan_router(plan)` under the API prefix. The authentication layer
 
 Gating fails closed. A failed read is `unavailable`, never a grant and never the free tier, so clients show a retry instead of a paywall. `NoEntitlements` from the hub is the free tier, as in `Entitlements`.
 
-`billing` is set only by `refresh`, and only when the hub included the claim. The platform ticket route never adds it, so a product that wants it must fetch tickets through the user ticket route with `includeBilling` in its own `TicketSource`. The cache does not keep `billing`, so `current` returns `null`.
+`billing` comes from the ticket's claim. `PlatformTicketSource` asks for it with `includeBilling: true`, which needs the hub with Schlüsselbund C27. `GET /me/entitlement` always calls `refresh`, so every read carries the current claim and a web or store subscriber never sees a purchase offer. The cache does not keep `billing`, and `current` returns `null`, because request gating only checks feature keys. Read `billing` from `refresh`, never from `current`.
 
 ### Check feature keys against the hub catalog
 
-`fixtures/plans/v1/catalog.json` is a recorded copy of the hub plan catalog; its README names the hub commit. A product contract test copies it and calls `assert_feature_keys_match(catalog, "hebkit", HEBKIT_FEATURE_KEYS)`, which panics with both lists when the product declares a key the catalog lacks or the catalog grants a key the product never checks. `feature_key_drift` returns the same lists as `FeatureKeyDrift` for a custom assertion.
+`fixtures/plans/v1/catalog.json` is a recorded copy of the hub plan catalog; its README names the hub commit. A product contract test copies it and calls `assert_feature_keys_match(catalog, "hebkit", HEBKIT_FEATURE_KEYS)`, which panics with both lists when the product declares a key the catalog lacks or the catalog grants a key the product never checks. `feature_key_drift` returns the same lists as `FeatureKeyDrift` for a custom assertion. Web and mobile code use `assertFeatureKeysMatch(catalog, productId, keys)`, `featureKeyDrift` and `catalogFeatureKeys` from `@baukit/suite-client` with the parsed JSON of the same file.
 
 ## Call the hub API
 
