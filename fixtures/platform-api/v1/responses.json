@@ -357,5 +357,17 @@
         }
       }
     }
+  },
+  "requests": {
+    "entitlementTicket": {
+      "method": "POST",
+      "path": "/platform/v1/entitlements/tickets",
+      "source": "Schlüsselbund C27 contract (hand-written before merge): includeBilling true issues the billing claim the user ticket route adds",
+      "body": {
+        "suiteSubject": "suite-dev|alice",
+        "productId": "hebkit",
+        "includeBilling": true
+      }
+    }
   }
 }

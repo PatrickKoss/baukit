@@ -15,8 +15,8 @@ pub enum PlanMode {
     Standalone,
 }
 
-/// The plan a product gates on. `billing` is set only when the verified
-/// ticket carried the claim, so cached reads never include it.
+/// The plan a product gates on. `billing` is set only by `refresh`, which
+/// serves `GET /me/entitlement`; request gating reads features only.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountEntitlement {
@@ -54,7 +54,7 @@ pub trait AccountPlan: Send + Sync {
     fn mode(&self) -> PlanMode;
     /// A freshly verified plan for `GET /me/entitlement`.
     async fn refresh(&self, suite_subject: &str) -> Result<AccountEntitlement, PlanError>;
-    /// The cached plan for request gating.
+    /// The cached plan for request gating, without `billing`.
     async fn current(&self, suite_subject: &str) -> Result<AccountEntitlement, PlanError>;
     async fn credits(&self, suite_subject: &str) -> Result<CreditBalance, PlanError>;
 }
@@ -129,14 +129,15 @@ pub trait TicketSource: Send + Sync {
 struct TicketRequest<'a> {
     suite_subject: &'a str,
     product_id: &'a str,
+    include_billing: bool,
 }
 #[derive(Deserialize)]
 struct TicketResponse {
     ticket: String,
 }
 
-/// `POST /platform/v1/entitlements/tickets` with service credentials. The
-/// platform route never adds the `billing` claim.
+/// `POST /platform/v1/entitlements/tickets` with service credentials and
+/// `includeBilling`, so the ticket carries the `billing` claim (Schlüsselbund C27).
 pub struct PlatformTicketSource {
     hub: Arc<HubClient>,
 }
@@ -155,6 +156,7 @@ impl TicketSource for PlatformTicketSource {
                 &TicketRequest {
                     suite_subject,
                     product_id: self.hub.product_id(),
+                    include_billing: true,
                 },
             )
             .await

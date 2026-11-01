@@ -384,6 +384,32 @@ async fn router_serves_the_plan_and_wallet() {
 }
 
 #[tokio::test]
+async fn hub_entitlement_route_serves_fresh_billing_on_every_read() {
+    let tickets = Arc::new(ScriptedTickets::default());
+    let plan: Arc<dyn AccountPlan> = Arc::new(hub_plan(tickets.clone()));
+    tickets.answer(Ok(sign(&claims(
+        &[],
+        1,
+        Some(json!({"channel":"web","manageUrl":PLANS_URL})),
+    ))));
+    let (status, _, body) = call(plan.clone(), "/me/entitlement", Some(SUBJECT)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["billing"],
+        json!({"channel":"web","manageUrl":PLANS_URL})
+    );
+    tickets.answer(Ok(sign(&claims(&[], 2, Some(json!({"channel":"family"}))))));
+    let (_, _, body) = call(plan.clone(), "/me/entitlement", Some(SUBJECT)).await;
+    assert_eq!(body["billing"], json!({"channel":"family"}));
+    assert_eq!(body["revision"], 2);
+    assert_eq!(tickets.calls.load(Ordering::SeqCst), 2);
+    tickets.answer(Err(EntitlementSourceError::Unavailable));
+    let (status, _, body) = call(plan, "/me/entitlement", Some(SUBJECT)).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["error"]["code"], "entitlements_unavailable");
+}
+
+#[tokio::test]
 async fn router_uses_one_set_of_error_codes() {
     let plan: Arc<dyn AccountPlan> = Arc::new(standalone(&[]));
     for path in ["/me/entitlement", "/me/credits"] {

@@ -38,6 +38,11 @@ fn recorded(name: &str) -> (u16, Value) {
     )
 }
 
+fn recorded_request(name: &str) -> Value {
+    let fixture: Value = serde_json::from_str(RESPONSES).expect("recorded responses");
+    fixture["requests"][name]["body"].clone()
+}
+
 #[derive(Clone, Debug)]
 struct Recorded {
     method: String,
@@ -924,10 +929,7 @@ async fn platform_ticket_source_posts_the_subject_and_product() -> TestResult {
         (request.method.as_str(), request.path.as_str()),
         ("POST", "/api/platform/v1/entitlements/tickets")
     );
-    assert_eq!(
-        request.body,
-        Some(json!({"suiteSubject": SUBJECT, "productId": "hebkit"}))
-    );
+    assert_eq!(request.body, Some(recorded_request("entitlementTicket")));
     for (name, expected) in [
         ("subjectNotFound", EntitlementSourceError::NoEntitlements),
         ("accountInactive", EntitlementSourceError::NoEntitlements),
