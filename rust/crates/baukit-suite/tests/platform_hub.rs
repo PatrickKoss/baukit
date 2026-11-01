@@ -908,3 +908,34 @@ fn organization_and_credit_events_decode_with_their_owner() -> TestResult {
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn platform_ticket_source_posts_the_subject_and_product() -> TestResult {
+    let hub = MockHub::start().await?;
+    let source = PlatformTicketSource::new(hub.client("hebkit")?);
+    hub.state.script(&["entitlementTicket"]);
+    let ticket = source.ticket(SUBJECT).await?;
+    assert_eq!(
+        Some(ticket.as_str()),
+        recorded("entitlementTicket").1["ticket"].as_str()
+    );
+    let request = hub.state.requests().pop().ok_or("request")?;
+    assert_eq!(
+        (request.method.as_str(), request.path.as_str()),
+        ("POST", "/api/platform/v1/entitlements/tickets")
+    );
+    assert_eq!(
+        request.body,
+        Some(json!({"suiteSubject": SUBJECT, "productId": "hebkit"}))
+    );
+    for (name, expected) in [
+        ("subjectNotFound", EntitlementSourceError::NoEntitlements),
+        ("accountInactive", EntitlementSourceError::NoEntitlements),
+        ("creditsUnavailable", EntitlementSourceError::Unavailable),
+        ("scopeMissing", EntitlementSourceError::Unavailable),
+    ] {
+        hub.state.script(&[name]);
+        assert_eq!(source.ticket(SUBJECT).await, Err(expected), "{name}");
+    }
+    Ok(())
+}

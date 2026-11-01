@@ -14,6 +14,14 @@
         "scope": "credits:read credits:spend organizations:read"
       }
     },
+    "entitlementTicket": {
+      "status": 200,
+      "source": "docs/platform-api.md POST /platform/v1/entitlements/tickets (ticket and expiresAt; the ticket is the premium-seven-days vector of fixtures/entitlement-tickets/v1)",
+      "body": {
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJhdWQiOiJoZWJraXQiLCJ0aWVyIjoicHJlbWl1bSIsImZlYXR1cmVzIjpbImV4cG9ydCJdLCJyZXYiOjE3LCJpYXQiOjE3OTk5OTk5NDAsImV4cCI6MTgwMDYwNDc0MH0.d_hi3_ljzZwrdn0TKni9NTfC78G_NZR3IxyUsOmErqPf3SN-ClKBkJTNpNNEyR8ylSeW0_EgOUO7iy3FIq8gBw",
+        "expiresAt": 1800604740
+      }
+    },
     "creditBalance": {
       "status": 200,
       "source": "backend/tests/platform.rs credit_routes_spend_only_the_caller_wallet_and_map_ledger_errors (hebkit balance after a 10-credit pack) and PlatformCreditBalanceDto in backend/crates/schluesselbund-api/src/routes/platform_credits.rs",

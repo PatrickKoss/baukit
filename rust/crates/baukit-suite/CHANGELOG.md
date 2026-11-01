@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Breaking: `TicketClaims` gains `billing: Option<BillingClaim>`, the optional Schlüsselbund C18 claim with `BillingChannel` (`web`, `app_store`, `play_store`, `family`, `organization`, `promo`), `sold_by` for store plans and `manage_url` for web plans. The verifier used to reject the claim as unknown; it now accepts a valid one and rejects `null`, unknown fields, `soldBy` outside the stores and `manageUrl` outside `web` or without an HTTP(S) host. `TicketClaims` is not `#[non_exhaustive]`, so struct literals need `billing: None`. The train takes a minor bump.
+- `platform` adds the plan kit: the `AccountPlan` port with `StandaloneAccountPlan` and `HubAccountPlan`, `PlatformTicketSource` and `VerifiedTicketSource`, `require_feature`, `PlanError` with the codes `suite_identity_missing`, `entitlements_unavailable`, `credits_unavailable` and `feature_not_entitled`, `account_plan_router` for `GET /me/entitlement` and `GET /me/credits` with `PlanSubject` and `AccountPlanOpenApi`, and `feature_key_drift` and `assert_feature_keys_match` against the recorded hub catalog in `fixtures/plans/v1/`. `CreditBalance`, `CreditGrant` and `CreditPack` derive `ToSchema`.
 - Breaking: `CreditBalance` reads the bucketed balance of Schlüsselbund C21: `suite_subject`, `wallet`, `revision`, `total`, `grant` with `available` and `expires_at: Option<i64>`, and `packs` with `available` and `expires_at`. `available`, `pools`, `CreditPool`, `grant.granted`, `grant.used` and `packs[].remaining` are gone, and a balance in the old shape fails as `HubError::InvalidResponse`. Products read `total` instead of `available` and `packs[].available` instead of `remaining`, and need the hub at C21 or later. The train takes a minor bump.
 
 ## [0.13.0] - 2026-10-31

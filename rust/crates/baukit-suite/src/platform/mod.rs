@@ -12,6 +12,9 @@ mod events;
 mod hub;
 mod memory;
 mod organizations;
+mod plan;
+mod plan_catalog;
+mod plan_http;
 #[cfg(feature = "postgres")]
 mod postgres;
 mod receiver;
@@ -24,6 +27,9 @@ pub use events::*;
 pub use hub::*;
 pub use memory::InMemoryPlatformInbox;
 pub use organizations::*;
+pub use plan::*;
+pub use plan_catalog::*;
+pub use plan_http::*;
 #[cfg(feature = "postgres")]
 pub use postgres::{PLATFORM_MIGRATION_SQL, PostgresEntitlementCache, PostgresPlatformInbox};
 pub use receiver::*;
