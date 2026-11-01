@@ -409,6 +409,8 @@ class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
                     root, environment, "corepack", "pnpm", "--dir", example,
                     "install", "--lockfile-only", "--no-frozen-lockfile", "--ignore-scripts",
                 )
+            rust_example = ["--manifest-path", "examples/rust-app/Cargo.toml"]
+            self.run_command(root, environment, "cargo", "generate-lockfile", *rust_example)
             check = ["python3", "scripts/check-example-lockfiles.py"]
             self.run_command(root, environment, *check)
             self.run_command(root, environment, "git", "init", "--quiet")
@@ -435,6 +437,11 @@ class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
             self.assertEqual(
                 (root / "examples/unrelated/pnpm-lock.yaml").read_bytes(), unrelated
             )
+            self.assertIn(
+                'name = "baukit-core"\nversion = "0.7.2"',
+                (root / "examples/rust-app/Cargo.lock").read_text(),
+            )
+            self.run_command(root, environment, "cargo", "metadata", "--locked", *rust_example)
             self.run_command(root, environment, *check)
             suite = json.loads((root / "typescript/packages/suite-client/package.json").read_text())
             self.assertEqual(suite["peerDependencies"], {
@@ -520,6 +527,12 @@ class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
                 "name": "unrelated", "private": True, "packageManager": package_manager,
             }),
             "examples/unrelated/pnpm-lock.yaml": "unrelated example must stay untouched\n",
+            "examples/rust-app/Cargo.toml": (
+                '[package]\nname = "rust-app"\nversion = "0.1.0"\nedition = "2021"\n'
+                '[workspace]\n[dependencies]\n'
+                'baukit-core = { path = "../../rust/crates/baukit-core" }\n'
+            ),
+            "examples/rust-app/src/lib.rs": "",
         }
         manifests = {
             "analytics-core": {"name": "@baukit/analytics-core", "version": "0.7.1"},

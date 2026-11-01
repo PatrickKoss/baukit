@@ -88,7 +88,7 @@ async fn service_contract() -> TestResult {
     )
     .await?;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(json_body(&body)?["error"]["code"], "validation_failed");
+    assert_eq!(json_body(&body)?["error"]["code"], "invalid_json");
 
     let (status, headers, body) = call(
         &api,

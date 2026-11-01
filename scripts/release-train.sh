@@ -92,6 +92,10 @@ TRAIN_VERSION="$next" perl -0pi -e \
   's{(\[package\]\nname = "baukit-cli"\nversion = ")[^"]+(")}{$1$ENV{TRAIN_VERSION}$2}' \
   cli/Cargo.toml
 cargo update --manifest-path cli/Cargo.toml --workspace
+while IFS= read -r lockfile; do
+  grep -q '^name = "baukit-' "$lockfile" || continue
+  cargo update --manifest-path "${lockfile%Cargo.lock}Cargo.toml" --workspace
+done < <(find examples -name Cargo.lock -not -path '*/target/*' | sort)
 
 release_date=${RELEASE_DATE:-$(date -u +%F)}
 mapfile -t template_changelogs < <(python3 - <<'PYTHON'
