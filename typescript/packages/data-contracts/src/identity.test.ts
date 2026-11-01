@@ -30,50 +30,17 @@ describe('scoped persistence registry', () => {
     ).rejects.toMatchObject({ code: 'persistence_identity_mismatch' });
   });
 
-  it('keeps E -> F -> E mappings stable and serializes a one-time legacy claim', async () => {
+  it('keeps E -> F -> E mappings stable', async () => {
     const registry = new InMemoryScopedPersistenceRegistryStore();
-    const inspectLegacy = vi.fn(() =>
-      Promise.resolve({
-        exists: true,
-        ownership: 'claimable',
-      } as const),
-    );
-    const base = {
-      namespace: 'example',
-      registry,
-      digest,
-      legacyStoreName: 'legacy.db',
-      inspectLegacy,
-    } as const;
+    const base = { namespace: 'example', registry, digest } as const;
 
     const [accountE, accountF] = await Promise.all([
       resolveScopedStore({ ...base, subject: 'account-e' }),
       resolveScopedStore({ ...base, subject: 'account-f' }),
     ]);
-    expect([accountE, accountF].filter((result) => result.claimedLegacy)).toHaveLength(1);
     expect(new Set([accountE.storeName, accountF.storeName]).size).toBe(2);
     await expect(resolveScopedStore({ ...base, subject: 'account-e' })).resolves.toEqual(accountE);
     await expect(resolveScopedStore({ ...base, subject: 'account-f' })).resolves.toEqual(accountF);
-    expect(inspectLegacy).toHaveBeenCalledOnce();
-  });
-
-  it.each([
-    [{ exists: false } as const, false],
-    [{ exists: true, ownership: 'ambiguous' } as const, false],
-    [{ exists: true, ownership: 'other-subject' } as const, false],
-    [{ exists: true, ownership: 'claimable' } as const, true],
-    [{ exists: true, ownership: 'current-subject' } as const, true],
-  ])('applies explicit legacy ownership rules to %j', async (inspection, claimedLegacy) => {
-    const result = await resolveScopedStore({
-      namespace: `legacy-${inspection.exists ? inspection.ownership : 'missing'}`,
-      subject: 'account-e',
-      registry: new InMemoryScopedPersistenceRegistryStore(),
-      digest,
-      legacyStoreName: 'legacy.db',
-      inspectLegacy: () => Promise.resolve(inspection),
-    });
-    expect(result.claimedLegacy).toBe(claimedLegacy);
-    expect(result.storeName === 'legacy.db').toBe(claimedLegacy);
   });
 
   it.each([
@@ -85,8 +52,7 @@ describe('scoped persistence registry', () => {
       namespaces: [
         {
           namespace: 'example',
-          legacyClaimedBySubject: null,
-          subjects: [{ subject: 'account-e', storeName: 'legacy.db', claimedLegacy: true }],
+          subjects: [{ subject: 'account-e', storeName: 'forged.db' }],
         },
       ],
     }),
@@ -95,109 +61,33 @@ describe('scoped persistence registry', () => {
       namespaces: [
         {
           namespace: 'example',
-          legacyClaimedBySubject: null,
           subjects: [
-            {
-              subject: 'account-e',
-              storeName: `baukit-scoped-v1-${'e'.repeat(64)}`,
-              claimedLegacy: false,
-            },
-            {
-              subject: 'account-f',
-              storeName: `baukit-scoped-v1-${'e'.repeat(64)}`,
-              claimedLegacy: false,
-            },
+            { subject: 'account-e', storeName: `baukit-scoped-v1-${'e'.repeat(64)}` },
+            { subject: 'account-f', storeName: `baukit-scoped-v1-${'e'.repeat(64)}` },
           ],
         },
       ],
     }),
-  ])('fails closed for corrupt registry metadata', async (serialized) => {
-    const inspectLegacy = vi.fn();
-    await expect(
-      resolveScopedStore({
-        namespace: 'example',
-        subject: 'account-e',
-        registry: new InMemoryScopedPersistenceRegistryStore(serialized),
-        digest,
-        inspectLegacy,
-        legacyStoreName: 'legacy.db',
-      }),
-    ).rejects.toMatchObject({ code: 'persistence_identity_mismatch' });
-    expect(inspectLegacy).not.toHaveBeenCalled();
-  });
-
-  it('rejects a claimed legacy mapping unless its configured name still matches', async () => {
-    const serialized = JSON.stringify({
-      version: 1,
-      namespaces: [
-        {
-          namespace: 'example',
-          legacyClaimedBySubject: 'account-e',
-          subjects: [{ subject: 'account-e', storeName: 'forged.db', claimedLegacy: true }],
-        },
-      ],
-    });
-    const registry = new InMemoryScopedPersistenceRegistryStore(serialized);
-
-    await expect(
-      resolveScopedStore({ namespace: 'example', subject: 'account-e', registry, digest }),
-    ).rejects.toMatchObject({ code: 'persistence_identity_mismatch' });
-    await expect(
-      resolveScopedStore({
-        namespace: 'example',
-        subject: 'account-e',
-        registry,
-        digest,
-        legacyStoreName: 'legacy.db',
-      }),
-    ).rejects.toMatchObject({ code: 'persistence_identity_mismatch' });
-  });
-
-  it('rejects duplicate store ownership before recording a legacy claim', async () => {
-    const registry = new InMemoryScopedPersistenceRegistryStore();
-    const accountE = await resolveScopedStore({
-      namespace: 'example',
-      subject: 'account-e',
-      registry,
-      digest,
-    });
-
-    await expect(
-      resolveScopedStore({
-        namespace: 'example',
-        subject: 'account-f',
-        registry,
-        digest,
-        legacyStoreName: accountE.storeName,
-        inspectLegacy: () => Promise.resolve({ exists: true, ownership: 'claimable' }),
-      }),
-    ).rejects.toMatchObject({ code: 'persistence_identity_mismatch' });
-  });
-
-  it('rejects duplicate store ownership across registry namespaces', async () => {
-    const serialized = JSON.stringify({
+    JSON.stringify({
       version: 1,
       namespaces: [
         {
           namespace: 'first',
-          legacyClaimedBySubject: 'account-e',
-          subjects: [{ subject: 'account-e', storeName: 'legacy.db', claimedLegacy: true }],
+          subjects: [{ subject: 'account-e', storeName: `baukit-scoped-v1-${'e'.repeat(64)}` }],
         },
         {
           namespace: 'second',
-          legacyClaimedBySubject: 'account-f',
-          subjects: [{ subject: 'account-f', storeName: 'legacy.db', claimedLegacy: true }],
+          subjects: [{ subject: 'account-e', storeName: `baukit-scoped-v1-${'e'.repeat(64)}` }],
         },
       ],
-    });
-
+    }),
+  ])('fails closed for corrupt registry metadata', async (serialized) => {
     await expect(
       resolveScopedStore({
-        namespace: 'first',
+        namespace: 'example',
         subject: 'account-e',
         registry: new InMemoryScopedPersistenceRegistryStore(serialized),
         digest,
-        legacyStoreName: 'legacy.db',
       }),
     ).rejects.toMatchObject({ code: 'persistence_identity_mismatch' });
   });
@@ -613,45 +503,7 @@ describe('scoped persistence lifecycle', () => {
     await expect(lifecycle.eraseActivePartition()).rejects.toThrow('delete failed');
     await expect(
       resolveScopedStore({ namespace: 'example', subject: 'account-e', registry, digest }),
-    ).resolves.toEqual({ storeName: partition?.storeName, claimedLegacy: false });
-  });
-
-  it('keeps a legacy-claim tombstone after erasing the claiming subject', async () => {
-    const registry = new InMemoryScopedPersistenceRegistryStore();
-    const inspectLegacy = vi.fn(() =>
-      Promise.resolve({ exists: true, ownership: 'claimable' } as const),
-    );
-    const base = {
-      namespace: 'example',
-      registry,
-      digest,
-      legacyStoreName: 'legacy.db',
-      inspectLegacy,
-    };
-    const lifecycle = new ScopedPersistenceLifecycle({
-      ...base,
-      open: () => Promise.resolve({ close: () => Promise.resolve() }),
-      erase: () => Promise.resolve(),
-      resetUserScopedState: () => undefined,
-    });
-    await expect(lifecycle.selectSubject('account-e')).resolves.toMatchObject({
-      storeName: 'legacy.db',
-    });
-
-    await expect(lifecycle.eraseActivePartition()).resolves.toBe(true);
-    await expect(
-      removeScopedPersistenceRegistryEntry({
-        namespace: 'example',
-        subject: 'account-e',
-        registry,
-      }),
-    ).resolves.toBe(false);
-
-    await expect(resolveScopedStore({ ...base, subject: 'account-e' })).resolves.toEqual({
-      storeName: `baukit-scoped-v1-${'e'.repeat(64)}`,
-      claimedLegacy: false,
-    });
-    expect(inspectLegacy).toHaveBeenCalledOnce();
+    ).resolves.toEqual({ storeName: partition?.storeName });
   });
 
   it('fails closed when registry removal encounters corrupt metadata', async () => {
@@ -664,11 +516,9 @@ describe('scoped persistence lifecycle', () => {
     ).rejects.toMatchObject({ code: 'persistence_identity_mismatch' });
   });
 
-  it('accepts a product compatibility resolver without weakening lifecycle ordering', async () => {
+  it('accepts a product resolver without weakening lifecycle ordering', async () => {
     const persistence = { close: vi.fn(() => Promise.resolve()) };
-    const resolveStore = vi.fn(() =>
-      Promise.resolve({ storeName: 'pre-v0.6-account-e', claimedLegacy: false }),
-    );
+    const resolveStore = vi.fn(() => Promise.resolve({ storeName: 'product-account-e' }));
     const open = vi.fn(() => Promise.resolve(persistence));
     const lifecycle = new ScopedPersistenceLifecycle({
       namespace: 'example',
@@ -680,13 +530,13 @@ describe('scoped persistence lifecycle', () => {
     });
 
     await expect(lifecycle.selectSubject('account-e')).resolves.toMatchObject({
-      storeName: 'pre-v0.6-account-e',
+      storeName: 'product-account-e',
       persistence,
     });
     expect(resolveStore).toHaveBeenCalledWith('account-e');
     expect(open).toHaveBeenCalledWith({
       subject: 'account-e',
-      storeName: 'pre-v0.6-account-e',
+      storeName: 'product-account-e',
     });
   });
 

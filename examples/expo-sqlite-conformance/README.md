@@ -18,7 +18,7 @@ file queue, and the connection and an `ExpoSqliteStore` on one file wait for
 each other in both arrival orders.
 The native runner also opens distinct SHA-256-derived database files for an
 offline E→F→E switch and proves record/outbox isolation, close-before-open,
-memory reset, one-time legacy claiming, corrupt-registry blocking, terminal
+memory reset, corrupt-registry blocking, terminal
 session expiry, and server-subject mismatch behavior. Expo Crypto is injected
 as the React Native SHA-256 implementation.
 
