@@ -82,7 +82,7 @@ class FakePort implements PurchasesPort {
 
 class FakeBackend implements EntitlementBackend {
   entitlement: VerifiedEntitlement | null = entitlement(1, []);
-  balance: CreditBalanceSnapshot | null = { suiteSubject: SUBJECT, available: 0, revision: 0 };
+  balance: CreditBalanceSnapshot | null = balance(0, 0);
   refreshes = 0;
   failNext = false;
 
@@ -104,7 +104,26 @@ function entitlement(
   features: string[],
   suiteSubject = SUBJECT,
 ): VerifiedEntitlement {
-  return { suiteSubject, tier: features.length ? 'premium' : 'free', features, revision };
+  return {
+    mode: 'hub',
+    suiteSubject,
+    tier: features.length ? 'premium' : 'free',
+    features,
+    revision,
+    plansUrl: 'https://accounts.example.test/plans',
+    billing: null,
+  };
+}
+
+function balance(total: number, revision: number): CreditBalanceSnapshot {
+  return {
+    suiteSubject: SUBJECT,
+    wallet: 'hebkit',
+    revision,
+    total,
+    grant: { available: total, expiresAt: null },
+    packs: [],
+  };
 }
 
 function setup(attempts = 3) {
@@ -175,7 +194,12 @@ describe('PurchaseFlow identity', () => {
     await flow.signOut();
 
     expect(port.calls).toEqual([`identify:${SUBJECT}`, 'reset']);
-    expect(flow.getState()).toEqual({ suiteSubject: null, entitlement: null, creditBalance: null });
+    expect(flow.getState()).toEqual({
+      suiteSubject: null,
+      entitlement: null,
+      creditBalance: null,
+      entitlementStatus: 'signed_out',
+    });
     await expect(flow.purchase(monthly)).rejects.toMatchObject({ code: 'not_identified' });
   });
 
@@ -390,7 +414,7 @@ describe('PurchaseFlow credit packs', () => {
     const { port, backend, flow } = setup();
     await flow.identify(SUBJECT);
     port.onPurchase = () => {
-      backend.balance = { suiteSubject: SUBJECT, available: 1_000, revision: 1 };
+      backend.balance = balance(1_000, 1);
     };
 
     const outcome = await flow.purchaseCreditPack(pack);
@@ -398,9 +422,9 @@ describe('PurchaseFlow credit packs', () => {
     expect(port.calls).toEqual([`identify:${SUBJECT}`, 'purchase:pack_small']);
     expect(outcome).toEqual({
       status: 'credited',
-      balance: { suiteSubject: SUBJECT, available: 1_000, revision: 1 },
+      balance: balance(1_000, 1),
     });
-    expect(flow.getState().creditBalance?.available).toBe(1_000);
+    expect(flow.getState().creditBalance?.total).toBe(1_000);
   });
 
   it('reports a pack as pending until the balance revision moves', async () => {
@@ -409,7 +433,7 @@ describe('PurchaseFlow credit packs', () => {
 
     await expect(flow.purchaseCreditPack(pack)).resolves.toEqual({
       status: 'pending',
-      balance: { suiteSubject: SUBJECT, available: 0, revision: 0 },
+      balance: balance(0, 0),
     });
   });
 
@@ -417,14 +441,14 @@ describe('PurchaseFlow credit packs', () => {
     const { port, backend, flow } = setup(3);
     await flow.identify(SUBJECT);
     await flow.refreshCreditBalance();
-    backend.balance = { suiteSubject: SUBJECT, available: 500, revision: 1 };
+    backend.balance = balance(500, 1);
     port.onPurchase = () => {
-      backend.balance = { suiteSubject: SUBJECT, available: 1_500, revision: 2 };
+      backend.balance = balance(1_500, 2);
     };
 
     await expect(flow.purchaseCreditPack(pack)).resolves.toEqual({
       status: 'credited',
-      balance: { suiteSubject: SUBJECT, available: 1_500, revision: 2 },
+      balance: balance(1_500, 2),
     });
   });
 
@@ -432,11 +456,11 @@ describe('PurchaseFlow credit packs', () => {
     const { backend, flow } = setup(3);
     await flow.identify(SUBJECT);
     await flow.refreshCreditBalance();
-    backend.balance = { suiteSubject: SUBJECT, available: 500, revision: 1 };
+    backend.balance = balance(500, 1);
 
     await expect(flow.purchaseCreditPack(pack)).resolves.toEqual({
       status: 'pending',
-      balance: { suiteSubject: SUBJECT, available: 500, revision: 1 },
+      balance: balance(500, 1),
     });
   });
 
@@ -454,7 +478,7 @@ describe('PurchaseFlow credit packs', () => {
     await flow.identify(SUBJECT);
     backend.balance = null;
     port.onPurchase = () => {
-      backend.balance = { suiteSubject: SUBJECT, available: 3_000, revision: 0 };
+      backend.balance = balance(3_000, 0);
     };
 
     await expect(flow.purchaseCreditPack(pack)).resolves.toMatchObject({ status: 'credited' });
@@ -474,6 +498,41 @@ describe('PurchaseFlow credit packs', () => {
     await flow.identify(SUBJECT);
     await expect(flow.purchaseCreditPack(pack)).rejects.toMatchObject({ code: 'unavailable' });
     expect(port.calls).toEqual([`identify:${SUBJECT}`]);
+  });
+});
+
+describe('PurchaseFlow entitlement status', () => {
+  it('loads, then turns ready or unavailable, and keeps a verified entitlement on failure', async () => {
+    const { backend, flow } = setup();
+    expect(flow.getState().entitlementStatus).toBe('signed_out');
+    await flow.identify(SUBJECT);
+    expect(flow.getState().entitlementStatus).toBe('loading');
+
+    backend.failNext = true;
+    await expect(flow.refreshEntitlement()).rejects.toThrow('backend offline');
+    expect(flow.getState().entitlementStatus).toBe('unavailable');
+
+    backend.entitlement = entitlement(2, ['export']);
+    await flow.refreshEntitlement();
+    expect(flow.getState().entitlementStatus).toBe('ready');
+
+    backend.failNext = true;
+    await expect(flow.refreshEntitlement()).rejects.toThrow('backend offline');
+    expect(flow.getState()).toMatchObject({
+      entitlementStatus: 'ready',
+      entitlement: { revision: 2 },
+    });
+
+    await flow.signOut();
+    expect(flow.getState().entitlementStatus).toBe('signed_out');
+  });
+
+  it('is ready without an entitlement when the session has no suite identity', async () => {
+    const { backend, flow } = setup();
+    backend.entitlement = null;
+    await flow.identify(SUBJECT);
+    await flow.refreshEntitlement();
+    expect(flow.getState()).toMatchObject({ entitlementStatus: 'ready', entitlement: null });
   });
 });
 
@@ -512,10 +571,22 @@ describe('helpers', () => {
     });
 
     expect(verified).toEqual({
+      mode: 'hub',
       suiteSubject: SUBJECT,
       tier: 'premium',
       features: ['export'],
       revision: 7,
+      plansUrl: null,
+      billing: null,
+    });
+    expect(
+      entitlementFromTicket(
+        { sub: SUBJECT, tier: 'free', features: [], rev: 1, billing: { channel: 'family' } },
+        'https://accounts.example.test/plans',
+      ),
+    ).toMatchObject({
+      billing: { channel: 'family' },
+      plansUrl: 'https://accounts.example.test/plans',
     });
     expect(hasFeature(verified, 'export')).toBe(true);
     expect(hasFeature(verified, 'sync')).toBe(false);

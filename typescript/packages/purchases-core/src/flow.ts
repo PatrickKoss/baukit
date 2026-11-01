@@ -10,8 +10,16 @@ export const DEFAULT_REFRESH_ATTEMPTS = 5;
 export const DEFAULT_REFRESH_INTERVAL_MS = 2_000;
 const NO_REVISION = -1;
 
+/**
+ * `loading` until the first read for this identity, `ready` after a verified answer,
+ * `unavailable` when a read failed before any verified entitlement arrived. A failed
+ * refresh keeps an earlier verified entitlement, like the backend's ticket cache.
+ */
+export type EntitlementStatus = 'signed_out' | 'loading' | 'ready' | 'unavailable';
+
 export interface PurchaseState {
   readonly suiteSubject: string | null;
+  readonly entitlementStatus: EntitlementStatus;
   readonly entitlement: VerifiedEntitlement | null;
   readonly creditBalance: CreditBalanceSnapshot | null;
 }
@@ -46,7 +54,12 @@ interface Revisioned {
   readonly revision: number;
 }
 
-const SIGNED_OUT: PurchaseState = { suiteSubject: null, entitlement: null, creditBalance: null };
+const SIGNED_OUT: PurchaseState = {
+  suiteSubject: null,
+  entitlementStatus: 'signed_out',
+  entitlement: null,
+  creditBalance: null,
+};
 
 function wait(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -94,7 +107,7 @@ export class PurchaseFlow {
     const generation = this.#restart();
     await this.#port.identify(suiteSubject);
     this.#assertGeneration(generation);
-    this.#setState({ ...SIGNED_OUT, suiteSubject });
+    this.#setState({ ...SIGNED_OUT, suiteSubject, entitlementStatus: 'loading' });
   }
 
   async signOut(): Promise<void> {
@@ -108,8 +121,20 @@ export class PurchaseFlow {
 
   async refreshEntitlement(): Promise<VerifiedEntitlement | null> {
     const identity = this.#identity();
-    const entitlement = await this.#backend.refreshEntitlement();
+    let entitlement: VerifiedEntitlement | null;
+    try {
+      entitlement = await this.#backend.refreshEntitlement();
+    } catch (error) {
+      this.#assertGeneration(identity.generation);
+      if (this.#state.entitlement === null) {
+        this.#setState({ ...this.#state, entitlementStatus: 'unavailable' });
+      }
+      throw error;
+    }
     this.#accept(identity, entitlement, 'entitlement');
+    if (this.#state.entitlementStatus !== 'ready') {
+      this.#setState({ ...this.#state, entitlementStatus: 'ready' });
+    }
     return this.#state.entitlement;
   }
 
