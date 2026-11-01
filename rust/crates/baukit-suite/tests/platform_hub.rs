@@ -172,6 +172,34 @@ fn reservation_id() -> Uuid {
     Uuid::parse_str(RESERVATION).expect("uuid")
 }
 
+#[test]
+fn credit_balance_needs_the_bucketed_shape() {
+    let before_c21 = json!({
+        "suiteSubject": SUBJECT,
+        "wallet": "hebkit",
+        "available": 10,
+        "revision": 0,
+        "pools": [],
+        "grant": {"granted": 0, "used": 0, "available": 0},
+        "packs": [{"remaining": 10, "expiresAt": 1_795_392_000}]
+    });
+    assert!(serde_json::from_value::<CreditBalance>(before_c21).is_err());
+    let expiring = json!({
+        "suiteSubject": SUBJECT,
+        "wallet": "sololeveling",
+        "revision": 3,
+        "total": 160,
+        "grant": {"available": 110, "expiresAt": 1_780_272_000},
+        "packs": [{"available": 50, "expiresAt": 1_804_636_800}]
+    });
+    let balance: CreditBalance = serde_json::from_value(expiring).expect("bucketed balance");
+    assert_eq!(balance.grant.expires_at, Some(1_780_272_000));
+    assert_eq!(
+        balance.total,
+        balance.grant.available + balance.packs[0].available
+    );
+}
+
 #[tokio::test]
 async fn hub_credits_round_trip_recorded_responses() -> TestResult {
     let hub = MockHub::start().await?;
@@ -188,8 +216,21 @@ async fn hub_credits_round_trip_recorded_responses() -> TestResult {
         balance,
         serde_json::from_value(recorded("creditBalance").1)?
     );
-    assert_eq!(balance.available, 10);
-    assert_eq!(balance.packs[0].remaining, 10);
+    assert_eq!(balance.total, 10);
+    assert_eq!(
+        balance.grant,
+        CreditGrant {
+            available: 0,
+            expires_at: None
+        }
+    );
+    assert_eq!(
+        balance.packs,
+        vec![CreditPack {
+            available: 10,
+            expires_at: 1_795_392_000
+        }]
+    );
 
     assert_eq!(
         credits.reserve(SUBJECT, 0, "free-action").await?,
@@ -798,7 +839,9 @@ async fn zero_cost_credits_accept_free_actions_and_refuse_paid_ones() -> TestRes
         Err(CreditsError::ReservationNotFound)
     );
     let balance = credits.balance(SUBJECT).await?;
-    assert_eq!((balance.wallet.as_str(), balance.available), ("hebkit", 0));
+    assert_eq!((balance.wallet.as_str(), balance.total), ("hebkit", 0));
+    assert_eq!(balance.grant, CreditGrant::default());
+    assert!(balance.packs.is_empty());
     Ok(())
 }
 

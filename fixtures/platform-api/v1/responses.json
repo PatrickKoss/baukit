@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "hubCommit": "74fe77bc2f9d07ed3534ad9f7773de814f443f4c",
+  "hubCommit": "f8bc16246df79c50d82b06ca15c7a16022fccd9d",
   "responses": {
     "token": {
       "status": 200,
@@ -20,17 +20,15 @@
       "body": {
         "suiteSubject": "suite-dev|alice",
         "wallet": "hebkit",
-        "available": 10,
         "revision": 0,
-        "pools": [],
+        "total": 10,
         "grant": {
-          "granted": 0,
-          "used": 0,
-          "available": 0
+          "available": 0,
+          "expiresAt": null
         },
         "packs": [
           {
-            "remaining": 10,
+            "available": 10,
             "expiresAt": 1795392000
           }
         ]

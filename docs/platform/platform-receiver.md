@@ -218,6 +218,20 @@ The balance `revision` counts `credits.changed` events. Plain reserve, settle an
 release calls do not emit one. On `PlatformEventKind::CreditsChanged`, call
 `balance` before the receipt transaction if the product caches balances.
 
+`CreditBalance` follows the bucketed balance of Schlüsselbund C21:
+
+```json
+{"suiteSubject":"suite-dev|alice","wallet":"sololeveling","revision":3,"total":160,"grant":{"available":110,"expiresAt":1780272000},"packs":[{"available":50,"expiresAt":1804636800}]}
+```
+
+`total` is what a reserve can take now: `grant.available` plus every pack.
+`grant` covers pools, rollover, the own or free grant and extra credits, and its
+`expires_at` is `None` when the bucket is empty. `packs` lists each lot's
+`available` and `expires_at`, earliest expiry first, which is the order a spend
+takes them. Show `total` as the spendable balance and the expiries next to it.
+A hub before C21 sends `available`, `pools`, `grant.granted`, `grant.used` and
+`packs[].remaining`, which `balance` rejects as `HubError::InvalidResponse`.
+
 ### Organizations
 
 `HubOrganizations::new(hub)` implements `OrganizationDirectory::summary(id)` with
