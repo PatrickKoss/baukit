@@ -1,0 +1,30 @@
+{{- range $process := list "api" "worker" }}
+{{- $workload := index $.Values $process }}
+{{- $budget := $workload.podDisruptionBudget }}
+{{- if and $budget.enabled (or (eq $process "api") $workload.enabled) }}
+{{- $hasMin := not (eq (toString $budget.minAvailable) "") }}
+{{- $hasMax := not (eq (toString $budget.maxUnavailable) "") }}
+{{- if and $hasMin $hasMax }}
+{{- fail (printf "%s.podDisruptionBudget sets both minAvailable and maxUnavailable; set only one" $process) }}
+{{- end }}
+{{- if not (or $hasMin $hasMax) }}
+{{- fail (printf "%s.podDisruptionBudget needs minAvailable or maxUnavailable" $process) }}
+{{- end }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "baukit-app.fullname" $ }}-{{ $process }}
+  labels:
+    {{- include "baukit-app.processLabels" (dict "root" $ "process" $process) | nindent 4 }}
+spec:
+  {{- if $hasMin }}
+  minAvailable: {{ include "baukit-app.intOrPercent" $budget.minAvailable }}
+  {{- else }}
+  maxUnavailable: {{ include "baukit-app.intOrPercent" $budget.maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "baukit-app.processSelectorLabels" (dict "root" $ "process" $process) | nindent 6 }}
+{{- end }}
+{{- end }}

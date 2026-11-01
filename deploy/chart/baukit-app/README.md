@@ -112,6 +112,8 @@ The pod and container security-context maps can be replaced when an image needs 
 | `api.readinessProbe.enabled` | `true` | Enable ops `/readyz` readiness probing. |
 | `api.readinessProbe.initialDelaySeconds` / `periodSeconds` / `timeoutSeconds` / `failureThreshold` | `2` / `5` / `2` / `3` | Readiness timing and failure threshold. |
 | `api.nodeSelector` / `api.affinity` / `api.tolerations` | `{}` / `{}` / `[]` | API scheduling controls. |
+| `api.podDisruptionBudget.enabled` | `false` | Create a `policy/v1` PodDisruptionBudget that selects the API pods. |
+| `api.podDisruptionBudget.minAvailable` / `maxUnavailable` | `""` / `""` | Set exactly one, as an integer or a percentage such as `50%`. Setting both or neither fails rendering. |
 
 ### Worker and release Jobs
 
@@ -133,6 +135,8 @@ The pod and container security-context maps can be replaced when an image needs 
 | `worker.readinessProbe.enabled` | `true` | Probe worker `/readyz` when worker ops is enabled. |
 | `worker.readinessProbe.initialDelaySeconds` / `periodSeconds` / `timeoutSeconds` / `failureThreshold` | `2` / `5` / `2` / `3` | Worker readiness settings. |
 | `worker.nodeSelector` / `worker.affinity` / `worker.tolerations` | `{}` / `{}` / `[]` | Worker scheduling controls. |
+| `worker.podDisruptionBudget.enabled` | `false` | Create a PodDisruptionBudget for the worker pods. It renders only when `worker.enabled` is true. |
+| `worker.podDisruptionBudget.minAvailable` / `maxUnavailable` | `""` / `""` | Set exactly one, as for the API budget. |
 | `migration.enabled` | `true` | Create the `pre-install,pre-upgrade` migration hook Job. |
 | `migration.image.repository` / `tag` / `pullPolicy` | `ghcr.io/example/minimal-migrate` / `latest` / `IfNotPresent` | Migrator-only image settings. |
 | `migration.command` / `migration.args` | `[/app/migrate]` / `[]` | Migrator entrypoint and arguments. |
@@ -151,6 +155,8 @@ The pod and container security-context maps can be replaced when an image needs 
 | `seed.backoffLimit` / `seed.activeDeadlineSeconds` | `1` / `600` | Seed retry and deadline bounds. |
 | `seed.resources.requests.cpu` / `memory` | `50m` / `64Mi` | Seed requests. |
 | `seed.resources.limits.cpu` / `memory` | `250m` / `128Mi` | Seed limits. |
+
+A budget limits voluntary evictions such as node drains. It does not stop a rolling update, which `api.strategy` controls. With two replicas, `minAvailable: 1` lets a drain evict one pod at a time. A `minAvailable` equal to the replica count blocks every drain, so leave room below it. The API budget works with the HPA because it counts the pods that currently match its selector.
 
 Migration uses `helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded`, so completed release Jobs do not accumulate while failed Jobs remain inspectable. Seed uses a `post-install,post-upgrade` hook and refuses to render in production unless both seed flags are explicitly true.
 

@@ -141,3 +141,8 @@ baukit.dev/process: {{ .process }}
 {{- define "baukit-app.image" -}}
 {{- printf "%s:%s" .repository (.tag | default "latest") -}}
 {{- end }}
+
+{{/* Render an IntOrString value, quoting percentages. */}}
+{{- define "baukit-app.intOrPercent" -}}
+{{- if kindIs "string" . }}{{ . | quote }}{{ else }}{{ . }}{{ end -}}
+{{- end }}

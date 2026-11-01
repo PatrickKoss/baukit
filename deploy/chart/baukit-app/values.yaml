@@ -76,6 +76,11 @@ api:
   networkPolicy:
     additionalIngress: []
     additionalEgress: []
+  # Set exactly one of minAvailable or maxUnavailable, as an integer or a percentage.
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: ""
+    maxUnavailable: ""
 
 worker:
   enabled: false
@@ -118,6 +123,11 @@ worker:
   networkPolicy:
     additionalIngress: []
     additionalEgress: []
+  # Set exactly one of minAvailable or maxUnavailable, as an integer or a percentage.
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: ""
+    maxUnavailable: ""
 
 # Optional product-scoped Redis for expendable state such as rate limiting.
 # Use one replica for direct Redis, or an odd replica count of at least three
