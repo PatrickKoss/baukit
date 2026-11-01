@@ -3,7 +3,7 @@
 Plan item 19, "Move copied template code into packages". Six helpers, one commit each.
 
 This records earlier package work. The TypeScript MCP template has since
-been removed. Current MCP adoption follows the [migration guide](../migrations/mcp-stdio-to-remote.md).
+been removed. Current MCP adoption follows the [migration guide](../remote-mcp.md).
 
 ## Source revisions
 
@@ -223,7 +223,7 @@ doctor` does not fail products that lack them.
 ## 6. MCP migration
 
 The TypeScript MCP template has been removed. Products migrate to the Rust
-remote server through the [migration guide](../migrations/mcp-stdio-to-remote.md).
+remote server through the [migration guide](../remote-mcp.md).
 `@baukit/auth-node` remains available for web OIDC test clients and other Node
 clients. It is no longer a generated MCP server dependency.
 

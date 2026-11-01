@@ -1,6 +1,6 @@
 # Historical verification
 
-This report records checks from the earlier TypeScript MCP implementation. That server has been removed. Current product adoption follows the [migration guide](../migrations/mcp-stdio-to-remote.md).
+This report records checks from the earlier TypeScript MCP implementation. That server has been removed. Current product adoption follows the [migration guide](../remote-mcp.md).
 
 ## 1. Summary
 

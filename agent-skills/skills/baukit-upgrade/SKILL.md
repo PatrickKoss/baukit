@@ -27,30 +27,6 @@ Upgrade every Baukit component as one release train. Do not invent or call a `ba
    Preserve `[quality]` thresholds, critical paths, the full-stack E2E opt-in, and every `openapi.consumers` entry. Add generated strict-profile scripts only when the product selects `profile = "strict"`.
 4. Refresh Cargo and pnpm lockfiles. Do not mix unrelated dependency upgrades into this change, and do not switch to public registries while the project remains private-first.
 
-When upgrading a product that already copied the `baukit-jobs` v0.5.1 schema,
-add `rust/crates/baukit-jobs/migrations/0002_baukit_jobs_failure_reason.sql`
-from the target checkout as a new product-owned migration. It adds
-`failure_reason`, backfills legacy `failed` rows as `attempts_exhausted` when
-`attempts >= max_attempts` and `permanent` otherwise, then adds the current
-value and status-consistency checks. Do not replace or edit the product's
-already-applied initial migration.
-
-When the target train ships
-`rust/crates/baukit-jobs/migrations/0003_baukit_jobs_claim_by_type.sql`, add it
-as another new product-owned migration. It rebuilds the pending claim index
-with `job_type` first. Check that every custom `JobStore` passes the new
-`job_types` claim argument through, and that each worker handler's
-`job_types()` lists every type that worker should run.
-
-When the target train ships
-`rust/crates/baukit-jobs/migrations/0004_baukit_jobs_active_deduplication.sql`,
-copy it as another new product-owned migration and apply it before deploying
-the new crate. Every enqueue and claim reads the new columns, including calls
-to existing methods. Upgrade workers before switching producers to
-pending-only mode so every claim clears the pending key. Add
-`dedupe_key: None, pending_dedupe_key: None` to any `Job` struct literal,
-including those in product tests.
-
 ## Validate and verify
 
 Run from the product root:

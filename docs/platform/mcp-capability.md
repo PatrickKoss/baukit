@@ -6,8 +6,7 @@ The backend serves Streamable HTTP at `/mcp` when the runtime configuration
 enables it. Clients obtain resource-specific OAuth tokens through Keycloak.
 
 See [remote MCP](../remote-mcp.md) for configuration, tool ports, schema drift
-checks and client setup. Existing products must follow the
-[migration guide](../migrations/mcp-stdio-to-remote.md).
+checks and client setup.
 
 Products using suite links can enable `baukit-mcp`'s `suite` feature and call
 `McpServices::with_suite_links(service, owners)`. Pass an `Arc<SuiteLinkService>`

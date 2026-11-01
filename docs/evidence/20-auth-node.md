@@ -2,7 +2,7 @@
 
 This records the Node client's original sources. `@baukit/auth-node`
 remains available for Node clients and web OIDC tests. Product MCP servers
-now follow the [Rust migration guide](../migrations/mcp-stdio-to-remote.md).
+now follow the [Rust migration guide](../remote-mcp.md).
 
 ## Source product files
 

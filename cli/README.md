@@ -125,9 +125,7 @@ API policy, fake-provider, sync-table, navigation, observability, budget, and
 local-data-retention guidance under their own names. Generated links should
 be updated when a document moves. Doctor checks the declared OpenAPI schema and
 consumers. For MCP, it checks the Rust router, OAuth configuration, metadata
-route, scoped tool registration and schema drift test. A retired TypeScript
-server or MCP capability table receives a migration finding. Follow the
-[MCP migration guide](../docs/migrations/mcp-stdio-to-remote.md).
+route, scoped tool registration and schema drift test.
 
 ## Backend image settings
 
