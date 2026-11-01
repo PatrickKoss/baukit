@@ -1,4 +1,4 @@
-.PHONY: toolchain fmt lint test check ci platform-validate platform-up platform-down platform-nuke platform-recreate platform-status ts-install ts-build ts-fmt ts-lint ts-test ts-browser-deps ts-browser-test ts-check cli-fmt cli-lint cli-test cli-check cli-ci scripts-test example-lockfiles-check mcp-fixture-gate generated-fixture-gate platform-fixture-gate install-skills android-sdk-setup native-android-gate expo-sqlite-conformance expo-sqlite-conformance-prepare expo-notifications-conformance expo-notifications-conformance-prepare media-grants-test media-grants-njs-test
+.PHONY: toolchain fmt lint test check ci platform-validate platform-up platform-down platform-nuke platform-recreate platform-status ts-install ts-build ts-fmt ts-lint ts-test ts-browser-deps ts-browser-test ts-check cli-fmt cli-lint cli-test cli-check cli-ci scripts-test example-lockfiles-check examples-test mcp-fixture-gate generated-fixture-gate platform-fixture-gate install-skills android-sdk-setup native-android-gate expo-sqlite-conformance expo-sqlite-conformance-prepare expo-notifications-conformance expo-notifications-conformance-prepare media-grants-test media-grants-njs-test
 
 RUST_MANIFEST := rust/Cargo.toml
 TS_DIR := typescript
@@ -23,7 +23,7 @@ test: ts-test
 check: ts-check
 	cargo check --manifest-path $(RUST_MANIFEST) --workspace --all-targets
 
-ci: example-lockfiles-check fmt lint test check suite-features-check package-dependencies-check ts-check ts-browser-test cli-ci scripts-test platform-validate media-grants-test media-grants-njs-test
+ci: example-lockfiles-check fmt lint test examples-test check suite-features-check package-dependencies-check ts-check ts-browser-test cli-ci scripts-test platform-validate media-grants-test media-grants-njs-test
 
 .PHONY: suite-features-check package-dependencies-check
 suite-features-check:
@@ -65,6 +65,9 @@ scripts-test:
 
 example-lockfiles-check:
 	python3 scripts/check-example-lockfiles.py
+
+examples-test:
+	cargo test --locked --manifest-path examples/minimal-api/Cargo.toml
 
 # backend, web, mobile, mobile-pwa, combined, mcp, auth, clerk, workos, platform-standalone, platform
 # Override with FIXTURE_FLAVORS="backend platform" for a targeted check.

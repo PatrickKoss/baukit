@@ -122,6 +122,7 @@ jobs:
         with:
           workspaces: rust -> target
       - run: cargo test --manifest-path rust/Cargo.toml
+      - run: make examples-test
 
   suite-features:
     name: Suite feature boundaries
