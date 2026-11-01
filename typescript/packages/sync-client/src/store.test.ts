@@ -18,7 +18,6 @@ describe('SyncStatusStore', () => {
       status: 'idle',
       lastAttemptAt: null,
       lastSuccessAt: null,
-      lastSyncAt: null,
       error: null,
       failure: null,
       retrying: false,
@@ -52,7 +51,6 @@ describe('SyncStatusStore', () => {
       status: 'idle',
       lastAttemptAt: firstSuccessAt,
       lastSuccessAt: firstSuccessAt,
-      lastSyncAt: firstSuccessAt,
       attention: [],
       pendingCount: 0,
       error: null,
@@ -137,7 +135,6 @@ describe('SyncStatusStore', () => {
     expect(store.getSnapshot()).toMatchObject({
       lastAttemptAt: failedAttemptAt,
       lastSuccessAt: firstSuccessAt,
-      lastSyncAt: firstSuccessAt,
       failure: { kind: 'network' },
     });
   });
@@ -223,7 +220,6 @@ describe('SyncStatusStore', () => {
       status: 'attention',
       lastAttemptAt: '2026-08-22T09:01:00Z',
       lastSuccessAt: '2026-08-22T09:00:00Z',
-      lastSyncAt: '2026-08-22T09:00:00Z',
       initialPullStatus: 'settled',
     });
   });

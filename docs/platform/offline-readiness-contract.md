@@ -51,11 +51,6 @@ Never display "synced" while unsent changes or actionable rejections remain. A c
   older accepted or rejected response arrives.
 - Reset readiness and sync state when the authenticated local-data partition changes.
 
-`lastSyncAt` is a deprecated compatibility field for one release cycle. It always equals
-`lastSuccessAt`. Products must migrate persisted state to separate attempt and success fields.
-When importing one old `lastSyncAt` value, use it as both timestamps because the old model cannot
-recover the attempt time independently.
-
 ## 4. Tombstone horizons and full rebuilds
 
 A server that purges tombstones must keep one purge horizon for each stable data owner. The

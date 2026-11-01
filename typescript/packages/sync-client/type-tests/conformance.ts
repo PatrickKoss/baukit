@@ -22,8 +22,6 @@ const tests = createSyncConformanceTests(adapter);
 declare const outcome: SyncConformanceSubmittedBatchOutcome<object, object, object>;
 declare const fullResync: SyncConformanceFullResyncCallbacks<object, object, number>;
 declare const staleCursor: SyncConformanceStaleCursor<number>;
-const legacyAcknowledge = adapter.outbox.markAcknowledged;
-const legacyRejection = adapter.outbox.recordRejected;
 const fixture: SyncConformanceChange = {
   changeId: 'change-1',
   entityType: 'record',
@@ -38,5 +36,3 @@ void fixture;
 void outcome;
 void fullResync;
 void staleCursor;
-void legacyAcknowledge;
-void legacyRejection;

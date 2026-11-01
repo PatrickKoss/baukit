@@ -173,13 +173,6 @@ const adapter: SyncConformanceAdapter<
     },
     listPending: (client) => clone(client.outbox),
     pendingId: (pending) => pending.changeId,
-    markAcknowledged(client, pending) {
-      const acknowledged = new Set(pending.map(({ changeId }) => changeId));
-      client.outbox = client.outbox.filter(({ changeId }) => !acknowledged.has(changeId));
-    },
-    recordRejected(client, rejected) {
-      client.rejected.push(...clone(rejected));
-    },
     listRejected: (client) => clone(client.rejected),
   },
   local: {
@@ -360,26 +353,5 @@ describe('sync conformance harness', () => {
 
     expect(existingCases).toHaveLength(14);
     for (const testCase of existingCases) await testCase.run();
-  });
-
-  it('keeps the legacy settlement callbacks available during migration', async () => {
-    const scenario = await adapter.createScenario();
-    const [client] = scenario.clients;
-    const pending: SyncConformanceChange = {
-      changeId: 'legacy-change',
-      entityType: 'record',
-      entityId: 'legacy',
-      operation: 'upsert',
-      value: 'legacy',
-      logicalTime: 1,
-    };
-    await adapter.outbox.enqueue(client, pending);
-    await adapter.outbox.markAcknowledged(client, [pending]);
-    await adapter.outbox.recordRejected(client, [
-      { entityType: 'record', entityId: 'legacy', reason: 'legacy' },
-    ]);
-
-    expect(await adapter.outbox.listPending(client)).toEqual([]);
-    expect(await adapter.outbox.listRejected(client)).toHaveLength(1);
   });
 });

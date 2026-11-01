@@ -108,12 +108,7 @@ export interface SyncConformanceAdapter<
   outbox: {
     enqueue(client: TClient, change: SyncConformanceChange): Promise<void> | void;
     listPending(client: TClient): Promise<readonly TPending[]> | readonly TPending[];
-    pendingId?(pending: TPending): string;
-    markAcknowledged(client: TClient, pending: readonly TPending[]): Promise<void> | void;
-    recordRejected(
-      client: TClient,
-      rejected: readonly SyncConformanceRejection[],
-    ): Promise<void> | void;
+    pendingId(pending: TPending): string;
     listRejected(
       client: TClient,
     ): Promise<readonly SyncConformanceRejection[]> | readonly SyncConformanceRejection[];
@@ -131,7 +126,7 @@ export interface SyncConformanceAdapter<
     readPendingState(
       client: TClient,
     ): Promise<SyncConformancePendingState> | SyncConformancePendingState;
-    applySubmittedBatchOutcome?(
+    applySubmittedBatchOutcome(
       client: TClient,
       outcome: SyncConformanceSubmittedBatchOutcome<TPending, TPushResponse, TRemoteChange>,
     ): Promise<void> | void;
@@ -320,9 +315,6 @@ export function createSyncConformanceTests<
     client: TClient,
     submission: Awaited<ReturnType<typeof submit>>,
   ): Promise<void> {
-    if (adapter.local.applySubmittedBatchOutcome === undefined) {
-      fail('adapter must implement local.applySubmittedBatchOutcome for submitted outcomes');
-    }
     await adapter.local.applySubmittedBatchOutcome(client, {
       submitted: submission.submitted,
       response: submission.response,
@@ -512,9 +504,6 @@ export function createSyncConformanceTests<
 
           const remaining = await pending(clientA);
           assert(remaining.length === 1, 'accepted submission removed a newer pending row');
-          if (adapter.outbox.pendingId === undefined) {
-            fail('adapter must implement outbox.pendingId for overlapping outcomes');
-          }
           assert(
             remaining[0] !== undefined &&
               adapter.outbox.pendingId(remaining[0]) === 'change-overlap-b',
@@ -542,9 +531,6 @@ export function createSyncConformanceTests<
 
           const remaining = await pending(clientA);
           assert(remaining.length === 1, 'rejected submission removed a newer pending row');
-          if (adapter.outbox.pendingId === undefined) {
-            fail('adapter must implement outbox.pendingId for overlapping outcomes');
-          }
           assert(
             remaining[0] !== undefined &&
               adapter.outbox.pendingId(remaining[0]) === 'change-overlap-b',
