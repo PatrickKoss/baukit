@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-11-01
+
 ## [0.14.0] - 2026-11-01
 
 - Breaking: `TicketClaims` gains `billing: Option<BillingClaim>`, the optional Schlüsselbund C18 claim with `BillingChannel` (`web`, `app_store`, `play_store`, `family`, `organization`, `promo`), `sold_by` for store plans and `manage_url` for web plans. The verifier used to reject the claim as unknown; it now accepts a valid one and rejects `null`, unknown fields, `soldBy` outside the stores and `manageUrl` outside `web` or without an HTTP(S) host. `TicketClaims` is not `#[non_exhaustive]`, so struct literals need `billing: None`. The train takes a minor bump.

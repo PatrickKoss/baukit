@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-11-01
+
 ## [0.14.0] - 2026-11-01
 
 - Breaking: web QA submit targets in `e2e/qa.config.ts` take `fields` and `invalidField`. The single-field `QaLegacySubmitField` shape and its helpers are gone. Generated local-data docs no longer describe claiming unowned legacy stores.
