@@ -37,12 +37,15 @@ corepack pnpm@12.9.1 --dir "$root/mobile" install --frozen-lockfile
 corepack pnpm@12.9.1 --dir "$root/mobile" run tokens
 (cd "$root/mobile" && CI=1 ./node_modules/.bin/expo prebuild \
   --clean --platform android --no-install)
-NODE_ENV=production bash "$root/mobile/scripts/android-java.sh" "$root/mobile/android/gradlew" \
-  -p "$root/mobile/android" \
-  --no-daemon \
-  -PreactNativeDevServerIp=127.0.0.1 \
-  -PreactNativeArchitectures="$architecture" \
-  assembleRelease
+gradle=(bash "$root/mobile/scripts/android-java.sh" "$root/mobile/android/gradlew" -p "$root/mobile/android"
+  --no-daemon --build-cache -PreactNativeDevServerIp=127.0.0.1)
+if [[ -n "${BAUKIT_QA_GRADLE_WORKERS:-}" ]]; then
+  gradle+=(--max-workers "$BAUKIT_QA_GRADLE_WORKERS")
+fi
+if [[ "${BAUKIT_QA_ASSEMBLE_DEBUG:-0}" == 1 ]]; then
+  "${gradle[@]}" --stacktrace assembleDebug
+fi
+NODE_ENV=production "${gradle[@]}" -PreactNativeArchitectures="$architecture" assembleRelease
 
 apk="$root/mobile/android/app/build/outputs/apk/release/app-release.apk"
 [[ -f "$apk" ]] || { echo "qa: Android build did not produce $apk" >&2; exit 1; }

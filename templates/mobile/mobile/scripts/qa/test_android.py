@@ -241,9 +241,31 @@ touch "$apk"
             f"corepack pnpm@12.9.1 --dir {self.root}/mobile install --frozen-lockfile",
             f"corepack pnpm@12.9.1 --dir {self.root}/mobile run tokens",
             "expo prebuild --clean --platform android --no-install",
-            f"gradle -p {self.root}/mobile/android --no-daemon "
+            f"gradle -p {self.root}/mobile/android --no-daemon --build-cache "
             "-PreactNativeDevServerIp=127.0.0.1 -PreactNativeArchitectures=x86_64 assembleRelease",
             "java-options -Dqa.test=1 --enable-native-access=ALL-UNNAMED",
+        ])
+
+    def test_gate_build_compiles_debug_and_release_from_one_prebuild(self) -> None:
+        bin_dir = self.root / "bin"
+        self.executable(bin_dir / "corepack", 'printf "corepack %s\\n" "$*" >> "$EVENTS"\n')
+        self.environment["PATH"] = str(bin_dir) + os.pathsep + self.environment["PATH"]
+        self.environment["BAUKIT_QA_ASSEMBLE_DEBUG"] = "1"
+        self.environment["BAUKIT_QA_GRADLE_WORKERS"] = "3"
+        self.executable(self.root / "mobile/node_modules/.bin/expo", 'printf "expo %s\\n" "$*" >> "$EVENTS"\n')
+        self.executable(self.root / "mobile/android/gradlew", r'''
+printf 'gradle %s\n' "$*" >> "$EVENTS"
+apk="$(dirname "$0")/app/build/outputs/apk/release/app-release.apk"
+mkdir -p "$(dirname "$apk")"
+touch "$apk"
+''')
+        self.run_script("build-android.sh")
+        events = self.events.read_text().splitlines()
+        self.assertEqual(events.count("expo prebuild --clean --platform android --no-install"), 1)
+        common = f"gradle -p {self.root}/mobile/android --no-daemon --build-cache -PreactNativeDevServerIp=127.0.0.1 --max-workers 3"
+        self.assertEqual([event for event in events if event.startswith("gradle")], [
+            f"{common} --stacktrace assembleDebug",
+            f"{common} -PreactNativeArchitectures=x86_64 assembleRelease",
         ])
 
     def test_android_java_reports_usage_and_preserves_command_failure(self) -> None:
@@ -347,7 +369,7 @@ esac
         report = self.root / "mobile/.qa/android-health.log"
         result = self.health_probe(report)
         self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn("no matching critical-process ANR", result.stderr)
+        self.assertIn("qa: logcat am_anr shows the ANR above; dumpsys lastanr has no record of it", result.stderr)
         self.assertNotIn("PID: 456", result.stderr)
         self.assertNotIn("com.android.systemui.extra", report.read_text())
 
@@ -406,8 +428,12 @@ fi
 printf '%s\n' "$*" >> "$EVENTS"
 if [[ "$*" == devices ]]; then printf 'List of devices attached\n'; fi
 if [[ "$*" == *'getprop sys.boot_completed' && -f "$EMULATOR_ARGS" ]]; then echo 1; fi
+if [[ "$*" == *'pidof com.android.systemui' ]]; then echo 321; fi
+if [[ "$*" == *'dumpsys window displays' ]]; then echo '  mCurrentFocus=Window{1 u0 launcher}'; fi
+if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/test-qa.avd/snapshots/${@: -1}"; fi
 ''')
-        self.executable(self.sdk / "emulator/emulator", 'printf "%s\\n" "$@" > "$EMULATOR_ARGS"\n')
+        self.environment["BAUKIT_QA_POLL_SECONDS"] = "0"
+        self.executable(self.sdk / "emulator/emulator", '{ flock 9; printf "%s\\n" "$@" -- >> "$EMULATOR_ARGS"; } 9>"$EMULATOR_ARGS.lock"\n')
         self.executable(self.scripts / "services.sh", "exit 0\n")
         apk = self.root / "mobile/android/app/build/outputs/apk/release/app-release.apk"
         apk.parent.mkdir(parents=True)
@@ -419,19 +445,29 @@ if [[ "$*" == *'getprop sys.boot_completed' && -f "$EMULATOR_ARGS" ]]; then echo
             self.environment["BAUKIT_QA_HEADLESS"] = headless
             self.events.unlink(missing_ok=True)
             emulator_args.unlink(missing_ok=True)
+            shutil.rmtree(self.avds / "test-qa.avd/snapshots", ignore_errors=True)
             self.run_script("android-env.sh")
             expected_args = [
-                "-avd", "test-qa", "-port", "5556", "-no-snapshot-load",
+                "-avd", "test-qa", "-port", "5556",
                 "-no-snapshot-save", "-no-audio", "-no-boot-anim", "-gpu", "swiftshader",
+                "-no-snapshot-load",
             ]
             if headless == "1":
                 expected_args.append("-no-window")
-            self.assertEqual(emulator_args.read_text().splitlines(), expected_args)
+            cold, *shared, rest = emulator_args.read_text().split("--\n")
+            self.assertEqual(cold.splitlines(), expected_args)
+            self.assertEqual(rest, "")
+            for port, launch in zip(("5556", "5558"), sorted(shared, key=lambda args: args.split()[3]), strict=True):
+                quick = [*expected_args[:3], port, *expected_args[4:]]
+                load = quick.index("-no-snapshot-load")
+                quick[load : load + 1] = ["-snapshot", "baukit-clean", "-read-only"]
+                self.assertEqual(launch.splitlines(), quick)
             events = self.events.read_text().splitlines()
             command = "-s emulator-5556 shell am start -n dev.baukit.{{ context.app_crate }}/.MainActivity -W"
             self.assertEqual(events.count(command), 1)
             launch = events.index(command)
             self.assertFalse(any("monkey" in event for event in events))
+            self.assertEqual(events.count("-s emulator-5556 emu avd snapshot save baukit-clean"), 1)
 {% if context.auth_oidc %}            for command in (flags, debug, stop):
                 self.assertEqual(events.count(command), 1)
                 self.assertLess(events.index(command), launch)

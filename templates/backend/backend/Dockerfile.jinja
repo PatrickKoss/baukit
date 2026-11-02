@@ -26,7 +26,8 @@ COPY ${BAUKIT_CONTEXT}/ ${BAUKIT_DESTINATION}/
 COPY ${LIMITS_FILE} /limits.json
 {% for input in context.image.build_inputs %}COPY ["{{ input.source }}", "{{ input.destination }}"]
 {% endfor %}# The target dir lives in a cache mount, so layers hold only the binaries.
-RUN --mount=type=cache,id={{ context.app_name }}-cargo-registry,target=/usr/local/cargo/registry \
+RUN --mount=type=cache,id={{ context.app_name }}-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id={{ context.app_name }}-cargo-git,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,id={{ builder.target_cache_id }},target=/workspace/target,sharing=locked \
     {% for command in context.commands %}{{ command }} \
     && {% endfor %}cargo build --locked --release -p {{ context.bin_crate }} \

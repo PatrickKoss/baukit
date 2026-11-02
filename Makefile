@@ -1,4 +1,4 @@
-.PHONY: toolchain fmt lint test check ci platform-validate platform-up platform-down platform-nuke platform-recreate platform-status ts-install ts-build ts-fmt ts-lint ts-test ts-browser-deps ts-browser-test ts-check cli-fmt cli-lint cli-test cli-check cli-ci scripts-test example-lockfiles-check examples-test mcp-fixture-gate generated-fixture-gate platform-fixture-gate install-skills android-sdk-setup native-android-gate expo-sqlite-conformance expo-sqlite-conformance-prepare expo-notifications-conformance expo-notifications-conformance-prepare media-grants-test media-grants-njs-test
+.PHONY: toolchain fmt lint test check ci platform-validate platform-up platform-down platform-nuke platform-recreate platform-status ts-install ts-build ts-fmt ts-lint ts-test ts-browser-deps ts-browser-test ts-check cli-fmt cli-lint cli-test cli-check cli-ci scripts-test example-lockfiles-check examples-test mcp-fixture-gate affected-fixture-gate ci-gate generated-fixture-gate platform-fixture-gate install-skills android-sdk-setup native-android-gate expo-sqlite-conformance expo-sqlite-conformance-prepare expo-notifications-conformance expo-notifications-conformance-prepare media-grants-test media-grants-njs-test
 
 RUST_MANIFEST := rust/Cargo.toml
 TS_DIR := typescript
@@ -77,6 +77,12 @@ generated-fixture-gate:
 platform-fixture-gate:
 	./scripts/generated-fixture-gate.sh platform-standalone platform
 
+affected-fixture-gate:
+	./scripts/affected-fixture-gate.sh
+
+ci-gate:
+	sh scripts/ci-gate.sh
+
 mcp-fixture-gate:
 	./scripts/mcp-remote-fixture.sh
 
@@ -87,14 +93,19 @@ install-skills:
 android-sdk-setup:
 	./scripts/android-sdk-setup.sh
 
+NATIVE_EMULATOR_PORT ?= 5620
+
 native-android-gate: android-sdk-setup
 	@set -e; \
-	fixture_parent="$$(mktemp -d)"; \
-	trap 'rm -rf "$$fixture_parent"' EXIT; \
-	corepack pnpm@12.9.1 --dir $(TS_DIR) install --frozen-lockfile --ignore-scripts; \
-	corepack pnpm@12.9.1 --dir $(TS_DIR) --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/data-contracts --filter @baukit/data-contracts-expo-sqlite --filter @baukit/localization-core --filter @baukit/ui-tokens --filter @baukit/navigation --filter @baukit/purchases-core --filter @baukit/purchases-revenuecat run build; \
+	fixture_parent="$${NATIVE_FIXTURE_PARENT:-$$(mktemp -d)}"; \
+	if [ -z "$${NATIVE_FIXTURE_PARENT:-}" ]; then trap 'rm -rf "$$fixture_parent"' EXIT; fi; \
+	mkdir -p "$$fixture_parent"; \
+	if [ "$${BAUKIT_TYPESCRIPT_BUILT:-0}" != 1 ]; then \
+		corepack pnpm@12.9.1 --dir $(TS_DIR) install --frozen-lockfile --ignore-scripts; \
+		corepack pnpm@12.9.1 --dir $(TS_DIR) --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/data-contracts --filter @baukit/data-contracts-expo-sqlite --filter @baukit/localization-core --filter @baukit/ui-tokens --filter @baukit/navigation --filter @baukit/purchases-core --filter @baukit/purchases-revenuecat run build; \
+	fi; \
 	cargo build --manifest-path $(CLI_MANIFEST) --bin baukit; \
-	cli/target/debug/baukit new fixture --mobile --dir "$$fixture_parent" --baukit-path rust; \
+	cli/target/debug/baukit new fixture --mobile $(NATIVE_FLAGS) --dir "$$fixture_parent" --baukit-path rust; \
 	corepack pnpm@12.9.1 --dir "$$fixture_parent/fixture/mobile" install --frozen-lockfile; \
 	corepack pnpm@12.9.1 --dir "$$fixture_parent/fixture/mobile" exec expo install --check; \
 	(cd "$$fixture_parent/fixture/mobile" && BAUKIT_QA_BUILD=1 CI=1 ./node_modules/.bin/expo prebuild --clean --platform android --no-install); \
@@ -103,7 +114,11 @@ native-android-gate: android-sdk-setup
 		> "$$fixture_parent/assemble.log" 2>&1 || build_status=$$?; \
 	cat "$$fixture_parent/assemble.log"; \
 	test "$${build_status:-0}" -eq 0; \
-	python3 scripts/check-gradle-deprecations.py --project "$$fixture_parent/fixture/mobile" "$$fixture_parent/assemble.log"
+	python3 scripts/check-gradle-deprecations.py --project "$$fixture_parent/fixture/mobile" "$$fixture_parent/assemble.log"; \
+	cp "$$fixture_parent/fixture/mobile/.maestro/smoke.yaml" "$$fixture_parent/fixture/mobile/.maestro/smoke-second-shard.yaml"; \
+	ANDROID_HOME="$${ANDROID_HOME:-$$HOME/Android/Sdk}" ANDROID_SDK_ROOT="$${ANDROID_SDK_ROOT:-$${ANDROID_HOME:-$$HOME/Android/Sdk}}" \
+		BAUKIT_QA_ANDROID_AVD=baukit-native-qa BAUKIT_QA_ANDROID_PORT=$(NATIVE_EMULATOR_PORT) BAUKIT_QA_ANDROID_EMULATORS=2 BAUKIT_QA_HEADLESS=1 \
+		make --no-print-directory -C "$$fixture_parent/fixture/mobile" qa-android-setup e2e-android
 
 expo-sqlite-conformance:
 	./examples/expo-sqlite-conformance/scripts/run-android.sh

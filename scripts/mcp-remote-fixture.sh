@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export CI=true CARGO_BUILD_JOBS=6 VITEST_MAX_WORKERS=4
+export CI=true CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-6} VITEST_MAX_WORKERS=${VITEST_MAX_WORKERS:-4}
 fixture_name=long-product-name-fixture
 fixture_parent=$(mktemp -d)
 trap 'python3 -c "import shutil,sys; shutil.rmtree(sys.argv[1])" "$fixture_parent"' EXIT
 fixture="$fixture_parent/$fixture_name"
 
 cargo build --manifest-path cli/Cargo.toml --bin baukit
-corepack pnpm --dir typescript install --frozen-lockfile
-corepack pnpm --dir typescript --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/auth-native --filter @baukit/auth-node --filter @baukit/data-contracts --filter @baukit/ui-tokens --filter @baukit/navigation --filter @baukit/purchases-core --filter @baukit/purchases-revenuecat run build
+if [[ "${BAUKIT_TYPESCRIPT_BUILT:-0}" != 1 ]]; then
+    corepack pnpm --dir typescript install --frozen-lockfile
+    corepack pnpm --dir typescript --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/auth-native --filter @baukit/auth-node --filter @baukit/data-contracts --filter @baukit/ui-tokens --filter @baukit/navigation --filter @baukit/purchases-core --filter @baukit/purchases-revenuecat run build
+fi
 cli/target/debug/baukit new "$fixture_name" --backend --web --mobile --worker --mcp --auth oidc --dir "$fixture_parent" --baukit-path rust
 cargo fmt --manifest-path "$fixture/backend/Cargo.toml" --all --check
 cargo clippy --manifest-path "$fixture/backend/Cargo.toml" --all-targets -- -D warnings

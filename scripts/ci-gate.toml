@@ -1,0 +1,20 @@
+[quality]
+shared = ["deploy/**", "fixtures/**", "rust/deny.toml", "rust/Cargo.toml", "renovate*.json"]
+
+[quality.gate_budget_minutes]
+full = 30
+affected = 15
+
+[quality.affected]
+"README.md" = []
+"CLAUDE.md" = []
+"AGENTS.md" = []
+"docs/**" = []
+"rust/crates/**" = ["rust", "fixtures", "mcp-fixture"]
+"cli/**" = ["cli", "fixtures", "mcp-fixture", "native-android"]
+"templates/**" = ["cli", "fixtures", "mcp-fixture", "native-android"]
+"agent-skills/**" = ["cli", "fixtures"]
+"typescript/**" = ["ts", "fixtures", "mcp-fixture", "android"]
+"examples/minimal-api/**" = ["examples-test"]
+"examples/expo-sqlite-conformance/**" = ["expo-sqlite"]
+"examples/expo-notifications-conformance/**" = ["expo-notifications"]

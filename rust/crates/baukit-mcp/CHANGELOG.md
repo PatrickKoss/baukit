@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-02
+
 ## [0.16.0] - 2026-11-02
 
 - `McpConfig` has `required_scopes`, the scopes every token must grant when Clerk MCP clients register dynamically. It defaults to empty.

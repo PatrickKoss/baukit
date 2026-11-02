@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-02
+
 ## [0.16.0] - 2026-11-02
 
 - Clerk MCP accepts dynamically registered clients when `mcp.required_scopes` is set and `mcp.oauth_client_id` is not. Startup requires one of them.

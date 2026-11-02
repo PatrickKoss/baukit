@@ -563,15 +563,13 @@ fn strict_coverage_creates_lcov_parent_with_an_external_target() -> anyhow::Resu
     strict.quality = QualityProfile::Strict;
     let root = generate_new(&strict)?;
     let runner = fs::read_to_string(root.join("scripts/quality-gate.sh"))?;
-    let start = runner
-        .find("cargo fmt --manifest-path backend/Cargo.toml")
-        .expect("backend gate");
+    let start = runner.find("step_rust_tests() {").expect("backend gate");
     let end = runner[start..]
-        .find("rust_version=")
+        .find("\nstep_rust_doctests")
         .expect("coverage gate end")
         + start;
     let commands = format!(
-        "set -eu\nmanifest_value() {{ echo 70; }}\n{}",
+        "set -eu\nmanifest_value() {{ echo 70; }}\ngate_mode=full\nworkers=2\n{}\nstep_rust_tests\n",
         &runner[start..end]
     );
     let tools = parent.path().join("tools");
@@ -716,19 +714,14 @@ fn docker_callers_isolate_checkouts_and_preserve_overrides() -> anyhow::Result<(
         assert!(help.status.success());
         assert!(String::from_utf8(help.stdout)?.contains("Only compose, build and buildx build"));
         let runner = fs::read_to_string(root.join("scripts/quality-gate.sh"))?;
-        let start = runner
-            .find("if [ -f backend/Dockerfile ]; then")
-            .expect("image build gate");
-        let end = runner[start..]
-            .find("\nif [ -f deploy/observability")
-            .expect("next gate")
-            + start;
+        let start = runner.find("step_images() {").expect("image build gate");
+        let end = runner[start..].find("\n}\n").expect("next gate") + start + 3;
         let baukit = parent.path().join("baukit");
         fs::create_dir_all(&baukit)?;
         fs::write(baukit.join("Cargo.toml"), "fixture")?;
         for source in ["registry", "path"] {
             let commands = format!(
-                "set -eu\ntemporary_paths=\nmanifest_value() {{ case $1 in dependencies.baukit.source) echo {source};; dependencies.baukit.path) printf %s \"$TEST_BAUKIT_PATH\";; esac; }}\n{}",
+                "set -eu\ntemporary_paths=\nmanifest_value() {{ case $1 in dependencies.baukit.source) echo {source};; dependencies.baukit.path) printf %s \"$TEST_BAUKIT_PATH\";; esac; }}\n{}step_images\n",
                 &runner[start..end]
             );
             let output = Command::new("sh")
@@ -865,7 +858,11 @@ fn strict_generation_is_capability_driven_and_matches_golden_tree() -> anyhow::R
         assert_eq!(runner.contains("playwright test"), web);
         assert_eq!(runner.contains("--repeat-each"), web);
         assert_eq!(runner.contains("expo-doctor"), mobile);
-        assert_eq!(runner.contains("assembleDebug"), mobile);
+        assert_eq!(runner.contains("BAUKIT_QA_ASSEMBLE_DEBUG=1"), mobile);
+        if mobile {
+            let build = fs::read_to_string(root.join("mobile/scripts/qa/build-android.sh"))?;
+            assert!(build.contains("assembleDebug"));
+        }
         assert_eq!(runner.contains("--dir web run build:sw:check"), web);
         assert_eq!(
             runner.contains("--dir mobile run build:sw:check"),
@@ -1504,7 +1501,7 @@ fn release_emission_uses_registry_versions_and_reproducibility_files() -> anyhow
     assert!(preflight.contains("BAUKIT_PREBUILT_IMAGES"));
     assert!(preflight.contains("ssh-add -l"));
     assert!(preflight.contains("PLAYWRIGHT_BROWSERS_PATH"));
-    assert!(preflight.contains("executable resolved outside the repository cache"));
+    assert!(preflight.contains("executable resolved outside PLAYWRIGHT_BROWSERS_PATH"));
     // Registry tarballs ship prebuilt `dist/`, so only non-Baukit packages need build approval.
     let web_workspace = fs::read_to_string(root.join("web/pnpm-workspace.yaml"))?;
     assert!(!web_workspace.contains("@baukit/"));
@@ -1707,6 +1704,7 @@ esac
             .current_dir(&root)
             .env("PATH", &path)
             .env("BAUKIT_PREBUILT_IMAGES", "true")
+            .env_remove("PLAYWRIGHT_BROWSERS_PATH")
             .env(
                 "BAUKIT_TEST_PLAYWRIGHT_MODULE",
                 root.join("web/node_modules/@playwright/test"),
@@ -1722,8 +1720,32 @@ esac
         );
     }
     let expected_cache = format!("{}\n", root.join("web/.playwright-browsers").display());
-    assert_eq!(fs::read_to_string(install_log)?, expected_cache);
-    assert_eq!(fs::read_to_string(run_log)?, expected_cache);
+    assert_eq!(fs::read_to_string(&install_log)?, expected_cache);
+    assert_eq!(fs::read_to_string(&run_log)?, expected_cache);
+    let shared = parent.path().join("shared-browsers");
+    let shared_marker = shared.join("browser-installed");
+    let result = Command::new("sh")
+        .args(["scripts/preflight.sh", "--", "record-playwright-cache"])
+        .current_dir(&root)
+        .env("PATH", &path)
+        .env("BAUKIT_PREBUILT_IMAGES", "true")
+        .env("PLAYWRIGHT_BROWSERS_PATH", &shared)
+        .env(
+            "BAUKIT_TEST_PLAYWRIGHT_MODULE",
+            root.join("web/node_modules/@playwright/test"),
+        )
+        .env("BAUKIT_TEST_PLAYWRIGHT_MARKER", &shared_marker)
+        .env("BAUKIT_TEST_INSTALL_LOG", &install_log)
+        .env("BAUKIT_TEST_RUN_LOG", &run_log)
+        .output()?;
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let shared_cache = format!("{}\n", shared.display());
+    assert_eq!(fs::read_to_string(&run_log)?, shared_cache);
+    assert!(fs::read_to_string(&install_log)?.ends_with(&shared_cache));
     Ok(())
 }
 

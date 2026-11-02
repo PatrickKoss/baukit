@@ -99,8 +99,10 @@ expo_android_prepare() {
   for package in "$@"; do filters+=(--filter "$package"); done
 
   "$repo_dir/scripts/android-sdk-setup.sh"
-  corepack pnpm --dir "$repo_dir/typescript" install --frozen-lockfile
-  corepack pnpm --dir "$repo_dir/typescript" "${filters[@]}" run build
+  if [[ "${BAUKIT_TYPESCRIPT_BUILT:-0}" != 1 ]]; then
+    corepack pnpm --dir "$repo_dir/typescript" install --frozen-lockfile
+    corepack pnpm --dir "$repo_dir/typescript" "${filters[@]}" run build
+  fi
   CI=1 corepack pnpm --dir "$example_dir" install --frozen-lockfile
   corepack pnpm --dir "$example_dir" run typecheck
   CI=1 corepack pnpm --dir "$example_dir" exec expo prebuild --clean --platform android

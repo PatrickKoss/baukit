@@ -54,6 +54,7 @@ class AndroidQaTests(unittest.TestCase):
             "FAILURE": "",
             "BAUKIT_QA_ADB_TIMEOUT_SECONDS": "0.15",
             "BAUKIT_QA_SKIP_BUILD": "1",
+            "BAUKIT_QA_POLL_SECONDS": "0",
         }
         self.environment.pop("BAUKIT_QA_RENDERER_THREADS", None)
         self.executable(self.sdk / "platform-tools/adb", r'''
@@ -73,7 +74,14 @@ case "$*" in
   *logcat*)
     if [[ "$FAILURE" == health ]]; then echo 'am_anr: [0,123,com.android.systemui,1,reason]'; fi ;;
   *'dumpsys activity lastanr')
-    printf 'ANR in com.android.systemui\nPID: 123\nReason: Input dispatching timed out\nprivate stack frame\n' ;;
+    if [[ "$FAILURE" == health ]]; then
+      printf 'ANR in com.android.systemui\nPID: 123\nReason: Input dispatching timed out\nprivate stack frame\n'
+    fi ;;
+  *'get-state')
+    if [[ -f "$ATTACHED" ]]; then echo device; else exit 1; fi ;;
+  *'pidof com.android.systemui') echo 321 ;;
+  *'dumpsys window displays') echo '  mCurrentFocus=Window{1 u0 com.android.launcher3/.Launcher}' ;;
+  *'emu avd snapshot save '*) mkdir -p "$ANDROID_AVD_HOME/test-qa.avd/snapshots/${@: -1}" ;;
 esac
 exit 0
 ''')
@@ -220,6 +228,130 @@ RENDERER
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assert_health_evidence(result)
         self.assertNotIn("maestro", self.events.read_text())
+
+    def test_first_boot_is_cold_and_saves_a_snapshot_later_boots_load(self):
+        self.prepare_start()
+        for expected in ("-no-snapshot-load", "-snapshot baukit-clean"):
+            with self.subTest(expected=expected):
+                self.events.unlink(missing_ok=True)
+                self.executable(self.sdk / "emulator/emulator", '{ flock 9; printf \'{"args": "%s"}\\n\' "$*" >> "$EVENTS"; } 9>"$EVENTS.lock"\n')
+                result = self.run_script("android-env.sh", "start")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                events = self.events.read_text().splitlines()
+                launch = next(json.loads(event)["args"] for event in events if event.startswith("{"))
+                self.assertIn(expected, launch)
+                self.assertIn("-no-snapshot-save", launch)
+                saved = [i for i, event in enumerate(events) if "snapshot save baukit-clean" in event]
+                if expected == "-no-snapshot-load":
+                    health = next(i for i, event in enumerate(events) if "lastanr" in event)
+                    self.assertEqual(len(saved), 1)
+                    self.assertLess(health, saved[0])
+                else:
+                    self.assertEqual(saved, [])
+                self.assertEqual(self.run_script("android-env.sh", "stop").returncode, 0)
+
+    def test_boot_waits_for_systemui_idle_before_health(self):
+        self.prepare_start()
+        result = self.run_script("android-env.sh", "start")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        events = [event for event in self.events.read_text().splitlines() if "emulator-5556" in event]
+        events = events[: next(i for i, event in enumerate(events) if "emu kill" in event)]
+        boot = next(i for i, event in enumerate(events) if "getprop" in event)
+        idle = [i for i, event in enumerate(events) if "dumpsys window displays" in event]
+        health = next(i for i, event in enumerate(events) if "logcat" in event)
+        self.assertGreaterEqual(len(idle), 3)
+        self.assertLess(boot, idle[0])
+        self.assertLess(idle[-1], health)
+
+    def test_port_comes_from_manifest_and_environment_overrides_it(self):
+        self.prepare_start()
+        (self.root / "baukit.toml").write_text("[quality]\nandroid_emulator_port = 5600\n")
+        for environment, serial in (({}, "emulator-5600"), ({"BAUKIT_QA_ANDROID_PORT": "5610"}, "emulator-5610")):
+            with self.subTest(serial=serial):
+                self.events.unlink(missing_ok=True)
+                result = self.run_script("android-env.sh", "start", **environment)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                port = int(serial.removeprefix("emulator-"))
+                self.assertEqual((self.state / "android-serial").read_text(), f"{serial}\nemulator-{port + 2}\n")
+                self.assertIn(f"adb -s {serial} install -r", self.events.read_text())
+                self.attached.touch()
+                self.run_script("android-env.sh", "stop")
+
+    def test_emulator_count_comes_from_manifest_and_extra_emulators_are_read_only(self):
+        self.prepare_start()
+        (self.root / "baukit.toml").write_text("[quality]\nandroid_emulator_port = 5600\nandroid_emulators = 3\n")
+        self.executable(self.sdk / "emulator/emulator", '{ flock 9; printf \'{"args": "%s"}\\n\' "$*" >> "$EVENTS"; } 9>"$EVENTS.lock"\n')
+        result = self.run_script("android-env.sh", "start")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.state / "android-serial").read_text(), "emulator-5600\nemulator-5602\nemulator-5604\n")
+        events = self.events.read_text().splitlines()
+        launches = [json.loads(event)["args"] for event in events if event.startswith("{")]
+        self.assertEqual(len(launches), 4)
+        self.assertNotIn("-read-only", launches[0])
+        self.assertIn("-no-snapshot-load", launches[0])
+        kill = next(i for i, event in enumerate(events) if "emulator-5600 emu kill" in event)
+        save = next(i for i, event in enumerate(events) if "snapshot save" in event)
+        self.assertLess(save, kill)
+        for launch in launches[1:]:
+            self.assertIn("-read-only", launch)
+            self.assertIn("-snapshot baukit-clean", launch)
+        for serial in ("emulator-5600", "emulator-5602", "emulator-5604"):
+            self.assertIn(f"adb -s {serial} install -r", self.events.read_text())
+            self.assertTrue(any(serial in event and "lastanr" in event for event in events), serial)
+        self.assertEqual(self.run_script("android-env.sh", "start", BAUKIT_QA_ANDROID_EMULATORS="0").returncode, 2)
+
+    def sharded(self, maestro):
+        (self.state / "android-owned").touch()
+        (self.state / "android-serial").write_text("emulator-5556\nemulator-5558\n")
+        self.attached.touch()
+        flows = self.mobile / ".maestro"
+        flows.mkdir()
+        for name in ("config.yaml", "a-first.yaml", "b-second.yaml", "c-third.yaml"):
+            (flows / name).write_text("appId: test\n")
+        self.executable(self.tools / "maestro", maestro)
+        return self.run_script("run-maestro.sh", "android")
+
+    def test_maestro_shards_flows_across_every_emulator(self):
+        result = self.sharded('echo "maestro $*" >> "$EVENTS"\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        runs = [event for event in self.events.read_text().splitlines() if event.startswith("maestro")]
+        self.assertEqual(len(runs), 1)
+        self.assertRegex(runs[0], "--device emulator-5556,emulator-5558 --shard-split 2 ")
+        self.assertTrue(runs[0].endswith(".maestro/a-first.yaml .maestro/b-second.yaml .maestro/c-third.yaml"))
+        events = self.events.read_text()
+        for serial in ("emulator-5556", "emulator-5558"):
+            self.assertIn(f"adb -s {serial} shell dumpsys activity lastanr", events)
+
+    def test_sharded_run_stops_when_an_emulator_dies(self):
+        result = self.sharded('rm -f "$ATTACHED"\nsleep 3\necho finished >> "$EVENTS"\n')
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("died during the sharded run", result.stderr)
+        self.assertNotIn("finished", self.events.read_text())
+
+    def test_maestro_stops_when_the_emulator_dies_between_flows(self):
+        self.owned()
+        flows = self.mobile / ".maestro"
+        flows.mkdir()
+        for name in ("a-first.yaml", "b-second.yaml", "c-third.yaml"):
+            (flows / name).write_text("appId: test\n")
+        self.executable(self.tools / "maestro", 'echo "maestro ${*: -1}" >> "$EVENTS"\nrm -f "$ATTACHED"\n')
+        result = self.run_script("run-maestro.sh", "android")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("emulator emulator-5556 died before b-second.yaml", result.stderr)
+        runs = [event for event in self.events.read_text().splitlines() if event.startswith("maestro")]
+        self.assertEqual(runs, ["maestro .maestro/a-first.yaml"])
+
+    def test_maestro_runs_every_flow_once_while_attached(self):
+        self.owned()
+        flows = self.mobile / ".maestro"
+        flows.mkdir()
+        for name in ("config.yaml", "a-first.yaml", "b-second.yml"):
+            (flows / name).write_text("appId: test\n")
+        self.executable(self.tools / "maestro", 'echo "maestro ${*: -1}" >> "$EVENTS"\n')
+        result = self.run_script("run-maestro.sh", "android")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        runs = [event for event in self.events.read_text().splitlines() if event.startswith("maestro")]
+        self.assertEqual(runs, ["maestro .maestro/a-first.yaml", "maestro .maestro/b-second.yml"])
 
     def assert_health_evidence(self, result):
         event = "am_anr: [0,123,com.android.systemui,1,reason]"
