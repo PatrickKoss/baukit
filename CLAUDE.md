@@ -66,6 +66,11 @@ change touches anything they cover.
 On a new Linux workstation, run `make ts-browser-deps` once to install the
 Playwright browsers and their OS packages. `make ts-browser-test` installs only
 the browser binaries, so routine checks do not run the system package manager.
+It runs each browser suite through `scripts/with-loopback-network.sh`, which gives
+the Vite server and browsers a private network namespace with only loopback. A
+Docker network created or removed by another gate on the host otherwise fires
+Chromium's network-change handling and aborts module requests, so a tester
+iframe never reports ready. The script needs unprivileged user namespaces.
 
 ### Golden snapshot trees
 
