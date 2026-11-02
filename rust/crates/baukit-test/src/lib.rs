@@ -47,6 +47,7 @@ mod identity_deleter;
 mod identity_erasure;
 mod inbox;
 mod jwt;
+mod keycloak;
 mod limits;
 mod live_row_cap;
 mod metrics;
@@ -111,6 +112,7 @@ pub use jwt::{
     JwtClaims, JwtFixtureError, MockOidcServer, MockOidcSession, authorization_header, hs256_token,
     rs256_token, rs256_token_with_key_id, unsigned_token,
 };
+pub use keycloak::{KeycloakLogin, KeycloakTestContainer, KeycloakTestError};
 pub use limits::{
     LimitsConformanceError, LiveRowLimitAdapter, NamedIngress, NamedOutput,
     assert_ingress_reason_code_parity, assert_limit_boundaries, assert_reason_code_conformance,

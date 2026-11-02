@@ -121,7 +121,49 @@ API key. Deletion uses `https://api.workos.com/user_management/users`.
 A 404 counts as complete; provider 5xx and 429 responses use durable retries.
 MCP uses WorkOS Connect's issuer and JWKS, distinct from AuthKit session tokens.
 
-## Erasure secrets
+{% if context.auth_clerk or context.auth_workos %}## Local development
+
+Production and local development run the same verifier. The bundled Keycloak
+realm issues access tokens shaped like {{ "Clerk" if context.auth_clerk else "WorkOS" }} tokens through client
+protocol mappers, and `config/local.toml` sets `auth.issuer` and `auth.jwks_uri`
+to that realm. Production replaces both through `{{ context.app_env }}__AUTH__ISSUER`
+and `{{ context.app_env }}__AUTH__JWKS_URI`; `config/local.toml` loads only in
+the local environment.
+
+The realm's public clients, including `{{ context.app_name }}-local`, use only the `basic` client scope with `fullScopeAllowed` off, so their
+tokens carry no `aud`. Keycloak sets `sub`, `sid`, `azp`, `iss`, `iat`, `exp`,
+`jti`, `typ`, `scope` and `auth_time` itself. Hardcoded-claim mappers add:
+
+{% if context.auth_clerk %}| Claim | Value | Mapper |
+| --- | --- | --- |
+| `v` | `2` | `clerk session version` |
+| `o` | `{"id":"org_local","rol":"admin","slg":"local"}` | `clerk active organization` |
+
+`azp` is the Keycloak client ID, so `auth.authorized_parties` lists those IDs
+locally and the web origins in production. Every local user has the same
+active organization. Replace a mapper with a user-attribute mapper when a test
+needs per-user organizations.
+{% else %}| Claim | Value | Mapper |
+| --- | --- | --- |
+| `client_id` | `client_{{ context.app_crate }}_local` | `workos client id` |
+| `org_id` | `org_local` | `workos organization` |
+| `role` | `admin` | `workos role` |
+| `permissions` | `["items:read","items:write"]` | `workos permissions` |
+
+`auth.client_id` is `client_{{ context.app_crate }}_local` locally and the
+AuthKit client ID in production. Keycloak also adds `azp`, which WorkOS does not
+send; the verifier ignores it. Every local user has the same organization.
+Replace a mapper with a user-attribute mapper when a test needs per-user
+organizations.
+{% endif %}
+`make keycloak-reconcile` repairs these mappers on a retained volume. The web
+and mobile apps still sign in with the {{ "Clerk" if context.auth_clerk else "WorkOS" }} SDK, so local browser
+sign-in needs a {{ "Clerk development instance" if context.auth_clerk else "WorkOS staging environment" }}; point `auth.issuer` and `auth.jwks_uri` at it
+for that. The ignored `local_realm` test signs `test` in through
+`{{ context.app_name }}-local` in a disposable Keycloak, checks the claim names,
+and verifies the token with the configured verifier and the other provider's.
+
+{% endif %}## Erasure secrets
 
 Set `{{ context.app_env }}__AUTH__ERASURE_HASH_KEY` to at least 32 random bytes.
 Keep it stable so erased identities remain fenced. Clerk and WorkOS always

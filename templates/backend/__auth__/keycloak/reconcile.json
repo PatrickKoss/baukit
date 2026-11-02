@@ -29,13 +29,22 @@
     }{% endif %}{% if context.web %},
     {
       "clientId": "{{ context.app_name }}-web",
-      "activeOrigins": ["http://localhost:{{ context.web_port }}"],
+{% if not context.auth_oidc %}      "exactProtocolMappers": true,
+{% endif %}      "activeOrigins": ["http://localhost:{{ context.web_port }}"],
       "activeRedirectUris": ["http://localhost:{{ context.web_port }}/*"]
     }{% endif %}{% if context.mobile %},
     {
       "clientId": "{{ context.app_name }}-mobile",
-      "activeOrigins": [],
+{% if not context.auth_oidc %}      "exactProtocolMappers": true,
+{% endif %}      "activeOrigins": [],
       "activeRedirectUris": ["{{ context.app_name }}://oauth"]
+    }{% endif %}{% if not context.auth_oidc %},
+    {
+      "clientId": "{{ context.app_name }}-local",
+      "exactProtocolMappers": true,
+      "exactRedirectUris": true,
+      "activeOrigins": [],
+      "activeRedirectUris": ["http://127.0.0.1:18890/callback"]
     }{% endif %}
   ],
   "users": ["test"]

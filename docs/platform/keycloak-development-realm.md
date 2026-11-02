@@ -1,6 +1,19 @@
 # Keycloak development realm
 
-Authenticated backend generation includes a Keycloak 26.7.0 development realm, a policy declaration, and a reconciler. These files are generated only with `--auth oidc`.
+Authenticated backend generation includes a Keycloak 26.8.0 development realm, a policy declaration, and a reconciler for every `--auth` provider. Keycloak runs only in local development.
+
+## Provider-shaped realms
+
+With `--auth oidc` the realm issues standard OIDC tokens with a backend audience. With `--auth clerk` or `--auth workos` the realm's public clients issue access tokens with the production provider's claim names, so the product runs the same verifier locally and in production. `config/local.toml` points `auth.issuer` and `auth.jwks_uri` at the local realm, and production overrides them through environment variables.
+
+These clients use only the `basic` client scope with `fullScopeAllowed` off, so tokens carry no `aud`. Hardcoded-claim protocol mappers add the provider claims:
+
+| Provider | Mappers | Claims |
+| --- | --- | --- |
+| Clerk | `clerk session version`, `clerk active organization` | `v` = 2, `o` = `{"id":"org_local","rol":"admin","slg":"local"}` |
+| WorkOS | `workos client id`, `workos organization`, `workos role`, `workos permissions` | `client_id`, `org_id`, `role`, `permissions` |
+
+Keycloak itself sets `sub`, `sid`, `azp`, `typ`, `scope` and `auth_time`. Locally `azp` is the Keycloak client ID, so Clerk products list client IDs in `auth.authorized_parties`. Every local user gets the same organization. The `<app>-local` PKCE client exists for scripts and tests. The generated ignored `local_realm` test imports the realm into a disposable Keycloak through `baukit_test::KeycloakTestContainer`, signs in, and checks that the token passes the product verifier and fails the other provider's. The web and mobile apps keep their provider SDKs, so browser sign-in still needs a provider development instance.
 
 ## Ownership
 

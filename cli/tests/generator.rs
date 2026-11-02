@@ -5209,17 +5209,20 @@ fn doctor_accepts_non_typescript_files_in_a_root_mcp_directory() -> anyhow::Resu
 }
 
 #[test]
-fn managed_auth_providers_generate_every_flavor_and_mcp_without_keycloak() -> anyhow::Result<()> {
-    for (provider, sdk, snapshot) in [
+fn managed_auth_providers_generate_every_flavor_with_a_provider_shaped_local_realm()
+-> anyhow::Result<()> {
+    for (provider, sdk, snapshot, shape_mapper) in [
         (
             AuthProvider::Clerk,
             "@clerk/clerk-js",
             include_str!("snapshots/clerk.tree"),
+            "clerk active organization",
         ),
         (
             AuthProvider::Workos,
             "@workos-inc/authkit-js",
             include_str!("snapshots/workos.tree"),
+            "workos organization",
         ),
     ] {
         for (backend, web, mobile, mcp, worker, pwa, quality) in [
@@ -5293,9 +5296,9 @@ fn managed_auth_providers_generate_every_flavor_and_mcp_without_keycloak() -> an
             let tree = read_tree(&root)?;
             assert!(
                 tree.keys()
-                    .all(|path| !path.to_string_lossy().contains("keycloak"))
+                    .all(|path| !path.to_string_lossy().contains("web/e2e/stack"))
             );
-            assert!(!root.join("keycloak").exists());
+            assert_eq!(root.join("keycloak").exists(), backend);
             assert_eq!(
                 baukit_cli::read_manifest(&root)?.capabilities.auth,
                 Some(provider)
@@ -5303,7 +5306,33 @@ fn managed_auth_providers_generate_every_flavor_and_mcp_without_keycloak() -> an
             if backend {
                 let compose = fs::read_to_string(root.join("compose.yaml"))?;
                 assert!(compose.contains("redis:"));
-                assert!(!compose.contains("keycloak"));
+                assert!(compose.contains("keycloak:"));
+                let realm: serde_json::Value =
+                    serde_json::from_str(&fs::read_to_string(root.join("keycloak/realm.json"))?)?;
+                let clients = realm["clients"]
+                    .as_array()
+                    .ok_or_else(|| anyhow::anyhow!("realm has no clients"))?;
+                let shaped = clients
+                    .iter()
+                    .filter(|client| client["clientId"] != "snapshot-app-backend")
+                    .filter(|client| client["clientId"] != "snapshot-app-mcp")
+                    .collect::<Vec<_>>();
+                assert_eq!(shaped.len(), 1 + usize::from(web) + usize::from(mobile));
+                for client in shaped {
+                    let mappers = client["protocolMappers"]
+                        .as_array()
+                        .ok_or_else(|| anyhow::anyhow!("client has no mappers"))?;
+                    assert!(mappers.iter().any(|mapper| mapper["name"] == shape_mapper));
+                    assert!(
+                        mappers
+                            .iter()
+                            .all(|mapper| mapper["protocolMapper"] != "oidc-audience-mapper")
+                    );
+                    assert_eq!(client["defaultClientScopes"], serde_json::json!(["basic"]));
+                }
+                assert!(root.join("backend/tests/local_realm.rs").is_file());
+                let local = fs::read_to_string(root.join("config/local.toml"))?;
+                assert!(local.contains("/realms/snapshot-app/protocol/openid-connect/certs"));
             }
             if web {
                 assert!(fs::read_to_string(root.join("web/package.json"))?.contains(sdk));
@@ -5318,21 +5347,13 @@ fn managed_auth_providers_generate_every_flavor_and_mcp_without_keycloak() -> an
 }
 
 #[test]
-fn doctor_reports_provider_config_sdk_and_keycloak_mismatches() -> anyhow::Result<()> {
+fn doctor_reports_provider_config_and_sdk_mismatches() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut generated = options(parent.path(), "provider-wiring");
     generated.auth = Some(AuthProvider::Clerk);
     generated.web = true;
     generated.mcp = true;
     let root = generate_new(&generated)?;
-    fs::create_dir(root.join("keycloak"))?;
-    fs::write(root.join("keycloak/realm.json"), "{}")?;
-    let compose_path = root.join("compose.yaml");
-    let mut compose: serde_yaml_ng::Value =
-        serde_yaml_ng::from_str(&fs::read_to_string(&compose_path)?)?;
-    compose["services"]["keycloak"] =
-        serde_yaml_ng::from_str("image: quay.io/keycloak/keycloak:26.8.0")?;
-    fs::write(compose_path, serde_yaml_ng::to_string(&compose)?)?;
     fs::write(
         root.join("config/local.toml"),
         "[auth]\nprovider = \"workos\"\nissuer = \"https://identity.example/realms/product\"\n[mcp]\nintrospection_client_id = \"backend\"\n",
@@ -5348,10 +5369,7 @@ fn doctor_reports_provider_config_sdk_and_keycloak_mismatches() -> anyhow::Resul
         .expect_err("provider mismatches must fail doctor")
         .to_string();
     for finding in [
-        "Keycloak realm left over",
-        "compose.yaml has a Keycloak service",
         "auth.provider is `workos`",
-        "auth.issuer points to a Keycloak realm",
         "Keycloak MCP introspection policy",
         "missing `@clerk/clerk-js`",
     ] {
@@ -5872,23 +5890,23 @@ fn remote_mcp_compose_keeps_public_issuers_and_fetches_internal_keys() -> anyhow
             environment["CONTAINER_AUTH__MCP__ENABLED"],
             "${CONTAINER_AUTH__MCP__ENABLED:-false}"
         );
-        if provider == AuthProvider::Oidc {
-            assert_eq!(
-                environment["CONTAINER_AUTH__MCP__JWKS_URI"],
-                "${CONTAINER_AUTH__MCP__JWKS_URI:-http://keycloak:8080/realms/container-auth/protocol/openid-connect/certs}"
-            );
-            assert_eq!(
-                environment["CONTAINER_AUTH__AUTH__JWKS_URI"],
-                "${CONTAINER_AUTH__AUTH__JWKS_URI:-http://keycloak:8080/realms/container-auth/protocol/openid-connect/certs}"
-            );
-            assert_eq!(
-                environment["CONTAINER_AUTH__MCP__ISSUER"],
-                "${CONTAINER_AUTH__MCP__ISSUER:-http://localhost:8081/realms/container-auth}"
-            );
-        } else {
-            assert!(environment["CONTAINER_AUTH__MCP__JWKS_URI"].is_null());
-            assert!(compose["services"]["keycloak"].is_null());
-        }
+        assert_eq!(
+            environment["CONTAINER_AUTH__MCP__JWKS_URI"],
+            "${CONTAINER_AUTH__MCP__JWKS_URI:-http://keycloak:8080/realms/container-auth/protocol/openid-connect/certs}"
+        );
+        assert_eq!(
+            environment["CONTAINER_AUTH__AUTH__JWKS_URI"],
+            "${CONTAINER_AUTH__AUTH__JWKS_URI:-http://keycloak:8080/realms/container-auth/protocol/openid-connect/certs}"
+        );
+        assert_eq!(
+            environment["CONTAINER_AUTH__MCP__ISSUER"],
+            "${CONTAINER_AUTH__MCP__ISSUER:-http://localhost:8081/realms/container-auth}"
+        );
+        assert!(!compose["services"]["keycloak"].is_null());
+        assert_eq!(
+            environment["CONTAINER_AUTH__AUTH__IDENTITY_ADMIN_BASE_URL"].is_null(),
+            provider != AuthProvider::Oidc
+        );
     }
     Ok(())
 }

@@ -84,16 +84,26 @@ python3 scripts/pkce-login.py \
 {% if context.mobile %}For the mobile client, also pass `--redirect-uri {{ context.app_name }}://oauth`. {% endif %}The helper's client ID is always explicit so product smoke tests cannot silently use another product's client.
 {% else %}This realm has no public PKCE client. Add a product-owned public client before using `scripts/pkce-login.py`; its `--client-id` argument is mandatory so smoke tests cannot silently use another product's client.
 {% endif %}
-{% endif %}
+{% endif %}{% if context.auth_clerk or context.auth_workos %}
+Every generated API route requires a bearer token. Production verifies {{ "Clerk session tokens" if context.auth_clerk else "WorkOS AuthKit access tokens" }}. Locally, `make dev` starts Keycloak and Redis and reconciles a realm whose clients issue tokens with the same claim names, and `config/local.toml` points the same {{ "`ClerkVerifier`" if context.auth_clerk else "`WorkOsVerifier`" }} at that realm's issuer and JWKS. [Authentication provider setup](docs/auth-providers.md#local-development) lists the mappers. Sign in as `test` / `development-password` through the `{{ context.app_name }}-local` PKCE client:
 
+```sh
+python3 scripts/pkce-login.py \
+  --issuer http://localhost:{{ context.keycloak_host_port }}/realms/{{ context.app_name }} \
+  --client-id {{ context.app_name }}-local \
+  --redirect-uri http://127.0.0.1:18890/callback --scope openid
+```
+
+The ignored `local_realm` test starts the same realm in a disposable Keycloak and checks that its token passes this product's verifier and fails the other provider's.
+{% endif %}
 Useful commands:
 
 ```sh
 make setup
 make preflight
 make check
-{% if context.auth_oidc %}make keycloak-policy
-{% endif %}{% if context.auth_enabled %}make dev
+{% if context.auth_enabled %}make keycloak-policy
+make dev
 {% endif %}make openapi
 baukit doctor
 make openapi-client

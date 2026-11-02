@@ -37,8 +37,8 @@ tokio.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-{% if context.platform %}base64 = "0.22.1"
-ed25519-dalek = "2.2.0"
+{% if context.platform or context.auth_clerk or context.auth_workos %}base64 = "0.22.1"
+{% endif %}{% if context.platform %}ed25519-dalek = "2.2.0"
 {% endif %}{% if context.auth_enabled %}tempfile = "3.27.0"
 {% endif %}baukit-http.workspace = true
 baukit-test = { workspace = true, features = ["sqlx-postgres"] }
@@ -95,6 +95,11 @@ path = "../../tests/identity_erasure_conformance.rs"
 [[test]]
 name = "provider_config"
 path = "../../tests/provider_config.rs"
+{% endif -%}
+{% if context.auth_clerk or context.auth_workos %}
+[[test]]
+name = "local_realm"
+path = "../../tests/local_realm.rs"
 {% endif -%}
 {% if context.platform %}
 {% if not context.worker %}

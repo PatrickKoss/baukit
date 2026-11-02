@@ -2,8 +2,8 @@
 mod erasure;
 
 use std::{error::Error, sync::Arc, time::Duration};
-{% if context.auth_oidc %}use std::{path::PathBuf, process::Command};
-{% endif %}
+use std::{path::PathBuf, process::Command};
+
 use axum::{
     body::{Body, to_bytes},
     http::{Method, Request, StatusCode, header},
@@ -27,7 +27,7 @@ use {{ context.app_crate }}_services::UserService;
 const AUDIENCE: &str = "{{ context.app_name }}-backend";
 const WEB_ORIGIN: &str = "https://app.example.com";
 
-{% if context.auth_oidc %}#[test]
+#[test]
 fn generated_keycloak_tools_pass_their_offline_checks() -> Result<(), Box<dyn Error>> {
     let product_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
     for arguments in [
@@ -54,7 +54,7 @@ fn generated_keycloak_tools_pass_their_offline_checks() -> Result<(), Box<dyn Er
     Ok(())
 }
 
-{% endif %}#[tokio::test]
+#[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]
 async fn protected_route_conforms_and_maps_subject_to_internal_user() -> Result<(), Box<dyn Error>>
 {

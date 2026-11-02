@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Clerk and WorkOS products run their production verifier locally against a provider-shaped Keycloak realm. `config/local.toml` sets `auth.issuer` and `auth.jwks_uri` to the realm, and the ignored `local_realm` backend test checks the token shape against both verifiers.
+
 ## [0.15.0] - 2026-11-02
 
 ## [0.14.1] - 2026-11-01
