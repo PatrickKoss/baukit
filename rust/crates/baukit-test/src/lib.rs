@@ -98,8 +98,9 @@ pub use erasure::{
 };
 pub use identity_deleter::FakeIdentityAccountDeleter;
 pub use identity_erasure::{
-    IdentityErasureAdapter, IdentityErasureConformanceError, IdentityErasureResponse,
-    IdentityErasureSnapshot, check_identity_erasure_conformance,
+    IdentityErasureAdapter, IdentityErasureConformanceError, IdentityErasureRequest,
+    IdentityErasureResponse, IdentityErasureRoutes, IdentityErasureSnapshot,
+    check_identity_erasure_conformance,
 };
 pub use inbox::{
     InboxConformanceCases, InboxConformanceError, InboxDelivery, InboxDisposition, InboxFault,

@@ -183,7 +183,7 @@ Gating fails closed. A failed read is `unavailable`, never a grant and never the
 
 ### Check feature keys against the hub catalog
 
-`fixtures/plans/v1/catalog.json` is a recorded copy of the hub plan catalog; its README names the hub commit. A product contract test copies it and calls `assert_feature_keys_match(catalog, "hebkit", HEBKIT_FEATURE_KEYS)`, which panics with both lists when the product declares a key the catalog lacks or the catalog grants a key the product never checks. `feature_key_drift` returns the same lists as `FeatureKeyDrift` for a custom assertion. Web and mobile code use `assertFeatureKeysMatch(catalog, productId, keys)`, `featureKeyDrift` and `catalogFeatureKeys` from `@baukit/suite-client` with the parsed JSON of the same file.
+`fixtures/plans/v1/catalog.json` is a recorded copy of the hub plan catalog; its README names the hub commit. A product contract test copies it and calls `assert_feature_keys_match(catalog, "hebkit", HEBKIT_FEATURE_KEYS)`, which panics with both lists when the product declares a key the catalog lacks or the catalog grants a key the product never checks. A plan grants keys through `includedProducts` and, for business plans, `organizationProducts`; the helpers count both, so a key granted only to organizations, such as `hebkit.trainer`, must be declared too. `feature_key_drift` returns the same lists as `FeatureKeyDrift` for a custom assertion. Web and mobile code use `assertFeatureKeysMatch(catalog, productId, keys)`, `featureKeyDrift` and `catalogFeatureKeys` from `@baukit/suite-client` with the parsed JSON of the same file.
 
 ## Call the hub API
 

@@ -138,8 +138,8 @@ ts-browser-deps: ts-install
 
 ts-browser-test: ts-install
 	PLAYWRIGHT_BROWSERS_PATH="$(CURDIR)/$(TS_DIR)/.playwright-browsers" corepack pnpm --dir $(TS_DIR) --filter @baukit/data-contracts-dexie exec playwright install chromium webkit
-	PLAYWRIGHT_BROWSERS_PATH="$(CURDIR)/$(TS_DIR)/.playwright-browsers" corepack pnpm --dir $(TS_DIR) --filter @baukit/data-contracts-dexie run test:browser
-	PLAYWRIGHT_BROWSERS_PATH="$(CURDIR)/$(TS_DIR)/.playwright-browsers" corepack pnpm --dir $(TS_DIR) --filter @baukit/navigation run test:browser
+	PLAYWRIGHT_BROWSERS_PATH="$(CURDIR)/$(TS_DIR)/.playwright-browsers" scripts/with-loopback-network.sh corepack pnpm --dir $(TS_DIR) --filter @baukit/data-contracts-dexie run test:browser
+	PLAYWRIGHT_BROWSERS_PATH="$(CURDIR)/$(TS_DIR)/.playwright-browsers" scripts/with-loopback-network.sh corepack pnpm --dir $(TS_DIR) --filter @baukit/navigation run test:browser
 
 ts-check: ts-install
 	corepack pnpm --dir $(TS_DIR) run check

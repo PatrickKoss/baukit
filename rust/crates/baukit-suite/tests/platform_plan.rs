@@ -503,3 +503,41 @@ fn feature_keys_compare_with_the_recorded_hub_catalog() {
 fn feature_key_assertion_reports_the_drift() {
     assert_feature_keys_match(CATALOG, PRODUCT, ["eigenruhe.custom_programs"]);
 }
+
+#[test]
+fn organization_grants_count_as_catalog_keys() {
+    let catalog = json!({"plans": [
+        {"includedProducts": [{"productId": "hebkit", "features": ["hebkit.advanced_stats"]}]},
+        {"includedProducts": [], "organizationProducts": null},
+        {"includedProducts": [], "organizationProducts": [
+            {"productId": "hebkit", "tier": "trainer", "features": ["hebkit.trainer"]}
+        ]}
+    ]})
+    .to_string();
+    assert_eq!(
+        catalog_feature_keys(&catalog, "hebkit")
+            .expect("keys")
+            .into_iter()
+            .collect::<Vec<_>>(),
+        ["hebkit.advanced_stats", "hebkit.trainer"]
+    );
+    let only_organization = json!({"plans": [{"includedProducts": [], "organizationProducts": [
+        {"productId": "hebkit", "features": ["hebkit.trainer"]}
+    ]}]})
+    .to_string();
+    assert_feature_keys_match(&only_organization, "hebkit", ["hebkit.trainer"]);
+}
+
+#[test]
+fn recorded_catalog_grants_hebkit_its_trainer_key() {
+    assert_feature_keys_match(
+        CATALOG,
+        "hebkit",
+        [
+            "hebkit.advanced_stats",
+            "hebkit.integrations_sync",
+            "hebkit.nutrition_recommendations",
+            "hebkit.trainer",
+        ],
+    );
+}

@@ -20,7 +20,16 @@ function stringList(value: unknown): string[] {
   return value;
 }
 
-function includedProducts(catalog: unknown): Record<string, unknown>[] {
+function productGrants(plan: Record<string, unknown>, field: string): Record<string, unknown>[] {
+  const grants = plan[field];
+  if (grants === undefined || grants === null) return [];
+  if (!Array.isArray(grants)) {
+    throw new PlanCatalogError(`plan catalog plan ${field} is not an array`);
+  }
+  return grants.filter(isRecord);
+}
+
+function grantedProducts(catalog: unknown): Record<string, unknown>[] {
   if (!isRecord(catalog) || !Array.isArray(catalog['plans'])) {
     throw new PlanCatalogError('plan catalog has no plans');
   }
@@ -28,14 +37,20 @@ function includedProducts(catalog: unknown): Record<string, unknown>[] {
     if (!isRecord(plan) || !Array.isArray(plan['includedProducts'])) {
       throw new PlanCatalogError('plan catalog plan has no includedProducts');
     }
-    return plan['includedProducts'].filter(isRecord);
+    return [
+      ...productGrants(plan, 'includedProducts'),
+      ...productGrants(plan, 'organizationProducts'),
+    ];
   });
 }
 
-/** Every feature key any plan in the parsed hub catalog grants to `productId`. */
+/**
+ * Every feature key any plan in the parsed hub catalog grants to `productId`,
+ * through `includedProducts` or `organizationProducts`.
+ */
 export function catalogFeatureKeys(catalog: unknown, productId: string): string[] {
   const keys = new Set<string>();
-  for (const included of includedProducts(catalog)) {
+  for (const included of grantedProducts(catalog)) {
     if (included['productId'] !== productId) continue;
     for (const key of stringList(included['features'])) keys.add(key);
   }

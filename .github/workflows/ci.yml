@@ -206,8 +206,11 @@ jobs:
           PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/typescript/.playwright-browsers
         run: |
           pnpm --filter @baukit/data-contracts-dexie exec playwright install --with-deps chromium webkit
-          pnpm --filter @baukit/data-contracts-dexie run test:browser
-          pnpm --filter @baukit/navigation run test:browser
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          ../scripts/with-loopback-network.sh pnpm --filter @baukit/data-contracts-dexie run test:browser
+          ../scripts/with-loopback-network.sh pnpm --filter @baukit/navigation run test:browser
 
   observability-lint:
     name: Observability metric names

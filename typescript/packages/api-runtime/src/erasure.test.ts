@@ -4,7 +4,11 @@ import receiptVectors from '../../../../fixtures/erasure/receipts-v1.json' with 
 
 import { ApiError, createApiRuntime, MockFetch } from './index.js';
 import { type IdempotencyKeyStorage, type StoredIdempotencyKey } from './idempotency.js';
-import { AmbiguousProfileErasureError, createProfileErasureClient } from './erasure.js';
+import {
+  AmbiguousProfileErasureError,
+  createProfileErasureClient,
+  type ProfileErasureRoutes,
+} from './erasure.js';
 
 const operationId = 'c6417b1e-4092-4ab8-8dce-e16222c160f3';
 const key = 'b7e64cbd-4521-4515-b4c7-3ffb1c7a72b7';
@@ -28,7 +32,7 @@ function storage(): IdempotencyKeyStorage & {
   };
 }
 
-function setup(persisted = storage(), account = 'subject-a') {
+function setup(persisted = storage(), account = 'subject-a', routes?: ProfileErasureRoutes) {
   const transport = new MockFetch();
   const runtime = createApiRuntime({
     baseUrl: 'https://api.example.test',
@@ -41,6 +45,7 @@ function setup(persisted = storage(), account = 'subject-a') {
     account,
     storage: persisted,
     keyFactory: () => key,
+    ...(routes === undefined ? {} : { routes }),
   });
   return { client, transport };
 }
@@ -330,4 +335,38 @@ describe('profile erasure polling', () => {
       expect(transport.requests).toHaveLength(0);
     },
   );
+});
+
+describe('profile erasure routes', () => {
+  const hubRoutes: ProfileErasureRoutes = {
+    eraseMethod: 'POST',
+    erasePath: '/v1/me/erasure',
+    statusPath: '/v1/me/erasure/{operationId}',
+  };
+
+  it('erases and polls through the routes the caller passes', async () => {
+    const { client, transport } = setup(storage(), 'subject-a', hubRoutes);
+    transport.enqueueJson(pending, { status: 202 });
+    transport.enqueueJson(completed);
+    await expect(client.erase()).resolves.toEqual(pending);
+    await expect(client.poll(operationId, { maxAttempts: 1 })).resolves.toEqual(completed);
+    transport.assertRequest(0, { method: 'POST', url: 'https://api.example.test/v1/me/erasure' });
+    expect(transport.request(0).headers.get('Idempotency-Key')).toBe(key);
+    transport.assertRequest(1, {
+      method: 'GET',
+      url: `https://api.example.test/v1/me/erasure/${operationId}`,
+    });
+    transport.assertQueueEmpty();
+  });
+
+  it('rejects a status path without the operation placeholder', () => {
+    expect(() =>
+      createProfileErasureClient({
+        fetch: globalThis.fetch,
+        account: 'subject-a',
+        storage: storage(),
+        routes: { ...hubRoutes, statusPath: '/v1/me/erasure' },
+      }),
+    ).toThrow(TypeError);
+  });
 });

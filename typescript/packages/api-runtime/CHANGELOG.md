@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## 0.15.0
+
+### Minor Changes
+
+- 8938b1d: `createProfileErasureClient` accepts `routes: { eraseMethod, erasePath, statusPath }`, so a product that erases through another route, such as `POST /v1/me/erasure` with `GET /v1/me/erasure/{operationId}`, uses the client directly. `templateProfileErasureRoutes` holds the default `DELETE /me` and `GET /me/erasures/{operationId}`. A status path without `{operationId}` throws a `TypeError` when the client is created.
+- Release the coordinated baukit 0.15.0 train.
+
 ## 0.14.1
 
 ### Patch Changes
