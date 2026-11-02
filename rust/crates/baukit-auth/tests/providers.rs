@@ -220,3 +220,78 @@ async fn discovery_requires_exact_issuer_text_including_trailing_slashes()
     }
     Ok(())
 }
+
+#[tokio::test]
+async fn clerk_mcp_accepts_any_registered_client_with_the_product_scopes()
+-> Result<(), Box<dyn Error>> {
+    let server = MockOidcServer::start().await?;
+    let verifier = baukit_auth::ClerkMcpVerifier::from_jwks_uri(
+        server.issuer(),
+        ["product:mcp"],
+        server.jwks_url(),
+    )?;
+    let unscoped = || -> Result<baukit_test::JwtClaims, Box<dyn Error>> {
+        let mut claims = server.claims("user_123", "unused", Duration::from_secs(300))?;
+        claims.aud = None;
+        Ok(claims)
+    };
+    let claims = |client: &str| -> Result<baukit_test::JwtClaims, Box<dyn Error>> {
+        Ok(unscoped()?
+            .claim("client_id", client)
+            .claim("scope", "openid product:mcp product:items:read")
+            .claim("jti", "oat_test"))
+    };
+    for client in ["client_dcr_one", "client_dcr_two"] {
+        let principal = verifier.verify(&server.mint(&claims(client)?)?).await?;
+        assert_eq!(principal.subject(), "user_123");
+        assert_eq!(principal.client_id(), Some(client));
+        assert!(principal.scopes().contains("product:items:read"));
+    }
+    let base = claims("client_dcr_one")?;
+    for (invalid, expected) in [
+        (
+            base.clone().claim("scope", "openid other:mcp"),
+            VerificationError::MissingScope,
+        ),
+        (
+            base.clone().claim("scope", serde_json::Value::Null),
+            VerificationError::MissingScope,
+        ),
+        (
+            base.clone().issuer("https://another.example"),
+            VerificationError::WrongIssuer,
+        ),
+        (base.clone().expires_at(0), VerificationError::Expired),
+        (
+            base.clone().claim("client_id", serde_json::Value::Null),
+            VerificationError::WrongClientId,
+        ),
+        (
+            unscoped()?
+                .claim("azp", "https://app.example")
+                .claim("sid", "sess_123")
+                .claim("scope", "product:mcp"),
+            VerificationError::WrongClientId,
+        ),
+    ] {
+        let error = verifier
+            .verify(&server.mint(&invalid)?)
+            .await
+            .expect_err("invalid Clerk MCP token accepted");
+        assert_eq!(
+            std::mem::discriminant(&error),
+            std::mem::discriminant(&expected)
+        );
+    }
+    let token = server.mint(&base)?;
+    let (signed, signature) = token.rsplit_once('.').ok_or("token has no signature")?;
+    let forged = format!("{signed}.{}", signature.chars().rev().collect::<String>());
+    assert!(verifier.verify(&forged).await.is_err());
+    assert!(matches!(
+        baukit_auth::ClerkMcpVerifier::new(server.issuer(), Vec::<String>::new()),
+        Err(baukit_auth::ProviderVerifierError::Configuration(
+            baukit_auth::OidcConfigError::EmptyValue("required scope")
+        ))
+    ));
+    Ok(())
+}

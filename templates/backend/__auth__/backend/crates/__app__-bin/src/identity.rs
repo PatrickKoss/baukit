@@ -47,15 +47,26 @@ pub async fn mcp_verifier(
         let client_id = config
             .oauth_client_id
             .as_deref()
-            .filter(|id| !id.is_empty())
-            .ok_or("Clerk MCP requires a dedicated mcp.oauth_client_id")?;
-        let verifier = match &config.jwks_uri {
-            Some(uri) => {
-                baukit_auth::ClerkOAuthVerifier::from_jwks_uri(&config.issuer, client_id, uri)?
-            }
-            None => baukit_auth::ClerkOAuthVerifier::new(&config.issuer, client_id)?,
+            .filter(|id| !id.is_empty());
+        let jwks = config.jwks_uri.as_deref();
+        let verifier: Arc<dyn IdentityVerifier> = match (client_id, jwks) {
+            (Some(id), Some(uri)) => Arc::new(baukit_auth::ClerkOAuthVerifier::from_jwks_uri(
+                &config.issuer,
+                id,
+                uri,
+            )?),
+            (Some(id), None) => Arc::new(baukit_auth::ClerkOAuthVerifier::new(&config.issuer, id)?),
+            (None, Some(uri)) => Arc::new(baukit_auth::ClerkMcpVerifier::from_jwks_uri(
+                &config.issuer,
+                config.required_scopes.clone(),
+                uri,
+            )?),
+            (None, None) => Arc::new(baukit_auth::ClerkMcpVerifier::new(
+                &config.issuer,
+                config.required_scopes.clone(),
+            )?),
         };
-        return Ok(Arc::new(verifier));
+        return Ok(verifier);
     }
     let mapping = baukit_auth::PrincipalClaimMapping::new()
         .client_id_claim(if auth.provider == AuthProvider::Oidc {

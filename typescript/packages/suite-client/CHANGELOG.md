@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## 0.16.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.16.0 train.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/integrations-client@0.16.0
+  - @baukit/localization-core@0.16.0
+
 ## 0.15.0
 
 ### Minor Changes

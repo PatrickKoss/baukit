@@ -12,6 +12,9 @@ pub(crate) enum TokenProfile {
     ClientBound {
         client_id: String,
     },
+    ScopeBound {
+        required_scopes: BTreeSet<String>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -272,6 +275,30 @@ impl OidcConfig {
             clock_skew: Duration::from_secs(60),
             claim_mapping: PrincipalClaimMapping::client_bound(),
             token_profile: TokenProfile::ClientBound { client_id },
+        })
+    }
+
+    pub(crate) fn scope_bound<I, T>(
+        issuer: impl AsRef<str>,
+        required_scopes: I,
+    ) -> Result<Self, OidcConfigError>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<String>,
+    {
+        let required_scopes = nonempty_values("required scope", required_scopes)?;
+        Ok(Self {
+            issuer: issuer.as_ref().to_owned(),
+            issuer_url: parsed_issuer(issuer.as_ref())?,
+            audiences: BTreeSet::new(),
+            client_id: None,
+            allowed_clients: None,
+            algorithms: BTreeSet::from([SigningAlgorithm::Rs256]),
+            cache_ttl: Duration::from_secs(300),
+            request_timeout: Duration::from_secs(5),
+            clock_skew: Duration::ZERO,
+            claim_mapping: PrincipalClaimMapping::client_bound(),
+            token_profile: TokenProfile::ScopeBound { required_scopes },
         })
     }
 

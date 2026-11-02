@@ -16,6 +16,8 @@ pub struct McpConfig {
     pub resource_url: String,
     pub issuer: String,
     pub oauth_client_id: Option<String>,
+    /// Scopes every token must grant when Clerk clients register dynamically.
+    pub required_scopes: Vec<String>,
     /// Optional key-fetch URL, including an internal HTTP endpoint.
     /// Token issuer checks and public discovery still use `issuer`.
     pub jwks_uri: Option<String>,
@@ -34,6 +36,7 @@ impl Default for McpConfig {
             resource_url: String::new(),
             issuer: String::new(),
             oauth_client_id: None,
+            required_scopes: Vec::new(),
             jwks_uri: None,
             introspection_client_id: None,
             introspection_client_secret: None,

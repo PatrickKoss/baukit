@@ -76,10 +76,15 @@ impl Validate for ProductConfig {
                 .oauth_client_id
                 .as_deref()
                 .is_none_or(|id| id.trim().is_empty())
+            && self
+                .mcp
+                .required_scopes
+                .iter()
+                .all(|scope| scope.trim().is_empty())
         {
             errors.push(ValidationError::new(
                 "mcp.oauth_client_id",
-                "Clerk MCP requires a dedicated OAuth client ID",
+                "Clerk MCP requires a dedicated OAuth client ID or required_scopes for dynamically registered clients",
             ));
         }
         if self.mcp.enabled

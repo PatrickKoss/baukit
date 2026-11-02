@@ -1085,7 +1085,10 @@ fn render_directory(
         if relative == Path::new("backend/Dockerfile.jinja") {
             continue;
         }
-        if !context.auth_oidc && is_keycloak_only(relative) {
+        if !context.auth_oidc && is_oidc_client_stack_only(relative) {
+            continue;
+        }
+        if context.auth_oidc && is_provider_shaped_realm_only(relative) {
             continue;
         }
         if is_python_cache_artifact(relative) {
@@ -1122,7 +1125,7 @@ fn render_directory(
         rendered.insert(output_path, output.into_bytes());
     }
     for child in directory.dirs() {
-        if !context.auth_oidc && is_keycloak_only(child.path()) {
+        if !context.auth_oidc && is_oidc_client_stack_only(child.path()) {
             continue;
         }
         if is_python_cache_artifact(child.path()) {
@@ -1162,13 +1165,13 @@ fn product_description(options: &NewOptions) -> String {
     format!("Baukit product with {}", capabilities.join(", "))
 }
 
-fn is_keycloak_only(path: &Path) -> bool {
+fn is_oidc_client_stack_only(path: &Path) -> bool {
     let value = path.to_string_lossy();
-    value.contains("keycloak")
-        || value.contains("reconcile_keycloak")
-        || value.contains("scripts/tests/fixtures/")
-        || value.contains("web/e2e/playwright.stack.config.ts")
-        || value.contains("web/e2e/stack")
+    value.contains("web/e2e/playwright.stack.config.ts") || value.contains("web/e2e/stack")
+}
+
+fn is_provider_shaped_realm_only(path: &Path) -> bool {
+    path.ends_with("backend/tests/local_realm.rs")
 }
 
 fn is_auth_only(path: &Path) -> bool {
@@ -1718,7 +1721,7 @@ fn validate_port_configuration(
             ("mobile/app.config.ts", format!("localhost:{}", ports.api)),
             ("mobile/src/api.ts", format!("localhost:{}", ports.api)),
         ]);
-        if uses_bundled_keycloak(root, manifest)? {
+        if oidc_clients_use_bundled_keycloak(root, manifest)? {
             expected.extend([
                 (
                     "mobile/.env.example",
@@ -1744,7 +1747,7 @@ fn validate_port_configuration(
             ("web/.env.example", format!("localhost:{}", ports.api)),
             ("web/src/api.ts", format!("localhost:{}", ports.api)),
         ]);
-        if uses_bundled_keycloak(root, manifest)? {
+        if oidc_clients_use_bundled_keycloak(root, manifest)? {
             expected.extend([
                 (
                     "web/.env.example",
@@ -1769,7 +1772,7 @@ fn validate_port_configuration(
         .into_iter()
         .map(|(path, snippet)| (path.to_owned(), snippet))
         .collect::<Vec<_>>();
-    if manifest.capabilities.backend && uses_bundled_keycloak(root, manifest)? {
+    if manifest.capabilities.backend && oidc_clients_use_bundled_keycloak(root, manifest)? {
         for krate in doctor_layout::rust_crates(root, manifest)? {
             for path in krate.sources {
                 let source = fs::read_to_string(&path)?;
@@ -2259,8 +2262,13 @@ fn validate_openapi_file(root: &Path, kind: &str, relative: &str, failures: &mut
     }
 }
 
+fn oidc_clients_use_bundled_keycloak(root: &Path, manifest: &Manifest) -> Result<bool> {
+    Ok(manifest.capabilities.auth == Some(AuthProvider::Oidc)
+        && uses_bundled_keycloak(root, manifest)?)
+}
+
 fn uses_bundled_keycloak(root: &Path, manifest: &Manifest) -> Result<bool> {
-    if manifest.capabilities.auth != Some(AuthProvider::Oidc) {
+    if manifest.capabilities.auth.is_none() {
         return Ok(false);
     }
     let path = root.join("config/local.toml");
@@ -2300,21 +2308,6 @@ fn validate_auth_provider(
         AuthProvider::Workos => "workos",
     };
     let before = failures.len();
-    if provider != AuthProvider::Oidc && root.join("keycloak/realm.json").exists() {
-        failures.push(format!(
-            "auth provider `{name}` has a Keycloak realm left over at `keycloak/realm.json`"
-        ));
-    }
-    let compose_path = root.join("compose.yaml");
-    if provider != AuthProvider::Oidc && compose_path.is_file() {
-        let compose: serde_yaml_ng::Value =
-            serde_yaml_ng::from_str(&fs::read_to_string(compose_path)?)?;
-        if !compose["services"]["keycloak"].is_null() {
-            failures.push(format!(
-                "compose.yaml has a Keycloak service for auth provider `{name}`"
-            ));
-        }
-    }
     let config_path = root.join("config/local.toml");
     if config_path.is_file() {
         let config: toml::Value = toml::from_str(&fs::read_to_string(config_path)?)?;
@@ -2326,17 +2319,6 @@ fn validate_auth_provider(
         {
             failures.push(format!(
                 "config/local.toml auth.provider is `{actual}`, but baukit.toml selects `{name}`"
-            ));
-        }
-        if provider != AuthProvider::Oidc
-            && let Some(issuer) = config
-                .get("auth")
-                .and_then(|auth| auth.get("issuer"))
-                .and_then(toml::Value::as_str)
-            && issuer.contains("/realms/")
-        {
-            failures.push(format!(
-                "config/local.toml auth.issuer points to a Keycloak realm for `{name}`"
             ));
         }
         if provider != AuthProvider::Oidc

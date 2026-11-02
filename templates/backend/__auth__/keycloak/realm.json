@@ -1,4 +1,59 @@
-{
+{% macro shape_mappers() %}{% if context.auth_clerk %}[
+        {
+          "name": "clerk session version",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {"claim.name": "v", "claim.value": "2", "jsonType.label": "int", "access.token.claim": "true", "id.token.claim": "false", "userinfo.token.claim": "false", "introspection.token.claim": "true"}
+        },
+        {
+          "name": "clerk active organization",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {"claim.name": "o", "claim.value": "{\"id\":\"org_local\",\"rol\":\"admin\",\"slg\":\"local\"}", "jsonType.label": "JSON", "access.token.claim": "true", "id.token.claim": "false", "userinfo.token.claim": "false", "introspection.token.claim": "true"}
+        }
+      ]{% else %}[
+        {
+          "name": "workos client id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {"claim.name": "client_id", "claim.value": "client_{{ context.app_crate }}_local", "jsonType.label": "String", "access.token.claim": "true", "id.token.claim": "false", "userinfo.token.claim": "false", "introspection.token.claim": "true"}
+        },
+        {
+          "name": "workos organization",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {"claim.name": "org_id", "claim.value": "org_local", "jsonType.label": "String", "access.token.claim": "true", "id.token.claim": "false", "userinfo.token.claim": "false", "introspection.token.claim": "true"}
+        },
+        {
+          "name": "workos role",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {"claim.name": "role", "claim.value": "admin", "jsonType.label": "String", "access.token.claim": "true", "id.token.claim": "false", "userinfo.token.claim": "false", "introspection.token.claim": "true"}
+        },
+        {
+          "name": "workos permissions",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {"claim.name": "permissions", "claim.value": "[\"items:read\",\"items:write\"]", "jsonType.label": "JSON", "access.token.claim": "true", "id.token.claim": "false", "userinfo.token.claim": "false", "introspection.token.claim": "true"}
+        }
+      ]{% endif %}{% endmacro %}{% macro backend_audience() %}[
+        {
+          "name": "backend audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "{{ context.app_name }}-backend",
+            "access.token.claim": "true"
+          }
+        }
+      ]{% endmacro %}{
   "realm": "{{ context.app_name }}",
   "displayName": "{{ context.app_name }} local development",
   "enabled": true,
@@ -70,14 +125,39 @@
       "defaultClientScopes": ["basic"],
       "optionalClientScopes": ["items:read"],
       "protocolMappers": [
-        {
+{% if context.auth_clerk %}        {
+          "name": "clerk oauth client id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {"claim.name": "client_id", "claim.value": "{{ context.app_name }}-mcp", "jsonType.label": "String", "access.token.claim": "true", "id.token.claim": "false", "userinfo.token.claim": "false", "introspection.token.claim": "true"}
+        }
+{% else %}        {
           "name": "MCP resource audience",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-audience-mapper",
           "consentRequired": false,
           "config": {"included.custom.audience": "http://localhost:{{ context.api_host_port }}/mcp", "access.token.claim": "true", "id.token.claim": "false"}
         }
-      ]
+{% endif %}      ]
+    }{% endif %}{% if not context.auth_oidc %},
+    {
+      "clientId": "{{ context.app_name }}-local",
+      "name": "Local {{ context.auth_provider }}-shaped PKCE client",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://127.0.0.1:18890/callback"],
+      "webOrigins": [],
+      "attributes": { "pkce.code.challenge.method": "S256" },
+      "protocol": "openid-connect",
+      "fullScopeAllowed": false,
+      "defaultClientScopes": ["basic"],
+      "optionalClientScopes": [],
+      "protocolMappers": {{ shape_mappers() }}
     }{% endif %}{% if context.web %},
     {
       "clientId": "{{ context.app_name }}-web",
@@ -90,19 +170,12 @@
       "webOrigins": ["http://localhost:{{ context.web_port }}"],
       "attributes": { "pkce.code.challenge.method": "S256" },
       "protocol": "openid-connect",
-      "protocolMappers": [
-        {
-          "name": "backend audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "{{ context.app_name }}-backend",
-            "access.token.claim": "true"
-          }
-        }
-      ]
-    }{% endif %}{% if context.mobile %},
+{% if context.auth_oidc %}      "protocolMappers": {{ backend_audience() }}
+{% else %}      "fullScopeAllowed": false,
+      "defaultClientScopes": ["basic"],
+      "optionalClientScopes": [],
+      "protocolMappers": {{ shape_mappers() }}
+{% endif %}    }{% endif %}{% if context.mobile %},
     {
       "clientId": "{{ context.app_name }}-mobile",
       "name": "Mobile public PKCE client",
@@ -114,18 +187,11 @@
       "webOrigins": [],
       "attributes": { "pkce.code.challenge.method": "S256" },
       "protocol": "openid-connect",
-      "protocolMappers": [
-        {
-          "name": "backend audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "{{ context.app_name }}-backend",
-            "access.token.claim": "true"
-          }
-        }
-      ]
-    }{% endif %}
+{% if context.auth_oidc %}      "protocolMappers": {{ backend_audience() }}
+{% else %}      "fullScopeAllowed": false,
+      "defaultClientScopes": ["basic"],
+      "optionalClientScopes": [],
+      "protocolMappers": {{ shape_mappers() }}
+{% endif %}    }{% endif %}
   ]
 }
