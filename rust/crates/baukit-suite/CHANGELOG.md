@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-02
+
 - `catalog_feature_keys`, `feature_key_drift` and `assert_feature_keys_match` count keys from a plan's `organizationProducts` as well as `includedProducts`. A missing or `null` list grants nothing. The recorded catalog in `fixtures/plans/v1/` is the hub's at Schlüsselbund C23, which grants `hebkit.trainer` only to organizations, so a product that receives an organization-only key must now declare it.
 
 ## [0.14.1] - 2026-11-01

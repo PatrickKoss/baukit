@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-02
+
 - Breaking: `check_identity_erasure_conformance` takes `&IdentityErasureRoutes` after the adapter, and `IdentityErasureAdapter` replaces `delete`, `status` and `resolve` with one `request(subject, IdentityErasureRequest { method, path, idempotency_key })`. `IdentityErasureRoutes::default()` is the template's `DELETE /me`, `GET /me/erasures/{operation}` and `GET /me`; a product with other routes, such as `POST /v1/me/erasure`, passes them instead of serving fixture routes. A status path without `{operation}` fails the check before any request. The train takes a minor bump.
 
 ## [0.14.1] - 2026-11-01

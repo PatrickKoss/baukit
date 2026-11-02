@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## 0.15.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.15.0 train.
+
+### Patch Changes
+
+- 673d7d0: `catalogFeatureKeys`, `featureKeyDrift` and `assertFeatureKeysMatch` count keys from a plan's `organizationProducts` as well as `includedProducts`. A missing or `null` list grants nothing; a list that is not an array fails as `PlanCatalogError`. A product that receives an organization-only key, such as `hebkit.trainer`, must now declare it.
+- Updated dependencies
+  - @baukit/integrations-client@0.15.0
+  - @baukit/localization-core@0.15.0
+
 ## 0.14.1
 
 ### Patch Changes
