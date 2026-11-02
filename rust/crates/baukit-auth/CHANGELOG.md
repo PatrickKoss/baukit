@@ -4,6 +4,8 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-02
+
 ## [0.16.0] - 2026-11-02
 
 - Added `ClerkMcpVerifier` for Clerk OAuth access tokens from dynamically registered MCP clients. It checks signature, issuer, expiry, a non-empty `client_id` and a configured set of required scopes, and rejects Clerk session tokens. `VerificationError::MissingScope` is new.
