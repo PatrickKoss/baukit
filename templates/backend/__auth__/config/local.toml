@@ -15,4 +15,5 @@ jwks_uri = "http://localhost:{{ context.keycloak_host_port }}/realms/{{ context.
 # jwks_uri = "https://keys.internal.example/mcp-jwks"
 {% else %}issuer = "http://localhost:{{ context.keycloak_host_port }}/realms/{{ context.app_name }}"
 jwks_uri = "http://localhost:{{ context.keycloak_host_port }}/realms/{{ context.app_name }}/protocol/openid-connect/certs"
-{% endif %}{% endif %}
+{% if context.auth_clerk %}required_scopes = ["items:read"]
+{% endif %}{% endif %}{% endif %}

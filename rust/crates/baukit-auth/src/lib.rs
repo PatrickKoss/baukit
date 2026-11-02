@@ -98,7 +98,9 @@ pub use config::{OidcConfig, OidcConfigError, PrincipalClaimMapping, SigningAlgo
 pub use postgres::{
     PostgresApiTokenStore, erase_owner_api_tokens, insert_api_token, purge_inactive_api_tokens,
 };
-pub use providers::{ClerkOAuthVerifier, ClerkVerifier, ProviderVerifierError, WorkOsVerifier};
+pub use providers::{
+    ClerkMcpVerifier, ClerkOAuthVerifier, ClerkVerifier, ProviderVerifierError, WorkOsVerifier,
+};
 pub use secret::constant_time_eq;
 pub use verifier::{
     IdentityVerifier, IssuerVerifier, MultiIssuerError, MultiIssuerVerifier, OidcVerifier,

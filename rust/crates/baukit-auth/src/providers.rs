@@ -158,6 +158,61 @@ impl IdentityVerifier for ClerkOAuthVerifier {
     }
 }
 
+/// Clerk OAuth JWT verification for dynamically registered MCP clients.
+///
+/// Dynamic client registration gives every MCP client its own `client_id`, so
+/// this verifier requires a non-empty `client_id` without pinning it, which
+/// also rejects Clerk session tokens. Clerk does not document how an OAuth
+/// access token is bound to a resource, so every token must grant all of the
+/// configured product-prefixed scopes instead.
+#[derive(Clone, Debug)]
+pub struct ClerkMcpVerifier {
+    inner: OidcVerifier,
+}
+
+impl ClerkMcpVerifier {
+    /// Uses the Clerk instance's Frontend API URL as issuer and JWKS host.
+    pub fn new<I, T>(
+        issuer: impl AsRef<str>,
+        required_scopes: I,
+    ) -> Result<Self, ProviderVerifierError>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<String>,
+    {
+        let config = OidcConfig::scope_bound(issuer, required_scopes)?;
+        let jwks_uri = clerk_jwks_uri(&config)?;
+        Ok(Self {
+            inner: OidcVerifier::from_jwks_uri(config, jwks_uri.as_str())?,
+        })
+    }
+
+    /// Uses an explicit signing-key endpoint with the same scope binding.
+    pub fn from_jwks_uri<I, T>(
+        issuer: impl AsRef<str>,
+        required_scopes: I,
+        jwks_uri: impl AsRef<str>,
+    ) -> Result<Self, ProviderVerifierError>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<String>,
+    {
+        let config = OidcConfig::scope_bound(issuer, required_scopes)?;
+        Ok(Self {
+            inner: OidcVerifier::from_jwks_uri(config, jwks_uri)?,
+        })
+    }
+}
+
+impl IdentityVerifier for ClerkMcpVerifier {
+    fn verify<'a>(
+        &'a self,
+        token: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<Principal, VerificationError>> + Send + 'a>> {
+        Box::pin(self.inner.verify(token))
+    }
+}
+
 /// WorkOS AuthKit session-token verification bound to one application client.
 ///
 /// AuthKit session tokens do not require an `aud` claim, so this adapter checks

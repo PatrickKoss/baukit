@@ -182,6 +182,44 @@ async fn mcp_enforces_provider_token_binding_and_introspection_is_restricted()
     Ok(())
 }
 
+#[tokio::test]
+async fn clerk_mcp_accepts_dynamically_registered_clients_with_the_required_scopes()
+-> Result<(), Box<dyn Error>> {
+    let server = baukit_test::MockOidcServer::start().await?;
+    let auth = {{ context.app_crate }}_bin::AuthConfig {
+        provider: AuthProvider::Clerk,
+        ..Default::default()
+    };
+    let config = baukit_mcp::McpConfig {
+        enabled: true,
+        issuer: "https://clerk.example".into(),
+        jwks_uri: Some(server.jwks_url().into()),
+        required_scopes: vec!["items:read".into()],
+        resource_url: "https://mcp.example/mcp".into(),
+        allowed_hosts: vec!["mcp.example".into()],
+        ..Default::default()
+    };
+    let verifier = mcp_verifier(&auth, &config).await?;
+    let mut claims = server
+        .claims("user_123", &config.resource_url, Duration::from_secs(300))?
+        .issuer(&config.issuer)
+        .claim("scope", "openid items:read");
+    claims.aud = None;
+    for client_id in ["client_registered_a", "client_registered_b"] {
+        let token = server.mint(&claims.clone().claim("client_id", client_id))?;
+        assert_eq!(verifier.verify(&token).await?.subject(), "user_123");
+    }
+    let claims = claims.claim("client_id", "client_registered_a");
+    for invalid in [
+        claims.clone().claim("scope", "openid"),
+        claims.clone().issuer("https://other.clerk.example"),
+        claims.clone().expires_at(0),
+    ] {
+        assert!(verifier.verify(&server.mint(&invalid)?).await.is_err());
+    }
+    Ok(())
+}
+
 #[test]
 fn startup_rejects_unsupported_introspection_and_unbound_clerk_oauth() -> Result<(), Box<dyn Error>>
 {
@@ -219,6 +257,14 @@ fn startup_rejects_unsupported_introspection_and_unbound_clerk_oauth() -> Result
         .load::<ProductConfig>()
         .expect_err("Clerk MCP started without an OAuth client binding");
     assert!(error.to_string().contains("dedicated OAuth client ID"));
+    std::fs::write(
+        file.path(),
+        "[auth]\nprovider = \"clerk\"\nissuer = \"https://identity.example\"\n[mcp]\nenabled = true\nissuer = \"https://identity.example\"\nrequired_scopes = [\"items:read\"]\nresource_url = \"https://mcp.example/mcp\"\nallowed_hosts = [\"mcp.example\"]\n",
+    )?;
+    ConfigLoader::new("provider-startup-test", Environment::Local)?
+        .local_file(file.path())
+        .without_dotenv()
+        .load::<ProductConfig>()?;
     Ok(())
 }
 

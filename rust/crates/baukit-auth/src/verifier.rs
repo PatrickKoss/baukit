@@ -1041,6 +1041,21 @@ fn validate_token_profile(
             }
             Some(_) => Err(VerificationError::InvalidPrincipalContext),
         },
+        TokenProfile::ScopeBound { required_scopes } => {
+            match claims.extra.get("client_id") {
+                Some(Value::String(value)) if !value.is_empty() => {}
+                Some(Value::String(_)) | None | Some(Value::Null) => {
+                    return Err(VerificationError::WrongClientId);
+                }
+                Some(_) => return Err(VerificationError::InvalidPrincipalContext),
+            }
+            let granted = scope_claim(claims.extra.get(config.claim_mapping.scope.as_ref()))?;
+            if required_scopes.is_subset(&granted) {
+                Ok(())
+            } else {
+                Err(VerificationError::MissingScope)
+            }
+        }
     }
 }
 
@@ -1290,6 +1305,9 @@ pub enum VerificationError {
     /// A WorkOS token did not name the configured application client.
     #[error("access token client ID is invalid")]
     WrongClientId,
+    /// The token did not grant every scope the verifier requires.
+    #[error("access token lacks a required scope")]
+    MissingScope,
     /// The required expiry claim was absent.
     #[error("access token expiry is missing")]
     MissingExpiry,

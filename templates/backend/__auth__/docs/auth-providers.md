@@ -87,7 +87,9 @@ Set `auth.issuer` to the Clerk Frontend API URL and `auth.authorized_parties`
 to the allowed web origins and mobile authorized-party values. The verifier
 checks signature, issuer and expiry; any present `azp` must match that list.
 Clerk session tokens do not require an audience. They authenticate REST,
-while MCP uses separate OAuth access tokens and a dedicated OAuth client.
+while MCP uses separate OAuth access tokens. Set `mcp.oauth_client_id` for a
+dedicated OAuth client, or `mcp.required_scopes` for clients that register
+dynamically; see the remote MCP docs.
 
 Set `VITE_CLERK_PUBLISHABLE_KEY` and `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`.
 The web adapter uses `@clerk/clerk-js`. Mobile uses `@clerk/expo` hosted sign-in

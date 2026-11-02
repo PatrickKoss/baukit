@@ -325,12 +325,28 @@ a custom scope and grant it only to that client. Pass its ID with Claude Code's
 `--client-id` or the Desktop connector's OAuth client setting above.
 
 Clerk's current docs describe JWT OAuth tokens, custom scopes, CIMD and DCR,
-but do not document resource-indicator audience configuration. Baukit therefore
-checks signature, exact issuer, expiry, signed `client_id` and each tool's scope.
-This binds tokens to the dedicated client, not the resource URL. Tokens issued
-to another client and ordinary Clerk session tokens are rejected. Keep client
-registration explicit; this verifier cannot accept arbitrary dynamically
-registered clients. It does not claim resource-audience isolation.
+but do not document resource-indicator audience configuration or the access
+token's claim list. With `mcp.oauth_client_id` set, Baukit's
+`ClerkOAuthVerifier` checks signature, exact issuer, expiry, signed `client_id`
+and each tool's scope. This binds tokens to the dedicated client, not the
+resource URL. Tokens issued to another client and ordinary Clerk session tokens
+are rejected.
+
+### Dynamically registered clients
+
+Remote connectors that register through Clerk's DCR get a new `client_id` each
+time, so it cannot be pinned. Leave `mcp.oauth_client_id` unset and set
+`mcp.required_scopes` instead. `ClerkMcpVerifier` then checks signature, exact
+issuer, expiry, a non-empty signed `client_id` and that the token grants every
+required scope; each tool's scope is still checked per call. Give these scopes
+a product prefix, such as `my-product:items:read`, in Clerk so that a token for
+another product on the same Clerk instance cannot carry them, and grant them as
+default scopes for dynamic clients. Clerk does not document how a token is bound
+to a resource, so this verifier does not claim resource-audience isolation. The
+issuer and the product-prefixed scopes are the binding. Startup fails when
+neither `mcp.oauth_client_id` nor `mcp.required_scopes` is set.
+Generated local config sets `required_scopes = ["items:read"]` against the local
+Keycloak realm.
 See [Clerk MCP setup](https://clerk.com/docs/expressjs/guides/ai/mcp/build-mcp-server)
 and [Clerk OAuth configuration](https://clerk.com/docs/guides/configure/auth-strategies/oauth/how-clerk-implements-oauth).
 
@@ -373,8 +389,8 @@ The bundled OIDC realm uses pre-registration. It does not enable anonymous
 dynamic registration or depend on Client ID Metadata Documents. Its realm
 import fixes redirect URIs and granted scopes. Keycloak's custom audience mapper
 binds this client to one resource even where Keycloak ignores the OAuth
-`resource` parameter. Clerk requires the dedicated client described above;
-WorkOS Connect can use its own dynamic registration settings.
+`resource` parameter. Clerk uses either the dedicated client or the
+scope-bound dynamic registration described above; WorkOS Connect can use its own dynamic registration settings.
 
 rmcp 3.5.1 serves stateless HTTP and supports the 2026-07-28 protocol, which uses
 `server/discover` and per-request metadata. It also accepts the 2025-11-25 and
