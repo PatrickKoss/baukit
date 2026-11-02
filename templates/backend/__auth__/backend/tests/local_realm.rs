@@ -63,7 +63,10 @@ async fn local_realm_issues_{{ context.auth_provider }}_shaped_tokens_for_the_pr
 {% else %}    assert_eq!(claims["client_id"], auth.client_id.as_str());
     assert_eq!(claims["org_id"], "org_local");
     assert_eq!(claims["role"], "admin");
-    assert_eq!(claims["permissions"], serde_json::json!(["items:read", "items:write"]));
+    assert_eq!(
+        claims["permissions"],
+        serde_json::json!(["items:read", "items:write"])
+    );
 {% endif %}
     let principal = auth_verifier(&auth).await?.verify(&token).await?;
     assert_eq!(Some(principal.subject()), claims["sub"].as_str());
