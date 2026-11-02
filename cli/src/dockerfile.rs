@@ -883,7 +883,15 @@ runtime_packages = [{stage = "migrate", packages = []}]
         let output = render_dockerfile(&manifest("")?)?;
         let previous = output
             .replace("ARG CARGO_TARGET_CACHE_PREFIX=test-product\n", "")
-            .replace("${CARGO_TARGET_CACHE_PREFIX}-target", "test-product-target");
+            .replace("${CARGO_TARGET_CACHE_PREFIX}-target", "test-product-target")
+            .replace(
+                "    --mount=type=cache,id=test-product-cargo-git,target=/usr/local/cargo/git,sharing=locked \\\n",
+                "",
+            )
+            .replace(
+                "target=/usr/local/cargo/registry,sharing=locked",
+                "target=/usr/local/cargo/registry",
+            );
         assert_eq!(
             Sha256::digest(previous.as_bytes())
                 .iter()

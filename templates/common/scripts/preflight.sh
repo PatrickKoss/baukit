@@ -51,7 +51,7 @@ if [ -f "$repository_root/web/package.json" ] && grep -Eq '"(@playwright/test|pl
 fi
 
 if [ "$has_playwright" = "true" ]; then
-  PLAYWRIGHT_BROWSERS_PATH="$repository_root/web/.playwright-browsers"
+  PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$repository_root/web/.playwright-browsers}"
   export PLAYWRIGHT_BROWSERS_PATH
   if ! command -v corepack >/dev/null 2>&1; then
     echo 'preflight: Playwright requires current Node.js LTS with corepack.' >&2
@@ -79,7 +79,7 @@ if [ "$has_playwright" = "true" ]; then
         const executable = fs.realpathSync(browser.executablePath());
         const relative = path.relative(cache, executable);
         if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-          throw new Error("Playwright executable resolved outside the repository cache");
+          throw new Error("Playwright executable resolved outside PLAYWRIGHT_BROWSERS_PATH");
         }
         fs.accessSync(executable, fs.constants.X_OK);
       }
@@ -92,7 +92,7 @@ if [ "$has_playwright" = "true" ]; then
       corepack pnpm@12.9.1 exec playwright install chromium webkit
     )
     if ! check_playwright_browsers; then
-      echo 'preflight: Playwright browser executables are missing from the repository cache.' >&2
+      echo 'preflight: Playwright browser executables are missing from PLAYWRIGHT_BROWSERS_PATH.' >&2
       exit 1
     fi
   fi

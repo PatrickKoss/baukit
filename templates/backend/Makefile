@@ -1,7 +1,7 @@
-.PHONY: setup preflight fmt lint test test-scripts check{% if context.web %} check-web{% endif %}{% if context.mobile %} check-mobile qa-setup qa-android-setup qa-ios-setup qa-android-build qa-ios-build qa-android qa-ios e2e-mobile e2e-mobile-live e2e-android e2e-android-live e2e-ios e2e-ios-live qa-android-down qa-ios-down qa-down{% endif %} lockfiles run{% if context.worker %} run-worker{% endif %} migrate openapi openapi-client db-up db-down{% if context.auth_enabled %} dev{% endif %}{% if context.auth_enabled %} keycloak-policy keycloak-reconcile keycloak-test keycloak-theme-test{% if context.web %} keycloak-theme-browser-test{% endif %}{% endif %}
+.PHONY: setup preflight fmt lint test test-scripts check{% if context.quality_strict %} ci{% endif %}{% if context.web %} check-web{% endif %}{% if context.mobile %} check-mobile qa-setup qa-android-setup qa-ios-setup qa-android-build qa-ios-build qa-android qa-ios e2e-mobile e2e-mobile-live e2e-android e2e-android-live e2e-ios e2e-ios-live qa-android-down qa-ios-down qa-down{% endif %} lockfiles run{% if context.worker %} run-worker{% endif %} migrate openapi openapi-client db-up db-down{% if context.auth_enabled %} dev{% endif %}{% if context.auth_enabled %} keycloak-policy keycloak-reconcile keycloak-test keycloak-theme-test{% if context.web %} keycloak-theme-browser-test{% endif %}{% endif %}
 
 BACKEND_MANIFEST := backend/Cargo.toml
-PLAYWRIGHT_BROWSERS_PATH := $(abspath web/.playwright-browsers)
+PLAYWRIGHT_BROWSERS_PATH ?= $(abspath web/.playwright-browsers)
 export PLAYWRIGHT_BROWSERS_PATH
 
 setup:
@@ -25,6 +25,9 @@ test-scripts:
 	node --test scripts/tests/keycloak_accessibility.test.mjs scripts/tests/keycloak_theme_preferences.test.mjs
 {% endif %}
 {% if context.quality_strict %}	python3 scripts/check-markdown-links.test.py
+
+{% endif %}{% if context.quality_strict %}ci:
+	sh scripts/quality-gate.sh
 
 {% endif %}check: preflight fmt lint test test-scripts{% if context.web %} check-web{% endif %}{% if context.mobile %} check-mobile{% endif %}
 

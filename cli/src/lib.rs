@@ -74,7 +74,11 @@ const EXPECTED_COMMON_FILES: &[&str] = &[
     "scripts/preflight.sh",
 ];
 
-const EXPECTED_STRICT_FILES: &[&str] = &["scripts/quality-gate.sh"];
+const EXPECTED_STRICT_FILES: &[&str] = &[
+    "scripts/quality-gate.sh",
+    "scripts/gate.py",
+    "scripts/gate.test.py",
+];
 
 const ENV_RECONCILIATION_FILES: &[&str] = &[
     "scripts/setup.sh",

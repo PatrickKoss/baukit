@@ -241,9 +241,31 @@ touch "$apk"
             f"corepack pnpm@12.9.1 --dir {self.root}/mobile install --frozen-lockfile",
             f"corepack pnpm@12.9.1 --dir {self.root}/mobile run tokens",
             "expo prebuild --clean --platform android --no-install",
-            f"gradle -p {self.root}/mobile/android --no-daemon "
+            f"gradle -p {self.root}/mobile/android --no-daemon --build-cache "
             "-PreactNativeDevServerIp=127.0.0.1 -PreactNativeArchitectures=x86_64 assembleRelease",
             "java-options -Dqa.test=1 --enable-native-access=ALL-UNNAMED",
+        ])
+
+    def test_gate_build_compiles_debug_and_release_from_one_prebuild(self) -> None:
+        bin_dir = self.root / "bin"
+        self.executable(bin_dir / "corepack", 'printf "corepack %s\\n" "$*" >> "$EVENTS"\n')
+        self.environment["PATH"] = str(bin_dir) + os.pathsep + self.environment["PATH"]
+        self.environment["BAUKIT_QA_ASSEMBLE_DEBUG"] = "1"
+        self.environment["BAUKIT_QA_GRADLE_WORKERS"] = "3"
+        self.executable(self.root / "mobile/node_modules/.bin/expo", 'printf "expo %s\\n" "$*" >> "$EVENTS"\n')
+        self.executable(self.root / "mobile/android/gradlew", r'''
+printf 'gradle %s\n' "$*" >> "$EVENTS"
+apk="$(dirname "$0")/app/build/outputs/apk/release/app-release.apk"
+mkdir -p "$(dirname "$apk")"
+touch "$apk"
+''')
+        self.run_script("build-android.sh")
+        events = self.events.read_text().splitlines()
+        self.assertEqual(events.count("expo prebuild --clean --platform android --no-install"), 1)
+        common = f"gradle -p {self.root}/mobile/android --no-daemon --build-cache -PreactNativeDevServerIp=127.0.0.1 --max-workers 3"
+        self.assertEqual([event for event in events if event.startswith("gradle")], [
+            f"{common} --stacktrace assembleDebug",
+            f"{common} -PreactNativeArchitectures=x86_64 assembleRelease",
         ])
 
     def test_android_java_reports_usage_and_preserves_command_failure(self) -> None:
