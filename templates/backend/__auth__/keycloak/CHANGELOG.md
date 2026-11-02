@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-11-02
+
 - `--auth clerk` and `--auth workos` products get the development realm, reconciler and `make dev` Keycloak. Their public clients use only the `basic` scope and hardcoded-claim mappers, so access tokens carry the provider's claim names and no `aud`. A new `<app>-local` PKCE client serves scripts and the `local_realm` test. Existing Clerk and WorkOS products copy `keycloak/`, the compose `keycloak` service and the `config/local.toml` issuer, JWKS and client settings from a fresh generation.
 
 ## [0.15.0] - 2026-11-02

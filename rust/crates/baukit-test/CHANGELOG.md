@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-11-02
+
 - Added `KeycloakTestContainer`, which imports a realm export into a disposable Keycloak 26.8.0 and returns access tokens from a PKCE login (`KeycloakLogin`).
 
 ## [0.15.0] - 2026-11-02
