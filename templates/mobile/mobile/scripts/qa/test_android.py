@@ -369,7 +369,7 @@ esac
         report = self.root / "mobile/.qa/android-health.log"
         result = self.health_probe(report)
         self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn("no matching critical-process ANR", result.stderr)
+        self.assertIn("qa: logcat am_anr shows the ANR above; dumpsys lastanr has no record of it", result.stderr)
         self.assertNotIn("PID: 456", result.stderr)
         self.assertNotIn("com.android.systemui.extra", report.read_text())
 
@@ -428,7 +428,10 @@ fi
 printf '%s\n' "$*" >> "$EVENTS"
 if [[ "$*" == devices ]]; then printf 'List of devices attached\n'; fi
 if [[ "$*" == *'getprop sys.boot_completed' && -f "$EMULATOR_ARGS" ]]; then echo 1; fi
+if [[ "$*" == *'pidof com.android.systemui' ]]; then echo 321; fi
+if [[ "$*" == *'dumpsys window displays' ]]; then echo '  mCurrentFocus=Window{1 u0 launcher}'; fi
 ''')
+        self.environment["BAUKIT_QA_POLL_SECONDS"] = "0"
         self.executable(self.sdk / "emulator/emulator", 'printf "%s\\n" "$@" > "$EMULATOR_ARGS"\n')
         self.executable(self.scripts / "services.sh", "exit 0\n")
         apk = self.root / "mobile/android/app/build/outputs/apk/release/app-release.apk"
@@ -443,8 +446,9 @@ if [[ "$*" == *'getprop sys.boot_completed' && -f "$EMULATOR_ARGS" ]]; then echo
             emulator_args.unlink(missing_ok=True)
             self.run_script("android-env.sh")
             expected_args = [
-                "-avd", "test-qa", "-port", "5556", "-no-snapshot-load",
+                "-avd", "test-qa", "-port", "5556",
                 "-no-snapshot-save", "-no-audio", "-no-boot-anim", "-gpu", "swiftshader",
+                "-no-snapshot-load",
             ]
             if headless == "1":
                 expected_args.append("-no-window")
@@ -454,6 +458,7 @@ if [[ "$*" == *'getprop sys.boot_completed' && -f "$EMULATOR_ARGS" ]]; then echo
             self.assertEqual(events.count(command), 1)
             launch = events.index(command)
             self.assertFalse(any("monkey" in event for event in events))
+            self.assertEqual(events.count("-s emulator-5556 emu avd snapshot save baukit-clean"), 1)
 {% if context.auth_oidc %}            for command in (flags, debug, stop):
                 self.assertEqual(events.count(command), 1)
                 self.assertLess(events.index(command), launch)

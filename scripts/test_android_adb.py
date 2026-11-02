@@ -44,7 +44,7 @@ class AndroidHealthTests(unittest.TestCase):
         result = subprocess.CompletedProcess(command, code, stdout=output)
         results = [subprocess.TimeoutExpired(command, 10) if timeout else result]
         calls = [call(command, capture_output=True, text=True, check=False, timeout=10)]
-        if diagnostics is not None or diagnostics_code or diagnostics_timeout:
+        if not timeout and code == 0:
             details = subprocess.CompletedProcess(dumpsys, diagnostics_code, stdout=diagnostics or "")
             results.append(subprocess.TimeoutExpired(dumpsys, 10) if diagnostics_timeout else details)
             calls.append(call(dumpsys, capture_output=True, text=True, check=False, timeout=10))
@@ -60,10 +60,7 @@ class AndroidHealthTests(unittest.TestCase):
         for event in ("am_anr", "am_crash"):
             for package in ("com.android.systemui", "com.google.android.inputmethod.latin", "com.android.inputmethod.latin"):
                 with self.subTest(event=event, package=package):
-                    status, message = self.probe(
-                        f"10-06 12:00:00 {event}: [0,123,{package},1,reason]\n",
-                        diagnostics="" if event == "am_anr" else None,
-                    )
+                    status, message = self.probe(f"10-06 12:00:00 {event}: [0,123,{package},1,reason]\n")
                     self.assertEqual(status, 1)
                     self.assertIn(f"Android system process is unhealthy: {package}", message)
                     self.assertIn(f"10-06 12:00:00 {event}: [0,123,{package},1,reason]\n", message)
@@ -106,7 +103,7 @@ class AndroidHealthTests(unittest.TestCase):
         self.assertIn(summary, stderr)
 
     def test_unrelated_anr_summary_is_not_retained(self):
-        for package in ("dev.baukit.example", "com.android.systemui.extra", "com.android.inputmethod.latin"):
+        for package in ("dev.baukit.example", "com.android.systemui.extra"):
             with self.subTest(package=package):
                 diagnostics = f"ANR in {package}\nPID: 456\nReason: unrelated reason\nstack: com.android.systemui\n"
                 with tempfile.TemporaryDirectory() as directory:
@@ -116,9 +113,16 @@ class AndroidHealthTests(unittest.TestCase):
                         diagnostics=diagnostics, report=report,
                     )
                     self.assertEqual(status, 1)
-                    self.assertIn("no matching critical-process ANR", stderr)
+                    self.assertIn("dumpsys lastanr has no record of it", stderr)
                     self.assertNotIn("PID: 456", stderr)
                     self.assertNotIn(package, report.read_text())
+
+    def test_dumpsys_anr_in_another_critical_package_is_reported(self):
+        diagnostics = "ANR in com.android.inputmethod.latin\nPID: 456\nReason: keyboard\n"
+        status, stderr = self.probe("am_anr: [0,123,com.android.systemui,1,reason]", diagnostics=diagnostics)
+        self.assertEqual(status, 1)
+        self.assertIn("dumpsys lastanr reports an ANR in com.android.inputmethod.latin", stderr)
+        self.assertIn("PID: 456", stderr)
 
     def test_diagnostics_failure_and_timeout_keep_the_unhealthy_status(self):
         event = "am_anr: [0,123,com.android.systemui,1,reason]"
@@ -134,18 +138,31 @@ class AndroidHealthTests(unittest.TestCase):
                 self.assertIn(message, stderr)
                 self.assertIn(message, report.read_text())
 
-    def test_crash_does_not_request_anr_diagnostics(self):
+    def test_crash_with_quiet_dumpsys_reports_only_the_crash(self):
         event = "am_crash: [0,123,com.android.systemui,1,reason]"
-        with patch.object(android_adb.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout=event)) as run, \
-                contextlib.redirect_stderr(io.StringIO()) as stderr:
-            self.assertEqual(android_adb.check_health("adb", "emulator-5556", 10), 1)
-        self.assertEqual(run.call_count, 1)
-        self.assertIn(event, stderr.getvalue())
+        status, stderr = self.probe(event, diagnostics="")
+        self.assertEqual(status, 1)
+        self.assertIn(event, stderr)
+        self.assertNotIn("dumpsys", stderr)
+
+    def test_dumpsys_anr_fails_when_logcat_rotated(self):
+        summary = "ANR in com.android.systemui\nPID: 123\nReason: Input dispatching timed out\n"
+        status, stderr = self.probe("--------- beginning of events\n", diagnostics=summary)
+        self.assertEqual(status, 1)
+        self.assertIn("dumpsys lastanr reports an ANR in com.android.systemui", stderr)
+        self.assertIn(summary, stderr)
+
+    def test_logcat_anr_without_dumpsys_record_still_fails(self):
+        event = "11-02 10:18:44.491 698 2117 I am_anr  : [0,984,com.android.systemui,550026765,executing service com.android.systemui/.SystemUIService, waited 20092ms]"
+        status, stderr = self.probe(event, diagnostics="")
+        self.assertEqual(status, 1)
+        self.assertIn("logcat am_anr shows the ANR above; dumpsys lastanr has no record of it", stderr)
 
     def test_manual_health_invocation_without_report_keeps_evidence(self):
         event = "am_crash: [0,123,com.android.systemui,1,reason]"
         with patch.object(android_adb.sys, "argv", [str(SOURCE), "--check-health", "adb", "emulator-5556"]), \
-                patch.object(android_adb.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout=event)), \
+                patch.object(android_adb.subprocess, "run", side_effect=[
+                    subprocess.CompletedProcess([], 0, stdout=event), subprocess.CompletedProcess([], 0, stdout="")]), \
                 contextlib.redirect_stderr(io.StringIO()) as stderr:
             self.assertEqual(android_adb.main(), 1)
         self.assertIn(event, stderr.getvalue())

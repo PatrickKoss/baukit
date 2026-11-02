@@ -5,6 +5,7 @@ mod doctor_files;
 mod doctor_layout;
 mod doctor_mcp;
 mod doctor_platform;
+mod gate_settings;
 mod identity;
 mod ports;
 
@@ -278,6 +279,14 @@ pub struct QualityManifest {
     pub full_stack_e2e: bool,
     #[serde(default)]
     pub openapi_compatibility: OpenApiCompatibility,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub android_emulator_port: Option<u16>,
+    #[serde(default)]
+    pub gate_budget_minutes: gate_settings::GateBudgetMinutes,
+    #[serde(default)]
+    pub affected: BTreeMap<String, Vec<String>>,
+    #[serde(default)]
+    pub shared: Vec<String>,
 }
 
 impl Default for QualityManifest {
@@ -289,6 +298,10 @@ impl Default for QualityManifest {
             webkit_repeats: default_webkit_repeats(),
             full_stack_e2e: false,
             openapi_compatibility: OpenApiCompatibility::Off,
+            android_emulator_port: None,
+            gate_budget_minutes: gate_settings::GateBudgetMinutes::default(),
+            affected: BTreeMap::new(),
+            shared: Vec::new(),
         }
     }
 }
@@ -982,6 +995,20 @@ fn render_product(
     Ok(rendered)
 }
 
+fn options_capabilities(options: &NewOptions) -> Capabilities {
+    Capabilities {
+        analytics: AnalyticsAdapter::Posthog,
+        backend: options.backend,
+        worker: options.worker,
+        mobile: options.mobile,
+        web: options.web,
+        pwa: options.pwa,
+        mcp: options.mcp,
+        platform: options.platform,
+        auth: options.auth,
+    }
+}
+
 fn render_manifest(context: &TemplateContext, options: &NewOptions) -> String {
     let auth = match options.auth {
         Some(AuthProvider::Oidc) => "auth = \"oidc\"\n",
@@ -1010,6 +1037,11 @@ fn render_manifest(context: &TemplateContext, options: &NewOptions) -> String {
     };
     let optional_capabilities = format!("{mcp}{platform_capability}");
     let consumers = "[\"generated/openapi.d.ts\"]";
+    let quality_extras = gate_settings::render_quality_extras(
+        &context.app_name,
+        &options_capabilities(options),
+        options.quality == QualityProfile::Strict,
+    );
     format!(
         "schema_version = {MANIFEST_SCHEMA_VERSION}\n\
 template_version = \"{}\"\n\
@@ -1025,6 +1057,7 @@ critical_paths = []\n\
 webkit_repeats = {}\n\
 full_stack_e2e = false\n\
 openapi_compatibility = \"off\"\n\
+{}\
 \n\
 [capabilities]\n\
 analytics = \"posthog\"\n\
@@ -1051,6 +1084,7 @@ consumers = {}\n{}",
         },
         default_backend_coverage_lines(),
         default_webkit_repeats(),
+        quality_extras,
         options.backend,
         options.worker,
         options.mobile,
@@ -1300,6 +1334,7 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
     if !(1..=100).contains(&manifest.quality.backend_coverage_lines) {
         failures.push("quality.backend_coverage_lines must be between 1 and 100".to_owned());
     }
+    gate_settings::validate(&manifest.quality, &manifest.capabilities, &mut failures);
     if manifest.quality.webkit_repeats == 0 {
         failures.push("quality.webkit_repeats must be greater than zero".to_owned());
     }

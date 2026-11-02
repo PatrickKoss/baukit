@@ -41,9 +41,17 @@ if [[ "$platform" == android ]]; then
   python3 "$mobile_dir/scripts/qa/android-adb.py" --check-health "$sdk_root/platform-tools/adb" "$device" "$mobile_dir/.qa/android-health.log"
 fi
 cd "$mobile_dir"
-"$maestro_bin" test \
-  --platform "$platform" \
-  --device "$device" \
-  --env "APP_ID=$app_id" \
-  --debug-output "$debug_dir" \
-  .maestro
+mapfile -t flows < <(find .maestro -maxdepth 1 -type f \( -name '*.yaml' -o -name '*.yml' \) ! -name 'config.y*ml' | sort)
+[[ -n "${flows[*]:-}" ]] || { echo "qa: mobile/.maestro has no flows" >&2; exit 1; }
+for flow in "${flows[@]}"; do
+  if [[ "$platform" == android ]] && ! python3 "$mobile_dir/scripts/qa/android-adb.py" --attached "$sdk_root/platform-tools/adb" "$device"; then
+    echo "qa: emulator died before ${flow#.maestro/}" >&2
+    exit 1
+  fi
+  "$maestro_bin" test \
+    --platform "$platform" \
+    --device "$device" \
+    --env "APP_ID=$app_id" \
+    --debug-output "$debug_dir" \
+    "$flow"
+done

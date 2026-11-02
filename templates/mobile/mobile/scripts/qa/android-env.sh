@@ -13,7 +13,18 @@ if [[ -z "$avd_home" && -f "$state_dir/android-avd-home" ]]; then
   avd_home="$(<"$state_dir/android-avd-home")"
 fi
 avd_name="${BAUKIT_QA_ANDROID_AVD:-{{ context.app_name }}-qa}"
-emulator_port="${BAUKIT_QA_ANDROID_PORT:-5556}"
+manifest_port() {
+  python3 - "$root/baukit.toml" <<'PORT'
+import sys, tomllib
+from pathlib import Path
+path = Path(sys.argv[1])
+quality = tomllib.loads(path.read_text()).get("quality", {}) if path.is_file() else {}
+print(quality.get("android_emulator_port", 5556))
+PORT
+}
+emulator_port="${BAUKIT_QA_ANDROID_PORT:-$(manifest_port)}"
+[[ "$emulator_port" =~ ^[0-9]+$ ]] || { echo "qa: Android emulator port must be a number" >&2; exit 2; }
+snapshot_name=baukit-clean
 serial="emulator-$emulator_port"
 
 adb="$sdk_root/platform-tools/adb"
@@ -98,12 +109,17 @@ bash "$root/mobile/scripts/qa/services.sh" start
 emulator_args=(
   -avd "$avd_name"
   -port "$emulator_port"
-  -no-snapshot-load
   -no-snapshot-save
   -no-audio
   -no-boot-anim
   -gpu swiftshader
 )
+snapshot_dir="$avd_home/$avd_name.avd/snapshots/$snapshot_name"
+if [[ -d "$snapshot_dir" ]]; then
+  emulator_args+=(-snapshot "$snapshot_name")
+else
+  emulator_args+=(-no-snapshot-load)
+fi
 if [[ "${BAUKIT_QA_HEADLESS:-0}" == 1 ]]; then
   emulator_args+=(-no-window)
 fi
@@ -123,7 +139,15 @@ if ! python3 "$root/mobile/scripts/qa/android-adb.py" --wait-for-boot "$adb" "$s
   exit 1
 fi
 
+if ! python3 "$root/mobile/scripts/qa/android-adb.py" --wait-for-idle "$adb" "$serial"; then
+  echo "qa: systemui did not become idle on $serial" >&2
+  exit 1
+fi
 python3 "$root/mobile/scripts/qa/android-adb.py" --check-health "$adb" "$serial" "$state_dir/android-health.log"
+if [[ ! -d "$snapshot_dir" ]]; then
+  adb_bounded -s "$serial" emu avd snapshot save "$snapshot_name" >/dev/null
+  echo "qa: saved quick-boot snapshot $snapshot_name"
+fi
 
 "$adb" -s "$serial" shell settings put global window_animation_scale 0
 "$adb" -s "$serial" shell settings put global transition_animation_scale 0

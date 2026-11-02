@@ -27,11 +27,13 @@ corepack pnpm@12.9.1 --dir mobile test
 
 `scripts/setup.sh` creates each local `.env` from its matching `.env.example` and appends newly added example assignments on later runs. It never replaces existing bytes. Existing assignments, including blank and exported assignments, count as local choices. If either file repeats a key, the first example assignment is the append candidate and any existing occurrence suppresses the append.
 
-{% if context.quality_strict %}Run the complete strict profile in CI order with:
+{% if context.quality_strict %}Run the complete strict profile with:
 
 ```sh
 sh scripts/quality-gate.sh
 ```
+
+The gate runs its lanes in parallel and splits `BAUKIT_GATE_CORES` (default `nproc`) across them. Before a merge, `sh scripts/quality-gate.sh --affected origin/main` runs the fast checks plus the steps `quality.affected` selects for the changed files. A change to a shared path such as a lockfile, `baukit.toml` or a migration runs the full gate. Tag Playwright tests `@logic` to run them on desktop Chromium only. [docs/quality-gate.md](docs/quality-gate.md) describes the lanes, caches, emulator settings and time budget.
 
 The strict gate checks local file links in committed Markdown under `README.md`, `CLAUDE.md`, `AGENTS.md`, and `docs/`. Before the first commit, it checks Markdown files present under those paths. It ignores external URLs and fragments. Pass a different list of repository-relative files or directories to `scripts/check-markdown-links.py` when product documentation lives elsewhere.
 

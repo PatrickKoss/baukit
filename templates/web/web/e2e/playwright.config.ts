@@ -4,6 +4,14 @@ import { fileURLToPath } from 'node:url';
 const port = Number(process.env['E2E_WEB_PORT'] ?? '{{ context.web_preview_port }}');
 const baseURL = `http://127.0.0.1:${String(port)}`;
 const webRoot = fileURLToPath(new URL('..', import.meta.url));
+const allPurposes = process.env['E2E_ALL_PURPOSES'] === '1';
+const logicOnElsewhere = allPurposes ? [] : [/@logic\b/];
+const webkitSkip = (process.env['E2E_WEBKIT_SKIP'] ?? '')
+  .split(',')
+  .filter((path) => path !== '')
+  .map((path) => fileURLToPath(new URL(`../${path}`, import.meta.url)))
+  .map((file) => new RegExp(`^${file.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&')}$`));
+const webkitProject = { grepInvert: logicOnElsewhere, testIgnore: webkitSkip };
 
 /**
  * The gate is hermetic: Playwright builds and serves the app itself and the
@@ -37,9 +45,9 @@ export default defineConfig({
         viewport: { width: 1440, height: 900 },
       },
     },
-    { name: 'mobile-chrome', use: { ...devices['Pixel 7'] } },
-    { name: 'webkit-desktop', use: { ...devices['Desktop Safari'] } },
-    { name: 'mobile-safari', use: { ...devices['iPhone 14'] } },
+    { name: 'mobile-chrome', grepInvert: logicOnElsewhere, use: { ...devices['Pixel 7'] } },
+    { name: 'webkit-desktop', ...webkitProject, use: { ...devices['Desktop Safari'] } },
+    { name: 'mobile-safari', ...webkitProject, use: { ...devices['iPhone 14'] } },
   ],
   webServer: {
     command: `pnpm exec vite preview --host 127.0.0.1 --port ${String(port)} --strictPort`,

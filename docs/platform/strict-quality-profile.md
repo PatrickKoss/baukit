@@ -18,6 +18,19 @@ critical_paths = []
 webkit_repeats = 3
 full_stack_e2e = false
 openapi_compatibility = "off"
+android_emulator_port = 5644
+shared = []
+
+[quality.gate_budget_minutes]
+full = 30
+affected = 15
+
+[quality.affected]
+"backend/crates/**" = ["backend"]
+"web/src/**" = ["web"]
+"web/e2e/**" = ["web-e2e"]
+"mobile/**" = ["mobile"]
+"docs/**" = []
 
 [openapi]
 schema = "backend/openapi.json"
@@ -30,7 +43,13 @@ consumers = ["generated/openapi.d.ts"]
 
 List each committed OpenAPI TypeScript declaration in `openapi.consumers`. `scripts/openapi-client.sh` regenerates the entire list. The strict gate fails when a listed file is uncommitted or changes after regeneration.
 
-After the schema diff, the strict gate runs `backend/tests/openapi_drift.rs`. Besides the drift check, that test fails on any property or path or query parameter name that is not camelCase and prints the JSON pointer of each one. Names a standard defines, such as OAuth 2.0 `access_token`, go in the test's `STANDARD_DEFINED_NAMES` list.
+nextest runs `backend/tests/openapi_drift.rs` with the rest of the backend suite. Besides the drift check, that test fails on any property or path or query parameter name that is not camelCase and prints the JSON pointer of each one. Names a standard defines, such as OAuth 2.0 `access_token`, go in the test's `STANDARD_DEFINED_NAMES` list.
+
+`android_emulator_port` exists only for mobile products. `baukit new` derives it from the product name. `gate_budget_minutes`, `affected` and `shared` exist only in strict products. The generator writes an `affected` table that fits the product's capabilities. `baukit doctor` rejects an odd or out-of-range emulator port, a zero budget, absolute globs, globs with `..`, and lane or step names the product's gate doesn't have.
+
+## Fast gate
+
+The gate runs lanes in parallel, splits `BAUKIT_GATE_CORES` across them, runs each suite once, and prints a timing table and budget check at the end. `--affected <base>` runs the fast checks plus the steps that `quality.affected` selects. The product copy of [the gate guide](../../templates/common/__strict__/docs/quality-gate.md) lists the lanes, dependencies, caches, Playwright tags, emulator health checks and selection rules.
 
 ## OpenAPI compatibility
 
@@ -88,6 +107,21 @@ The backend coverage gate uses `cargo llvm-cov nextest --run-ignored all`. Docke
 Observability checks run only when `deploy/observability/product-metrics.txt` exists. A production image builds only when `backend/Dockerfile` exists. Generated products set `capabilities.pwa = false`. If a product adds a PWA and changes that value to true, the app that serves it must provide `build:sw:check`. That is the web package when the product has a web app, and otherwise the mobile package, whose Expo web export serves the worker. The strict runner calls it in both local and CI runs.
 
 ## Migration
+
+### v0.17.0
+
+A product's `.T` task takes these steps:
+
+1. Copy `scripts/quality-gate.sh`, `scripts/gate.py`, `scripts/gate.test.py` and `docs/quality-gate.md` from a v0.17.0 render, then add `/.quality-gate/` to `.gitignore`.
+2. Add `[quality.gate_budget_minutes]`, `[quality.affected]` and `shared = []` to `baukit.toml`. Start from the table a fresh `baukit new --quality strict` writes for the same capabilities, then add globs for product directories. Paths that match no glob run the full gate, so a missing glob costs time, not coverage. Run `baukit doctor`.
+3. Mobile products set `quality.android_emulator_port`. Use the value `baukit new` would write, or keep the port the product already uses. Replace `BAUKIT_QA_ANDROID_EMULATOR_PORT` with `BAUKIT_QA_ANDROID_PORT` in scripts and docs.
+4. Make `ci` in the Makefile run `sh scripts/quality-gate.sh` alone. Remove `check` or other suites that run before the gate.
+5. Delete clamps that read `Committed_AS` or cap test threads, such as `scripts/cargo-build-jobs.py`, and let `BAUKIT_GATE_CORES` drive the counts. Remove `--runInBand` from `mobile/package.json`. Tests that share state go in a nextest test group or a separate Jest project.
+6. Tag Playwright tests that check only application logic with `@logic`. Leave `qa-*.spec.ts` untagged.
+7. Copy `android-env.sh`, `android-adb.py`, `run-maestro.sh` and `build-android.sh` from the template, plus the `ci` target and the `PLAYWRIGHT_BROWSERS_PATH ?=` line in the Makefile, and `preflight.sh`.
+8. Run the full gate once and compare `.quality-gate/timings.txt` with the old gate. Then merge through `--affected`.
+
+### Markdown links
 
 Existing strict products can copy `scripts/check-markdown-links.py` and its test from the current template. Add both commands to `scripts/quality-gate.sh` before capability-specific build checks:
 
