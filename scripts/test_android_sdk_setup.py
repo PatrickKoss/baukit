@@ -60,7 +60,6 @@ printf 'hw.cpu.ncore = 1\nhw.cpu.ncore=2\nhw.gpu.mode=auto\n' > "$ANDROID_AVD_HO
             for path in (
                 ".github/workflows/ci.yml",
                 "templates/common/.github/workflows/native.yml",
-                "templates/common/__strict__/scripts/quality-gate.sh",
             )
         )
         for command in commands:
@@ -72,6 +71,13 @@ printf 'hw.cpu.ncore = 1\nhw.cpu.ncore=2\nhw.gpu.mode=auto\n' > "$ANDROID_AVD_HO
             self.assertTrue(gradle_lines, command)
             for line in gradle_lines:
                 self.assertIn("-PreactNativeDevServerIp=127.0.0.1", line)
+
+    def test_strict_gate_debug_build_sets_the_loopback_gradle_property(self) -> None:
+        script = (ROOT / "templates/mobile/mobile/scripts/qa/build-android.sh").read_text()
+        definition = script[script.index("gradle=(") : script.index(")", script.index("gradle=("))]
+        self.assertIn("gradlew", definition)
+        self.assertIn("-PreactNativeDevServerIp=127.0.0.1", definition)
+        self.assertIn('"${gradle[@]}" --stacktrace assembleDebug', script)
 
 
 if __name__ == "__main__":

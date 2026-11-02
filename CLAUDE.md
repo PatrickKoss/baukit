@@ -41,6 +41,18 @@ Always pass the right `--manifest-path` / `--dir`; there is no root workspace.
 CI (`.github/workflows/ci.yml`) is strict and the pipeline must stay green.
 Before declaring any task done, run the same checks CI runs, locally.
 
+`sh scripts/ci-gate.sh` (or `make ci-gate`) runs every CI job's checks in parallel lanes,
+and each CI job calls one of its steps with `scripts/ci-gate.sh --step NAME`.
+`--list-steps` prints the step table, `--affected BASE` runs only the lanes that
+`scripts/ci-gate.toml` maps to changed paths, and `--plan` prints the selection
+without running it. Timings and lane logs land in `.ci-gate/`.
+
+`sh scripts/ci-gate.sh` (or `make ci-gate`) runs every CI job's checks in parallel lanes,
+and each CI job calls one of its steps with `scripts/ci-gate.sh --step NAME`.
+`--list-steps` prints the step table, `--affected BASE` runs only the lanes that
+`scripts/ci-gate.toml` maps to changed paths, and `--plan` prints the selection
+without running it. Timings and lane logs land in `.ci-gate/`.
+
 `make ci` covers most of it (fmt, clippy `-D warnings`, tests, and cargo check
 for `rust/` and `cli/`, plus pnpm build/format/lint/test/check for
 `typescript/`, the `scripts/` tests, and both media-grant vector suites; the

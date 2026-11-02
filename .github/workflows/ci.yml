@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
-      - run: scripts/check-version-coherence.py
+      - run: scripts/ci-gate.sh --step version-coherence
 
   rustfmt:
     name: Rustfmt
@@ -97,7 +97,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2.9.2
         with:
           workspaces: rust -> target
-      - run: cargo fmt --manifest-path rust/Cargo.toml --all --check
+      - run: scripts/ci-gate.sh --step rust-fmt
 
   clippy:
     name: Clippy
@@ -110,7 +110,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2.9.2
         with:
           workspaces: rust -> target
-      - run: cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings
+      - run: scripts/ci-gate.sh --step rust-clippy
 
   test:
     name: Test
@@ -121,8 +121,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2.9.2
         with:
           workspaces: rust -> target
-      - run: cargo test --manifest-path rust/Cargo.toml
-      - run: make examples-test
+      - run: scripts/ci-gate.sh --step rust-tests
+      - run: scripts/ci-gate.sh --step rust-check
+      - run: scripts/ci-gate.sh --step examples-test
 
   suite-features:
     name: Suite feature boundaries
@@ -135,7 +136,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2.9.2
         with:
           workspaces: rust -> target
-      - run: make suite-features-check
+      - run: scripts/ci-gate.sh --step suite-features
 
   cargo-deny:
     name: Cargo deny
@@ -147,7 +148,7 @@ jobs:
         with:
           workspaces: rust -> target
       - uses: taiki-e/install-action@cargo-deny
-      - run: cargo deny --manifest-path rust/Cargo.toml --config rust/deny.toml check advisories licenses
+      - run: scripts/ci-gate.sh --step cargo-deny
 
   msrv:
     name: MSRV (Rust 1.95)
@@ -189,17 +190,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-
       - name: Check example lockfiles
-        run: make example-lockfiles-check
+        run: scripts/ci-gate.sh --step example-lockfiles
       - name: Install TypeScript dependencies
-        working-directory: typescript
-        run: pnpm install --frozen-lockfile
+        run: scripts/ci-gate.sh --step ts-install
       - name: Build, lint, and test TypeScript packages
-        working-directory: typescript
-        run: |
-          pnpm run test:source-maps
-          pnpm turbo build lint test --concurrency=4
+        env:
+          BAUKIT_GATE_WORKERS: 4
+        run: scripts/ci-gate.sh --step ts-check
       - name: Check packed npm dependencies
-        run: make package-dependencies-check
+        run: scripts/ci-gate.sh --step package-dependencies
       - name: Test Dexie conformance in Chromium and WebKit
         working-directory: typescript
         env:
@@ -217,9 +216,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
-      - run: python3 deploy/observability/lint/check-metric-names.py
-      - run: python3 -m unittest discover -s deploy/observability/lint -p 'test_*.py'
-      - run: deploy/observability/lint/check-rules.sh
+      - run: scripts/ci-gate.sh --step metric-names
+      - run: scripts/ci-gate.sh --step observability-tests
+      - run: scripts/ci-gate.sh --step observability-rules
 
   openapi-compatibility:
     name: OpenAPI compatibility check
@@ -240,7 +239,7 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Allow unprivileged user namespaces for loopback network tests
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
+      - run: scripts/ci-gate.sh --step scripts-tests
 
   media-grants:
     name: Media grant njs verifier
@@ -250,7 +249,7 @@ jobs:
       - uses: actions/setup-node@v7.0.0
         with:
           node-version-file: typescript/.nvmrc
-      - run: make media-grants-test media-grants-njs-test
+      - run: scripts/ci-gate.sh --step media-grants
 
   cli:
     name: Baukit CLI
@@ -263,9 +262,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2.9.2
         with:
           workspaces: cli -> target
-      - run: cargo fmt --manifest-path cli/Cargo.toml --all --check
-      - run: cargo clippy --manifest-path cli/Cargo.toml --all-targets -- -D warnings
-      - run: cargo test --manifest-path cli/Cargo.toml
+      - run: scripts/ci-gate.sh --step cli-fmt
+      - run: scripts/ci-gate.sh --step cli-clippy
+      - run: scripts/ci-gate.sh --step cli-tests
+      - run: scripts/ci-gate.sh --step cli-check
 
   mcp-fixture:
     name: Remote MCP fixture and OAuth smoke
@@ -290,7 +290,7 @@ jobs:
             rust -> target
             cli -> target
       - run: cargo test --manifest-path rust/Cargo.toml -p baukit-mcp -- --include-ignored
-      - run: make mcp-fixture-gate
+      - run: scripts/ci-gate.sh --step mcp-fixture
 
   generated-fixture:
     name: Generated fixture (${{ matrix.flavor }})
@@ -382,11 +382,9 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: actions/setup-node@v7.0.0
-        if: matrix.mobile || matrix.web
         with:
           node-version-file: typescript/.nvmrc
       - name: Enable pinned pnpm
-        if: matrix.mobile || matrix.web
         working-directory: typescript
         run: |
           npm install --global corepack@0.36.0
@@ -394,12 +392,10 @@ jobs:
           corepack install
           pnpm --version
       - name: Find pnpm store
-        if: matrix.mobile || matrix.web
         id: pnpm-store
         working-directory: typescript
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v6.1.0
-        if: matrix.mobile || matrix.web
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ runner.os }}-pnpm-generated-${{ matrix.flavor }}-${{ hashFiles('typescript/pnpm-lock.yaml') }}
@@ -410,74 +406,21 @@ jobs:
         with:
           workspaces: cli -> target
           key: generated-fixture-cli
-      - name: Build local Baukit TypeScript dependencies
-        if: matrix.mobile || matrix.web
-        working-directory: typescript
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/auth-native --filter @baukit/auth-node --filter @baukit/data-contracts --filter @baukit/ui-tokens --filter @baukit/navigation --filter @baukit/purchases-core --filter @baukit/purchases-revenuecat --filter @baukit/pwa-web run build
-      - name: Build CLI and generate local-path fixture
-        run: |
-          cargo build --manifest-path cli/Cargo.toml --bin baukit
-          cli/target/debug/baukit new ${{ matrix.product_name }} ${{ matrix.flags }} --dir .generated-fixture --baukit-path rust
+      - name: Generate and verify the fixture
+        env:
+          BAUKIT_FIXTURE_FLAVORS: ${{ matrix.flavor }}
+        run: scripts/ci-gate.sh --step generated-fixture
+
+  affected-fixture:
+    name: Affected gate selection fixture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2.9.2
-        if: matrix.backend
         with:
-          workspaces: .generated-fixture/${{ matrix.product_name }}/backend -> target
-          key: generated-fixture-${{ matrix.flavor }}-backend
-      - name: Format generated backend
-        if: matrix.backend
-        run: cargo fmt --manifest-path .generated-fixture/${{ matrix.product_name }}/backend/Cargo.toml --all --check
-      - name: Lint generated backend
-        if: matrix.backend
-        run: cargo clippy --manifest-path .generated-fixture/${{ matrix.product_name }}/backend/Cargo.toml --all-targets -- -D warnings
-      - name: Test generated backend and OpenAPI drift
-        if: matrix.backend
-        run: |
-          cargo test --manifest-path .generated-fixture/${{ matrix.product_name }}/backend/Cargo.toml -- --include-ignored
-          cargo test --manifest-path .generated-fixture/${{ matrix.product_name }}/backend/Cargo.toml -p ${{ matrix.product_name }}-bin --test openapi_drift
-      - name: Verify platform TypeScript client drift and standalone deployment
-        if: startsWith(matrix.flavor, 'platform')
-        working-directory: .generated-fixture/${{ matrix.product_name }}
-        run: |
-          before=$(mktemp)
-          cp generated/openapi.d.ts "$before"
-          sh scripts/openapi-client.sh
-          diff -u "$before" generated/openapi.d.ts
-          helm template fixture ../../deploy/chart/baukit-app -f deploy/values.yaml > platform-rendered.yaml
-          if grep -q 'PLATFORM__RECEIVER_SECRET\|PLATFORM__PREVIOUS_RECEIVER_SECRET' platform-rendered.yaml; then
-            echo "standalone platform values unexpectedly inject receiver secrets" >&2
-            exit 1
-          fi
-      - name: Install and verify generated web app
-        if: matrix.web
-        working-directory: .generated-fixture/${{ matrix.product_name }}/web
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm build
-          pnpm lint
-          pnpm test
-          pnpm run test:coverage
-      # Keep the fast source layer here; the path-filtered Android gate below compiles a clean fixture.
-      - name: Install and verify generated mobile app without a native build
-        if: matrix.mobile
-        working-directory: .generated-fixture/${{ matrix.product_name }}/mobile
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm exec expo install --check
-          pnpm exec tsc --noEmit
-          pnpm lint
-          pnpm run test:coverage
-      - name: Export and verify the generated mobile PWA
-        if: matrix.flavor == 'mobile-pwa'
-        working-directory: .generated-fixture/${{ matrix.product_name }}/mobile
-        run: |
-          pnpm exec expo export --platform web --max-workers 4
-          pnpm run build:sw
-          pnpm run build:sw:check
-      - name: Verify generated MCP tool schemas
-        if: matrix.mcp
-        run: cargo test --manifest-path ".generated-fixture/${{ matrix.product_name }}/backend/Cargo.toml" -p "${{ matrix.product_name }}-mcp" --test tool_drift
+          workspaces: cli -> target
+      - run: scripts/ci-gate.sh --step affected-fixture
 
   generated-mobile-android-build:
     name: Build generated mobile Android fixture (${{ matrix.provider }})

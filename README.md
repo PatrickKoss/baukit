@@ -184,6 +184,7 @@ examples/    minimal-api, expo-sqlite-conformance
 ```bash
 make toolchain          # mise: Node 26, Temurin 25.0.4.1+1, Rust 1.99.0
 mise exec -- make ci    # fmt, clippy, tests, and the TypeScript gates
+mise exec -- sh scripts/ci-gate.sh    # every CI job in parallel lanes
 ```
 
 Mise installs Corepack 0.36.0 with Node. Corepack reads the pnpm 12.9.1 pin in `typescript/package.json`. Docker and the Android SDK stay system dependencies. iOS work needs xtool with a Darwin SDK you generate from a manually downloaded `Xcode.xip`, and Linux has no iOS simulator.

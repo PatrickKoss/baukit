@@ -3,7 +3,8 @@
 
 The calling script owns the step commands. It lists its steps with
 `<script> --list-steps` as lines of `name lane after mode tokens`, where
-`after` and `tokens` are comma lists or `-`, and `mode` is `always` (also a
+`after` and `tokens` are comma lists or `-`, a step answers to its name, its
+lane and its tokens, and `mode` is `always` (also a
 fast check under --affected), `selected` (runs when the full gate runs or a
 token selects it), or `affected` (runs only under --affected). This runner
 calls `<script> --step <name>` for each selected step.
@@ -450,6 +451,7 @@ def run_command(arguments: argparse.Namespace) -> int:
     environment["BAUKIT_GATE_MODE"] = mode
     environment["BAUKIT_GATE_BASE"] = arguments.affected or ""
     environment["BAUKIT_GATE_TOKENS"] = " ".join(sorted(selection.tokens))
+    environment["BAUKIT_GATE_STEPS"] = " ".join(item.step.name for item in planned)
     extras = []
     if arguments.cargo_workspace and mode == "affected" and "backend" in {base_token(t) for t in selection.tokens}:
         manifest = Path(arguments.cargo_workspace)
