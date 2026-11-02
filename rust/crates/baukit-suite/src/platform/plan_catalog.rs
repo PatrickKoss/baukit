@@ -9,6 +9,15 @@ struct Catalog {
 #[serde(rename_all = "camelCase")]
 struct CatalogPlan {
     included_products: Vec<IncludedProduct>,
+    #[serde(default)]
+    organization_products: Option<Vec<IncludedProduct>>,
+}
+impl CatalogPlan {
+    fn granted_products(self) -> impl Iterator<Item = IncludedProduct> {
+        self.included_products
+            .into_iter()
+            .chain(self.organization_products.into_iter().flatten())
+    }
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -39,7 +48,8 @@ impl FeatureKeyDrift {
     }
 }
 
-/// Every feature key any plan in `catalog_json` grants to `product_id`.
+/// Every feature key any plan in `catalog_json` grants to `product_id`, through
+/// `includedProducts` or `organizationProducts`.
 pub fn catalog_feature_keys(
     catalog_json: &str,
     product_id: &str,
@@ -48,7 +58,7 @@ pub fn catalog_feature_keys(
     let keys: BTreeSet<String> = catalog
         .plans
         .into_iter()
-        .flat_map(|plan| plan.included_products)
+        .flat_map(CatalogPlan::granted_products)
         .filter(|included| included.product_id == product_id)
         .flat_map(|included| included.features)
         .collect();

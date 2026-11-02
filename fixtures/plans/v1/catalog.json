@@ -1162,6 +1162,140 @@
         "suite.individual",
         "suite.family"
       ]
+    },
+    {
+      "id": "business.self_improvement.suite",
+      "line": "self_improvement",
+      "storefront": "business",
+      "includedProducts": [
+        {
+          "productId": "sololeveling",
+          "tier": "premium",
+          "features": [
+            "sololeveling.ai_quest_generation",
+            "sololeveling.ai_coaching",
+            "sololeveling.hunter_reports",
+            "sololeveling.lifegraph_narration",
+            "sololeveling.goal_milestone_suggestions"
+          ]
+        },
+        {
+          "productId": "eigenruhe",
+          "tier": "premium",
+          "features": [
+            "eigenruhe.custom_programs",
+            "eigenruhe.insights_extended",
+            "eigenruhe.nachtruhe"
+          ]
+        },
+        {
+          "productId": "hebkit",
+          "tier": "premium",
+          "features": [
+            "hebkit.advanced_stats",
+            "hebkit.integrations_sync",
+            "hebkit.nutrition_recommendations"
+          ]
+        },
+        {
+          "productId": "leitbild",
+          "tier": "premium",
+          "features": [
+            "leitbild.ai_reflections",
+            "leitbild.weekly_reflections"
+          ]
+        },
+        {
+          "productId": "tiefgang",
+          "tier": "premium",
+          "features": [
+            "tiefgang.browser_extension",
+            "tiefgang.integrations",
+            "tiefgang.webhooks",
+            "tiefgang.advanced_rules",
+            "tiefgang.weekly_review",
+            "tiefgang.mcp"
+          ]
+        },
+        {
+          "productId": "redemut",
+          "tier": "premium",
+          "features": [
+            "redemut.conversation_coach",
+            "redemut.speech_to_text"
+          ]
+        },
+        {
+          "productId": "schlauzug",
+          "tier": "premium",
+          "features": [
+            "schlauzug.extra_open_rooms",
+            "schlauzug.extra_question_sets"
+          ]
+        },
+        {
+          "productId": "lesezeichen",
+          "tier": "premium",
+          "features": [
+            "lesezeichen.extended_generation",
+            "lesezeichen.book_generation",
+            "lesezeichen.daily_briefings",
+            "lesezeichen.extended_storage"
+          ]
+        },
+        {
+          "productId": "kassensturz",
+          "tier": "premium",
+          "features": [
+            "kassensturz.unlimited_connections",
+            "kassensturz.unlimited_history",
+            "kassensturz.forecast",
+            "kassensturz.budgets",
+            "kassensturz.net_worth",
+            "kassensturz.depots",
+            "kassensturz.household",
+            "kassensturz.tax_exports",
+            "kassensturz.mcp_access"
+          ]
+        }
+      ],
+      "organizationProducts": [
+        {
+          "productId": "eigenruhe",
+          "tier": "trainer",
+          "features": [
+            "eigenruhe.studio"
+          ]
+        },
+        {
+          "productId": "hebkit",
+          "tier": "premium",
+          "features": [
+            "hebkit.trainer"
+          ]
+        }
+      ],
+      "creditGrants": [],
+      "familySize": null,
+      "seatModel": "per_seat",
+      "providerPriceIds": {
+        "development": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "staging": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        },
+        "production": {
+          "paddle": null,
+          "revenuecat": null,
+          "stripe": null
+        }
+      },
+      "displayPrice": null
     }
   ],
   "freePlans": [

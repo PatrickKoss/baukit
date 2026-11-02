@@ -48,8 +48,39 @@ describe('plan catalog feature keys', () => {
       {},
       { plans: [{}] },
       { plans: [{ includedProducts: [{ productId: 'eigenruhe', features: [1] }] }] },
+      { plans: [{ includedProducts: [], organizationProducts: {} }] },
     ]) {
       expect(() => catalogFeatureKeys(broken, 'eigenruhe')).toThrow(PlanCatalogError);
     }
+  });
+
+  it('counts keys a plan grants only to organizations', () => {
+    const organizationOnly = {
+      plans: [
+        { includedProducts: [{ productId: 'hebkit', features: ['hebkit.advanced_stats'] }] },
+        { includedProducts: [], organizationProducts: null },
+        {
+          includedProducts: [],
+          organizationProducts: [
+            { productId: 'hebkit', tier: 'trainer', features: ['hebkit.trainer'] },
+          ],
+        },
+      ],
+    };
+    expect(catalogFeatureKeys(organizationOnly, 'hebkit')).toEqual([
+      'hebkit.advanced_stats',
+      'hebkit.trainer',
+    ]);
+  });
+
+  it('grants hebkit its trainer key in the recorded catalog', () => {
+    expect(() => {
+      assertFeatureKeysMatch(catalog, 'hebkit', [
+        'hebkit.advanced_stats',
+        'hebkit.integrations_sync',
+        'hebkit.nutrition_recommendations',
+        'hebkit.trainer',
+      ]);
+    }).not.toThrow();
   });
 });
