@@ -13,8 +13,25 @@ export type ProfileErasureOperation =
   | { readonly status: 'pending' | 'failed'; readonly operationId: string }
   | { readonly status: 'completed'; readonly operationId: string; readonly completedAt?: string };
 
+export interface ProfileErasureRoutes {
+  /** HTTP method of the erasure request, such as `DELETE` or `POST`. */
+  readonly eraseMethod: string;
+  readonly erasePath: string;
+  /** Status read path. `{operationId}` is replaced with the encoded operation ID. */
+  readonly statusPath: string;
+}
+
+/** The template routes: `DELETE /me` and `GET /me/erasures/{operationId}`. */
+export const templateProfileErasureRoutes: ProfileErasureRoutes = Object.freeze({
+  eraseMethod: 'DELETE',
+  erasePath: '/me',
+  statusPath: '/me/erasures/{operationId}',
+});
+
 export interface ProfileErasureClientOptions {
   readonly fetch: FetchImplementation;
+  /** Defaults to `templateProfileErasureRoutes`. */
+  readonly routes?: ProfileErasureRoutes;
   readonly account: string;
   /** Durable storage, separate from tokens so a lost response survives a reload. */
   readonly storage: IdempotencyKeyStorage;
@@ -76,11 +93,17 @@ const INITIAL_DELAY_MS = 500;
 const MAX_DELAY_MS = 5_000;
 const MAX_ATTEMPTS = 8;
 
-/** Creates a client for DELETE /me and its fenced-subject status endpoint. */
+const OPERATION_ID_PLACEHOLDER = '{operationId}';
+
+/** Creates a client for the erasure route and its fenced-subject status endpoint. */
 export function createProfileErasureClient(
   options: ProfileErasureClientOptions,
 ): ProfileErasureClient {
   if (options.account.trim() === '') throw new TypeError('An erasure account is required.');
+  const routes = options.routes ?? templateProfileErasureRoutes;
+  if (!routes.statusPath.includes(OPERATION_ID_PLACEHOLDER)) {
+    throw new TypeError('The erasure status path needs an {operationId} placeholder.');
+  }
   const keys = createIdempotencyKeyStore({
     // An uncertain erasure must keep its key, even if the user returns much later.
     ttlMs: Number.MAX_SAFE_INTEGER,
@@ -98,8 +121,8 @@ export function createProfileErasureClient(
       signal?.throwIfAborted();
       let receipt: ProfileErasureReceipt;
       try {
-        const response = await options.fetch('/me', {
-          method: 'DELETE',
+        const response = await options.fetch(routes.erasePath, {
+          method: routes.eraseMethod,
           headers: { 'Idempotency-Key': key },
           ...(signal === undefined ? {} : { signal }),
         });
@@ -132,7 +155,12 @@ export function createProfileErasureClient(
       delayMs = Math.min(delayMs, maxDelayMs);
       for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
         polling.signal?.throwIfAborted();
-        const operation = await readOperation(options.fetch, operationId, polling.signal);
+        const operation = await readOperation(
+          options.fetch,
+          routes.statusPath.replaceAll(OPERATION_ID_PLACEHOLDER, encodeURIComponent(operationId)),
+          operationId,
+          polling.signal,
+        );
         if (operation.status !== 'pending' || attempt === maxAttempts - 1) return operation;
         await waitForPoll(delayMs, polling.signal);
         delayMs = Math.min(delayMs * 2, maxDelayMs);
@@ -148,11 +176,12 @@ function isErasedFence(cause: unknown): boolean {
 
 async function readOperation(
   fetch: FetchImplementation,
+  path: string,
   operationId: string,
   signal: AbortSignal | undefined,
 ): Promise<ProfileErasureOperation> {
   try {
-    const response = await fetch(`/me/erasures/${encodeURIComponent(operationId)}`, {
+    const response = await fetch(path, {
       method: 'GET',
       ...(signal === undefined ? {} : { signal }),
     });

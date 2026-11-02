@@ -14,8 +14,8 @@ use baukit_erasure::{
 use baukit_jobs::{PostgresJobStore, WorkerConfig, WorkerRunner};
 use baukit_runtime::ShutdownToken;
 use baukit_test::{
-    FakeIdentityAccountDeleter, IdentityErasureAdapter, IdentityErasureResponse,
-    IdentityErasureSnapshot, MockOidcServer,
+    FakeIdentityAccountDeleter, IdentityErasureAdapter, IdentityErasureRequest,
+    IdentityErasureResponse, IdentityErasureRoutes, IdentityErasureSnapshot, MockOidcServer,
 };
 use sqlx::PgPool;
 use tower::ServiceExt as _;
@@ -53,7 +53,7 @@ struct EndpointAdapter {
     prefix: &'static str,
 }
 impl EndpointAdapter {
-    async fn request(
+    async fn send(
         &self,
         subject: &str,
         method: &str,
@@ -156,28 +156,17 @@ impl IdentityErasureAdapter for EndpointAdapter {
             Ok(())
         })
     }
-    fn delete<'a>(
+    fn request<'a>(
         &'a self,
         subject: &'a str,
-        key: &'a str,
+        request: IdentityErasureRequest<'a>,
     ) -> ErasureFuture<'a, Result<IdentityErasureResponse, Self::Error>> {
-        adapter_result(self.request(subject, "DELETE", "/me", Some(key)))
-    }
-    fn status<'a>(
-        &'a self,
-        subject: &'a str,
-        operation: Uuid,
-    ) -> ErasureFuture<'a, Result<IdentityErasureResponse, Self::Error>> {
-        adapter_result(async move {
-            self.request(subject, "GET", &format!("/me/erasures/{operation}"), None)
-                .await
-        })
-    }
-    fn resolve<'a>(
-        &'a self,
-        subject: &'a str,
-    ) -> ErasureFuture<'a, Result<IdentityErasureResponse, Self::Error>> {
-        adapter_result(self.request(subject, "GET", "/me", None))
+        adapter_result(self.send(
+            subject,
+            request.method,
+            request.path,
+            request.idempotency_key,
+        ))
     }
     fn snapshot<'a>(
         &'a self,
@@ -255,6 +244,7 @@ async fn endpoint_identity_erasure_conforms() -> Result<(), TestError> {
     };
     baukit_test::check_identity_erasure_conformance(
         &mut adapter,
+        &IdentityErasureRoutes::default(),
         "erasure-subject",
         "other-subject",
     )
@@ -262,12 +252,13 @@ async fn endpoint_identity_erasure_conforms() -> Result<(), TestError> {
     adapter.prefix = "/api";
     baukit_test::check_identity_erasure_conformance(
         &mut adapter,
+        &IdentityErasureRoutes::default(),
         "nested-erasure-subject",
         "nested-other-subject",
     )
     .await?;
     for key in [None, Some("short"), Some("contains a space in the key")] {
-        let response = adapter.request("new-subject", "DELETE", "/me", key).await?;
+        let response = adapter.send("new-subject", "DELETE", "/me", key).await?;
         assert_eq!(response.status, 400);
         assert_eq!(
             response.body["error"]["code"],
@@ -275,11 +266,11 @@ async fn endpoint_identity_erasure_conforms() -> Result<(), TestError> {
         );
     }
     let response = adapter
-        .request("erasure-subject", "GET", "/items", None)
+        .send("erasure-subject", "GET", "/items", None)
         .await?;
     assert_eq!(response.status, 401);
     assert_eq!(response.body["error"]["code"], "profile_erased");
-    let response = adapter.resolve("erasure-subject").await?;
+    let response = adapter.send("erasure-subject", "GET", "/me", None).await?;
     assert_eq!(response.status, 401);
     assert_eq!(response.body["error"]["code"], "profile_erased");
     let token = adapter.issuer.mint(&adapter.issuer.claims(
@@ -378,11 +369,11 @@ async fn retained_identity_reonboards_with_a_new_profile_and_rejects_old_session
         prefix: "",
     };
     let original = adapter
-        .request("returning-subject", "GET", "/me", None)
+        .send("returning-subject", "GET", "/me", None)
         .await?;
     assert_eq!(original.status, 200);
     let erased = adapter
-        .request(
+        .send(
             "returning-subject",
             "DELETE",
             "/me",

@@ -24,6 +24,45 @@ pub struct IdentityErasureResponse {
     /// Decoded product response body.
     pub body: Value,
 }
+/// Routes the conformance check calls. `status_path` contains `{operation}`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IdentityErasureRoutes {
+    /// HTTP method of the erasure request, such as `DELETE` or `POST`.
+    pub erase_method: String,
+    /// Path of the erasure request.
+    pub erase_path: String,
+    /// Path of the subject-authorized status read, with an `{operation}` placeholder.
+    pub status_path: String,
+    /// Path of a profile-resolving `GET` endpoint.
+    pub resolve_path: String,
+}
+impl Default for IdentityErasureRoutes {
+    /// The template routes: `DELETE /me`, `GET /me/erasures/{operation}` and `GET /me`.
+    fn default() -> Self {
+        Self {
+            erase_method: "DELETE".into(),
+            erase_path: "/me".into(),
+            status_path: "/me/erasures/{operation}".into(),
+            resolve_path: "/me".into(),
+        }
+    }
+}
+impl IdentityErasureRoutes {
+    fn status(&self, operation: Uuid) -> String {
+        self.status_path
+            .replace("{operation}", &operation.to_string())
+    }
+}
+/// One authenticated request the conformance check sends through the product router.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IdentityErasureRequest<'a> {
+    /// HTTP method.
+    pub method: &'a str,
+    /// Path from [`IdentityErasureRoutes`].
+    pub path: &'a str,
+    /// `Idempotency-Key` header value, sent only on erasure requests.
+    pub idempotency_key: Option<&'a str>,
+}
 /// Product endpoint and worker adapter for identity erasure conformance.
 pub trait IdentityErasureAdapter {
     /// Failure type, excluded from safe conformance diagnostics.
@@ -34,30 +73,67 @@ pub trait IdentityErasureAdapter {
         subject: &'a str,
         fake: Arc<FakeIdentityAccountDeleter>,
     ) -> ErasureFuture<'a, Result<(), Self::Error>>;
-    /// Calls DELETE through the product's real authenticated router.
-    fn delete<'a>(
+    /// Sends `request` as `subject` through the product's real authenticated router.
+    fn request<'a>(
         &'a self,
         subject: &'a str,
-        key: &'a str,
-    ) -> ErasureFuture<'a, Result<IdentityErasureResponse, Self::Error>>;
-    /// Calls the subject-authorized status endpoint through that router.
-    fn status<'a>(
-        &'a self,
-        subject: &'a str,
-        operation: Uuid,
+        request: IdentityErasureRequest<'a>,
     ) -> ErasureFuture<'a, Result<IdentityErasureResponse, Self::Error>>;
     /// Executes the registered worker until the identity operation completes.
     fn run_worker(&self) -> ErasureFuture<'_, Result<(), Self::Error>>;
-    /// Calls a profile-resolving authenticated endpoint, such as GET /me.
-    fn resolve<'a>(
-        &'a self,
-        subject: &'a str,
-    ) -> ErasureFuture<'a, Result<IdentityErasureResponse, Self::Error>>;
     /// Counts the product inventory, identity jobs, and every raw-subject location.
     fn snapshot<'a>(
         &'a self,
         subject: &'a str,
     ) -> ErasureFuture<'a, Result<IdentityErasureSnapshot, Self::Error>>;
+}
+struct Client<'a, A> {
+    adapter: &'a A,
+    routes: &'a IdentityErasureRoutes,
+}
+impl<A: IdentityErasureAdapter> Client<'_, A> {
+    async fn erase(
+        &self,
+        subject: &str,
+        key: &str,
+    ) -> Result<IdentityErasureResponse, IdentityErasureConformanceError> {
+        self.send(
+            subject,
+            &self.routes.erase_method,
+            &self.routes.erase_path,
+            Some(key),
+        )
+        .await
+    }
+    async fn status(
+        &self,
+        subject: &str,
+        operation: Uuid,
+    ) -> Result<IdentityErasureResponse, IdentityErasureConformanceError> {
+        self.send(subject, "GET", &self.routes.status(operation), None)
+            .await
+    }
+    async fn resolve(
+        &self,
+        subject: &str,
+    ) -> Result<IdentityErasureResponse, IdentityErasureConformanceError> {
+        self.send(subject, "GET", &self.routes.resolve_path, None)
+            .await
+    }
+    async fn send(
+        &self,
+        subject: &str,
+        method: &str,
+        path: &str,
+        idempotency_key: Option<&str>,
+    ) -> Result<IdentityErasureResponse, IdentityErasureConformanceError> {
+        let request = IdentityErasureRequest {
+            method,
+            path,
+            idempotency_key,
+        };
+        self.adapter.request(subject, request).await.map_err(failed)
+    }
 }
 /// Safe conformance failure, without subjects or provider diagnostics.
 #[derive(Debug, thiserror::Error)]
@@ -77,12 +153,17 @@ fn failed<E>(_: E) -> IdentityErasureConformanceError {
 /// Verifies durable acceptance, replay, conflict, fences, worker completion and subject removal.
 pub async fn check_identity_erasure_conformance<A: IdentityErasureAdapter>(
     adapter: &mut A,
+    routes: &IdentityErasureRoutes,
     subject: &str,
     foreign_subject: &str,
 ) -> Result<(), IdentityErasureConformanceError> {
     require(
         !subject.is_empty() && !foreign_subject.is_empty() && subject != foreign_subject,
         "two distinct subjects are required",
+    )?;
+    require(
+        routes.status_path.contains("{operation}"),
+        "status path needs an {operation} placeholder",
     )?;
     let fake = Arc::new(FakeIdentityAccountDeleter::default());
     fake.push_outcome(Err(IdentityDeletionError::Retryable));
@@ -92,8 +173,12 @@ pub async fn check_identity_erasure_conformance<A: IdentityErasureAdapter>(
         seeded.product_rows > 0 && !seeded.fenced,
         "fixture must seed unfenced product rows",
     )?;
+    let client = Client {
+        adapter: &*adapter,
+        routes,
+    };
     let key = Uuid::now_v7().to_string();
-    let pending = adapter.delete(subject, &key).await.map_err(failed)?;
+    let pending = client.erase(subject, &key).await?;
     require(
         pending.status == 202 && pending.body["status"] == "pending",
         "IdP failure must return durable pending acceptance",
@@ -112,42 +197,29 @@ pub async fn check_identity_erasure_conformance<A: IdentityErasureAdapter>(
         "inline provider deletion must be attempted once",
     )?;
     require(
-        adapter
-            .status(subject, operation)
-            .await
-            .map_err(failed)?
-            .body
-            == pending.body,
+        client.status(subject, operation).await?.body == pending.body,
         "status must report the pending receipt",
     )?;
     require(
-        adapter.delete(subject, &key).await.map_err(failed)? == pending,
+        client.erase(subject, &key).await? == pending,
         "pending replay must return the same response",
     )?;
-    let conflict = adapter
-        .delete(foreign_subject, &key)
-        .await
-        .map_err(failed)?;
+    let conflict = client.erase(foreign_subject, &key).await?;
     require(
         conflict.status == 409 && conflict.body["error"]["code"] == "erasure_idempotency_conflict",
         "cross-identity key reuse must conflict",
     )?;
     require(
-        adapter
-            .status(foreign_subject, operation)
-            .await
-            .map_err(failed)?
-            .status
-            == 404,
+        client.status(foreign_subject, operation).await?.status == 404,
         "foreign receipt lookup must return 404",
     )?;
-    let fenced = adapter.resolve(subject).await.map_err(failed)?;
+    let fenced = client.resolve(subject).await?;
     require(
         fenced.status == 401 && fenced.body["error"]["code"] == "profile_erased",
         "fenced subject resolution must reject profile recreation",
     )?;
     adapter.run_worker().await.map_err(failed)?;
-    let completed = adapter.status(subject, operation).await.map_err(failed)?;
+    let completed = client.status(subject, operation).await?;
     require(
         completed.status == 200
             && completed.body["status"] == "completed"
@@ -158,13 +230,13 @@ pub async fn check_identity_erasure_conformance<A: IdentityErasureAdapter>(
         fake.calls() == [subject, subject],
         "worker must call the registered identity deleter",
     )?;
-    let replay = adapter.delete(subject, &key).await.map_err(failed)?;
+    let replay = client.erase(subject, &key).await?;
     require(
         replay.status == 200 && replay.body == completed.body,
         "completed replay must return the stored receipt",
     )?;
     require(
-        adapter.delete(subject, &key).await.map_err(failed)? == replay,
+        client.erase(subject, &key).await? == replay,
         "completion timestamp must remain stable",
     )?;
     let snapshot = adapter.snapshot(subject).await.map_err(failed)?;

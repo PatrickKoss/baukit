@@ -220,7 +220,7 @@ if (receipt.status === 'pending' && receipt.operationId !== null) {
 }
 ```
 
-`erase` sends `DELETE /me` with `Idempotency-Key`. It validates the 200 completed
+`erase` sends `DELETE /me` with `Idempotency-Key`, and `poll` reads `GET /me/erasures/{operationId}`. Pass `routes: { eraseMethod, erasePath, statusPath }` for other routes, for example `{ eraseMethod: 'POST', erasePath: '/v1/me/erasure', statusPath: '/v1/me/erasure/{operationId}' }`; `templateProfileErasureRoutes` holds the defaults. It validates the 200 completed
 and 202 pending bodies. A network drop, abort after sending, malformed success
 body, or uncertain server error throws `AmbiguousProfileErasureError`. Its code
 is compatible with `eraseProductProfile`. Keep the same key for a later retry,

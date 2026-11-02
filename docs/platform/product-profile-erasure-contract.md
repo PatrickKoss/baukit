@@ -422,8 +422,14 @@ counts only. Failure output and database diagnostics must not print inserted use
 content, credentials, request bodies, or processor payloads.
 
 Products using delete mode also implement `IdentityErasureAdapter` and run
-`check_identity_erasure_conformance` through their real authenticated endpoint
-and registered worker wiring. It injects one provider failure, checks that
+`check_identity_erasure_conformance(adapter, routes, subject, foreign_subject)`
+through their real authenticated endpoint and registered worker wiring. The
+adapter's `request` sends each `IdentityErasureRequest` (method, path and
+optional `Idempotency-Key`) through the product router. `routes` is an
+`IdentityErasureRoutes` value; `IdentityErasureRoutes::default()` is the
+template's `DELETE /me`, `GET /me/erasures/{operation}` and `GET /me`. A product
+that erases elsewhere, such as `POST /v1/me/erasure`, passes its own routes.
+The helper still expects the receipt bodies and status codes described above. It injects one provider failure, checks that
 product rows are erased while the receipt and job remain pending, verifies
 replay and 409 conflict, rejects fenced profile resolution, runs the worker,
 and checks completed replay plus the absence of every raw-subject location.
