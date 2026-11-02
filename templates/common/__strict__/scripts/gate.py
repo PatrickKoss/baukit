@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 MODES = ("always", "selected", "affected")
-DEFAULT_BUDGET_MINUTES = {"full": 30, "affected": 15}
+DEFAULT_BUDGET_MINUTES = {"full": 10, "affected": 5}
 DEFAULT_WORKER_MEMORY_MB = 1024
 LIGHT_LANES = frozenset({"fast"})
 FAILURE_TAIL_LINES = 40

@@ -33,9 +33,9 @@ The gate prints its cache settings before it starts. It sets `RUSTC_WRAPPER=scca
 
 ## Android emulator
 
-`quality.android_emulator_port` in `baukit.toml` sets the emulator console port. `baukit new` writes an even port from 5556 to 5680 derived from the product name, so products on one host don't share an emulator. `BAUKIT_QA_ANDROID_PORT` overrides it for one run.
+`quality.android_emulator_port` in `baukit.toml` sets the emulator console port. `baukit new` writes an even port from 5556 to 5680 derived from the product name, so products on one host don't share an emulator. `BAUKIT_QA_ANDROID_PORT` overrides it for one run. `quality.android_emulators`, 2 by default, sets how many emulators the gate boots. They take the console port and the even ports after it, so two emulators at 5644 use 5644 and 5646. `BAUKIT_QA_ANDROID_EMULATORS` overrides the count for one run.
 
-The first boot is a cold boot. Once systemui is idle and the health check passes, `android-env.sh` saves a `baukit-clean` snapshot, and later boots load it. Delete `<avd>.avd/snapshots/baukit-clean` to force a cold boot. After `sys.boot_completed`, the script waits until systemui has a stable PID and a focused window that is no "Not Responding" dialog. The health check reads `am_anr` and `am_crash` lines from logcat and `dumpsys activity lastanr`, and fails on either. Before each Maestro flow, `run-maestro.sh` checks that the device is attached and stops with `emulator died before <flow>` when it isn't. Flows don't rerun.
+The first boot is a cold boot. Once systemui is idle and the health check passes, `android-env.sh` saves a `baukit-clean` snapshot, and later boots load it. Delete `<avd>.avd/snapshots/baukit-clean` to force a cold boot. After `sys.boot_completed`, the script waits until systemui has a stable PID and a focused window that is no "Not Responding" dialog. The health check reads `am_anr` and `am_crash` lines from logcat and `dumpsys activity lastanr`, and fails on either. The first emulator boots alone and saves the snapshot if it's missing. The others then boot from that snapshot with `-read-only`, and each gets the same idle and health checks and the release APK. With two or more emulators, `run-maestro.sh` passes every flow once to `maestro test --shard-split <n>` with all serials in `--device`, and it checks every device while Maestro runs. When one disappears it stops Maestro with `emulator <serial> died during the sharded run`. With one emulator, or one flow, the flows run in order and the script checks the device before each one, stopping with `emulator <serial> died before <flow>`. Flows don't rerun.
 
 ## Browser matrix
 
@@ -64,4 +64,4 @@ The gate prints the mode, the reason for each changed file and the step list bef
 
 ## Budget
 
-`quality.gate_budget_minutes` holds the target wall time, 30 minutes for the full gate and 15 for the affected gate. At the end the gate prints whether it stayed within the budget. Over budget, it prints a warning with the lane that set the wall time and that lane's steps, slowest first. The gate doesn't fail over budget.
+`quality.gate_budget_minutes` holds the target wall time for the full and the affected gate. New products start at 10 and 5 minutes, the small tier. Mid-size repositories set 20 and 10, large ones 30 and 15. At the end the gate prints whether it stayed within the budget. Over budget, it prints a warning with the lane that set the wall time and that lane's steps, slowest first. The gate doesn't fail over budget.

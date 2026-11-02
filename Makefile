@@ -93,6 +93,8 @@ install-skills:
 android-sdk-setup:
 	./scripts/android-sdk-setup.sh
 
+NATIVE_EMULATOR_PORT ?= 5620
+
 native-android-gate: android-sdk-setup
 	@set -e; \
 	fixture_parent="$${NATIVE_FIXTURE_PARENT:-$$(mktemp -d)}"; \
@@ -112,7 +114,11 @@ native-android-gate: android-sdk-setup
 		> "$$fixture_parent/assemble.log" 2>&1 || build_status=$$?; \
 	cat "$$fixture_parent/assemble.log"; \
 	test "$${build_status:-0}" -eq 0; \
-	python3 scripts/check-gradle-deprecations.py --project "$$fixture_parent/fixture/mobile" "$$fixture_parent/assemble.log"
+	python3 scripts/check-gradle-deprecations.py --project "$$fixture_parent/fixture/mobile" "$$fixture_parent/assemble.log"; \
+	cp "$$fixture_parent/fixture/mobile/.maestro/smoke.yaml" "$$fixture_parent/fixture/mobile/.maestro/smoke-second-shard.yaml"; \
+	ANDROID_HOME="$${ANDROID_HOME:-$$HOME/Android/Sdk}" ANDROID_SDK_ROOT="$${ANDROID_SDK_ROOT:-$${ANDROID_HOME:-$$HOME/Android/Sdk}}" \
+		BAUKIT_QA_ANDROID_AVD=baukit-native-qa BAUKIT_QA_ANDROID_PORT=$(NATIVE_EMULATOR_PORT) BAUKIT_QA_ANDROID_EMULATORS=2 BAUKIT_QA_HEADLESS=1 \
+		make --no-print-directory -C "$$fixture_parent/fixture/mobile" qa-android-setup e2e-android
 
 expo-sqlite-conformance:
 	./examples/expo-sqlite-conformance/scripts/run-android.sh

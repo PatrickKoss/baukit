@@ -430,9 +430,10 @@ if [[ "$*" == devices ]]; then printf 'List of devices attached\n'; fi
 if [[ "$*" == *'getprop sys.boot_completed' && -f "$EMULATOR_ARGS" ]]; then echo 1; fi
 if [[ "$*" == *'pidof com.android.systemui' ]]; then echo 321; fi
 if [[ "$*" == *'dumpsys window displays' ]]; then echo '  mCurrentFocus=Window{1 u0 launcher}'; fi
+if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/test-qa.avd/snapshots/${@: -1}"; fi
 ''')
         self.environment["BAUKIT_QA_POLL_SECONDS"] = "0"
-        self.executable(self.sdk / "emulator/emulator", 'printf "%s\\n" "$@" > "$EMULATOR_ARGS"\n')
+        self.executable(self.sdk / "emulator/emulator", '{ flock 9; printf "%s\\n" "$@" -- >> "$EMULATOR_ARGS"; } 9>"$EMULATOR_ARGS.lock"\n')
         self.executable(self.scripts / "services.sh", "exit 0\n")
         apk = self.root / "mobile/android/app/build/outputs/apk/release/app-release.apk"
         apk.parent.mkdir(parents=True)
@@ -444,6 +445,7 @@ if [[ "$*" == *'dumpsys window displays' ]]; then echo '  mCurrentFocus=Window{1
             self.environment["BAUKIT_QA_HEADLESS"] = headless
             self.events.unlink(missing_ok=True)
             emulator_args.unlink(missing_ok=True)
+            shutil.rmtree(self.avds / "test-qa.avd/snapshots", ignore_errors=True)
             self.run_script("android-env.sh")
             expected_args = [
                 "-avd", "test-qa", "-port", "5556",
@@ -452,7 +454,14 @@ if [[ "$*" == *'dumpsys window displays' ]]; then echo '  mCurrentFocus=Window{1
             ]
             if headless == "1":
                 expected_args.append("-no-window")
-            self.assertEqual(emulator_args.read_text().splitlines(), expected_args)
+            cold, *shared, rest = emulator_args.read_text().split("--\n")
+            self.assertEqual(cold.splitlines(), expected_args)
+            self.assertEqual(rest, "")
+            for port, launch in zip(("5556", "5558"), sorted(shared, key=lambda args: args.split()[3]), strict=True):
+                quick = [*expected_args[:3], port, *expected_args[4:]]
+                load = quick.index("-no-snapshot-load")
+                quick[load : load + 1] = ["-snapshot", "baukit-clean", "-read-only"]
+                self.assertEqual(launch.splitlines(), quick)
             events = self.events.read_text().splitlines()
             command = "-s emulator-5556 shell am start -n dev.baukit.{{ context.app_crate }}/.MainActivity -W"
             self.assertEqual(events.count(command), 1)

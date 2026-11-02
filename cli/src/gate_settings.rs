@@ -7,6 +7,12 @@ use crate::{Capabilities, QualityManifest};
 const FIRST_EMULATOR_PORT: u16 = 5556;
 const EMULATOR_PORT_SLOTS: u32 = 63;
 const LAST_EMULATOR_PORT: u16 = 5682;
+const DEFAULT_ANDROID_EMULATORS: u8 = 2;
+const MAX_ANDROID_EMULATORS: u8 = 4;
+
+pub const fn default_android_emulators() -> u8 {
+    DEFAULT_ANDROID_EMULATORS
+}
 const FNV_OFFSET: u32 = 0x811c_9dc5;
 const FNV_PRIME: u32 = 0x0100_0193;
 
@@ -29,14 +35,15 @@ impl Default for GateBudgetMinutes {
 }
 
 const fn default_full_budget() -> u16 {
-    30
+    10
 }
 
 const fn default_affected_budget() -> u16 {
-    15
+    5
 }
 
 /// Even console port in 5556..=5680 so products on one host get different emulators.
+/// Extra emulators use the following even ports.
 pub fn default_emulator_port(product: &str) -> u16 {
     let hash = product.bytes().fold(FNV_OFFSET, |hash, byte| {
         (hash ^ u32::from(byte)).wrapping_mul(FNV_PRIME)
@@ -83,8 +90,9 @@ pub fn render_quality_extras(name: &str, capabilities: &Capabilities, strict: bo
     let mut text = String::new();
     if capabilities.mobile {
         text.push_str(&format!(
-            "android_emulator_port = {}\n",
-            default_emulator_port(name)
+            "android_emulator_port = {}\nandroid_emulators = {}\n",
+            default_emulator_port(name),
+            default_android_emulators()
         ));
     }
     if !strict {
@@ -185,6 +193,21 @@ pub fn validate(
         } else if !(FIRST_EMULATOR_PORT..=LAST_EMULATOR_PORT).contains(&port) || port % 2 != 0 {
             failures.push(format!(
                 "quality.android_emulator_port must be an even port from {FIRST_EMULATOR_PORT} to {LAST_EMULATOR_PORT}"
+            ));
+        }
+    }
+    if let Some(count) = quality.android_emulators {
+        let last_port = u32::from(quality.android_emulator_port.unwrap_or(FIRST_EMULATOR_PORT))
+            + 2 * u32::from(count.saturating_sub(1));
+        if !capabilities.mobile {
+            failures.push("quality.android_emulators requires the mobile capability".to_owned());
+        } else if !(1..=MAX_ANDROID_EMULATORS).contains(&count) {
+            failures.push(format!(
+                "quality.android_emulators must be from 1 to {MAX_ANDROID_EMULATORS}"
+            ));
+        } else if last_port > u32::from(LAST_EMULATOR_PORT) {
+            failures.push(format!(
+                "quality.android_emulators needs ports up to {last_port}, past {LAST_EMULATOR_PORT}"
             ));
         }
     }
@@ -291,6 +314,9 @@ mod tests {
             quality.android_emulator_port,
             Some(default_emulator_port("demo"))
         );
+        assert_eq!(quality.android_emulators, Some(2));
+        assert_eq!(quality.gate_budget_minutes.full, 10);
+        assert_eq!(quality.gate_budget_minutes.affected, 5);
         let mut failures = Vec::new();
         validate(&quality, &caps, &mut failures);
         assert!(failures.is_empty(), "{failures:?}");
@@ -313,6 +339,30 @@ mod tests {
         assert!(text.contains("unknown lane or step `playwright:@x`"));
         assert!(text.contains("unknown lane or step `nope`"));
         assert!(text.contains("quality.shared glob `../x`"));
+    }
+
+    #[test]
+    fn emulator_counts_must_fit_the_port_range() {
+        let caps = capabilities(false, false, true);
+        for (text, failures_expected) in [
+            ("android_emulators = 2\n", 0),
+            ("android_emulators = 0\n", 1),
+            ("android_emulators = 5\n", 1),
+            ("android_emulator_port = 5682\nandroid_emulators = 2\n", 1),
+            ("android_emulator_port = 5676\nandroid_emulators = 4\n", 0),
+        ] {
+            let quality: QualityManifest = toml::from_str(text).expect("parses");
+            let mut failures = Vec::new();
+            validate(&quality, &caps, &mut failures);
+            assert_eq!(failures.len(), failures_expected, "{text}: {failures:?}");
+        }
+        let quality: QualityManifest = toml::from_str("android_emulators = 2\n").expect("parses");
+        let mut failures = Vec::new();
+        validate(&quality, &capabilities(true, false, false), &mut failures);
+        assert_eq!(
+            failures,
+            ["quality.android_emulators requires the mobile capability"]
+        );
     }
 
     #[test]

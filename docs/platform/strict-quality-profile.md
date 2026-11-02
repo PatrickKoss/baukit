@@ -19,11 +19,12 @@ webkit_repeats = 3
 full_stack_e2e = false
 openapi_compatibility = "off"
 android_emulator_port = 5644
+android_emulators = 2
 shared = []
 
 [quality.gate_budget_minutes]
-full = 30
-affected = 15
+full = 10
+affected = 5
 
 [quality.affected]
 "backend/crates/**" = ["backend"]
@@ -45,7 +46,7 @@ List each committed OpenAPI TypeScript declaration in `openapi.consumers`. `scri
 
 nextest runs `backend/tests/openapi_drift.rs` with the rest of the backend suite. Besides the drift check, that test fails on any property or path or query parameter name that is not camelCase and prints the JSON pointer of each one. Names a standard defines, such as OAuth 2.0 `access_token`, go in the test's `STANDARD_DEFINED_NAMES` list.
 
-`android_emulator_port` exists only for mobile products. `baukit new` derives it from the product name. `gate_budget_minutes`, `affected` and `shared` exist only in strict products. The generator writes an `affected` table that fits the product's capabilities. `baukit doctor` rejects an odd or out-of-range emulator port, a zero budget, absolute globs, globs with `..`, and lane or step names the product's gate doesn't have.
+`android_emulator_port` and `android_emulators` exist only for mobile products. `baukit new` derives the port from the product name and sets 2 emulators, which use the port and the next even port. The gate shards Maestro flows across them. `gate_budget_minutes` is per repository and both values are settable: 10 and 5 minutes for small products (the default for new ones), 20 and 10 for mid-size ones, 30 and 15 for large ones. `gate_budget_minutes`, `affected` and `shared` exist only in strict products. The generator writes an `affected` table that fits the product's capabilities. `baukit doctor` rejects an odd or out-of-range emulator port, an emulator count outside 1 to 4 or one whose last port passes 5682, a zero budget, absolute globs, globs with `..`, and lane or step names the product's gate doesn't have.
 
 ## Fast gate
 
@@ -113,8 +114,8 @@ Observability checks run only when `deploy/observability/product-metrics.txt` ex
 A product's `.T` task takes these steps:
 
 1. Copy `scripts/quality-gate.sh`, `scripts/gate.py`, `scripts/gate.test.py` and `docs/quality-gate.md` from a v0.17.0 render, then add `/.quality-gate/` to `.gitignore`.
-2. Add `[quality.gate_budget_minutes]`, `[quality.affected]` and `shared = []` to `baukit.toml`. Start from the table a fresh `baukit new --quality strict` writes for the same capabilities, then add globs for product directories. Paths that match no glob run the full gate, so a missing glob costs time, not coverage. Run `baukit doctor`.
-3. Mobile products set `quality.android_emulator_port`. Use the value `baukit new` would write, or keep the port the product already uses. Replace `BAUKIT_QA_ANDROID_EMULATOR_PORT` with `BAUKIT_QA_ANDROID_PORT` in scripts and docs.
+2. Add `[quality.gate_budget_minutes]` with the repository's tier (10/5 small, 20/10 mid, 30/15 large), `[quality.affected]` and `shared = []` to `baukit.toml`. Start from the table a fresh `baukit new --quality strict` writes for the same capabilities, then add globs for product directories. Paths that match no glob run the full gate, so a missing glob costs time, not coverage. Run `baukit doctor`.
+3. Mobile products set `quality.android_emulator_port` and `quality.android_emulators = 2`, and check that the second port is free on the host. Use the value `baukit new` would write, or keep the port the product already uses. Replace `BAUKIT_QA_ANDROID_EMULATOR_PORT` with `BAUKIT_QA_ANDROID_PORT` in scripts and docs.
 4. Make `ci` in the Makefile run `sh scripts/quality-gate.sh` alone. Remove `check` or other suites that run before the gate.
 5. Delete clamps that read `Committed_AS` or cap test threads, such as `scripts/cargo-build-jobs.py`, and let `BAUKIT_GATE_CORES` drive the counts. Remove `--runInBand` from `mobile/package.json`. Tests that share state go in a nextest test group or a separate Jest project.
 6. Tag Playwright tests that check only application logic with `@logic`. Leave `qa-*.spec.ts` untagged.

@@ -180,8 +180,8 @@ class BudgetTests(unittest.TestCase):
         self.assertIn("gate: warning: lane backend set the wall time: rust-tests 900 s, rust-clippy 120 s", report)
 
     def test_budget_defaults(self):
-        self.assertEqual(gate.budget_minutes({}, "full"), 30)
-        self.assertEqual(gate.budget_minutes({}, "affected"), 15)
+        self.assertEqual(gate.budget_minutes({}, "full"), 10)
+        self.assertEqual(gate.budget_minutes({}, "affected"), 5)
         self.assertEqual(gate.budget_minutes({"quality": {"gate_budget_minutes": {"full": 40}}}, "full"), 40)
 
 
