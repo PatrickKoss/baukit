@@ -238,6 +238,8 @@ jobs:
       - name: Install TypeScript dependencies for package checks
         working-directory: typescript
         run: pnpm install --frozen-lockfile
+      - name: Allow unprivileged user namespaces for loopback network tests
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: python3 -m unittest discover -s scripts -p 'test_*.py'
 
   media-grants:
