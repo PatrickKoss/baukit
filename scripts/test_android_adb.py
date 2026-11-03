@@ -195,3 +195,137 @@ class AndroidHealthTests(unittest.TestCase):
                 patch.object(android_adb.time, "sleep"), contextlib.redirect_stderr(stderr):
             self.assertEqual(android_adb.wait_for_stop("adb", "emulator-5556", 10), 124)
         self.assertIn("did not stop before the ADB deadline", stderr.getvalue())
+
+
+def stat(busy: int, idle: int, cores: int = 4) -> str:
+    lines = [f"cpu  {busy} 0 0 {idle} 0 0 0 0 0 0"]
+    lines += [f"cpu{index} 0 0 0 0 0 0 0 0 0 0" for index in range(cores)]
+    return "\n".join(lines) + "\n"
+
+
+class FakeClock:
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
+
+
+class AndroidSettleTests(unittest.TestCase):
+    def settle(self, samples, attached=0, timeout=60):
+        clock = FakeClock()
+        commands = []
+        last = samples[-1]
+
+        def shell(adb, serial, timeout, *command):
+            commands.append(command)
+            if command[0] == "cmd":
+                clock.now += 5
+                return ""
+            return samples.pop(0) if samples else last
+
+        output = io.StringIO()
+        error = io.StringIO()
+        with patch.object(android_adb, "shell", side_effect=shell), \
+                patch.object(android_adb, "attached", return_value=attached), \
+                patch.dict(android_adb.os.environ, {"BAUKIT_QA_POLL_SECONDS": "2"}), \
+                contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+            status = android_adb.settle("adb", "emulator-5556", 10, timeout, clock=clock, sleep=clock.sleep)
+        return status, output.getvalue(), error.getvalue(), commands, clock.now
+
+    def test_quiet_device_settles_after_dexopt(self):
+        status, output, _, commands, _ = self.settle([stat(0, 0), stat(200, 1000)])
+        self.assertEqual(status, 0)
+        self.assertEqual(commands[0], ("cmd", "package", "bg-dexopt-job"))
+        self.assertEqual(output, "qa: emulator-5556 settled in 15 s\n")
+
+    def test_busy_window_is_not_quiet(self):
+        status, output, _, _, _ = self.settle([stat(0, 0), stat(3000, 1000), stat(3100, 2000)])
+        self.assertEqual(status, 0)
+        self.assertEqual(output, "qa: emulator-5556 settled in 25 s\n")
+
+    def test_busy_device_saves_anyway_after_the_deadline(self):
+        samples = [stat(busy * 1000, busy * 100) for busy in range(1, 50)]
+        status, output, _, _, now = self.settle(samples, timeout=60)
+        self.assertEqual(status, 0)
+        self.assertEqual(output, "qa: emulator-5556 did not settle within 60 s; saving the snapshot anyway\n")
+        self.assertEqual(now, 60)
+
+    def test_lost_device_fails(self):
+        status, output, error, _, _ = self.settle([None], attached=1)
+        self.assertEqual(status, 1)
+        self.assertEqual(output, "")
+        self.assertEqual(error, "qa: lost emulator-5556 while it settled\n")
+
+    def test_failed_probe_on_an_attached_device_keeps_waiting(self):
+        status, output, _, _, _ = self.settle([stat(0, 0), None, stat(10, 990), stat(20, 1980)])
+        self.assertEqual(status, 0)
+        self.assertEqual(output, "qa: emulator-5556 settled in 35 s\n")
+
+    def test_busy_cores_scale_with_the_guest_core_count(self):
+        before = android_adb.cpu_counters(stat(0, 0, cores=4))
+        after = android_adb.cpu_counters(stat(50, 50, cores=4))
+        self.assertEqual(android_adb.busy_cores(before, after), 2.0)
+        self.assertEqual(android_adb.busy_cores(after, after), 0.0)
+        self.assertIsNone(android_adb.cpu_counters("garbage"))
+
+    def test_settle_deadline_rejects_nonpositive_values(self):
+        with patch.dict(android_adb.os.environ, {"BAUKIT_QA_SETTLE_TIMEOUT_SECONDS": "0"}), \
+                patch.object(android_adb.sys, "argv", ["android-adb.py", "--settle", "adb", "emulator-5556"]), \
+                self.assertRaisesRegex(ValueError, "BAUKIT_QA_SETTLE_TIMEOUT_SECONDS must be a positive finite number"):
+            android_adb.main()
+
+
+class AndroidSnapshotTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.sdk = self.root / "sdk"
+        self.image = self.sdk / "system-images/android-36/google_apis/x86_64"
+        self.image.mkdir(parents=True)
+        (self.image / "source.properties").write_text("Pkg.Revision=7\n")
+        self.config = self.root / "config.ini"
+        self.config.write_text(
+            "image.sysdir.1=system-images/android-36/google_apis/x86_64/\n"
+            "hw.ramSize=2048\nhw.cpu.ncore=4\navd.ini.displayname=test\n"
+        )
+
+    def name(self, gpu="swiftshader_indirect", version="0.17.1"):
+        return android_adb.snapshot_name(self.config, self.sdk, gpu, version)
+
+    def test_same_inputs_give_the_same_name(self):
+        self.assertEqual(self.name(), self.name())
+        self.assertRegex(self.name(), r"^baukit-clean-[0-9a-f]{12}$")
+
+    def test_each_input_changes_the_name(self):
+        original = self.name()
+        self.assertNotEqual(self.name(gpu="swiftshader"), original)
+        self.assertNotEqual(self.name(version="0.17.2"), original)
+        (self.image / "source.properties").write_text("Pkg.Revision=8\n")
+        self.assertNotEqual(self.name(), original)
+        (self.image / "source.properties").write_text("Pkg.Revision=7\n")
+        self.assertEqual(self.name(), original)
+        text = self.config.read_text()
+        self.config.write_text(text.replace("hw.ramSize=2048", "hw.ramSize=4096"))
+        self.assertNotEqual(self.name(), original)
+        self.config.write_text(text.replace("android-36", "android-35"))
+        self.assertNotEqual(self.name(), original)
+
+    def test_non_hardware_settings_and_order_keep_the_name(self):
+        original = self.name()
+        lines = self.config.read_text().splitlines()
+        self.config.write_text("\n".join(reversed(lines)).replace("displayname=test", "displayname=other") + "\n")
+        self.assertEqual(self.name(), original)
+
+    def test_prune_removes_only_older_baukit_snapshots(self):
+        snapshots = self.root / "snapshots"
+        for name in ("baukit-clean", "baukit-clean-aaaaaaaaaaaa", "baukit-clean-bbbbbbbbbbbb", "default_boot"):
+            (snapshots / name).mkdir(parents=True)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(android_adb.prune_snapshots(snapshots, "baukit-clean-bbbbbbbbbbbb"), 0)
+        self.assertEqual(sorted(path.name for path in snapshots.iterdir()), ["baukit-clean-bbbbbbbbbbbb", "default_boot"])
+        self.assertEqual(android_adb.prune_snapshots(self.root / "missing", "baukit-clean-x"), 0)

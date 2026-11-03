@@ -430,6 +430,7 @@ if [[ "$*" == devices ]]; then printf 'List of devices attached\n'; fi
 if [[ "$*" == *'getprop sys.boot_completed' && -f "$EMULATOR_ARGS" ]]; then echo 1; fi
 if [[ "$*" == *'pidof com.android.systemui' ]]; then echo 321; fi
 if [[ "$*" == *'dumpsys window displays' ]]; then echo '  mCurrentFocus=Window{1 u0 launcher}'; fi
+if [[ "$*" == *'cat /proc/stat' ]]; then printf 'cpu  10 0 10 80 0 0 0 0 0 0\ncpu0 10 0 10 80 0 0 0 0 0 0\n'; fi
 if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/test-qa.avd/snapshots/${@: -1}"; fi
 ''')
         self.environment["BAUKIT_QA_POLL_SECONDS"] = "0"
@@ -446,10 +447,13 @@ if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/te
             self.events.unlink(missing_ok=True)
             emulator_args.unlink(missing_ok=True)
             shutil.rmtree(self.avds / "test-qa.avd/snapshots", ignore_errors=True)
+            for marker in self.avds.glob("test-qa.avd/baukit-clean-*.ready"):
+                marker.unlink()
             self.run_script("android-env.sh")
+            snapshot = self.snapshot_name()
             expected_args = [
                 "-avd", "test-qa", "-port", "5556",
-                "-no-snapshot-save", "-no-audio", "-no-boot-anim", "-gpu", "swiftshader",
+                "-no-snapshot-save", "-no-audio", "-no-boot-anim", "-gpu", "swiftshader_indirect",
                 "-no-snapshot-load",
             ]
             if headless == "1":
@@ -460,20 +464,28 @@ if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/te
             for port, launch in zip(("5556", "5558"), sorted(shared, key=lambda args: args.split()[3]), strict=True):
                 quick = [*expected_args[:3], port, *expected_args[4:]]
                 load = quick.index("-no-snapshot-load")
-                quick[load : load + 1] = ["-snapshot", "baukit-clean", "-read-only"]
+                quick[load : load + 1] = ["-snapshot", snapshot, "-read-only"]
                 self.assertEqual(launch.splitlines(), quick)
             events = self.events.read_text().splitlines()
             command = "-s emulator-5556 shell am start -n dev.baukit.{{ context.app_crate }}/.MainActivity -W"
             self.assertEqual(events.count(command), 1)
             launch = events.index(command)
             self.assertFalse(any("monkey" in event for event in events))
-            self.assertEqual(events.count("-s emulator-5556 emu avd snapshot save baukit-clean"), 1)
+            self.assertEqual(events.count(f"-s emulator-5556 emu avd snapshot save {snapshot}"), 1)
 {% if context.auth_oidc %}            for command in (flags, debug, stop):
                 self.assertEqual(events.count(command), 1)
                 self.assertLess(events.index(command), launch)
             self.assertLess(events.index(stop), events.index(flags))
 {% else %}            self.assertFalse(any("chrome" in event for event in events))
 {% endif %}
+
+    def snapshot_name(self, gpu: str = "swiftshader_indirect", version: str = "{{ context.template_version }}") -> str:
+        result = subprocess.run(
+            ["python3", str(self.scripts / "android-adb.py"), "--snapshot-name",
+             str(self.avds / "test-qa.avd/config.ini"), str(self.sdk), gpu, version],
+            capture_output=True, text=True, check=True, timeout=15,
+        )
+        return result.stdout.strip()
 
     def test_android_setup_keeps_ownership_when_device_probe_fails(self) -> None:
         self.executable(self.sdk / "emulator/emulator", 'echo emulator >> "$EVENTS"\n')

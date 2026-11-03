@@ -21,7 +21,7 @@ def render(source: str, backend: bool) -> str:
         source, count = re.subn(pattern, choose, source, flags=re.S)
         if not count:
             raise ValueError("unsupported template condition")
-    for key, value in (("app_name", "test"), ("app_crate", "test"), ("app_env", "TEST")):
+    for key, value in (("app_name", "test"), ("app_crate", "test"), ("app_env", "TEST"), ("template_version", "test")):
         source = source.replace("{{ context." + key + " }}", value)
     return source
 
@@ -81,6 +81,7 @@ case "$*" in
     if [[ -f "$ATTACHED" ]]; then echo device; else exit 1; fi ;;
   *'pidof com.android.systemui') echo 321 ;;
   *'dumpsys window displays') echo '  mCurrentFocus=Window{1 u0 com.android.launcher3/.Launcher}' ;;
+  *'cat /proc/stat') printf 'cpu  10 0 10 80 0 0 0 0 0 0\ncpu0 10 0 10 80 0 0 0 0 0 0\n' ;;
   *'emu avd snapshot save '*) mkdir -p "$ANDROID_AVD_HOME/test-qa.avd/snapshots/${@: -1}" ;;
 esac
 exit 0
@@ -249,6 +250,33 @@ RENDERER
                 else:
                     self.assertEqual(saved, [])
                 self.assertEqual(self.run_script("android-env.sh", "stop").returncode, 0)
+
+    def test_snapshot_settles_clears_logcat_and_replaces_stale_or_unfinished_snapshots(self):
+        self.prepare_start()
+        avd = self.root / "avd/test-qa.avd"
+        (avd / "snapshots/baukit-clean").mkdir(parents=True)
+        (avd / "baukit-clean-000000000000.ready").touch()
+        name = subprocess.run(
+            [sys.executable, str(self.scripts / "android-adb.py"), "--snapshot-name",
+             str(avd / "config.ini"), str(self.sdk), "swiftshader_indirect", "test"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        (avd / "snapshots" / name).mkdir()
+        (avd / "snapshots" / name / "partial").touch()
+        result = self.run_script("android-env.sh", "start")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"qa: saved quick-boot snapshot {name}", result.stdout)
+        self.assertEqual(sorted(path.name for path in (avd / "snapshots").iterdir()), [name])
+        self.assertEqual(sorted(path.name for path in avd.glob("*.ready")), [f"{name}.ready"])
+        self.assertFalse((avd / "snapshots" / name / "partial").exists())
+        events = self.events.read_text().splitlines()
+        order = [
+            next(i for i, event in enumerate(events) if marker in event)
+            for marker in ("bg-dexopt-job", "cat /proc/stat", "logcat -b all -c", f"snapshot save {name}")
+        ]
+        self.assertEqual(order, sorted(order))
+        self.assertGreater(order[1], max(i for i, event in enumerate(events[: order[0]]) if "lastanr" in event))
+        self.assertEqual(self.run_script("android-env.sh", "stop").returncode, 0)
 
     def test_boot_waits_for_systemui_idle_before_health(self):
         self.prepare_start()

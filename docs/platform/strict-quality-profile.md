@@ -109,6 +109,15 @@ Observability checks run only when `deploy/observability/product-metrics.txt` ex
 
 ## Migration
 
+### v0.17.1
+
+Mobile products take these steps:
+
+1. Copy `mobile/scripts/qa/android-adb.py` from a v0.17.1 render.
+2. Copy `mobile/scripts/qa/android-env.sh` from the render. A product that changed its copy ports the snapshot block instead: compute `snapshot_name` with `android-adb.py --snapshot-name`, load a snapshot only when its `<avd>.avd/<snapshot>.ready` marker exists, hold `<avd>.avd/baukit-snapshot.lock` around the cold boot and save, close fd 9 in the emulator subshell, run `--settle` and the health check before `logcat -b all -c` and the save, and then `--prune-snapshots`. Replace `-gpu swiftshader` with `-gpu swiftshader_indirect`.
+3. Set `BAUKIT_QA_SETTLE_TIMEOUT_SECONDS` only when a host needs more than the 600-second default.
+4. Run `make e2e-android` twice, once to save the new snapshot and once to load it. The old `baukit-clean` snapshot goes away with the first save.
+
 ### v0.17.0
 
 A product's `.T` task takes these steps:
