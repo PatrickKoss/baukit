@@ -453,7 +453,7 @@ if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/te
             snapshot = self.snapshot_name()
             expected_args = [
                 "-avd", "test-qa", "-port", "5556",
-                "-no-snapshot-save", "-no-audio", "-no-boot-anim", "-gpu", "swiftshader",
+                "-no-snapshot-save", "-no-audio", "-no-boot-anim", "-gpu", "swiftshader_indirect",
                 "-no-snapshot-load",
             ]
             if headless == "1":
@@ -479,7 +479,7 @@ if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/te
 {% else %}            self.assertFalse(any("chrome" in event for event in events))
 {% endif %}
 
-    def snapshot_name(self, gpu: str = "swiftshader", version: str = "{{ context.template_version }}") -> str:
+    def snapshot_name(self, gpu: str = "swiftshader_indirect", version: str = "{{ context.template_version }}") -> str:
         result = subprocess.run(
             ["python3", str(self.scripts / "android-adb.py"), "--snapshot-name",
              str(self.avds / "test-qa.avd/config.ini"), str(self.sdk), gpu, version],

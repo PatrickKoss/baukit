@@ -258,7 +258,7 @@ RENDERER
         (avd / "baukit-clean-000000000000.ready").touch()
         name = subprocess.run(
             [sys.executable, str(self.scripts / "android-adb.py"), "--snapshot-name",
-             str(avd / "config.ini"), str(self.sdk), "swiftshader", "test"],
+             str(avd / "config.ini"), str(self.sdk), "swiftshader_indirect", "test"],
             capture_output=True, text=True, check=True,
         ).stdout.strip()
         (avd / "snapshots" / name).mkdir()
