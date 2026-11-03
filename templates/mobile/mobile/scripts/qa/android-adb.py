@@ -1,7 +1,9 @@
+import hashlib
 import math
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -10,6 +12,11 @@ import time
 DEFAULT_PROBE_TIMEOUT = 10
 DEFAULT_BOOT_TIMEOUT = 360
 DEFAULT_IDLE_TIMEOUT = 180
+DEFAULT_SETTLE_TIMEOUT = 600
+SETTLE_WINDOW_POLLS = 5
+QUIET_CORES = 1.0
+SNAPSHOT_PREFIX = "baukit-clean"
+SNAPSHOT_HASH_LENGTH = 12
 IDLE_STABLE_PROBES = 3
 POLL_INTERVAL = 2
 SYSTEMUI = "com.android.systemui"
@@ -82,6 +89,75 @@ def wait_for_idle(adb: str, serial: str, probe_timeout: float, idle_timeout: flo
         time.sleep(min(poll_interval(), max(0, deadline - time.monotonic())))
     print("qa: systemui did not settle before the idle deadline", file=sys.stderr)
     return 124
+
+
+def cpu_counters(stat: str) -> tuple[int, int, int] | None:
+    lines = stat.splitlines()
+    total_line = next((line.split() for line in lines if line.startswith("cpu ")), None)
+    cores = sum(1 for line in lines if re.match(r"cpu\d+ ", line))
+    if total_line is None or not cores:
+        return None
+    values = [int(value) for value in total_line[1:]]
+    idle = sum(values[3:5])
+    return sum(values), sum(values) - idle, cores
+
+
+def busy_cores(before: tuple[int, int, int], after: tuple[int, int, int]) -> float:
+    total = after[0] - before[0]
+    return 0.0 if total <= 0 else (after[1] - before[1]) / total * after[2]
+
+
+def settle(adb: str, serial: str, probe_timeout: float, settle_timeout: float,
+           clock=time.monotonic, sleep=time.sleep) -> int:
+    start = clock()
+    deadline = start + settle_timeout
+    shell(adb, serial, max(probe_timeout, deadline - clock()), "cmd", "package", "bg-dexopt-job")
+    window = SETTLE_WINDOW_POLLS * poll_interval()
+    before = None
+    while clock() < deadline:
+        stat = shell(adb, serial, probe_timeout, "cat", "/proc/stat")
+        after = cpu_counters(stat) if stat else None
+        if after is None:
+            if attached(adb, serial, probe_timeout):
+                print(f"qa: lost {serial} while it settled", file=sys.stderr)
+                return 1
+        elif before is not None and busy_cores(before, after) < QUIET_CORES:
+            print(f"qa: {serial} settled in {clock() - start:.0f} s")
+            return 0
+        before = after
+        sleep(min(window, max(0, deadline - clock())))
+    print(f"qa: {serial} did not settle within {settle_timeout:.0f} s; saving the snapshot anyway")
+    return 0
+
+
+def snapshot_name(config: Path, sdk_root: Path, gpu: str, version: str) -> str:
+    settings = {}
+    for line in (config.read_text() if config.is_file() else "").splitlines():
+        key, separator, value = line.partition("=")
+        if separator:
+            settings[key.strip()] = value.strip()
+    image = settings.get("image.sysdir.1", "").strip("/")
+    properties = sdk_root / image / "source.properties"
+    digest = hashlib.sha256()
+    for part in (
+        image,
+        properties.read_text() if properties.is_file() else "",
+        *sorted(f"{key}={value}" for key, value in settings.items() if key.startswith("hw.")),
+        gpu,
+        version,
+    ):
+        digest.update(part.encode() + b"\0")
+    return f"{SNAPSHOT_PREFIX}-{digest.hexdigest()[:SNAPSHOT_HASH_LENGTH]}"
+
+
+def prune_snapshots(snapshots: Path, keep: str) -> int:
+    if not snapshots.is_dir():
+        return 0
+    for entry in snapshots.iterdir():
+        if entry.name.startswith(SNAPSHOT_PREFIX) and entry.name != keep and entry.is_dir():
+            shutil.rmtree(entry)
+            print(f"qa: removed stale quick-boot snapshot {entry.name}")
+    return 0
 
 
 def attached(adb: str, serial: str, timeout: float) -> int:
@@ -178,6 +254,14 @@ def main() -> int:
     if sys.argv[1] == "--wait-for-idle":
         idle_timeout = timeout_setting("BAUKIT_QA_IDLE_TIMEOUT_SECONDS", DEFAULT_IDLE_TIMEOUT)
         return wait_for_idle(sys.argv[2], sys.argv[3], probe_timeout, idle_timeout)
+    if sys.argv[1] == "--settle":
+        settle_timeout = timeout_setting("BAUKIT_QA_SETTLE_TIMEOUT_SECONDS", DEFAULT_SETTLE_TIMEOUT)
+        return settle(sys.argv[2], sys.argv[3], probe_timeout, settle_timeout)
+    if sys.argv[1] == "--snapshot-name":
+        print(snapshot_name(Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4], sys.argv[5]))
+        return 0
+    if sys.argv[1] == "--prune-snapshots":
+        return prune_snapshots(Path(sys.argv[2]), sys.argv[3])
     if sys.argv[1] == "--attached":
         return attached(sys.argv[2], sys.argv[3], probe_timeout)
     if sys.argv[1] == "--wait-for-boot":

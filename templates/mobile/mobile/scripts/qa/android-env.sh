@@ -26,7 +26,7 @@ emulator_port="${BAUKIT_QA_ANDROID_PORT:-$(manifest_quality android_emulator_por
 [[ "$emulator_port" =~ ^[0-9]+$ ]] || { echo "qa: Android emulator port must be a number" >&2; exit 2; }
 emulator_count="${BAUKIT_QA_ANDROID_EMULATORS:-$(manifest_quality android_emulators 2)}"
 [[ "$emulator_count" =~ ^[1-9][0-9]*$ ]] || { echo "qa: Android emulator count must be a positive integer" >&2; exit 2; }
-snapshot_name=baukit-clean
+gpu_mode=swiftshader
 serials=()
 for ((index = 0; index < emulator_count; index++)); do
   serials+=("emulator-$((emulator_port + 2 * index))")
@@ -122,7 +122,10 @@ done
 mkdir -p "$state_dir"
 bash "$root/mobile/scripts/qa/services.sh" start
 
-snapshot_dir="$avd_home/$avd_name.avd/snapshots/$snapshot_name"
+avd_dir="$avd_home/$avd_name.avd"
+snapshot_name="$(python3 "$root/mobile/scripts/qa/android-adb.py" --snapshot-name "$avd_dir/config.ini" "$sdk_root" "$gpu_mode" "{{ context.template_version }}")"
+snapshot_dir="$avd_dir/snapshots/$snapshot_name"
+snapshot_ready="$avd_dir/$snapshot_name.ready"
 mkdir -p "$state_dir/renderer"
 printf '[Processor]\nThreadCount=%s\n[Testing]\nDisableServer=1\n' "$renderer_threads" > "$state_dir/renderer/SwiftShader.ini"
 : > "$state_dir/android-serial"
@@ -137,14 +140,14 @@ launch_emulator() {
     -no-snapshot-save
     -no-audio
     -no-boot-anim
-    -gpu swiftshader
+    -gpu "$gpu_mode"
   )
-  if [[ -d "$snapshot_dir" ]]; then
+  if [[ -f "$snapshot_ready" ]]; then
     emulator_args+=(-snapshot "$snapshot_name")
   else
     emulator_args+=(-no-snapshot-load)
   fi
-  if ((emulator_count > 1)) && [[ -d "$snapshot_dir" ]]; then
+  if ((emulator_count > 1)) && [[ -f "$snapshot_ready" ]]; then
     emulator_args+=(-read-only)
   fi
   if ((index > 0)); then
@@ -154,6 +157,7 @@ launch_emulator() {
     emulator_args+=(-no-window)
   fi
   (
+    exec 9>&-
     cd "$state_dir/renderer"
     export LP_NUM_THREADS="$renderer_threads"
     exec nohup "$emulator" "${emulator_args[@]}"
@@ -174,16 +178,37 @@ await_emulator() {
   python3 "$root/mobile/scripts/qa/android-adb.py" --check-health "$adb" "$device" "$state_dir/android-health.log"
 }
 
-if [[ ! -d "$snapshot_dir" ]]; then
+lock_snapshot() {
+  mkdir -p "$avd_dir"
+  exec 9>"$avd_dir/baukit-snapshot.lock"
+  python3 -c 'import fcntl; fcntl.flock(9, fcntl.LOCK_EX)'
+}
+
+save_snapshot() {
   launch_emulator 0
   await_emulator "$serial"
+  python3 "$root/mobile/scripts/qa/android-adb.py" --settle "$adb" "$serial" || exit 1
+  python3 "$root/mobile/scripts/qa/android-adb.py" --check-health "$adb" "$serial" "$state_dir/android-health.log"
+  adb_bounded -s "$serial" logcat -b all -c >/dev/null
+  rm -rf "$snapshot_dir"
   adb_bounded -s "$serial" emu avd snapshot save "$snapshot_name" >/dev/null
+  touch "$snapshot_ready"
   echo "qa: saved quick-boot snapshot $snapshot_name"
+  python3 "$root/mobile/scripts/qa/android-adb.py" --prune-snapshots "$avd_dir/snapshots" "$snapshot_name"
+  find "$avd_dir" -maxdepth 1 -name 'baukit-clean*.ready' ! -name "$snapshot_name.ready" -delete
   if ((emulator_count > 1)); then
     adb_bounded -s "$serial" emu kill >/dev/null
     python3 "$root/mobile/scripts/qa/android-adb.py" --wait-for-stop "$adb" "$serial"
     : > "$state_dir/android-serial"
   fi
+}
+
+if [[ ! -f "$snapshot_ready" ]]; then
+  lock_snapshot
+  if [[ ! -f "$snapshot_ready" ]]; then
+    save_snapshot
+  fi
+  exec 9>&-
 fi
 for ((index = 0; index < emulator_count; index++)); do
   if ((index > 0)) || [[ ! -s "$state_dir/android-serial" ]]; then
