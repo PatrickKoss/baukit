@@ -58,6 +58,7 @@ export type {
 } from './store.js';
 export {
   commitCursorAfterLocalTransaction,
+  DEFAULT_REQUEST_TIMEOUT_MS,
   DEFAULT_RETRY_AFTER_FALLBACK_MS,
   parseRetryAfter,
   SyncTransport,

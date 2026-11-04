@@ -185,6 +185,13 @@ It classifies failures as follows:
 values use `now + retryAfterFallbackMs`. The default fallback is 60 seconds. Tests and products
 with another policy can inject `now` and `retryAfterFallbackMs` in the fetch-backed constructor.
 
+Every request has a deadline, `requestTimeoutMs`, 30 seconds by default (`DEFAULT_REQUEST_TIMEOUT_MS`).
+It covers the fetch and the body read. When it passes, the transport aborts the request's signal
+and rejects with a retryable `SyncNetworkError`, so the scheduler's next run opens a new
+connection instead of waiting on a pooled one whose packets get dropped. Both constructors take
+the setting. A prebuilt request function receives the deadline signal and should pass it on to
+its `fetch`. A caller's own `signal` still aborts the request.
+
 Auth headers resolve per attempt, so a token refreshed between retries is picked up. The
 partition header is sent only when the caller passes a `partitionId`, and both its name and the
 mismatch code are configurable. The transport never names an endpoint: callers pass the path and
