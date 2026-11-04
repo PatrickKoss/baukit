@@ -53,7 +53,9 @@ export async function createDeleteProfileClient(subject: string): Promise<Profil
     baseUrl:
       typeof configuredBaseUrl === 'string'
         ? configuredBaseUrl
-        : 'http://localhost:{{ context.api_host_port }}',
+        : __DEV__
+          ? 'http://localhost:{{ context.api_host_port }}'
+          : '',
     environment: __DEV__ ? 'development' : 'production',
     tokenProvider: () => Promise.resolve(token ?? null),
     retry: false,

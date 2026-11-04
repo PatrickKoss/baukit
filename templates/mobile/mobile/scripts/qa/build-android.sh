@@ -20,6 +20,7 @@ export BAUKIT_QA_BUILD=1
 export EXPO_PUBLIC_API_URL="http://localhost:${BAUKIT_QA_API_PORT:-18080}"
 {% if context.auth_oidc %}export EXPO_PUBLIC_OIDC_ISSUER="http://localhost:${BAUKIT_QA_KEYCLOAK_PORT:-18081}/realms/{{ context.app_name }}"
 export EXPO_PUBLIC_OIDC_CLIENT_ID="{{ context.app_name }}-mobile"
+{% elif context.auth_enabled %}export EXPO_PUBLIC_LOCAL_OIDC_ISSUER="http://localhost:${BAUKIT_QA_KEYCLOAK_PORT:-18081}/realms/{{ context.app_name }}"
 {% endif %}
 
 if [[ -f "$root/mobile/.env" ]]; then
@@ -29,6 +30,7 @@ if [[ -f "$root/mobile/.env" ]]; then
   export EXPO_PUBLIC_API_URL="http://localhost:${BAUKIT_QA_API_PORT:-18080}"
 {% if context.auth_oidc %}  export EXPO_PUBLIC_OIDC_ISSUER="http://localhost:${BAUKIT_QA_KEYCLOAK_PORT:-18081}/realms/{{ context.app_name }}"
   export EXPO_PUBLIC_OIDC_CLIENT_ID="{{ context.app_name }}-mobile"
+{% elif context.auth_enabled %}export EXPO_PUBLIC_LOCAL_OIDC_ISSUER="http://localhost:${BAUKIT_QA_KEYCLOAK_PORT:-18081}/realms/{{ context.app_name }}"
 {% endif %}
 fi
 export BAUKIT_QA_BUILD=1

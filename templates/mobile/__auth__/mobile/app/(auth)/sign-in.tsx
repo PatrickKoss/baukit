@@ -29,7 +29,7 @@ export default function SignInScreen() {
           )}
           <ActionButton
             disabled={!auth.ready}
-            label={auth.ready ? 'Sign in with {{ "local Keycloak" if context.auth_oidc else "Clerk" if context.auth_clerk else "WorkOS" }}' : 'Preparing sign in...'}
+            label={auth.ready ? `Sign in with ${auth.providerLabel}` : 'Preparing sign in...'}
             onPress={() => void auth.signIn(mode)}
           />
         </View>

@@ -7,12 +7,12 @@ import {
   useEffect,
   useState,
 } from 'react';
-import Constants from 'expo-constants';
-{% if not context.auth_clerk %}import * as AuthSession from 'expo-auth-session';
+{% if context.auth_oidc %}import Constants from 'expo-constants';
+import * as AuthSession from 'expo-auth-session';
 import * as Crypto from 'expo-crypto';
-{% endif %}
+{% endif %}import { unverifiedSignInSessionFromJwt } from '@baukit/api-runtime';
 import {
-{% if not context.auth_clerk %}  appearanceStateDecoration,{% endif %}
+  appearanceStateDecoration,
   safeAuthErrorMessage,
   type OidcSession,
   type SessionExpiredReason,
@@ -20,67 +20,57 @@ import {
   type SignOutResult,
 } from '@baukit/auth-native';
 {% if context.auth_oidc %}import { completeExpoAuthSession, createExpoOidcClient } from '@baukit/auth-native/expo';
-{% elif context.auth_workos %}import { completeExpoAuthSession, createExpoOidcEnvironment } from '@baukit/auth-native/expo';
-import { createWorkOsNativeClient } from '@baukit/auth-native/workos';
-{% else %}import { createClerkExpoClient } from '@baukit/auth-native/clerk-expo';
 {% endif %}
-
 import type { ThemePreference } from './app-preferences';
 import { signInFeedback } from './auth-feedback';
-import { authStorage } from './auth-storage';
+{% if context.auth_oidc %}import { authStorage } from './auth-storage';
+{% endif %}import type { {% if context.auth_oidc %}SignInAdapter, {% endif %}SignInSession } from './sign-in/port';
+{% if context.auth_oidc %}
+import { PRODUCT_NAME } from './product';
 
-{% if not context.auth_clerk %}import { PRODUCT_NAME } from './product';{% endif %}
-
-{% if not context.auth_clerk %}completeExpoAuthSession();
+completeExpoAuthSession();
 
 const configuredIssuer: unknown = Constants.expoConfig?.extra?.['oidcIssuer'];
 const configuredClientId: unknown = Constants.expoConfig?.extra?.['oidcClientId'];
-{% if context.auth_oidc %}const configuredAudience: unknown = Constants.expoConfig?.extra?.['oidcAudience'];
+const configuredAudience: unknown = Constants.expoConfig?.extra?.['oidcAudience'];
 const configuredResource: unknown = Constants.expoConfig?.extra?.['oidcResource'];
 const configuredScopes: unknown = Constants.expoConfig?.extra?.['oidcScopes'];
 const offlineAccess = Constants.expoConfig?.extra?.['oidcOfflineAccess'] !== false;
-{% endif %}
-const issuer =
-  typeof configuredIssuer === 'string'
-    ? configuredIssuer
-    : {% if context.auth_oidc %}`http://localhost:{{ context.keycloak_host_port }}/realms/${PRODUCT_NAME}`{% else %}'https://api.workos.com/'{% endif %};
-const clientId =
-  typeof configuredClientId === 'string' ? configuredClientId : `${PRODUCT_NAME}-mobile`;
-const redirectUri = AuthSession.makeRedirectUri({
-  scheme: PRODUCT_NAME,
-  path: 'oauth',
-});
 
-export const authClient = {% if context.auth_oidc %}createExpoOidcClient{% else %}createWorkOsNativeClient{% endif %}(
-  {
-    issuer,
-    clientId,
-    redirectUri,
-{% if context.auth_oidc %}    scopes: typeof configuredScopes === 'string' && configuredScopes.trim()
-      ? configuredScopes.trim().split(/\s+/u) : ['openid', 'profile', 'email'],
-    ...(typeof configuredAudience === 'string' && configuredAudience.trim() ? { audience: configuredAudience } : {}),
-    ...(typeof configuredResource === 'string' && configuredResource.trim() ? { resource: configuredResource } : {}),
-    offlineAccess,
-{% else %}    scopes: ['openid', 'profile', 'email'],
-    offlineAccess: true,
+const signInAdapter: SignInAdapter = {
+  providerLabel: 'local Keycloak',
+  client: createExpoOidcClient(
+    {
+      issuer:
+        typeof configuredIssuer === 'string'
+          ? configuredIssuer
+          : `http://localhost:{{ context.keycloak_host_port }}/realms/${PRODUCT_NAME}`,
+      clientId: typeof configuredClientId === 'string' ? configuredClientId : `${PRODUCT_NAME}-mobile`,
+      redirectUri: AuthSession.makeRedirectUri({ scheme: PRODUCT_NAME, path: 'oauth' }),
+      scopes:
+        typeof configuredScopes === 'string' && configuredScopes.trim()
+          ? configuredScopes.trim().split(/\s+/u)
+          : ['openid', 'profile', 'email'],
+      ...(typeof configuredAudience === 'string' && configuredAudience.trim()
+        ? { audience: configuredAudience }
+        : {}),
+      ...(typeof configuredResource === 'string' && configuredResource.trim()
+        ? { resource: configuredResource }
+        : {}),
+      offlineAccess,
+      storageKeyPrefix: `${PRODUCT_NAME}.oidc`,
+    },
+    {
+      randomBytes: (size) => Crypto.getRandomBytesAsync(size),
+      storage: authStorage,
+    },
+  ),
+};
+{% else %}// Metro swaps this import for ./sign-in/production in production builds (metro.config.js).
+import { signInAdapter } from './sign-in/local';
 {% endif %}
-    storageKeyPrefix: `${PRODUCT_NAME}.oidc`,
-  },
-{% if context.auth_workos %}  createExpoOidcEnvironment({
-    randomBytes: (size) => Crypto.getRandomBytesAsync(size),
-    storage: authStorage,
-  }),
-{% else %}  {
-    randomBytes: (size) => Crypto.getRandomBytesAsync(size),
-    storage: authStorage,
-  },
-{% endif %}
-);
+export const authClient = signInAdapter.client;
 
-{% else %}const configuredKey: unknown = Constants.expoConfig?.extra?.['clerkPublishableKey'];
-const clerk = createClerkExpoClient(typeof configuredKey === 'string' ? configuredKey : '', authStorage);
-export const authClient = clerk.client;
-{% endif %}
 export interface ProductAuth {
   readonly accessToken?: string;
   readonly subject?: string;
@@ -89,6 +79,9 @@ export interface ProductAuth {
   readonly announcement?: string;
   readonly sessionExpired: boolean;
   readonly sessionExpiredReason?: SessionExpiredReason;
+  readonly providerLabel: string;
+  /** User and organization read from the access token's claims. */
+  readonly session?: SignInSession;
   /** Passes the app's theme to the login page so it opens in the same mode. */
   readonly signIn: (appearance?: ThemePreference) => Promise<SignInResult | undefined>;
   readonly signOut: () => Promise<SignOutResult | undefined>;
@@ -99,7 +92,9 @@ const AuthContext = createContext<ProductAuth | undefined>(undefined);
 export function AuthProvider({ children }: PropsWithChildren) {
   const auth = useAuthState();
   const content = createElement(AuthContext.Provider, { value: auth }, children);
-  return {% if context.auth_clerk %}createElement(clerk.Provider, {}, content){% else %}content{% endif %};
+  return signInAdapter.Provider === undefined
+    ? content
+    : createElement(signInAdapter.Provider, {}, content);
 }
 
 export function useAuth(): ProductAuth {
@@ -167,16 +162,16 @@ function useAuthState(): ProductAuth {
   }, [session]);
 
   const signIn = useCallback(
-    async ({% if not context.auth_clerk %}appearance?: ThemePreference{% endif %}): Promise<SignInResult | undefined> => {
+    async (appearance?: ThemePreference): Promise<SignInResult | undefined> => {
       setError(undefined);
       setAnnouncement(undefined);
       setSessionExpiredReason(undefined);
       try {
-        const result = await authClient.signIn({% if not context.auth_clerk %}
+        const result = await authClient.signIn(
           appearance === undefined
             ? {}
             : { stateDecoration: appearanceStateDecoration({ mode: appearance }) },
-{% endif %});
+        );
         setAnnouncement(signInFeedback(result));
         return result;
       } catch (cause) {
@@ -198,7 +193,11 @@ function useAuthState(): ProductAuth {
     }
   }, []);
 
+  const signInSession =
+    session === undefined ? undefined : unverifiedSignInSessionFromJwt(session.accessToken);
   return {
+    providerLabel: signInAdapter.providerLabel,
+    ...(signInSession === undefined ? {} : { session: signInSession }),
     ...(session?.accessToken === undefined ? {} : { accessToken: session.accessToken }),
     ...(session?.subject === undefined ? {} : { subject: session.subject }),
     ready,

@@ -19,61 +19,20 @@ on the same port.
 
 `EXPO_PUBLIC_API_URL` defaults to `http://localhost:{{ context.api_host_port }}` and `EXPO_PUBLIC_OIDC_ISSUER` defaults to Keycloak on port {{ context.keycloak_host_port }}. A physical device needs the computer's LAN address with the same ports.{% endif %}
 
-{% elif context.auth_clerk %}Copy `.env.example` to `.env` and set `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`.
-Enable Clerk hosted sign-in and register the app's redirect and native identifiers.
-The `@baukit/auth-native/clerk-expo` adapter uses the official Expo SDK with
-SecureStore. Run `corepack pnpm install --frozen-lockfile && corepack pnpm start`.
+{% else %}`src/sign-in/port.ts` is the one sign-in port the app uses. Local development signs in with Keycloak: run the composed Keycloak, copy `.env.example` to `.env`, then run `corepack pnpm@12.9.1 install --frozen-lockfile && corepack pnpm@12.9.1 start` and sign in with `test` / `development-password`. `src/sign-in/local.ts` runs the authorization-code flow with PKCE in the system browser against the product realm and the `{{ context.app_name }}://oauth` redirect. The realm issues {{ "Clerk" if context.auth_clerk else "WorkOS" }}-shaped tokens for the production verifier. `EXPO_PUBLIC_LOCAL_OIDC_ISSUER` overrides the realm URL, for example with the computer's LAN address on a physical device.
+
+`metro.config.js` resolves `src/sign-in/local.ts` to `src/sign-in/production.ts` when `NODE_ENV` is `production`, which `expo export` and release builds set. QA builds set `BAUKIT_QA_BUILD=1` and keep the local adapter. `corepack pnpm@12.9.1 check:bundle` exports Android and iOS for production and fails if the bundle contains the Keycloak adapter module, a `/realms/` URL, or a loopback URL from product or `@baukit` code.
+
+{% if context.auth_clerk %}For production, set `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`. Enable Clerk hosted sign-in and register the app's redirect and native identifiers. The production adapter uses the Expo SDK with SecureStore through `@baukit/auth-native/clerk-expo`.
 See [Clerk Expo setup](https://clerk.com/docs/reference/expo/overview).
-
-{% else %}Copy `.env.example` to `.env` and set `EXPO_PUBLIC_OIDC_CLIENT_ID` to the
-WorkOS application client ID. Keep `EXPO_PUBLIC_OIDC_ISSUER=https://api.workos.com/`
-unless your AuthKit API uses a custom domain. Enable public-client authentication
-and register `{{ context.app_name }}://oauth`. The native adapter uses browser
-PKCE and JSON token exchange without an API key in the app. Run
-`corepack pnpm install --frozen-lockfile && corepack pnpm start`.
+{% else %}For production, set `EXPO_PUBLIC_OIDC_CLIENT_ID` to the WorkOS application client ID. Keep `EXPO_PUBLIC_OIDC_ISSUER=https://api.workos.com/` unless your AuthKit API uses a custom domain. Enable public-client authentication and register `{{ context.app_name }}://oauth`. The production adapter uses browser PKCE and JSON token exchange without an API key in the app.
 See the [official Expo AuthKit example](https://github.com/workos/expo-authkit-example).
-
-{% endif %}Authenticated startup resolves the immutable provider subject before opening the subject's opaque SQLite database or enabling user-scoped API/cache/analytics work. Account changes close SQLite and reset memory first; terminal session expiry closes and blocks rather than masquerading as an account switch. Language, theme, and analytics consent live in subject-keyed records through `src/app-preferences.ts`. Sign-out resets the preference controller to defaults before provider logout, while the retained record loads again if that subject returns. The generated logout policy is **retain**. Review [docs/local-data-retention.md](docs/local-data-retention.md) before changing it.
-
-Expo Router starts at `app/_layout.tsx`. That layout initializes localization and analytics, mounts the authentication provider once, and restricts the root stack by session state. Signed-out sessions use `app/(auth)/sign-in.tsx`; signed-in sessions use `app/(tabs)/index.tsx`. Add tabs in `app/(tabs)/_layout.tsx`, and add screens to the matching route group. Directly reachable screens should use `src/back-or-replace.ts` with a semantic fallback route so a cold deep link never leaves the back control stuck.
-
-`src/localization/i18n.ts` composes `@baukit/localization-core`, i18next, react-i18next, and Expo Localization. It checks the full ordered device-locale list and loads literal catalog imports after the identity-scoped preference record hydrates.
-
-Protected API calls use the runtime's explicit one-replay 401 handshake: concurrent callers share refresh, terminal refresh rejection clears the session and announces expiry, while transient provider/network failure preserves it for a later retry. A second 401 stops. Automatic replay does not make writes idempotent; write endpoints still need a server-side idempotency contract.
-
-Local state is cleared before provider logout. Cancelled sign-in is announced
-without an error. Physical devices need reachable API and issuer hostnames.
-Production must use HTTPS.
-{% if context.auth_oidc %}
-The next sign-in forces `prompt=login` if provider logout fails or is unavailable.
-The generated Keycloak theme reads the current theme mode from the native
-adapter's authenticated appearance hint. If nonce generation fails, the login
-page follows the system setting.
 {% endif %}
-
-{% if context.pwa and not context.web %}## PWA web export
-
-The mobile package includes the web dependencies matched to Expo 57 and exports a single-page
-app to `dist/`.
-
-```sh
-corepack pnpm exec expo export --platform web
-corepack pnpm run build:sw
-corepack pnpm run build:sw:check
-```
-
-The worker build copies `@baukit/pwa-web/worker` into `dist/baukit-pwa-worker.js` after export.
-Deploy `dist/` and configure the host to serve `index.html` for app routes. Add a product-owned
-manifest, icons, `sw.js` and registration code under `public/` before exporting. The worker
-loads the Baukit helpers with `importScripts('/baukit-pwa-worker.js')`. Products own the cache
-policy and offline behavior. Expo SQLite on web needs the hosting headers
-`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless`.
-
 {% endif %}## Native QA
 
 Android builds require Java 25. `corepack pnpm android` and the QA targets grant native access to Android's Prefab tool. Use `bash scripts/android-java.sh ./android/gradlew` with your Gradle arguments for direct builds.
 
-The local QA targets start disposable PostgreSQL, Redis{% if context.auth_oidc %}, Keycloak{% endif %} and API instances on separate ports. Managed providers need the backend issuer, client ID and deletion secrets configured before starting the API. They install an embedded release build in a dedicated emulator or simulator, so Metro is not required.
+The local QA targets start disposable PostgreSQL, Redis{% if context.auth_enabled %}, Keycloak{% endif %} and API instances on separate ports.{% if context.auth_enabled and not context.auth_oidc %} The API verifies the local realm's tokens, and a placeholder stands in for the provider deletion key unless `{{ context.app_env }}__AUTH__IDENTITY_ADMIN_CLIENT_SECRET` is set.{% endif %} They install an embedded release build in a dedicated emulator or simulator, so Metro is not required.
 
 ```sh
 make qa-android          # interactive Android emulator
@@ -87,7 +46,7 @@ make qa-ios-down
 
 Use `make e2e-android` or `make e2e-ios` for one disposable automated run. Mobile-only products expose the same targets through `make -C mobile`. Android supports Linux and macOS. iOS requires macOS, Xcode with a Simulator runtime, and CocoaPods. Maestro is required only for the `e2e-*` targets.
 
-{% if context.auth_oidc %}The generated `.maestro/smoke.yaml` signs in with the local test account, reaches the main screen, and persists analytics consent.{% else %}The generated `.maestro/smoke.yaml` checks the provider sign-in entry. Hosted authentication needs a provider test account and product-owned flows.{% endif %} Add product critical paths beside it. QA state and logs live under `.qa/`; generated native projects and build output are ignored by Git. `qa-down` removes only the QA compose project's volumes.
+The generated `.maestro/smoke.yaml` signs in with the local test account{% if not context.auth_oidc %} through Keycloak{% endif %}, reaches the main screen, and persists analytics consent. Add product critical paths beside it. QA state and logs live under `.qa/`; generated native projects and build output are ignored by Git. `qa-down` removes only the QA compose project's volumes.
 
 The Baukit packages come from {{ context.baukit_typescript_dependency_description }} and the generated lockfile makes the first install reproducible. Native compilation is outside the portable CI gates; run `corepack pnpm@12.9.1 typecheck`, `corepack pnpm@12.9.1 lint`, and `corepack pnpm@12.9.1 test`.
 

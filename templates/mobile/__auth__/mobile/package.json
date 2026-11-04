@@ -14,8 +14,9 @@
     "build:sw:check": "node scripts/build-sw.mjs{% if context.pwa and not context.web %} --output-dir dist{% endif %} --check",
     "typecheck": "tsc --noEmit",
     "lint": "eslint app app.config.ts src --max-warnings=0",
-    "test": "jest && node --test scripts/build-sw.test.mjs",
-    "test:coverage": "jest --coverage"
+    "test": "jest && node --test scripts/build-sw.test.mjs{% if not context.auth_oidc %} scripts/check-production-bundle.test.mjs{% endif %}",
+{% if not context.auth_oidc %}    "check:bundle": "node scripts/check-production-bundle.mjs",
+{% endif %}    "test:coverage": "jest --coverage"
   },
   "dependencies": {
 {{ context.baukit_mobile_typescript_dependencies }},

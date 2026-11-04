@@ -9,6 +9,7 @@ const configuredClientId: unknown = process.env['EXPO_PUBLIC_OIDC_CLIENT_ID'];
 {% if context.auth_oidc %}const configuredAudience: unknown = process.env['EXPO_PUBLIC_OIDC_AUDIENCE'];
 const configuredResource: unknown = process.env['EXPO_PUBLIC_OIDC_RESOURCE'];
 const configuredScopes: unknown = process.env['EXPO_PUBLIC_OIDC_SCOPES'];
+{% endif %}{% if not context.auth_oidc %}const configuredLocalIssuer: unknown = process.env['EXPO_PUBLIC_LOCAL_OIDC_ISSUER'];
 {% endif %}
 const isQaBuild = process.env['BAUKIT_QA_BUILD'] === '1';
 
@@ -44,6 +45,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         : 'http://localhost:{{ context.api_host_port }}',
     revenueCat,
     clerkPublishableKey: typeof configuredKey === 'string' ? configuredKey : '',
+{% if not context.auth_oidc %}    ...(typeof configuredLocalIssuer === 'string' && configuredLocalIssuer !== ''
+      ? { localOidcIssuer: configuredLocalIssuer }
+      : {}),
+{% endif %}
     oidcIssuer:
       typeof configuredIssuer === 'string'
         ? configuredIssuer

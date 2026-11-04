@@ -26,6 +26,7 @@ const signOut = jest.fn(() =>
 beforeEach(() => {
   jest.clearAllMocks();
   jest.mocked(useAuth).mockReturnValue({
+    providerLabel: "local Keycloak",
     subject: "subject-123",
     ready: true,
     sessionExpired: false,

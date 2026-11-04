@@ -38,7 +38,7 @@ import { currentUser, type CurrentUser } from './api';
 
 beforeEach(() => {
   mockAuth = {
-    accessToken: 'token', subject: 'same-subject', ready: true, sessionExpired: false,
+    providerLabel: 'local Keycloak', accessToken: 'token', subject: 'same-subject', ready: true, sessionExpired: false,
     signIn: jest.fn(() => Promise.resolve(undefined)),
     signOut: jest.fn(() => Promise.resolve(undefined)),
   };
@@ -76,7 +76,7 @@ it('passes profile_erased through the auth layout after the tokens are cleared',
   jest.mocked(currentUser).mockResolvedValueOnce({ id: 'profile', subject: 'same-subject' });
   const rendered = await render(<RootLayout />);
   mockAuth = {
-    ready: true, sessionExpired: true, sessionExpiredReason: 'profile_erased',
+    providerLabel: 'local Keycloak', ready: true, sessionExpired: true, sessionExpiredReason: 'profile_erased',
     signIn: mockAuth.signIn, signOut: mockAuth.signOut,
   };
   await rendered.rerender(<RootLayout />);
