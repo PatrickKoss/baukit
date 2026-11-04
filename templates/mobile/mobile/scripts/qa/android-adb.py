@@ -15,6 +15,7 @@ DEFAULT_IDLE_TIMEOUT = 180
 DEFAULT_SETTLE_TIMEOUT = 600
 DEFAULT_WIFI_TIMEOUT = 90
 HOST_ALIAS = "10.0.2.2"
+WIFI_STATUS_LINES = 4
 SETTLE_WINDOW_POLLS = 5
 QUIET_CORES = 1.0
 SNAPSHOT_PREFIX = "baukit-clean"
@@ -79,15 +80,19 @@ def poll_interval() -> float:
 
 
 def wait_for_wifi_route(adb: str, serial: str, probe_timeout: float, wifi_timeout: float) -> int:
-    deadline = time.monotonic() + wifi_timeout
+    started = time.monotonic()
+    deadline = started + wifi_timeout
     route = ""
     while deadline - time.monotonic() > 0:
         route = shell(adb, serial, probe_timeout, "ip", "-4", "route", "get", HOST_ALIAS) or ""
         if " dev wlan0 " in f" {route} ":
+            print(f"qa: {serial} has a Wi-Fi route after {round(time.monotonic() - started)} s", file=sys.stderr)
             return 0
         time.sleep(min(poll_interval(), max(0, deadline - time.monotonic())))
+    status = shell(adb, serial, probe_timeout, "cmd", "wifi", "status") or ""
     print(f"qa: {serial} has no Wi-Fi route to {HOST_ALIAS}; offline flows need Wi-Fi", file=sys.stderr)
     print(f"qa: last route: {route.strip() or 'none'}", file=sys.stderr)
+    print(f"qa: Wi-Fi status: {' | '.join(status.strip().splitlines()[:WIFI_STATUS_LINES]) or 'none'}", file=sys.stderr)
     return 124
 
 

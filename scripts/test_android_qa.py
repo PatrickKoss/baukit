@@ -84,6 +84,7 @@ case "$*" in
   *'cat /proc/stat') printf 'cpu  10 0 10 80 0 0 0 0 0 0\ncpu0 10 0 10 80 0 0 0 0 0 0\n' ;;
   *'ip -4 route get 10.0.2.2')
     if [[ "$FAILURE" != wifi ]]; then echo '10.0.2.2 dev wlan0 src 10.0.2.16 uid 0'; else echo '10.0.2.2 dev eth0 src 10.0.2.15 uid 0'; fi ;;
+  *'cmd wifi status') echo 'Wifi is enabled'; echo 'Wifi is not connected' ;;
   *'emu avd snapshot save '*) mkdir -p "$ANDROID_AVD_HOME/test-qa.avd/snapshots/${@: -1}" ;;
 esac
 exit 0
@@ -285,6 +286,7 @@ RENDERER
         self.executable(self.sdk / "emulator/emulator", '{ flock 9; printf \'{"args": "%s"}\\n\' "$*" >> "$EVENTS"; } 9>"$EVENTS.lock"\n')
         result = self.run_script("android-env.sh", "start")
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertRegex(result.stderr, r"qa: emulator-\d+ has a Wi-Fi route after \d+ s")
         events = self.events.read_text().splitlines()
         launches = [json.loads(event)["args"] for event in events if event.startswith("{")]
         self.assertTrue(launches)
@@ -301,6 +303,7 @@ RENDERER
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("has no Wi-Fi route to 10.0.2.2; offline flows need Wi-Fi", result.stderr)
         self.assertIn("qa: last route: 10.0.2.2 dev eth0", result.stderr)
+        self.assertIn("qa: Wi-Fi status: Wifi is enabled | Wifi is not connected", result.stderr)
         self.assertNotIn("snapshot save", self.events.read_text())
         self.run_script("android-env.sh", "stop")
 
