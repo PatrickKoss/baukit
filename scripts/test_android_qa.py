@@ -300,6 +300,7 @@ RENDERER
         result = self.run_script("android-env.sh", "start", FAILURE="wifi", BAUKIT_QA_WIFI_TIMEOUT_SECONDS="0.2")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("has no Wi-Fi route to 10.0.2.2; offline flows need Wi-Fi", result.stderr)
+        self.assertIn("qa: last route: 10.0.2.2 dev eth0", result.stderr)
         self.assertNotIn("snapshot save", self.events.read_text())
         self.run_script("android-env.sh", "stop")
 
