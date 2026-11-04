@@ -1126,7 +1126,7 @@ fn render_directory(
         if relative == Path::new("backend/Dockerfile.jinja") {
             continue;
         }
-        if !context.auth_oidc && is_oidc_client_stack_only(relative) {
+        if !context.auth_oidc && !context.backend && is_client_stack_only(relative) {
             continue;
         }
         if context.auth_oidc && is_provider_shaped_realm_only(relative) {
@@ -1166,7 +1166,7 @@ fn render_directory(
         rendered.insert(output_path, output.into_bytes());
     }
     for child in directory.dirs() {
-        if !context.auth_oidc && is_oidc_client_stack_only(child.path()) {
+        if !context.auth_oidc && !context.backend && is_client_stack_only(child.path()) {
             continue;
         }
         if is_python_cache_artifact(child.path()) {
@@ -1206,13 +1206,24 @@ fn product_description(options: &NewOptions) -> String {
     format!("Baukit product with {}", capabilities.join(", "))
 }
 
-fn is_oidc_client_stack_only(path: &Path) -> bool {
+fn is_client_stack_only(path: &Path) -> bool {
     let value = path.to_string_lossy();
     value.contains("web/e2e/playwright.stack.config.ts") || value.contains("web/e2e/stack")
 }
 
 fn is_provider_shaped_realm_only(path: &Path) -> bool {
     path.ends_with("backend/tests/local_realm.rs")
+        || path
+            .parent()
+            .is_some_and(|parent| parent.ends_with("src/sign-in"))
+            && path.file_name().is_some_and(|name| {
+                let name = name.to_string_lossy();
+                name.starts_with("local.") || name.starts_with("production.")
+            })
+        || path.file_name().is_some_and(|name| {
+            name.to_string_lossy()
+                .starts_with("check-production-bundle")
+        })
 }
 
 fn is_auth_only(path: &Path) -> bool {

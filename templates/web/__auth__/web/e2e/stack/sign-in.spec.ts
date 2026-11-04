@@ -11,4 +11,5 @@ test('a new Keycloak user signs in and sees their subject', async ({ page }) => 
   await signInWithKeycloak(page, user, stack);
 
   await expect(page.getByText(`Signed in as ${user.subject}`)).toBeVisible();
-});
+{% if not context.auth_oidc %}  await expect(page.getByText('Organization org_local')).toBeVisible();
+{% endif %}});

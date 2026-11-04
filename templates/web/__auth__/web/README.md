@@ -12,18 +12,15 @@ Vite, React, and TanStack Query application with {{ context.auth_provider }} aut
 
 `VITE_API_URL` defaults to `http://localhost:{{ context.api_host_port }}` and `VITE_OIDC_ISSUER` defaults to Keycloak on port {{ context.keycloak_host_port }}.{% endif %}
 
-{% elif context.auth_clerk %}Copy `.env.example` to `.env` and set `VITE_CLERK_PUBLISHABLE_KEY`.
-The `@baukit/auth-web/clerk` adapter uses Clerk's official browser SDK and hosted
-sign-in. Configure the web origin and callback in Clerk. Then run
-`corepack pnpm install --frozen-lockfile && corepack pnpm dev`.
-See [Clerk JavaScript setup](https://clerk.com/docs/reference/javascript/overview).
+{% else %}`src/sign-in/port.ts` is the one sign-in port the app uses. Local development signs in with Keycloak: run `docker compose up -d --wait keycloak` from the product root, copy `.env.example` to `.env`, then run `corepack pnpm@12.9.1 install --frozen-lockfile && corepack pnpm@12.9.1 dev` and sign in with `test` / `development-password`. `src/sign-in/local.ts` runs the authorization-code flow with PKCE against the product realm, which issues {{ "Clerk" if context.auth_clerk else "WorkOS" }}-shaped tokens for the production verifier. `VITE_LOCAL_OIDC_ISSUER` overrides the realm URL.
 
-{% else %}Copy `.env.example` to `.env` and set `VITE_WORKOS_CLIENT_ID`.
-Enable AuthKit public-client authentication and register the callback and CORS
-origin. The `@baukit/auth-web/workos` adapter uses the official AuthKit SDK.
-Then run `corepack pnpm install --frozen-lockfile && corepack pnpm dev`.
-See [AuthKit JavaScript](https://github.com/workos/authkit-js).
+`vite build` runs in production mode, and `src/auth.ts` then picks `src/sign-in/production.ts`. Rollup drops the local adapter, so the production bundle has no Keycloak code or realm URL. `corepack pnpm@12.9.1 check:bundle` builds production and fails if the output contains the Keycloak adapter, a `/realms/` URL or a loopback URL.
 
+{% if context.auth_clerk %}For production, set `VITE_CLERK_PUBLISHABLE_KEY` and `VITE_API_URL`. The production adapter uses Clerk's browser SDK through `@baukit/auth-web/clerk` and hosted sign-in. Configure the web origin and callback in Clerk.
+See [Clerk JavaScript setup](https://clerk.com/docs/reference/javascript/overview) and [Clerk session tokens](https://clerk.com/docs/guides/sessions/session-tokens).
+{% else %}For production, set `VITE_WORKOS_CLIENT_ID` and `VITE_API_URL`. Enable AuthKit public-client authentication and register the callback and CORS origin. The production adapter uses the AuthKit SDK through `@baukit/auth-web/workos`.
+See [AuthKit JavaScript](https://github.com/workos/authkit-js) and [WorkOS sessions](https://workos.com/docs/user-management/sessions).
+{% endif %}
 {% endif %}Protected API calls use the runtime's explicit one-replay 401 handshake. Concurrent callers share refresh; terminal rejection clears auth and disables authenticated schedulers, while transient provider/network failure preserves the session for retry. A second 401 stops. Replay does not make writes safe by itself, so every replayable mutation still needs server-side idempotency.
 
 The backend-confirmed immutable provider subject is selected before user-scoped queries and analytics identity are enabled. Account changes and terminal expiry reset query state and analytics first; a corrupt ownership registry blocks instead of falling back to shared state. The starter is fail-closed on an offline reload until it can confirm the token's subject because `@baukit/auth-web` deliberately does not trust decoded token claims. The generated logout policy is **retain**; review [docs/local-data-retention.md](docs/local-data-retention.md) before adding Dexie or changing retention.
@@ -50,7 +47,9 @@ Products configure browser cases in `e2e/qa.config.ts`. Per-case API stubs overr
 
 For QA files generated before this template version, `field` and `value` still work for one-field submit targets, and a missing `recoveryRole` still means `button`. Migrate new or edited forms to `fields` and `invalidField`. Keep the synthetic local-storage token and identity responses separate from development and production credentials.
 
-## Keycloak stack test
+{% else %}Vitest covers both sign-in adapters against the port: the local adapter with a mocked discovery and token endpoint, and the production adapter with the provider SDK mocked. The browser gate stubs the API and runs the local adapter, since `vite preview` and the dev server do not use `--mode production`.
+
+{% endif %}{% if context.auth_oidc or context.backend %}## Keycloak stack test
 
 `e2e/stack` signs a real user in through the composed Keycloak and reads their subject back from the running API. The helpers come from `@baukit/auth-node/keycloak-testing`, a dev dependency, and `e2e/stack/keycloak.ts` holds only this product's defaults. `createKeycloakTestUser` uses the Keycloak admin API to create a verified user with a random password and returns its subject. `signInWithKeycloak` waits for the Keycloak page, fills `#username` and `#password`, and submits. `revokeKeycloakUserSessions` ends a user's sessions for expiry tests.
 
@@ -68,16 +67,11 @@ corepack pnpm@12.9.1 exec playwright install chromium
 E2E_WEB_PORT=5183 corepack pnpm@12.9.1 exec playwright test --config e2e/playwright.stack.config.ts
 ```
 
-`E2E_WEB_PORT` sets the Vite port and defaults to {{ context.web_port }}, the only origin the realm file lists. Before the specs run, global setup adds the chosen origin to the `{{ context.app_name }}-web` client's redirect URIs and web origins through the admin API if the client lacks it. The config reuses a server that already listens on the port, so pick a free port when another process holds {{ context.web_port }}. `E2E_KEYCLOAK_URL`, `E2E_KEYCLOAK_REALM`, `E2E_KEYCLOAK_ADMIN_USERNAME`, `E2E_KEYCLOAK_ADMIN_PASSWORD`, and `E2E_KEYCLOAK_WEB_CLIENT_ID` override the development defaults. Each run leaves its users and any added origin in the realm, so point it only at a disposable development realm. The hermetic browser gate never runs these specs.
+`E2E_WEB_PORT` sets the Vite port and defaults to {{ context.web_port }}, the only origin the realm file lists. Before the specs run, global setup adds the chosen origin to the `{{ context.app_name }}-web` client's redirect URIs and web origins through the admin API if the client lacks it. The config reuses a server that already listens on the port, so pick a free port when another process holds {{ context.web_port }}. `E2E_KEYCLOAK_URL`, `E2E_KEYCLOAK_REALM`, `E2E_KEYCLOAK_ADMIN_USERNAME`, `E2E_KEYCLOAK_ADMIN_PASSWORD`, and `E2E_KEYCLOAK_WEB_CLIENT_ID` override the development defaults. Each run leaves its users and any added origin in the realm, so point it only at a disposable development realm. The hermetic browser gate never runs these specs.{% if not context.auth_oidc %} The API needs `{{ context.app_env }}__AUTH__IDENTITY_ADMIN_CLIENT_SECRET` to start; any placeholder works for sign-in. The spec also checks that the page shows the realm's `org_local` organization.{% endif %}
 
 The template has no automated full-stack lifecycle or image cache. Its browser gate stubs the API, and this single stack test checks real UI sign-in. Per-project Docker stacks and API-seeded sessions suit a larger suite with many authenticated flows. Adding them here would require a new runner, backend image, realm lifecycle, and cleanup protocol.
 
 The smallest next step is a disposable launcher for this sign-in test. It should override every Compose host port with a Docker-assigned port, read the mappings before starting the API, and import a temporary realm with the chosen web origin. Dependency installation should take a lock inside the worktree. Keep UI login for this test. Add a session client at runtime only when repeated authenticated flows need it, with a check that rejects the product realm as the import destination. Measure startup and test time before adding an image cache or concurrent stacks.
-
-{% else %}The unit tests exercise the authentication contract with a mocked provider SDK.
-Interactive hosted sign-in requires a configured provider instance and test
-account. Add authenticated browser cases using that instance or an SDK session
-fixture; the generated Keycloak token fixture does not authenticate these SDKs.
 
 {% endif %}## Delete profile
 

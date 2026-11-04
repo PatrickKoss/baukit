@@ -10,6 +10,12 @@ export {
   type UnverifiedDisplayIdentityFallback,
   type UnverifiedDisplayIdentityHints,
 } from './unverified-display-identity.js';
+export {
+  unverifiedSignInSessionFromJwt,
+  type SignInOrganization,
+  type SignInSession,
+  type SignInUser,
+} from './sign-in-session.js';
 
 /** The request ID header accepted and returned by `baukit-http`. */
 export const REQUEST_ID_HEADER = 'x-request-id' as const;

@@ -5316,9 +5316,10 @@ fn managed_auth_providers_generate_every_flavor_with_a_provider_shaped_local_rea
             generated.auth = Some(provider);
             let root = generate_new(&generated)?;
             let tree = read_tree(&root)?;
-            assert!(
+            assert_eq!(
                 tree.keys()
-                    .all(|path| !path.to_string_lossy().contains("web/e2e/stack"))
+                    .any(|path| path.to_string_lossy().contains("web/e2e/stack")),
+                web && backend
             );
             assert_eq!(root.join("keycloak").exists(), backend);
             assert_eq!(

@@ -4,6 +4,9 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.test.{ts,tsx}'],
+{% if context.auth_enabled and not context.auth_oidc %}    // Inlined so adapter tests can mock the provider SDK the package imports.
+    server: { deps: { inline: ['@baukit/auth-web'] } },
+{% endif %}
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],

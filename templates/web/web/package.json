@@ -11,7 +11,9 @@
     "build:sw:check": "node scripts/build-sw.mjs --check",
     "build": "pnpm run tokens && tsc --noEmit && tsc --noEmit -p e2e/tsconfig.json && vite build",
     "lint": "eslint src e2e vite.config.ts --max-warnings=0",
-    "test": "vitest run && node --test scripts/build-sw.test.mjs",
+    "test": "vitest run && node --test scripts/build-sw.test.mjs{% if context.auth_enabled and not context.auth_oidc %} scripts/check-production-bundle.test.mjs{% endif %}",
+{% if context.auth_enabled and not context.auth_oidc %}    "check:bundle": "node scripts/check-production-bundle.mjs",
+{% endif %}
     "test:coverage": "vitest run --coverage",
     "test:e2e": "pnpm run build && playwright test --config e2e/playwright.config.ts"
   },

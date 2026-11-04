@@ -158,12 +158,47 @@ send; the verifier ignores it. Every local user has the same organization.
 Replace a mapper with a user-attribute mapper when a test needs per-user
 organizations.
 {% endif %}
-`make keycloak-reconcile` repairs these mappers on a retained volume. The web
-and mobile apps still sign in with the {{ "Clerk" if context.auth_clerk else "WorkOS" }} SDK, so local browser
-sign-in needs a {{ "Clerk development instance" if context.auth_clerk else "WorkOS staging environment" }}; point `auth.issuer` and `auth.jwks_uri` at it
-for that. The ignored `local_realm` test signs `test` in through
-`{{ context.app_name }}-local` in a disposable Keycloak, checks the claim names,
-and verifies the token with the configured verifier and the other provider's.
+`make keycloak-reconcile` repairs these mappers on a retained volume. The ignored
+`local_realm` test signs `test` in through `{{ context.app_name }}-local` in a
+disposable Keycloak, checks the claim names, and verifies the token with the
+configured verifier and the other provider's.
+
+## Sign-in adapters
+
+The web and mobile apps depend on one sign-in port in `src/sign-in/port.ts`. It
+signs in and out, returns the access token, and reads the session: `sub` becomes
+`user.id`, `sid` becomes `sessionId`, and the organization comes from
+{% if context.auth_clerk %}Clerk's `o` claim (`id`, `rol`, `slg`, and the comma-separated `per`){% else %}WorkOS's `org_id`, `role` and `permissions`{% endif %}.
+`unverifiedSignInSessionFromJwt` in `@baukit/api-runtime` builds that shape for
+every adapter. It reads claims for display only; the backend verifies the token.
+
+Each app has two adapters. `src/sign-in/local.ts` runs the authorization-code flow
+with PKCE S256 against this realm: in the browser through the
+`{{ context.app_name }}-web` client, and on mobile through the system browser and the
+`{{ context.app_name }}-mobile` client with the `{{ context.app_name }}://oauth` redirect. Sign in as
+`test` with `development-password`. `src/sign-in/production.ts` uses the {{ "Clerk" if context.auth_clerk else "WorkOS" }}
+SDK described above.
+
+The build picks the adapter. Vite's `--mode production`, the default for
+`vite build`, selects the production adapter in `web/src/auth.ts`, and Rollup
+drops the local adapter from the bundle. Every other mode, including `vite` and
+Vitest, uses the local adapter. On mobile, `metro.config.js` resolves
+`src/sign-in/local.ts` to `src/sign-in/production.ts` when `NODE_ENV` is
+`production`, which `expo export` and release builds set, unless
+`BAUKIT_QA_BUILD=1` marks a QA build that signs in against the local realm.
+Jest, TypeScript and `expo start` see the local adapter. No runtime flag can switch
+a production bundle back to Keycloak.
+
+`VITE_LOCAL_OIDC_ISSUER` and `EXPO_PUBLIC_LOCAL_OIDC_ISSUER` override the
+realm URL, for example for a physical device on the LAN. Both default to
+`http://localhost:{{ context.keycloak_host_port }}/realms/{{ context.app_name }}`.
+
+`pnpm check:bundle` in `web/` and `mobile/` builds production and fails when the
+output contains the Keycloak adapter, a `/realms/` URL or a loopback URL. The
+mobile check exports Android and iOS with source maps, fails if
+`src/sign-in/local.ts` is among the bundle's modules, and counts a loopback URL
+only when product or `@baukit` code emits it, since React Native and Expo Router
+ship their own development-server defaults. The strict gate runs them as the `web-bundle` and `mobile-bundle` steps.
 
 {% endif %}## Erasure secrets
 
