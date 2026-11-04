@@ -1369,6 +1369,10 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
         gate_steps.as_ref(),
         &mut failures,
     );
+    successes.extend(gate_settings::emulator_summary(
+        &manifest.quality,
+        &manifest.capabilities,
+    ));
     if manifest.quality.webkit_repeats == 0 {
         failures.push("quality.webkit_repeats must be greater than zero".to_owned());
     }

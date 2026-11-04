@@ -37,7 +37,26 @@ The gate prints its cache settings before it starts. It sets `RUSTC_WRAPPER=scca
 
 ## Android emulator
 
-`quality.android_emulator_port` in `baukit.toml` sets the emulator console port. `baukit new` writes an even port from 5556 to 5680 derived from the product name, so products on one host don't share an emulator. `BAUKIT_QA_ANDROID_PORT` overrides it for one run. `quality.android_emulators`, 2 by default, sets how many emulators the gate boots. They take the console port and the even ports after it, so two emulators at 5644 use 5644 and 5646. `BAUKIT_QA_ANDROID_EMULATORS` overrides the count for one run.
+`quality.android_emulator_port` in `baukit.toml` sets the emulator console port. `BAUKIT_QA_ANDROID_PORT` overrides it for one run. `quality.android_emulators`, 2 by default, sets how many emulators the gate boots. Each emulator takes its console port and the ADB port after it, and the next emulator starts two ports higher, so two emulators at 5644 take 5644 to 5647. `BAUKIT_QA_ANDROID_EMULATORS` overrides the count for one run.
+
+Ports from 5556 to 5811 form blocks of 8, starting at 5556, 5564, 5572 and so on. A block holds up to 4 emulators. Each product owns one block, and its range must stay inside the block that holds its first port. `baukit doctor` prints the range and the block, and rejects an odd port, a port outside 5556 to 5810, or a range that runs past its block. `baukit new` picks one of the 16 blocks from 5556 to 5683 from the product name. The blocks from 5684 up stay free for Baukit's own lanes and one-off runs: Baukit's `native-android` lane uses 5780 to 5783, from `scripts/ci-gate.toml`. Two products in one block share emulators, so give each product its own block.
+
+The products' ranges at Baukit v0.17.1, from each `baukit.toml`:
+
+| Product | Port | Emulators | Range | Block | Overlaps or past its block |
+| --- | --- | --- | --- | --- | --- |
+| Eigenruhe | 5564 | 3 | 5564 to 5569 | 5564 to 5571 | |
+| Hebkit | 5592 | 2 | 5592 to 5595 | 5588 to 5595 | Kassensturz |
+| Kassensturz | 5594 | 2 | 5594 to 5597 | 5588 to 5595 | Hebkit, past its block |
+| Schlauzug | 5598 (script default, not in `baukit.toml`) | 2 | 5598 to 5601 | 5596 to 5603 | |
+| Redemut | 5620 | 2 | 5620 to 5623 | 5620 to 5627 | Baukit's old native lane |
+| Schlüsselbund | 5644 | 2 | 5644 to 5647 | 5644 to 5651 | Tiefgang |
+| Tiefgang | 5646 | 2 | 5646 to 5649 | 5644 to 5651 | Schlüsselbund |
+| Solo Leveling System | 5662 | 2 | 5662 to 5665 | 5660 to 5667 | |
+| Lesezeichen | 5674 | 2 | 5674 to 5677 | 5668 to 5675 | past its block |
+| Leitbild | 5680 | 2 | 5680 to 5683 | 5676 to 5683 | |
+
+Architecture Health Platform and Runtime Analyzer have no mobile app. A product that moves picks a free block, sets the block's first port, and keeps the second free block for itself only. The free product blocks start at 5556, 5572, 5580, 5604, 5612, 5628, 5636 and 5652.
 
 The first boot is a cold boot. Once systemui is idle and the health check passes, `android-env.sh` runs `cmd package bg-dexopt-job` and then reads the guest's `/proc/stat` every 10 seconds until the emulator uses less than one core over a window. `BAUKIT_QA_SETTLE_TIMEOUT_SECONDS`, 600 by default, bounds the dexopt run and the wait together. Past it, the script prints `did not settle` and saves anyway. A device that drops off ADB while it settles fails the start. The script then repeats the health check, clears logcat and saves the snapshot, so later boots don't resume the first boot's dexopt and Play services work.
 

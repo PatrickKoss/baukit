@@ -9,8 +9,9 @@ use serde::{Deserialize, Serialize};
 use crate::{AuthProvider, Capabilities, QualityManifest};
 
 const FIRST_EMULATOR_PORT: u16 = 5556;
-const EMULATOR_PORT_SLOTS: u32 = 63;
-const LAST_EMULATOR_PORT: u16 = 5682;
+const EMULATOR_BLOCK_PORTS: u16 = 8;
+const PRODUCT_EMULATOR_BLOCKS: u32 = 16;
+const LAST_EMULATOR_PORT: u16 = 5810;
 const DEFAULT_ANDROID_EMULATORS: u8 = 2;
 const MAX_ANDROID_EMULATORS: u8 = 4;
 
@@ -46,14 +47,51 @@ const fn default_affected_budget() -> u16 {
     5
 }
 
-/// Even console port in 5556..=5680 so products on one host get different emulators.
-/// Extra emulators use the following even ports.
+/// First console port of one of the 16 product blocks from 5556 to 5683, picked by name.
+/// A block holds 8 ports: the console and ADB ports of up to 4 emulators.
 pub fn default_emulator_port(product: &str) -> u16 {
     let hash = product.bytes().fold(FNV_OFFSET, |hash, byte| {
         (hash ^ u32::from(byte)).wrapping_mul(FNV_PRIME)
     });
-    let slot = u16::try_from(hash % EMULATOR_PORT_SLOTS).unwrap_or_default();
-    FIRST_EMULATOR_PORT + 2 * slot
+    let block = u16::try_from(hash % PRODUCT_EMULATOR_BLOCKS).unwrap_or_default();
+    FIRST_EMULATOR_PORT + EMULATOR_BLOCK_PORTS * block
+}
+
+/// Console and ADB ports the emulators take, and the block that must hold them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EmulatorPorts {
+    pub first: u32,
+    pub last: u32,
+    pub block_first: u32,
+    pub block_last: u32,
+}
+
+pub fn emulator_ports(port: u16, emulators: u8) -> EmulatorPorts {
+    let first = u32::from(port);
+    let block = u32::from(EMULATOR_BLOCK_PORTS);
+    let block_first = u32::from(FIRST_EMULATOR_PORT)
+        + (first.saturating_sub(u32::from(FIRST_EMULATOR_PORT)) / block) * block;
+    EmulatorPorts {
+        first,
+        last: first + 2 * u32::from(emulators.max(1)) - 1,
+        block_first,
+        block_last: block_first + block - 1,
+    }
+}
+
+/// Doctor's line for the emulator ports a mobile product's settings take.
+pub fn emulator_summary(quality: &QualityManifest, capabilities: &Capabilities) -> Option<String> {
+    let port = quality
+        .android_emulator_port
+        .filter(|_| capabilities.mobile)?;
+    let emulators = quality
+        .android_emulators
+        .unwrap_or(DEFAULT_ANDROID_EMULATORS);
+    let ports = emulator_ports(port, emulators);
+    Some(format!(
+        "quality.android_emulator_port {port} with {emulators} emulators takes ports {} to {} in block {} to {}",
+        ports.first, ports.last, ports.block_first, ports.block_last
+    ))
 }
 
 pub fn default_affected(capabilities: &Capabilities) -> BTreeMap<String, Vec<String>> {
@@ -274,18 +312,24 @@ pub fn validate(
             ));
         }
     }
-    if let Some(count) = quality.android_emulators {
-        let last_port = u32::from(quality.android_emulator_port.unwrap_or(FIRST_EMULATOR_PORT))
-            + 2 * u32::from(count.saturating_sub(1));
-        if !capabilities.mobile {
-            failures.push("quality.android_emulators requires the mobile capability".to_owned());
-        } else if !(1..=MAX_ANDROID_EMULATORS).contains(&count) {
+    let count = quality
+        .android_emulators
+        .unwrap_or(DEFAULT_ANDROID_EMULATORS);
+    if quality.android_emulators.is_some() && !capabilities.mobile {
+        failures.push("quality.android_emulators requires the mobile capability".to_owned());
+    } else if !(1..=MAX_ANDROID_EMULATORS).contains(&count) {
+        failures.push(format!(
+            "quality.android_emulators must be from 1 to {MAX_ANDROID_EMULATORS}"
+        ));
+    } else if capabilities.mobile {
+        let ports = emulator_ports(
+            quality.android_emulator_port.unwrap_or(FIRST_EMULATOR_PORT),
+            count,
+        );
+        if ports.last > ports.block_last {
             failures.push(format!(
-                "quality.android_emulators must be from 1 to {MAX_ANDROID_EMULATORS}"
-            ));
-        } else if last_port > u32::from(LAST_EMULATOR_PORT) {
-            failures.push(format!(
-                "quality.android_emulators needs ports up to {last_port}, past {LAST_EMULATOR_PORT}"
+                "quality.android_emulator_port {} with {count} emulators takes ports {} to {}, past its block {} to {}; start the range at {}",
+                ports.first, ports.first, ports.last, ports.block_first, ports.block_last, ports.block_first
             ));
         }
     }
@@ -353,7 +397,7 @@ mod tests {
     }
 
     #[test]
-    fn emulator_ports_are_even_in_range_and_differ_between_products() {
+    fn default_emulator_ports_start_a_product_block() {
         let ports: Vec<u16> = [
             "architecture-health-platform",
             "eigenruhe",
@@ -371,17 +415,76 @@ mod tests {
         .iter()
         .map(|name| default_emulator_port(name))
         .collect();
-        for port in &ports {
-            assert!((FIRST_EMULATOR_PORT..=LAST_EMULATOR_PORT - 2).contains(port));
-            assert_eq!(port % 2, 0);
+        let blocks: Vec<u16> = ports
+            .iter()
+            .map(|port| (port - FIRST_EMULATOR_PORT) / EMULATOR_BLOCK_PORTS)
+            .collect();
+        for (port, block) in ports.iter().zip(&blocks) {
+            assert_eq!(
+                (port - FIRST_EMULATOR_PORT) % EMULATOR_BLOCK_PORTS,
+                0,
+                "{port}"
+            );
+            assert!(u32::from(*block) < PRODUCT_EMULATOR_BLOCKS, "{port}");
+            let range = emulator_ports(*port, MAX_ANDROID_EMULATORS);
+            assert_eq!(
+                (range.first, range.last),
+                (range.block_first, range.block_last)
+            );
         }
-        let mut unique = ports.clone();
+        let mut unique = blocks.clone();
         unique.sort_unstable();
         unique.dedup();
-        assert_eq!(unique.len(), ports.len());
+        assert!(unique.len() > 1);
         assert_eq!(
             default_emulator_port("schlauzug"),
             default_emulator_port("schlauzug")
+        );
+    }
+
+    #[test]
+    fn emulator_ranges_must_stay_in_their_block() {
+        let caps = capabilities(false, false, true);
+        for (text, expected) in [
+            ("android_emulator_port = 5644\n", None),
+            (
+                "android_emulator_port = 5646\nandroid_emulators = 3\n",
+                None,
+            ),
+            ("android_emulator_port = 5790\n", None),
+            (
+                "android_emulator_port = 5594\n",
+                Some(
+                    "quality.android_emulator_port 5594 with 2 emulators takes ports 5594 to 5597, past its block 5588 to 5595; start the range at 5588",
+                ),
+            ),
+            (
+                "android_emulator_port = 5644\nandroid_emulators = 4\n",
+                None,
+            ),
+            (
+                "android_emulator_port = 5646\nandroid_emulators = 4\n",
+                Some(
+                    "quality.android_emulator_port 5646 with 4 emulators takes ports 5646 to 5653, past its block 5644 to 5651; start the range at 5644",
+                ),
+            ),
+        ] {
+            let quality: QualityManifest = toml::from_str(text).expect("parses");
+            let mut failures = Vec::new();
+            validate(&quality, &caps, None, &mut failures);
+            assert_eq!(failures, expected.into_iter().collect::<Vec<_>>(), "{text}");
+        }
+        let quality: QualityManifest =
+            toml::from_str("android_emulator_port = 5790\n").expect("parses");
+        assert_eq!(
+            emulator_summary(&quality, &caps).as_deref(),
+            Some(
+                "quality.android_emulator_port 5790 with 2 emulators takes ports 5790 to 5793 in block 5788 to 5795"
+            )
+        );
+        assert_eq!(
+            emulator_summary(&quality, &capabilities(true, false, false)),
+            None
         );
     }
 
@@ -443,8 +546,8 @@ mod tests {
             ("android_emulators = 2\n", 0),
             ("android_emulators = 0\n", 1),
             ("android_emulators = 5\n", 1),
-            ("android_emulator_port = 5682\nandroid_emulators = 2\n", 1),
-            ("android_emulator_port = 5676\nandroid_emulators = 4\n", 0),
+            ("android_emulator_port = 5810\nandroid_emulators = 2\n", 1),
+            ("android_emulator_port = 5804\nandroid_emulators = 4\n", 0),
         ] {
             let quality: QualityManifest = toml::from_str(text).expect("parses");
             let mut failures = Vec::new();
@@ -468,7 +571,7 @@ mod tests {
     #[test]
     fn odd_or_out_of_range_ports_fail() {
         let caps = capabilities(false, false, true);
-        for port in [5557_u16, 5554, 5684] {
+        for port in [5557_u16, 5554, 5812] {
             let quality: QualityManifest =
                 toml::from_str(&format!("android_emulator_port = {port}\n")).expect("parses");
             let mut failures = Vec::new();
