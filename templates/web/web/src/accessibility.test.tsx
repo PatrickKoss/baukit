@@ -17,6 +17,8 @@ vi.mock('./api', () => ({
     hasSession: vi.fn().mockReturnValue(false),
     handleCallback: vi.fn().mockResolvedValue(false),
     subscribeSessionExpired: () => () => undefined,
+    providerLabel: 'local Keycloak',
+    session: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -47,7 +49,7 @@ describe('generated accessibility scan', () => {
     );
 
 {% if context.auth_enabled %}    expect(screen.getByRole('button', {
-      name: 'Sign in with {{ "local Keycloak" if context.auth_oidc else "Clerk" if context.auth_clerk else "WorkOS" }}',
+      name: 'Sign in with local Keycloak',
     })).toBeDefined();
 {% endif %}    await expectNoHighImpactViolations(result.container);
   });

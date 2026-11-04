@@ -5316,9 +5316,10 @@ fn managed_auth_providers_generate_every_flavor_with_a_provider_shaped_local_rea
             generated.auth = Some(provider);
             let root = generate_new(&generated)?;
             let tree = read_tree(&root)?;
-            assert!(
+            assert_eq!(
                 tree.keys()
-                    .all(|path| !path.to_string_lossy().contains("web/e2e/stack"))
+                    .any(|path| path.to_string_lossy().contains("web/e2e/stack")),
+                web && backend
             );
             assert_eq!(root.join("keycloak").exists(), backend);
             assert_eq!(
@@ -6256,5 +6257,72 @@ fn platform_rerender_uses_the_declared_product_migration_path() -> anyhow::Resul
     assert_eq!(fs::read_to_string(&manifest_path)?, source);
     assert!(root.join("backend/migrations/0012_platform.sql").is_file());
     assert!(!root.join("backend/migrations/0008_platform.sql").exists());
+    Ok(())
+}
+
+#[test]
+fn doctor_checks_local_realm_sites_of_provider_products() -> anyhow::Result<()> {
+    for provider in [AuthProvider::Clerk, AuthProvider::Workos] {
+        let parent = tempfile::tempdir()?;
+        let mut generated = options(parent.path(), "provider-realm");
+        generated.auth = Some(provider);
+        generated.mobile = true;
+        generated.web = true;
+        generated.port_offset = 100;
+        generated.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+        let root = generate_new(&generated)?;
+        doctor(&root)?;
+        for (relative, current, stale) in [
+            (
+                "web/.env.example",
+                "localhost:8181/realms/",
+                "localhost:8081/realms/",
+            ),
+            (
+                "mobile/.env.example",
+                "localhost:8181/realms/",
+                "localhost:8081/realms/",
+            ),
+            (
+                "mobile/scripts/qa/docker-compose.qa.yml",
+                "KEYCLOAK_PORT:-18081",
+                "KEYCLOAK_PORT:-18181",
+            ),
+            (
+                "mobile/scripts/qa/services.sh",
+                "KEYCLOAK_PORT:-18081",
+                "KEYCLOAK_PORT:-18181",
+            ),
+            (
+                "mobile/scripts/qa/build-android.sh",
+                "KEYCLOAK_PORT:-18081",
+                "KEYCLOAK_PORT:-18181",
+            ),
+            (
+                "mobile/scripts/qa/build-ios.sh",
+                "KEYCLOAK_PORT:-18081",
+                "KEYCLOAK_PORT:-18181",
+            ),
+            (
+                "mobile/scripts/qa/android-env.sh",
+                "KEYCLOAK_PORT:-18081",
+                "KEYCLOAK_PORT:-18181",
+            ),
+        ] {
+            let path = root.join(relative);
+            let source = fs::read_to_string(&path)?;
+            assert!(source.contains(current), "{relative} lacks {current}");
+            fs::write(&path, source.replacen(current, stale, 1))?;
+            let error = doctor(&root)
+                .expect_err("doctor must find a stale local realm port")
+                .to_string();
+            assert!(
+                error.contains(&format!("`{relative}` does not use port offset 100")),
+                "{relative}: {error}"
+            );
+            fs::write(&path, source)?;
+        }
+        doctor(&root)?;
+    }
     Ok(())
 }

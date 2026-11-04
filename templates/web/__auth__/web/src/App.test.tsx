@@ -17,8 +17,10 @@ vi.mock('./auth', () => ({
     hasSession: () => true,
     handleCallback: () => Promise.resolve(false),
     subscribeSessionExpired: mocks.subscribeSessionExpired,
-    login: vi.fn(),
-    logout: vi.fn(),
+    providerLabel: 'local Keycloak',
+    session: () => Promise.resolve(undefined),
+    signIn: vi.fn(),
+    signOut: vi.fn(),
   },
 }));
 vi.mock('./analytics', () => ({

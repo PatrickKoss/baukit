@@ -58,7 +58,9 @@ function requiredFallback(
   return { displayName, initials };
 }
 
-function decodeUnverifiedJwtPayload(token: string): Readonly<Record<string, unknown>> | undefined {
+export function decodeUnverifiedJwtPayload(
+  token: string,
+): Readonly<Record<string, unknown>> | undefined {
   const segments = token.split('.');
   const encoded = segments.length === 3 ? segments[1] : undefined;
   if (

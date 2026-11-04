@@ -439,7 +439,7 @@ if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/te
         apk = self.root / "mobile/android/app/build/outputs/apk/release/app-release.apk"
         apk.parent.mkdir(parents=True)
         apk.touch()
-{% if context.auth_oidc %}        flags = '-s emulator-5556 shell echo "chrome --disable-fre --no-first-run --no-default-browser-check" > /data/local/tmp/chrome-command-line'
+{% if context.auth_enabled %}        flags = '-s emulator-5556 shell echo "chrome --disable-fre --no-first-run --no-default-browser-check" > /data/local/tmp/chrome-command-line'
         debug = '-s emulator-5556 shell settings put global debug_app com.android.chrome'
         stop = '-s emulator-5556 shell am force-stop com.android.chrome'
 {% endif %}        for headless in ("0", "1"):
@@ -472,7 +472,7 @@ if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/te
             launch = events.index(command)
             self.assertFalse(any("monkey" in event for event in events))
             self.assertEqual(events.count(f"-s emulator-5556 emu avd snapshot save {snapshot}"), 1)
-{% if context.auth_oidc %}            for command in (flags, debug, stop):
+{% if context.auth_enabled %}            for command in (flags, debug, stop):
                 self.assertEqual(events.count(command), 1)
                 self.assertLess(events.index(command), launch)
             self.assertLess(events.index(stop), events.index(flags))

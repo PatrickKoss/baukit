@@ -19,9 +19,9 @@ const oidc = vi.hoisted(() => {
   };
 });
 
-vi.mock('{% if context.auth_oidc %}@baukit/auth-web{% elif context.auth_clerk %}@baukit/auth-web/clerk{% else %}@baukit/auth-web/workos{% endif %}', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('{% if context.auth_oidc %}@baukit/auth-web{% elif context.auth_clerk %}@baukit/auth-web/clerk{% else %}@baukit/auth-web/workos{% endif %}')>();
-  class FakeOidcClient {
+const fakeClient = vi.hoisted(
+  () => () =>
+    class FakeProviderClient {
     public constructor(options: unknown) {
       oidc.constructed.push(options);
     }
@@ -32,10 +32,17 @@ vi.mock('{% if context.auth_oidc %}@baukit/auth-web{% elif context.auth_clerk %}
     public subscribeSessionExpired = oidc.subscribeSessionExpired;
     public logout = oidc.logout;
     public clearSession = oidc.clearSession;
-  }
-  return { ...actual, {{ "OidcClient" if context.auth_oidc else "ClerkWebClient" if context.auth_clerk else "WorkOsWebClient" }}: FakeOidcClient };
-});
+    },
+);
 
+vi.mock('@baukit/auth-web', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@baukit/auth-web')>()),
+  OidcClient: fakeClient(),
+}));
+{% if not context.auth_oidc %}vi.mock('{{ "@baukit/auth-web/clerk" if context.auth_clerk else "@baukit/auth-web/workos" }}', () => ({
+  {{ "ClerkWebClient" if context.auth_clerk else "WorkOsWebClient" }}: fakeClient(),
+}));
+{% endif %}
 async function loadAuthClient(): Promise<typeof import('./auth').authClient> {
   vi.resetModules();
   return (await import('./auth')).authClient;
@@ -82,7 +89,8 @@ describe('authClient without a browser window', () => {
     await expect(authClient.handleCallback()).resolves.toBe(false);
     await expect(authClient.accessToken()).resolves.toBeUndefined();
     authClient.subscribeSessionExpired(listener)();
-    await expect(authClient.logout()).resolves.toBe(false);
+    await expect(authClient.signOut()).resolves.toBe(false);
+    await expect(authClient.session()).resolves.toBeUndefined();
     expect(oidc.constructed).toEqual([]);
     expect(listener).not.toHaveBeenCalled();
   });
@@ -133,27 +141,62 @@ describe('authClient in the browser', () => {
     });
   });
 
-{% else %}  it('uses the configured provider SDK once', async () => {
+{% else %}  it('signs in against the local realm outside production builds', async () => {
+    const authClient = await loadAuthClient();
+
+    expect(authClient.providerLabel).toBe('local Keycloak');
+    authClient.hasSession();
+    authClient.hasSession();
+
+    expect(oidc.constructed).toEqual([
+      {
+        issuer: expect.stringMatching(/^http:\/\/localhost:\d+\/realms\/[^/]+$/) as unknown,
+        clientId: expect.stringMatching(/-web$/) as unknown,
+        redirectUri: 'https://app.example.test/',
+        scopes: [],
+        offlineAccess: false,
+        storageKeyPrefix: expect.stringMatching(/:local-oidc$/) as unknown,
+      },
+    ]);
+  });
+
+  it('uses the configured provider SDK once in production builds', async () => {
+    vi.stubEnv('MODE', 'production');
     vi.stubEnv('{{ "VITE_CLERK_PUBLISHABLE_KEY" if context.auth_clerk else "VITE_WORKOS_CLIENT_ID" }}', 'public-provider-id');
     const auth = await loadAuthClient();
     auth.hasSession();
     auth.hasSession();
+    expect(auth.providerLabel).toBe('{{ "Clerk" if context.auth_clerk else "WorkOS" }}');
     expect(oidc.constructed).toEqual([{ {{ "publishableKey" if context.auth_clerk else "clientId" }}: 'public-provider-id', redirectUri: 'https://app.example.test/' }]);
   });
+
 {% endif %}  it('delegates each call to the OIDC client', async () => {
     const authClient = await loadAuthClient();
     const listener = vi.fn();
 
-    await authClient.login();
+    await authClient.signIn();
     await expect(authClient.handleCallback()).resolves.toBe(true);
     await expect(authClient.accessToken({ forceRefresh: true })).resolves.toBe('access-token');
     authClient.subscribeSessionExpired(listener)();
-    await expect(authClient.logout()).resolves.toBe(true);
+    await expect(authClient.signOut()).resolves.toBe(true);
 
     expect(oidc.login).toHaveBeenCalledOnce();
+    expect(oidc.logout).toHaveBeenCalledOnce();
     expect(oidc.accessToken).toHaveBeenCalledWith({ forceRefresh: true });
     expect(oidc.subscribeSessionExpired).toHaveBeenCalledWith(listener);
     expect(oidc.unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it('reads the session, user and organization from the access token', async () => {
+    const payload = btoa(JSON.stringify({ sub: 'user_1', sid: 'sess_1', org_id: 'org_local', role: 'admin', permissions: [] }));
+    oidc.accessToken.mockResolvedValueOnce(`header.${payload.replace(/=+$/u, '')}.signature`);
+    const authClient = await loadAuthClient();
+
+    await expect(authClient.session()).resolves.toEqual({
+      sessionId: 'sess_1',
+      user: { id: 'user_1' },
+      organization: { id: 'org_local', role: 'admin', permissions: [] },
+    });
   });
 
   it('asks for a cached token by default', async () => {

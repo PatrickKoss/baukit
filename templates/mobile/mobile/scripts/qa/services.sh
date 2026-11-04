@@ -9,7 +9,7 @@ postgres_port="${BAUKIT_QA_POSTGRES_PORT:-15432}"
 redis_port="${BAUKIT_QA_REDIS_PORT:-16379}"
 api_port="${BAUKIT_QA_API_PORT:-18080}"
 ops_port="${BAUKIT_QA_OPS_PORT:-19090}"
-{% if context.auth_oidc %}keycloak_port="${BAUKIT_QA_KEYCLOAK_PORT:-18081}"
+{% if context.auth_enabled %}keycloak_port="${BAUKIT_QA_KEYCLOAK_PORT:-18081}"
 {% endif %}
 compose=(
   docker compose
@@ -72,7 +72,7 @@ stop_services
 command -v cargo >/dev/null || { echo "qa: cargo is required" >&2; exit 1; }
 command -v curl >/dev/null || { echo "qa: curl is required" >&2; exit 1; }
 
-echo "qa: starting disposable PostgreSQL, Redis{% if context.auth_oidc %}, and Keycloak{% endif %}"
+echo "qa: starting disposable PostgreSQL, Redis{% if context.auth_enabled %}, and Keycloak{% endif %}"
 "${compose[@]}" up -d --wait
 
 export {{ context.app_env }}__DATABASE__URL="postgres://postgres:postgres@127.0.0.1:${postgres_port}/{{ context.app_crate }}"
@@ -83,6 +83,9 @@ export {{ context.app_env }}__OPS__BIND_ADDRESS=127.0.0.1
 export {{ context.app_env }}__OPS__PORT="$ops_port"
 {% if context.auth_oidc %}export {{ context.app_env }}__AUTH__ISSUER="http://localhost:${keycloak_port}/realms/{{ context.app_name }}"
 export {{ context.app_env }}__AUTH__AUDIENCE="{{ context.app_name }}-backend"
+{% elif context.auth_enabled %}export {{ context.app_env }}__AUTH__ISSUER="http://localhost:${keycloak_port}/realms/{{ context.app_name }}"
+export {{ context.app_env }}__AUTH__JWKS_URI="http://localhost:${keycloak_port}/realms/{{ context.app_name }}/protocol/openid-connect/certs"
+export {{ context.app_env }}__AUTH__IDENTITY_ADMIN_CLIENT_SECRET="${ {{- context.app_env }}__AUTH__IDENTITY_ADMIN_CLIENT_SECRET:-qa-placeholder-not-a-provider-key}"
 {% endif %}
 
 cargo build --locked --manifest-path "$root/backend/Cargo.toml" \

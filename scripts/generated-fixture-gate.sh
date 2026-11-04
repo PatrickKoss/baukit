@@ -67,6 +67,11 @@ for flavor in "${flavors[@]}"; do
         corepack pnpm --dir "$fixture/mobile" lint
         corepack pnpm --dir "$fixture/mobile" run test:coverage
     fi
+    if [[ "$flavor" == clerk || "$flavor" == workos ]]; then
+        corepack pnpm --dir "$fixture/web" run check:bundle
+        (cd "$fixture/mobile" && node --test scripts/check-production-bundle.test.mjs)
+        corepack pnpm --dir "$fixture/mobile" run check:bundle
+    fi
     if [[ "$flavor" == mobile-pwa ]]; then
         corepack pnpm --dir "$fixture/mobile" exec expo export --platform web --max-workers 4
         corepack pnpm --dir "$fixture/mobile" run build:sw

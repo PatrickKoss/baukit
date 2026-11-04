@@ -13,6 +13,7 @@ import { analytics } from './analytics';
 import { NavigationShell } from './navigation-shell';
 import { currentUser, listItems, type CurrentUser, type Item } from './api';
 import { authClient } from './auth';
+import type { SignInSession } from './sign-in/port';
 import { backOrReplace, browserNavigation } from './back-or-replace';
 import { deriveDetailRouteState } from './route-state';
 import { DetailRouteStateView } from './route-state-view';
@@ -32,6 +33,7 @@ export function App() {
   const [sessionExpiredReason, setSessionExpiredReason] = useState<SessionExpiredReason>();
   const [authError, setAuthError] = useState<string>();
   const [user, setUser] = useState<CurrentUser>();
+  const [signInSession, setSignInSession] = useState<SignInSession>();
   const localData = useAuthenticatedLocalData(user?.id, sessionExpiredReason, queryClient);
   const blockIdentityMismatch = localData.blockIdentityMismatch;
   const partition =
@@ -83,6 +85,12 @@ export function App() {
       return;
     }
     let active = true;
+    void authClient
+      .session()
+      .then((nextSession) => {
+        if (active) setSignInSession(nextSession);
+      })
+      .catch(() => undefined);
     void currentUser()
       .then((nextUser) => {
         if (active) setUser(nextUser);
@@ -131,7 +139,7 @@ export function App() {
       await localData.clear();
       setAuthenticated(false);
       setUser(undefined);
-      await authClient.logout();
+      await authClient.signOut();
     } catch (cause) {
       setAuthError(cause instanceof Error ? cause.message : 'Could not close local account data.');
     }
@@ -217,6 +225,9 @@ export function App() {
               Signed in as {user?.subject ?? 'confirming…'}; internal user ID{' '}
               {user?.id ?? 'confirming…'}. Local data: {localData.state.status}.
             </p>
+            {signInSession?.organization === undefined ? null : (
+              <p className="muted">Organization {signInSession.organization.id}</p>
+            )}
             <button
               className="action secondary"
               type="button"
@@ -231,8 +242,8 @@ export function App() {
             </a>
           </>
         ) : (
-          <button className="action" type="button" onClick={() => void authClient.login()}>
-            Sign in with {{ "local Keycloak" if context.auth_oidc else "Clerk" if context.auth_clerk else "WorkOS" }}
+          <button className="action" type="button" onClick={() => void authClient.signIn()}>
+            Sign in with {authClient.providerLabel}
           </button>
         )}
       </section>

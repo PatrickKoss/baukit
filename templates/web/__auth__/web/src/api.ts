@@ -16,7 +16,12 @@ export interface CurrentUser {
 const configuredBaseUrl: unknown = import.meta.env['VITE_API_URL'];
 const api = createAuthenticatedApiRuntime({
   auth: authClient,
-  baseUrl: typeof configuredBaseUrl === 'string' ? configuredBaseUrl : 'http://localhost:{{ context.api_host_port }}',
+  baseUrl:
+    typeof configuredBaseUrl === 'string'
+      ? configuredBaseUrl
+      : import.meta.env.MODE === 'production'
+        ? window.location.origin
+        : 'http://localhost:{{ context.api_host_port }}',
   environment: import.meta.env.MODE,
 });
 

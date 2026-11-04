@@ -1,19 +1,16 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import type { PropsWithChildren } from 'react';
 {% if context.auth_oidc %}import { createExpoOidcClient as createClient } from '@baukit/auth-native/expo';
-{% elif context.auth_workos %}import { createWorkOsNativeClient as createClient } from '@baukit/auth-native/workos';
-{% else %}import { createClerkExpoClient as createClient } from '@baukit/auth-native/clerk-expo';
-{% endif %}
-import {
-{% if not context.auth_clerk %}  appearanceStateDecoration,{% endif %}
+{% endif %}import {
+  appearanceStateDecoration,
   OidcError,
   type OidcSession,
   type SessionExpiredEvent,
 } from '@baukit/auth-native';
 
-jest.mock('expo-auth-session', () => ({ makeRedirectUri: () => 'product://oauth' }));
+{% if context.auth_oidc %}jest.mock('expo-auth-session', () => ({ makeRedirectUri: () => 'product://oauth' }));
 jest.mock('expo-crypto', () => ({ getRandomBytesAsync: jest.fn() }));
-{% if context.auth_oidc %}jest.mock('expo-constants', () => ({
+jest.mock('expo-constants', () => ({
   __esModule: true,
   default: { expoConfig: { extra: {
     oidcAudience: 'https://api.example.test',
@@ -22,8 +19,7 @@ jest.mock('expo-crypto', () => ({ getRandomBytesAsync: jest.fn() }));
     oidcOfflineAccess: false,
   } } },
 }));
-{% endif %}
-jest.mock('{% if context.auth_oidc %}@baukit/auth-native/expo{% elif context.auth_workos %}@baukit/auth-native/workos{% else %}@baukit/auth-native/clerk-expo{% endif %}', () => {
+jest.mock('@baukit/auth-native/expo', () => {
   const client = {
     subscribe: jest.fn(),
     subscribeSessionExpired: jest.fn(),
@@ -32,22 +28,30 @@ jest.mock('{% if context.auth_oidc %}@baukit/auth-native/expo{% elif context.aut
     signIn: jest.fn(),
     signOut: jest.fn(),
   };
-{% if context.auth_oidc %}  return { completeExpoAuthSession: jest.fn(), createExpoOidcClient: jest.fn(() => client) };
-{% elif context.auth_workos %}  return { createWorkOsNativeClient: jest.fn(() => client) };
-{% else %}  return { createClerkExpoClient: jest.fn(() => ({ client, Provider: ({ children }: PropsWithChildren) => children })) };
-{% endif %}
+  return { completeExpoAuthSession: jest.fn(), createExpoOidcClient: jest.fn(() => client) };
 });
-
-{% if context.auth_workos %}jest.mock('@baukit/auth-native/expo', () => ({ completeExpoAuthSession: jest.fn(), createExpoOidcEnvironment: (environment: unknown) => environment }));
+{% else %}jest.mock('./sign-in/local', () => ({
+  signInAdapter: {
+    providerLabel: 'local Keycloak',
+    client: {
+      subscribe: jest.fn(),
+      subscribeSessionExpired: jest.fn(),
+      initialize: jest.fn(),
+      accessToken: jest.fn(),
+      signIn: jest.fn(),
+      signOut: jest.fn(),
+    },
+    Provider: ({ children }: PropsWithChildren) => children,
+  },
+}));
 {% endif %}
 import { authClient, AuthProvider, useAuth } from './auth';
-import { authStorage } from './auth-storage';
-
-const client = jest.mocked(authClient);
-const clientEnvironment = jest.mocked(createClient).mock.calls[0]?.[1];
-{% if context.auth_oidc %}const clientConfiguration = jest.mocked(createClient).mock.calls[0]?.[0];
+{% if context.auth_oidc %}import { authStorage } from './auth-storage';
 {% endif %}
-const REFRESH_LEAD_MS = 30_000;
+const client = jest.mocked(authClient);
+{% if context.auth_oidc %}const clientEnvironment = jest.mocked(createClient).mock.calls[0]?.[1];
+const clientConfiguration = jest.mocked(createClient).mock.calls[0]?.[0];
+{% endif %}const REFRESH_LEAD_MS = 30_000;
 
 function session(overrides: Partial<OidcSession> = {}): OidcSession {
   return {
@@ -105,11 +109,11 @@ describe('useAuth', () => {
     });
   });
 
-{% endif %}
   it('uses the SecureStore storage port', () => {
-    expect({% if context.auth_clerk %}clientEnvironment{% else %}clientEnvironment?.storage{% endif %}).toBe(authStorage);
+    expect(clientEnvironment?.storage).toBe(authStorage);
   });
 
+{% endif %}
   it('requires the provider', async () => {
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
@@ -124,12 +128,26 @@ describe('useAuth', () => {
     const { result } = await renderAuth();
 
     expect(result.current).toMatchObject({
+      providerLabel: 'local Keycloak',
       accessToken: 'access-token',
       subject: 'subject-123',
       ready: true,
       sessionExpired: false,
     });
     expect(result.current.error).toBeUndefined();
+  });
+
+  it('reads the user and organization from the access token', async () => {
+    const claims = btoa(JSON.stringify({ sub: 'subject-123', sid: 'sess_1', org_id: 'org_local', role: 'admin', permissions: ['items:read'] }));
+    client.initialize.mockResolvedValue(session({ accessToken: `header.${claims.replace(/=+$/u, '')}.signature` }));
+
+    const { result } = await renderAuth();
+
+    expect(result.current.session).toEqual({
+      sessionId: 'sess_1',
+      user: { id: 'subject-123' },
+      organization: { id: 'org_local', role: 'admin', permissions: ['items:read'] },
+    });
   });
 
   it('reports a safe message when initialization fails', async () => {
@@ -192,9 +210,9 @@ describe('useAuth', () => {
     const outcome = await act(() => result.current.signIn('dark'));
 
     expect(outcome).toEqual({ status: 'success', subject: 'subject-123' });
-    expect(client.signIn.mock.calls).toEqual({% if context.auth_clerk %}[[]]{% else %}[
+    expect(client.signIn.mock.calls).toEqual([
       [{ stateDecoration: appearanceStateDecoration({ mode: 'dark' }) }],
-    ]{% endif %});
+    ]);
     expect(result.current.sessionExpired).toBe(false);
     expect(result.current.sessionExpiredReason).toBeUndefined();
     expect(result.current.announcement).toBeUndefined();
@@ -206,7 +224,7 @@ describe('useAuth', () => {
 
     await act(() => result.current.signIn());
 
-    expect(client.signIn.mock.calls).toEqual({% if context.auth_clerk %}[[]]{% else %}[[{}]]{% endif %});
+    expect(client.signIn.mock.calls).toEqual([[{}]]);
     expect(result.current.announcement).toBe('Sign in cancelled. You can try again.');
   });
 
