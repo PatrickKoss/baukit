@@ -9,8 +9,8 @@
 | fast | openapi, rust-fmt, migrations, mcp-drift, scripts-tests, markdown-links, preflight, metric-names, spec-purposes |
 | backend | rust-clippy, rust-msrv, rust-tests, rust-doctests |
 | images | images |
-| web | web-install, web-build, web-lint, web-unit, web-service-worker, playwright, webkit-repeats |
-| mobile | mobile-install, mobile-typecheck, mobile-lint, expo-doctor, mobile-unit, mobile-service-worker, ios-check, android-build, android-e2e |
+| web | web-install, web-build, web-lint, web-unit, web-service-worker, {% if context.auth_enabled and not context.auth_oidc %}web-bundle, {% endif %}playwright, webkit-repeats |
+| mobile | mobile-install, mobile-typecheck, mobile-lint, expo-doctor, mobile-unit, mobile-service-worker, {% if context.auth_enabled and not context.auth_oidc %}mobile-bundle, {% endif %}ios-check, android-build, android-e2e |
 | stack | full-stack-e2e, only when `quality.full_stack_e2e = true` |
 
 A product only gets the lanes and steps its capabilities need. Lanes run at the same time. Steps inside a lane run in order and stop at the first failure. Two steps also wait on a step in another lane: `web-build` and `mobile-typecheck` wait for `openapi`, because the OpenAPI step regenerates the client those builds import. `mcp-drift` waits for `openapi` too.

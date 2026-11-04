@@ -112,7 +112,8 @@ web-build web web-install{% if context.backend %},openapi{% endif %} selected we
 web-lint web web-build always -
 web-unit web web-lint selected -
 web-service-worker web web-build selected -
-playwright web web-build selected web-e2e,playwright
+{% if context.auth_enabled and not context.auth_oidc %}web-bundle web web-build selected -
+{% endif %}playwright web web-build selected web-e2e,playwright
 webkit-repeats web playwright selected -
 {% endif %}{% if context.mobile %}mobile-install mobile - always -
 mobile-typecheck mobile mobile-install{% if context.backend %},openapi{% endif %} always -
@@ -120,6 +121,7 @@ mobile-lint mobile mobile-typecheck always -
 expo-doctor mobile mobile-lint selected -
 mobile-unit mobile expo-doctor selected -
 {% if not context.web %}mobile-service-worker mobile mobile-unit selected -
+{% endif %}{% if context.auth_enabled and not context.auth_oidc %}mobile-bundle mobile mobile-unit selected -
 {% endif %}ios-check mobile mobile-unit selected -
 android-build mobile ios-check selected -
 android-e2e mobile android-build selected -
@@ -340,7 +342,12 @@ step_web_service_worker() {
   corepack pnpm@12.9.1 --dir web run build:sw:check
 }
 
-critical_paths() {
+{% if context.web and context.auth_enabled and not context.auth_oidc %}step_web_bundle() {
+  (cd web && node --test scripts/check-production-bundle.test.mjs)
+  corepack pnpm@12.9.1 --dir web run check:bundle
+}
+
+{% endif %}critical_paths() {
   manifest_value quality.critical_paths | while IFS= read -r critical_path; do
     [ -n "$critical_path" ] || continue
     case "$critical_path" in
@@ -420,7 +427,12 @@ step_mobile_service_worker() {
 {% endif %}  corepack pnpm@12.9.1 --dir mobile run build:sw:check
 }
 {% endif %}
-step_ios_check() {
+{% if context.mobile and context.auth_enabled and not context.auth_oidc %}step_mobile_bundle() {
+  (cd mobile && node --test scripts/check-production-bundle.test.mjs)
+  corepack pnpm@12.9.1 --dir mobile run check:bundle
+}
+
+{% endif %}step_ios_check() {
   CI=1 corepack pnpm@12.9.1 --dir mobile exec expo prebuild --clean --platform ios
   CI=1 corepack pnpm@12.9.1 --dir mobile exec expo export --platform ios --output-dir dist/ios-check --max-workers "$workers"
 }

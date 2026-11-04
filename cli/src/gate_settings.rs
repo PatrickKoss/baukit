@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, path::Path};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Capabilities, QualityManifest};
+use crate::{AuthProvider, Capabilities, QualityManifest};
 
 const FIRST_EMULATOR_PORT: u16 = 5556;
 const EMULATOR_PORT_SLOTS: u32 = 63;
@@ -167,6 +167,17 @@ fn known_tokens(capabilities: &Capabilities, quality: &QualityManifest) -> Vec<&
         ]);
         if !capabilities.web {
             tokens.push("mobile-service-worker");
+        }
+    }
+    if matches!(
+        capabilities.auth,
+        Some(AuthProvider::Clerk | AuthProvider::Workos)
+    ) {
+        if capabilities.web {
+            tokens.push("web-bundle");
+        }
+        if capabilities.mobile {
+            tokens.push("mobile-bundle");
         }
     }
     if quality.full_stack_e2e {
