@@ -15,6 +15,7 @@ mod organizations;
 mod plan;
 mod plan_catalog;
 mod plan_http;
+mod plan_organization;
 #[cfg(feature = "postgres")]
 mod postgres;
 mod receiver;
@@ -30,6 +31,7 @@ pub use organizations::*;
 pub use plan::*;
 pub use plan_catalog::*;
 pub use plan_http::*;
+pub use plan_organization::*;
 #[cfg(feature = "postgres")]
 pub use postgres::{PLATFORM_MIGRATION_SQL, PostgresEntitlementCache, PostgresPlatformInbox};
 pub use receiver::*;

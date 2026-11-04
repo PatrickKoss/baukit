@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Breaking: organizations are plan kit subjects (BK25). `require_feature(plan, subject, feature)` takes `impl Into<FeatureSubject>` and returns `FeatureGrant`. `Some(suite_subject)` and `None` still work as account subjects. `FeatureSubject::Member` checks the organization's grant once the hub confirms the membership, and `FeatureSubject::Organization` checks an organization-owned API token or worker with no suite subject. `FeatureSubject` is an Axum extractor that reads the `PlanOrganization` extension, the `X-Organization-Id` header and `PlanSubject`. `HubAccountPlan::with_organizations(grants)` enables it, and grants and memberships stay cached for `ORGANIZATION_CACHE_TTL_SECONDS` (60). `AccountPlan` gains `organization_refresh`, `organization_current` and `is_member`, which default to `organization_not_accessible`. `PlanError` gains `OrganizationNotAccessible` (403 `organization_not_accessible`) and `OrganizationIdInvalid` (400 `organization_id_invalid`). `AccountEntitlement` gains `organization`, which the account body omits. `GET /me/entitlement` with `X-Organization-Id` serves the organization's plan to a member.
+
 ## [0.17.1] - 2026-11-03
 
 ## [0.17.0] - 2026-11-02
