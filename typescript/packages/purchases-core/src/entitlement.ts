@@ -10,6 +10,12 @@ export interface BillingClaim {
   readonly manageUrl?: string;
 }
 
+/** The organization a member read the plan for. */
+export interface EntitlementOrganization {
+  readonly organizationId: string;
+  readonly name: string | null;
+}
+
 /** The body of the product backend's `GET /me/entitlement`. */
 export interface VerifiedEntitlement {
   readonly mode: PlanMode;
@@ -20,6 +26,8 @@ export interface VerifiedEntitlement {
   /** The hub `/plans` page in hub mode, null in standalone mode. */
   readonly plansUrl: string | null;
   readonly billing: BillingClaim | null;
+  /** Set when the backend served an organization's plan to a member. */
+  readonly organization?: EntitlementOrganization | null;
 }
 
 /** The body of the product backend's `GET /me/credits`. */
@@ -36,6 +44,8 @@ export interface CreditBalanceSnapshot {
 export interface EntitlementBackend {
   refreshEntitlement(): Promise<VerifiedEntitlement | null>;
   creditBalance?(): Promise<CreditBalanceSnapshot | null>;
+  /** The plan of an organization the account acts for, sent with `X-Organization-Id`. */
+  organizationEntitlement?(organizationId: string): Promise<VerifiedEntitlement | null>;
 }
 
 export interface TicketClaimsLike {

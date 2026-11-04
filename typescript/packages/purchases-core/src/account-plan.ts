@@ -10,7 +10,12 @@ export const ACCOUNT_PLAN_ERROR_CODES = [
   'entitlements_unavailable',
   'credits_unavailable',
   'feature_not_entitled',
+  'organization_not_accessible',
+  'organization_id_invalid',
 ] as const;
+
+/** The request header that names the organization a request acts for. */
+export const ORGANIZATION_HEADER = 'x-organization-id';
 export type AccountPlanErrorCode = (typeof ACCOUNT_PLAN_ERROR_CODES)[number];
 
 export class AccountPlanError extends Error {
@@ -60,11 +65,16 @@ function parseEntitlement(value: unknown): VerifiedEntitlement {
     !value['features'].every(text) ||
     !count(value['revision']) ||
     !nullable(value['plansUrl'], text) ||
-    !nullable(value['billing'], record)
+    !nullable(value['billing'], record) ||
+    !(value['organization'] === undefined || nullable(value['organization'], organization))
   ) {
     throw new TypeError('The API returned an invalid entitlement.');
   }
   return value as unknown as VerifiedEntitlement;
+}
+
+function organization(value: unknown): boolean {
+  return record(value) && text(value['organizationId']) && nullable(value['name'], text);
 }
 
 function parseBalance(value: unknown): CreditBalanceSnapshot {
@@ -104,11 +114,18 @@ async function failure(response: Response): Promise<AccountPlanError> {
   );
 }
 
-/** Reads Baukit's `GET /me/entitlement` and `GET /me/credits`. `suite_identity_missing` resolves to `null`. */
+/**
+ * Reads Baukit's `GET /me/entitlement` and `GET /me/credits`. `suite_identity_missing` resolves
+ * to `null`. `organizationEntitlement` rejects a non-member with `organization_not_accessible`.
+ */
 export function createAccountPlanBackend(options: AccountPlanBackendOptions): EntitlementBackend {
   const base = options.baseUrl.replace(/\/+$/u, '');
-  async function read<T>(path: string, parse: (value: unknown) => T): Promise<T | null> {
-    const headers = { accept: 'application/json', ...(await options.headers?.()) };
+  async function read<T>(
+    path: string,
+    parse: (value: unknown) => T,
+    extra: Record<string, string> = {},
+  ): Promise<T | null> {
+    const headers = { accept: 'application/json', ...(await options.headers?.()), ...extra };
     const response = await options.fetch(`${base}${path}`, { headers });
     if (!response.ok) {
       const error = await failure(response);
@@ -120,5 +137,7 @@ export function createAccountPlanBackend(options: AccountPlanBackendOptions): En
   return {
     refreshEntitlement: () => read('/me/entitlement', parseEntitlement),
     creditBalance: () => read('/me/credits', parseBalance),
+    organizationEntitlement: (organizationId) =>
+      read('/me/entitlement', parseEntitlement, { [ORGANIZATION_HEADER]: organizationId }),
   };
 }

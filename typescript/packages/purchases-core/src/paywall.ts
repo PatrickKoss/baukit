@@ -11,6 +11,11 @@ export type Paywall =
       readonly soldBy: string | null;
     }
   | { readonly kind: 'covered'; readonly channel: 'family' | 'organization' }
+  | {
+      readonly kind: 'organization_managed';
+      readonly organizationId: string;
+      readonly organizationName: string | null;
+    }
   | { readonly kind: 'none' };
 
 export interface PaywallContext {
@@ -22,10 +27,22 @@ export interface PaywallContext {
 /**
  * The C18 rules: a plan managed on the web or in a store shows where to manage it and
  * never sells a second plan, family and organization coverage offer no purchase, and
- * standalone mode sells nothing. Promo grants and free accounts may buy.
+ * standalone mode sells nothing. Promo grants and free accounts may buy. An organization's
+ * plan covers its members, and a feature it lacks names the organization whose admins manage
+ * the plan instead of offering a purchase.
  */
 export function paywallFor(entitlement: VerifiedEntitlement, context: PaywallContext): Paywall {
   if (entitlement.mode === 'standalone') return { kind: 'none' };
+  const organization = entitlement.organization;
+  if (organization) {
+    if (context.feature === undefined || entitlement.features.includes(context.feature))
+      return { kind: 'covered', channel: 'organization' };
+    return {
+      kind: 'organization_managed',
+      organizationId: organization.organizationId,
+      organizationName: organization.name,
+    };
+  }
   const link =
     entitlement.plansUrl === null
       ? null

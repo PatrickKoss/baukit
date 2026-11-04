@@ -181,6 +181,29 @@ Gating fails closed. A failed read is `unavailable`, never a grant and never the
 
 `billing` comes from the ticket's claim. `PlatformTicketSource` asks for it with `includeBilling: true`, which needs the hub with Schlüsselbund C27. `GET /me/entitlement` always calls `refresh`, so every read carries the current claim and a web or store subscriber never sees a purchase offer. The cache does not keep `billing`, and `current` returns `null`, because request gating only checks feature keys. Read `billing` from `refresh`, never from `current`.
 
+### Organizations as subjects
+
+A request can act for a hub organization instead of the account's own plan. `require_feature(&plan, subject, key)` takes a `FeatureSubject`:
+
+| Subject | Checked against |
+| --- | --- |
+| `Account(Option<suite_subject>)`, or `Some(subject)` / `None` | the account's plan, as above |
+| `Member { organization_id, suite_subject }` | the organization's grant, once the hub confirms the account can use the product there |
+| `Organization(organization_id)` | the organization's grant, for an API token or worker the organization owns; no suite subject |
+
+A request names its organization with the `X-Organization-Id` header (`ORGANIZATION_HEADER`), a UUID. `FeatureSubject` is an Axum extractor: a `PlanOrganization(id)` extension, which the authentication layer inserts for an organization-owned token, gives `Organization`; otherwise the header and `PlanSubject` give `Member`; without the header, `PlanSubject` gives `Account`. A worker builds `FeatureSubject::Organization(id)` itself. A member's own plan never applies to an organization request, and an organization's grant never applies to the account's own requests.
+
+Enable it with `HubAccountPlan::new(...)?.with_organizations(Arc::new(HubOrganizations::new(hub)))`, which needs `organizations:read`. The grant is the hub's `GET /platform/v1/organizations/{id}` summary: its `tier` and `features`, which the hub derives from the plan's `organizationProducts`, and no features while the organization is suspended. The kit stores it in the `EntitlementCache` under the subject `organization_cache_subject(id)` (`organization:<id>`) for `ORGANIZATION_CACHE_TTL_SECONDS` (60), so a lost grant applies within 60 seconds. Membership comes from paging `GET /platform/v1/accounts/{suiteSubject}/organizations`; the kit keeps a confirmed membership in memory for the same 60 seconds and never caches a refusal. `StandaloneAccountPlan` gives every organization the configured grant and leaves membership to the product's authentication. Without `with_organizations`, and in `AccountPlan` implementations that don't override the organization methods, every organization subject answers `organization_not_accessible`.
+
+`GET /me/entitlement` with `X-Organization-Id` returns the organization's plan to a member: `suiteSubject` is the member, `organization` is `{organizationId, name}`, and `plansUrl` and `billing` are null, because members never buy for the organization. The account body omits `organization`. `GET /me/credits` ignores the header.
+
+| Code | Status | When |
+| --- | --- | --- |
+| `organization_not_accessible` | 403 | the organization is unknown or invisible to the product, the account is not a member, or an organization token names another organization. All three answer the same body, and the kit checks membership before it reads the organization, so a non-member learns nothing about whether it exists |
+| `organization_id_invalid` | 400 | `X-Organization-Id` is not a UUID |
+| `feature_not_entitled` | 403, `details.feature` | the organization's grant lacks the key |
+| `entitlements_unavailable` | 503, `Retry-After: 5` | the summary, membership or cache read failed |
+
 ### Check feature keys against the hub catalog
 
 `fixtures/plans/v1/catalog.json` is a recorded copy of the hub plan catalog; its README names the hub commit. A product contract test copies it and calls `assert_feature_keys_match(catalog, "hebkit", HEBKIT_FEATURE_KEYS)`, which panics with both lists when the product declares a key the catalog lacks or the catalog grants a key the product never checks. A plan grants keys through `includedProducts` and, for business plans, `organizationProducts`; the helpers count both, so a key granted only to organizations, such as `hebkit.trainer`, must be declared too. `feature_key_drift` returns the same lists as `FeatureKeyDrift` for a custom assertion. Web and mobile code use `assertFeatureKeysMatch(catalog, productId, keys)`, `featureKeyDrift` and `catalogFeatureKeys` from `@baukit/suite-client` with the parsed JSON of the same file.

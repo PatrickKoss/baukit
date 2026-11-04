@@ -380,6 +380,37 @@ async fn cache_conformance(cache: &dyn EntitlementCache) {
             .expect("other subject retained"),
         10
     );
+    organization_conformance(cache).await;
+}
+async fn organization_conformance(cache: &dyn EntitlementCache) {
+    let organization = organization_cache_subject(uuid::Uuid::from_u128(7));
+    let mut grant = snapshot(3, 100);
+    grant.subject = organization.clone();
+    cache.store(&grant).await.expect("organization grant");
+    assert_eq!(
+        cache
+            .get(&organization, "hebkit", 99)
+            .await
+            .expect("cached"),
+        Some(grant.clone())
+    );
+    grant.revision = 4;
+    grant.features = Vec::new();
+    grant.valid_until = 160;
+    cache.store(&grant).await.expect("lost grant");
+    assert_eq!(
+        cache.get(&organization, "hebkit", 100).await.expect("lost"),
+        Some(grant)
+    );
+    cache.forget("erased").await.expect("member erased");
+    assert_eq!(
+        cache
+            .revision(&organization, "hebkit")
+            .await
+            .expect("organization kept"),
+        4
+    );
+    cache.forget(&organization).await.expect("cleanup");
 }
 #[tokio::test]
 async fn memory_cache_and_standalone_read_api() {

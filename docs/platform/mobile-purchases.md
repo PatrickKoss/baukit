@@ -50,6 +50,10 @@ A failed refresh keeps the last verified entitlement, as the backend keeps its c
 | `family`, `organization` | `covered`, no purchase |
 | standalone mode | `none` |
 
+An organization's plan, which carries `organization`, ignores `billing`. It answers `covered` with channel `organization` when it has the feature, and `organization_managed` with `organizationId` and `organizationName` when it lacks it. Show that the organization's admins manage the plan. Never offer a purchase.
+
+To gate on an organization the account acts for, load its plan with `useOrganizationPlan(backend, organizationId)`, which calls `backend.organizationEntitlement(organizationId)`, and pass it as `useFeature(key, { organization })` or `<LockedFeature organization={...}>`. The state is `loading`, `unavailable`, `not_accessible` for a non-member (locked with paywall `none`) or `ready`. `organizationFeatureAccess(state, key, {productId})` is the same check without React.
+
 `plansLink(plansUrl, {from, feature})` builds `<plansUrl>?from=<product id>&feature=<feature key>`, the Plans page contract of Schlüsselbund C17 (`1cb82e6`, docs/billing.md, "Plans page with product context"). Both parameters are optional. The builder drops `feature` without `from`, because the hub ignores it there. The hub matches values exactly and falls back to the normal page for a bad value, so pass the product ID and the catalog feature key unchanged.
 
 ## Ticket refresh

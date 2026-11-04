@@ -17,6 +17,37 @@ export type FeatureAccess =
       readonly paywall: Paywall;
     };
 
+/** An organization's plan as a client loads it through `organizationEntitlement`. */
+export type OrganizationPlanState =
+  | { readonly status: 'loading' }
+  | { readonly status: 'unavailable' }
+  | { readonly status: 'not_accessible' }
+  | { readonly status: 'ready'; readonly entitlement: VerifiedEntitlement };
+
+/** Access to `feature` through an organization's plan. A non-member sees neither feature nor paywall. */
+export function organizationFeatureAccess(
+  organization: OrganizationPlanState,
+  feature: string,
+  context: Omit<PaywallContext, 'feature'>,
+): FeatureAccess {
+  switch (organization.status) {
+    case 'loading':
+    case 'unavailable':
+      return { status: organization.status };
+    case 'not_accessible':
+      return { status: 'locked', entitlement: null, paywall: { kind: 'none' } };
+    case 'ready': {
+      const { entitlement } = organization;
+      if (entitlement.features.includes(feature)) return { status: 'granted', entitlement };
+      return {
+        status: 'locked',
+        entitlement,
+        paywall: paywallFor(entitlement, { ...context, feature }),
+      };
+    }
+  }
+}
+
 export function featureAccess(
   state: PurchaseState,
   feature: string,
