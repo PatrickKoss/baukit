@@ -312,6 +312,9 @@ pub fn validate(
             ));
         }
     }
+    if quality.android_wifi && !capabilities.mobile {
+        failures.push("quality.android_wifi requires the mobile capability".to_owned());
+    }
     let count = quality
         .android_emulators
         .unwrap_or(DEFAULT_ANDROID_EMULATORS);
@@ -565,6 +568,29 @@ mod tests {
         assert_eq!(
             failures,
             ["quality.android_emulators requires the mobile capability"]
+        );
+    }
+
+    #[test]
+    fn android_wifi_requires_the_mobile_capability() {
+        let quality: QualityManifest = toml::from_str("android_wifi = true\n").expect("parses");
+        let mut failures = Vec::new();
+        validate(
+            &quality,
+            &capabilities(false, false, true),
+            None,
+            &mut failures,
+        );
+        assert!(failures.is_empty(), "{failures:?}");
+        validate(
+            &quality,
+            &capabilities(true, false, false),
+            None,
+            &mut failures,
+        );
+        assert_eq!(
+            failures,
+            ["quality.android_wifi requires the mobile capability"]
         );
     }
 

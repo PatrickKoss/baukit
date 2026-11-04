@@ -261,7 +261,7 @@ RENDERER
         (avd / "baukit-clean-000000000000.ready").touch()
         name = subprocess.run(
             [sys.executable, str(self.scripts / "android-adb.py"), "--snapshot-name",
-             str(avd / "config.ini"), str(self.sdk), "swiftshader_indirect", "-WiFiPacketStream", "test"],
+             str(avd / "config.ini"), str(self.sdk), "swiftshader_indirect", "", "test"],
             capture_output=True, text=True, check=True,
         ).stdout.strip()
         (avd / "snapshots" / name).mkdir()
@@ -281,10 +281,22 @@ RENDERER
         self.assertGreater(order[1], max(i for i, event in enumerate(events[: order[0]]) if "lastanr" in event))
         self.assertEqual(self.run_script("android-env.sh", "stop").returncode, 0)
 
+    def test_emulators_keep_the_default_network_without_android_wifi(self):
+        self.prepare_start()
+        self.executable(self.sdk / "emulator/emulator", '{ flock 9; printf \'{"args": "%s"}\\n\' "$*" >> "$EVENTS"; } 9>"$EVENTS.lock"\n')
+        result = self.run_script("android-env.sh", "start", FAILURE="wifi")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        events = self.events.read_text()
+        self.assertIn('"args": "-avd', events)
+        self.assertNotIn("-feature", events)
+        self.assertNotIn("svc wifi", events)
+        self.assertNotIn("route get", events)
+        self.assertEqual(self.run_script("android-env.sh", "stop").returncode, 0)
+
     def test_emulators_launch_without_wifi_packet_stream_and_wait_for_the_wifi_route(self):
         self.prepare_start()
         self.executable(self.sdk / "emulator/emulator", '{ flock 9; printf \'{"args": "%s"}\\n\' "$*" >> "$EVENTS"; } 9>"$EVENTS.lock"\n')
-        result = self.run_script("android-env.sh", "start")
+        result = self.run_script("android-env.sh", "start", BAUKIT_QA_ANDROID_WIFI="1")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertRegex(result.stderr, r"qa: emulator-\d+ has a Wi-Fi route after \d+ s")
         events = self.events.read_text().splitlines()
@@ -299,7 +311,7 @@ RENDERER
 
     def test_missing_wifi_route_fails_the_start(self):
         self.prepare_start()
-        result = self.run_script("android-env.sh", "start", FAILURE="wifi", BAUKIT_QA_WIFI_TIMEOUT_SECONDS="0.2")
+        result = self.run_script("android-env.sh", "start", FAILURE="wifi", BAUKIT_QA_WIFI_TIMEOUT_SECONDS="0.2", BAUKIT_QA_ANDROID_WIFI="true")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("has no Wi-Fi route to 10.0.2.2; offline flows need Wi-Fi", result.stderr)
         self.assertIn("qa: last route: 10.0.2.2 dev eth0", result.stderr)
@@ -453,9 +465,9 @@ wait
         for progress in ('echo "step $step"', 'touch "${*: -2:1}/commands-$step.json"'):
             with self.subTest(progress=progress):
                 result = self.run_watched(f'''
-for step in 1 2 3 4 5 6 7 8 9 10; do
+for step in $(seq 40); do
   {progress}
-  sleep 0.4
+  sleep 0.1
 done
 echo finished >> "$EVENTS"
 ''')

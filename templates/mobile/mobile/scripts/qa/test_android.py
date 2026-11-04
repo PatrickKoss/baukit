@@ -462,19 +462,21 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
 {% if context.auth_enabled %}        flags = '-s emulator-5556 shell echo "chrome --disable-fre --no-first-run --no-default-browser-check" > /data/local/tmp/chrome-command-line'
         debug = '-s emulator-5556 shell settings put global debug_app com.android.chrome'
         stop = '-s emulator-5556 shell am force-stop com.android.chrome'
-{% endif %}        for headless in ("0", "1"):
+{% endif %}        for headless, wifi in (("0", "1"), ("1", "1"), ("1", "0")):
             self.environment["BAUKIT_QA_HEADLESS"] = headless
+            self.environment["BAUKIT_QA_ANDROID_WIFI"] = wifi
             self.events.unlink(missing_ok=True)
             emulator_args.unlink(missing_ok=True)
             shutil.rmtree(self.avds / "test-qa.avd/snapshots", ignore_errors=True)
             for marker in self.avds.glob("test-qa.avd/baukit-clean-*.ready"):
                 marker.unlink()
             self.run_script("android-env.sh")
-            snapshot = self.snapshot_name()
+            features = "-WiFiPacketStream" if wifi == "1" else ""
+            snapshot = self.snapshot_name(features=features)
             expected_args = [
                 "-avd", "test-qa", "-port", "5556",
                 "-no-snapshot-save", "-no-audio", "-no-boot-anim", "-gpu", "swiftshader_indirect",
-                "-feature", "-WiFiPacketStream", "-no-snapshot-load",
+                *(["-feature", features] if features else []), "-no-snapshot-load",
             ]
             if headless == "1":
                 expected_args.append("-no-window")
@@ -492,10 +494,12 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
             launch = events.index(command)
             self.assertFalse(any("monkey" in event for event in events))
             self.assertEqual(events.count(f"-s emulator-5556 emu avd snapshot save {snapshot}"), 1)
-            for serial in ("emulator-5556", "emulator-5558"):
-                wifi = events.index(f"-s {serial} shell svc wifi enable")
-                self.assertLess(events.index(f"-s {serial} shell cmd connectivity airplane-mode disable"), wifi)
-                self.assertLess(wifi, events.index(f"-s {serial} shell ip -4 route get 10.0.2.2"))
+            if wifi == "0":
+                self.assertFalse(any("svc wifi" in event or "route get" in event for event in events))
+            for serial in ("emulator-5556", "emulator-5558") if wifi == "1" else ():
+                enable = events.index(f"-s {serial} shell svc wifi enable")
+                self.assertLess(events.index(f"-s {serial} shell cmd connectivity airplane-mode disable"), enable)
+                self.assertLess(enable, events.index(f"-s {serial} shell ip -4 route get 10.0.2.2"))
 {% if context.auth_enabled %}            for command in (flags, debug, stop):
                 self.assertEqual(events.count(command), 1)
                 self.assertLess(events.index(command), launch)
@@ -503,10 +507,12 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
 {% else %}            self.assertFalse(any("chrome" in event for event in events))
 {% endif %}
 
-    def snapshot_name(self, gpu: str = "swiftshader_indirect", version: str = "{{ context.template_version }}") -> str:
+    def snapshot_name(
+        self, gpu: str = "swiftshader_indirect", version: str = "{{ context.template_version }}", features: str = "",
+    ) -> str:
         result = subprocess.run(
             ["python3", str(self.scripts / "android-adb.py"), "--snapshot-name",
-             str(self.avds / "test-qa.avd/config.ini"), str(self.sdk), gpu, "-WiFiPacketStream", version],
+             str(self.avds / "test-qa.avd/config.ini"), str(self.sdk), gpu, features, version],
             capture_output=True, text=True, check=True, timeout=15,
         )
         return result.stdout.strip()

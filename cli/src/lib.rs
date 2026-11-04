@@ -283,6 +283,8 @@ pub struct QualityManifest {
     pub android_emulator_port: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub android_emulators: Option<u8>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub android_wifi: bool,
     #[serde(default)]
     pub gate_budget_minutes: gate_settings::GateBudgetMinutes,
     #[serde(default)]
@@ -304,6 +306,7 @@ impl Default for QualityManifest {
             openapi_compatibility: OpenApiCompatibility::Off,
             android_emulator_port: None,
             android_emulators: None,
+            android_wifi: false,
             gate_budget_minutes: gate_settings::GateBudgetMinutes::default(),
             affected: BTreeMap::new(),
             shared: Vec::new(),
