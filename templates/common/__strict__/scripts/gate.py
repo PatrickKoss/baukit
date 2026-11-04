@@ -266,6 +266,10 @@ class CoreBudget:
             self.free -= granted
             return granted
 
+    def available(self) -> int:
+        with self.condition:
+            return self.free
+
     def release(self, cores: int) -> None:
         with self.condition:
             self.free += cores
@@ -371,6 +375,7 @@ class Runner:
         self.lane_seconds: dict[str, int] = {}
         self.lock = threading.Lock()
         self.timings_file = log_directory / "timings.txt"
+        self.started = time.monotonic()
 
     def lanes(self) -> dict[str, list[Step]]:
         lanes: dict[str, list[Step]] = {}
@@ -427,11 +432,18 @@ class Runner:
             return self.budget.acquire(max(share, reserve), reserve), True
         return self.budget.acquire(share), True
 
+    def grant_detail(self, asked: float) -> str:
+        now = time.monotonic()
+        return (f"at +{round(now - self.started)} s after waiting {round(now - asked)} s, "
+                f"{self.budget.available()} of {self.budget.cores} cores free")
+
     def run_step(self, lane: str, step: Step, log: Path) -> bool:
+        asked = time.monotonic()
         cores, drawn = self.cores_for(step)
         environment = dict(self.environment)
         worker_environment(environment, cores)
-        print(f"gate: [{lane}] {step.name} started with {cores} {'cores' if drawn else 'cores, light'}", flush=True)
+        print(f"gate: [{lane}] {step.name} started with {cores} {'cores' if drawn else 'cores, light'}, "
+              f"{self.grant_detail(asked)}", flush=True)
         started = time.monotonic()
         try:
             with log.open("a") as output:

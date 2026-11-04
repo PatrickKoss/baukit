@@ -285,6 +285,10 @@ class RunnerTests(unittest.TestCase):
         self.assertIn("gate: [docs] d started with 2 cores, light", result.stdout)
         self.assertRegex(result.stdout, r"gate: \[mobile\] android-e2e started with [2-4] cores")
         self.assertIn("keeps 2 for the emulators; light: docs, fast", result.stdout)
+        self.assertRegex(
+            result.stdout,
+            r"gate: \[web\] b started with 2 cores, at \+\d+ s after waiting \d+ s, \d+ of \d+ cores free",
+        )
 
     def test_unknown_light_names_fail(self):
         result, ran, _, _ = self.run_gate(["a fast - always -"], [], settings_text='[quality]\nlight = ["nope"]\n')
