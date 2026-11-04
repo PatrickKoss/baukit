@@ -1821,6 +1821,19 @@ fn validate_port_configuration(
             ]);
         }
     }
+    if provider_clients_use_bundled_keycloak(root, manifest)? {
+        let realm = format!("localhost:{}/realms/", ports.keycloak);
+        if manifest.capabilities.web {
+            expected.push(("web/.env.example", realm.clone()));
+        }
+        if manifest.capabilities.mobile {
+            expected.push(("mobile/.env.example", realm));
+            let qa_port = format!("{QA_KEYCLOAK_PORT_VARIABLE}{QA_KEYCLOAK_PORT}");
+            for script in QA_KEYCLOAK_SCRIPTS {
+                expected.push((script, qa_port.clone()));
+            }
+        }
+    }
     let mut expected = expected
         .into_iter()
         .map(|(path, snippet)| (path.to_owned(), snippet))
@@ -1854,7 +1867,9 @@ fn validate_port_configuration(
         } else {
             source
         };
-        let mismatched = if relative == "Makefile" && snippet.starts_with("REDIS_URL=") {
+        let mismatched = if snippet.starts_with(QA_KEYCLOAK_PORT_VARIABLE) {
+            has_mismatched_qa_keycloak_port(&source)
+        } else if relative == "Makefile" && snippet.starts_with("REDIS_URL=") {
             let expected_port = loopback_ports(&snippet, false)
                 .first()
                 .copied()
@@ -2313,6 +2328,38 @@ fn validate_openapi_file(root: &Path, kind: &str, relative: &str, failures: &mut
     } else if !root.join(path).is_file() {
         failures.push(format!("missing OpenAPI {kind} file `{relative}`"));
     }
+}
+
+const QA_KEYCLOAK_PORT_VARIABLE: &str = "BAUKIT_QA_KEYCLOAK_PORT:-";
+const QA_KEYCLOAK_PORT: u16 = 18081;
+const QA_KEYCLOAK_SCRIPTS: [&str; 5] = [
+    "mobile/scripts/qa/docker-compose.qa.yml",
+    "mobile/scripts/qa/services.sh",
+    "mobile/scripts/qa/build-android.sh",
+    "mobile/scripts/qa/build-ios.sh",
+    "mobile/scripts/qa/android-env.sh",
+];
+
+fn has_mismatched_qa_keycloak_port(source: &str) -> bool {
+    let ports = source
+        .split(QA_KEYCLOAK_PORT_VARIABLE)
+        .skip(1)
+        .map(|tail| {
+            tail.chars()
+                .take_while(char::is_ascii_digit)
+                .collect::<String>()
+                .parse::<u16>()
+                .ok()
+        })
+        .collect::<Vec<_>>();
+    ports.is_empty() || ports.iter().any(|port| *port != Some(QA_KEYCLOAK_PORT))
+}
+
+fn provider_clients_use_bundled_keycloak(root: &Path, manifest: &Manifest) -> Result<bool> {
+    Ok(matches!(
+        manifest.capabilities.auth,
+        Some(AuthProvider::Clerk | AuthProvider::Workos)
+    ) && uses_bundled_keycloak(root, manifest)?)
 }
 
 fn oidc_clients_use_bundled_keycloak(root: &Path, manifest: &Manifest) -> Result<bool> {
