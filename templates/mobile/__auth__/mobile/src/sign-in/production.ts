@@ -24,17 +24,22 @@ import type { SignInAdapter } from './port';
 
 completeExpoAuthSession();
 
-const configuredIssuer: unknown = Constants.expoConfig?.extra?.['oidcIssuer'];
-const configuredClientId: unknown = Constants.expoConfig?.extra?.['oidcClientId'];
+function setting(name: string): string {
+  const value: unknown = Constants.expoConfig?.extra?.[name];
+  return typeof value === 'string' ? value.trim() : '';
+}
 
-/** WorkOS AuthKit as a public PKCE client in the system browser. */
+const apiHostname = setting('workosApiHostname') || 'api.workos.com';
+
+/** WorkOS AuthKit as a public PKCE client in the system browser, with rotating refresh tokens in SecureStore. */
 export const signInAdapter: SignInAdapter = {
   providerLabel: 'WorkOS',
   client: createWorkOsNativeClient(
     {
-      issuer: typeof configuredIssuer === 'string' ? configuredIssuer : 'https://api.workos.com/',
-      clientId: typeof configuredClientId === 'string' ? configuredClientId : `${PRODUCT_NAME}-mobile`,
-      redirectUri: AuthSession.makeRedirectUri({ scheme: PRODUCT_NAME, path: 'oauth' }),
+      issuer: `https://${apiHostname}/`,
+      clientId: setting('workosClientId'),
+      redirectUri:
+        setting('workosRedirectUri') || AuthSession.makeRedirectUri({ scheme: PRODUCT_NAME, path: 'oauth' }),
       scopes: ['openid', 'profile', 'email'],
       offlineAccess: true,
       storageKeyPrefix: `${PRODUCT_NAME}.oidc`,

@@ -24,6 +24,8 @@ The issuer is resolved only through `/.well-known/openid-configuration`; provide
 
 `session()` exposes the subject, access token, optional refresh and ID tokens, and the `issuedAt` and `expiresAt` timestamps in epoch milliseconds. Refresh responses retain the previous refresh token or ID token when the provider omits either. When a session inside the configured refresh window has no refresh token, `accessToken()` clears it and returns `undefined`; callers should present sign-in again.
 
+`refreshOnRestore` makes `initialize()` refresh an expired stored session before it resolves. A rejected refresh ends the session and a network error keeps it. It defaults to false, and `createWorkOsNativeClient` sets it to true.
+
 `refreshLeewaySeconds` defaults to 30 seconds; the refresh window is the smaller of that value and half the token lifetime, measured as `expiresAt - issuedAt`.
 
 `offlineAccess` deliberately defaults to `false`; set it to `true` only when the provider is configured to issue refresh tokens for `offline_access`. `accessToken()` shares one refresh across concurrent callers. Pass `{ forceRefresh: true }` after a 401 to bypass the proactive expiry window while still joining any refresh already in flight.

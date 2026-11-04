@@ -6326,3 +6326,66 @@ fn doctor_checks_local_realm_sites_of_provider_products() -> anyhow::Result<()> 
     }
     Ok(())
 }
+
+#[test]
+fn doctor_checks_workos_mobile_configuration() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut generated = options(parent.path(), "workos-mobile");
+    generated.auth = Some(AuthProvider::Workos);
+    generated.mobile = true;
+    generated.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&generated)?;
+    doctor(&root)?;
+    let env_path = root.join("mobile/.env.example");
+    let env = fs::read_to_string(&env_path)?;
+    for setting in [
+        "EXPO_PUBLIC_WORKOS_CLIENT_ID",
+        "EXPO_PUBLIC_WORKOS_API_HOSTNAME",
+        "EXPO_PUBLIC_WORKOS_REDIRECT_URI",
+    ] {
+        let without = env
+            .lines()
+            .filter(|line| !line.starts_with(&format!("{setting}=")))
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(&env_path, without)?;
+        let error = doctor(&root)
+            .expect_err("doctor must find a missing WorkOS setting")
+            .to_string();
+        assert!(
+            error.contains(&format!("mobile/.env.example does not declare `{setting}`")),
+            "{setting}: {error}"
+        );
+        fs::write(&env_path, &env)?;
+    }
+    let config_path = root.join("mobile/app.config.ts");
+    let config = fs::read_to_string(&config_path)?;
+    fs::write(
+        &config_path,
+        config.replace("'EXPO_PUBLIC_WORKOS_CLIENT_ID'", "'EXPO_PUBLIC_CLIENT'"),
+    )?;
+    let error = doctor(&root)
+        .expect_err("doctor must find an unread WorkOS setting")
+        .to_string();
+    assert!(
+        error.contains("mobile/app.config.ts does not read `EXPO_PUBLIC_WORKOS_CLIENT_ID`"),
+        "{error}"
+    );
+    fs::write(&config_path, config)?;
+    let local_path = root.join("mobile/.env");
+    let placeholder = ["sk", "test", "placeholder"].join("_");
+    fs::write(
+        &local_path,
+        format!("{env}WORKOS_API_KEY=\"{placeholder}\"\n"),
+    )?;
+    let error = doctor(&root)
+        .expect_err("doctor must find a secret key in the mobile env")
+        .to_string();
+    assert!(
+        error.contains("mobile/.env carries a secret API key (`sk_`)"),
+        "{error}"
+    );
+    fs::remove_file(&local_path)?;
+    doctor(&root)?;
+    Ok(())
+}

@@ -102,8 +102,11 @@ export function createWorkOsNativeClient(
   config: NativeOidcConfig,
   environment: NativeOidcEnvironment,
 ): NativeOidcClient {
-  return new NativeOidcClient(config, {
-    ...environment,
-    protocol: workosProtocol(config, environment),
-  });
+  return new NativeOidcClient(
+    { refreshOnRestore: true, ...config },
+    {
+      ...environment,
+      protocol: workosProtocol(config, environment),
+    },
+  );
 }

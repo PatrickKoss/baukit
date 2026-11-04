@@ -269,3 +269,76 @@ it('persists WorkOS fresh authentication across erasure, reload, failed exchange
   await reloaded.signIn();
   expect(authorize.mock.calls.at(-1)?.[0].prompt).toBeUndefined();
 });
+
+describe('WorkOS cold-start restore', () => {
+  function restoreEnvironment(stored: object, response: () => Promise<Response>) {
+    const values = new Map([['restore.session', JSON.stringify(stored)]]);
+    const fetch = vi.fn<NativeOidcEnvironment['fetch']>().mockImplementation(response);
+    const environment: NativeOidcEnvironment = {
+      fetch,
+      now: () => 400_000,
+      browser: { authorize: vi.fn(), endSession: () => Promise.resolve(true) },
+      storage: {
+        get: (key) => Promise.resolve(values.get(key) ?? null),
+        set: (key, value) => {
+          values.set(key, value);
+          return Promise.resolve();
+        },
+        delete: (key) => {
+          values.delete(key);
+          return Promise.resolve();
+        },
+      },
+    };
+    const client = createWorkOsNativeClient(
+      {
+        issuer: 'https://api.workos.com/',
+        clientId: 'client_app',
+        redirectUri: 'app://oauth',
+        storageKeyPrefix: 'restore',
+      },
+      environment,
+    );
+    return { client, fetch, values };
+  }
+  const expired = {
+    subject: 'user_123',
+    accessToken: token('user_123', 300),
+    refreshToken: 'refresh_old',
+    issuedAt: 0,
+    expiresAt: 300_000,
+  };
+
+  it('refreshes an expired stored session before initialize resolves', async () => {
+    const { client, fetch, values } = restoreEnvironment(expired, () =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({ access_token: token('user_123', 900), refresh_token: 'refresh_new' }),
+        ),
+      ),
+    );
+    expect((await client.initialize())?.refreshToken).toBe('refresh_new');
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(values.get('restore.session') ?? '{}')).toMatchObject({
+      refreshToken: 'refresh_new',
+    });
+  });
+
+  it('keeps an expired session on a network failure and expires it on invalid_grant', async () => {
+    const offline = restoreEnvironment(expired, () => Promise.reject(new TypeError('offline')));
+    expect((await offline.client.initialize())?.refreshToken).toBe('refresh_old');
+    const rejected = restoreEnvironment(expired, () =>
+      Promise.resolve(new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400 })),
+    );
+    expect(await rejected.client.initialize()).toBeUndefined();
+    expect(rejected.values.has('restore.session')).toBe(false);
+  });
+
+  it('restores a live session without a token request', async () => {
+    const { client, fetch } = restoreEnvironment({ ...expired, expiresAt: 900_000 }, () =>
+      Promise.reject(new Error('unexpected')),
+    );
+    expect((await client.initialize())?.subject).toBe('user_123');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});

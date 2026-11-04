@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const BUNDLE_MARKERS = [
   { name: "Keycloak adapter", pattern: /keycloak|local-oidc/giu },
   { name: "local realm URL", pattern: /\/realms\//gu },
+  { name: "secret API key (sk_)", pattern: /\bsk_(?:test|live)_[A-Za-z0-9]{16,}/gu },
 ];
 const PRODUCT_MARKERS = [{ name: "loopback URL", pattern: /https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])/giu }];
 const LOCAL_ADAPTER_SOURCE = /(?:^|\/)src\/sign-in\/local\.[cm]?[jt]sx?$/u;
@@ -125,12 +126,12 @@ async function main() {
     }
     const findings = await scanExport(outDir);
     if (findings.length > 0) {
-      console.error(`production bundle carries local sign-in code:\n${findings.join("\n")}`);
+      console.error(`production bundle carries local sign-in code or a secret key:\n${findings.join("\n")}`);
       process.exitCode = 1;
       return;
     }
     console.log(
-      `production ${PLATFORMS.join(" and ")} bundles carry no Keycloak adapter, local realm URL or product loopback URL`,
+      `production ${PLATFORMS.join(" and ")} bundles carry no Keycloak adapter, local realm URL, product loopback URL or secret API key`,
     );
   } finally {
     await rm(outDir, { recursive: true, force: true });

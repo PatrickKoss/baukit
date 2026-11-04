@@ -25,7 +25,17 @@ on the same port.
 
 {% if context.auth_clerk %}For production, set `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`. Enable Clerk hosted sign-in and register the app's redirect and native identifiers. The production adapter uses the Expo SDK with SecureStore through `@baukit/auth-native/clerk-expo`.
 See [Clerk Expo setup](https://clerk.com/docs/reference/expo/overview).
-{% else %}For production, set `EXPO_PUBLIC_OIDC_CLIENT_ID` to the WorkOS application client ID. Keep `EXPO_PUBLIC_OIDC_ISSUER=https://api.workos.com/` unless your AuthKit API uses a custom domain. Enable public-client authentication and register `{{ context.app_name }}://oauth`. The production adapter uses browser PKCE and JSON token exchange without an API key in the app.
+{% else %}For production, set three values in `.env` or the build environment. None of them is a secret:
+
+- `EXPO_PUBLIC_WORKOS_CLIENT_ID`, the AuthKit application's client ID (`client_...`). It is empty in `.env.example`, and the production adapter throws at startup without it.
+- `EXPO_PUBLIC_WORKOS_API_HOSTNAME`, `api.workos.com` by default. Set it to your AuthKit custom domain if you use one.
+- `EXPO_PUBLIC_WORKOS_REDIRECT_URI`, `{{ context.app_name }}://oauth` by default.
+
+In the WorkOS dashboard, add `{{ context.app_name }}://oauth` as a redirect URI and as a sign-out redirect, and leave refresh-token rotation on. Don't put a WorkOS API key (`sk_...`) in the app. The code and refresh grants run as a public client with PKCE. `check:bundle` fails when an `sk_test_` or `sk_live_` key shows up in the bundle, and `baukit doctor` fails when one is in `mobile/.env` or `mobile/.env.example`.
+
+The session lives in SecureStore under `{{ context.app_name }}.oidc.session`. The adapter refreshes 30 seconds before the access token expires, or at half its lifetime when that is shorter, and again when the API answers 401. One refresh runs at a time and other callers wait for it. WorkOS returns a new refresh token on every refresh, and the adapter writes the whole session in one SecureStore write, so the old token is gone. A 400 or 401 from the token endpoint, such as `invalid_grant`, clears the session and fires `subscribeSessionExpired`. A network error keeps the session and the next request tries again. On a cold start, `initialize()` reads SecureStore and refreshes first when the stored access token has expired.
+
+`signOut()` deletes the stored session, then opens `https://<host>/user_management/sessions/logout?session_id=<sid>&return_to=<redirect URI>` in the system browser, with `sid` from the access token. WorkOS sends the browser back to the app's scheme. Offline, or when the user closes the browser, it returns `{ providerLogout: 'failed' }`, the local session is still gone, and the next sign-in forces the login prompt.
 See the [official Expo AuthKit example](https://github.com/workos/expo-authkit-example).
 {% endif %}
 {% endif %}## Native QA

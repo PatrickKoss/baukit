@@ -2464,12 +2464,73 @@ fn validate_auth_provider(
             ));
         }
     }
+    if provider == AuthProvider::Workos && manifest.capabilities.mobile {
+        validate_workos_mobile_configuration(root, failures)?;
+    }
     if failures.len() == before {
         successes.push(format!(
             "auth provider `{name}` matches config and frontend SDK wiring"
         ));
     }
     Ok(())
+}
+
+const WORKOS_MOBILE_SETTINGS: [&str; 3] = [
+    "EXPO_PUBLIC_WORKOS_CLIENT_ID",
+    "EXPO_PUBLIC_WORKOS_API_HOSTNAME",
+    "EXPO_PUBLIC_WORKOS_REDIRECT_URI",
+];
+const MOBILE_ENV_FILES: [&str; 2] = ["mobile/.env.example", "mobile/.env"];
+
+fn validate_workos_mobile_configuration(root: &Path, failures: &mut Vec<String>) -> Result<()> {
+    let config_path = root.join("mobile/app.config.ts");
+    if config_path.is_file() {
+        let config = fs::read_to_string(config_path)?;
+        for setting in WORKOS_MOBILE_SETTINGS {
+            if !config.contains(&format!("'{setting}'")) {
+                failures.push(format!(
+                    "mobile/app.config.ts does not read `{setting}` for WorkOS sign-in"
+                ));
+            }
+        }
+    }
+    for relative in MOBILE_ENV_FILES {
+        let path = root.join(relative);
+        if !path.is_file() {
+            continue;
+        }
+        let source = fs::read_to_string(path)?;
+        if relative.ends_with(".example") {
+            for setting in WORKOS_MOBILE_SETTINGS {
+                if !declares_env_assignment(&source, setting) {
+                    failures.push(format!("{relative} does not declare `{setting}`"));
+                }
+            }
+        }
+        if source.lines().any(carries_secret_api_key) {
+            failures.push(format!(
+                "{relative} carries a secret API key (`sk_`); the WorkOS mobile client is public and needs none"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn declares_env_assignment(source: &str, key: &str) -> bool {
+    source.lines().any(|line| {
+        line.trim_start()
+            .trim_start_matches("export ")
+            .split_once('=')
+            .is_some_and(|(name, _)| name.trim() == key)
+    })
+}
+
+fn carries_secret_api_key(line: &str) -> bool {
+    let Some((_, value)) = line.split_once('=') else {
+        return false;
+    };
+    let value = value.trim().trim_matches(['"', '\'']);
+    value.starts_with("sk_test_") || value.starts_with("sk_live_")
 }
 
 fn validate_remote_mcp(

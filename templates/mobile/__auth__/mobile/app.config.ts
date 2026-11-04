@@ -4,9 +4,9 @@ import { PRODUCT_NAME } from './src/product.ts';
 
 const configuredApiUrl: unknown = process.env['EXPO_PUBLIC_API_URL'];
 const configuredKey: unknown = process.env['EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY'];
-const configuredIssuer: unknown = process.env['EXPO_PUBLIC_OIDC_ISSUER'];
+{% if context.auth_oidc %}const configuredIssuer: unknown = process.env['EXPO_PUBLIC_OIDC_ISSUER'];
 const configuredClientId: unknown = process.env['EXPO_PUBLIC_OIDC_CLIENT_ID'];
-{% if context.auth_oidc %}const configuredAudience: unknown = process.env['EXPO_PUBLIC_OIDC_AUDIENCE'];
+const configuredAudience: unknown = process.env['EXPO_PUBLIC_OIDC_AUDIENCE'];
 const configuredResource: unknown = process.env['EXPO_PUBLIC_OIDC_RESOURCE'];
 const configuredScopes: unknown = process.env['EXPO_PUBLIC_OIDC_SCOPES'];
 {% endif %}{% if not context.auth_oidc %}const configuredLocalIssuer: unknown = process.env['EXPO_PUBLIC_LOCAL_OIDC_ISSUER'];
@@ -49,13 +49,16 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       ? { localOidcIssuer: configuredLocalIssuer }
       : {}),
 {% endif %}
-    oidcIssuer:
+{% if context.auth_oidc %}    oidcIssuer:
       typeof configuredIssuer === 'string'
         ? configuredIssuer
-        : {% if context.auth_oidc %}`http://localhost:{{ context.keycloak_host_port }}/realms/${PRODUCT_NAME}`{% elif context.auth_workos %}'https://api.workos.com/'{% else %}''{% endif %},
+        : `http://localhost:{{ context.keycloak_host_port }}/realms/${PRODUCT_NAME}`,
     oidcClientId:
       typeof configuredClientId === 'string' ? configuredClientId : `${PRODUCT_NAME}-mobile`,
-{% if context.auth_oidc %}    oidcAudience: typeof configuredAudience === 'string' ? configuredAudience : undefined,
+{% elif context.auth_workos %}    workosClientId: environmentText('EXPO_PUBLIC_WORKOS_CLIENT_ID'),
+    workosApiHostname: environmentText('EXPO_PUBLIC_WORKOS_API_HOSTNAME') || 'api.workos.com',
+    workosRedirectUri: environmentText('EXPO_PUBLIC_WORKOS_REDIRECT_URI') || `${PRODUCT_NAME}://oauth`,
+{% endif %}{% if context.auth_oidc %}    oidcAudience: typeof configuredAudience === 'string' ? configuredAudience : undefined,
     oidcResource: typeof configuredResource === 'string' ? configuredResource : undefined,
     oidcScopes: typeof configuredScopes === 'string' ? configuredScopes : undefined,
     oidcOfflineAccess: process.env['EXPO_PUBLIC_OIDC_OFFLINE_ACCESS'] !== 'false',

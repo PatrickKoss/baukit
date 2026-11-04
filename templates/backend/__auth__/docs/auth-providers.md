@@ -108,7 +108,7 @@ Set `auth.issuer` to `https://api.workos.com/` (or your configured issuer) and
 `auth.client_id` to the AuthKit application client ID. The verifier requires the
 signed `client_id` and uses WorkOS's client-specific JWKS endpoint. Session
 access tokens need no audience. Set `VITE_WORKOS_CLIENT_ID` and the mobile
-`EXPO_PUBLIC_OIDC_CLIENT_ID`. Enable public-client authentication, configure
+`EXPO_PUBLIC_WORKOS_CLIENT_ID`. Enable public-client authentication, configure
 redirect URIs and permit the web origin in WorkOS's CORS settings.
 
 The web adapter uses `@workos-inc/authkit-js`. Mobile uses AuthKit PKCE through
@@ -116,7 +116,22 @@ the existing native browser and secure-storage ports. It exchanges codes and
 rotates refresh tokens through WorkOS's JSON public-client API without an API
 key in the app. This follows the protocol in the
 [official Expo AuthKit example](https://github.com/workos/expo-authkit-example).
-Logout clears secure storage before ending the provider session.
+
+For the native client, register `<app>://oauth` as a redirect URI and a
+sign-out redirect in the WorkOS dashboard and keep refresh-token rotation on.
+The app reads `EXPO_PUBLIC_WORKOS_CLIENT_ID`, `EXPO_PUBLIC_WORKOS_API_HOSTNAME`
+(default `api.workos.com`) and `EXPO_PUBLIC_WORKOS_REDIRECT_URI` (default
+`<app>://oauth`). The API key belongs only in the backend's
+`{{ context.app_env }}__AUTH__IDENTITY_ADMIN_CLIENT_SECRET`. The mobile
+`check:bundle` fails on an `sk_test_` or `sk_live_` key in the bundle, and
+`baukit doctor` fails on one in the mobile env files.
+
+The app keeps the session in SecureStore, refreshes before expiry and on a 401,
+and runs one refresh at a time. Each refresh stores the rotated refresh token.
+A rejected refresh (`invalid_grant`) ends the session; a network error keeps it.
+Logout clears secure storage first, then opens WorkOS's
+`/user_management/sessions/logout` with the access token's `sid` and returns to
+the app's scheme. A failed logout call still leaves the app signed out.
 
 Set `{{ context.app_env }}__AUTH__IDENTITY_ADMIN_CLIENT_SECRET` to the WorkOS
 API key. Deletion uses `https://api.workos.com/user_management/users`.
