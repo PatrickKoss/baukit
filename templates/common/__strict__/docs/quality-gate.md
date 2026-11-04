@@ -19,7 +19,11 @@ Each lane writes `.quality-gate/<lane>.log`. Every step appends `name seconds` t
 
 ## Workers
 
-`BAUKIT_GATE_CORES` sets the cores the gate may use. It defaults to `nproc`. The runner divides it by the number of lanes other than `fast` that have steps to run, and caps the result so each worker has `BAUKIT_GATE_WORKER_MEMORY_MB` (default 1024) of the host's total memory. The share goes to nextest `--test-threads`, `CARGO_BUILD_JOBS`, Jest `--maxWorkers`, `VITEST_MAX_WORKERS`, Playwright `E2E_WORKERS` and Gradle `--max-workers`. The gate never reads `Committed_AS`.
+`BAUKIT_GATE_CORES` sets the cores the gate may use. It defaults to `nproc`. All lanes draw from that one budget. When a step starts, the runner divides the budget by the lanes that still have steps to run, not counting light lanes, and caps the result so each worker has `BAUKIT_GATE_WORKER_MEMORY_MB` (default 1024) of the host's total memory. The step takes that many cores out of the budget, or what is left, and returns them when it ends. A step waits while the budget is empty, so the running steps never hold more than `BAUKIT_GATE_CORES` together, and a lane that finishes early leaves bigger shares to the steps that start after it. The share goes to nextest `--test-threads`, `CARGO_BUILD_JOBS`, Jest `--maxWorkers`, `VITEST_MAX_WORKERS`, Playwright `E2E_WORKERS`, Gradle `--max-workers` (`BAUKIT_QA_GRADLE_WORKERS`) and the CMake job pools of native modules (`BAUKIT_QA_NATIVE_JOBS`, applied by `mobile/scripts/qa/native-jobs.init.gradle`). The gate never reads `Committed_AS`.
+
+`android-e2e` waits until it can take at least `BAUKIT_GATE_EMULATOR_CORES` cores, so the emulators keep their share while other lanes still run. It defaults to 2 per emulator, from `quality.android_emulators` or `BAUKIT_QA_ANDROID_EMULATORS`, and never more than the budget.
+
+`quality.light` in `baukit.toml` lists lanes or steps that take no share, for steps that mostly wait or run one process. Its default is `[]`. The `fast` lane is always light. A light step still gets the current share in its environment. The gate and `baukit doctor` reject names that are no lane or step of the gate. Each step prints the cores it started with, and the lane log records them after the step name.
 
 Tests that must not run in parallel belong in a nextest test group in `backend/.config/nextest.toml` or in a separate Jest project. Don't add `--runInBand` or a one-thread setting for the whole suite.
 

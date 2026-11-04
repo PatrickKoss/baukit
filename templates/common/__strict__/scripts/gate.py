@@ -29,7 +29,10 @@ from pathlib import Path
 MODES = ("always", "selected", "affected")
 DEFAULT_BUDGET_MINUTES = {"full": 10, "affected": 5}
 DEFAULT_WORKER_MEMORY_MB = 1024
+DEFAULT_ANDROID_EMULATORS = 2
+CORES_PER_EMULATOR = 2
 LIGHT_LANES = frozenset({"fast"})
+EMULATOR_STEPS = frozenset({"android-e2e"})
 FAILURE_TAIL_LINES = 40
 GENERIC_SHARED = (
     "**/Cargo.lock",
@@ -223,12 +226,50 @@ def split_workers(cores: int, lanes: int, memory_mb: int | None, worker_memory_m
     return share
 
 
-def heavy_lanes(planned: list[PlannedStep]) -> list[str]:
+def is_light(step: Step, light: frozenset[str]) -> bool:
+    return step.lane in LIGHT_LANES or step.lane in light or step.name in light
+
+
+def heavy_lanes(planned: list[PlannedStep], light: frozenset[str] = frozenset()) -> list[str]:
     lanes = []
     for item in planned:
-        if item.step.lane not in LIGHT_LANES and item.step.lane not in lanes:
+        if not is_light(item.step, light) and item.step.lane not in lanes:
             lanes.append(item.step.lane)
     return lanes
+
+
+def unknown_light(light: frozenset[str], steps: list[Step]) -> list[str]:
+    known = {step.name for step in steps} | {step.lane for step in steps}
+    return sorted(light - known)
+
+
+class CoreBudget:
+    """One pool of cores that every heavy step draws its workers from while it runs."""
+
+    def __init__(self, cores: int, memory_mb: int | None, worker_memory_mb: int, emulator_cores: int):
+        self.cores = max(1, cores)
+        self.free = self.cores
+        self.memory_mb = memory_mb
+        self.worker_memory_mb = worker_memory_mb
+        self.emulator_cores = min(self.cores, max(1, emulator_cores))
+        self.condition = threading.Condition()
+
+    def share(self, lanes: int) -> int:
+        return split_workers(self.cores, lanes, self.memory_mb, self.worker_memory_mb)
+
+    def acquire(self, want: int, minimum: int = 1) -> int:
+        want = min(self.cores, max(1, want))
+        minimum = min(want, max(1, minimum))
+        with self.condition:
+            self.condition.wait_for(lambda: self.free >= minimum)
+            granted = min(want, self.free)
+            self.free -= granted
+            return granted
+
+    def release(self, cores: int) -> None:
+        with self.condition:
+            self.free += cores
+            self.condition.notify_all()
 
 
 def budget_report(
@@ -293,14 +334,33 @@ def shared_paths(settings: dict) -> list[str]:
     return paths
 
 
+def light_settings(settings: dict) -> frozenset[str]:
+    return frozenset(settings.get("quality", {}).get("light", []))
+
+
+def emulator_cores(settings: dict, environment: dict[str, str]) -> int:
+    configured = environment.get("BAUKIT_GATE_EMULATOR_CORES")
+    if configured:
+        return int(configured)
+    emulators = environment.get("BAUKIT_QA_ANDROID_EMULATORS") or settings.get("quality", {}).get(
+        "android_emulators", DEFAULT_ANDROID_EMULATORS)
+    return CORES_PER_EMULATOR * int(emulators)
+
+
 def budget_minutes(settings: dict, mode: str) -> int:
     configured = settings.get("quality", {}).get("gate_budget_minutes", {})
     return int(configured.get(mode, DEFAULT_BUDGET_MINUTES[mode]))
 
 
 class Runner:
-    def __init__(self, planned: list[PlannedStep], command: list[str], log_directory: Path, environment: dict[str, str]):
+    def __init__(
+        self, planned: list[PlannedStep], command: list[str], log_directory: Path, environment: dict[str, str],
+        budget: CoreBudget | None = None, light: frozenset[str] = frozenset(),
+    ):
         self.planned = planned
+        self.budget = budget or CoreBudget(int(environment.get("BAUKIT_GATE_WORKERS", "1")), None, 0, 1)
+        self.light = light
+        self.open_lanes = set(heavy_lanes(planned, light))
         self.command = command
         self.log_directory = log_directory
         self.environment = environment
@@ -352,18 +412,38 @@ class Runner:
                 failed = True
                 continue
             failed = not self.run_step(lane, step, log)
+        with self.lock:
+            self.open_lanes.discard(lane)
         self.lane_seconds[lane] = round(time.monotonic() - started)
 
+    def cores_for(self, step: Step) -> tuple[int, bool]:
+        """Return the step's workers and whether they came out of the shared budget."""
+        with self.lock:
+            share = self.budget.share(len(self.open_lanes))
+        if is_light(step, self.light):
+            return share, False
+        if step.name in EMULATOR_STEPS:
+            reserve = self.budget.emulator_cores
+            return self.budget.acquire(max(share, reserve), reserve), True
+        return self.budget.acquire(share), True
+
     def run_step(self, lane: str, step: Step, log: Path) -> bool:
-        print(f"gate: [{lane}] {step.name} started", flush=True)
+        cores, drawn = self.cores_for(step)
+        environment = dict(self.environment)
+        worker_environment(environment, cores)
+        print(f"gate: [{lane}] {step.name} started with {cores} {'cores' if drawn else 'cores, light'}", flush=True)
         started = time.monotonic()
-        with log.open("a") as output:
-            output.write(f"\n==> {step.name}\n")
-            output.flush()
-            result = subprocess.run(
-                [*self.command, step.name], stdout=output, stderr=subprocess.STDOUT,
-                env=self.environment, check=False,
-            )
+        try:
+            with log.open("a") as output:
+                output.write(f"\n==> {step.name} ({cores} cores)\n")
+                output.flush()
+                result = subprocess.run(
+                    [*self.command, step.name], stdout=output, stderr=subprocess.STDOUT,
+                    env=environment, check=False,
+                )
+        finally:
+            if drawn:
+                self.budget.release(cores)
         seconds = round(time.monotonic() - started)
         passed = result.returncode == 0
         self.record(step.name, seconds, "passed" if passed else f"failed with exit {result.returncode}")
@@ -422,7 +502,7 @@ def cache_environment(environment: dict[str, str]) -> list[str]:
 def worker_environment(environment: dict[str, str], workers: int) -> None:
     for name in (
         "BAUKIT_GATE_WORKERS", "CARGO_BUILD_JOBS", "NEXTEST_TEST_THREADS", "RUST_TEST_THREADS",
-        "VITEST_MAX_WORKERS", "E2E_WORKERS",
+        "VITEST_MAX_WORKERS", "E2E_WORKERS", "BAUKIT_QA_GRADLE_WORKERS", "BAUKIT_QA_NATIVE_JOBS",
     ):
         environment[name] = str(workers)
 
@@ -433,6 +513,11 @@ def run_command(arguments: argparse.Namespace) -> int:
     steps = parse_steps(listing)
     settings = load_settings(Path(arguments.settings))
     mode = "affected" if arguments.affected else "full"
+    light = light_settings(settings)
+    unknown = unknown_light(light, steps)
+    if unknown:
+        print(f"gate: quality.light names unknown lanes or steps: {', '.join(unknown)}", file=sys.stderr)
+        return 2
     if arguments.affected:
         changed = changed_files(arguments.affected)
         affected = settings.get("quality", {}).get("affected", {})
@@ -466,11 +551,17 @@ def run_command(arguments: argparse.Namespace) -> int:
     else:
         environment["BAUKIT_GATE_RUST_PACKAGES"] = ""
     cores = int(os.environ.get("BAUKIT_GATE_CORES") or os.cpu_count() or 1)
-    lanes = heavy_lanes(planned)
+    lanes = heavy_lanes(planned, light)
     worker_memory = int(os.environ.get("BAUKIT_GATE_WORKER_MEMORY_MB", DEFAULT_WORKER_MEMORY_MB))
-    workers = split_workers(cores, len(lanes), total_memory_mb(), worker_memory)
+    budget = CoreBudget(cores, total_memory_mb(), worker_memory, emulator_cores(settings, environment))
+    workers = budget.share(len(lanes))
     worker_environment(environment, workers)
     extras.append(f"workers: {cores} cores across {len(lanes)} lanes ({', '.join(lanes) or 'none'}): {workers} per lane")
+    extras.append(
+        f"workers: lanes share {budget.cores} cores; a finished lane frees its share; "
+        f"{', '.join(sorted(EMULATOR_STEPS))} keeps {budget.emulator_cores} for the emulators; "
+        f"light: {', '.join(sorted(LIGHT_LANES | light))}"
+    )
     extras.extend(cache_environment(environment))
     print_plan(mode, arguments.affected, selection, planned, extras)
     if arguments.plan:
@@ -481,7 +572,7 @@ def run_command(arguments: argparse.Namespace) -> int:
         stale.unlink()
     environment["BAUKIT_GATE_LOG_DIR"] = str(log_directory)
     started = time.monotonic()
-    runner = Runner(planned, [*script, "--step"], log_directory, environment)
+    runner = Runner(planned, [*script, "--step"], log_directory, environment, budget, light)
     failures = runner.run()
     wall = round(time.monotonic() - started)
     with runner.timings_file.open("a") as output:

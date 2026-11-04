@@ -323,6 +323,15 @@ pub fn validate(
             }
         }
     }
+    let lanes_and_steps: BTreeSet<String> = gate.map_or_else(
+        || known.clone(),
+        |gate| gate.lanes.union(&gate.steps).cloned().collect(),
+    );
+    for name in &quality.light {
+        if !lanes_and_steps.contains(name) {
+            failures.push(format!("quality.light names unknown lane or step `{name}`"));
+        }
+    }
     for glob in &quality.shared {
         if invalid_glob(glob) {
             failures.push(format!(
@@ -497,6 +506,42 @@ mod tests {
                 "quality.affected `web/**` names unknown lane or step `rust-tests`",
                 "quality.affected `web/**` names unknown lane or step `unknown:x`",
             ]
+        );
+    }
+
+    #[test]
+    fn light_names_must_be_lanes_or_steps_of_the_gate() {
+        let gate = parse_gate_steps("doctor fast - always -\nplaywright web - selected web-e2e\n")
+            .expect("listing parses");
+        let quality: QualityManifest =
+            toml::from_str("light = [\"web\", \"doctor\", \"web-e2e\", \"nope\"]\n")
+                .expect("quality parses");
+        let mut failures = Vec::new();
+        validate(
+            &quality,
+            &capabilities(false, true, false),
+            Some(&gate),
+            &mut failures,
+        );
+        assert_eq!(
+            failures,
+            [
+                "quality.light names unknown lane or step `web-e2e`",
+                "quality.light names unknown lane or step `nope`",
+            ]
+        );
+        let quality: QualityManifest =
+            toml::from_str("light = [\"web\", \"nope\"]\n").expect("quality parses");
+        let mut failures = Vec::new();
+        validate(
+            &quality,
+            &capabilities(false, true, false),
+            None,
+            &mut failures,
+        );
+        assert_eq!(
+            failures,
+            ["quality.light names unknown lane or step `nope`"]
         );
     }
 

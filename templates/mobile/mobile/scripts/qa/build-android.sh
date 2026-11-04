@@ -44,6 +44,10 @@ gradle=(bash "$root/mobile/scripts/android-java.sh" "$root/mobile/android/gradle
 if [[ -n "${BAUKIT_QA_GRADLE_WORKERS:-}" ]]; then
   gradle+=(--max-workers "$BAUKIT_QA_GRADLE_WORKERS")
 fi
+if [[ -n "${BAUKIT_QA_NATIVE_JOBS:-}" ]]; then
+  export BAUKIT_QA_NATIVE_JOBS
+  gradle+=(--init-script "$root/mobile/scripts/qa/native-jobs.init.gradle")
+fi
 if [[ "${BAUKIT_QA_ASSEMBLE_DEBUG:-0}" == 1 ]]; then
   "${gradle[@]}" --stacktrace assembleDebug
 fi

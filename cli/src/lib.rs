@@ -289,6 +289,8 @@ pub struct QualityManifest {
     pub affected: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     pub shared: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub light: Vec<String>,
 }
 
 impl Default for QualityManifest {
@@ -305,6 +307,7 @@ impl Default for QualityManifest {
             gate_budget_minutes: gate_settings::GateBudgetMinutes::default(),
             affected: BTreeMap::new(),
             shared: Vec::new(),
+            light: Vec::new(),
         }
     }
 }

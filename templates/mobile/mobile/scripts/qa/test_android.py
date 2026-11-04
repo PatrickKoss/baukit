@@ -31,7 +31,8 @@ class AndroidScriptsTest(unittest.TestCase):
             "BAUKIT_QA_SKIP_BUILD": "1",
             "EVENTS": str(self.events),
         }
-        self.environment.pop("BAUKIT_QA_AVD_CONFIG", None)
+        for name in ("BAUKIT_QA_AVD_CONFIG", "BAUKIT_QA_GRADLE_WORKERS", "BAUKIT_QA_NATIVE_JOBS"):
+            self.environment.pop(name, None)
 
     def prepare_sdk(self) -> Path:
         tools = self.sdk / "cmdline-tools/16111833/bin"
@@ -267,6 +268,24 @@ touch "$apk"
             f"{common} --stacktrace assembleDebug",
             f"{common} -PreactNativeArchitectures=x86_64 assembleRelease",
         ])
+
+    def test_native_jobs_cap_cmake_through_the_init_script(self) -> None:
+        bin_dir = self.root / "bin"
+        self.executable(bin_dir / "corepack", "exit 0\n")
+        self.environment["PATH"] = str(bin_dir) + os.pathsep + self.environment["PATH"]
+        self.environment["BAUKIT_QA_NATIVE_JOBS"] = "2"
+        self.executable(self.root / "mobile/node_modules/.bin/expo", "exit 0\n")
+        self.executable(self.root / "mobile/android/gradlew", r'''
+printf 'gradle %s jobs=%s\n' "$*" "$BAUKIT_QA_NATIVE_JOBS" >> "$EVENTS"
+apk="$(dirname "$0")/app/build/outputs/apk/release/app-release.apk"
+mkdir -p "$(dirname "$apk")"
+touch "$apk"
+''')
+        self.run_script("build-android.sh")
+        init_script = self.scripts / "native-jobs.init.gradle"
+        self.assertIn(f"--init-script {init_script} ", self.events.read_text())
+        self.assertIn("jobs=2", self.events.read_text())
+        self.assertIn("-DCMAKE_JOB_POOLS=native=${nativeJobs}", init_script.read_text())
 
     def test_android_java_reports_usage_and_preserves_command_failure(self) -> None:
         for arguments, expected_status in (([], 2), (["bash", "-c", "exit 17"], 17)):

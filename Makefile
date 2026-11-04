@@ -110,7 +110,7 @@ native-android-gate: android-sdk-setup
 	corepack pnpm@12.9.1 --dir "$$fixture_parent/fixture/mobile" exec expo install --check; \
 	(cd "$$fixture_parent/fixture/mobile" && BAUKIT_QA_BUILD=1 CI=1 ./node_modules/.bin/expo prebuild --clean --platform android --no-install); \
 	ANDROID_HOME="$${ANDROID_HOME:-$$HOME/Android/Sdk}" ANDROID_SDK_ROOT="$${ANDROID_SDK_ROOT:-$${ANDROID_HOME:-$$HOME/Android/Sdk}}" \
-		bash "$$fixture_parent/fixture/mobile/scripts/android-java.sh" "$$fixture_parent/fixture/mobile/android/gradlew" -p "$$fixture_parent/fixture/mobile/android" --no-daemon --stacktrace --warning-mode all -PreactNativeDevServerIp=127.0.0.1 assembleDebug \
+		bash "$$fixture_parent/fixture/mobile/scripts/android-java.sh" "$$fixture_parent/fixture/mobile/android/gradlew" -p "$$fixture_parent/fixture/mobile/android" --no-daemon --stacktrace --warning-mode all $${BAUKIT_QA_GRADLE_WORKERS:+--max-workers $$BAUKIT_QA_GRADLE_WORKERS} $${BAUKIT_QA_NATIVE_JOBS:+--init-script "$$fixture_parent/fixture/mobile/scripts/qa/native-jobs.init.gradle"} -PreactNativeDevServerIp=127.0.0.1 assembleDebug \
 		> "$$fixture_parent/assemble.log" 2>&1 || build_status=$$?; \
 	cat "$$fixture_parent/assemble.log"; \
 	test "$${build_status:-0}" -eq 0; \
