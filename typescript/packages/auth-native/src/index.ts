@@ -68,6 +68,8 @@ export interface NativeOidcConfig {
   readonly postLogoutRedirectUri?: string;
   /** Defaults to 30 seconds. */
   readonly refreshLeewaySeconds?: number;
+  /** Refreshes an expired stored session during `initialize()`. Defaults to false. */
+  readonly refreshOnRestore?: boolean;
   /** Overrides the issuer/client-specific prefix. Only ASCII letters, digits, '.', '-' and '_' are allowed. */
   readonly storageKeyPrefix?: string;
 }
@@ -182,6 +184,7 @@ interface NormalizedConfig {
   readonly scopes: readonly string[];
   readonly postLogoutRedirectUri: string;
   readonly refreshLeewayMs: number;
+  readonly refreshOnRestore: boolean;
   readonly storageKeyPrefix: string;
 }
 
@@ -439,7 +442,18 @@ export class NativeOidcClient {
       this.setCurrentSession(session);
     }
     this.initialized = true;
+    if (this.config.refreshOnRestore) await this.refreshExpiredRestore();
     return this.currentSession;
+  }
+
+  private async refreshExpiredRestore(): Promise<void> {
+    const session = this.currentSession;
+    if (session === undefined || session.expiresAt > this.environment.now()) return;
+    try {
+      await this.accessToken();
+    } catch (cause) {
+      if (!(cause instanceof OidcError && cause.retryable)) throw cause;
+    }
   }
 
   private async refresh(previous: OidcSession): Promise<string | undefined> {
@@ -699,6 +713,7 @@ function normalizeConfig(config: NativeOidcConfig): NormalizedConfig {
       'OIDC post-logout redirect URI',
     ),
     refreshLeewayMs: refreshLeewaySeconds * 1000,
+    refreshOnRestore: config.refreshOnRestore ?? false,
     storageKeyPrefix,
   };
 }

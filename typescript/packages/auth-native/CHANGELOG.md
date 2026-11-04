@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Minor Changes
+
+- Add `NativeOidcConfig.refreshOnRestore`. When it is true, `initialize()` refreshes an expired stored session before it resolves. `createWorkOsNativeClient` turns it on.
+
 ## 0.17.1
 
 ### Patch Changes

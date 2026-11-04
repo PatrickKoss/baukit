@@ -1,4 +1,4 @@
-import { describe, expect, it } from '@jest/globals';
+import { {% if not context.auth_clerk %}afterEach, beforeEach, {% endif %}describe, expect, it } from '@jest/globals';
 {% if context.auth_clerk %}import { render, screen, waitFor } from '@testing-library/react-native';
 import type { PropsWithChildren } from 'react';
 import { Text } from 'react-native';
@@ -9,17 +9,28 @@ jest.mock('expo-constants', () => ({
   __esModule: true,
   default: {
     expoConfig: {
-      extra: {% if context.auth_clerk %}{ clerkPublishableKey: 'pk_test_placeholder' }{% else %}{ oidcIssuer: 'https://auth.example.invalid/', oidcClientId: 'client_placeholder' }{% endif %},
+      extra: {% if context.auth_clerk %}{ clerkPublishableKey: 'pk_test_placeholder' }{% else %}{ workosApiHostname: 'auth.example.invalid', workosClientId: 'client_placeholder' }{% endif %},
     },
   },
 }));
-jest.mock('../auth-storage', () => ({
+{% if context.auth_clerk %}jest.mock('../auth-storage', () => ({
   authStorage: {
     get: () => Promise.resolve(null),
     set: () => Promise.resolve(),
     delete: () => Promise.resolve(),
   },
-}));
+}));{% else %}const mockSecureStore = new Map<string, string>();
+jest.mock('expo-secure-store', () => ({
+  getItemAsync: (key: string) => Promise.resolve(mockSecureStore.get(key) ?? null),
+  setItemAsync: (key: string, value: string) => {
+    mockSecureStore.set(key, value);
+    return Promise.resolve();
+  },
+  deleteItemAsync: (key: string) => {
+    mockSecureStore.delete(key);
+    return Promise.resolve();
+  },
+}));{% endif %}
 
 function unsignedJwt(payload: unknown): string {
   const encoded = btoa(JSON.stringify(payload)).replaceAll('+', '-').replaceAll('/', '_');
@@ -99,7 +110,17 @@ describe('Clerk production sign-in adapter', () => {
     await expect(signInAdapter.client.signIn()).resolves.toMatchObject({ status: 'cancelled' });
   });
 });
-{% else %}const mockBrowser = {
+{% else %}import { MockFetch } from '@baukit/api-runtime';
+import * as WebBrowser from 'expo-web-browser';
+
+import { createAuthenticatedApiRuntime } from '../authenticated-api';
+import { PRODUCT_NAME } from '../product';
+import type { SignInAdapter } from './port';
+
+const mockOpenAuthSession = jest.fn<Promise<WebBrowser.WebBrowserAuthSessionResult>, unknown[]>(() =>
+  Promise.resolve({ type: 'success' as const, url: '' }),
+);
+const mockBrowser = {
   prompt: jest.fn<Promise<unknown>, []>(),
   requests: [] as unknown[],
 };
@@ -107,7 +128,8 @@ describe('Clerk production sign-in adapter', () => {
 jest.mock('expo-crypto', () => ({ getRandomBytesAsync: (size: number) => Promise.resolve(new Uint8Array(size)) }));
 jest.mock('expo-web-browser', () => ({
   maybeCompleteAuthSession: jest.fn(),
-  openAuthSessionAsync: jest.fn(() => Promise.resolve({ type: 'success' })),
+  openAuthSessionAsync: (...args: unknown[]) => mockOpenAuthSession(...args),
+  WebBrowserResultType: { DISMISS: 'dismiss' },
 }));
 jest.mock('expo-auth-session', () => ({
   makeRedirectUri: ({ scheme, path }: { scheme: string; path: string }) => `${scheme}://${path}`,
@@ -184,6 +206,244 @@ describe('WorkOS production sign-in adapter', () => {
     mockBrowser.prompt.mockResolvedValue({ type: 'dismiss' });
 
     await expect(signInAdapter.client.signIn()).resolves.toEqual({ status: 'cancelled', reason: 'dismiss' });
+  });
+});
+
+const SESSION_KEY = `${PRODUCT_NAME}.oidc.session`;
+const TOKEN_ENDPOINT = 'https://auth.example.invalid/user_management/authenticate';
+const LIFETIME_SECONDS = 300;
+let issued = 0;
+
+function accessTokenAt(nowMs: number): string {
+  issued += 1;
+  return unsignedJwt({
+    sub: 'user_workos',
+    sid: 'session_workos',
+    jti: `token_${String(issued)}`,
+    exp: Math.floor(nowMs / 1000) + LIFETIME_SECONDS,
+  });
+}
+
+function tokenResponse(refreshToken: string): Promise<Response> {
+  return Promise.resolve(
+    new Response(JSON.stringify({ access_token: accessTokenAt(Date.now()), refresh_token: refreshToken }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }),
+  );
+}
+
+function refreshBodies(): Record<string, unknown>[] {
+  return mockFetch.mock.calls
+    .map(([, init]) => JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as Record<string, unknown>)
+    .filter((body) => body['grant_type'] === 'refresh_token');
+}
+
+function storedSession(): Record<string, unknown> | undefined {
+  const raw = mockSecureStore.get(SESSION_KEY);
+  return raw === undefined ? undefined : (JSON.parse(raw) as Record<string, unknown>);
+}
+
+function freshAdapter(): SignInAdapter {
+  let adapter: SignInAdapter | undefined;
+  jest.isolateModules(() => {
+    adapter = jest.requireActual<typeof import('./production')>('./production').signInAdapter;
+  });
+  if (adapter === undefined) throw new Error('production adapter did not load');
+  return adapter;
+}
+
+async function signedInAdapter(): Promise<SignInAdapter> {
+  mockFetch.mockImplementationOnce(() => tokenResponse('refresh_1'));
+  mockBrowser.prompt.mockResolvedValue({ type: 'success', params: { code: 'workos-code', state: 'expected-state' } });
+  const adapter = freshAdapter();
+  await expect(adapter.client.signIn()).resolves.toEqual({ status: 'success', subject: 'user_workos' });
+  return adapter;
+}
+
+function advance(milliseconds: number): void {
+  const now = Date.now() + milliseconds;
+  jest.spyOn(Date, 'now').mockReturnValue(now);
+}
+
+describe('WorkOS production session', () => {
+  beforeEach(() => {
+    mockSecureStore.clear();
+    mockFetch.mockReset();
+    mockOpenAuthSession.mockClear();
+  });
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('keeps the session in SecureStore and refreshes before the access token expires', async () => {
+    const adapter = await signedInAdapter();
+    expect(storedSession()).toMatchObject({ refreshToken: 'refresh_1' });
+    const first = await adapter.client.accessToken();
+    expect(refreshBodies()).toHaveLength(0);
+
+    advance((LIFETIME_SECONDS - 10) * 1000);
+    mockFetch.mockImplementationOnce(() => tokenResponse('refresh_2'));
+    const second = await adapter.client.accessToken();
+
+    expect(second).not.toBe(first);
+    expect(refreshBodies()).toEqual([
+      { grant_type: 'refresh_token', client_id: 'client_placeholder', refresh_token: 'refresh_1' },
+    ]);
+    expect(mockFetch.mock.calls.at(-1)?.[0]).toBe(TOKEN_ENDPOINT);
+  });
+
+  it('stores the rotated refresh token and drops the old one', async () => {
+    const adapter = await signedInAdapter();
+    mockFetch.mockImplementationOnce(() => tokenResponse('refresh_2'));
+    await adapter.client.accessToken({ forceRefresh: true });
+    mockFetch.mockImplementationOnce(() => tokenResponse('refresh_3'));
+    await adapter.client.accessToken({ forceRefresh: true });
+
+    expect(refreshBodies().map((body) => body['refresh_token'])).toEqual(['refresh_1', 'refresh_2']);
+    expect(storedSession()).toMatchObject({ refreshToken: 'refresh_3' });
+    expect([...mockSecureStore.values()].join()).not.toContain('refresh_2');
+  });
+
+  it('refreshes once on a 401 from the product API and replays with the new token', async () => {
+    const adapter = await signedInAdapter();
+    const stale = await adapter.client.accessToken();
+    const api = new MockFetch()
+      .enqueueJson({ error: { code: 'unauthenticated', message: 'Authentication required', requestId: 'r', details: {} } }, { status: 401 })
+      .enqueueJson({ id: 'user-1' });
+    mockFetch.mockImplementationOnce(() => tokenResponse('refresh_2'));
+    const runtime = createAuthenticatedApiRuntime({
+      auth: adapter.client,
+      baseUrl: 'https://api.example.test',
+      environment: 'test',
+      fetch: api.fetch,
+    });
+
+    await expect(runtime.fetch('/me')).resolves.toHaveProperty('status', 200);
+
+    expect(refreshBodies()).toHaveLength(1);
+    expect(api.request(0).headers.get('authorization')).toBe(`Bearer ${stale ?? ''}`);
+    expect(api.request(1).headers.get('authorization')).toBe(`Bearer ${(await adapter.client.accessToken()) ?? ''}`);
+    expect(api.request(1).headers.get('authorization')).not.toBe(`Bearer ${stale ?? ''}`);
+  });
+
+  it('runs one refresh while concurrent requests wait for it', async () => {
+    const adapter = await signedInAdapter();
+    let release: (() => void) | undefined;
+    mockFetch.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = () => {
+            void tokenResponse('refresh_2').then(resolve);
+          };
+        }),
+    );
+    advance((LIFETIME_SECONDS - 10) * 1000);
+    const pending = [
+      adapter.client.accessToken(),
+      adapter.client.accessToken({ forceRefresh: true }),
+      adapter.client.accessToken(),
+    ];
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(release).toBeDefined();
+    release?.();
+    const tokens = await Promise.all(pending);
+
+    expect(refreshBodies()).toHaveLength(1);
+    expect(new Set(tokens).size).toBe(1);
+    expect(storedSession()).toMatchObject({ refreshToken: 'refresh_2' });
+  });
+
+  it('expires the session when WorkOS rejects the refresh token with invalid_grant', async () => {
+    const adapter = await signedInAdapter();
+    const expired = jest.fn();
+    adapter.client.subscribeSessionExpired(expired);
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: 'invalid_grant', error_description: 'Refresh token already exchanged.' }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+
+    await expect(adapter.client.accessToken({ forceRefresh: true })).resolves.toBeUndefined();
+
+    expect(expired).toHaveBeenCalledWith({ type: 'session-expired', reason: 'refresh_rejected' });
+    expect(mockSecureStore.has(SESSION_KEY)).toBe(false);
+    await expect(adapter.client.accessToken()).resolves.toBeUndefined();
+  });
+
+  it('keeps the session after a network failure and retries on the next request', async () => {
+    const adapter = await signedInAdapter();
+    const expired = jest.fn();
+    adapter.client.subscribeSessionExpired(expired);
+    mockFetch.mockRejectedValueOnce(new TypeError('Network request failed'));
+
+    await expect(adapter.client.accessToken({ forceRefresh: true })).rejects.toMatchObject({
+      code: 'refresh_failed',
+      retryable: true,
+    });
+    expect(storedSession()).toMatchObject({ refreshToken: 'refresh_1' });
+    expect(expired).not.toHaveBeenCalled();
+
+    mockFetch.mockImplementationOnce(() => tokenResponse('refresh_2'));
+    await expect(adapter.client.accessToken({ forceRefresh: true })).resolves.toEqual(expect.any(String));
+    expect(refreshBodies().map((body) => body['refresh_token'])).toEqual(['refresh_1', 'refresh_1']);
+    expect(storedSession()).toMatchObject({ refreshToken: 'refresh_2' });
+  });
+
+  it('signs out locally, then ends the WorkOS session with the sid in the system browser', async () => {
+    const adapter = await signedInAdapter();
+    mockOpenAuthSession.mockResolvedValueOnce({ type: 'success' as const, url: `${PRODUCT_NAME}://oauth` });
+
+    await expect(adapter.client.signOut()).resolves.toEqual({ providerLogout: 'completed' });
+
+    expect(mockSecureStore.has(SESSION_KEY)).toBe(false);
+    await expect(adapter.client.accessToken()).resolves.toBeUndefined();
+    expect(mockOpenAuthSession).toHaveBeenCalledWith(
+      `https://auth.example.invalid/user_management/sessions/logout?session_id=session_workos&return_to=${encodeURIComponent(`${PRODUCT_NAME}://oauth`)}`,
+      `${PRODUCT_NAME}://oauth`,
+    );
+  });
+
+  it.each<[string, () => Promise<WebBrowser.WebBrowserAuthSessionResult>]>([
+    ['the browser cannot reach WorkOS', () => Promise.reject(new Error('offline'))],
+    ['the user dismisses the browser', () => Promise.resolve({ type: WebBrowser.WebBrowserResultType.DISMISS })],
+  ])('drops the local session even when %s', async (_case, outcome) => {
+    const adapter = await signedInAdapter();
+    mockOpenAuthSession.mockImplementationOnce(outcome);
+
+    await expect(adapter.client.signOut()).resolves.toEqual({ providerLogout: 'failed' });
+
+    expect(mockSecureStore.has(SESSION_KEY)).toBe(false);
+    await expect(adapter.client.accessToken()).resolves.toBeUndefined();
+    await expect(freshAdapter().client.initialize()).resolves.toBeUndefined();
+  });
+
+  it('restores a stored session on a cold start without a token request', async () => {
+    await signedInAdapter();
+    mockFetch.mockClear();
+
+    const restored = freshAdapter();
+
+    await expect(restored.client.initialize()).resolves.toMatchObject({ subject: 'user_workos', refreshToken: 'refresh_1' });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('refreshes an expired stored session on a cold start before reporting it', async () => {
+    await signedInAdapter();
+    advance((LIFETIME_SECONDS + 60) * 1000);
+    mockFetch.mockImplementationOnce(() => tokenResponse('refresh_2'));
+
+    const restored = freshAdapter();
+    const session = await restored.client.initialize();
+
+    expect(refreshBodies()).toEqual([
+      { grant_type: 'refresh_token', client_id: 'client_placeholder', refresh_token: 'refresh_1' },
+    ]);
+    expect(session).toMatchObject({ refreshToken: 'refresh_2' });
+    expect((session?.expiresAt ?? 0) > Date.now()).toBe(true);
+    expect(storedSession()).toMatchObject({ refreshToken: 'refresh_2' });
   });
 });
 {% endif %}

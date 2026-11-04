@@ -44,6 +44,16 @@ test("Keycloak markers, realm URLs and the local adapter module fail anywhere", 
   assert.deepEqual(scanBundleText("x=1", mapFor(["/src/sign-in/local.ts"], "AAAA")), ["Keycloak adapter module"]);
 });
 
+test("a WorkOS or Clerk secret API key fails anywhere", () => {
+  const library = mapFor([librarySource], "AAAA");
+  const key = ["sk", "test", "placeholderplaceholder0000"].join("_");
+  assert.deepEqual(scanBundleText(`k='${key}'`, library), ["secret API key (sk_)"]);
+  assert.deepEqual(scanBundleText(`k='${key.replace("test", "live")}'`, mapFor([appSource], "AAAA")), [
+    "secret API key (sk_)",
+  ]);
+  assert.deepEqual(scanBundleText("disk_test_placeholderplaceholder0000;sk_test_short", library), []);
+});
+
 test("the export scan reads each bundle with its source map", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "bundle-scan-"));
   t.after(() => rm(directory, { recursive: true }));
