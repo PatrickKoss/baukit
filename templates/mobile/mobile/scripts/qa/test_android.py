@@ -451,6 +451,7 @@ if [[ "$*" == *'pidof com.android.systemui' ]]; then echo 321; fi
 if [[ "$*" == *'dumpsys window displays' ]]; then echo '  mCurrentFocus=Window{1 u0 launcher}'; fi
 if [[ "$*" == *'cat /proc/stat' ]]; then printf 'cpu  10 0 10 80 0 0 0 0 0 0\ncpu0 10 0 10 80 0 0 0 0 0 0\n'; fi
 if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/test-qa.avd/snapshots/${@: -1}"; fi
+if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 10.0.2.16 uid 0'; fi
 ''')
         self.environment["BAUKIT_QA_POLL_SECONDS"] = "0"
         self.executable(self.sdk / "emulator/emulator", '{ flock 9; printf "%s\\n" "$@" -- >> "$EMULATOR_ARGS"; } 9>"$EMULATOR_ARGS.lock"\n')
@@ -473,7 +474,7 @@ if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/te
             expected_args = [
                 "-avd", "test-qa", "-port", "5556",
                 "-no-snapshot-save", "-no-audio", "-no-boot-anim", "-gpu", "swiftshader_indirect",
-                "-no-snapshot-load",
+                "-feature", "-WiFiPacketStream", "-no-snapshot-load",
             ]
             if headless == "1":
                 expected_args.append("-no-window")
@@ -491,6 +492,10 @@ if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/te
             launch = events.index(command)
             self.assertFalse(any("monkey" in event for event in events))
             self.assertEqual(events.count(f"-s emulator-5556 emu avd snapshot save {snapshot}"), 1)
+            for serial in ("emulator-5556", "emulator-5558"):
+                wifi = events.index(f"-s {serial} shell svc wifi enable")
+                self.assertLess(events.index(f"-s {serial} shell cmd connectivity airplane-mode disable"), wifi)
+                self.assertLess(wifi, events.index(f"-s {serial} shell ip -4 route get 10.0.2.2"))
 {% if context.auth_enabled %}            for command in (flags, debug, stop):
                 self.assertEqual(events.count(command), 1)
                 self.assertLess(events.index(command), launch)
@@ -501,7 +506,7 @@ if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/te
     def snapshot_name(self, gpu: str = "swiftshader_indirect", version: str = "{{ context.template_version }}") -> str:
         result = subprocess.run(
             ["python3", str(self.scripts / "android-adb.py"), "--snapshot-name",
-             str(self.avds / "test-qa.avd/config.ini"), str(self.sdk), gpu, version],
+             str(self.avds / "test-qa.avd/config.ini"), str(self.sdk), gpu, "-WiFiPacketStream", version],
             capture_output=True, text=True, check=True, timeout=15,
         )
         return result.stdout.strip()

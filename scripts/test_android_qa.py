@@ -82,6 +82,8 @@ case "$*" in
   *'pidof com.android.systemui') echo 321 ;;
   *'dumpsys window displays') echo '  mCurrentFocus=Window{1 u0 com.android.launcher3/.Launcher}' ;;
   *'cat /proc/stat') printf 'cpu  10 0 10 80 0 0 0 0 0 0\ncpu0 10 0 10 80 0 0 0 0 0 0\n' ;;
+  *'ip -4 route get 10.0.2.2')
+    if [[ "$FAILURE" != wifi ]]; then echo '10.0.2.2 dev wlan0 src 10.0.2.16 uid 0'; else echo '10.0.2.2 dev eth0 src 10.0.2.15 uid 0'; fi ;;
   *'emu avd snapshot save '*) mkdir -p "$ANDROID_AVD_HOME/test-qa.avd/snapshots/${@: -1}" ;;
 esac
 exit 0
@@ -258,7 +260,7 @@ RENDERER
         (avd / "baukit-clean-000000000000.ready").touch()
         name = subprocess.run(
             [sys.executable, str(self.scripts / "android-adb.py"), "--snapshot-name",
-             str(avd / "config.ini"), str(self.sdk), "swiftshader_indirect", "test"],
+             str(avd / "config.ini"), str(self.sdk), "swiftshader_indirect", "-WiFiPacketStream", "test"],
             capture_output=True, text=True, check=True,
         ).stdout.strip()
         (avd / "snapshots" / name).mkdir()
@@ -277,6 +279,29 @@ RENDERER
         self.assertEqual(order, sorted(order))
         self.assertGreater(order[1], max(i for i, event in enumerate(events[: order[0]]) if "lastanr" in event))
         self.assertEqual(self.run_script("android-env.sh", "stop").returncode, 0)
+
+    def test_emulators_launch_without_wifi_packet_stream_and_wait_for_the_wifi_route(self):
+        self.prepare_start()
+        self.executable(self.sdk / "emulator/emulator", '{ flock 9; printf \'{"args": "%s"}\\n\' "$*" >> "$EVENTS"; } 9>"$EVENTS.lock"\n')
+        result = self.run_script("android-env.sh", "start")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        events = self.events.read_text().splitlines()
+        launches = [json.loads(event)["args"] for event in events if event.startswith("{")]
+        self.assertTrue(launches)
+        for launch in launches:
+            self.assertIn("-feature -WiFiPacketStream", launch)
+        route = next(i for i, event in enumerate(events) if "route get 10.0.2.2" in event)
+        self.assertLess(next(i for i, event in enumerate(events) if "svc wifi enable" in event), route)
+        self.assertLess(route, next(i for i, event in enumerate(events) if "snapshot save" in event))
+        self.assertEqual(self.run_script("android-env.sh", "stop").returncode, 0)
+
+    def test_missing_wifi_route_fails_the_start(self):
+        self.prepare_start()
+        result = self.run_script("android-env.sh", "start", FAILURE="wifi", BAUKIT_QA_WIFI_TIMEOUT_SECONDS="0.2")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("has no Wi-Fi route to 10.0.2.2; offline flows need Wi-Fi", result.stderr)
+        self.assertNotIn("snapshot save", self.events.read_text())
+        self.run_script("android-env.sh", "stop")
 
     def test_boot_waits_for_systemui_idle_before_health(self):
         self.prepare_start()

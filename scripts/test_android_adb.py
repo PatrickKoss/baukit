@@ -1,6 +1,7 @@
 import contextlib
 import importlib.util
 import io
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -294,8 +295,8 @@ class AndroidSnapshotTests(unittest.TestCase):
             "hw.ramSize=2048\nhw.cpu.ncore=4\navd.ini.displayname=test\n"
         )
 
-    def name(self, gpu="swiftshader_indirect", version="0.17.1"):
-        return android_adb.snapshot_name(self.config, self.sdk, gpu, version)
+    def name(self, gpu="swiftshader_indirect", features="-WiFiPacketStream", version="0.17.1"):
+        return android_adb.snapshot_name(self.config, self.sdk, gpu, features, version)
 
     def test_same_inputs_give_the_same_name(self):
         self.assertEqual(self.name(), self.name())
@@ -305,6 +306,7 @@ class AndroidSnapshotTests(unittest.TestCase):
         original = self.name()
         self.assertNotEqual(self.name(gpu="swiftshader"), original)
         self.assertNotEqual(self.name(version="0.17.2"), original)
+        self.assertNotEqual(self.name(features=""), original)
         (self.image / "source.properties").write_text("Pkg.Revision=8\n")
         self.assertNotEqual(self.name(), original)
         (self.image / "source.properties").write_text("Pkg.Revision=7\n")
@@ -321,11 +323,54 @@ class AndroidSnapshotTests(unittest.TestCase):
         self.config.write_text("\n".join(reversed(lines)).replace("displayname=test", "displayname=other") + "\n")
         self.assertEqual(self.name(), original)
 
-    def test_prune_removes_only_older_baukit_snapshots(self):
-        snapshots = self.root / "snapshots"
-        for name in ("baukit-clean", "baukit-clean-aaaaaaaaaaaa", "baukit-clean-bbbbbbbbbbbb", "default_boot"):
-            (snapshots / name).mkdir(parents=True)
+    def snapshot(self, avd, name, ready=True, age=0):
+        directory = avd / "snapshots" / name
+        directory.mkdir(parents=True)
+        os.utime(directory, (1_000_000 - age, 1_000_000 - age))
+        if ready:
+            (avd / f"{name}.ready").touch()
+
+    def prune(self, avd, keep, loaded=frozenset()):
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(android_adb.prune_snapshots(snapshots, "baukit-clean-bbbbbbbbbbbb"), 0)
-        self.assertEqual(sorted(path.name for path in snapshots.iterdir()), ["baukit-clean-bbbbbbbbbbbb", "default_boot"])
-        self.assertEqual(android_adb.prune_snapshots(self.root / "missing", "baukit-clean-x"), 0)
+            self.assertEqual(android_adb.prune_snapshots(avd, keep, set(loaded)), 0)
+        return (
+            sorted(path.name for path in (avd / "snapshots").iterdir()),
+            sorted(path.name for path in avd.glob("*.ready")),
+        )
+
+    def test_prune_removes_older_baukit_snapshots_but_keeps_the_newest_complete_one(self):
+        avd = self.root / "test-qa.avd"
+        self.snapshot(avd, "baukit-clean", ready=False)
+        self.snapshot(avd, "baukit-clean-aaaaaaaaaaaa", age=20)
+        self.snapshot(avd, "baukit-clean-bbbbbbbbbbbb", age=10)
+        self.snapshot(avd, "baukit-clean-cccccccccccc", ready=False, age=1)
+        self.snapshot(avd, "baukit-clean-dddddddddddd")
+        (avd / "snapshots/default_boot").mkdir()
+        (avd / "baukit-clean-eeeeeeeeeeee.ready").touch()
+        self.assertEqual(self.prune(avd, "baukit-clean-dddddddddddd"), (
+            ["baukit-clean-bbbbbbbbbbbb", "baukit-clean-dddddddddddd", "default_boot"],
+            ["baukit-clean-bbbbbbbbbbbb.ready", "baukit-clean-dddddddddddd.ready"],
+        ))
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(android_adb.prune_snapshots(self.root / "missing", "baukit-clean-x", set()), 0)
+
+    def test_prune_keeps_snapshots_that_running_emulators_loaded(self):
+        avd = self.root / "test-qa.avd"
+        self.snapshot(avd, "baukit-clean-aaaaaaaaaaaa", age=20)
+        self.snapshot(avd, "baukit-clean-bbbbbbbbbbbb", age=10)
+        self.snapshot(avd, "baukit-clean-dddddddddddd")
+        self.assertEqual(self.prune(avd, "baukit-clean-dddddddddddd", {"baukit-clean-aaaaaaaaaaaa"})[0], [
+            "baukit-clean-aaaaaaaaaaaa", "baukit-clean-bbbbbbbbbbbb", "baukit-clean-dddddddddddd",
+        ])
+
+    def test_loaded_snapshots_reads_emulator_command_lines_for_the_avd(self):
+        proc = self.root / "proc"
+        for pid, args in (
+            ("10", ["emulator", "-avd", "test-qa", "-port", "5790", "-snapshot", "baukit-clean-aaaaaaaaaaaa"]),
+            ("11", ["qemu", "-avd", "other-qa", "-snapshot", "baukit-clean-bbbbbbbbbbbb"]),
+            ("12", ["emulator", "-avd", "test-qa", "-no-snapshot-load"]),
+            ("self", ["python3"]),
+        ):
+            (proc / pid).mkdir(parents=True)
+            (proc / pid / "cmdline").write_bytes("\0".join(args).encode() + b"\0")
+        self.assertEqual(android_adb.loaded_snapshots("test-qa", proc), {"baukit-clean-aaaaaaaaaaaa"})
