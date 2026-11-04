@@ -27,6 +27,13 @@ declared, doctor accepts loopback browser origins on `web`, declared
 `web_preview` and `metro` ports, and every `web_extra` port. Metro is included
 because `expo start --web` serves through Metro.
 
+`keycloak_extra = [8181]` lists loopback Keycloak ports for realms the product
+reads but does not run, such as the hub's suite realm next to its own product
+realm. Each entry must be nonzero, unique, and differ from every other host
+port. Templates do not render it. Doctor accepts issuer URLs of the form
+`localhost:<port>/realms/` on `keycloak` and on every `keycloak_extra` port,
+and still rejects any other issuer port.
+
 Absent declarations retain Vite dev 5173, preview 4173, and Expo's unpinned
 Metro port. `port_offset` shifts PostgreSQL, API, operations, Keycloak, Redis,
 and fake-provider host ports. It never shifts these dev-server ports. Doctor

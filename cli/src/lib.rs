@@ -1743,7 +1743,12 @@ fn validate_port_configuration(
         }
     };
     doctor_dev_ports::validate(root, manifest, &ports, successes, failures)?;
-    if manifest.port_offset == 0 && manifest.ports.keys().all(|name| ports::is_dev_port(name)) {
+    if manifest.port_offset == 0
+        && manifest
+            .ports
+            .keys()
+            .all(|name| ports::is_dev_port(name) || name == "keycloak_extra")
+    {
         successes.push("no port offset is configured".to_owned());
         return Ok(());
     }
@@ -1929,11 +1934,17 @@ fn validate_port_configuration(
                 source
             };
             if matches!(relative.as_str(), "mobile/src/api.ts" | "web/src/api.ts") {
-                loopback_ports(&source, snippet.contains("/realms/"))
-                    .iter()
-                    .any(|port| *port != expected_port)
+                let issuer = snippet.contains("/realms/");
+                loopback_ports(&source, issuer).iter().any(|port| {
+                    *port != expected_port && !(issuer && ports.keycloak_extra.contains(port))
+                })
             } else {
-                has_mismatched_loopback_port(&source, expected_port, snippet.contains("/realms/"))
+                has_mismatched_loopback_port(
+                    &source,
+                    expected_port,
+                    &ports.keycloak_extra,
+                    snippet.contains("/realms/"),
+                )
             }
         } else {
             !source.contains(&snippet)
@@ -2178,10 +2189,17 @@ fn loopback_ports(source: &str, issuer: bool) -> Vec<u16> {
         .collect()
 }
 
-fn has_mismatched_loopback_port(source: &str, expected_port: u16, issuer: bool) -> bool {
+fn has_mismatched_loopback_port(
+    source: &str,
+    expected_port: u16,
+    extra_issuer_ports: &[u16],
+    issuer: bool,
+) -> bool {
     let ports = loopback_ports(source, issuer);
     if issuer {
-        ports.iter().any(|port| *port != expected_port)
+        ports
+            .iter()
+            .any(|port| *port != expected_port && !extra_issuer_ports.contains(port))
     } else {
         !ports.is_empty() && !ports.contains(&expected_port)
     }
@@ -3300,8 +3318,8 @@ run:
             const issuer = "http://localhost:8081/realms/product";
             const origin = "http://localhost:5173";
         "#;
-        assert!(!has_mismatched_loopback_port(source, 8081, true));
-        assert!(has_mismatched_loopback_port(source, 8181, true));
+        assert!(!has_mismatched_loopback_port(source, 8081, &[], true));
+        assert!(has_mismatched_loopback_port(source, 8181, &[], true));
     }
 
     #[test]

@@ -45,6 +45,7 @@ pub(crate) struct PortConfiguration {
     pub web: Option<u16>,
     pub web_preview: Option<u16>,
     pub web_extra: Vec<u16>,
+    pub keycloak_extra: Vec<u16>,
     pub metro: Option<u16>,
     pub offset: u32,
     pub service_ports_declared: bool,
@@ -60,17 +61,21 @@ impl PortConfiguration {
     pub fn from_manifest(manifest: &Manifest) -> Result<Self> {
         let mut ports = Self::new(manifest.port_offset)?;
         for (name, declaration) in &manifest.ports {
-            if name == "web_extra" {
+            if let Some(list) = match name.as_str() {
+                "web_extra" => Some(&mut ports.web_extra),
+                "keycloak_extra" => Some(&mut ports.keycloak_extra),
+                _ => None,
+            } {
                 let PortDeclaration::HostList(hosts) = declaration else {
-                    bail!("ports.web_extra must be a list of host ports");
+                    bail!("ports.{name} must be a list of host ports");
                 };
                 if hosts.is_empty() {
-                    bail!("ports.web_extra must not be empty");
+                    bail!("ports.{name} must not be empty");
                 }
                 if hosts.contains(&0) {
-                    bail!("ports.web_extra must use nonzero host ports");
+                    bail!("ports.{name} must use nonzero host ports");
                 }
-                ports.web_extra.clone_from(hosts);
+                list.clone_from(hosts);
                 continue;
             }
             let PortDeclaration::Mapping(mapping) = declaration else {
@@ -155,6 +160,7 @@ impl PortConfiguration {
             web: None,
             web_preview: None,
             web_extra: Vec::new(),
+            keycloak_extra: Vec::new(),
             metro: None,
             offset,
             service_ports_declared: false,
@@ -182,12 +188,19 @@ impl PortConfiguration {
                 bail!("ports.{name} and ports.{previous} collide on effective host port {port}");
             }
         }
-        for port in &self.web_extra {
-            if let Some(previous) = seen.insert(*port, "web_extra") {
-                if previous == "web_extra" {
-                    bail!("ports.web_extra contains duplicate host port {port}");
+        for (name, list) in [
+            ("web_extra", &self.web_extra),
+            ("keycloak_extra", &self.keycloak_extra),
+        ] {
+            for port in list {
+                if let Some(previous) = seen.insert(*port, name) {
+                    if previous == name {
+                        bail!("ports.{name} contains duplicate host port {port}");
+                    }
+                    bail!(
+                        "ports.{name} and ports.{previous} collide on effective host port {port}"
+                    );
                 }
-                bail!("ports.web_extra and ports.{previous} collide on effective host port {port}");
             }
         }
         Ok(())
