@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+    process::Command,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -115,6 +119,68 @@ pub fn render_quality_extras(name: &str, capabilities: &Capabilities, strict: bo
     text
 }
 
+/// Lanes, steps and selection tokens a product's gate defines.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct GateSteps {
+    pub lanes: BTreeSet<String>,
+    pub steps: BTreeSet<String>,
+    pub tokens: BTreeSet<String>,
+}
+
+const GATE_SCRIPT: &str = "scripts/quality-gate.sh";
+const STEP_FIELDS: usize = 5;
+
+/// Parses `name lane after mode tokens` lines from `quality-gate.sh --list-steps`.
+pub fn parse_gate_steps(listing: &str) -> Result<GateSteps, String> {
+    let mut gate = GateSteps::default();
+    for line in listing.lines().filter(|line| !line.trim().is_empty()) {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        let [name, lane, _, _, tokens] = fields[..] else {
+            return Err(format!(
+                "{GATE_SCRIPT} --list-steps printed `{line}`, expected {STEP_FIELDS} fields"
+            ));
+        };
+        gate.steps.insert(name.to_owned());
+        gate.lanes.insert(lane.to_owned());
+        gate.tokens.extend([name.to_owned(), lane.to_owned()]);
+        if tokens != "-" {
+            gate.tokens.extend(
+                tokens
+                    .split(',')
+                    .filter(|token| !token.is_empty())
+                    .map(str::to_owned),
+            );
+        }
+    }
+    Ok(gate)
+}
+
+/// Lists the product gate's steps, or `None` when the product has no strict gate script.
+pub fn list_gate_steps(root: &Path) -> Option<Result<GateSteps, String>> {
+    if !root.join(GATE_SCRIPT).is_file() {
+        return None;
+    }
+    let output = match Command::new("sh")
+        .args([GATE_SCRIPT, "--list-steps"])
+        .current_dir(root)
+        .output()
+    {
+        Ok(output) => output,
+        Err(error) => {
+            return Some(Err(format!(
+                "could not run {GATE_SCRIPT} --list-steps: {error}"
+            )));
+        }
+    };
+    if !output.status.success() {
+        return Some(Err(format!(
+            "{GATE_SCRIPT} --list-steps failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    Some(parse_gate_steps(&String::from_utf8_lossy(&output.stdout)))
+}
+
 fn known_tokens(capabilities: &Capabilities, quality: &QualityManifest) -> Vec<&'static str> {
     let mut tokens = vec![
         "fast",
@@ -195,6 +261,7 @@ fn invalid_glob(glob: &str) -> bool {
 pub fn validate(
     quality: &QualityManifest,
     capabilities: &Capabilities,
+    gate: Option<&GateSteps>,
     failures: &mut Vec<String>,
 ) {
     if let Some(port) = quality.android_emulator_port {
@@ -226,7 +293,15 @@ pub fn validate(
     if budget.full == 0 || budget.affected == 0 {
         failures.push("quality.gate_budget_minutes values must be greater than zero".to_owned());
     }
-    let known = known_tokens(capabilities, quality);
+    let known: BTreeSet<String> = gate.map_or_else(
+        || {
+            known_tokens(capabilities, quality)
+                .into_iter()
+                .map(str::to_owned)
+                .collect()
+        },
+        |gate| gate.tokens.clone(),
+    );
     for (glob, tokens) in &quality.affected {
         if invalid_glob(glob) {
             failures.push(format!(
@@ -236,10 +311,10 @@ pub fn validate(
         for token in tokens {
             let valid = match token.split_once(':') {
                 Some(("playwright", tag)) => {
-                    capabilities.web && tag.starts_with('@') && tag.len() > 1
+                    known.contains("playwright") && tag.starts_with('@') && tag.len() > 1
                 }
                 Some(_) => false,
-                None => known.contains(&token.as_str()),
+                None => known.contains(token),
             };
             if !valid {
                 failures.push(format!(
@@ -329,7 +404,7 @@ mod tests {
         assert_eq!(quality.gate_budget_minutes.full, 10);
         assert_eq!(quality.gate_budget_minutes.affected, 5);
         let mut failures = Vec::new();
-        validate(&quality, &caps, &mut failures);
+        validate(&quality, &caps, None, &mut failures);
         assert!(failures.is_empty(), "{failures:?}");
     }
 
@@ -341,7 +416,7 @@ mod tests {
         )
         .expect("quality parses");
         let mut failures = Vec::new();
-        validate(&quality, &caps, &mut failures);
+        validate(&quality, &caps, None, &mut failures);
         let text = failures.join("\n");
         assert!(text.contains("android_emulator_port requires the mobile capability"));
         assert!(text.contains("gate_budget_minutes values must be greater than zero"));
@@ -364,12 +439,17 @@ mod tests {
         ] {
             let quality: QualityManifest = toml::from_str(text).expect("parses");
             let mut failures = Vec::new();
-            validate(&quality, &caps, &mut failures);
+            validate(&quality, &caps, None, &mut failures);
             assert_eq!(failures.len(), failures_expected, "{text}: {failures:?}");
         }
         let quality: QualityManifest = toml::from_str("android_emulators = 2\n").expect("parses");
         let mut failures = Vec::new();
-        validate(&quality, &capabilities(true, false, false), &mut failures);
+        validate(
+            &quality,
+            &capabilities(true, false, false),
+            None,
+            &mut failures,
+        );
         assert_eq!(
             failures,
             ["quality.android_emulators requires the mobile capability"]
@@ -383,8 +463,69 @@ mod tests {
             let quality: QualityManifest =
                 toml::from_str(&format!("android_emulator_port = {port}\n")).expect("parses");
             let mut failures = Vec::new();
-            validate(&quality, &caps, &mut failures);
+            validate(&quality, &caps, None, &mut failures);
             assert_eq!(failures.len(), 1, "{port}");
         }
+    }
+
+    #[test]
+    fn product_steps_from_the_gate_listing_are_accepted() {
+        let gate = parse_gate_steps(
+            "openapi fast - always -\nwebkit-repeats web playwright selected -\nmobile-cpu-budgets mobile - selected cpu\n\nplaywright web - selected web-e2e\n",
+        )
+        .expect("listing parses");
+        assert_eq!(
+            gate.lanes,
+            BTreeSet::from(["fast".into(), "mobile".into(), "web".into()])
+        );
+        assert!(gate.steps.contains("mobile-cpu-budgets"));
+        assert!(gate.tokens.contains("cpu") && gate.tokens.contains("web-e2e"));
+        let quality: QualityManifest = toml::from_str(
+            "[affected]\n\"mobile/**\" = [\"mobile-cpu-budgets\", \"cpu\", \"playwright:@smoke\"]\n\"web/**\" = [\"rust-tests\", \"unknown:x\"]\n",
+        )
+        .expect("quality parses");
+        let mut failures = Vec::new();
+        validate(
+            &quality,
+            &capabilities(false, false, true),
+            Some(&gate),
+            &mut failures,
+        );
+        assert_eq!(
+            failures,
+            [
+                "quality.affected `web/**` names unknown lane or step `rust-tests`",
+                "quality.affected `web/**` names unknown lane or step `unknown:x`",
+            ]
+        );
+    }
+
+    #[test]
+    fn malformed_gate_listings_are_rejected() {
+        let error = parse_gate_steps("openapi fast always -\n").expect_err("four fields");
+        assert!(error.contains("expected 5 fields"), "{error}");
+    }
+
+    #[test]
+    fn gate_steps_come_from_the_product_script() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        assert!(list_gate_steps(directory.path()).is_none());
+        let scripts = directory.path().join("scripts");
+        std::fs::create_dir_all(&scripts).expect("scripts directory");
+        std::fs::write(
+            scripts.join("quality-gate.sh"),
+            "[ \"$1\" = --list-steps ] || exit 3\necho 'doctor fast - always -'\n",
+        )
+        .expect("script");
+        let gate = list_gate_steps(directory.path())
+            .expect("script exists")
+            .expect("listing runs");
+        assert!(gate.steps.contains("doctor"));
+        std::fs::write(scripts.join("quality-gate.sh"), "echo broken >&2\nexit 4\n")
+            .expect("script");
+        let error = list_gate_steps(directory.path())
+            .expect("script exists")
+            .expect_err("listing fails");
+        assert!(error.contains("--list-steps failed: broken"), "{error}");
     }
 }

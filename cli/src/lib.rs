@@ -1348,7 +1348,24 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
     if !(1..=100).contains(&manifest.quality.backend_coverage_lines) {
         failures.push("quality.backend_coverage_lines must be between 1 and 100".to_owned());
     }
-    gate_settings::validate(&manifest.quality, &manifest.capabilities, &mut failures);
+    let gate_steps = if manifest.quality.profile == QualityProfile::Strict {
+        match gate_settings::list_gate_steps(root) {
+            Some(Ok(steps)) => Some(steps),
+            Some(Err(error)) => {
+                failures.push(error);
+                None
+            }
+            None => None,
+        }
+    } else {
+        None
+    };
+    gate_settings::validate(
+        &manifest.quality,
+        &manifest.capabilities,
+        gate_steps.as_ref(),
+        &mut failures,
+    );
     if manifest.quality.webkit_repeats == 0 {
         failures.push("quality.webkit_repeats must be greater than zero".to_owned());
     }

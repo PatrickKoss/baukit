@@ -62,7 +62,7 @@ The fast checks always run: the whole `fast` lane plus format, lint and typechec
 
 The shared paths are lockfiles, `package.json` files, `pnpm-workspace.yaml`, Rust toolchain files, `.cargo/`, every `migrations/` directory, `baukit.toml`, `limits.json`, `scripts/`, `Makefile`, `mise.toml`, `.github/`, `compose.yaml`, the OpenAPI document, `mcp-tools.json` next to it, every `openapi.consumers` file and every glob in `quality.shared`.
 
-The gate prints the mode, the reason for each changed file and the step list before it runs anything. `baukit doctor` rejects globs with `..`, absolute globs and names that are no lane or step of this product.
+The gate prints the mode, the reason for each changed file and the step list before it runs anything. `baukit doctor` rejects globs with `..` and absolute globs. It runs `sh scripts/quality-gate.sh --list-steps` and rejects names that are no lane, step or token in that listing, so a step the product adds to its gate can be named here.
 
 ## Budget
 
