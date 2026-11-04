@@ -406,6 +406,81 @@ RENDERER
         runs = [event for event in self.events.read_text().splitlines() if event.startswith("maestro")]
         self.assertEqual(runs, ["maestro .maestro/a-first.yaml", "maestro .maestro/b-second.yml"])
 
+    def flows(self, *names):
+        self.owned()
+        flows = self.mobile / ".maestro"
+        flows.mkdir()
+        for name in names:
+            (flows / name).write_text("appId: test\n")
+
+    def run_watched(self, maestro):
+        self.executable(self.tools / "maestro", maestro)
+        return subprocess.run(
+            ["bash", str(self.scripts / "run-maestro.sh"), "android"],
+            env={**self.environment, "BAUKIT_QA_MAESTRO_STALL_SECONDS": "1", "BAUKIT_QA_POLL_SECONDS": "0.1"},
+            capture_output=True, text=True, timeout=20, check=False,
+        )
+
+    def test_a_flow_without_progress_is_stopped_and_keeps_its_debug_output(self):
+        self.flows("a-first.yaml", "b-second.yaml")
+        child = self.root / "child"
+        result = self.run_watched(f'''
+echo "maestro ${{*: -1}}" >> "$EVENTS"
+debug="${{*: -2:1}}"
+[[ "${{*: -1}}" == .maestro/a-first.yaml ]] || exit 0
+echo "Launch app" && touch "$debug/screenshot-1.png"
+sleep 60 &
+echo $! > {child}
+wait
+''')
+        self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+        self.assertIn("qa: a-first.yaml made no progress for 1 s; stopped it and kept", result.stderr)
+        self.assertIn("Launch app", result.stdout)
+        debug = self.mobile / "maestro-debug"
+        self.assertTrue((debug / "screenshot-1.png").exists())
+        self.assertIn("Launch app", (debug / "maestro-output.log").read_text())
+        runs = [event for event in self.events.read_text().splitlines() if event.startswith("maestro")]
+        self.assertEqual(runs, ["maestro .maestro/a-first.yaml"])
+        alive = subprocess.run(["kill", "-0", child.read_text().strip()], capture_output=True, check=False)
+        self.assertNotEqual(alive.returncode, 0)
+
+    def test_a_slow_flow_that_keeps_making_progress_passes(self):
+        self.flows("a-first.yaml")
+        for progress in ('echo "step $step"', 'touch "${*: -2:1}/commands-$step.json"'):
+            with self.subTest(progress=progress):
+                result = self.run_watched(f'''
+for step in 1 2 3 4 5 6 7 8 9 10; do
+  {progress}
+  sleep 0.4
+done
+echo finished >> "$EVENTS"
+''')
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("finished", self.events.read_text())
+                self.events.unlink()
+
+    def test_a_sharded_run_without_progress_is_stopped(self):
+        (self.state / "android-owned").touch()
+        (self.state / "android-serial").write_text("emulator-5556\nemulator-5558\n")
+        self.attached.touch()
+        flows = self.mobile / ".maestro"
+        flows.mkdir()
+        for name in ("a-first.yaml", "b-second.yaml"):
+            (flows / name).write_text("appId: test\n")
+        result = self.run_watched('sleep 60\n')
+        self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+        self.assertIn("qa: the sharded run made no progress for 1 s", result.stderr)
+
+    def test_stall_deadline_must_be_a_positive_integer(self):
+        self.flows("a-first.yaml")
+        self.executable(self.tools / "maestro", 'echo maestro >> "$EVENTS"\n')
+        for value in ("0", "-1", "1.5", "soon"):
+            with self.subTest(value=value):
+                result = self.run_script("run-maestro.sh", "android", BAUKIT_QA_MAESTRO_STALL_SECONDS=value)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("BAUKIT_QA_MAESTRO_STALL_SECONDS must be a positive integer", result.stderr)
+        self.assertFalse(self.events.exists() and "maestro" in self.events.read_text())
+
     def assert_health_evidence(self, result):
         event = "am_anr: [0,123,com.android.systemui,1,reason]"
         self.assertIn(event, result.stderr)
