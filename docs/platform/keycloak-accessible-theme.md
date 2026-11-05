@@ -80,12 +80,13 @@ macros, passkeys, WebAuthn, registration profile fields, reCAPTCHA, error
 rendering, and CSS classes. A script-only child is still coupled to DOM IDs and
 therefore needs compatibility tests, but its copied surface is much smaller.
 
-Baukit currently has two separate pins:
+At the time of this spike Baukit had two pins: the
+[generated development Compose stack](../../templates/backend/compose.yaml)
+used exact Keycloak `26.7.0`, matching Fitness Tracker, and a production
+Operator base used `26.7.1`. Baukit 0.18.0 removed that base, because
+production runs Clerk or WorkOS and Keycloak serves only local development
+and E2E. Separately:
 
-- the [generated development Compose stack](../../templates/backend/compose.yaml)
-  uses exact Keycloak `26.7.0`, matching Fitness Tracker;
-- the [production Operator base](../../deploy/platform/keycloak/README.md) is
-  pinned to `26.7.1`; and
 - OpenDialog's Compose files use the floating `26.7` tag. Its locally cached
   image was 26.7.0 during this spike, but the tag does not guarantee that patch.
 
@@ -154,15 +155,12 @@ If the real-container proof succeeds, ship all of the following together:
 - a generated read-only Compose mount of `./keycloak/themes` at
   `/opt/keycloak/themes`;
 - generated documentation explaining direct use, product-child inheritance,
-  cache/restart behavior, registration enablement, and production packaging;
-  and
+  cache/restart behavior and registration enablement; and
 - a compatibility note naming the exact tested Keycloak patch and the
   selectors/markup contracts on which the script relies.
 
 The realm selection and Compose mount must be tested as generated output, not
-only documented snippets. Production delivery for the Operator base also needs
-an explicit, immutable theme packaging/mount mechanism; a development bind
-mount is not a production deployment design.
+only documented snippets.
 
 ## Acceptance tests
 
@@ -195,9 +193,7 @@ cover:
    registration cases through that fixture.
 
 The initial support statement should be **Keycloak 26.7.0 only** because that
-is the generated Compose pin. Before the asset is used with Baukit's 26.7.1
-Operator base, run the same suite against 26.7.1 and record it as supported.
-Every Keycloak patch/minor upgrade must inspect the inherited form contracts and
+is the generated Compose pin. Every Keycloak patch/minor upgrade must inspect the inherited form contracts and
 rerun the real-browser suite. Do not use a floating `26.7` tag in the test
 matrix or compatibility statement.
 

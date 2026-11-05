@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Breaking: remove the Keycloak operator base (`keycloak/`, vendored CRDs, realm import and migration Job examples) and the local cluster's Keycloak and realm components (BK21). Production signs in with Clerk or WorkOS; the local fixture verifies tokens from its compose Keycloak on the host.
+
 - Group worker metrics by `job_kind` in shared dashboards, recording rules, and alerts. Test distinct handler types under one scrape job.
 
 - Replace MinIO with digest-pinned RustFS 1.0.1 in the local platform. Use AWS CLI bucket bootstrap, keep `baukit-local` and `posthog`, and connect local Loki, PostHog, and PostgreSQL backups through path-style S3 in `us-east-1`.

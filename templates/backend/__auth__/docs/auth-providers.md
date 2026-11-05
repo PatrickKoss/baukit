@@ -11,8 +11,10 @@ Never put an API key in a web or mobile environment file.
 
 ## OIDC and external issuers
 
-`--auth oidc` includes a development Keycloak realm. To use Auth0, Entra ID,
-Zitadel, Cognito or Authentik, replace the authentication section:
+`--auth oidc` includes a development Keycloak realm. Keycloak runs only on
+developer machines and in E2E; Baukit ships no production Keycloak deployment.
+A deployed product points the verifier at its external issuer. To use Auth0,
+Entra ID, Zitadel, Cognito or Authentik, replace the authentication section:
 
 ```toml
 [auth]
@@ -220,6 +222,6 @@ ship their own development-server defaults. The strict gate runs them as the `we
 Set `{{ context.app_env }}__AUTH__ERASURE_HASH_KEY` to at least 32 random bytes.
 Keep it stable so erased identities remain fenced. Clerk and WorkOS always
 require their deletion API key, including local development. Only the bundled
-Keycloak flavor supplies a local admin secret. Production always requires an
-explicit secret. Configure `identity_admin_base_url` only for an HTTPS API
-proxy. The generated adapter permits loopback HTTP only in local development.
+Keycloak flavor supplies a local admin secret, and only for local development.
+Configure `identity_admin_base_url` only for an HTTPS API proxy. The generated
+adapter permits loopback HTTP only in local development.

@@ -35,10 +35,9 @@ trap 'rm -rf -- "$work_dir"' EXIT
 # Middleware/TraefikService; Flagger Canary/MetricTemplate; Kyverno
 # ClusterPolicy; cert-manager resources; Prometheus
 # Operator ServiceMonitor/PodMonitor/PrometheusRule; CloudNativePG/Barman
-# Cluster/ObjectStore/Backup/ScheduledBackup/Pooler; and Keycloak Operator
-# resources. -ignore-missing-schemas remains a fallback for newly added CRDs.
+# Cluster/ObjectStore/Backup/ScheduledBackup/Pooler. -ignore-missing-schemas remains a fallback for newly added CRDs.
 # Downloaded core schemas share the offline cache with the Helm chart archives.
-kubeconform_skip_kinds=CustomResourceDefinition,HelmRepository,HelmRelease,GitRepository,Kustomization,Middleware,TraefikService,Canary,MetricTemplate,ClusterPolicy,Certificate,Issuer,ClusterIssuer,ServiceMonitor,PodMonitor,PrometheusRule,Cluster,ObjectStore,Backup,ScheduledBackup,Pooler,Keycloak,KeycloakRealmImport
+kubeconform_skip_kinds=CustomResourceDefinition,HelmRepository,HelmRelease,GitRepository,Kustomization,Middleware,TraefikService,Canary,MetricTemplate,ClusterPolicy,Certificate,Issuer,ClusterIssuer,ServiceMonitor,PodMonitor,PrometheusRule,Cluster,ObjectStore,Backup,ScheduledBackup,Pooler
 
 strip_yaml_quotes() {
   local value=$1

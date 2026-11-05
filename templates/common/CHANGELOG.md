@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Breaking: `scripts/keycloak_policy.py` accepts only the `development` class, and the production realm and policy fixtures are gone (BK21). Keycloak runs only for local development and E2E.
+
 ## [0.17.1] - 2026-11-03
 
 ## [0.17.0] - 2026-11-02

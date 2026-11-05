@@ -60,5 +60,5 @@ executable. The Canary `pre-rollout` webhook uses `type: cmd` and invokes that
 executable against `<product>-canary` directly. Credentials remain in an
 existing SOPS-managed Secret, never in this base or image. This shape keeps
 the zero-customer-traffic gate headless and lets each app grant only DNS,
-Keycloak, Prometheus, and canary-Service egress.
+identity provider, Prometheus, and canary-Service egress.
 

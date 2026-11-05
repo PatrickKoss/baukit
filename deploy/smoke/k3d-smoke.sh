@@ -9,10 +9,7 @@ observability_chart=${BAUKIT_SMOKE_OBSERVABILITY_CHART:-$deploy_root/observabili
 product=${BAUKIT_SMOKE_PRODUCT:?BAUKIT_SMOKE_PRODUCT is required}
 values_file=${BAUKIT_SMOKE_VALUES_FILE:?BAUKIT_SMOKE_VALUES_FILE is required}
 images=${BAUKIT_SMOKE_IMAGES:?BAUKIT_SMOKE_IMAGES is required}
-issuer=${BAUKIT_SMOKE_ISSUER:?BAUKIT_SMOKE_ISSUER is required}
-client_id=${BAUKIT_SMOKE_OIDC_CLIENT_ID:?BAUKIT_SMOKE_OIDC_CLIENT_ID is required}
-username=${BAUKIT_SMOKE_OIDC_USERNAME:?BAUKIT_SMOKE_OIDC_USERNAME is required}
-oidc_password=${BAUKIT_SMOKE_OIDC_PASSWORD:?BAUKIT_SMOKE_OIDC_PASSWORD is required}
+token_command=${BAUKIT_SMOKE_TOKEN_COMMAND:?BAUKIT_SMOKE_TOKEN_COMMAND is required}
 
 cluster_name=${BAUKIT_SMOKE_CLUSTER:-$product-baukit-smoke}
 namespace=${BAUKIT_SMOKE_NAMESPACE:-$product}
@@ -25,7 +22,6 @@ secret_manifests=${BAUKIT_SMOKE_SECRET_MANIFESTS:-}
 worker_enabled=${BAUKIT_SMOKE_WORKER_ENABLED:-false}
 k3s_dns_enabled=${BAUKIT_SMOKE_K3S_DNS_ENABLED:-true}
 k3d_ports=${BAUKIT_SMOKE_K3D_PORTS:-8081:30081@server:0}
-resolve_host=${BAUKIT_SMOKE_RESOLVE_HOST:-host.k3d.internal=127.0.0.1}
 api_check_path=${BAUKIT_SMOKE_API_CHECK_PATH:-/me}
 api_check_status=${BAUKIT_SMOKE_API_CHECK_STATUS:-200}
 known_gaps_file=${BAUKIT_SMOKE_KNOWN_GAPS_FILE:-}
@@ -184,18 +180,27 @@ if [ "$worker_enabled" = true ]; then
     wait_for_url http://127.0.0.1:19091/readyz
 fi
 
-echo "exercising a headless OIDC authorization-code + PKCE login"
+echo "requesting an access token from the product token command"
+[ -x "$token_command" ] || {
+    echo "product token command is not executable: $token_command" >&2
+    exit 2
+}
 token_file=$temporary_dir/access-token
-BAUKIT_HEADLESS_PASSWORD=$oidc_password \
-python3 "$script_dir/headless-pkce-login.py" \
-    --issuer "$issuer" \
-    --client-id "$client_id" \
-    --username "$username" \
-    --password-env BAUKIT_HEADLESS_PASSWORD \
-    --resolve-host "$resolve_host" \
-    --token-file "$token_file" \
-    --check-url "http://127.0.0.1:18080$api_check_path" \
-    --check-status "$api_check_status"
+(umask 077 && : >"$token_file")
+BAUKIT_SMOKE_ACCESS_TOKEN_FILE=$token_file "$token_command"
+[ -s "$token_file" ] || {
+    echo "product token command wrote no access token" >&2
+    exit 1
+}
+check_status=$(
+    printf 'Authorization: Bearer %s\n' "$(head -n 1 "$token_file")" |
+        curl --silent --output /dev/null --write-out '%{http_code}' \
+            --header @- "http://127.0.0.1:18080$api_check_path"
+)
+[ "$check_status" = "$api_check_status" ] || {
+    echo "GET $api_check_path returned $check_status, expected $api_check_status" >&2
+    exit 1
+}
 if [ -n "$product_check" ]; then
     [ -x "$product_check" ] || {
         echo "product smoke check is not executable: $product_check" >&2
@@ -214,7 +219,7 @@ if [ "$worker_enabled" = true ]; then
         >"$temporary_dir/worker-runtime.log"
     runtime_logs=$runtime_logs:$temporary_dir/worker-runtime.log
 fi
-printf '%s\n' "$oidc_password" >"$forbidden_file"
+: >"$forbidden_file"
 while IFS= read -r access_token || [ -n "$access_token" ]; do
     [ -n "$access_token" ] && printf '%s\n' "$access_token" >>"$forbidden_file"
 done <"$token_file"

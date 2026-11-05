@@ -46,10 +46,10 @@ class RuntimeStorageCredentialsTest(unittest.TestCase):
     def test_existing_state_gains_storage_credentials_without_rotating_identity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             state = Path(directory)
-            state.joinpath("secrets.env").write_text("KEYCLOAK_ADMIN_PASSWORD=retained-password\n")
+            state.joinpath("secrets.env").write_text("GRAFANA_ADMIN_PASSWORD=retained-password\n")
             result = self.run_shell(state, """
                 ensure_secret_state
-                printf '%s\\n' "$KEYCLOAK_ADMIN_PASSWORD" "$RUSTFS_ACCESS_KEY" "$RUSTFS_SECRET_KEY"
+                printf '%s\\n' "$GRAFANA_ADMIN_PASSWORD" "$RUSTFS_ACCESS_KEY" "$RUSTFS_SECRET_KEY"
                 ensure_secret_state
                 printf '%s\\n' "$RUSTFS_ACCESS_KEY" "$RUSTFS_SECRET_KEY"
             """).splitlines()
