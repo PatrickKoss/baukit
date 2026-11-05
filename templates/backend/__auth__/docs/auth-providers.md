@@ -99,6 +99,24 @@ and SecureStore through `@baukit/auth-native/clerk-expo`. Enable hosted sign-in
 in Clerk and register the mobile app's redirect and native identifiers.
 See [Clerk Expo](https://clerk.com/docs/reference/expo/overview).
 
+Clerk session tokens carry no `auth_time`, and the erasure fence rejects a
+session without a sign-in time after the fence. Add the sign-in time in the
+Clerk dashboard under **Sessions**, **Customize session token**, and merge this
+claim into any claims already there:
+
+```json
+{
+  "session_created_at": "{{ '{{' }}session.created_at{{ '}}' }}"
+}
+```
+
+`session.created_at` is the session's creation time in Unix seconds and stays
+the same for the session's life. The verifier reads `session_created_at`
+(`baukit_auth::CLERK_SIGN_IN_TIME_CLAIM`) into `Principal::authenticated_at`.
+Without the claim, a user who erased their profile stays fenced on every later
+sign-in. See [Customize session tokens](https://clerk.com/docs/guides/sessions/customize-session-tokens)
+and the [shortcodes](https://clerk.com/docs/guides/sessions/jwt-templates#available-shortcodes).
+
 Set `{{ context.app_env }}__AUTH__IDENTITY_ADMIN_CLIENT_SECRET` to the Clerk
 secret key. The deletion endpoint defaults to `https://api.clerk.com/v1/users`.
 A deleted or missing user counts as complete. Provider 5xx and 429 responses
@@ -157,6 +175,10 @@ tokens carry no `aud`. Keycloak sets `sub`, `sid`, `azp`, `iss`, `iat`, `exp`,
 | --- | --- | --- |
 | `v` | `2` | `clerk session version` |
 | `o` | `{"id":"org_local","rol":"admin","slg":"local"}` | `clerk active organization` |
+
+A user-session-note mapper, `clerk sign-in time`, copies Keycloak's `AUTH_TIME`
+session note into `session_created_at`, so local tokens reach
+`Principal::authenticated_at` through the same claim as production ones.
 
 `azp` is the Keycloak client ID, so `auth.authorized_parties` lists those IDs
 locally and the web origins in production. Every local user has the same

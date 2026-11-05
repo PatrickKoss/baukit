@@ -975,8 +975,11 @@ impl JwtClaims {
         {
             return Err(VerificationError::NotYetValid);
         }
-        let authenticated_at =
-            authentication_time(self.extra.remove("auth_time").as_ref(), now, skew)?;
+        let mapped_time = self
+            .extra
+            .remove(config.claim_mapping.authenticated_at.as_ref());
+        let auth_time = self.extra.remove("auth_time");
+        let authenticated_at = authentication_time(mapped_time.or(auth_time).as_ref(), now, skew)?;
         let organization = mapped_claim(&self.extra, config.claim_mapping.organization.as_ref())?;
         let tenant = mapped_claim(&self.extra, config.claim_mapping.tenant.as_ref())?;
         let client_id = mapped_claim(&self.extra, config.claim_mapping.client_id.as_ref())?;

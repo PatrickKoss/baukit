@@ -1,4 +1,6 @@
-use baukit_auth::{ClerkVerifier, IdentityVerifier, VerificationError, WorkOsVerifier};
+use baukit_auth::{
+    CLERK_SIGN_IN_TIME_CLAIM, ClerkVerifier, IdentityVerifier, VerificationError, WorkOsVerifier,
+};
 use baukit_test::MockOidcServer;
 use std::{error::Error, time::Duration};
 
@@ -293,5 +295,50 @@ async fn clerk_mcp_accepts_any_registered_client_with_the_product_scopes()
             baukit_auth::OidcConfigError::EmptyValue("required scope")
         ))
     ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn clerk_sessions_take_authenticated_at_from_the_sign_in_time_claim()
+-> Result<(), Box<dyn Error>> {
+    let server = MockOidcServer::start().await?;
+    let clerk =
+        ClerkVerifier::from_jwks_uri(server.issuer(), ["https://app.example"], server.jwks_url())?;
+    let base = server
+        .claims("user_123", "api", Duration::from_secs(300))?
+        .claim("azp", "https://app.example");
+    let signed_in = 1_700_000_000_i64;
+
+    let present = clerk
+        .verify(&server.mint(&base.clone().claim(CLERK_SIGN_IN_TIME_CLAIM, signed_in))?)
+        .await?;
+    assert_eq!(
+        present.authenticated_at(),
+        chrono::DateTime::from_timestamp(signed_in, 0)
+    );
+
+    let missing = clerk.verify(&server.mint(&base.clone())?).await?;
+    assert_eq!(missing.authenticated_at(), None);
+
+    let auth_time_only = clerk
+        .verify(&server.mint(&base.clone().claim("auth_time", signed_in))?)
+        .await?;
+    assert_eq!(
+        auth_time_only.authenticated_at(),
+        chrono::DateTime::from_timestamp(signed_in, 0)
+    );
+
+    for malformed in [
+        serde_json::json!("1700000000"),
+        serde_json::json!(-1),
+        serde_json::json!(1.5),
+    ] {
+        assert!(matches!(
+            clerk
+                .verify(&server.mint(&base.clone().claim(CLERK_SIGN_IN_TIME_CLAIM, malformed))?)
+                .await,
+            Err(VerificationError::MalformedToken)
+        ));
+    }
     Ok(())
 }

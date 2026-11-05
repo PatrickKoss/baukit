@@ -13,6 +13,14 @@ This table records the tested baseline. The committed lockfiles record exact res
 
 Expo published SDK 57 patch releases on 2026-11-05, and `expo-doctor` fails a 0.18.0 render since then. A mobile product bumps `expo` to 57.0.32 and `expo-router` to 57.0.30 in `mobile/package.json`, `expo-constants` to 57.0.23 in the `catalog` of `mobile/pnpm-workspace.yaml`, and `@expo/metro-runtime` to 57.0.18 when the Expo app hosts the PWA. pnpm refuses releases younger than a day, so the template lists the 24 exact `name@x.y.z` releases from the SDK 57 patch set in `minimumReleaseAgeExclude`. Copy that list from a fresh render, run `corepack pnpm@12.9.1 --dir mobile install` and check that `pnpm dlx expo-doctor` passes 21/21.
 
+#### Clerk sign-in time for the erasure fence
+
+Clerk session tokens carry no `auth_time`, so baukit-erasure fenced every Clerk session of a user who erased a product profile, for good. `baukit-auth` adds `CLERK_SIGN_IN_TIME_CLAIM` (`session_created_at`), and `ClerkVerifier` maps that claim, Unix seconds, to `Principal::authenticated_at`. The fence itself is unchanged. A token without the claim stays fenced, and a malformed one fails with `MalformedToken`. The OAuth and MCP verifiers are unchanged. A Clerk product takes these steps:
+
+1. In the Clerk dashboard, open **Sessions**, **Customize session token** and merge `{"session_created_at": "{{session.created_at}}"}` into the claims, in every Clerk instance (development and production).
+2. Copy the `clerk sign-in time` mapper from a fresh render's `keycloak/realm.json` into each Clerk-shaped client, and the new assertions in `backend/tests/local_realm.rs`. The mapper is Keycloak's built-in `oidc-usersessionmodel-note-mapper` on the `AUTH_TIME` session note, so local tokens carry the same claim.
+3. Re-render `docs/auth-providers.md`, then recreate the local Keycloak so it imports the realm again.
+
 ## v0.18.0
 
 Last verified release train: `v0.18.0` (breaking minor train on top of `v0.17.1`). Production has no Keycloak any more: BK21 removes the operator base and the local cluster's Keycloak, and Keycloak stays for local development, E2E and QA only. `HubClient` can send a hub `sbsvc_` service token. Clerk and WorkOS web and Expo apps sign in through one port, with the BK19 Keycloak realm locally and the provider SDK in production (BK24, BK22). Organizations are plan kit subjects (BK25). The lane gate shares one core budget, and the native QA scripts gain stall, Wi-Fi and snapshot fixes (BK27).

@@ -12,6 +12,13 @@
           "protocolMapper": "oidc-hardcoded-claim-mapper",
           "consentRequired": false,
           "config": {"claim.name": "o", "claim.value": "{\"id\":\"org_local\",\"rol\":\"admin\",\"slg\":\"local\"}", "jsonType.label": "JSON", "access.token.claim": "true", "id.token.claim": "false", "userinfo.token.claim": "false", "introspection.token.claim": "true"}
+        },
+        {
+          "name": "clerk sign-in time",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usersessionmodel-note-mapper",
+          "consentRequired": false,
+          "config": {"user.session.note": "AUTH_TIME", "claim.name": "session_created_at", "jsonType.label": "long", "access.token.claim": "true", "id.token.claim": "false", "userinfo.token.claim": "false", "introspection.token.claim": "true"}
         }
       ]{% else %}[
         {
