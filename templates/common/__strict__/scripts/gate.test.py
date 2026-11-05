@@ -3,6 +3,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import threading
 import unittest
 from pathlib import Path
 
@@ -185,8 +186,49 @@ class BudgetTests(unittest.TestCase):
         self.assertEqual(gate.budget_minutes({"quality": {"gate_budget_minutes": {"full": 40}}}, "full"), 40)
 
 
+class CoreBudgetTests(unittest.TestCase):
+    def test_heavy_steps_never_hold_more_than_the_budget(self):
+        budget = gate.CoreBudget(4, None, 1024, 2)
+        self.assertEqual(budget.acquire(3), 3)
+        self.assertEqual(budget.acquire(3), 1)
+        released = threading.Timer(0.1, budget.release, args=(3,))
+        released.start()
+        self.assertEqual(budget.acquire(2), 2)
+        released.join()
+
+    def test_emulator_steps_wait_for_their_reserve(self):
+        budget = gate.CoreBudget(6, None, 1024, 4)
+        self.assertEqual(budget.acquire(3), 3)
+        granted = []
+        waiter = threading.Thread(target=lambda: granted.append(budget.acquire(4, 4)))
+        waiter.start()
+        waiter.join(0.1)
+        self.assertEqual(granted, [])
+        budget.release(3)
+        waiter.join(1)
+        self.assertEqual(granted, [4])
+
+    def test_reserve_and_requests_stay_within_the_budget(self):
+        budget = gate.CoreBudget(2, None, 1024, 8)
+        self.assertEqual(budget.emulator_cores, 2)
+        self.assertEqual(budget.acquire(9, 9), 2)
+
+    def test_emulator_cores_follow_the_emulator_count(self):
+        self.assertEqual(gate.emulator_cores({}, {}), 4)
+        self.assertEqual(gate.emulator_cores({"quality": {"android_emulators": 3}}, {}), 6)
+        self.assertEqual(gate.emulator_cores({}, {"BAUKIT_QA_ANDROID_EMULATORS": "1"}), 2)
+        self.assertEqual(gate.emulator_cores({}, {"BAUKIT_GATE_EMULATOR_CORES": "5"}), 5)
+
+    def test_light_lanes_and_steps_take_no_share(self):
+        planned = gate.plan(STEPS, gate.Selection(True, []))
+        light = frozenset({"images", "web-unit"})
+        self.assertEqual(gate.heavy_lanes(planned, light), ["backend", "web", "mobile"])
+        self.assertEqual(gate.heavy_lanes(planned, frozenset({"images", "mobile"})), ["backend", "web"])
+        self.assertEqual(gate.unknown_light(frozenset({"images", "nope"}), STEPS), ["nope"])
+
+
 class RunnerTests(unittest.TestCase):
-    def run_gate(self, steps, failing, *extra):
+    def run_gate(self, steps, failing, *extra, settings_text="", script_body=""):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             script = root / "steps.sh"
@@ -194,9 +236,9 @@ class RunnerTests(unittest.TestCase):
                 if [ "$1" = --list-steps ]; then printf '%s\\n' {' '.join(repr(line) for line in steps)}; exit 0; fi
                 echo "ran $2" >> "{root}/ran"
                 case " {' '.join(failing)} " in *" $2 "*) exit 3 ;; esac
-            """))
+            """) + script_body)
             settings = root / "settings.toml"
-            settings.write_text("")
+            settings.write_text(settings_text)
             result = subprocess.run(
                 [sys.executable, str(SCRIPT), "run", "--script", f"sh {script}", "--settings", str(settings),
                  "--log-dir", str(root / "logs"), *extra],
@@ -225,6 +267,34 @@ class RunnerTests(unittest.TestCase):
         self.assertNotIn("ran b", ran)
         self.assertIn("ran c", ran)
         self.assertIn("gate: failed lanes: fast (a failed with exit 3), web (b blocked by a)", result.stdout)
+
+    def test_running_steps_share_one_budget(self):
+        body = textwrap.dedent("""\
+            echo "env $2 $BAUKIT_GATE_WORKERS $BAUKIT_QA_GRADLE_WORKERS $BAUKIT_QA_NATIVE_JOBS" >> "$(dirname "$0")/ran"
+            sleep 0.3
+        """)
+        result, ran, _, _ = self.run_gate(
+                ["a fast - always -", "b web - selected -", "c mobile - selected -", "android-e2e mobile c selected -",
+             "d docs - selected -"],
+            [], settings_text='[quality]\nlight = ["docs"]\nandroid_emulators = 1\n', script_body=body,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("env b 2 2 2", ran)
+        self.assertIn("gate: [web] b started with 2 cores", result.stdout)
+        self.assertIn("gate: [mobile] c started with 2 cores", result.stdout)
+        self.assertIn("gate: [docs] d started with 2 cores, light", result.stdout)
+        self.assertRegex(result.stdout, r"gate: \[mobile\] android-e2e started with [2-4] cores")
+        self.assertIn("keeps 2 for the emulators; light: docs, fast", result.stdout)
+        self.assertRegex(
+            result.stdout,
+            r"gate: \[web\] b started with 2 cores, at \+\d+ s after waiting \d+ s, \d+ of \d+ cores free",
+        )
+
+    def test_unknown_light_names_fail(self):
+        result, ran, _, _ = self.run_gate(["a fast - always -"], [], settings_text='[quality]\nlight = ["nope"]\n')
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("quality.light names unknown lanes or steps: nope", result.stderr)
+        self.assertEqual(ran, [])
 
     def test_plan_prints_steps_without_running(self):
         result, ran, _, _ = self.run_gate(["a fast - always -"], [], "--plan")

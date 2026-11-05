@@ -13,6 +13,9 @@ DEFAULT_PROBE_TIMEOUT = 10
 DEFAULT_BOOT_TIMEOUT = 360
 DEFAULT_IDLE_TIMEOUT = 180
 DEFAULT_SETTLE_TIMEOUT = 600
+DEFAULT_WIFI_TIMEOUT = 90
+HOST_ALIAS = "10.0.2.2"
+WIFI_STATUS_LINES = 4
 SETTLE_WINDOW_POLLS = 5
 QUIET_CORES = 1.0
 SNAPSHOT_PREFIX = "baukit-clean"
@@ -76,6 +79,23 @@ def poll_interval() -> float:
     return float(os.environ.get("BAUKIT_QA_POLL_SECONDS", POLL_INTERVAL))
 
 
+def wait_for_wifi_route(adb: str, serial: str, probe_timeout: float, wifi_timeout: float) -> int:
+    started = time.monotonic()
+    deadline = started + wifi_timeout
+    route = ""
+    while deadline - time.monotonic() > 0:
+        route = shell(adb, serial, probe_timeout, "ip", "-4", "route", "get", HOST_ALIAS) or ""
+        if " dev wlan0 " in f" {route} ":
+            print(f"qa: {serial} has a Wi-Fi route after {round(time.monotonic() - started)} s", file=sys.stderr)
+            return 0
+        time.sleep(min(poll_interval(), max(0, deadline - time.monotonic())))
+    status = shell(adb, serial, probe_timeout, "cmd", "wifi", "status") or ""
+    print(f"qa: {serial} has no Wi-Fi route to {HOST_ALIAS}; offline flows need Wi-Fi", file=sys.stderr)
+    print(f"qa: last route: {route.strip() or 'none'}", file=sys.stderr)
+    print(f"qa: Wi-Fi status: {' | '.join(status.strip().splitlines()[:WIFI_STATUS_LINES]) or 'none'}", file=sys.stderr)
+    return 124
+
+
 def wait_for_idle(adb: str, serial: str, probe_timeout: float, idle_timeout: float) -> int:
     deadline = time.monotonic() + idle_timeout
     stable = 0
@@ -130,7 +150,7 @@ def settle(adb: str, serial: str, probe_timeout: float, settle_timeout: float,
     return 0
 
 
-def snapshot_name(config: Path, sdk_root: Path, gpu: str, version: str) -> str:
+def snapshot_name(config: Path, sdk_root: Path, gpu: str, features: str, version: str) -> str:
     settings = {}
     for line in (config.read_text() if config.is_file() else "").splitlines():
         key, separator, value = line.partition("=")
@@ -144,19 +164,46 @@ def snapshot_name(config: Path, sdk_root: Path, gpu: str, version: str) -> str:
         properties.read_text() if properties.is_file() else "",
         *sorted(f"{key}={value}" for key, value in settings.items() if key.startswith("hw.")),
         gpu,
+        features,
         version,
     ):
         digest.update(part.encode() + b"\0")
     return f"{SNAPSHOT_PREFIX}-{digest.hexdigest()[:SNAPSHOT_HASH_LENGTH]}"
 
 
-def prune_snapshots(snapshots: Path, keep: str) -> int:
-    if not snapshots.is_dir():
-        return 0
-    for entry in snapshots.iterdir():
-        if entry.name.startswith(SNAPSHOT_PREFIX) and entry.name != keep and entry.is_dir():
-            shutil.rmtree(entry)
-            print(f"qa: removed stale quick-boot snapshot {entry.name}")
+def loaded_snapshots(avd_name: str, proc: Path = Path("/proc")) -> set[str]:
+    loaded = set()
+    for cmdline in proc.glob("[0-9]*/cmdline"):
+        try:
+            args = cmdline.read_bytes().decode(errors="replace").split("\0")
+        except OSError:
+            continue
+        pairs = dict(zip(args, args[1:]))
+        if pairs.get("-avd") == avd_name and "-snapshot" in pairs:
+            loaded.add(pairs["-snapshot"])
+    return loaded
+
+
+def prune_snapshots(avd_dir: Path, keep: str, loaded: set[str]) -> int:
+    """Delete older baukit snapshots except loaded ones and the newest complete older one."""
+    snapshots = avd_dir / "snapshots"
+    older = [
+        entry for entry in (snapshots.iterdir() if snapshots.is_dir() else ())
+        if entry.name.startswith(SNAPSHOT_PREFIX) and entry.name != keep and entry.is_dir()
+    ]
+    complete = [entry for entry in older if (avd_dir / f"{entry.name}.ready").is_file()]
+    kept = {keep, *loaded}
+    if complete:
+        kept.add(max(complete, key=lambda entry: entry.stat().st_mtime).name)
+    for entry in older:
+        if entry.name in kept:
+            print(f"qa: kept older quick-boot snapshot {entry.name} for other worktrees")
+            continue
+        shutil.rmtree(entry)
+        print(f"qa: removed stale quick-boot snapshot {entry.name}")
+    for ready in avd_dir.glob(f"{SNAPSHOT_PREFIX}*.ready"):
+        if ready.name.removesuffix(".ready") not in kept:
+            ready.unlink()
     return 0
 
 
@@ -258,10 +305,13 @@ def main() -> int:
         settle_timeout = timeout_setting("BAUKIT_QA_SETTLE_TIMEOUT_SECONDS", DEFAULT_SETTLE_TIMEOUT)
         return settle(sys.argv[2], sys.argv[3], probe_timeout, settle_timeout)
     if sys.argv[1] == "--snapshot-name":
-        print(snapshot_name(Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4], sys.argv[5]))
+        print(snapshot_name(Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4], sys.argv[5], sys.argv[6]))
         return 0
     if sys.argv[1] == "--prune-snapshots":
-        return prune_snapshots(Path(sys.argv[2]), sys.argv[3])
+        return prune_snapshots(Path(sys.argv[2]), sys.argv[3], loaded_snapshots(sys.argv[4]))
+    if sys.argv[1] == "--wait-for-wifi-route":
+        wifi_timeout = timeout_setting("BAUKIT_QA_WIFI_TIMEOUT_SECONDS", DEFAULT_WIFI_TIMEOUT)
+        return wait_for_wifi_route(sys.argv[2], sys.argv[3], probe_timeout, wifi_timeout)
     if sys.argv[1] == "--attached":
         return attached(sys.argv[2], sys.argv[3], probe_timeout)
     if sys.argv[1] == "--wait-for-boot":

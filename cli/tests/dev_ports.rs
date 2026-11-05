@@ -959,3 +959,90 @@ fn external_oidc_still_checks_explicit_backend_browser_origins() -> anyhow::Resu
     );
     Ok(())
 }
+
+const SUITE_REALM_PORTS: &str =
+    "keycloak = { host = 8091, container = 8080 }\nkeycloak_extra = [8181, 8182]\n";
+
+fn seeded_product(root: &Path, declarations: &str) -> anyhow::Result<()> {
+    let source = root.join("source");
+    generate_new(&options(&source))?;
+    let manifest = fs::read_to_string(source.join("baukit.toml"))? + "\n[ports]\n" + declarations;
+    fs::remove_dir_all(source)?;
+    fs::write(root.join("baukit.toml"), manifest)?;
+    generate_new(&options(root))?;
+    Ok(())
+}
+
+fn add_suite_issuer(root: &Path) -> anyhow::Result<()> {
+    let path = root.join("web/.env.example");
+    let source = fs::read_to_string(&path)?;
+    fs::write(
+        path,
+        source + "VITE_SUITE_ISSUER=http://localhost:8181/realms/suite\n",
+    )?;
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_issuers_on_keycloak_extra_ports() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = parent.path();
+    seeded_product(root, SUITE_REALM_PORTS)?;
+    add_suite_issuer(root)?;
+    doctor(root)?;
+    Ok(())
+}
+
+#[test]
+fn doctor_rejects_a_second_issuer_port_outside_keycloak_extra() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = parent.path();
+    seeded_product(root, &SUITE_REALM_PORTS.replace("8181, 8182", "8182"))?;
+    add_suite_issuer(root)?;
+    let error = doctor(root)
+        .expect_err("an undeclared issuer port must fail")
+        .to_string();
+    assert!(
+        error.contains("generated file `web/.env.example`"),
+        "{error}"
+    );
+    Ok(())
+}
+
+#[test]
+fn keycloak_extra_rejects_empty_duplicate_zero_and_colliding_ports() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = parent.path();
+    generate_new(&options(root))?;
+    let path = root.join("baukit.toml");
+    let original = fs::read_to_string(&path)?;
+    for (declaration, message) in [
+        (
+            "keycloak_extra = []",
+            "ports.keycloak_extra must not be empty",
+        ),
+        (
+            "keycloak_extra = [8181, 8181]",
+            "ports.keycloak_extra contains duplicate host port 8181",
+        ),
+        (
+            "keycloak_extra = [0]",
+            "ports.keycloak_extra must use nonzero host ports",
+        ),
+        (
+            "keycloak_extra = [8081]",
+            "ports.keycloak_extra and ports.keycloak collide on effective host port 8081",
+        ),
+        (
+            "keycloak_extra = { host = 8181 }",
+            "ports.keycloak_extra must be a list of host ports",
+        ),
+    ] {
+        fs::write(&path, format!("{original}\n[ports]\n{declaration}\n"))?;
+        let error = doctor(root)
+            .expect_err("invalid keycloak_extra")
+            .to_string();
+        assert!(error.contains(message), "{error}");
+    }
+    Ok(())
+}

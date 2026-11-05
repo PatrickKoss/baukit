@@ -13,6 +13,7 @@ import {
 } from './error.js';
 import {
   commitCursorAfterLocalTransaction,
+  DEFAULT_REQUEST_TIMEOUT_MS,
   parseRetryAfter,
   SyncTransport,
   validatePullPage,
@@ -20,6 +21,7 @@ import {
   type SyncFetch,
   type SyncFetchResponse,
   type SyncPrebuiltRequest,
+  type SyncRequestInit,
 } from './transport.js';
 
 function response(status: number, body: string, retryAfter?: string): SyncFetchResponse {
@@ -53,7 +55,11 @@ describe('SyncTransport', () => {
     });
 
     expect(result).toEqual({ accepted: 1 });
-    expect(fetch).toHaveBeenCalledWith('https://api.example.test/sync/push', {
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = fetch.mock.calls[0] ?? [];
+    const { signal, ...sent } = init ?? {};
+    expect(url).toBe('https://api.example.test/sync/push');
+    expect(sent).toEqual({
       method: 'POST',
       headers: {
         Authorization: 'Bearer token',
@@ -62,6 +68,7 @@ describe('SyncTransport', () => {
       },
       body: '{"changes":[]}',
     });
+    expect(signal).toBeInstanceOf(AbortSignal);
   });
 
   it('awaits an async auth header provider', async () => {
@@ -78,7 +85,9 @@ describe('SyncTransport', () => {
   });
 
   it('delegates a relative request to a prebuilt product API client', async () => {
-    const request = vi.fn(() => Promise.resolve({ accepted: 1 }));
+    const request = vi.fn((_input: string, _init?: SyncRequestInit) =>
+      Promise.resolve({ accepted: 1 }),
+    );
     const client = new SyncTransport({ request: request as SyncPrebuiltRequest });
 
     const result = await client.request<{ accepted: number }>('/sync/push', {
@@ -89,7 +98,11 @@ describe('SyncTransport', () => {
     });
 
     expect(result).toEqual({ accepted: 1 });
-    expect(request).toHaveBeenCalledWith('/sync/push?limit=50', {
+    expect(request).toHaveBeenCalledTimes(1);
+    const [input, init] = request.mock.calls[0] ?? [];
+    const { signal, ...sent } = init ?? {};
+    expect(input).toBe('/sync/push?limit=50');
+    expect(sent).toEqual({
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -97,6 +110,7 @@ describe('SyncTransport', () => {
       },
       body: '{"changes":[]}',
     });
+    expect(signal).toBeInstanceOf(AbortSignal);
   });
 
   it('leaves a prebuilt request function in charge of its errors', async () => {
@@ -105,6 +119,118 @@ describe('SyncTransport', () => {
     const client = new SyncTransport({ request });
 
     await expect(client.request('/sync/pull')).rejects.toBe(failure);
+  });
+
+  describe('request deadline', () => {
+    function hangingFetch(): { fetch: SyncFetch; signals: AbortSignal[] } {
+      const signals: AbortSignal[] = [];
+      const fetch: SyncFetch = (_input, init) => {
+        if (init?.signal) signals.push(init.signal);
+        return new Promise(() => undefined);
+      };
+      return { fetch, signals };
+    }
+
+    it('aborts a request that outlives the default deadline', async () => {
+      vi.useFakeTimers();
+      try {
+        const { fetch, signals } = hangingFetch();
+        const pending = transport(fetch).request('/sync/pull');
+        const outcome = expect(pending).rejects.toThrow(
+          new SyncNetworkError('sync request timed out after 30000 ms'),
+        );
+        await vi.advanceTimersByTimeAsync(DEFAULT_REQUEST_TIMEOUT_MS - 1);
+        expect(signals[0]?.aborted).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
+        await outcome;
+        await expect(pending).rejects.toBeInstanceOf(SyncNetworkError);
+        expect(signals[0]?.aborted).toBe(true);
+        expect(signals[0]?.reason).toBeInstanceOf(SyncNetworkError);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('bounds a body read that stalls after the headers arrive', async () => {
+      vi.useFakeTimers();
+      try {
+        const stalled: SyncFetchResponse = {
+          ok: true,
+          status: 200,
+          text: () => new Promise(() => undefined),
+        };
+        const client = new SyncTransport({
+          baseUrl: 'https://api.example.test',
+          fetch: () => Promise.resolve(stalled),
+          authHeaders: () => ({}),
+          requestTimeoutMs: 5_000,
+        });
+        const pending = client.request('/sync/pull');
+        const outcome = expect(pending).rejects.toThrow('sync request timed out after 5000 ms');
+        await vi.advanceTimersByTimeAsync(5_000);
+        await outcome;
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('gives a prebuilt request the deadline signal', async () => {
+      vi.useFakeTimers();
+      try {
+        let signal: AbortSignal | undefined;
+        const request = ((_input: string, init?: { signal?: AbortSignal }) => {
+          signal = init?.signal;
+          return new Promise(() => undefined);
+        }) as SyncPrebuiltRequest;
+        const pending = new SyncTransport({ request, requestTimeoutMs: 1_000 }).request(
+          '/sync/pull',
+        );
+        const outcome = expect(pending).rejects.toBeInstanceOf(SyncNetworkError);
+        await vi.advanceTimersByTimeAsync(1_000);
+        await outcome;
+        expect(signal?.aborted).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('clears the timer once a request settles', async () => {
+      vi.useFakeTimers();
+      try {
+        const fetch = vi.fn<SyncFetch>(() => Promise.resolve(response(200, '{}')));
+        await transport(fetch).request('/sync/pull');
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('forwards a caller abort to the request signal', async () => {
+      const { fetch, signals } = hangingFetch();
+      const caller = new AbortController();
+      void transport(fetch)
+        .request('/sync/pull', { signal: caller.signal })
+        .catch(() => undefined);
+      await Promise.resolve();
+      await Promise.resolve();
+      caller.abort('stopped');
+      expect(signals[0]?.aborted).toBe(true);
+      expect(signals[0]?.reason).toBe('stopped');
+    });
+
+    it('rejects a deadline that is not finite and positive', () => {
+      for (const requestTimeoutMs of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+        expect(
+          () =>
+            new SyncTransport({
+              baseUrl: 'https://api.example.test',
+              fetch: () => Promise.resolve(response(200, '{}')),
+              authHeaders: () => ({}),
+              requestTimeoutMs,
+            }),
+        ).toThrow(new RangeError('requestTimeoutMs must be finite and positive'));
+      }
+    });
   });
 
   it('appends query parameters and honours a custom partition header', async () => {

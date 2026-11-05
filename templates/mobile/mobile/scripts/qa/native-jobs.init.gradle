@@ -1,0 +1,15 @@
+def nativeJobs = System.getenv('BAUKIT_QA_NATIVE_JOBS')
+
+if (nativeJobs) {
+  allprojects {
+    afterEvaluate { project ->
+      def android = project.extensions.findByName('android')
+      if (android == null) return
+      android.defaultConfig.externalNativeBuild.cmake.arguments(
+        "-DCMAKE_JOB_POOLS=native=${nativeJobs}",
+        '-DCMAKE_JOB_POOL_COMPILE=native',
+        '-DCMAKE_JOB_POOL_LINK=native'
+      )
+    }
+  }
+}

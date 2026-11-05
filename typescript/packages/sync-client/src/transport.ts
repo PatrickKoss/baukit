@@ -54,6 +54,11 @@ export interface SyncFetchTransportOptions {
   retryAfterFallbackMs?: number;
   /** Clock used to resolve `Retry-After`. Defaults to `Date.now`. */
   now?: () => number;
+  /**
+   * Milliseconds one request may take, body read included, before it is aborted
+   * with a {@link SyncNetworkError}. Defaults to 30 seconds.
+   */
+  requestTimeoutMs?: number;
 }
 
 export interface SyncPrebuiltRequestTransportOptions {
@@ -64,6 +69,11 @@ export interface SyncPrebuiltRequestTransportOptions {
   request: SyncPrebuiltRequest;
   /** Defaults to `X-Partition-Id`. */
   partitionHeader?: string;
+  /**
+   * Milliseconds one request may take before its signal aborts and it rejects
+   * with a {@link SyncNetworkError}. Defaults to 30 seconds.
+   */
+  requestTimeoutMs?: number;
 }
 
 export type SyncTransportOptions = SyncFetchTransportOptions | SyncPrebuiltRequestTransportOptions;
@@ -81,6 +91,7 @@ const DEFAULT_PARTITION_HEADER = 'X-Partition-Id';
 const DEFAULT_PARTITION_MISMATCH_CODE = 'partition_identity_mismatch';
 const RETRYABLE_STATUSES = new Set([408, 429]);
 export const DEFAULT_RETRY_AFTER_FALLBACK_MS = 60_000;
+export const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
 interface ServerErrorBody {
   code?: unknown;
@@ -210,6 +221,7 @@ export class SyncTransport {
   private readonly partitionMismatchCode: string | null;
   private readonly retryAfterFallbackMs: number;
   private readonly now: () => number;
+  private readonly requestTimeoutMs: number;
 
   constructor(private readonly options: SyncTransportOptions) {
     this.baseUrl = 'fetch' in options ? options.baseUrl.replace(/\/+$/, '') : null;
@@ -226,6 +238,10 @@ export class SyncTransport {
     if (!Number.isFinite(this.retryAfterFallbackMs) || this.retryAfterFallbackMs < 0) {
       throw new RangeError('retryAfterFallbackMs must be finite and non-negative');
     }
+    this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    if (!Number.isFinite(this.requestTimeoutMs) || this.requestTimeoutMs <= 0) {
+      throw new RangeError('requestTimeoutMs must be finite and positive');
+    }
   }
 
   /**
@@ -236,15 +252,50 @@ export class SyncTransport {
    * decoding and failure policy to that request function.
    */
   async request<T>(path: string, options: SyncRequestOptions = {}): Promise<T> {
-    if ('request' in this.options) {
-      return this.options.request<T>(this.path(path, options.query), this.init(options, {}));
-    }
+    return this.withDeadline(options.signal, (signal) => {
+      const bounded = { ...options, signal };
+      if ('request' in this.options) {
+        return this.options.request<T>(this.path(path, options.query), this.init(bounded, {}));
+      }
+      return this.fetchJson<T>(path, bounded);
+    });
+  }
+
+  private async fetchJson<T>(path: string, options: SyncRequestOptions): Promise<T> {
     const response = await this.send(path, options);
     const body = await this.readBody(response);
     if (!response.ok) {
       throw this.asTransportError(response.status, body, response.headers?.get('Retry-After'));
     }
     return this.decode(body) as T;
+  }
+
+  private async withDeadline<T>(
+    callerSignal: AbortSignal | undefined,
+    run: (signal: AbortSignal) => Promise<T>,
+  ): Promise<T> {
+    const controller = new AbortController();
+    const forwardAbort = (): void => {
+      controller.abort(callerSignal?.reason);
+    };
+    if (callerSignal?.aborted) forwardAbort();
+    callerSignal?.addEventListener('abort', forwardAbort, { once: true });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        const error = new SyncNetworkError(
+          `sync request timed out after ${String(this.requestTimeoutMs)} ms`,
+        );
+        controller.abort(error);
+        reject(error);
+      }, this.requestTimeoutMs);
+    });
+    try {
+      return await Promise.race([run(controller.signal), deadline]);
+    } finally {
+      clearTimeout(timer);
+      callerSignal?.removeEventListener('abort', forwardAbort);
+    }
   }
 
   private async send(path: string, options: SyncRequestOptions): Promise<SyncFetchResponse> {

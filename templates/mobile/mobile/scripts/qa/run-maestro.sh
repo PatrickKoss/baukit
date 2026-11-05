@@ -60,6 +60,55 @@ all_attached() {
   done
 }
 
+stall_seconds="${BAUKIT_QA_MAESTRO_STALL_SECONDS:-300}"
+[[ "$stall_seconds" =~ ^[1-9][0-9]*$ ]] || {
+  echo "qa: BAUKIT_QA_MAESTRO_STALL_SECONDS must be a positive integer" >&2
+  exit 2
+}
+mkdir -p "$debug_dir"
+maestro_log="$debug_dir/maestro-output.log"
+
+progress() {
+  { wc -c < "$maestro_log"; find "$debug_dir" -type f ! -name maestro-output.log -exec ls -ln {} + 2>/dev/null; } | cksum
+}
+
+stop_maestro() {
+  kill -TERM -- "-$1" 2>/dev/null || true
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    kill -0 "$1" 2>/dev/null || break
+    sleep 1
+  done
+  kill -KILL -- "-$1" 2>/dev/null || true
+  wait "$1" 2>/dev/null || true
+}
+
+run_maestro() {
+  local label="$1" check="$2" last="" now since=$SECONDS pid
+  shift 2
+  : > "$maestro_log"
+  set -m
+  "$maestro_bin" "$@" > >(tee -a "$maestro_log") 2>&1 &
+  pid=$!
+  set +m
+  while kill -0 "$pid" 2>/dev/null; do
+    if [[ -n "$check" ]] && ! all_attached "$check"; then
+      stop_maestro "$pid"
+      return 1
+    fi
+    now="$(progress)"
+    if [[ "$now" != "$last" ]]; then
+      last="$now"
+      since=$SECONDS
+    elif ((SECONDS - since > stall_seconds)); then
+      echo "qa: $label made no progress for $stall_seconds s; stopped it and kept $debug_dir" >&2
+      stop_maestro "$pid"
+      return 124
+    fi
+    sleep "${BAUKIT_QA_POLL_SECONDS:-5}"
+  done
+  wait "$pid"
+}
+
 count() { echo "$#"; }
 flow_count="$(count "${flows[@]}")"
 shards="$(count "${devices[@]}")"
@@ -71,7 +120,7 @@ if ((shards < 2)); then
     if [[ "$platform" == android ]]; then
       all_attached "before ${flow#.maestro/}" || exit 1
     fi
-    "$maestro_bin" test \
+    run_maestro "${flow#.maestro/}" "" test \
       --platform "$platform" \
       --device "${devices[0]}" \
       --env "APP_ID=$app_id" \
@@ -84,20 +133,10 @@ fi
 devices=("${devices[@]:0:shards}")
 device_list="$(IFS=,; printf '%s' "${devices[*]}")"
 echo "qa: sharding $flow_count flows across $device_list"
-"$maestro_bin" test \
+run_maestro "the sharded run" "during the sharded run" test \
   --platform "$platform" \
   --env "APP_ID=$app_id" \
   --debug-output "$debug_dir" \
   --device "$device_list" \
   --shard-split "$shards" \
-  "${flows[@]}" &
-maestro_pid=$!
-while kill -0 "$maestro_pid" 2>/dev/null; do
-  if ! all_attached "during the sharded run"; then
-    kill "$maestro_pid" 2>/dev/null || true
-    wait "$maestro_pid" || true
-    exit 1
-  fi
-  sleep "${BAUKIT_QA_POLL_SECONDS:-5}"
-done
-wait "$maestro_pid"
+  "${flows[@]}"

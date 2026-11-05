@@ -31,7 +31,8 @@ class AndroidScriptsTest(unittest.TestCase):
             "BAUKIT_QA_SKIP_BUILD": "1",
             "EVENTS": str(self.events),
         }
-        self.environment.pop("BAUKIT_QA_AVD_CONFIG", None)
+        for name in ("BAUKIT_QA_AVD_CONFIG", "BAUKIT_QA_GRADLE_WORKERS", "BAUKIT_QA_NATIVE_JOBS"):
+            self.environment.pop(name, None)
 
     def prepare_sdk(self) -> Path:
         tools = self.sdk / "cmdline-tools/16111833/bin"
@@ -268,6 +269,24 @@ touch "$apk"
             f"{common} -PreactNativeArchitectures=x86_64 assembleRelease",
         ])
 
+    def test_native_jobs_cap_cmake_through_the_init_script(self) -> None:
+        bin_dir = self.root / "bin"
+        self.executable(bin_dir / "corepack", "exit 0\n")
+        self.environment["PATH"] = str(bin_dir) + os.pathsep + self.environment["PATH"]
+        self.environment["BAUKIT_QA_NATIVE_JOBS"] = "2"
+        self.executable(self.root / "mobile/node_modules/.bin/expo", "exit 0\n")
+        self.executable(self.root / "mobile/android/gradlew", r'''
+printf 'gradle %s jobs=%s\n' "$*" "$BAUKIT_QA_NATIVE_JOBS" >> "$EVENTS"
+apk="$(dirname "$0")/app/build/outputs/apk/release/app-release.apk"
+mkdir -p "$(dirname "$apk")"
+touch "$apk"
+''')
+        self.run_script("build-android.sh")
+        init_script = self.scripts / "native-jobs.init.gradle"
+        self.assertIn(f"--init-script {init_script} ", self.events.read_text())
+        self.assertIn("jobs=2", self.events.read_text())
+        self.assertIn("-DCMAKE_JOB_POOLS=native=${nativeJobs}", init_script.read_text())
+
     def test_android_java_reports_usage_and_preserves_command_failure(self) -> None:
         for arguments, expected_status in (([], 2), (["bash", "-c", "exit 17"], 17)):
             with self.subTest(arguments=arguments):
@@ -432,6 +451,7 @@ if [[ "$*" == *'pidof com.android.systemui' ]]; then echo 321; fi
 if [[ "$*" == *'dumpsys window displays' ]]; then echo '  mCurrentFocus=Window{1 u0 launcher}'; fi
 if [[ "$*" == *'cat /proc/stat' ]]; then printf 'cpu  10 0 10 80 0 0 0 0 0 0\ncpu0 10 0 10 80 0 0 0 0 0 0\n'; fi
 if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/test-qa.avd/snapshots/${@: -1}"; fi
+if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 10.0.2.16 uid 0'; fi
 ''')
         self.environment["BAUKIT_QA_POLL_SECONDS"] = "0"
         self.executable(self.sdk / "emulator/emulator", '{ flock 9; printf "%s\\n" "$@" -- >> "$EMULATOR_ARGS"; } 9>"$EMULATOR_ARGS.lock"\n')
@@ -442,19 +462,21 @@ if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/te
 {% if context.auth_enabled %}        flags = '-s emulator-5556 shell echo "chrome --disable-fre --no-first-run --no-default-browser-check" > /data/local/tmp/chrome-command-line'
         debug = '-s emulator-5556 shell settings put global debug_app com.android.chrome'
         stop = '-s emulator-5556 shell am force-stop com.android.chrome'
-{% endif %}        for headless in ("0", "1"):
+{% endif %}        for headless, wifi in (("0", "1"), ("1", "1"), ("1", "0")):
             self.environment["BAUKIT_QA_HEADLESS"] = headless
+            self.environment["BAUKIT_QA_ANDROID_WIFI"] = wifi
             self.events.unlink(missing_ok=True)
             emulator_args.unlink(missing_ok=True)
             shutil.rmtree(self.avds / "test-qa.avd/snapshots", ignore_errors=True)
             for marker in self.avds.glob("test-qa.avd/baukit-clean-*.ready"):
                 marker.unlink()
             self.run_script("android-env.sh")
-            snapshot = self.snapshot_name()
+            features = "-WiFiPacketStream" if wifi == "1" else ""
+            snapshot = self.snapshot_name(features=features)
             expected_args = [
                 "-avd", "test-qa", "-port", "5556",
                 "-no-snapshot-save", "-no-audio", "-no-boot-anim", "-gpu", "swiftshader_indirect",
-                "-no-snapshot-load",
+                *(["-feature", features] if features else []), "-no-snapshot-load",
             ]
             if headless == "1":
                 expected_args.append("-no-window")
@@ -472,6 +494,12 @@ if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/te
             launch = events.index(command)
             self.assertFalse(any("monkey" in event for event in events))
             self.assertEqual(events.count(f"-s emulator-5556 emu avd snapshot save {snapshot}"), 1)
+            if wifi == "0":
+                self.assertFalse(any("svc wifi" in event or "route get" in event for event in events))
+            for serial in ("emulator-5556", "emulator-5558") if wifi == "1" else ():
+                enable = events.index(f"-s {serial} shell svc wifi enable")
+                self.assertLess(events.index(f"-s {serial} shell cmd connectivity airplane-mode disable"), enable)
+                self.assertLess(enable, events.index(f"-s {serial} shell ip -4 route get 10.0.2.2"))
 {% if context.auth_enabled %}            for command in (flags, debug, stop):
                 self.assertEqual(events.count(command), 1)
                 self.assertLess(events.index(command), launch)
@@ -479,10 +507,12 @@ if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/te
 {% else %}            self.assertFalse(any("chrome" in event for event in events))
 {% endif %}
 
-    def snapshot_name(self, gpu: str = "swiftshader_indirect", version: str = "{{ context.template_version }}") -> str:
+    def snapshot_name(
+        self, gpu: str = "swiftshader_indirect", version: str = "{{ context.template_version }}", features: str = "",
+    ) -> str:
         result = subprocess.run(
             ["python3", str(self.scripts / "android-adb.py"), "--snapshot-name",
-             str(self.avds / "test-qa.avd/config.ini"), str(self.sdk), gpu, version],
+             str(self.avds / "test-qa.avd/config.ini"), str(self.sdk), gpu, features, version],
             capture_output=True, text=True, check=True, timeout=15,
         )
         return result.stdout.strip()

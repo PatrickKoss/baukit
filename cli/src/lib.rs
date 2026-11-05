@@ -283,12 +283,16 @@ pub struct QualityManifest {
     pub android_emulator_port: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub android_emulators: Option<u8>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub android_wifi: bool,
     #[serde(default)]
     pub gate_budget_minutes: gate_settings::GateBudgetMinutes,
     #[serde(default)]
     pub affected: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     pub shared: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub light: Vec<String>,
 }
 
 impl Default for QualityManifest {
@@ -302,9 +306,11 @@ impl Default for QualityManifest {
             openapi_compatibility: OpenApiCompatibility::Off,
             android_emulator_port: None,
             android_emulators: None,
+            android_wifi: false,
             gate_budget_minutes: gate_settings::GateBudgetMinutes::default(),
             affected: BTreeMap::new(),
             shared: Vec::new(),
+            light: Vec::new(),
         }
     }
 }
@@ -1348,7 +1354,28 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
     if !(1..=100).contains(&manifest.quality.backend_coverage_lines) {
         failures.push("quality.backend_coverage_lines must be between 1 and 100".to_owned());
     }
-    gate_settings::validate(&manifest.quality, &manifest.capabilities, &mut failures);
+    let gate_steps = if manifest.quality.profile == QualityProfile::Strict {
+        match gate_settings::list_gate_steps(root) {
+            Some(Ok(steps)) => Some(steps),
+            Some(Err(error)) => {
+                failures.push(error);
+                None
+            }
+            None => None,
+        }
+    } else {
+        None
+    };
+    gate_settings::validate(
+        &manifest.quality,
+        &manifest.capabilities,
+        gate_steps.as_ref(),
+        &mut failures,
+    );
+    successes.extend(gate_settings::emulator_summary(
+        &manifest.quality,
+        &manifest.capabilities,
+    ));
     if manifest.quality.webkit_repeats == 0 {
         failures.push("quality.webkit_repeats must be greater than zero".to_owned());
     }
@@ -1719,7 +1746,12 @@ fn validate_port_configuration(
         }
     };
     doctor_dev_ports::validate(root, manifest, &ports, successes, failures)?;
-    if manifest.port_offset == 0 && manifest.ports.keys().all(|name| ports::is_dev_port(name)) {
+    if manifest.port_offset == 0
+        && manifest
+            .ports
+            .keys()
+            .all(|name| ports::is_dev_port(name) || name == "keycloak_extra")
+    {
         successes.push("no port offset is configured".to_owned());
         return Ok(());
     }
@@ -1905,11 +1937,17 @@ fn validate_port_configuration(
                 source
             };
             if matches!(relative.as_str(), "mobile/src/api.ts" | "web/src/api.ts") {
-                loopback_ports(&source, snippet.contains("/realms/"))
-                    .iter()
-                    .any(|port| *port != expected_port)
+                let issuer = snippet.contains("/realms/");
+                loopback_ports(&source, issuer).iter().any(|port| {
+                    *port != expected_port && !(issuer && ports.keycloak_extra.contains(port))
+                })
             } else {
-                has_mismatched_loopback_port(&source, expected_port, snippet.contains("/realms/"))
+                has_mismatched_loopback_port(
+                    &source,
+                    expected_port,
+                    &ports.keycloak_extra,
+                    snippet.contains("/realms/"),
+                )
             }
         } else {
             !source.contains(&snippet)
@@ -2154,10 +2192,17 @@ fn loopback_ports(source: &str, issuer: bool) -> Vec<u16> {
         .collect()
 }
 
-fn has_mismatched_loopback_port(source: &str, expected_port: u16, issuer: bool) -> bool {
+fn has_mismatched_loopback_port(
+    source: &str,
+    expected_port: u16,
+    extra_issuer_ports: &[u16],
+    issuer: bool,
+) -> bool {
     let ports = loopback_ports(source, issuer);
     if issuer {
-        ports.iter().any(|port| *port != expected_port)
+        ports
+            .iter()
+            .any(|port| *port != expected_port && !extra_issuer_ports.contains(port))
     } else {
         !ports.is_empty() && !ports.contains(&expected_port)
     }
@@ -3276,8 +3321,8 @@ run:
             const issuer = "http://localhost:8081/realms/product";
             const origin = "http://localhost:5173";
         "#;
-        assert!(!has_mismatched_loopback_port(source, 8081, true));
-        assert!(has_mismatched_loopback_port(source, 8181, true));
+        assert!(!has_mismatched_loopback_port(source, 8081, &[], true));
+        assert!(has_mismatched_loopback_port(source, 8181, &[], true));
     }
 
     #[test]

@@ -27,6 +27,12 @@ emulator_port="${BAUKIT_QA_ANDROID_PORT:-$(manifest_quality android_emulator_por
 emulator_count="${BAUKIT_QA_ANDROID_EMULATORS:-$(manifest_quality android_emulators 2)}"
 [[ "$emulator_count" =~ ^[1-9][0-9]*$ ]] || { echo "qa: Android emulator count must be a positive integer" >&2; exit 2; }
 gpu_mode=swiftshader_indirect
+android_wifi="${BAUKIT_QA_ANDROID_WIFI:-$(manifest_quality android_wifi false)}"
+case "$android_wifi" in
+  true | True | 1) android_wifi=1 ;;
+  false | False | 0) android_wifi=0 ;;
+  *) echo "qa: quality.android_wifi must be true or false" >&2; exit 2 ;;
+esac
 serials=()
 for ((index = 0; index < emulator_count; index++)); do
   serials+=("emulator-$((emulator_port + 2 * index))")
@@ -123,7 +129,11 @@ mkdir -p "$state_dir"
 bash "$root/mobile/scripts/qa/services.sh" start
 
 avd_dir="$avd_home/$avd_name.avd"
-snapshot_name="$(python3 "$root/mobile/scripts/qa/android-adb.py" --snapshot-name "$avd_dir/config.ini" "$sdk_root" "$gpu_mode" "{{ context.template_version }}")"
+emulator_features=""
+if ((android_wifi)); then
+  emulator_features="-WiFiPacketStream"
+fi
+snapshot_name="$(python3 "$root/mobile/scripts/qa/android-adb.py" --snapshot-name "$avd_dir/config.ini" "$sdk_root" "$gpu_mode" "$emulator_features" "{{ context.template_version }}")"
 snapshot_dir="$avd_dir/snapshots/$snapshot_name"
 snapshot_ready="$avd_dir/$snapshot_name.ready"
 mkdir -p "$state_dir/renderer"
@@ -142,6 +152,9 @@ launch_emulator() {
     -no-boot-anim
     -gpu "$gpu_mode"
   )
+  if [[ -n "$emulator_features" ]]; then
+    emulator_args+=(-feature "$emulator_features")
+  fi
   if [[ -f "$snapshot_ready" ]]; then
     emulator_args+=(-snapshot "$snapshot_name")
   else
@@ -176,6 +189,10 @@ await_emulator() {
     exit 1
   fi
   python3 "$root/mobile/scripts/qa/android-adb.py" --check-health "$adb" "$device" "$state_dir/android-health.log"
+  ((android_wifi)) || return 0
+  adb_bounded -s "$device" shell cmd connectivity airplane-mode disable >/dev/null
+  adb_bounded -s "$device" shell svc wifi enable >/dev/null
+  python3 "$root/mobile/scripts/qa/android-adb.py" --wait-for-wifi-route "$adb" "$device" || exit 1
 }
 
 lock_snapshot() {
@@ -194,8 +211,7 @@ save_snapshot() {
   adb_bounded -s "$serial" emu avd snapshot save "$snapshot_name" >/dev/null
   touch "$snapshot_ready"
   echo "qa: saved quick-boot snapshot $snapshot_name"
-  python3 "$root/mobile/scripts/qa/android-adb.py" --prune-snapshots "$avd_dir/snapshots" "$snapshot_name"
-  find "$avd_dir" -maxdepth 1 -name 'baukit-clean*.ready' ! -name "$snapshot_name.ready" -delete
+  python3 "$root/mobile/scripts/qa/android-adb.py" --prune-snapshots "$avd_dir" "$snapshot_name" "$avd_name"
   if ((emulator_count > 1)); then
     adb_bounded -s "$serial" emu kill >/dev/null
     python3 "$root/mobile/scripts/qa/android-adb.py" --wait-for-stop "$adb" "$serial"

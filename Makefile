@@ -93,7 +93,8 @@ install-skills:
 android-sdk-setup:
 	./scripts/android-sdk-setup.sh
 
-NATIVE_EMULATOR_PORT ?= 5620
+NATIVE_EMULATOR_PORT ?= $(shell python3 -c 'import tomllib; print(tomllib.load(open("scripts/ci-gate.toml", "rb"))["quality"]["android_emulator_port"])')
+NATIVE_EMULATORS ?= $(shell python3 -c 'import tomllib; print(tomllib.load(open("scripts/ci-gate.toml", "rb"))["quality"]["android_emulators"])')
 
 native-android-gate: android-sdk-setup
 	@set -e; \
@@ -110,14 +111,14 @@ native-android-gate: android-sdk-setup
 	corepack pnpm@12.9.1 --dir "$$fixture_parent/fixture/mobile" exec expo install --check; \
 	(cd "$$fixture_parent/fixture/mobile" && BAUKIT_QA_BUILD=1 CI=1 ./node_modules/.bin/expo prebuild --clean --platform android --no-install); \
 	ANDROID_HOME="$${ANDROID_HOME:-$$HOME/Android/Sdk}" ANDROID_SDK_ROOT="$${ANDROID_SDK_ROOT:-$${ANDROID_HOME:-$$HOME/Android/Sdk}}" \
-		bash "$$fixture_parent/fixture/mobile/scripts/android-java.sh" "$$fixture_parent/fixture/mobile/android/gradlew" -p "$$fixture_parent/fixture/mobile/android" --no-daemon --stacktrace --warning-mode all -PreactNativeDevServerIp=127.0.0.1 assembleDebug \
+		bash "$$fixture_parent/fixture/mobile/scripts/android-java.sh" "$$fixture_parent/fixture/mobile/android/gradlew" -p "$$fixture_parent/fixture/mobile/android" --no-daemon --stacktrace --warning-mode all $${BAUKIT_QA_GRADLE_WORKERS:+--max-workers $$BAUKIT_QA_GRADLE_WORKERS} $${BAUKIT_QA_NATIVE_JOBS:+--init-script "$$fixture_parent/fixture/mobile/scripts/qa/native-jobs.init.gradle"} -PreactNativeDevServerIp=127.0.0.1 assembleDebug \
 		> "$$fixture_parent/assemble.log" 2>&1 || build_status=$$?; \
 	cat "$$fixture_parent/assemble.log"; \
 	test "$${build_status:-0}" -eq 0; \
 	python3 scripts/check-gradle-deprecations.py --project "$$fixture_parent/fixture/mobile" "$$fixture_parent/assemble.log"; \
 	cp "$$fixture_parent/fixture/mobile/.maestro/smoke.yaml" "$$fixture_parent/fixture/mobile/.maestro/smoke-second-shard.yaml"; \
 	ANDROID_HOME="$${ANDROID_HOME:-$$HOME/Android/Sdk}" ANDROID_SDK_ROOT="$${ANDROID_SDK_ROOT:-$${ANDROID_HOME:-$$HOME/Android/Sdk}}" \
-		BAUKIT_QA_ANDROID_AVD=baukit-native-qa BAUKIT_QA_ANDROID_PORT=$(NATIVE_EMULATOR_PORT) BAUKIT_QA_ANDROID_EMULATORS=2 BAUKIT_QA_HEADLESS=1 \
+		BAUKIT_QA_ANDROID_AVD=baukit-native-qa BAUKIT_QA_ANDROID_PORT=$(NATIVE_EMULATOR_PORT) BAUKIT_QA_ANDROID_EMULATORS=$(NATIVE_EMULATORS) BAUKIT_QA_HEADLESS=1 \
 		make --no-print-directory -C "$$fixture_parent/fixture/mobile" qa-android-setup e2e-android
 
 expo-sqlite-conformance:
