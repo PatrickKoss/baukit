@@ -16,6 +16,7 @@ const WORKOS_JWKS_BASE: &str = "https://api.workos.com/sso/jwks/";
 /// none unless [`ClerkVerifier::with_audiences`] configures one. When `azp` is
 /// present, this adapter requires an exact match in the configured allowlist.
 /// Clerk's version 2 active organization claim is mapped from `o.id`.
+/// [`CLERK_SIGN_IN_TIME_CLAIM`](crate::CLERK_SIGN_IN_TIME_CLAIM) sets [`Principal::authenticated_at`].
 #[derive(Clone, Debug)]
 pub struct ClerkVerifier {
     inner: OidcVerifier,

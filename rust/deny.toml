@@ -1,5 +1,7 @@
 [advisories]
-ignore = []
+ignore = [
+  { id = "RUSTSEC-2026-0440", reason = "astral-tokio-tar is unmaintained with no patched release; reached only through testcontainers 0.28.0, used by baukit-test as test support; remove when testcontainers ships testcontainers-rs#1006" },
+]
 
 [licenses]
 confidence-threshold = 0.8

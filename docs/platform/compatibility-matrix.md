@@ -5,6 +5,42 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.18.1
+
+Last verified release train: `v0.18.1` (patch train on top of `v0.18.0`). It takes the Expo SDK 57 patch releases, maps a custom Clerk session-token claim with the sign-in time to `Principal::authenticated_at` so the erasure fence lets a Clerk user who erased a profile sign in again, and fixes three doctor gaps: declared QA Keycloak ports, a declared local PKCE callback port, and template gate steps the product's gate lacks. `baukit-auth` adds `CLERK_SIGN_IN_TIME_CLAIM`; no other crate or package API changed. Baukit's `rust/deny.toml` ignores RUSTSEC-2026-0440 (astral-tokio-tar, unmaintained, no patched release), which only testcontainers 0.28.0 in `baukit-test` pulls in.
+
+### Upgrade steps
+
+Follow the sections in this order.
+
+#### Bump the pins
+
+Set every `baukit-*` crate to `=0.18.1` and every `@baukit/*` package to `0.18.1`, set `baukit.toml`'s template version to `0.18.1`, then refresh `backend/Cargo.lock` and the pnpm lockfiles.
+
+#### Expo SDK 57 patch releases
+
+Expo published SDK 57 patch releases on 2026-11-05, and `expo-doctor` fails a 0.18.0 render since then. A mobile product bumps `expo` to 57.0.32 and `expo-router` to 57.0.30 in `mobile/package.json`, `expo-constants` to 57.0.23 in the `catalog` of `mobile/pnpm-workspace.yaml`, and `@expo/metro-runtime` to 57.0.18 when the Expo app hosts the PWA. pnpm refuses releases younger than a day, so the template lists the 24 exact `name@x.y.z` releases from the SDK 57 patch set in `minimumReleaseAgeExclude`. Copy that list from a fresh render, run `corepack pnpm@12.9.1 --dir mobile install` and check that `pnpm dlx expo-doctor` passes 21/21.
+
+#### Clerk sign-in time for the erasure fence
+
+Clerk session tokens carry no `auth_time`, so baukit-erasure fenced every Clerk session of a user who erased a product profile, for good. `baukit-auth` adds `CLERK_SIGN_IN_TIME_CLAIM` (`session_created_at`), and `ClerkVerifier` maps that claim, Unix seconds, to `Principal::authenticated_at`. The fence itself is unchanged. A token without the claim stays fenced, and a malformed one fails with `MalformedToken`. The OAuth and MCP verifiers are unchanged. A Clerk product takes these steps:
+
+1. In the Clerk dashboard, open **Sessions**, **Customize session token** and merge `{"session_created_at": "{{session.created_at}}"}` into the claims, in every Clerk instance (development and production).
+2. Copy the `clerk sign-in time` mapper from a fresh render's `keycloak/realm.json` into each Clerk-shaped client, and the new assertions in `backend/tests/local_realm.rs`. The mapper is Keycloak's built-in `oidc-usersessionmodel-note-mapper` on the `AUTH_TIME` session note, so local tokens carry the same claim.
+3. Re-render `docs/auth-providers.md`, then recreate the local Keycloak so it imports the realm again.
+
+#### Unmaintained astral-tokio-tar advisory
+
+A product that runs `cargo deny` adds the same single-ID entry to its `deny.toml` `[advisories] ignore`, `{ id = "RUSTSEC-2026-0440", reason = "astral-tokio-tar is unmaintained with no patched release; reached only through testcontainers 0.28.0, used by baukit-test as test support; remove when testcontainers ships testcontainers-rs#1006" }`, and removes it once a testcontainers release drops astral-tokio-tar.
+
+#### Doctor: declared QA Keycloak and callback ports, template gate steps
+
+For Clerk and WorkOS mobile products, doctor's QA Keycloak check accepts `${BAUKIT_QA_KEYCLOAK_PORT:-<port>}` on the bundled 18081, on `ports.keycloak` and on each `ports.keycloak_extra` port, and still rejects any other port. `[ports] local_callback = { host = <port> }`, default 18890, sets the realm's `<app>-local` PKCE callback, and doctor checks that client's redirect URIs against it instead of the `ports.web` browser ports. Strict products: doctor renders the template gate's step table for the declared capabilities and fails when `sh scripts/quality-gate.sh --list-steps` lacks one of its steps. A product on 0.18.0 takes these steps:
+
+1. Run `baukit doctor`. A missing template step, such as `expo-doctor` in Eigenruhe, gets copied from a fresh render's `scripts/quality-gate.sh` and `docs/quality-gate.md`.
+2. If the product moved the local PKCE callback off 18890, declare it as `ports.local_callback`.
+3. A product whose QA reuses its dev Keycloak (Tiefgang on 8281) or runs its own (Eigenruhe on 24003) declares that port as `ports.keycloak` or in `ports.keycloak_extra`, then sets `auth = "clerk"` (or `"workos"`) in `baukit.toml` and runs `baukit doctor` again. The provider checks and the `web-bundle` and `mobile-bundle` steps now apply.
+
 ## v0.18.0
 
 Last verified release train: `v0.18.0` (breaking minor train on top of `v0.17.1`). Production has no Keycloak any more: BK21 removes the operator base and the local cluster's Keycloak, and Keycloak stays for local development, E2E and QA only. `HubClient` can send a hub `sbsvc_` service token. Clerk and WorkOS web and Expo apps sign in through one port, with the BK19 Keycloak realm locally and the provider SDK in production (BK24, BK22). Organizations are plan kit subjects (BK25). The lane gate shares one core budget, and the native QA scripts gain stall, Wi-Fi and snapshot fixes (BK27).
@@ -149,7 +185,7 @@ columns. See the [PostgreSQL 18 release notes](https://www.postgresql.org/docs/1
 
 | Responsibility | Dependency | Tested baseline | Notes |
 |---|---|---|---|
-| Mobile runtime | Expo SDK | 57.0.31 (RN 0.86.3, React 19.2.3) | React/RN versions follow the Expo SDK, verified with Expo Doctor |
+| Mobile runtime | Expo SDK | 57.0.32 (RN 0.86.3, React 19.2.3) | React/RN versions follow the Expo SDK, verified with Expo Doctor |
 | Mobile navigation | Expo Router | 57.0.29 | Generated mobile template baseline with Expo Router and `Stack.Protected` in the auth overlay; `react-native-screens` 4.26.2, `react-native-safe-area-context` 5.7.0, `react-native-reanimated` 4.5.1, `react-native-worklets` 0.10.1, and `react-native-gesture-handler` 2.32.0. |
 | Remote state | TanStack Query | 5 | |
 | Web routing | TanStack Router | current v1 | re-verify TanStack Start status separately |

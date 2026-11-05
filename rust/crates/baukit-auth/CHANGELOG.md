@@ -4,6 +4,12 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-11-05
+
+### Added
+
+- `CLERK_SIGN_IN_TIME_CLAIM` (`session_created_at`). `ClerkVerifier` maps that custom session-token claim, Unix seconds, to `Principal::authenticated_at`, because Clerk session tokens carry no `auth_time`. It takes precedence over `auth_time`; without either, the principal has no authentication time, as before.
+
 ## [0.18.0] - 2026-11-05
 
 ## [0.17.1] - 2026-11-03

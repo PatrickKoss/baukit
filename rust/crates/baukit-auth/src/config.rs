@@ -92,6 +92,17 @@ impl SigningAlgorithm {
 }
 
 const DEFAULT_SCOPE_CLAIM: &str = "scope";
+const DEFAULT_AUTHENTICATED_AT_CLAIM: &str = "auth_time";
+
+/// Custom Clerk session-token claim that carries the session's sign-in time.
+///
+/// Clerk session tokens have no `auth_time`. Add this claim to the instance's
+/// session token as `"{{session.created_at}}"`, Unix seconds, and
+/// [`ClerkVerifier`](crate::ClerkVerifier) maps it to
+/// [`Principal::authenticated_at`](crate::Principal::authenticated_at).
+/// Without it the verifier falls back to `auth_time`, which Clerk does not
+/// send, so the principal has no authentication time.
+pub const CLERK_SIGN_IN_TIME_CLAIM: &str = "session_created_at";
 
 /// Configuration that maps provider claims onto Baukit's stable principal fields.
 ///
@@ -103,6 +114,7 @@ pub struct PrincipalClaimMapping {
     pub(crate) tenant: Option<ClaimPath>,
     pub(crate) client_id: Option<ClaimPath>,
     pub(crate) scope: Cow<'static, str>,
+    pub(crate) authenticated_at: Cow<'static, str>,
     pub(crate) profile: BTreeSet<String>,
 }
 
@@ -121,6 +133,7 @@ impl PrincipalClaimMapping {
             tenant: None,
             client_id: None,
             scope: Cow::Borrowed(DEFAULT_SCOPE_CLAIM),
+            authenticated_at: Cow::Borrowed(DEFAULT_AUTHENTICATED_AT_CLAIM),
             profile: BTreeSet::new(),
         }
     }
@@ -163,7 +176,8 @@ impl PrincipalClaimMapping {
     ///
     /// Only string and boolean values are copied, for example `email`,
     /// `email_verified`, `name`, and `picture`. Unselected claims stay private.
-    /// `auth_time` is reserved for [`Principal::authenticated_at`](crate::Principal::authenticated_at).
+    /// `auth_time`, or [`CLERK_SIGN_IN_TIME_CLAIM`] for Clerk, is reserved for
+    /// [`Principal::authenticated_at`](crate::Principal::authenticated_at).
     #[must_use]
     pub fn profile_claims<I, T>(mut self, claims: I) -> Self
     where
@@ -177,6 +191,7 @@ impl PrincipalClaimMapping {
     pub(crate) fn clerk() -> Self {
         Self {
             organization: Some(ClaimPath::nested("o", "id")),
+            authenticated_at: Cow::Borrowed(CLERK_SIGN_IN_TIME_CLAIM),
             ..Self::new()
         }
     }

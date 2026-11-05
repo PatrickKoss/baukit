@@ -44,7 +44,7 @@
       "exactProtocolMappers": true,
       "exactRedirectUris": true,
       "activeOrigins": [],
-      "activeRedirectUris": ["http://127.0.0.1:18890/callback"]
+      "activeRedirectUris": ["http://127.0.0.1:{{ context.local_callback_port }}/callback"]
     }{% endif %}
   ],
   "users": ["test"]

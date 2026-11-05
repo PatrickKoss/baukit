@@ -95,4 +95,6 @@ The gate prints the mode, the reason for each changed file and the step list bef
 
 `[ports] keycloak_extra = [8181]` lists loopback Keycloak ports for realms the product reads but does not run, such as the hub's suite realm next to its own product realm. It has no default. Doctor accepts issuers of the form `localhost:<port>/realms/` on `ports.keycloak` and on each listed port, and rejects an empty list, zero, duplicates and ports that collide with another host port.
 
+Doctor renders the template's step table for the declared capabilities and fails when `sh scripts/quality-gate.sh --list-steps` lacks one of its steps, such as `expo-doctor` in a mobile product. Product-only steps may be added freely.
+
 `@baukit/sync-client` gives each sync request a deadline. `requestTimeoutMs` on `SyncTransport` defaults to 30000. Past it, the transport aborts the request and rejects with a retryable `SyncNetworkError`, so the next scheduler run opens a new connection.

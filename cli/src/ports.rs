@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::Manifest;
 
 pub const WEB_PORT: u16 = 5173;
+pub const LOCAL_CALLBACK_PORT: u16 = 18890;
 pub const WEB_PREVIEW_PORT: u16 = 4173;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -47,6 +48,7 @@ pub(crate) struct PortConfiguration {
     pub web_extra: Vec<u16>,
     pub keycloak_extra: Vec<u16>,
     pub metro: Option<u16>,
+    pub local_callback: Option<u16>,
     pub offset: u32,
     pub service_ports_declared: bool,
     pub api_container: u16,
@@ -54,7 +56,10 @@ pub(crate) struct PortConfiguration {
 }
 
 pub(crate) fn is_dev_port(name: &str) -> bool {
-    matches!(name, "web" | "web_preview" | "web_extra" | "metro")
+    matches!(
+        name,
+        "web" | "web_preview" | "web_extra" | "metro" | "local_callback"
+    )
 }
 
 impl PortConfiguration {
@@ -133,10 +138,15 @@ impl PortConfiguration {
             "web" => &mut self.web,
             "web_preview" => &mut self.web_preview,
             "metro" => &mut self.metro,
+            "local_callback" => &mut self.local_callback,
             _ => unreachable!("dev port name was checked"),
         };
         *target = Some(mapping.host);
         Ok(())
+    }
+
+    pub fn local_callback_port(&self) -> u16 {
+        self.local_callback.unwrap_or(LOCAL_CALLBACK_PORT)
     }
 
     pub fn new(offset: u32) -> Result<Self> {
@@ -162,6 +172,7 @@ impl PortConfiguration {
             web_extra: Vec::new(),
             keycloak_extra: Vec::new(),
             metro: None,
+            local_callback: None,
             offset,
             service_ports_declared: false,
             api_container: shifted("API", 8080)?,
@@ -181,6 +192,7 @@ impl PortConfiguration {
             ("web", self.web),
             ("web_preview", self.web_preview),
             ("metro", self.metro),
+            ("local_callback", self.local_callback),
         ] {
             if let Some(port) = port
                 && let Some(previous) = seen.insert(port, name)

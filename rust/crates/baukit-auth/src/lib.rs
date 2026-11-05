@@ -93,7 +93,9 @@ pub use api_token::{
 };
 pub use axum_integration::{AuthRejection, AuthState, establish_principal};
 pub use baukit_openapi::{BEARER_AUTH_SCHEME, OpenApiMetadata};
-pub use config::{OidcConfig, OidcConfigError, PrincipalClaimMapping, SigningAlgorithm};
+pub use config::{
+    CLERK_SIGN_IN_TIME_CLAIM, OidcConfig, OidcConfigError, PrincipalClaimMapping, SigningAlgorithm,
+};
 #[cfg(feature = "sqlx-postgres")]
 pub use postgres::{
     PostgresApiTokenStore, erase_owner_api_tokens, insert_api_token, purge_inactive_api_tokens,

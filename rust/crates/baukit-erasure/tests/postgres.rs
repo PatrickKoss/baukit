@@ -782,3 +782,40 @@ async fn reonboarding_can_erase_again_and_old_keys_keep_their_receipts()
     assert_eq!(unchanged, second_fence);
     Ok(())
 }
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn clerk_sessions_pass_the_fence_only_with_a_sign_in_time_after_it()
+-> Result<(), Box<dyn Error>> {
+    let (_container, pool, store) = database().await?;
+    let service = ErasureService::new(store.clone(), IdentityRetention::Retain)?;
+    let operation = service
+        .erase("alice", None, "clerk-fence-key-01", &Product)
+        .await?;
+    assert_eq!(operation.status, ErasureState::Completed);
+    let erased_at: chrono::DateTime<chrono::Utc> =
+        sqlx::query_scalar("SELECT erased_at FROM erasure_fences WHERE subject_hash = $1")
+            .bind(store.subject_hash("alice"))
+            .fetch_one(&pool)
+            .await?;
+    let oidc = baukit_test::MockOidcServer::start().await?;
+    let clerk = baukit_auth::ClerkVerifier::from_jwks_uri(
+        oidc.issuer(),
+        ["https://app.example"],
+        oidc.jwks_url(),
+    )?;
+    let claims = oidc
+        .claims("alice", "api", Duration::from_secs(300))?
+        .claim("azp", "https://app.example");
+    let fence_seconds = erased_at.timestamp();
+    for (signed_in, rejected) in [(fence_seconds + 1, false), (fence_seconds - 1, true)] {
+        let token = oidc.mint(
+            &claims
+                .clone()
+                .claim(baukit_auth::CLERK_SIGN_IN_TIME_CLAIM, signed_in),
+        )?;
+        let principal = clerk.verify(&token).await?;
+        assert_session_checks(&store, "alice", principal.authenticated_at(), rejected).await?;
+    }
+    Ok(())
+}

@@ -44,7 +44,7 @@ async fn local_realm_issues_{{ context.auth_provider }}_shaped_tokens_for_the_pr
     let token = keycloak
         .access_token(&KeycloakLogin {
             client_id: &format!("{PRODUCT}-local"),
-            redirect_uri: "http://127.0.0.1:18890/callback",
+            redirect_uri: "http://127.0.0.1:{{ context.local_callback_port }}/callback",
             username: "test",
             password: "development-password",
             scope: "openid",
@@ -60,6 +60,14 @@ async fn local_realm_issues_{{ context.auth_provider }}_shaped_tokens_for_the_pr
         claims["o"],
         serde_json::json!({"id": "org_local", "rol": "admin", "slg": "local"})
     );
+    assert!(
+        claims[baukit_auth::CLERK_SIGN_IN_TIME_CLAIM].is_u64(),
+        "{claims}"
+    );
+    assert_eq!(
+        claims[baukit_auth::CLERK_SIGN_IN_TIME_CLAIM],
+        claims["auth_time"]
+    );
 {% else %}    assert_eq!(claims["client_id"], auth.client_id.as_str());
     assert_eq!(claims["org_id"], "org_local");
     assert_eq!(claims["role"], "admin");
@@ -72,7 +80,11 @@ async fn local_realm_issues_{{ context.auth_provider }}_shaped_tokens_for_the_pr
     assert_eq!(Some(principal.subject()), claims["sub"].as_str());
     assert_eq!(principal.organization(), Some("org_local"));
     assert_eq!(principal.issuer(), Some(keycloak.issuer().as_str()));
-
+{% if context.auth_clerk %}    assert_eq!(
+        principal.authenticated_at().map(|at| at.timestamp()),
+        claims[baukit_auth::CLERK_SIGN_IN_TIME_CLAIM].as_i64()
+    );
+{% endif %}
 {% if context.auth_clerk %}    let other = baukit_auth::WorkOsVerifier::from_jwks_uri(
         keycloak.issuer(),
         "client_{{ context.app_crate }}_local",

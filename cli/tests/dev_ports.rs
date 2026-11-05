@@ -1046,3 +1046,152 @@ fn keycloak_extra_rejects_empty_duplicate_zero_and_colliding_ports() -> anyhow::
     }
     Ok(())
 }
+
+const QA_KEYCLOAK_DEFAULT: &str = "${BAUKIT_QA_KEYCLOAK_PORT:-18081}";
+const QA_KEYCLOAK_SCRIPTS: [&str; 5] = [
+    "mobile/scripts/qa/docker-compose.qa.yml",
+    "mobile/scripts/qa/services.sh",
+    "mobile/scripts/qa/build-android.sh",
+    "mobile/scripts/qa/build-ios.sh",
+    "mobile/scripts/qa/android-env.sh",
+];
+
+fn clerk_product(root: &Path, declarations: &str) -> anyhow::Result<()> {
+    let clerk = |directory: &Path| NewOptions {
+        auth: Some(AuthProvider::Clerk),
+        ..options(directory)
+    };
+    let source = root.join("source");
+    generate_new(&clerk(&source))?;
+    let manifest = fs::read_to_string(source.join("baukit.toml"))? + "\n[ports]\n" + declarations;
+    fs::remove_dir_all(source)?;
+    fs::write(root.join("baukit.toml"), manifest)?;
+    generate_new(&clerk(root))?;
+    Ok(())
+}
+
+fn use_qa_keycloak_port(root: &Path, port: u16) -> anyhow::Result<()> {
+    for relative in QA_KEYCLOAK_SCRIPTS {
+        let path = root.join(relative);
+        let source = fs::read_to_string(&path)?;
+        assert!(source.contains(QA_KEYCLOAK_DEFAULT), "{relative}");
+        fs::write(
+            path,
+            source.replace(
+                QA_KEYCLOAK_DEFAULT,
+                &format!("${{BAUKIT_QA_KEYCLOAK_PORT:-{port}}}"),
+            ),
+        )?;
+    }
+    Ok(())
+}
+
+const CLERK_PORTS: &str =
+    "keycloak = { host = 8281, container = 8080 }\nkeycloak_extra = [24003]\n";
+
+#[test]
+fn doctor_accepts_the_bundled_qa_keycloak_port() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    clerk_product(parent.path(), CLERK_PORTS)?;
+    doctor(parent.path())?;
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_a_qa_keycloak_on_a_declared_port() -> anyhow::Result<()> {
+    for port in [8281, 24003] {
+        let parent = tempfile::tempdir()?;
+        clerk_product(parent.path(), CLERK_PORTS)?;
+        use_qa_keycloak_port(parent.path(), port)?;
+        doctor(parent.path())?;
+    }
+    Ok(())
+}
+
+#[test]
+fn doctor_rejects_a_qa_keycloak_on_an_undeclared_port() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    clerk_product(parent.path(), CLERK_PORTS)?;
+    use_qa_keycloak_port(parent.path(), 24004)?;
+    let error = doctor(parent.path())
+        .expect_err("an undeclared QA Keycloak port must fail")
+        .to_string();
+    assert!(
+        error.contains("mobile/scripts/qa/services.sh") && error.contains("18081"),
+        "{error}"
+    );
+    Ok(())
+}
+
+#[test]
+fn realm_callback_follows_the_declared_local_callback_port() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = parent.path();
+    clerk_product(
+        root,
+        "web = { host = 5673 }\nlocal_callback = { host = 18990 }\n",
+    )?;
+    for relative in [
+        "keycloak/realm.json",
+        "keycloak/reconcile.json",
+        "backend/tests/local_realm.rs",
+    ] {
+        let source = fs::read_to_string(root.join(relative))?;
+        assert!(
+            source.contains("http://127.0.0.1:18990/callback") && !source.contains("18890"),
+            "{relative}"
+        );
+    }
+    doctor(root)?;
+    let path = root.join("keycloak/realm.json");
+    fs::write(
+        &path,
+        fs::read_to_string(&path)?.replace("127.0.0.1:18990/callback", "127.0.0.1:18890/callback"),
+    )?;
+    let error = doctor(root)
+        .expect_err("an undeclared callback port must fail")
+        .to_string();
+    assert!(
+        error.contains("keycloak/realm.json") && error.contains("found port 18890"),
+        "{error}"
+    );
+    Ok(())
+}
+
+#[test]
+fn realm_callback_defaults_to_18890_with_a_declared_web_port() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = parent.path();
+    clerk_product(root, "web = { host = 5673 }\n")?;
+    assert!(
+        fs::read_to_string(root.join("keycloak/realm.json"))?
+            .contains("http://127.0.0.1:18890/callback")
+    );
+    doctor(root)?;
+    Ok(())
+}
+
+#[test]
+fn doctor_requires_every_template_gate_step_for_the_capabilities() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = parent.path();
+    generate_new(&NewOptions {
+        auth: Some(AuthProvider::Clerk),
+        quality: QualityProfile::Strict,
+        ..options(root)
+    })?;
+    doctor(root)?;
+    let path = root.join("scripts/quality-gate.sh");
+    let source = fs::read_to_string(&path)?;
+    let step = "expo-doctor mobile mobile-lint selected -\n";
+    assert!(source.contains(step));
+    fs::write(&path, source.replace(step, ""))?;
+    let error = doctor(root)
+        .expect_err("a gate without expo-doctor must fail")
+        .to_string();
+    assert!(
+        error.contains("lacks template steps for the declared capabilities: expo-doctor"),
+        "{error}"
+    );
+    Ok(())
+}
