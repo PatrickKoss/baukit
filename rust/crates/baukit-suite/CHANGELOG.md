@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-11-05
+
 ## [0.18.0] - 2026-11-05
 
 - Breaking: `HubClientConfig` gains `token`, a hub `sbsvc_` platform service token sent as the bearer with no token request, no refresh and no retry after a 401, and `token_url` becomes optional (BK21). Validation requires exactly one of the static token and client credentials.

@@ -5,9 +5,17 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
-## Unreleased
+## v0.18.1
+
+Last verified release train: `v0.18.1` (patch train on top of `v0.18.0`). It takes the Expo SDK 57 patch releases, maps a custom Clerk session-token claim with the sign-in time to `Principal::authenticated_at` so the erasure fence lets a Clerk user who erased a profile sign in again, and fixes three doctor gaps: declared QA Keycloak ports, a declared local PKCE callback port, and template gate steps the product's gate lacks. `baukit-auth` adds `CLERK_SIGN_IN_TIME_CLAIM`; no other crate or package API changed. Baukit's `rust/deny.toml` ignores RUSTSEC-2026-0440 (astral-tokio-tar, unmaintained, no patched release), which only testcontainers 0.28.0 in `baukit-test` pulls in.
 
 ### Upgrade steps
+
+Follow the sections in this order.
+
+#### Bump the pins
+
+Set every `baukit-*` crate to `=0.18.1` and every `@baukit/*` package to `0.18.1`, set `baukit.toml`'s template version to `0.18.1`, then refresh `backend/Cargo.lock` and the pnpm lockfiles.
 
 #### Expo SDK 57 patch releases
 
@@ -20,6 +28,10 @@ Clerk session tokens carry no `auth_time`, so baukit-erasure fenced every Clerk 
 1. In the Clerk dashboard, open **Sessions**, **Customize session token** and merge `{"session_created_at": "{{session.created_at}}"}` into the claims, in every Clerk instance (development and production).
 2. Copy the `clerk sign-in time` mapper from a fresh render's `keycloak/realm.json` into each Clerk-shaped client, and the new assertions in `backend/tests/local_realm.rs`. The mapper is Keycloak's built-in `oidc-usersessionmodel-note-mapper` on the `AUTH_TIME` session note, so local tokens carry the same claim.
 3. Re-render `docs/auth-providers.md`, then recreate the local Keycloak so it imports the realm again.
+
+#### Unmaintained astral-tokio-tar advisory
+
+A product that runs `cargo deny` adds the same single-ID entry to its `deny.toml` `[advisories] ignore`, `{ id = "RUSTSEC-2026-0440", reason = "astral-tokio-tar is unmaintained with no patched release; reached only through testcontainers 0.28.0, used by baukit-test as test support; remove when testcontainers ships testcontainers-rs#1006" }`, and removes it once a testcontainers release drops astral-tokio-tar.
 
 #### Doctor: declared QA Keycloak and callback ports, template gate steps
 

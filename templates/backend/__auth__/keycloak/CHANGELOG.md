@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-11-05
+
 {% if context.auth_clerk %}- The Clerk clients add a `clerk sign-in time` mapper that emits `session_created_at` from the session's `AUTH_TIME` note.
 
 {% endif %}## [0.18.0] - 2026-11-05
