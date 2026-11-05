@@ -41,6 +41,7 @@ static MOBILE_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates
 static MCP_REMOTE_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/mcp-remote");
 static WEB_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/web");
 static PLATFORM_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/platform");
+const STRICT_GATE_TEMPLATE: &str = "__strict__/scripts/quality-gate.sh";
 static WORKER_TEMPLATE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../templates/worker");
 const REMOTE_MCP_CLIENT_SCOPES: &str = include_str!("../resources/remote-mcp-client-scopes.json");
 
@@ -421,6 +422,7 @@ struct TemplateContext {
     web_port: u16,
     web_preview_port: u16,
     metro_port: Option<u16>,
+    local_callback_port: u16,
     dev_ports_declared: bool,
     web_preview_declared: bool,
     service_ports_declared: bool,
@@ -526,6 +528,7 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         web_port: ports.web.unwrap_or(ports::WEB_PORT),
         web_preview_port: ports.web_preview.unwrap_or(ports::WEB_PREVIEW_PORT),
         metro_port: ports.metro,
+        local_callback_port: ports.local_callback_port(),
         web_preview_declared: ports.web_preview.is_some(),
         service_ports_declared: ports.service_ports_declared,
         api_container_port: ports.api_container,
@@ -1372,6 +1375,16 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
         gate_steps.as_ref(),
         &mut failures,
     );
+    if let Some(gate) = &gate_steps {
+        let template = COMMON_TEMPLATE
+            .get_file(STRICT_GATE_TEMPLATE)
+            .and_then(|file| file.contents_utf8())
+            .context("the strict gate template is missing")?;
+        match gate_settings::template_steps(template, &manifest.capabilities) {
+            Ok(steps) => gate_settings::validate_template_steps(&steps, gate, &mut failures),
+            Err(error) => failures.push(error),
+        }
+    }
     successes.extend(gate_settings::emulator_summary(
         &manifest.quality,
         &manifest.capabilities,
@@ -1900,7 +1913,7 @@ fn validate_port_configuration(
             source
         };
         let mismatched = if snippet.starts_with(QA_KEYCLOAK_PORT_VARIABLE) {
-            has_mismatched_qa_keycloak_port(&source)
+            has_mismatched_qa_keycloak_port(&source, &ports)
         } else if relative == "Makefile" && snippet.starts_with("REDIS_URL=") {
             let expected_port = loopback_ports(&snippet, false)
                 .first()
@@ -2385,7 +2398,12 @@ const QA_KEYCLOAK_SCRIPTS: [&str; 5] = [
     "mobile/scripts/qa/android-env.sh",
 ];
 
-fn has_mismatched_qa_keycloak_port(source: &str) -> bool {
+fn has_mismatched_qa_keycloak_port(source: &str, declared: &PortConfiguration) -> bool {
+    let accepted = |port: u16| {
+        port == QA_KEYCLOAK_PORT
+            || port == declared.keycloak
+            || declared.keycloak_extra.contains(&port)
+    };
     let ports = source
         .split(QA_KEYCLOAK_PORT_VARIABLE)
         .skip(1)
@@ -2397,7 +2415,7 @@ fn has_mismatched_qa_keycloak_port(source: &str) -> bool {
                 .ok()
         })
         .collect::<Vec<_>>();
-    ports.is_empty() || ports.iter().any(|port| *port != Some(QA_KEYCLOAK_PORT))
+    ports.is_empty() || ports.iter().any(|port| !port.is_some_and(accepted))
 }
 
 fn provider_clients_use_bundled_keycloak(root: &Path, manifest: &Manifest) -> Result<bool> {
@@ -3044,6 +3062,7 @@ mod generator_tests {
             web_port: 5173,
             web_preview_port: 4173,
             metro_port: None,
+            local_callback_port: super::ports::LOCAL_CALLBACK_PORT,
             dev_ports_declared: false,
             web_preview_declared: false,
             service_ports_declared: false,

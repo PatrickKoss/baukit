@@ -21,6 +21,14 @@ Clerk session tokens carry no `auth_time`, so baukit-erasure fenced every Clerk 
 2. Copy the `clerk sign-in time` mapper from a fresh render's `keycloak/realm.json` into each Clerk-shaped client, and the new assertions in `backend/tests/local_realm.rs`. The mapper is Keycloak's built-in `oidc-usersessionmodel-note-mapper` on the `AUTH_TIME` session note, so local tokens carry the same claim.
 3. Re-render `docs/auth-providers.md`, then recreate the local Keycloak so it imports the realm again.
 
+#### Doctor: declared QA Keycloak and callback ports, template gate steps
+
+For Clerk and WorkOS mobile products, doctor's QA Keycloak check accepts `${BAUKIT_QA_KEYCLOAK_PORT:-<port>}` on the bundled 18081, on `ports.keycloak` and on each `ports.keycloak_extra` port, and still rejects any other port. `[ports] local_callback = { host = <port> }`, default 18890, sets the realm's `<app>-local` PKCE callback, and doctor checks that client's redirect URIs against it instead of the `ports.web` browser ports. Strict products: doctor renders the template gate's step table for the declared capabilities and fails when `sh scripts/quality-gate.sh --list-steps` lacks one of its steps. A product on 0.18.0 takes these steps:
+
+1. Run `baukit doctor`. A missing template step, such as `expo-doctor` in Eigenruhe, gets copied from a fresh render's `scripts/quality-gate.sh` and `docs/quality-gate.md`.
+2. If the product moved the local PKCE callback off 18890, declare it as `ports.local_callback`.
+3. A product whose QA reuses its dev Keycloak (Tiefgang on 8281) or runs its own (Eigenruhe on 24003) declares that port as `ports.keycloak` or in `ports.keycloak_extra`, then sets `auth = "clerk"` (or `"workos"`) in `baukit.toml` and runs `baukit doctor` again. The provider checks and the `web-bundle` and `mobile-bundle` steps now apply.
+
 ## v0.18.0
 
 Last verified release train: `v0.18.0` (breaking minor train on top of `v0.17.1`). Production has no Keycloak any more: BK21 removes the operator base and the local cluster's Keycloak, and Keycloak stays for local development, E2E and QA only. `HubClient` can send a hub `sbsvc_` service token. Clerk and WorkOS web and Expo apps sign in through one port, with the BK19 Keycloak realm locally and the provider SDK in production (BK24, BK22). Organizations are plan kit subjects (BK25). The lane gate shares one core budget, and the native QA scripts gain stall, Wi-Fi and snapshot fixes (BK27).

@@ -157,7 +157,7 @@
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
-      "redirectUris": ["http://127.0.0.1:18890/callback"],
+      "redirectUris": ["http://127.0.0.1:{{ context.local_callback_port }}/callback"],
       "webOrigins": [],
       "attributes": { "pkce.code.challenge.method": "S256" },
       "protocol": "openid-connect",

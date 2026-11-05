@@ -91,7 +91,7 @@ Every generated API route requires a bearer token. Production verifies {{ "Clerk
 python3 scripts/pkce-login.py \
   --issuer http://localhost:{{ context.keycloak_host_port }}/realms/{{ context.app_name }} \
   --client-id {{ context.app_name }}-local \
-  --redirect-uri http://127.0.0.1:18890/callback --scope openid
+  --redirect-uri http://127.0.0.1:{{ context.local_callback_port }}/callback --scope openid
 ```
 
 The ignored `local_realm` test starts the same realm in a disposable Keycloak and checks that its token passes this product's verifier and fails the other provider's.

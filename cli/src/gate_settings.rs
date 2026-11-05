@@ -219,6 +219,51 @@ pub fn list_gate_steps(root: &Path) -> Option<Result<GateSteps, String>> {
     Some(parse_gate_steps(&String::from_utf8_lossy(&output.stdout)))
 }
 
+const STEP_TABLE_START: &str = "cat <<'STEPS'\n";
+const STEP_TABLE_END: &str = "STEPS\n";
+
+/// Renders the template gate's step table for `capabilities` and returns its step names.
+pub fn template_steps(
+    gate_template: &str,
+    capabilities: &Capabilities,
+) -> Result<BTreeSet<String>, String> {
+    let table = gate_template
+        .split_once(STEP_TABLE_START)
+        .and_then(|(_, tail)| tail.split_once(STEP_TABLE_END))
+        .map(|(table, _)| table)
+        .ok_or("the template gate has no step table")?;
+    let context = minijinja::context! { context => minijinja::context! {
+        backend => capabilities.backend,
+        mcp => capabilities.mcp,
+        mobile => capabilities.mobile,
+        web => capabilities.web,
+        auth_enabled => capabilities.auth.is_some(),
+        auth_oidc => capabilities.auth == Some(AuthProvider::Oidc),
+    }};
+    let rendered = minijinja::Environment::new()
+        .render_str(table, context)
+        .map_err(|error| format!("could not render the template step table: {error}"))?;
+    Ok(parse_gate_steps(&rendered)?.steps)
+}
+
+/// Reports template steps that the product's gate does not list.
+pub fn validate_template_steps(
+    template: &BTreeSet<String>,
+    gate: &GateSteps,
+    failures: &mut Vec<String>,
+) {
+    let missing: Vec<&str> = template
+        .difference(&gate.steps)
+        .map(String::as_str)
+        .collect();
+    if !missing.is_empty() {
+        failures.push(format!(
+            "{GATE_SCRIPT} --list-steps lacks template steps for the declared capabilities: {}",
+            missing.join(", ")
+        ));
+    }
+}
+
 fn known_tokens(capabilities: &Capabilities, quality: &QualityManifest) -> Vec<&'static str> {
     let mut tokens = vec![
         "fast",
@@ -701,5 +746,33 @@ mod tests {
             .expect("script exists")
             .expect_err("listing fails");
         assert!(error.contains("--list-steps failed: broken"), "{error}");
+    }
+
+    #[test]
+    fn template_steps_follow_capabilities() {
+        let template = include_str!("../../templates/common/__strict__/scripts/quality-gate.sh");
+        let mut clerk = capabilities(false, false, true);
+        clerk.auth = Some(AuthProvider::Clerk);
+        let steps = template_steps(template, &clerk).expect("renders");
+        assert!(steps.contains("expo-doctor") && steps.contains("mobile-bundle"));
+        assert!(!steps.contains("rust-clippy") && !steps.contains("web-build"));
+        clerk.auth = Some(AuthProvider::Oidc);
+        let steps = template_steps(template, &clerk).expect("renders");
+        assert!(!steps.contains("mobile-bundle"));
+        assert!(template_steps("no table", &clerk).is_err());
+    }
+
+    #[test]
+    fn missing_template_steps_are_reported() {
+        let template = BTreeSet::from(["expo-doctor".to_owned(), "doctor".to_owned()]);
+        let gate = parse_gate_steps("doctor fast - always -\n").expect("parses");
+        let mut failures = Vec::new();
+        validate_template_steps(&template, &gate, &mut failures);
+        assert_eq!(
+            failures,
+            [format!(
+                "{GATE_SCRIPT} --list-steps lacks template steps for the declared capabilities: expo-doctor"
+            )]
+        );
     }
 }

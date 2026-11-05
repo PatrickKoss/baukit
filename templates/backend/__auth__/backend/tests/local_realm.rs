@@ -44,7 +44,7 @@ async fn local_realm_issues_{{ context.auth_provider }}_shaped_tokens_for_the_pr
     let token = keycloak
         .access_token(&KeycloakLogin {
             client_id: &format!("{PRODUCT}-local"),
-            redirect_uri: "http://127.0.0.1:18890/callback",
+            redirect_uri: "http://127.0.0.1:{{ context.local_callback_port }}/callback",
             username: "test",
             password: "development-password",
             scope: "openid",

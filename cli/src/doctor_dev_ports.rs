@@ -23,7 +23,7 @@ pub(crate) fn validate(
             failures,
         )?;
         if crate::uses_bundled_keycloak(root, manifest)? {
-            check_keycloak_origins(root, manifest, &browser_ports, failures)?;
+            check_keycloak_origins(root, manifest, ports, &browser_ports, failures)?;
         }
         check_authorized_parties(root, manifest, &browser_ports, failures)?;
         check_redirect_default(root, port, failures)?;
@@ -134,10 +134,13 @@ fn check_port(
 fn check_keycloak_origins(
     root: &Path,
     manifest: &Manifest,
+    configuration: &PortConfiguration,
     ports: &[u16],
     failures: &mut Vec<String>,
 ) -> Result<()> {
     let mcp_client = format!("{}-mcp", manifest.app.name);
+    let local_client = format!("{}-local", manifest.app.name);
+    let callback_ports = [configuration.local_callback_port()];
     for (relative, fields) in [
         ("keycloak/realm.json", ["webOrigins", "redirectUris"]),
         (
@@ -156,10 +159,15 @@ fn check_keycloak_origins(
             if manifest.capabilities.mcp && client["clientId"].as_str() == Some(&mcp_client) {
                 continue;
             }
+            let accepted = if client["clientId"].as_str() == Some(&local_client) {
+                &callback_ports[..]
+            } else {
+                ports
+            };
             for field in fields {
                 if let Some(origins) = client[field].as_array() {
                     for origin in origins.iter().filter_map(serde_json::Value::as_str) {
-                        check_browser_origins(relative, origin, ports, failures);
+                        check_browser_origins(relative, origin, accepted, failures);
                     }
                 }
             }

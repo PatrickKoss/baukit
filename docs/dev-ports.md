@@ -34,6 +34,16 @@ port. Templates do not render it. Doctor accepts issuer URLs of the form
 `localhost:<port>/realms/` on `keycloak` and on every `keycloak_extra` port,
 and still rejects any other issuer port.
 
+`local_callback = { host = 18890 }` sets the loopback PKCE callback of the
+Clerk and WorkOS realm's `<app>-local` client in `keycloak/realm.json`,
+`keycloak/reconcile.json`, `backend/tests/local_realm.rs` and the README's
+`pkce-login.py` example. It defaults to 18890. Doctor checks that client's
+redirect URIs against it instead of the browser ports.
+
+For Clerk and WorkOS mobile products, doctor accepts a QA Keycloak default of
+`${BAUKIT_QA_KEYCLOAK_PORT:-<port>}` in the mobile QA scripts on the bundled
+18081, on `keycloak` and on every `keycloak_extra` port.
+
 Absent declarations retain Vite dev 5173, preview 4173, and Expo's unpinned
 Metro port. `port_offset` shifts PostgreSQL, API, operations, Keycloak, Redis,
 and fake-provider host ports. It never shifts these dev-server ports. Doctor
