@@ -9,7 +9,6 @@ resources:
   - ../../cnpg
   - ../../flagger
   - ../../hcloud
-  - ../../keycloak
   - ../../kured
   - ../../kyverno
   - ../../observability-stack

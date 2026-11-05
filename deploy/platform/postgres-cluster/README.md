@@ -55,10 +55,6 @@ GitOps-oriented role API; retain policies keep deleting a Kubernetes object from
 silently deleting a production role or database. Application migrations still
 own schemas and tables.
 
-For Keycloak, the overlay convention is database `keycloak`, owner
-`keycloak_owner`, and Secret `keycloak-db-credentials`. The Secret can be
-referenced by both the `DatabaseRole` and the Keycloak CR.
-
 ## Restore-test freshness metric
 
 The suspended CronJob deletes any prior throwaway cluster, restores the latest

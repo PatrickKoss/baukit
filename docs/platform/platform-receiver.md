@@ -218,17 +218,29 @@ takes a `baukit_egress::GuardedClient` built with
 `EgressOptions::with_error_body_limit`, so hub error codes reach typed errors.
 Construction fails without it.
 
-The client requests a token from `token_url` with `grant_type=client_credentials`,
+Configure one of two credential modes. Validation rejects a config with
+neither and a config with both.
+
+- `token`: a hub-issued `sbsvc_` platform service token, created with the
+  hub's `service-token create` and replaced with `rotate` or `revoke`. The
+  client sends it as the bearer on every request. It never calls a token
+  endpoint and never refreshes. A 401 returns `HubError::Unauthorized` with no
+  retry, so rotate the token in the secret store and restart the process.
+- `token_url`, `client_secret` and optionally `client_id`: client credentials,
+  described below. New products use `token`.
+
+In client-credentials mode the client requests a token from `token_url` with `grant_type=client_credentials`,
 the client ID and the client secret, and keeps it in memory. Clones share the
 cache, and one token request serves concurrent callers. The cached token is
 replaced `TOKEN_REFRESH_MARGIN` (30 seconds) before `expires_in` elapses, or at
 half its lifetime when that is shorter. A 401 from the API drops that token,
 fetches a new one and repeats the request once. A second 401 returns
 `HubError::Unauthorized`, as does a token endpoint that refuses the credentials.
-The secret lives in `Secret<String>`, so settings debug output redacts it. No
+The service token and the secret live in `Secret<String>`, so settings debug
+output redacts them. No
 error variant carries a URL, token or secret. `get_json` and `post_json` are
 available for other platform routes; use `post_json` only on idempotent routes,
-because of the 401 retry.
+because client-credentials mode repeats a request after a 401.
 
 `HubError::Unavailable` covers transport failures, timeouts, 408, 429 and 5xx.
 `InvalidResponse` means a 2xx body that breaks the contract. Other statuses
@@ -413,9 +425,10 @@ With product prefix `APP`, these settings load through `baukit-config`:
 | `APP__PLATFORM__PREVIOUS_RECEIVER_SECRET` | Optional previous HMAC secret during rotation. |
 | `APP__PLATFORM__STANDALONE_DEFAULT__TIER` | Default standalone tier, initially `free`. |
 | `APP__PLATFORM_CLIENT__API_URL` | Hub API base URL, when embedded as `platform_client`. |
-| `APP__PLATFORM_CLIENT__TOKEN_URL` | Hub token endpoint, such as `<hub>/realms/suite/protocol/openid-connect/token`. |
-| `APP__PLATFORM_CLIENT__CLIENT_ID` | Optional. Defaults to `platform-<product_id>`. |
-| `APP__PLATFORM_CLIENT__CLIENT_SECRET` | Service client secret. Server-side only. |
+| `APP__PLATFORM_CLIENT__TOKEN` | Hub `sbsvc_` platform service token. Server-side only, from the secret store. Excludes the three keys below. |
+| `APP__PLATFORM_CLIENT__TOKEN_URL` | Client-credentials mode only. Hub token endpoint. |
+| `APP__PLATFORM_CLIENT__CLIENT_ID` | Client-credentials mode only. Optional. Defaults to `platform-<product_id>`. |
+| `APP__PLATFORM_CLIENT__CLIENT_SECRET` | Client-credentials mode only. Service client secret. Server-side only. |
 
 Configure `standalone_default.features` as an array in the product settings file.
 Partial hub settings fail validation. No secret value appears in settings debug

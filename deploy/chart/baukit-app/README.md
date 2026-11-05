@@ -10,7 +10,7 @@ The migration hook only starts the migrate process. Advisory locking, lock timeo
 # Chart.yaml in a product repository
 dependencies:
   - name: baukit-app
-    version: 0.17.1
+    version: 0.18.0
     repository: oci://ghcr.io/patrickkoss/charts
     alias: application
 ```
@@ -231,11 +231,11 @@ backend generated with `--mcp --backend --auth oidc`. The chart passes these val
 as product configuration and adds `/mcp` and the RFC 9728 metadata paths to
 each ingress host. `mcp.allowedOrigins` is an exact list and defaults to empty.
 Set `mcp.jwksUri` to fetch signing keys through an internal endpoint, such as
-`http://keycloak:8080/realms/product/protocol/openid-connect/certs`. The public
+`http://identity-proxy.platform.svc.cluster.local/jwks`. The public
 issuer and discovery metadata still use `mcp.issuer`. An empty `mcp.jwksUri`
 leaves key discovery to the provider.
 
-Set the Keycloak MCP audience mapper to the same resource URL. The endpoint
+Bind the issuer's MCP audience to the same resource URL. The endpoint
 shares the API HTTP listener. Use TLS on the ingress and shared Redis for
 rate limiting across replicas.
 

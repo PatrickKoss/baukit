@@ -27,7 +27,6 @@ The conventional namespaces are:
 | database operator | `cnpg-system` |
 | shared database cluster | `postgres` |
 | shared Redis (direct or Sentinel HA) | `platform-redis` |
-| identity | `keycloak` |
 | metrics, logs, and traces | `observability` |
 
 `cluster-baseline` defines `platform-critical` and `platform-standard` as
@@ -196,8 +195,10 @@ k3d with the bundled k3s Traefik disabled, publishes the replacement Traefik
 on host ports 80 and 443, installs Flux, and lets the overlay's Flux
 Kustomizations reconcile all pinned HelmReleases. The local flavor includes the
 baseline, cert-manager and a self-signed `ClusterIssuer`, Traefik, CNPG and one
-PostgreSQL cluster, the Keycloak operator and realm import, the observability
-stack, and RustFS for Loki logs and PostgreSQL backups. The hcloud base is
+PostgreSQL cluster, the observability stack, and RustFS for Loki logs and
+PostgreSQL backups. It runs no Keycloak, because production has none: the
+fixture verifies tokens from its own compose Keycloak on the host, which
+`make dev` in the fixture starts on port 8091. The hcloud base is
 intentionally omitted because Docker-hosted k3d has neither Hetzner metadata nor cloud
 volumes.
 
@@ -223,10 +224,9 @@ cluster and stops the local Git HTTP process. The ignored
 the same credentials; remove that directory manually only when credential
 rotation is intended.
 
-`status` prints the generated Keycloak bootstrap, Grafana, RustFS, and fixture
-OIDC credentials on demand. The state directory is mode 0700 and its
+`status` prints the generated Grafana and RustFS credentials on demand. The state directory is mode 0700 and its
 `secrets.env` is mode 0600. No Secret manifest or credential value is stored in
-the publishable overlay. Kubernetes Secrets for PostgreSQL, Keycloak, Grafana,
+the publishable overlay. Kubernetes Secrets for PostgreSQL, Grafana,
 RustFS, and the initial product are generated and applied at runtime.
 
 ### Integration-harness GitRepository contract
@@ -285,8 +285,8 @@ kubectl wait job/postgres-restore-test-manual -n postgres \
 generated integration fixture. Its runtime database URL belongs in the
 `fixture-runtime` Secret. The values enable the API, migration hook, worker,
 ingress, ServiceMonitors, and the local network-policy egress required for
-PostgreSQL, Keycloak, and Tempo. See `local-footprint.md` for the measured
-complete-stack footprint.
+PostgreSQL, the host's compose Keycloak, and Tempo. See `local-footprint.md`
+for the measured complete-stack footprint.
 
 ### Local k3s compatibility and troubleshooting
 

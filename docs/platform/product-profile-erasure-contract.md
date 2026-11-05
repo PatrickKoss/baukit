@@ -300,7 +300,7 @@ permanent and requires operator action.
 The admin client has connect and request timeouts, disables redirects and
 proxies, and requires HTTPS. An explicit local-development allowance permits
 HTTP. It has its own reqwest client because `baukit-egress` blocks private
-addresses and Keycloak is commonly in-cluster.
+addresses and the local development Keycloak listens on loopback.
 
 Load the client secret and hash key through `baukit_config::Secret`. Generated
 local development uses the realm's local backend secret and a local hash key.

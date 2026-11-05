@@ -2,9 +2,15 @@
 
 ## Unreleased
 
+## 0.18.0
+
 ### Minor Changes
 
 - Add `NativeOidcConfig.refreshOnRestore`. When it is true, `initialize()` refreshes an expired stored session before it resolves. `createWorkOsNativeClient` turns it on.
+
+### Minor Changes
+
+- Release the coordinated baukit 0.18.0 train.
 
 ## 0.17.1
 

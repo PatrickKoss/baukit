@@ -151,9 +151,17 @@ impl MockHub {
     fn config(&self) -> HubClientConfig {
         HubClientConfig {
             api_url: format!("{}/api", self.base),
-            token_url: format!("{}{TOKEN_PATH}", self.base),
+            token: None,
+            token_url: Some(format!("{}{TOKEN_PATH}", self.base)),
             client_id: None,
             client_secret: Some(Secret::new(SECRET.into())),
+        }
+    }
+    fn static_config(&self, token: &str) -> HubClientConfig {
+        HubClientConfig {
+            api_url: format!("{}/api", self.base),
+            token: Some(Secret::new(token.into())),
+            ..HubClientConfig::default()
         }
     }
     fn client(&self, product_id: &str) -> Result<Arc<HubClient>, Box<dyn std::error::Error>> {
@@ -466,7 +474,11 @@ async fn hub_client_settings_are_validated() -> TestResult {
             ..hub.config()
         },
         HubClientConfig {
-            token_url: "https://hub.example/token#fragment".into(),
+            token_url: Some("https://hub.example/token#fragment".into()),
+            ..hub.config()
+        },
+        HubClientConfig {
+            token_url: None,
             ..hub.config()
         },
         HubClientConfig {
@@ -479,6 +491,92 @@ async fn hub_client_settings_are_validated() -> TestResult {
         },
     ] {
         assert!(broken.validate().is_err());
+    }
+    Ok(())
+}
+
+fn placeholder_service_token() -> String {
+    format!("sbsvc_{}", Uuid::new_v4().simple())
+}
+
+#[tokio::test]
+async fn static_service_token_is_the_bearer_without_a_token_request() -> TestResult {
+    let hub = MockHub::start().await?;
+    let token = placeholder_service_token();
+    let client = Arc::new(HubClient::new(
+        &hub.static_config(&token),
+        "hebkit",
+        guarded()?,
+    )?);
+    let credits = HubCredits::new(client);
+    hub.state.script(&["creditBalance", "creditBalance"]);
+    credits.balance(SUBJECT).await?;
+    credits.balance(SUBJECT).await?;
+    let bearer = format!("Bearer {token}");
+    let requests = hub.state.requests();
+    assert_eq!(requests.len(), 2);
+    assert!(
+        requests
+            .iter()
+            .all(|request| request.authorization.as_deref() == Some(bearer.as_str()))
+    );
+    assert_eq!(hub.state.token_calls(), 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn static_service_token_maps_401_to_unauthorized_without_retry() -> TestResult {
+    let hub = MockHub::start().await?;
+    let token = placeholder_service_token();
+    let client = Arc::new(HubClient::new(
+        &hub.static_config(&token),
+        "hebkit",
+        guarded()?,
+    )?);
+    let credits = HubCredits::new(client);
+    hub.state.script(&["unauthenticated", "creditBalance"]);
+    let unauthorized = Err(CreditsError::Hub(HubError::Unauthorized));
+    assert_eq!(credits.balance(SUBJECT).await, unauthorized);
+    assert_eq!(
+        hub.state.requests().len(),
+        1,
+        "a static token is not retried"
+    );
+    assert_eq!(hub.state.token_calls(), 0);
+    assert!(!format!("{unauthorized:?}").contains(&token));
+    assert!(!format!("{:?}", hub.static_config(&token)).contains(&token));
+    Ok(())
+}
+
+#[tokio::test]
+async fn hub_client_requires_exactly_one_credential_mode() -> TestResult {
+    let hub = MockHub::start().await?;
+    let token = placeholder_service_token();
+    assert!(hub.static_config(&token).validate().is_ok());
+    assert!(HubClient::new(&hub.static_config(&token), "hebkit", guarded()?).is_ok());
+    let both = HubClientConfig {
+        token: Some(Secret::new(token.clone())),
+        ..hub.config()
+    };
+    let neither = HubClientConfig {
+        api_url: format!("{}/api", hub.base),
+        ..HubClientConfig::default()
+    };
+    let empty_token = hub.static_config("");
+    let token_with_client_id = HubClientConfig {
+        client_id: Some("custom-client".into()),
+        ..hub.static_config(&token)
+    };
+    let padded_token = hub.static_config(&format!(" {token}"));
+    for broken in [
+        both,
+        neither,
+        empty_token,
+        token_with_client_id,
+        padded_token,
+    ] {
+        assert!(broken.validate().is_err());
+        assert!(HubClient::new(&broken, "hebkit", guarded()?).is_err());
     }
     Ok(())
 }

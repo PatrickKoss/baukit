@@ -14,58 +14,96 @@ const JSON: &str = "application/json";
 const FORM: &str = "application/x-www-form-urlencoded";
 
 /// Service credentials for the hub's `/platform/v1` API. Embed it next to
-/// `PlatformConfig`, for example as `platform_client`.
+/// `PlatformConfig`, for example as `platform_client`. Set either `token` or
+/// `token_url` with `client_secret`, never both.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct HubClientConfig {
     /// Hub API base URL. Requests go to `<api_url>/platform/v1/...`.
     pub api_url: String,
-    /// The hub realm's OAuth token endpoint.
-    pub token_url: String,
+    /// A hub-issued `sbsvc_` platform service token, sent as the bearer on
+    /// every request. It is never refreshed.
+    pub token: Option<Secret<String>>,
+    /// The hub realm's OAuth token endpoint for client credentials.
+    #[serde(deserialize_with = "crate::config::empty_string_as_none")]
+    pub token_url: Option<String>,
     /// Defaults to `platform-<product_id>`.
     #[serde(deserialize_with = "crate::config::empty_string_as_none")]
     pub client_id: Option<String>,
     pub client_secret: Option<Secret<String>>,
 }
+impl HubClientConfig {
+    fn static_token(&self) -> Option<&Secret<String>> {
+        self.token
+            .as_ref()
+            .filter(|token| !token.expose().is_empty())
+    }
+    fn uses_client_credentials(&self) -> bool {
+        self.token_url.is_some() || self.client_id.is_some() || self.client_secret.is_some()
+    }
+}
 impl Validate for HubClientConfig {
     fn validate(&self) -> Result<(), ValidationErrors> {
         let mut errors = Vec::new();
-        for (field, value) in [
-            ("platform_client.api_url", &self.api_url),
-            ("platform_client.token_url", &self.token_url),
-        ] {
-            if base_url(value).is_none() {
-                errors.push(ValidationError::new(
-                    field,
-                    "must be an HTTP(S) URL without credentials, query or fragment",
-                ));
+        if base_url(&self.api_url).is_none() {
+            errors.push(ValidationError::new("platform_client.api_url", URL_RULE));
+        }
+        match (self.static_token(), self.uses_client_credentials()) {
+            (Some(_), true) => errors.push(ValidationError::new(
+                "platform_client",
+                "set either token or the client credentials, not both",
+            )),
+            (None, false) => errors.push(ValidationError::new(
+                "platform_client",
+                "requires token or the client credentials",
+            )),
+            (Some(token), false) => {
+                if token.expose().chars().any(invalid_token_char) {
+                    errors.push(ValidationError::new(
+                        "platform_client.token",
+                        "must not contain whitespace or control characters",
+                    ));
+                }
             }
-        }
-        if self
-            .client_id
-            .as_deref()
-            .is_some_and(|id| id.trim() != id || id.chars().any(char::is_control) || id.is_empty())
-        {
-            errors.push(ValidationError::new(
-                "platform_client.client_id",
-                "must not contain whitespace padding or control characters",
-            ));
-        }
-        if !self
-            .client_secret
-            .as_ref()
-            .is_some_and(|secret| !secret.expose().is_empty())
-        {
-            errors.push(ValidationError::new(
-                "platform_client.client_secret",
-                "is required",
-            ));
+            (None, true) => validate_client_credentials(self, &mut errors),
         }
         if errors.is_empty() {
             Ok(())
         } else {
             Err(ValidationErrors::new(errors))
         }
+    }
+}
+
+const URL_RULE: &str = "must be an HTTP(S) URL without credentials, query or fragment";
+
+fn invalid_token_char(character: char) -> bool {
+    character.is_whitespace() || character.is_control()
+}
+
+fn validate_client_credentials(config: &HubClientConfig, errors: &mut Vec<ValidationError>) {
+    if config.token_url.as_deref().and_then(base_url).is_none() {
+        errors.push(ValidationError::new("platform_client.token_url", URL_RULE));
+    }
+    if config
+        .client_id
+        .as_deref()
+        .is_some_and(|id| id.trim() != id || id.chars().any(char::is_control) || id.is_empty())
+    {
+        errors.push(ValidationError::new(
+            "platform_client.client_id",
+            "must not contain whitespace padding or control characters",
+        ));
+    }
+    if !config
+        .client_secret
+        .as_ref()
+        .is_some_and(|secret| !secret.expose().is_empty())
+    {
+        errors.push(ValidationError::new(
+            "platform_client.client_secret",
+            "is required",
+        ));
     }
 }
 
@@ -76,8 +114,9 @@ pub enum HubError {
     /// Transport failure, timeout, rate limit, or a 408 or 5xx response.
     #[error("hub_unavailable")]
     Unavailable,
-    /// The token endpoint refused the credentials, or the API returned 401
-    /// again with a freshly issued token.
+    /// The token endpoint refused the credentials, the API returned 401
+    /// again with a freshly issued token, or it returned 401 for the static
+    /// service token.
     #[error("hub_unauthorized")]
     Unauthorized,
     /// A 2xx response whose body does not match the contract.
@@ -117,17 +156,26 @@ struct ErrorCode {
     code: String,
 }
 
-/// Calls `/platform/v1` with a client-credentials token. Clones share the
-/// token cache, so one token request serves concurrent callers.
+#[derive(Clone)]
+enum Credentials {
+    Static(Arc<CachedToken>),
+    ClientCredentials {
+        token_url: Url,
+        client_id: String,
+        client_secret: Secret<String>,
+        cache: Arc<Mutex<Option<Arc<CachedToken>>>>,
+    },
+}
+
+/// Calls `/platform/v1` with a static service token or a client-credentials
+/// token. Clones share the token cache, so one token request serves
+/// concurrent callers.
 #[derive(Clone)]
 pub struct HubClient {
     product_id: String,
     api_url: Url,
-    token_url: Url,
-    client_id: String,
-    client_secret: Secret<String>,
+    credentials: Credentials,
     client: GuardedClient,
-    token: Arc<Mutex<Option<Arc<CachedToken>>>>,
 }
 impl HubClient {
     /// The guarded client must capture error bodies through
@@ -149,24 +197,32 @@ impl HubClient {
                 "must capture error bodies to read hub error codes",
             ));
         }
-        let (Some(api_url), Some(token_url), Some(client_secret)) = (
-            base_url(&config.api_url),
-            Url::parse(&config.token_url).ok(),
-            config.client_secret.clone(),
-        ) else {
-            return Err(invalid("platform_client", "invalid hub client settings"));
+        let settings_error = || invalid("platform_client", "invalid hub client settings");
+        let api_url = base_url(&config.api_url).ok_or_else(settings_error)?;
+        let credentials = match config.static_token() {
+            Some(token) => Credentials::Static(Arc::new(CachedToken {
+                value: token.clone(),
+                refresh_at: Instant::now(),
+            })),
+            None => Credentials::ClientCredentials {
+                token_url: config
+                    .token_url
+                    .as_deref()
+                    .and_then(base_url)
+                    .ok_or_else(settings_error)?,
+                client_id: config
+                    .client_id
+                    .clone()
+                    .unwrap_or_else(|| format!("{CLIENT_ID_PREFIX}{product_id}")),
+                client_secret: config.client_secret.clone().ok_or_else(settings_error)?,
+                cache: Arc::default(),
+            },
         };
         Ok(Self {
             product_id: product_id.into(),
             api_url,
-            token_url,
-            client_id: config
-                .client_id
-                .clone()
-                .unwrap_or_else(|| format!("{CLIENT_ID_PREFIX}{product_id}")),
-            client_secret,
+            credentials,
             client,
-            token: Arc::default(),
         })
     }
     /// The calling product. The hub derives wallets and summaries from it.
@@ -243,7 +299,7 @@ impl HubClient {
                         .map_err(|_| HubError::InvalidResponse);
                 }
                 Err(EgressError::Status { status, .. })
-                    if status == StatusCode::UNAUTHORIZED && !refreshed =>
+                    if status == StatusCode::UNAUTHORIZED && !refreshed && self.refreshes() =>
                 {
                     refreshed = true;
                     self.invalidate(&token).await;
@@ -252,8 +308,14 @@ impl HubClient {
             }
         }
     }
+    fn refreshes(&self) -> bool {
+        matches!(self.credentials, Credentials::ClientCredentials { .. })
+    }
     async fn invalidate(&self, used: &Arc<CachedToken>) {
-        let mut cached = self.token.lock().await;
+        let Credentials::ClientCredentials { cache, .. } = &self.credentials else {
+            return;
+        };
+        let mut cached = cache.lock().await;
         if cached
             .as_ref()
             .is_some_and(|token| Arc::ptr_eq(token, used))
@@ -262,7 +324,16 @@ impl HubClient {
         }
     }
     async fn token(&self) -> Result<Arc<CachedToken>, HubError> {
-        let mut cached = self.token.lock().await;
+        let (token_url, client_id, client_secret, cache) = match &self.credentials {
+            Credentials::Static(token) => return Ok(token.clone()),
+            Credentials::ClientCredentials {
+                token_url,
+                client_id,
+                client_secret,
+                cache,
+            } => (token_url, client_id, client_secret, cache),
+        };
+        let mut cached = cache.lock().await;
         if let Some(token) = cached
             .as_ref()
             .filter(|token| Instant::now() < token.refresh_at)
@@ -272,8 +343,8 @@ impl HubClient {
         let requested_at = Instant::now();
         let body = url::form_urlencoded::Serializer::new(String::new())
             .append_pair("grant_type", "client_credentials")
-            .append_pair("client_id", &self.client_id)
-            .append_pair("client_secret", self.client_secret.expose())
+            .append_pair("client_id", client_id)
+            .append_pair("client_secret", client_secret.expose())
             .finish();
         let mut headers = HeaderMap::new();
         headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(FORM));
@@ -281,7 +352,7 @@ impl HubClient {
         let response = self
             .client
             .execute(
-                EgressRequest::post(self.token_url.clone())
+                EgressRequest::post(token_url.clone())
                     .with_headers(headers)
                     .with_body(body),
             )
@@ -352,7 +423,8 @@ mod tests {
     fn client() -> HubClient {
         let config = HubClientConfig {
             api_url: "https://hub.example/api/".into(),
-            token_url: "https://hub.example/token".into(),
+            token: None,
+            token_url: Some("https://hub.example/token".into()),
             client_id: None,
             client_secret: Some(Secret::new("secret".into())),
         };

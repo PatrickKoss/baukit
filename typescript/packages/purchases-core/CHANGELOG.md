@@ -2,7 +2,13 @@
 
 ## Unreleased
 
+## 0.18.0
+
 - Organizations are plan subjects (BK25). `VerifiedEntitlement` gains the optional `organization: {organizationId, name}`. `EntitlementBackend.organizationEntitlement(organizationId)` reads `GET /me/entitlement` with the `X-Organization-Id` header (`ORGANIZATION_HEADER`), and `createAccountPlanBackend` implements it. `paywallFor` answers `covered` with channel `organization` for an organization plan that has the feature and the new `organization_managed` paywall with `organizationId` and `organizationName` when it lacks it, never `purchase`. `organizationFeatureAccess`, `OrganizationPlanState`, `useOrganizationPlan(backend, organizationId)` and the `organization` option of `useFeature` and `LockedFeature` gate on an organization's plan. `ACCOUNT_PLAN_ERROR_CODES` adds `organization_not_accessible` and `organization_id_invalid`. Exhaustive switches over `Paywall['kind']` need the new arm.
+
+### Minor Changes
+
+- Release the coordinated baukit 0.18.0 train.
 
 ## 0.17.1
 

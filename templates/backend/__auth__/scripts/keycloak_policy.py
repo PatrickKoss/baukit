@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-ENVIRONMENT_CLASSES = ("development", "production")
+ENVIRONMENT_CLASSES = ("development",)
 TLS_LEVELS = {"none": 0, "external": 1, "all": 2}
 POLICY_EXPRESSION = re.compile(r"^([A-Za-z][A-Za-z0-9]*)(?:\(([^)]*)\))?$")
 
@@ -75,8 +75,6 @@ def validate_policy_document(policy: dict[str, Any], environment_class: str) -> 
     minimum_tls = policy.get("minimumTls")
     if minimum_tls not in TLS_LEVELS:
         failures.append("policy minimumTls must be one of none, external, or all")
-    if environment_class == "production" and minimum_tls == "none":
-        failures.append("production policy minimumTls cannot be none")
     redirects = policy.get("redirectUris")
     if not isinstance(redirects, dict):
         failures.append("policy redirectUris must be an object")
@@ -89,8 +87,6 @@ def validate_policy_document(policy: dict[str, Any], environment_class: str) -> 
             failures.append(
                 "policy redirectUris.allowDevelopmentLoopbackHttp must be true or false"
             )
-        if environment_class == "production" and allow_http is True:
-            failures.append("production policy cannot allow development loopback HTTP")
         schemes = redirects.get("allowedCustomSchemes")
         if not isinstance(schemes, list) or not all(
             isinstance(scheme, str) and scheme for scheme in schemes
@@ -109,9 +105,7 @@ def validate_policy_document(policy: dict[str, Any], environment_class: str) -> 
     return failures
 
 
-def validate_redirect_uri(
-    uri: object, policy: dict[str, Any], environment_class: str
-) -> str | None:
+def validate_redirect_uri(uri: object, policy: dict[str, Any]) -> str | None:
     if not isinstance(uri, str) or not uri:
         return "must be a non-empty string"
     if uri == "*":
@@ -130,11 +124,7 @@ def validate_redirect_uri(
             return "has an unbounded wildcard"
         if parsed.scheme == "http":
             loopback = parsed.hostname in ("localhost", "127.0.0.1", "::1")
-            allowed = (
-                environment_class == "development"
-                and redirect_policy["allowDevelopmentLoopbackHttp"]
-                and loopback
-            )
+            allowed = redirect_policy["allowDevelopmentLoopbackHttp"] and loopback
             if not allowed:
                 return "uses HTTP outside an allowed development loopback address"
         return None
@@ -176,8 +166,6 @@ def validate_realm(
         failures.append("sslRequired must be one of none, external, or all")
     elif TLS_LEVELS[realm_tls] < TLS_LEVELS[policy["minimumTls"]]:
         failures.append(f"sslRequired must be at least {policy['minimumTls']}")
-    if environment_class == "production" and realm_tls == "none":
-        failures.append("production realms cannot use sslRequired none")
 
     clients = realm.get("clients")
     if not isinstance(clients, list):
@@ -207,7 +195,7 @@ def validate_realm(
                 f"public client {label!r} has more than {maximum_count} redirect URIs"
             )
         for uri in redirect_uris:
-            problem = validate_redirect_uri(uri, policy, environment_class)
+            problem = validate_redirect_uri(uri, policy)
             if problem:
                 failures.append(f"public client {label!r} redirect URI {uri!r} {problem}")
     users = realm.get("users", [])

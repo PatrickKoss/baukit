@@ -1,6 +1,7 @@
 # Integration-proof values for a CLI-generated `fixture` product. The images
 # are built from the generated Dockerfile and imported into k3d by the Wave I2
-# procedure; runtime credentials remain in Kubernetes Secrets.
+# procedure; runtime credentials remain in Kubernetes Secrets. Sign-in uses the
+# fixture's compose Keycloak on the host (`make dev`), never one in the cluster.
 fullnameOverride: fixture
 product: fixture
 deploymentEnvironment: local
@@ -8,7 +9,8 @@ deploymentEnvironment: local
 config:
   otlpEndpoint: http://tempo.observability.svc.cluster.local:4317
   overrides:
-    AUTH__ISSUER: http://keycloak-service.keycloak.svc.cluster.local:8080/realms/fixture
+    AUTH__ISSUER: http://localhost:8091/realms/fixture
+    AUTH__JWKS_URI: http://host.k3d.internal:8091/realms/fixture/protocol/openid-connect/certs
     AUTH__AUDIENCE: fixture-backend
     DATABASE__MAX_CONNECTIONS: "5"
     WORKER__CONCURRENCY: "1"
@@ -65,7 +67,7 @@ networkPolicy:
     - ports:
         - port: 5432
           protocol: TCP
-        - port: 8080
+        - port: 8091
           protocol: TCP
         - port: 4317
           protocol: TCP

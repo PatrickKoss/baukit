@@ -51,8 +51,10 @@ credential. Rotate it before expiry, or replace the source through
 refreshes client-credentials tokens, such as one built on
 `baukit_suite::platform::HubClient`. Never put this token in a browser or app.
 
-`HubClient` caches its client-credentials token and refreshes it before expiry
-or once after a 401. `PlatformConfig::credits` returns `ZeroCostCredits` in
+`HubClient` sends a hub `sbsvc_` service token from `platform_client.token`
+(`{{ context.app_env }}__PLATFORM_CLIENT__TOKEN`) as the bearer, with no refresh
+and no retry after a 401. In client-credentials mode it caches its token and
+refreshes it before expiry or once after a 401. Configure one mode, not both. `PlatformConfig::credits` returns `ZeroCostCredits` in
 standalone mode and `HubCredits` in hub mode for metered actions, and
 `HubOrganizations` reads organization summaries after `organization.updated`.
 

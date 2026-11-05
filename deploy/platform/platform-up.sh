@@ -53,16 +53,12 @@ ensure_secret_state() {
   if [[ ! -f $secrets_file ]]; then
     umask 077
     {
-      printf 'KEYCLOAK_ADMIN_USER=%q\n' admin
-      printf 'KEYCLOAK_ADMIN_PASSWORD=%q\n' "$(random_value 18)"
-      printf 'KEYCLOAK_DB_PASSWORD=%q\n' "$(random_value 18)"
       printf 'POSTGRES_PRODUCT_PASSWORD=%q\n' "$(random_value 18)"
       printf 'GRAFANA_ADMIN_USER=%q\n' admin
       printf 'GRAFANA_ADMIN_PASSWORD=%q\n' "$(random_value 18)"
       printf 'RUSTFS_ACCESS_KEY=%q\n' "local-$(random_value 6)"
       printf 'RUSTFS_SECRET_KEY=%q\n' "$(random_value 18)"
       printf 'FIXTURE_DB_PASSWORD=%q\n' "$(random_value 18)"
-      printf 'FIXTURE_OIDC_PASSWORD=%q\n' "$(random_value 12)"
     } >"$secrets_file"
     chmod 0600 "$secrets_file"
   fi
@@ -149,7 +145,7 @@ apply_secret() {
 
 apply_runtime_identity() {
   local namespace
-  for namespace in postgres keycloak observability posthog; do
+  for namespace in postgres observability posthog; do
     kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
     kubectl label namespace "$namespace" app.kubernetes.io/part-of=baukit-platform --overwrite >/dev/null
   done
@@ -170,17 +166,6 @@ apply_runtime_identity() {
   apply_secret posthog posthog-object-storage \
     --from-literal=root-user="$RUSTFS_ACCESS_KEY" \
     --from-literal=root-password="$RUSTFS_SECRET_KEY"
-  apply_secret postgres keycloak-db-credentials \
-    --type=kubernetes.io/basic-auth \
-    --from-literal=username=keycloak_owner \
-    --from-literal=password="$KEYCLOAK_DB_PASSWORD"
-  apply_secret keycloak keycloak-db-credentials \
-    --type=kubernetes.io/basic-auth \
-    --from-literal=username=keycloak_owner \
-    --from-literal=password="$KEYCLOAK_DB_PASSWORD"
-  apply_secret keycloak keycloak-bootstrap-admin \
-    --from-literal=username="$KEYCLOAK_ADMIN_USER" \
-    --from-literal=password="$KEYCLOAK_ADMIN_PASSWORD"
   apply_secret observability grafana-admin \
     --from-literal=admin-user="$GRAFANA_ADMIN_USER" \
     --from-literal=admin-password="$GRAFANA_ADMIN_PASSWORD"
@@ -209,11 +194,8 @@ status() {
     print_diagnostics
   fi
   printf '\nLocal credentials (stored mode 0600 in %s):\n' "$secrets_file"
-  printf '  Keycloak bootstrap: %s / %s\n' "$KEYCLOAK_ADMIN_USER" "$KEYCLOAK_ADMIN_PASSWORD"
   printf '  Grafana:            %s / %s\n' "$GRAFANA_ADMIN_USER" "$GRAFANA_ADMIN_PASSWORD"
   printf '  RustFS:             %s / %s\n' "$RUSTFS_ACCESS_KEY" "$RUSTFS_SECRET_KEY"
-  printf '  Fixture OIDC user:  test / %s\n' "$FIXTURE_OIDC_PASSWORD"
-  printf '  Keycloak service:   http://keycloak-service.keycloak.svc.cluster.local:8080\n'
 }
 
 up() {

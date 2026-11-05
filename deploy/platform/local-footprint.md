@@ -18,8 +18,6 @@ idle period.
 | flux-system | Helm controller | 1m | 113 MiB |
 | flux-system | Kustomize controller | 1m | 153 MiB |
 | flux-system | source controller | 1m | 111 MiB |
-| keycloak | Keycloak | 3m | 645 MiB |
-| keycloak | Keycloak operator | 5m | 261 MiB |
 | kube-system | CoreDNS | 1m | 30 MiB |
 | kube-system | local-path provisioner | 1m | 19 MiB |
 | kube-system | metrics server | 3m | 26 MiB |
@@ -36,11 +34,13 @@ idle period.
 | postgres | PostgreSQL plus Barman sidecar | 5m | 134 MiB |
 | postgres | restore-test Pushgateway | 0m | 20 MiB |
 | traefik | Traefik | 1m | 32 MiB |
-| **Pod subtotal** | **28 running pods, excludes replaced storage** | **62m** | **3,270 MiB (3.19 GiB)** |
+| **Pod subtotal** | **26 running pods, excludes replaced storage** | **54m** | **2,364 MiB (2.31 GiB)** |
 
 The table excludes the retired object-storage pod, which used 1m CPU and
 113 MiB in the August sample. The subtotal is historical and does not include
-the replacement RustFS pod.
+the replacement RustFS pod. It also leaves out Keycloak (3m, 645 MiB) and the
+Keycloak operator (5m, 261 MiB), which the local cluster no longer runs since
+Baukit 0.18.0. The node total below still includes them.
 
 On 2026-10-04, the isolated RustFS 1.0.1 proof cluster reported **5m CPU and
 67 MiB** for RustFS after AWS CLI object round trips, Barman WAL archive and

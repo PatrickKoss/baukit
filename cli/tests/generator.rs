@@ -1331,15 +1331,6 @@ fn generated_keycloak_policy_and_reconciler_fixtures_pass() -> anyhow::Result<()
             "--environment-class",
             "development",
         ],
-        vec![
-            "scripts/keycloak_policy.py",
-            "--realm",
-            "scripts/tests/fixtures/production-realm.json",
-            "--policy",
-            "scripts/tests/fixtures/production-policy.json",
-            "--environment-class",
-            "production",
-        ],
         vec!["scripts/reconcile_keycloak.py", "--check"],
     ] {
         let output = Command::new("python3")
@@ -1353,6 +1344,21 @@ fn generated_keycloak_policy_and_reconciler_fixtures_pass() -> anyhow::Result<()
             String::from_utf8_lossy(&output.stderr)
         );
     }
+    let production = Command::new("python3")
+        .args([
+            "scripts/keycloak_policy.py",
+            "--environment-class",
+            "production",
+        ])
+        .current_dir(&root)
+        .output()?;
+    assert!(!production.status.success());
+    assert!(String::from_utf8_lossy(&production.stderr).contains("invalid choice"));
+    assert!(
+        !root
+            .join("scripts/tests/fixtures/production-realm.json")
+            .exists()
+    );
     let results = doctor(&root)?;
     assert!(
         results

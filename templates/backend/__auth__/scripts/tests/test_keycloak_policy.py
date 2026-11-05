@@ -25,19 +25,11 @@ class KeycloakPolicyTests(unittest.TestCase):
         )
         self.assertEqual(failures, [])
 
-    def test_production_fixture_declares_and_passes_its_class(self):
+    def test_policy_must_declare_the_requested_class(self):
+        policy = self.fixture("development-policy.json")
+        policy["environmentClass"] = "staging"
         failures = keycloak_policy.validate_realm(
-            self.fixture("production-realm.json"),
-            self.fixture("production-policy.json"),
-            "production",
-        )
-        self.assertEqual(failures, [])
-
-    def test_environment_class_is_not_inferred_from_realm_name(self):
-        failures = keycloak_policy.validate_realm(
-            self.fixture("development-realm.json"),
-            self.fixture("development-policy.json"),
-            "production",
+            self.fixture("development-realm.json"), policy, "development"
         )
         self.assertTrue(any("environmentClass" in failure for failure in failures))
 
@@ -55,14 +47,14 @@ class KeycloakPolicyTests(unittest.TestCase):
         self.assertTrue(any("bruteForceProtected" in failure for failure in failures))
 
     def test_weakened_tls_pkce_and_direct_grants_are_rejected(self):
-        realm = self.fixture("production-realm.json")
+        realm = self.fixture("development-realm.json")
         realm["sslRequired"] = "none"
-        client = realm["clients"][0]
+        client = next(client for client in realm["clients"] if client.get("publicClient"))
         client["directAccessGrantsEnabled"] = True
         client["attributes"] = {}
-        failures = keycloak_policy.validate_realm(
-            realm, self.fixture("production-policy.json"), "production"
-        )
+        policy = self.fixture("development-policy.json")
+        policy["minimumTls"] = "external"
+        failures = keycloak_policy.validate_realm(realm, policy, "development")
         self.assertTrue(any("sslRequired" in failure for failure in failures))
         self.assertTrue(any("direct-access" in failure for failure in failures))
         self.assertTrue(any("PKCE S256" in failure for failure in failures))

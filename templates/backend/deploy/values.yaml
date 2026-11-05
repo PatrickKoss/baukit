@@ -82,6 +82,16 @@ worker:
 #           key: current
 {% endif %}# Worker and migration commands validate the same hub configuration as the API.
 # Put PLATFORM_HUB__SERVICE_TOKEN in the runtime Secret with the product prefix.
+# A backend that embeds HubClientConfig as platform_client sets
+# PLATFORM_CLIENT__API_URL in config.overrides and reads the hub service token
+# from a Secret reference, never a value:
+# api:
+#   env:
+#     - name: {{ context.app_env }}__PLATFORM_CLIENT__TOKEN
+#       valueFrom:
+#         secretKeyRef:
+#           name: {{ context.app_name }}-platform-client
+#           key: token
 
 {% endif %}ingress:
   enabled: false{% if context.mcp %}
