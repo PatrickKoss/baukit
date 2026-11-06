@@ -99,6 +99,8 @@ export interface OrganizationSummary {
   readonly assignedSeats: number;
   /** Matches the latest `organization.updated` event, or 0 before the first. */
   readonly revision: number;
+  readonly ssoConnectionActive: boolean;
+  readonly directorySyncActive: boolean;
 }
 
 export type OrganizationRole = 'owner' | 'admin' | 'billing' | 'member';

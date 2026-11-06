@@ -80,6 +80,8 @@ it('matches recorded hub credit and organization responses', () => {
     paidQuantity: 4,
     assignedSeats: 1,
     revision: 1,
+    ssoConnectionActive: true,
+    directorySyncActive: false,
   };
   expect(body('creditBalance')).toEqual(balance);
   expect(body('reservationPending')).toEqual(pending);
@@ -94,6 +96,8 @@ it('matches recorded hub credit and organization responses', () => {
     paidQuantity: summary.paidQuantity,
     assignedSeats: summary.assignedSeats,
     revision: summary.revision,
+    ssoConnectionActive: false,
+    directorySyncActive: summary.directorySyncActive,
   };
   expect(body('organizationSummaryWithoutName')).toStrictEqual(withoutName);
 });

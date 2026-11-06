@@ -5,6 +5,14 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## Unreleased
+
+### Upgrade steps
+
+#### Organization SSO and directory state
+
+`OrganizationSummary` in `baukit-suite` gains the required `sso_connection_active` and `directory_sync_active`, and `@baukit/suite-client`'s `OrganizationSummary` gains `ssoConnectionActive` and `directorySyncActive`. Both come from the hub's `GET /platform/v1/organizations/{id}` since Schlüsselbund C34.F, so a product reads organization summaries only from a hub with C34.F. A product that builds `OrganizationSummary` literals in tests sets both fields.
+
 ## v0.18.1
 
 Last verified release train: `v0.18.1` (patch train on top of `v0.18.0`). It takes the Expo SDK 57 patch releases, maps a custom Clerk session-token claim with the sign-in time to `Principal::authenticated_at` so the erasure fence lets a Clerk user who erased a profile sign in again, and fixes three doctor gaps: declared QA Keycloak ports, a declared local PKCE callback port, and template gate steps the product's gate lacks. `baukit-auth` adds `CLERK_SIGN_IN_TIME_CLAIM`; no other crate or package API changed. Baukit's `rust/deny.toml` ignores RUSTSEC-2026-0440 (astral-tokio-tar, unmaintained, no patched release), which only testcontainers 0.28.0 in `baukit-test` pulls in.

@@ -49,6 +49,8 @@ impl ScriptedGrants {
                 paid_quantity: Some(5),
                 assigned_seats: 1,
                 revision,
+                sso_connection_active: false,
+                directory_sync_active: false,
             }),
         );
     }
