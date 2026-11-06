@@ -1230,8 +1230,8 @@ fn is_provider_shaped_realm_only(path: &Path) -> bool {
                 name.starts_with("local.") || name.starts_with("production.")
             })
         || path.file_name().is_some_and(|name| {
-            name.to_string_lossy()
-                .starts_with("check-production-bundle")
+            let name = name.to_string_lossy();
+            name.starts_with("check-production-bundle") || name == "sign-in-config.test.mjs"
         })
 }
 
@@ -1542,6 +1542,7 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
         }
         validate_frontend_capability(root, "mobile", &dependencies, &mut successes, &mut failures)?;
         validate_mobile_router_configuration(root, &mut successes, &mut failures)?;
+        validate_mobile_qa_build_flag(root, &mut failures)?;
         if manifest.capabilities.auth.is_some() {
             doctor_layout::validate_mobile_auth_wiring(root, &manifest, &mut failures)?;
         }
@@ -1552,7 +1553,11 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
             dependencies.push("@baukit/analytics-core");
         }
         if manifest.capabilities.auth.is_some() {
-            dependencies.extend(EXPECTED_WEB_AUTH_DEPENDENCIES);
+            dependencies.extend(if web_renders_expo_routes(root)? {
+                EXPECTED_MOBILE_AUTH_DEPENDENCIES
+            } else {
+                EXPECTED_WEB_AUTH_DEPENDENCIES
+            });
         }
         validate_frontend_capability(root, "web", &dependencies, &mut successes, &mut failures)?;
     }
@@ -1816,7 +1821,6 @@ fn validate_port_configuration(
     if manifest.capabilities.mobile {
         expected.extend([
             ("mobile/.env.example", format!("localhost:{}", ports.api)),
-            ("mobile/app.config.ts", format!("localhost:{}", ports.api)),
             ("mobile/src/api.ts", format!("localhost:{}", ports.api)),
         ]);
         if oidc_clients_use_bundled_keycloak(root, manifest)? {
@@ -2398,23 +2402,38 @@ const QA_KEYCLOAK_SCRIPTS: [&str; 5] = [
     "mobile/scripts/qa/android-env.sh",
 ];
 
+const KEYCLOAK_PORT_VARIABLE_SUFFIX: &str = "_KEYCLOAK_PORT";
+
+/// The defaults of `${NAME_KEYCLOAK_PORT:-<port>}` expansions. A default that
+/// nests another expansion is skipped, since the inner one carries the port.
+fn qa_keycloak_port_defaults(source: &str) -> Vec<Option<u16>> {
+    source
+        .match_indices("${")
+        .filter_map(|(start, _)| {
+            let (name, default) = source[start + 2..].split_once(":-")?;
+            let keycloak_port_variable = name.ends_with(KEYCLOAK_PORT_VARIABLE_SUFFIX)
+                && name.chars().all(|character| {
+                    character.is_ascii_uppercase() || character.is_ascii_digit() || character == '_'
+                });
+            if !keycloak_port_variable || default.starts_with("${") {
+                return None;
+            }
+            let digits = default
+                .chars()
+                .take_while(char::is_ascii_digit)
+                .collect::<String>();
+            Some(digits.parse::<u16>().ok())
+        })
+        .collect()
+}
+
 fn has_mismatched_qa_keycloak_port(source: &str, declared: &PortConfiguration) -> bool {
     let accepted = |port: u16| {
         port == QA_KEYCLOAK_PORT
             || port == declared.keycloak
             || declared.keycloak_extra.contains(&port)
     };
-    let ports = source
-        .split(QA_KEYCLOAK_PORT_VARIABLE)
-        .skip(1)
-        .map(|tail| {
-            tail.chars()
-                .take_while(char::is_ascii_digit)
-                .collect::<String>()
-                .parse::<u16>()
-                .ok()
-        })
-        .collect::<Vec<_>>();
+    let ports = qa_keycloak_port_defaults(source);
     ports.is_empty() || ports.iter().any(|port| !port.is_some_and(accepted))
 }
 
@@ -2494,24 +2513,22 @@ fn validate_auth_provider(
             ));
         }
     }
+    let native_dependency = match provider {
+        AuthProvider::Clerk => "@clerk/expo",
+        _ => "@baukit/auth-native",
+    };
+    let web_dependency = if web_renders_expo_routes(root)? {
+        native_dependency
+    } else {
+        match provider {
+            AuthProvider::Clerk => "@clerk/clerk-js",
+            AuthProvider::Workos => "@workos-inc/authkit-js",
+            AuthProvider::Oidc => "@baukit/auth-web",
+        }
+    };
     for (enabled, directory, dependency) in [
-        (
-            manifest.capabilities.web,
-            "web",
-            match provider {
-                AuthProvider::Clerk => "@clerk/clerk-js",
-                AuthProvider::Workos => "@workos-inc/authkit-js",
-                AuthProvider::Oidc => "@baukit/auth-web",
-            },
-        ),
-        (
-            manifest.capabilities.mobile,
-            "mobile",
-            match provider {
-                AuthProvider::Clerk => "@clerk/expo",
-                _ => "@baukit/auth-native",
-            },
-        ),
+        (manifest.capabilities.web, "web", web_dependency),
+        (manifest.capabilities.mobile, "mobile", native_dependency),
     ] {
         if !enabled {
             continue;
@@ -2544,6 +2561,20 @@ const WORKOS_MOBILE_SETTINGS: [&str; 3] = [
     "EXPO_PUBLIC_WORKOS_REDIRECT_URI",
 ];
 const MOBILE_ENV_FILES: [&str; 2] = ["mobile/.env.example", "mobile/.env"];
+
+const QA_BUILD_FLAG: &str = "BAUKIT_QA_BUILD";
+
+fn validate_mobile_qa_build_flag(root: &Path, failures: &mut Vec<String>) -> Result<()> {
+    for relative in MOBILE_ENV_FILES {
+        let path = root.join(relative);
+        if path.is_file() && declares_env_assignment(&fs::read_to_string(path)?, QA_BUILD_FLAG) {
+            failures.push(format!(
+                "{relative} sets `{QA_BUILD_FLAG}`; Expo loads it into every export, so a production bundle would sign in locally. Set it only in the QA scripts' shell"
+            ));
+        }
+    }
+    Ok(())
+}
 
 fn validate_workos_mobile_configuration(root: &Path, failures: &mut Vec<String>) -> Result<()> {
     let config_path = root.join("mobile/app.config.ts");
@@ -2738,6 +2769,26 @@ struct PackageDependencies {
     dependencies: BTreeMap<String, String>,
     #[serde(default, rename = "devDependencies")]
     dev_dependencies: BTreeMap<String, String>,
+}
+
+const EXPO_WEB_SHAPE_DEPENDENCY: &str = "expo-router";
+/// Present in a Vite web app only; a web app that renders the Expo routes has its own client.
+pub(crate) const VITE_WEB_ONLY_FILES: &[&str] = &["web/src/api.ts"];
+
+/// True when `web/` is the Expo web build: a Vite app that renders the mobile
+/// Expo Router routes, so sign-in and API calls run through the mobile code.
+pub(crate) fn web_renders_expo_routes(root: &Path) -> Result<bool> {
+    let package_path = root.join("web/package.json");
+    if !package_path.is_file() {
+        return Ok(false);
+    }
+    let package = fs::read_to_string(&package_path)
+        .with_context(|| format!("could not read {}", package_path.display()))?;
+    let sections: PackageDependencies = serde_json::from_str(&package)
+        .with_context(|| format!("could not parse {}", package_path.display()))?;
+    Ok(sections
+        .dependencies
+        .contains_key(EXPO_WEB_SHAPE_DEPENDENCY))
 }
 
 #[derive(Deserialize)]
@@ -3100,8 +3151,8 @@ mod doctor_tests {
     use super::{
         Capabilities, DoctorCommandOutput, DoctorHost, diagnose_docker, diagnose_ssh_agent,
         has_mismatched_loopback_port, probe_git_dependency, pwa_app_directory,
-        resolve_makefile_variables, validate_mobile_router_configuration,
-        validate_pwa_worker_build,
+        resolve_makefile_variables, validate_mobile_qa_build_flag,
+        validate_mobile_router_configuration, validate_pwa_worker_build,
     };
 
     struct ExpectedCommand {
@@ -3172,6 +3223,33 @@ mod doctor_tests {
             code: Some(code),
             stderr: String::new(),
         })
+    }
+
+    #[test]
+    fn mobile_env_files_must_not_set_the_qa_build_flag() -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        fs::create_dir(root.path().join("mobile"))?;
+        fs::write(
+            root.path().join("mobile/.env.example"),
+            "EXPO_PUBLIC_API_URL=http://localhost:8080\nBAUKIT_QA_BUILD_NOTE=1\n",
+        )?;
+        let mut failures = Vec::new();
+        validate_mobile_qa_build_flag(root.path(), &mut failures)?;
+        assert!(failures.is_empty(), "{failures:?}");
+
+        fs::write(
+            root.path().join("mobile/.env"),
+            "export BAUKIT_QA_BUILD=1\n",
+        )?;
+        fs::write(
+            root.path().join("mobile/.env.example"),
+            "BAUKIT_QA_BUILD=\n",
+        )?;
+        validate_mobile_qa_build_flag(root.path(), &mut failures)?;
+        assert_eq!(failures.len(), 2, "{failures:?}");
+        assert!(failures[0].starts_with("mobile/.env.example sets `BAUKIT_QA_BUILD`"));
+        assert!(failures[1].starts_with("mobile/.env sets `BAUKIT_QA_BUILD`"));
+        Ok(())
     }
 
     #[test]

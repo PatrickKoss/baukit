@@ -2,6 +2,7 @@
 
 import argparse
 import re
+import sys
 from pathlib import Path
 
 
@@ -37,6 +38,17 @@ def reconcile(example_path: Path, env_path: Path) -> list[str]:
     return [key.decode("ascii") for key, _ in missing]
 
 
+def stale_keys(example_path: Path, env_path: Path) -> list[str]:
+    if not env_path.exists():
+        return []
+    example_keys = set(assignments(example_path.read_bytes()))
+    return [
+        key.decode("ascii")
+        for key in assignments(env_path.read_bytes())
+        if key not in example_keys
+    ]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Append assignments missing from a local environment file."
@@ -44,6 +56,11 @@ def main() -> None:
     parser.add_argument("example", type=Path)
     parser.add_argument("env", type=Path)
     args = parser.parse_args()
+    for key in stale_keys(args.example, args.env):
+        print(
+            f"warning: {args.env} sets {key}, which {args.example} no longer lists",
+            file=sys.stderr,
+        )
     for key in reconcile(args.example, args.env):
         print(f"added {key}")
 

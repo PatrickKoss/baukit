@@ -6,7 +6,7 @@
 
 | Lane | Steps in order |
 | --- | --- |
-| fast | openapi, rust-fmt, migrations, mcp-drift, scripts-tests, markdown-links, preflight, metric-names, spec-purposes |
+| fast | openapi, rust-fmt, migrations, mcp-drift, scripts-tests, markdown-links, preflight, baukit-doctor, metric-names, spec-purposes |
 | backend | rust-clippy, rust-msrv, rust-tests, rust-doctests |
 | images | images |
 | web | web-install, web-build, web-lint, web-unit, web-service-worker, {% if context.auth_enabled and not context.auth_oidc %}web-bundle, {% endif %}playwright, webkit-repeats |

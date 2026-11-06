@@ -5,6 +5,45 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.18.2
+
+Last verified release train: `v0.18.2` (patch train on top of `v0.18.1`). `baukit-suite` and `@baukit/suite-client` read the hub's organization SSO and directory-sync state. The templates keep local sign-in and loopback URLs out of production bundles, bound every adb call in the Android QA setup, and warn about stale `.env` keys. Doctor accepts nested QA Keycloak port variables and the Expo web shape. The templates drop all 24 Expo SDK 57 `minimumReleaseAgeExclude` entries. At 09:41 UTC on 2026-11-06, a fresh render installed without them and pnpm listed none as inside its one-day window.
+
+### Upgrade steps
+
+Follow the sections in this order, starting from a product on 0.18.1. Render a fresh product with the same capabilities (`baukit new`) at v0.18.2 to copy files from.
+
+#### Bump the pins
+
+1. Set every `baukit-*` crate to `=0.18.2` and every `@baukit/*` package to `0.18.2`, and set `baukit.toml`'s template version to `0.18.2`.
+2. Strict products move the Baukit clone in `scripts/quality-gate.sh` to `git clone --branch v0.18.2`. A product whose gate also pins `baukit_commit` sets it to the `v0.18.2` tag's commit in the same change. Two products missed these on 0.18.1, and their gates kept testing the old templates.
+3. Mobile products delete the `minimumReleaseAgeExclude` list from `mobile/pnpm-workspace.yaml`. The Expo SDK 57 patch releases are past pnpm's one-day window.
+4. Refresh `backend/Cargo.lock` with `cargo update -p baukit-core` (or any pinned crate) and the pnpm lockfiles with `corepack pnpm@12.9.1 install`.
+
+#### Organization SSO and directory state
+
+`OrganizationSummary` in `baukit-suite` gains the required `sso_connection_active` and `directory_sync_active`, and `@baukit/suite-client`'s `OrganizationSummary` gains `ssoConnectionActive` and `directorySyncActive`. Both come from the hub's `GET /platform/v1/organizations/{id}` since Schlüsselbund C34.F, so a product reads organization summaries only from a hub with C34.F. A product that builds `OrganizationSummary` literals in tests sets both fields.
+
+#### Local sign-in out of production bundles
+
+The `.18` product tasks found four ways local sign-in or local URLs reached a production bundle, and the templates close each one. A Clerk or WorkOS product takes these steps (an OIDC product takes steps 1, 2 and 5):
+
+1. Copy `mobile/scripts/qa-build-flag.mjs` and `mobile/scripts/qa-build-flag.test.mjs` from a fresh render, and the new `metro.config.js` head: it imports `expo/metro-config.js`, calls `assertQaBuildFlagFromShell(import.meta.dirname)` and uses `import.meta.dirname` instead of `__dirname`. Metro now refuses to bundle when `mobile/.env`, `.env.local` or a `.env.<mode>[.local]` file sets `BAUKIT_QA_BUILD`, because Expo loads those files into every export (LEI.18, HEB.18). A product with its own flag name, such as Hebkit's `HEBKIT_QA_BUILD`, changes `QA_BUILD_FLAG`. The QA scripts keep exporting the flag in their shell.
+2. Remove `BAUKIT_QA_BUILD` from `mobile/.env.example` and `mobile/.env` if it is there. `baukit doctor` now rejects it in both.
+3. In `mobile/app.config.ts`, copy `localSignInBuild` and pass `localOidcIssuer` only when it is true (`NODE_ENV` is not `production`, or `BAUKIT_QA_BUILD=1`), and set `apiBaseUrl` only when `EXPO_PUBLIC_API_URL` is set (SLS.18, KS.18). The loopback fallback stays in `mobile/src/api.ts` and `mobile/src/delete-profile.ts` under `__DEV__`. A product without sign-in makes the same `apiBaseUrl` change, and its `mobile/src/api.ts` now falls back to the loopback API only under `__DEV__`. Doctor no longer looks for the API port in `mobile/app.config.ts`.
+4. Copy `mobile/scripts/check-production-bundle.mjs`, `check-production-bundle.test.mjs` and the new `mobile/scripts/sign-in-config.test.mjs`, and add both new tests to the `test` script in `mobile/package.json`. The bundle check now exports with `--clear` in a private Metro cache (a cached transform hid a leak in KS.18), keeps `EXPO_PUBLIC_LOCAL_OIDC_ISSUER` and the rest of `mobile/.env`, falls back to the `.env.example` values when no `mobile/.env` exists, scans the Expo web export when the Expo app hosts the PWA, and scans files copied from `mobile/public/` as unmapped code instead of failing on their missing source map.
+5. Standard-profile products copy the `Check that production bundles carry no local sign-in` step into the `mobile` job of `.github/workflows/ci.yml`. Strict products already run it as `mobile-bundle`.
+
+The web template needs no change: `web/vite.config.ts` doesn't call `loadEnv`, and `web/src/auth.ts` keys on Vite's `--mode`. A product whose `vite.config.ts` reads its QA flag through `loadEnv` (HEB.18) reads it from `process.env` instead.
+
+#### Doctor, bounded adb and setup warnings
+
+1. Copy `scripts/reconcile-env.py` and `scripts/reconcile-env.test.py` from a fresh render. `sh scripts/setup.sh` now prints a warning for each local `.env` key its `.env.example` no longer lists. Delete those keys by hand.
+2. Mobile products copy `mobile/scripts/qa/android-adb.py`, `mobile/scripts/qa/android-env.sh` and `mobile/scripts/qa/test_android.py`. Every adb call in the setup loop now times out after `BAUKIT_QA_ADB_TIMEOUT_SECONDS` (default 60). Device probes keep 10 seconds.
+3. Doctor now accepts `${BAUKIT_QA_KEYCLOAK_PORT:-${PRODUCT_KEYCLOAK_PORT:-18081}}` when the inner default is the declared port. Products that copied the plain form need no change.
+4. An Expo web build (`expo-router` in `web/package.json`) no longer needs `web/src/api.ts`, the OIDC Vite auth files (`web/src/auth.ts`, `web/src/auth.test.ts`, `web/src/local-data.ts`, `web/src/persistence-lifecycle.ts`) or the web auth SDK. Doctor expects the mobile auth SDK (`@clerk/expo` or `@baukit/auth-native`) and `EXPECTED_MOBILE_AUTH_DEPENDENCIES` in `web/package.json` instead. A product that kept those files only for tests may delete them.
+5. Doctor runs in the gate now. Strict products copy the `baukit-doctor fast - always -` line into the step list of `scripts/quality-gate.sh` and the `step_baukit_doctor` function, which builds the CLI from the pinned Baukit checkout with `cargo run --locked`. Doctor fails a strict gate that lacks the step. Standard products copy the `baukit-doctor` job into `.github/workflows/ci.yml`. A product that already runs doctor as its own step drops that step to avoid running it twice.
+
 ## v0.18.1
 
 Last verified release train: `v0.18.1` (patch train on top of `v0.18.0`). It takes the Expo SDK 57 patch releases, maps a custom Clerk session-token claim with the sign-in time to `Principal::authenticated_at` so the erasure fence lets a Clerk user who erased a profile sign in again, and fixes three doctor gaps: declared QA Keycloak ports, a declared local PKCE callback port, and template gate steps the product's gate lacks. `baukit-auth` adds `CLERK_SIGN_IN_TIME_CLAIM`; no other crate or package API changed. Baukit's `rust/deny.toml` ignores RUSTSEC-2026-0440 (astral-tokio-tar, unmaintained, no patched release), which only testcontainers 0.28.0 in `baukit-test` pulls in.

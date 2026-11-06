@@ -1071,17 +1071,15 @@ fn clerk_product(root: &Path, declarations: &str) -> anyhow::Result<()> {
 }
 
 fn use_qa_keycloak_port(root: &Path, port: u16) -> anyhow::Result<()> {
+    use_qa_keycloak_expansion(root, &format!("${{BAUKIT_QA_KEYCLOAK_PORT:-{port}}}"))
+}
+
+fn use_qa_keycloak_expansion(root: &Path, expansion: &str) -> anyhow::Result<()> {
     for relative in QA_KEYCLOAK_SCRIPTS {
         let path = root.join(relative);
         let source = fs::read_to_string(&path)?;
         assert!(source.contains(QA_KEYCLOAK_DEFAULT), "{relative}");
-        fs::write(
-            path,
-            source.replace(
-                QA_KEYCLOAK_DEFAULT,
-                &format!("${{BAUKIT_QA_KEYCLOAK_PORT:-{port}}}"),
-            ),
-        )?;
+        fs::write(path, source.replace(QA_KEYCLOAK_DEFAULT, expansion))?;
     }
     Ok(())
 }
@@ -1120,6 +1118,47 @@ fn doctor_rejects_a_qa_keycloak_on_an_undeclared_port() -> anyhow::Result<()> {
         error.contains("mobile/scripts/qa/services.sh") && error.contains("18081"),
         "{error}"
     );
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_a_product_keycloak_port_variable_with_a_declared_default() -> anyhow::Result<()> {
+    for expansion in [
+        "${TIEFGANG_KEYCLOAK_PORT:-8281}",
+        "${TIEFGANG_KEYCLOAK_PORT:-${BAUKIT_QA_KEYCLOAK_PORT:-8281}}",
+        "${QA2_KEYCLOAK_PORT:-24003}",
+    ] {
+        let parent = tempfile::tempdir()?;
+        clerk_product(parent.path(), CLERK_PORTS)?;
+        use_qa_keycloak_expansion(parent.path(), expansion)?;
+        doctor(parent.path()).map_err(|error| anyhow::anyhow!("{expansion}: {error}"))?;
+    }
+    Ok(())
+}
+
+#[test]
+fn doctor_rejects_a_product_keycloak_port_variable_without_a_declared_default() -> anyhow::Result<()>
+{
+    for expansion in [
+        "${TIEFGANG_KEYCLOAK_PORT:-24004}",
+        "${TIEFGANG_KEYCLOAK_PORT:-${BAUKIT_QA_KEYCLOAK_PORT:-24004}}",
+        "${TIEFGANG_KEYCLOAK_PORT:-${KEYCLOAK}}",
+        "${tiefgang_KEYCLOAK_PORT:-8281}",
+        "${TIEFGANG_PORT:-8281}",
+        "8281",
+    ] {
+        let parent = tempfile::tempdir()?;
+        clerk_product(parent.path(), CLERK_PORTS)?;
+        use_qa_keycloak_expansion(parent.path(), expansion)?;
+        let error = doctor(parent.path())
+            .err()
+            .ok_or_else(|| anyhow::anyhow!("{expansion} must fail"))?
+            .to_string();
+        assert!(
+            error.contains("mobile/scripts/qa/services.sh"),
+            "{expansion}: {error}"
+        );
+    }
     Ok(())
 }
 
@@ -1193,5 +1232,77 @@ fn doctor_requires_every_template_gate_step_for_the_capabilities() -> anyhow::Re
         error.contains("lacks template steps for the declared capabilities: expo-doctor"),
         "{error}"
     );
+    Ok(())
+}
+
+fn drop_vite_web_client(root: &Path, expo_routes: bool) -> anyhow::Result<()> {
+    let package_path = root.join("web/package.json");
+    let mut package: serde_json::Value = serde_json::from_str(&fs::read_to_string(&package_path)?)?;
+    let dependencies = package["dependencies"]
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("web/package.json has no dependencies"))?;
+    dependencies.remove("@baukit/auth-web");
+    if expo_routes {
+        dependencies.insert("expo-router".to_owned(), "57.0.30".into());
+        dependencies.insert("@baukit/auth-native".to_owned(), "0.18.1".into());
+        dependencies.insert("@clerk/expo".to_owned(), "3.0.0".into());
+    }
+    fs::write(package_path, serde_json::to_string_pretty(&package)?)?;
+    fs::remove_file(root.join("web/src/api.ts"))?;
+    Ok(())
+}
+
+fn drop_oidc_web_client(root: &Path, expo_routes: bool) -> anyhow::Result<()> {
+    generate_new(&options(root))?;
+    drop_vite_web_client(root, expo_routes)?;
+    for relative in [
+        "web/src/auth.ts",
+        "web/src/auth.test.ts",
+        "web/src/local-data.ts",
+        "web/src/persistence-lifecycle.ts",
+    ] {
+        fs::remove_file(root.join(relative))?;
+    }
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_an_oidc_expo_web_build_without_the_vite_auth_files() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    drop_oidc_web_client(parent.path(), true)?;
+    doctor(parent.path())?;
+    Ok(())
+}
+
+#[test]
+fn doctor_requires_the_vite_auth_files_for_an_oidc_vite_web_app() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    drop_oidc_web_client(parent.path(), false)?;
+    let error = doctor(parent.path())
+        .expect_err("an OIDC Vite web app without its auth files must fail")
+        .to_string();
+    assert!(error.contains("web/src/auth.ts"), "{error}");
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_an_expo_web_build_without_the_vite_client() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    clerk_product(parent.path(), CLERK_PORTS)?;
+    drop_vite_web_client(parent.path(), true)?;
+    doctor(parent.path())?;
+    Ok(())
+}
+
+#[test]
+fn doctor_requires_the_vite_client_for_a_vite_web_app() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    clerk_product(parent.path(), CLERK_PORTS)?;
+    drop_vite_web_client(parent.path(), false)?;
+    let error = doctor(parent.path())
+        .expect_err("a Vite web app without its client must fail")
+        .to_string();
+    assert!(error.contains("web/src/api.ts"), "{error}");
+    assert!(error.contains("`@baukit/auth-web`"), "{error}");
     Ok(())
 }

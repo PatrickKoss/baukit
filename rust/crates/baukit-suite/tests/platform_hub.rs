@@ -605,6 +605,8 @@ async fn organization_summary_reads_recorded_responses() -> TestResult {
             paid_quantity: Some(4),
             assigned_seats: 1,
             revision: 1,
+            sso_connection_active: true,
+            directory_sync_active: false,
         }
     );
     let older = organizations.summary(id).await?;
@@ -613,6 +615,7 @@ async fn organization_summary_reads_recorded_responses() -> TestResult {
         older,
         OrganizationSummary {
             name: None,
+            sso_connection_active: false,
             ..summary
         }
     );

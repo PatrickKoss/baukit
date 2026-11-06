@@ -241,17 +241,17 @@ fi
 apk="$root/mobile/android/app/build/outputs/apk/release/app-release.apk"
 [[ -f "$apk" ]] || { echo "qa: missing $apk; run 'make qa-android-build'" >&2; exit 1; }
 for serial in "${serials[@]}"; do
-  "$adb" -s "$serial" shell settings put global window_animation_scale 0
-  "$adb" -s "$serial" shell settings put global transition_animation_scale 0
-  "$adb" -s "$serial" shell settings put global animator_duration_scale 0
-  "$adb" -s "$serial" reverse "tcp:${BAUKIT_QA_API_PORT:-18080}" "tcp:${BAUKIT_QA_API_PORT:-18080}"
-{% if context.auth_enabled %}  "$adb" -s "$serial" reverse "tcp:${BAUKIT_QA_KEYCLOAK_PORT:-18081}" "tcp:${BAUKIT_QA_KEYCLOAK_PORT:-18081}"
-  "$adb" -s "$serial" shell am force-stop com.android.chrome
-  "$adb" -s "$serial" shell 'echo "chrome --disable-fre --no-first-run --no-default-browser-check" > /data/local/tmp/chrome-command-line'
-  "$adb" -s "$serial" shell settings put global debug_app com.android.chrome
+  adb_bounded -s "$serial" shell settings put global window_animation_scale 0
+  adb_bounded -s "$serial" shell settings put global transition_animation_scale 0
+  adb_bounded -s "$serial" shell settings put global animator_duration_scale 0
+  adb_bounded -s "$serial" reverse "tcp:${BAUKIT_QA_API_PORT:-18080}" "tcp:${BAUKIT_QA_API_PORT:-18080}"
+{% if context.auth_enabled %}  adb_bounded -s "$serial" reverse "tcp:${BAUKIT_QA_KEYCLOAK_PORT:-18081}" "tcp:${BAUKIT_QA_KEYCLOAK_PORT:-18081}"
+  adb_bounded -s "$serial" shell am force-stop com.android.chrome
+  adb_bounded -s "$serial" shell 'echo "chrome --disable-fre --no-first-run --no-default-browser-check" > /data/local/tmp/chrome-command-line'
+  adb_bounded -s "$serial" shell settings put global debug_app com.android.chrome
 {% endif %}
-  "$adb" -s "$serial" install -r "$apk" >/dev/null
-  "$adb" -s "$serial" shell am start -n dev.baukit.{{ context.app_crate }}/.MainActivity -W >/dev/null
+  adb_bounded -s "$serial" install -r "$apk" >/dev/null
+  adb_bounded -s "$serial" shell am start -n dev.baukit.{{ context.app_crate }}/.MainActivity -W >/dev/null
 done
 
 echo "qa: Android app ready on ${serials[*]}"

@@ -5,32 +5,6 @@ allowBuilds:
 catalog:
   expo-constants: 57.0.23
 
-minimumReleaseAgeExclude:
-  - '@expo/cli@57.0.33'
-  - '@expo/config-plugins@57.0.12'
-  - '@expo/config@57.0.11'
-  - '@expo/env@2.4.4'
-  - '@expo/fingerprint@0.20.15'
-  - '@expo/image-utils@0.11.7'
-  - '@expo/inline-modules@0.1.9'
-  - '@expo/local-build-cache-provider@57.0.10'
-  - '@expo/log-box@57.0.5'
-  - '@expo/metro-config@57.0.14'
-  - '@expo/metro-runtime@57.0.18'
-  - '@expo/plist@0.8.2'
-  - '@expo/prebuild-config@57.0.20'
-  - '@expo/require-utils@57.0.7'
-  - '@expo/router-server@57.0.15'
-  - '@expo/schema-utils@57.0.3'
-  - 'babel-preset-expo@57.0.17'
-  - 'expo-asset@57.0.21'
-  - 'expo-constants@57.0.23'
-  - 'expo-glass-effect@57.0.5'
-  - 'expo-modules-autolinking@57.0.17'
-  - 'expo-modules-core@57.0.25'
-  - 'expo-router@57.0.30'
-  - 'expo@57.0.32'
-
 overrides:
   '@react-native/metro-config': 0.86.3
   expo-constants: 'catalog:'

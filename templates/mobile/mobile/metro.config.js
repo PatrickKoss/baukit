@@ -1,10 +1,13 @@
 import path from 'node:path';
-import metroConfig from 'expo/metro-config';
+import metroConfig from 'expo/metro-config.js';
+
+import { assertQaBuildFlagFromShell } from './scripts/qa-build-flag.mjs';
 
 const { getDefaultConfig } = metroConfig;
 
-const repositoryRoot = path.resolve(__dirname, '..');
-const config = getDefaultConfig(__dirname);
+assertQaBuildFlagFromShell(import.meta.dirname);
+const repositoryRoot = path.resolve(import.meta.dirname, '..');
+const config = getDefaultConfig(import.meta.dirname);
 {% if context.pwa and not context.web %}config.resolver.assetExts.push('wasm');
 {% endif %}const existingBlockList = config.resolver.blockList;
 const ignoredSiblings = new RegExp(
@@ -21,8 +24,8 @@ config.resolver.blockList = [
 // the bundle carries neither. QA builds keep signing in against the local realm.
 const productionSignIn =
   process.env.NODE_ENV === 'production' && process.env.BAUKIT_QA_BUILD !== '1';
-const localSignInAdapter = path.join(__dirname, 'src', 'sign-in', 'local.ts');
-const productionSignInAdapter = path.join(__dirname, 'src', 'sign-in', 'production.ts');
+const localSignInAdapter = path.join(import.meta.dirname, 'src', 'sign-in', 'local.ts');
+const productionSignInAdapter = path.join(import.meta.dirname, 'src', 'sign-in', 'production.ts');
 const upstreamResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   const resolved = (upstreamResolveRequest ?? context.resolveRequest)(context, moduleName, platform);

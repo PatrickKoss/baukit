@@ -306,7 +306,9 @@ A hub before C21 sends `available`, `pools`, `grant.granted`, `grant.used` and
 `GET /platform/v1/organizations/{id}` and the `organizations:read` scope.
 `OrganizationSummary` holds the display `name`, `status`, the caller product's
 `tier`, `features`, `paid_quantity` (`None` without a seat limit),
-`assigned_seats` and `revision`. `name` is `None` from a hub before
+`assigned_seats`, `revision`, and `sso_connection_active` and
+`directory_sync_active`, which say whether the organization has an active
+WorkOS SSO connection and directory sync. `name` is `None` from a hub before
 Schlüsselbund C16. Membership products have no seats, so `assigned_seats` is 0
 for them.
 An unknown or invisible organization returns `OrganizationError::NotFound`. A

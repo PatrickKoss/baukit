@@ -226,7 +226,7 @@
     },
     "organizationSummary": {
       "status": 200,
-      "source": "backend/tests/platform.rs organization summary test (business.runtime_analyzer.professional, quantity 4, one seat) and PlatformOrganizationDto in backend/openapi.json; name from Schlüsselbund task/c16 51805a34 docs/platform-api.md#business-organizations and the summary test in backend/tests/platform.rs",
+      "source": "backend/tests/platform.rs organization summary test (business.runtime_analyzer.professional, quantity 4, one seat) and PlatformOrganizationDto in backend/openapi.json; ssoConnectionActive and directorySyncActive from Schlüsselbund C34.F; name from Schlüsselbund task/c16 51805a34 docs/platform-api.md#business-organizations and the summary test in backend/tests/platform.rs",
       "body": {
         "organizationId": "018f1234-5678-7abc-8def-012345678901",
         "name": "Summary",
@@ -236,7 +236,9 @@
         "features": [],
         "paidQuantity": 4,
         "assignedSeats": 1,
-        "revision": 1
+        "revision": 1,
+        "ssoConnectionActive": true,
+        "directorySyncActive": false
       }
     },
     "organizationSummaryWithoutName": {
@@ -250,7 +252,9 @@
         "features": [],
         "paidQuantity": 4,
         "assignedSeats": 1,
-        "revision": 1
+        "revision": 1,
+        "ssoConnectionActive": false,
+        "directorySyncActive": false
       }
     },
     "organizationNotFound": {

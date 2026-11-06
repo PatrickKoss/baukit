@@ -29,6 +29,10 @@ pub struct OrganizationSummary {
     pub assigned_seats: u64,
     /// Matches the latest `organization.updated` event, or 0 before the first.
     pub revision: u64,
+    /// The organization has an active WorkOS SSO connection.
+    pub sso_connection_active: bool,
+    /// The organization has an active WorkOS directory sync.
+    pub directory_sync_active: bool,
 }
 
 /// A member's role in the organization, independent of the product.
