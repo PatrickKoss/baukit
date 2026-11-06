@@ -270,6 +270,7 @@ fn known_tokens(capabilities: &Capabilities, quality: &QualityManifest) -> Vec<&
         "scripts-tests",
         "markdown-links",
         "preflight",
+        "baukit-doctor",
         "metric-names",
     ];
     if capabilities.backend {

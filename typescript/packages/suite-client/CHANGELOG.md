@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## 0.18.2
+
+### Patch Changes
+
+- Release the coordinated baukit 0.18.2 train.
+- 60a8718: `OrganizationSummary` gains the required `ssoConnectionActive` and `directorySyncActive` booleans from the hub's organization summary (Schlüsselbund C34.F).
+- Updated dependencies
+  - @baukit/integrations-client@0.18.2
+  - @baukit/localization-core@0.18.2
+
 ## 0.18.1
 
 ### Patch Changes

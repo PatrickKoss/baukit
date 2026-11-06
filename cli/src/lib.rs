@@ -2513,24 +2513,22 @@ fn validate_auth_provider(
             ));
         }
     }
+    let native_dependency = match provider {
+        AuthProvider::Clerk => "@clerk/expo",
+        _ => "@baukit/auth-native",
+    };
+    let web_dependency = if web_renders_expo_routes(root)? {
+        native_dependency
+    } else {
+        match provider {
+            AuthProvider::Clerk => "@clerk/clerk-js",
+            AuthProvider::Workos => "@workos-inc/authkit-js",
+            AuthProvider::Oidc => "@baukit/auth-web",
+        }
+    };
     for (enabled, directory, dependency) in [
-        (
-            manifest.capabilities.web,
-            "web",
-            match provider {
-                AuthProvider::Clerk => "@clerk/clerk-js",
-                AuthProvider::Workos => "@workos-inc/authkit-js",
-                AuthProvider::Oidc => "@baukit/auth-web",
-            },
-        ),
-        (
-            manifest.capabilities.mobile,
-            "mobile",
-            match provider {
-                AuthProvider::Clerk => "@clerk/expo",
-                _ => "@baukit/auth-native",
-            },
-        ),
+        (manifest.capabilities.web, "web", web_dependency),
+        (manifest.capabilities.mobile, "mobile", native_dependency),
     ] {
         if !enabled {
             continue;

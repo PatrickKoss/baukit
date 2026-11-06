@@ -18,7 +18,18 @@ jobs:
 {% if context.quality_strict %}      - run: python3 scripts/check-markdown-links.test.py
       - run: python3 scripts/check-markdown-links.py README.md CLAUDE.md AGENTS.md docs
 {% endif %}
-{% if context.quality_strict %}  strict-quality:
+{% if not context.quality_strict %}  baukit-doctor:
+    name: Baukit doctor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check the product with baukit doctor
+        run: |
+          git clone --branch v{{ context.template_version }} --depth 1 https://github.com/PatrickKoss/baukit.git "$RUNNER_TEMP/baukit"
+          cargo run --quiet --locked --manifest-path "$RUNNER_TEMP/baukit/cli/Cargo.toml" --bin baukit -- doctor
+
+{% endif %}{% if context.quality_strict %}  strict-quality:
     name: Strict quality profile
     runs-on: ubuntu-latest
     timeout-minutes: 90

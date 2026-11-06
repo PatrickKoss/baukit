@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.18.2
+
+### Patch Changes
+
+- Release the coordinated baukit 0.18.2 train.
+- Updated dependencies
+  - @baukit/purchases-core@0.18.2
+
 ## 0.18.1
 
 ### Patch Changes

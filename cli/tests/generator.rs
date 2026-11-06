@@ -1125,6 +1125,7 @@ fn combined_generation_applies_port_offset_to_host_ports() -> anyhow::Result<()>
             "mobile/.env.example",
             "EXPO_PUBLIC_OIDC_ISSUER=http://localhost:8181/realms/offset-app",
         ),
+        ("mobile/src/api.ts", "http://localhost:8180"),
         (
             "mobile/app.config.ts",
             "http://localhost:8181/realms/${PRODUCT_NAME}",
@@ -1968,6 +1969,12 @@ fn doctor_rejects_drift_in_product_constants_and_url_defaults() -> anyhow::Resul
         (
             "mobile/app.config.ts",
             "localhost:8181",
+            "localhost:9999",
+            "port offset 100",
+        ),
+        (
+            "mobile/src/api.ts",
+            "localhost:8180",
             "localhost:9999",
             "port offset 100",
         ),
@@ -6386,5 +6393,34 @@ fn doctor_checks_workos_mobile_configuration() -> anyhow::Result<()> {
     );
     fs::remove_file(&local_path)?;
     doctor(&root)?;
+    Ok(())
+}
+
+#[test]
+fn both_quality_profiles_run_baukit_doctor() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let standard_root = generate_new(&options(parent.path(), "doctor-standard"))?;
+    let workflow: serde_yaml_ng::Value = serde_yaml_ng::from_str(&fs::read_to_string(
+        standard_root.join(".github/workflows/ci.yml"),
+    )?)?;
+    let steps = workflow["jobs"]["baukit-doctor"]["steps"]
+        .as_sequence()
+        .expect("baukit-doctor CI steps");
+    assert!(steps.iter().any(|step| {
+        step["run"]
+            .as_str()
+            .is_some_and(|run| run.contains("--bin baukit -- doctor"))
+    }));
+
+    let mut strict = options(parent.path(), "doctor-strict");
+    strict.quality = QualityProfile::Strict;
+    let strict_root = generate_new(&strict)?;
+    let workflow: serde_yaml_ng::Value = serde_yaml_ng::from_str(&fs::read_to_string(
+        strict_root.join(".github/workflows/ci.yml"),
+    )?)?;
+    assert!(workflow["jobs"].get("baukit-doctor").is_none());
+    let gate = fs::read_to_string(strict_root.join("scripts/quality-gate.sh"))?;
+    assert!(gate.contains("\nbaukit-doctor fast - always -\n"));
+    assert!(gate.contains("--bin baukit -- doctor"));
     Ok(())
 }

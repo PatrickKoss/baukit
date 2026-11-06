@@ -85,7 +85,10 @@ fn expected_files(root: &Path, manifest: &Manifest) -> Result<ExpectedFiles> {
             expected.insert(format!("{kind}/src/analytics.ts"), kind);
         }
     }
-    if manifest.capabilities.web && manifest.capabilities.auth == Some(AuthProvider::Oidc) {
+    if manifest.capabilities.web
+        && manifest.capabilities.auth == Some(AuthProvider::Oidc)
+        && !web_renders_expo_routes(root)?
+    {
         add_files(&mut expected, "OIDC web", EXPECTED_AUTH_WEB_FILES);
     }
     Ok(expected)

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.18.2] - 2026-11-06
+
 - Metro refuses a `BAUKIT_QA_BUILD` set in a `mobile/.env*` file. The app config passes the local realm only to development and QA builds and `apiBaseUrl` only when `EXPO_PUBLIC_API_URL` is set. `check:bundle` exports with `--clear` and `mobile/.env` loaded, and scans the Expo web export and copied public files.
 
 ## [0.18.1] - 2026-11-05

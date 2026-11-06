@@ -100,6 +100,7 @@ migrations fast - always -
 {% endif %}{% endif %}scripts-tests fast - always -
 markdown-links fast - always -
 preflight fast - always -
+baukit-doctor fast - always -
 metric-names fast - always -
 {% if context.web %}spec-purposes fast - always -
 {% endif %}{% if context.backend %}rust-clippy backend - always -
@@ -143,6 +144,11 @@ step_markdown_links() {
 
 step_preflight() {
   sh scripts/preflight.sh
+}
+
+step_baukit_doctor() {
+  use_baukit_root
+  cargo run --quiet --locked --manifest-path "$baukit_root/cli/Cargo.toml" --bin baukit -- doctor
 }
 
 step_metric_names() {

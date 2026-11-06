@@ -2,9 +2,14 @@
 
 ## [Unreleased]
 
+## [0.18.2] - 2026-11-06
+
 {% if context.mobile %}- Metro refuses to bundle when a `mobile/.env*` file sets `BAUKIT_QA_BUILD`, and the app config passes `apiBaseUrl` only when `EXPO_PUBLIC_API_URL` is set.
 {% endif %}{% if context.mobile and context.auth_enabled and not context.auth_oidc %}- The app config passes the local realm only to development and QA builds. The mobile bundle check exports with a clear Metro cache and `mobile/.env` loaded, scans the Expo web export and copied public files, and runs in the standard profile's CI.
+{% endif %}{% if context.mobile %}- `mobile/pnpm-workspace.yaml` no longer lists the Expo SDK 57 patch releases in `minimumReleaseAgeExclude`. They are past pnpm's one-day window.
 {% endif %}{% if context.mobile %}- Every adb call in the Android QA scripts has a timeout. `BAUKIT_QA_ADB_TIMEOUT_SECONDS` sets it, 60 seconds by default and 10 for device probes.
+{% endif %}{% if context.quality_strict %}- `scripts/quality-gate.sh` runs `baukit doctor` as the `baukit-doctor` step in the `fast` lane.
+{% else %}- `.github/workflows/ci.yml` gains a `baukit-doctor` job that runs `baukit doctor` from the pinned Baukit tag.
 {% endif %}- `scripts/setup.sh` warns about keys in a local `.env` that its `.env.example` no longer lists, and leaves them in place.
 
 

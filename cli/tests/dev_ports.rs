@@ -1245,9 +1245,43 @@ fn drop_vite_web_client(root: &Path, expo_routes: bool) -> anyhow::Result<()> {
     if expo_routes {
         dependencies.insert("expo-router".to_owned(), "57.0.30".into());
         dependencies.insert("@baukit/auth-native".to_owned(), "0.18.1".into());
+        dependencies.insert("@clerk/expo".to_owned(), "3.0.0".into());
     }
     fs::write(package_path, serde_json::to_string_pretty(&package)?)?;
     fs::remove_file(root.join("web/src/api.ts"))?;
+    Ok(())
+}
+
+fn drop_oidc_web_client(root: &Path, expo_routes: bool) -> anyhow::Result<()> {
+    generate_new(&options(root))?;
+    drop_vite_web_client(root, expo_routes)?;
+    for relative in [
+        "web/src/auth.ts",
+        "web/src/auth.test.ts",
+        "web/src/local-data.ts",
+        "web/src/persistence-lifecycle.ts",
+    ] {
+        fs::remove_file(root.join(relative))?;
+    }
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_an_oidc_expo_web_build_without_the_vite_auth_files() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    drop_oidc_web_client(parent.path(), true)?;
+    doctor(parent.path())?;
+    Ok(())
+}
+
+#[test]
+fn doctor_requires_the_vite_auth_files_for_an_oidc_vite_web_app() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    drop_oidc_web_client(parent.path(), false)?;
+    let error = doctor(parent.path())
+        .expect_err("an OIDC Vite web app without its auth files must fail")
+        .to_string();
+    assert!(error.contains("web/src/auth.ts"), "{error}");
     Ok(())
 }
 
