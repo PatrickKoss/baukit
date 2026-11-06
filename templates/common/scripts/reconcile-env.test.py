@@ -37,6 +37,28 @@ class ReconcileEnvTest(unittest.TestCase):
             self.assertNotIn("do-not-print-this", completed.stdout)
             self.assertEqual(completed.stderr, "")
 
+    def test_cli_warns_about_keys_the_example_dropped_without_changing_them(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            example = root / ".env.example"
+            env = root / ".env"
+            example.write_bytes(b"KEPT=1\n")
+            original = b"KEPT=1\nexport STALE=secret-value\n"
+            env.write_bytes(original)
+
+            completed = subprocess.run(
+                [sys.executable, str(SCRIPT), str(example), str(env)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(completed.stdout, "")
+            self.assertIn("STALE", completed.stderr)
+            self.assertIn("no longer lists", completed.stderr)
+            self.assertNotIn("secret-value", completed.stderr)
+            self.assertEqual(env.read_bytes(), original)
+
     def test_preserves_existing_bytes_and_appends_in_example_order(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

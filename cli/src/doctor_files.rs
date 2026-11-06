@@ -9,7 +9,8 @@ use crate::{
     AnalyticsAdapter, AuthProvider, ENV_RECONCILIATION_FILES, EXPECTED_AUTH_WEB_FILES,
     EXPECTED_BACKEND_FILES, EXPECTED_COMMON_FILES, EXPECTED_MOBILE_FILES,
     EXPECTED_STRICT_BACKEND_FILES, EXPECTED_STRICT_FILES, EXPECTED_WEB_FILES,
-    MARKDOWN_LINK_CHECK_FILES, Manifest, QualityProfile, doctor_layout,
+    MARKDOWN_LINK_CHECK_FILES, Manifest, QualityProfile, VITE_WEB_ONLY_FILES, doctor_layout,
+    web_renders_expo_routes,
 };
 
 type ExpectedFiles = BTreeMap<String, &'static str>;
@@ -75,6 +76,11 @@ fn expected_files(root: &Path, manifest: &Manifest) -> Result<ExpectedFiles> {
             continue;
         }
         add_files(&mut expected, kind, files);
+        if kind == "web" && web_renders_expo_routes(root)? {
+            for path in VITE_WEB_ONLY_FILES {
+                expected.remove(*path);
+            }
+        }
         if manifest.capabilities.analytics != AnalyticsAdapter::None {
             expected.insert(format!("{kind}/src/analytics.ts"), kind);
         }

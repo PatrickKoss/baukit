@@ -4,7 +4,9 @@
 
 {% if context.mobile %}- Metro refuses to bundle when a `mobile/.env*` file sets `BAUKIT_QA_BUILD`, and the app config passes `apiBaseUrl` only when `EXPO_PUBLIC_API_URL` is set.
 {% endif %}{% if context.mobile and context.auth_enabled and not context.auth_oidc %}- The app config passes the local realm only to development and QA builds. The mobile bundle check exports with a clear Metro cache and `mobile/.env` loaded, scans the Expo web export and copied public files, and runs in the standard profile's CI.
-{% endif %}
+{% endif %}{% if context.mobile %}- Every adb call in the Android QA scripts has a timeout. `BAUKIT_QA_ADB_TIMEOUT_SECONDS` sets it, 60 seconds by default and 10 for device probes.
+{% endif %}- `scripts/setup.sh` warns about keys in a local `.env` that its `.env.example` no longer lists, and leaves them in place.
+
 
 ## [0.18.1] - 2026-11-05
 

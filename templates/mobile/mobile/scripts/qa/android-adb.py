@@ -10,6 +10,8 @@ import time
 
 
 DEFAULT_PROBE_TIMEOUT = 10
+DEFAULT_COMMAND_TIMEOUT = 60
+ADB_TIMEOUT_SETTING = "BAUKIT_QA_ADB_TIMEOUT_SECONDS"
 DEFAULT_BOOT_TIMEOUT = 360
 DEFAULT_IDLE_TIMEOUT = 180
 DEFAULT_SETTLE_TIMEOUT = 600
@@ -294,7 +296,7 @@ def check_health(adb: str, serial: str, timeout: float, report: Path | None = No
 
 
 def main() -> int:
-    probe_timeout = timeout_setting("BAUKIT_QA_ADB_TIMEOUT_SECONDS", DEFAULT_PROBE_TIMEOUT)
+    probe_timeout = timeout_setting(ADB_TIMEOUT_SETTING, DEFAULT_PROBE_TIMEOUT)
     if sys.argv[1] == "--check-health":
         report = Path(sys.argv[4]) if len(sys.argv) > 4 else None
         return check_health(sys.argv[2], sys.argv[3], probe_timeout, report)
@@ -320,7 +322,8 @@ def main() -> int:
     try:
         if sys.argv[1] == "--wait-for-stop":
             return wait_for_stop(sys.argv[2], sys.argv[3], probe_timeout)
-        return subprocess.run(sys.argv[1:], timeout=probe_timeout, check=False).returncode
+        command_timeout = timeout_setting(ADB_TIMEOUT_SETTING, DEFAULT_COMMAND_TIMEOUT)
+        return subprocess.run(sys.argv[1:], timeout=command_timeout, check=False).returncode
     except subprocess.TimeoutExpired:
         print(f"qa: ADB command timed out: {' '.join(sys.argv[1:])}", file=sys.stderr)
         return 124

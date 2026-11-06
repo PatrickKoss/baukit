@@ -507,6 +507,40 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
 {% else %}            self.assertFalse(any("chrome" in event for event in events))
 {% endif %}
 
+    def test_hanging_app_install_is_bounded(self) -> None:
+        emulator_args = self.root / "emulator-args"
+        self.environment["EMULATOR_ARGS"] = str(emulator_args)
+        self.executable(self.sdk / "platform-tools/adb", r'''
+if [[ "$*" == *'install -r '* ]]; then exec sleep 60; fi
+if [[ "$*" == devices ]]; then printf 'List of devices attached\n'; fi
+if [[ "$*" == *'getprop sys.boot_completed' && -f "$EMULATOR_ARGS" ]]; then echo 1; fi
+if [[ "$*" == *'pidof com.android.systemui' ]]; then echo 321; fi
+if [[ "$*" == *'dumpsys window displays' ]]; then echo '  mCurrentFocus=Window{1 u0 launcher}'; fi
+if [[ "$*" == *'cat /proc/stat' ]]; then printf 'cpu  10 0 10 80 0 0 0 0 0 0\ncpu0 10 0 10 80 0 0 0 0 0 0\n'; fi
+if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/test-qa.avd/snapshots/${@: -1}"; fi
+''')
+        self.executable(self.sdk / "emulator/emulator", 'printf "%s\\n" "$@" -- >> "$EMULATOR_ARGS"\n')
+        self.executable(self.scripts / "services.sh", "exit 0\n")
+        apk = self.root / "mobile/android/app/build/outputs/apk/release/app-release.apk"
+        apk.parent.mkdir(parents=True)
+        apk.touch()
+        started = time.monotonic()
+        result = subprocess.run(
+            ["bash", str(self.scripts / "android-env.sh")],
+            env={
+                **self.environment,
+                "BAUKIT_QA_POLL_SECONDS": "0",
+                "BAUKIT_QA_HEADLESS": "1",
+                "BAUKIT_QA_ANDROID_WIFI": "0",
+                "BAUKIT_QA_ADB_TIMEOUT_SECONDS": "2",
+            },
+            capture_output=True, text=True, check=False, timeout=30,
+        )
+        self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
+        self.assertIn("ADB command timed out", result.stderr)
+        self.assertIn("install -r", result.stderr)
+        self.assertLess(time.monotonic() - started, 30)
+
     def snapshot_name(
         self, gpu: str = "swiftshader_indirect", version: str = "{{ context.template_version }}", features: str = "",
     ) -> str:

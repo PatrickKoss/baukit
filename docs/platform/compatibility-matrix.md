@@ -25,6 +25,13 @@ The `.18` product tasks found four ways local sign-in or local URLs reached a pr
 
 The web template needs no change: `web/vite.config.ts` doesn't call `loadEnv`, and `web/src/auth.ts` keys on Vite's `--mode`. A product whose `vite.config.ts` reads its QA flag through `loadEnv` (HEB.18) reads it from `process.env` instead.
 
+#### Doctor, bounded adb and setup warnings
+
+1. Copy `scripts/reconcile-env.py` and `scripts/reconcile-env.test.py` from a fresh render. `sh scripts/setup.sh` now prints a warning for each local `.env` key its `.env.example` no longer lists. Delete those keys by hand.
+2. Mobile products copy `mobile/scripts/qa/android-adb.py`, `mobile/scripts/qa/android-env.sh` and `mobile/scripts/qa/test_android.py`. Every adb call in the setup loop now times out after `BAUKIT_QA_ADB_TIMEOUT_SECONDS` (default 60). Device probes keep 10 seconds.
+3. Doctor now accepts `${BAUKIT_QA_KEYCLOAK_PORT:-${PRODUCT_KEYCLOAK_PORT:-18081}}` when the inner default is the declared port. Products that copied the plain form need no change.
+4. An Expo web build (`expo-router` in `web/package.json`) no longer needs `web/src/api.ts` or `@baukit/auth-web`. Doctor expects the mobile auth dependencies instead.
+
 ## v0.18.1
 
 Last verified release train: `v0.18.1` (patch train on top of `v0.18.0`). It takes the Expo SDK 57 patch releases, maps a custom Clerk session-token claim with the sign-in time to `Principal::authenticated_at` so the erasure fence lets a Clerk user who erased a profile sign in again, and fixes three doctor gaps: declared QA Keycloak ports, a declared local PKCE callback port, and template gate steps the product's gate lacks. `baukit-auth` adds `CLERK_SIGN_IN_TIME_CLAIM`; no other crate or package API changed. Baukit's `rust/deny.toml` ignores RUSTSEC-2026-0440 (astral-tokio-tar, unmaintained, no patched release), which only testcontainers 0.28.0 in `baukit-test` pulls in.

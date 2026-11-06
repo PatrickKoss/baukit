@@ -1553,7 +1553,11 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
             dependencies.push("@baukit/analytics-core");
         }
         if manifest.capabilities.auth.is_some() {
-            dependencies.extend(EXPECTED_WEB_AUTH_DEPENDENCIES);
+            dependencies.extend(if web_renders_expo_routes(root)? {
+                EXPECTED_MOBILE_AUTH_DEPENDENCIES
+            } else {
+                EXPECTED_WEB_AUTH_DEPENDENCIES
+            });
         }
         validate_frontend_capability(root, "web", &dependencies, &mut successes, &mut failures)?;
     }
@@ -2398,23 +2402,38 @@ const QA_KEYCLOAK_SCRIPTS: [&str; 5] = [
     "mobile/scripts/qa/android-env.sh",
 ];
 
+const KEYCLOAK_PORT_VARIABLE_SUFFIX: &str = "_KEYCLOAK_PORT";
+
+/// The defaults of `${NAME_KEYCLOAK_PORT:-<port>}` expansions. A default that
+/// nests another expansion is skipped, since the inner one carries the port.
+fn qa_keycloak_port_defaults(source: &str) -> Vec<Option<u16>> {
+    source
+        .match_indices("${")
+        .filter_map(|(start, _)| {
+            let (name, default) = source[start + 2..].split_once(":-")?;
+            let keycloak_port_variable = name.ends_with(KEYCLOAK_PORT_VARIABLE_SUFFIX)
+                && name.chars().all(|character| {
+                    character.is_ascii_uppercase() || character.is_ascii_digit() || character == '_'
+                });
+            if !keycloak_port_variable || default.starts_with("${") {
+                return None;
+            }
+            let digits = default
+                .chars()
+                .take_while(char::is_ascii_digit)
+                .collect::<String>();
+            Some(digits.parse::<u16>().ok())
+        })
+        .collect()
+}
+
 fn has_mismatched_qa_keycloak_port(source: &str, declared: &PortConfiguration) -> bool {
     let accepted = |port: u16| {
         port == QA_KEYCLOAK_PORT
             || port == declared.keycloak
             || declared.keycloak_extra.contains(&port)
     };
-    let ports = source
-        .split(QA_KEYCLOAK_PORT_VARIABLE)
-        .skip(1)
-        .map(|tail| {
-            tail.chars()
-                .take_while(char::is_ascii_digit)
-                .collect::<String>()
-                .parse::<u16>()
-                .ok()
-        })
-        .collect::<Vec<_>>();
+    let ports = qa_keycloak_port_defaults(source);
     ports.is_empty() || ports.iter().any(|port| !port.is_some_and(accepted))
 }
 
@@ -2752,6 +2771,26 @@ struct PackageDependencies {
     dependencies: BTreeMap<String, String>,
     #[serde(default, rename = "devDependencies")]
     dev_dependencies: BTreeMap<String, String>,
+}
+
+const EXPO_WEB_SHAPE_DEPENDENCY: &str = "expo-router";
+/// Present in a Vite web app only; a web app that renders the Expo routes has its own client.
+pub(crate) const VITE_WEB_ONLY_FILES: &[&str] = &["web/src/api.ts"];
+
+/// True when `web/` is the Expo web build: a Vite app that renders the mobile
+/// Expo Router routes, so sign-in and API calls run through the mobile code.
+pub(crate) fn web_renders_expo_routes(root: &Path) -> Result<bool> {
+    let package_path = root.join("web/package.json");
+    if !package_path.is_file() {
+        return Ok(false);
+    }
+    let package = fs::read_to_string(&package_path)
+        .with_context(|| format!("could not read {}", package_path.display()))?;
+    let sections: PackageDependencies = serde_json::from_str(&package)
+        .with_context(|| format!("could not parse {}", package_path.display()))?;
+    Ok(sections
+        .dependencies
+        .contains_key(EXPO_WEB_SHAPE_DEPENDENCY))
 }
 
 #[derive(Deserialize)]

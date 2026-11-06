@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - Doctor rejects `BAUKIT_QA_BUILD` in `mobile/.env.example` and `mobile/.env`, and no longer expects the API port in `mobile/app.config.ts`.
+- Doctor accepts a product port variable nested in `${BAUKIT_QA_KEYCLOAK_PORT:-...}` when its default is the declared port, and an Expo web build (`expo-router` in `web/package.json`) no longer needs `web/src/api.ts` or `@baukit/auth-web`.
 
 ## [0.18.1] - 2026-11-05
 
