@@ -8,7 +8,12 @@ export interface Item {
 }
 
 const configuredBaseUrl: unknown = Constants.expoConfig?.extra?.['apiBaseUrl'];
-const baseUrl = typeof configuredBaseUrl === 'string' ? configuredBaseUrl : 'http://localhost:{{ context.api_host_port }}';
+const baseUrl =
+  typeof configuredBaseUrl === 'string'
+    ? configuredBaseUrl
+    : __DEV__
+      ? 'http://localhost:{{ context.api_host_port }}'
+      : '';
 
 const api = createApiRuntime({
   baseUrl,

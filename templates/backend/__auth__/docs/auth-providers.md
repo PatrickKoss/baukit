@@ -226,7 +226,14 @@ Vitest, uses the local adapter. On mobile, `metro.config.js` resolves
 `production`, which `expo export` and release builds set, unless
 `BAUKIT_QA_BUILD=1` marks a QA build that signs in against the local realm.
 Jest, TypeScript and `expo start` see the local adapter. No runtime flag can switch
-a production bundle back to Keycloak.
+a production bundle back to Keycloak. The QA scripts export `BAUKIT_QA_BUILD` in
+their shell. Expo loads every `mobile/.env*` file into each export, so
+`metro.config.js` refuses to bundle when one of them sets the flag, and
+`baukit doctor` rejects it in `mobile/.env.example` and `mobile/.env`. The app
+config passes `EXPO_PUBLIC_LOCAL_OIDC_ISSUER` to the app only in development and
+QA builds, and adds `apiBaseUrl` only when `EXPO_PUBLIC_API_URL` is set. The
+loopback API fallback lives in the app code under `__DEV__`. The web build picks
+its adapter from Vite's `--mode`, which no `web/.env` file can set.
 
 `VITE_LOCAL_OIDC_ISSUER` and `EXPO_PUBLIC_LOCAL_OIDC_ISSUER` override the
 realm URL, for example for a physical device on the LAN. Both default to
@@ -234,10 +241,13 @@ realm URL, for example for a physical device on the LAN. Both default to
 
 `pnpm check:bundle` in `web/` and `mobile/` builds production and fails when the
 output contains the Keycloak adapter, a `/realms/` URL or a loopback URL. The
-mobile check exports Android and iOS with source maps, fails if
+mobile check exports Android and iOS{% if context.pwa and not context.web %}, and the Expo web build,{% endif %} with source maps and `--clear`
+in a private Metro cache, loads `mobile/.env` as a developer's export does
+(the `.env.example` values when no `mobile/.env` exists), scans files copied
+from `mobile/public/` as unmapped code, fails if
 `src/sign-in/local.ts` is among the bundle's modules, and counts a loopback URL
 only when product or `@baukit` code emits it, since React Native and Expo Router
-ship their own development-server defaults. The strict gate runs them as the `web-bundle` and `mobile-bundle` steps.
+ship their own development-server defaults. The strict gate runs them as the `web-bundle` and `mobile-bundle` steps, and the standard profile's CI runs the mobile check in its `mobile` job.
 
 {% endif %}## Erasure secrets
 

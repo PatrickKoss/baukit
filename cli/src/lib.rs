@@ -1230,8 +1230,8 @@ fn is_provider_shaped_realm_only(path: &Path) -> bool {
                 name.starts_with("local.") || name.starts_with("production.")
             })
         || path.file_name().is_some_and(|name| {
-            name.to_string_lossy()
-                .starts_with("check-production-bundle")
+            let name = name.to_string_lossy();
+            name.starts_with("check-production-bundle") || name == "sign-in-config.test.mjs"
         })
 }
 
@@ -1542,6 +1542,7 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
         }
         validate_frontend_capability(root, "mobile", &dependencies, &mut successes, &mut failures)?;
         validate_mobile_router_configuration(root, &mut successes, &mut failures)?;
+        validate_mobile_qa_build_flag(root, &mut failures)?;
         if manifest.capabilities.auth.is_some() {
             doctor_layout::validate_mobile_auth_wiring(root, &manifest, &mut failures)?;
         }
@@ -1816,7 +1817,6 @@ fn validate_port_configuration(
     if manifest.capabilities.mobile {
         expected.extend([
             ("mobile/.env.example", format!("localhost:{}", ports.api)),
-            ("mobile/app.config.ts", format!("localhost:{}", ports.api)),
             ("mobile/src/api.ts", format!("localhost:{}", ports.api)),
         ]);
         if oidc_clients_use_bundled_keycloak(root, manifest)? {
@@ -2545,6 +2545,20 @@ const WORKOS_MOBILE_SETTINGS: [&str; 3] = [
 ];
 const MOBILE_ENV_FILES: [&str; 2] = ["mobile/.env.example", "mobile/.env"];
 
+const QA_BUILD_FLAG: &str = "BAUKIT_QA_BUILD";
+
+fn validate_mobile_qa_build_flag(root: &Path, failures: &mut Vec<String>) -> Result<()> {
+    for relative in MOBILE_ENV_FILES {
+        let path = root.join(relative);
+        if path.is_file() && declares_env_assignment(&fs::read_to_string(path)?, QA_BUILD_FLAG) {
+            failures.push(format!(
+                "{relative} sets `{QA_BUILD_FLAG}`; Expo loads it into every export, so a production bundle would sign in locally. Set it only in the QA scripts' shell"
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn validate_workos_mobile_configuration(root: &Path, failures: &mut Vec<String>) -> Result<()> {
     let config_path = root.join("mobile/app.config.ts");
     if config_path.is_file() {
@@ -3100,8 +3114,8 @@ mod doctor_tests {
     use super::{
         Capabilities, DoctorCommandOutput, DoctorHost, diagnose_docker, diagnose_ssh_agent,
         has_mismatched_loopback_port, probe_git_dependency, pwa_app_directory,
-        resolve_makefile_variables, validate_mobile_router_configuration,
-        validate_pwa_worker_build,
+        resolve_makefile_variables, validate_mobile_qa_build_flag,
+        validate_mobile_router_configuration, validate_pwa_worker_build,
     };
 
     struct ExpectedCommand {
@@ -3172,6 +3186,33 @@ mod doctor_tests {
             code: Some(code),
             stderr: String::new(),
         })
+    }
+
+    #[test]
+    fn mobile_env_files_must_not_set_the_qa_build_flag() -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        fs::create_dir(root.path().join("mobile"))?;
+        fs::write(
+            root.path().join("mobile/.env.example"),
+            "EXPO_PUBLIC_API_URL=http://localhost:8080\nBAUKIT_QA_BUILD_NOTE=1\n",
+        )?;
+        let mut failures = Vec::new();
+        validate_mobile_qa_build_flag(root.path(), &mut failures)?;
+        assert!(failures.is_empty(), "{failures:?}");
+
+        fs::write(
+            root.path().join("mobile/.env"),
+            "export BAUKIT_QA_BUILD=1\n",
+        )?;
+        fs::write(
+            root.path().join("mobile/.env.example"),
+            "BAUKIT_QA_BUILD=\n",
+        )?;
+        validate_mobile_qa_build_flag(root.path(), &mut failures)?;
+        assert_eq!(failures.len(), 2, "{failures:?}");
+        assert!(failures[0].starts_with("mobile/.env.example sets `BAUKIT_QA_BUILD`"));
+        assert!(failures[1].starts_with("mobile/.env sets `BAUKIT_QA_BUILD`"));
+        Ok(())
     }
 
     #[test]

@@ -12,7 +12,8 @@ const configuredScopes: unknown = process.env['EXPO_PUBLIC_OIDC_SCOPES'];
 {% endif %}{% if not context.auth_oidc %}const configuredLocalIssuer: unknown = process.env['EXPO_PUBLIC_LOCAL_OIDC_ISSUER'];
 {% endif %}
 const isQaBuild = process.env['BAUKIT_QA_BUILD'] === '1';
-
+{% if not context.auth_oidc %}const localSignInBuild = process.env.NODE_ENV !== 'production' || isQaBuild;
+{% endif %}
 function environmentText(name: string): string {
   const value: unknown = process.env[name];
   return typeof value === 'string' ? value : '';
@@ -39,13 +40,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ...(isQaBuild ? ['./plugins/with-qa-local-network.cjs'] : []),
   ],
   extra: {
-    apiBaseUrl:
-      typeof configuredApiUrl === 'string'
-        ? configuredApiUrl
-        : 'http://localhost:{{ context.api_host_port }}',
+    ...(typeof configuredApiUrl === 'string' ? { apiBaseUrl: configuredApiUrl } : {}),
     revenueCat,
     clerkPublishableKey: typeof configuredKey === 'string' ? configuredKey : '',
-{% if not context.auth_oidc %}    ...(typeof configuredLocalIssuer === 'string' && configuredLocalIssuer !== ''
+{% if not context.auth_oidc %}    ...(localSignInBuild && typeof configuredLocalIssuer === 'string' && configuredLocalIssuer !== ''
       ? { localOidcIssuer: configuredLocalIssuer }
       : {}),
 {% endif %}

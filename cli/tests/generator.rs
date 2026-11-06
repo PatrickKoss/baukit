@@ -1125,7 +1125,6 @@ fn combined_generation_applies_port_offset_to_host_ports() -> anyhow::Result<()>
             "mobile/.env.example",
             "EXPO_PUBLIC_OIDC_ISSUER=http://localhost:8181/realms/offset-app",
         ),
-        ("mobile/app.config.ts", "http://localhost:8180"),
         (
             "mobile/app.config.ts",
             "http://localhost:8181/realms/${PRODUCT_NAME}",
@@ -1969,12 +1968,6 @@ fn doctor_rejects_drift_in_product_constants_and_url_defaults() -> anyhow::Resul
         (
             "mobile/app.config.ts",
             "localhost:8181",
-            "localhost:9999",
-            "port offset 100",
-        ),
-        (
-            "mobile/app.config.ts",
-            "localhost:8180",
             "localhost:9999",
             "port offset 100",
         ),

@@ -29,10 +29,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ...(isQaBuild ? ['./plugins/with-qa-local-network.cjs'] : []),
   ],
   extra: {
-    apiBaseUrl:
-      typeof configuredApiUrl === 'string'
-        ? configuredApiUrl
-        : 'http://localhost:{{ context.api_host_port }}',
+    ...(typeof configuredApiUrl === 'string' ? { apiBaseUrl: configuredApiUrl } : {}),
     revenueCat,
   },
   ios: {

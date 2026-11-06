@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+{% if context.mobile %}- Metro refuses to bundle when a `mobile/.env*` file sets `BAUKIT_QA_BUILD`, and the app config passes `apiBaseUrl` only when `EXPO_PUBLIC_API_URL` is set.
+{% endif %}{% if context.mobile and context.auth_enabled and not context.auth_oidc %}- The app config passes the local realm only to development and QA builds. The mobile bundle check exports with a clear Metro cache and `mobile/.env` loaded, scans the Expo web export and copied public files, and runs in the standard profile's CI.
+{% endif %}
+
 ## [0.18.1] - 2026-11-05
 
 {% if context.mobile %}- Generated mobile apps pin Expo 57.0.32, expo-router 57.0.30, expo-constants 57.0.23 and @expo/metro-runtime 57.0.18, the SDK 57 patch releases, and list those releases in `minimumReleaseAgeExclude` until they are a day old.

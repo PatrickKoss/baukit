@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Doctor rejects `BAUKIT_QA_BUILD` in `mobile/.env.example` and `mobile/.env`, and no longer expects the API port in `mobile/app.config.ts`.
+
 ## [0.18.1] - 2026-11-05
 
 - Doctor accepts a QA Keycloak on `ports.keycloak` or `ports.keycloak_extra` as well as 18081, adds `ports.local_callback` (default 18890) for the realm's local PKCE callback, and checks a strict product's gate for every template step its capabilities need.

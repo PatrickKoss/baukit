@@ -1,8 +1,10 @@
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseEnv } from "node:util";
 
 const BUNDLE_MARKERS = [
   { name: "Keycloak adapter", pattern: /keycloak|local-oidc/giu },
@@ -11,7 +13,8 @@ const BUNDLE_MARKERS = [
 ];
 const PRODUCT_MARKERS = [{ name: "loopback URL", pattern: /https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])/giu }];
 const LOCAL_ADAPTER_SOURCE = /(?:^|\/)src\/sign-in\/local\.[cm]?[jt]sx?$/u;
-const PLATFORMS = ["android", "ios"];
+const PLATFORMS = ["android", "ios"{% if context.pwa and not context.web %}, "web"{% endif %}];
+const UNMAPPED_PUBLIC_FILE = { version: 3, sources: [], mappings: "" };
 const SOURCE_MAP_COMMENT = /\n\/\/# sourceMappingURL=[^\n]*/u;
 const BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const VLQ_CONTINUATION = 32;
@@ -83,16 +86,36 @@ export function scanBundleText(text, map) {
   return [...new Set(findings)];
 }
 
-export async function scanExport(directory) {
+async function relativeFiles(directory) {
+  const entries = await readdir(directory, { recursive: true, withFileTypes: true }).catch((error) => {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  });
+  return entries.filter((entry) => entry.isFile()).map((entry) => relative(directory, join(entry.parentPath, entry.name)));
+}
+
+export async function publicFiles(directory) {
+  return new Set(await relativeFiles(directory));
+}
+
+async function sourceMap(file, path, copiedPublicFiles) {
+  try {
+    return JSON.parse(await readFile(`${file}.map`, "utf8"));
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    if (copiedPublicFiles.has(path)) return UNMAPPED_PUBLIC_FILE;
+    throw new Error(`missing source map for ${path}`);
+  }
+}
+
+export async function scanExport(directory, copiedPublicFiles = new Set()) {
   const entries = await readdir(directory, { recursive: true, withFileTypes: true });
   const bundles = entries.filter((entry) => entry.isFile() && entry.name.endsWith(".js"));
   if (bundles.length === 0) throw new Error(`no JavaScript bundle in ${directory}`);
   const findings = [];
   for (const entry of bundles) {
     const file = join(entry.parentPath, entry.name);
-    const map = JSON.parse(await readFile(`${file}.map`, "utf8").catch(() => {
-      throw new Error(`missing source map for ${relative(directory, file)}`);
-    }));
+    const map = await sourceMap(file, relative(directory, file), copiedPublicFiles);
     const text = (await readFile(file, "utf8")).replace(SOURCE_MAP_COMMENT, "");
     for (const finding of scanBundleText(text, map)) {
       findings.push(`${relative(directory, file)}: ${finding}`);
@@ -101,40 +124,52 @@ export async function scanExport(directory) {
   return findings;
 }
 
-function productionEnvironment() {
+export async function developerEnvironment(mobileDirectory) {
+  if (existsSync(join(mobileDirectory, ".env"))) return {};
+  return { ...parseEnv(await readFile(join(mobileDirectory, ".env.example"), "utf8")) };
+}
+
+function productionEnvironment(developer, cacheDirectory) {
   const environment = {
+    ...developer,
     ...process.env,
     NODE_ENV: "production",
     EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL ?? "https://api.example.invalid",
+    TMPDIR: cacheDirectory,
   };
   delete environment.BAUKIT_QA_BUILD;
-  delete environment.EXPO_PUBLIC_LOCAL_OIDC_ISSUER;
   return environment;
 }
 
 async function main() {
   const mobileDirectory = join(dirname(fileURLToPath(import.meta.url)), "..");
   const outDir = await mkdtemp(join(tmpdir(), "production-bundle-"));
+  const cacheDir = await mkdtemp(join(tmpdir(), "production-bundle-cache-"));
   try {
+    const environment = productionEnvironment(await developerEnvironment(mobileDirectory), cacheDir);
+    const copiedPublicFiles = await publicFiles(join(mobileDirectory, "public"));
+    const findings = [];
     for (const platform of PLATFORMS) {
+      const platformDir = join(outDir, platform);
       const build = spawnSync(
         join(mobileDirectory, "node_modules", ".bin", "expo"),
-        ["export", "--platform", platform, "--no-bytecode", "--source-maps", "--output-dir", join(outDir, platform)],
-        { cwd: mobileDirectory, stdio: ["ignore", "ignore", "inherit"], env: productionEnvironment() },
+        ["export", "--platform", platform, "--clear", "--no-bytecode", "--source-maps", "--output-dir", platformDir],
+        { cwd: mobileDirectory, stdio: ["ignore", "ignore", "inherit"], env: environment },
       );
       if (build.status !== 0) throw new Error(`production ${platform} export failed`);
+      for (const finding of await scanExport(platformDir, copiedPublicFiles)) findings.push(`${platform}/${finding}`);
     }
-    const findings = await scanExport(outDir);
     if (findings.length > 0) {
       console.error(`production bundle carries local sign-in code or a secret key:\n${findings.join("\n")}`);
       process.exitCode = 1;
       return;
     }
     console.log(
-      `production ${PLATFORMS.join(" and ")} bundles carry no Keycloak adapter, local realm URL, product loopback URL or secret API key`,
+      `production ${PLATFORMS.join(", ")} bundles carry no Keycloak adapter, local realm URL, product loopback URL or secret API key`,
     );
   } finally {
     await rm(outDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
   }
 }
 

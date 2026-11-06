@@ -1,10 +1,17 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { decodeMappings, isProductSource, scanBundleText, scanExport } from "./check-production-bundle.mjs";
+import {
+  decodeMappings,
+  developerEnvironment,
+  isProductSource,
+  publicFiles,
+  scanBundleText,
+  scanExport,
+} from "./check-production-bundle.mjs";
 
 const appSource = "/src/api.ts";
 const librarySource = "/node_modules/react-native/Libraries/Core/Devtools/getDevServer.js";
@@ -70,4 +77,32 @@ test("the export scan reads each bundle with its source map", async (t) => {
     "entry.js: local realm URL",
     `entry.js: loopback URL from ${appSource}`,
   ]);
+});
+
+test("a copied public file without a source map is scanned as unmapped code", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "bundle-public-"));
+  t.after(() => rm(root, { recursive: true }));
+  const exported = join(root, "export");
+  await mkdir(join(root, "public", "vendor"), { recursive: true });
+  await mkdir(join(exported, "vendor"), { recursive: true });
+  await writeFile(join(root, "public", "vendor", "worker.js"), "");
+  await writeFile(join(exported, "vendor", "worker.js"), "fetch('http://localhost:8080/api');");
+  const copied = await publicFiles(join(root, "public"));
+  assert.deepEqual([...copied], [join("vendor", "worker.js")]);
+  assert.deepEqual(await scanExport(exported, copied), [
+    `${join("vendor", "worker.js")}: loopback URL from unmapped code`,
+  ]);
+  await assert.rejects(scanExport(exported), /missing source map for vendor\/worker\.js/u);
+  assert.deepEqual(await publicFiles(join(root, "missing")), new Set());
+});
+
+test("without a mobile/.env the check exports with the example values a developer copies", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "bundle-env-"));
+  t.after(() => rm(directory, { recursive: true }));
+  await writeFile(join(directory, ".env.example"), "EXPO_PUBLIC_LOCAL_OIDC_ISSUER=http://localhost:8180/realms/app\n");
+  assert.deepEqual(await developerEnvironment(directory), {
+    EXPO_PUBLIC_LOCAL_OIDC_ISSUER: "http://localhost:8180/realms/app",
+  });
+  await writeFile(join(directory, ".env"), "EXPO_PUBLIC_API_URL=http://localhost:8080\n");
+  assert.deepEqual(await developerEnvironment(directory), {});
 });
