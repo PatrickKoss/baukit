@@ -49,7 +49,7 @@ zeroize.workspace = true
 
 [dev-dependencies]
 baukit-auth = { path = ".", features = ["browser-session"] }
-baukit-ratelimit = { path = "../baukit-ratelimit" }
+baukit-ratelimit = { path = "../baukit-ratelimit", features = ["browser-session"] }
 baukit-test = { path = "../baukit-test", features = ["sqlx-postgres"] }
 tower = { workspace = true, features = ["util"] }
 tracing-subscriber.workspace = true

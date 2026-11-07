@@ -585,7 +585,29 @@ impl OidcVerifier {
             token,
             TokenVerification::Id {
                 client_id,
-                expected_nonce,
+                expected_nonce: Some(expected_nonce),
+            },
+        )
+        .await
+    }
+
+    /// Verifies an ID token returned directly by the token endpoint for a code
+    /// exchange whose authorization request carried no nonce.
+    pub(crate) async fn verify_exchanged_id_token(
+        &self,
+        token: &str,
+    ) -> Result<Principal, VerificationError> {
+        let client_id = self
+            .inner
+            .config
+            .client_id
+            .as_deref()
+            .ok_or(VerificationError::MissingClientId)?;
+        self.verify_token(
+            token,
+            TokenVerification::Id {
+                client_id,
+                expected_nonce: None,
             },
         )
         .await
@@ -611,7 +633,11 @@ impl OidcVerifier {
         let key_id = header.kid.ok_or(VerificationError::MissingKeyId)?;
         let key = self.key_for(&key_id).await?;
         key.verify(algorithm, &signing_input, &signature)?;
-        if let TokenVerification::Id { expected_nonce, .. } = verification {
+        if let TokenVerification::Id {
+            expected_nonce: Some(expected_nonce),
+            ..
+        } = verification
+        {
             match claims.extra.get("nonce") {
                 Some(Value::String(nonce))
                     if crate::constant_time_eq(nonce.as_bytes(), expected_nonce.as_bytes()) => {}
@@ -881,7 +907,7 @@ enum TokenVerification<'a> {
     Access,
     Id {
         client_id: &'a str,
-        expected_nonce: &'a str,
+        expected_nonce: Option<&'a str>,
     },
 }
 

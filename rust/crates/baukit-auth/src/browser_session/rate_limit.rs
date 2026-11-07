@@ -61,7 +61,8 @@ pub type RateLimitFuture<'a> = Pin<Box<dyn Future<Output = RateLimitOutcome> + S
 /// Rate-limit port for the browser session router.
 ///
 /// `baukit-ratelimit` depends on `baukit-auth`, so the adapter over its shared
-/// Redis store lives outside this crate. The adapter applies the store's fail
+/// store is `StoreBrowserSessionRateLimiter` in `baukit-ratelimit` behind its
+/// `browser-session` feature. The adapter applies the store's fail
 /// mode and returns [`RateLimitOutcome::Limited`] when it fails closed.
 pub trait BrowserSessionRateLimiter: Send + Sync {
     /// Consumes one token from `limit`'s bucket for `subject`.

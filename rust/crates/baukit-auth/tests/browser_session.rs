@@ -30,14 +30,13 @@ use baukit_auth::{
     browser_session::{
         self, BROWSER_SESSION_HEADER, BrowserSessionConfig, BrowserSessionRateLimit,
         BrowserSessionRateLimiter, BrowserSessionState, RateLimitFuture, RateLimitOutcome,
-        RateLimitSubject,
     },
 };
 use baukit_credential_vault::{
     CredentialCipher, EncryptedCredentials, EncryptedField, NONCE_LENGTH,
 };
 use baukit_http::HttpOptions;
-use baukit_ratelimit::{Quota, RateLimitStore as _, RedisRateLimitStore, resolve_client_ip};
+use baukit_ratelimit::{RateLimitOptions, RedisRateLimitStore, StoreBrowserSessionRateLimiter};
 use baukit_test::{KeycloakTestContainer, PostgresTestContainer, RedisTestContainer};
 use serde_json::Value;
 use sqlx::PgPool;
@@ -104,59 +103,13 @@ fn realm_json() -> Vec<u8> {
     .into_bytes()
 }
 
-struct RedisLimiter {
-    store: RedisRateLimitStore,
-}
-
-impl BrowserSessionRateLimiter for RedisLimiter {
-    fn check<'a>(
-        &'a self,
-        limit: BrowserSessionRateLimit,
-        subject: RateLimitSubject<'a>,
-    ) -> RateLimitFuture<'a> {
-        Box::pin(async move {
-            let key = match subject {
-                RateLimitSubject::ClientIp { headers, peer } => {
-                    let ip = resolve_client_ip(headers, peer, 1)
-                        .map_or_else(|| "unknown".to_owned(), |ip| ip.to_string());
-                    format!("test:{}:{ip}", limit.group)
-                }
-                RateLimitSubject::SessionId(id) => format!("test:{}:{id}", limit.group),
-                _ => {
-                    return RateLimitOutcome::Limited {
-                        retry_after: Duration::from_secs(60),
-                    };
-                }
-            };
-            let Ok(quota) = Quota::new(
-                limit.requests_per_minute,
-                Duration::from_secs(60),
-                limit.burst,
-            ) else {
-                return RateLimitOutcome::Limited {
-                    retry_after: Duration::from_secs(60),
-                };
-            };
-            match self.store.check_and_consume(&key, quota).await {
-                Ok(decision) if decision.allowed => RateLimitOutcome::Allowed,
-                Ok(decision) => RateLimitOutcome::Limited {
-                    retry_after: decision.retry_after,
-                },
-                Err(_) => RateLimitOutcome::Limited {
-                    retry_after: quota.period(),
-                },
-            }
-        })
-    }
-}
-
 struct AllowAll;
 
 impl BrowserSessionRateLimiter for AllowAll {
     fn check<'a>(
         &'a self,
         _limit: BrowserSessionRateLimit,
-        _subject: RateLimitSubject<'a>,
+        _subject: browser_session::RateLimitSubject<'a>,
     ) -> RateLimitFuture<'a> {
         Box::pin(std::future::ready(RateLimitOutcome::Allowed))
     }
@@ -185,7 +138,13 @@ async fn fixture(with_redis: bool) -> Result<Fixture, TestError> {
     ) = if with_redis {
         let redis = baukit_test::start_redis().await?;
         let store = RedisRateLimitStore::connect(redis.connection_url()).await?;
-        (Some(redis), Arc::new(RedisLimiter { store }))
+        (
+            Some(redis),
+            Arc::new(StoreBrowserSessionRateLimiter::new(
+                store,
+                RateLimitOptions::default(),
+            )),
+        )
     } else {
         (None, Arc::new(AllowAll))
     };

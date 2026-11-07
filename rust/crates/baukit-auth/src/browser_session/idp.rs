@@ -4,14 +4,13 @@ use axum::http::{
     HeaderMap, HeaderValue, StatusCode,
     header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE},
 };
-use base64::{
-    Engine as _,
-    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
-};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use baukit_egress::{EgressError, EgressRequest, GuardedClient};
 use serde::Deserialize;
 use url::{Url, form_urlencoded};
 use zeroize::Zeroizing;
+
+use crate::{OidcConfig, OidcVerifier, VerificationError};
 
 use super::config::{BrowserSessionConfig, BrowserSessionConfigError};
 
@@ -37,8 +36,8 @@ pub(crate) trait IdentityProvider: Send + Sync {
     fn refresh<'a>(&'a self, refresh_token: &'a str) -> IdpFuture<'a, TokenSet>;
     /// Revokes a refresh token per RFC 7009. A no-op without a revocation endpoint.
     fn revoke<'a>(&'a self, refresh_token: &'a str) -> IdpFuture<'a, ()>;
-    /// Returns the subject of an ID token taken from a direct token response.
-    fn subject(&self, id_token: &str) -> Result<String, IdpError>;
+    /// Verifies an ID token from a direct token response and returns its subject.
+    fn subject<'a>(&'a self, id_token: &'a str) -> IdpFuture<'a, String>;
     fn end_session_url(&self, id_token: Option<&str>) -> Option<String>;
 }
 
@@ -48,14 +47,49 @@ pub(crate) enum IdpError {
     InvalidGrant,
     #[error("the IdP is unavailable")]
     Unavailable(#[source] EgressError),
+    #[error("the IdP signing keys are unavailable")]
+    KeysUnavailable(#[source] VerificationError),
     #[error("the IdP response is invalid: {0}")]
     InvalidResponse(&'static str),
+    #[error("the ID token failed verification")]
+    InvalidIdToken(#[source] VerificationError),
+}
+
+/// Checks ID tokens against the issuer JWKS with the shared [`OidcVerifier`].
+pub(crate) struct IdTokenVerifier {
+    verifier: OidcVerifier,
+}
+
+impl IdTokenVerifier {
+    pub(crate) fn new(
+        issuer: &str,
+        client_id: &str,
+        jwks_uri: &str,
+        request_timeout: Duration,
+    ) -> Result<Self, IdpDiscoveryError> {
+        let config = OidcConfig::new(issuer, client_id)
+            .and_then(|config| config.with_client_id(client_id))
+            .and_then(|config| config.with_request_timeout(request_timeout))
+            .map_err(|_| IdpDiscoveryError::InvalidDocument)?;
+        let verifier = OidcVerifier::from_jwks_uri(config, jwks_uri)
+            .map_err(|_| IdpDiscoveryError::InvalidDocument)?;
+        Ok(Self { verifier })
+    }
+
+    pub(crate) async fn subject(&self, id_token: &str) -> Result<String, IdpError> {
+        match self.verifier.verify_exchanged_id_token(id_token).await {
+            Ok(principal) => Ok(principal.subject().to_owned()),
+            Err(error) if error.is_unavailable() => Err(IdpError::KeysUnavailable(error)),
+            Err(error) => Err(IdpError::InvalidIdToken(error)),
+        }
+    }
 }
 
 #[derive(Deserialize)]
 struct DiscoveryDocument {
     issuer: String,
     token_endpoint: String,
+    jwks_uri: String,
     revocation_endpoint: Option<String>,
     end_session_endpoint: Option<String>,
 }
@@ -69,32 +103,10 @@ struct TokenResponse {
     id_token: Option<String>,
 }
 
-#[derive(Deserialize)]
-struct IdTokenClaims {
-    iss: String,
-    sub: String,
-    aud: Audience,
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum Audience {
-    One(String),
-    Many(Vec<String>),
-}
-
-impl Audience {
-    fn contains(&self, client_id: &str) -> bool {
-        match self {
-            Self::One(audience) => audience == client_id,
-            Self::Many(audiences) => audiences.iter().any(|audience| audience == client_id),
-        }
-    }
-}
-
 /// OIDC token client that sends every request through [`GuardedClient`].
 pub(crate) struct OidcTokenClient {
     client: GuardedClient,
+    id_tokens: IdTokenVerifier,
     issuer: String,
     client_id: String,
     client_secret: Option<Zeroizing<String>>,
@@ -157,8 +169,19 @@ impl OidcTokenClient {
         }
         let parse =
             |value: String| Url::parse(&value).map_err(|_| IdpDiscoveryError::InvalidDocument);
+        let jwks_uri = parse(document.jwks_uri)?;
+        if jwks_uri.origin() != config.issuer.origin() {
+            return Err(IdpDiscoveryError::InvalidDocument);
+        }
+        let id_tokens = IdTokenVerifier::new(
+            &document.issuer,
+            &config.client_id,
+            jwks_uri.as_str(),
+            config.request_timeout,
+        )?;
         Ok(Arc::new(Self {
             client,
+            id_tokens,
             issuer: document.issuer,
             client_id: config.client_id.clone(),
             client_secret: config.client_secret.clone(),
@@ -288,30 +311,8 @@ impl IdentityProvider for OidcTokenClient {
         })
     }
 
-    fn subject(&self, id_token: &str) -> Result<String, IdpError> {
-        let mut segments = id_token.split('.');
-        let (Some(_), Some(payload), Some(_), None) = (
-            segments.next(),
-            segments.next(),
-            segments.next(),
-            segments.next(),
-        ) else {
-            return Err(IdpError::InvalidResponse("ID token is not a JWT"));
-        };
-        let payload = URL_SAFE_NO_PAD
-            .decode(payload)
-            .map_err(|_| IdpError::InvalidResponse("ID token payload is not base64url"))?;
-        let claims: IdTokenClaims = serde_json::from_slice(&payload)
-            .map_err(|_| IdpError::InvalidResponse("ID token claims are invalid"))?;
-        if claims.iss != self.issuer || !claims.aud.contains(&self.client_id) {
-            return Err(IdpError::InvalidResponse(
-                "ID token was not issued for this client",
-            ));
-        }
-        if claims.sub.is_empty() {
-            return Err(IdpError::InvalidResponse("ID token has no subject"));
-        }
-        Ok(claims.sub)
+    fn subject<'a>(&'a self, id_token: &'a str) -> IdpFuture<'a, String> {
+        Box::pin(self.id_tokens.subject(id_token))
     }
 
     fn end_session_url(&self, id_token: Option<&str>) -> Option<String> {

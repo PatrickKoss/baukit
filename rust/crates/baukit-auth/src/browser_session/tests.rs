@@ -35,7 +35,7 @@ use super::{
     config::{is_same_site, parse_origin},
     cookie::CookieSettings,
     crypto::{self, GRACE_ACCESS_TOKEN_FIELD, REFRESH_TOKEN_FIELD, SessionCredential},
-    idp::{IdentityProvider, IdpError, IdpFuture, TokenSet},
+    idp::{IdTokenVerifier, IdentityProvider, IdpError, IdpFuture, TokenSet},
     router,
     service::Clock,
     store::{SessionRow, SessionStore, SessionTransaction, StoreFuture},
@@ -143,16 +143,22 @@ struct FakeIdp {
     revoked: StdMutex<Vec<String>>,
     refresh_delay: Option<Duration>,
     unavailable: bool,
+    id_tokens: Option<IdTokenVerifier>,
+    exchange_id_token: Option<String>,
 }
 
 impl FakeIdp {
-    fn tokens(serial: usize) -> TokenSet {
+    fn tokens(&self, serial: usize) -> TokenSet {
+        let id_token = self
+            .exchange_id_token
+            .clone()
+            .unwrap_or_else(|| format!("id:{SUBJECT}"));
         TokenSet {
             access_token: Zeroizing::new(format!("access-{serial}")),
             expires_in: ACCESS_LIFETIME,
             refresh_token: Some(Zeroizing::new(format!("refresh-{serial}"))),
             refresh_expires_in: None,
-            id_token: Some(Zeroizing::new(format!("id:{SUBJECT}"))),
+            id_token: Some(Zeroizing::new(id_token)),
         }
     }
 
@@ -176,7 +182,7 @@ impl IdentityProvider for FakeIdp {
         _redirect_uri: &'a str,
     ) -> IdpFuture<'a, TokenSet> {
         let result = if code == "good-code" {
-            Ok(Self::tokens(0))
+            Ok(self.tokens(0))
         } else {
             Err(IdpError::InvalidGrant)
         };
@@ -199,7 +205,7 @@ impl IdentityProvider for FakeIdp {
                 return Err(IdpError::InvalidGrant);
             }
             let serial = self.refreshes.fetch_add(1, Ordering::SeqCst) + 1;
-            Ok(Self::tokens(serial))
+            Ok(self.tokens(serial))
         })
     }
 
@@ -210,11 +216,16 @@ impl IdentityProvider for FakeIdp {
         Box::pin(std::future::ready(Ok(())))
     }
 
-    fn subject(&self, id_token: &str) -> Result<String, IdpError> {
-        id_token
-            .strip_prefix("id:")
-            .map(str::to_owned)
-            .ok_or(IdpError::InvalidResponse("bad id token"))
+    fn subject<'a>(&'a self, id_token: &'a str) -> IdpFuture<'a, String> {
+        Box::pin(async move {
+            if let Some(verifier) = &self.id_tokens {
+                return verifier.subject(id_token).await;
+            }
+            id_token
+                .strip_prefix("id:")
+                .map(str::to_owned)
+                .ok_or(IdpError::InvalidResponse("bad id token"))
+        })
     }
 
     fn end_session_url(&self, id_token: Option<&str>) -> Option<String> {
@@ -958,4 +969,82 @@ async fn rate_limits_use_the_ip_and_session_buckets() -> TestResult {
     );
     assert_eq!(json(response).await?["error"]["code"], "rate_limited");
     Ok(())
+}
+
+const CLIENT_ID: &str = "web";
+const ID_TOKEN_LIFETIME: Duration = Duration::from_secs(300);
+const EXPIRED_SECONDS_AGO: u64 = 3_600;
+
+async fn exchange_with_id_token(
+    server: &baukit_test::MockOidcServer,
+    id_token: String,
+) -> Result<(Response, Harness), TestError> {
+    let verifier = IdTokenVerifier::new(
+        server.issuer(),
+        CLIENT_ID,
+        server.jwks_url(),
+        Duration::from_secs(5),
+    )?;
+    let harness = harness(FakeIdp {
+        id_tokens: Some(verifier),
+        exchange_id_token: Some(id_token),
+        ..FakeIdp::default()
+    })?;
+    let response = send(
+        &harness.app,
+        request("exchange", None, Some(&exchange_body()))?,
+    )
+    .await?;
+    Ok((response, harness))
+}
+
+#[tokio::test]
+async fn exchange_accepts_a_verified_id_token() -> TestResult {
+    let server = baukit_test::MockOidcServer::start().await?;
+    let token = server.mint(&server.claims(SUBJECT, CLIENT_ID, ID_TOKEN_LIFETIME)?)?;
+    let (response, harness) = exchange_with_id_token(&server, token).await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json(response).await?["subject"], SUBJECT);
+    assert_eq!(harness.store.snapshot().await.len(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn exchange_rejects_unverifiable_id_tokens_without_a_session() -> TestResult {
+    let server = baukit_test::MockOidcServer::start().await?;
+    let valid = server.claims(SUBJECT, CLIENT_ID, ID_TOKEN_LIFETIME)?;
+    let forged = forge_signature(&server.mint(&valid)?)?;
+    let wrong_audience =
+        server.mint(&server.claims(SUBJECT, "other-client", ID_TOKEN_LIFETIME)?)?;
+    let past = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs()
+        .saturating_sub(EXPIRED_SECONDS_AGO);
+    let expired = server.mint(&valid.expires_at(past))?;
+    for (case, token) in [
+        ("forged", forged),
+        ("wrong audience", wrong_audience),
+        ("expired", expired),
+    ] {
+        let (response, harness) = exchange_with_id_token(&server, token).await?;
+        assert_eq!(
+            response.status(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "{case}"
+        );
+        assert!(set_cookie(&response).is_none(), "{case}");
+        assert!(harness.store.snapshot().await.is_empty(), "{case}");
+    }
+    Ok(())
+}
+
+fn forge_signature(token: &str) -> Result<String, TestError> {
+    let (signed, signature) = token.rsplit_once('.').ok_or("token has no signature")?;
+    let mut bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(signature)?;
+    let first = bytes.first_mut().ok_or("empty signature")?;
+    *first ^= 0xff;
+    Ok(format!(
+        "{signed}.{}",
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+    ))
 }

@@ -64,8 +64,12 @@ pub(crate) enum SessionError {
 fn idp_error(error: IdpError) -> SessionError {
     match error {
         IdpError::InvalidGrant => SessionError::InvalidGrant,
-        IdpError::Unavailable(_) => SessionError::IdpUnavailable(error),
-        IdpError::InvalidResponse(_) => SessionError::InvalidIdpResponse(error),
+        IdpError::Unavailable(_) | IdpError::KeysUnavailable(_) => {
+            SessionError::IdpUnavailable(error)
+        }
+        IdpError::InvalidResponse(_) | IdpError::InvalidIdToken(_) => {
+            SessionError::InvalidIdpResponse(error)
+        }
     }
 }
 
@@ -128,7 +132,7 @@ impl SessionService {
             .ok_or(SessionError::InvalidIdpResponse(IdpError::InvalidResponse(
                 "token response lacks an ID token",
             )))?;
-        let subject = self.idp.subject(id_token).map_err(idp_error)?;
+        let subject = self.idp.subject(id_token).await.map_err(idp_error)?;
         let refresh_token =
             tokens
                 .refresh_token
@@ -199,7 +203,7 @@ impl SessionService {
         now: DateTime<Utc>,
     ) -> Result<Issued, SessionError> {
         if let Some(id_token) = &tokens.id_token
-            && self.idp.subject(id_token).map_err(idp_error)? != row.subject
+            && self.idp.subject(id_token).await.map_err(idp_error)? != row.subject
         {
             return Err(SessionError::InvalidIdpResponse(IdpError::InvalidResponse(
                 "refreshed ID token names another subject",
