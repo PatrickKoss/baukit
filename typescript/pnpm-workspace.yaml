@@ -9,3 +9,6 @@ allowBuilds:
 peerDependencyRules:
   allowedVersions:
     eslint-plugin-jsx-a11y>eslint: '10'
+overrides:
+  glob@13: 14.0.2
+  minimatch@10: 11.0.1

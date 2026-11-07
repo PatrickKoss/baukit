@@ -45,7 +45,7 @@
     "@baukit/purchases-core": "workspace:*",
     "react-native-purchases": "10.14.0",
     "typescript": "6.0.3",
-    "vitest": "5.0.3"
+    "vitest": "5.0.5"
   },
   "peerDependencies": {
     "@baukit/purchases-core": "^0.18.3",
