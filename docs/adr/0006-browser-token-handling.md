@@ -95,6 +95,14 @@ Set-Cookie: __Host-<product>-session=<session_id>.<secret>; Path=/; Secure; Http
   refresh token lifetime the backend learns from `refresh_expires_in` (Keycloak)
   or config. Every refresh resets it. An absolute lifetime lives in the session
   row, not the cookie.
+- Idle timeout vs Keycloak: without `offline_access`, a Keycloak refresh token
+  dies at the realm's SSO Session Idle (30 minutes by default) and SSO Session
+  Max. With it, Offline Session Idle and Offline Session Max Limited apply. The
+  backend sets `Max-Age` and `absolute_expires_at` to the minimum of its config
+  and `refresh_expires_in` from each token response, so it never promises a
+  session the realm will refuse. The template realm sets Offline Session Idle
+  to 30 days and requests `offline_access`; startup logs a warning when the
+  configured idle timeout exceeds the first `refresh_expires_in` seen.
 - Local dev: Chrome and Firefox treat `http://localhost` as a secure context and
   accept `Secure` and `__Host-` cookies over plain http there. Safari does not.
   `BrowserSessionConfig.insecure_local_cookie` drops the prefix and `Secure` only
@@ -117,8 +125,31 @@ All three endpoints are `POST` and require all of:
 refuses to build when `allowed_origins` is empty or `allow_credentials` is off,
 because then the browser would drop the cookie.
 
+Only the session client sends cookies: its three `fetch` calls use
+`credentials: 'include'`. `authenticated-api.ts` and every other API call keep
+the default `credentials: 'same-origin'` and send the bearer header, so the
+`Path=/` cookie never reaches a non-session route cross-origin. On a single
+origin deployment it does ride along, and the API ignores it there.
+
 Rejected: a double-submit CSRF token. It needs a readable cookie or a token in
 storage, which is what this ADR removes, and adds nothing over 2 and 3.
+
+### Rate limiting
+
+`/auth/session/exchange` and `/auth/session/refresh` go through
+`baukit-ratelimit` with two `authenticated_route_group`-style buckets on the
+shared Redis store:
+
+- per client IP (`RateLimitOptions::ip_key`, honouring `trusted_proxy_hops`):
+  group `auth-session-ip`, 30 requests per minute, burst 10.
+- per session id (the id part of the cookie, never the secret): group
+  `auth-session-id`, 12 requests per minute, burst 4. Exchange has no session
+  yet and uses only the IP bucket.
+
+Logout is limited per IP only. Fail mode follows `RateLimitOptions.fail_mode`
+(fail closed in the template). A refused request gets `429` with
+`Retry-After`; the client treats it like a network error and keeps the account
+hint.
 
 ### 4. Refresh token at rest: server-side session table
 
@@ -126,14 +157,29 @@ The cookie holds an opaque `session_id.secret` (128-bit id, 256-bit secret).
 Table `baukit_auth_browser_sessions` in baukit-auth's migrations stores:
 `id`, `secret_hash` (SHA-256), `family_id`, `subject`, `refresh_token` and
 `id_token` encrypted with `CredentialCipher` (AAD = id + subject), `created_at`,
-`last_used_at`, `absolute_expires_at`, `revoked_at`, `rotated_to`.
+`last_used_at`, `absolute_expires_at`, `revoked_at`, `rotated_to`,
+`grace_access_token` (encrypted, AAD = row id + subject), `grace_until`.
 
 Refresh rotates: it creates a new row in the same family, marks the old one
 `rotated_to`, and stores the IdP's rotated refresh token if it sent one. A
-request that presents an already rotated secret is reuse: the backend revokes
-the whole family, revokes the refresh token at the IdP, and returns 401. A
-10-second grace window returns the successor for the same old secret, so two
-tabs racing a refresh do not log the user out. Rows go through the same
+refresh locks the presented row (`SELECT ... FOR UPDATE`), so a second request
+with the same secret waits until the first commits.
+
+Two tabs share the cookie jar, so the losing tab gets the successor cookie as
+soon as the winner's response lands. What it lacks is an access token. The
+winner therefore stores the access token it returns in the successor row as
+`grace_access_token`, with `grace_until = now + 10 s`. When a request presents
+an old secret whose hash matches a row with `rotated_to` set:
+
+- inside the successor's `grace_until`: respond `200` with the successor's
+  grace access token and its `expiresAt`, and no `Set-Cookie`. No IdP call, no
+  new row.
+- after it: reuse. The backend revokes the whole family, revokes the refresh
+  token at the IdP, clears the cookie and returns 401.
+
+A later rotation of the successor nulls its `grace_access_token`. The grace
+token is an access token already sent to the same browser, so storing it for
+10 seconds widens nothing. Rows go through the same
 retention purge as other baukit tables; `subject` lets data-subject erasure and
 "sign out everywhere" delete all of a user's sessions.
 
@@ -193,17 +239,34 @@ frame-ancestors 'none'` on API responses, `Cache-Control: no-store` on every
 `/auth/session/*` response and on responses to requests with `Authorization`,
 and HSTS behind `HttpOptions.hsts` (off for localhost).
 
-The web template ships a CSP for its static server and the Helm chart's web
-ingress:
+The templates ship a CSP for the static server and the Helm chart's web
+ingress. The base, shared by every flavor:
 
 ```
-default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:;
-connect-src 'self' <api origin> <issuer origin> <posthog origin>; frame-src <issuer origin>;
-worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none';
-form-action 'self' <issuer origin>; frame-ancestors 'none'; upgrade-insecure-requests
+default-src 'self'; script-src 'self'; img-src 'self' data: blob: <media origin>;
+media-src 'self' blob: <media origin>;
+connect-src 'self' <api origin> <issuer origin> <posthog origin> <suite hub api origin>;
+frame-src <issuer origin>; worker-src 'self'; manifest-src 'self'; object-src 'none';
+base-uri 'none'; form-action 'self' <issuer origin>; frame-ancestors 'none';
+upgrade-insecure-requests
 ```
 
-`frame-src` covers the silent-token iframe. Clerk and WorkOS flavors add their
+Per flavor, `style-src` differs:
+
+| Flavor | Built by | `style-src` | Why |
+|---|---|---|---|
+| web (`templates/web/web`) | Vite | `'self'` | CSS is emitted as files |
+| mobile-pwa (`templates/mobile/mobile`, `web.output: 'single'` in `app.config.ts`) | Expo Metro web export | `'self' 'unsafe-inline'` | react-native-web injects `<style>` elements at runtime |
+
+Scripts never get `'unsafe-inline'`. If the Expo export or the Vite build
+emits an inline `<script>`, the build step computes its SHA-256 and adds it as
+a `'sha256-...'` source; the implementation task checks the current exports
+and adds a build test that fails on an inline script without a matching hash.
+`<media origin>` is the host behind the njs media-grant verifier
+(`deploy/media-grants`), present only when the product serves media.
+`<suite hub api origin>` is present only for suite products, which call the
+hub's API through `@baukit/suite-client`; the silent-token iframe origin is the
+issuer and is covered by `frame-src`. Clerk and WorkOS flavors add their
 vendor hosts. Vite dev mode gets a relaxed variant (`'unsafe-inline'` styles,
 websocket for HMR), never the production build. Trusted Types is a later step.
 
@@ -223,6 +286,7 @@ without a compatibility mode. Each product with an OIDC web client must:
 1. Mount `browser_session::router` under `/auth/session`, add
    `BrowserSessionConfig` (issuer, client id, redirect URIs, cookie name,
    idle and absolute timeouts, credential-vault key) and run the new migration.
+   Enable `baukit-ratelimit` with Redis if the product has not yet.
 2. Set `allow_credentials` and the web origin in `allowed_origins`.
 3. Replace `OidcClient` with `BrowserSessionClient` and pass the API base URL.
    `getAccessToken`, `handleCallback`, `onSessionExpired` and `clearSession`
@@ -257,6 +321,22 @@ Generated products pick all of this up from the template.
 - Negative e2e: a page on a foreign origin posts a form and a `fetch` to
   `/auth/session/refresh` and gets no token; a stolen access token stops working
   after expiry; replaying a captured old cookie ends the session.
+- Grace window (Rust unit, fake clock): old secret inside 10 s returns the
+  successor's grace token with no `Set-Cookie` and no IdP call; at 10 s plus
+  one tick it revokes the family; two concurrent refreshes produce exactly one
+  IdP call and one successor; rotating the successor clears its grace token;
+  AAD from another row fails to decrypt the grace token.
+- Rate limit (Rust integration with Redis testcontainer): the 31st exchange per
+  minute from one IP and the 13th refresh per session id return 429 with
+  `Retry-After`; a second session id from the same IP still passes the session
+  bucket.
+- Credentials (TS unit): only session calls use `credentials: 'include'`; an
+  API call made through `authenticated-api.ts` uses `same-origin`.
+- CSP in Playwright, every flavor (web, mobile-pwa, combined, auth, clerk,
+  workos): extend `templates/web/web/e2e/tests/console-warnings.ts`, which today
+  collects only `warning` messages, to also collect `error` messages and
+  `securitypolicyviolation` events, and fail the QA run on any CSP violation.
+  Allowlist entries are not allowed for CSP.
 - Fixture gate: `curl -I` on the built web shows the CSP; API responses carry
   `nosniff` and `no-store` on `/auth/session/*`.
 
@@ -267,7 +347,8 @@ Four agents, disjoint files:
 1. **baukit-auth BFF** (`rust/crates/baukit-auth/src/browser_session/`,
    new migration, `Cargo.toml`, crate tests): config, session store on
    PostgreSQL with credential-vault encryption, IdP token client, router, CSRF
-   guard, same-site check, Keycloak integration tests.
+   guard, same-site check, grace window, rate-limit wiring, Keycloak and Redis
+   integration tests.
 2. **baukit-http headers** (`rust/crates/baukit-http/src/middleware.rs`,
    `options.rs`, new `security_headers.rs`, tests): `SecurityHeadersLayer`,
    HSTS option, `X-Baukit-Session` in CORS allowed headers.
@@ -277,7 +358,9 @@ Four agents, disjoint files:
    test, service-worker denylist.
 4. **Templates and chart** (`templates/`, `cli/tests/snapshots`,
    `deploy/helm`): mount the router, config and env, swap the web client, CSP
-   for the static server and ingress, e2e specs, fixture header check. Starts
+   per flavor for the static server and ingress, inline-script hash check, CSP
+   violation collection in `console-warnings.ts`, e2e specs, fixture header
+   check. Starts
    after 1 to 3 publish their public signatures, which this ADR fixes.
 
 ## Consequences
