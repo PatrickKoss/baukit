@@ -104,14 +104,14 @@ Added with the raised cap: W1-E skills + baukit threat model (P2.10, P2.11), W1-
 W1-G ast-grep rules (P1.5 rules only), W1-H ADR 0006 browser token handling (P2.2 design), W1-I read-only
 tenancy and rate-limit audit of the products (S-08).
 
-- [~] P1.1 Rust lint baseline: add the E1 set (expect_used, indexing_slicing, cast_*, too_many_lines at 80,
+- [~] P1.1 (rust/ and cli/ done; template clippy.toml in W5-T1) Rust lint baseline: add the E1 set (expect_used, indexing_slicing, cast_*, too_many_lines at 80,
   allow_attributes(+_without_reason), missing_panics_doc, return_self_not_must_use, unused_async(+trait_impl),
   needless_pass_by_value, manual_let_else, struct_excessive_bools, print_stdout/stderr, disallowed_methods)
   plus a shared `clippy.toml` to `rust/`, `cli/` and the backend template; fix all violations in baukit.
   Acceptance: `make ci` green with `-D warnings`, no new `#[allow]`, each `#[expect]` has a reason.
-- [ ] P1.2 `missing_errors_doc` on core, http, config, auth first, then the rest (255 docs).
+- [x] P1.2 (F1a/F1b: every pub Result fn documented after tracing its Err sites; lint on in rust/ and cli/, not in the product baseline) `missing_errors_doc` on core, http, config, auth first, then the rest (255 docs).
 - [~] P1.3 (rust/ and cli/ done in W1-D; template deny.toml open) cargo-deny: `allow-wildcard-paths`, full `check` for `rust/`, new `cli/deny.toml`, template `deny.toml`.
-- [~] P1.4 (W3-1 running: lints, file-size, suppressions, patterns, agent-docs; `template-files` moves to the template wave as P1.4b) `baukit check` subcommand framework (also: `patterns` runs lint/ast-grep with ast-grep 0.51.1, skips
+- [~] P1.4 (all seven rules merged: lints, file-size, suppressions, patterns, agent-docs, observability, template-files with `.baukit/template-files.toml` and the `scripts/quality-gate.local.sh` hook; wiring the last two into the generated gate is W5-T1) `baukit check` subcommand framework (also: `patterns` runs lint/ast-grep with ast-grep 0.51.1, skips
   `vendor/`, `target/`, `node_modules`, and rejects `ast-grep-ignore` comments without a `-- reason`) in the CLI, with rules:
   `lints` (baseline subset check for Cargo lint tables and clippy.toml), `file-size` (Rust/TS, shrinking
   allowlist in `baukit.toml`), `agent-docs` (Q-09), `template-files` (Q-07). Unit + CLI tests.
@@ -123,14 +123,14 @@ tenancy and rate-limit audit of the products (S-08).
   max-lines-per-function 80, max-lines 500, max-depth 4, complexity 15 (warn), max-params 4,
   consistent-type-assertions, strict-boolean-expressions per E2. Used by `typescript/` and both templates.
   Fix the ~114 violations in baukit packages.
-- [~] P1.7 Shared type guards: one `isRecord`/validation helper module, remove the 10 copies and the
+- [x] P1.7 (no `as unknown as` left in production code; the remaining test-file casts are DOM/Expo/RevenueCat test doubles; the last isRecord copies now import @baukit/type-guards) Shared type guards: one `isRecord`/validation helper module, remove the 10 copies and the
   avoidable `as unknown as` casts.
 - [x] P1.8 (baukit in W1-D/W1-D2, templates in W5-T3) ruff + shellcheck for `scripts/` in baukit and the template gate; fix findings.
-- [~] P1.9 (cli split merged in W1-B; Rust splits in W1-A and navigation in W1-C await merge; template `api.rs::run` open) Refactors to meet the limits: split `cli/src/lib.rs`, `supervise_task`, `authorize_inner`,
+- [~] P1.9 (cli, Rust and navigation splits merged; template `api.rs::run` in W5-T1) Refactors to meet the limits: split `cli/src/lib.rs`, `supervise_task`, `authorize_inner`,
   `worker.rs::execute`, navigation `native.tsx` components, template `api.rs::run` (composition builder).
 - [ ] P1.10 `SuiteComposition` builder in baukit-suite; template uses it (Q-08). Crate part done (W4-G);
   template and product adoption pending.
-- [ ] P1.11 `baukit check observability` replacing the five product linters (Q-13).
+- [x] P1.11 (F2: native rule agreeing with check-metric-names.py on shared fixtures, plus datasource and dashboard-coverage checks; product findings in the log, old linters go in P4.2) `baukit check observability` replacing the five product linters (Q-13).
 
 ## Phase 2. Security tooling, tests and skills
 
@@ -148,11 +148,11 @@ tenancy and rate-limit audit of the products (S-08).
   (nightly, 60 s per target locally, longer on schedule). Template gets a `backend/fuzz` scaffold and the step.
 - [x] P2.7 (vault, media grants, HLC merged; F5 added a two-owner proptest over the crate's revision and purge calls on Postgres, which found purge deleting another owner's row with the same id; `TombstoneTable` delete now binds owners as `$2`; push/pull isolation stays product-owned and moves to the P4.2 rollout) Property tests: credential vault (roundtrip, any AAD change fails), media grants (Rust signer and
   njs verifier agree, single-byte mutations rejected), sync merge (idempotent, owner isolation).
-- [ ] P2.8 `baukit-test` security helpers: auth negative suite and `assert_cross_tenant_denied` that walks the
+- [~] P2.8 (crate helpers merged; the template test lands with P2.12 in W5-T1) `baukit-test` security helpers: auth negative suite and `assert_cross_tenant_denied` that walks the
   OpenAPI routes; template integration test that uses both.
 - [~] P2.9 (baukit merged in W4-C; template `clippy.toml` in W5-T1) clippy `disallowed-methods` for raw reqwest outside an allowlisted adapter module (template
   `clippy.toml`).
-- [~] P2.10 (threat-model + security-testing done in W1-E; code-conformance waits for the checks) Skills in `agent-skills/skills/`: `baukit-threat-model` (data classes, trust boundaries,
+- [x] P2.10 (threat-model and security-testing in W1-E, code-conformance in F3) Skills in `agent-skills/skills/`: `baukit-threat-model` (data classes, trust boundaries,
   STRIDE per boundary, threat → control → test table, output `docs/threat-model.md`),
   `baukit-security-testing` (when and how to add fuzz, property and negative auth tests),
   `baukit-code-conformance` (fixing lint and check failures without suppressing them).
@@ -171,7 +171,7 @@ tenancy and rate-limit audit of the products (S-08).
 - [x] P3.2 (W5-T3; markers are `baukit:agent-rules:start/end`, filled from lint/agent-rules.md at generation) Template managed block `<!-- baukit:begin -->`/`<!-- baukit:end -->` in the generated CLAUDE.md
   with the shared rules; `baukit upgrade` refreshes it; `baukit check agent-docs` verifies it and the D3
   file convention.
-- [ ] P3.3 Skills index and install docs updated.
+- [x] P3.3 (agent-skills/README.md lists all 14 skills; the generated CLAUDE.md skills section is in W5-T1) Skills index and install docs updated.
 
 ## Phase 4. Release and rollout
 
@@ -444,3 +444,21 @@ tenancy and rate-limit audit of the products (S-08).
     swallowed `session()` error.
   - Follow-ups (not in this wave): the CSP `policy.ts` duplicated between web and mobile, and COOP/COEP
     headers in the chart nginx config.
+
+### 2026-11-07 follow-up batch (F1 to F5)
+
+- F1a/F1b: about 290 `# Errors` sections. The first part-A pass named a variant `encrypt` cannot return; the
+  traced rework fixed 48 of 161 sections. `missing_errors_doc` is now on in rust/ and cli/. rustdoc runs with
+  `-D warnings` in the rust-check and cli-check steps.
+- F2: `baukit check observability` and `template-files`. Product findings (none reported by the old linters):
+  eigenruhe 20 datasource (fixed uid `prometheus`), kassensturz 6 metrics on no dashboard, AHP 81 coverage +
+  9 undeclared `DS_PROMETHEUS`, lesezeichen 14, leitbild 4, schluesselbund 16 coverage gaps. promtool stays a
+  separate step. Generated products get `.baukit/template-files.toml` and a `.gitleaks.toml` that allowlists it.
+- F3: baukit-code-conformance skill and the skills index.
+- F4: `baukit_integrations::oauth_state` (single-use, browser-bound state with PKCE, Postgres consume race test,
+  fuzz target, threat-model rows B-18 to B-20). The unlimited suite router is gone.
+- F5: owner-isolation proptest found `purge_tombstone_batch` deleting another owner's row with the same id; the
+  delete SQL now gets owners as `$2`.
+- Gotcha: the kache rustc wrapper can serve a stale `baukit` binary after new template files land
+  (`include_dir!`); `cargo clean -p baukit-cli` fixes it.
+
