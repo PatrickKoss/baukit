@@ -4,6 +4,16 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- `assert_cross_tenant_denied` / `check_cross_tenant_denied` walk every OpenAPI operation with a path
+  parameter, substitute principal A's ids and call as principal B against an axum `Router` or a base URL.
+  Any status outside the denied set (403, 404 by default) or a leak marker in the body fails. A path
+  parameter without a fixture id fails, and exclusions need a reason that every run prints.
+- `assert_auth_negative_suite` / `check_auth_negative_suite` send a missing token, an expired token, a token
+  for another audience, a token signed by an unknown key and an `alg: none` token to every operation that
+  declares security, and require 401 for each.
+
 ## [0.18.3] - 2026-11-07
 
 ## [0.18.2] - 2026-11-06
