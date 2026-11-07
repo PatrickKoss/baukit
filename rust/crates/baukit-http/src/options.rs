@@ -236,7 +236,7 @@ impl HttpOptions {
             additional_exposed_headers: Vec::new(),
             response_cache_policy: ResponseCachePolicy::default(),
             json_rejection_codes: JsonRejectionCodes::default(),
-            hsts_max_age: None,
+            hsts_max_age: config.hsts_max_age,
         }
         .validate()
     }

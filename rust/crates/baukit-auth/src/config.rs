@@ -8,6 +8,7 @@ pub(crate) enum TokenProfile {
     Oidc,
     Clerk {
         authorized_parties: BTreeSet<String>,
+        allow_missing_azp: bool,
     },
     ClientBound {
         client_id: String,
@@ -268,8 +269,21 @@ impl OidcConfig {
             request_timeout: Duration::from_secs(5),
             clock_skew: Duration::from_secs(5),
             claim_mapping: PrincipalClaimMapping::clerk(),
-            token_profile: TokenProfile::Clerk { authorized_parties },
+            token_profile: TokenProfile::Clerk {
+                authorized_parties,
+                allow_missing_azp: false,
+            },
         })
+    }
+
+    pub(crate) fn allowing_missing_authorized_party(mut self) -> Self {
+        if let TokenProfile::Clerk {
+            allow_missing_azp, ..
+        } = &mut self.token_profile
+        {
+            *allow_missing_azp = true;
+        }
+        self
     }
 
     pub(crate) fn client_bound(

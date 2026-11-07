@@ -13,8 +13,10 @@ const WORKOS_JWKS_BASE: &str = "https://api.workos.com/sso/jwks/";
 /// Clerk session-token verification with authorized-party checks.
 ///
 /// Clerk session tokens do not require an `aud` claim, so this adapter checks
-/// none unless [`ClerkVerifier::with_audiences`] configures one. When `azp` is
-/// present, this adapter requires an exact match in the configured allowlist.
+/// none unless [`ClerkVerifier::with_audiences`] configures one. Tokens must
+/// carry an `azp` from the configured allowlist. Clerk sets `azp` from the
+/// request `Origin` and omits it when that header is empty, as it is for native
+/// apps; [`ClerkVerifier::allow_missing_authorized_party`] accepts such tokens.
 /// Clerk's version 2 active organization claim is mapped from `o.id`.
 /// [`CLERK_SIGN_IN_TIME_CLAIM`](crate::CLERK_SIGN_IN_TIME_CLAIM) sets [`Principal::authenticated_at`].
 #[derive(Clone, Debug)]
@@ -84,6 +86,23 @@ impl ClerkVerifier {
         T: Into<String>,
     {
         let config = self.inner.config().clone().with_profile_claims(claims);
+        Self {
+            inner: self.inner.with_config(config),
+        }
+    }
+
+    /// Also accepts tokens without `azp`, such as sessions from native apps.
+    ///
+    /// Any other Clerk application on the same instance can then mint an
+    /// accepted token, so pair this with [`Self::with_audiences`] where possible.
+    /// A present `azp` must still match the allowlist.
+    #[must_use]
+    pub fn allow_missing_authorized_party(self) -> Self {
+        let config = self
+            .inner
+            .config()
+            .clone()
+            .allowing_missing_authorized_party();
         Self {
             inner: self.inner.with_config(config),
         }

@@ -48,7 +48,8 @@ async fn clerk_adapter_checks_authorized_party_and_maps_v2_organization()
 }
 
 #[tokio::test]
-async fn clerk_adapter_accepts_tokens_without_an_authorized_party() -> Result<(), Box<dyn Error>> {
+async fn clerk_adapter_accepts_tokens_without_an_authorized_party_only_after_opting_in()
+-> Result<(), Box<dyn Error>> {
     let server = MockOidcServer::start().await?;
     let verifier = ClerkVerifier::from_jwks_uri(
         server.issuer(),
@@ -60,10 +61,21 @@ async fn clerk_adapter_accepts_tokens_without_an_authorized_party() -> Result<()
         .issuer(server.issuer())
         .expires_at(expiry()?);
 
+    assert!(matches!(
+        verifier.verify(&server.mint(&claims)?).await,
+        Err(VerificationError::WrongAuthorizedParty)
+    ));
+    let native = verifier.allow_missing_authorized_party();
     assert_eq!(
-        verifier.verify(&server.mint(&claims)?).await?.subject(),
+        native.verify(&server.mint(&claims)?).await?.subject(),
         "native_user"
     );
+    assert!(matches!(
+        native
+            .verify(&server.mint(&claims.claim("azp", "https://evil.example"))?)
+            .await,
+        Err(VerificationError::WrongAuthorizedParty)
+    ));
     Ok(())
 }
 

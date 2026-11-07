@@ -5,6 +5,7 @@ All notable changes to `baukit-auth` are documented here.
 ## [Unreleased]
 
 - Breaking: `IssuedApiToken` no longer implements `PartialEq` or `Eq`, so the secret is never compared in variable time. Its `Debug` output redacts `secret`.
+- Breaking: `ClerkVerifier` rejects session tokens without `azp` (`WrongAuthorizedParty`). Clerk omits `azp` when the request has no `Origin`, as native apps do; `ClerkVerifier::allow_missing_authorized_party()` accepts those tokens again. A present `azp` must still be in the allowlist.
 - New `browser-session` feature: `browser_session::router` serves `POST /auth/session/{exchange,refresh,logout}` (ADR 0006). The refresh token stays server side in `baukit_auth_browser_sessions` (sealed with `CredentialCipher`); the browser holds a `__Host-` HttpOnly SameSite=Strict cookie. CSRF needs `X-Baukit-Session: 1` and an allowed Origin. Refresh rotates under a row lock with a 10 s reuse grace; reuse after it revokes the family. The ID token is verified against the issuer JWKS. Rate limiting goes through the `BrowserSessionRateLimiter` port. Migration `0002_baukit_auth_browser_sessions.sql`.
 
 ## [0.18.3] - 2026-11-07
