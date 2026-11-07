@@ -299,3 +299,15 @@ tenancy and rate-limit audit of the products (S-08).
   - F: P2.4 Clerk azp plus the HSTS config field.
   - G: P1.10 suite builder plus a limiter on unauthenticated suite routes.
   - H: P2.8 test helpers.
+- 2026-11-07: W4-D merged.
+  - 9 `ts-double-cast` findings are gone. analytics-core probes globals as `unknown` with typeof checks.
+    sync-client wraps host interval ids in opaque handles through a WeakMap.
+  - No suppressions. Main: TS lint 26/26, tests pass for the affected packages.
+  - Leftover: a test-only `readFileSync as unknown as` in `sync-client/src/hlc.test.ts:100`. The rule skips
+    tests.
+- 2026-11-07: P3.1 done. Rewrote `lint/agent-rules.md`: gate, no prod panics, suppressions, file size,
+  hexagonal, TS guards, owner-scoped SQL plus a second-principal test, every route in the limiter, egress,
+  secrets, no browser token storage, deny/osv/SHA pins, threat model. Synced with `--fix`. Removed the
+  duplicated gate paragraph from CLAUDE.md.
+- 2026-11-07: W5-T3 (template repo-level: SHA pins, security steps, `baukit check` in the generated gate,
+  managed block, AGENTS.md symlink) started.
