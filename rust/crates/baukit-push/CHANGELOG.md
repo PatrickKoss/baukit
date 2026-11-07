@@ -4,6 +4,11 @@ All notable changes to `baukit-push` are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- `ExpoPushSender` sends every request through a `baukit-egress` `GuardedClient`. The default client reaches only the configured endpoint's scheme, host and port; the raw `reqwest` transport is gone. `with_guarded_client` still replaces it. Non-success statuses and parse failures now report through the egress error classes.
+- The crate no longer depends on `reqwest`.
+
 ## [0.18.3] - 2026-11-07
 
 ## [0.18.2] - 2026-11-06

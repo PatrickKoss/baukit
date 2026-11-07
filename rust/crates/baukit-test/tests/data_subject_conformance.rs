@@ -341,7 +341,7 @@ async fn rejects_broken_http_requirements_without_disclosing_inputs()
         let mut adapter = Adapter::new(None).await?;
         let router = Router::new().fallback(proxy).with_state(Proxy {
             base: adapter.target.base_url().to_owned(),
-            client: reqwest::Client::builder().no_proxy().build()?,
+            client: baukit_test::test_http_client().no_proxy().build()?,
             mutation,
             lookup: Arc::new(Mutex::new(None)),
             seen: Arc::new(Mutex::new(std::collections::HashSet::new())),
@@ -363,7 +363,7 @@ async fn accepts_terminal_replay_and_cacheable_discovery_without_public_directiv
         let mut adapter = Adapter::new(None).await?;
         let router = Router::new().fallback(proxy).with_state(Proxy {
             base: adapter.target.base_url().to_owned(),
-            client: reqwest::Client::builder().no_proxy().build()?,
+            client: baukit_test::test_http_client().no_proxy().build()?,
             mutation,
             lookup: Arc::new(Mutex::new(None)),
             seen: Arc::new(Mutex::new(std::collections::HashSet::new())),

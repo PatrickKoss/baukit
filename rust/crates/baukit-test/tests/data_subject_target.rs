@@ -31,7 +31,7 @@ const EXPORT: &str = "/api/v1/data-subject/exports";
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn client() -> Client {
-    Client::builder()
+    baukit_test::test_http_client()
         .no_proxy()
         .timeout(Duration::from_secs(5))
         .build()

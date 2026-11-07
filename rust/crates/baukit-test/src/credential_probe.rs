@@ -555,7 +555,7 @@ mod tests {
     impl HttpProbe {
         fn new(origin: &str, required_scope: Option<&'static str>) -> Self {
             Self {
-                client: reqwest::Client::builder()
+                client: crate::test_http_client()
                     .timeout(Duration::from_millis(500))
                     .build()
                     .expect("test client builds"),
@@ -694,7 +694,9 @@ mod tests {
             .await
             .expect("server starts");
         server.push_response(ScriptedCredentialProbeResponse::ok("{}"));
-        reqwest::Client::new()
+        crate::test_http_client()
+            .build()
+            .expect("test client builds")
             .get(format!("{}/private-path", server.origin()))
             .header("authorization", "Bearer private-token")
             .send()
@@ -710,7 +712,11 @@ mod tests {
             .await
             .expect("server starts");
         server.push_response(ScriptedCredentialProbeResponse::ok("streamed").streamed());
-        let response = reqwest::get(server.origin())
+        let response = crate::test_http_client()
+            .build()
+            .expect("test client builds")
+            .get(server.origin())
+            .send()
             .await
             .expect("request completes");
 

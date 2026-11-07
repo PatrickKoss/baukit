@@ -246,8 +246,6 @@ fn empty_response(status: u16, headers: BTreeMap<String, String>) -> Response<Bo
 
 #[cfg(test)]
 mod tests {
-    use reqwest::Client;
-
     use super::*;
 
     #[tokio::test]
@@ -259,7 +257,7 @@ mod tests {
                 .with_header("retry-after", "17"),
         );
         receiver.push_response(ScriptedWebhookResponse::success());
-        let client = Client::new();
+        let client = crate::test_http_client().build()?;
         let body = br#"{"private":"fixture"}"#;
         let first = client
             .post(receiver.url("events"))

@@ -283,7 +283,7 @@ async fn two_routers_link_both_roles_reconnect_relay_and_disconnect() -> TestRes
         let b = b.clone();
         async move { axum::serve(b_listener, b).await }
     });
-    let http = reqwest::Client::builder()
+    let http = baukit_test::test_http_client()
         .redirect(reqwest::redirect::Policy::none())
         .build()?;
     let mut old_links = None;

@@ -13,6 +13,7 @@ All notable changes to `baukit-test` are documented here.
 - `assert_auth_negative_suite` / `check_auth_negative_suite` send a missing token, an expired token, a token
   for another audience, a token signed by an unknown key and an `alg: none` token to every operation that
   declares security, and require 401 for each.
+- `test_http_client()` returns the raw `reqwest::ClientBuilder` that tests use to drive servers under test. It is the one place in test support that builds a raw client, so the `disallowed-methods` lint for raw `reqwest` constructors needs no suppression elsewhere.
 
 ### Security
 

@@ -17,7 +17,9 @@ const CHALLENGE: &str = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
 const REDIRECT: &str = "https://app.example/callback";
 
 fn client() -> Result<Client, reqwest::Error> {
-    Client::builder().timeout(Duration::from_secs(5)).build()
+    baukit_test::test_http_client()
+        .timeout(Duration::from_secs(5))
+        .build()
 }
 
 fn endpoint(server: &MockOidcServer) -> String {

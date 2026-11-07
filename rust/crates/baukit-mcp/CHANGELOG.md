@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `KeycloakIntrospectionPolicy` sends introspection requests through a `baukit-egress` `GuardedClient` that reaches only the issuer's scheme, host and port, with the 32 KiB response limit enforced by the guard. The `reqwest` dependency is replaced by `baukit-egress`.
+
 ## [0.18.3] - 2026-11-07
 
 ## [0.18.2] - 2026-11-06

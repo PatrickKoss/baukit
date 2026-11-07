@@ -53,6 +53,7 @@ mod data_subject_conformance;
 mod erasure;
 #[cfg(test)]
 mod fixture_tests;
+mod http_client;
 mod identity_deleter;
 mod identity_erasure;
 mod inbox;
@@ -116,6 +117,7 @@ pub use erasure::{
     CleanupKind, ErasureConformanceError, OwnedResourceCheck, ProductProfileErasureAdapter,
     check_product_profile_erasure_conformance,
 };
+pub use http_client::test_http_client;
 pub use identity_deleter::FakeIdentityAccountDeleter;
 pub use identity_erasure::{
     IdentityErasureAdapter, IdentityErasureConformanceError, IdentityErasureRequest,

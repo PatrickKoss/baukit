@@ -1,6 +1,5 @@
 use std::{
     collections::{BTreeMap, BTreeSet, btree_map::Entry},
-    error::Error as _,
     future::Future,
     pin::Pin,
     sync::Arc,
@@ -9,8 +8,9 @@ use std::{
 
 use aws_lc_rs::{digest, signature};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use baukit_egress::{EgressClientError, EgressError, EgressOptionsError, GuardedClient};
 use chrono::{DateTime, Utc};
-use reqwest::{Client, StatusCode, Url};
+use reqwest::{StatusCode, Url};
 use serde::Deserialize;
 use serde_json::Value;
 use thiserror::Error;
@@ -18,6 +18,7 @@ use tokio::sync::Mutex;
 
 use crate::authorized_party::{validate_clerk_authorized_party, validate_client_id};
 use crate::config::ClaimPath;
+use crate::oidc_http::{self, Document};
 use crate::{
     ApiToken, ClerkVerifier, OidcConfig, SigningAlgorithm, WorkOsVerifier, config::TokenProfile,
 };
@@ -457,7 +458,7 @@ pub enum MultiIssuerError {
 
 struct VerifierInner {
     config: OidcConfig,
-    client: Client,
+    client: GuardedClient,
     jwks_uri: Url,
     cache: Mutex<JwksCache>,
 }
@@ -479,12 +480,9 @@ impl OidcVerifier {
         config: OidcConfig,
         jwks_uri: impl AsRef<str>,
     ) -> Result<Self, VerificationError> {
-        let client = Client::builder()
-            .timeout(config.request_timeout)
-            .build()
-            .map_err(VerificationError::Client)?;
         let jwks_uri =
             Url::parse(jwks_uri.as_ref()).map_err(|_| VerificationError::InvalidJwksUri)?;
+        let client = oidc_http::configured_client(&config, &jwks_uri)?;
         Ok(Self {
             inner: Arc::new(VerifierInner {
                 config,
@@ -501,31 +499,15 @@ impl OidcVerifier {
     /// fetched lazily on first verification and then cached according to the
     /// configured TTL.
     pub async fn discover(config: OidcConfig) -> Result<Self, VerificationError> {
-        let client = Client::builder()
-            .timeout(config.request_timeout)
-            .build()
-            .map_err(VerificationError::Client)?;
-        let discovery_url = config.discovery_url();
-        let response = client
-            .get(discovery_url)
-            .send()
-            .await
-            .map_err(discovery_request_error)?;
-        if !response.status().is_success() {
-            return Err(VerificationError::DiscoveryStatus(response.status()));
-        }
-        let metadata: DiscoveryDocument = response.json().await.map_err(|error| {
-            if is_json_parse_error(&error) {
-                VerificationError::InvalidDiscoveryDocument(error)
-            } else {
-                discovery_request_error(error)
-            }
-        })?;
+        let discovery = oidc_http::configured_client(&config, &config.issuer_url)?;
+        let metadata: DiscoveryDocument =
+            oidc_http::get_json(&discovery, config.discovery_url(), Document::Discovery).await?;
         if metadata.issuer != config.issuer.as_str() {
             return Err(VerificationError::DiscoveryIssuerMismatch);
         }
         let jwks_uri =
             Url::parse(&metadata.jwks_uri).map_err(|_| VerificationError::InvalidJwksUri)?;
+        let client = oidc_http::discovered_jwks_client(&config, discovery, &jwks_uri)?;
         Ok(Self {
             inner: Arc::new(VerifierInner {
                 config,
@@ -684,23 +666,12 @@ impl OidcVerifier {
     }
 
     async fn fetch_jwks(&self) -> Result<JwkSet, VerificationError> {
-        let response = self
-            .inner
-            .client
-            .get(self.inner.jwks_uri.clone())
-            .send()
-            .await
-            .map_err(jwks_request_error)?;
-        if !response.status().is_success() {
-            return Err(VerificationError::JwksStatus(response.status()));
-        }
-        response.json().await.map_err(|error| {
-            if is_json_parse_error(&error) {
-                VerificationError::InvalidJwksDocument(error)
-            } else {
-                jwks_request_error(error)
-            }
-        })
+        oidc_http::get_json(
+            &self.inner.client,
+            self.inner.jwks_uri.clone(),
+            Document::Jwks,
+        )
+        .await
     }
 }
 
@@ -1213,29 +1184,6 @@ fn mapped_claim(
     }
 }
 
-fn is_json_parse_error(error: &reqwest::Error) -> bool {
-    // Reqwest also reports interrupted body reads as decode errors.
-    error
-        .source()
-        .is_some_and(|source| source.is::<serde_json::Error>())
-}
-
-fn discovery_request_error(error: reqwest::Error) -> VerificationError {
-    if error.is_timeout() {
-        VerificationError::DiscoveryTimeout
-    } else {
-        VerificationError::DiscoveryRequest(error)
-    }
-}
-
-fn jwks_request_error(error: reqwest::Error) -> VerificationError {
-    if error.is_timeout() {
-        VerificationError::JwksTimeout
-    } else {
-        VerificationError::JwksRequest(error)
-    }
-}
-
 /// Failure while discovering an issuer or verifying an access token.
 #[derive(Debug, Error)]
 #[non_exhaustive]
@@ -1245,19 +1193,25 @@ pub enum VerificationError {
     Unavailable,
     /// The HTTP client could not be created.
     #[error("could not create OIDC HTTP client")]
-    Client(#[source] reqwest::Error),
+    Client(#[source] EgressClientError),
+    /// The issuer or JWKS URL cannot form the default egress allowance.
+    #[error("OIDC endpoint cannot be used as an egress endpoint")]
+    EgressEndpoint,
+    /// The egress options derived from the configuration are invalid.
+    #[error("invalid OIDC egress options")]
+    EgressOptions(#[source] EgressOptionsError),
     /// OIDC discovery exceeded the configured timeout.
     #[error("OIDC discovery timed out")]
     DiscoveryTimeout,
     /// OIDC discovery failed while sending the request or reading the response.
     #[error("OIDC discovery request failed")]
-    DiscoveryRequest(#[source] reqwest::Error),
+    DiscoveryRequest(#[source] Box<EgressError>),
     /// OIDC discovery returned a non-success status.
     #[error("OIDC discovery returned HTTP {0}")]
     DiscoveryStatus(StatusCode),
     /// OIDC discovery returned invalid JSON.
     #[error("OIDC discovery document was invalid")]
-    InvalidDiscoveryDocument(#[source] reqwest::Error),
+    InvalidDiscoveryDocument(#[source] serde_json::Error),
     /// Discovery metadata did not report the configured issuer exactly.
     #[error("OIDC discovery issuer did not match configuration")]
     DiscoveryIssuerMismatch,
@@ -1269,13 +1223,13 @@ pub enum VerificationError {
     JwksTimeout,
     /// JWKS failed while sending the request or reading the response.
     #[error("JWKS request failed")]
-    JwksRequest(#[source] reqwest::Error),
+    JwksRequest(#[source] Box<EgressError>),
     /// JWKS returned a non-success status.
     #[error("JWKS returned HTTP {0}")]
     JwksStatus(StatusCode),
     /// JWKS returned invalid JSON.
     #[error("JWKS document was invalid")]
-    InvalidJwksDocument(#[source] reqwest::Error),
+    InvalidJwksDocument(#[source] serde_json::Error),
     /// The JWT did not have three valid base64url-encoded segments.
     #[error("access token was malformed")]
     MalformedToken,
@@ -1355,11 +1309,8 @@ impl VerificationError {
     #[must_use]
     pub fn is_unavailable(&self) -> bool {
         match self {
-            Self::Unavailable
-            | Self::DiscoveryTimeout
-            | Self::DiscoveryRequest(_)
-            | Self::JwksTimeout
-            | Self::JwksRequest(_) => true,
+            Self::Unavailable | Self::DiscoveryTimeout | Self::JwksTimeout => true,
+            Self::DiscoveryRequest(error) | Self::JwksRequest(error) => error.is_retryable(),
             Self::DiscoveryStatus(status) | Self::JwksStatus(status) => {
                 is_transient_status(*status)
             }
@@ -1374,6 +1325,8 @@ impl VerificationError {
     pub fn is_misconfigured(&self) -> bool {
         match self {
             Self::Client(_)
+            | Self::EgressEndpoint
+            | Self::EgressOptions(_)
             | Self::InvalidDiscoveryDocument(_)
             | Self::DiscoveryIssuerMismatch
             | Self::InvalidJwksUri
@@ -1384,6 +1337,7 @@ impl VerificationError {
             Self::DiscoveryStatus(status) | Self::JwksStatus(status) => {
                 !is_transient_status(*status)
             }
+            Self::DiscoveryRequest(error) | Self::JwksRequest(error) => !error.is_retryable(),
             _ => false,
         }
     }
@@ -1512,39 +1466,58 @@ mod tests {
         let server = tokio::spawn(async move {
             axum::serve(
                 listener,
-                axum::Router::new().route("/", axum::routing::get(|| async { "invalid JSON" })),
+                axum::Router::new().fallback(|| async { "invalid JSON" }),
             )
             .await
             .expect("server");
         });
         let secret = "private-token-material";
-        let url = format!("http://{address}/?token={secret}");
-        let variants = [
-            VerificationError::Client,
-            VerificationError::DiscoveryRequest,
-            VerificationError::InvalidDiscoveryDocument,
-            VerificationError::JwksRequest,
-            VerificationError::InvalidJwksDocument,
+        let issuer = format!("http://{address}/{secret}");
+        let jwks = format!("http://{address}/jwks?token={secret}");
+        let config = OidcConfig::new(&issuer, "api").expect("config");
+        let blocked = config
+            .clone()
+            .with_egress_policy(baukit_egress::AddressPolicy::PublicOnly);
+        let errors = [
+            OidcVerifier::discover(config.clone())
+                .await
+                .map(|_| ())
+                .expect_err("invalid discovery document"),
+            OidcVerifier::discover(blocked.clone())
+                .await
+                .map(|_| ())
+                .expect_err("blocked discovery"),
+            OidcVerifier::from_jwks_uri(config, &jwks)
+                .expect("verifier")
+                .fetch_jwks()
+                .await
+                .map(|_| ())
+                .expect_err("invalid JWKS document"),
+            OidcVerifier::from_jwks_uri(blocked, &jwks)
+                .expect("verifier")
+                .fetch_jwks()
+                .await
+                .map(|_| ())
+                .expect_err("blocked JWKS"),
         ];
-        for variant in variants {
-            let source = reqwest::get(&url)
-                .await
-                .expect("response")
-                .json::<Value>()
-                .await
-                .expect_err("invalid JSON");
-            let error = variant(source);
-            assert!(!error.to_string().contains(secret));
-            assert!(!error.to_string().contains(&address.to_string()));
-            if matches!(
-                error,
-                VerificationError::Client(_)
-                    | VerificationError::InvalidDiscoveryDocument(_)
-                    | VerificationError::InvalidJwksDocument(_)
-            ) {
-                assert!(error.is_misconfigured());
-                assert!(!error.is_unavailable());
+        assert!(matches!(
+            errors,
+            [
+                VerificationError::InvalidDiscoveryDocument(_),
+                VerificationError::DiscoveryRequest(_),
+                VerificationError::InvalidJwksDocument(_),
+                VerificationError::JwksRequest(_),
+            ]
+        ));
+        for error in errors {
+            let mut source: Option<&dyn std::error::Error> = Some(&error);
+            while let Some(current) = source {
+                assert!(!current.to_string().contains(secret), "{current}");
+                assert!(!current.to_string().contains(&address.to_string()));
+                source = current.source();
             }
+            assert!(error.is_misconfigured(), "{error:?}");
+            assert!(!error.is_unavailable(), "{error:?}");
         }
         server.abort();
     }

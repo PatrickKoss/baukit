@@ -1,6 +1,8 @@
+use crate::egress::{bearer, endpoint_client, status, success};
 use crate::{ErasureFuture, IdentityAccountDeleter, IdentityDeletionError};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use baukit_config::Secret;
-use reqwest::{Client, StatusCode};
+use baukit_egress::{EgressRequest, GuardedClient};
 use serde::Deserialize;
 use std::{
     sync::Arc,
@@ -24,10 +26,11 @@ pub struct KeycloakDeletionConfig {
     pub allow_local_http: bool,
 }
 
-/// Dedicated Keycloak admin client, with no proxy or redirects.
+/// Dedicated Keycloak admin client that reaches only the configured base URL's
+/// scheme, host and port, with no proxy or redirects.
 #[derive(Clone)]
 pub struct KeycloakAccountDeleter {
-    client: Client,
+    client: GuardedClient,
     base: Url,
     config: KeycloakDeletionConfig,
     token: Arc<Mutex<Option<CachedToken>>>,
@@ -58,13 +61,7 @@ impl KeycloakAccountDeleter {
         {
             return Err(IdentityDeletionError::Permanent);
         }
-        let client = Client::builder()
-            .no_proxy()
-            .connect_timeout(Duration::from_secs(2))
-            .timeout(Duration::from_secs(5))
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .map_err(|_| IdentityDeletionError::Permanent)?;
+        let client = endpoint_client(&base)?;
         Ok(Self {
             client,
             base,
@@ -87,27 +84,27 @@ impl KeycloakAccountDeleter {
         {
             return Ok(token.value.expose().clone());
         }
-        let token: TokenResponse = self
-            .client
-            .post(self.url(&[
-                "realms",
-                &self.config.realm,
-                "protocol",
-                "openid-connect",
-                "token",
-            ])?)
-            .form(&[
-                ("grant_type", "client_credentials"),
-                ("client_id", self.config.client_id.as_str()),
-                ("client_secret", self.config.client_secret.expose().as_str()),
-            ])
-            .send()
-            .await
-            .map_err(|_| IdentityDeletionError::Retryable)?
-            .error_for_status()
-            .map_err(|_| IdentityDeletionError::Retryable)?
-            .json()
-            .await
+        let form = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("grant_type", "client_credentials")
+            .append_pair("client_id", &self.config.client_id)
+            .append_pair("client_secret", self.config.client_secret.expose())
+            .finish();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/x-www-form-urlencoded"),
+        );
+        let request = EgressRequest::post(self.url(&[
+            "realms",
+            &self.config.realm,
+            "protocol",
+            "openid-connect",
+            "token",
+        ])?)
+        .with_headers(headers)
+        .with_body(form);
+        let response = success(&self.client, request).await?;
+        let token: TokenResponse = serde_json::from_slice(response.body())
             .map_err(|_| IdentityDeletionError::Retryable)?;
         if token.access_token.is_empty() {
             return Err(IdentityDeletionError::Retryable);
@@ -129,14 +126,10 @@ impl IdentityAccountDeleter for KeycloakAccountDeleter {
             if subject.is_empty() {
                 return Err(IdentityDeletionError::Permanent);
             }
-            let response = self
-                .client
-                .delete(self.url(&["admin", "realms", &self.config.realm, "users", subject])?)
-                .bearer_auth(self.token().await?)
-                .send()
-                .await
-                .map_err(|_| IdentityDeletionError::Retryable)?;
-            let status = response.status();
+            let url = self.url(&["admin", "realms", &self.config.realm, "users", subject])?;
+            let request =
+                EgressRequest::new(Method::DELETE, url).with_headers(bearer(&self.token().await?)?);
+            let status = status(&self.client, request).await?;
             if status.is_success() || status == StatusCode::NOT_FOUND {
                 return Ok(());
             }

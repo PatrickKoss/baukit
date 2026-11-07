@@ -17,16 +17,16 @@ workspace = true
 
 [features]
 default = ["keycloak", "api-providers"]
-api-providers = ["dep:reqwest", "dep:url"]
-keycloak = ["dep:reqwest", "dep:url"]
+api-providers = ["dep:baukit-egress", "dep:url"]
+keycloak = ["dep:baukit-egress", "dep:url"]
 
 [dependencies]
 axum.workspace = true
 baukit-config.workspace = true
+baukit-egress = { workspace = true, optional = true }
 baukit-http.workspace = true
 baukit-jobs.workspace = true
 chrono.workspace = true
-reqwest = { workspace = true, optional = true, features = ["form"] }
 aws-lc-rs.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -41,6 +41,7 @@ uuid.workspace = true
 baukit-auth = { path = "../baukit-auth" }
 baukit-runtime = { path = "../baukit-runtime" }
 baukit-test = { path = "../baukit-test" }
+reqwest = { workspace = true, features = ["form"] }
 testcontainers.workspace = true
 tempfile.workspace = true
 tracing-subscriber.workspace = true
