@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## [0.19.0] - 2026-11-07
+
+- Breaking, security: sign-in goes through the backend browser session (ADR 0006) with `BrowserSessionClient` from `@baukit/auth-web`. The refresh token stays server side behind a `__Host-` HttpOnly cookie, the access token lives in memory only, and tabs hand a refresh over to each other instead of racing it.
+
 ## [0.18.3] - 2026-11-07
 
 - The production sign-in adapter reads its provider key with static `import.meta.env` access. `check:bundle` builds with a random `VITE_BUNDLE_CHECK_CANARY` value and fails when the bundle carries it.

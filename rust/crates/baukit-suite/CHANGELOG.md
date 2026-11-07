@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-07
+
 - `compose::PostgresSuite::builder(pool, settings, limiter)` replaces the `SuiteComposition` copied into product bins (P1.10). It takes `SuiteSettings` (`new` parses the catalog JSON, `with_catalog` takes a parsed one) plus the identity, replay, applier and erasure owner lookup ports, and exposes `context`, `outbox`, `store`, `delivery`, `erasure`, `module()`, `module_with(applier)`, `api()`, `notifier()`, `erasure_notifier(links)`, `router(api)` and, with `jobs`, `worker(store)`, `worker_with(store, delivery, config)` and `default_worker_config()`.
 - Security: `PostgresSuite::router` limits `GET /suite/links/callback`, `POST /suite/links/exchange` and `POST /suite/links/{id}/revoke` per client IP (`SuitePublicRateLimit`, default 60 per minute, burst 10, fail closed). Before, a product that merged the suite routes outside `baukit_ratelimit::layers` left them unlimited.
 - Breaking: `adapters::http::router` is gone and `adapters::http::public_router` is private. Mount the suite with `PostgresSuite::router(api)` or `adapters::public_limit::limited_router(state, store, limit)`, so callback, exchange and revoke cannot be mounted without the per-IP bucket. `inbound_router` and `user_router` stay public.

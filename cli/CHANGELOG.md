@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-07
+
 ## [0.18.3] - 2026-11-07
 
 - `baukit new` writes `"mobile/.maestro/**" = ["mobile", "android-build", "android-e2e"]` into a strict mobile product's `quality.affected` table.

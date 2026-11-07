@@ -4,6 +4,8 @@ All notable changes to `baukit-config` are documented here.
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-07
+
 - `http.hsts_max_age` (`<PREFIX>__HTTP__HSTS_MAX_AGE`, seconds). Omitted, it is off in `local` and `DEFAULT_HSTS_MAX_AGE` (one year) in every other environment; `0` turns it off. `HttpConfig` moved to its own module and is re-exported unchanged.
 
 ## [0.18.3] - 2026-11-07

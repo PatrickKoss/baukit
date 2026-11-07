@@ -4,6 +4,8 @@ All notable changes to `baukit-http` are documented here.
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-07
+
 - `layers()` adds `SecurityHeadersLayer` outermost: `nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` and `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` on every response unless the handler set them; `Cache-Control: no-store` on `/auth/session/*` and on requests with `Authorization`.
 - `HttpOptions::with_hsts(max_age)` sends `Strict-Transport-Security`, never for a loopback `Host`.
 - `HttpOptions::from_config` maps `HttpConfig::hsts_max_age`, so deployed environments send HSTS unless `http.hsts_max_age = 0`.

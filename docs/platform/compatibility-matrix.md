@@ -5,6 +5,62 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.19.0
+
+Last verified release train: `v0.19.0` (minor train on top of `v0.18.3`), the quality and security train. The full local gate passed on 2026-11-07 with Rust 1.95 MSRV, Node 26.10.0 and pnpm 12.9.1: every Rust test with `--include-ignored`, all generated fixture flavors (backend, web, mobile, mobile-pwa, combined, mcp, auth, clerk, workos, platform-standalone, platform), the remote MCP fixture against Keycloak, the real-browser Dexie suite and both Android conformance runs. Three npm packages are new: `@baukit/type-guards`, `@baukit/eslint-config` and `@baukit/csp`.
+
+### Breaking changes
+
+- `baukit-sync`: `TombstoneTable.delete` binds ids as `$1` and owners as `$2` and must delete `(id, owner_id)` pairs. The old one-parameter SQL deleted every owner's row with a purged id.
+- `baukit-suite`: `adapters::http::router` is gone. Mount the suite with `PostgresSuite::router(api)` or `adapters::public_limit::limited_router`, which rate limit callback, exchange and revoke per client IP.
+- `baukit-auth`: `ClerkVerifier` rejects tokens without `azp` unless `allow_missing_authorized_party()` is set; `IssuedApiToken` lost `PartialEq`; `VerificationError` carries egress errors, because `OidcVerifier` fetches discovery and JWKS through `baukit-egress`.
+- `baukit-http`: `layers()` adds security headers to every response, including `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`. A backend route that serves HTML sets its own CSP.
+- `@baukit/auth-web`: tokens leave the browser. `BrowserSessionClient` redeems the code through the backend's `/auth/session/{exchange,refresh,logout}` (ADR 0006), and `OidcClient` keeps only discovery, login and the callback transaction. There is no compatibility mode.
+- Templates: `AGENTS.md` is a symlink to `CLAUDE.md` with the managed agent-rules block, and the `items` example is owner-scoped.
+
+### Upgrade steps
+
+Follow the sections in this order, starting from a product on 0.18.2 or 0.18.3. Render a fresh product with the same capabilities (`baukit new`) at v0.19.0 to copy files from.
+
+#### Bump the pins
+
+1. Set every `baukit-*` crate to `=0.19.0` and every `@baukit/*` package to `0.19.0`, and set `baukit.toml`'s template version to `0.19.0`. Add `@baukit/eslint-config` and `@baukit/csp` as dev dependencies of web and mobile.
+2. Strict products move the Baukit clone in `scripts/quality-gate.sh` to `git clone --branch v0.19.0`, and `baukit_commit` to that tag's commit when the gate pins one.
+3. pnpm refuses `@baukit/*@0.19.0` for a day after the publish. Inside that window list the exact `@baukit/<name>@0.19.0` entries in `minimumReleaseAgeExclude` and remove them afterwards. Remove any `@baukit/*@0.18.x` entries left over.
+4. Refresh `backend/Cargo.lock` and the pnpm lockfiles.
+
+#### Owner-keyed tombstone purge (sync products)
+
+Rewrite every `TombstoneTable.delete` to `DELETE FROM <table> AS record USING UNNEST($1::uuid[], $2::uuid[]) AS purged (id, owner_id) WHERE record.id = purged.id AND record.owner_id = purged.owner_id`. Add a test where two owners hold the same id and a purge for one leaves the other's row.
+
+#### Suite routes (suite products)
+
+Replace `adapters::http::router` with `PostgresSuite::router(api)` or `limited_router(state, store, limit)`. Every route, including `/suite/*` and `/platform/*` routes merged late, sits inside `baukit_ratelimit::layers` or its own limiter.
+
+#### Provider linking (integration products)
+
+Move OAuth provider-linking callbacks to `baukit_integrations::oauth_state` (features `oauth-state`, `postgres`, `axum`): a single-use 256-bit state bound to the browser with the `__Host-baukit-oauth` cookie, PKCE S256, and the `OAUTH_STATE_MIGRATION_SQL` migration. A signed, TTL-bound state that is neither single-use nor browser-bound lets an attacker link the victim's provider account.
+
+#### Browser sessions (web products with auth)
+
+Mount `baukit_auth::browser_session::router` (feature `browser-session`) with `StoreBrowserSessionRateLimiter` from `baukit-ratelimit`, and run its `0002_baukit_auth_browser_sessions.sql` migration. Copy the web template's sign-in files, which use `BrowserSessionClient`. Delete any code that reads `<prefix>:tokens`.
+
+#### Clerk on mobile (Clerk products with an Expo app)
+
+Native requests carry no `Origin`, so Clerk omits `azp`. Set `allow_missing_azp` in the product's Clerk config, which calls `ClerkVerifier::allow_missing_authorized_party()`. A present `azp` must still be allowed.
+
+#### Web headers and CSP (web products)
+
+Delete the local `csp/policy.ts` (and `src/csp/policy.ts` in mobile) and import the builder from `@baukit/csp`; keep only `origins.ts`. `vite preview` and the chart's `web` component send COOP and CORP `same-origin`. COEP stays unset. A product that opens a cross-origin popup and reads `window.opener` needs `same-origin-allow-popups` on its app pages and no COOP on the callback page (ADR 0006 section 7).
+
+#### Lint baseline, gate steps and agent docs
+
+1. Copy the backend's workspace `[lints]`, `clippy.toml` and `deny.toml`, the web and mobile eslint configs on `@baukit/eslint-config`, `baukit-check.toml`, `.baukit/template-files.toml`, `.gitleaks.toml`, `zizmor.yml`, `osv-scanner.toml` and the `mise.toml` tools. Fix every finding; a `#[expect]` or `eslint-disable` names its invariant.
+2. Copy the CI workflow and `scripts/repo-lint.sh`: cargo-deny, gitleaks, zizmor, osv-scanner, and `baukit check agent-docs file-size suppressions lints patterns observability template-files`. Product-specific gate steps go in `scripts/quality-gate.local.sh`.
+3. Copy `backend/fuzz` and add a target for each parser or decoder the product owns.
+4. Run `baukit check agent-docs --fix --root .` to refresh the managed block and turn `AGENTS.md` into the symlink.
+5. Write `docs/threat-model.md` with the `baukit-threat-model` skill and test its controls with `baukit-security-testing`.
+
 ## v0.18.3
 
 Last verified release train: `v0.18.3` (patch train on top of `v0.18.2`). The web template reads every `VITE_*` key statically, so Vite no longer inlines the whole env object, local issuer included, into a production bundle. `baukit-http` allows the `x-organization-id` request header in its default CORS settings, and `useOrganizationPlan` in `@baukit/purchases-core` returns a `retry()`. The mobile template's scripts pass `preserve-caught-error` and `@typescript-eslint/no-dynamic-delete`, its app-config tests run under Jest, and `--affected` runs the Android steps for a Maestro-only change. Baukit's workspaces and templates carry no `minimumReleaseAgeExclude` entries for `@baukit/*@0.18.2`, checked at 01:44 UTC on 2026-11-07, so the train removed none.

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## [0.19.0] - 2026-11-07
+
+- Lints with `@baukit/eslint-config` and builds the web export's CSP with `@baukit/csp`.
+
 ## [0.18.3] - 2026-11-07
 
 - The app config cases moved from `scripts/sign-in-config.test.mjs` to `src/app-config.test.ts` under Jest. The node test keeps the Metro cases. `check-production-bundle.mjs` passes the caught error as `cause`.

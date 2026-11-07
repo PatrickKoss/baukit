@@ -4,6 +4,8 @@ All notable changes to `baukit-ratelimit` are documented here.
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-07
+
 - New `browser-session` feature: `StoreBrowserSessionRateLimiter` implements baukit-auth's `BrowserSessionRateLimiter` over any `RateLimitStore`, keyed per client IP (honouring `trusted_proxy_hops`) and per session id, following `fail_mode`.
 - Strict workspace clippy lint set (QS W1-A).
 

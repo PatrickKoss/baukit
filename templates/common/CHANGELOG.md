@@ -2,11 +2,24 @@
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-07
+
 - Breaking: `AGENTS.md` is a symlink to `CLAUDE.md`, and `CLAUDE.md` ends with the managed Baukit agent-rules block. Replace an existing `AGENTS.md` copy with the symlink, then run `baukit check agent-docs --fix --root .` from the matching Baukit checkout.
 - Every workflow action is pinned to a commit SHA with its version in a comment, and every checkout sets `persist-credentials: false`. `rust-toolchain` and `install-action` take the toolchain and tools as inputs.
 - `scripts/repo-lint.sh` runs actionlint and zizmor, gitleaks, osv-scanner, ruff and shellcheck. `mise.toml` pins those tools, and `zizmor.yml`, `osv-scanner.toml`, `ruff.toml` and `.shellcheckrc` configure them. {% if context.quality_strict %}`scripts/quality-gate.sh` runs them as fast-lane steps{% else %}A `repository-lint` CI job runs them{% endif %}.
 - {% if context.quality_strict %}The `baukit-check` gate step{% else %}The `baukit-doctor` CI job{% endif %} runs `baukit check agent-docs file-size suppressions lints patterns observability template-files` with the limits in `baukit-check.toml`.
 
+{% if context.backend %}- Breaking, security: the `items` example is owner-scoped. Migration `0001_create_items.sql` adds `owner_id` and an `(owner_id, id)` index, every query carries the owner in its `WHERE`, ids are server-generated UUIDv7, and `tests/support/owner_scoping.rs` checks that a second owner can neither read, list, update nor delete the first owner's item. Products that kept the example routes either delete them or apply the same scoping.
+- Security: every route sits inside the rate limiter. `rate_limits.rs` holds `rate_limited` and{% if context.auth_enabled %} `protect_routes`. Item writes get a per-identity quota, and the browser-session, MCP and platform routes get the IP limiter on their own{% else %} wraps the whole API in an in-memory IP limiter, so each replica keeps its own buckets{% endif %}.
+- The backend carries the strict lint baseline: workspace `[lints]`, `clippy.toml` (raw `reqwest` is a disallowed method) and `deny.toml`. `scripts/repo-lint.sh deny` runs cargo-deny.
+- `backend/fuzz` is a cargo-fuzz crate with an `item_body` target. Add a target for every parser or decoder the product owns.
+- `deploy/observability` ships an API dashboard and recording rules that `baukit check observability` keeps in sync with the emitted metrics.
+{% endif %}{% if context.auth_clerk and context.mobile %}- The Clerk verifier sets `allow_missing_azp: true`, because native requests carry no `Origin` and Clerk then omits `azp`. A present `azp` must still be allowed.
+{% endif %}- `.baukit/template-files.toml` lists the template-owned files that `baukit check template-files` compares against the template. Product-specific gate steps go in `scripts/quality-gate.local.sh` (`local_steps` plus `step_<name>`), not in template-owned scripts.
+- `CLAUDE.md` lists the installable Baukit agent skills.
+{% if context.web or context.mobile %}- Web and mobile lint with `@baukit/eslint-config`; every `eslint-disable` needs `-- reason`. The Content Security Policy comes from `@baukit/csp`: delete the local `policy.ts` copy and keep only the origins.
+{% endif %}{% if context.web %}- `vite preview` and the chart's `web` component send `Cross-Origin-Opener-Policy` and `Cross-Origin-Resource-Policy` `same-origin` next to the CSP. COEP stays unset.
+{% endif %}
 ## [0.18.3] - 2026-11-07
 
 {% if context.web %}- Web source reads every `VITE_*` key with static `import.meta.env.VITE_...` access, declared in `web/src/vite-env.d.ts`, so Vite no longer inlines the whole env object into a production bundle.

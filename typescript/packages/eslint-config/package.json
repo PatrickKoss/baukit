@@ -1,6 +1,6 @@
 {
   "name": "@baukit/eslint-config",
-  "version": "0.18.3",
+  "version": "0.19.0",
   "description": "Shared ESLint flat configs for Baukit packages and the products built on them.",
   "license": "MIT",
   "author": "Patrick Koss",

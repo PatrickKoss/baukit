@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.19.0
+
 ### Major Changes
 
 - Add `BrowserSessionClient` (ADR 0006). It redeems the authorization code through the product
@@ -18,6 +20,15 @@
   compatibility mode.
 - `SessionExpiredReason` drops `refresh_unavailable` and adds `signed_out`. New `OidcErrorCode`
   `logout_failed`.
+
+### Minor Changes
+
+- Release the coordinated baukit 0.19.0 train.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/type-guards@0.19.0
 
 ## 0.18.3
 

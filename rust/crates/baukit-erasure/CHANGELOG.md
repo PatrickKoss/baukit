@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-07
+
 ### Changed
 
 - `KeycloakAccountDeleter`, `ClerkAccountDeleter` and `WorkOsAccountDeleter` send requests through a `baukit-egress` `GuardedClient` that reaches only the configured base URL's scheme, host and port. A destination the guard rejects is a permanent failure. The `reqwest` dependency is replaced by `baukit-egress`.

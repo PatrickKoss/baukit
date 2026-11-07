@@ -4,6 +4,8 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-07
+
 - Breaking: `IssuedApiToken` no longer implements `PartialEq` or `Eq`, so the secret is never compared in variable time. Its `Debug` output redacts `secret`.
 - Breaking: `ClerkVerifier` rejects session tokens without `azp` (`WrongAuthorizedParty`). Clerk omits `azp` when the request has no `Origin`, as native apps do; `ClerkVerifier::allow_missing_authorized_party()` accepts those tokens again. A present `azp` must still be in the allowlist.
 

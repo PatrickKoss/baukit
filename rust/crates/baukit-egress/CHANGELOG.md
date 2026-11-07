@@ -4,6 +4,8 @@ All notable changes to `baukit-egress` are documented here.
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-07
+
 ### Added
 
 - `AllowedEndpoint::from_url` allows exactly the scheme, host and effective port of a configured URL.

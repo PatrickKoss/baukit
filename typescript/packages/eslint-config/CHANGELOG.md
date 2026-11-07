@@ -2,4 +2,10 @@
 
 ## Unreleased
 
+## 0.19.0
+
 - Add the shared ESLint flat configs `base`, `react`, `reactWeb` and `scripts`.
+
+### Minor Changes
+
+- Release the coordinated baukit 0.19.0 train.
