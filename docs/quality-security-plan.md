@@ -318,3 +318,12 @@ tenancy and rate-limit audit of the products (S-08).
     winapi-util). cargo deny is clean.
   - Main `baukit check`: file-size, suppressions and agent-docs ok. 2 lints findings (template eslint configs,
     T2) and 10 patterns findings (W4-B, W4-C, W4-E) remain.
+- 2026-11-07: W4-E merged (ADR 0006 task 3).
+  - `BrowserSessionClient` keeps the access token in memory and coordinates refresh with Web Locks and
+    BroadcastChannel. `OidcClient` is cut down to PKCE redirects. pwa-web makes `/auth/session/` and
+    Authorization requests network-only.
+  - Main: full TS gate green. Browser storage holds only the account hint, the PKCE transaction and the
+    force-login marker. The `ts-token-web-storage` finding is gone.
+  - Accepted deviation: refresh on load happens only when an account hint exists.
+  - Known break: the OIDC web template fails to compile until ADR task 4. Started W5-T2 for that: BFF mount,
+    web client swap, CSP, e2e, and `@baukit/eslint-config` in the web and mobile templates.
