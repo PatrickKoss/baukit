@@ -83,7 +83,7 @@ pub fn emulator_ports(port: u16, emulators: u8) -> EmulatorPorts {
 pub fn emulator_summary(quality: &QualityManifest, capabilities: &Capabilities) -> Option<String> {
     let port = quality
         .android_emulator_port
-        .filter(|_| capabilities.mobile)?;
+        .filter(|_| capabilities.components.mobile())?;
     let emulators = quality
         .android_emulators
         .unwrap_or(DEFAULT_ANDROID_EMULATORS);
@@ -111,18 +111,18 @@ pub fn default_affected(capabilities: &Capabilities) -> BTreeMap<String, Vec<Str
     ] {
         add(document, &[]);
     }
-    if capabilities.backend {
+    if capabilities.components.backend() {
         add("backend/crates/**", &["backend"]);
         add("backend/Cargo.toml", &["backend", "images"]);
         add("backend/Dockerfile", &["images"]);
     }
-    if capabilities.web {
+    if capabilities.components.web() {
         add("web/src/**", &["web"]);
         add("web/public/**", &["web"]);
         add("web/index.html", &["web"]);
         add("web/e2e/**", &["web-e2e"]);
     }
-    if capabilities.mobile {
+    if capabilities.components.mobile() {
         add("mobile/**", &["mobile"]);
         add(
             "mobile/.maestro/**",
@@ -134,7 +134,7 @@ pub fn default_affected(capabilities: &Capabilities) -> BTreeMap<String, Vec<Str
 
 pub fn render_quality_extras(name: &str, capabilities: &Capabilities, strict: bool) -> String {
     let mut text = String::new();
-    if capabilities.mobile {
+    if capabilities.components.mobile() {
         text.push_str(&format!(
             "android_emulator_port = {}\nandroid_emulators = {}\n",
             default_emulator_port(name),
@@ -237,10 +237,10 @@ pub fn template_steps(
         .map(|(table, _)| table)
         .ok_or("the template gate has no step table")?;
     let context = minijinja::context! { context => minijinja::context! {
-        backend => capabilities.backend,
-        mcp => capabilities.mcp,
-        mobile => capabilities.mobile,
-        web => capabilities.web,
+        backend => capabilities.components.backend(),
+        mcp => capabilities.components.mcp(),
+        mobile => capabilities.components.mobile(),
+        web => capabilities.components.web(),
         auth_enabled => capabilities.auth.is_some(),
         auth_oidc => capabilities.auth == Some(AuthProvider::Oidc),
     }};
@@ -277,7 +277,7 @@ fn known_tokens(capabilities: &Capabilities, quality: &QualityManifest) -> Vec<&
         "baukit-doctor",
         "metric-names",
     ];
-    if capabilities.backend {
+    if capabilities.components.backend() {
         tokens.extend([
             "openapi",
             "rust-fmt",
@@ -289,11 +289,11 @@ fn known_tokens(capabilities: &Capabilities, quality: &QualityManifest) -> Vec<&
             "rust-doctests",
             "images",
         ]);
-        if capabilities.mcp {
+        if capabilities.components.mcp() {
             tokens.push("mcp-drift");
         }
     }
-    if capabilities.web {
+    if capabilities.components.web() {
         tokens.extend([
             "spec-purposes",
             "web",
@@ -307,7 +307,7 @@ fn known_tokens(capabilities: &Capabilities, quality: &QualityManifest) -> Vec<&
             "webkit-repeats",
         ]);
     }
-    if capabilities.mobile {
+    if capabilities.components.mobile() {
         tokens.extend([
             "mobile",
             "mobile-install",
@@ -319,7 +319,7 @@ fn known_tokens(capabilities: &Capabilities, quality: &QualityManifest) -> Vec<&
             "android-build",
             "android-e2e",
         ]);
-        if !capabilities.web {
+        if !capabilities.components.web() {
             tokens.push("mobile-service-worker");
         }
     }
@@ -327,10 +327,10 @@ fn known_tokens(capabilities: &Capabilities, quality: &QualityManifest) -> Vec<&
         capabilities.auth,
         Some(AuthProvider::Clerk | AuthProvider::Workos)
     ) {
-        if capabilities.web {
+        if capabilities.components.web() {
             tokens.push("web-bundle");
         }
-        if capabilities.mobile {
+        if capabilities.components.mobile() {
             tokens.push("mobile-bundle");
         }
     }
@@ -346,14 +346,13 @@ fn invalid_glob(glob: &str) -> bool {
         || glob.split('/').any(|part| part == ".." || part.is_empty())
 }
 
-pub fn validate(
+fn validate_android(
     quality: &QualityManifest,
     capabilities: &Capabilities,
-    gate: Option<&GateSteps>,
     failures: &mut Vec<String>,
 ) {
     if let Some(port) = quality.android_emulator_port {
-        if !capabilities.mobile {
+        if !capabilities.components.mobile() {
             failures
                 .push("quality.android_emulator_port requires the mobile capability".to_owned());
         } else if !(FIRST_EMULATOR_PORT..=LAST_EMULATOR_PORT).contains(&port) || port % 2 != 0 {
@@ -362,19 +361,19 @@ pub fn validate(
             ));
         }
     }
-    if quality.android_wifi && !capabilities.mobile {
+    if quality.android_wifi && !capabilities.components.mobile() {
         failures.push("quality.android_wifi requires the mobile capability".to_owned());
     }
     let count = quality
         .android_emulators
         .unwrap_or(DEFAULT_ANDROID_EMULATORS);
-    if quality.android_emulators.is_some() && !capabilities.mobile {
+    if quality.android_emulators.is_some() && !capabilities.components.mobile() {
         failures.push("quality.android_emulators requires the mobile capability".to_owned());
     } else if !(1..=MAX_ANDROID_EMULATORS).contains(&count) {
         failures.push(format!(
             "quality.android_emulators must be from 1 to {MAX_ANDROID_EMULATORS}"
         ));
-    } else if capabilities.mobile {
+    } else if capabilities.components.mobile() {
         let ports = emulator_ports(
             quality.android_emulator_port.unwrap_or(FIRST_EMULATOR_PORT),
             count,
@@ -386,6 +385,15 @@ pub fn validate(
             ));
         }
     }
+}
+
+pub fn validate(
+    quality: &QualityManifest,
+    capabilities: &Capabilities,
+    gate: Option<&GateSteps>,
+    failures: &mut Vec<String>,
+) {
+    validate_android(quality, capabilities, failures);
     let budget = &quality.gate_budget_minutes;
     if budget.full == 0 || budget.affected == 0 {
         failures.push("quality.gate_budget_minutes values must be greater than zero".to_owned());

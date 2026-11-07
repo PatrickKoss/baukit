@@ -6,8 +6,8 @@ use std::{
 
 use anyhow::{Result, ensure};
 use baukit_cli::{
-    AnalyticsAdapter, AuthProvider, DoctorWaiver, NewOptions, QualityProfile, doctor, generate_new,
-    read_manifest,
+    AnalyticsAdapter, AuthProvider, Component, Components, DoctorWaiver, NewOptions,
+    QualityProfile, doctor, generate_new, read_manifest,
 };
 
 const CONSOLE_SPEC: &str = "web/e2e/tests/qa-console.spec.ts";
@@ -17,13 +17,7 @@ fn options(parent: &Path) -> NewOptions {
     NewOptions {
         name: "waiver-product".to_owned(),
         directory: parent.to_owned(),
-        backend: false,
-        worker: false,
-        mobile: false,
-        web: true,
-        pwa: false,
-        mcp: false,
-        platform: false,
+        components: Components::from([Component::Web]),
         auth: None,
         force: false,
         into_existing: false,
@@ -95,8 +89,8 @@ fn waived_browser_audits_print_notes_and_keep_unwaived_failures() -> Result<()> 
 fn waivers_cover_every_active_expected_file_group() -> Result<()> {
     let parent = tempfile::tempdir()?;
     let mut combined = options(parent.path());
-    combined.backend = true;
-    combined.mobile = true;
+    combined.components.insert(Component::Backend);
+    combined.components.insert(Component::Mobile);
     combined.auth = Some(AuthProvider::Oidc);
     combined.quality = QualityProfile::Strict;
     let root = generate_new(&combined)?;
@@ -335,7 +329,7 @@ fn waivers_do_not_silence_other_checks_on_the_same_path() -> Result<()> {
 fn waivers_follow_declared_backend_file_paths() -> Result<()> {
     let parent = tempfile::tempdir()?;
     let mut backend = options(parent.path());
-    backend.backend = true;
+    backend.components.insert(Component::Backend);
     let root = generate_new(&backend)?;
     fs::rename(root.join("backend"), root.join("server"))?;
     let mut manifest = read_manifest(&root)?;
