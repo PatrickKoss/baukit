@@ -191,10 +191,21 @@ tenancy and rate-limit audit of the products (S-08).
   - runtime-analyzer: one global `anonymous:auth` bucket (`finops-api/src/lib.rs:278`) lets one client lock
     out all sign-ins. Key it per client IP.
   - kassensturz (9 tables), hebkit (2): sync upserts need the owner in `ON CONFLICT ... WHERE`. Unverified.
-  - solo-leveling-system: private guilds and `/parties/{id}` readable by any user, cohort enrolment of foreign
-    ids, OAuth state single-use unchecked. Pending the SLS audit part.
-  - eigenruhe, lesezeichen: `/suite/*` and `/platform/inbound` merged after the limiter; kassensturz has no
-    limiter on `/platform/inbound`; schluesselbund never limits invalid `/platform/v1` tokens. Unverified.
+  - solo-leveling-system (verified): `GET /guilds/{id}` and its members, progression, quests and competitions
+    ignore private visibility (`services/src/groups.rs:1015` checks only `disbanded_at`); `GET /parties/{id}`
+    returns any party with members (`services/src/groups.rs:1226`); cohort `add_member` enrols a foreign
+    `userId` in the arc before the FK rejects the member row (`services/src/orgs.rs:1934-1956`); the
+    integration callback trusts a signed, TTL-bound `state` that is neither single-use nor bound to the
+    browser, so an attacker-started authorize URL links the victim's provider account to the attacker
+    (`v1/integrations.rs:355-388`). Minor: `POST /challenges` takes any `guildId`.
+  - eigenruhe: no missing scoping. Sync `id_is_owned_or_missing` (`eigenruhe-postgres/src/sync.rs:918`) races on
+    a concurrent first insert of one id by two owners: the loser gets `Accepted` with nothing written.
+  - schluesselbund: family routes and platform family members check membership in Rust after an id load;
+    `require_world` runs before the membership check (existence oracle). Unverified.
+  - eigenruhe (verified: `eigenruhe-bin/src/bin/api.rs:445-447` merges suite and platform outside
+    `baukit_ratelimit::layers`), lesezeichen: `/suite/*` and `/platform/inbound` are not rate limited;
+    kassensturz has no limiter on `/platform/inbound`; schluesselbund never limits invalid `/platform/v1`
+    tokens (the last three unverified).
   - Every product: a two-principal test per id route (current coverage ranges from 2 of 18 to 42 of 64).
 - [ ] P4.3 Cross-repo conformance sweep: `baukit check` green in all 12, counts table recorded below.
 
