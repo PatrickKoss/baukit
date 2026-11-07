@@ -541,10 +541,32 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         id: Uuid,
         owner: Uuid,
     ) -> Result<Option<SuiteLink>, SuiteStoreError> {
-        Ok(self
-            .find_link(id)
-            .await?
-            .filter(|link| link.user_id == owner))
+        let owned: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM suite_links WHERE id=$1 AND user_id=$2)",
+        )
+        .bind(id)
+        .bind(owner)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(storage)?;
+        if !owned {
+            return Ok(None);
+        }
+        self.refresh_failures(id).await?;
+        sqlx::query_as::<_, LinkRow>(
+            r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
+            remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
+            secret_key_version, sends, receives, share_xp, reward_mode, delivery_health,
+            consecutive_failures, last_delivery_at, last_failure_at, last_failure_code,
+            last_received_at, created_at, updated_at, revoked_at FROM suite_links WHERE id=$1 AND user_id=$2"#,
+        )
+        .bind(id)
+        .bind(owner)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(storage)?
+        .map(TryInto::try_into)
+        .transpose()
     }
     async fn list_links(&self, owner: Uuid) -> Result<Vec<SuiteLink>, SuiteStoreError> {
         let ids: Vec<Uuid> =

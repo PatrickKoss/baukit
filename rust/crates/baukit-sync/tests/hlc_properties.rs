@@ -1,3 +1,11 @@
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::too_many_lines,
+    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
+)]
+
 use std::{cell::Cell, cmp::Ordering, rc::Rc};
 
 use baukit_sync::hlc::{self, HybridLogicalClock, MAX_ENCODED_TIMESTAMP};

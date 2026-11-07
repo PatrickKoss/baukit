@@ -1,3 +1,11 @@
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::too_many_lines,
+    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
+)]
+
 use std::collections::BTreeMap;
 
 use baukit_credential_vault::{CredentialCipher, CredentialSecrets, EncryptedCredentials};
