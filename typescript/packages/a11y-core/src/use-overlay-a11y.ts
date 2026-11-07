@@ -46,7 +46,7 @@ export interface OverlayA11yResult {
 // "after the overlay presented". It stays the default so existing callers keep
 // working; pass `deferFocus` to drive focus from a real layout event instead.
 const deferUntilInteractionsDone: DeferFocus = (task) =>
-  // eslint-disable-next-line @typescript-eslint/no-deprecated
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- React Native 0.86 has no replacement for running after the overlay presented; see the comment above
   InteractionManager.runAfterInteractions(task);
 
 /**

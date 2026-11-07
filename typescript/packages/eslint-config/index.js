@@ -1,3 +1,4 @@
+import eslintComments from '@eslint-community/eslint-plugin-eslint-comments';
 import eslint from '@eslint/js';
 import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
@@ -39,6 +40,21 @@ export const testRelaxedRules = {
   'max-params': 'off',
 };
 
+/** Every eslint-disable names a rule and gives a `-- reason`; stale directives fail. */
+function directiveConfigs(files) {
+  return [
+    {
+      files,
+      plugins: { '@eslint-community/eslint-comments': eslintComments },
+      linterOptions: { reportUnusedDisableDirectives: 'error' },
+      rules: {
+        '@eslint-community/eslint-comments/require-description': 'error',
+        '@eslint-community/eslint-comments/no-unlimited-disable': 'error',
+      },
+    },
+  ];
+}
+
 /**
  * Type-checked TypeScript rules for `files`. Consumers add their own
  * `languageOptions.parserOptions` (`projectService` or `project` plus `tsconfigRootDir`).
@@ -50,6 +66,7 @@ export function base({ files = sourceFiles } = {}) {
       (config) => ({ ...config, files }),
     ),
     { files, rules: baseRules },
+    ...directiveConfigs(files),
     { files: testFiles, rules: testRelaxedRules },
   ];
 }
@@ -70,6 +87,7 @@ const scriptRules = {
 export function scripts({ files = scriptFiles, globals: scriptGlobals = globals.node } = {}) {
   return [
     { ...eslint.configs.recommended, files },
+    ...directiveConfigs(files),
     {
       files,
       languageOptions: { sourceType: 'module', globals: scriptGlobals },

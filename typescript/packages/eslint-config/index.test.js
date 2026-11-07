@@ -25,12 +25,30 @@ describe('@baukit/eslint-config', () => {
     assert.deepEqual(rules, []);
   });
 
+  it('rejects a disable directive without a reason and a blanket disable', async () => {
+    const bare = await lintScript('// eslint-disable-next-line no-undef\nexport const x = y;\n');
+    assert.deepEqual(bare, ['@eslint-community/eslint-comments/require-description']);
+    const blanket = await lintScript('/* eslint-disable */\nexport const x = 1;\n');
+    assert.ok(blanket.includes('@eslint-community/eslint-comments/no-unlimited-disable'));
+  });
+
+  it('accepts a disable directive with a reason and reports an unused one', async () => {
+    const reasoned = await lintScript(
+      '// eslint-disable-next-line no-undef -- y is injected by the host\nexport const x = y;\n',
+    );
+    assert.deepEqual(reasoned, []);
+    const unused = await lintScript(
+      '// eslint-disable-next-line no-undef -- stale\nexport const x = 1;\n',
+    );
+    assert.deepEqual(unused, [null]);
+  });
+
   it('scopes every base block to the requested files and relaxes test size limits', () => {
     const configs = base({ files: ['src/**/*.ts'] });
     const testBlock = configs.at(-1);
     assert.deepEqual(testBlock.files, testFiles);
     assert.equal(testBlock.rules['max-lines-per-function'], 'off');
-    assert.deepEqual(configs.at(-2).rules, baseRules);
+    assert.deepEqual(configs.at(-3).rules, baseRules);
     for (const config of configs.slice(0, -1)) assert.deepEqual(config.files, ['src/**/*.ts']);
   });
 

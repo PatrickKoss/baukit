@@ -383,6 +383,9 @@ importers:
 
   packages/eslint-config:
     dependencies:
+      '@eslint-community/eslint-plugin-eslint-comments':
+        specifier: 4.8.1
+        version: 4.8.1(eslint@10.12.0(supports-color@8.1.1))
       '@eslint/js':
         specifier: 10.0.1
         version: 10.0.1(eslint@10.12.0(supports-color@8.1.1))
@@ -1326,6 +1329,12 @@ packages:
   '@csstools/css-tokenizer@4.0.2':
     resolution: {integrity: sha512-OoKoR0f76dCY666JlcbhmVTs2drYj1GUXZTYTcbUgJjh9Nv41aFfZ21bPQTERm5+L5cBDo466NltB2lplS5GBw==}
     engines: {node: '>=20.19.0'}
+
+  '@eslint-community/eslint-plugin-eslint-comments@4.8.1':
+    resolution: {integrity: sha512-vafrdi15JHBFh1qWOAucyJwlEEuhdoMof28jOdKdgnwZ7bXwd6v4wzHYSmAVLwnx0yc7bqAtfJ0EZQV1WAzV/Q==}
+    engines: {node: ^12.22.0 || ^14.17.0 || >=16.0.0}
+    peerDependencies:
+      eslint: ^6.0.0 || ^7.0.0 || ^8.0.0 || ^9.0.0 || ^10.0.0
 
   '@eslint-community/eslint-utils@4.10.1':
     resolution: {integrity: sha512-cuadcxVFE8sDK6iWJbs8Sn0av2Nrh2QSGQhVlBW9AaAHqHwjWsZHT8LJ4hFGPh7ASBV2deFdM7H/DPjulmh8rg==}
@@ -6252,6 +6261,12 @@ snapshots:
       css-tree: 3.2.1
 
   '@csstools/css-tokenizer@4.0.2': {}
+
+  '@eslint-community/eslint-plugin-eslint-comments@4.8.1(eslint@10.12.0(supports-color@8.1.1))':
+    dependencies:
+      escape-string-regexp: 4.0.0
+      eslint: 10.12.0(supports-color@8.1.1)
+      ignore: 7.0.12
 
   '@eslint-community/eslint-utils@4.10.1(eslint@10.12.0(supports-color@8.1.1))':
     dependencies:
