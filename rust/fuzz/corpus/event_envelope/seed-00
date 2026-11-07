@@ -1,0 +1,1 @@
+{"eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77", "type": "hebkit.workout.completed", "userId": "oidc-subject-1", "occurredAt": "2026-08-24T10:00:00Z", "sourceApp": "hebkit", "schemaVersion": 1, "payload": {"durationMinutes": 42, "workoutId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d78"}}

@@ -1,0 +1,1 @@
+{"eventId": "event-type-uppercase", "type": "Focus.session.completed", "userId": "oidc-subject-1", "occurredAt": "2026-08-24T11:00:00Z", "sourceApp": "tiefgang", "schemaVersion": 1, "payload": {}}
