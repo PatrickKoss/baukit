@@ -39,4 +39,7 @@ case "$script_src" in
     *unsafe-inline* | *unsafe-eval*) fail "script-src allows unsafe sources" ;;
 esac
 tr -d '\r' <"$headers" | grep -qi '^x-content-type-options: nosniff$' || fail "no X-Content-Type-Options: nosniff"
+tr -d '\r' <"$headers" | grep -qi '^cross-origin-opener-policy: same-origin$' || fail "no Cross-Origin-Opener-Policy: same-origin"
+tr -d '\r' <"$headers" | grep -qi '^cross-origin-resource-policy: same-origin$' || fail "no Cross-Origin-Resource-Policy: same-origin"
+! tr -d '\r' <"$headers" | grep -qi '^cross-origin-embedder-policy:' || fail "Cross-Origin-Embedder-Policy must stay unset"
 echo "web headers: $policy"

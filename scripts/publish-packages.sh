@@ -12,7 +12,7 @@ cd "$repo_root"
 
 # Packages depending on another baukit package must follow it.
 ORDER=(
-  type-guards eslint-config
+  type-guards eslint-config csp
   a11y-core analytics-core api-runtime events localization-core
   preferences-core ui-tokens navigation data-contracts auth-native auth-node auth-web
   pwa-web sync-client integrations-client suite-client

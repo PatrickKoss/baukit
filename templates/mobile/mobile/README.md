@@ -117,7 +117,7 @@ exporting. The worker loads the Baukit helpers with `importScripts('/baukit-pwa-
 Products own the cache policy and offline behavior. `baukit doctor` checks the worker wiring,
 and the strict runner exports the site before building and checking the worker. Pass the fetch event's `Request` to the handler unchanged. The decider reads its headers, so requests carrying `Authorization` and every `/auth/session/*` call stay network-only and never land in a cache.
 
-After `expo export --platform web`, `pnpm csp` writes `dist/csp.txt` with a hash for every inline script and fails on one it cannot match. `style-src` keeps `'unsafe-inline'` because react-native-web injects `<style>` elements at runtime; scripts never get it. Serve the export through the Helm chart's `web` component with `--set-file web.contentSecurityPolicy=mobile/dist/csp.txt`.
+After `expo export --platform web`, `pnpm csp` writes `dist/csp.txt` with `@baukit/csp` with a hash for every inline script and fails on one it cannot match. `style-src` keeps `'unsafe-inline'` because react-native-web injects `<style>` elements at runtime; scripts never get it. Serve the export through the Helm chart's `web` component with `--set-file web.contentSecurityPolicy=mobile/dist/csp.txt`.
 {% else %}The generated manifest keeps `capabilities.pwa = false`. A product without a web app can serve a PWA
 from the Expo web export. Set `capabilities.pwa = true` in the product-root `baukit.toml`, add
 `@baukit/pwa-web` and the `build:sw` and `build:sw:check` scripts to this package, and write

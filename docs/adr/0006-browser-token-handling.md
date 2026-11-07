@@ -275,6 +275,19 @@ hub's API through `@baukit/suite-client`; the silent-token iframe origin is the
 issuer and is covered by `frame-src`. Clerk and WorkOS flavors add their
 vendor hosts. Vite dev mode gets a relaxed variant (`'unsafe-inline'` styles,
 websocket for HMR), never the production build. Trusted Types is a later step.
+`@baukit/csp` builds the policy; the templates keep only their origins.
+
+Next to the CSP, `vite preview` and the chart's nginx send
+`Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Resource-Policy: same-origin`. The template sign-in is a
+same-window redirect and the silent-token frame talks to `window.parent`,
+which COOP does not touch. The interactive `SilentTokenBroker` popup reads
+`window.opener` on its callback page after a cross-origin hop to the issuer;
+no template wires it, and `same-origin-allow-popups` would not keep it either,
+because the callback document's own COOP still switches browsing context
+groups. A product that adds that popup serves its callback page without COOP.
+COEP stays unset: `require-corp` blocks third-party images and analytics
+unless every subresource opts in.
 
 ### 8. Same-site requirement
 

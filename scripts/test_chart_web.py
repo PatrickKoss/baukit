@@ -41,6 +41,9 @@ class WebChartTest(unittest.TestCase):
         conf = config["data"]["default.conf"]
         self.assertIn(f'add_header Content-Security-Policy "{POLICY}" always;', conf)
         self.assertIn('add_header X-Content-Type-Options "nosniff" always;', conf)
+        self.assertIn('add_header Cross-Origin-Opener-Policy "same-origin" always;', conf)
+        self.assertIn('add_header Cross-Origin-Resource-Policy "same-origin" always;', conf)
+        self.assertNotIn("Cross-Origin-Embedder-Policy", conf)
         kinds = {
             doc["kind"]
             for doc in documents
