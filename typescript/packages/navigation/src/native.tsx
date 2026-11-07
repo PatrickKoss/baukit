@@ -42,6 +42,8 @@ import {
   type CollapseProps,
   type NavigationStateHandle,
 } from './use-navigation-state.js';
+import { useNavigationBarHeight as profileBarHeight } from './native-profile.js';
+import { SectionPicker as Picker } from './native-section-picker.js';
 
 export type {
   Navigate,
@@ -51,7 +53,8 @@ export type {
   NavigationTheme,
   NavigationTypography,
 } from './native-theme.js';
-export { useNavigationBarHeight } from './native-profile.js';
+// A local binding keeps the export a plain property, so Jest can spy on it like before the split.
+export const useNavigationBarHeight: typeof profileBarHeight = profileBarHeight;
 
 export interface AppNavigationProps extends CollapseProps, NavigationSlots {
   readonly items: readonly NavigationItem<NavigationIcon>[];
@@ -459,4 +462,6 @@ export function AppNavigation(props: AppNavigationProps): ReactNode {
   );
 }
 
-export { SectionPicker, type SectionPickerProps } from './native-section-picker.js';
+export type { SectionPickerProps } from './native-section-picker.js';
+// A local binding keeps the export a plain property, so Jest can spy on it like before the split.
+export const SectionPicker: typeof Picker = Picker;

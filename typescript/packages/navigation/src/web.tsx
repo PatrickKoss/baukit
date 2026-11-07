@@ -35,6 +35,7 @@ import {
   type NavigationLinkRenderer,
 } from './web-link.js';
 import { Profile } from './web-profile.js';
+import { SectionPicker as Picker } from './web-section-picker.js';
 
 export {
   isNavigationClick,
@@ -44,7 +45,9 @@ export {
   type NavigationLinkProps,
   type NavigationLinkRenderer,
 } from './web-link.js';
-export { SectionPicker, type SectionPickerProps } from './web-section-picker.js';
+export type { SectionPickerProps } from './web-section-picker.js';
+// A local binding keeps the export a plain property, so Jest can spy on it like before the split.
+export const SectionPicker: typeof Picker = Picker;
 
 const ICON_SIZE = 24;
 const CHILD_ICON_SIZE = 20;
