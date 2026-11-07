@@ -417,3 +417,5 @@ tenancy and rate-limit audit of the products (S-08).
     W4-E. On main those flavors wait for W5-T2.
   - Main after the merge: cli fmt and clippy green, 292 cli tests, `baukit check` green except `lints`
     (W5-T2).
+  - Fixture gate on main with the merged binary: backend, web, mobile, mobile-pwa and platform-standalone pass.
+    Repo-lint ran in every fixture: zizmor no findings, gitleaks no leaks, osv, ruff and shellcheck clean.
