@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed, 2026-11-07. Implements decision D2 of the
+Accepted, 2026-11-07. Implements decision D2 of the
 [quality and security plan](../quality-security-plan.md) and fixes S-01 and S-02
 ([E4-01, E4-02](../quality-security/E4-security.md)).
 
