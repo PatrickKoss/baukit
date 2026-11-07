@@ -16,6 +16,7 @@ paths = [
   '''^rust/crates/baukit-test/src/jwt/fixtures/oidc-key-[12]\.pem$''',
   '''^rust/crates/baukit-test/src/suite/fixtures/v1/link-protocol\.json$''',
   '''^typescript/packages/analytics-core/src/scrubber\.test\.ts$''',
+  '''^typescript/packages/auth-web/src/(test-support/session-backend|browser-session-client\.test|browser-session-storage\.test)\.ts$''',
 ]
 
 [[allowlists]]
