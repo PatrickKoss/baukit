@@ -15,6 +15,11 @@ impl FixedUtcInterval {
     /// The duration must contain at least one whole second and no fractional
     /// second. Whole-second intervals keep slot identifiers stable across
     /// runtimes and database timestamp precision settings.
+    ///
+    /// # Errors
+    ///
+    /// [`FixedUtcIntervalError::Zero`] for a zero duration, [`FixedUtcIntervalError::Subsecond`]
+    /// for a fractional second, and [`FixedUtcIntervalError::OutOfRange`] above `i64::MAX` seconds.
     pub fn new(duration: Duration) -> Result<Self, FixedUtcIntervalError> {
         if duration.is_zero() {
             return Err(FixedUtcIntervalError::Zero);
@@ -28,6 +33,10 @@ impl FixedUtcInterval {
     }
 
     /// Returns the slot containing `observed_at`.
+    ///
+    /// # Errors
+    ///
+    /// [`FixedUtcIntervalError::OutOfRange`] when the slot start overflows the timestamp range.
     pub fn slot_at(
         self,
         observed_at: DateTime<Utc>,
@@ -47,6 +56,11 @@ impl FixedUtcInterval {
     /// Pass the slot stored in the current job and the clock time observed by
     /// its handler. A delayed handler skips missed slots. A clock that moves
     /// backward cannot schedule a slot at or before the current one.
+    ///
+    /// # Errors
+    ///
+    /// [`FixedUtcIntervalError::OutOfRange`] when `observed_at` or the next slot falls outside
+    /// the supported timestamp range.
     pub fn next_slot(
         self,
         current: FixedUtcSlot,
@@ -85,6 +99,11 @@ impl FixedUtcInterval {
     /// assert_eq!(slot.identifier(), "fixed-utc:0");
     /// # Ok::<(), baukit_jobs::FixedUtcIntervalError>(())
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// [`FixedUtcIntervalError::OutOfRange`] when the jittered run time overflows the
+    /// supported timestamp range.
     pub fn run_at(
         self,
         slot: FixedUtcSlot,
@@ -125,6 +144,11 @@ pub struct FixedUtcJitter {
 
 impl FixedUtcJitter {
     /// Creates a jitter bound with a finite fraction in `(0, 1]`.
+    ///
+    /// # Errors
+    ///
+    /// [`FixedUtcIntervalError::InvalidJitterFraction`] when `fraction` is not finite or lies
+    /// outside `(0, 1]`.
     pub fn new(fraction: f64) -> Result<Self, FixedUtcIntervalError> {
         if !fraction.is_finite() || fraction <= 0.0 || fraction > 1.0 {
             return Err(FixedUtcIntervalError::InvalidJitterFraction);

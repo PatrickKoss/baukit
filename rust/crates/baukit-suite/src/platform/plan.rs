@@ -93,6 +93,12 @@ pub trait AccountPlan: Send + Sync {
 
 /// Grants the subject's plan when it includes `feature`. A missing subject, a
 /// failed read, an inaccessible organization and a locked feature are distinct errors.
+///
+/// # Errors
+///
+/// `PlanError::SuiteIdentityMissing` without a suite subject, `OrganizationNotAccessible` when
+/// the subject is not a member, `FeatureNotEntitled` when the plan lacks `feature`, and any
+/// error the plan read returns, such as `EntitlementsUnavailable`.
 pub async fn require_feature(
     plan: &dyn AccountPlan,
     subject: impl Into<FeatureSubject>,
@@ -280,6 +286,11 @@ impl VerifiedTicketSource {
     pub fn new(tickets: Arc<dyn TicketSource>, verifier: TicketVerifier) -> Self {
         Self { tickets, verifier }
     }
+    /// # Errors
+    ///
+    /// `EntitlementSourceError::Unavailable` when the ticket source fails or keys cannot be fetched,
+    /// `Invalid` when the ticket fails verification or names another subject or product. Ticket
+    /// source errors pass through.
     pub async fn claims(
         &self,
         suite_subject: &str,
@@ -326,6 +337,11 @@ pub struct HubAccountPlan {
 }
 impl HubAccountPlan {
     /// `plans_url` is the hub web `/plans` page, as an absolute HTTP(S) URL.
+    ///
+    /// # Errors
+    ///
+    /// `PlatformError::Invalid` when `plans_url` is not an absolute HTTP(S) URL with a host or
+    /// `product_id` is empty.
     pub fn new(
         product_id: String,
         source: VerifiedTicketSource,

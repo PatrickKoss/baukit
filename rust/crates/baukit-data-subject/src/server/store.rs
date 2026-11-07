@@ -27,6 +27,10 @@ pub struct PostgresDataSubjectStore {
 impl PostgresDataSubjectStore {
     /// Validates all configuration before accepting work.
     /// The erasure service must use the same PostgreSQL database as this pool.
+    ///
+    /// # Errors
+    ///
+    /// [`DataSubjectError::Configuration`] when `config` fails validation.
     pub fn new(pool: PgPool, config: DataSubjectConfig) -> Result<Self, DataSubjectError> {
         config.validate()?;
         Ok(Self {
@@ -58,6 +62,12 @@ impl PostgresDataSubjectStore {
 
     /// Resolves and queues one erasure atomically. Inputs remain transient.
     /// Callers must validate the idempotency key and authorize the client first.
+    ///
+    /// # Errors
+    ///
+    /// [`DataSubjectError::Conflict`] when the key was used with a different request,
+    /// [`DataSubjectError::Database`] or [`DataSubjectError::Jobs`] when PostgreSQL or the job
+    /// store fails, and [`DataSubjectError::Result`] for an unreadable stored operation.
     pub async fn start_erasure(
         &self,
         client_id: &str,
@@ -71,6 +81,11 @@ impl PostgresDataSubjectStore {
 
     /// Resolves and queues one enabled export using its configured product port.
     /// Callers must validate the idempotency key and authorize the client first.
+    ///
+    /// # Errors
+    ///
+    /// [`DataSubjectError::Configuration`] when no export product is configured, otherwise
+    /// the errors of [`Self::start_erasure`].
     pub async fn start_export(
         &self,
         client_id: &str,
@@ -153,6 +168,11 @@ impl PostgresDataSubjectStore {
     }
 
     /// Client- and kind-isolated operation lookup. Foreign operations are absent.
+    ///
+    /// # Errors
+    ///
+    /// [`DataSubjectError::Database`] when the query fails and [`DataSubjectError::Result`]
+    /// for a stored row that does not decode.
     pub async fn status(
         &self,
         client_id: &str,
@@ -167,6 +187,12 @@ impl PostgresDataSubjectStore {
 
     /// Returns exact bytes only for an owned, completed, unexpired export part.
     /// Expired metadata stays on the operation after its part bytes are purged.
+    ///
+    /// # Errors
+    ///
+    /// [`DataSubjectError::ExportNotReady`] before completion, [`DataSubjectError::ExportExpired`]
+    /// after expiry, [`DataSubjectError::Database`] when the query fails, and
+    /// [`DataSubjectError::Result`] for a stored row that does not decode.
     pub async fn export_part(
         &self,
         client_id: &str,
@@ -208,6 +234,11 @@ impl PostgresDataSubjectStore {
     /// The returned count is operations removed; part expiry is independent.
     /// Schedule repeated calls using a product job and `baukit_jobs::FixedUtcInterval`.
     /// Zero or a size above [`MAX_PURGE_BATCH_SIZE`] is a configuration error.
+    ///
+    /// # Errors
+    ///
+    /// [`DataSubjectError::Configuration`] for an out-of-range `batch_size`,
+    /// [`DataSubjectError::Database`] or [`DataSubjectError::Jobs`] when deletion fails.
     pub async fn purge_expired(
         &self,
         now: DateTime<Utc>,

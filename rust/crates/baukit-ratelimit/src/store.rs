@@ -22,6 +22,11 @@ pub struct Quota {
 
 impl Quota {
     /// Creates and validates a quota.
+    ///
+    /// # Errors
+    ///
+    /// [`QuotaError::ZeroRequests`] or [`QuotaError::ZeroPeriod`] for zero values, and
+    /// [`QuotaError::CapacityOverflow`] when `requests_per_period + burst` overflows.
     pub fn new(requests_per_period: u64, period: Duration, burst: u64) -> Result<Self, QuotaError> {
         if requests_per_period == 0 {
             return Err(QuotaError::ZeroRequests);

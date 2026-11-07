@@ -180,6 +180,11 @@ pub struct HubClient {
 impl HubClient {
     /// The guarded client must capture error bodies through
     /// `EgressOptions::with_error_body_limit`, so hub error codes reach typed errors.
+    ///
+    /// # Errors
+    ///
+    /// `ValidationErrors` when `config` is invalid, `product_id` is empty, the client does not
+    /// capture error bodies, or the API URL, token URL or client secret is missing or malformed.
     pub fn new(
         config: &HubClientConfig,
         product_id: &str,
@@ -230,11 +235,21 @@ impl HubClient {
         &self.product_id
     }
     /// `GET <api_url>/platform/v1/<segments>`. Each segment is percent-encoded.
+    ///
+    /// # Errors
+    ///
+    /// `HubError::Unavailable` on transport failure, timeout, 408 or 5xx, `Unauthorized` when the
+    /// token is refused, `Rejected` for other statuses, and `InvalidResponse` when the body does not
+    /// decode into `T`.
     pub async fn get_json<T: DeserializeOwned>(&self, segments: &[&str]) -> Result<T, HubError> {
         self.send(EgressRequest::get(self.url(segments)?)).await
     }
     /// `GET <api_url>/platform/v1/<segments>?<query>`. Names and values are
     /// form-encoded in the given order. An empty `query` sends no `?`.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`Self::get_json`].
     pub async fn get_json_with_query<T: DeserializeOwned>(
         &self,
         segments: &[&str],
@@ -245,6 +260,11 @@ impl HubClient {
     }
     /// `POST <api_url>/platform/v1/<segments>` with a JSON body. A 401 retry
     /// repeats the request, so use it only for idempotent routes.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`Self::get_json`]. `HubError::InvalidResponse` also covers a body that does
+    /// not serialize.
     pub async fn post_json<B: Serialize + Sync, T: DeserializeOwned>(
         &self,
         segments: &[&str],

@@ -278,6 +278,11 @@ fn tool_annotations(definition: &ScopedTool) -> ToolAnnotations {
 }
 
 /// Exports protocol schemas and required scopes for drift checks.
+///
+/// # Errors
+///
+/// [`McpConfigError::Invalid`] when a tool definition has a duplicate name or an input
+/// schema that does not compile.
 pub fn tool_schema(definitions: &[ScopedTool]) -> Result<Value, McpConfigError> {
     Ok(
         json!({"tools": compile_tools(definitions)?, "scopes": definitions.iter().map(|tool| (&tool.name, &tool.required_scopes)).collect::<std::collections::BTreeMap<_, _>>()}),

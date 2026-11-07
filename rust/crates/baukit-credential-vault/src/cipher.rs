@@ -52,6 +52,11 @@ impl CredentialCipher {
     /// of standard base64. The highest version becomes the write key. Duplicate
     /// versions, malformed base64, wrong key lengths, and empty rings are all
     /// rejected as [`CredentialVaultError::InvalidConfiguration`].
+    ///
+    /// # Errors
+    ///
+    /// [`CredentialVaultError::InvalidConfiguration`] for an empty ring, a malformed entry or
+    /// version, a duplicate version, invalid base64, or a key that is not 32 bytes.
     pub fn parse(value: &str) -> Result<Self, CredentialVaultError> {
         let mut keys = BTreeMap::new();
         for entry in value
@@ -104,6 +109,11 @@ impl CredentialCipher {
     /// Each field gets a fresh random nonce and associated data binding the
     /// scope id, the key version, and the field name, so ciphertext cannot be
     /// replayed into another scope, another field, or another key version.
+    ///
+    /// # Errors
+    ///
+    /// [`CredentialVaultError::InvalidConfiguration`] when `secrets` is empty, and
+    /// [`CredentialVaultError::DecryptionFailed`] if sealing a field fails.
     pub fn encrypt(
         &self,
         scope_id: Uuid,
@@ -133,6 +143,11 @@ impl CredentialCipher {
     /// An unknown version, a wrong nonce length, a wrong scope, a renamed
     /// field, and tampered bytes all fail as
     /// [`CredentialVaultError::DecryptionFailed`].
+    ///
+    /// # Errors
+    ///
+    /// [`CredentialVaultError::DecryptionFailed`] when the payload has no fields, names an
+    /// unknown key version, or any field fails to authenticate.
     pub fn decrypt(
         &self,
         encrypted: &EncryptedCredentials,

@@ -32,6 +32,11 @@ pub struct SuitePublicRateLimit {
 
 impl SuitePublicRateLimit {
     /// 60 requests per minute and IP with a burst of 10, one trusted hop, fail closed.
+    ///
+    /// # Errors
+    ///
+    /// `QuotaError` when the default quota is rejected. The defaults are non-zero, so this does not
+    /// happen in practice.
     pub fn new() -> Result<Self, QuotaError> {
         Ok(Self {
             quota: Quota::new(DEFAULT_REQUESTS_PER_MINUTE, MINUTE, DEFAULT_BURST)?,
@@ -42,6 +47,10 @@ impl SuitePublicRateLimit {
     }
 
     /// Keeps the default quota and takes proxy trust, fail mode and key prefix from the product.
+    ///
+    /// # Errors
+    ///
+    /// `QuotaError` under the same condition as [`Self::new`].
     pub fn from_options(options: &RateLimitOptions) -> Result<Self, QuotaError> {
         Ok(Self {
             trusted_proxy_hops: options.trusted_proxy_hops,

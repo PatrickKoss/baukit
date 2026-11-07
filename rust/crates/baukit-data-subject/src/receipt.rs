@@ -86,6 +86,11 @@ impl ReceiptPayload {
 
     /// Stable UTF-8 JSON for signing: struct field order, compact encoding, no trailing newline.
     /// Nested structs keep declaration order; arrays keep caller order. No map sorting occurs.
+    ///
+    /// # Errors
+    ///
+    /// [`ReceiptError::ContractVersion`] for another contract version,
+    /// [`ReceiptError::Payload`] for an inconsistent receipt or when JSON encoding fails.
     pub fn canonical_bytes(&self) -> Result<Vec<u8>, ReceiptError> {
         self.validate()?;
         serde_json::to_vec(self).map_err(|_| ReceiptError::Payload)
@@ -101,6 +106,11 @@ pub struct ReceiptSigner {
 impl ReceiptSigner {
     /// Loads an unencrypted PKCS#8 PEM with the `PRIVATE KEY` label.
     /// The caller owns and must protect or erase its input buffer.
+    ///
+    /// # Errors
+    ///
+    /// [`ReceiptError::SigningKey`] when the PEM does not parse, has another label, or holds
+    /// no Ed25519 PKCS#8 key.
     pub fn from_pkcs8_pem(private_key_pem: &str) -> Result<Self, ReceiptError> {
         let pem = pem::parse(private_key_pem).map_err(|_| ReceiptError::SigningKey)?;
         if pem.tag() != "PRIVATE KEY" {
@@ -111,6 +121,10 @@ impl ReceiptSigner {
     }
 
     /// Loads an unencrypted PKCS#8 DER key, accepting v1 and v2 documents.
+    ///
+    /// # Errors
+    ///
+    /// [`ReceiptError::SigningKey`] when the bytes are not an Ed25519 PKCS#8 key.
     pub fn from_pkcs8_der(private_key_der: &[u8]) -> Result<Self, ReceiptError> {
         let pair =
             Ed25519KeyPair::from_pkcs8(private_key_der).map_err(|_| ReceiptError::SigningKey)?;
@@ -137,6 +151,11 @@ impl ReceiptSigner {
     }
 
     /// Signs the canonical receipt JSON with one standard-base64 Ed25519 signature.
+    ///
+    /// # Errors
+    ///
+    /// Returns the error from [`ReceiptPayload::canonical_bytes`] when the payload cannot be
+    /// serialized to canonical JSON.
     pub fn sign(&self, payload: &ReceiptPayload) -> Result<DsseEnvelope, ReceiptError> {
         let body = payload.canonical_bytes()?;
         let signature = self.pair.sign(&pae(RECEIPT_PAYLOAD_TYPE, &body));
@@ -159,6 +178,11 @@ pub struct ReceiptVerifier {
 
 impl ReceiptVerifier {
     /// Loads trusted discovery, checking the version and every advertised key.
+    ///
+    /// # Errors
+    ///
+    /// [`ReceiptError::ContractVersion`] for an unsupported contract version, and
+    /// [`ReceiptError::ReceiptKeys`] under the rules of [`Self::from_receipt_keys`].
     pub fn from_discovery(discovery: &DiscoveryDocument) -> Result<Self, ReceiptError> {
         if discovery.contract_version != CONTRACT_VERSION {
             return Err(ReceiptError::ContractVersion);
@@ -167,6 +191,11 @@ impl ReceiptVerifier {
     }
 
     /// Loads discovery's `receiptKeys`, requiring unique SPKI-derived IDs and one current key.
+    ///
+    /// # Errors
+    ///
+    /// [`ReceiptError::ReceiptKeys`] when there is not exactly one current key, a PEM does
+    /// not parse, or a key ID is duplicated or does not match its SPKI.
     pub fn from_receipt_keys(receipt_keys: &[ReceiptKey]) -> Result<Self, ReceiptError> {
         if receipt_keys
             .iter()
@@ -200,6 +229,12 @@ impl ReceiptVerifier {
 
     /// Checks the media type, all key IDs, and at least one signature before parsing JSON.
     /// Signatures cover decoded payload bytes as received, never re-serialized JSON.
+    ///
+    /// # Errors
+    ///
+    /// [`ReceiptError::PayloadType`] for another media type, [`ReceiptError::Encoding`] for
+    /// invalid base64 or JSON, [`ReceiptError::UnknownKey`] for an untrusted key ID, and
+    /// [`ReceiptError::Signature`] when no signature verifies.
     pub fn verify(&self, envelope: &DsseEnvelope) -> Result<ReceiptPayload, ReceiptError> {
         if envelope.payload_type != RECEIPT_PAYLOAD_TYPE {
             return Err(ReceiptError::PayloadType);

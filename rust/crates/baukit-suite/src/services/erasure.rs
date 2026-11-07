@@ -30,6 +30,11 @@ impl SuiteErasureNotifier for SuiteErasureNotificationService {
 /// Two concurrent first requests with the same key may both notify for the same
 /// current profile, which is the profile being erased. `erase` repeats all checks
 /// under its locks after notification.
+///
+/// # Errors
+///
+/// Propagates [`baukit_erasure::ErasureError`] from preflight and erase, such as `InvalidKey`,
+/// `Conflict`, `ProfileErased` or `Database`.
 pub async fn erase_with_suite(
     service: &baukit_erasure::ErasureService,
     notifier: &dyn SuiteErasureNotifier,

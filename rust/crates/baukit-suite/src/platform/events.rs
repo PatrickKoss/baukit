@@ -158,6 +158,10 @@ pub struct PlatformEventDecoder {
     event_type_prefix: String,
 }
 impl PlatformEventDecoder {
+    /// # Errors
+    ///
+    /// `PlatformError::Invalid` when `source_app` is empty, padded, has control characters or is too
+    /// long, or the prefix is not lowercase snake case within the length limit.
     pub fn new(
         source_app: String,
         event_type_prefix: Option<String>,
@@ -187,6 +191,10 @@ impl PlatformEventDecoder {
     pub fn source_app(&self) -> &str {
         &self.source_app
     }
+    /// # Errors
+    ///
+    /// `PlatformError::Invalid` when the body is not a valid event envelope, comes from another
+    /// source app, occurs too far in the future, or a known event type fails its payload schema.
     pub fn decode(&self, body: &[u8], now: DateTime<Utc>) -> Result<PlatformEvent, PlatformError> {
         let envelope: EventEnvelope =
             serde_json::from_slice(body).map_err(|_| PlatformError::Invalid)?;

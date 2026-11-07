@@ -54,6 +54,10 @@ pub struct SuiteSettings {
 
 impl SuiteSettings {
     /// Parses the payload catalog. `app_id` is also the metric prefix.
+    ///
+    /// # Errors
+    ///
+    /// `Data` when `catalog_json` is not a valid payload catalog.
     pub fn new(
         app_id: &str,
         peers_json: &str,
@@ -250,6 +254,12 @@ impl PostgresSuiteBuilder {
     }
 
     /// Validates the configuration and requires a cipher whenever peers are configured.
+    ///
+    /// # Errors
+    ///
+    /// `Missing` without an identity or replay source, `Config` when the suite config, peer registry
+    /// or cipher requirement fails validation, `Data` for an invalid registry, `Peer` when the default
+    /// peer client cannot be built, and `Quota` when the default public limit is invalid.
     pub fn build(self) -> Result<PostgresSuite, SuiteComposeError> {
         let Self {
             pool,
@@ -344,6 +354,10 @@ impl PostgresSuite {
 #[cfg(feature = "jobs")]
 impl PostgresSuite {
     /// Delivery worker on `SUITE_QUEUE` with four slots and 30 s to 6 h retry backoff.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`Self::worker_with`] with the default worker config.
     pub fn worker(
         &self,
         store: Arc<dyn baukit_jobs::JobStore>,
@@ -352,6 +366,10 @@ impl PostgresSuite {
     }
 
     /// Worker for a product delivery runner that wraps [`PostgresSuite::delivery`].
+    ///
+    /// # Errors
+    ///
+    /// `RunnerError::InvalidConfig` when `config` is invalid for the suite job types.
     pub fn worker_with(
         &self,
         store: Arc<dyn baukit_jobs::JobStore>,

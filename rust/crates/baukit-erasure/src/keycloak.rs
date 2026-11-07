@@ -47,6 +47,12 @@ struct TokenResponse {
 
 impl KeycloakAccountDeleter {
     /// Validates configuration and constructs the private-network client.
+    ///
+    /// # Errors
+    ///
+    /// [`IdentityDeletionError::Permanent`] for an unparsable or non-HTTPS base URL (HTTP only
+    /// with `allow_local_http`), a URL with credentials, query or fragment, empty realm or
+    /// client credentials, or when the egress client cannot be built.
     pub fn new(config: KeycloakDeletionConfig) -> Result<Self, IdentityDeletionError> {
         let base = Url::parse(&config.base_url).map_err(|_| IdentityDeletionError::Permanent)?;
         if !(base.scheme() == "https" || (base.scheme() == "http" && config.allow_local_http))

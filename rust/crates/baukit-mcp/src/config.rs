@@ -50,6 +50,12 @@ impl Default for McpConfig {
 
 impl McpConfig {
     /// Rejects ambiguous URLs, empty host lists, and invalid limits before startup.
+    ///
+    /// # Errors
+    ///
+    /// [`McpConfigError::Invalid`] naming the first rejected field: a resource URL not ending in
+    /// `/mcp`, an issuer or JWKS URL with credentials, query or fragment, empty host lists, or
+    /// out-of-range limits.
     pub fn validate(&self) -> Result<(), McpConfigError> {
         let resource = endpoint(&self.resource_url)?;
         if resource.path() != "/mcp" {

@@ -58,6 +58,11 @@ pub struct CustomIdentifierType(String);
 
 impl CustomIdentifierType {
     /// Parses a complete custom type, including its `x-` prefix.
+    ///
+    /// # Errors
+    ///
+    /// [`ValidationError::IdentifierType`] without the `x-` prefix or with a segment that is
+    /// empty or not lowercase ASCII alphanumeric.
     pub fn new(value: &str) -> Result<Self, ValidationError> {
         let suffix = value
             .strip_prefix("x-")
@@ -197,6 +202,10 @@ fn visible_reference(value: &str) -> bool {
 }
 
 /// Checks the opaque reference without trimming or changing it.
+///
+/// # Errors
+///
+/// [`ValidationError::SubjectReference`] when the value is empty, too long, or not visible ASCII.
 pub fn validate_subject_reference(value: &str) -> Result<(), ValidationError> {
     if visible_reference(value) {
         Ok(())
@@ -207,6 +216,10 @@ pub fn validate_subject_reference(value: &str) -> Result<(), ValidationError> {
 
 /// Validates one required header value without trimming or changing it.
 /// HTTP adapters must also reject repeated `Idempotency-Key` headers.
+///
+/// # Errors
+///
+/// [`ValidationError::IdempotencyKey`] when the header is absent or not a visible reference.
 pub fn validate_idempotency_key(value: Option<&str>) -> Result<(), ValidationError> {
     if value.is_some_and(visible_reference) {
         Ok(())
@@ -217,6 +230,12 @@ pub fn validate_idempotency_key(value: Option<&str>) -> Result<(), ValidationErr
 
 /// Validates bounds and advertised types, then normalizes transient lookup values.
 /// Array order and duplicates are preserved when comparing normalized request bodies.
+///
+/// # Errors
+///
+/// [`ValidationError::SubjectReference`] for an invalid reference,
+/// [`ValidationError::IdentifierCount`] for zero or too many identifiers, and the
+/// identifier type and value variants for unsupported types or out-of-bounds values.
 pub fn normalize_request(
     request: &DataSubjectRequest,
     limits: &Limits,

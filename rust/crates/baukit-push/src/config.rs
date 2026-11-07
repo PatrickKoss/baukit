@@ -109,6 +109,11 @@ pub struct PushOptions {
 
 impl PushOptions {
     /// Creates options for a full push send endpoint URL.
+    ///
+    /// # Errors
+    ///
+    /// [`PushOptionsError::InvalidEndpoint`] when `endpoint` is not an absolute HTTP URL ending
+    /// in `/send`.
     pub fn new(endpoint: impl Into<String>) -> Result<Self, PushOptionsError> {
         let endpoint = endpoint.into();
         let (endpoint, receipts_endpoint) = validated_endpoints(&endpoint)?;
@@ -125,6 +130,12 @@ impl PushOptions {
     ///
     /// An empty `access_token` means the project does not enforce push
     /// security, so no `Authorization` header is sent.
+    ///
+    /// # Errors
+    ///
+    /// [`PushOptionsError::Configuration`] when `config` fails validation, and
+    /// [`PushOptionsError::InvalidEndpoint`] for an endpoint that is not an absolute HTTP URL
+    /// ending in `/send`.
     pub fn from_config(config: &PushConfig) -> Result<Self, PushOptionsError> {
         config.validate()?;
         let access_token = config.access_token.expose().trim();
@@ -141,6 +152,10 @@ impl PushOptions {
     /// Sets the bearer token sent with every push request.
     ///
     /// An empty or whitespace-only token is rejected; omit the call instead.
+    ///
+    /// # Errors
+    ///
+    /// [`PushOptionsError::EmptyAccessToken`] when the token is empty or whitespace.
     pub fn with_access_token(
         mut self,
         access_token: impl Into<String>,
@@ -154,6 +169,10 @@ impl PushOptions {
     }
 
     /// Sets how many notifications are sent in one upstream request.
+    ///
+    /// # Errors
+    ///
+    /// [`PushOptionsError::InvalidBatchSize`] when `batch_size` is zero or above `MAX_BATCH_SIZE`.
     pub fn with_batch_size(mut self, batch_size: usize) -> Result<Self, PushOptionsError> {
         if batch_size == 0 || batch_size > MAX_BATCH_SIZE {
             return Err(PushOptionsError::InvalidBatchSize(batch_size));
@@ -163,6 +182,10 @@ impl PushOptions {
     }
 
     /// Sets the timeout applied to each upstream request.
+    ///
+    /// # Errors
+    ///
+    /// [`PushOptionsError::ZeroRequestTimeout`] when `request_timeout` is zero.
     pub fn with_request_timeout(
         mut self,
         request_timeout: Duration,

@@ -40,6 +40,10 @@ impl Default for SuiteConfig {
     }
 }
 impl SuiteConfig {
+    /// # Errors
+    ///
+    /// `SuiteDataError` when `peers_json` is not a valid peer registry, a configured peer is unknown,
+    /// or a peer URL is invalid or disallowed loopback.
     pub fn registry(
         &self,
         own_app: &str,
@@ -57,6 +61,11 @@ impl SuiteConfig {
         )
     }
     /// Validate the embedded registry and require encryption whenever suite mode is active.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ValidationErrors` when a field fails validation, the peer registry is invalid, or peers
+    /// are configured without a credential cipher.
     #[cfg(feature = "runtime")]
     pub fn validate_for(
         &self,

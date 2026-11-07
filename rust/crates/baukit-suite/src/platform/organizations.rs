@@ -132,6 +132,11 @@ impl HubOrganizations {
     /// Reads `GET /platform/v1/organizations/{id}/members?product=<caller>&cursor=`.
     /// Start with `None` and pass each `next_cursor` until it is `None`. A
     /// malformed or foreign cursor is `HubError::Rejected` with `invalid_pagination`.
+    ///
+    /// # Errors
+    ///
+    /// `OrganizationError::Hub` with the [`HubClient::get_json`] error, including `Rejected` for a
+    /// bad cursor.
     pub async fn members(
         &self,
         organization_id: Uuid,
@@ -146,6 +151,10 @@ impl HubOrganizations {
     }
     /// Reads `GET /platform/v1/accounts/{suiteSubject}/organizations?product=<caller>&cursor=`.
     /// An unknown subject gets an empty page. Paging works like `members`.
+    ///
+    /// # Errors
+    ///
+    /// `OrganizationError::Hub` with the [`HubClient::get_json`] error.
     pub async fn organizations_for_subject(
         &self,
         suite_subject: &str,

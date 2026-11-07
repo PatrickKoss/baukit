@@ -14,6 +14,10 @@ impl PostgresPlatformInbox {
         Self { pool }
     }
     /// Purge a bounded batch. Keep receipts for at least 30 days before pruning.
+    ///
+    /// # Errors
+    ///
+    /// `PlatformError::Invalid` when `batch` is 0. Database failures map through `storage`.
     pub async fn purge_received_before(
         &self,
         cutoff: chrono::DateTime<chrono::Utc>,
@@ -91,6 +95,10 @@ impl PostgresEntitlementCache {
         Self { pool }
     }
     /// Remove all subject snapshots in the caller's erasure transaction.
+    ///
+    /// # Errors
+    ///
+    /// Database failures map through `storage`.
     pub async fn forget_in_transaction(
         subject: &str,
         connection: &mut PgConnection,
@@ -102,6 +110,10 @@ impl PostgresEntitlementCache {
             .map_err(storage)?;
         Ok(())
     }
+    /// # Errors
+    ///
+    /// `PlatformError::Invalid` when the snapshot fails validation or its revision exceeds `i64`.
+    /// Database failures map through `storage`.
     pub async fn store_in_transaction(
         snapshot: &EntitlementSnapshot,
         connection: &mut PgConnection,

@@ -114,6 +114,10 @@ impl RedisRateLimitStore {
     ///
     /// Fully disabled request limiting returns `None` without parsing the Redis
     /// URL or opening a connection.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`Self::connect`] when limiting is enabled.
     pub async fn connect_if_enabled(
         options: &RateLimitOptions,
     ) -> Result<Option<Self>, RateLimitStoreError> {
@@ -129,6 +133,11 @@ impl RedisRateLimitStore {
     /// `redis+sentinel://host1:26379,host2:26379/mymaster` discovers the
     /// writable master through the listed Sentinel nodes. Sentinel URLs do not
     /// support authentication, database selection, query strings, or fragments.
+    ///
+    /// # Errors
+    ///
+    /// [`RateLimitStoreError`] when the URL is invalid or unsupported, or the first connection
+    /// to Redis or a Sentinel master fails.
     pub async fn connect(redis_url: &str) -> Result<Self, RateLimitStoreError> {
         match parse_redis_target(redis_url)? {
             RedisTarget::Direct(redis_url) => {
@@ -150,6 +159,11 @@ impl RedisRateLimitStore {
     /// Each Sentinel endpoint must be an unauthenticated `host:port` string;
     /// bracketed IPv6 addresses such as `[::1]:26379` are accepted. At least
     /// one endpoint and a non-empty master name are required.
+    ///
+    /// # Errors
+    ///
+    /// [`RateLimitStoreError`] for an empty master name, no or malformed Sentinel endpoints, or
+    /// when master discovery or the connection fails.
     pub async fn connect_sentinel<I, S>(
         sentinels: I,
         master_name: &str,

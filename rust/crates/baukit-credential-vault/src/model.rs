@@ -39,6 +39,10 @@ impl CredentialSecrets {
     /// alphanumerics, `_`, `-`, or `.`, or when the value is empty. Rejecting
     /// empty values keeps "absent" and "present but blank" from being confused
     /// after a round trip.
+    ///
+    /// # Errors
+    ///
+    /// [`CredentialVaultError::InvalidConfiguration`] for an invalid field name or an empty value.
     pub fn insert(
         &mut self,
         name: impl Into<String>,
@@ -56,6 +60,10 @@ impl CredentialSecrets {
     }
 
     /// Adds one named secret and returns the set, for builder-style composition.
+    ///
+    /// # Errors
+    ///
+    /// [`CredentialVaultError::InvalidConfiguration`] under the same rules as [`Self::insert`].
     pub fn with(
         mut self,
         name: impl Into<String>,
