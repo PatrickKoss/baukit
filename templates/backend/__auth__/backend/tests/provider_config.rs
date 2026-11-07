@@ -102,6 +102,41 @@ async fn oidc_authorized_parties_restrict_rest_sessions_only_when_configured()
 {% endif %}    Ok(())
 }
 
+#[tokio::test]
+async fn clerk_accepts_tokens_without_azp_only_when_opted_in() -> Result<(), Box<dyn Error>> {
+    let server = baukit_test::MockOidcServer::start().await?;
+    for allow_missing in [false, true] {
+        let file = tempfile::Builder::new().suffix(".toml").tempfile()?;
+        std::fs::write(
+            file.path(),
+            format!(
+                "[auth]\nprovider = \"clerk\"\nissuer = {:?}\njwks_uri = {:?}\nauthorized_parties = [\"https://app.example\"]\nallow_missing_azp = {allow_missing}\n",
+                server.issuer(),
+                server.jwks_url(),
+            ),
+        )?;
+        let loaded: BaukitConfig<ProductConfig> =
+            ConfigLoader::new("clerk-azp-test", Environment::Local)?
+                .local_file(file.path())
+                .without_dotenv()
+                .load()?;
+        let verifier = auth_verifier(&loaded.product.auth).await?;
+        let claims = server.claims("user_123", "api", Duration::from_secs(300))?;
+        assert_eq!(
+            verifier.verify(&server.mint(&claims)?).await.is_ok(),
+            allow_missing,
+            "missing azp, opt-in {allow_missing}",
+        );
+        let foreign = claims.clone().claim("azp", "https://foreign.example");
+        assert!(verifier.verify(&server.mint(&foreign)?).await.is_err());
+        let allowed = claims.claim("azp", "https://app.example");
+        assert!(verifier.verify(&server.mint(&allowed)?).await.is_ok());
+    }
+    let defaults = {{ context.app_crate }}_bin::AuthConfig::default();
+    assert!({% if not context.mobile %}!{% endif %}defaults.allow_missing_azp);
+    Ok(())
+}
+
 {% if context.mcp %}#[tokio::test]
 async fn mcp_enforces_provider_token_binding_and_introspection_is_restricted()
 -> Result<(), Box<dyn Error>> {

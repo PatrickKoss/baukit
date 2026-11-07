@@ -1,0 +1,33 @@
+[advisories]
+ignore = [
+  { id = "RUSTSEC-2026-0440", reason = "astral-tokio-tar is unmaintained with no patched release; reached only through testcontainers 0.28.0, used by baukit-test as test support; remove when testcontainers ships testcontainers-rs#1006" },
+]
+
+[licenses]
+confidence-threshold = 0.8
+private = { ignore = true }
+unused-allowed-license = "allow"
+allow = [
+  "Apache-2.0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "BSL-1.0",
+  "CC0-1.0",
+  "CDLA-Permissive-2.0",
+  "ISC",
+  "MIT",
+  "MIT-0",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "Zlib",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

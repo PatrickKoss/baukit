@@ -48,29 +48,32 @@ impl UserService {
         Self { repository }
     }
 
-    pub async fn list(&self) -> Result<Vec<Item>, ServiceError> {
-        self.repository.list().await.map_err(Into::into)
+    pub async fn list(&self, owner_id: &str) -> Result<Vec<Item>, ServiceError> {
+        self.repository.list(owner_id).await.map_err(Into::into)
     }
 
-    pub async fn get(&self, id: Uuid) -> Result<Item, ServiceError> {
-        self.repository.get(id).await?.ok_or(ServiceError::NotFound)
+    pub async fn get(&self, owner_id: &str, id: Uuid) -> Result<Item, ServiceError> {
+        self.repository
+            .get(owner_id, id)
+            .await?
+            .ok_or(ServiceError::NotFound)
     }
 
-    pub async fn create(&self, name: String) -> Result<Item, ServiceError> {
-        let item = Item::new(Uuid::now_v7(), name)?;
+    pub async fn create(&self, owner_id: &str, name: String) -> Result<Item, ServiceError> {
+        let item = Item::new(Uuid::now_v7(), owner_id, name)?;
         self.repository.create(item).await.map_err(Into::into)
     }
 
-    pub async fn update(&self, id: Uuid, name: String) -> Result<Item, ServiceError> {
-        let item = Item::new(id, name)?;
+    pub async fn update(&self, owner_id: &str, id: Uuid, name: String) -> Result<Item, ServiceError> {
+        let item = Item::new(id, owner_id, name)?;
         self.repository
             .update(item)
             .await?
             .ok_or(ServiceError::NotFound)
     }
 
-    pub async fn delete(&self, id: Uuid) -> Result<(), ServiceError> {
-        if self.repository.delete(id).await? {
+    pub async fn delete(&self, owner_id: &str, id: Uuid) -> Result<(), ServiceError> {
+        if self.repository.delete(owner_id, id).await? {
             Ok(())
         } else {
             Err(ServiceError::NotFound)

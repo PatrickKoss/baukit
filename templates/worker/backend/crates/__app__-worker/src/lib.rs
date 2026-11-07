@@ -73,7 +73,11 @@ pub mod platform {
             job: &ClaimedJob,
             cancellation: JobCancellation,
         ) -> Result<(), JobError> {
-            let starts_at: DateTime<Utc> = serde_json::from_value(job.payload["slot"].clone())
+            let slot = job
+                .payload
+                .get("slot")
+                .ok_or_else(|| JobError::permanent("receipt purge payload has no slot"))?;
+            let starts_at: DateTime<Utc> = serde_json::from_value(slot.clone())
                 .map_err(|_| JobError::permanent("invalid receipt purge payload"))?;
             let slot = self
                 .interval

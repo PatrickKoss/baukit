@@ -29,12 +29,12 @@ pub const READ_SCOPE: &str = "items:read";
 const MAX_ITEMS: usize = 20;
 
 pub trait ItemReadService: Send + Sync {
-    fn list(&self, subject: &str) -> PortFuture<'_, Result<Vec<Item>, ServiceError>>;
+    fn list<'a>(&'a self, subject: &'a str) -> PortFuture<'a, Result<Vec<Item>, ServiceError>>;
 }
 
 impl ItemReadService for ItemService {
-    fn list(&self, _subject: &str) -> PortFuture<'_, Result<Vec<Item>, ServiceError>> {
-        Box::pin(ItemService::list(self))
+    fn list<'a>(&'a self, subject: &'a str) -> PortFuture<'a, Result<Vec<Item>, ServiceError>> {
+        Box::pin(ItemService::list(self, subject))
     }
 }
 
@@ -214,6 +214,7 @@ mod tests {
                     .map(|index| {
                         serde_json::from_value(json!({
                             "id": "00000000-0000-0000-0000-000000000000",
+                            "owner_id": "owner",
                             "name": format!("item-{index}")
                         }))
                         .expect("item")

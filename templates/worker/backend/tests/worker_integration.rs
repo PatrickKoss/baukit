@@ -23,7 +23,7 @@ async fn durable_outbox_runs_the_generated_demo_handler() -> Result<(), Box<dyn 
     let fixture = baukit_test::start_postgres_with_migrations(&migrations).await?;
     let pool = sqlx::PgPool::connect(fixture.connection_url()).await?;
     let service = ItemService::new(Arc::new(PostgresItemRepository::new(pool.clone())));
-    let item = service.create("worker fixture".to_owned()).await?;
+    let item = service.create("worker-owner", "worker fixture".to_owned()).await?;
     let (job_id, status, payload): (uuid::Uuid, String, serde_json::Value) =
         sqlx::query_as("SELECT id, status, payload FROM job_outbox WHERE idempotency_key = $1")
             .bind(format!("item-created:{}", item.id))

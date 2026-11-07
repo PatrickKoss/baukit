@@ -21,7 +21,7 @@ The Rust parser loads `ranges` as a map of named bounds. The section may be abse
 Use both policy bounds when checking a duration:
 
 ```rust
-let bounds = limits::limits_policy().ranges["interval_seconds"];
+let bounds = limits::limits_policy()?.ranges.get("interval_seconds").copied().ok_or(MissingRange)?;
 limits::check_range("intervalSeconds", interval.as_secs(), bounds.minimum, bounds.maximum)?;
 ```
 

@@ -12,12 +12,21 @@ use uuid::Uuid;
 
 pub type PortFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+/// Item storage. Every read and write is scoped to the owner, so one owner never sees another's items.
 pub trait ItemRepository: Send + Sync + 'static {
-    fn list(&self) -> PortFuture<'_, Result<Vec<Item>, RepositoryError>>;
-    fn get(&self, id: Uuid) -> PortFuture<'_, Result<Option<Item>, RepositoryError>>;
+    fn list<'a>(&'a self, owner_id: &'a str) -> PortFuture<'a, Result<Vec<Item>, RepositoryError>>;
+    fn get<'a>(
+        &'a self,
+        owner_id: &'a str,
+        id: Uuid,
+    ) -> PortFuture<'a, Result<Option<Item>, RepositoryError>>;
     fn create(&self, item: Item) -> PortFuture<'_, Result<Item, RepositoryError>>;
     fn update(&self, item: Item) -> PortFuture<'_, Result<Option<Item>, RepositoryError>>;
-    fn delete(&self, id: Uuid) -> PortFuture<'_, Result<bool, RepositoryError>>;
+    fn delete<'a>(
+        &'a self,
+        owner_id: &'a str,
+        id: Uuid,
+    ) -> PortFuture<'a, Result<bool, RepositoryError>>;
     fn ready(&self) -> PortFuture<'_, Result<(), RepositoryError>>;
 }
 

@@ -3,8 +3,8 @@ use serde_json::Value;
 
 use {{ context.app_crate }}_mcp::ItemTools;
 
-fn committed_schema() -> Value {
-    serde_json::from_str(include_str!("../mcp-tools.json")).expect("committed schema")
+fn committed_schema() -> serde_json::Result<Value> {
+    serde_json::from_str(include_str!("../mcp-tools.json"))
 }
 
 #[test]
@@ -12,7 +12,7 @@ fn registered_tools_match_committed_schema() {
     let actual = tool_schema(&ItemTools::definitions()).expect("tool schema");
     assert_eq!(
         actual,
-        committed_schema()["tools"],
+        committed_schema().expect("committed schema")["tools"],
         "update mcp-tools.json after reviewing tool schema and scope changes"
     );
 }
@@ -20,7 +20,7 @@ fn registered_tools_match_committed_schema() {
 #[test]
 fn registered_resources_and_prompts_match_committed_schema() {
     let actual = ItemTools::schema().expect("capability schema");
-    let expected = committed_schema();
+    let expected = committed_schema().expect("committed schema");
     assert_eq!(
         actual["resources"], expected["resources"],
         "update mcp-tools.json after reviewing resource definitions and scopes"

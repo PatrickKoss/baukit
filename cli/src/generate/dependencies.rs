@@ -9,12 +9,13 @@ use crate::{
     generate::NewOptions,
 };
 
-const BASE_CRATES: [&str; 8] = [
+const BASE_CRATES: [&str; 9] = [
     "baukit-core",
     "baukit-config",
     "baukit-http",
     "baukit-openapi",
     "baukit-ops",
+    "baukit-ratelimit",
     "baukit-runtime",
     "baukit-telemetry",
     "baukit-test",
@@ -100,7 +101,6 @@ fn baukit_crates(options: &NewOptions) -> Vec<&'static str> {
             "baukit-auth",
             "baukit-credential-vault",
             "baukit-erasure",
-            "baukit-ratelimit",
         ]);
     }
     if components.worker() || auth_enabled {

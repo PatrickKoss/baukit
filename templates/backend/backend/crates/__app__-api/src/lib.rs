@@ -36,7 +36,10 @@ use {{ context.app_crate }}_services::ItemService;
 use {{ context.app_crate }}_services::ServiceError;
 {% if context.auth_enabled %}use {{ context.app_crate }}_services::UserService;
 {% endif %}
-#[derive(Clone)]
+{% if not context.auth_enabled %}/// Owner of every item while the product has no authentication; enabling auth scopes items to the principal.
+pub const LOCAL_OWNER: &str = "local";
+
+{% endif %}#[derive(Clone)]
 pub struct ApiState {
     pub items: ItemService,
 {% if context.auth_enabled %}    pub users: UserService,
@@ -289,12 +292,12 @@ async fn current_user(
 )]
 {% if context.auth_enabled %}async fn list_items(
     State(state): State<ApiState>,
-    _principal: Principal,
+    principal: Principal,
 ) -> Result<Json<Vec<ItemDto>>, ApiError> {
 {% else %}async fn list_items(State(state): State<ApiState>) -> Result<Json<Vec<ItemDto>>, ApiError> {
 {% endif %}    let items = state
         .items
-        .list()
+        .list({% if context.auth_enabled %}principal.subject(){% else %}LOCAL_OWNER{% endif %})
         .await
         .map_err(map_service_error)?
         .into_iter()
@@ -318,11 +321,11 @@ async fn current_user(
 async fn get_item(
     State(state): State<ApiState>,
     ApiPath(id): ApiPath<Uuid>,
-{% if context.auth_enabled %}    _principal: Principal,
+{% if context.auth_enabled %}    principal: Principal,
 {% endif %}) -> Result<Json<ItemDto>, ApiError> {
     state
         .items
-        .get(id)
+        .get({% if context.auth_enabled %}principal.subject(){% else %}LOCAL_OWNER{% endif %}, id)
         .await
         .map(ItemDto::from)
         .map(Json)
@@ -344,12 +347,12 @@ async fn get_item(
 )]
 async fn create_item(
     State(state): State<ApiState>,
-{% if context.auth_enabled %}    _principal: Principal,
+{% if context.auth_enabled %}    principal: Principal,
 {% endif %}    ApiJson(request): ApiJson<SaveItemRequest>,
 ) -> Result<(StatusCode, Json<ItemDto>), ApiError> {
     let item = state
         .items
-        .create(request.name)
+        .create({% if context.auth_enabled %}principal.subject(){% else %}LOCAL_OWNER{% endif %}, request.name)
         .await
         .map_err(map_service_error)?;
     Ok((StatusCode::CREATED, Json(item.into())))
@@ -372,12 +375,12 @@ async fn create_item(
 async fn update_item(
     State(state): State<ApiState>,
     ApiPath(id): ApiPath<Uuid>,
-{% if context.auth_enabled %}    _principal: Principal,
+{% if context.auth_enabled %}    principal: Principal,
 {% endif %}    ApiJson(request): ApiJson<SaveItemRequest>,
 ) -> Result<Json<ItemDto>, ApiError> {
     state
         .items
-        .update(id, request.name)
+        .update({% if context.auth_enabled %}principal.subject(){% else %}LOCAL_OWNER{% endif %}, id, request.name)
         .await
         .map(ItemDto::from)
         .map(Json)
@@ -399,9 +402,13 @@ async fn update_item(
 async fn delete_item(
     State(state): State<ApiState>,
     ApiPath(id): ApiPath<Uuid>,
-{% if context.auth_enabled %}    _principal: Principal,
+{% if context.auth_enabled %}    principal: Principal,
 {% endif %}) -> Result<StatusCode, ApiError> {
-    state.items.delete(id).await.map_err(map_service_error)?;
+    state
+        .items
+        .delete({% if context.auth_enabled %}principal.subject(){% else %}LOCAL_OWNER{% endif %}, id)
+        .await
+        .map_err(map_service_error)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -428,7 +435,12 @@ fn map_service_error(error: ServiceError) -> ApiError {
 }
 
 pub fn map_limit_error(error: LimitError) -> ApiError {
-    if let LimitError::InvalidRange(error) = error {
+    if matches!(
+        error,
+        LimitError::InvalidRange(_)
+            | LimitError::JsonEncoding { .. }
+            | LimitError::PolicyUnavailable(_)
+    ) {
         return ApiError::internal(error);
     }
     ApiError::new(
@@ -520,7 +532,7 @@ mod tests {
         assert_eq!(error.code(), "out_of_range");
 
         let error =
-            Item::new(Uuid::nil(), "x".repeat(201)).expect_err("name should exceed the limit");
+            Item::new(Uuid::nil(), "owner", "x".repeat(201)).expect_err("name should exceed the limit");
         let error = map_service_error(ServiceError::Invalid(error));
         assert_eq!(error.status(), StatusCode::BAD_REQUEST);
         assert_eq!(error.code(), "text_too_long");

@@ -44,31 +44,49 @@ impl PostgresUserRepository {
     }
 }{% endif %}
 
+type ItemRow = (Uuid, String, String);
+
+fn item_from_row((id, owner_id, name): ItemRow) -> Item {
+    Item { id, owner_id, name }
+}
+
+fn is_unique_violation(error: &sqlx::Error) -> bool {
+    error
+        .as_database_error()
+        .and_then(|error| error.code())
+        .as_deref()
+        == Some("23505")
+}
+
 impl ItemRepository for PostgresItemRepository {
-    fn list(&self) -> PortFuture<'_, Result<Vec<Item>, RepositoryError>> {
+    fn list<'a>(&'a self, owner_id: &'a str) -> PortFuture<'a, Result<Vec<Item>, RepositoryError>> {
         Box::pin(async move {
-            sqlx::query_as::<_, (Uuid, String)>(
-                "SELECT id, name FROM items ORDER BY created_at, id",
+            sqlx::query_as::<_, ItemRow>(
+                "SELECT id, owner_id, name FROM items WHERE owner_id = $1 ORDER BY created_at, id",
             )
+            .bind(owner_id)
             .fetch_all(&self.pool)
             .await
-            .map(|rows| {
-                rows.into_iter()
-                    .map(|(id, name)| Item { id, name })
-                    .collect()
-            })
+            .map(|rows| rows.into_iter().map(item_from_row).collect())
             .map_err(RepositoryError::unavailable)
         })
     }
 
-    fn get(&self, id: Uuid) -> PortFuture<'_, Result<Option<Item>, RepositoryError>> {
+    fn get<'a>(
+        &'a self,
+        owner_id: &'a str,
+        id: Uuid,
+    ) -> PortFuture<'a, Result<Option<Item>, RepositoryError>> {
         Box::pin(async move {
-            sqlx::query_as::<_, (Uuid, String)>("SELECT id, name FROM items WHERE id = $1")
-                .bind(id)
-                .fetch_optional(&self.pool)
-                .await
-                .map(|row| row.map(|(id, name)| Item { id, name }))
-                .map_err(RepositoryError::unavailable)
+            sqlx::query_as::<_, ItemRow>(
+                "SELECT id, owner_id, name FROM items WHERE owner_id = $1 AND id = $2",
+            )
+            .bind(owner_id)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map(|row| row.map(item_from_row))
+            .map_err(RepositoryError::unavailable)
         })
     }
 
@@ -79,33 +97,32 @@ impl ItemRepository for PostgresItemRepository {
                 .begin()
                 .await
                 .map_err(RepositoryError::unavailable)?;
-            let result = sqlx::query_as::<_, (Uuid, String)>(
-                "INSERT INTO items (id, name) VALUES ($1, $2) RETURNING id, name",
+            let created = sqlx::query_as::<_, ItemRow>(
+                "INSERT INTO items (id, owner_id, name) VALUES ($1, $2, $3) \
+                 RETURNING id, owner_id, name",
             )
             .bind(item.id)
+            .bind(&item.owner_id)
             .bind(&item.name)
             .fetch_one(&mut *transaction)
-            .await;
-            let (id, name) = match result {
-                Ok(row) => row,
-                Err(error)
-                    if error
-                        .as_database_error()
-                        .and_then(|error| error.code())
-                        .as_deref()
-                        == Some("23505") =>
-                {
-                    return Err(RepositoryError::Conflict);
+            .await
+            .map(item_from_row)
+            .map_err(|error| {
+                if is_unique_violation(&error) {
+                    RepositoryError::Conflict
+                } else {
+                    RepositoryError::unavailable(error)
                 }
-                Err(error) => return Err(RepositoryError::unavailable(error)),
-            };
-            let payload = serde_json::to_value(ItemCreatedJob { item_id: id })
-                .map_err(RepositoryError::unavailable)?;
+            })?;
+            let payload = serde_json::to_value(ItemCreatedJob {
+                item_id: created.id,
+            })
+            .map_err(RepositoryError::unavailable)?;
             PostgresJobStore::new(self.pool.clone())
                 .enqueue_in_transaction(
                     &mut transaction,
                     NewJob::new(ITEM_CREATED_JOB_TYPE, payload, 3)
-                        .idempotency_key(format!("item-created:{id}")),
+                        .idempotency_key(format!("item-created:{}", created.id)),
                 )
                 .await
                 .map_err(RepositoryError::unavailable)?;
@@ -113,47 +130,51 @@ impl ItemRepository for PostgresItemRepository {
                 .commit()
                 .await
                 .map_err(RepositoryError::unavailable)?;
-            Ok(Item { id, name })
-{% else %}            let result = sqlx::query_as::<_, (Uuid, String)>(
-                "INSERT INTO items (id, name) VALUES ($1, $2) RETURNING id, name",
+            Ok(created)
+{% else %}            sqlx::query_as::<_, ItemRow>(
+                "INSERT INTO items (id, owner_id, name) VALUES ($1, $2, $3) \
+                 RETURNING id, owner_id, name",
             )
             .bind(item.id)
+            .bind(item.owner_id)
             .bind(item.name)
             .fetch_one(&self.pool)
-            .await;
-            match result {
-                Ok((id, name)) => Ok(Item { id, name }),
-                Err(error)
-                    if error
-                        .as_database_error()
-                        .and_then(|error| error.code())
-                        .as_deref()
-                        == Some("23505") =>
-                {
-                    Err(RepositoryError::Conflict)
+            .await
+            .map(item_from_row)
+            .map_err(|error| {
+                if is_unique_violation(&error) {
+                    RepositoryError::Conflict
+                } else {
+                    RepositoryError::unavailable(error)
                 }
-                Err(error) => Err(RepositoryError::unavailable(error)),
-            }
+            })
 {% endif %}        })
     }
 
     fn update(&self, item: Item) -> PortFuture<'_, Result<Option<Item>, RepositoryError>> {
         Box::pin(async move {
-            sqlx::query_as::<_, (Uuid, String)>(
-                "UPDATE items SET name = $2 WHERE id = $1 RETURNING id, name",
+            sqlx::query_as::<_, ItemRow>(
+                "UPDATE items SET name = $3 WHERE owner_id = $1 AND id = $2 \
+                 RETURNING id, owner_id, name",
             )
+            .bind(item.owner_id)
             .bind(item.id)
             .bind(item.name)
             .fetch_optional(&self.pool)
             .await
-            .map(|row| row.map(|(id, name)| Item { id, name }))
+            .map(|row| row.map(item_from_row))
             .map_err(RepositoryError::unavailable)
         })
     }
 
-    fn delete(&self, id: Uuid) -> PortFuture<'_, Result<bool, RepositoryError>> {
+    fn delete<'a>(
+        &'a self,
+        owner_id: &'a str,
+        id: Uuid,
+    ) -> PortFuture<'a, Result<bool, RepositoryError>> {
         Box::pin(async move {
-            sqlx::query("DELETE FROM items WHERE id = $1")
+            sqlx::query("DELETE FROM items WHERE owner_id = $1 AND id = $2")
+                .bind(owner_id)
                 .bind(id)
                 .execute(&self.pool)
                 .await
@@ -228,7 +249,11 @@ impl baukit_erasure::ProductErasure for PostgresProfileErasure {
             )
             .await
             .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
-{% endif %}            sqlx::query("DELETE FROM user_identities WHERE subject = $1")
+{% endif %}            sqlx::query("DELETE FROM items WHERE owner_id = $1")
+                .bind(subject)
+                .execute(&mut *connection)
+                .await?;
+            sqlx::query("DELETE FROM user_identities WHERE subject = $1")
                 .bind(subject)
                 .execute(connection)
                 .await?;

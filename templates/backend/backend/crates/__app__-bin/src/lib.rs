@@ -26,7 +26,9 @@ use uuid::Uuid;
 
 mod config;
 {% if context.platform %}pub mod platform;
-{% endif %}pub use config::config_loader;
+{% endif %}mod rate_limits;
+pub use config::config_loader;
+pub use rate_limits::{RateLimits, rate_limited{% if context.auth_enabled %}, protect_routes{% endif %}};
 
 {% if context.auth_enabled %}mod browser_session;
 mod identity;
@@ -120,6 +122,8 @@ pub struct AuthConfig {
     pub client_id: String,
     pub publishable_key: String,
     pub authorized_parties: Vec<String>,
+    /// Clerk only: accept tokens without `azp`, which native apps send. A present `azp` must still be allowed.
+    pub allow_missing_azp: bool,
     pub jwks_uri: Option<String>,
     pub issuer: String,
     pub audience: String,
@@ -137,6 +141,7 @@ impl Default for AuthConfig {
             client_id: String::new(),
             publishable_key: String::new(),
             authorized_parties: {% if context.auth_clerk %}vec!["http://localhost:{{ context.web_port }}".into()]{% else %}Vec::new(){% endif %},
+            allow_missing_azp: {{ "true" if context.mobile else "false" }},
             jwks_uri: None,
             issuer: {% if context.auth_oidc %}format!("http://localhost:{{ context.keycloak_host_port }}/realms/{PRODUCT}"),{% elif context.auth_workos %}"https://api.workos.com/".into(),{% else %}String::new(),{% endif %}
             audience: format!("{PRODUCT}-backend"),
@@ -242,33 +247,49 @@ impl InMemoryItemRepository {
     }
 }
 
+impl InMemoryItemRepository {
+    fn read(&self) -> std::sync::RwLockReadGuard<'_, BTreeMap<Uuid, Item>> {
+        self.items
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn write(&self) -> std::sync::RwLockWriteGuard<'_, BTreeMap<Uuid, Item>> {
+        self.items
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
 impl ItemRepository for InMemoryItemRepository {
-    fn list(&self) -> PortFuture<'_, Result<Vec<Item>, RepositoryError>> {
+    fn list<'a>(&'a self, owner_id: &'a str) -> PortFuture<'a, Result<Vec<Item>, RepositoryError>> {
         Box::pin(async move {
-            let items = self
-                .items
+            Ok(self
                 .read()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            Ok(items.values().cloned().collect())
+                .values()
+                .filter(|item| item.owner_id == owner_id)
+                .cloned()
+                .collect())
         })
     }
 
-    fn get(&self, id: Uuid) -> PortFuture<'_, Result<Option<Item>, RepositoryError>> {
+    fn get<'a>(
+        &'a self,
+        owner_id: &'a str,
+        id: Uuid,
+    ) -> PortFuture<'a, Result<Option<Item>, RepositoryError>> {
         Box::pin(async move {
-            let items = self
-                .items
+            Ok(self
                 .read()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            Ok(items.get(&id).cloned())
+                .get(&id)
+                .filter(|item| item.owner_id == owner_id)
+                .cloned())
         })
     }
 
     fn create(&self, item: Item) -> PortFuture<'_, Result<Item, RepositoryError>> {
         Box::pin(async move {
-            let mut items = self
-                .items
-                .write()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut items = self.write();
             if items.contains_key(&item.id) {
                 return Err(RepositoryError::Conflict);
             }
@@ -279,26 +300,29 @@ impl ItemRepository for InMemoryItemRepository {
 
     fn update(&self, item: Item) -> PortFuture<'_, Result<Option<Item>, RepositoryError>> {
         Box::pin(async move {
-            let mut items = self
-                .items
-                .write()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if let std::collections::btree_map::Entry::Occupied(mut entry) = items.entry(item.id) {
-                entry.insert(item.clone());
-                Ok(Some(item))
-            } else {
-                Ok(None)
+            let mut items = self.write();
+            match items.get_mut(&item.id) {
+                Some(stored) if stored.owner_id == item.owner_id => {
+                    stored.clone_from(&item);
+                    Ok(Some(item))
+                }
+                _ => Ok(None),
             }
         })
     }
 
-    fn delete(&self, id: Uuid) -> PortFuture<'_, Result<bool, RepositoryError>> {
+    fn delete<'a>(
+        &'a self,
+        owner_id: &'a str,
+        id: Uuid,
+    ) -> PortFuture<'a, Result<bool, RepositoryError>> {
         Box::pin(async move {
-            let mut items = self
-                .items
-                .write()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            Ok(items.remove(&id).is_some())
+            let mut items = self.write();
+            if items.get(&id).is_some_and(|item| item.owner_id == owner_id) {
+                items.remove(&id);
+                return Ok(true);
+            }
+            Ok(false)
         })
     }
 

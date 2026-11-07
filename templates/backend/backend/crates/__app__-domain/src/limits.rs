@@ -115,12 +115,22 @@ impl LimitsPolicy {
     }
 }
 
-pub fn limits_policy() -> &'static LimitsPolicy {
-    static POLICY: OnceLock<LimitsPolicy> = OnceLock::new();
-    POLICY.get_or_init(|| {
-        parse_limits_policy(LIMITS_JSON)
-            .unwrap_or_else(|error| panic!("embedded limits.json must be valid: {error}"))
-    })
+/// The embedded `limits.json` failed to parse; the message names the cause.
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+#[error("embedded limits.json is invalid: {0}")]
+pub struct LimitsPolicyUnavailable(&'static str);
+
+/// The policy embedded from `limits.json`, parsed once.
+///
+/// # Errors
+///
+/// Returns [`LimitsPolicyUnavailable`] when the embedded policy does not parse.
+pub fn limits_policy() -> Result<&'static LimitsPolicy, LimitsPolicyUnavailable> {
+    static POLICY: OnceLock<Result<LimitsPolicy, String>> = OnceLock::new();
+    POLICY
+        .get_or_init(|| parse_limits_policy(LIMITS_JSON).map_err(|error| error.to_string()))
+        .as_ref()
+        .map_err(|message| LimitsPolicyUnavailable(message.as_str()))
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -167,6 +177,10 @@ pub enum LimitError {
     },
     #[error(transparent)]
     InvalidRange(#[from] InvalidLimitRange),
+    #[error("{field} could not be encoded as JSON")]
+    JsonEncoding { field: &'static str },
+    #[error(transparent)]
+    PolicyUnavailable(#[from] LimitsPolicyUnavailable),
 }
 
 impl LimitError {
@@ -174,7 +188,7 @@ impl LimitError {
         match self {
             Self::Exceeded { reason, .. } => reason.as_str(),
             Self::OutOfRange { .. } => LimitReason::OutOfRange.as_str(),
-            Self::InvalidRange(_) => "internal",
+            Self::InvalidRange(_) | Self::JsonEncoding { .. } | Self::PolicyUnavailable(_) => "internal",
         }
     }
 
@@ -201,7 +215,7 @@ impl LimitError {
                 ("minimum".to_owned(), Value::from(minimum)),
                 ("maximum".to_owned(), Value::from(maximum)),
             ]),
-            Self::InvalidRange(_) => BTreeMap::new(),
+            Self::InvalidRange(_) | Self::JsonEncoding { .. } | Self::PolicyUnavailable(_) => BTreeMap::new(),
         }
     }
 }
@@ -229,12 +243,12 @@ pub fn check_text(field: &'static str, value: &str) -> Result<(), LimitError> {
     map_limit_exceeded(
         field,
         LimitReason::TextTooLong,
-        check_trimmed_unicode_scalars(value, limits_policy().text.max_characters),
+        check_trimmed_unicode_scalars(value, limits_policy()?.text.max_characters),
     )
 }
 
 pub fn check_json_document(field: &'static str, value: &Value) -> Result<(), LimitError> {
-    match check_compact_json_utf8_bytes(value, limits_policy().document.max_bytes) {
+    match check_compact_json_utf8_bytes(value, limits_policy()?.document.max_bytes) {
         Ok(_) => Ok(()),
         Err(CompactJsonLimitError::Limit(error)) => Err(LimitError::Exceeded {
             reason: LimitReason::JsonbTooLarge,
@@ -242,9 +256,7 @@ pub fn check_json_document(field: &'static str, value: &Value) -> Result<(), Lim
             measured: error.measured(),
             allowed: error.allowed(),
         }),
-        Err(CompactJsonLimitError::Encoding(_)) => {
-            unreachable!("serde_json::Value must serialize")
-        }
+        Err(CompactJsonLimitError::Encoding(_)) => Err(LimitError::JsonEncoding { field }),
     }
 }
 
@@ -252,7 +264,7 @@ pub fn check_collection(field: &'static str, count: usize) -> Result<(), LimitEr
     check_count(
         field,
         count,
-        limits_policy().collection.max_elements,
+        limits_policy()?.collection.max_elements,
         LimitReason::TooManyElements,
     )
 }
@@ -261,7 +273,7 @@ pub fn check_rows(field: &'static str, count: usize) -> Result<(), LimitError> {
     check_count(
         field,
         count,
-        limits_policy().rows.max_count,
+        limits_policy()?.rows.max_count,
         LimitReason::TooManyRows,
     )
 }
@@ -270,7 +282,7 @@ pub fn check_body(field: &'static str, byte_length: usize) -> Result<(), LimitEr
     check_count(
         field,
         byte_length,
-        limits_policy().body.max_bytes,
+        limits_policy()?.body.max_bytes,
         LimitReason::BodyTooLarge,
     )
 }
@@ -279,7 +291,7 @@ pub fn check_batch(field: &'static str, count: usize) -> Result<(), LimitError> 
     check_count(
         field,
         count,
-        limits_policy().batch.max_items,
+        limits_policy()?.batch.max_items,
         LimitReason::BatchTooLarge,
     )
 }
@@ -366,7 +378,7 @@ mod tests {
 
     #[test]
     fn range_errors_preserve_details_and_reject_inverted_bounds() {
-        let bounds = limits_policy().ranges["interval_seconds"];
+        let bounds = limits_policy().expect("embedded policy should parse").ranges["interval_seconds"];
         for measured in [bounds.minimum, 86400, bounds.maximum] {
             assert_eq!(
                 check_range("intervalSeconds", measured, bounds.minimum, bounds.maximum),
@@ -400,7 +412,7 @@ mod tests {
     fn loads_the_shared_product_fixture() {
         let parsed = parse_limits_policy(include_str!("../../../../limits.json"))
             .expect("shared limits fixture should parse");
-        assert_eq!(limits_policy(), &parsed);
+        assert_eq!(limits_policy().expect("embedded policy should parse"), &parsed);
         assert_eq!(parsed.version, SUPPORTED_POLICY_VERSION);
     }
 
@@ -430,7 +442,7 @@ mod tests {
 
     #[test]
     fn checks_boundaries_and_stable_reason_codes() {
-        let policy = limits_policy();
+        let policy = limits_policy().expect("embedded policy should parse");
         assert_eq!(
             check_text("title", &"é".repeat(policy.text.max_characters)),
             Ok(())
@@ -508,7 +520,7 @@ mod tests {
     fn measures_compact_json_in_utf8_bytes() {
         let value = json!({ "value": "é" });
         let byte_length = value.to_string().len();
-        let oversized = json!({ "value": "x".repeat(limits_policy().document.max_bytes) });
+        let oversized = json!({ "value": "x".repeat(limits_policy().expect("embedded policy should parse").document.max_bytes) });
 
         assert!(byte_length > value.to_string().chars().count());
         let error =
@@ -519,7 +531,7 @@ mod tests {
             json!({
                 "field": "metadata",
                 "measured": oversized.to_string().len(),
-                "allowed": limits_policy().document.max_bytes,
+                "allowed": limits_policy().expect("embedded policy should parse").document.max_bytes,
             })
         );
     }
