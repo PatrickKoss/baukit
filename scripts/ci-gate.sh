@@ -52,6 +52,7 @@ mcp-fixture mcp ts-check selected -
 native-android android ts-check selected -
 expo-sqlite android native-android selected -
 expo-notifications android expo-sqlite selected -
+fuzz fuzz - selected -
 STEPS
 }
 
@@ -121,6 +122,12 @@ step_suite_features() { ./scripts/check-suite-features.sh; }
 step_rust_msrv() {
   cargo "+$msrv" check --manifest-path rust/Cargo.toml --workspace --all-targets
 }
+step_fuzz() {
+  cargo fmt --manifest-path rust/fuzz/Cargo.toml --all --check
+  cargo clippy --manifest-path rust/fuzz/Cargo.toml --all-targets -- -D warnings
+  sh scripts/fuzz.sh all "${BAUKIT_FUZZ_SECONDS:-60}"
+}
+
 step_examples_test() {
   cargo test --locked --manifest-path examples/minimal-api/Cargo.toml -- --test-threads "$workers"
 }

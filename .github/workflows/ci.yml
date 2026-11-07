@@ -326,6 +326,28 @@ jobs:
       - run: scripts/ci-gate.sh --step cli-tests
       - run: scripts/ci-gate.sh --step cli-check
 
+  fuzz:
+    name: Fuzz targets (60 s each)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: nightly
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: rust/fuzz -> target
+      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
+        with:
+          tool: cargo-fuzz@0.13.2
+      - run: scripts/ci-gate.sh --step fuzz
+
   mcp-fixture:
     name: Remote MCP fixture and OAuth smoke
     runs-on: ubuntu-latest
