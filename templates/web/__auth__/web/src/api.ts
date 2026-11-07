@@ -13,7 +13,7 @@ export interface CurrentUser {
   readonly subject: string;
 }
 
-const configuredBaseUrl: unknown = import.meta.env['VITE_API_URL'];
+const configuredBaseUrl: unknown = import.meta.env.VITE_API_URL;
 const api = createAuthenticatedApiRuntime({
   auth: authClient,
   baseUrl:

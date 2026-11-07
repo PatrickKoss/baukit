@@ -1231,7 +1231,9 @@ fn is_provider_shaped_realm_only(path: &Path) -> bool {
             })
         || path.file_name().is_some_and(|name| {
             let name = name.to_string_lossy();
-            name.starts_with("check-production-bundle") || name == "sign-in-config.test.mjs"
+            name.starts_with("check-production-bundle")
+                || name == "sign-in-config.test.mjs"
+                || name == "app-config.test.ts"
         })
 }
 

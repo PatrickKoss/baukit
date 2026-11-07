@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.18.3] - 2026-11-07
+
 ## [0.18.2] - 2026-11-06
 
 - Breaking: `OrganizationSummary` gains the required `sso_connection_active` and `directory_sync_active`, read from the hub summary's `ssoConnectionActive` and `directorySyncActive` (Schlüsselbund C34.F, BK29). Struct literals must set both, and a summary without them is `HubError::InvalidResponse`.

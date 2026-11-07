@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.18.3] - 2026-11-07
+
+{% if context.web %}- Web source reads every `VITE_*` key with static `import.meta.env.VITE_...` access, declared in `web/src/vite-env.d.ts`, so Vite no longer inlines the whole env object into a production bundle.
+{% endif %}{% if context.mobile %}- `mobile/eslint.config.js` turns on `preserve-caught-error` and `@typescript-eslint/no-dynamic-delete`, and `pnpm lint` checks `mobile/scripts`.
+{% endif %}{% if context.mobile and context.quality_strict %}- `baukit.toml` maps `mobile/.maestro/**` to `android-build` and `android-e2e`, so `--affected` runs the flows for a Maestro-only change.
+{% endif %}
 ## [0.18.2] - 2026-11-06
 
 {% if context.mobile %}- Metro refuses to bundle when a `mobile/.env*` file sets `BAUKIT_QA_BUILD`, and the app config passes `apiBaseUrl` only when `EXPO_PUBLIC_API_URL` is set.

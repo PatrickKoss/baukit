@@ -80,6 +80,16 @@ class MatcherTests(unittest.TestCase):
         selection = gate.select(["mobile/app.config.ts"], AFFECTED, SHARED)
         self.assertIn("android-e2e", names(gate.plan(STEPS, selection)))
 
+    def test_maestro_only_change_selects_the_android_steps_in_any_lane(self):
+        steps = gate.parse_steps(textwrap.dedent("""
+            mobile-unit mobile - selected -
+            android-build native mobile-unit selected -
+            android-e2e native android-build selected -
+        """))
+        affected = {"mobile/.maestro/**": ["mobile", "android-build", "android-e2e"]}
+        selection = gate.select(["mobile/.maestro/smoke.yaml"], affected, SHARED)
+        self.assertEqual(names(gate.plan(steps, selection)), ["mobile-unit", "android-build", "android-e2e"])
+
     def test_shared_paths_run_the_full_gate(self):
         for path in ("backend/Cargo.lock", "web/pnpm-lock.yaml", "backend/migrations/0002_x.sql", "baukit.toml",
                      "limits.json", "scripts/quality-gate.sh", "backend/openapi.json"):

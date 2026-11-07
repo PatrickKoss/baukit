@@ -4,6 +4,10 @@ All notable changes to `baukit-http` are documented here.
 
 ## [Unreleased]
 
+## [0.18.3] - 2026-11-07
+
+- The default CORS allowed request headers include `x-organization-id` (`X_ORGANIZATION_ID`), which `baukit-suite`'s organization plan subject reads from browsers (BK30).
+
 ## [0.18.2] - 2026-11-06
 
 ## [0.18.1] - 2026-11-05

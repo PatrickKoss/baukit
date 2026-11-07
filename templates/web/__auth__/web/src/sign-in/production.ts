@@ -4,18 +4,13 @@
 import type { SignInPort } from './port';
 import { createSignInPort } from './provider-client';
 
-function environmentText(name: string): string {
-  const value: unknown = import.meta.env[name];
-  return typeof value === 'string' ? value : '';
-}
-
 {% if context.auth_clerk %}/** Clerk's browser SDK with hosted sign-in. */
 export function createProductionSignIn(): SignInPort {
   return createSignInPort(
     'Clerk',
     () =>
       new ClerkWebClient({
-        publishableKey: environmentText('VITE_CLERK_PUBLISHABLE_KEY'),
+        publishableKey: import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ?? '',
         redirectUri: `${window.location.origin}/`,
       }),
   );
@@ -26,7 +21,7 @@ export function createProductionSignIn(): SignInPort {
     'WorkOS',
     () =>
       new WorkOsWebClient({
-        clientId: environmentText('VITE_WORKOS_CLIENT_ID'),
+        clientId: import.meta.env.VITE_WORKOS_CLIENT_ID ?? '',
         redirectUri: `${window.location.origin}/`,
       }),
   );

@@ -5,6 +5,43 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.18.3
+
+Last verified release train: `v0.18.3` (patch train on top of `v0.18.2`). The web template reads every `VITE_*` key statically, so Vite no longer inlines the whole env object, local issuer included, into a production bundle. `baukit-http` allows the `x-organization-id` request header in its default CORS settings, and `useOrganizationPlan` in `@baukit/purchases-core` returns a `retry()`. The mobile template's scripts pass `preserve-caught-error` and `@typescript-eslint/no-dynamic-delete`, its app-config tests run under Jest, and `--affected` runs the Android steps for a Maestro-only change. Baukit's workspaces and templates carry no `minimumReleaseAgeExclude` entries for `@baukit/*@0.18.2`, checked at 01:44 UTC on 2026-11-07, so the train removed none.
+
+### Upgrade steps
+
+Follow the sections in this order, starting from a product on 0.18.2. Render a fresh product with the same capabilities (`baukit new`) at v0.18.3 to copy files from.
+
+#### Bump the pins
+
+1. Set every `baukit-*` crate to `=0.18.3` and every `@baukit/*` package to `0.18.3`, and set `baukit.toml`'s template version to `0.18.3`.
+2. Strict products move the Baukit clone in `scripts/quality-gate.sh` to `git clone --branch v0.18.3`. A product whose gate also pins `baukit_commit` sets it to the `v0.18.3` tag's commit in the same change. The `baukit-doctor` step builds the CLI from that pinned clone, so a stale tag runs an old doctor.
+3. pnpm refuses `@baukit/*@0.18.3` for a day after the publish. A product that installs inside that window lists the exact `@baukit/<name>@0.18.3` entries it needs in `minimumReleaseAgeExclude` and removes them once the window ends. Remove any `@baukit/*@0.18.2` entries left from the last round.
+4. Refresh `backend/Cargo.lock` with `cargo update -p baukit-core` (or any pinned crate) and the pnpm lockfiles with `corepack pnpm@12.9.1 install`.
+
+#### Recorded platform responses
+
+A product that keeps a recorded platform API responses fixture, such as a JSON file of hub `GET /platform/v1/organizations/{id}` bodies, adds the two required `OrganizationSummary` booleans `sso_connection_active` and `directory_sync_active` to every organization summary in it (AHP.ID). The 0.18.2 client rejects a summary without them.
+
+#### Web env keys read statically (web products)
+
+`import.meta.env[name]` with a computed key made Vite inline every `VITE_*` value from `web/.env` into the production bundle. A computed key is gone from the template.
+
+1. Copy `web/src/vite-env.d.ts`, which declares the product's `VITE_*` keys on `ImportMetaEnv`, so `noPropertyAccessFromIndexSignature` accepts `import.meta.env.VITE_...`.
+2. Copy `web/src/api.ts`, and for an authenticated product `web/src/auth.ts`, `web/src/delete-profile.ts`, `web/src/sign-in/local.ts` and `web/src/sign-in/production.ts`, or make the same change by hand: every `import.meta.env['VITE_X']` and `import.meta.env[name]` becomes `import.meta.env.VITE_X`. Add any product key to `vite-env.d.ts`.
+3. Clerk and WorkOS products copy `web/scripts/check-production-bundle.mjs` and `check-production-bundle.test.mjs`. `check:bundle` now builds with a random `VITE_BUNDLE_CHECK_CANARY` value and fails with `inlined Vite env object` when the bundle carries it.
+
+#### Organization header and plan retry
+
+`baukit-http` exports `X_ORGANIZATION_ID` and allows it in the default CORS request headers. A product that added `x-organization-id` through `with_additional_allowed_headers` (AHP) may drop it. `useOrganizationPlan` returns `OrganizationPlan`, the old state plus `retry()`, which reads the plan again. It still passes to `useFeature` and `LockedFeature` as `organization`. A product that rebuilt its backend object to retry calls `retry()` from its `unavailable` view instead.
+
+#### Mobile scripts, app-config tests and Maestro paths (mobile products)
+
+1. Copy `mobile/eslint.config.js`, or add the `preserve-caught-error` and `@typescript-eslint/no-dynamic-delete` rules and the `scripts/**/*.{js,mjs,cjs}` block with `tseslint.configs.disableTypeChecked`, and add `scripts` to the `lint` script in `mobile/package.json`.
+2. Clerk and WorkOS products copy `mobile/scripts/check-production-bundle.mjs`, which passes the caught error as `cause`, `mobile/scripts/sign-in-config.test.mjs`, which keeps only the Metro cases, and the new `mobile/src/app-config.test.ts`, which runs the app-config cases under Jest. A product that already moved those cases to its unit runner (Schlauzug, Hebkit, Solo Leveling, Redemut, Tiefgang) keeps its own test and drops the template's app-config file.
+3. Strict products add `"mobile/.maestro/**" = ["mobile", "android-build", "android-e2e"]` to `[quality.affected]` in `baukit.toml`, with their own lane names when the Android steps run in another lane (KS.18), and copy `scripts/gate.test.py`.
+
 ## v0.18.2
 
 Last verified release train: `v0.18.2` (patch train on top of `v0.18.1`). `baukit-suite` and `@baukit/suite-client` read the hub's organization SSO and directory-sync state. The templates keep local sign-in and loopback URLs out of production bundles, bound every adb call in the Android QA setup, and warn about stale `.env` keys. Doctor accepts nested QA Keycloak port variables and the Expo web shape. The templates drop all 24 Expo SDK 57 `minimumReleaseAgeExclude` entries. At 09:41 UTC on 2026-11-06, a fresh render installed without them and pnpm listed none as inside its one-day window.

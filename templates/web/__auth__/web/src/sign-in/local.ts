@@ -4,7 +4,7 @@ import { PRODUCT_NAME } from '../product';
 import type { SignInPort } from './port';
 import { createSignInPort } from './provider-client';
 
-const configuredIssuer: unknown = import.meta.env['VITE_LOCAL_OIDC_ISSUER'];
+const configuredIssuer: unknown = import.meta.env.VITE_LOCAL_OIDC_ISSUER;
 
 /** Authorization code with PKCE against the product's local Keycloak realm. */
 export function createLocalSignIn(environment?: OidcClientEnvironment): SignInPort {

@@ -31,7 +31,7 @@ names them. The default exposed set is `x-request-id`, `traceparent`, `tracestat
 `Retry-After`, `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`, `ETag`, and `Location`.
 That covers the request identity, every header `baukit-ratelimit` emits, the revision validator,
 and the address of a created resource. The default allowed request headers are `Authorization`,
-`Content-Type`, `If-Match`, `Idempotency-Key`, `x-request-id`, `traceparent`, and `tracestate`, so
+`Content-Type`, `If-Match`, `Idempotency-Key`, `x-request-id`, `x-organization-id`, `traceparent`, and `tracestate`, so
 a browser can send a conditional or keyed write. Add product headers with `with_additional_exposed_headers`:
 
 ```rust

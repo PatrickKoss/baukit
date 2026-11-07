@@ -13,7 +13,7 @@
     "build:sw": "node scripts/build-sw.mjs{% if context.pwa and not context.web %} --output-dir dist{% endif %}",
     "build:sw:check": "node scripts/build-sw.mjs{% if context.pwa and not context.web %} --output-dir dist{% endif %} --check",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint app app.config.ts src --max-warnings=0",
+    "lint": "eslint app app.config.ts src scripts --max-warnings=0",
     "test": "jest && node --test scripts/build-sw.test.mjs scripts/qa-build-flag.test.mjs",
     "test:coverage": "jest --coverage"
   },

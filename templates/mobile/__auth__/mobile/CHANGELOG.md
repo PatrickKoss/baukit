@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## [0.18.3] - 2026-11-07
+
+- The app config cases moved from `scripts/sign-in-config.test.mjs` to `src/app-config.test.ts` under Jest. The node test keeps the Metro cases. `check-production-bundle.mjs` passes the caught error as `cause`.
+
 ## [0.18.2] - 2026-11-06
 
 - Metro refuses a `BAUKIT_QA_BUILD` set in a `mobile/.env*` file. The app config passes the local realm only to development and QA builds and `apiBaseUrl` only when `EXPO_PUBLIC_API_URL` is set. `check:bundle` exports with `--clear` and `mobile/.env` loaded, and scans the Expo web export and copied public files.

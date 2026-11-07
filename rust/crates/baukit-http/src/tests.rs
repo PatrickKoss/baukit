@@ -785,6 +785,41 @@ async fn cors_preflight_uses_explicit_origin() {
 }
 
 #[tokio::test]
+async fn cors_preflight_allows_the_organization_header_by_default() {
+    let options = HttpOptions::default()
+        .with_allowed_origins(["https://app.example.com"])
+        .expect("valid origin");
+    let response = layers(Router::new().route("/me", get(|| async {})), options)
+        .oneshot(
+            Request::builder()
+                .method(Method::OPTIONS)
+                .uri("/me")
+                .header(header::ORIGIN, "https://app.example.com")
+                .header(header::ACCESS_CONTROL_REQUEST_METHOD, "GET")
+                .header(
+                    header::ACCESS_CONTROL_REQUEST_HEADERS,
+                    "authorization,x-organization-id",
+                )
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let allowed = response.headers()[header::ACCESS_CONTROL_ALLOW_HEADERS]
+        .to_str()
+        .expect("allowed headers")
+        .split(',')
+        .map(str::trim)
+        .collect::<Vec<_>>();
+    assert!(
+        allowed.contains(&X_ORGANIZATION_ID.as_str()),
+        "missing x-organization-id from {allowed:?}"
+    );
+}
+
+#[tokio::test]
 async fn cors_preflight_adds_product_headers_to_the_defaults() {
     let options = HttpOptions::default()
         .with_allowed_origins(["https://app.example.com"])
