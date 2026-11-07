@@ -219,7 +219,8 @@ async fn item_routes_deny_other_tenants_and_invalid_tokens() -> Result<(), Box<d
         Ok(issuer.mint(&issuer.claims(subject, AUDIENCE, Duration::from_secs(60))?)?)
     };
     let item_id = create_item(&api, &token("alice")?, "alice-private-item").await?;
-    let document = serde_json::to_value({{ context.app_crate }}_api::openapi_document())?;
+    let openapi = {{ context.app_crate }}_api::openapi_document();
+    let document = serde_json::to_value(openapi)?;
     let target = baukit_test::SecurityTarget::router(api);
     let fixtures = baukit_test::OperationFixtures::new()
         .path_value("id", &item_id)

@@ -20,4 +20,4 @@ dashboards = ["deploy/observability/dashboards"]
 rules = ["deploy/observability/rules"]
 sources = ["backend/crates"]
 metric-prefix = "{{ context.app_crate }}_"
-{% endif %}
+{% endif -%}

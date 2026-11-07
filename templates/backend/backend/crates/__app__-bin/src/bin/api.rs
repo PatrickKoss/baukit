@@ -32,7 +32,7 @@ use {{ context.app_crate }}_bin::browser_session_router;
 use {{ context.app_crate }}_bin::mcp_verifier;
 {% endif %}use {{ context.app_crate }}_bin::operations_router;
 {% if context.auth_enabled %}use {{ context.app_crate }}_bin::protect_routes;
-{% else %}use {{ context.app_crate }}_bin::rate_limited;
+{% endif %}{% if not context.auth_enabled or context.platform %}use {{ context.app_crate }}_bin::rate_limited;
 {% endif %}{% if not context.auth_enabled and not context.platform %}use {{ context.app_crate }}_ports::ItemRepository;
 {% endif %}use {{ context.app_crate }}_postgres::PostgresItemRepository;
 {% if context.auth_enabled %}use {{ context.app_crate }}_postgres::PostgresProfileErasure;
@@ -209,51 +209,56 @@ async fn compose_api(
             browser_session_router(&config.product.auth.browser_session, dependencies).await?,
         );
     }
-{% if context.mcp %}    // baukit_mcp limits its own routes with the same store, keyed by the verified MCP caller.
-    let mcp = mcp_router(config, backend, limits.as_ref()).await?;
-{% endif %}{% if context.platform %}    let platform = {{ context.app_crate }}_bin::platform::compose(backend.pool.clone(), &config.product)?;
-    late.push(platform.router);
+{% if context.platform %}    let mut platform = {{ context.app_crate }}_bin::platform::compose(backend.pool.clone(), &config.product)?;
+    platform.router = rate_limited(platform.router, limits.as_ref());
 {% endif %}    let api = protect_routes(
         routes(backend.api_state.clone()),
         late,
         backend.auth.clone(),
         limits.as_ref(),
     )?;
-{% if context.mcp %}    let api = api.merge(mcp);
-{% endif %}{% if context.platform %}    let api = api.layer(axum::Extension(platform.entitlements));
-{% endif %}    Ok(finalize_with_options(api, http))
-}
-{% if context.mcp %}
-async fn mcp_router(
-    config: &BaukitConfig<ProductConfig>,
-    backend: &Backend,
-    limits: Option<&RateLimits>,
-) -> Result<Router, Box<dyn Error>> {
-    let mcp_store: Arc<dyn baukit_ratelimit::RateLimitStore> = match limits {
-        Some(limits) => Arc::new(limits.store.clone()),
-        None if config.environment == Environment::Local || !config.product.mcp.enabled => {
-            Arc::new(baukit_ratelimit::InMemoryRateLimitStore::default())
-        }
-        None => {
-            return Err(
-                "remote MCP requires a shared rate-limit store outside local development".into(),
-            );
-        }
-    };
-    let verifier = if config.product.mcp.enabled {
-        mcp_verifier(&config.product.auth, &config.product.mcp).await?
-    } else {
-        backend.verifier.clone()
-    };
-    let services = {{ context.app_crate }}_mcp::services(Arc::new(backend.item_service.clone()));
-    Ok(baukit_mcp::router(
+{% if context.mcp %}    // baukit_mcp limits its own routes with the same store, keyed by the verified MCP caller.
+    let mcp_store = mcp_store(config, limits.as_ref())?;
+    let item_reads = Arc::new(backend.item_service.clone());
+    let mcp_services = {{ context.app_crate }}_mcp::services(item_reads);
+    let mcp = baukit_mcp::router(
         config.product.mcp.clone(),
-        verifier,
-        services,
+        mcp_caller_verifier(config, backend).await?,
+        mcp_services,
         mcp_store,
         mcp_policy(&config.product.auth, &config.product.mcp)?,
     )
-    .await?)
+    .await?;
+    let api = api.merge(mcp);
+{% endif %}{% if context.platform %}    let api = api
+        .merge(platform.router)
+        .layer(axum::Extension(platform.entitlements));
+{% endif %}    Ok(finalize_with_options(api, http))
+}
+{% if context.mcp %}
+fn mcp_store(
+    config: &BaukitConfig<ProductConfig>,
+    limits: Option<&RateLimits>,
+) -> Result<Arc<dyn baukit_ratelimit::RateLimitStore>, Box<dyn Error>> {
+    match limits {
+        Some(limits) => Ok(Arc::new(limits.store.clone())),
+        None if config.environment == Environment::Local || !config.product.mcp.enabled => {
+            Ok(Arc::new(baukit_ratelimit::InMemoryRateLimitStore::default()))
+        }
+        None => {
+            Err("remote MCP requires a shared rate-limit store outside local development".into())
+        }
+    }
+}
+
+async fn mcp_caller_verifier(
+    config: &BaukitConfig<ProductConfig>,
+    backend: &Backend,
+) -> Result<Arc<dyn IdentityVerifier>, Box<dyn Error>> {
+    if config.product.mcp.enabled {
+        return Ok(mcp_verifier(&config.product.auth, &config.product.mcp).await?);
+    }
+    Ok(backend.verifier.clone())
 }
 {% endif %}{% else %}
 fn compose_api(
