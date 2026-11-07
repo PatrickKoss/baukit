@@ -15,6 +15,7 @@ pub struct CheckConfig {
     pub file_size: FileSizeConfig,
     #[serde(default)]
     pub suppressions: SuppressionsConfig,
+    pub observability: Option<ObservabilityConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -51,6 +52,29 @@ const fn default_ts_max_lines() -> usize {
 pub struct SuppressionsConfig {
     #[serde(default)]
     pub max: BTreeMap<String, usize>,
+}
+
+/// Where a product keeps its dashboards, Prometheus rules and metric-emitting source.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub struct ObservabilityConfig {
+    /// Dashboard JSON files, or directories whose `*.json` files are dashboards.
+    #[serde(default)]
+    pub dashboards: Vec<String>,
+    /// Alert and recording rule files, or directories whose `*.yml`/`*.yaml` files are rules.
+    #[serde(default)]
+    pub rules: Vec<String>,
+    /// Directories whose Rust files emit metrics through the `metrics` macros.
+    #[serde(default)]
+    pub sources: Vec<String>,
+    /// Metric lists in the `check-metric-names.py --allowlist` format.
+    #[serde(default)]
+    pub metrics: Vec<String>,
+    /// Fixed datasource uids a dashboard may name instead of a datasource variable.
+    #[serde(default)]
+    pub datasource_uids: Vec<String>,
+    /// Prefix every product metric emitted from `sources` must start with.
+    pub metric_prefix: Option<String>,
 }
 
 impl CheckConfig {

@@ -1,0 +1,4 @@
+# Product metrics for the agreement fixture.
+shop_orders_total
+shop_checkout_duration_seconds histogram
+shop_queue_depth

@@ -19,6 +19,14 @@ jobs:
       - run: python3 scripts/reconcile-env.test.py
 {% if context.quality_strict %}      - run: python3 scripts/check-markdown-links.test.py
       - run: python3 scripts/check-markdown-links.py README.md CLAUDE.md AGENTS.md docs
+{% else %}      - name: Product steps from scripts/quality-gate.local.sh
+        if: {% raw %}${{ hashFiles('scripts/quality-gate.local.sh') != '' }}{% endraw %}
+        run: |
+          set -eu
+          . ./scripts/quality-gate.local.sh
+          for step in $(local_steps | cut -d ' ' -f 1); do
+            "step_$(printf %s "$step" | tr - _)"
+          done
 {% endif %}
 {% if not context.quality_strict %}  repository-lint:
     name: Supply chain and script lint
