@@ -378,9 +378,17 @@ impl BrowserSessionState {
                     "The identity provider is unavailable. Retry later.",
                 )
             }
-            SessionError::Store(_)
-            | SessionError::Crypto(_)
-            | SessionError::InvalidIdpResponse(_) => ApiError::internal(error).into_response(),
+            SessionError::InvalidIdpResponse(_) => {
+                tracing::warn!(error = %error, "browser session IdP response failed verification");
+                problem(
+                    StatusCode::BAD_GATEWAY,
+                    "idp_invalid_response",
+                    "The identity provider returned an invalid response.",
+                )
+            }
+            SessionError::Store(_) | SessionError::Crypto(_) => {
+                ApiError::internal(error).into_response()
+            }
         }
     }
 }

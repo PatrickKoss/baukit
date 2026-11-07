@@ -1027,12 +1027,13 @@ async fn exchange_rejects_unverifiable_id_tokens_without_a_session() -> TestResu
         ("expired", expired),
     ] {
         let (response, harness) = exchange_with_id_token(&server, token).await?;
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY, "{case}");
+        assert!(set_cookie(&response).is_none(), "{case}");
         assert_eq!(
-            response.status(),
-            StatusCode::INTERNAL_SERVER_ERROR,
+            json(response).await?["error"]["code"],
+            "idp_invalid_response",
             "{case}"
         );
-        assert!(set_cookie(&response).is_none(), "{case}");
         assert!(harness.store.snapshot().await.is_empty(), "{case}");
     }
     Ok(())
