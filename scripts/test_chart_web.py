@@ -34,12 +34,18 @@ class WebChartTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         documents = [doc for doc in yaml.safe_load_all(result.stdout) if doc]
         config = next(
-            doc for doc in documents if doc["kind"] == "ConfigMap" and doc["metadata"]["name"].endswith("-web")
+            doc
+            for doc in documents
+            if doc["kind"] == "ConfigMap" and doc["metadata"]["name"].endswith("-web")
         )
         conf = config["data"]["default.conf"]
         self.assertIn(f'add_header Content-Security-Policy "{POLICY}" always;', conf)
         self.assertIn('add_header X-Content-Type-Options "nosniff" always;', conf)
-        kinds = {doc["kind"] for doc in documents if doc["metadata"]["name"].startswith("web-test-baukit-app-web")}
+        kinds = {
+            doc["kind"]
+            for doc in documents
+            if doc["metadata"]["name"].startswith("web-test-baukit-app-web")
+        }
         self.assertEqual(kinds, {"ConfigMap", "Deployment", "Service", "Ingress", "NetworkPolicy"})
 
     def test_a_missing_policy_fails_the_render(self) -> None:
