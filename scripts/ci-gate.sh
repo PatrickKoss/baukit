@@ -81,11 +81,15 @@ step_osv() {
   done
   osv-scanner scan source --config osv-scanner.toml "$@"
 }
-step_python_lint() {
-  ruff check scripts
-  ruff format --check scripts
+# templates/ hold Jinja sources that generated products lint after rendering.
+tracked_sources() {
+  git ls-files -z -- "$@" | grep -zvE '(^|/)(node_modules|target|vendor)/|^templates/'
 }
-step_shell_lint() { shellcheck scripts/*.sh; }
+step_python_lint() {
+  tracked_sources '*.py' | xargs -0 ruff check
+  tracked_sources '*.py' | xargs -0 ruff format --check
+}
+step_shell_lint() { tracked_sources '*.sh' | xargs -0 shellcheck; }
 step_metric_names() { python3 deploy/observability/lint/check-metric-names.py; }
 step_observability_tests() {
   python3 -m unittest discover -s deploy/observability/lint -p 'test_*.py'

@@ -23,3 +23,6 @@ ignore = [
 "scripts/mcp-remote-smoke.py" = ["S106", "S310"]
 # urlopen targets are built from the https API_BASE constant.
 "scripts/generate-jingle.py" = ["S310"]
+# Test helper that drives the Docker Keycloak login form; every URL comes from that
+# container's discovery document or its redirect responses.
+"rust/crates/baukit-erasure/tests/support/keycloak_login.py" = ["S310"]

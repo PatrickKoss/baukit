@@ -224,7 +224,7 @@ build_snapshot() {
     --restart unless-stopped \
     -p "$git_port:$git_port" \
     -v "$git_root:/srv/git:ro" \
-    "$snapshot_image" --root /srv/git --port "$git_port" >/dev/null
+    "$snapshot_image" --host 0.0.0.0 --root /srv/git --port "$git_port" >/dev/null
   wait_for_snapshot
 }
 
