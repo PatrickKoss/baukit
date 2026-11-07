@@ -38,6 +38,19 @@
 //! `owner_id`, `updated_at`, `deleted_at`, `revision`, plus an `(owner_id,
 //! revision)` index.
 //!
+//! Key syncable tables by `PRIMARY KEY (owner_id, id)`, because clients pick
+//! `id` and two owners can send the same one. With a global `id` key, keep the
+//! owner in the `WHERE` of every write and never upsert with a bare
+//! `ON CONFLICT (id)`:
+//!
+//! ```sql
+//! INSERT INTO product_records (owner_id, id, deleted_at, revision)
+//! VALUES ($1, $2, $3, $4)
+//! ON CONFLICT (owner_id, id) DO UPDATE
+//! SET deleted_at = EXCLUDED.deleted_at, revision = EXCLUDED.revision
+//! WHERE product_records.owner_id = EXCLUDED.owner_id;
+//! ```
+//!
 //! # Usage
 //!
 //! Call [`next_revision`] inside the transaction that writes the row, and stamp

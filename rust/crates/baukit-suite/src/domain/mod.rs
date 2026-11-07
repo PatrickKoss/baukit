@@ -202,6 +202,12 @@ pub struct PeerRegistry {
 }
 
 impl PeerRegistry {
+    /// # Errors
+    ///
+    /// `SuiteDataError::InvalidRegistry` when `peers_json` does not parse, has a schema version
+    /// other than 1 or holds invalid peer metadata. `UnknownPeer` when `own_app` or a configured peer
+    /// is missing from the file or a configured peer is `own_app`, and `InvalidUrl` when a
+    /// configured URL is not acceptable.
     pub fn new(
         own_app: &str,
         peers_json: &str,
@@ -305,6 +311,10 @@ impl PeerRegistry {
     pub fn public_web_url(&self) -> Option<&str> {
         self.public_web_url.as_deref()
     }
+    /// # Errors
+    ///
+    /// `SuiteDataError::ReturnUrlInvalid` when no public web URL is configured or `value` fails
+    /// [`validate_return_url`].
     pub fn validate_return_url(&self, value: &str) -> Result<(), SuiteDataError> {
         validate_return_url(
             value,
@@ -373,6 +383,11 @@ pub(crate) fn validate_authorize_url(
     Url::parse(value).map_err(|_| SuiteDataError::InvalidUrl(peer.to_owned()))
 }
 
+/// # Errors
+///
+/// `SuiteDataError::ReturnUrlInvalid` when either URL does not parse, either carries
+/// credentials, the origin has a path, query or fragment, or `value` is neither
+/// `<origin>/suite/linked` nor `<own_scheme>://suite/linked`.
 pub fn validate_return_url(
     value: &str,
     own_web_origin: &str,
@@ -483,6 +498,12 @@ impl InboundValidationError {
     }
 }
 
+/// # Errors
+///
+/// `InboundValidationError::Envelope` when the envelope fails baukit validation (age is skipped
+/// for replay), `FutureOccurrence` past the signature window, `SourceAppMismatch` when the source
+/// is not the linked peer, `UnsupportedType` when the link does not receive the event type, and
+/// `Payload` when the payload fails the catalog.
 pub fn validate_inbound(
     catalog: &PayloadCatalog,
     envelope: &EventEnvelope,
@@ -524,6 +545,10 @@ pub enum ReplayWindowError {
     TooOld,
 }
 
+/// # Errors
+///
+/// `ReplayWindowError::Future` when `since` is after `today`, `TooOld` when it is more than
+/// `SUITE_MAX_REPLAY_DAYS` days back.
 pub fn validate_replay_since(since: NaiveDate, today: NaiveDate) -> Result<(), ReplayWindowError> {
     let age = today.signed_duration_since(since).num_days();
     if age < 0 {
@@ -695,6 +720,10 @@ pub fn signature_timestamp_valid(timestamp: i64, now: i64) -> bool {
     timestamp.abs_diff(now) <= SUITE_SIGNATURE_WINDOW_SECONDS
 }
 
+/// # Errors
+///
+/// `SuiteDataError::PkceInvalid` when the verifier is shorter than 43 or longer than
+/// `SUITE_MAX_TEXT_CHARACTERS` bytes, or holds bytes outside the RFC 7636 unreserved set.
 pub fn pkce_challenge(verifier: &str) -> Result<String, SuiteDataError> {
     if !(43..=SUITE_MAX_TEXT_CHARACTERS).contains(&verifier.len())
         || !verifier
@@ -712,6 +741,11 @@ pub fn hint_for(suite_subject: &str) -> String {
     ))
 }
 
+/// # Errors
+///
+/// `SuiteDataError::SubjectInvalid` when the identity domain is empty, padded, contains `|` or
+/// control characters, the claim name is empty, or the claim value is not a non-empty string
+/// without control characters.
 pub fn suite_subject(
     identity_domain: Option<&str>,
     identity_claim: Option<&str>,
@@ -738,6 +772,11 @@ pub fn suite_subject(
     Ok(Some(format!("{domain}|{value}")))
 }
 
+/// # Errors
+///
+/// `SuiteDataError::SubjectInvalid` when either subject is not `domain|id` with a non-empty,
+/// unpadded domain and id and no control characters. `AccountMismatch` when both share a domain
+/// but differ.
 pub fn shared_suite_subject(
     initiator: Option<&str>,
     authorizer: Option<&str>,

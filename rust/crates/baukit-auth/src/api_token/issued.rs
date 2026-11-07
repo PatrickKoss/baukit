@@ -23,7 +23,7 @@ pub struct IssuedApiToken {
 /// Show the secret once in the creation response. Store only
 /// [`secret_hash()`](Self::secret_hash) and optionally
 /// [`display_prefix()`](Self::display_prefix). Look up presented credentials by
-/// `hash_api_token(presented)`, as [`ApiTokenVerifier`] does.
+/// `hash_api_token(presented)`, as [`ApiTokenVerifier`](crate::ApiTokenVerifier) does.
 ///
 /// Debug output redacts the secret and hash. Dropping this value zeroizes the
 /// secret unless [`into_secret()`](Self::into_secret) transfers it to the caller.
@@ -40,7 +40,7 @@ impl GeneratedApiToken {
         &self.secret
     }
 
-    /// Returns the [`hash_api_token`] digest to store for later lookups.
+    /// Returns the [`hash_api_token`](crate::hash_api_token) digest to store for later lookups.
     #[must_use]
     pub fn secret_hash(&self) -> &[u8] {
         &self.secret_hash

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { isRecord, isStringArray } from '@baukit/type-guards';
 
 import { type JsonValue, type KeyValueStore, StorageError } from './contracts.js';
 import {
@@ -97,14 +98,6 @@ const EMPTY: FormValue = { title: '', tags: [] };
 const accountA: Scope = { account: 'account-a', document: 'note-1' };
 const accountB: Scope = { account: 'account-b', document: 'note-1' };
 const otherDocument: Scope = { account: 'account-a', document: 'note-2' };
-
-function isRecord(value: JsonValue): value is Record<string, JsonValue> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isStringArray(value: JsonValue | undefined): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === 'string');
-}
 
 function decodeFormValue(value: JsonValue): DraftDecodeResult<FormValue> {
   if (!isRecord(value) || typeof value['title'] !== 'string' || !isStringArray(value['tags'])) {

@@ -1,0 +1,6 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "SHA-256 hashes of template-owned files"
+paths = ['''^\.baukit/template-files\.toml$''']

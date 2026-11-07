@@ -6,19 +6,15 @@ ts-max-lines = 500
 
 # Files over the limit when the rule landed. Entries only shrink: split a file and drop its entry.
 [file_size.allowlist]
-"cli/src/dockerfile.rs" = 1251
 "cli/src/doctor_layout.rs" = 1106
 "examples/expo-sqlite-conformance/src/conformance.ts" = 1174
-"rust/crates/baukit-auth/src/api_token.rs" = 1910
-"rust/crates/baukit-auth/src/verifier.rs" = 1670
-"rust/crates/baukit-jobs/src/runner.rs" = 1095
-"rust/crates/baukit-jobs/src/store.rs" = 1016
-"rust/crates/baukit-runtime/src/lib.rs" = 1049
-"rust/crates/baukit-suite/src/adapters/http.rs" = 1046
-"rust/crates/baukit-suite/src/adapters/postgres/mod.rs" = 1169
-"rust/crates/baukit-test/src/data_subject.rs" = 1019
-"rust/crates/baukit-test/src/data_subject_conformance.rs" = 1094
-"rust/crates/baukit-test/src/jwt.rs" = 1197
+"rust/crates/baukit-auth/src/api_token.rs" = 1823
+"rust/crates/baukit-auth/src/verifier.rs" = 1404
+"rust/crates/baukit-jobs/src/runner.rs" = 1057
+"rust/crates/baukit-suite/src/adapters/http.rs" = 1039
+"rust/crates/baukit-suite/src/adapters/postgres/mod.rs" = 1056
+"rust/crates/baukit-test/src/data_subject_conformance.rs" = 1057
+"rust/crates/baukit-test/src/jwt.rs" = 1031
 "typescript/packages/auth-native/src/index.ts" = 542
 "typescript/packages/auth-node/src/device-flow.ts" = 524
 "typescript/packages/auth-web/src/silent-token-broker.ts" = 543
@@ -30,3 +26,8 @@ rust-allow = 76
 rust-expect = 34
 eslint-disable = 1
 ast-grep-ignore = 0
+
+# `baukit check observability`: baukit's own dashboards and rules use only catalog metrics.
+[observability]
+dashboards = ["deploy/observability/dashboards"]
+rules = ["deploy/observability/alerts", "deploy/observability/recording-rules"]

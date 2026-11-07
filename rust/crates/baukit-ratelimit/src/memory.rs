@@ -42,6 +42,10 @@ struct AmountEntry {
 
 impl InMemoryRateLimitStore {
     /// Creates a store capped at `max_entries` active keys per limiter type.
+    ///
+    /// # Errors
+    ///
+    /// [`InMemoryStoreError::ZeroCapacity`] when `max_entries` is zero.
     pub fn new(max_entries: usize) -> Result<Self, InMemoryStoreError> {
         if max_entries == 0 {
             return Err(InMemoryStoreError::ZeroCapacity);

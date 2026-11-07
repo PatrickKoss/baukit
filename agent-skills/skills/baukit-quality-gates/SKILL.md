@@ -36,4 +36,6 @@ Set `BAUKIT_BASE_REVISION` to the pull request base commit when the local branch
 - Native failures occur after a clean Expo prebuild. Treat missing config-plugin output, iOS bundle errors, and Android compiler errors as dependency or app-configuration failures.
 - Observability failures mean a dashboard, rule, or query references a metric outside the Baukit and product vocabularies. Register the product metric or correct the query.
 
+- `baukit check`, clippy and eslint failures mean the code breaks a shared rule. Fix the code with the `baukit-code-conformance` skill. Do not add a suppression or raise a number in `baukit-check.toml` to get green.
+
 When a local machine lacks a required tool, use the generated CI job as the authoritative run and report the missing local prerequisite. Keep the gate blocking.

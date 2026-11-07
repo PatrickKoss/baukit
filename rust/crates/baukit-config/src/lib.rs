@@ -530,6 +530,10 @@ where
 /// A type that checks its configuration invariants before startup.
 pub trait Validate {
     /// Returns every validation problem found, rather than stopping at the first.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ValidationErrors`] holding one entry per invalid field.
     fn validate(&self) -> Result<(), ValidationErrors>;
 }
 
@@ -626,6 +630,11 @@ impl ConfigLoader {
     ///
     /// ASCII letters are uppercased and `-` becomes `_`, so `my-app` uses the
     /// `MY_APP__` prefix. Other characters are rejected.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LoadError::InvalidPrefix`] when `app_name` is empty or contains a
+    /// character other than ASCII letters, digits, `_` and `-`.
     pub fn new(app_name: &str, environment: Environment) -> Result<Self, LoadError> {
         let prefix = normalize_prefix(app_name)?;
         Ok(Self {
@@ -687,6 +696,13 @@ impl ConfigLoader {
     }
 
     /// Loads, deserializes, and validates a standard configuration plus product fields.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LoadError::Dotenv`] when a present dotenv file cannot be read or
+    /// parsed, [`LoadError::Configuration`] when the sources cannot be merged or do not
+    /// deserialize into the standard or product fields, and [`LoadError::Validation`]
+    /// when the loaded configuration fails validation.
     pub fn load<T>(&self) -> Result<BaukitConfig<T>, LoadError>
     where
         T: Default + Validate + serde::de::DeserializeOwned,

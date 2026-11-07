@@ -105,6 +105,11 @@ fn service_job_error(error: &SuiteServiceError) -> JobError {
 
 /// Runs cleanup on UTC hour boundaries until the shutdown channel closes or becomes true.
 /// Storage failures are logged and counted, then retried at the next boundary.
+///
+/// # Errors
+///
+/// `Store(InvalidData)` when the hourly interval or the next slot cannot be computed. Cleanup
+/// failures do not end the loop.
 pub async fn run_hourly_cleanup(
     service: Arc<dyn SuiteDeliveryRunner>,
     shutdown: tokio::sync::watch::Receiver<bool>,

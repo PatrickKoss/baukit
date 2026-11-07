@@ -16,6 +16,7 @@ baukit-auth = { path = "../crates/baukit-auth" }
 baukit-core = { path = "../crates/baukit-core", features = ["media-grants"] }
 baukit-events = { path = "../crates/baukit-events" }
 baukit-http = { path = "../crates/baukit-http" }
+baukit-integrations = { path = "../crates/baukit-integrations", features = ["oauth-state"] }
 baukit-mcp = { path = "../crates/baukit-mcp" }
 baukit-ratelimit = { path = "../crates/baukit-ratelimit" }
 baukit-sync = { path = "../crates/baukit-sync", default-features = false }
@@ -67,6 +68,13 @@ bench = false
 [[bin]]
 name = "mcp_jsonrpc"
 path = "fuzz_targets/mcp_jsonrpc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "oauth_state_parse"
+path = "fuzz_targets/oauth_state_parse.rs"
 test = false
 doc = false
 bench = false

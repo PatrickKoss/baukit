@@ -44,6 +44,11 @@ impl std::error::Error for OpsConformanceError {}
 /// of `readiness`. The helper verifies passing readiness, permanently registers
 /// a deliberate failure through that shared registry, and then verifies the
 /// `503` per-check response. Use a dedicated service fixture for each call.
+///
+/// # Errors
+///
+/// Returns [`OpsConformanceError`] when the HTTP client cannot be built, or listing
+/// each failed `/healthz` or `/readyz` request and each unexpected status or body.
 pub async fn check_ops_base_url_conformance(
     base_url: &str,
     readiness: &ReadinessRegistry,
@@ -123,6 +128,11 @@ pub async fn assert_ops_base_url_conformance(base_url: &str, readiness: &Readine
 /// verifies passing readiness, then permanently registers a test failure in
 /// that shared registry and verifies a `503` response containing a per-check
 /// JSON result. Use a fresh registry/router fixture for each call.
+///
+/// # Errors
+///
+/// Returns [`OpsConformanceError`] listing each failed `/healthz` or `/readyz`
+/// request and each unexpected status or body.
 pub async fn check_ops_router_conformance(
     router: &Router,
     readiness: &ReadinessRegistry,

@@ -30,6 +30,11 @@ impl PostgresAppRole {
     /// The name must match `[a-z_][a-z0-9_]*` and fit PostgreSQL's 63-byte
     /// identifier limit. The password must be non-empty and use only
     /// `A-Z`, `a-z`, `0-9`, `.`, `_`, `~`, and `-`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PostgresTestError::InvalidAppRole`] when the name or password breaks
+    /// the rules above.
     pub fn new(
         name: impl Into<String>,
         password: impl Into<String>,
@@ -124,6 +129,12 @@ impl PostgresTestDatabases {
     }
 
     /// Creates a uniquely named database, grants the app role, and runs migrations.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PostgresTestError::InvalidConnectionUrl`] when the admin URL cannot
+    /// name the new database, `Connect` when the server is unreachable, `Setup` when
+    /// creating the role, database or grants fails, and `Migrate` for a bad migration.
     pub async fn create(&self) -> Result<PostgresTestDatabase, PostgresTestError> {
         let name = format!("{DATABASE_NAME_PREFIX}{}", uuid::Uuid::new_v4().simple());
         let connection_url = with_database(&self.admin_url, &name)?;
@@ -264,6 +275,11 @@ impl PostgresTestDatabase {
     }
 
     /// Drops the database, closing any connections still open to it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PostgresTestError::Connect`] when the admin connection fails and
+    /// [`PostgresTestError::Setup`] when the drop statement fails.
     pub async fn drop_database(mut self) -> Result<(), PostgresTestError> {
         self.dropped = true;
         drop_database(&self.admin_url, &self.name).await

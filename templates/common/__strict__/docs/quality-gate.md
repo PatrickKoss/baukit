@@ -19,6 +19,24 @@ Each lane writes `.quality-gate/<lane>.log`. Every step appends `name seconds` t
 
 `baukit-check` runs `baukit check agent-docs file-size suppressions` from the same Baukit checkout as `baukit-doctor`, with the limits in `baukit-check.toml`. The other five fast steps call `sh scripts/repo-lint.sh`, which runs actionlint and zizmor on `.github/workflows`, gitleaks, osv-scanner on the committed lockfiles, ruff on Python files and shellcheck on shell scripts. `mise install` installs the versions pinned in `mise.toml`.
 
+## Product extensions
+
+Baukit owns `scripts/`, `web/scripts/`, `mobile/scripts/`, `.github/workflows/`, this document and a few other files. `.baukit/template-files.toml` lists each one with the SHA-256 of its rendered content, and `baukit check template-files` fails when one of them changes. Don't edit them. Put product steps in `scripts/quality-gate.local.sh` instead. The gate sources that file when it exists. A `local_steps` function prints extra rows for the step table, in the format of `sh scripts/quality-gate.sh --list-steps`, and a `step_<name>` function runs each one, with dashes in the name turned into underscores:
+
+```sh
+local_steps() {
+  echo "dashboard-coverage fast - always -"
+}
+
+step_dashboard_coverage() {
+  python3 tools/check-dashboards.py
+}
+```
+
+The file can also redefine a template step function when a product has to replace it. CI runs the local steps as part of `sh scripts/quality-gate.sh`. A product on the standard profile has no gate, and its generated CI runs each `local_steps` row from the `Generated repository scripts` job instead.
+
+After a Baukit upgrade re-renders the template, review the changes to the owned files and run `baukit check template-files --update` to record the new hashes.
+
 ## Workers
 
 `BAUKIT_GATE_CORES` sets the cores the gate may use. It defaults to `nproc`. All lanes draw from that one budget. When a step starts, the runner divides the budget by the lanes that still have steps to run, not counting light lanes, and caps the result so each worker has `BAUKIT_GATE_WORKER_MEMORY_MB` (default 1024) of the host's total memory. The step takes that many cores out of the budget, or what is left, and returns them when it ends. A step waits while the budget is empty, so the running steps never hold more than `BAUKIT_GATE_CORES` together, and a lane that finishes early leaves bigger shares to the steps that start after it. The share goes to nextest `--test-threads`, `CARGO_BUILD_JOBS`, Jest `--maxWorkers`, `VITEST_MAX_WORKERS`, Playwright `E2E_WORKERS`, Gradle `--max-workers` (`BAUKIT_QA_GRADLE_WORKERS`) and the CMake job pools of native modules (`BAUKIT_QA_NATIVE_JOBS`, applied by `mobile/scripts/qa/native-jobs.init.gradle`). The gate never reads `Committed_AS`.

@@ -100,6 +100,10 @@ impl RedisSentinelTestContainer {
     /// [`start_redis_sentinel`] waits for Sentinel to discover the replica. Killing
     /// the master before that discovery leaves Sentinel with no promotion candidate
     /// and no failover happens at all.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RedisTestError::Container`] when Docker cannot stop the master.
     pub async fn stop_master(&self) -> Result<(), RedisTestError> {
         self.master.stop_with_timeout(Some(0)).await?;
         Ok(())
@@ -110,6 +114,12 @@ impl RedisSentinelTestContainer {
     /// Call this while the topology is healthy, then stop the old master to test
     /// client recovery. The failover timeout leaves room for Sentinel's 30-second
     /// TILT period when a loaded host stalls its event loop.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RedisTestError::Container`] or [`RedisTestError::Io`] when the
+    /// command cannot run or its output cannot be read, and
+    /// [`RedisTestError::Topology`] when Sentinel does not answer `OK`.
     pub async fn request_failover(&self) -> Result<(), RedisTestError> {
         let mut result = self
             .sentinel
@@ -171,6 +181,11 @@ impl RedisSentinelTestContainer {
     /// already promoted itself, so a client that resolves in that window connects to
     /// the dead node. Tests that assert post-failover behavior should await this
     /// first.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RedisTestError::Topology`] when Sentinel publishes no new master
+    /// before the readiness timeout, or the errors of [`Self::master_address`].
     pub async fn wait_for_failover(
         &self,
         previous_address: &str,
@@ -187,6 +202,12 @@ impl RedisSentinelTestContainer {
     }
 
     /// Returns the `ip:port` Sentinel currently publishes for the monitored master.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RedisTestError::Container`] or [`RedisTestError::Io`] when Sentinel
+    /// cannot be queried, and [`RedisTestError::Topology`] when its reply has no
+    /// master `ip` or `port`.
     pub async fn master_address(&self) -> Result<String, RedisTestError> {
         let master = self.sentinel_state("master").await?;
         let ip = sentinel_field(&master, "ip")
@@ -360,6 +381,11 @@ fn sentinel_has_new_master(reply: &[String], previous_address: &str) -> bool {
 /// Starts a disposable Redis container asynchronously.
 ///
 /// Docker is contacted only when this function is called.
+///
+/// # Errors
+///
+/// Returns [`RedisTestError::Container`] when Docker cannot start the image or
+/// report its host and port.
 pub async fn start_redis() -> Result<RedisTestContainer, RedisTestError> {
     let container = redis_image()
         .with_tag(REDIS_IMAGE_TAG)
@@ -383,6 +409,12 @@ pub async fn start_redis() -> Result<RedisTestContainer, RedisTestError> {
 /// configuration. The local Docker
 /// host must be able to route Testcontainers bridge addresses because those are
 /// the node addresses Sentinel returns during master discovery.
+///
+/// # Errors
+///
+/// Returns [`RedisTestError::Container`] when Docker cannot start a node or report
+/// its address, and [`RedisTestError::Topology`] when Sentinel does not see a
+/// healthy master with its replica before the readiness timeout.
 pub async fn start_redis_sentinel() -> Result<RedisSentinelTestContainer, RedisTestError> {
     let suffix = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)

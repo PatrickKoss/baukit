@@ -41,6 +41,13 @@ impl BrowserSessionConfig {
     /// `cookie_name` is the bare name, for example `acme-session`; production
     /// cookies are sent as `__Host-acme-session`. `public_api_origin` is the
     /// origin browsers use to reach this backend.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BrowserSessionConfigError::InvalidIssuer`] when `issuer` is not an
+    /// absolute URL, `EmptyClientId` for an empty client ID, `InvalidCookieName` when
+    /// `cookie_name` is not `[A-Za-z0-9_-]+`, and `InvalidPublicApiOrigin` when
+    /// `public_api_origin` is not an http(s) origin.
     pub fn new(
         issuer: &str,
         client_id: impl Into<String>,
@@ -98,6 +105,10 @@ impl BrowserSessionConfig {
     }
 
     /// Sets the idle timeout, the cookie `Max-Age`. Defaults to 30 days.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BrowserSessionConfigError::ZeroTimeout`] when `timeout` is under one second.
     pub fn with_idle_timeout(
         mut self,
         timeout: Duration,
@@ -110,6 +121,10 @@ impl BrowserSessionConfig {
     }
 
     /// Sets the absolute session lifetime. Defaults to 90 days.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BrowserSessionConfigError::ZeroTimeout`] when `timeout` is under one second.
     pub fn with_absolute_timeout(
         mut self,
         timeout: Duration,
@@ -139,6 +154,10 @@ impl BrowserSessionConfig {
     }
 
     /// Sets the timeout for each IdP request. Defaults to 10 seconds.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BrowserSessionConfigError::ZeroTimeout`] when `timeout` is zero.
     pub fn with_request_timeout(
         mut self,
         timeout: Duration,
@@ -194,6 +213,13 @@ impl BrowserSessionConfig {
     /// URI is configured, when `insecure_local_cookie` is set for a non-local
     /// origin, or when an allowed origin is not same-site with the public API
     /// origin.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BrowserSessionConfigError::NoRedirectUris`],
+    /// `CredentialsDisabled`, `InvalidAllowedOrigin` or `NoAllowedOrigins` for the
+    /// CORS and redirect cases, `InsecureCookieNotLocal` for a non-local insecure
+    /// cookie, and `CrossSiteOrigin` naming the first cross-site origin.
     pub fn validate(&self, http: &HttpOptions) -> Result<Vec<Url>, BrowserSessionConfigError> {
         if self.redirect_uris.is_empty() {
             return Err(BrowserSessionConfigError::NoRedirectUris);

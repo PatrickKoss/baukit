@@ -128,6 +128,10 @@ impl JwtClaims {
 }
 
 /// Encodes claims as an HS256 JWT with a test-only shared secret.
+///
+/// # Errors
+///
+/// Returns [`JwtFixtureError::Json`] when the claims cannot be serialized.
 pub fn hs256_token(secret: &[u8], claims: &JwtClaims) -> Result<String, JwtFixtureError> {
     encode_token(&json!({"alg": "HS256", "typ": "JWT"}), claims, |message| {
         let key = hmac::Key::new(hmac::HMAC_SHA256, secret);
@@ -136,11 +140,22 @@ pub fn hs256_token(secret: &[u8], claims: &JwtClaims) -> Result<String, JwtFixtu
 }
 
 /// Encodes claims as an RS256 JWT using a PEM-encoded RSA private key.
+///
+/// # Errors
+///
+/// Fails like [`rs256_token_with_key_id`].
 pub fn rs256_token(private_key_pem: &[u8], claims: &JwtClaims) -> Result<String, JwtFixtureError> {
     rs256_token_with_key_id(private_key_pem, None, claims)
 }
 
 /// Encodes claims as an RS256 JWT with an optional JWKS key identifier.
+///
+/// # Errors
+///
+/// Returns [`JwtFixtureError::Pem`] when the input is not PEM,
+/// [`JwtFixtureError::UnsupportedPemTag`] for a label other than `PRIVATE KEY`
+/// or `RSA PRIVATE KEY`, [`JwtFixtureError::InvalidRsaKey`] for a bad key, and
+/// `Json` or `Signing` when encoding or signing fails.
 pub fn rs256_token_with_key_id(
     private_key_pem: &[u8],
     key_id: Option<&str>,
@@ -172,6 +187,10 @@ pub fn rs256_token_with_key_id(
 }
 
 /// Encodes claims in an unsigned JWT using the forbidden `none` algorithm.
+///
+/// # Errors
+///
+/// Returns [`JwtFixtureError::Json`] when the claims cannot be serialized.
 pub fn unsigned_token(claims: &JwtClaims) -> Result<String, JwtFixtureError> {
     let header = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!({"alg": "none"}))?);
     let claims = URL_SAFE_NO_PAD.encode(serde_json::to_vec(claims)?);
@@ -190,6 +209,11 @@ where
 }
 
 /// Creates an HTTP `Authorization` header value for a generated JWT.
+///
+/// # Errors
+///
+/// Returns [`InvalidHeaderValue`] when `token` contains bytes not allowed in a
+/// header value.
 pub fn authorization_header(token: &str) -> Result<HeaderValue, InvalidHeaderValue> {
     HeaderValue::from_str(&format!("Bearer {token}"))
 }
@@ -204,6 +228,11 @@ pub struct MockOidcServer {
 
 impl MockOidcServer {
     /// Starts a mock issuer on an ephemeral loopback port.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JwtFixtureError::Io`] when the loopback listener cannot bind or
+    /// report its address.
     pub async fn start() -> Result<Self, JwtFixtureError> {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let address = listener.local_addr()?;
@@ -250,6 +279,10 @@ impl MockOidcServer {
     }
 
     /// Builds claims with this issuer and an expiry relative to now.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JwtFixtureError::Clock`] when the system clock is before the Unix epoch.
     pub fn claims(
         &self,
         subject: impl Into<String>,
@@ -265,6 +298,11 @@ impl MockOidcServer {
     }
 
     /// Mints an RS256 token with the active signing key and its `kid` header.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JwtFixtureError::InvalidActiveKey`] when the active key index is
+    /// invalid, or the signing errors of [`rs256_token_with_key_id`].
     pub fn mint(&self, claims: &JwtClaims) -> Result<String, JwtFixtureError> {
         mint_with_active_key(&self.state, claims)
     }
@@ -273,6 +311,11 @@ impl MockOidcServer {
     ///
     /// Use a `kid` the JWKS does not publish to test unknown-key refresh and
     /// negative caching.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JwtFixtureError::InvalidActiveKey`] when the active key index is
+    /// invalid, or the signing errors of [`rs256_token_with_key_id`].
     pub fn mint_with_key_id(
         &self,
         claims: &JwtClaims,
@@ -282,6 +325,11 @@ impl MockOidcServer {
     }
 
     /// Creates an access/refresh token pair whose access token has the requested lifetime.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JwtFixtureError::Clock`] for a clock before the Unix epoch, or the
+    /// errors of [`Self::mint`] when the access token cannot be signed.
     pub fn issue_session(
         &self,
         subject: impl Into<String>,
@@ -306,6 +354,13 @@ impl MockOidcServer {
     /// the discovered token endpoint with `grant_type=authorization_code`, `client_id`,
     /// `redirect_uri`, and `code_verifier`. Codes expire after five minutes. The resulting
     /// access token uses the client ID as its audience and includes `azp`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JwtFixtureError::InvalidPkceChallenge`] when `code_challenge` is not
+    /// an unpadded base64url SHA-256 digest, and
+    /// [`JwtFixtureError::InvalidAuthorizationCode`] for an empty subject or client ID
+    /// or a redirect URI that does not parse.
     pub fn issue_authorization_code(
         &self,
         subject: impl Into<String>,
@@ -352,6 +407,11 @@ impl MockOidcServer {
     /// `client_secret`. Issued tokens use the client ID as their subject, carry `azp`
     /// and `client_id`, and have the supplied audience and a five-minute lifetime.
     /// No refresh token is issued. Registering the same client again replaces its secret.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JwtFixtureError::InvalidClientCredentials`] when the client ID,
+    /// secret or audience is empty.
     pub fn register_client_credentials(
         &self,
         client_id: impl Into<String>,
@@ -382,6 +442,12 @@ impl MockOidcServer {
     ///
     /// Rejected or revoked refresh tokens return [`JwtFixtureError::RefreshRejected`],
     /// providing a deterministic terminal-refresh fixture.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JwtFixtureError::RefreshRejected`] when the endpoint rejects the token,
+    /// [`JwtFixtureError::InvalidTokenResponse`] when a success lacks a field, and
+    /// `Form` or `Http` when the request cannot be encoded, sent or decoded.
     pub async fn refresh_session(
         &self,
         refresh_token: &str,
@@ -962,236 +1028,4 @@ pub enum JwtFixtureError {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::sync::Arc;
-
-    use baukit_auth::{OidcConfig, OidcVerifier, VerificationError};
-
-    use super::*;
-
-    #[tokio::test]
-    async fn expired_authorization_codes_are_rejected() -> Result<(), Box<dyn std::error::Error>> {
-        let server = MockOidcServer::start().await?;
-        let challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
-        let code = server.issue_authorization_code(
-            "user",
-            "web",
-            "https://app.example/callback",
-            challenge,
-        )?;
-        server
-            .state
-            .codes
-            .write()
-            .expect("mock code lock")
-            .get_mut(&code)
-            .expect("issued code")
-            .issued_at -= AUTHORIZATION_CODE_LIFETIME;
-        let request = TokenEndpointRequest {
-            grant_type: "authorization_code".to_owned(),
-            code: Some(code),
-            client_id: Some("web".to_owned()),
-            redirect_uri: Some("https://app.example/callback".to_owned()),
-            code_verifier: Some("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk".to_owned()),
-            client_secret: None,
-            refresh_token: None,
-        };
-        let response = authorization_code(&server.state, &request);
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
-        assert_eq!(
-            serde_json::from_slice::<Value>(&body)?["error"],
-            "invalid_grant"
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn pkce_rejects_invalid_verifier_syntax_even_when_the_hash_matches() {
-        for verifier in [
-            "a".repeat(MIN_PKCE_VERIFIER_LENGTH - 1),
-            "a".repeat(MAX_PKCE_VERIFIER_LENGTH + 1),
-            format!("{} ", "a".repeat(MIN_PKCE_VERIFIER_LENGTH)),
-            format!("{}é", "a".repeat(MIN_PKCE_VERIFIER_LENGTH)),
-        ] {
-            let challenge =
-                URL_SAFE_NO_PAD.encode(digest::digest(&digest::SHA256, verifier.as_bytes()));
-            assert!(!pkce_matches(&verifier, &challenge));
-        }
-        for length in [MIN_PKCE_VERIFIER_LENGTH, MAX_PKCE_VERIFIER_LENGTH] {
-            let verifier = "a".repeat(length);
-            let challenge =
-                URL_SAFE_NO_PAD.encode(digest::digest(&digest::SHA256, verifier.as_bytes()));
-            assert!(pkce_matches(&verifier, &challenge));
-        }
-    }
-
-    #[test]
-    fn creates_hs256_fixture_with_configured_claims() -> Result<(), Box<dyn std::error::Error>> {
-        let claims = JwtClaims::new()
-            .subject("user-123")
-            .issuer("fixture")
-            .audience("api")
-            .expires_at(4_102_444_800);
-        let token = hs256_token(b"fixture-secret", &claims)?;
-        assert_eq!(token.split('.').count(), 3);
-        assert_eq!(
-            authorization_header(&token)?.to_str().expect("header text"),
-            format!("Bearer {token}")
-        );
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn mock_server_discovers_verifies_caches_and_rotates()
-    -> Result<(), Box<dyn std::error::Error>> {
-        let server = MockOidcServer::start().await?;
-        let verifier = OidcVerifier::discover(OidcConfig::new(server.issuer(), "api")?).await?;
-        let claims = server.claims("user-123", "api", Duration::from_secs(60))?;
-        assert_eq!(
-            verifier.verify(&server.mint(&claims)?).await?.subject(),
-            "user-123"
-        );
-        assert_eq!(
-            verifier.verify(&server.mint(&claims)?).await?.subject(),
-            "user-123"
-        );
-        assert_eq!(server.jwks_request_count(), 1);
-
-        server.rotate_signing_key();
-        assert_eq!(
-            verifier.verify(&server.mint(&claims)?).await?.subject(),
-            "user-123"
-        );
-        assert_eq!(server.jwks_request_count(), 2);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn mock_server_exercises_jwks_timeout() -> Result<(), Box<dyn std::error::Error>> {
-        let server = MockOidcServer::start().await?;
-        // The timeout covers discovery too, and discovery is served without delay,
-        // so too tight a budget fails discovery instead of the JWKS fetch under test.
-        // Measured discovery is under 30 ms, but the margin has to absorb a clock
-        // jump, not just slow I/O, so keep it wide and keep the delay well past it.
-        server.set_jwks_delay(Duration::from_secs(10));
-        let config = OidcConfig::new(server.issuer(), "api")?
-            .with_request_timeout(Duration::from_secs(1))?;
-        let verifier = OidcVerifier::discover(config).await?;
-        let claims = server.claims("user-123", "api", Duration::from_secs(60))?;
-        assert!(matches!(
-            verifier.verify(&server.mint(&claims)?).await,
-            Err(VerificationError::JwksTimeout)
-        ));
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn unknown_key_refresh_is_single_flight_and_negatively_cached()
-    -> Result<(), Box<dyn std::error::Error>> {
-        let server = MockOidcServer::start().await?;
-        server.set_jwks_delay(Duration::from_millis(20));
-        let verifier =
-            Arc::new(OidcVerifier::discover(OidcConfig::new(server.issuer(), "api")?).await?);
-        let claims = server.claims("user-123", "api", Duration::from_secs(60))?;
-        let token = server.mint_with_key_id(&claims, "unknown-key")?;
-        let mut tasks = Vec::new();
-        for _ in 0..16 {
-            let verifier = Arc::clone(&verifier);
-            let token = token.clone();
-            tasks.push(tokio::spawn(async move { verifier.verify(&token).await }));
-        }
-        for task in tasks {
-            assert!(matches!(task.await?, Err(VerificationError::UnknownKeyId)));
-        }
-        assert_eq!(server.jwks_request_count(), 1);
-
-        assert!(matches!(
-            verifier.verify(&token).await,
-            Err(VerificationError::UnknownKeyId)
-        ));
-        assert_eq!(server.jwks_request_count(), 1);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn jwks_url_serves_verifiers_without_discovery_and_refreshes_after_ttl()
-    -> Result<(), Box<dyn std::error::Error>> {
-        let server = MockOidcServer::start().await?;
-        assert!(server.jwks_url().starts_with(server.issuer()));
-        let cache_ttl = Duration::from_millis(100);
-        let config = OidcConfig::new(server.issuer(), "api")?.with_jwks_cache_ttl(cache_ttl)?;
-        let verifier = OidcVerifier::from_jwks_uri(config, server.jwks_url())?;
-        let token = server.mint(&server.claims("user-123", "api", Duration::from_secs(60))?)?;
-
-        verifier.verify(&token).await?;
-        verifier.verify(&token).await?;
-        assert_eq!(server.jwks_request_count(), 1);
-
-        sleep(cache_ttl * 2).await;
-        verifier.verify(&token).await?;
-        assert_eq!(server.jwks_request_count(), 2);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn mint_with_key_id_signs_with_the_active_key() -> Result<(), Box<dyn std::error::Error>>
-    {
-        let server = MockOidcServer::start().await?;
-        let claims = server.claims("user-123", "api", Duration::from_secs(60))?;
-        let token = server.mint_with_key_id(&claims, KEY_1_ID)?;
-        assert_eq!(token, server.mint(&claims)?);
-        server.rotate_signing_key();
-        let rotated = server.mint_with_key_id(&claims, KEY_2_ID)?;
-        assert_eq!(rotated, server.mint(&claims)?);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn mock_sessions_cover_short_lived_concurrent_rejected_and_revoked_refresh()
-    -> Result<(), Box<dyn std::error::Error>> {
-        let server = Arc::new(MockOidcServer::start().await?);
-        let verifier = OidcVerifier::discover(
-            OidcConfig::new(server.issuer(), "api")?.with_clock_skew(Duration::ZERO),
-        )
-        .await?;
-        let session = server.issue_session("user-123", "api", Duration::from_secs(1))?;
-        assert_eq!(session.expires_in(), Duration::from_secs(1));
-        assert_eq!(
-            verifier.verify(session.access_token()).await?.subject(),
-            "user-123"
-        );
-
-        server.set_refresh_delay(Duration::from_millis(20));
-        let mut tasks = Vec::new();
-        for _ in 0..8 {
-            let server = Arc::clone(&server);
-            let refresh_token = session.refresh_token().to_owned();
-            tasks.push(tokio::spawn(async move {
-                server.refresh_session(&refresh_token).await
-            }));
-        }
-        for task in tasks {
-            let refreshed = task.await??;
-            assert_eq!(
-                verifier.verify(refreshed.access_token()).await?.subject(),
-                "user-123"
-            );
-        }
-        assert_eq!(server.refresh_request_count(), 8);
-
-        assert!(server.reject_refresh(session.refresh_token()));
-        assert!(matches!(
-            server.refresh_session(session.refresh_token()).await,
-            Err(JwtFixtureError::RefreshRejected { ref code }) if code == "invalid_grant"
-        ));
-
-        let revoked = server.issue_session("user-456", "api", Duration::from_secs(60))?;
-        assert!(server.revoke_session(revoked.refresh_token()));
-        assert!(matches!(
-            server.refresh_session(revoked.refresh_token()).await,
-            Err(JwtFixtureError::RefreshRejected { ref code }) if code == "invalid_grant"
-        ));
-        Ok(())
-    }
-}
+mod tests;

@@ -342,6 +342,9 @@ importers:
 
   packages/data-contracts:
     devDependencies:
+      '@baukit/type-guards':
+        specifier: ^0.18.3
+        version: link:../type-guards
       typescript:
         specifier: 6.0.3
         version: 6.0.3

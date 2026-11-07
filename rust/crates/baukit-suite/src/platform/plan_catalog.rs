@@ -50,6 +50,11 @@ impl FeatureKeyDrift {
 
 /// Every feature key any plan in `catalog_json` grants to `product_id`, through
 /// `includedProducts` or `organizationProducts`.
+///
+/// # Errors
+///
+/// `PlanCatalogError::Json` when `catalog_json` does not parse, `UnknownProduct` when no plan
+/// grants `product_id` a feature.
 pub fn catalog_feature_keys(
     catalog_json: &str,
     product_id: &str,
@@ -68,6 +73,9 @@ pub fn catalog_feature_keys(
     Ok(keys)
 }
 
+/// # Errors
+///
+/// The errors of [`catalog_feature_keys`].
 pub fn feature_key_drift<'a>(
     catalog_json: &str,
     product_id: &str,

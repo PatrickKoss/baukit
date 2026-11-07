@@ -140,6 +140,22 @@ underneath its own engine:
   batches and raises `sync_purge_horizons` in the same transaction, and `guard_pull_cursor` rejects
   a stale cursor inside the pull transaction. `baukit-test` checks a product's purge and pull with
   `check_purge_horizon_conformance`.
+- Owner isolation on the server is the product's job, because the product owns push and pull SQL.
+  Clients choose row ids, so two owners can send the same id. Key syncable tables by
+  `PRIMARY KEY (owner_id, id)`, or keep the owner in the `WHERE` of every write. A bare
+  `ON CONFLICT (id)` upsert on a global id lets one owner's push overwrite another owner's row. The
+  safe upsert names the owner in the conflict target and the update's `WHERE`:
+
+  ```sql
+  INSERT INTO product_records (owner_id, id, deleted_at, revision)
+  VALUES ($1, $2, $3, $4)
+  ON CONFLICT (owner_id, id) DO UPDATE
+  SET deleted_at = EXCLUDED.deleted_at, revision = EXCLUDED.revision, updated_at = now()
+  WHERE product_records.owner_id = EXCLUDED.owner_id;
+  ```
+
+  A `TombstoneTable` delete gets the purged ids as `$1` and their owners as `$2`, and must delete
+  exactly those `(owner_id, id)` pairs.
 
 Both are mechanism, not protocol. Entity names, dependency order, endpoint paths, payload shapes,
 and conflict rules remain product-owned.

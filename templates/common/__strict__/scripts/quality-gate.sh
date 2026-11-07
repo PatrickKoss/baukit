@@ -136,6 +136,9 @@ android-e2e mobile android-build selected -
   if [ "$(manifest_value quality.full_stack_e2e)" = "true" ]; then
     echo "full-stack-e2e stack - selected -"
   fi
+  if command -v local_steps >/dev/null 2>&1; then
+    local_steps
+  fi
 }
 
 step_scripts_tests() {
@@ -491,6 +494,11 @@ step_android_e2e() {
   return "$status"
 }
 {% endif %}
+if [ -f scripts/quality-gate.local.sh ]; then
+  # shellcheck source=/dev/null
+  . ./scripts/quality-gate.local.sh
+fi
+
 case "${1:-}" in
   --list-steps)
     list_steps

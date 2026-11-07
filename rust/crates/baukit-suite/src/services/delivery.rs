@@ -7,6 +7,9 @@ impl SuiteDeliveryService {
     pub fn new(context: Arc<SuiteContext>) -> Self {
         Self { context }
     }
+    /// # Errors
+    ///
+    /// Same as [`Self::deliver_claimed`].
     pub async fn deliver(
         &self,
         job: SuiteDeliverJobV1,
@@ -14,6 +17,11 @@ impl SuiteDeliveryService {
     ) -> Result<DeliveryAction, SuiteServiceError> {
         self.deliver_claimed(job, now, None).await
     }
+    /// # Errors
+    ///
+    /// `Store` when loading or recording the link fails, `Protocol(Disabled | PeerUnknown)` when the
+    /// link's peer is not active in the registry, `Cipher` when the link secret does not decrypt and
+    /// `PayloadInvalid` when the envelope does not serialize. Peer failures map to a [`DeliveryAction`].
     pub async fn deliver_claimed(
         &self,
         job: SuiteDeliverJobV1,
@@ -67,6 +75,10 @@ impl SuiteDeliveryService {
         delivery_metric(&self.context.metric_prefix, action);
         Ok(action)
     }
+    /// # Errors
+    ///
+    /// `Store` when loading the link fails, `Protocol(Disabled | PeerUnknown)` when its peer is not
+    /// active and `Cipher` when the link secret does not decrypt. Peer failures map to a [`DeliveryAction`].
     pub async fn revoke(
         &self,
         job: SuiteRevokeJobV1,
@@ -107,6 +119,12 @@ impl SuiteDeliveryService {
             .await;
         Ok(peer_action(&response))
     }
+    /// # Errors
+    ///
+    /// `ReplayWindow` when `since` is outside the replay window, `Store(NotFound)` when the owner has
+    /// no such link, `LinkRevoked` or `LinkInactive` when the link cannot deliver,
+    /// `Protocol(Disabled | PeerUnknown)` for an inactive peer, `Store(ReplayTooSoon)` within the
+    /// replay cooldown, and `Store` when the transaction or replay source fails.
     pub async fn replay(
         &self,
         owner: Uuid,
@@ -147,6 +165,11 @@ impl SuiteDeliveryService {
         self.context.store.commit_transaction(tx).await?;
         Ok(count)
     }
+    /// # Errors
+    ///
+    /// `Store(NotFound)` when the owner has no such link, `LinkRevoked` or `LinkInactive` when the
+    /// link cannot deliver, `Protocol(Disabled | PeerUnknown)` for an inactive peer, and `Store` when
+    /// enqueueing the test event fails.
     pub async fn test(
         &self,
         owner: Uuid,
@@ -174,6 +197,9 @@ impl SuiteDeliveryService {
         self.context.store.commit_transaction(tx).await?;
         Ok(())
     }
+    /// # Errors
+    ///
+    /// `Store` when the cleanup query fails or times out.
     pub async fn cleanup(
         &self,
         now: DateTime<Utc>,

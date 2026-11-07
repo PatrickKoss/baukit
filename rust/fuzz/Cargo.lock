@@ -258,6 +258,7 @@ dependencies = [
  "aws-lc-rs",
  "axum",
  "base64 0.23.1",
+ "baukit-egress",
  "baukit-http",
  "baukit-openapi",
  "chrono",
@@ -299,16 +300,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "baukit-egress"
+version = "0.18.3"
+dependencies = [
+ "axum",
+ "baukit-http",
+ "reqwest",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "baukit-erasure"
 version = "0.18.3"
 dependencies = [
  "aws-lc-rs",
  "axum",
  "baukit-config",
+ "baukit-egress",
  "baukit-http",
  "baukit-jobs",
  "chrono",
- "reqwest",
  "serde",
  "serde_json",
  "sqlx",
@@ -337,6 +352,7 @@ dependencies = [
  "baukit-core",
  "baukit-events",
  "baukit-http",
+ "baukit-integrations",
  "baukit-mcp",
  "baukit-ratelimit",
  "baukit-sync",
@@ -376,10 +392,13 @@ dependencies = [
 name = "baukit-integrations"
 version = "0.18.3"
 dependencies = [
+ "aws-lc-rs",
+ "base64 0.23.1",
  "baukit-http",
  "chrono",
  "serde",
  "serde_json",
+ "subtle",
  "thiserror",
  "uuid",
 ]
@@ -406,12 +425,13 @@ version = "0.18.3"
 dependencies = [
  "aws-lc-rs",
  "axum",
+ "base64 0.23.1",
  "baukit-auth",
  "baukit-config",
+ "baukit-egress",
  "baukit-ratelimit",
  "http",
  "metrics",
- "reqwest",
  "rmcp",
  "serde",
  "serde_json",

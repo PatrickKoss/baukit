@@ -84,11 +84,20 @@ impl std::fmt::Debug for ExpoPushSender {
 
 impl ExpoPushSender {
     /// Builds a sender against the public Expo API with default options.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`Self::with_options`].
     pub fn new() -> Result<Self, PushOptionsError> {
         Self::with_options(PushOptions::default())
     }
 
     /// Builds a sender from validated options.
+    ///
+    /// # Errors
+    ///
+    /// [`PushOptionsError::InvalidEndpoint`] when the endpoint has no host or port, or the
+    /// egress client for it cannot be built.
     pub fn with_options(options: PushOptions) -> Result<Self, PushOptionsError> {
         let client = endpoint_client(&options)?;
         Ok(Self { client, options })

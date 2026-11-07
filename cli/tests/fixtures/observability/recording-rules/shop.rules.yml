@@ -1,0 +1,10 @@
+groups:
+  - name: shop
+    rules:
+      - record: shop:orders:rate5m
+        expr: sum(rate(shop_orders_total[5m]))
+      - record: shop:unknown:rate5m
+        expr: |
+          sum(
+            rate(shop_unknown_total[5m])
+          )

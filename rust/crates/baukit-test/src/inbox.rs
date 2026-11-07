@@ -204,6 +204,11 @@ impl fmt::Display for InboxConformanceError {
 impl std::error::Error for InboxConformanceError {}
 
 /// Checks first delivery, replay, concurrency, rollback, isolation, and durability.
+///
+/// # Errors
+///
+/// Returns [`InboxConformanceError`] listing each failed first-delivery, replay,
+/// concurrency, rollback, isolation or durability check.
 pub async fn check_postgres_inbox_conformance<Port>(
     port: &Port,
     cases: InboxConformanceCases,

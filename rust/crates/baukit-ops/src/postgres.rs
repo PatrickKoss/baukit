@@ -66,6 +66,10 @@ impl Drop for PoolMetricsSampler {
 /// The first sample and all zero-valued countable families are emitted before
 /// this function returns. The returned handle owns and cancels the task; retain
 /// it for as long as sampling should continue.
+///
+/// # Errors
+///
+/// Returns [`PoolMetricsSamplerError::ZeroInterval`] when `interval` is zero.
 pub fn spawn_pool_metrics_sampler(
     pool: PgPool,
     interval: Duration,
@@ -91,6 +95,11 @@ pub fn spawn_pool_metrics_sampler(
 /// SQLx does not expose hooks for observing every `PgPool::acquire` call, so
 /// applications that require `db_pool_acquire_*` metrics should use this helper
 /// at acquisition sites. Direct executor calls on `PgPool` are not included.
+///
+/// # Errors
+///
+/// Returns the [`sqlx::Error`] from `PgPool::acquire`, such as
+/// [`sqlx::Error::PoolTimedOut`] when no connection frees up in time.
 pub async fn acquire(pool: &PgPool) -> Result<PoolConnection<Postgres>, sqlx::Error> {
     observe_acquisition(pool.acquire()).await
 }
@@ -101,6 +110,11 @@ pub async fn acquire(pool: &PgPool) -> Result<PoolConnection<Postgres>, sqlx::Er
 /// the initial `BEGIN` round trip in that API, so the recorded duration includes
 /// both. Pool timeouts increment `db_pool_acquire_timeouts_total` just like
 /// [`acquire`].
+///
+/// # Errors
+///
+/// Returns the [`sqlx::Error`] from `PgPool::begin`, such as
+/// [`sqlx::Error::PoolTimedOut`] or a failed `BEGIN`.
 pub async fn begin(pool: &PgPool) -> Result<Transaction<'static, Postgres>, sqlx::Error> {
     observe_acquisition(pool.begin()).await
 }

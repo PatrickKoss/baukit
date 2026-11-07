@@ -14,6 +14,10 @@ impl PostgresPlatformInbox {
         Self { pool }
     }
     /// Purge a bounded batch. Keep receipts for at least 30 days before pruning.
+    ///
+    /// # Errors
+    ///
+    /// `PlatformError::Invalid` when `batch` is 0. `Unavailable` when the database query fails.
     pub async fn purge_received_before(
         &self,
         cutoff: chrono::DateTime<chrono::Utc>,
@@ -91,6 +95,10 @@ impl PostgresEntitlementCache {
         Self { pool }
     }
     /// Remove all subject snapshots in the caller's erasure transaction.
+    ///
+    /// # Errors
+    ///
+    /// `PlatformError::Unavailable` when the database query fails.
     pub async fn forget_in_transaction(
         subject: &str,
         connection: &mut PgConnection,
@@ -102,6 +110,11 @@ impl PostgresEntitlementCache {
             .map_err(storage)?;
         Ok(())
     }
+    /// # Errors
+    ///
+    /// `PlatformError::Invalid` when the snapshot has an empty subject, product id or tier, a
+    /// negative `valid_until`, or a revision above the ticket maximum.
+    /// `Unavailable` when the database query fails.
     pub async fn store_in_transaction(
         snapshot: &EntitlementSnapshot,
         connection: &mut PgConnection,

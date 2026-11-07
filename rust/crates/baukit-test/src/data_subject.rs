@@ -5,12 +5,7 @@ use std::{
     time::Duration,
 };
 
-use aws_lc_rs::{
-    digest::{SHA256, digest},
-    hmac,
-    rand::SystemRandom,
-    signature::Ed25519KeyPair,
-};
+use aws_lc_rs::{hmac, rand::SystemRandom, signature::Ed25519KeyPair};
 use axum::{
     Json, Router,
     body::to_bytes,
@@ -18,12 +13,11 @@ use axum::{
     http::{HeaderMap, Method, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 use baukit_data_subject::{
-    CONTRACT_VERSION, CategoryEntry, DataSubjectRequest, DiscoveryDocument, ExportPart,
-    IdentifierType, Limits, OperationError, OperationKind, OperationResource, OperationStatus,
-    RECEIPT_TYPE, ReceiptKey, ReceiptKeyStatus, ReceiptPayload, ReceiptSigner, Restriction, Scopes,
-    Service, codes, normalize_request, validate_idempotency_key, validate_subject_reference,
+    CONTRACT_VERSION, CategoryEntry, DataSubjectRequest, DiscoveryDocument, IdentifierType, Limits,
+    OperationKind, OperationResource, OperationStatus, ReceiptKey, ReceiptKeyStatus, ReceiptSigner,
+    Restriction, Scopes, Service, codes, normalize_request, validate_idempotency_key,
+    validate_subject_reference,
 };
 use baukit_http::ApiError;
 use chrono::{DateTime, Utc};
@@ -34,6 +28,10 @@ use uuid::Uuid;
 const DISCOVERY: &str = "/.well-known/baukit/data-subject";
 const PREFIX: &str = "/api/v1/data-subject/";
 const MAX_REQUEST_BYTES: usize = 1_048_576;
+
+mod receipt;
+
+use receipt::complete;
 
 /// Outcome applied when an operation finishes. Export content stays in memory only.
 /// This type omits `Debug` to keep exported data out of assertion output.
@@ -298,11 +296,20 @@ pub struct DataSubjectTargetServer {
 
 impl DataSubjectTargetServer {
     /// Binds 127.0.0.1:0. Unscripted subjects complete with empty categories.
+    ///
+    /// # Errors
+    ///
+    /// Fails like [`Self::start_with_options`].
     pub async fn start() -> io::Result<Self> {
         Self::start_with_options(DataSubjectTargetOptions::default()).await
     }
 
     /// Starts with custom discovery bounds and retention settings.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`io::Error`] when test key generation fails or the loopback
+    /// listener cannot bind or report its address.
     pub async fn start_with_options(options: DataSubjectTargetOptions) -> io::Result<Self> {
         let signer = fresh_signer()?;
         let unadvertised_signer = fresh_signer()?;
@@ -396,6 +403,13 @@ impl DataSubjectTargetServer {
 
     /// Replaces the script for future operations with this reference.
     /// Existing operations keep their original script and transient counters.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DataSubjectScriptError::SubjectReference`] for an invalid reference,
+    /// and [`DataSubjectScriptError::ExportBounds`] or
+    /// [`DataSubjectScriptError::ServerStatus`] when the script breaks the export
+    /// limits or scripts a non-5xx server error.
     pub fn set_script(
         &self,
         subject_reference: impl Into<String>,
@@ -414,6 +428,12 @@ impl DataSubjectTargetServer {
     }
 
     /// Replaces the fallback for future operations without a subject-specific script.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DataSubjectScriptError::ExportBounds`] or
+    /// [`DataSubjectScriptError::ServerStatus`] when the script breaks the export
+    /// limits or scripts a non-5xx server error.
     pub fn set_default_script(
         &self,
         script: impl Into<DataSubjectScript>,
@@ -427,6 +447,12 @@ impl DataSubjectTargetServer {
 
     /// Appends a fault to an explicit subject script and operations using that script.
     /// Use after POST to exercise polling or download retries.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DataSubjectScriptError::MissingScript`] when no script exists for
+    /// `subject_reference`, and `ExportBounds` or `ServerStatus` when the updated
+    /// script is invalid.
     pub fn push_fault(
         &self,
         subject_reference: &str,
@@ -447,6 +473,10 @@ impl DataSubjectTargetServer {
 
     /// Publishes a fresh current key and retains every old key as previous.
     /// Receipts signed before rotation remain unchanged, including on replay.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`io::Error`] when the new signing key cannot be generated.
     pub fn rotate_key(&self) -> io::Result<ReceiptKey> {
         let signer = fresh_signer()?;
         let key = signer.receipt_key().clone();
@@ -461,6 +491,11 @@ impl DataSubjectTargetServer {
 
     /// Advances the retention clock without sleeping. Network delays use real time.
     /// Durations beyond chrono's range are rejected without changing the clock.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`io::Error`] when `duration` or the resulting clock offset is out
+    /// of chrono's range.
     pub fn advance_time(&self, duration: Duration) -> io::Result<()> {
         let delta = chrono::Duration::from_std(duration)
             .map_err(|_| io::Error::other("invalid test clock advance"))?;
@@ -878,122 +913,6 @@ fn pending_poll(outcome: &mut DataSubjectOutcome) -> bool {
             _ => return false,
         }
     }
-}
-
-fn complete(state: &TargetState, operation: &mut Operation) {
-    let resource = &mut operation.resource;
-    resource.completed_at = Some(state.now());
-    match &operation.outcome {
-        DataSubjectOutcome::Completed { categories } => {
-            resource.status = OperationStatus::Completed;
-            resource.categories = categories.clone();
-        }
-        DataSubjectOutcome::NotFound => resource.status = OperationStatus::NotFound,
-        DataSubjectOutcome::Restricted {
-            categories,
-            restrictions,
-        } => {
-            resource.status = OperationStatus::Restricted;
-            resource.categories = categories.clone();
-            resource.restrictions = restrictions.clone();
-        }
-        DataSubjectOutcome::Failed { code } => {
-            resource.status = OperationStatus::Failed;
-            resource.error = Some(OperationError { code: code.clone() });
-        }
-        DataSubjectOutcome::Export { parts } => {
-            resource.status = OperationStatus::Completed;
-            operation.parts = parts
-                .iter()
-                .map(|part| serde_json::to_vec(part).expect("JSON value serializes"))
-                .collect();
-            resource.parts = operation
-                .parts
-                .iter()
-                .enumerate()
-                .map(|(index, bytes)| ExportPart {
-                    part_number: u32::try_from(index + 1).expect("validated part count"),
-                    sha256: hex_digest(bytes),
-                    bytes: bytes.len() as u64,
-                })
-                .collect();
-        }
-        DataSubjectOutcome::PendingFor { .. } => {
-            unreachable!("pending wrappers consumed before completion")
-        }
-    }
-    if !resource.status.has_receipt() {
-        return;
-    }
-    let faults = lock(&operation.script).faults.clone();
-    let mut payload = ReceiptPayload {
-        receipt_type: RECEIPT_TYPE.into(),
-        contract_version: CONTRACT_VERSION.into(),
-        operation_id: resource.operation_id,
-        kind: resource.kind,
-        status: resource.status,
-        subject_reference: resource.subject_reference.clone(),
-        service: state.discovery.service.clone(),
-        created_at: resource.created_at,
-        completed_at: resource.completed_at.expect("terminal timestamp"),
-        categories: resource.categories.clone(),
-        restrictions: resource.restrictions.clone(),
-        parts: resource.parts.clone(),
-    };
-    if faults
-        .iter()
-        .any(|fault| matches!(fault, DataSubjectFault::WrongSubjectReference))
-    {
-        let last = payload
-            .subject_reference
-            .pop()
-            .expect("validated reference");
-        payload
-            .subject_reference
-            .push(if last == 'x' { 'y' } else { 'x' });
-    }
-    let signer = if faults
-        .iter()
-        .any(|fault| matches!(fault, DataSubjectFault::BadSignature))
-    {
-        &state.unadvertised_signer
-    } else {
-        &state.signer
-    };
-    let mut receipt = signer.sign(&payload).expect("controlled receipt is valid");
-    if faults
-        .iter()
-        .any(|fault| matches!(fault, DataSubjectFault::WrongKeyId))
-    {
-        receipt.signatures[0].keyid = "0".repeat(64);
-    }
-    if faults
-        .iter()
-        .any(|fault| matches!(fault, DataSubjectFault::TamperedPayload))
-    {
-        let mut bytes = STANDARD.decode(&receipt.payload).expect("signer base64");
-        bytes.push(b' ');
-        receipt.payload = STANDARD.encode(bytes);
-    }
-    if faults
-        .iter()
-        .any(|fault| matches!(fault, DataSubjectFault::PartDigestMismatch))
-    {
-        for bytes in &mut operation.parts {
-            let mut changed = vec![b' '; bytes.len()];
-            changed[0] = if bytes == b"0" { b'1' } else { b'0' };
-            *bytes = changed;
-        }
-    }
-    resource.receipt = Some(receipt);
-}
-
-fn hex_digest(bytes: &[u8]) -> String {
-    digest(&SHA256, bytes)
-        .as_ref()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
 }
 
 fn operation_response(resource: &OperationResource) -> Response {

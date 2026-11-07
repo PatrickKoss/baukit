@@ -151,6 +151,12 @@ fn failed<E>(_: E) -> IdentityErasureConformanceError {
 }
 
 /// Verifies durable acceptance, replay, conflict, fences, worker completion and subject removal.
+///
+/// # Errors
+///
+/// Returns [`IdentityErasureConformanceError`] naming the first failed check, such
+/// as equal subjects, a malformed status path, a failed adapter call, or a missing
+/// replay, conflict, fence or removal behavior.
 pub async fn check_identity_erasure_conformance<A: IdentityErasureAdapter>(
     adapter: &mut A,
     routes: &IdentityErasureRoutes,

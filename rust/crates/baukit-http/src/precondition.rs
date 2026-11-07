@@ -131,6 +131,11 @@ impl<'a> RevisionEtag<'a> {
     }
 
     /// Creates a codec for a prefix built at runtime.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidEtagPrefix`] when `prefix` is too long or contains characters
+    /// outside the allowed ETag prefix set.
     pub const fn try_new(prefix: &'a str) -> Result<Self, InvalidEtagPrefix> {
         if is_valid_prefix(prefix) {
             Ok(Self { prefix })
@@ -164,6 +169,12 @@ impl<'a> RevisionEtag<'a> {
     }
 
     /// Parses one `If-Match` field value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`InvalidIfMatch`] variant naming the problem: `NonAscii`, `Empty`,
+    /// `Wildcard`, `WeakValidator`, `List` or `Malformed` for the header shape, and
+    /// `PrefixMismatch`, `InvalidRevision` or `RevisionOutOfRange` for the revision.
     pub fn parse(&self, value: &HeaderValue) -> Result<Revision, InvalidIfMatch> {
         let text = visible_ascii(value.as_bytes())?;
         let tag = text.trim_matches([' ', '\t']);
@@ -186,6 +197,11 @@ impl<'a> RevisionEtag<'a> {
     /// Reads the revision from a route that requires `If-Match`.
     ///
     /// A missing header returns [`PreconditionError::Required`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PreconditionError::Required`] when `If-Match` is missing and
+    /// [`PreconditionError::Invalid`] when it repeats or does not parse.
     pub fn required_if_match(&self, headers: &HeaderMap) -> Result<Revision, PreconditionError> {
         self.optional_if_match(headers)?
             .ok_or(PreconditionError::Required)
@@ -194,6 +210,11 @@ impl<'a> RevisionEtag<'a> {
     /// Reads the revision from a route where `If-Match` is optional.
     ///
     /// A missing header returns `Ok(None)`, which permits an unconditional write.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PreconditionError::Invalid`] with [`InvalidIfMatch::RepeatedHeader`]
+    /// for more than one header, or with the [`Self::parse`] failure for the value.
     pub fn optional_if_match(
         &self,
         headers: &HeaderMap,
@@ -347,6 +368,10 @@ impl From<PreconditionError> for ApiError {
 ///
 /// A mismatch returns [`PreconditionError::Stale`] carrying `current`, which becomes 412
 /// `precondition_failed` with `details.currentRevision`.
+///
+/// # Errors
+///
+/// Returns [`PreconditionError::Stale`] carrying `current` when `expected` differs.
 pub fn ensure_current_revision(
     expected: Revision,
     current: Revision,

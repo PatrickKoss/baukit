@@ -14,6 +14,9 @@ impl SuiteLinkService {
     pub fn new(context: Arc<SuiteContext>) -> Self {
         Self { context }
     }
+    /// # Errors
+    ///
+    /// `Store` when listing the owner's links fails.
     pub async fn peers(&self, owner: Uuid) -> Result<Vec<SuitePeerView>, SuiteServiceError> {
         let links = self.context.store.list_links(owner).await?;
         Ok(self
@@ -41,6 +44,12 @@ impl SuiteLinkService {
             })
             .collect())
     }
+    /// # Errors
+    ///
+    /// `Protocol(PeerUnknown | Disabled)` for an unknown or inactive peer, `Protocol(ReturnUrlInvalid)`
+    /// for a disallowed return URL, `Protocol(PayloadInvalid)` for an empty, oversized or control-char
+    /// state nonce, `Cipher` when the PKCE verifier does not encrypt, `PayloadInvalid` for an
+    /// unparsable peer web URL, and `Store` when persisting the request fails.
     pub async fn start(
         &self,
         user: SuiteUser,
@@ -100,6 +109,10 @@ impl SuiteLinkService {
             authorize_url: url.into(),
         })
     }
+    /// # Errors
+    ///
+    /// `Store` when the request lookup fails and `Protocol(CodeInvalid)` when no live request matches
+    /// the callback state.
     pub async fn callback(
         &self,
         input: LinkCallbackQuery,
@@ -116,6 +129,13 @@ impl SuiteLinkService {
         relay_callback(request.as_ref(), &input, now)
             .map_err(|_| LinkProtocolError::CodeInvalid.into())
     }
+    /// # Errors
+    ///
+    /// `Protocol(NotFound | CodeInvalid | AccountMismatch | Disabled | PeerUnknown)` for a missing,
+    /// expired or revoked request, a malformed code, a peer 422 or 409, mismatched accounts or an
+    /// inactive peer, `Cipher` when a secret does not encrypt or decrypt, `PayloadInvalid` when the
+    /// link secret is not 32 bytes, `PeerUnreachable` when the peer exchange fails or answers with an
+    /// invalid response, and `Store` when persistence, replay or the identity lookup fails.
     pub async fn complete(
         &self,
         user: SuiteUser,
@@ -296,6 +316,10 @@ impl SuiteLinkService {
         self.context.store.commit_transaction(tx).await?;
         Ok(persisted)
     }
+    /// # Errors
+    ///
+    /// `Store` when listing links fails and `Protocol(PeerUnknown)` when the client is not an active
+    /// peer.
     pub async fn preview(
         &self,
         user: SuiteUser,
@@ -319,6 +343,10 @@ impl SuiteLinkService {
             hint_domain.as_deref(),
         )?)
     }
+    /// # Errors
+    ///
+    /// `Protocol(Disabled | PeerUnknown)` for an inactive client, `PayloadInvalid` for a malformed
+    /// state, code challenge or peer URL, and `Store` when persisting the code fails.
     pub async fn authorize(
         &self,
         user: SuiteUser,
@@ -364,6 +392,10 @@ impl SuiteLinkService {
             redirect_url: url.into(),
         })
     }
+    /// # Errors
+    ///
+    /// `Protocol(Disabled | PeerUnknown)` for an inactive client and `PayloadInvalid` for a malformed
+    /// state or peer URL.
     pub fn deny(
         &self,
         input: &AuthorizationDeny,
@@ -381,6 +413,11 @@ impl SuiteLinkService {
             redirect_url: url.into(),
         })
     }
+    /// # Errors
+    ///
+    /// `PayloadInvalid` for an oversized client id or invalid request, `Protocol` for an inactive
+    /// peer, an invalid code or mismatched accounts, `RateLimited` or `RateLimiter` after repeated
+    /// failures for the peer, `Cipher` when the secret does not encrypt, and `Store` when persistence fails.
     pub async fn exchange(
         &self,
         input: ExchangeRequest,
@@ -555,9 +592,15 @@ impl SuiteLinkService {
             .await?;
         Ok(())
     }
+    /// # Errors
+    ///
+    /// `Store` when listing the owner's links fails.
     pub async fn list(&self, owner: Uuid) -> Result<Vec<SuiteLink>, SuiteServiceError> {
         Ok(self.context.store.list_links(owner).await?)
     }
+    /// # Errors
+    ///
+    /// `Store(NotFound)` when the owner has no such link and `Store` when the lookup fails.
     pub async fn get(&self, owner: Uuid, id: Uuid) -> Result<SuiteLink, SuiteServiceError> {
         Ok(self
             .context
@@ -566,6 +609,10 @@ impl SuiteLinkService {
             .await?
             .ok_or(SuiteStoreError::NotFound)?)
     }
+    /// # Errors
+    ///
+    /// `PayloadInvalid` when `mode` is not one of this app's reward modes and `Store` when the link is
+    /// missing for the owner or the update fails.
     pub async fn update(
         &self,
         owner: Uuid,
@@ -583,6 +630,10 @@ impl SuiteLinkService {
             .update_preferences(owner, id, xp, mode, now)
             .await?)
     }
+    /// # Errors
+    ///
+    /// `Store(NotFound)` or `Protocol(NotFound)` when the owner has no such link, and `Store` when
+    /// revoking the link or enqueueing the peer revoke fails. An already revoked link returns `Ok`.
     pub async fn disconnect(
         &self,
         owner: Uuid,
@@ -610,6 +661,10 @@ impl SuiteLinkService {
         self.context.store.commit_transaction(tx).await?;
         Ok(())
     }
+    /// # Errors
+    ///
+    /// `Store(NotFound)` when the owner has no re-enableable link with that id and `Store` when the
+    /// update fails.
     pub async fn reenable(
         &self,
         owner: Uuid,

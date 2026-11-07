@@ -154,6 +154,10 @@ pub fn trimmed_unicode_scalar_count(value: &str) -> usize {
 }
 
 /// Returns the UTF-8 byte length of the compact JSON encoding.
+///
+/// # Errors
+///
+/// Returns a [`serde_json::Error`] when `value` cannot be serialized.
 pub fn compact_json_utf8_bytes(value: &impl Serialize) -> Result<usize, serde_json::Error> {
     serde_json::to_vec(value).map(|encoded| encoded.len())
 }
@@ -171,6 +175,10 @@ pub const fn collection_length<Element>(value: &[Element]) -> usize {
 }
 
 /// Checks a measured amount against a caller-provided maximum.
+///
+/// # Errors
+///
+/// Returns [`LimitExceeded`] when `measured` is above `allowed`.
 pub const fn check_measurement(
     measured: usize,
     allowed: usize,
@@ -185,6 +193,11 @@ pub const fn check_measurement(
 ///
 /// Uses `u64` so seconds from [`std::time::Duration::as_secs`] fit on every target.
 /// Inverted bounds return [`LimitRangeError::InvalidBounds`] before checking the measurement.
+///
+/// # Errors
+///
+/// Returns [`LimitRangeError::InvalidBounds`] when `minimum` exceeds `maximum` and
+/// [`LimitRangeError::OutOfRange`] when `measured` falls outside the bounds.
 pub const fn check_range(
     measured: u64,
     minimum: u64,
@@ -211,6 +224,10 @@ pub const fn check_range(
 }
 
 /// Measures trimmed Unicode scalar values and checks the result.
+///
+/// # Errors
+///
+/// Returns [`LimitExceeded`] when the trimmed scalar count is above `allowed`.
 pub fn check_trimmed_unicode_scalars(
     value: &str,
     allowed: usize,
@@ -219,6 +236,11 @@ pub fn check_trimmed_unicode_scalars(
 }
 
 /// Measures compact JSON UTF-8 bytes and checks the result.
+///
+/// # Errors
+///
+/// Returns [`CompactJsonLimitError::Encoding`] when `value` cannot be serialized
+/// and [`CompactJsonLimitError::Limit`] when the encoded length is above `allowed`.
 pub fn check_compact_json_utf8_bytes(
     value: &impl Serialize,
     allowed: usize,
@@ -228,11 +250,19 @@ pub fn check_compact_json_utf8_bytes(
 }
 
 /// Measures a byte slice and checks the result.
+///
+/// # Errors
+///
+/// Returns [`LimitExceeded`] when the slice is longer than `allowed` bytes.
 pub const fn check_bytes(value: &[u8], allowed: usize) -> Result<LimitMeasurement, LimitExceeded> {
     check_measurement(byte_length(value), allowed)
 }
 
 /// Measures a collection slice and checks the result.
+///
+/// # Errors
+///
+/// Returns [`LimitExceeded`] when the slice holds more than `allowed` elements.
 pub const fn check_collection<Element>(
     value: &[Element],
     allowed: usize,

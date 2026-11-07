@@ -81,6 +81,9 @@ impl AuthorizationPreview {
     }
 }
 
+/// # Errors
+///
+/// `LinkProtocolError::PeerUnknown` when `client` is not an active peer in `registry`.
 pub fn preview_authorization(
     registry: &PeerRegistry,
     client: &str,
@@ -136,6 +139,12 @@ impl LinkProtocolError {
     }
 }
 
+/// # Errors
+///
+/// `LinkProtocolError::PeerUnknown` when `peer_app` is not a registry peer or is this app,
+/// `Disabled` when the peer is known but not configured, `ReturnUrlInvalid` when the return URL
+/// fails [`PeerRegistry::validate_return_url`], and `PayloadInvalid` when the state nonce is
+/// empty, too long or contains control characters.
 pub fn validate_link_start<'a>(
     registry: &'a PeerRegistry,
     request: &LinkStartRequest,
@@ -210,6 +219,11 @@ impl CallbackError {
     }
 }
 
+/// # Errors
+///
+/// `CallbackError::CodeInvalid` when `request` is `None` or its stored return URL does not
+/// parse, cannot be a base, has no host, or carries credentials. A bad state or code is not an
+/// error: it redirects with `status=failed`.
 pub fn relay_callback(
     request: Option<&LinkRequest>,
     query: &LinkCallbackQuery,
@@ -266,6 +280,11 @@ pub enum CompleteDecision {
     ExistingLink(Uuid),
 }
 
+/// # Errors
+///
+/// `LinkProtocolError::NotFound` when `request` is missing or belongs to another owner.
+/// `CodeInvalid` when the request expired, already has a link without being consumed, or was
+/// consumed without recording a link.
 pub fn validate_complete(
     request: Option<&LinkRequest>,
     owner_id: Uuid,
@@ -292,6 +311,12 @@ pub enum ExchangeDecision {
     ExistingLink(Uuid),
 }
 
+/// # Errors
+///
+/// `LinkProtocolError::CodeInvalid` when the code is missing, expired, issued to another client,
+/// fails the hash or PKCE check, carries a link without being consumed, was consumed for a
+/// different link, or either suite subject is malformed. `AccountMismatch` when an auto-approved
+/// code lacks a matching suite subject or the two suite subjects differ within one identity domain.
 pub fn validate_exchange(
     code: Option<&LinkCode>,
     request: &ExchangeRequest,

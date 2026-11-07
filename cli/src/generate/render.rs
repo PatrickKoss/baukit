@@ -11,7 +11,8 @@ use serde::{Serialize, Serializer, ser::SerializeMap};
 use crate::{
     BACKEND_TEMPLATE, COMMON_TEMPLATE, MCP_REMOTE_TEMPLATE, MOBILE_TEMPLATE, PLATFORM_TEMPLATE,
     WEB_TEMPLATE, WORKER_TEMPLATE, components::Components, dockerfile::render_dockerfile,
-    generate::NewOptions, generate::manifest_source::render_manifest, manifest::AuthProvider,
+    generate::NewOptions, generate::manifest_source::render_manifest,
+    generate::template_files::add_template_files_manifest, manifest::AuthProvider,
     manifest::Manifest,
 };
 
@@ -186,6 +187,7 @@ pub(crate) fn render_product(
         );
     }
     rendered.insert(PathBuf::from("baukit.toml"), source.into_bytes());
+    add_template_files_manifest(&mut rendered)?;
     Ok(rendered)
 }
 

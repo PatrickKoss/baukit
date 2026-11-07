@@ -56,6 +56,11 @@ impl IdempotencyKeyRule {
     }
 
     /// Creates a rule from bounds read at runtime.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidIdempotencyKeyRule`] unless `1 <= min_bytes <= max_bytes` and
+    /// `max_bytes` is within the protocol maximum.
     pub const fn try_new(
         min_bytes: usize,
         max_bytes: usize,
@@ -83,6 +88,12 @@ impl IdempotencyKeyRule {
     }
 
     /// Parses one `Idempotency-Key` field value.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidIdempotencyKey::Empty`] for an empty value,
+    /// `InvalidCharacter` for bytes outside visible ASCII, and `TooShort` or
+    /// `TooLong` when its length is outside the rule's bounds.
     pub fn parse<'h>(
         &self,
         value: &'h HeaderValue,
@@ -108,6 +119,11 @@ impl IdempotencyKeyRule {
     /// Reads the key from a route that requires `Idempotency-Key`.
     ///
     /// A missing header returns [`IdempotencyError::Required`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`IdempotencyError::Required`] when the header is missing and
+    /// [`IdempotencyError::Invalid`] when it repeats or breaks the rule's grammar.
     pub fn required<'h>(
         &self,
         headers: &'h HeaderMap,
@@ -118,6 +134,12 @@ impl IdempotencyKeyRule {
     /// Reads the key from a route where `Idempotency-Key` is optional.
     ///
     /// A missing header returns `Ok(None)`, which runs the mutation without a replay record.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`IdempotencyError::Invalid`] with
+    /// [`InvalidIdempotencyKey::RepeatedHeader`] for more than one header, or with
+    /// `Empty`, `InvalidCharacter`, `TooShort` or `TooLong` when the value breaks the rule.
     pub fn optional<'h>(
         &self,
         headers: &'h HeaderMap,

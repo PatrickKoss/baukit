@@ -77,6 +77,10 @@ impl ValidatedPayload {
     }
 
     /// Deserializes into a product-owned payload type. Use `deny_unknown_fields`.
+    ///
+    /// # Errors
+    ///
+    /// `PayloadError::InvalidPayload` when the payload does not deserialize into `T`.
     pub fn deserialize<T: DeserializeOwned>(&self) -> Result<T, PayloadError> {
         serde_json::from_value(Value::Object(self.0.clone()))
             .map_err(|error| PayloadError::InvalidPayload(error.to_string()))
@@ -85,6 +89,12 @@ impl ValidatedPayload {
 
 impl PayloadCatalog {
     /// Loads a catalog and rejects duplicate event types, fields and invalid bounds.
+    ///
+    /// # Errors
+    ///
+    /// `SuiteDataError::InvalidRegistry` when `json` does not parse, the schema version is not 1,
+    /// an event type or field name repeats, an event has more than 32 fields, or a field name or
+    /// field kind bound is invalid.
     pub fn from_json(json: &str) -> Result<Self, SuiteDataError> {
         let catalog: Self = serde_json::from_str(json)
             .map_err(|error| SuiteDataError::InvalidRegistry(error.to_string()))?;
@@ -119,6 +129,11 @@ impl PayloadCatalog {
     }
 
     /// Checks a payload against its event definition. Optional fields must be omitted.
+    ///
+    /// # Errors
+    ///
+    /// `PayloadError::UnsupportedType` when the catalog has no `event_type`. Any field failure from
+    /// [`validate_fields`](super::validation::validate_fields) passes through.
     pub fn validate(
         &self,
         event_type: &str,

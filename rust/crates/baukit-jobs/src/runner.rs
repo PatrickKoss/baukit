@@ -22,6 +22,10 @@ use crate::{
     metrics::{self, FAILURE, RETRY, SUCCESS},
 };
 
+mod config;
+
+use config::validate_config;
+
 /// A boxed future returned by [`JobHandler`].
 pub type JobFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -144,6 +148,12 @@ pub struct WorkerRunner {
 
 impl WorkerRunner {
     /// Validates configuration, registers zero-valued worker metrics, and creates a runner.
+    ///
+    /// # Errors
+    ///
+    /// [`RunnerError::InvalidConfig`] for an empty worker id or queue, zero concurrency or
+    /// duration, `retry_initial` above `retry_max`, a lease not longer than the job timeout,
+    /// or empty or duplicate job types.
     pub fn new(
         store: Arc<dyn JobStore>,
         handler: Arc<dyn JobHandler>,
@@ -159,6 +169,12 @@ impl WorkerRunner {
     }
 
     /// Probes the store's claim-query shape for operations readiness.
+    ///
+    /// # Errors
+    ///
+    /// Whatever the store's [`JobStore::ready`] returns. [`PostgresJobStore`](crate::PostgresJobStore)
+    /// returns [`crate::StoreError::Database`] when the probe query fails and
+    /// [`crate::StoreError::Task`] when its owned task panics or is aborted.
     pub async fn ready(&self) -> Result<(), crate::StoreError> {
         self.store.ready().await
     }
@@ -173,6 +189,13 @@ impl WorkerRunner {
     /// abandons a claim, it finishes and the job recovers after lease expiry.
     /// Running attempts drain in the `JoinSet`; `TaskSupervisor` bounds that
     /// drain using the same [`ShutdownToken`] deadline.
+    ///
+    /// # Errors
+    ///
+    /// [`RunnerError::Store`] when a store call fails, [`RunnerError::Task`] when a claim or
+    /// attempt task panics or is aborted, and [`RunnerError::LeaseLost`] when an attempt can no
+    /// longer persist its outcome because another worker owns the job, and
+    /// [`RunnerError::InvalidConfig`] when a retry deadline overflows the timestamp range.
     pub async fn run(self, shutdown: ShutdownToken) -> Result<(), RunnerError> {
         let mut running = JoinSet::new();
         loop {
@@ -422,67 +445,6 @@ fn ensure_transition(updated: bool, job_id: Uuid) -> Result<(), RunnerError> {
     } else {
         Err(RunnerError::LeaseLost { job_id })
     }
-}
-
-fn validate_config(
-    config: &WorkerConfig,
-    job_types: &'static [&'static str],
-) -> Result<(), RunnerError> {
-    if config.worker_id.trim().is_empty() {
-        return Err(RunnerError::InvalidConfig(
-            "worker_id must not be empty".to_owned(),
-        ));
-    }
-    if config.queue.trim().is_empty() {
-        return Err(RunnerError::InvalidConfig(
-            "queue must not be empty".to_owned(),
-        ));
-    }
-    if config.concurrency == 0 {
-        return Err(RunnerError::InvalidConfig(
-            "concurrency must be greater than zero".to_owned(),
-        ));
-    }
-    for (name, duration) in [
-        ("poll_interval", config.poll_interval),
-        ("lease_duration", config.lease_duration),
-        ("job_timeout", config.job_timeout),
-        (
-            "cancellation_poll_interval",
-            config.cancellation_poll_interval,
-        ),
-        ("retry_initial", config.retry_initial),
-        ("retry_max", config.retry_max),
-    ] {
-        if duration.is_zero() {
-            return Err(RunnerError::InvalidConfig(format!(
-                "{name} must be greater than zero"
-            )));
-        }
-    }
-    if config.retry_initial > config.retry_max {
-        return Err(RunnerError::InvalidConfig(
-            "retry_initial must not exceed retry_max".to_owned(),
-        ));
-    }
-    if config.lease_duration <= config.job_timeout {
-        return Err(RunnerError::InvalidConfig(
-            "lease_duration must exceed job_timeout".to_owned(),
-        ));
-    }
-    if job_types.is_empty() || job_types.iter().any(|job| job.trim().is_empty()) {
-        return Err(RunnerError::InvalidConfig(
-            "job_types must contain non-empty static identifiers".to_owned(),
-        ));
-    }
-    for (index, job) in job_types.iter().enumerate() {
-        if job_types.iter().take(index).any(|earlier| earlier == job) {
-            return Err(RunnerError::InvalidConfig(format!(
-                "duplicate job type `{job}`"
-            )));
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]

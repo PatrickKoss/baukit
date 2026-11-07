@@ -134,6 +134,11 @@ pub struct ScriptedWebhookReceiver {
 
 impl ScriptedWebhookReceiver {
     /// Starts a receiver on an ephemeral loopback port.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`io::Error`] when the loopback listener cannot bind or report its
+    /// address.
     pub async fn start() -> io::Result<Self> {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let address = listener.local_addr()?;

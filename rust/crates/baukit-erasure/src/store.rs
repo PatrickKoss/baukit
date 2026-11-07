@@ -149,6 +149,10 @@ pub struct PostgresErasureStore {
 }
 impl PostgresErasureStore {
     /// Requires at least 32 bytes of secret key material. Keep the key stable.
+    ///
+    /// # Errors
+    ///
+    /// [`ErasureError::Configuration`] when `hash_key` is shorter than 32 bytes.
     pub fn new(pool: PgPool, hash_key: Secret<String>) -> Result<Self, ErasureError> {
         if hash_key.expose().len() < 32 {
             return Err(ErasureError::Configuration);
@@ -175,6 +179,11 @@ impl PostgresErasureStore {
     }
     /// Locks subject resolution against erasure and checks this session in the same transaction.
     /// Admission requires a login after the fence and no unfinished erasure operations.
+    ///
+    /// # Errors
+    ///
+    /// [`ErasureError::ProfileErased`] when the session is fenced, and
+    /// [`ErasureError::Database`] when locking or the fence query fails.
     pub async fn guard_subject(
         &self,
         transaction: &mut Transaction<'_, Postgres>,
@@ -196,6 +205,10 @@ impl PostgresErasureStore {
     }
     /// Returns whether this session is rejected, without creating a profile.
     /// A missing login time keeps a subject fenced permanently.
+    ///
+    /// # Errors
+    ///
+    /// [`ErasureError::Database`] when the fence query fails.
     pub async fn is_fenced(
         &self,
         subject: &str,
@@ -208,6 +221,11 @@ impl PostgresErasureStore {
             .await?)
     }
     /// Subject-authorized status lookup. Unknown and foreign operations both return None.
+    ///
+    /// # Errors
+    ///
+    /// [`ErasureError::Database`] when the query fails and [`ErasureError::Receipt`] when the
+    /// stored response does not decode.
     pub async fn status(
         &self,
         subject: &str,
@@ -255,6 +273,11 @@ async fn lock(transaction: &mut Transaction<'_, Postgres>, hash: &[u8]) -> Resul
     Ok(())
 }
 /// Axum handler helper. Call after authentication, before any product operation.
+///
+/// # Errors
+///
+/// [`ErasureError::ProfileErased`] when the session is fenced, and
+/// [`ErasureError::Database`] when the fence query fails.
 pub async fn reject_fenced_subject(
     store: &PostgresErasureStore,
     subject: &str,
@@ -293,6 +316,11 @@ pub struct ErasureService {
 impl ErasureService {
     /// Builds a service with an explicit identity retention mode.
     /// Delete mode requires a nonempty provider id, nonzero timeout and attempts.
+    ///
+    /// # Errors
+    ///
+    /// [`ErasureError::Configuration`] in delete mode with a blank provider id, zero inline
+    /// timeout, or zero max attempts.
     pub fn new(
         store: PostgresErasureStore,
         identity_retention: IdentityRetention,
@@ -322,6 +350,12 @@ impl ErasureService {
     /// Retain mode completes immediately. Delete mode queues identity deletion;
     /// register `IdentityDeletionHandler` to process it. No provider call runs here.
     /// Existing fences do not prevent an authorized operator from erasing again.
+    ///
+    /// # Errors
+    ///
+    /// [`ErasureError::Configuration`] for an empty subject, [`ErasureError::Database`] or
+    /// [`ErasureError::Jobs`] when writing the fence or queueing identity deletion fails, and
+    /// [`ErasureError::Receipt`] when the outcome cannot be serialized or decoded.
     pub async fn fence_as_operator_in_transaction(
         &self,
         transaction: &mut Transaction<'_, Postgres>,
@@ -369,6 +403,14 @@ impl ErasureService {
     ///
     /// Use this before external notifications. `erase` repeats every check under
     /// its locks because this result does not reserve the key or subject.
+    ///
+    /// # Errors
+    ///
+    /// [`ErasureError::InvalidKey`] for a key that is not a 16 to 128 byte header value,
+    /// [`ErasureError::Configuration`] for an empty subject, [`ErasureError::Conflict`] when the
+    /// key belongs to another subject, [`ErasureError::ProfileErased`] for a fenced session, and
+    /// [`ErasureError::Database`] or [`ErasureError::Receipt`] when the lookup fails or the
+    /// stored response does not decode.
     pub async fn preflight(
         &self,
         subject: &str,
@@ -389,6 +431,12 @@ impl ErasureService {
         Ok(ErasurePreflight::Proceed)
     }
     /// Erases once under key and subject locks. Replays never call product deletion again.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`Self::preflight`], [`ErasureError::Database`] when product deletion or the
+    /// commit fails, and [`ErasureError::Jobs`] when queueing identity deletion fails. A failed
+    /// inline provider call is logged and returns the pending outcome.
     pub async fn erase(
         &self,
         subject: &str,

@@ -14,6 +14,11 @@ pub struct SignedHeaders {
     replay: bool,
 }
 impl SignedHeaders {
+    /// # Errors
+    ///
+    /// `SignatureInvalid` when a suite header repeats, a required header is missing, the content type
+    /// is not JSON, the timestamp is not a decimal integer, the delivery id is empty, too long or has
+    /// control characters, or `x-suite-replay` is present with a value other than `1`.
     pub fn parse<'a>(
         headers: impl Iterator<Item = (&'a str, &'a str)>,
     ) -> Result<Self, SuiteServiceError> {
@@ -154,6 +159,13 @@ impl SuiteIngestService {
         self.verify(&link, h, body, now)?;
         Ok(link)
     }
+    /// # Errors
+    ///
+    /// `SignatureInvalid` for an unknown source, link, bad signature or stale timestamp, `RateLimited`
+    /// or `RateLimiter` from the inbound limits, `PayloadInvalid` or `Inbound` for an oversized,
+    /// malformed or rejected envelope, `LinkRevoked` for a revoked link, `Unavailable` without an
+    /// applier, `Store(InvalidData)` when the applier grants a reward for a replay, and `Store` when
+    /// persistence or the applier fails.
     pub async fn ingest(
         &self,
         id: Uuid,
@@ -312,6 +324,11 @@ impl SuiteIngestService {
         }
         Ok(outcome)
     }
+    /// # Errors
+    ///
+    /// `PayloadInvalid` unless the body is `{}` with a UUID delivery id and no replay flag,
+    /// `SignatureInvalid`, `RateLimited` or `RateLimiter` when authentication fails, and `Store` when
+    /// loading, locking or revoking the link fails. An already revoked link returns `Ok`.
     pub async fn revoke_from_peer(
         &self,
         id: Uuid,

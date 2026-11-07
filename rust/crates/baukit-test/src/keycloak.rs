@@ -63,6 +63,11 @@ impl fmt::Debug for KeycloakLogin<'_> {
 
 impl KeycloakTestContainer {
     /// Starts Keycloak with `realm_json` imported as realm `realm`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`KeycloakTestError::Container`] when Docker cannot start the image,
+    /// it does not log readiness within the startup timeout, or its port cannot be read.
     pub async fn start(
         realm: impl Into<String>,
         realm_json: impl Into<Vec<u8>>,
@@ -98,6 +103,12 @@ impl KeycloakTestContainer {
     }
 
     /// Signs a user in through the login form and returns the access token.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`KeycloakTestError::Http`] when a request to Keycloak fails and
+    /// [`KeycloakTestError::Login`] when the login form, redirect or code exchange
+    /// does not produce an access token.
     pub async fn access_token(
         &self,
         login: &KeycloakLogin<'_>,

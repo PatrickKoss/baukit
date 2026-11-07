@@ -58,6 +58,13 @@ pub enum PrivateNetworkError {
 
 impl PrivateNetwork {
     /// Creates a network, rejecting invalid prefixes, host bits, and ranges.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PrivateNetworkError::PrefixTooLong`] when `prefix` exceeds the
+    /// address width, [`PrivateNetworkError::Ipv4Mapped`] for an IPv4-mapped IPv6
+    /// address, [`PrivateNetworkError::HostBitsSet`] when bits past the prefix are
+    /// set, and [`PrivateNetworkError::NotPrivate`] outside the allowlistable ranges.
     pub fn new(network: IpAddr, prefix: u8) -> Result<Self, PrivateNetworkError> {
         let host_bits = match network {
             IpAddr::V4(address) => {
@@ -137,6 +144,10 @@ pub struct PrivateNetworks(Vec<PrivateNetwork>);
 
 impl PrivateNetworks {
     /// Creates a list, rejecting an empty iterator.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PrivateNetworkError::EmptyList`] when `networks` is empty.
     pub fn new(
         networks: impl IntoIterator<Item = PrivateNetwork>,
     ) -> Result<Self, PrivateNetworkError> {

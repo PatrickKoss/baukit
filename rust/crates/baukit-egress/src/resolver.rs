@@ -110,6 +110,12 @@ impl Resolver for StaticResolver {
 /// The guarded client runs this once per new connection and connects only to
 /// the returned addresses. Call it directly to check a destination early, for
 /// example when a subscription is created.
+///
+/// # Errors
+///
+/// Returns [`EgressError::BlockedAddress`] when `host` misses the allowed endpoint
+/// or any answer fails the policy, [`EgressError::Timeout`] when the lookup outlasts
+/// `timeout`, and [`EgressError::Resolve`] when it fails or returns no address.
 pub async fn resolve_destination(
     resolver: &dyn Resolver,
     host: &str,

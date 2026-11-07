@@ -8,6 +8,13 @@ use anyhow::{Context, Result, bail};
 
 use crate::{OPENAPI_TYPESCRIPT_PACKAGE, manifest::read_manifest};
 
+/// Regenerates the TypeScript OpenAPI client for every configured consumer.
+///
+/// # Errors
+///
+/// Fails when `baukit.toml` cannot be read, the product has no backend or no
+/// OpenAPI consumers, none of `corepack`, `pnpm` or `npx` is installed, an output
+/// directory cannot be created, or the generator command fails.
 pub fn generate_openapi_client(root: &Path) -> Result<()> {
     let manifest = read_manifest(root)?;
     if !manifest.capabilities.components.backend() {
