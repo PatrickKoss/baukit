@@ -5623,8 +5623,8 @@ fn doctor_requires_conditional_mcp_router_results_to_be_merged() -> anyhow::Resu
         .expect("MCP binding");
     let end = start
         + api[start..]
-            .find("let api = api.merge(mcp);")
-            .expect("MCP merge");
+            .find("let mcp = rate_limited(mcp,")
+            .expect("MCP rate limiter");
     let call = api[start + "let mcp = ".len()..end]
         .trim()
         .strip_suffix(';')

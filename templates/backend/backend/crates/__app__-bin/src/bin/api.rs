@@ -32,7 +32,7 @@ use {{ context.app_crate }}_bin::browser_session_router;
 use {{ context.app_crate }}_bin::mcp_verifier;
 {% endif %}use {{ context.app_crate }}_bin::operations_router;
 {% if context.auth_enabled %}use {{ context.app_crate }}_bin::protect_routes;
-{% endif %}{% if not context.auth_enabled or context.platform %}use {{ context.app_crate }}_bin::rate_limited;
+{% endif %}{% if not context.auth_enabled or context.platform or context.mcp %}use {{ context.app_crate }}_bin::rate_limited;
 {% endif %}{% if not context.auth_enabled and not context.platform %}use {{ context.app_crate }}_ports::ItemRepository;
 {% endif %}use {{ context.app_crate }}_postgres::PostgresItemRepository;
 {% if context.auth_enabled %}use {{ context.app_crate }}_postgres::PostgresProfileErasure;
@@ -218,7 +218,7 @@ async fn compose_api(
         backend.auth.clone(),
         limits.as_ref(),
     )?;
-{% if context.mcp %}    // baukit_mcp limits its own routes with the same store, keyed by the verified MCP caller.
+{% if context.mcp %}    // baukit_mcp limits verified callers itself; the IP limiter covers requests with invalid tokens.
     let mcp_store = mcp_store(config, limits.as_ref())?;
     let item_reads = Arc::new(backend.item_service.clone());
     let mcp_services = {{ context.app_crate }}_mcp::services(item_reads);
@@ -230,6 +230,7 @@ async fn compose_api(
         mcp_policy(&config.product.auth, &config.product.mcp)?,
     )
     .await?;
+    let mcp = rate_limited(mcp, limits.as_ref());
     let api = api.merge(mcp);
 {% endif %}{% if context.platform %}    let api = api
         .merge(platform.router)
