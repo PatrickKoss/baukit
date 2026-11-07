@@ -42,38 +42,56 @@ export interface NodeStyleTimeout {
   unref(): void;
 }
 
+// The lib targets ES2022 without DOM or Node types, so host globals are read as unknown and probed.
+function readGlobal(name: string): unknown {
+  return Reflect.get(globalThis, name);
+}
+
+function readProperty(owner: unknown, name: string): unknown {
+  return typeof owner === 'object' && owner !== null ? Reflect.get(owner, name) : undefined;
+}
+
 export function getTimeoutRuntime(): TimeoutRuntime {
-  // globalThis carries no timer types in this DOM-free lib; probe before use.
-  const runtime = globalThis as unknown as Partial<TimeoutRuntime>;
-  if (runtime.setTimeout === undefined || runtime.clearTimeout === undefined) {
+  const setTimer = readGlobal('setTimeout');
+  const clearTimer = readGlobal('clearTimeout');
+  if (typeof setTimer !== 'function' || typeof clearTimer !== 'function') {
     throw new Error('@baukit/analytics-core requires setTimeout and clearTimeout');
   }
-  return runtime as TimeoutRuntime;
+  return {
+    setTimeout: (callback, milliseconds): unknown =>
+      Reflect.apply(setTimer, globalThis, [callback, milliseconds]),
+    clearTimeout: (handle) => {
+      Reflect.apply(clearTimer, globalThis, [handle]);
+    },
+  };
 }
 
 export function inferDevelopmentMode(): boolean {
-  // `process` exists only on Node-like runtimes and is untyped without @types/node.
-  const runtime = globalThis as unknown as {
-    process?: { env?: Readonly<Record<string, string | undefined>> };
-  };
-  return runtime.process?.env?.['NODE_ENV'] !== 'production';
+  const env = readProperty(readGlobal('process'), 'env');
+  return readProperty(env, 'NODE_ENV') !== 'production';
 }
 
 export function defaultWarning(message: string): void {
-  // Some embedded runtimes have no console; the lib targets ES2022 without DOM types.
-  const runtime = globalThis as unknown as { console?: { warn(value: string): void } };
-  runtime.console?.warn(message);
+  const console = readGlobal('console');
+  const warn = readProperty(console, 'warn');
+  if (typeof warn === 'function') {
+    Reflect.apply(warn, console, [message]);
+  }
 }
 
 export function defaultUuidFactory(): string {
-  // Web Crypto is optional on Hermes and untyped without DOM lib, so probe it.
-  const runtime = globalThis as unknown as { crypto?: { randomUUID?: () => string } };
-  if (runtime.crypto?.randomUUID === undefined) {
+  const crypto = readGlobal('crypto');
+  const randomUUID = readProperty(crypto, 'randomUUID');
+  if (typeof randomUUID !== 'function') {
     throw new Error(
       '@baukit/analytics-core requires crypto.randomUUID; provide uuidFactory on runtimes without it',
     );
   }
-  return runtime.crypto.randomUUID();
+  const uuid: unknown = Reflect.apply(randomUUID, crypto, []);
+  if (typeof uuid !== 'string') {
+    throw new Error('@baukit/analytics-core expected crypto.randomUUID to return a string');
+  }
+  return uuid;
 }
 
 function requireInteger(name: string, value: number, minimum: number): number {

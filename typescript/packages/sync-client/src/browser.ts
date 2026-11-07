@@ -1,4 +1,5 @@
 import type { SyncSchedulerEnvironment, SyncSchedulerTimer } from './scheduler.js';
+import { createOpaqueIntervalTimers } from './timer-handles.js';
 
 export interface BrowserSyncDocument {
   readonly visibilityState: string;
@@ -34,8 +35,8 @@ function resolveDocument(document: BrowserSyncDocument | undefined): BrowserSync
 }
 
 function resolveWindow(window: BrowserSyncWindow | undefined): BrowserSyncWindow {
-  // `window` is absent outside browsers, and the DOM `Window` type is wider than this sync seam.
-  const globalWindow = globalThis.window as unknown as BrowserSyncWindow | undefined;
+  const globalWindow: BrowserSyncWindow | undefined =
+    typeof globalThis.window === 'undefined' ? undefined : globalThis.window;
   const resolved = window ?? globalWindow;
   if (resolved === undefined) {
     throw new Error('Browser sync environment requires a window');
@@ -57,14 +58,14 @@ export function createBrowserSyncEnvironment(
 ): SyncSchedulerEnvironment {
   const browserDocument = resolveDocument(options.document);
   const browserWindow = resolveWindow(options.window);
-  // The DOM returns numeric interval ids; the scheduler stores them as opaque timer handles.
-  const timers: BrowserSyncTimers = options.timers ?? {
-    setInterval: (callback, milliseconds) =>
-      browserWindow.setInterval(callback, milliseconds) as unknown as SyncSchedulerTimer,
-    clearInterval: (handle) => {
-      browserWindow.clearInterval(handle as unknown as number);
-    },
-  };
+  const timers: BrowserSyncTimers =
+    options.timers ??
+    createOpaqueIntervalTimers({
+      setInterval: (callback, milliseconds) => browserWindow.setInterval(callback, milliseconds),
+      clearInterval: (handle: number) => {
+        browserWindow.clearInterval(handle);
+      },
+    });
 
   return {
     isActive: () => browserDocument.visibilityState === 'visible',
