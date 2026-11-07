@@ -14,6 +14,10 @@ All notable changes to `baukit-test` are documented here.
   for another audience, a token signed by an unknown key and an `alg: none` token to every operation that
   declares security, and require 401 for each.
 
+### Security
+
+- `KeycloakLogin` redacts the password in `Debug` output.
+
 ## [0.18.3] - 2026-11-07
 
 ## [0.18.2] - 2026-11-06

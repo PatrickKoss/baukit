@@ -2054,3 +2054,22 @@ fn inbound_type_source_future_and_error_codes_are_explicit_for_live_and_replay()
         );
     }
 }
+
+#[test]
+fn link_requests_debug_redacts_authorization_code() {
+    let complete = LinkCompleteRequest {
+        code: "auth-code-secret".to_owned(),
+    };
+    let callback = LinkCallbackQuery {
+        state: Some("state-1".to_owned()),
+        from: None,
+        code: Some("auth-code-secret".to_owned()),
+        error: None,
+    };
+
+    for debug in [format!("{complete:?}"), format!("{callback:?}")] {
+        assert!(!debug.contains("auth-code-secret"));
+        assert!(debug.contains("[REDACTED]"));
+    }
+    assert!(format!("{callback:?}").contains("state-1"));
+}
