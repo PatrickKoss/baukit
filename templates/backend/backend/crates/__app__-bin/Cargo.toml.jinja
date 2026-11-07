@@ -13,9 +13,11 @@ workspace = true
 baukit-core.workspace = true
 {% endif %}{% if context.auth_enabled or context.platform %}chrono.workspace = true
 {% endif %}axum.workspace = true
-{% if context.auth_enabled %}baukit-auth.workspace = true
+{% if context.auth_enabled %}baukit-auth = { workspace = true, features = ["browser-session"] }
+baukit-credential-vault.workspace = true
 baukit-erasure.workspace = true
-baukit-ratelimit.workspace = true
+baukit-http.workspace = true
+baukit-ratelimit = { workspace = true, features = ["browser-session"] }
 {% endif %}{% if context.mcp %}baukit-mcp.workspace = true
 {{ context.app_crate }}-mcp.workspace = true
 {% endif %}baukit-config.workspace = true
@@ -40,8 +42,8 @@ uuid.workspace = true
 {% if context.platform or context.auth_clerk or context.auth_workos %}base64 = "0.22.1"
 {% endif %}{% if context.platform %}ed25519-dalek = "2.2.0"
 {% endif %}{% if context.auth_enabled %}tempfile = "3.27.0"
-{% endif %}baukit-http.workspace = true
-baukit-test = { workspace = true, features = ["sqlx-postgres"] }
+{% endif %}{% if not context.auth_enabled %}baukit-http.workspace = true
+{% endif %}baukit-test = { workspace = true, features = ["sqlx-postgres"] }
 serde_json.workspace = true
 tower.workspace = true
 

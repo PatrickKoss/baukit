@@ -1,6 +1,16 @@
 product: chart-options
 fullnameOverride: chart-options
 
+browserSession:
+  enabled: true
+  allowedOrigins: [https://app.chart-options.example]
+  redirectUris: [https://app.chart-options.example/]
+  postLogoutRedirectUri: https://app.chart-options.example/
+  publicApiOrigin: https://api.chart-options.example
+  credentialKeysSecretRef:
+    name: chart-options-browser-session
+    key: keys
+
 platform:
   receiverSecretRef:
     name: chart-options-platform

@@ -17,10 +17,13 @@ use tokio::net::TcpListener;
 
 {% if context.auth_enabled %}use {{ context.app_crate }}_api::ApiState;
 use {{ context.app_crate }}_api::ErasureApi;
-use {{ context.app_crate }}_api::finalize_api;
+use {{ context.app_crate }}_api::finalize_with_options;
+use {{ context.app_crate }}_api::http_options;
 use {{ context.app_crate }}_api::routes;
+use {{ context.app_crate }}_bin::BrowserSessionDependencies;
 use {{ context.app_crate }}_bin::ProductConfig;
 use {{ context.app_crate }}_bin::auth_verifier;
+use {{ context.app_crate }}_bin::browser_session_router;
 use {{ context.app_crate }}_bin::config_loader;
 use {{ context.app_crate }}_bin::identity_erasure;
 {% if context.mcp %}use {{ context.app_crate }}_bin::mcp_policy;
@@ -47,6 +50,7 @@ const PRODUCT: &str = "{{ context.app_name }}";
 const ENV_PREFIX: &str = "{{ context.app_env }}";
 {% if context.auth_enabled %}const ITEM_WRITE_GROUP: &str = "item_writes";
 const ITEM_WRITE_REQUESTS_PER_MINUTE: u64 = 30;
+const HSTS_MAX_AGE: Duration = Duration::from_secs(365 * 24 * 60 * 60);
 {% endif %}
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -100,7 +104,7 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
     )?;
     let item_service = ItemService::new(Arc::new(PostgresItemRepository::new(pool.clone())));
     let user_service = UserService::new(Arc::new(PostgresUserRepository::new(
-        pool{% if context.platform %}.clone(){% endif %},
+        pool.clone(),
         erasure_service.store().clone(),
     )));
     let verifier = auth_verifier(&config.product.auth).await?;
@@ -153,6 +157,27 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
     let api = routes(api_state);
 {% if context.auth_enabled %}    let rate_limit_options = RateLimitOptions::from_config(&config.rate_limit)?;
     let rate_limit_store = RedisRateLimitStore::connect_if_enabled(&rate_limit_options).await?;
+    let mut http = http_options(&config.http)?;
+    if config.environment != Environment::Local {
+        http = http.with_hsts(HSTS_MAX_AGE);
+    }
+    let browser_sessions = if config.product.auth.browser_session.enabled {
+        http.allow_credentials = true;
+        browser_session_router(
+            &config.product.auth.browser_session,
+            BrowserSessionDependencies {
+                issuer: &config.product.auth.issuer,
+                http: &http,
+                pool: pool.clone(),
+                rate_limit: &rate_limit_options,
+                rate_limit_store: rate_limit_store.clone(),
+                environment: config.environment,
+            },
+        )
+        .await?
+    } else {
+        None
+    };
     let api = if let Some(store) = rate_limit_store{% if context.mcp %}.clone(){% endif %} {
         let item_write_options = AuthenticatedRouteGroupOptions::new(
             ITEM_WRITE_GROUP,
@@ -176,6 +201,10 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         auth,
         baukit_auth::establish_principal,
     ));
+    let api = match browser_sessions {
+        Some(sessions) => api.merge(sessions),
+        None => api,
+    };
 {% endif %}{% if context.mcp %}    let mcp_store: Arc<dyn baukit_ratelimit::RateLimitStore> = match rate_limit_store {
         Some(store) => Arc::new(store),
         None if config.environment == Environment::Local || !config.product.mcp.enabled => {
@@ -206,7 +235,9 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
     let api = api
         .merge(platform.router)
         .layer(axum::Extension(platform.entitlements));
-{% endif %}    let api = finalize_api(api, &config.http)?;
+{% endif %}{% if context.auth_enabled %}    let api = finalize_with_options(api, http);
+{% else %}    let api = finalize_api(api, &config.http)?;
+{% endif %}
     let shutdown = ShutdownToken::new(config.shutdown.drain_timeout);
     let traffic_gate = TrafficGate::new();
     shutdown.on_drain({

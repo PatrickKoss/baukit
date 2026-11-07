@@ -47,6 +47,18 @@ worker:
   allowedHosts: [mcp.example.com]
   allowedOrigins: []
 
+{% endif %}{% if context.auth_oidc and context.web %}# The web client signs in through /auth/session (ADR 0006). The runtime Secret
+# above may not set CORS origins; browserSession.allowedOrigins owns them.
+browserSession:
+  enabled: true
+  allowedOrigins: [https://app.example.com]
+  redirectUris: [https://app.example.com/]
+  postLogoutRedirectUri: https://app.example.com/
+  publicApiOrigin: https://api.example.com
+  credentialKeysSecretRef:
+    name: {{ context.app_name }}-browser-session
+    key: keys
+
 {% endif %}{% if context.platform %}platform:
   receiverSecretRef:
     name: ""

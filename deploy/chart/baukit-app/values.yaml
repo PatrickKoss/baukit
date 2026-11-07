@@ -301,6 +301,19 @@ mcp:
   maxRequestBodyBytes: 32768
   requestsPerMinute: 60
 
+# Browser session backend-for-frontend (ADR 0006), API only. Web and API must
+# share a registrable domain. allowedOrigins becomes the CORS allowlist.
+browserSession:
+  enabled: false
+  allowedOrigins: []
+  redirectUris: []
+  postLogoutRedirectUri: ""
+  publicApiOrigin: ""
+  # Secret holding the `version:base64key,...` keyring for stored refresh tokens.
+  credentialKeysSecretRef:
+    name: ""
+    key: keys
+
 # Optional API-only hub receiver secret. Values contain references, never secrets.
 platform:
   receiverSecretRef:

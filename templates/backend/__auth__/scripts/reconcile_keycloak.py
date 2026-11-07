@@ -49,6 +49,10 @@ RECONCILABLE_REALM_FIELDS = SCOPE_REALM_FIELDS | {
     "quickLoginCheckMilliSeconds",
     "maxFailureWaitSeconds",
     "maxDeltaTimeSeconds",
+    "accessTokenLifespan",
+    "offlineSessionIdleTimeout",
+    "offlineSessionMaxLifespanEnabled",
+    "offlineSessionMaxLifespan",
 }
 
 

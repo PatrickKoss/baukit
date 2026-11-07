@@ -70,6 +70,10 @@
   "loginTheme": "baukit-accessible",
   "passwordPolicy": "length(12) and notUsername and notEmail and maxLength(128)",
   "bruteForceProtected": true,
+  "accessTokenLifespan": 300,
+  "offlineSessionIdleTimeout": 2592000,
+  "offlineSessionMaxLifespanEnabled": true,
+  "offlineSessionMaxLifespan": 7776000,
   "users": [
     {
       "username": "service-account-{{ context.app_name }}-backend",
@@ -168,14 +172,14 @@
     }{% endif %}{% if context.web %},
     {
       "clientId": "{{ context.app_name }}-web",
-      "name": "Web public PKCE client",
+      "name": "Web public PKCE client, redeemed by the backend /auth/session",
       "enabled": true,
       "publicClient": true,
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
       "redirectUris": ["http://localhost:{{ context.web_port }}/*"],
       "webOrigins": ["http://localhost:{{ context.web_port }}"],
-      "attributes": { "pkce.code.challenge.method": "S256" },
+      "attributes": { "pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "+" },
       "protocol": "openid-connect",
 {% if context.auth_oidc %}      "protocolMappers": {{ backend_audience() }}
 {% else %}      "fullScopeAllowed": false,
