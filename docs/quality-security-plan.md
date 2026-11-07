@@ -311,3 +311,10 @@ tenancy and rate-limit audit of the products (S-08).
   duplicated gate paragraph from CLAUDE.md.
 - 2026-11-07: W5-T3 (template repo-level: SHA pins, security steps, `baukit check` in the generated gate,
   managed block, AGENTS.md symlink) started.
+- 2026-11-07: W3-1 rework merged.
+  - The walker uses the `ignore` crate, so .gitignore is honoured in every rule. examples/minimal-api adopts
+    the lint baseline with real fixes.
+  - The report claimed "no new crates". In fact 7 came in (ignore, walkdir, crossbeam-*, same-file,
+    winapi-util). cargo deny is clean.
+  - Main `baukit check`: file-size, suppressions and agent-docs ok. 2 lints findings (template eslint configs,
+    T2) and 10 patterns findings (W4-B, W4-C, W4-E) remain.
