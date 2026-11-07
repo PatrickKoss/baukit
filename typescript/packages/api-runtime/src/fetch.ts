@@ -304,7 +304,8 @@ function createRequest(
 
 function createUuid(): string {
   // Runtime probe: React Native and older runtimes may lack `crypto` despite the DOM lib typing.
-  const cryptoApi = (globalThis as unknown as { readonly crypto?: Crypto }).crypto;
+  const runtime: { readonly crypto?: Crypto } = globalThis;
+  const cryptoApi = runtime.crypto;
   if (typeof cryptoApi?.randomUUID === 'function') {
     return cryptoApi.randomUUID();
   }

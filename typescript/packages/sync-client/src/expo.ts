@@ -2,6 +2,7 @@ import * as Network from 'expo-network';
 import { AppState, Platform } from 'react-native';
 
 import type { SyncSchedulerEnvironment, SyncSchedulerTimer } from './scheduler.js';
+import { createOpaqueIntervalTimers } from './timer-handles.js';
 
 export interface ExpoSyncTimers {
   setInterval(callback: () => void, milliseconds: number): SyncSchedulerTimer;
@@ -18,14 +19,12 @@ interface ExpoNetworkModule {
   addNetworkStateListener?: (listener: (state: Network.NetworkState) => void) => { remove(): void };
 }
 
-// React Native and Node return different interval handle types; the scheduler keeps them opaque.
-const defaultTimers: ExpoSyncTimers = {
-  setInterval: (callback, milliseconds) =>
-    globalThis.setInterval(callback, milliseconds) as unknown as SyncSchedulerTimer,
-  clearInterval: (handle) => {
-    globalThis.clearInterval(handle as unknown as ReturnType<typeof globalThis.setInterval>);
+const defaultTimers: ExpoSyncTimers = createOpaqueIntervalTimers({
+  setInterval: (callback, milliseconds) => globalThis.setInterval(callback, milliseconds),
+  clearInterval: (handle: ReturnType<typeof globalThis.setInterval>) => {
+    globalThis.clearInterval(handle);
   },
-};
+});
 
 function isUsableNetwork(state: Network.NetworkState): boolean {
   return state.isConnected === true && state.isInternetReachable !== false;
