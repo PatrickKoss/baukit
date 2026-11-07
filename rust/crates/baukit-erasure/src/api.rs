@@ -77,6 +77,12 @@ pub struct ClerkAccountDeleter(ApiDeleter);
 
 impl ClerkAccountDeleter {
     /// Uses a Clerk API root, normally `https://api.clerk.com/v1`.
+    ///
+    /// # Errors
+    ///
+    /// [`IdentityDeletionError::Permanent`] for an unparsable or non-HTTPS URL (HTTP only on
+    /// loopback with `allow_local_http`), a URL with credentials, query or fragment, an empty
+    /// API key, or when the egress client cannot be built.
     pub fn new(config: ApiDeletionConfig) -> Result<Self, IdentityDeletionError> {
         ApiDeleter::new(config).map(Self)
     }
@@ -97,6 +103,12 @@ pub struct WorkOsAccountDeleter(ApiDeleter);
 
 impl WorkOsAccountDeleter {
     /// Uses a WorkOS API root, normally `https://api.workos.com`.
+    ///
+    /// # Errors
+    ///
+    /// [`IdentityDeletionError::Permanent`] for an unparsable or non-HTTPS URL (HTTP only on
+    /// loopback with `allow_local_http`), a URL with credentials, query or fragment, an empty
+    /// API key, or when the egress client cannot be built.
     pub fn new(config: ApiDeletionConfig) -> Result<Self, IdentityDeletionError> {
         ApiDeleter::new(config).map(Self)
     }

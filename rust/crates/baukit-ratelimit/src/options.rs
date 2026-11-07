@@ -34,6 +34,11 @@ pub struct RateLimitOptions {
 
 impl RateLimitOptions {
     /// Converts the shared application configuration into validated runtime options.
+    ///
+    /// # Errors
+    ///
+    /// [`RateLimitOptionsError::Configuration`] when `config` fails validation, and
+    /// [`RateLimitOptionsError::Quota`] when a scope's quota is invalid.
     pub fn from_config(config: &RateLimitConfig) -> Result<Self, RateLimitOptionsError> {
         validate_config(config)?;
         Ok(Self {
@@ -118,6 +123,11 @@ pub struct AuthenticatedRouteGroupOptions {
 
 impl AuthenticatedRouteGroupOptions {
     /// Creates a route-group policy that shares the global key prefix and fail mode.
+    ///
+    /// # Errors
+    ///
+    /// [`AuthenticatedRouteGroupOptionsError::EmptyGroup`], `GroupTooLong` or `InvalidGroup` when
+    /// `group` is empty, longer than 64 bytes, or uses characters outside the allowed set.
     pub fn new(
         group: impl Into<String>,
         quota: Quota,

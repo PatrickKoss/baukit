@@ -28,6 +28,9 @@ pub struct PlatformReceiver {
     body_limit: usize,
 }
 impl PlatformReceiver {
+    /// # Errors
+    ///
+    /// `PlatformError::Invalid` when the current or previous secret is empty.
     pub fn new(
         decoder: PlatformEventDecoder,
         current_secret: Secret<String>,
@@ -57,6 +60,9 @@ impl PlatformReceiver {
         self.clock = clock;
         self
     }
+    /// # Errors
+    ///
+    /// `PlatformError::Invalid` when `body_limit` is 0.
     pub fn with_body_limit(mut self, body_limit: usize) -> Result<Self, PlatformError> {
         if body_limit == 0 {
             return Err(PlatformError::Invalid);

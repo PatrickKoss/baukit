@@ -175,6 +175,12 @@ impl Entitlements {
             mode: EntitlementMode::Standalone(default),
         }
     }
+    /// # Errors
+    ///
+    /// `PlatformError::Unavailable` in hub mode when the source fails with anything but
+    /// `NoEntitlements`, or returns a snapshot that is invalid, already expired, for another
+    /// subject or product, or older than the cached revision, or when the snapshot is gone after
+    /// the store. Cache read and write errors pass through. Standalone mode never fails.
     pub async fn current(
         &self,
         subject: &str,
@@ -231,6 +237,9 @@ impl Entitlements {
             })),
         }
     }
+    /// # Errors
+    ///
+    /// The errors of [`Self::current`].
     pub async fn has_entitlement(
         &self,
         subject: &str,
@@ -242,6 +251,9 @@ impl Entitlements {
             .await?
             .is_some_and(|s| s.features.iter().any(|f| f == feature)))
     }
+    /// # Errors
+    ///
+    /// The errors of [`Self::current`].
     pub async fn has_tier(
         &self,
         subject: &str,

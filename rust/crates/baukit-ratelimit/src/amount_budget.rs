@@ -71,6 +71,10 @@ impl FixedWindow {
     }
 
     /// Creates a duration window aligned to the Unix epoch.
+    ///
+    /// # Errors
+    ///
+    /// [`FixedWindowError::ZeroDuration`] when `duration` is zero.
     pub fn duration(duration: Duration) -> Result<Self, FixedWindowError> {
         if duration.is_zero() {
             return Err(FixedWindowError::ZeroDuration);
@@ -115,6 +119,12 @@ pub struct FixedWindowBudgetOptions {
 
 impl FixedWindowBudgetOptions {
     /// Creates options for one configured budget namespace.
+    ///
+    /// # Errors
+    ///
+    /// [`FixedWindowBudgetOptionsError::EmptyNamespace`], `NamespaceTooLong` or
+    /// `InvalidNamespace` when `namespace` is empty, too long, or has characters outside
+    /// ASCII alphanumerics, `_`, `-` and `.`.
     pub fn new(
         namespace: impl Into<String>,
         window: FixedWindow,

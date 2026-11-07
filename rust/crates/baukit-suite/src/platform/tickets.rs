@@ -104,6 +104,11 @@ fn grace<'de, D: Deserializer<'de>>(d: D) -> Result<Option<i64>, D::Error> {
     i64::deserialize(d).map(Some)
 }
 impl TicketClaims {
+    /// # Errors
+    ///
+    /// `TicketError::Invalid` when a required claim is empty, the issuer differs, the revision or
+    /// billing is invalid, or `iat`/`exp` are inconsistent or exceed the maximum lifetime.
+    /// `Expired` when `exp` has passed, `WrongAudience` when `aud` differs.
     pub fn verify_claims(&self, issuer: &str, audience: &str, now: i64) -> Result<(), TicketError> {
         if self.iss.is_empty()
             || self.iss != issuer
@@ -239,6 +244,12 @@ impl<'a> ParsedTicket<'a> {
 }
 
 /// Offline verification with an already trusted public-key set.
+///
+/// # Errors
+///
+/// `TicketError::Invalid` when the ticket is malformed, the JWKS has too many, empty or duplicate
+/// key ids, the key id is unknown, the key is not an Ed25519 signing key, the signature fails or
+/// the payload does not parse. Claim errors from [`TicketClaims::verify_claims`] pass through.
 pub fn verify_ticket(
     ticket: &str,
     jwks: &TicketJwks,
@@ -266,6 +277,10 @@ pub struct GuardedJwksSource {
     client: GuardedClient,
 }
 impl GuardedJwksSource {
+    /// # Errors
+    ///
+    /// `TicketError::Invalid` when `url` is not an HTTP(S) URL with a host and no credentials or
+    /// fragment.
     pub fn new(url: &str, client: GuardedClient) -> Result<Self, TicketError> {
         let url = Url::parse(url).map_err(|_| TicketError::Invalid)?;
         if !matches!(url.scheme(), "http" | "https")
@@ -309,6 +324,10 @@ pub struct TicketVerifier {
     refresh: Arc<Mutex<()>>,
 }
 impl TicketVerifier {
+    /// # Errors
+    ///
+    /// `TicketError::Invalid` when `jwks_url` is rejected by [`GuardedJwksSource::new`] or the
+    /// issuer or product id is empty.
     pub fn new(
         issuer: String,
         product_id: String,
@@ -321,6 +340,9 @@ impl TicketVerifier {
             Arc::new(GuardedJwksSource::new(jwks_url, client)?),
         )
     }
+    /// # Errors
+    ///
+    /// `TicketError::Invalid` when `issuer` or `product_id` is empty.
     pub fn with_source(
         issuer: String,
         product_id: String,
@@ -344,9 +366,18 @@ impl TicketVerifier {
             .filter(|at| at.elapsed() < JWKS_TTL)
             .and_then(|_| cache.keys.get(kid).cloned())
     }
+    /// # Errors
+    ///
+    /// The errors of [`Self::verify_at`].
     pub async fn verify(&self, ticket: &str) -> Result<TicketClaims, TicketError> {
         self.verify_at(ticket, chrono::Utc::now().timestamp()).await
     }
+    /// # Errors
+    ///
+    /// `TicketError::KeysUnavailable` when the key set fetch fails or returns an invalid set, or a
+    /// stale cache was refreshed within the cooldown. `Invalid` when the ticket is malformed or its
+    /// key id stays unknown after a refresh. Key, signature and claim errors as in
+    /// [`verify_ticket`].
     pub async fn verify_at(&self, ticket: &str, now: i64) -> Result<TicketClaims, TicketError> {
         let parsed = ParsedTicket::parse(ticket)?;
         if let Some(key) = self.cached_key(&parsed.kid).await {

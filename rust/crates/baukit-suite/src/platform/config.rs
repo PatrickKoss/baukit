@@ -98,6 +98,9 @@ impl PlatformConfig {
     pub fn standalone(&self) -> bool {
         self.hub_issuer.is_none()
     }
+    /// # Errors
+    ///
+    /// `ValidationErrors` when the config is invalid, or when hub mode has no `source`.
     pub fn entitlements(
         &self,
         cache: Arc<dyn super::EntitlementCache>,
@@ -123,6 +126,11 @@ impl PlatformConfig {
         })
     }
     /// `ZeroCostCredits` in standalone mode, otherwise `HubCredits` through `hub`.
+    ///
+    /// # Errors
+    ///
+    /// `ValidationErrors` when the config is invalid, or in hub mode when `hub` is missing or uses a
+    /// product id other than `platform.product_id`.
     pub fn credits(
         &self,
         hub: Option<Arc<super::HubClient>>,
@@ -147,6 +155,10 @@ impl PlatformConfig {
         }
         Ok(Arc::new(super::HubCredits::new(hub)))
     }
+    /// # Errors
+    ///
+    /// `ValidationErrors` when the config is invalid or a receiver secret is set but the source app,
+    /// event type prefix or a secret is empty or malformed.
     pub fn receiver(
         &self,
         inbox: Arc<dyn PlatformInbox>,
@@ -183,6 +195,11 @@ impl PlatformConfig {
             .transpose()
     }
     /// The caller supplies the guarded client's public, local or private-network policy.
+    ///
+    /// # Errors
+    ///
+    /// `ValidationErrors` when the config is invalid or the issuer, product id or JWKS URL is
+    /// rejected by [`TicketVerifier::new`].
     pub fn ticket_verifier(
         &self,
         client: baukit_egress::GuardedClient,

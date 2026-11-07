@@ -43,6 +43,11 @@ struct Security {
 /// for revocation and expiry on every request. `config.issuer` names the OAuth
 /// authorization server in discovery.
 /// The rate-limit store may be shared Redis.
+///
+/// # Errors
+///
+/// The errors of [`McpConfig::validate`], [`McpConfigError::Invalid`] for duplicate or invalid
+/// service definitions, and [`McpConfigError::Quota`] for an invalid rate-limit quota.
 pub async fn router(
     config: McpConfig,
     verifier: Arc<dyn IdentityVerifier>,

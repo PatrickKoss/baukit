@@ -67,6 +67,12 @@ pub struct FieldSpec<'a> {
     pub kind: FieldKind<'a>,
 }
 
+/// # Errors
+///
+/// `PayloadError::TooManyKeys` past 32 keys, `InvalidKey` for a key that is not lower camel
+/// ASCII up to 64 bytes, `NullValue` for a null, `UnknownField` for a key not in `fields`,
+/// `InvalidType`, `OutOfBounds` or `InvalidValue` when a value does not match its kind, and
+/// `MissingField` when a required field is absent.
 pub fn validate_fields(
     payload: &Map<String, Value>,
     fields: &[FieldSpec<'_>],
@@ -166,6 +172,10 @@ fn parse_civil_date(value: &str) -> Option<NaiveDate> {
     (date.format("%Y-%m-%d").to_string() == value).then_some(date)
 }
 
+/// # Errors
+///
+/// The deserializer's error when the value is not an `i64`, lies outside `MIN..=MAX`, or does
+/// not fit `T`.
 pub fn integer<'de, D: Deserializer<'de>, T: TryFrom<i64>, const MIN: i64, const MAX: i64>(
     deserializer: D,
 ) -> Result<T, D::Error> {

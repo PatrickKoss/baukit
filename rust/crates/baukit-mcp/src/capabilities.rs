@@ -248,6 +248,11 @@ pub(crate) fn validate_prompts(prompts: &[ScopedPrompt]) -> Result<(), McpConfig
 }
 
 /// Exports resource metadata, URI templates and their grants for committed drift checks.
+///
+/// # Errors
+///
+/// [`McpConfigError::Invalid`] for a duplicate URI, template or name, a non-absolute or
+/// templated resource URI, a malformed template, or invalid required scopes.
 pub fn resource_schema(
     resources: &[ScopedResource],
     templates: &[ScopedResourceTemplate],
@@ -262,6 +267,11 @@ pub fn resource_schema(
 }
 
 /// Exports prompt metadata, arguments and grants for committed drift checks.
+///
+/// # Errors
+///
+/// [`McpConfigError::Invalid`] for a duplicate prompt name, invalid required scopes, or
+/// duplicate argument names within a prompt.
 pub fn prompt_schema(prompts: &[ScopedPrompt]) -> Result<Value, McpConfigError> {
     validate_prompts(prompts)?;
     Ok(json!({
@@ -271,6 +281,11 @@ pub fn prompt_schema(prompts: &[ScopedPrompt]) -> Result<Value, McpConfigError> 
 }
 
 /// Exports all product definitions, including empty optional registries.
+///
+/// # Errors
+///
+/// [`McpConfigError::Invalid`] under the rules of [`crate::tool_schema`], [`resource_schema`]
+/// and [`prompt_schema`].
 pub fn capability_schema(
     tools: &[ScopedTool],
     resources: &[ScopedResource],
@@ -283,6 +298,10 @@ pub fn capability_schema(
 }
 
 /// Exports the definitions registered by a product's composed services.
+///
+/// # Errors
+///
+/// [`McpConfigError::Invalid`] under the rules of [`capability_schema`].
 pub fn service_schema(services: &McpServices) -> Result<Value, McpConfigError> {
     let resources = &services.resources;
     let prompts = &services.prompts;

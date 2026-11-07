@@ -16,6 +16,10 @@ pub struct ReqwestSuitePeerClient {
     client: GuardedClient,
 }
 impl ReqwestSuitePeerClient {
+    /// # Errors
+    ///
+    /// `EgressClientError` when reqwest cannot build the guarded HTTP client, for example when the
+    /// TLS backend fails to initialize.
     pub fn new(allow_loopback: bool) -> Result<Self, EgressClientError> {
         let options = if allow_loopback {
             EgressOptions::default().with_policy(AddressPolicy::AllowLoopback)

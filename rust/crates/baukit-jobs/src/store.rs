@@ -5,8 +5,15 @@ use sqlx::{PgConnection, PgPool, Postgres, Row as _, Transaction};
 use uuid::Uuid;
 
 use crate::{
-    CancellationOutcome, ClaimedJob, EnqueueOutcome, FailureDisposition, Job, JobFailureReason,
-    JobStatus, NewJob, StoreError, TerminalJobCleanupOutcome, TerminalJobCutoffs,
+    CancellationOutcome, ClaimedJob, EnqueueOutcome, FailureDisposition, Job, JobStatus, NewJob,
+    StoreError, TerminalJobCleanupOutcome, TerminalJobCutoffs,
+};
+
+mod validation;
+
+use validation::{
+    bound_error, parse_failure_reason, parse_status, status_name, validate_deduplicated_job,
+    validate_job_types, validate_new_job, validate_text, validate_worker_id,
 };
 
 const MAX_JOB_TYPE_LENGTH: usize = 200;
@@ -154,6 +161,12 @@ impl PostgresJobStore {
     ///
     /// Use this with a domain mutation to implement the transactional outbox
     /// pattern. The transaction remains owned by the caller.
+    ///
+    /// # Errors
+    ///
+    /// [`StoreError::InvalidInput`] when the job fails validation or `max_attempts` exceeds
+    /// `i32::MAX`, [`StoreError::Database`] when the insert fails, and
+    /// [`StoreError::InvalidData`] when the stored row does not decode.
     pub async fn enqueue_in_transaction(
         &self,
         transaction: &mut PgConnection,
@@ -171,6 +184,13 @@ impl PostgresJobStore {
     /// an idempotency key. Apply migration 0004 before using this method.
     ///
     /// The store commits its transaction even if the caller is cancelled.
+    ///
+    /// # Errors
+    ///
+    /// [`StoreError::InvalidInput`] when the job or `dedupe_key` fails validation or
+    /// `max_attempts` exceeds `i32::MAX`, [`StoreError::Database`] when the transaction fails,
+    /// [`StoreError::InvalidData`] when the stored row does not decode, and
+    /// [`StoreError::Task`] when the owned store task panics or is aborted.
     pub async fn enqueue_deduplicated(
         &self,
         job: NewJob,
@@ -187,6 +207,13 @@ impl PostgresJobStore {
     /// uses a separate key column from [`Self::enqueue_deduplicated`]; the same
     /// type and key in different modes do not deduplicate each other.
     /// Key validation and transaction ownership follow that method's rules.
+    ///
+    /// # Errors
+    ///
+    /// [`StoreError::InvalidInput`] when the job or `dedupe_key` fails validation or
+    /// `max_attempts` exceeds `i32::MAX`, [`StoreError::Database`] when the transaction fails,
+    /// [`StoreError::InvalidData`] when the stored row does not decode, and
+    /// [`StoreError::Task`] when the owned store task panics or is aborted.
     pub async fn enqueue_pending_deduplicated(
         &self,
         job: NewJob,
@@ -222,6 +249,13 @@ impl PostgresJobStore {
     /// keep the transaction short. The caller owns transaction completion.
     /// At repeatable read or serializable isolation, retry the whole transaction
     /// if PostgreSQL reports a serialization failure.
+    ///
+    /// # Errors
+    ///
+    /// [`StoreError::InvalidInput`] when the job or `dedupe_key` fails validation or
+    /// `max_attempts` exceeds `i32::MAX`, [`StoreError::Database`] when a statement fails,
+    /// including serialization failures, and [`StoreError::InvalidData`] when the stored row
+    /// does not decode.
     pub async fn enqueue_deduplicated_in_transaction(
         &self,
         transaction: &mut PgConnection,
@@ -238,6 +272,13 @@ impl PostgresJobStore {
     /// pending row locked until commit or rollback. Keep the transaction short.
     /// At repeatable read or serializable isolation, retry the whole transaction
     /// if PostgreSQL reports a serialization failure.
+    ///
+    /// # Errors
+    ///
+    /// [`StoreError::InvalidInput`] when the job or `dedupe_key` fails validation or
+    /// `max_attempts` exceeds `i32::MAX`, [`StoreError::Database`] when a statement fails,
+    /// including serialization failures, and [`StoreError::InvalidData`] when the stored row
+    /// does not decode.
     pub async fn enqueue_pending_deduplicated_in_transaction(
         &self,
         transaction: &mut PgConnection,
@@ -252,6 +293,11 @@ impl PostgresJobStore {
     ///
     /// Product writes performed earlier in the transaction and this lease-owned
     /// transition commit or roll back together.
+    ///
+    /// # Errors
+    ///
+    /// [`StoreError::InvalidInput`] for an invalid `worker_id` and [`StoreError::Database`]
+    /// when the update fails.
     pub async fn complete_in_transaction(
         &self,
         transaction: &mut Transaction<'_, Postgres>,
@@ -279,6 +325,11 @@ impl PostgresJobStore {
     /// cancellation or reclaim waits for that lock; claim's `SKIP LOCKED`
     /// selection skips the row. Time can still pass beyond the lease deadline,
     /// so completion must check the lease again using a fresh timestamp.
+    ///
+    /// # Errors
+    ///
+    /// [`StoreError::InvalidInput`] for an invalid `worker_id` and [`StoreError::Database`]
+    /// when the query fails.
     pub async fn check_lease_in_transaction(
         &self,
         transaction: &mut Transaction<'_, Postgres>,
@@ -307,6 +358,12 @@ impl PostgresJobStore {
     /// Only `job_type` matches are changed. Pending jobs become cancelled with
     /// locks cleared. Running jobs retain their lease and receive a cancellation
     /// request for the runner to finish. Terminal jobs stay untouched.
+    ///
+    /// # Errors
+    ///
+    /// [`StoreError::InvalidInput`] for a blank or overlong `job_type` or `key`,
+    /// [`StoreError::Database`] when the update fails, and [`StoreError::InvalidData`] for an
+    /// unknown returned status.
     pub async fn request_cancellation_by_key_in_transaction(
         &self,
         transaction: &mut Transaction<'_, Postgres>,
@@ -324,6 +381,12 @@ impl PostgresJobStore {
     /// The prefix must contain 1 to 500 characters and cannot be blank. `%` and
     /// `_` match literally. Only jobs of `job_type` are changed, using the same
     /// lifecycle as [`Self::request_cancellation_by_key_in_transaction`].
+    ///
+    /// # Errors
+    ///
+    /// [`StoreError::InvalidInput`] for a blank or overlong `job_type` or `prefix`,
+    /// [`StoreError::Database`] when the update fails, and [`StoreError::InvalidData`] for an
+    /// unknown returned status.
     pub async fn request_cancellation_by_key_prefix_in_transaction(
         &self,
         transaction: &mut Transaction<'_, Postgres>,
@@ -344,6 +407,12 @@ impl PostgresJobStore {
     /// configured with [`Self::retain_failed_kinds`] are ineligible when failed.
     /// Pending and running jobs are never eligible, including running jobs
     /// whose lease has expired. Concurrently locked rows are skipped.
+    ///
+    /// # Errors
+    ///
+    /// [`StoreError::InvalidInput`] when `batch_size` is zero or above the maximum,
+    /// [`StoreError::Database`] when the delete fails, and [`StoreError::InvalidData`] for an
+    /// unknown returned status.
     pub async fn cleanup_terminal_jobs(
         &self,
         cutoffs: TerminalJobCutoffs,
@@ -832,98 +901,6 @@ fn row_to_job(row: &sqlx::postgres::PgRow) -> Result<Job, StoreError> {
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
     })
-}
-
-fn validate_deduplicated_job(job: &NewJob, dedupe_key: &str) -> Result<(), StoreError> {
-    validate_new_job(job)?;
-    validate_text("dedupe_key", dedupe_key, MAX_DEDUPE_KEY_LENGTH)?;
-    if job.idempotency_key.is_some() {
-        return Err(StoreError::InvalidInput(
-            "job deduplication cannot be combined with an idempotency key".to_owned(),
-        ));
-    }
-    Ok(())
-}
-
-fn validate_new_job(job: &NewJob) -> Result<(), StoreError> {
-    validate_text("job_type", &job.job_type, MAX_JOB_TYPE_LENGTH)?;
-    if job.max_attempts == 0 {
-        return Err(StoreError::InvalidInput(
-            "max_attempts must be greater than zero".to_owned(),
-        ));
-    }
-    if let Some(key) = &job.idempotency_key {
-        validate_text("idempotency_key", key, MAX_IDEMPOTENCY_KEY_LENGTH)?;
-    }
-    Ok(())
-}
-
-fn validate_job_types(job_types: &[&str]) -> Result<(), StoreError> {
-    if job_types.is_empty() {
-        return Err(StoreError::InvalidInput(
-            "job_types must contain at least one job type".to_owned(),
-        ));
-    }
-    job_types
-        .iter()
-        .try_for_each(|job_type| validate_text("job_type", job_type, MAX_JOB_TYPE_LENGTH))
-}
-
-fn validate_worker_id(worker_id: &str) -> Result<(), StoreError> {
-    validate_text("worker_id", worker_id, MAX_WORKER_ID_LENGTH)
-}
-
-fn validate_text(name: &str, value: &str, max: usize) -> Result<(), StoreError> {
-    let length = value.chars().count();
-    if value.trim().is_empty() || length > max {
-        Err(StoreError::InvalidInput(format!(
-            "{name} must contain 1 to {max} characters"
-        )))
-    } else {
-        Ok(())
-    }
-}
-
-fn bound_error(error: &str) -> String {
-    let bounded = error.trim();
-    if bounded.is_empty() {
-        "job failed without an error message".to_owned()
-    } else {
-        bounded.chars().take(MAX_ERROR_LENGTH).collect()
-    }
-}
-
-fn status_name(status: JobStatus) -> &'static str {
-    match status {
-        JobStatus::Pending => "pending",
-        JobStatus::Running => "running",
-        JobStatus::Succeeded => "succeeded",
-        JobStatus::Failed => "failed",
-        JobStatus::Cancelled => "cancelled",
-    }
-}
-
-fn parse_status(status: &str) -> Result<JobStatus, StoreError> {
-    match status {
-        "pending" => Ok(JobStatus::Pending),
-        "running" => Ok(JobStatus::Running),
-        "succeeded" => Ok(JobStatus::Succeeded),
-        "failed" => Ok(JobStatus::Failed),
-        "cancelled" => Ok(JobStatus::Cancelled),
-        value => Err(StoreError::InvalidData(format!(
-            "unknown job status `{value}`"
-        ))),
-    }
-}
-
-fn parse_failure_reason(reason: &str) -> Result<JobFailureReason, StoreError> {
-    match reason {
-        "permanent" => Ok(JobFailureReason::Permanent),
-        "attempts_exhausted" => Ok(JobFailureReason::AttemptsExhausted),
-        value => Err(StoreError::InvalidData(format!(
-            "unknown job failure reason `{value}`"
-        ))),
-    }
 }
 
 impl From<sqlx::Error> for StoreError {

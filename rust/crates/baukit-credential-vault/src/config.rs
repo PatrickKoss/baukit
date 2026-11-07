@@ -42,6 +42,10 @@ impl CredentialVaultConfig {
     }
 
     /// Builds the cipher, or `None` when no keyring is configured.
+    ///
+    /// # Errors
+    ///
+    /// [`CredentialVaultError::InvalidConfiguration`] when the configured keyring does not parse.
     pub fn cipher(&self) -> Result<Option<CredentialCipher>, CredentialVaultError> {
         if !self.is_enabled() {
             return Ok(None);
