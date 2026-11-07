@@ -3,7 +3,7 @@ use std::{error::Error, sync::Arc};
 use axum::{
     Router,
     body::{Body, to_bytes},
-    http::{HeaderMap, Method, Request, StatusCode, header},
+    http::{HeaderMap, HeaderValue, Method, Request, StatusCode, header},
 };
 use baukit_config::HttpConfig;
 use baukit_ops::TrafficGate;
@@ -38,48 +38,73 @@ async fn service_contract() -> TestResult {
         traffic_gate.clone(),
     )?;
 
+    assert_note_lifecycle(&api).await?;
+    assert_error_envelopes(&api).await?;
+    assert_not_found_and_failure_envelopes(&api).await?;
+    assert_operations(&operations, &traffic_gate).await?;
+
+    telemetry.shutdown()?;
+    Ok(())
+}
+
+async fn assert_note_lifecycle(api: &Router) -> TestResult {
     let (status, headers, body) = call(
-        &api,
+        api,
         json_request(
             Method::POST,
             "/notes",
-            json!({"title": "First", "body": "A small note"}),
+            &json!({"title": "First", "body": "A small note"}),
             Some("request-create-1"),
         )?,
     )
     .await?;
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(headers["x-request-id"], "request-create-1");
-    assert_eq!(json_body(&body)?["id"], 1);
+    assert_eq!(request_id(&headers)?, Some("request-create-1"));
+    assert_eq!(json_body(&body)?.pointer("/id"), Some(&json!(1)));
 
-    let (status, _, body) = call(&api, empty_request(Method::GET, "/notes/1")?).await?;
+    let (status, _, body) = call(api, empty_request(Method::GET, "/notes/1")?).await?;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(json_body(&body)?["title"], "First");
+    assert_eq!(json_body(&body)?.pointer("/title"), Some(&json!("First")));
 
-    let (status, _, body) = call(&api, empty_request(Method::GET, "/notes")?).await?;
+    let (status, _, body) = call(api, empty_request(Method::GET, "/notes")?).await?;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(json_body(&body)?.as_array().map(Vec::len), Some(1));
+    Ok(())
+}
 
+async fn assert_error_envelopes(api: &Router) -> TestResult {
     let (status, headers, body) = call(
-        &api,
+        api,
         json_request(
             Method::POST,
             "/notes",
-            json!({"title": "  ", "body": "invalid"}),
+            &json!({"title": "  ", "body": "invalid"}),
             Some("request-validation-1"),
         )?,
     )
     .await?;
     let validation = json_body(&body)?;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(headers["x-request-id"], "request-validation-1");
-    assert_eq!(validation["error"]["code"], "validation_failed");
-    assert_eq!(validation["error"]["message"], "The request is invalid");
-    assert_eq!(validation["error"]["requestId"], "request-validation-1");
-    assert_eq!(validation["error"]["details"]["title"], "must not be empty");
+    assert_eq!(request_id(&headers)?, Some("request-validation-1"));
+    assert_eq!(
+        validation.pointer("/error/code"),
+        Some(&json!("validation_failed"))
+    );
+    assert_eq!(
+        validation.pointer("/error/message"),
+        Some(&json!("The request is invalid"))
+    );
+    assert_eq!(
+        validation.pointer("/error/requestId"),
+        Some(&json!("request-validation-1"))
+    );
+    assert_eq!(
+        validation.pointer("/error/details/title"),
+        Some(&json!("must not be empty"))
+    );
 
     let (status, _, body) = call(
-        &api,
+        api,
         Request::builder()
             .method(Method::POST)
             .uri("/notes")
@@ -88,59 +113,79 @@ async fn service_contract() -> TestResult {
     )
     .await?;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(json_body(&body)?["error"]["code"], "invalid_json");
+    assert_eq!(
+        json_body(&body)?.pointer("/error/code"),
+        Some(&json!("invalid_json"))
+    );
 
+    Ok(())
+}
+
+async fn assert_not_found_and_failure_envelopes(api: &Router) -> TestResult {
     let (status, headers, body) = call(
-        &api,
+        api,
         empty_request_with_id(Method::GET, "/notes/404", "request-missing-1")?,
     )
     .await?;
     let missing = json_body(&body)?;
     assert_eq!(status, StatusCode::NOT_FOUND);
-    assert_eq!(headers["x-request-id"], "request-missing-1");
-    assert_eq!(missing["error"]["code"], "not_found");
-    assert_eq!(missing["error"]["requestId"], "request-missing-1");
-    assert_eq!(missing["error"]["details"], json!({}));
+    assert_eq!(request_id(&headers)?, Some("request-missing-1"));
+    assert_eq!(missing.pointer("/error/code"), Some(&json!("not_found")));
+    assert_eq!(
+        missing.pointer("/error/requestId"),
+        Some(&json!("request-missing-1"))
+    );
+    assert_eq!(missing.pointer("/error/details"), Some(&json!({})));
 
     let (status, _, body) = call(
-        &api,
+        api,
         empty_request_with_id(Method::GET, "/missing-route", "request-route-1")?,
     )
     .await?;
     assert_eq!(status, StatusCode::NOT_FOUND);
-    assert_eq!(json_body(&body)?["error"]["requestId"], "request-route-1");
+    assert_eq!(
+        json_body(&body)?.pointer("/error/requestId"),
+        Some(&json!("request-route-1"))
+    );
 
     let (status, _, body) = call(
-        &api,
+        api,
         empty_request_with_id(Method::GET, "/fail", "request-fail-1")?,
     )
     .await?;
     let deliberate_failure = json_body(&body)?;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(
-        deliberate_failure["error"]["details"]["example"],
-        "this endpoint always fails"
+        deliberate_failure.pointer("/error/details/example"),
+        Some(&json!("this endpoint always fails"))
     );
+    Ok(())
+}
 
-    let (status, _, body) = call(&operations, empty_request(Method::GET, "/healthz")?).await?;
+async fn assert_operations(operations: &Router, traffic_gate: &TrafficGate) -> TestResult {
+    let (status, _, body) = call(operations, empty_request(Method::GET, "/healthz")?).await?;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(json_body(&body)?, json!({"status": "ok"}));
 
-    let (status, _, body) = call(&operations, empty_request(Method::GET, "/readyz")?).await?;
+    let (status, _, body) = call(operations, empty_request(Method::GET, "/readyz")?).await?;
     assert_eq!(status, StatusCode::OK);
     let readiness = json_body(&body)?;
-    assert_eq!(readiness["status"], "ready");
-    assert_eq!(readiness["accepting_traffic"], true);
-    assert_eq!(readiness["checks"][0]["name"], "accepting_traffic");
-    assert_eq!(readiness["checks"][1]["name"], "state");
+    assert_eq!(readiness.pointer("/status"), Some(&json!("ready")));
+    assert_eq!(readiness.pointer("/accepting_traffic"), Some(&json!(true)));
+    assert_eq!(
+        readiness.pointer("/checks/0/name"),
+        Some(&json!("accepting_traffic"))
+    );
+    assert_eq!(readiness.pointer("/checks/1/name"), Some(&json!("state")));
 
-    let (status, headers, body) =
-        call(&operations, empty_request(Method::GET, "/metrics")?).await?;
+    let (status, headers, body) = call(operations, empty_request(Method::GET, "/metrics")?).await?;
     assert_eq!(status, StatusCode::OK);
     assert!(
-        headers[header::CONTENT_TYPE]
-            .to_str()?
-            .starts_with("text/plain")
+        headers
+            .get(header::CONTENT_TYPE)
+            .map(HeaderValue::to_str)
+            .transpose()?
+            .is_some_and(|content_type| content_type.starts_with("text/plain"))
     );
     let metrics = String::from_utf8(body)?;
     for metric in [
@@ -156,11 +201,12 @@ async fn service_contract() -> TestResult {
     assert!(metrics.contains("status=\"404\""));
 
     traffic_gate.stop_accepting();
-    let (status, _, body) = call(&operations, empty_request(Method::GET, "/readyz")?).await?;
+    let (status, _, body) = call(operations, empty_request(Method::GET, "/readyz")?).await?;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(json_body(&body)?["status"], "not_ready");
-
-    telemetry.shutdown()?;
+    assert_eq!(
+        json_body(&body)?.pointer("/status"),
+        Some(&json!("not_ready"))
+    );
     Ok(())
 }
 
@@ -190,7 +236,7 @@ async fn call(
 fn json_request(
     method: Method,
     uri: &str,
-    body: Value,
+    body: &Value,
     request_id: Option<&str>,
 ) -> Result<Request<Body>, Box<dyn Error>> {
     let mut builder = Request::builder()
@@ -200,7 +246,7 @@ fn json_request(
     if let Some(request_id) = request_id {
         builder = builder.header("x-request-id", request_id);
     }
-    Ok(builder.body(Body::from(serde_json::to_vec(&body)?))?)
+    Ok(builder.body(Body::from(serde_json::to_vec(body)?))?)
 }
 
 fn empty_request(method: Method, uri: &str) -> Result<Request<Body>, Box<dyn Error>> {
@@ -220,6 +266,13 @@ fn empty_request_with_id(
         .uri(uri)
         .header("x-request-id", request_id)
         .body(Body::empty())?)
+}
+
+fn request_id(headers: &HeaderMap) -> Result<Option<&str>, header::ToStrError> {
+    headers
+        .get("x-request-id")
+        .map(HeaderValue::to_str)
+        .transpose()
 }
 
 fn json_body(body: &[u8]) -> Result<Value, serde_json::Error> {
