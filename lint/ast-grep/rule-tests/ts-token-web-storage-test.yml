@@ -1,0 +1,28 @@
+id: ts-token-web-storage
+valid:
+  - |
+    localStorage.setItem("theme", theme);
+  - |
+    sessionStorage.getItem("accessToken");
+  - |
+    map.put("token", value);
+  - |
+    cache.setItem("token", t);
+  - |
+    import Dexie from "dexie";
+    await db.sessionEvents.put(event);
+  - |
+    import Dexie from "dexie";
+    await db.search.put({ keys: searchTokens(row) });
+  - |
+    globalThis.sessionStorage.setItem(KEY, JSON.stringify(session));
+invalid:
+  - |
+    localStorage.setItem("accessToken", token);
+  - |
+    window.sessionStorage.setItem(KEY, session.refresh);
+  - |
+    localStorage.setItem("auth", JSON.stringify({ jwt }));
+  - |
+    import Dexie from "dexie";
+    await db.credentials.put({ id: 1, refreshToken });

@@ -68,6 +68,7 @@ Verified findings only. IDs point into the reports.
 | S-09 | No fuzz or property tests in baukit | 0 fuzz targets, 0 proptest; kassensturz is prior art | cargo-fuzz targets + proptest, time-boxed `fuzz` gate step |
 | S-10 | No threat models | none in baukit; 3 products mention the term only | `baukit-threat-model` skill + `docs/threat-model.md` per repo |
 | S-11 | No reusable auth negative tests | each product writes its own or none | `baukit-test` suite: expired, wrong iss/aud, alg none, HS256 confusion, unknown kid, tampered payload |
+| S-12 | Template demo resource has no owner | `templates/backend/backend/migrations/0001_create_items.sql`: global `items` table, every authenticated user can list, rename and delete all rows. Routes still live in kassensturz, lesezeichen, schluesselbund; dead table left in eigenruhe, leitbild, tiefgang (W1-I) | template example scoped by the authenticated principal with a cross-tenant test, so the pattern agents copy is the safe one; products delete or scope `items` |
 
 Checked and sound (do not re-review): JWT algorithm allowlist and kid/exp checks, constant-time compares,
 credential vault (AES-256-GCM, random nonces, AAD), njs media-grant verifier, MCP origin + bearer checks,
@@ -110,11 +111,12 @@ tenancy and rate-limit audit of the products (S-08).
   Acceptance: `make ci` green with `-D warnings`, no new `#[allow]`, each `#[expect]` has a reason.
 - [ ] P1.2 `missing_errors_doc` on core, http, config, auth first, then the rest (255 docs).
 - [~] P1.3 cargo-deny: `allow-wildcard-paths`, full `check` for `rust/`, new `cli/deny.toml`, template `deny.toml`.
-- [ ] P1.4 `baukit check` subcommand framework in the CLI, with rules:
+- [ ] P1.4 `baukit check` subcommand framework (also: `patterns` runs lint/ast-grep with ast-grep 0.51.1, skips
+  `vendor/`, `target/`, `node_modules`, and rejects `ast-grep-ignore` comments without a `-- reason`) in the CLI, with rules:
   `lints` (baseline subset check for Cargo lint tables and clippy.toml), `file-size` (Rust/TS, shrinking
   allowlist in `baukit.toml`), `agent-docs` (Q-09), `template-files` (Q-07). Unit + CLI tests.
   Wired into `baukit doctor` and the template quality gate.
-- [ ] P1.5 ast-grep rules with tests: `as unknown as` outside tests, `derive(Debug)` on secret-named fields,
+- [x] P1.5 (rules merged; CLI wiring is P1.4) ast-grep rules with tests: `as unknown as` outside tests, `derive(Debug)` on secret-named fields,
   `format!` starting with an SQL keyword, raw `reqwest::Client` outside adapters, `localStorage.setItem` with
   token-named keys. `baukit check patterns` runs them.
 - [~] P1.6 `@baukit/eslint-config` package: typescript-eslint strictTypeChecked, react-hooks, jsx-a11y (web),
@@ -131,10 +133,10 @@ tenancy and rate-limit audit of the products (S-08).
 
 ## Phase 2. Security tooling, tests and skills
 
-- [ ] P2.1 `SecurityHeadersLayer` in baukit-http on by default (nosniff, Referrer-Policy, frame-ancestors via
+- [~] P2.1 (baukit-http layer merged in W2-2; web CSP, chart edge config, HSTS config field and fixture header checks wait for the template wave) `SecurityHeadersLayer` in baukit-http on by default (nosniff, Referrer-Policy, frame-ancestors via
   CSP for HTML, `Cache-Control: no-store` on authenticated JSON, HSTS behind config); CSP for the web template
   and the chart's edge config; header assertions in the fixture gate.
-- [ ] P2.2 (design: ADR 0006 accepted; implementation = its 4 tasks) auth-web token storage per D2, with a test that no storage write contains a refresh token.
+- [~] P2.2 (ADR task 2 headers merged; W2-1 baukit-auth BFF running; auth-web waits for W1-C; design: ADR 0006 accepted; implementation = its 4 tasks) auth-web token storage per D2, with a test that no storage write contains a refresh token.
 - [ ] P2.3 `IssuedApiToken` and every secret-holding type: redacting Debug / `SecretString`.
 - [ ] P2.4 Clerk missing-azp opt-in; negative tests for every token profile.
 - [~] P2.5 Supply chain: SHA-pin all actions in baukit and the template workflows, renovate digest pinning,
@@ -152,6 +154,11 @@ tenancy and rate-limit audit of the products (S-08).
   STRIDE per boundary, threat → control → test table, output `docs/threat-model.md`),
   `baukit-security-testing` (when and how to add fuzz, property and negative auth tests),
   `baukit-code-conformance` (fixing lint and check failures without suppressing them).
+- [ ] P2.12 Template `items` example: owner column, `(owner, id)` in every query, cross-tenant test in the
+  generated backend (S-12). Lands with the template wave.
+- [ ] P2.13 baukit-suite `find_link_for_owner` (`adapters/postgres/mod.rs:539`) loads by id, runs
+  `refresh_failures` on the foreign id, then filters the owner in Rust. Move `user_id` into the WHERE and refresh
+  only after the owner matches. After W1-A merges (it owns the crate's lint fixes).
 - [x] P2.11 baukit's own `docs/threat-model.md`, written with the new skill.
 
 ## Phase 3. Agent instructions
@@ -175,6 +182,20 @@ tenancy and rate-limit audit of the products (S-08).
   - [ ] eigenruhe  - [ ] hebkit  - [ ] leitbild  - [ ] redemut
   - [ ] schlauzug  - [ ] tiefgang  - [ ] solo-leveling-system  - [ ] lesezeichen
   - [ ] schluesselbund  - [ ] kassensturz  - [ ] runtime-analyzer  - [ ] architecture-health-platform
+  Tenancy and rate-limit fixes from W1-I (`docs/quality-security/I-tenancy-ratelimit.md`), verified by the
+  orchestrator unless marked:
+  - kassensturz, lesezeichen, schluesselbund: delete or owner-scope the template `items` routes (S-12).
+  - redemut: sync push takes `device_id` from the client (`redemut-services/src/lib.rs:1299`) and the FK is
+    global (`migrations/20260901000000_storage_usage.sql:17`), so user B can attach events to A's device and
+    block A's erasure. Composite FK `(user_id, device_id)` plus a check.
+  - runtime-analyzer: one global `anonymous:auth` bucket (`finops-api/src/lib.rs:278`) lets one client lock
+    out all sign-ins. Key it per client IP.
+  - kassensturz (9 tables), hebkit (2): sync upserts need the owner in `ON CONFLICT ... WHERE`. Unverified.
+  - solo-leveling-system: private guilds and `/parties/{id}` readable by any user, cohort enrolment of foreign
+    ids, OAuth state single-use unchecked. Pending the SLS audit part.
+  - eigenruhe, lesezeichen: `/suite/*` and `/platform/inbound` merged after the limiter; kassensturz has no
+    limiter on `/platform/inbound`; schluesselbund never limits invalid `/platform/v1` tokens. Unverified.
+  - Every product: a two-principal test per id route (current coverage ranges from 2 of 18 to 42 of 64).
 - [ ] P4.3 Cross-repo conformance sweep: `baukit check` green in all 12, counts table recorded below.
 
 ## Log
@@ -205,4 +226,21 @@ tenancy and rate-limit audit of the products (S-08).
   inline styles and misses media origins, no rate limiting on /auth/session/*.
 - 2026-11-07: ADR 0006 amended (grace token column + FOR UPDATE, per-flavor CSP, rate-limit buckets,
   credentials scope, Keycloak idle note), accepted and merged. Worktree removed.
+- 2026-11-07: W2-1 (ADR 0006 task 1, baukit-auth BFF) and W2-2 (task 2, baukit-http headers) started in
+  parallel with W1-A; both check against the new lint set via CLIPPY_CONF_DIR without editing the lint table.
+- 2026-11-07: W2-2 merged (ADR 0006 task 2). Re-read the layer against ADR section 7, re-ran its 9 tests, and
+  grepped rust/, cli/ and templates/ for HTML-serving routes (none, so the API CSP on every response is safe).
+  Follow-up: `hsts_max_age` in baukit-config `HttpConfig`, so products set HSTS from config (template wave).
+- 2026-11-07: W1-D merged after re-running its 7 gate steps, checking 14 action pins against upstream tags and
+  diffing version-coherence output. 46 time-boxed osv ignores and narrowed ruff/shellcheck scopes went back as
+  W1-D2 (example lock bumps, repo-wide script lint). typescript/pnpm-lock bumps wait for W1-C.
+- 2026-11-07: W1-I audit in. Verified: S-12 items, redemut device FK, RA shared auth bucket, baukit-suite
+  owner filter in Rust (P2.13). Rejected: kassensturz aggregator-consent DoS (the composite FK at
+  `0046_consent_expiry.sql:38` blocks the insert). Seven products got spot checks only, so P2.8's per-route
+  helper has to close the gap.
+- 2026-11-07: W1-G merged. Re-ran `ast-grep test` (7/7) and scans of baukit and hebkit (counts match).
+  Sampled secret-debug hits: real tokens plus one borderline (`preview_token`). `rust-sql-unscoped-by-id`
+  is hint-only (455 hits, mostly global tables). Baseline hits: ts-double-cast 17 (P1.7), raw client 6,
+  secret-debug 2, token storage 1 (P2.2). Product totals are in the W1-G report numbers in the merge commit's
+  lint/README.md context; rollout must fix them.
 - 2026-11-07: findings catalog and phases written. User chose D2 = BFF refresh cookie, D3 = CLAUDE.md + symlink.

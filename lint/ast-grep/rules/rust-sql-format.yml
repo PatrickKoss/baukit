@@ -1,0 +1,30 @@
+id: rust-sql-format
+language: rust
+severity: error
+message: SQL built with format! from runtime values. Bind values as query parameters ($1, ?) and take identifiers only from constants.
+note: Interpolating anything but a SCREAMING_CASE constant into SQL text is an injection risk and defeats prepared statement caching.
+ignores:
+  - "**/tests/**"
+  - "**/benches/**"
+  - "**/baukit-test/**"
+  - "**/*-test-support/**"
+  - "**/*_test.rs"
+  - "**/tests.rs"
+rule:
+  not:
+    inside:
+      stopBy: end
+      kind: mod_item
+      follows:
+        kind: attribute_item
+        regex: 'cfg\(test\)'
+  kind: macro_invocation
+  regex: '^format!\s*\(\s*r?#*"\s*(?i:select\b[\s\S]*\bfrom\b|select\s+(count|1|exists|\{)|insert\s+into\b|update\s+\S+\s+set\b|delete\s+from\b|with\s+(recursive\s+)?\w+\s+as\s*\(|(create|alter|drop)\s+(or\s+replace\s+|unique\s+|temp(orary)?\s+|if\s+(not\s+)?exists\s+)*(table|index|database|schema|extension|function|type|view|role|trigger|sequence|policy|publication|subscription|user|materialized|domain)\b)'
+  any:
+    - regex: '\{[a-z_][A-Za-z0-9_.]*(:[^}]*)?\}'
+    - has:
+        kind: token_tree
+        has:
+          stopBy: end
+          kind: identifier
+          regex: '[a-z]'

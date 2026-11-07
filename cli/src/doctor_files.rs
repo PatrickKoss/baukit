@@ -9,8 +9,9 @@ use crate::{
     AnalyticsAdapter, AuthProvider, ENV_RECONCILIATION_FILES, EXPECTED_AUTH_WEB_FILES,
     EXPECTED_BACKEND_FILES, EXPECTED_COMMON_FILES, EXPECTED_MOBILE_FILES,
     EXPECTED_STRICT_BACKEND_FILES, EXPECTED_STRICT_FILES, EXPECTED_WEB_FILES,
-    MARKDOWN_LINK_CHECK_FILES, Manifest, QualityProfile, VITE_WEB_ONLY_FILES, doctor_layout,
-    web_renders_expo_routes,
+    MARKDOWN_LINK_CHECK_FILES, Manifest, QualityProfile,
+    doctor_frontend::{VITE_WEB_ONLY_FILES, web_renders_expo_routes},
+    doctor_layout,
 };
 
 type ExpectedFiles = BTreeMap<String, &'static str>;
@@ -34,7 +35,7 @@ fn expected_files(root: &Path, manifest: &Manifest) -> Result<ExpectedFiles> {
             "Markdown link check",
             MARKDOWN_LINK_CHECK_FILES,
         );
-        if manifest.capabilities.backend {
+        if manifest.capabilities.components.backend() {
             add_files(
                 &mut expected,
                 "strict backend",
@@ -42,7 +43,7 @@ fn expected_files(root: &Path, manifest: &Manifest) -> Result<ExpectedFiles> {
             );
         }
     }
-    if manifest.capabilities.backend {
+    if manifest.capabilities.components.backend() {
         for path in EXPECTED_BACKEND_FILES {
             expected.insert(path.replace("__APP__", &manifest.app.name), "backend");
         }
@@ -66,11 +67,15 @@ fn expected_files(root: &Path, manifest: &Manifest) -> Result<ExpectedFiles> {
     }
     for (active, kind, files) in [
         (
-            manifest.capabilities.mobile,
+            manifest.capabilities.components.mobile(),
             "mobile",
             EXPECTED_MOBILE_FILES,
         ),
-        (manifest.capabilities.web, "web", EXPECTED_WEB_FILES),
+        (
+            manifest.capabilities.components.web(),
+            "web",
+            EXPECTED_WEB_FILES,
+        ),
     ] {
         if !active {
             continue;
@@ -85,7 +90,7 @@ fn expected_files(root: &Path, manifest: &Manifest) -> Result<ExpectedFiles> {
             expected.insert(format!("{kind}/src/analytics.ts"), kind);
         }
     }
-    if manifest.capabilities.web
+    if manifest.capabilities.components.web()
         && manifest.capabilities.auth == Some(AuthProvider::Oidc)
         && !web_renders_expo_routes(root)?
     {

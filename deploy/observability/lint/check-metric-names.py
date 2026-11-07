@@ -10,7 +10,6 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[3]
 OBSERVABILITY = ROOT / "deploy" / "observability"
 
@@ -48,16 +47,12 @@ HISTOGRAM_METRICS = {
     "db_pool_acquire_duration_seconds",
     "worker_job_duration_seconds",
 }
-METRIC_SELECTOR = re.compile(
-    r"(?<![A-Za-z0-9_:])([A-Za-z_:][A-Za-z0-9_:]*)\s*(?=\{|\[)"
-)
+METRIC_SELECTOR = re.compile(r"(?<![A-Za-z0-9_:])([A-Za-z_:][A-Za-z0-9_:]*)\s*(?=\{|\[)")
 IDENTIFIER = re.compile(r"(?<![A-Za-z0-9_:])([A-Za-z_:][A-Za-z0-9_:]*)")
 RECORD_NAME = re.compile(r"^\s*-?\s*record:\s*([A-Za-z_:][A-Za-z0-9_:]*)\s*$", re.MULTILINE)
 FORBIDDEN_PLURAL = re.compile(r"\bhttp_requests_duration_seconds(?:_[a-z]+)?\b")
 LOKI_SERVICE_NAME = re.compile(r"\{[^}\n]*\bservice_name\s*(?:=|!=|=~|!~)")
-STATUS_CLASS = re.compile(
-    r"\bstatus\s*(?:=|!=|=~|!~)\s*[\"'](?:[1-5][xX]{2})[\"']"
-)
+STATUS_CLASS = re.compile(r"\bstatus\s*(?:=|!=|=~|!~)\s*[\"'](?:[1-5][xX]{2})[\"']")
 PROMQL_KEYWORDS = {
     "and",
     "bool",
@@ -264,9 +259,7 @@ def rule_paths(observability: Path, extra_rules: Sequence[Path]) -> list[Path]:
     return sorted(paths + list(extra_rules))
 
 
-def read_rule_documents(
-    paths: Sequence[Path], problems: list[str]
-) -> list[tuple[Path, str]]:
+def read_rule_documents(paths: Sequence[Path], problems: list[str]) -> list[tuple[Path, str]]:
     documents: list[tuple[Path, str]] = []
     for path in paths:
         try:
@@ -285,9 +278,7 @@ def allowed_metric_names(
     return exposed_metrics | PROMETHEUS_BUILTINS | local_recordings
 
 
-def lint_dashboards(
-    paths: Sequence[Path], allowed_metrics: set[str], problems: list[str]
-) -> None:
+def lint_dashboards(paths: Sequence[Path], allowed_metrics: set[str], problems: list[str]) -> None:
     for path in paths:
         try:
             expressions = dashboard_expressions(path)
@@ -304,9 +295,7 @@ def lint_rules(
     for path, content in documents:
         location = display_path(path)
         for line_number, expression in rule_expressions(content):
-            lint_expression(
-                f"{location}:{line_number}", expression, allowed_metrics, problems
-            )
+            lint_expression(f"{location}:{line_number}", expression, allowed_metrics, problems)
 
 
 def load_product_metrics(allowlist: Path | None) -> tuple[set[str], set[str]]:
@@ -332,9 +321,7 @@ def main(argv: Sequence[str] = ()) -> int:
     local_recordings = {
         name for _, content in rule_documents for name in RECORD_NAME.findall(content)
     }
-    allowed_metrics = allowed_metric_names(
-        product_metrics, product_histograms, local_recordings
-    )
+    allowed_metrics = allowed_metric_names(product_metrics, product_histograms, local_recordings)
 
     dashboard_paths = sorted((observability / "dashboards").glob("*.json"))
     lint_dashboards(dashboard_paths, allowed_metrics, problems)

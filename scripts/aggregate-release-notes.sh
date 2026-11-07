@@ -63,7 +63,7 @@ echo
 echo "## Commits"
 echo
 if [[ -n "$previous_tag" ]]; then
-  git log --pretty='- %s (`%h`)' "$previous_tag..$current_tag"
+  git log --pretty="- %s (\`%h\`)" "$previous_tag..$current_tag"
 else
-  git log --pretty='- %s (`%h`)' "$current_tag"
+  git log --pretty="- %s (\`%h\`)" "$current_tag"
 fi

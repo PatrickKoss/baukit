@@ -5,19 +5,13 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
-use baukit_cli::{NewOptions, QualityProfile, generate_new, read_manifest};
+use baukit_cli::{Component, Components, NewOptions, QualityProfile, generate_new, read_manifest};
 
 fn product(parent: &Path) -> Result<PathBuf> {
     generate_new(&NewOptions {
         name: "image-product".to_owned(),
         directory: parent.to_owned(),
-        backend: true,
-        worker: false,
-        mobile: false,
-        web: false,
-        pwa: false,
-        mcp: false,
-        platform: false,
+        components: Components::from([Component::Backend]),
         auth: None,
         force: false,
         into_existing: false,
@@ -194,6 +188,10 @@ impl DockerResources {
 }
 
 impl Drop for DockerResources {
+    #[expect(
+        clippy::print_stderr,
+        reason = "Drop cannot return the cleanup error, so stderr is the only place to report leaked Docker resources"
+    )]
     fn drop(&mut self) {
         if let Err(error) = self.cleanup() {
             eprintln!("Docker fixture cleanup failed: {error:#}");

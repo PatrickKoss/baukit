@@ -32,8 +32,9 @@ class PodDisruptionBudgetChartTest(unittest.TestCase):
         self.assertEqual(self.budgets("worker.enabled=true"), {})
 
     def test_api_budget_selects_the_api_pods(self) -> None:
-        budgets = self.budgets("api.podDisruptionBudget.enabled=true",
-                               "api.podDisruptionBudget.minAvailable=1")
+        budgets = self.budgets(
+            "api.podDisruptionBudget.enabled=true", "api.podDisruptionBudget.minAvailable=1"
+        )
         self.assertEqual(list(budgets), [f"{RELEASE}-baukit-app-api"])
         api = budgets[f"{RELEASE}-baukit-app-api"]
         self.assertIn("apiVersion: policy/v1", api)
@@ -43,9 +44,11 @@ class PodDisruptionBudgetChartTest(unittest.TestCase):
         self.assertIn(f"app.kubernetes.io/instance: {RELEASE}", api)
 
     def test_worker_budget_selects_the_worker_pods(self) -> None:
-        budgets = self.budgets("worker.enabled=true",
-                               "worker.podDisruptionBudget.enabled=true",
-                               "worker.podDisruptionBudget.maxUnavailable=50%")
+        budgets = self.budgets(
+            "worker.enabled=true",
+            "worker.podDisruptionBudget.enabled=true",
+            "worker.podDisruptionBudget.maxUnavailable=50%",
+        )
         self.assertEqual(list(budgets), [f"{RELEASE}-baukit-app-worker"])
         worker = budgets[f"{RELEASE}-baukit-app-worker"]
         self.assertIn('  maxUnavailable: "50%"\n', worker)
@@ -53,11 +56,13 @@ class PodDisruptionBudgetChartTest(unittest.TestCase):
         self.assertIn("baukit.dev/process: worker", worker)
 
     def test_selectors_match_the_deployment_selectors(self) -> None:
-        result = self.render("worker.enabled=true",
-                             "api.podDisruptionBudget.enabled=true",
-                             "api.podDisruptionBudget.minAvailable=1",
-                             "worker.podDisruptionBudget.enabled=true",
-                             "worker.podDisruptionBudget.minAvailable=1")
+        result = self.render(
+            "worker.enabled=true",
+            "api.podDisruptionBudget.enabled=true",
+            "api.podDisruptionBudget.minAvailable=1",
+            "worker.podDisruptionBudget.enabled=true",
+            "worker.podDisruptionBudget.minAvailable=1",
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         docs = result.stdout.split("---")
         for process in ["api", "worker"]:
@@ -73,26 +78,35 @@ class PodDisruptionBudgetChartTest(unittest.TestCase):
         start = next(i for i, line in enumerate(lines) if line.strip() == "matchLabels:")
         indent = len(lines[start]) - len(lines[start].lstrip()) + 2
         labels = []
-        for line in lines[start + 1:]:
+        for line in lines[start + 1 :]:
             if len(line) - len(line.lstrip()) != indent:
                 break
             labels.append(line.strip())
         return labels
 
     def test_worker_budget_needs_the_worker(self) -> None:
-        self.assertEqual(self.budgets("worker.podDisruptionBudget.enabled=true",
-                                      "worker.podDisruptionBudget.minAvailable=1"), {})
+        self.assertEqual(
+            self.budgets(
+                "worker.podDisruptionBudget.enabled=true",
+                "worker.podDisruptionBudget.minAvailable=1",
+            ),
+            {},
+        )
 
     def test_both_fields_fail(self) -> None:
         for process in ["api", "worker"]:
             with self.subTest(process=process):
-                result = self.render("worker.enabled=true",
-                                     f"{process}.podDisruptionBudget.enabled=true",
-                                     f"{process}.podDisruptionBudget.minAvailable=1",
-                                     f"{process}.podDisruptionBudget.maxUnavailable=1")
+                result = self.render(
+                    "worker.enabled=true",
+                    f"{process}.podDisruptionBudget.enabled=true",
+                    f"{process}.podDisruptionBudget.minAvailable=1",
+                    f"{process}.podDisruptionBudget.maxUnavailable=1",
+                )
                 self.assertNotEqual(result.returncode, 0)
-                self.assertIn(f"{process}.podDisruptionBudget sets both minAvailable and maxUnavailable",
-                              result.stderr)
+                self.assertIn(
+                    f"{process}.podDisruptionBudget sets both minAvailable and maxUnavailable",
+                    result.stderr,
+                )
 
     def test_neither_field_fails(self) -> None:
         result = self.render("api.podDisruptionBudget.enabled=true")
@@ -100,9 +114,11 @@ class PodDisruptionBudgetChartTest(unittest.TestCase):
         self.assertIn("api.podDisruptionBudget needs minAvailable or maxUnavailable", result.stderr)
 
     def test_budget_renders_alongside_the_hpa(self) -> None:
-        result = self.render("autoscaling.enabled=true",
-                             "api.podDisruptionBudget.enabled=true",
-                             "api.podDisruptionBudget.minAvailable=1")
+        result = self.render(
+            "autoscaling.enabled=true",
+            "api.podDisruptionBudget.enabled=true",
+            "api.podDisruptionBudget.minAvailable=1",
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("kind: HorizontalPodAutoscaler", result.stdout)
         self.assertEqual(result.stdout.count("kind: PodDisruptionBudget"), 1)

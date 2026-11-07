@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use baukit_cli::{AuthProvider, NewOptions, QualityProfile};
+use baukit_cli::{AuthProvider, Component, Components, NewOptions, QualityProfile};
 
 type ConfigureFlavor = fn(&mut NewOptions);
 
@@ -8,57 +8,57 @@ pub fn snapshot_flavors(parent: &Path) -> impl Iterator<Item = (&'static str, Ne
     let flavors: [(&str, ConfigureFlavor); 13] = [
         ("backend", |_| {}),
         ("platform", |o| {
-            o.platform = true;
+            o.components.insert(Component::Platform);
             o.auth = Some(AuthProvider::Oidc);
-            o.worker = true;
-            o.web = true;
+            o.components.insert(Component::Worker);
+            o.components.insert(Component::Web);
         }),
         ("platform-standalone", |o| {
-            o.platform = true;
-            o.web = true;
+            o.components.insert(Component::Platform);
+            o.components.insert(Component::Web);
         }),
-        ("worker", |o| o.worker = true),
+        ("worker", |o| o.components.set(Component::Worker, true)),
         ("mobile", |o| {
-            o.backend = false;
-            o.mobile = true;
+            o.components.remove(Component::Backend);
+            o.components.insert(Component::Mobile);
         }),
         ("mobile-pwa", |o| {
-            o.backend = false;
-            o.mobile = true;
-            o.pwa = true;
+            o.components.remove(Component::Backend);
+            o.components.insert(Component::Mobile);
+            o.components.insert(Component::Pwa);
         }),
         ("web", |o| {
-            o.backend = false;
-            o.web = true;
+            o.components.remove(Component::Backend);
+            o.components.insert(Component::Web);
         }),
         ("combined", |o| {
-            o.mobile = true;
-            o.web = true;
+            o.components.insert(Component::Mobile);
+            o.components.insert(Component::Web);
         }),
         ("mcp-remote", |o| {
-            o.mcp = true;
+            o.components.insert(Component::Mcp);
             o.auth = Some(AuthProvider::Oidc);
         }),
         ("strict", |o| {
-            o.mobile = true;
-            o.web = true;
+            o.components.insert(Component::Mobile);
+            o.components.insert(Component::Web);
             o.quality = QualityProfile::Strict;
         }),
         ("clerk", |o| {
-            o.mobile = true;
-            o.web = true;
-            o.mcp = true;
+            o.components.insert(Component::Mobile);
+            o.components.insert(Component::Web);
+            o.components.insert(Component::Mcp);
             o.auth = Some(AuthProvider::Clerk);
         }),
         ("workos", |o| {
-            o.mobile = true;
-            o.web = true;
-            o.mcp = true;
+            o.components.insert(Component::Mobile);
+            o.components.insert(Component::Web);
+            o.components.insert(Component::Mcp);
             o.auth = Some(AuthProvider::Workos);
         }),
         ("auth", |o| {
-            o.mobile = true;
-            o.web = true;
+            o.components.insert(Component::Mobile);
+            o.components.insert(Component::Web);
             o.auth = Some(AuthProvider::Oidc);
         }),
     ];
@@ -66,13 +66,7 @@ pub fn snapshot_flavors(parent: &Path) -> impl Iterator<Item = (&'static str, Ne
         let mut options = NewOptions {
             name: "snapshot-app".to_owned(),
             directory: parent.to_path_buf(),
-            backend: true,
-            worker: false,
-            mobile: false,
-            web: false,
-            pwa: false,
-            mcp: false,
-            platform: false,
+            components: Components::from([Component::Backend]),
             auth: None,
             force: false,
             into_existing: false,

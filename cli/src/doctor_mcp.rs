@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::{Manifest, doctor_layout, identity};
 
@@ -56,7 +56,7 @@ fn production_symbols(text: &str) -> String {
             return code;
         };
         let suffix = &item[index + 1..];
-        if item.as_bytes()[index] == b';' {
+        if item[index..].starts_with(';') {
             remaining = suffix;
         } else if let Some(body) = block(suffix, '{', '}') {
             remaining = &suffix[body.len() + 1..];
@@ -335,31 +335,15 @@ fn wrapper_validates_config(code: &str) -> bool {
     })
 }
 
-pub(super) fn validate_wiring(
+/// Sources of crates that implement MCP tools, and whether any of them depends on baukit-mcp.
+fn mcp_tool_sources(
     root: &Path,
     manifest: &Manifest,
-    failures: &mut Vec<String>,
-) -> Result<()> {
-    let crates = doctor_layout::rust_crates(root, manifest)?;
-    let sources = crates
-        .iter()
-        .flat_map(|krate| krate.sources.iter().cloned())
-        .collect::<Vec<_>>();
-    let graph = source(root, manifest, "", &sources, true)?;
+    crates: &[doctor_layout::RustCrate],
+) -> Result<(Vec<PathBuf>, bool)> {
     let mut tools = Vec::new();
-    let mut tests = crates
-        .iter()
-        .flat_map(|krate| krate.tests.iter().cloned())
-        .collect::<Vec<_>>();
-    tests.extend(doctor_layout::files(
-        &doctor_layout::backend_manifest(root, manifest)?
-            .parent()
-            .expect("backend manifest parent")
-            .join("tests"),
-        "rs",
-    )?);
     let mut dependency = false;
-    for krate in &crates {
+    for krate in crates {
         let code = source(root, manifest, "", &krate.sources, true)?;
         if !krate.name.ends_with("-mcp")
             && !["implToolServicefor", "implbaukit_mcp::ToolServicefor"]
@@ -380,6 +364,32 @@ pub(super) fn validate_wiring(
                     })
             });
     }
+    Ok((tools, dependency))
+}
+
+pub(super) fn validate_wiring(
+    root: &Path,
+    manifest: &Manifest,
+    failures: &mut Vec<String>,
+) -> Result<()> {
+    let crates = doctor_layout::rust_crates(root, manifest)?;
+    let sources = crates
+        .iter()
+        .flat_map(|krate| krate.sources.iter().cloned())
+        .collect::<Vec<_>>();
+    let graph = source(root, manifest, "", &sources, true)?;
+    let mut tests = crates
+        .iter()
+        .flat_map(|krate| krate.tests.iter().cloned())
+        .collect::<Vec<_>>();
+    tests.extend(doctor_layout::files(
+        &doctor_layout::backend_manifest(root, manifest)?
+            .parent()
+            .context("the backend Cargo manifest has no parent directory")?
+            .join("tests"),
+        "rs",
+    )?);
+    let (tools, dependency) = mcp_tool_sources(root, manifest, &crates)?;
     require(dependency, "auth layer", failures);
     let router = source(root, manifest, "mcp_router", &sources, true)?;
     require(

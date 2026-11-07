@@ -29,12 +29,15 @@ class RuntimeStorageCredentialsTest(unittest.TestCase):
     def test_new_credentials_are_private_and_survive_convergence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             state = Path(directory) / "state"
-            credentials = self.run_shell(state, """
+            credentials = self.run_shell(
+                state,
+                """
                 ensure_secret_state
                 printf '%s %s\\n' "$RUSTFS_ACCESS_KEY" "$RUSTFS_SECRET_KEY"
                 ensure_secret_state
                 printf '%s %s\\n' "$RUSTFS_ACCESS_KEY" "$RUSTFS_SECRET_KEY"
-            """).splitlines()
+            """,
+            ).splitlines()
             self.assertEqual(len(credentials), 2)
             self.assertEqual(credentials[0], credentials[1])
             access_key, secret_key = credentials[0].split()
@@ -47,12 +50,15 @@ class RuntimeStorageCredentialsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             state = Path(directory)
             state.joinpath("secrets.env").write_text("GRAFANA_ADMIN_PASSWORD=retained-password\n")
-            result = self.run_shell(state, """
+            result = self.run_shell(
+                state,
+                """
                 ensure_secret_state
                 printf '%s\\n' "$GRAFANA_ADMIN_PASSWORD" "$RUSTFS_ACCESS_KEY" "$RUSTFS_SECRET_KEY"
                 ensure_secret_state
                 printf '%s\\n' "$RUSTFS_ACCESS_KEY" "$RUSTFS_SECRET_KEY"
-            """).splitlines()
+            """,
+            ).splitlines()
             self.assertEqual(result[0], "retained-password")
             self.assertEqual(result[1:3], result[3:5])
             self.assertTrue(all(result[1:3]))
@@ -61,10 +67,13 @@ class RuntimeStorageCredentialsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             state = Path(directory)
             state.joinpath("secrets.env").write_text("RUSTFS_ACCESS_KEY=partial-key\n")
-            result = self.run_shell(state, """
+            result = self.run_shell(
+                state,
+                """
                 ensure_secret_state
                 printf '%s\\n' "$RUSTFS_ACCESS_KEY" "$RUSTFS_SECRET_KEY"
-            """).splitlines()
+            """,
+            ).splitlines()
             self.assertEqual(len(result), 2)
             self.assertNotEqual(result[0], "partial-key")
             self.assertRegex(result[0], r"^local-[0-9a-f]{12}$")
@@ -72,14 +81,17 @@ class RuntimeStorageCredentialsTest(unittest.TestCase):
 
     def test_consumers_receive_the_same_keys_in_their_required_secret_shapes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            result = self.run_shell(Path(directory), """
+            result = self.run_shell(
+                Path(directory),
+                """
                 ensure_secret_state
                 RUSTFS_ACCESS_KEY=storage-access
                 RUSTFS_SECRET_KEY=storage-secret
                 kubectl() { cat >/dev/null; }
                 apply_secret() { printf '%s\\n' "$*"; }
                 apply_runtime_identity
-            """).splitlines()
+            """,
+            ).splitlines()
             expected = [
                 "postgres postgres-backup-credentials --from-literal=ACCESS_KEY_ID=storage-access --from-literal=ACCESS_SECRET_KEY=storage-secret",
                 "postgres rustfs-root --from-literal=username=storage-access --from-literal=password=storage-secret",
@@ -91,7 +103,9 @@ class RuntimeStorageCredentialsTest(unittest.TestCase):
 
 
 class BucketBootstrapTest(unittest.TestCase):
-    def run_bootstrap(self, directory: Path, existing: str, create_status: int) -> subprocess.CompletedProcess[str]:
+    def run_bootstrap(
+        self, directory: Path, existing: str, create_status: int
+    ) -> subprocess.CompletedProcess[str]:
         manifest = (PLATFORM / "overlays/local/components/foundation/rustfs.yaml").read_text()
         body = manifest.split("            - |\n", 1)[1].split("          env:\n", 1)[0]
         commands = textwrap.dedent(body)
@@ -118,6 +132,7 @@ esac
             },
             capture_output=True,
             text=True,
+            check=False,
         )
 
     def test_existing_bucket_is_kept_and_missing_bucket_is_created(self) -> None:

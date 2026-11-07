@@ -1,0 +1,21 @@
+id: rust-sql-unscoped-by-id
+language: rust
+severity: hint
+message: Query filters only by id. Add the tenant or owner predicate (AND tenant_id = $2) unless the table is global.
+note: A lookup by primary key alone lets any caller who guesses an id read or change another tenant's row (IDOR).
+ignores:
+  - "**/tests/**"
+  - "**/*_test.rs"
+  - "**/tests.rs"
+rule:
+  not:
+    inside:
+      stopBy: end
+      kind: mod_item
+      follows:
+        kind: attribute_item
+        regex: 'cfg\(test\)'
+  any:
+    - kind: string_literal
+    - kind: raw_string_literal
+  regex: '(?is)\bwhere\s+id\s*=\s*\$1\s*("|;|\breturning\b|\bfor\s+update\b|\blimit\b|\border\b)'

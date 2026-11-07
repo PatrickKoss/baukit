@@ -2,7 +2,7 @@ use std::{fs, path::Path};
 
 use anyhow::Result;
 
-use crate::{Manifest, doctor_layout};
+use crate::{Manifest, doctor_backend::sql_creates_table, doctor_layout};
 
 pub(super) fn validate(
     root: &Path,
@@ -25,7 +25,7 @@ pub(super) fn validate(
     }
     let migration_sql = fs::read_to_string(&migration).unwrap_or_default();
     for table in ["platform_inbound_receipts", "platform_entitlement_cache"] {
-        if !super::sql_creates_table(&migration_sql, table) {
+        if !sql_creates_table(&migration_sql, table) {
             failures.push(format!(
                 "platform migration {} must create {table}",
                 platform.migration

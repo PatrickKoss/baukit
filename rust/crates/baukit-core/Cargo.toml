@@ -31,3 +31,4 @@ zeroize = { workspace = true, optional = true }
 
 [dev-dependencies]
 baukit-core = { path = ".", features = ["media-grants", "webhook-signature"] }
+proptest = "1.12.0"

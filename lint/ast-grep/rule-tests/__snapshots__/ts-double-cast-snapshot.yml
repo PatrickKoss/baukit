@@ -1,0 +1,14 @@
+id: ts-double-cast
+snapshots:
+  "const a = value as unknown as Foo;\n":
+    labels:
+    - source: value as unknown as Foo
+      style: primary
+      start: 10
+      end: 33
+  "const el = <div ref={(r) => (ref.current = r as unknown as HTMLElement)} />;\n":
+    labels:
+    - source: r as unknown as HTMLElement
+      style: primary
+      start: 43
+      end: 70

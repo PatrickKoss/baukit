@@ -1,15 +1,16 @@
 import io
-from pathlib import Path
 import subprocess
 import sys
 import tarfile
 import tempfile
 import unittest
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts/check-gradle-deprecations.py"
-TEMPLATE_GRADLE = 'apply plugin: "com.android.application"\nandroid {\n    namespace "com.helloworld"\n}\n'
+TEMPLATE_GRADLE = (
+    'apply plugin: "com.android.application"\nandroid {\n    namespace "com.helloworld"\n}\n'
+)
 PROPERTY = (
     "Properties should be assigned using the 'propName = value' syntax. Setting a property via the "
     "Gradle-generated 'propName value' or 'propName(value)' syntax in Groovy DSL has been deprecated. "
@@ -82,8 +83,13 @@ class CheckGradleDeprecationsTest(unittest.TestCase):
             result = self.run_check(project, log)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("expo template\tandroid/app/build.gradle:3", result.stdout)
-            self.assertIn("third-party package\tnode_modules/lib/android/build.gradle:2", result.stdout)
-            self.assertIn("third-party toolchain\tcom.android.build.gradle.internal.res.Aapt2FromMaven", result.stdout)
+            self.assertIn(
+                "third-party package\tnode_modules/lib/android/build.gradle:2", result.stdout
+            )
+            self.assertIn(
+                "third-party toolchain\tcom.android.build.gradle.internal.res.Aapt2FromMaven",
+                result.stdout,
+            )
             self.assertIn("3 Gradle deprecations, 0 from Baukit-owned files", result.stdout)
 
     def test_deprecation_from_a_line_outside_the_expo_template_fails(self) -> None:

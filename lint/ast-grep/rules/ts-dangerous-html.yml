@@ -1,0 +1,40 @@
+id: ts-dangerous-html
+language: tsx
+severity: error
+message: Raw HTML injection. Render text through JSX, or pass the HTML through the sanitizer module (files named sanitize*) first.
+note: dangerouslySetInnerHTML and innerHTML execute any markup they get; unsanitized input becomes XSS.
+ignores:
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/*.spec.ts"
+  - "**/*.spec.tsx"
+  - "**/__tests__/**"
+  - "**/test/**"
+  - "**/tests/**"
+  - "**/e2e/**"
+  - "**/test-utils/**"
+  - "**/testing/**"
+  - "**/sanitize*"
+  - "**/sanitizer/**"
+  - "**/+html.tsx"
+rule:
+  any:
+    - kind: jsx_attribute
+      has:
+        kind: property_identifier
+        regex: '^dangerouslySetInnerHTML$'
+    - all:
+        - any:
+            - pattern: $E.innerHTML = $V
+            - pattern: $E.outerHTML = $V
+        - not:
+            has:
+              field: right
+              any:
+                - kind: string
+                - pattern: renderToStaticMarkup($$$)
+                - pattern: renderToString($$$)
+                - kind: template_string
+                  not:
+                    has:
+                      kind: template_substitution

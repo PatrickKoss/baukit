@@ -1,9 +1,8 @@
 import os
-from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -17,11 +16,11 @@ class AndroidSdkSetupTest(unittest.TestCase):
             tools = sdk / "cmdline-tools/13114758/bin"
             tools.mkdir(parents=True)
             (tools / "sdkmanager").write_text("#!/bin/sh\nexit 0\n")
-            (tools / "avdmanager").write_text('''#!/bin/sh
+            (tools / "avdmanager").write_text("""#!/bin/sh
 mkdir -p "$ANDROID_AVD_HOME/test.avd"
 touch "$ANDROID_AVD_HOME/test.ini"
 printf 'hw.cpu.ncore = 1\nhw.cpu.ncore=2\nhw.gpu.mode=auto\n' > "$ANDROID_AVD_HOME/test.avd/config.ini"
-''')
+""")
             for tool in tools.iterdir():
                 tool.chmod(0o755)
             environment = {

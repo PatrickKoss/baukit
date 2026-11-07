@@ -4,6 +4,10 @@ All notable changes to `baukit-http` are documented here.
 
 ## [Unreleased]
 
+- `layers()` adds `SecurityHeadersLayer` outermost: `nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` and `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` on every response unless the handler set them; `Cache-Control: no-store` on `/auth/session/*` and on requests with `Authorization`.
+- `HttpOptions::with_hsts(max_age)` sends `Strict-Transport-Security`, never for a loopback `Host`.
+- The default CORS allowed request headers include `x-baukit-session` (`X_BAUKIT_SESSION`), the browser session CSRF header (ADR 0006).
+
 ## [0.18.3] - 2026-11-07
 
 - The default CORS allowed request headers include `x-organization-id` (`X_ORGANIZATION_ID`), which `baukit-suite`'s organization plan subject reads from browsers (BK30).

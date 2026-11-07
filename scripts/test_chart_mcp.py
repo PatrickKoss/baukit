@@ -19,18 +19,29 @@ class McpChartTest(unittest.TestCase):
         self.assertEqual(disabled.returncode, 0, disabled.stderr)
         self.assertNotIn("MCP__ENABLED", disabled.stdout)
         self.assertNotIn("oauth-protected-resource", disabled.stdout)
-        enabled = self.render("ingress.enabled=true", "mcp.enabled=true", "mcp.resourceUrl=https://mcp.example/mcp", "mcp.issuer=https://identity.example/realms/product", "mcp.allowedHosts[0]=mcp.example")
+        enabled = self.render(
+            "ingress.enabled=true",
+            "mcp.enabled=true",
+            "mcp.resourceUrl=https://mcp.example/mcp",
+            "mcp.issuer=https://identity.example/realms/product",
+            "mcp.allowedHosts[0]=mcp.example",
+        )
         self.assertEqual(enabled.returncode, 0, enabled.stderr)
-        for path in ["/mcp", "/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp"]:
+        for path in [
+            "/mcp",
+            "/.well-known/oauth-protected-resource",
+            "/.well-known/oauth-protected-resource/mcp",
+        ]:
             self.assertIn(f"- path: {path}\n            pathType: Exact", enabled.stdout)
         self.assertIn('value: "https://mcp.example/mcp"', enabled.stdout)
         self.assertIn('value: "https://identity.example/realms/product"', enabled.stdout)
-        self.assertIn('MCP__ALLOWED_HOSTS', enabled.stdout)
+        self.assertIn("MCP__ALLOWED_HOSTS", enabled.stdout)
         self.assertIn('value: "[\\"mcp.example\\"]"', enabled.stdout)
 
     def test_jwks_override_is_optional_and_only_applies_to_the_api(self) -> None:
         settings = (
-            "worker.enabled=true", "mcp.enabled=true",
+            "worker.enabled=true",
+            "mcp.enabled=true",
             "mcp.resourceUrl=https://mcp.example/mcp",
             "mcp.issuer=https://identity.example/realms/product",
             "mcp.allowedHosts[0]=mcp.example",
@@ -41,9 +52,12 @@ class McpChartTest(unittest.TestCase):
         uri = "http://keycloak:8080/realms/product/protocol/openid-connect/certs"
         enabled = self.render(*settings, f"mcp.jwksUri={uri}")
         self.assertEqual(enabled.returncode, 0, enabled.stderr)
-        self.assertEqual(enabled.stdout.count('MCP__JWKS_URI'), 1)
-        api = next(document for document in enabled.stdout.split('---')
-                   if 'name: mcp-test-baukit-app-api' in document and 'kind: Deployment' in document)
+        self.assertEqual(enabled.stdout.count("MCP__JWKS_URI"), 1)
+        api = next(
+            document
+            for document in enabled.stdout.split("---")
+            if "name: mcp-test-baukit-app-api" in document and "kind: Deployment" in document
+        )
         self.assertIn(f'- name: MINIMAL_API__MCP__JWKS_URI\n              value: "{uri}"', api)
         self.assertIn('value: "https://identity.example/realms/product"', api)
         disabled = self.render(f"mcp.jwksUri={uri}")
@@ -51,7 +65,11 @@ class McpChartTest(unittest.TestCase):
         self.assertNotIn("MCP__JWKS_URI", disabled.stdout)
 
     def test_enabled_mcp_requires_a_host_allowlist(self) -> None:
-        result = self.render("mcp.enabled=true", "mcp.resourceUrl=https://mcp.example/mcp", "mcp.issuer=https://identity.example")
+        result = self.render(
+            "mcp.enabled=true",
+            "mcp.resourceUrl=https://mcp.example/mcp",
+            "mcp.issuer=https://identity.example",
+        )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("mcp.allowedHosts must not be empty", result.stderr)
 

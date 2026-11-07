@@ -5,6 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use anyhow::{Context, Result};
 use baukit_cli::{NewOptions, generate_new};
 use sha2::{Digest, Sha256};
 
@@ -13,12 +14,12 @@ mod snapshot_flavors;
 
 use snapshot_flavors::snapshot_flavors;
 
-fn read_tree(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+fn read_tree(root: &Path) -> Result<BTreeMap<PathBuf, Vec<u8>>> {
     let mut tree = BTreeMap::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        for entry in fs::read_dir(&dir).expect("read_dir") {
-            let entry = entry.expect("entry");
+        for entry in fs::read_dir(&dir).with_context(|| format!("read {}", dir.display()))? {
+            let entry = entry?;
             let path = entry.path();
             if is_python_cache_artifact(&path) {
                 continue;
@@ -26,12 +27,15 @@ fn read_tree(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
             if path.is_dir() {
                 stack.push(path);
             } else {
-                let relative = path.strip_prefix(root).expect("strip").to_path_buf();
-                tree.insert(relative, fs::read(&path).expect("read"));
+                let relative = path.strip_prefix(root)?.to_path_buf();
+                tree.insert(
+                    relative,
+                    fs::read(&path).with_context(|| format!("read {}", path.display()))?,
+                );
             }
         }
     }
-    tree
+    Ok(tree)
 }
 
 fn is_python_cache_artifact(path: &Path) -> bool {
@@ -55,20 +59,26 @@ fn sha256_hex(contents: &[u8]) -> String {
         .collect()
 }
 
-fn bless(name: &str, options: &NewOptions) {
-    let root = generate_new(options).expect("generate");
-    let snapshot = render(&read_tree(&root));
+fn bless(name: &str, options: &NewOptions) -> Result<PathBuf> {
+    let root = generate_new(options)?;
+    let snapshot = render(&read_tree(&root)?);
     let target = snapshot_path(name);
-    fs::write(&target, snapshot).expect("write");
-    println!("blessed {}", target.display());
+    fs::write(&target, snapshot).with_context(|| format!("write {}", target.display()))?;
+    Ok(target)
 }
 
-fn main() {
-    let parent = tempfile::tempdir().expect("tempdir");
+#[expect(
+    clippy::print_stdout,
+    reason = "developer tool output: names each snapshot file it rewrote"
+)]
+fn main() -> Result<()> {
+    let parent = tempfile::tempdir()?;
     for (name, options) in snapshot_flavors(parent.path()) {
-        bless(name, &options);
-        fs::remove_dir_all(parent.path().join(&options.name)).expect("remove rendered tree");
+        let target = bless(name, &options)?;
+        println!("blessed {}", target.display());
+        fs::remove_dir_all(parent.path().join(&options.name))?;
     }
+    Ok(())
 }
 
 fn snapshot_path(name: &str) -> PathBuf {

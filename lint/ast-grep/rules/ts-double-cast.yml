@@ -1,0 +1,18 @@
+id: ts-double-cast
+language: tsx
+severity: error
+message: Double cast through unknown. Narrow the value with a type guard or a schema parse instead.
+note: "`as unknown as T` turns off type checking for that value; a wrong shape then fails far from the cast."
+ignores:
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/*.spec.ts"
+  - "**/*.spec.tsx"
+  - "**/__tests__/**"
+  - "**/test/**"
+  - "**/tests/**"
+  - "**/e2e/**"
+  - "**/test-utils/**"
+  - "**/testing/**"
+rule:
+  pattern: $E as unknown as $T
