@@ -1,12 +1,13 @@
 #!/bin/sh
 # Serves a built web client with `vite preview` and checks its security headers.
+# vite runs without the pnpm wrapper, which does not forward signals, so the EXIT trap stops it.
 set -eu
 
 web=${1:?usage: check-web-headers.sh WEB_DIR}
 port=${WEB_HEADERS_PORT:-4173}
 headers=$(mktemp)
 log=$(mktemp)
-corepack pnpm --dir "$web" exec vite preview --port "$port" --strictPort >"$log" 2>&1 &
+(cd "$web" && exec node node_modules/vite/bin/vite.js preview --port "$port" --strictPort) >"$log" 2>&1 &
 preview=$!
 trap 'kill "$preview" 2>/dev/null || true; rm -f "$headers" "$log"' EXIT
 
