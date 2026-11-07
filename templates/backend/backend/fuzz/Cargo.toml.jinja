@@ -1,0 +1,28 @@
+[package]
+name = "{{ context.app_name }}-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+# Its own workspace: cargo-fuzz needs nightly, the backend workspace stays on stable.
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4.12"
+serde_json = "1.0.151"
+uuid = "1.27.0"
+{{ context.app_crate }}-api = { path = "../crates/{{ context.app_name }}-api" }
+{{ context.app_crate }}-domain = { path = "../crates/{{ context.app_name }}-domain" }
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "item_body"
+path = "fuzz_targets/item_body.rs"
+test = false
+doc = false
+bench = false

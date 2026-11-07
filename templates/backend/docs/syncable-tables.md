@@ -13,11 +13,16 @@ Every syncable table carries these five columns:
 
 | Column | Type | Purpose |
 |---|---|---|
-| `id` | `UUID PRIMARY KEY` | Client-generated, so a row exists offline before the server sees it. |
+| `id` | `UUID NOT NULL` | Client-generated, so a row exists offline before the server sees it. |
 | `owner_id` | `UUID NOT NULL REFERENCES users (id)` | The partition a pull is scoped to. |
 | `updated_at` | `TIMESTAMPTZ NOT NULL DEFAULT now()` | Last-writer-wins input, if conflicts are resolved that way. |
 | `deleted_at` | `TIMESTAMPTZ` | Tombstone. Null means live. |
 | `revision` | `BIGINT NOT NULL` | Allocated by `baukit_sync::next_revision` for the write that produced this row state. |
+
+The key is `PRIMARY KEY (owner_id, id)`. Clients pick the id, so a bare `id` key lets one owner
+claim or overwrite another owner's row by sending the same UUID. Every write names the owner:
+upserts use `ON CONFLICT (owner_id, id)`, never a bare `ON CONFLICT (id)`, and updates and
+tombstones put `owner_id` in the `WHERE`.
 
 Plus one index per table:
 
@@ -33,6 +38,15 @@ Never `DELETE` a syncable row. Set `deleted_at` and allocate a new revision, exa
 other update. A hard delete makes the row stop appearing in pulls, so every client that already
 holds it keeps it forever, and the deletion silently never propagates.
 
+A batch delete binds the owner as `$2` and tombstones `(owner_id, id)` pairs, so ids the caller
+does not own match nothing:
+
+```sql
+UPDATE product_records
+SET deleted_at = now(), updated_at = now(), revision = $1
+WHERE owner_id = $2 AND id = ANY($3) AND deleted_at IS NULL
+```
+
 ## Allocating a revision
 
 `baukit_sync::next_revision` bumps the owner's counter inside the transaction you pass it, so the
@@ -43,10 +57,12 @@ allocation commits or rolls back with the row write. It needs the `sqlx-postgres
 let mut transaction = pool.begin().await?;
 let revision = baukit_sync::next_revision(&mut transaction, owner_id).await?;
 sqlx::query(
-    "UPDATE product_records SET name = $1, updated_at = now(), revision = $2 WHERE id = $3",
+    "UPDATE product_records SET name = $1, updated_at = now(), revision = $2
+     WHERE owner_id = $3 AND id = $4",
 )
 .bind(name)
 .bind(revision)
+.bind(owner_id)
 .bind(record_id)
 .execute(&mut *transaction)
 .await?;

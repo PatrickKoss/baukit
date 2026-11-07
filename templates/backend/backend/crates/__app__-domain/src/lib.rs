@@ -7,6 +7,7 @@ pub mod limits;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Item {
     pub id: Uuid,
+    pub owner_id: String,
     pub name: String,
 }{% if context.worker %}
 
@@ -25,7 +26,11 @@ pub struct InternalUser {
 }{% endif %}
 
 impl Item {
-    pub fn new(id: Uuid, name: impl Into<String>) -> Result<Self, DomainError> {
+    pub fn new(
+        id: Uuid,
+        owner_id: impl Into<String>,
+        name: impl Into<String>,
+    ) -> Result<Self, DomainError> {
         let name = name.into();
         let name = name.trim();
         if name.is_empty() {
@@ -34,6 +39,7 @@ impl Item {
         limits::check_text("item.name", name)?;
         Ok(Self {
             id,
+            owner_id: owner_id.into(),
             name: name.to_owned(),
         })
     }
@@ -54,8 +60,8 @@ mod tests {
     #[test]
     fn item_normalizes_its_name() -> Result<(), DomainError> {
         let id = Uuid::nil();
-        assert_eq!(Item::new(id, "  first  ")?.name, "first");
-        assert_eq!(Item::new(id, " "), Err(DomainError::EmptyName));
+        assert_eq!(Item::new(id, "owner", "  first  ")?.name, "first");
+        assert_eq!(Item::new(id, "owner", " "), Err(DomainError::EmptyName));
         Ok(())
     }
 }

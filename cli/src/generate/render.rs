@@ -159,6 +159,10 @@ pub(crate) fn render_product(
     add_common_files(&mut renderer.rendered)?;
     if components.backend() {
         renderer.component(&BACKEND_TEMPLATE)?;
+        renderer.rendered.insert(
+            PathBuf::from("backend/clippy.toml"),
+            CLIPPY_CONFIG.as_bytes().to_vec(),
+        );
         if components.worker() {
             renderer.directory(&WORKER_TEMPLATE)?;
         }
@@ -196,6 +200,7 @@ pub(crate) const RENDERED_SYMLINKS: &[(&str, &str)] = &[("AGENTS.md", AGENT_GUID
 
 const AGENT_GUIDE: &str = "CLAUDE.md";
 const AGENT_RULES: &str = include_str!("../../../lint/agent-rules.md");
+const CLIPPY_CONFIG: &str = include_str!("../../../lint/rust/clippy.toml");
 const AGENT_RULES_START: &str = "<!-- baukit:agent-rules:start -->\n";
 const AGENT_RULES_END: &str = "<!-- baukit:agent-rules:end -->\n";
 

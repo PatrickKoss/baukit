@@ -1231,7 +1231,8 @@ fn oidc_generation_is_deterministic_and_records_the_optional_capability() -> any
 
     let api = fs::read_to_string(first.join("backend/crates/snapshot-app-api/src/lib.rs"))?;
     assert_eq!(api.matches("security((\"bearerAuth\" = []))").count(), 8);
-    assert_eq!(api.matches("_principal: Principal").count(), 5);
+    assert_eq!(api.matches("principal: Principal").count(), 9);
+    assert!(!api.contains("_principal: Principal"));
     let openapi = fs::read_to_string(first.join("backend/openapi.json"))?;
     assert_eq!(openapi.matches("\"bearerAuth\": []").count(), 8);
     let realm = fs::read_to_string(first.join("keycloak/realm.json"))?;
@@ -1843,7 +1844,7 @@ fn raw_templates_do_not_contain_cargo_manifests() -> anyhow::Result<()> {
                 .file_name()
                 .is_some_and(|name| name == "Cargo.toml.jinja"))
             .count(),
-        9
+        10
     );
     Ok(())
 }
@@ -4031,57 +4032,11 @@ fn doctor_requires_redis_only_for_redis_backed_features() -> anyhow::Result<()> 
     );
     let api = root.join("backend/crates/postgres-limits-bin/src/bin/api.rs");
     let source = fs::read_to_string(&api)?;
-    let import_start = source
-        .find("use baukit_ratelimit::{")
-        .expect("rate limit imports");
-    let import_end = source[import_start..].find("};").expect("import end") + import_start + 2;
-    let mut postgres = source.clone();
-    postgres.replace_range(import_start..import_end, "");
-    let limiter_start = postgres
-        .find("    let rate_limit_options =")
-        .expect("rate limit setup");
-    let limiter_end = postgres
-        .find("    // Axum runs")
-        .expect("authentication setup");
-    postgres.replace_range(
-        limiter_start..limiter_end,
-        "    let api = api.layer(middleware::from_fn_with_state(pool.clone(), postgres_limit));\n",
-    );
-    postgres = postgres.replace("const ITEM_WRITE_GROUP: &str = \"item_writes\";\n", "");
-    postgres = postgres.replace(
-        "PostgresUserRepository::new(\n        pool,",
-        "PostgresUserRepository::new(\n        pool.clone(),",
-    );
-    let postgres_limiter = r#"
-async fn postgres_limit(
-    axum::extract::State(pool): axum::extract::State<sqlx::PgPool>,
-    request: Request,
-    next: middleware::Next,
-) -> Result<axum::response::Response, axum::http::StatusCode> {
-    use axum::http::StatusCode;
-    if !is_item_write(&request) {
-        return Ok(next.run(request).await);
-    }
-    let principal = request.extensions().get::<Principal>().ok_or(StatusCode::UNAUTHORIZED)?;
-    let consumed: i64 = sqlx::query_scalar(
-        "INSERT INTO product_rate_limits (subject, window_start, consumed) \
-         VALUES ($1, date_trunc('minute', now()), 1) \
-         ON CONFLICT (subject, window_start) DO UPDATE \
-         SET consumed = product_rate_limits.consumed + 1 RETURNING consumed",
-    )
-    .bind(item_write_subject(principal))
-    .fetch_one(&pool)
-    .await
-    .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
-    let limit = i64::try_from(ITEM_WRITE_REQUESTS_PER_MINUTE)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    if consumed > limit {
-        return Err(StatusCode::TOO_MANY_REQUESTS);
-    }
-    Ok(next.run(request).await)
-}
-"#;
-    fs::write(&api, format!("{postgres}{postgres_limiter}"))?;
+    assert!(source.contains("RedisRateLimitStore::connect_if_enabled"));
+    fs::write(
+        &api,
+        source.replace("RedisRateLimitStore", "PostgresRateLimitStore"),
+    )?;
     let browser_session = root.join("backend/crates/postgres-limits-bin/src/browser_session.rs");
     let browser_session_source = fs::read_to_string(&browser_session)?;
     fs::write(
@@ -4848,7 +4803,8 @@ fn auth_conformance_does_not_wait_for_access_token_expiry() -> anyhow::Result<()
     assert!(!test.contains("tokio::time::sleep"));
     assert!(!test.contains("Duration::from_secs(1)"));
     assert!(test.contains(".expires_at(0)"));
-    assert!(test.contains("authorization_header(&expired)"));
+    assert!(test.contains("get_me(&app, &expired)"));
+    assert!(test.contains("authorization_header(token)"));
     assert!(test.contains("refresh_session(session.refresh_token())"));
     Ok(())
 }
@@ -5667,8 +5623,8 @@ fn doctor_requires_conditional_mcp_router_results_to_be_merged() -> anyhow::Resu
         .expect("MCP binding");
     let end = start
         + api[start..]
-            .find("let api = api.merge(mcp);")
-            .expect("MCP merge");
+            .find("let mcp = rate_limited(mcp,")
+            .expect("MCP rate limiter");
     let call = api[start + "let mcp = ".len()..end]
         .trim()
         .strip_suffix(';')

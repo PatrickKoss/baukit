@@ -1,4 +1,4 @@
-use std::{env, error::Error};
+use std::{env, error::Error, io::Write as _};
 
 use baukit_config::Environment;
 use {{ context.app_crate }}_bin::{ProductConfig, config_loader, platform::purge_receipts};
@@ -22,6 +22,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .await?;
     let removed = purge_receipts(pool.clone()).await?;
     pool.close().await;
-    println!("purged {removed} platform receipts");
+    writeln!(
+        std::io::stdout().lock(),
+        "purged {removed} platform receipts"
+    )?;
     Ok(())
 }

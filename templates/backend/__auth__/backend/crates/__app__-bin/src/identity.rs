@@ -27,6 +27,9 @@ pub async fn auth_verifier(
                 )?,
                 None => ClerkVerifier::new(&config.issuer, config.authorized_parties.clone())?,
             };
+            if config.allow_missing_azp {
+                return Ok(Arc::new(verifier.allow_missing_authorized_party()));
+            }
             Ok(Arc::new(verifier))
         }
         AuthProvider::Workos => {

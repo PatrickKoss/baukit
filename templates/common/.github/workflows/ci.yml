@@ -43,10 +43,12 @@ jobs:
           install_args: >-
             aqua:rhysd/actionlint aqua:zizmorcore/zizmor aqua:gitleaks/gitleaks
             aqua:google/osv-scanner aqua:astral-sh/ruff aqua:koalaman/shellcheck
+            aqua:ast-grep/ast-grep{% if context.backend %} aqua:EmbarkStudios/cargo-deny{% endif %}
       - run: sh scripts/repo-lint.sh workflow-lint
       - run: sh scripts/repo-lint.sh secret-scan
       - run: sh scripts/repo-lint.sh osv
-      - run: sh scripts/repo-lint.sh python-lint
+{% if context.backend %}      - run: sh scripts/repo-lint.sh deny
+{% endif %}      - run: sh scripts/repo-lint.sh python-lint
       - run: sh scripts/repo-lint.sh shell-lint
 
   baukit-doctor:
@@ -59,13 +61,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: stable
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          version: 2026.8.11
+          cache: false
+          install_args: aqua:ast-grep/ast-grep
       - name: Check the product with baukit doctor
         run: |
           git clone --branch v{{ context.template_version }} --depth 1 https://github.com/PatrickKoss/baukit.git "$RUNNER_TEMP/baukit"
           cargo run --quiet --locked --manifest-path "$RUNNER_TEMP/baukit/cli/Cargo.toml" --bin baukit -- doctor
-      # The lints and patterns rules join this list once the backend and frontend templates carry their baselines.
-      - name: Check agent docs, file sizes and suppressions with baukit check
-        run: cargo run --quiet --locked --manifest-path "$RUNNER_TEMP/baukit/cli/Cargo.toml" --bin baukit -- check agent-docs file-size suppressions --root .
+      - name: Check agent docs, file sizes, suppressions, lints, patterns, observability and template files with baukit check
+        run: cargo run --quiet --locked --manifest-path "$RUNNER_TEMP/baukit/cli/Cargo.toml" --bin baukit -- check agent-docs file-size suppressions lints patterns observability template-files --root .
 
 {% endif %}{% if context.quality_strict %}  strict-quality:
     name: Strict quality profile
@@ -83,13 +89,17 @@ jobs:
           install_args: >-
             aqua:rhysd/actionlint aqua:zizmorcore/zizmor aqua:gitleaks/gitleaks
             aqua:google/osv-scanner aqua:astral-sh/ruff aqua:koalaman/shellcheck
+            aqua:ast-grep/ast-grep{% if context.backend %} aqua:EmbarkStudios/cargo-deny{% endif %}
 {% if context.backend %}      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: nightly
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: stable
           components: rustfmt, clippy, llvm-tools-preview
       - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
         with:
-          tool: cargo-llvm-cov,cargo-nextest
+          tool: cargo-llvm-cov,cargo-nextest,cargo-fuzz@0.13.2
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: backend -> target

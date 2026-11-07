@@ -13,3 +13,11 @@ rust-allow = 0
 rust-expect = 0
 eslint-disable = 0
 ast-grep-ignore = 0
+{% if context.backend %}
+# Dashboards and rules may only reference metrics the backend emits or the baukit catalog defines.
+[observability]
+dashboards = ["deploy/observability/dashboards"]
+rules = ["deploy/observability/rules"]
+sources = ["backend/crates"]
+metric-prefix = "{{ context.app_crate }}_"
+{% endif -%}

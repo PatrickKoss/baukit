@@ -5,9 +5,11 @@ use std::{error::Error, sync::Arc, time::Duration};
 use std::{path::PathBuf, process::Command};
 
 use axum::{
+    Router,
     body::{Body, to_bytes},
     http::{Method, Request, StatusCode, header},
     middleware,
+    response::Response,
 };
 use baukit_auth::{AuthState, OidcConfig, OidcVerifier};
 use baukit_config::HttpConfig;
@@ -77,43 +79,11 @@ async fn protected_route_conforms_and_maps_subject_to_internal_user() -> Result<
 
     baukit_test::check_auth_router_conformance(&app, "/me", &issuer, AUDIENCE).await?;
 
-    for (method, path) in [
-        (Method::GET, "/items"),
-        (Method::POST, "/items"),
-        (Method::GET, "/items/00000000-0000-0000-0000-000000000000"),
-        (Method::PUT, "/items/00000000-0000-0000-0000-000000000000"),
-        (
-            Method::DELETE,
-            "/items/00000000-0000-0000-0000-000000000000",
-        ),
-    ] {
-        let response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method(method)
-                    .uri(path)
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(r#"{"name":"protected"}"#))?,
-            )
-            .await?;
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
-    }
+    assert_item_routes_reject_anonymous_callers(&app).await?;
 
     let session =
         issuer.issue_session("seeded-test-subject", AUDIENCE, Duration::from_secs(300))?;
-    let response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/me")
-                .header(
-                    header::AUTHORIZATION,
-                    baukit_test::authorization_header(session.access_token())?,
-                )
-                .body(Body::empty())?,
-        )
-        .await?;
+    let response = get_me(&app, session.access_token()).await?;
     assert_eq!(response.status(), StatusCode::OK);
     let body: Value = serde_json::from_slice(&to_bytes(response.into_body(), 1024 * 1024).await?)?;
     assert_eq!(body["subject"], "seeded-test-subject");
@@ -140,24 +110,63 @@ async fn protected_route_conforms_and_maps_subject_to_internal_user() -> Result<
             .claims("seeded-test-subject", AUDIENCE, Duration::from_secs(300))?
             .expires_at(0),
     )?;
-    let response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/me")
-                .header(
-                    header::AUTHORIZATION,
-                    baukit_test::authorization_header(&expired)?,
-                )
-                .body(Body::empty())?,
-        )
-        .await?;
+    let response = get_me(&app, &expired).await?;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(
         response.headers()[header::WWW_AUTHENTICATE],
         "Bearer error=\"invalid_token\", error_description=\"expired\""
     );
 
+    assert_refresh_rotation(&app, &issuer, &session).await?;
+    Ok(())
+}
+
+async fn get_me(app: &Router, token: &str) -> Result<Response, Box<dyn Error>> {
+    Ok(app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/me")
+                .header(
+                    header::AUTHORIZATION,
+                    baukit_test::authorization_header(token)?,
+                )
+                .body(Body::empty())?,
+        )
+        .await?)
+}
+
+async fn assert_item_routes_reject_anonymous_callers(app: &Router) -> Result<(), Box<dyn Error>> {
+    for (method, path) in [
+        (Method::GET, "/items"),
+        (Method::POST, "/items"),
+        (Method::GET, "/items/00000000-0000-0000-0000-000000000000"),
+        (Method::PUT, "/items/00000000-0000-0000-0000-000000000000"),
+        (
+            Method::DELETE,
+            "/items/00000000-0000-0000-0000-000000000000",
+        ),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(method)
+                    .uri(path)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"name":"protected"}"#))?,
+            )
+            .await?;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
+    }
+    Ok(())
+}
+
+async fn assert_refresh_rotation(
+    app: &Router,
+    issuer: &baukit_test::MockOidcServer,
+    session: &baukit_test::MockOidcSession,
+) -> Result<(), Box<dyn Error>> {
     issuer.set_refresh_delay(Duration::from_millis(20));
     let refreshed = issuer.refresh_session(session.refresh_token()).await?;
     let (concurrent_a, concurrent_b) = tokio::join!(
@@ -167,18 +176,7 @@ async fn protected_route_conforms_and_maps_subject_to_internal_user() -> Result<
     concurrent_a?;
     concurrent_b?;
     assert_eq!(issuer.refresh_request_count(), 3);
-    let response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/me")
-                .header(
-                    header::AUTHORIZATION,
-                    baukit_test::authorization_header(refreshed.access_token())?,
-                )
-                .body(Body::empty())?,
-        )
-        .await?;
+    let response = get_me(app, refreshed.access_token()).await?;
     assert_eq!(response.status(), StatusCode::OK);
 
     assert!(issuer.reject_refresh(session.refresh_token()));
@@ -195,7 +193,6 @@ async fn protected_route_conforms_and_maps_subject_to_internal_user() -> Result<
         Err(baukit_test::JwtFixtureError::RefreshRejected { ref code })
             if code == "invalid_grant"
     ));
-
     Ok(())
 }
 

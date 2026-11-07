@@ -6,8 +6,8 @@ use baukit_ops::{TrafficGate, spawn_pool_metrics_sampler};
 use baukit_runtime::{
     ProcessKind, RestartPolicy, ServiceInfo, ShutdownToken, TaskSupervisor, build_info,
 };
-use baukit_telemetry::{TelemetryBuilder, tracing};
-use sqlx::postgres::PgPoolOptions;
+use baukit_telemetry::{Telemetry, TelemetryBuilder, tracing};
+use sqlx::{PgPool, postgres::PgPoolOptions};
 use tokio::net::TcpListener;
 
 use {{ context.app_crate }}_bin::ProductConfig;
@@ -17,6 +17,7 @@ use {{ context.app_crate }}_bin::worker_operations_router;
 {% else %}use {{ context.app_crate }}_worker::DemoJobHandler;
 {% endif %}
 const PRODUCT: &str = "{{ context.app_name }}";
+const POOL_METRICS_INTERVAL: Duration = Duration::from_secs(15);
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -42,13 +43,7 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         build_info!(),
         config.environment,
     );
-    let mut telemetry_builder = TelemetryBuilder::new(service_info.telemetry_identity().clone())
-        .sampling_ratio(config.telemetry.trace_sampling_ratio)
-        .log_format(config.telemetry.log_format);
-    if let Some(endpoint) = &config.telemetry.otlp_endpoint {
-        telemetry_builder = telemetry_builder.otlp_endpoint(endpoint);
-    }
-    let telemetry = Arc::new(telemetry_builder.init()?);
+    let telemetry = init_telemetry(&config, &service_info)?;
 
     let pool = PgPoolOptions::new()
         .max_connections(database.max_connections)
@@ -56,23 +51,8 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         .acquire_timeout(database.acquire_timeout)
         .connect(database.url.expose())
         .await?;
-    let pool_metrics = spawn_pool_metrics_sampler(pool.clone(), Duration::from_secs(15))?;
-{% if context.platform %}    let handler = Arc::new(PlatformJobHandler::new(pool.clone())?);
-    handler.enqueue_initial(chrono::Utc::now()).await?;
-{% endif %}    let runner = WorkerRunner::new(
-        {% if context.auth_enabled %}Arc::new(
-            PostgresJobStore::new(pool.clone())
-                .retain_failed_kinds(&[baukit_erasure::IDENTITY_DELETE_JOB_TYPE]),
-        ),{% else %}Arc::new(PostgresJobStore::new(pool.clone())),{% endif %}
-        {% if context.platform %}handler,{% else %}Arc::new(DemoJobHandler::new()),{% endif %}
-        WorkerConfig {
-            concurrency: config.product.worker.concurrency,
-            poll_interval: Duration::from_millis(config.product.worker.poll_interval_milliseconds),
-            lease_duration: Duration::from_secs(config.product.worker.lease_duration_seconds),
-            job_timeout: Duration::from_secs(config.product.worker.job_timeout_seconds),
-            ..WorkerConfig::default()
-        },
-    )?;
+    let pool_metrics = spawn_pool_metrics_sampler(pool.clone(), POOL_METRICS_INTERVAL)?;
+    let runner = build_runner(&config, &pool){% if context.platform %}.await{% endif %}?;
 
     let shutdown = ShutdownToken::new(config.shutdown.drain_timeout);
     let traffic_gate = TrafficGate::new();
@@ -94,6 +74,64 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
     );
 
     let signal_task = shutdown.spawn_signal_listener();
+    let server_result = supervise(&shutdown, runner, listener, operations).await?;
+    if !signal_task.is_finished() {
+        signal_task.abort();
+    }
+    let _signal_result = signal_task.await;
+    pool.close().await;
+    pool_metrics.shutdown().await;
+    shutdown
+        .run_during_drain(
+            async move { tokio::task::spawn_blocking(move || telemetry.shutdown()).await },
+        )
+        .await???;
+    server_result?;
+    Ok(())
+}
+
+fn init_telemetry(
+    config: &BaukitConfig<ProductConfig>,
+    service_info: &ServiceInfo,
+) -> Result<Arc<Telemetry>, Box<dyn Error>> {
+    let mut builder = TelemetryBuilder::new(service_info.telemetry_identity().clone())
+        .sampling_ratio(config.telemetry.trace_sampling_ratio)
+        .log_format(config.telemetry.log_format);
+    if let Some(endpoint) = &config.telemetry.otlp_endpoint {
+        builder = builder.otlp_endpoint(endpoint);
+    }
+    Ok(Arc::new(builder.init()?))
+}
+
+{% if context.platform %}async {% endif %}fn build_runner(
+    config: &BaukitConfig<ProductConfig>,
+    pool: &PgPool,
+) -> Result<WorkerRunner, Box<dyn Error>> {
+{% if context.platform %}    let handler = Arc::new(PlatformJobHandler::new(pool.clone())?);
+    handler.enqueue_initial(chrono::Utc::now()).await?;
+{% endif %}    let runner = WorkerRunner::new(
+        {% if context.auth_enabled %}Arc::new(
+            PostgresJobStore::new(pool.clone())
+                .retain_failed_kinds(&[baukit_erasure::IDENTITY_DELETE_JOB_TYPE]),
+        ),{% else %}Arc::new(PostgresJobStore::new(pool.clone())),{% endif %}
+        {% if context.platform %}handler,{% else %}Arc::new(DemoJobHandler::new()),{% endif %}
+        WorkerConfig {
+            concurrency: config.product.worker.concurrency,
+            poll_interval: Duration::from_millis(config.product.worker.poll_interval_milliseconds),
+            lease_duration: Duration::from_secs(config.product.worker.lease_duration_seconds),
+            job_timeout: Duration::from_secs(config.product.worker.job_timeout_seconds),
+            ..WorkerConfig::default()
+        },
+    )?;
+    Ok(runner)
+}
+
+async fn supervise(
+    shutdown: &ShutdownToken,
+    runner: WorkerRunner,
+    listener: TcpListener,
+    operations: axum::Router,
+) -> Result<std::io::Result<()>, Box<dyn Error>> {
     let worker_shutdown = shutdown.child_token();
     let mut tasks = TaskSupervisor::new(shutdown.clone());
     tasks.spawn(
@@ -115,18 +153,5 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         .await;
     shutdown.trigger();
     tasks.join().await?;
-    if !signal_task.is_finished() {
-        signal_task.abort();
-    }
-    let _signal_result = signal_task.await;
-    pool.close().await;
-    pool_metrics.shutdown().await;
-    let telemetry_for_shutdown = Arc::clone(&telemetry);
-    shutdown
-        .run_during_drain(async move {
-            tokio::task::spawn_blocking(move || telemetry_for_shutdown.shutdown()).await
-        })
-        .await???;
-    server_result?;
-    Ok(())
+    Ok(server_result)
 }

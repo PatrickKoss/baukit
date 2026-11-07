@@ -16,7 +16,10 @@ use tower::ServiceExt;
 
 use {{ context.app_crate }}_api::HubTicketSource;
 {% if not context.worker %}use {{ context.app_crate }}_bin::platform::purge_receipts;
-{% endif %}use {{ context.app_crate }}_bin::{ProductConfig, platform::compose};
+{% endif %}use {{ context.app_crate }}_bin::{
+    ProductConfig, RateLimits,
+    platform::{PlatformServices, compose},
+};
 
 const SUBJECT: &str = "suite|person-123";
 const PRODUCT: &str = "{{ context.app_crate }}";
@@ -42,30 +45,47 @@ async fn hub() -> Result<Hub, Box<dyn Error>> {
         .route("/keys", get(move || async move { Json(jwks) }))
         .route(
             "/tickets",
-            post(
-                move |headers: HeaderMap, Json(body): Json<Value>| async move {
-                    assert_eq!(headers["authorization"], "Bearer fixture-service-token");
-                    assert_eq!(body["productId"], PRODUCT);
-                    let now = chrono::Utc::now().timestamp();
-                    let subject = if body["suiteSubject"] == "suite|misbound" {
-                        "suite|another"
-                    } else {
-                        body["suiteSubject"].as_str().expect("subject")
-                    };
-                    let claims = json!({"iss": issuer, "sub": subject, "aud": PRODUCT,
-                "tier": "paid", "features": ["export"], "rev": 7, "iat": now, "exp": now + 3600});
-                    let header =
-                        URL_SAFE_NO_PAD.encode(br#"{"alg":"EdDSA","kid":"fixture","typ":"JWT"}"#);
-                    let payload =
-                        URL_SAFE_NO_PAD.encode(serde_json::to_vec(&claims).expect("claims"));
-                    let input = format!("{header}.{payload}");
-                    let signature = URL_SAFE_NO_PAD.encode(key.sign(input.as_bytes()).to_bytes());
-                    Json(json!({"ticket": format!("{input}.{signature}")}))
-                },
-            ),
+            post(move |headers: HeaderMap, Json(body): Json<Value>| {
+                let issuer = issuer.clone();
+                let key = key.clone();
+                async move { issue_ticket(&headers, &body, &issuer, &key).map(Json) }
+            }),
         );
     let task = tokio::spawn(async move { axum::serve(listener, app).await });
     Ok(Hub { base, task })
+}
+
+fn issue_ticket(
+    headers: &HeaderMap,
+    body: &Value,
+    issuer: &str,
+    key: &SigningKey,
+) -> Result<Value, StatusCode> {
+    let authorization = headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok());
+    if authorization != Some("Bearer fixture-service-token")
+        || body.get("productId").and_then(Value::as_str) != Some(PRODUCT)
+    {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    let requested = body
+        .get("suiteSubject")
+        .and_then(Value::as_str)
+        .ok_or(StatusCode::BAD_REQUEST)?;
+    let subject = if requested == "suite|misbound" {
+        "suite|another"
+    } else {
+        requested
+    };
+    let now = chrono::Utc::now().timestamp();
+    let claims = json!({"iss": issuer, "sub": subject, "aud": PRODUCT,
+        "tier": "paid", "features": ["export"], "rev": 7, "iat": now, "exp": now + 3600});
+    let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"EdDSA","kid":"fixture","typ":"JWT"}"#);
+    let claims = serde_json::to_vec(&claims).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let input = format!("{header}.{}", URL_SAFE_NO_PAD.encode(claims));
+    let signature = URL_SAFE_NO_PAD.encode(key.sign(input.as_bytes()).to_bytes());
+    Ok(json!({"ticket": format!("{input}.{signature}")}))
 }
 
 fn settings(base: &str) -> ProductConfig {
@@ -81,7 +101,7 @@ fn settings(base: &str) -> ProductConfig {
     config
 }
 
-fn request(body: &str, secret: &str) -> Request<Body> {
+fn request(body: &str, secret: &str) -> Result<Request<Body>, axum::http::Error> {
     let now = chrono::Utc::now().timestamp();
     Request::post("/platform/inbound")
         .header("content-type", "application/json")
@@ -93,15 +113,14 @@ fn request(body: &str, secret: &str) -> Request<Body> {
             sign_webhook_hmac_sha256(secret.as_bytes(), now, "fixture-attempt", body.as_bytes()),
         )
         .body(Body::from(body.to_owned()))
-        .expect("request")
 }
 
 #[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]
 async fn signed_fixture_event_reads_entitlements_and_retains_receipts() -> Result<(), Box<dyn Error>>
 {
-    use baukit_suite::platform::EntitlementCache;
-    let migrations = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
+{% if context.auth_enabled %}    use baukit_suite::platform::EntitlementCache;
+{% endif %}    let migrations = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
     let fixture = baukit_test::start_postgres_with_migrations(&migrations).await?;
     let pool = sqlx::PgPool::connect(fixture.connection_url()).await?;
     let hub = hub().await?;
@@ -114,14 +133,14 @@ async fn signed_fixture_event_reads_entitlements_and_retains_receipts() -> Resul
     let response = services
         .router
         .clone()
-        .oneshot(request(&body, "wrong"))
+        .oneshot(request(&body, "wrong")?)
         .await?;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     for _ in 0..2 {
         let response = services
             .router
             .clone()
-            .oneshot(request(&body, SECRET))
+            .oneshot(request(&body, SECRET)?)
             .await?;
         assert_eq!(response.status(), StatusCode::NO_CONTENT);
     }
@@ -133,29 +152,12 @@ async fn signed_fixture_event_reads_entitlements_and_retains_receipts() -> Resul
     let response = services
         .router
         .clone()
-        .oneshot(request(&erasure, SECRET))
+        .oneshot(request(&erasure, SECRET)?)
         .await?;
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     let cache = PostgresEntitlementCache::new(pool.clone());
     let now = chrono::Utc::now().timestamp();
-    let cached = cache
-        .get(SUBJECT, PRODUCT, now)
-        .await?
-        .ok_or("snapshot missing")?;
-    assert_eq!(cached.revision, 7);
-    assert!(
-        services
-            .entitlements
-            .has_entitlement(SUBJECT, "export", now)
-            .await?
-    );
-    // A miss exercises the same verified ticket source through the read API.
-    assert!(
-        services
-            .entitlements
-            .has_tier("suite|another", "paid", now)
-            .await?
-    );
+    assert_verified_entitlements(&cache, &services, now).await?;
     let receipts: i64 = sqlx::query_scalar("SELECT count(*) FROM platform_inbound_receipts")
         .fetch_one(&pool)
         .await?;
@@ -182,6 +184,33 @@ async fn signed_fixture_event_reads_entitlements_and_retains_receipts() -> Resul
     assert_eq!(cache.revision(SUBJECT, PRODUCT).await?, 0);
     assert!(cache.get(SUBJECT, PRODUCT, now).await?.is_none());
 {% endif %}    pool.close().await;
+    Ok(())
+}
+
+async fn assert_verified_entitlements(
+    cache: &PostgresEntitlementCache,
+    services: &PlatformServices,
+    now: i64,
+) -> Result<(), Box<dyn Error>> {
+    use baukit_suite::platform::EntitlementCache;
+    let cached = cache
+        .get(SUBJECT, PRODUCT, now)
+        .await?
+        .ok_or("snapshot missing")?;
+    assert_eq!(cached.revision, 7);
+    assert!(
+        services
+            .entitlements
+            .has_entitlement(SUBJECT, "export", now)
+            .await?
+    );
+    // A miss exercises the same verified ticket source through the read API.
+    assert!(
+        services
+            .entitlements
+            .has_tier("suite|another", "paid", now)
+            .await?
+    );
     Ok(())
 }{% if context.worker %}
 
@@ -234,10 +263,12 @@ async fn run_receipt_purge(pool: sqlx::PgPool) -> Result<(), Box<dyn Error>> {
     let pending: Vec<(String, chrono::DateTime<chrono::Utc>, Value)> = sqlx::query_as(
         "SELECT idempotency_key, run_after, payload FROM job_outbox WHERE job_type = $1 AND status = 'pending'",
     ).bind(PURGE_JOB_TYPE).fetch_all(&pool).await?;
-    assert_eq!(pending.len(), 1);
-    assert_eq!(pending[0].0, next.identifier());
-    assert_eq!(pending[0].1, next.starts_at());
-    assert_eq!(pending[0].2["slot"], json!(next.starts_at()));
+    let [(key, run_after, payload)] = pending.as_slice() else {
+        return Err(format!("expected one pending purge, found {}", pending.len()).into());
+    };
+    assert_eq!(*key, next.identifier());
+    assert_eq!(*run_after, next.starts_at());
+    assert_eq!(payload.get("slot"), Some(&json!(next.starts_at())));
     assert!(!replica.enqueue_initial(now).await?.created);
     let old: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM platform_inbound_receipts WHERE event_id = 'old')",
@@ -338,4 +369,44 @@ fn hub_runtime_settings_require_a_valid_url_and_service_credential() {
     assert!(hub.validate_for(&config.platform).is_err());
     hub.service_token = None;
     assert!(hub.validate_for(&config.platform).is_err());
+}
+
+#[tokio::test]
+async fn platform_routes_sit_inside_the_rate_limiter() -> Result<(), Box<dyn Error>> {
+    const QUOTA: u64 = 2;
+    let pool = sqlx::PgPool::connect_lazy("postgres://unused@127.0.0.1:1/unused")?;
+    let services = compose(pool, &settings("http://127.0.0.1:1"))?;
+    let mut options = baukit_ratelimit::RateLimitOptions::default();
+    options.ip.quota = baukit_ratelimit::Quota::new(QUOTA, std::time::Duration::from_secs(60), 0)?;
+    let limits = RateLimits {
+        store: baukit_ratelimit::SharedRateLimitStore::new(
+            baukit_ratelimit::InMemoryRateLimitStore::default(),
+        ),
+        options,
+    };
+{% if context.auth_enabled %}    let issuer = baukit_test::MockOidcServer::start().await?;
+    let verifier =
+        baukit_auth::OidcVerifier::discover(baukit_auth::OidcConfig::new(issuer.issuer(), "api")?)
+            .await?;
+    let app = {{ context.app_crate }}_bin::protect_routes(
+        Router::new(),
+        [services.router],
+        baukit_auth::AuthState::new(verifier),
+        Some(&limits),
+    )?;
+{% else %}    let app = {{ context.app_crate }}_bin::rate_limited(services.router, Some(&limits));
+{% endif %}    let mut statuses = Vec::new();
+    for _ in 0..=QUOTA {
+        let response = app.clone().oneshot(request("{}", "wrong")?).await?;
+        statuses.push(response.status());
+    }
+    assert_eq!(
+        statuses,
+        [
+            StatusCode::UNAUTHORIZED,
+            StatusCode::UNAUTHORIZED,
+            StatusCode::TOO_MANY_REQUESTS
+        ]
+    );
+    Ok(())
 }

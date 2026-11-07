@@ -1,4 +1,9 @@
-use std::{env, error::Error, io, path::PathBuf};
+use std::{
+    env,
+    error::Error,
+    io::{self, Write as _},
+    path::PathBuf,
+};
 
 use baukit_config::{BaukitConfig, Environment};
 
@@ -25,6 +30,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let migrator = sqlx::migrate::Migrator::new(migrations.clone()).await?;
     migrator.run(&pool).await?;
     pool.close().await;
-    println!("applied migrations from {}", migrations.display());
+    writeln!(
+        io::stdout().lock(),
+        "applied migrations from {}",
+        migrations.display()
+    )?;
     Ok(())
 }

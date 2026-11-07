@@ -105,7 +105,14 @@ per IP and per session through the Redis store.
 
 Set `auth.issuer` to the Clerk Frontend API URL and `auth.authorized_parties`
 to the allowed web origins and mobile authorized-party values. The verifier
-checks signature, issuer and expiry; any present `azp` must match that list.
+checks signature, issuer and expiry, and requires an `azp` from that list.
+Clerk omits `azp` when a request has no `Origin`, which is every request from a
+native app. `auth.allow_missing_azp`
+(`{{ context.app_env }}__AUTH__ALLOW_MISSING_AZP`) accepts such tokens; a
+present `azp` must still be in the list. It defaults to
+`{{ "true" if context.mobile else "false" }}` for this product. Any Clerk
+application on the same instance can mint a token without `azp`, so leave it
+off when no native app calls the API.
 Clerk session tokens do not require an audience. They authenticate REST,
 while MCP uses separate OAuth access tokens. Set `mcp.oauth_client_id` for a
 dedicated OAuth client, or `mcp.required_scopes` for clients that register
