@@ -134,7 +134,7 @@ tenancy and rate-limit audit of the products (S-08).
 - [ ] P2.1 `SecurityHeadersLayer` in baukit-http on by default (nosniff, Referrer-Policy, frame-ancestors via
   CSP for HTML, `Cache-Control: no-store` on authenticated JSON, HSTS behind config); CSP for the web template
   and the chart's edge config; header assertions in the fixture gate.
-- [ ] P2.2 auth-web token storage per D2, with a test that no storage write contains a refresh token.
+- [ ] P2.2 (design: ADR 0006 accepted; implementation = its 4 tasks) auth-web token storage per D2, with a test that no storage write contains a refresh token.
 - [ ] P2.3 `IssuedApiToken` and every secret-holding type: redacting Debug / `SecretString`.
 - [ ] P2.4 Clerk missing-azp opt-in; negative tests for every token profile.
 - [~] P2.5 Supply chain: SHA-pin all actions in baukit and the template workflows, renovate digest pinning,
@@ -203,4 +203,6 @@ tenancy and rate-limit audit of the products (S-08).
   Worktree and branch removed (no build cache was created).
 - 2026-11-07: W1-H ADR 0006 sent back: grace window not implementable with hashed secrets, CSP breaks Expo/RNW
   inline styles and misses media origins, no rate limiting on /auth/session/*.
+- 2026-11-07: ADR 0006 amended (grace token column + FOR UPDATE, per-flavor CSP, rate-limit buckets,
+  credentials scope, Keycloak idle note), accepted and merged. Worktree removed.
 - 2026-11-07: findings catalog and phases written. User chose D2 = BFF refresh cookie, D3 = CLAUDE.md + symlink.
