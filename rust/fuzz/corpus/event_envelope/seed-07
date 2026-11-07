@@ -1,0 +1,1 @@
+{"eventId": "event-age-boundary", "type": "relax.session.completed", "userId": "oidc-subject-1", "occurredAt": "2026-08-17T12:00:00Z", "sourceApp": "relax", "schemaVersion": 1, "payload": {}}

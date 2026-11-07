@@ -18,7 +18,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-
 METHODS = ("get", "put", "post", "delete", "options", "head", "patch", "trace")
 PATH_PARAMETER = re.compile(r"\{[^}/]+\}")
 SUCCESS_STATUS = re.compile(r"^2(\d\d|XX)$")
@@ -163,11 +162,14 @@ class Comparison:
         base_body = resolve(self.base, base_operation.get("requestBody"))
         current_body = resolve(self.current, current_operation.get("requestBody"))
         location = f"{label} request"
-        if current_body is not None and current_body.get("required"):
-            if base_body is None or not base_body.get("required"):
-                self.report(
-                    "request-body-required", location, "clients that omit the body are rejected"
-                )
+        if (
+            current_body is not None
+            and current_body.get("required")
+            and (base_body is None or not base_body.get("required"))
+        ):
+            self.report(
+                "request-body-required", location, "clients that omit the body are rejected"
+            )
         if base_body is None or current_body is None:
             return
         self.compare_content(
@@ -216,9 +218,7 @@ class Comparison:
                 media_location,
             )
 
-    def compare_schema(
-        self, base: object, current: object, direction: str, location: str
-    ) -> None:
+    def compare_schema(self, base: object, current: object, direction: str, location: str) -> None:
         SchemaComparison(self, direction, location).compare(base, current, "$", frozenset())
 
 
@@ -390,7 +390,8 @@ class SchemaComparison:
                 change = "added" if was_added else "removed"
                 for member in members:
                     self.report(
-                        "composition-changed", pointer,
+                        "composition-changed",
+                        pointer,
                         f"{keyword} member {json.dumps(member, sort_keys=True)} was {change}",
                     )
 
@@ -429,8 +430,11 @@ def match_composition_members(
     for index, old in unmatched:
         identity = composition_identity(old)
         match = next(
-            (position for position, new in enumerate(remaining)
-             if identity is not None and composition_identity(new) == identity),
+            (
+                position
+                for position, new in enumerate(remaining)
+                if identity is not None and composition_identity(new) == identity
+            ),
             None,
         )
         if match is None:
@@ -461,8 +465,8 @@ def pointer_target(document: dict, target: str) -> object:
     if not target.startswith("#/"):
         raise ConfigurationError(f"{target}: only local references are supported")
     node: object = document
-    for token in target[2:].split("/"):
-        token = token.replace("~1", "/").replace("~0", "~")
+    for escaped in target[2:].split("/"):
+        token = escaped.replace("~1", "/").replace("~0", "~")
         if not isinstance(node, dict) or token not in node:
             raise ConfigurationError(f"{target}: unresolved reference")
         node = node[token]
@@ -475,10 +479,10 @@ def normalized_path(path: str) -> str:
 
 def operations(document: dict, prefixes: tuple[str, ...]) -> dict:
     found = {}
-    for path, item in document.get("paths", {}).items():
+    for path, raw_item in document.get("paths", {}).items():
         if prefixes and not path.startswith(prefixes):
             continue
-        item = resolve(document, item)
+        item = resolve(document, raw_item)
         for method in METHODS:
             operation = item.get(method)
             if isinstance(operation, dict):
@@ -492,8 +496,8 @@ def parameters(document: dict, path: str, item: dict, operation: dict) -> dict:
     path_names = [match[1:-1] for match in PATH_PARAMETER.findall(path)]
     merged = {}
     for source in (item.get("parameters", []), operation.get("parameters", [])):
-        for parameter in source:
-            parameter = resolve(document, parameter)
+        for raw_parameter in source:
+            parameter = resolve(document, raw_parameter)
             merged[parameter_key(parameter, path_names)] = parameter
     return merged
 
@@ -531,9 +535,7 @@ def security_options(document: dict, operation: dict) -> list[dict]:
 
 
 def satisfies(sent: dict, required: dict) -> bool:
-    return all(
-        scheme in sent and scopes <= sent[scheme] for scheme, scopes in required.items()
-    )
+    return all(scheme in sent and scopes <= sent[scheme] for scheme, scopes in required.items())
 
 
 def describe_security(option: dict) -> str:
@@ -623,9 +625,7 @@ def read_revision(revision: str, path: Path) -> dict | None:
 
 def git(*arguments: str) -> subprocess.CompletedProcess:
     try:
-        return subprocess.run(
-            ["git", *arguments], capture_output=True, text=True, check=False
-        )
+        return subprocess.run(["git", *arguments], capture_output=True, text=True, check=False)
     except OSError as error:
         raise ConfigurationError(f"cannot run git: {error}") from error
 

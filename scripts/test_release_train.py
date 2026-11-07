@@ -18,9 +18,7 @@ SCRIPT = ROOT / "scripts/release-train.sh"
 
 
 def shell_order(script: str) -> list[str]:
-    match = re.search(
-        r"^ORDER=\((.*?)^\)", (ROOT / script).read_text(), re.MULTILINE | re.DOTALL
-    )
+    match = re.search(r"^ORDER=\((.*?)^\)", (ROOT / script).read_text(), re.MULTILINE | re.DOTALL)
     if match is None:
         raise AssertionError(f"{script} must declare ORDER")
     return shlex.split(match[1], comments=True)
@@ -29,8 +27,9 @@ def shell_order(script: str) -> list[str]:
 def crate_dependencies(manifest: dict, workspace: dict) -> set[str]:
     dependencies = set()
     for group in ("dependencies", "build-dependencies"):
-        for alias, requirement in manifest.get(group, {}).items():
-            if isinstance(requirement, dict) and requirement.get("workspace") is True:
+        for alias, declared in manifest.get(group, {}).items():
+            requirement = declared
+            if isinstance(declared, dict) and declared.get("workspace") is True:
                 requirement = workspace["dependencies"][alias]
             name = requirement.get("package", alias) if isinstance(requirement, dict) else alias
             if name.startswith("baukit-"):
@@ -45,9 +44,7 @@ class ReleaseInventoryTest(unittest.TestCase):
         directories = sorted(
             path for path in (ROOT / "typescript/packages").iterdir() if path.is_dir()
         )
-        packages = [
-            json.loads((path / "package.json").read_text())["name"] for path in directories
-        ]
+        packages = [json.loads((path / "package.json").read_text())["name"] for path in directories]
         config = json.loads((ROOT / "typescript/.changeset/config.json").read_text())
         self.assertEqual(len(config["fixed"]), 1)
         self.assertCountEqual(config["fixed"][0], packages)
@@ -73,9 +70,7 @@ class ReleaseInventoryTest(unittest.TestCase):
                     self.assertLess(positions[dependency], positions[package["name"]])
 
     def test_release_plz_and_publish_order_cover_every_crate_directory(self) -> None:
-        directories = sorted(
-            path for path in (ROOT / "rust/crates").iterdir() if path.is_dir()
-        )
+        directories = sorted(path for path in (ROOT / "rust/crates").iterdir() if path.is_dir())
         crates = [
             tomllib.loads((path / "Cargo.toml").read_text())["package"]["name"]
             for path in directories
@@ -91,9 +86,7 @@ class ReleaseInventoryTest(unittest.TestCase):
         positions = {name: index for index, name in enumerate(order)}
         workspace = tomllib.loads((ROOT / "rust/Cargo.toml").read_text())["workspace"]
         for crate in order:
-            manifest = tomllib.loads(
-                (ROOT / "rust/crates" / crate / "Cargo.toml").read_text()
-            )
+            manifest = tomllib.loads((ROOT / "rust/crates" / crate / "Cargo.toml").read_text())
             for dependency in sorted(crate_dependencies(manifest, workspace)):
                 with self.subTest(crate=crate, dependency=dependency):
                     self.assertIn(dependency, positions)
@@ -127,9 +120,7 @@ class ReleaseTrainCorepackTest(unittest.TestCase):
         root = self.root
         (root / "typescript/.changeset").mkdir()
         (root / "rust").mkdir()
-        (root / "rust/Cargo.toml").write_text(
-            '[workspace.package]\nversion = "0.6.0"\n'
-        )
+        (root / "rust/Cargo.toml").write_text('[workspace.package]\nversion = "0.6.0"\n')
         self.executable(root / "scripts/check-version-coherence.py", "#!/bin/sh\nexit 0\n")
         binaries = root / "bin"
         binaries.mkdir()
@@ -137,7 +128,7 @@ class ReleaseTrainCorepackTest(unittest.TestCase):
             binaries / "git",
             '#!/bin/sh\ncase "$1" in\n'
             'rev-parse) printf "%s\\n" "$TEST_REPO_ROOT";;\n'
-            'status) exit 0;;\nesac\n',
+            "status) exit 0;;\nesac\n",
         )
         self.executable(
             binaries / "corepack",
@@ -194,15 +185,21 @@ class ReleasePackageChangelogTest(unittest.TestCase):
 
     def test_adds_an_empty_unreleased_section_for_a_new_package(self):
         source = "# Package\n\n## 0.9.1\n\n- First release.\n"
-        self.assertEqual(cut_package_changelog(source, "0.9.1"),
-                         "# Package\n\n## Unreleased\n\n## 0.9.1\n\n- First release.\n")
+        self.assertEqual(
+            cut_package_changelog(source, "0.9.1"),
+            "# Package\n\n## Unreleased\n\n## 0.9.1\n\n- First release.\n",
+        )
 
     def test_rejects_a_missing_or_duplicate_new_release(self):
-        for source in ("## Unreleased\n\n- Product fix.\n\n## 0.9.0\n\n- Old fix.\n",
-                       "## Unreleased\n\n- Product fix.\n\n## 0.9.1\n\n- One release.\n\n## 0.9.1\n\n- Duplicate release.\n"):
-            with self.subTest(source=source):
-                with self.assertRaisesRegex(ValueError, "missing the new release heading"):
-                    cut_package_changelog(source, "0.9.1")
+        for source in (
+            "## Unreleased\n\n- Product fix.\n\n## 0.9.0\n\n- Old fix.\n",
+            "## Unreleased\n\n- Product fix.\n\n## 0.9.1\n\n- One release.\n\n## 0.9.1\n\n- Duplicate release.\n",
+        ):
+            with (
+                self.subTest(source=source),
+                self.assertRaisesRegex(ValueError, "missing the new release heading"),
+            ):
+                cut_package_changelog(source, "0.9.1")
 
 
 class ReleaseTrainFilesTest(unittest.TestCase):
@@ -211,8 +208,9 @@ class ReleaseTrainFilesTest(unittest.TestCase):
         sections = re.split(r"^## ", navigation, flags=re.MULTILINE)
         pending = [section for section in sections if section.startswith("[Unreleased]\n")]
         self.assertEqual(len(pending), 1)
-        menu_focus = [section for section in sections
-                      if "Remove web menus before restoring focus" in section]
+        menu_focus = [
+            section for section in sections if "Remove web menus before restoring focus" in section
+        ]
         self.assertEqual(len(menu_focus), 1)
         self.assertFalse(menu_focus[0].startswith(("0.9.0\n", "0.8.0\n")))
         shipped = next(section for section in sections if section.startswith("0.8.0\n"))
@@ -221,14 +219,19 @@ class ReleaseTrainFilesTest(unittest.TestCase):
         for path in (ROOT / "typescript/packages").glob("*/CHANGELOG.md"):
             with self.subTest(path=path):
                 sections = re.split(r"^## ", path.read_text(), flags=re.MULTILINE)
-                pending = [section for section in sections
-                           if section.startswith(("Unreleased\n", "[Unreleased]\n"))]
+                pending = [
+                    section
+                    for section in sections
+                    if section.startswith(("Unreleased\n", "[Unreleased]\n"))
+                ]
                 self.assertEqual(len(pending), 1)
                 self.assertNotIn("Publish the TypeScript sources referenced", pending[0])
 
     def test_authentication_template_notes_have_release_boundaries(self):
-        for relative in ("templates/web/__auth__/web/CHANGELOG.md",
-                         "templates/mobile/__auth__/mobile/CHANGELOG.md"):
+        for relative in (
+            "templates/web/__auth__/web/CHANGELOG.md",
+            "templates/mobile/__auth__/mobile/CHANGELOG.md",
+        ):
             source = (ROOT / relative).read_text()
             pending, history = source.split("## [0.9.0] - 2026-10-07", 1)
             self.assertNotIn("Select the {{ context.auth_provider }}", pending)
@@ -283,32 +286,57 @@ class ReleaseTrainFilesTest(unittest.TestCase):
         self.assertIn("Breaking: `--mcp`", older)
 
     def test_patch_train_rejects_uncut_cli_entries(self):
-        self.check_patch_train("## [Unreleased]\n\n- Pending template fix.\n", False,
-                               {"cli/CHANGELOG.md": "## [Unreleased]\n- Pending CLI fix.\n"})
+        self.check_patch_train(
+            "## [Unreleased]\n\n- Pending template fix.\n",
+            False,
+            {"cli/CHANGELOG.md": "## [Unreleased]\n- Pending CLI fix.\n"},
+        )
 
     def test_patch_train_rejects_a_missing_cli_unreleased_heading(self):
-        self.check_patch_train("## [Unreleased]\n\n- Pending template fix.\n", False,
-                               {"cli/CHANGELOG.md": "## [0.7.0] - 2026-10-04\n\n- Shipped CLI fix.\n"})
+        self.check_patch_train(
+            "## [Unreleased]\n\n- Pending template fix.\n",
+            False,
+            {"cli/CHANGELOG.md": "## [0.7.0] - 2026-10-04\n\n- Shipped CLI fix.\n"},
+        )
 
     def test_patch_train_rejects_uncut_crate_entries(self):
-        self.check_patch_train("## [Unreleased]\n\n- Pending template fix.\n", False,
-                               {"rust/crates/baukit-core/CHANGELOG.md": "## [Unreleased]\n- Pending crate fix.\n"})
+        self.check_patch_train(
+            "## [Unreleased]\n\n- Pending template fix.\n",
+            False,
+            {"rust/crates/baukit-core/CHANGELOG.md": "## [Unreleased]\n- Pending crate fix.\n"},
+        )
 
     def test_patch_train_rejects_uncut_chart_entries(self):
-        self.check_patch_train("## [Unreleased]\n\n- Pending template fix.\n", False,
-                               {"deploy/chart/baukit-app/CHANGELOG.md": "## [Unreleased]\n- Pending chart fix.\n"})
+        self.check_patch_train(
+            "## [Unreleased]\n\n- Pending template fix.\n",
+            False,
+            {"deploy/chart/baukit-app/CHANGELOG.md": "## [Unreleased]\n- Pending chart fix.\n"},
+        )
 
     def test_patch_train_rejects_uncut_package_entries(self):
-        self.check_patch_train("## [Unreleased]\n\n- Pending template fix.\n", False,
-                               {"typescript/packages/analytics-core/CHANGELOG.md": "## Unreleased\n- Pending package fix.\n"})
+        self.check_patch_train(
+            "## [Unreleased]\n\n- Pending template fix.\n",
+            False,
+            {
+                "typescript/packages/analytics-core/CHANGELOG.md": "## Unreleased\n- Pending package fix.\n"
+            },
+        )
 
     def test_patch_train_rejects_duplicate_package_unreleased_sections(self):
-        self.check_patch_train("## [Unreleased]\n\n- Pending template fix.\n", False,
-                               {"typescript/packages/analytics-core/CHANGELOG.md": "## Unreleased\n\n- One fix.\n\n## [Unreleased]\n\n- Another fix.\n"})
+        self.check_patch_train(
+            "## [Unreleased]\n\n- Pending template fix.\n",
+            False,
+            {
+                "typescript/packages/analytics-core/CHANGELOG.md": "## Unreleased\n\n- One fix.\n\n## [Unreleased]\n\n- Another fix.\n"
+            },
+        )
 
     def test_patch_train_rejects_uncut_authentication_template_entries(self):
-        self.check_patch_train("## [Unreleased]\n\n- Pending template fix.\n", False,
-                               {"templates/web/__auth__/web/CHANGELOG.md": "## Unreleased\n- Pending web fix.\n"})
+        self.check_patch_train(
+            "## [Unreleased]\n\n- Pending template fix.\n",
+            False,
+            {"templates/web/__auth__/web/CHANGELOG.md": "## Unreleased\n- Pending web fix.\n"},
+        )
 
     def test_patch_train_cuts_template_changelog_and_updates_cli_tags(self):
         self.check_patch_train("## [Unreleased]\n\n- Pending template fix.\n", True)
@@ -316,10 +344,19 @@ class ReleaseTrainFilesTest(unittest.TestCase):
     def test_patch_train_rejects_uncut_template_entries(self):
         self.check_patch_train("## [Unreleased]\n- Pending template fix.\n", False)
 
-    def check_patch_train(self, changelog: str, succeeds: bool, changelog_overrides: dict[str, str] | None = None):
+    def check_patch_train(
+        self, changelog: str, succeeds: bool, changelog_overrides: dict[str, str] | None = None
+    ):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for relative in ["scripts/release-train.sh", "scripts/release_packages.py", "scripts/check-example-lockfiles.py", "scripts/cli_install.py", "templates/common/CHANGELOG.md", "README.md"]:
+            for relative in [
+                "scripts/release-train.sh",
+                "scripts/release_packages.py",
+                "scripts/check-example-lockfiles.py",
+                "scripts/cli_install.py",
+                "templates/common/CHANGELOG.md",
+                "README.md",
+            ]:
                 destination = root / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(ROOT / relative, destination)
@@ -328,13 +365,15 @@ class ReleaseTrainFilesTest(unittest.TestCase):
                 "cli/CHANGELOG.md": "## [Unreleased]\n\n- Pending CLI fix.\n\n## [0.7.0] - 2026-10-04\n\n- Shipped CLI fix.\n",
                 "cli/Cargo.toml": '[package]\nname = "baukit-cli"\nversion = "0.7.0"\n',
                 "rust/crates/baukit-core/CHANGELOG.md": "## [Unreleased]\n\n- Pending crate fix.\n",
-                "typescript/packages/analytics-core/package.json": json.dumps({"name": "@baukit/analytics-core", "version": "0.7.1"}),
+                "typescript/packages/analytics-core/package.json": json.dumps(
+                    {"name": "@baukit/analytics-core", "version": "0.7.1"}
+                ),
                 "typescript/packages/analytics-core/CHANGELOG.md": "# @baukit/analytics-core\n\n## Unreleased\n\n- Pending package fix.\n\n## 0.7.0\n\n- Previous package fix.\n",
                 "templates/web/__auth__/web/CHANGELOG.md": "## Unreleased\n\n- Pending web fix.\n",
                 "deploy/chart/baukit-app/Chart.yaml": 'version: 0.7.0\nappVersion: "0.7.0"\n',
                 "deploy/chart/baukit-app/CHANGELOG.md": "## [Unreleased]\n\n- Pending chart fix.\n",
                 "deploy/observability/Chart.yaml": 'version: 0.7.0\nappVersion: "0.7.0"\n',
-                "deploy/chart/baukit-app/README.md": '  - name: baukit-app\n    version: 0.7.0\n',
+                "deploy/chart/baukit-app/README.md": "  - name: baukit-app\n    version: 0.7.0\n",
             }
             for relative, source in files.items():
                 path = root / relative
@@ -345,7 +384,10 @@ class ReleaseTrainFilesTest(unittest.TestCase):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(source)
             (root / "typescript/.changeset").mkdir()
-            (root / "templates/common/CHANGELOG.md").write_text(changelog + "\n## [0.7.0] - 2026-10-04\n\n- Previous fix.\n\n## [0.6.0] - 2026-10-02\n")
+            (root / "templates/common/CHANGELOG.md").write_text(
+                changelog
+                + "\n## [0.7.0] - 2026-10-04\n\n- Previous fix.\n\n## [0.6.0] - 2026-10-02\n"
+            )
             before = (root / "templates/common/CHANGELOG.md").read_text()
             binaries = root / "bin"
             binaries.mkdir()
@@ -354,8 +396,15 @@ class ReleaseTrainFilesTest(unittest.TestCase):
             self.assertIsNotNone(real_git)
             subprocess.run([real_git, "init", "--quiet", str(root)], check=True)
             subprocess.run([real_git, "add", "."], cwd=root, check=True)
-            executable(binaries / "git", '#!/bin/sh\ncase "$1" in\nrev-parse) printf "%s\\n" "$TEST_REPO_ROOT";;\nstatus) exit 0;;\n*) exec ' + shlex.quote(real_git) + ' "$@";;\nesac\n')
-            executable(binaries / "corepack", """#!/bin/sh
+            executable(
+                binaries / "git",
+                '#!/bin/sh\ncase "$1" in\nrev-parse) printf "%s\\n" "$TEST_REPO_ROOT";;\nstatus) exit 0;;\n*) exec '
+                + shlex.quote(real_git)
+                + ' "$@";;\nesac\n',
+            )
+            executable(
+                binaries / "corepack",
+                """#!/bin/sh
 python3 - <<'PYTHON'
 from pathlib import Path
 path = Path("packages/analytics-core/CHANGELOG.md")
@@ -364,12 +413,25 @@ heading = "## 0.7.1\\n\\n- Release the coordinated train.\\n\\n"
 source = source.replace("## ", heading + "## ", 1)
 path.write_text(source)
 PYTHON
-""")
+""",
+            )
             executable(binaries / "cargo", "#!/bin/sh\nexit 0\n")
             executable(binaries / "node", "#!/bin/sh\nprintf '0.7.1\\n'\n")
             executable(root / "scripts/check-version-coherence.py", "#!/bin/sh\nexit 0\n")
-            environment = {**os.environ, "PATH": f"{binaries}:{os.environ['PATH']}", "TEST_REPO_ROOT": str(root), "RELEASE_DATE": "2026-10-05"}
-            result = subprocess.run(["bash", str(root / "scripts/release-train.sh"), "patch"], cwd=root, env=environment, capture_output=True, text=True)
+            environment = {
+                **os.environ,
+                "PATH": f"{binaries}:{os.environ['PATH']}",
+                "TEST_REPO_ROOT": str(root),
+                "RELEASE_DATE": "2026-10-05",
+            }
+            result = subprocess.run(
+                ["bash", str(root / "scripts/release-train.sh"), "patch"],
+                cwd=root,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
             if not succeeds:
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("still has uncut Unreleased entries", result.stderr)
@@ -379,15 +441,33 @@ PYTHON
                 return
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             after = (root / "templates/common/CHANGELOG.md").read_text()
-            self.assertEqual(after, before.replace("## [Unreleased]\n\n", "## [Unreleased]\n\n## [0.7.1] - 2026-10-05\n\n", 1))
+            self.assertEqual(
+                after,
+                before.replace(
+                    "## [Unreleased]\n\n", "## [Unreleased]\n\n## [0.7.1] - 2026-10-05\n\n", 1
+                ),
+            )
             cli_changelog = (root / "cli/CHANGELOG.md").read_text()
-            self.assertEqual(cli_changelog, "## [Unreleased]\n\n## [0.7.1] - 2026-10-05\n\n- Pending CLI fix.\n\n## [0.7.0] - 2026-10-04\n\n- Shipped CLI fix.\n")
+            self.assertEqual(
+                cli_changelog,
+                "## [Unreleased]\n\n## [0.7.1] - 2026-10-05\n\n- Pending CLI fix.\n\n## [0.7.0] - 2026-10-04\n\n- Shipped CLI fix.\n",
+            )
             chart_changelog = (root / "deploy/chart/baukit-app/CHANGELOG.md").read_text()
-            self.assertEqual(chart_changelog, "## [Unreleased]\n\n## [0.7.1] - 2026-10-05\n\n- Pending chart fix.\n")
-            package_changelog = (root / "typescript/packages/analytics-core/CHANGELOG.md").read_text()
-            self.assertEqual(package_changelog, "# @baukit/analytics-core\n\n## Unreleased\n\n## 0.7.1\n\n- Pending package fix.\n\n- Release the coordinated train.\n\n## 0.7.0\n\n- Previous package fix.\n")
-            self.assertEqual((root / "templates/web/__auth__/web/CHANGELOG.md").read_text(),
-                             "## Unreleased\n\n## [0.7.1] - 2026-10-05\n\n- Pending web fix.\n")
+            self.assertEqual(
+                chart_changelog,
+                "## [Unreleased]\n\n## [0.7.1] - 2026-10-05\n\n- Pending chart fix.\n",
+            )
+            package_changelog = (
+                root / "typescript/packages/analytics-core/CHANGELOG.md"
+            ).read_text()
+            self.assertEqual(
+                package_changelog,
+                "# @baukit/analytics-core\n\n## Unreleased\n\n## 0.7.1\n\n- Pending package fix.\n\n- Release the coordinated train.\n\n## 0.7.0\n\n- Previous package fix.\n",
+            )
+            self.assertEqual(
+                (root / "templates/web/__auth__/web/CHANGELOG.md").read_text(),
+                "## Unreleased\n\n## [0.7.1] - 2026-10-05\n\n- Pending web fix.\n",
+            )
             self.assertEqual(after.count("## [0.7.0]"), 1)
             self.assertEqual(after.count("## [0.6.0]"), 1)
             self.assertIn("--tag v0.7.1 --locked baukit-cli", (root / "README.md").read_text())
@@ -395,30 +475,15 @@ PYTHON
 
 
 class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
+    RUST_EXAMPLE = ("--manifest-path", "examples/rust-app/Cargo.toml")
+    CHECK = ("python3", "scripts/check-example-lockfiles.py")
+
     def test_patch_train_refreshes_discovered_example_lockfiles(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self.prepare_repo(root)
             environment = {**os.environ, "CI": "true", "CARGO_BUILD_JOBS": "6"}
-            self.run_command(
-                root, environment, "corepack", "pnpm", "--dir", "typescript",
-                "install", "--no-frozen-lockfile", "--ignore-scripts",
-            )
-            for example in ("examples/first", "examples/nested/second"):
-                self.run_command(
-                    root, environment, "corepack", "pnpm", "--dir", example,
-                    "install", "--lockfile-only", "--no-frozen-lockfile", "--ignore-scripts",
-                )
-            rust_example = ["--manifest-path", "examples/rust-app/Cargo.toml"]
-            self.run_command(root, environment, "cargo", "generate-lockfile", *rust_example)
-            check = ["python3", "scripts/check-example-lockfiles.py"]
-            self.run_command(root, environment, *check)
-            self.run_command(root, environment, "git", "init", "--quiet")
-            self.run_command(root, environment, "git", "add", ".")
-            self.run_command(
-                root, environment, "git", "-c", "user.name=release-test", "-c",
-                "user.email=release-test@invalid", "commit", "--quiet", "-m", "test fixture",
-            )
+            self.install_and_commit_fixture(root, environment)
             unrelated = (root / "examples/unrelated/pnpm-lock.yaml").read_bytes()
             result = self.run_command(
                 root, environment, "bash", "scripts/release-train.sh", "patch"
@@ -434,31 +499,39 @@ class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
                 lockfile = root / example / "pnpm-lock.yaml"
                 self.assertIn("^0.7.2", lockfile.read_text())
                 self.assertNotIn("^0.7.1", lockfile.read_text())
-            self.assertEqual(
-                (root / "examples/unrelated/pnpm-lock.yaml").read_bytes(), unrelated
-            )
+            self.assertEqual((root / "examples/unrelated/pnpm-lock.yaml").read_bytes(), unrelated)
             self.assertIn(
                 'name = "baukit-core"\nversion = "0.7.2"',
                 (root / "examples/rust-app/Cargo.lock").read_text(),
             )
-            self.run_command(root, environment, "cargo", "metadata", "--locked", *rust_example)
-            self.run_command(root, environment, *check)
+            self.run_command(root, environment, "cargo", "metadata", "--locked", *self.RUST_EXAMPLE)
+            self.run_command(root, environment, *self.CHECK)
             suite = json.loads((root / "typescript/packages/suite-client/package.json").read_text())
-            self.assertEqual(suite["peerDependencies"], {
-                "@baukit/integrations-client": "^0.7.2",
-                "@baukit/localization-core": "^0.7.2",
-            })
+            self.assertEqual(
+                suite["peerDependencies"],
+                {
+                    "@baukit/integrations-client": "^0.7.2",
+                    "@baukit/localization-core": "^0.7.2",
+                },
+            )
             self.assertEqual(suite["devDependencies"]["@baukit/integrations-client"], "workspace:*")
             suite_path = root / "typescript/packages/suite-client/package.json"
             for invalid_range in ("^0.7.1", "workspace:*"):
                 suite["peerDependencies"]["@baukit/localization-core"] = invalid_range
                 suite_path.write_text(json.dumps(suite))
                 stale_peer = subprocess.run(
-                    ["python3", "scripts/check-version-coherence.py"], cwd=root,
-                    env=environment, capture_output=True, text=True,
+                    ["python3", "scripts/check-version-coherence.py"],
+                    cwd=root,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    check=False,
                 )
                 self.assertNotEqual(stale_peer.returncode, 0)
-                self.assertIn("@baukit/suite-client peerDependencies requires @baukit/localization-core", stale_peer.stderr)
+                self.assertIn(
+                    "@baukit/suite-client peerDependencies requires @baukit/localization-core",
+                    stale_peer.stderr,
+                )
             suite["peerDependencies"]["@baukit/localization-core"] = "^0.7.2"
             suite_path.write_text(json.dumps(suite))
             self.run_command(root, environment, "python3", "scripts/check-version-coherence.py")
@@ -467,24 +540,69 @@ class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
             manifest["peerDependencies"]["@baukit/data-contracts"] = ">=0.7.2"
             adapter.write_text(json.dumps(manifest))
             stale = subprocess.run(
-                check, cwd=root, env=environment, capture_output=True, text=True
+                self.CHECK, cwd=root, env=environment, capture_output=True, text=True, check=False
             )
             self.assertNotEqual(stale.returncode, 0)
             self.assertIn("ERR_PNPM_OUTDATED_LOCKFILE", stale.stdout + stale.stderr)
-            self.run_command(root, environment, *check, "--refresh")
-            self.run_command(root, environment, *check)
+            self.run_command(root, environment, *self.CHECK, "--refresh")
+            self.run_command(root, environment, *self.CHECK)
             (root / "examples/first/pnpm-lock.yaml").unlink()
             missing = subprocess.run(
-                check, cwd=root, env=environment, capture_output=True, text=True
+                self.CHECK, cwd=root, env=environment, capture_output=True, text=True, check=False
             )
             self.assertNotEqual(missing.returncode, 0)
             self.assertIn("Missing pnpm-lock.yaml for examples/first", missing.stderr)
 
+    def install_and_commit_fixture(self, root: Path, environment: dict[str, str]) -> None:
+        self.run_command(
+            root,
+            environment,
+            "corepack",
+            "pnpm",
+            "--dir",
+            "typescript",
+            "install",
+            "--no-frozen-lockfile",
+            "--ignore-scripts",
+        )
+        for example in ("examples/first", "examples/nested/second"):
+            self.run_command(
+                root,
+                environment,
+                "corepack",
+                "pnpm",
+                "--dir",
+                example,
+                "install",
+                "--lockfile-only",
+                "--no-frozen-lockfile",
+                "--ignore-scripts",
+            )
+        self.run_command(root, environment, "cargo", "generate-lockfile", *self.RUST_EXAMPLE)
+        self.run_command(root, environment, *self.CHECK)
+        self.run_command(root, environment, "git", "init", "--quiet")
+        self.run_command(root, environment, "git", "add", ".")
+        self.run_command(
+            root,
+            environment,
+            "git",
+            "-c",
+            "user.name=release-test",
+            "-c",
+            "user.email=release-test@invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "test fixture",
+        )
+
     @staticmethod
     def prepare_repo(root: Path) -> None:
         for relative in (
-            "scripts/release-train.sh", "scripts/release_packages.py",
-            "scripts/check-example-lockfiles.py", "scripts/cli_install.py",
+            "scripts/release-train.sh",
+            "scripts/release_packages.py",
+            "scripts/check-example-lockfiles.py",
+            "scripts/cli_install.py",
             "scripts/check-version-coherence.py",
         ):
             destination = root / relative
@@ -499,17 +617,16 @@ class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
             "rust/Cargo.toml": (
                 '[workspace]\nmembers = ["crates/baukit-core"]\nresolver = "2"\n'
                 '[workspace.package]\nversion = "0.7.1"\nlicense = "MIT"\n'
-                '[workspace.dependencies]\n'
+                "[workspace.dependencies]\n"
             ),
             "rust/release-plz.toml": (
                 '[[package]]\nname = "baukit-core"\n'
                 'version_group = "baukit-release-train"\npublish = false\n'
             ),
             "rust/crates/baukit-core/Cargo.toml": (
-                '[package]\nname = "baukit-core"\nversion.workspace = true\n'
-                'edition = "2021"\n'
+                '[package]\nname = "baukit-core"\nversion.workspace = true\nedition = "2021"\n'
             ),
-            "rust/crates/baukit-core/src/lib.rs": "pub const NAME: &str = \"baukit-core\";\n",
+            "rust/crates/baukit-core/src/lib.rs": 'pub const NAME: &str = "baukit-core";\n',
             "rust/crates/baukit-core/CHANGELOG.md": "## [Unreleased]\n\n- Pending fix.\n",
             "cli/Cargo.toml": (
                 '[package]\nname = "baukit-cli"\nversion = "0.7.1"\nedition = "2021"\n'
@@ -523,13 +640,17 @@ class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
             "deploy/observability/Chart.yaml": 'version: 0.7.1\nappVersion: "0.7.1"\n',
             "deploy/chart/baukit-app/README.md": "  - name: baukit-app\n    version: 0.7.1\n",
             "typescript/pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n",
-            "examples/unrelated/package.json": json.dumps({
-                "name": "unrelated", "private": True, "packageManager": package_manager,
-            }),
+            "examples/unrelated/package.json": json.dumps(
+                {
+                    "name": "unrelated",
+                    "private": True,
+                    "packageManager": package_manager,
+                }
+            ),
             "examples/unrelated/pnpm-lock.yaml": "unrelated example must stay untouched\n",
             "examples/rust-app/Cargo.toml": (
                 '[package]\nname = "rust-app"\nversion = "0.1.0"\nedition = "2021"\n'
-                '[workspace]\n[dependencies]\n'
+                "[workspace]\n[dependencies]\n"
                 'baukit-core = { path = "../../rust/crates/baukit-core" }\n'
             ),
             "examples/rust-app/src/lib.rs": "",
@@ -538,7 +659,8 @@ class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
             "analytics-core": {"name": "@baukit/analytics-core", "version": "0.7.1"},
             "data-contracts": {"name": "@baukit/data-contracts", "version": "0.7.1"},
             "adapter": {
-                "name": "@baukit/adapter", "version": "0.7.1",
+                "name": "@baukit/adapter",
+                "version": "0.7.1",
                 "peerDependencies": {"@baukit/data-contracts": "^0.7.1"},
             },
         }
@@ -546,23 +668,31 @@ class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
             manifest = json.loads((ROOT / f"typescript/packages/{name}/package.json").read_text())
             manifests[name] = {"name": manifest["name"], "version": "0.7.1"}
             if name == "suite-client":
-                manifests[name].update({
-                    "peerDependencies": {dependency: "^0.7.1" for dependency in manifest["peerDependencies"]},
-                    "devDependencies": {dependency: "workspace:*" for dependency in manifest["peerDependencies"]},
-                })
+                manifests[name].update(
+                    {
+                        "peerDependencies": {
+                            dependency: "^0.7.1" for dependency in manifest["peerDependencies"]
+                        },
+                        "devDependencies": {
+                            dependency: "workspace:*" for dependency in manifest["peerDependencies"]
+                        },
+                    }
+                )
         for name, manifest in manifests.items():
             manifest.update({"license": "MIT", "publishConfig": {"access": "public"}})
-            files[f"typescript/packages/{name}/package.json"] = json.dumps(
-                manifest, indent=2
-            )
+            files[f"typescript/packages/{name}/package.json"] = json.dumps(manifest, indent=2)
             files[f"typescript/packages/{name}/CHANGELOG.md"] = (
                 f"# @baukit/{name}\n\n## Unreleased\n\n- Pending package fix.\n"
             )
-        files["typescript/package.json"] = json.dumps({
-            "name": "release-test", "private": True, "packageManager": package_manager,
-            "scripts": {"version-packages": "changeset version"},
-            "devDependencies": {"@changesets/cli": changesets},
-        })
+        files["typescript/package.json"] = json.dumps(
+            {
+                "name": "release-test",
+                "private": True,
+                "packageManager": package_manager,
+                "scripts": {"version-packages": "changeset version"},
+                "devDependencies": {"@changesets/cli": changesets},
+            }
+        )
         config = json.loads((ROOT / "typescript/.changeset/config.json").read_text())
         config["fixed"] = [[manifest["name"] for manifest in manifests.values()]]
         files["typescript/.changeset/config.json"] = json.dumps(config)
@@ -570,23 +700,27 @@ class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
             ("first", "../..", "dependencies"),
             ("nested/second", "../../..", "devDependencies"),
         ):
-            files[f"examples/{example}/package.json"] = json.dumps({
-                "name": example.replace("/", "-"), "private": True,
-                "packageManager": package_manager,
-                group: {
-                    "@baukit/adapter": f"file:{prefix}/typescript/packages/adapter",
-                    "@baukit/data-contracts": f"file:{prefix}/typescript/packages/data-contracts",
-                },
-            })
+            files[f"examples/{example}/package.json"] = json.dumps(
+                {
+                    "name": example.replace("/", "-"),
+                    "private": True,
+                    "packageManager": package_manager,
+                    group: {
+                        "@baukit/adapter": f"file:{prefix}/typescript/packages/adapter",
+                        "@baukit/data-contracts": f"file:{prefix}/typescript/packages/data-contracts",
+                    },
+                }
+            )
         for relative, contents in files.items():
             destination = root / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_text(contents)
+
     def run_command(
         self, root: Path, environment: dict[str, str], *command: str
     ) -> subprocess.CompletedProcess[str]:
         result = subprocess.run(
-            command, cwd=root, env=environment, capture_output=True, text=True
+            command, cwd=root, env=environment, capture_output=True, text=True, check=False
         )
         self.assertEqual(
             result.returncode, 0, f"{' '.join(command)}\n{result.stdout}{result.stderr}"

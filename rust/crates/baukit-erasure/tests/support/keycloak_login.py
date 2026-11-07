@@ -5,13 +5,13 @@ import hashlib
 import html
 import http.cookiejar
 import json
-from pathlib import Path
 import runpy
 import secrets
 import sys
 import time
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
 REQUEST_TIMEOUT_SECONDS = 20
 CLOCK_POLL_INTERVAL_SECONDS = 0.01
@@ -59,12 +59,10 @@ def authorization_callback(client, helpers, authorization_url, require_login):
     raise RuntimeError("Keycloak did not redirect to the PKCE callback")
 
 
-def authorize(client, helpers, metadata, redirect_uri, require_login, prompt=None):
+def authorize(client, helpers, metadata, redirect_uri, *, require_login, prompt=None):
     verifier = secrets.token_urlsafe(64)
     challenge = (
-        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
-        .decode()
-        .rstrip("=")
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
     )
     state = secrets.token_urlsafe(24)
     parameters = {
@@ -137,9 +135,7 @@ def main():
     tokens = {
         "initial": initial,
         "refreshed": refreshed,
-        "silent": authorize(
-            client, helpers, metadata, redirect_uri, require_login=False
-        ),
+        "silent": authorize(client, helpers, metadata, redirect_uri, require_login=False),
         "forced": authorize(
             client, helpers, metadata, redirect_uri, require_login=True, prompt="login"
         ),

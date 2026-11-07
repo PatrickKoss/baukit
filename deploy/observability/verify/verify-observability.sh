@@ -13,8 +13,8 @@ case "$product_prefix" in
     '' | *[!A-Z0-9_]* | [0-9_]*) usage ;;
 esac
 
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-observability=$(CDPATH= cd -- "$script_dir/.." && pwd)
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+observability=$(CDPATH='' cd -- "$script_dir/.." && pwd)
 temporary_dir=$(mktemp -d)
 
 cleanup() {

@@ -54,10 +54,10 @@ done
 }
 [[ -d $target ]] || die "target directory does not exist: $target"
 
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 skills_dir=$script_dir/skills
 [[ -d $skills_dir ]] || die "canonical skills directory is missing: $skills_dir"
-target=$(CDPATH= cd -- "$target" && pwd)
+target=$(CDPATH='' cd -- "$target" && pwd)
 
 if [[ $explicit_harness == false ]]; then
     [[ -d $target/.claude ]] && select_claude=true

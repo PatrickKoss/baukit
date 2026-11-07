@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-observability=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+observability=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 if command -v promtool >/dev/null 2>&1; then
     promtool check rules "$observability/recording-rules/baukit-red.rules.yml" "$observability/alerts/baukit.rules.yml"
     promtool test rules "$observability/tests/worker.rules.test.yml"

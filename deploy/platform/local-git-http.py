@@ -40,8 +40,7 @@ class GitHandler(BaseHTTPRequestHandler):
         result = subprocess.run(
             ["git", "http-backend"],
             input=body,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             env=environment,
             check=False,
         )
@@ -69,14 +68,14 @@ class GitHandler(BaseHTTPRequestHandler):
 
 def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--host", required=True)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--port", type=int, required=True)
     args = parser.parse_args()
-    server = ThreadingHTTPServer(("0.0.0.0", args.port), GitHandler)
+    server = ThreadingHTTPServer((args.host, args.port), GitHandler)
     server.git_root = args.root.resolve()  # type: ignore[attr-defined]
     server.serve_forever()
 
 
 if __name__ == "__main__":
     main()
-

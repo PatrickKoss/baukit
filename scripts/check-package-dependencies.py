@@ -30,7 +30,10 @@ def check_package(directory: Path) -> None:
     with tempfile.TemporaryDirectory(prefix="baukit-npm-pack-") as temporary:
         result = subprocess.run(
             ["npm", "pack", "--json", "--ignore-scripts", "--pack-destination", temporary],
-            cwd=directory, check=True, capture_output=True, text=True,
+            cwd=directory,
+            check=True,
+            capture_output=True,
+            text=True,
         )
         filename = packed_filename(result.stdout, directory)
         with tarfile.open(Path(temporary) / filename, "r:gz") as archive:

@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -20,13 +19,18 @@ jobs:
   native-changes:
     name: Detect native gate changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       mobile: ${{ steps.filter.outputs.mobile }}
       sqlite: ${{ steps.filter.outputs.sqlite }}
       notifications: ${{ steps.filter.outputs.notifications }}
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: dorny/paths-filter@v4.0.3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
           filters: |
@@ -83,18 +87,44 @@ jobs:
     name: Release version coherence
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: scripts/ci-gate.sh --step version-coherence
+
+  supply-chain:
+    name: Supply chain and script lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          version: 2026.8.11
+          cache: false
+          install_args: >-
+            aqua:rhysd/actionlint aqua:zizmorcore/zizmor aqua:gitleaks/gitleaks
+            aqua:google/osv-scanner aqua:astral-sh/ruff aqua:koalaman/shellcheck
+      - run: scripts/ci-gate.sh --step workflow-lint
+      - run: scripts/ci-gate.sh --step secret-scan
+      - run: scripts/ci-gate.sh --step osv
+      - run: scripts/ci-gate.sh --step python-lint
+      - run: scripts/ci-gate.sh --step shell-lint
 
   rustfmt:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
           components: rustfmt
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: rust -> target
       - run: scripts/ci-gate.sh --step rust-fmt
@@ -103,11 +133,14 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
           components: clippy
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: rust -> target
       - run: scripts/ci-gate.sh --step rust-clippy
@@ -116,9 +149,13 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: rust -> target
       - run: scripts/ci-gate.sh --step rust-tests
@@ -129,11 +166,14 @@ jobs:
     name: Suite feature boundaries
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
           components: clippy
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: rust -> target
       - run: scripts/ci-gate.sh --step suite-features
@@ -142,23 +182,31 @@ jobs:
     name: Cargo deny
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: rust -> target
-      - uses: taiki-e/install-action@cargo-deny
+      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
+        with:
+          tool: cargo-deny@0.20.2
       - run: scripts/ci-gate.sh --step cargo-deny
 
   msrv:
     name: MSRV (Rust 1.95)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: "1.95"
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: rust -> target
           key: msrv-1.95
@@ -168,8 +216,10 @@ jobs:
     name: TypeScript
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: actions/setup-node@v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: typescript/.nvmrc
       - name: Enable pinned pnpm
@@ -183,7 +233,7 @@ jobs:
         id: pnpm-store
         working-directory: typescript
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v6.1.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ runner.os }}-pnpm-${{ hashFiles('typescript/pnpm-lock.yaml') }}
@@ -215,7 +265,9 @@ jobs:
     name: Observability metric names
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: scripts/ci-gate.sh --step metric-names
       - run: scripts/ci-gate.sh --step observability-tests
       - run: scripts/ci-gate.sh --step observability-rules
@@ -224,8 +276,10 @@ jobs:
     name: OpenAPI compatibility check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: actions/setup-node@v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: typescript/.nvmrc
       - name: Enable pinned pnpm for release train tests
@@ -245,8 +299,10 @@ jobs:
     name: Media grant njs verifier
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: actions/setup-node@v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: typescript/.nvmrc
       - run: scripts/ci-gate.sh --step media-grants
@@ -255,17 +311,42 @@ jobs:
     name: Baukit CLI
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: cli -> target
       - run: scripts/ci-gate.sh --step cli-fmt
       - run: scripts/ci-gate.sh --step cli-clippy
       - run: scripts/ci-gate.sh --step cli-tests
       - run: scripts/ci-gate.sh --step cli-check
+
+  fuzz:
+    name: Fuzz targets (60 s each)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: nightly
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: rust/fuzz -> target
+      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
+        with:
+          tool: cargo-fuzz@0.13.2
+      - run: scripts/ci-gate.sh --step fuzz
 
   mcp-fixture:
     name: Remote MCP fixture and OAuth smoke
@@ -276,15 +357,18 @@ jobs:
       CARGO_BUILD_JOBS: 6
       VITEST_MAX_WORKERS: 4
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
           components: rustfmt, clippy
-      - uses: actions/setup-node@v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: typescript/.nvmrc
       - run: npm install --global corepack@0.36.0 && corepack enable
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: |
             rust -> target
@@ -377,11 +461,14 @@ jobs:
             web: true
             mcp: false
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
           components: rustfmt, clippy
-      - uses: actions/setup-node@v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: typescript/.nvmrc
       - name: Enable pinned pnpm
@@ -395,14 +482,14 @@ jobs:
         id: pnpm-store
         working-directory: typescript
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v6.1.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ runner.os }}-pnpm-generated-${{ matrix.flavor }}-${{ hashFiles('typescript/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-generated-
             ${{ runner.os }}-pnpm-
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: cli -> target
           key: generated-fixture-cli
@@ -415,9 +502,13 @@ jobs:
     name: Affected gate selection fixture
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: cli -> target
       - run: scripts/ci-gate.sh --step affected-fixture
@@ -440,14 +531,18 @@ jobs:
           - provider: workos
             flags: --auth workos
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Free runner disk
         run: bash scripts/ci-free-disk.sh
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-node@v7.0.0
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: typescript/.nvmrc
-      - uses: actions/setup-java@v6.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: "25.0.4+101.0.LTS"
@@ -461,14 +556,14 @@ jobs:
         id: native-pnpm-store
         working-directory: typescript
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v6.1.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.native-pnpm-store.outputs.path }}
           key: ${{ runner.os }}-pnpm-native-${{ hashFiles('typescript/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-native-
             ${{ runner.os }}-pnpm-
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: cli -> target
           key: generated-native-fixture-cli
@@ -478,9 +573,12 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/auth-native --filter @baukit/data-contracts --filter @baukit/data-contracts-expo-sqlite --filter @baukit/localization-core --filter @baukit/ui-tokens --filter @baukit/navigation --filter @baukit/purchases-core --filter @baukit/purchases-revenuecat run build
       - name: Generate mobile fixture
+        env:
+          FIXTURE_FLAGS: ${{ matrix.flags }}
         run: |
+          read -r -a fixture_flags <<< "$FIXTURE_FLAGS"
           cargo build --manifest-path cli/Cargo.toml --bin baukit
-          cli/target/debug/baukit new fixture --mobile ${{ matrix.flags }} --dir .generated-native-fixture --baukit-path rust
+          cli/target/debug/baukit new fixture --mobile "${fixture_flags[@]}" --dir .generated-native-fixture --baukit-path rust
       - name: Install fixture dependencies
         working-directory: .generated-native-fixture/fixture/mobile
         run: pnpm install --frozen-lockfile
@@ -492,13 +590,15 @@ jobs:
       - name: Find pinned Android NDK
         id: native-ndk
         run: bash scripts/ci-android-ndk.sh version .generated-native-fixture/fixture/mobile >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v6.1.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.native-ndk.outputs.path }}
           key: ${{ runner.os }}-android-ndk-${{ steps.native-ndk.outputs.version }}
       - name: Install pinned Android NDK
-        run: bash scripts/ci-android-ndk.sh install "${{ steps.native-ndk.outputs.version }}"
-      - uses: gradle/actions/setup-gradle@v6.4.0
+        env:
+          NDK_VERSION: ${{ steps.native-ndk.outputs.version }}
+        run: bash scripts/ci-android-ndk.sh install "$NDK_VERSION"
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
           cache-provider: basic
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
@@ -511,7 +611,7 @@ jobs:
         run: python3 scripts/check-gradle-deprecations.py --project .generated-native-fixture/fixture/mobile .generated-native-fixture/fixture/mobile/native-assemble.log
       - name: Upload native failure diagnostics
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: generated-mobile-android-failure-${{ matrix.provider }}
           if-no-files-found: warn
@@ -549,13 +649,15 @@ jobs:
     if: needs.native-changes.outputs.sqlite == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Free runner disk
         run: bash scripts/ci-free-disk.sh
-      - uses: actions/setup-node@v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: typescript/.nvmrc
-      - uses: actions/setup-java@v6.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: "25.0.4+101.0.LTS"
@@ -573,7 +675,7 @@ jobs:
         id: sqlite-pnpm-store
         working-directory: typescript
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v6.1.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.sqlite-pnpm-store.outputs.path }}
           key: ${{ runner.os }}-pnpm-sqlite-${{ hashFiles('typescript/pnpm-lock.yaml', 'examples/expo-sqlite-conformance/pnpm-lock.yaml') }}
@@ -585,13 +687,15 @@ jobs:
       - name: Find pinned Android NDK
         id: sqlite-ndk
         run: bash scripts/ci-android-ndk.sh version examples/expo-sqlite-conformance >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v6.1.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.sqlite-ndk.outputs.path }}
           key: ${{ runner.os }}-android-ndk-${{ steps.sqlite-ndk.outputs.version }}
       - name: Install pinned Android NDK
-        run: bash scripts/ci-android-ndk.sh install "${{ steps.sqlite-ndk.outputs.version }}"
-      - uses: gradle/actions/setup-gradle@v6.4.0
+        env:
+          NDK_VERSION: ${{ steps.sqlite-ndk.outputs.version }}
+        run: bash scripts/ci-android-ndk.sh install "$NDK_VERSION"
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
           cache-provider: basic
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
@@ -601,7 +705,7 @@ jobs:
         run: make expo-sqlite-conformance
       - name: Upload conformance failure diagnostics
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: expo-sqlite-android-failure
           if-no-files-found: warn
@@ -637,13 +741,15 @@ jobs:
     if: needs.native-changes.outputs.notifications == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Free runner disk
         run: bash scripts/ci-free-disk.sh
-      - uses: actions/setup-node@v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: typescript/.nvmrc
-      - uses: actions/setup-java@v6.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: "25.0.4+101.0.LTS"
@@ -661,7 +767,7 @@ jobs:
         id: notifications-pnpm-store
         working-directory: typescript
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v6.1.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.notifications-pnpm-store.outputs.path }}
           key: ${{ runner.os }}-pnpm-notifications-${{ hashFiles('typescript/pnpm-lock.yaml', 'examples/expo-notifications-conformance/pnpm-lock.yaml') }}
@@ -673,13 +779,15 @@ jobs:
       - name: Find pinned Android NDK
         id: notifications-ndk
         run: bash scripts/ci-android-ndk.sh version examples/expo-notifications-conformance >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v6.1.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.notifications-ndk.outputs.path }}
           key: ${{ runner.os }}-android-ndk-${{ steps.notifications-ndk.outputs.version }}
       - name: Install pinned Android NDK
-        run: bash scripts/ci-android-ndk.sh install "${{ steps.notifications-ndk.outputs.version }}"
-      - uses: gradle/actions/setup-gradle@v6.4.0
+        env:
+          NDK_VERSION: ${{ steps.notifications-ndk.outputs.version }}
+        run: bash scripts/ci-android-ndk.sh install "$NDK_VERSION"
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
           cache-provider: basic
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
@@ -689,7 +797,7 @@ jobs:
         run: make expo-notifications-conformance
       - name: Upload conformance failure diagnostics
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: expo-notifications-android-failure
           if-no-files-found: warn

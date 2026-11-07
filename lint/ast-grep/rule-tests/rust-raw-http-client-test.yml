@@ -1,0 +1,25 @@
+id: rust-raw-http-client
+valid:
+  - |
+    fn f() { let c = GuardedClient::new(policy); }
+  - |
+    use std::collections::HashMap;
+    fn f() { let m = HashMap::new(); let c = Client::new(); }
+  - |
+    #[cfg(test)]
+    mod tests { fn f() { let c = reqwest::Client::new(); } }
+invalid:
+  - |
+    fn f() { let c = reqwest::Client::new(); }
+  - |
+    fn f() { let c = reqwest::Client::builder().build(); }
+  - |
+    fn f() { let c = reqwest::ClientBuilder::new(); }
+  - |
+    async fn f() { reqwest::get("https://x").await; }
+  - |
+    use reqwest::Client;
+    fn f() { let c = Client::new(); }
+  - |
+    use reqwest::{Client, Url};
+    fn f() { let c = Client::builder(); }

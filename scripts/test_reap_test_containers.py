@@ -2,17 +2,16 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import shlex
 import shutil
 import subprocess
 import tempfile
 import time
 import unittest
-
+from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parent / "reap-test-containers.sh"
-FAKE_DOCKER = r'''#!/usr/bin/env python3
+FAKE_DOCKER = r"""#!/usr/bin/env python3
 import json
 import os
 from pathlib import Path
@@ -44,7 +43,7 @@ elif args[0] == "rm":
         sys.exit(1)
 else:
     raise AssertionError(args)
-'''
+"""
 
 
 class ReapTestContainersTest(unittest.TestCase):
@@ -88,21 +87,30 @@ class ReapTestContainersTest(unittest.TestCase):
     def run_script(self, containers, *arguments):
         self.state.write_text(json.dumps(containers))
         result = subprocess.run(
-            ["bash", str(SCRIPT), *arguments], env=self.environment,
-            capture_output=True, text=True, timeout=10,
+            ["bash", str(SCRIPT), *arguments],
+            env=self.environment,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
         )
-        calls = [json.loads(line) for line in self.calls.read_text().splitlines()] \
-            if self.calls.exists() else []
+        calls = (
+            [json.loads(line) for line in self.calls.read_text().splitlines()]
+            if self.calls.exists()
+            else []
+        )
         return result, calls
 
     def test_removes_dead_and_reused_pids_and_preserves_live_and_unlabelled(self):
-        result, calls = self.run_script([
-            self.container("dead"),
-            self.container("reused", pid=str(os.getpid()), binary="different-binary"),
-            self.container("live", pid=str(os.getpid()), binary=self.binary),
-            self.container("unlabelled", marker=""),
-            self.container("false-label", marker="false"),
-        ])
+        result, calls = self.run_script(
+            [
+                self.container("dead"),
+                self.container("reused", pid=str(os.getpid()), binary="different-binary"),
+                self.container("live", pid=str(os.getpid()), binary=self.binary),
+                self.container("unlabelled", marker=""),
+                self.container("false-label", marker="false"),
+            ]
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual([call[-1] for call in calls if call[0] == "rm"], ["dead", "reused"])
 
@@ -110,32 +118,43 @@ class ReapTestContainersTest(unittest.TestCase):
         result, calls = self.run_script([self.container("dead")], "--dry-run")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(any(call[0] == "rm" for call in calls))
-        for detail in ["dead", "postgres:18.6-alpine", "/repo/worktree with spaces/backend", "test-binary"]:
+        for detail in [
+            "dead",
+            "postgres:18.6-alpine",
+            "/repo/worktree with spaces/backend",
+            "test-binary",
+        ]:
             self.assertIn(detail, result.stdout)
         self.assertRegex(result.stdout, r"age=36\d\ds")
 
     def test_mismatched_pid_namespace_is_preserved(self):
-        result, calls = self.run_script([
-            self.container("foreign-namespace", pid_ns="pid:[different]"),
-        ])
+        result, calls = self.run_script(
+            [
+                self.container("foreign-namespace", pid_ns="pid:[different]"),
+            ]
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(any(call[0] == "rm" for call in calls))
         self.assertEqual(result.stdout, "")
 
     def test_mismatched_host_is_preserved(self):
-        result, calls = self.run_script([
-            self.container("foreign-host", host=f"{self.hostname}-different"),
-        ])
+        result, calls = self.run_script(
+            [
+                self.container("foreign-host", host=f"{self.hostname}-different"),
+            ]
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(any(call[0] == "rm" for call in calls))
         self.assertEqual(result.stdout, "")
 
     def test_missing_scope_labels_are_preserved(self):
-        result, calls = self.run_script([
-            self.container("missing-namespace", pid_ns=""),
-            self.container("missing-host", host=""),
-            self.container("missing-both", pid_ns="", host=""),
-        ])
+        result, calls = self.run_script(
+            [
+                self.container("missing-namespace", pid_ns=""),
+                self.container("missing-host", host=""),
+                self.container("missing-both", pid_ns="", host=""),
+            ]
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(any(call[0] == "rm" for call in calls))
         self.assertEqual(result.stdout, "")
@@ -209,51 +228,65 @@ class ReapTestContainersTest(unittest.TestCase):
         self.assertEqual(result.stdout, "")
 
     def test_missing_binary_preserves_live_pid_but_allows_dead_pid_cleanup(self):
-        result, calls = self.run_script([
-            self.container("unknown-live", pid=str(os.getpid()), binary=""),
-            self.container("unknown-dead", binary="", manifest="", started=""),
-        ])
+        result, calls = self.run_script(
+            [
+                self.container("unknown-live", pid=str(os.getpid()), binary=""),
+                self.container("unknown-dead", binary="", manifest="", started=""),
+            ]
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual([call[-1] for call in calls if call[0] == "rm"], ["unknown-dead"])
         self.assertIn("age=unknown", result.stdout)
 
     def test_invalid_pids_are_preserved(self):
-        result, calls = self.run_script([
-            self.container(f"invalid-{index}", pid=pid)
-            for index, pid in enumerate(["", "0", "-1", "abc", "../1"])
-        ])
+        result, calls = self.run_script(
+            [
+                self.container(f"invalid-{index}", pid=pid)
+                for index, pid in enumerate(["", "0", "-1", "abc", "../1"])
+            ]
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(any(call[0] == "rm" for call in calls))
 
     def test_unreadable_live_executable_is_preserved(self):
         self.mock_executable_readlink("exit 1\n")
-        result, calls = self.run_script([
-            self.container("unreadable", pid=str(os.getpid()), binary="different-binary"),
-        ])
+        result, calls = self.run_script(
+            [
+                self.container("unreadable", pid=str(os.getpid()), binary="different-binary"),
+            ]
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(any(call[0] == "rm" for call in calls))
 
     def test_deleted_executable_with_same_name_is_preserved(self):
         self.mock_executable_readlink(f"printf '/usr/bin/{self.binary} (deleted)\\n'\n")
-        result, calls = self.run_script([
-            self.container("deleted-executable", pid=str(os.getpid()), binary=self.binary),
-        ])
+        result, calls = self.run_script(
+            [
+                self.container("deleted-executable", pid=str(os.getpid()), binary=self.binary),
+            ]
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(any(call[0] == "rm" for call in calls))
 
     def test_binary_name_ending_in_deleted_is_preserved(self):
         self.mock_executable_readlink("printf '/target/test (deleted)\\n'\n")
-        result, calls = self.run_script([
-            self.container("suffix-in-name", pid=str(os.getpid()), binary="test (deleted)"),
-        ])
+        result, calls = self.run_script(
+            [
+                self.container("suffix-in-name", pid=str(os.getpid()), binary="test (deleted)"),
+            ]
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(any(call[0] == "rm" for call in calls))
 
     def test_invalid_and_future_start_times_do_not_prevent_cleanup(self):
-        result, calls = self.run_script([
-            self.container(f"unknown-age-{index}", started=started)
-            for index, started in enumerate(["bad", "18446744073709551615", str(int(time.time()) + 3600)])
-        ])
+        result, calls = self.run_script(
+            [
+                self.container(f"unknown-age-{index}", started=started)
+                for index, started in enumerate(
+                    ["bad", "18446744073709551615", str(int(time.time()) + 3600)]
+                )
+            ]
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len([call for call in calls if call[0] == "rm"]), 3)
         self.assertEqual(result.stdout.count("age=unknown"), 3)

@@ -154,8 +154,8 @@ class ProductInvocationTests(unittest.TestCase):
         self.product.write_allowlist("")
         self.product.write_dashboard(
             'sum by (job_kind, outcome) (rate(worker_job_runs_total{job="worker"}[5m]))',
-            'histogram_quantile(0.95, sum by (job_kind, le) '
-            '(rate(worker_job_duration_seconds_bucket[5m])))',
+            "histogram_quantile(0.95, sum by (job_kind, le) "
+            "(rate(worker_job_duration_seconds_bucket[5m])))",
         )
         status, _, stderr = self.product.lint()
         self.assertEqual(status, 0, stderr)
@@ -164,9 +164,7 @@ class ProductInvocationTests(unittest.TestCase):
         self.product.write_allowlist("")
         for label in ("job", "exported_job"):
             with self.subTest(label=label):
-                self.product.write_dashboard(
-                    f"sum by ({label}) (rate(worker_job_runs_total[5m]))"
-                )
+                self.product.write_dashboard(f"sum by ({label}) (rate(worker_job_runs_total[5m]))")
                 status, _, stderr = self.product.lint()
                 self.assertEqual(status, 1)
                 self.assertIn("worker handler types must use job_kind", stderr)
