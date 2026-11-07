@@ -34,7 +34,8 @@ const RECORDS: TombstoneTable = TombstoneTable::new(
      ORDER BY deleted_at, id
      LIMIT $2
      FOR UPDATE SKIP LOCKED",
-    "DELETE FROM product_records WHERE id = ANY($1)",
+    "DELETE FROM product_records record USING UNNEST($1::uuid[], $2::uuid[]) AS purged (id, owner_id)
+     WHERE record.id = purged.id AND record.owner_id = purged.owner_id",
 );
 
 const ITEMS: TombstoneTable = TombstoneTable::new(
@@ -46,7 +47,8 @@ const ITEMS: TombstoneTable = TombstoneTable::new(
      ORDER BY item.deleted_at, item.id
      LIMIT $2
      FOR UPDATE OF item SKIP LOCKED",
-    "DELETE FROM product_items WHERE id = ANY($1)",
+    "DELETE FROM product_items item USING product_lists list, UNNEST($1::uuid[], $2::uuid[]) AS purged (id, owner_id)
+     WHERE item.id = purged.id AND list.id = item.list_id AND list.owner_id = purged.owner_id",
 );
 
 const LISTS: TombstoneTable = TombstoneTable::new(
@@ -58,7 +60,8 @@ const LISTS: TombstoneTable = TombstoneTable::new(
      ORDER BY list.deleted_at, list.id
      LIMIT $2
      FOR UPDATE SKIP LOCKED",
-    "DELETE FROM product_lists WHERE id = ANY($1)",
+    "DELETE FROM product_lists record USING UNNEST($1::uuid[], $2::uuid[]) AS purged (id, owner_id)
+     WHERE record.id = purged.id AND record.owner_id = purged.owner_id",
 );
 
 #[derive(Clone, Copy)]
@@ -313,7 +316,8 @@ async fn a_selector_that_ignores_the_limit_is_rejected_before_deleting() -> Resu
         "SELECT id, owner_id, revision FROM product_records
          WHERE deleted_at < $1 AND $2::bigint > 0
          FOR UPDATE SKIP LOCKED",
-        "DELETE FROM product_records WHERE id = ANY($1)",
+        "DELETE FROM product_records record USING UNNEST($1::uuid[], $2::uuid[]) AS purged (id, owner_id)
+     WHERE record.id = purged.id AND record.owner_id = purged.owner_id",
     );
 
     let mut transaction = pool.begin().await?;
