@@ -61,8 +61,8 @@ describe('BrowserSessionClient', () => {
       storageEntries(browser.localStorage)
         .map(([key]) => key)
         .sort(),
-    ).toEqual(['product:account', 'product:refresh-generation']);
-    expect(browser.localStorage.getItem('product:refresh-generation')).toBe('1');
+    ).toEqual(['product:account', 'product:session-generation']);
+    expect(browser.localStorage.getItem('product:session-generation')).toBe('1');
     expect(JSON.parse(required(browser.localStorage.getItem('product:account')))).toEqual({
       subject: 'user-1',
       signedInAt: 1_000_000,

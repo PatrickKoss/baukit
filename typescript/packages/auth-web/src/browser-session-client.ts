@@ -78,7 +78,7 @@ export class BrowserSessionClient {
     const prefix = this.oidc.storageKeyPrefix;
     this.accountStorageKey = `${prefix}:account`;
     this.lockName = `${prefix}:refresh`;
-    this.generationStorageKey = `${prefix}:refresh-generation`;
+    this.generationStorageKey = `${prefix}:session-generation`;
     this.channel = environment.openChannel?.(`${prefix}:session`);
     this.channel?.subscribe((message) => {
       this.receive(readSessionMessage(message));
@@ -213,7 +213,7 @@ export class BrowserSessionClient {
   }
 
   private coordinatedRefresh(requestedAt: number): Promise<string | undefined> {
-    const generation = this.refreshGeneration();
+    const generation = this.sessionGeneration();
     const run = () => this.refreshUnlessSettled(requestedAt, generation);
     const locks = this.environment.locks;
     return locks === undefined ? run() : locks.request(this.lockName, run);
@@ -224,7 +224,7 @@ export class BrowserSessionClient {
     requestedAt: number,
     generation: number,
   ): Promise<string | undefined> {
-    if (this.revision === requestedAt && this.refreshGeneration() !== generation) {
+    if (this.revision === requestedAt && this.sessionGeneration() !== generation) {
       await this.nextSession();
     }
     const current = this.token;
@@ -267,7 +267,7 @@ export class BrowserSessionClient {
     this.remember(session);
     this.environment.localStorage.setItem(
       this.generationStorageKey,
-      String(this.refreshGeneration() + 1),
+      String(this.sessionGeneration() + 1),
     );
     const hint = this.account();
     if (options.newSignIn || hint?.subject !== session.subject) {
@@ -308,7 +308,7 @@ export class BrowserSessionClient {
   }
 
   /** Counts sessions issued in any tab; it holds no token or expiry. */
-  private refreshGeneration(): number {
+  private sessionGeneration(): number {
     const value = Number(this.environment.localStorage.getItem(this.generationStorageKey));
     return Number.isSafeInteger(value) ? value : 0;
   }
