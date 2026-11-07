@@ -1,5 +1,5 @@
 1ca9818a510051b53f1dd01d64050bfc8a0e51a7914ac17d80b05fbbe7cbd2f9  .agents/skills/baukit-backend/SKILL.md
-48b7f1f818c59e485341f5734f7f66032c0273750864d886f690304c0e1e9660  .baukit/template-files.toml
+605ceebc86f9f465c895c12200b242bf23662a1dc5449b984443a12e7719bb21  .baukit/template-files.toml
 b25e4a2d0a7562470f166e8082f1ff2ee01bcd01cc222935e4fcffb15febfc4f  .cargo/config.toml
 1ca9818a510051b53f1dd01d64050bfc8a0e51a7914ac17d80b05fbbe7cbd2f9  .claude/skills/baukit-backend/SKILL.md
 1150d7de509c2164cd9c59985c4a5b8d812c8473d723693a34bcd7b47bcdb101  .dockerignore
