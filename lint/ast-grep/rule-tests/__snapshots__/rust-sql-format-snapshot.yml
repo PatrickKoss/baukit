@@ -1,0 +1,42 @@
+id: rust-sql-format
+snapshots:
+  "fn f() { let q = format!(\"CREATE TABLE IF NOT EXISTS {name} (id int)\"); }\n":
+    labels:
+    - source: format!("CREATE TABLE IF NOT EXISTS {name} (id int)")
+      style: primary
+      start: 17
+      end: 70
+  "fn f() { let q = format!(\"SELECT * FROM users WHERE name = '{name}'\"); }\n":
+    labels:
+    - source: format!("SELECT * FROM users WHERE name = '{name}'")
+      style: primary
+      start: 17
+      end: 69
+  "fn f() { let q = format!(\"delete from {} where id = {}\", TABLE, id); }\n":
+    labels:
+    - source: format!("delete from {} where id = {}", TABLE, id)
+      style: primary
+      start: 17
+      end: 67
+    - source: id
+      style: secondary
+      start: 64
+      end: 66
+    - source: ("delete from {} where id = {}", TABLE, id)
+      style: secondary
+      start: 24
+      end: 67
+  "fn f() { let q = format!(r#\"INSERT INTO t VALUES ({})\"#, value.to_string()); }\n":
+    labels:
+    - source: format!(r#"INSERT INTO t VALUES ({})"#, value.to_string())
+      style: primary
+      start: 17
+      end: 75
+    - source: value
+      style: secondary
+      start: 57
+      end: 62
+    - source: (r#"INSERT INTO t VALUES ({})"#, value.to_string())
+      style: secondary
+      start: 24
+      end: 75

@@ -1,0 +1,24 @@
+id: rust-sql-unscoped-by-id
+snapshots:
+  "const Q: &str = \"DELETE FROM notes WHERE id = $1 RETURNING id\";\n":
+    labels:
+    - source: "\"DELETE FROM notes WHERE id = $1 RETURNING id\""
+      style: primary
+      start: 16
+      end: 62
+  "const Q: &str = \"SELECT * FROM notes WHERE id = $1\";\n":
+    labels:
+    - source: "\"SELECT * FROM notes WHERE id = $1\""
+      style: primary
+      start: 16
+      end: 51
+  "const Q: &str = r#\"\n    UPDATE notes SET body = $2\n    WHERE id = $1\n\"#;\n":
+    labels:
+    - source: |-
+        r#"
+            UPDATE notes SET body = $2
+            WHERE id = $1
+        "#
+      style: primary
+      start: 16
+      end: 71

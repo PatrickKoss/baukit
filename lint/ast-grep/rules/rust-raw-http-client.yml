@@ -1,0 +1,42 @@
+id: rust-raw-http-client
+language: rust
+severity: error
+message: Raw reqwest client outside the egress adapter. Build outbound HTTP through baukit-egress GuardedClient.
+note: GuardedClient enforces the egress allowlist, blocks private and metadata addresses, and sets timeouts. A bare reqwest client skips all of that (SSRF).
+ignores:
+  - "**/adapters/egress/**"
+  - "**/baukit-egress/**"
+  - "**/baukit-test/**"
+  - "**/*-test-support/**"
+  - "**/tests/**"
+  - "**/benches/**"
+  - "**/examples/**"
+  - "**/*_test.rs"
+  - "**/tests.rs"
+rule:
+  any:
+    - pattern: reqwest::Client::new()
+    - pattern: reqwest::Client::builder()
+    - pattern: reqwest::ClientBuilder::new()
+    - pattern: reqwest::blocking::Client::new()
+    - pattern: reqwest::blocking::Client::builder()
+    - pattern: reqwest::get($$$)
+    - all:
+        - any:
+            - pattern: Client::new()
+            - pattern: Client::builder()
+            - pattern: ClientBuilder::new()
+            - pattern: get($URL)
+        - inside:
+            kind: source_file
+            stopBy: end
+            has:
+              kind: use_declaration
+              regex: 'reqwest::(blocking::)?(\{[^}]*\b)?(Client|ClientBuilder|get)\b'
+  not:
+    inside:
+      stopBy: end
+      kind: mod_item
+      follows:
+        kind: attribute_item
+        regex: 'cfg\(test\)'
