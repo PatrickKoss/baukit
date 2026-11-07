@@ -1,6 +1,6 @@
 # Code quality and security plan
 
-Owner: Claude (orchestrator). Implementers: Opus 5.5 subagents at low effort, at most 4 in parallel.
+Owner: Claude (orchestrator). Implementers: Opus 5.5 subagents at low effort, at most 10 in parallel (raised from 4 on 2026-11-07).
 The orchestrator re-checks every subagent result (re-runs its commands, reads the diff, looks for skipped
 checks and new suppressions) before ticking a box. Weak results go back to the same agent.
 
@@ -99,14 +99,17 @@ W1-B `cli/` lints, fixes and the `lib.rs` split (P1.1 cli part, P1.9 CLI part);
 W1-C `typescript/` eslint-config and shared guards (P1.6, P1.7);
 W1-D supply chain and script linters for baukit's own CI (P1.3, P1.8, P2.5 baukit part).
 Templates follow in wave 2, after the baukit-side config is settled.
+Added with the raised cap: W1-E skills + baukit threat model (P2.10, P2.11), W1-F fuzz + proptest (P2.6, P2.7, no src edits),
+W1-G ast-grep rules (P1.5 rules only), W1-H ADR 0006 browser token handling (P2.2 design), W1-I read-only
+tenancy and rate-limit audit of the products (S-08).
 
-- [ ] P1.1 Rust lint baseline: add the E1 set (expect_used, indexing_slicing, cast_*, too_many_lines at 80,
+- [~] P1.1 Rust lint baseline: add the E1 set (expect_used, indexing_slicing, cast_*, too_many_lines at 80,
   allow_attributes(+_without_reason), missing_panics_doc, return_self_not_must_use, unused_async(+trait_impl),
   needless_pass_by_value, manual_let_else, struct_excessive_bools, print_stdout/stderr, disallowed_methods)
   plus a shared `clippy.toml` to `rust/`, `cli/` and the backend template; fix all violations in baukit.
   Acceptance: `make ci` green with `-D warnings`, no new `#[allow]`, each `#[expect]` has a reason.
 - [ ] P1.2 `missing_errors_doc` on core, http, config, auth first, then the rest (255 docs).
-- [ ] P1.3 cargo-deny: `allow-wildcard-paths`, full `check` for `rust/`, new `cli/deny.toml`, template `deny.toml`.
+- [~] P1.3 cargo-deny: `allow-wildcard-paths`, full `check` for `rust/`, new `cli/deny.toml`, template `deny.toml`.
 - [ ] P1.4 `baukit check` subcommand framework in the CLI, with rules:
   `lints` (baseline subset check for Cargo lint tables and clippy.toml), `file-size` (Rust/TS, shrinking
   allowlist in `baukit.toml`), `agent-docs` (Q-09), `template-files` (Q-07). Unit + CLI tests.
@@ -114,13 +117,13 @@ Templates follow in wave 2, after the baukit-side config is settled.
 - [ ] P1.5 ast-grep rules with tests: `as unknown as` outside tests, `derive(Debug)` on secret-named fields,
   `format!` starting with an SQL keyword, raw `reqwest::Client` outside adapters, `localStorage.setItem` with
   token-named keys. `baukit check patterns` runs them.
-- [ ] P1.6 `@baukit/eslint-config` package: typescript-eslint strictTypeChecked, react-hooks, jsx-a11y (web),
+- [~] P1.6 `@baukit/eslint-config` package: typescript-eslint strictTypeChecked, react-hooks, jsx-a11y (web),
   max-lines-per-function 80, max-lines 500, max-depth 4, complexity 15 (warn), max-params 4,
   consistent-type-assertions, strict-boolean-expressions per E2. Used by `typescript/` and both templates.
   Fix the ~114 violations in baukit packages.
-- [ ] P1.7 Shared type guards: one `isRecord`/validation helper module, remove the 10 copies and the
+- [~] P1.7 Shared type guards: one `isRecord`/validation helper module, remove the 10 copies and the
   avoidable `as unknown as` casts.
-- [ ] P1.8 ruff + shellcheck for `scripts/` in baukit and the template gate; fix findings.
+- [~] P1.8 ruff + shellcheck for `scripts/` in baukit and the template gate; fix findings.
 - [ ] P1.9 Refactors to meet the limits: split `cli/src/lib.rs`, `supervise_task`, `authorize_inner`,
   `worker.rs::execute`, navigation `native.tsx` components, template `api.rs::run` (composition builder).
 - [ ] P1.10 `SuiteComposition` builder in baukit-suite; template uses it (Q-08).
@@ -134,22 +137,22 @@ Templates follow in wave 2, after the baukit-side config is settled.
 - [ ] P2.2 auth-web token storage per D2, with a test that no storage write contains a refresh token.
 - [ ] P2.3 `IssuedApiToken` and every secret-holding type: redacting Debug / `SecretString`.
 - [ ] P2.4 Clerk missing-azp opt-in; negative tests for every token profile.
-- [ ] P2.5 Supply chain: SHA-pin all actions in baukit and the template workflows, renovate digest pinning,
+- [~] P2.5 Supply chain: SHA-pin all actions in baukit and the template workflows, renovate digest pinning,
   zizmor + actionlint step, gitleaks with fixture allowlist, osv-scanner over Cargo.lock and pnpm-lock.yaml.
-- [ ] P2.6 Fuzzing: `rust/fuzz` with targets for JWT header/claims decode, sync push batch decode, event
+- [~] P2.6 Fuzzing: `rust/fuzz` with targets for JWT header/claims decode, sync push batch decode, event
   envelope, MCP JSON-RPC dispatch, idempotency-key and locale header parsers; time-boxed `fuzz` gate step
   (nightly, 60 s per target locally, longer on schedule). Template gets a `backend/fuzz` scaffold and the step.
-- [ ] P2.7 Property tests: credential vault (roundtrip, any AAD change fails), media grants (Rust signer and
+- [~] P2.7 Property tests: credential vault (roundtrip, any AAD change fails), media grants (Rust signer and
   njs verifier agree, single-byte mutations rejected), sync merge (idempotent, owner isolation).
 - [ ] P2.8 `baukit-test` security helpers: auth negative suite and `assert_cross_tenant_denied` that walks the
   OpenAPI routes; template integration test that uses both.
 - [ ] P2.9 clippy `disallowed-methods` for raw reqwest outside an allowlisted adapter module (template
   `clippy.toml`).
-- [ ] P2.10 Skills in `agent-skills/skills/`: `baukit-threat-model` (data classes, trust boundaries,
+- [~] P2.10 (threat-model + security-testing done in W1-E; code-conformance waits for the checks) Skills in `agent-skills/skills/`: `baukit-threat-model` (data classes, trust boundaries,
   STRIDE per boundary, threat → control → test table, output `docs/threat-model.md`),
   `baukit-security-testing` (when and how to add fuzz, property and negative auth tests),
   `baukit-code-conformance` (fixing lint and check failures without suppressing them).
-- [ ] P2.11 baukit's own `docs/threat-model.md`, written with the new skill.
+- [x] P2.11 baukit's own `docs/threat-model.md`, written with the new skill.
 
 ## Phase 3. Agent instructions
 
@@ -194,4 +197,10 @@ Templates follow in wave 2, after the baukit-side config is settled.
   hebkit edition 2021), god files (redemut-api 8491, schlauzug-api 7420, AHP limits.rs 4369), template
   `run` 205 lines, 12 distinct `quality-gate.sh` hashes, AHP symlink vs hebkit check, eigenruhe CLAUDE.md/AGENTS.md
   line 200 contradiction. Its function-length counter is a heuristic; P1.1 re-measures with clippy.
+- 2026-11-07: wave 1 started: W1-A..D, then W1-E..I after the cap went to 10.
+- 2026-11-07: W1-E merged (a509243b). Checked every helper the skills cite (baukit_test::jwt, egress
+  StaticResolver/BlockedAddress, ApiError::not_found) and every test cited in docs/threat-model.md: all exist.
+  Worktree and branch removed (no build cache was created).
+- 2026-11-07: W1-H ADR 0006 sent back: grace window not implementable with hashed secrets, CSP breaks Expo/RNW
+  inline styles and misses media origins, no rate limiting on /auth/session/*.
 - 2026-11-07: findings catalog and phases written. User chose D2 = BFF refresh cookie, D3 = CLAUDE.md + symlink.
