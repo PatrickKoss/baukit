@@ -136,7 +136,7 @@ tenancy and rate-limit audit of the products (S-08).
 - [~] P2.1 (baukit-http layer merged in W2-2; web CSP, chart edge config, HSTS config field and fixture header checks wait for the template wave) `SecurityHeadersLayer` in baukit-http on by default (nosniff, Referrer-Policy, frame-ancestors via
   CSP for HTML, `Cache-Control: no-store` on authenticated JSON, HSTS behind config); CSP for the web template
   and the chart's edge config; header assertions in the fixture gate.
-- [~] P2.2 (ADR task 2 headers merged; W2-1 BFF in rework; auth-web waits for W1-C; design: ADR 0006 accepted; implementation = its 4 tasks) auth-web token storage per D2, with a test that no storage write contains a refresh token.
+- [~] P2.2 (ADR tasks 1 and 2 merged: BFF in baukit-auth + ratelimit adapter, headers; task 3 auth-web/pwa-web after W1-C; task 4 templates; auth-web waits for W1-C; design: ADR 0006 accepted; implementation = its 4 tasks) auth-web token storage per D2, with a test that no storage write contains a refresh token.
 - [ ] P2.3 `IssuedApiToken` and every secret-holding type: redacting Debug / `SecretString`.
 - [ ] P2.4 Clerk missing-azp opt-in; negative tests for every token profile.
 - [~] P2.5 (baukit done in W1-D; template workflows open) Supply chain: SHA-pin all actions in baukit and the template workflows, renovate digest pinning,
@@ -228,6 +228,10 @@ tenancy and rate-limit audit of the products (S-08).
   credentials scope, Keycloak idle note), accepted and merged. Worktree removed.
 - 2026-11-07: W2-1 (ADR 0006 task 1, baukit-auth BFF) and W2-2 (task 2, baukit-http headers) started in
   parallel with W1-A; both check against the new lint set via CLIPPY_CONF_DIR without editing the lint table.
+- 2026-11-07: Full Rust gate on main after W1-A: fmt, clippy `--all-features -D warnings`, 105 test suites
+  with `--include-ignored`, 0 failed. W2-1 merged after round 3 (502 `idp_invalid_response`); clippy and the
+  auth and ratelimit suites re-run on main with Docker. Orchestrator added the auth, ratelimit and suite
+  changelog entries.
 - 2026-11-07: W1-A merged after its second round: re-ran fmt, clippy `--all-features -D warnings` and the
   P2.13 Docker test, and reviewed the jitter, suppression and suite diffs. 93 suppressions with reasons; about 60 of
   them are the same file-level allow in integration tests, where allow-*-in-tests does not reach helper
