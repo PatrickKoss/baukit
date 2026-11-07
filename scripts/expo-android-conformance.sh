@@ -68,7 +68,7 @@ expo_android_pick_serial() {
   local attached port
   attached="$(adb devices 2>/dev/null || true)"
   for (( port = 5554; port <= 5584; port += 2 )); do
-    if ! grep -q "^emulator-$port[[:space:]]" <<< "$attached"; then
+    if ! grep -q "^emulator-${port}[[:space:]]" <<< "$attached"; then
       android_serial="emulator-$port"
       return 0
     fi

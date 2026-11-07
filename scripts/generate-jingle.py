@@ -70,9 +70,16 @@ INTRO_CHUNK = {
     "section": "Intro",
     "duration_ms": 6400,
     "positive_styles": (
-        "garage punk rock", f"{MUSIC_BPM} BPM", "E minor", "crunchy power chord guitars",
-        "picked electric bass", "hammer and anvil percussion", "hand claps",
-        "raw older male lead and gang vocals", "playful defiance", "dry live room production",
+        "garage punk rock",
+        f"{MUSIC_BPM} BPM",
+        "E minor",
+        "crunchy power chord guitars",
+        "picked electric bass",
+        "hammer and anvil percussion",
+        "hand claps",
+        "raw older male lead and gang vocals",
+        "playful defiance",
+        "dry live room production",
     ),
     "negative_styles": ("polished corporate pop", "slow ballad", "fade out"),
 }
@@ -93,9 +100,12 @@ MUSIC = {
             INTRO_CHUNK,
             {"section": "Verse", "duration_ms": 12800, **VERSE_STYLES},
             {"section": "Chorus", "duration_ms": 19200, **CHORUS_STYLES},
-            {"section": "Outro", "duration_ms": 6400,
-             "positive_styles": ("shouted gang vocals", "metallic anvil accents", "hard stop"),
-             "negative_styles": ("fade out",)},
+            {
+                "section": "Outro",
+                "duration_ms": 6400,
+                "positive_styles": ("shouted gang vocals", "metallic anvil accents", "hard stop"),
+                "negative_styles": ("fade out",),
+            },
         ),
     },
     "long": {
@@ -104,35 +114,50 @@ MUSIC = {
             INTRO_CHUNK,
             {"section": "Verse 1", "duration_ms": 12800, **VERSE_STYLES},
             {"section": "Chorus", "duration_ms": 12800, **CHORUS_STYLES},
-            {"section": "Verse 2", "duration_ms": 12800,
-             "positive_styles": ("driving bass", "hammer percussion", "rhythmic lead vocal"),
-             "negative_styles": ("tempo change",)},
+            {
+                "section": "Verse 2",
+                "duration_ms": 12800,
+                "positive_styles": ("driving bass", "hammer percussion", "rhythmic lead vocal"),
+                "negative_styles": ("tempo change",),
+            },
             {"section": "Chorus 2", "duration_ms": 12800, **CHORUS_STYLES},
-            {"section": "Bridge", "duration_ms": 6400,
-             "positive_styles": ("stop time hand claps", "wry shouted lead"),
-             "negative_styles": ("long instrumental solo",)},
-            {"section": "Final chorus", "duration_ms": 12800,
-             "positive_styles": ("full gang vocals", "hard stop"),
-             "negative_styles": ("fade out",)},
+            {
+                "section": "Bridge",
+                "duration_ms": 6400,
+                "positive_styles": ("stop time hand claps", "wry shouted lead"),
+                "negative_styles": ("long instrumental solo",),
+            },
+            {
+                "section": "Final chorus",
+                "duration_ms": 12800,
+                "positive_styles": ("full gang vocals", "hard stop"),
+                "negative_styles": ("fade out",),
+            },
         ),
     },
 }
 SOUND_EFFECTS = {
     "anvil": {
-        "text": ("One heavy workshop hammer striking a steel anvil, a tight metallic ring "
-                 "and short room decay, compact logo punctuation, no voices or music."),
+        "text": (
+            "One heavy workshop hammer striking a steel anvil, a tight metallic ring "
+            "and short room decay, compact logo punctuation, no voices or music."
+        ),
         "duration_seconds": 1.2,
         "prompt_influence": 0.8,
     },
     "blueprint": {
-        "text": ("A stiff paper blueprint snapping open on a wooden workbench, followed by "
-                 "one crisp socket wrench click, close dry recording, no voices or music."),
+        "text": (
+            "A stiff paper blueprint snapping open on a wooden workbench, followed by "
+            "one crisp socket wrench click, close dry recording, no voices or music."
+        ),
         "duration_seconds": 0.8,
         "prompt_influence": 0.8,
     },
     "relay": {
-        "text": ("Three mechanical relay clicks stepping evenly into one firm metal latch, "
-                 "like a workshop job counter completing a task, no voices or music."),
+        "text": (
+            "Three mechanical relay clicks stepping evenly into one firm metal latch, "
+            "like a workshop job counter completing a task, no voices or music."
+        ),
         "duration_seconds": 2.0,
         "prompt_influence": 0.75,
     },
@@ -212,7 +237,8 @@ def storyboard_rows(text: str, version: str) -> list[list[str]]:
     section = text.split(heading + "\n", 1)[1].split("\n#", 1)[0]
     rows = [
         [cell.strip() for cell in line.strip().strip("|").split("|")]
-        for line in section.splitlines() if line.startswith("|")
+        for line in section.splitlines()
+        if line.startswith("|")
     ]
     if len(rows) < 3 or rows[0] != ["Section", "Start (s)", "End (s)", "On screen", "Sound effect"]:
         raise ValueError(f"invalid {version} storyboard table")
@@ -225,11 +251,12 @@ def validate_storyboard(text: str, version: str) -> list[list[str]]:
     if len(rows) != len(chunks):
         raise ValueError(f"{version} storyboard section count differs from music")
     start_ms = 0
-    for row, chunk in zip(rows, chunks):
+    for row, chunk in zip(rows, chunks, strict=True):
         end_ms = start_ms + chunk["duration_ms"]
         try:
             matches = (
-                len(row) == 5 and row[0] == chunk["section"]
+                len(row) == 5
+                and row[0] == chunk["section"]
                 and Decimal(row[1]) * 1000 == start_ms
                 and Decimal(row[2]) * 1000 == end_ms
             )
@@ -256,8 +283,11 @@ def validate_document(text: str) -> dict:
     for language in LANGUAGES:
         for part in ("intro", "outro"):
             spoken = blocks["voiceover", language, part]
-            if (not spoken.strip() or len(spoken) >= VOICEOVER_CHARACTER_LIMIT
-                    or re.search(r"<[^>]+>", spoken)):
+            if (
+                not spoken.strip()
+                or len(spoken) >= VOICEOVER_CHARACTER_LIMIT
+                or re.search(r"<[^>]+>", spoken)
+            ):
                 raise ValueError(
                     f"{language} {part} voiceover must be nonempty, "
                     f"under {VOICEOVER_CHARACTER_LIMIT} characters, without SSML"
@@ -269,17 +299,21 @@ def validate_document(text: str) -> dict:
 def music_payload(blocks: dict, language: str, version: str, model: str) -> dict:
     sections = parse_sections(blocks["lyrics", language, version])
     chunks = []
-    for index, ((_, text), chunk) in enumerate(zip(sections, MUSIC[version]["chunks"])):
+    for index, ((_, text), chunk) in enumerate(
+        zip(sections, MUSIC[version]["chunks"], strict=True)
+    ):
         styles = list(chunk["positive_styles"])
         if index == 0:
             styles.append("German lyrics" if language == "de" else "English lyrics")
-        chunks.append({
-            "text": text,
-            "duration_ms": chunk["duration_ms"],
-            "positive_styles": styles,
-            "negative_styles": list(chunk["negative_styles"]),
-            "context_adherence": "high",
-        })
+        chunks.append(
+            {
+                "text": text,
+                "duration_ms": chunk["duration_ms"],
+                "positive_styles": styles,
+                "negative_styles": list(chunk["negative_styles"]),
+                "context_adherence": "high",
+            }
+        )
     return {
         "model_id": model,
         "composition_plan": {"chunks": chunks},
@@ -316,34 +350,49 @@ def build_jobs(blocks: dict, args: argparse.Namespace) -> list[Job]:
     for language in languages:
         if "music" in args.parts:
             for version in versions:
-                jobs.append(Job(
-                    f"{APP_SLUG}-jingle-{version}-{language}.mp3",
-                    f"/v1/music?output_format={MUSIC['output_format']}",
-                    music_payload(blocks, language, version, args.music_model), MUSIC_TIMEOUT_S,
-                ))
+                jobs.append(
+                    Job(
+                        f"{APP_SLUG}-jingle-{version}-{language}.mp3",
+                        f"/v1/music?output_format={MUSIC['output_format']}",
+                        music_payload(blocks, language, version, args.music_model),
+                        MUSIC_TIMEOUT_S,
+                    )
+                )
         if "voice" in args.parts:
             voice_id = VOICES[language]["voice_id"]
             for part in ("intro", "outro"):
-                jobs.append(Job(
-                    f"{APP_SLUG}-voiceover-{part}-{language}.mp3",
-                    f"/v1/text-to-speech/{voice_id}?output_format={TTS_OUTPUT_FORMAT}",
-                    voice_payload(blocks, language, part, args.tts_model),
-                    REQUEST_TIMEOUT_S, voice_id,
-                ))
+                jobs.append(
+                    Job(
+                        f"{APP_SLUG}-voiceover-{part}-{language}.mp3",
+                        f"/v1/text-to-speech/{voice_id}?output_format={TTS_OUTPUT_FORMAT}",
+                        voice_payload(blocks, language, part, args.tts_model),
+                        REQUEST_TIMEOUT_S,
+                        voice_id,
+                    )
+                )
     if "sfx" in args.parts:
-        jobs.extend(Job(
-            f"{APP_SLUG}-sfx-{effect_id}.mp3",
-            f"/v1/sound-generation?output_format={SFX_OUTPUT_FORMAT}",
-            sfx_payload(effect_id), REQUEST_TIMEOUT_S,
-        ) for effect_id in SOUND_EFFECTS)
+        jobs.extend(
+            Job(
+                f"{APP_SLUG}-sfx-{effect_id}.mp3",
+                f"/v1/sound-generation?output_format={SFX_OUTPUT_FORMAT}",
+                sfx_payload(effect_id),
+                REQUEST_TIMEOUT_S,
+            )
+            for effect_id in SOUND_EFFECTS
+        )
     return jobs
 
 
 def http_request(
-    method: str, endpoint: str, body: dict | None, api_key: str, timeout: int,
+    method: str,
+    endpoint: str,
+    body: dict | None,
+    api_key: str,
+    timeout: int,
 ) -> tuple[bytes, dict]:
     request = urllib.request.Request(
-        API_BASE + endpoint, method=method,
+        API_BASE + endpoint,
+        method=method,
         data=None if body is None else json.dumps(body, ensure_ascii=False).encode("utf-8"),
         headers={"xi-api-key": api_key, "Content-Type": "application/json"},
     )
@@ -395,14 +444,25 @@ def load_manifest(path: Path) -> dict:
     if not path.exists():
         return {"app": APP_SLUG, "files": {}}
     manifest = json.loads(path.read_text(encoding="utf-8"))
-    if (not isinstance(manifest, dict) or manifest.get("app") != APP_SLUG
-            or not isinstance(manifest.get("files"), dict)):
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("app") != APP_SLUG
+        or not isinstance(manifest.get("files"), dict)
+    ):
         raise ValueError(f"invalid manifest: {path}")
     return manifest
 
 
-def generate(jobs: list[Job], out_dir: Path, doc_hash: str, api_key: str,
-             dry_run: bool, force: bool, transport) -> None:
+def generate(
+    jobs: list[Job],
+    out_dir: Path,
+    doc_hash: str,
+    api_key: str,
+    *,
+    dry_run: bool,
+    force: bool,
+    transport,
+) -> None:
     manifest_path = out_dir / "manifest.json"
     manifest = load_manifest(manifest_path)
     if dry_run:
@@ -469,8 +529,10 @@ def ffmpeg_command(plan: dict, out_dir: Path, target: Path) -> list[str]:
     for name in mix_inputs(plan):
         command += ["-i", str(out_dir / name)]
     audio_format = f"aformat=sample_rates={MIX_SAMPLE_RATE}:channel_layouts=stereo"
-    loudness = (f"loudnorm=I={MIX_LOUDNESS_LUFS}:TP={MIX_TRUE_PEAK_DB}"
-                f":LRA={MIX_LOUDNESS_RANGE},{audio_format}")
+    loudness = (
+        f"loudnorm=I={MIX_LOUDNESS_LUFS}:TP={MIX_TRUE_PEAK_DB}"
+        f":LRA={MIX_LOUDNESS_RANGE},{audio_format}"
+    )
     filters = [f"[{index}]{audio_format}[a{index}]" for index in range(3)]
     bed = ["[a1]"]
     for index, (_, start) in enumerate(plan["effects"], start=3):
@@ -485,12 +547,17 @@ def ffmpeg_command(plan: dict, out_dir: Path, target: Path) -> list[str]:
     filters += [f"[a0]{loudness}[intro]", f"[a2]{loudness}[outro]"]
     gap = f"anullsrc=r={MIX_SAMPLE_RATE}:cl=stereo,atrim=duration={MIX_GAP_SECONDS}"
     filters += [f"{gap}[g0]", f"{gap}[g1]"]
-    filters.append(
-        f"[intro][g0][bed][g1][outro]concat=n=5:v=0:a=1,alimiter=limit={MIX_LIMIT}[out]"
-    )
+    filters.append(f"[intro][g0][bed][g1][outro]concat=n=5:v=0:a=1,alimiter=limit={MIX_LIMIT}[out]")
     return command + [
-        "-filter_complex", ";".join(filters), "-map", "[out]", "-b:a", MIX_BITRATE,
-        "-f", "mp3", str(target),
+        "-filter_complex",
+        ";".join(filters),
+        "-map",
+        "[out]",
+        "-b:a",
+        MIX_BITRATE,
+        "-f",
+        "mp3",
+        str(target),
     ]
 
 
@@ -498,7 +565,9 @@ def run_ffmpeg(command: list[str]) -> None:
     if shutil.which(command[0]) is None:
         raise RuntimeError(FFMPEG_MISSING)
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=FFMPEG_TIMEOUT_S)
+        result = subprocess.run(
+            command, capture_output=True, text=True, timeout=FFMPEG_TIMEOUT_S, check=False
+        )
     except subprocess.TimeoutExpired as error:
         detail = error.stderr or b""
         if isinstance(detail, bytes):
@@ -517,11 +586,13 @@ def mix(blocks: dict, args: argparse.Namespace, out_dir: Path, mixer) -> None:
         for plan in plans:
             print(f"Plan {out_dir / plan['filename']} (mix of {', '.join(mix_inputs(plan))})")
         return
-    missing = sorted({
-        name for plan in plans for name in mix_inputs(plan) if not (out_dir / name).is_file()
-    })
+    missing = sorted(
+        {name for plan in plans for name in mix_inputs(plan) if not (out_dir / name).is_file()}
+    )
     if missing:
-        raise ValueError(f"Mix needs {', '.join(missing)}; generate them with --parts music,voice,sfx")
+        raise ValueError(
+            f"Mix needs {', '.join(missing)}; generate them with --parts music,voice,sfx"
+        )
     for plan in plans:
         path = out_dir / plan["filename"]
         temporary = path.with_suffix(path.suffix + ".tmp")
@@ -560,20 +631,33 @@ def main(argv: list[str] | None = None, transport=None, mixer=None) -> int:
     api_key = (args.api_key or os.environ.get("ELEVENLABS_API_KEY", "")).strip()
     paid = any(part in PAID_PARTS for part in args.parts)
     if paid and not args.dry_run and not api_key:
-        print("error: --api-key or ELEVENLABS_API_KEY is required unless --dry-run is set",
-              file=sys.stderr)
+        print(
+            "error: --api-key or ELEVENLABS_API_KEY is required unless --dry-run is set",
+            file=sys.stderr,
+        )
         return 1
     try:
         source = DOC.read_bytes()
         blocks = validate_document(source.decode("utf-8"))
         out_dir = args.out_dir.resolve()
         mixer = mixer or run_ffmpeg
-        if "mix" in args.parts and not args.dry_run and mixer is run_ffmpeg:
-            if shutil.which("ffmpeg") is None:
-                raise RuntimeError(FFMPEG_MISSING)
+        if (
+            "mix" in args.parts
+            and not args.dry_run
+            and mixer is run_ffmpeg
+            and shutil.which("ffmpeg") is None
+        ):
+            raise RuntimeError(FFMPEG_MISSING)
         if paid:
-            generate(build_jobs(blocks, args), out_dir, hashlib.sha256(source).hexdigest(),
-                     api_key, args.dry_run, args.force, transport or http_request)
+            generate(
+                build_jobs(blocks, args),
+                out_dir,
+                hashlib.sha256(source).hexdigest(),
+                api_key,
+                dry_run=args.dry_run,
+                force=args.force,
+                transport=transport or http_request,
+            )
         if "mix" in args.parts:
             mix(blocks, args, out_dir, mixer)
         return 0

@@ -4,3 +4,10 @@ node = { version = "26.10.0", postinstall = "npm install --global --prefix \"$MI
 rust = { version = "1.99.0", components = "clippy,rustfmt" }
 swift = "6.4.0"
 "github:xtool-org/xtool" = { version = "1.20.1", asset_pattern = "xtool-x86_64.AppImage", postinstall = "cd \"$MISE_TOOL_INSTALL_PATH\" && ./xtool.AppImage --appimage-extract >/dev/null && printf '#!/bin/sh\nexec \"$(dirname \"$(readlink -f \"$0\")\")/squashfs-root/AppRun\" \"$@\"\n' > xtool && chmod +x xtool" }
+"aqua:rhysd/actionlint" = "1.7.12"
+"aqua:zizmorcore/zizmor" = "1.32.0"
+"aqua:gitleaks/gitleaks" = "8.30.1"
+"aqua:google/osv-scanner" = "2.7.0"
+"aqua:astral-sh/ruff" = "0.17.4"
+"aqua:koalaman/shellcheck" = "0.11.0"
+"aqua:EmbarkStudios/cargo-deny" = "0.20.2"

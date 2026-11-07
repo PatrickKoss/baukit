@@ -1,0 +1,34 @@
+title = "baukit"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Committed test-only keys and cross-language test vectors; none is used outside tests"
+paths = [
+  '''^fixtures/data-subject/v1/generate\.py$''',
+  '''^fixtures/data-subject/v1/test-only-private\.pem$''',
+  '''^fixtures/entitlement-tickets/v1/billing-vectors\.json$''',
+  '''^fixtures/entitlement-tickets/v1/vectors\.json$''',
+  '''^fixtures/media-grants/vectors-v1\.json$''',
+  '''^fixtures/platform-api/v1/responses\.json$''',
+  '''^fixtures/suite-events/v1/link-protocol\.json$''',
+  '''^rust/crates/baukit-test/src/jwt/fixtures/oidc-key-[12]\.pem$''',
+  '''^rust/crates/baukit-test/src/suite/fixtures/v1/link-protocol\.json$''',
+  '''^typescript/packages/analytics-core/src/scrubber\.test\.ts$''',
+]
+
+[[allowlists]]
+description = "Upstream barman-cloud manifest: the Secret holds the base64 sidecar image name, removed with v0.14.0"
+condition = "AND"
+commits = ["af6e2b4f66b1402b6b0bf189d2797f142e4fb286", "1bcad0fde3c17636ebf6f6fcc96bdecb6cd17a6d"]
+paths = ['''^deploy/platform/cnpg/plugin-barman-cloud-v0\.14\.0\.yaml$''']
+
+[[allowlists]]
+description = "Historical test literals (a fake erase() argument and a UUID idempotency key) flagged by generic-api-key"
+condition = "AND"
+commits = ["d1c0d46999b38b79b4558097ab5c900ed27b3ae2", "f29b455d1224a89dbc7b3248a69ba473dea60e9a"]
+paths = [
+  '''^rust/crates/baukit-erasure/tests/postgres\.rs$''',
+  '''^typescript/packages/api-runtime/src/erasure\.test\.ts$''',
+]

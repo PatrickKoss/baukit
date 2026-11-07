@@ -25,12 +25,16 @@ def typescript_manifests(root: Path) -> dict[str, Path]:
 
 def cut_package_changelog(source: str, version: str) -> str:
     sections = re.split(r"^## ", source, flags=re.MULTILINE)
-    pending = [section for section in sections[1:]
-               if section.partition("\n")[0] in ("Unreleased", "[Unreleased]")]
-    releases = [section for section in sections[1:]
-                if section.partition("\n")[0] == version]
-    if len(pending) > 1 or len(releases) != 1 or any(
-        not section.partition("\n")[2].startswith("\n") for section in pending
+    pending = [
+        section
+        for section in sections[1:]
+        if section.partition("\n")[0] in ("Unreleased", "[Unreleased]")
+    ]
+    releases = [section for section in sections[1:] if section.partition("\n")[0] == version]
+    if (
+        len(pending) > 1
+        or len(releases) != 1
+        or any(not section.partition("\n")[2].startswith("\n") for section in pending)
     ):
         raise ValueError("still has uncut Unreleased entries or is missing the new release heading")
 
@@ -41,9 +45,12 @@ def cut_package_changelog(source: str, version: str) -> str:
         heading, _, body = history[index].partition("\n")
         history[index] = f"{heading}\n\n{notes}\n\n{body.lstrip()}"
     unreleased = pending[0].partition("\n")[0] if pending else "Unreleased"
-    return sections[0].rstrip() + f"\n\n## {unreleased}\n\n" + "\n\n".join(
-        "## " + section.rstrip() for section in history
-    ) + "\n"
+    return (
+        sections[0].rstrip()
+        + f"\n\n## {unreleased}\n\n"
+        + "\n\n".join("## " + section.rstrip() for section in history)
+        + "\n"
+    )
 
 
 def cut_package_changelogs(root: Path, version: str) -> None:
