@@ -29,7 +29,7 @@ export interface IssuedSession {
   readonly subject: string;
 }
 
-/** The only sign-in state kept in localStorage. It holds no token. */
+/** Sign-in state kept in localStorage beside a session counter. It holds no token. */
 export interface AccountHint {
   readonly subject: string;
   /** Epoch milliseconds. */

@@ -37,6 +37,8 @@ const HTTP_NO_CONTENT = 204;
 const HTTP_UNAUTHORIZED = 401;
 const HTTP_TOO_MANY_REQUESTS = 429;
 const HTTP_SERVER_ERROR = 500;
+/** How long a tab that waited for the refresh lock waits for the winner's token. */
+export const SESSION_HANDOFF_TIMEOUT_MS = 2000;
 
 type SessionEndpoint = 'exchange' | 'refresh' | 'logout';
 
@@ -56,6 +58,8 @@ export class BrowserSessionClient {
   private readonly refreshLeewayMs: number;
   private readonly accountStorageKey: string;
   private readonly lockName: string;
+  private readonly generationStorageKey: string;
+  private readonly sessionWaiters = new Set<() => void>();
   private readonly channel: SessionChannel | undefined;
   private readonly listeners = new Set<SessionExpiredListener>();
   private token: MemoryToken | undefined;
@@ -74,6 +78,7 @@ export class BrowserSessionClient {
     const prefix = this.oidc.storageKeyPrefix;
     this.accountStorageKey = `${prefix}:account`;
     this.lockName = `${prefix}:refresh`;
+    this.generationStorageKey = `${prefix}:refresh-generation`;
     this.channel = environment.openChannel?.(`${prefix}:session`);
     this.channel?.subscribe((message) => {
       this.receive(readSessionMessage(message));
@@ -208,13 +213,20 @@ export class BrowserSessionClient {
   }
 
   private coordinatedRefresh(requestedAt: number): Promise<string | undefined> {
-    const run = () => this.refreshUnlessSettled(requestedAt);
+    const generation = this.refreshGeneration();
+    const run = () => this.refreshUnlessSettled(requestedAt, generation);
     const locks = this.environment.locks;
     return locks === undefined ? run() : locks.request(this.lockName, run);
   }
 
   /** Skips the request when another tab refreshed or signed out while this one waited. */
-  private async refreshUnlessSettled(requestedAt: number): Promise<string | undefined> {
+  private async refreshUnlessSettled(
+    requestedAt: number,
+    generation: number,
+  ): Promise<string | undefined> {
+    if (this.revision === requestedAt && this.refreshGeneration() !== generation) {
+      await this.nextSession();
+    }
     const current = this.token;
     if (this.revision !== requestedAt) {
       if (current === undefined) {
@@ -253,6 +265,10 @@ export class BrowserSessionClient {
 
   private accept(session: IssuedSession, options: { readonly newSignIn: boolean }): void {
     this.remember(session);
+    this.environment.localStorage.setItem(
+      this.generationStorageKey,
+      String(this.refreshGeneration() + 1),
+    );
     const hint = this.account();
     if (options.newSignIn || hint?.subject !== session.subject) {
       const next: AccountHint = { subject: session.subject, signedInAt: this.environment.now() };
@@ -282,11 +298,38 @@ export class BrowserSessionClient {
     }
     if (message.type === 'session') {
       this.remember(message);
+      this.releaseSessionWaiters();
       return;
     }
     this.revision += 1;
     this.token = undefined;
+    this.releaseSessionWaiters();
     this.notify(expiredReason(message.cause));
+  }
+
+  /** Counts sessions issued in any tab; it holds no token or expiry. */
+  private refreshGeneration(): number {
+    const value = Number(this.environment.localStorage.getItem(this.generationStorageKey));
+    return Number.isSafeInteger(value) ? value : 0;
+  }
+
+  /** Resolves when another tab's session message arrives or the handoff times out. */
+  private nextSession(): Promise<void> {
+    return new Promise((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        this.sessionWaiters.delete(done);
+        resolve();
+      };
+      const timer = setTimeout(done, SESSION_HANDOFF_TIMEOUT_MS);
+      this.sessionWaiters.add(done);
+    });
+  }
+
+  private releaseSessionWaiters(): void {
+    for (const done of [...this.sessionWaiters]) {
+      done();
+    }
   }
 
   private expire(reason: SessionExpiredReason): void {

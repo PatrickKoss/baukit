@@ -55,9 +55,15 @@ export function fakeLocks(): SessionLocks & { readonly requests: string[] } {
   };
 }
 
-/** Delivers each message asynchronously to every other channel with the same name. */
+/**
+ * Delivers each message asynchronously to every other channel with the same name.
+ * `task` delivery runs after pending lock handoffs, like a slow BroadcastChannel.
+ */
 export class ChannelHub {
   public readonly posted: unknown[] = [];
+
+  public constructor(private readonly delivery: 'microtask' | 'task' = 'microtask') {}
+
   private readonly channels = new Set<{ name: string; listeners: ((m: unknown) => void)[] }>();
 
   public open = (name: string): SessionChannel => {
@@ -69,9 +75,14 @@ export class ChannelHub {
         const copy: unknown = structuredClone(message);
         for (const other of this.channels) {
           if (other !== entry && other.name === name) {
-            queueMicrotask(() => {
+            const deliver = () => {
               for (const listener of other.listeners) listener(copy);
-            });
+            };
+            if (this.delivery === 'task') {
+              setTimeout(deliver, 0);
+            } else {
+              queueMicrotask(deliver);
+            }
           }
         }
       },
