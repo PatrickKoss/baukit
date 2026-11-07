@@ -16,6 +16,7 @@ use serde_json::Value;
 use thiserror::Error;
 use tokio::sync::Mutex;
 
+use crate::authorized_party::{validate_clerk_authorized_party, validate_client_id};
 use crate::config::ClaimPath;
 use crate::{
     ApiToken, ClerkVerifier, OidcConfig, SigningAlgorithm, WorkOsVerifier, config::TokenProfile,
@@ -1057,27 +1058,19 @@ fn validate_token_profile(
     }
     match &config.token_profile {
         TokenProfile::Oidc => validate_oidc_authorized_party(claims, config),
-        TokenProfile::Clerk { authorized_parties } => match claims.extra.get("azp") {
-            None | Some(Value::Null) => Ok(()),
-            Some(Value::String(value)) if authorized_parties.contains(value) => Ok(()),
-            Some(Value::String(_)) => Err(VerificationError::WrongAuthorizedParty),
-            Some(_) => Err(VerificationError::InvalidPrincipalContext),
-        },
-        TokenProfile::ClientBound { client_id } => match claims.extra.get("client_id") {
-            Some(Value::String(value)) if value == client_id => Ok(()),
-            Some(Value::String(_)) | None | Some(Value::Null) => {
-                Err(VerificationError::WrongClientId)
-            }
-            Some(_) => Err(VerificationError::InvalidPrincipalContext),
-        },
+        TokenProfile::Clerk {
+            authorized_parties,
+            allow_missing_azp,
+        } => validate_clerk_authorized_party(
+            claims.extra.get("azp"),
+            authorized_parties,
+            *allow_missing_azp,
+        ),
+        TokenProfile::ClientBound { client_id } => {
+            validate_client_id(claims.extra.get("client_id"), Some(client_id.as_str()))
+        }
         TokenProfile::ScopeBound { required_scopes } => {
-            match claims.extra.get("client_id") {
-                Some(Value::String(value)) if !value.is_empty() => {}
-                Some(Value::String(_)) | None | Some(Value::Null) => {
-                    return Err(VerificationError::WrongClientId);
-                }
-                Some(_) => return Err(VerificationError::InvalidPrincipalContext),
-            }
+            validate_client_id(claims.extra.get("client_id"), None)?;
             let granted = scope_claim(claims.extra.get(config.claim_mapping.scope.as_ref()))?;
             if required_scopes.is_subset(&granted) {
                 Ok(())

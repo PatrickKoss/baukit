@@ -43,6 +43,7 @@ fn default_layer_supplies_standard_values() {
 
     assert_eq!(config.environment, Environment::Local);
     assert_eq!(config.http.port, 8080);
+    assert_eq!(config.http.hsts_max_age, None);
     assert_eq!(config.ops.port, 9090);
     assert!(config.database.is_none());
     assert_eq!(config.shutdown.drain_timeout, Duration::from_secs(30));
@@ -101,6 +102,29 @@ url = "postgres://file-secret@localhost/file"
 }
 
 #[test]
+fn deployed_environments_default_hsts_unless_configured() {
+    let directory = TestDirectory::new();
+    let file = directory.path().join("production.toml");
+    let load = |contents: &str| {
+        fs::write(&file, contents).expect("write config");
+        ConfigLoader::new("hsts_app", Environment::Production)
+            .expect("valid loader")
+            .local_file(file.clone())
+            .without_dotenv()
+            .load::<()>()
+            .expect("valid config")
+            .http
+            .hsts_max_age
+    };
+
+    assert_eq!(load(""), Some(DEFAULT_HSTS_MAX_AGE));
+    assert_eq!(
+        load("[http]\nhsts_max_age = 600\n"),
+        Some(Duration::from_secs(600))
+    );
+}
+
+#[test]
 fn partial_ip_rate_limit_section_retains_ip_defaults() {
     let directory = TestDirectory::new();
     let file = directory.path().join("local.toml");
@@ -131,6 +155,7 @@ fn environment_override_precedence_and_separator_work() {
         &[
             ("LAYER_APP__HTTP__PORT", "8282"),
             ("LAYER_APP__HTTP__REQUEST_TIMEOUT", "17"),
+            ("LAYER_APP__HTTP__HSTS_MAX_AGE", "0"),
             ("LAYER_APP__FEATURE_LIMIT", "9"),
         ],
     );
@@ -264,6 +289,7 @@ request_timeout = 12
 
     assert_eq!(config.http.port, 8282);
     assert_eq!(config.http.request_timeout, Duration::from_secs(17));
+    assert_eq!(config.http.hsts_max_age, None);
     assert_eq!(config.product.feature_limit, 9);
     assert_eq!(config.environment, Environment::Staging);
 }

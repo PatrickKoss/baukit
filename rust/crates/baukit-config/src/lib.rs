@@ -122,61 +122,6 @@ where
     }
 }
 
-/// Configuration for the public HTTP listener.
-#[derive(Clone, Debug, Deserialize)]
-#[serde(default)]
-pub struct HttpConfig {
-    /// Address on which the public listener accepts connections.
-    pub bind_address: IpAddr,
-    /// TCP port for the public listener.
-    pub port: u16,
-    /// Maximum time allowed for an HTTP request, in integer seconds on input.
-    #[serde(with = "duration_seconds")]
-    pub request_timeout: Duration,
-    /// Maximum accepted request-body size in bytes.
-    pub body_size_limit: usize,
-    /// Maximum number of requests processed concurrently.
-    pub concurrency_limit: usize,
-    /// Origins allowed by CORS. An empty list allows no cross-origin requests.
-    pub cors_allowed_origins: Vec<String>,
-}
-
-impl Default for HttpConfig {
-    fn default() -> Self {
-        Self {
-            bind_address: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-            port: 8080,
-            request_timeout: Duration::from_secs(30),
-            body_size_limit: 2 * 1024 * 1024,
-            concurrency_limit: 1_024,
-            cors_allowed_origins: Vec::new(),
-        }
-    }
-}
-
-impl Validate for HttpConfig {
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        let mut errors = Vec::new();
-        require_non_zero(self.port, "port", &mut errors);
-        require_non_zero(
-            self.request_timeout.as_secs(),
-            "request_timeout",
-            &mut errors,
-        );
-        require_non_zero(self.body_size_limit, "body_size_limit", &mut errors);
-        require_non_zero(self.concurrency_limit, "concurrency_limit", &mut errors);
-        for (index, origin) in self.cors_allowed_origins.iter().enumerate() {
-            if origin.trim().is_empty() {
-                errors.push(ValidationError::new(
-                    format!("cors_allowed_origins[{index}]"),
-                    "must not be empty",
-                ));
-            }
-        }
-        validation_result(errors)
-    }
-}
-
 /// Whether request processing continues when the rate-limit store is unavailable.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -768,10 +713,13 @@ impl ConfigLoader {
 
         let merged = builder.build()?;
         let standard = merged.clone().try_deserialize::<StandardConfig>()?;
+        let hsts_configured = http::hsts_configured(&merged)?;
         let product = deserialize_product_config::<T>(merged.cache)?;
         let loaded = BaukitConfig {
             environment: standard.environment,
-            http: standard.http,
+            http: standard
+                .http
+                .with_hsts_default(standard.environment, hsts_configured),
             ops: standard.ops,
             database: standard.database,
             rate_limit: standard.rate_limit,
@@ -986,6 +934,10 @@ fn extend_validation(
         }));
     }
 }
+
+mod http;
+
+pub use http::{DEFAULT_HSTS_MAX_AGE, HttpConfig};
 
 mod duration_seconds {
     use std::time::Duration;

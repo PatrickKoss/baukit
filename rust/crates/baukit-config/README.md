@@ -71,6 +71,9 @@ matters for secrets: an API key of `0123` must not be parsed into `123` on its w
 
 Durations in the standard sections deserialize from integer seconds.
 
+`http.hsts_max_age` (seconds) sets the `Strict-Transport-Security` max-age. Omitted, it is off in
+`local` and one year elsewhere; `0` turns it off.
+
 ## Secrets
 
 Wrap a secret in `Secret<T>`. Its `Debug` and `Display` both print `[redacted]`, and the inner value

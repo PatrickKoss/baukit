@@ -231,7 +231,11 @@ fn host_request(host: &str) -> Request<Body> {
 
 #[tokio::test]
 async fn hsts_is_sent_only_when_enabled_and_not_for_loopback_hosts() {
-    let options = HttpOptions::default().with_hsts(Duration::from_secs(31_536_000));
+    let config = baukit_config::HttpConfig {
+        hsts_max_age: Some(baukit_config::DEFAULT_HSTS_MAX_AGE),
+        ..baukit_config::HttpConfig::default()
+    };
+    let options = HttpOptions::from_config(&config).expect("valid options");
     assert_eq!(
         options.hsts_max_age(),
         Some(Duration::from_secs(31_536_000))

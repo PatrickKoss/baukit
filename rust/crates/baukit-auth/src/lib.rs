@@ -76,6 +76,7 @@
 #![deny(missing_docs)]
 
 mod api_token;
+mod authorized_party;
 mod axum_integration;
 #[cfg(feature = "browser-session")]
 pub mod browser_session;
