@@ -33,8 +33,8 @@ impl SuiteErasureNotifier for SuiteErasureNotificationService {
 ///
 /// # Errors
 ///
-/// Propagates [`baukit_erasure::ErasureError`] from preflight and erase, such as `InvalidKey`,
-/// `Conflict`, `ProfileErased` or `Database`.
+/// The errors of [`baukit_erasure::ErasureService::preflight`] and
+/// [`baukit_erasure::ErasureService::erase`], unchanged.
 pub async fn erase_with_suite(
     service: &baukit_erasure::ErasureService,
     notifier: &dyn SuiteErasureNotifier,

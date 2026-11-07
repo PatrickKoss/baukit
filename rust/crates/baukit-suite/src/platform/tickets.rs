@@ -247,8 +247,9 @@ impl<'a> ParsedTicket<'a> {
 ///
 /// # Errors
 ///
-/// `TicketError::Invalid` when the ticket is malformed, the JWKS is invalid, the key id is
-/// unknown or the signature fails. Claim errors from [`TicketClaims::verify_claims`] pass through.
+/// `TicketError::Invalid` when the ticket is malformed, the JWKS has too many, empty or duplicate
+/// key ids, the key id is unknown, the key is not an Ed25519 signing key, the signature fails or
+/// the payload does not parse. Claim errors from [`TicketClaims::verify_claims`] pass through.
 pub fn verify_ticket(
     ticket: &str,
     jwks: &TicketJwks,
@@ -373,8 +374,10 @@ impl TicketVerifier {
     }
     /// # Errors
     ///
-    /// `TicketError::KeysUnavailable` when the key set cannot be fetched, `Invalid` when the ticket
-    /// is malformed or its key id stays unknown, plus the errors of [`verify_ticket`].
+    /// `TicketError::KeysUnavailable` when the key set fetch fails or returns an invalid set, or a
+    /// stale cache was refreshed within the cooldown. `Invalid` when the ticket is malformed or its
+    /// key id stays unknown after a refresh. Key, signature and claim errors as in
+    /// [`verify_ticket`].
     pub async fn verify_at(&self, ticket: &str, now: i64) -> Result<TicketClaims, TicketError> {
         let parsed = ParsedTicket::parse(ticket)?;
         if let Some(key) = self.cached_key(&parsed.kid).await {

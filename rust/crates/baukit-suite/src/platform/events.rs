@@ -194,7 +194,8 @@ impl PlatformEventDecoder {
     /// # Errors
     ///
     /// `PlatformError::Invalid` when the body is not a valid event envelope, comes from another
-    /// source app, occurs too far in the future, or a known event type fails its payload schema.
+    /// source app, occurs more than `MAX_EVENT_FUTURE_SECONDS` ahead, or a known event type fails
+    /// its payload schema or names an owner other than the envelope user.
     pub fn decode(&self, body: &[u8], now: DateTime<Utc>) -> Result<PlatformEvent, PlatformError> {
         let envelope: EventEnvelope =
             serde_json::from_slice(body).map_err(|_| PlatformError::Invalid)?;

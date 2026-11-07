@@ -96,9 +96,10 @@ pub trait AccountPlan: Send + Sync {
 ///
 /// # Errors
 ///
-/// `PlanError::SuiteIdentityMissing` without a suite subject, `OrganizationNotAccessible` when
-/// the subject is not a member, `FeatureNotEntitled` when the plan lacks `feature`, and any
-/// error the plan read returns, such as `EntitlementsUnavailable`.
+/// `PlanError::SuiteIdentityMissing` when an account or member subject has no suite subject,
+/// `OrganizationNotAccessible` when a member subject is not a member, `FeatureNotEntitled` when
+/// the plan lacks `feature`, and any error `plan` returns from `current`, `is_member` or
+/// `organization_current`, such as `EntitlementsUnavailable`.
 pub async fn require_feature(
     plan: &dyn AccountPlan,
     subject: impl Into<FeatureSubject>,

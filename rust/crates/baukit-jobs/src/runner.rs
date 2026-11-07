@@ -172,7 +172,9 @@ impl WorkerRunner {
     ///
     /// # Errors
     ///
-    /// [`crate::StoreError::Database`] when the claim-query probe fails.
+    /// Whatever the store's [`JobStore::ready`] returns. [`PostgresJobStore`](crate::PostgresJobStore)
+    /// returns [`crate::StoreError::Database`] when the probe query fails and
+    /// [`crate::StoreError::Task`] when its owned task panics or is aborted.
     pub async fn ready(&self) -> Result<(), crate::StoreError> {
         self.store.ready().await
     }
@@ -190,8 +192,10 @@ impl WorkerRunner {
     ///
     /// # Errors
     ///
-    /// [`RunnerError::Store`] when a store call fails and [`RunnerError::Task`] when an attempt
-    /// task panics or is aborted. Lease loss of a single attempt is returned the same way.
+    /// [`RunnerError::Store`] when a store call fails, [`RunnerError::Task`] when a claim or
+    /// attempt task panics or is aborted, and [`RunnerError::LeaseLost`] when an attempt can no
+    /// longer persist its outcome because another worker owns the job, and
+    /// [`RunnerError::InvalidConfig`] when a retry deadline overflows the timestamp range.
     pub async fn run(self, shutdown: ShutdownToken) -> Result<(), RunnerError> {
         let mut running = JoinSet::new();
         loop {

@@ -164,8 +164,9 @@ impl PostgresJobStore {
     ///
     /// # Errors
     ///
-    /// [`StoreError::InvalidInput`] when the job fails validation and [`StoreError::Database`]
-    /// when the insert fails.
+    /// [`StoreError::InvalidInput`] when the job fails validation or `max_attempts` exceeds
+    /// `i32::MAX`, [`StoreError::Database`] when the insert fails, and
+    /// [`StoreError::InvalidData`] when the stored row does not decode.
     pub async fn enqueue_in_transaction(
         &self,
         transaction: &mut PgConnection,
@@ -186,8 +187,10 @@ impl PostgresJobStore {
     ///
     /// # Errors
     ///
-    /// [`StoreError::InvalidInput`] when the job or `dedupe_key` fails validation and
-    /// [`StoreError::Database`] when the transaction fails.
+    /// [`StoreError::InvalidInput`] when the job or `dedupe_key` fails validation or
+    /// `max_attempts` exceeds `i32::MAX`, [`StoreError::Database`] when the transaction fails,
+    /// [`StoreError::InvalidData`] when the stored row does not decode, and
+    /// [`StoreError::Task`] when the owned store task panics or is aborted.
     pub async fn enqueue_deduplicated(
         &self,
         job: NewJob,
@@ -207,8 +210,10 @@ impl PostgresJobStore {
     ///
     /// # Errors
     ///
-    /// [`StoreError::InvalidInput`] when the job or `dedupe_key` fails validation and
-    /// [`StoreError::Database`] when the transaction fails.
+    /// [`StoreError::InvalidInput`] when the job or `dedupe_key` fails validation or
+    /// `max_attempts` exceeds `i32::MAX`, [`StoreError::Database`] when the transaction fails,
+    /// [`StoreError::InvalidData`] when the stored row does not decode, and
+    /// [`StoreError::Task`] when the owned store task panics or is aborted.
     pub async fn enqueue_pending_deduplicated(
         &self,
         job: NewJob,
@@ -247,8 +252,10 @@ impl PostgresJobStore {
     ///
     /// # Errors
     ///
-    /// [`StoreError::InvalidInput`] when the job or `dedupe_key` fails validation and
-    /// [`StoreError::Database`] when a statement fails, including serialization failures.
+    /// [`StoreError::InvalidInput`] when the job or `dedupe_key` fails validation or
+    /// `max_attempts` exceeds `i32::MAX`, [`StoreError::Database`] when a statement fails,
+    /// including serialization failures, and [`StoreError::InvalidData`] when the stored row
+    /// does not decode.
     pub async fn enqueue_deduplicated_in_transaction(
         &self,
         transaction: &mut PgConnection,
@@ -268,8 +275,10 @@ impl PostgresJobStore {
     ///
     /// # Errors
     ///
-    /// [`StoreError::InvalidInput`] when the job or `dedupe_key` fails validation and
-    /// [`StoreError::Database`] when a statement fails, including serialization failures.
+    /// [`StoreError::InvalidInput`] when the job or `dedupe_key` fails validation or
+    /// `max_attempts` exceeds `i32::MAX`, [`StoreError::Database`] when a statement fails,
+    /// including serialization failures, and [`StoreError::InvalidData`] when the stored row
+    /// does not decode.
     pub async fn enqueue_pending_deduplicated_in_transaction(
         &self,
         transaction: &mut PgConnection,
@@ -352,8 +361,9 @@ impl PostgresJobStore {
     ///
     /// # Errors
     ///
-    /// [`StoreError::InvalidInput`] for a blank or overlong `job_type` or `key`, and
-    /// [`StoreError::Database`] when the update fails.
+    /// [`StoreError::InvalidInput`] for a blank or overlong `job_type` or `key`,
+    /// [`StoreError::Database`] when the update fails, and [`StoreError::InvalidData`] for an
+    /// unknown returned status.
     pub async fn request_cancellation_by_key_in_transaction(
         &self,
         transaction: &mut Transaction<'_, Postgres>,
@@ -374,8 +384,9 @@ impl PostgresJobStore {
     ///
     /// # Errors
     ///
-    /// [`StoreError::InvalidInput`] for a blank or overlong `job_type` or `prefix`, and
-    /// [`StoreError::Database`] when the update fails.
+    /// [`StoreError::InvalidInput`] for a blank or overlong `job_type` or `prefix`,
+    /// [`StoreError::Database`] when the update fails, and [`StoreError::InvalidData`] for an
+    /// unknown returned status.
     pub async fn request_cancellation_by_key_prefix_in_transaction(
         &self,
         transaction: &mut Transaction<'_, Postgres>,

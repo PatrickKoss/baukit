@@ -205,7 +205,7 @@ fn visible_reference(value: &str) -> bool {
 ///
 /// # Errors
 ///
-/// [`ValidationError::SubjectReference`] when the value is empty, too long, or not visible ASCII.
+/// [`ValidationError::SubjectReference`] when the value is not 16 to 128 bytes of visible ASCII.
 pub fn validate_subject_reference(value: &str) -> Result<(), ValidationError> {
     if visible_reference(value) {
         Ok(())
@@ -219,7 +219,8 @@ pub fn validate_subject_reference(value: &str) -> Result<(), ValidationError> {
 ///
 /// # Errors
 ///
-/// [`ValidationError::IdempotencyKey`] when the header is absent or not a visible reference.
+/// [`ValidationError::IdempotencyKey`] when the header is absent or not 16 to 128 bytes of
+/// visible ASCII.
 pub fn validate_idempotency_key(value: Option<&str>) -> Result<(), ValidationError> {
     if value.is_some_and(visible_reference) {
         Ok(())
@@ -234,8 +235,11 @@ pub fn validate_idempotency_key(value: Option<&str>) -> Result<(), ValidationErr
 /// # Errors
 ///
 /// [`ValidationError::SubjectReference`] for an invalid reference,
-/// [`ValidationError::IdentifierCount`] for zero or too many identifiers, and the
-/// identifier type and value variants for unsupported types or out-of-bounds values.
+/// [`ValidationError::IdentifierCount`] for zero or too many identifiers,
+/// [`ValidationError::UnsupportedIdentifierType`] for a type not in `supported_types`,
+/// [`ValidationError::IdentifierLength`] for a value over the limit before or after
+/// normalization, [`ValidationError::Phone`] for a phone that is not `+` and 8 to 15 digits,
+/// and [`ValidationError::IdentifierEmpty`] for a value that normalizes to empty.
 pub fn normalize_request(
     request: &DataSubjectRequest,
     limits: &Limits,

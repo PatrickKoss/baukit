@@ -177,9 +177,10 @@ impl Entitlements {
     }
     /// # Errors
     ///
-    /// `PlatformError::Unavailable` in hub mode when the source fails, returns an invalid or
-    /// already expired snapshot, or the snapshot vanishes after the store. Cache read and write
-    /// errors pass through. Standalone mode never fails.
+    /// `PlatformError::Unavailable` in hub mode when the source fails with anything but
+    /// `NoEntitlements`, or returns a snapshot that is invalid, already expired, for another
+    /// subject or product, or older than the cached revision, or when the snapshot is gone after
+    /// the store. Cache read and write errors pass through. Standalone mode never fails.
     pub async fn current(
         &self,
         subject: &str,

@@ -56,7 +56,8 @@ impl CredentialCipher {
     /// # Errors
     ///
     /// [`CredentialVaultError::InvalidConfiguration`] for an empty ring, a malformed entry or
-    /// version, a duplicate version, invalid base64, or a key that is not 32 bytes.
+    /// version, a duplicate version, invalid base64, or a key that is not 32 bytes or that
+    /// AES-256-GCM rejects.
     pub fn parse(value: &str) -> Result<Self, CredentialVaultError> {
         let mut keys = BTreeMap::new();
         for entry in value
@@ -112,8 +113,9 @@ impl CredentialCipher {
     ///
     /// # Errors
     ///
-    /// [`CredentialVaultError::InvalidConfiguration`] when `secrets` is empty, and
-    /// [`CredentialVaultError::DecryptionFailed`] if sealing a field fails.
+    /// [`CredentialVaultError::InvalidConfiguration`] when `secrets` is empty, the active key
+    /// version is missing from the ring, the system RNG fails to produce a nonce, or sealing a
+    /// field fails.
     pub fn encrypt(
         &self,
         scope_id: Uuid,
@@ -147,7 +149,8 @@ impl CredentialCipher {
     /// # Errors
     ///
     /// [`CredentialVaultError::DecryptionFailed`] when the payload has no fields, names an
-    /// unknown key version, or any field fails to authenticate.
+    /// unknown key version, or a field has a nonce that is not 12 bytes, fails to authenticate,
+    /// decrypts to an empty value, or is rejected by [`CredentialSecrets::insert`].
     pub fn decrypt(
         &self,
         encrypted: &EncryptedCredentials,

@@ -314,9 +314,9 @@ pub enum ExchangeDecision {
 /// # Errors
 ///
 /// `LinkProtocolError::CodeInvalid` when the code is missing, expired, issued to another client,
-/// fails the hash or PKCE check, or was already consumed for a different link.
-/// `AccountMismatch` when an auto-approved code lacks a matching suite subject or the two suite
-/// subjects differ within one identity domain.
+/// fails the hash or PKCE check, carries a link without being consumed, was consumed for a
+/// different link, or either suite subject is malformed. `AccountMismatch` when an auto-approved
+/// code lacks a matching suite subject or the two suite subjects differ within one identity domain.
 pub fn validate_exchange(
     code: Option<&LinkCode>,
     request: &ExchangeRequest,

@@ -92,8 +92,9 @@ impl PayloadCatalog {
     ///
     /// # Errors
     ///
-    /// `SuiteDataError::InvalidRegistry` when `json` does not parse, the schema version is not 1, or
-    /// an event type, field name or bound is duplicated or invalid.
+    /// `SuiteDataError::InvalidRegistry` when `json` does not parse, the schema version is not 1,
+    /// an event type or field name repeats, an event has more than 32 fields, or a field name or
+    /// field kind bound is invalid.
     pub fn from_json(json: &str) -> Result<Self, SuiteDataError> {
         let catalog: Self = serde_json::from_str(json)
             .map_err(|error| SuiteDataError::InvalidRegistry(error.to_string()))?;

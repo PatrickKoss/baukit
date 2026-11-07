@@ -46,9 +46,10 @@ impl SuiteLinkService {
     }
     /// # Errors
     ///
-    /// `Protocol` when the peer or return URL fails start validation, `Cipher` when the PKCE verifier
-    /// does not encrypt, `PayloadInvalid` for an unparsable peer URL, and `Store` when persisting the
-    /// request fails.
+    /// `Protocol(PeerUnknown | Disabled)` for an unknown or inactive peer, `Protocol(ReturnUrlInvalid)`
+    /// for a disallowed return URL, `Protocol(PayloadInvalid)` for an empty, oversized or control-char
+    /// state nonce, `Cipher` when the PKCE verifier does not encrypt, `PayloadInvalid` for an
+    /// unparsable peer web URL, and `Store` when persisting the request fails.
     pub async fn start(
         &self,
         user: SuiteUser,
@@ -131,9 +132,10 @@ impl SuiteLinkService {
     /// # Errors
     ///
     /// `Protocol(NotFound | CodeInvalid | AccountMismatch | Disabled | PeerUnknown)` for a missing,
-    /// expired or revoked request, a malformed code, mismatched accounts or an inactive peer, `Cipher`
-    /// when stored secrets do not decrypt, `PeerUnreachable` when the peer exchange fails, and `Store`
-    /// when persistence or the identity lookup fails.
+    /// expired or revoked request, a malformed code, a peer 422 or 409, mismatched accounts or an
+    /// inactive peer, `Cipher` when a secret does not encrypt or decrypt, `PayloadInvalid` when the
+    /// link secret is not 32 bytes, `PeerUnreachable` when the peer exchange fails or answers with an
+    /// invalid response, and `Store` when persistence, replay or the identity lookup fails.
     pub async fn complete(
         &self,
         user: SuiteUser,
@@ -316,8 +318,8 @@ impl SuiteLinkService {
     }
     /// # Errors
     ///
-    /// `Store` when listing links fails and `Protocol` when the client is not an active peer or the
-    /// hint does not match the user's suite subject.
+    /// `Store` when listing links fails and `Protocol(PeerUnknown)` when the client is not an active
+    /// peer.
     pub async fn preview(
         &self,
         user: SuiteUser,

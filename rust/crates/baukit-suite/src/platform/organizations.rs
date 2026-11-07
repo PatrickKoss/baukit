@@ -135,8 +135,9 @@ impl HubOrganizations {
     ///
     /// # Errors
     ///
-    /// `OrganizationError::Hub` with the [`HubClient::get_json`] error, including `Rejected` for a
-    /// bad cursor.
+    /// `OrganizationError::NotFound` for a 404 `platform_organization_not_found`, `Unavailable`
+    /// for `HubError::Unavailable`, and `Hub` with any other [`HubClient::get_json`] error,
+    /// including `Rejected` for a bad cursor.
     pub async fn members(
         &self,
         organization_id: Uuid,
@@ -154,7 +155,8 @@ impl HubOrganizations {
     ///
     /// # Errors
     ///
-    /// `OrganizationError::Hub` with the [`HubClient::get_json`] error.
+    /// `OrganizationError::Unavailable` for `HubError::Unavailable`, `NotFound` for a 404
+    /// `platform_organization_not_found`, and `Hub` with any other [`HubClient::get_json`] error.
     pub async fn organizations_for_subject(
         &self,
         suite_subject: &str,

@@ -154,8 +154,8 @@ impl ReceiptSigner {
     ///
     /// # Errors
     ///
-    /// Returns the error from [`ReceiptPayload::canonical_bytes`] when the payload cannot be
-    /// serialized to canonical JSON.
+    /// [`ReceiptError::ContractVersion`] or [`ReceiptError::Payload`] under the rules of
+    /// [`ReceiptPayload::canonical_bytes`].
     pub fn sign(&self, payload: &ReceiptPayload) -> Result<DsseEnvelope, ReceiptError> {
         let body = payload.canonical_bytes()?;
         let signature = self.pair.sign(&pae(RECEIPT_PAYLOAD_TYPE, &body));
@@ -195,7 +195,8 @@ impl ReceiptVerifier {
     /// # Errors
     ///
     /// [`ReceiptError::ReceiptKeys`] when there is not exactly one current key, a PEM does
-    /// not parse, or a key ID is duplicated or does not match its SPKI.
+    /// not parse or is not a `PUBLIC KEY` Ed25519 SPKI, or a key ID is duplicated or does not
+    /// match its SPKI.
     pub fn from_receipt_keys(receipt_keys: &[ReceiptKey]) -> Result<Self, ReceiptError> {
         if receipt_keys
             .iter()
@@ -233,8 +234,10 @@ impl ReceiptVerifier {
     /// # Errors
     ///
     /// [`ReceiptError::PayloadType`] for another media type, [`ReceiptError::Encoding`] for
-    /// invalid base64 or JSON, [`ReceiptError::UnknownKey`] for an untrusted key ID, and
-    /// [`ReceiptError::Signature`] when no signature verifies.
+    /// invalid payload or signature base64, [`ReceiptError::UnknownKey`] for an untrusted key
+    /// ID, [`ReceiptError::Signature`] when no signature verifies, and
+    /// [`ReceiptError::ContractVersion`] or [`ReceiptError::Payload`] for signed JSON that does
+    /// not parse or fails the [`ReceiptPayload::canonical_bytes`] checks.
     pub fn verify(&self, envelope: &DsseEnvelope) -> Result<ReceiptPayload, ReceiptError> {
         if envelope.payload_type != RECEIPT_PAYLOAD_TYPE {
             return Err(ReceiptError::PayloadType);

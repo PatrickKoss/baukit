@@ -355,7 +355,7 @@ impl ErasureService {
     ///
     /// [`ErasureError::Configuration`] for an empty subject, [`ErasureError::Database`] or
     /// [`ErasureError::Jobs`] when writing the fence or queueing identity deletion fails, and
-    /// [`ErasureError::Receipt`] when the outcome cannot be serialized.
+    /// [`ErasureError::Receipt`] when the outcome cannot be serialized or decoded.
     pub async fn fence_as_operator_in_transaction(
         &self,
         transaction: &mut Transaction<'_, Postgres>,
@@ -406,10 +406,11 @@ impl ErasureService {
     ///
     /// # Errors
     ///
-    /// [`ErasureError::InvalidKey`] for a key that is not a valid header value,
+    /// [`ErasureError::InvalidKey`] for a key that is not a 16 to 128 byte header value,
     /// [`ErasureError::Configuration`] for an empty subject, [`ErasureError::Conflict`] when the
-    /// key belongs to another subject, and [`ErasureError::Database`] or
-    /// [`ErasureError::Receipt`] when the lookup fails or the stored response does not decode.
+    /// key belongs to another subject, [`ErasureError::ProfileErased`] for a fenced session, and
+    /// [`ErasureError::Database`] or [`ErasureError::Receipt`] when the lookup fails or the
+    /// stored response does not decode.
     pub async fn preflight(
         &self,
         subject: &str,
@@ -433,9 +434,9 @@ impl ErasureService {
     ///
     /// # Errors
     ///
-    /// The errors of [`Self::preflight`], [`ErasureError::ProfileErased`] for a fenced session,
-    /// [`ErasureError::Jobs`] when queueing identity deletion fails, and any error the
-    /// product deletion returns.
+    /// The errors of [`Self::preflight`], [`ErasureError::Database`] when product deletion or the
+    /// commit fails, and [`ErasureError::Jobs`] when queueing identity deletion fails. A failed
+    /// inline provider call is logged and returns the pending outcome.
     pub async fn erase(
         &self,
         subject: &str,

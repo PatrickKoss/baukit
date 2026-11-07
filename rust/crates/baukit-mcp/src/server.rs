@@ -281,8 +281,8 @@ fn tool_annotations(definition: &ScopedTool) -> ToolAnnotations {
 ///
 /// # Errors
 ///
-/// [`McpConfigError::Invalid`] when a tool definition has a duplicate name or an input
-/// schema that does not compile.
+/// [`McpConfigError::Invalid`] when a tool name is empty, duplicated or over 128 bytes, its
+/// required scopes are empty or invalid, or its input or output schema is not a JSON object.
 pub fn tool_schema(definitions: &[ScopedTool]) -> Result<Value, McpConfigError> {
     Ok(
         json!({"tools": compile_tools(definitions)?, "scopes": definitions.iter().map(|tool| (&tool.name, &tool.required_scopes)).collect::<std::collections::BTreeMap<_, _>>()}),

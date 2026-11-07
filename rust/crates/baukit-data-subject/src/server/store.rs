@@ -66,8 +66,10 @@ impl PostgresDataSubjectStore {
     /// # Errors
     ///
     /// [`DataSubjectError::Conflict`] when the key was used with a different request,
-    /// [`DataSubjectError::Database`] or [`DataSubjectError::Jobs`] when PostgreSQL or the job
-    /// store fails, and [`DataSubjectError::Result`] for an unreadable stored operation.
+    /// [`DataSubjectError::Database`] when PostgreSQL or the product's `resolve` fails,
+    /// [`DataSubjectError::Jobs`] when the enqueue fails, [`DataSubjectError::Configuration`]
+    /// when the operation retention overflows the clock, and [`DataSubjectError::Result`] for
+    /// an unserializable request or an unreadable stored operation.
     pub async fn start_erasure(
         &self,
         client_id: &str,
@@ -237,8 +239,8 @@ impl PostgresDataSubjectStore {
     ///
     /// # Errors
     ///
-    /// [`DataSubjectError::Configuration`] for an out-of-range `batch_size`,
-    /// [`DataSubjectError::Database`] or [`DataSubjectError::Jobs`] when deletion fails.
+    /// [`DataSubjectError::Configuration`] for an out-of-range `batch_size` and
+    /// [`DataSubjectError::Database`] when a query or the commit fails.
     pub async fn purge_expired(
         &self,
         now: DateTime<Utc>,

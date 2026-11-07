@@ -271,7 +271,7 @@ pub fn resource_schema(
 /// # Errors
 ///
 /// [`McpConfigError::Invalid`] for a duplicate prompt name, invalid required scopes, or
-/// invalid prompt arguments.
+/// duplicate argument names within a prompt.
 pub fn prompt_schema(prompts: &[ScopedPrompt]) -> Result<Value, McpConfigError> {
     validate_prompts(prompts)?;
     Ok(json!({
@@ -284,8 +284,8 @@ pub fn prompt_schema(prompts: &[ScopedPrompt]) -> Result<Value, McpConfigError> 
 ///
 /// # Errors
 ///
-/// [`McpConfigError::Invalid`] when a tool, resource, template or prompt definition does not
-/// compile to a protocol schema.
+/// [`McpConfigError::Invalid`] under the rules of [`crate::tool_schema`], [`resource_schema`]
+/// and [`prompt_schema`].
 pub fn capability_schema(
     tools: &[ScopedTool],
     resources: &[ScopedResource],

@@ -42,8 +42,9 @@ impl Default for SuiteConfig {
 impl SuiteConfig {
     /// # Errors
     ///
-    /// `SuiteDataError` when `peers_json` is not a valid peer registry, a configured peer is unknown,
-    /// or a peer URL is invalid or disallowed loopback.
+    /// `SuiteDataError::InvalidRegistry` when `peers_json` does not parse or holds invalid metadata,
+    /// `UnknownPeer` when `own_app` or a configured peer is missing from it or a configured peer is
+    /// `own_app`, and `InvalidUrl` for an unacceptable URL, including loopback when not allowed.
     pub fn registry(
         &self,
         own_app: &str,

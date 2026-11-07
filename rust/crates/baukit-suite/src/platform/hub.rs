@@ -238,9 +238,10 @@ impl HubClient {
     ///
     /// # Errors
     ///
-    /// `HubError::Unavailable` on transport failure, timeout, 408 or 5xx, `Unauthorized` when the
-    /// token is refused, `Rejected` for other statuses, and `InvalidResponse` when the body does not
-    /// decode into `T`.
+    /// `HubError::Unavailable` on transport failure, timeout, 408, 429 or 5xx. `Unauthorized` when
+    /// the token endpoint refuses the credentials or the API returns 401 after any refresh.
+    /// `Rejected` for other statuses. `InvalidResponse` when the body is too large or does not
+    /// decode into `T`, or the token response is malformed.
     pub async fn get_json<T: DeserializeOwned>(&self, segments: &[&str]) -> Result<T, HubError> {
         self.send(EgressRequest::get(self.url(segments)?)).await
     }

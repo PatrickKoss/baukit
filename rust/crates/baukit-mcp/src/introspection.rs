@@ -107,8 +107,9 @@ struct CacheEntry {
 impl KeycloakIntrospectionPolicy {
     /// # Errors
     ///
-    /// [`McpConfigError::Invalid`] for an ambiguous issuer, empty client credentials, or a
-    /// timeout, cache TTL or capacity outside the documented bounds.
+    /// [`McpConfigError::Invalid`] for an issuer that is not HTTPS (or loopback HTTP) without
+    /// credentials, query or fragment, empty client credentials, a timeout, cache TTL or
+    /// capacity outside the documented bounds, or when the egress client cannot be built.
     pub fn new(config: KeycloakIntrospectionConfig) -> Result<Self, McpConfigError> {
         crate::config::endpoint(&config.issuer)?;
         if config.client_id.is_empty()

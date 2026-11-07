@@ -53,9 +53,11 @@ impl McpConfig {
     ///
     /// # Errors
     ///
-    /// [`McpConfigError::Invalid`] naming the first rejected field: a resource URL not ending in
-    /// `/mcp`, an issuer or JWKS URL with credentials, query or fragment, empty host lists, or
-    /// out-of-range limits.
+    /// [`McpConfigError::Invalid`] naming the first rejected field: a resource URL, issuer or
+    /// allowed origin that is not HTTPS (or loopback HTTP) without credentials, query or
+    /// fragment, a resource path other than `/mcp`, an invalid JWKS URL, an empty or
+    /// non-exact allowed host, an origin with a path, or a zero body limit.
+    /// [`McpConfigError::Quota`] when `requests_per_minute` is not a valid quota.
     pub fn validate(&self) -> Result<(), McpConfigError> {
         let resource = endpoint(&self.resource_url)?;
         if resource.path() != "/mcp" {

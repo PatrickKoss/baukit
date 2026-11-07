@@ -164,7 +164,8 @@ impl SuiteIngestService {
     /// `SignatureInvalid` for an unknown source, link, bad signature or stale timestamp, `RateLimited`
     /// or `RateLimiter` from the inbound limits, `PayloadInvalid` or `Inbound` for an oversized,
     /// malformed or rejected envelope, `LinkRevoked` for a revoked link, `Unavailable` without an
-    /// applier, and `Store` when persistence or the applier fails.
+    /// applier, `Store(InvalidData)` when the applier grants a reward for a replay, and `Store` when
+    /// persistence or the applier fails.
     pub async fn ingest(
         &self,
         id: Uuid,
@@ -327,7 +328,7 @@ impl SuiteIngestService {
     ///
     /// `PayloadInvalid` unless the body is `{}` with a UUID delivery id and no replay flag,
     /// `SignatureInvalid`, `RateLimited` or `RateLimiter` when authentication fails, and `Store` when
-    /// revoking the link fails. An already revoked link returns `Ok`.
+    /// loading, locking or revoking the link fails. An already revoked link returns `Ok`.
     pub async fn revoke_from_peer(
         &self,
         id: Uuid,

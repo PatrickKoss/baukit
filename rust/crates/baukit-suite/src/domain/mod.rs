@@ -206,7 +206,8 @@ impl PeerRegistry {
     ///
     /// `SuiteDataError::InvalidRegistry` when `peers_json` does not parse, has a schema version
     /// other than 1 or holds invalid peer metadata. `UnknownPeer` when `own_app` or a configured peer
-    /// is missing from the file, and `InvalidUrl` when a configured URL is not acceptable.
+    /// is missing from the file or a configured peer is `own_app`, and `InvalidUrl` when a
+    /// configured URL is not acceptable.
     pub fn new(
         own_app: &str,
         peers_json: &str,
