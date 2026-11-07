@@ -69,20 +69,25 @@ def backend_environment(name: str) -> dict[str, str]:
     return environment
 
 
-def run_inside(fixture: Path) -> None:
+def binary_directory(fixture: Path) -> Path:
+    target = os.environ.get("CARGO_TARGET_DIR") or fixture / "backend/target"
+    return Path(target).resolve() / "debug"
+
+
+def run_inside(fixture: Path, binaries: Path) -> None:
     environment = backend_environment(fixture.name)
     web = fixture / "web"
     with tempfile.TemporaryFile(mode="w+") as output:
         started: list[subprocess.Popen] = []
         try:
             subprocess.run(
-                [str(fixture / "backend/target/debug/migrate")],
+                [str(binaries / "migrate")],
                 cwd=fixture,
                 env=environment,
                 check=True,
             )
             api = subprocess.Popen(
-                [str(fixture / "backend/target/debug/api")],
+                [str(binaries / "api")],
                 cwd=fixture,
                 env=environment,
                 stdout=output,
@@ -119,8 +124,12 @@ def run_inside(fixture: Path) -> None:
                 stop(process)
 
 
-def compose_override(repository: Path, fixture: Path) -> str:
-    mounts = [f"{repository}:{repository}:ro", f"{fixture}:{fixture}"]
+def compose_override(repository: Path, fixture: Path, binaries: Path) -> str:
+    mounts = [
+        f"{repository}:{repository}:ro",
+        f"{fixture}:{fixture}",
+        f"{binaries}:{binaries}:ro",
+    ]
     return f"""services:
   postgres:
     ports: !reset []
@@ -154,10 +163,11 @@ def compose_override(repository: Path, fixture: Path) -> str:
 
 
 def run(fixture: Path, repository: Path) -> None:
+    binaries = binary_directory(fixture)
     project = f"baukit-web-session-{os.getpid()}"
     with tempfile.TemporaryDirectory(prefix="baukit-web-session-") as temporary:
         override = Path(temporary) / "compose.yaml"
-        override.write_text(compose_override(repository, fixture))
+        override.write_text(compose_override(repository, fixture, binaries))
         compose = [
             "docker",
             "compose",
@@ -182,6 +192,7 @@ def run(fixture: Path, repository: Path) -> None:
                     str(Path(__file__).resolve()),
                     str(fixture),
                     "--inside",
+                    str(binaries),
                 ],
                 check=True,
             )
@@ -197,11 +208,11 @@ def main() -> None:
     signal.signal(signal.SIGTERM, stop_on_signal)
     parser = argparse.ArgumentParser()
     parser.add_argument("fixture", type=Path)
-    parser.add_argument("--inside", action="store_true")
+    parser.add_argument("--inside", type=Path, metavar="BINARIES")
     args = parser.parse_args()
     fixture = args.fixture.resolve()
-    if args.inside:
-        run_inside(fixture)
+    if args.inside is not None:
+        run_inside(fixture, args.inside)
     else:
         run(fixture, Path(__file__).resolve().parents[1])
 

@@ -15,11 +15,23 @@ SPEC.loader.exec_module(STACK)
 
 class WebSessionStackTest(unittest.TestCase):
     def test_override_publishes_no_host_ports_and_shares_the_keycloak_network(self) -> None:
-        override = STACK.compose_override(Path("/repo"), Path("/repo/fixture"))
+        override = STACK.compose_override(
+            Path("/repo"), Path("/repo/fixture"), Path("/cargo/target/debug")
+        )
         self.assertEqual(override.count("ports: !reset []"), 3)
         self.assertIn("network_mode: service:stack", override)
         self.assertIn('"/repo:/repo:ro"', override)
         self.assertIn('"/repo/fixture:/repo/fixture"', override)
+        self.assertIn('"/cargo/target/debug:/cargo/target/debug:ro"', override)
+
+    def test_binaries_follow_the_cargo_target_directory(self) -> None:
+        fixture = Path("/repo/fixture")
+        with patch.dict(STACK.os.environ, {"CARGO_TARGET_DIR": "/cargo/target"}):
+            self.assertEqual(STACK.binary_directory(fixture), Path("/cargo/target/debug"))
+        with patch.dict(STACK.os.environ, {"CARGO_TARGET_DIR": ""}):
+            self.assertEqual(
+                STACK.binary_directory(fixture), Path("/repo/fixture/backend/target/debug")
+            )
 
     def test_stack_is_torn_down_even_when_startup_fails(self) -> None:
         for fail_startup in (False, True):
