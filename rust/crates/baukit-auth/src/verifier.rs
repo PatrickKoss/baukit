@@ -591,8 +591,8 @@ impl OidcVerifier {
         .await
     }
 
-    /// Verifies an ID token returned directly by the token endpoint for a code
-    /// exchange whose authorization request carried no nonce.
+    /// Verifies a token-endpoint ID token from a code exchange that sent no nonce.
+    #[cfg(feature = "browser-session")]
     pub(crate) async fn verify_exchanged_id_token(
         &self,
         token: &str,

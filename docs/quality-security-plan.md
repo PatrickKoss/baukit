@@ -327,3 +327,13 @@ tenancy and rate-limit audit of the products (S-08).
   - Accepted deviation: refresh on load happens only when an account hint exists.
   - Known break: the OIDC web template fails to compile until ADR task 4. Started W5-T2 for that: BFF mount,
     web client swap, CSP, e2e, and `@baukit/eslint-config` in the web and mobile templates.
+- 2026-11-07: W4-H merged (P2.8 crate part).
+  - `assert_cross_tenant_denied` walks every OpenAPI operation that has a path parameter. A missing fixture
+    id or a stale or blank exclusion fails. `assert_auth_negative_suite` runs 5 bad credentials against
+    secured operations.
+  - 2 reasoned `print_stdout` expects; rust-expect max raised to 31. The 6 self-tests pass on main.
+  - The template test waits for P2.12 (items owner scoping). The ready version is in
+    reports/test-helpers-template.rs.
+  - Fixed on main: `verify_exchanged_id_token` is now gated behind `browser-session`.
+    `cargo clippy -p baukit-auth` without the feature failed on dead code; the workspace build hid it
+    through feature unification.
