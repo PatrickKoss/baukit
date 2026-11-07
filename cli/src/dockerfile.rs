@@ -156,11 +156,13 @@ fn path(value: &str, absolute: bool) -> Result<()> {
 
 fn name(value: &str) -> Result<()> {
     ensure!(
-        !value.is_empty()
+        value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte))
             && value
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte))
-            && value.as_bytes()[0].is_ascii_alphanumeric(),
+                .as_bytes()
+                .first()
+                .is_some_and(u8::is_ascii_alphanumeric),
         "invalid image binary or crate name `{value}`"
     );
     Ok(())
@@ -230,8 +232,10 @@ pub(crate) fn validate(manifest: &Manifest) -> Result<()> {
 
 fn apt_package(package: &str, scope: &str) -> Result<()> {
     ensure!(
-        !package.is_empty()
-            && package.as_bytes()[0].is_ascii_alphanumeric()
+        package
+            .as_bytes()
+            .first()
+            .is_some_and(u8::is_ascii_alphanumeric)
             && package
                 .bytes()
                 .all(|byte| byte.is_ascii_alphanumeric() || b".+-".contains(&byte)),
@@ -338,7 +342,9 @@ fn validated_outputs(steps: &[PreBuildStep]) -> Result<Vec<String>> {
     let mut outputs = Vec::new();
     for step in steps {
         ensure!(
-            !step.command.is_empty() && !step.command[0].is_empty(),
+            step.command
+                .first()
+                .is_some_and(|program| !program.is_empty()),
             "image pre-build command must not be empty"
         );
         ensure!(
@@ -1117,35 +1123,36 @@ runtime_files = [{ stage = "api", source = "/generated/content/file", destinatio
         Ok(())
     }
 
+    fn download_declaration(field: &str, value: &str) -> String {
+        format!(
+            r#"downloads = [{{stage = "{}", url = "{}", archive_sha256 = "{}", binary = "{}", binary_sha256 = "{}", destination = "{}"}}]"#,
+            if field == "stage" { value } else { "api" },
+            if field == "url" {
+                value
+            } else {
+                "https://example.com/tool.tar.gz"
+            },
+            if field == "archive_sha256" {
+                value.to_owned()
+            } else {
+                "a".repeat(64)
+            },
+            if field == "binary" { value } else { "tool" },
+            if field == "binary_sha256" {
+                value.to_owned()
+            } else {
+                "b".repeat(64)
+            },
+            if field == "destination" {
+                value
+            } else {
+                "/app/tool"
+            }
+        )
+    }
+
     #[test]
     fn rejects_each_invalid_image_declaration() -> Result<()> {
-        let download = |field: &str, value: &str| {
-            format!(
-                r#"downloads = [{{stage = "{}", url = "{}", archive_sha256 = "{}", binary = "{}", binary_sha256 = "{}", destination = "{}"}}]"#,
-                if field == "stage" { value } else { "api" },
-                if field == "url" {
-                    value
-                } else {
-                    "https://example.com/tool.tar.gz"
-                },
-                if field == "archive_sha256" {
-                    value.to_owned()
-                } else {
-                    "a".repeat(64)
-                },
-                if field == "binary" { value } else { "tool" },
-                if field == "binary_sha256" {
-                    value.to_owned()
-                } else {
-                    "b".repeat(64)
-                },
-                if field == "destination" {
-                    value
-                } else {
-                    "/app/tool"
-                }
-            )
-        };
         let mut cases = vec![
             ("binaries = []".to_owned(), "must not be empty"),
             ("binaries = [\"api\", \"api\"]".to_owned(), "duplicate"),
@@ -1190,7 +1197,7 @@ runtime_files = [{ stage = "api", source = "/generated/content/file", destinatio
             ("binary", "/tool", "relative"),
             ("destination", "tool", "absolute"),
         ] {
-            cases.push((download(field, value), expected));
+            cases.push((download_declaration(field, value), expected));
         }
         for (source, expected) in cases {
             let error = render_dockerfile(&manifest(&source)?)

@@ -3,6 +3,7 @@ mod manifest_source;
 mod render;
 
 use std::{
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     process::Command,
@@ -21,7 +22,7 @@ use crate::{
     },
     manifest::{AuthProvider, Manifest, QualityProfile},
     openapi_client::{command_exists, run_checked},
-    ports,
+    ports::{self, PortConfiguration},
 };
 
 #[derive(Clone, Debug)]
@@ -40,20 +41,7 @@ pub struct NewOptions {
 
 pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
     validate_name(&options.name)?;
-    if options.components.worker() && !options.components.backend() {
-        bail!("--worker requires --backend because it is generated in the backend workspace");
-    }
-    if options.components.pwa() && !options.components.mobile() && !options.components.web() {
-        bail!("--pwa requires --mobile or --web to serve the worker");
-    }
-    if options.components.platform() && !options.components.backend() {
-        bail!("--platform requires --backend because the receiver uses PostgreSQL");
-    }
-    validate_mcp_options(options)?;
-    if !options.components.backend() && !options.components.mobile() && !options.components.web() {
-        bail!("select at least one capability: --backend, --mobile, or --web");
-    }
-
+    validate_component_selection(options)?;
     let destination = if options.into_existing {
         options.directory.clone()
     } else {
@@ -64,22 +52,63 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         .as_deref()
         .map(toml::from_str::<Manifest>)
         .transpose()?;
-    let platform_migration = if options.components.platform() {
-        platform_migration_path(&destination, manifest.as_ref())?
-    } else {
-        PLATFORM_MIGRATION_PATH.to_owned()
-    };
-    if options.components.platform() {
-        doctor_layout::product_path(&destination, &platform_migration)?;
-        if Path::new(&platform_migration)
-            .extension()
-            .is_none_or(|extension| extension != "sql")
-        {
-            bail!("platform.migration must name a forward SQL migration");
-        }
+    let platform_migration = resolve_platform_migration(&destination, manifest.as_ref(), options)?;
+    ensure_destination_accepts_output(&destination, options)?;
+
+    let context = template_context(options, &ports, platform_migration)?;
+    let mut rendered = render_product(&context, options)?;
+    if let Some(source) = existing_manifest {
+        rendered.insert(PathBuf::from("baukit.toml"), source.into_bytes());
     }
+    write_rendered(&destination, rendered)?;
+
+    if options.resolve_lockfiles {
+        resolve_lockfiles(&destination, options)?;
+    }
+
+    Ok(destination)
+}
+
+fn validate_component_selection(options: &NewOptions) -> Result<()> {
+    let components = options.components;
+    if components.worker() && !components.backend() {
+        bail!("--worker requires --backend because it is generated in the backend workspace");
+    }
+    if components.pwa() && !components.mobile() && !components.web() {
+        bail!("--pwa requires --mobile or --web to serve the worker");
+    }
+    if components.platform() && !components.backend() {
+        bail!("--platform requires --backend because the receiver uses PostgreSQL");
+    }
+    validate_mcp_options(options)?;
+    if !components.backend() && !components.mobile() && !components.web() {
+        bail!("select at least one capability: --backend, --mobile, or --web");
+    }
+    Ok(())
+}
+
+fn resolve_platform_migration(
+    destination: &Path,
+    manifest: Option<&Manifest>,
+    options: &NewOptions,
+) -> Result<String> {
+    if !options.components.platform() {
+        return Ok(PLATFORM_MIGRATION_PATH.to_owned());
+    }
+    let platform_migration = platform_migration_path(destination, manifest)?;
+    doctor_layout::product_path(destination, &platform_migration)?;
+    if Path::new(&platform_migration)
+        .extension()
+        .is_none_or(|extension| extension != "sql")
+    {
+        bail!("platform.migration must name a forward SQL migration");
+    }
+    Ok(platform_migration)
+}
+
+fn ensure_destination_accepts_output(destination: &Path, options: &NewOptions) -> Result<()> {
     let non_empty = destination.exists()
-        && fs::read_dir(&destination)
+        && fs::read_dir(destination)
             .with_context(|| format!("could not inspect {}", destination.display()))?
             .next()
             .transpose()?
@@ -90,9 +119,16 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
             destination.display()
         );
     }
+    Ok(())
+}
 
+fn template_context(
+    options: &NewOptions,
+    ports: &PortConfiguration,
+    platform_migration: String,
+) -> Result<TemplateContext> {
     let dependency = dependency_context(options)?;
-    let context = TemplateContext {
+    Ok(TemplateContext {
         app_name: options.name.clone(),
         app_crate: options.name.replace('-', "_"),
         app_env: options.name.replace('-', "_").to_ascii_uppercase(),
@@ -128,14 +164,13 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         },
         api_container_port: ports.api_container,
         ops_container_port: ports.ops_container,
-    };
-    let mut rendered = render_product(&context, options)?;
-    if let Some(source) = existing_manifest {
-        rendered.insert(PathBuf::from("baukit.toml"), source.into_bytes());
-    }
-    let mut conflicts = Vec::new();
+    })
+}
 
-    fs::create_dir_all(&destination)
+/// Writes new files and reports existing files whose content differs as conflicts.
+fn write_rendered(destination: &Path, rendered: BTreeMap<PathBuf, Vec<u8>>) -> Result<()> {
+    let mut conflicts = Vec::new();
+    fs::create_dir_all(destination)
         .with_context(|| format!("could not create {}", destination.display()))?;
     for (relative, bytes) in rendered {
         let output = destination.join(relative);
@@ -143,7 +178,7 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
             let existing = fs::read(&output)
                 .with_context(|| format!("could not read existing file {}", output.display()))?;
             if existing != bytes {
-                conflicts.push(output.strip_prefix(&destination)?.to_path_buf());
+                conflicts.push(output.strip_prefix(destination)?.to_path_buf());
             }
             continue;
         }
@@ -153,31 +188,25 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         fs::write(&output, bytes)
             .with_context(|| format!("could not write {}", output.display()))?;
     }
-
-    if !conflicts.is_empty() {
-        conflicts.sort();
-        let mut report = String::from(
-            "baukit generation conflicts\n\nThe following existing files differ from the template and were not overwritten:\n",
-        );
-        for conflict in &conflicts {
-            report.push_str("- ");
-            report.push_str(&conflict.display().to_string());
-            report.push('\n');
-        }
-        let conflict_path = available_conflict_path(&destination)?;
-        fs::write(&conflict_path, report)?;
-        bail!(
-            "generation found {} conflict(s); no modified file was overwritten. See {}",
-            conflicts.len(),
-            conflict_path.display()
-        );
+    if conflicts.is_empty() {
+        return Ok(());
     }
-
-    if options.resolve_lockfiles {
-        resolve_lockfiles(&destination, options)?;
+    conflicts.sort();
+    let mut report = String::from(
+        "baukit generation conflicts\n\nThe following existing files differ from the template and were not overwritten:\n",
+    );
+    for conflict in &conflicts {
+        report.push_str("- ");
+        report.push_str(&conflict.display().to_string());
+        report.push('\n');
     }
-
-    Ok(destination)
+    let conflict_path = available_conflict_path(destination)?;
+    fs::write(&conflict_path, report)?;
+    bail!(
+        "generation found {} conflict(s); no modified file was overwritten. See {}",
+        conflicts.len(),
+        conflict_path.display()
+    )
 }
 
 pub(crate) fn resolve_lockfiles(destination: &Path, options: &NewOptions) -> Result<()> {
@@ -299,8 +328,11 @@ pub(crate) fn validate_name(name: &str) -> Result<()> {
         );
     }
     let valid = !name.is_empty()
-        && name.as_bytes()[0].is_ascii_lowercase()
-        && name.as_bytes()[name.len() - 1].is_ascii_alphanumeric()
+        && name.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
+        && name
+            .as_bytes()
+            .last()
+            .is_some_and(u8::is_ascii_alphanumeric)
         && name
             .bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')

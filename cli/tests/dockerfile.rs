@@ -188,6 +188,10 @@ impl DockerResources {
 }
 
 impl Drop for DockerResources {
+    #[expect(
+        clippy::print_stderr,
+        reason = "Drop cannot return the cleanup error, so stderr is the only place to report leaked Docker resources"
+    )]
     fn drop(&mut self) {
         if let Err(error) = self.cleanup() {
             eprintln!("Docker fixture cleanup failed: {error:#}");

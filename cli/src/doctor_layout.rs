@@ -471,13 +471,11 @@ pub(super) fn uses_redis(root: &Path, manifest: &Manifest) -> Result<bool> {
     Ok(false)
 }
 
-pub(super) fn validate_backend_wiring(
+fn validate_rendered_dockerfile(
     root: &Path,
     manifest: &Manifest,
-    successes: &mut Vec<String>,
     failures: &mut Vec<String>,
 ) -> Result<()> {
-    let initial = failures.len();
     let dockerfile = crate::dockerfile::output_path(root, manifest)?;
     if dockerfile.is_file()
         && fs::read(&dockerfile)? != crate::render_dockerfile(manifest)?.as_bytes()
@@ -487,6 +485,48 @@ pub(super) fn validate_backend_wiring(
             dockerfile.strip_prefix(root)?.display()
         ));
     }
+    Ok(())
+}
+
+fn validate_backend_auth_wiring(
+    root: &Path,
+    manifest: &Manifest,
+    tests: &[PathBuf],
+    failures: &mut Vec<String>,
+) -> Result<()> {
+    require_source(
+        root,
+        manifest,
+        "auth_tests",
+        tests,
+        &["check_auth_router_conformance", "MockOidcServer"],
+        true,
+        failures,
+    )?;
+    let Some(relative) = manifest.doctor.sources.get("pkce_login") else {
+        return Ok(());
+    };
+    let path = product_path(root, relative)?;
+    let found = if path.is_file() {
+        let source = fs::read_to_string(path)?;
+        source.contains("code_challenge") && source.contains("S256")
+    } else {
+        false
+    };
+    if !found {
+        failures.push("missing pkce_login wiring (expected code_challenge and S256)".to_owned());
+    }
+    Ok(())
+}
+
+pub(super) fn validate_backend_wiring(
+    root: &Path,
+    manifest: &Manifest,
+    successes: &mut Vec<String>,
+    failures: &mut Vec<String>,
+) -> Result<()> {
+    let initial = failures.len();
+    validate_rendered_dockerfile(root, manifest, failures)?;
     let crates = rust_crates(root, manifest)?;
     if crates.is_empty() {
         failures.push("backend has no declared Cargo packages".to_owned());
@@ -542,29 +582,7 @@ pub(super) fn validate_backend_wiring(
         )?;
     }
     if manifest.capabilities.auth.is_some() {
-        require_source(
-            root,
-            manifest,
-            "auth_tests",
-            &tests,
-            &["check_auth_router_conformance", "MockOidcServer"],
-            true,
-            failures,
-        )?;
-        if let Some(relative) = manifest.doctor.sources.get("pkce_login") {
-            let path = product_path(root, relative)?;
-            let found = if path.is_file() {
-                let source = fs::read_to_string(path)?;
-                source.contains("code_challenge") && source.contains("S256")
-            } else {
-                false
-            };
-            if !found {
-                failures.push(
-                    "missing pkce_login wiring (expected code_challenge and S256)".to_owned(),
-                );
-            }
-        }
+        validate_backend_auth_wiring(root, manifest, &tests, failures)?;
     }
     if initial == failures.len() {
         successes.push("backend wiring is present in declared Cargo packages".to_owned());
@@ -788,6 +806,15 @@ fn tool_path(
     }
 }
 
+/// The Keycloak realm documents and tools that the doctor runs together.
+struct KeycloakFiles {
+    realm: PathBuf,
+    policy: PathBuf,
+    config: PathBuf,
+    policy_tool: PathBuf,
+    reconcile_tool: PathBuf,
+}
+
 pub(super) fn validate_keycloak_realm_tools(
     root: &Path,
     manifest: &Manifest,
@@ -795,22 +822,47 @@ pub(super) fn validate_keycloak_realm_tools(
     successes: &mut Vec<String>,
     failures: &mut Vec<String>,
 ) -> Result<()> {
-    let json = files(root, "json")?
-        .into_iter()
-        .filter(|path| {
-            !path
-                .strip_prefix(root)
-                .expect("discovered product file")
-                .components()
-                .any(|part| {
-                    matches!(
-                        part.as_os_str().to_str(),
-                        Some("tests" | "test" | "fixtures")
-                    )
-                })
-        })
-        .collect::<Vec<_>>();
     let python = files(root, "py")?;
+    let located = locate_keycloak_files(root, manifest, &python, failures)?;
+    validate_keycloak_tool_tests(root, manifest, &python, failures)?;
+    let Some(keycloak) = located else {
+        return Ok(());
+    };
+    let realm_document: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&keycloak.realm)?)?;
+    if let Some(name) = realm_document
+        .get("realm")
+        .and_then(serde_json::Value::as_str)
+    {
+        identity::validate_admin_realm(root, manifest, name, failures)?;
+    }
+    run_keycloak_tools(root, host, &keycloak, successes, failures)
+}
+
+/// Product JSON files outside test and fixture directories.
+fn product_json_files(root: &Path) -> Result<Vec<PathBuf>> {
+    let mut json = Vec::new();
+    for path in files(root, "json")? {
+        let in_test_data = path.strip_prefix(root)?.components().any(|part| {
+            matches!(
+                part.as_os_str().to_str(),
+                Some("tests" | "test" | "fixtures")
+            )
+        });
+        if !in_test_data {
+            json.push(path);
+        }
+    }
+    Ok(json)
+}
+
+fn locate_keycloak_files(
+    root: &Path,
+    manifest: &Manifest,
+    python: &[PathBuf],
+    failures: &mut Vec<String>,
+) -> Result<Option<KeycloakFiles>> {
+    let json = product_json_files(root)?;
     let paths = &manifest.doctor;
     let realm = json_path(
         root,
@@ -848,17 +900,37 @@ pub(super) fn validate_keycloak_realm_tools(
     let policy_tool = tool_path(
         root,
         paths.keycloak_policy_tool.as_deref(),
-        &python,
+        python,
         "keycloak_policy.py",
         failures,
     )?;
     let reconcile_tool = tool_path(
         root,
         paths.keycloak_reconcile_tool.as_deref(),
-        &python,
+        python,
         "reconcile_keycloak.py",
         failures,
     )?;
+    let (Some(realm), Some(policy), Some(config), Some(policy_tool), Some(reconcile_tool)) =
+        (realm, policy, config, policy_tool, reconcile_tool)
+    else {
+        return Ok(None);
+    };
+    Ok(Some(KeycloakFiles {
+        realm,
+        policy,
+        config,
+        policy_tool,
+        reconcile_tool,
+    }))
+}
+
+fn validate_keycloak_tool_tests(
+    root: &Path,
+    manifest: &Manifest,
+    python: &[PathBuf],
+    failures: &mut Vec<String>,
+) -> Result<()> {
     for (key, markers) in [
         ("keycloak_policy_tests", &["validate_realm"][..]),
         (
@@ -873,7 +945,7 @@ pub(super) fn validate_keycloak_realm_tools(
         let candidates = if let Some(relative) = manifest.doctor.sources.get(key) {
             vec![product_path(root, relative)?]
         } else {
-            python.clone()
+            python.to_vec()
         };
         let mut found = false;
         for path in candidates {
@@ -890,18 +962,16 @@ pub(super) fn validate_keycloak_realm_tools(
             ));
         }
     }
-    let (Some(realm), Some(policy), Some(config), Some(policy_tool), Some(reconcile_tool)) =
-        (realm, policy, config, policy_tool, reconcile_tool)
-    else {
-        return Ok(());
-    };
-    let realm_document: serde_json::Value = serde_json::from_str(&fs::read_to_string(&realm)?)?;
-    if let Some(name) = realm_document
-        .get("realm")
-        .and_then(serde_json::Value::as_str)
-    {
-        identity::validate_admin_realm(root, manifest, name, failures)?;
-    }
+    Ok(())
+}
+
+fn run_keycloak_tools(
+    root: &Path,
+    host: &dyn DoctorHost,
+    keycloak: &KeycloakFiles,
+    successes: &mut Vec<String>,
+    failures: &mut Vec<String>,
+) -> Result<()> {
     let relative = |path: &Path| -> Result<String> {
         Ok(path.strip_prefix(root)?.to_string_lossy().into_owned())
     };
@@ -909,11 +979,11 @@ pub(super) fn validate_keycloak_realm_tools(
         (
             "Keycloak development realm policy",
             vec![
-                relative(&policy_tool)?,
+                relative(&keycloak.policy_tool)?,
                 "--realm".to_owned(),
-                relative(&realm)?,
+                relative(&keycloak.realm)?,
                 "--policy".to_owned(),
-                relative(&policy)?,
+                relative(&keycloak.policy)?,
                 "--environment-class".to_owned(),
                 "development".to_owned(),
             ],
@@ -921,13 +991,13 @@ pub(super) fn validate_keycloak_realm_tools(
         (
             "Keycloak reconciliation inputs",
             vec![
-                relative(&reconcile_tool)?,
+                relative(&keycloak.reconcile_tool)?,
                 "--realm".to_owned(),
-                relative(&realm)?,
+                relative(&keycloak.realm)?,
                 "--policy".to_owned(),
-                relative(&policy)?,
+                relative(&keycloak.policy)?,
                 "--config".to_owned(),
-                relative(&config)?,
+                relative(&keycloak.config)?,
                 "--check".to_owned(),
             ],
         ),

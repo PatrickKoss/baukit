@@ -156,12 +156,12 @@ fn check_keycloak_origins(
             continue;
         };
         let json: serde_json::Value = serde_json::from_str(&source)?;
-        let Some(clients) = json["clients"].as_array() else {
+        let Some(clients) = json.get("clients").and_then(serde_json::Value::as_array) else {
             continue;
         };
         for client in clients {
             if manifest.capabilities.components.mcp()
-                && client["clientId"].as_str() == Some(&mcp_client)
+                && client.get("clientId").and_then(serde_json::Value::as_str) == Some(&mcp_client)
             {
                 continue;
             }
@@ -247,7 +247,10 @@ fn check_expo_scripts(root: &Path, port: u16, failures: &mut Vec<String>) -> Res
         return Ok(());
     };
     let package: serde_json::Value = serde_json::from_str(&source)?;
-    let Some(scripts) = package["scripts"].as_object() else {
+    let Some(scripts) = package
+        .get("scripts")
+        .and_then(serde_json::Value::as_object)
+    else {
         return Ok(());
     };
     for (name, command) in scripts
@@ -257,10 +260,16 @@ fn check_expo_scripts(root: &Path, port: u16, failures: &mut Vec<String>) -> Res
         for command in command.split(['&', ';', '|', '\n']) {
             let words = command.split_whitespace().collect::<Vec<_>>();
             for (index, pair) in words.windows(2).enumerate() {
-                if pair[0] != "expo" || !(pair[1] == "start" || pair[1].starts_with("run:")) {
+                let [program, subcommand] = pair else {
+                    continue;
+                };
+                if *program != "expo" || !(*subcommand == "start" || subcommand.starts_with("run:"))
+                {
                     continue;
                 }
-                let flags = &words[index + 2..];
+                let Some(flags) = words.get(index + 2..) else {
+                    continue;
+                };
                 let found = expo_port_flags(flags);
                 let relative = format!("{relative} scripts.{name}");
                 if found.is_empty() {

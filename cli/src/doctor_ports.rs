@@ -131,208 +131,23 @@ pub(crate) fn validate_port_configuration(
         return Ok(());
     }
     let initial_failure_count = failures.len();
-    let mut expected = Vec::new();
-    if manifest.capabilities.components.backend() {
-        let redis_port = validate_compose_ports(root, manifest, &ports, failures)?;
-        expected.extend([
-            ("Makefile", format!("HTTP__PORT={}", ports.api)),
-            ("Makefile", format!("OPS__PORT={}", ports.ops)),
-            (
-                "deploy/values.yaml",
-                format!(
-                    "http: {}",
-                    manifest
-                        .ports
-                        .get("api")
-                        .and_then(PortDeclaration::as_mapping)
-                        .and_then(|port| port.container)
-                        .unwrap_or(ports.api)
-                ),
-            ),
-            (
-                "deploy/values.yaml",
-                format!(
-                    "ops: {}",
-                    manifest
-                        .ports
-                        .get("ops")
-                        .and_then(PortDeclaration::as_mapping)
-                        .and_then(|port| port.container)
-                        .unwrap_or(ports.ops)
-                ),
-            ),
-        ]);
-        if doctor_layout::uses_redis(root, manifest)? {
-            expected.push((
-                "Makefile",
-                format!("REDIS_URL=redis://127.0.0.1:{redis_port}/"),
-            ));
-        }
-        if uses_bundled_keycloak(root, manifest)? {
-            expected.extend([
-                ("Makefile", format!("localhost:{}/realms/", ports.keycloak)),
-                ("scripts/pkce-login.py", format!("localhost:{}", ports.api)),
-            ]);
-        }
-    }
-    if manifest.capabilities.components.mobile() {
-        expected.extend([
-            ("mobile/.env.example", format!("localhost:{}", ports.api)),
-            ("mobile/src/api.ts", format!("localhost:{}", ports.api)),
-        ]);
-        if oidc_clients_use_bundled_keycloak(root, manifest)? {
-            expected.extend([
-                (
-                    "mobile/.env.example",
-                    format!("localhost:{}/realms/", ports.keycloak),
-                ),
-                (
-                    "mobile/app.config.ts",
-                    format!("localhost:{}/realms/", ports.keycloak),
-                ),
-                (
-                    "mobile/src/auth.ts",
-                    format!("localhost:{}/realms/", ports.keycloak),
-                ),
-                (
-                    "mobile/src/delete-profile.ts",
-                    format!("localhost:{}", ports.api),
-                ),
-            ]);
-        }
-    }
-    if manifest.capabilities.components.web() {
-        expected.extend([
-            ("web/.env.example", format!("localhost:{}", ports.api)),
-            ("web/src/api.ts", format!("localhost:{}", ports.api)),
-        ]);
-        if oidc_clients_use_bundled_keycloak(root, manifest)? {
-            expected.extend([
-                (
-                    "web/.env.example",
-                    format!("localhost:{}/realms/", ports.keycloak),
-                ),
-                (
-                    "web/src/auth.ts",
-                    format!("localhost:{}/realms/", ports.keycloak),
-                ),
-                (
-                    "web/src/delete-profile.ts",
-                    format!("localhost:{}", ports.api),
-                ),
-                (
-                    "web/e2e/stack/keycloak.ts",
-                    format!("localhost:{}", ports.keycloak),
-                ),
-            ]);
-        }
-    }
-    if provider_clients_use_bundled_keycloak(root, manifest)? {
-        let realm = format!("localhost:{}/realms/", ports.keycloak);
-        if manifest.capabilities.components.web() {
-            expected.push(("web/.env.example", realm.clone()));
-        }
-        if manifest.capabilities.components.mobile() {
-            expected.push(("mobile/.env.example", realm));
-            let qa_port = format!("{QA_KEYCLOAK_PORT_VARIABLE}{QA_KEYCLOAK_PORT}");
-            for script in QA_KEYCLOAK_SCRIPTS {
-                expected.push((script, qa_port.clone()));
-            }
-        }
-    }
-    let mut expected = expected
-        .into_iter()
-        .map(|(path, snippet)| (path.to_owned(), snippet))
-        .collect::<Vec<_>>();
-    if manifest.capabilities.components.backend()
-        && oidc_clients_use_bundled_keycloak(root, manifest)?
-    {
-        for krate in doctor_layout::rust_crates(root, manifest)? {
-            for path in krate.sources {
-                let source = fs::read_to_string(&path)?;
-                let relative = path.strip_prefix(root)?.to_string_lossy().into_owned();
-                if source.contains("identity_admin_realm:") {
-                    expected.push((
-                        relative.clone(),
-                        format!("localhost:{}/realms/", ports.keycloak),
-                    ));
-                }
-                if source.contains("identity_admin_base_url:") {
-                    expected.push((relative, format!("localhost:{}", ports.keycloak)));
-                }
-            }
-        }
-    }
-    for (relative, snippet) in expected {
+    for (relative, snippet) in expected_port_snippets(root, manifest, &ports, failures)? {
         let relative = relative.replace("PLACEHOLDER", &manifest.app.name);
         let path = root.join(&relative);
         if !path.is_file() {
             continue;
         }
         let source = fs::read_to_string(&path)?;
-        let source = if relative == "Makefile" {
-            resolve_makefile_variables(&source)
-        } else {
-            source
-        };
-        let mismatched = if snippet.starts_with(QA_KEYCLOAK_PORT_VARIABLE) {
-            has_mismatched_qa_keycloak_port(&source, &ports)
-        } else if relative == "Makefile" && snippet.starts_with("REDIS_URL=") {
-            let expected_port = loopback_ports(&snippet, false)
-                .first()
-                .copied()
-                .context("expected Redis port")?;
-            let redis_sources = source
-                .split("redis://")
-                .skip(1)
-                .map(|tail| {
-                    tail.split(|character: char| {
-                        character.is_whitespace() || matches!(character, '}' | '\'' | '"')
-                    })
-                    .next()
-                    .unwrap_or_default()
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-            let actual_ports = loopback_ports(&redis_sources, false);
-            actual_ports.is_empty() || actual_ports.iter().any(|port| *port != expected_port)
-        } else if relative.ends_with(".rs")
-            || is_environment_capable_source(&relative)
-            || (relative == "Makefile" && snippet.contains("/realms/"))
-        {
-            let expected_port = localhost_port(&snippet).expect("expected snippet has a port");
-            let source = source.replace("${KEYCLOAK_PORT}", &ports.keycloak.to_string());
-            let source = if relative.ends_with(".rs") && !snippet.contains("/realms/") {
-                source
-                    .split("identity_admin_base_url:")
-                    .skip(1)
-                    .filter_map(|field| field.split(',').next())
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            } else {
-                source
-            };
-            if matches!(relative.as_str(), "mobile/src/api.ts" | "web/src/api.ts") {
-                let issuer = snippet.contains("/realms/");
-                loopback_ports(&source, issuer).iter().any(|port| {
-                    *port != expected_port && !(issuer && ports.keycloak_extra.contains(port))
-                })
-            } else {
-                has_mismatched_loopback_port(
-                    &source,
-                    expected_port,
-                    &ports.keycloak_extra,
-                    snippet.contains("/realms/"),
-                )
-            }
-        } else {
-            !source.contains(&snippet)
-        };
-        if mismatched {
+        if snippet_mismatches(&relative, &snippet, source, &ports)? {
             failures.push(if manifest.ports.is_empty() {
-                format!("generated file `{relative}` does not use port offset {}", manifest.port_offset)
+                format!(
+                    "generated file `{relative}` does not use port offset {}",
+                    manifest.port_offset
+                )
             } else {
-                format!("generated file `{relative}` does not match declared ports (expected `{snippet}`)")
+                format!(
+                    "generated file `{relative}` does not match declared ports (expected `{snippet}`)"
+                )
             });
         }
     }
@@ -344,6 +159,246 @@ pub(crate) fn validate_port_configuration(
         });
     }
     Ok(())
+}
+
+type Snippet = (&'static str, String);
+
+/// The `(file, snippet)` pairs whose ports must match the configuration.
+fn expected_port_snippets(
+    root: &Path,
+    manifest: &Manifest,
+    ports: &PortConfiguration,
+    failures: &mut Vec<String>,
+) -> Result<Vec<(String, String)>> {
+    let components = manifest.capabilities.components;
+    let mut expected = Vec::new();
+    if components.backend() {
+        expected.extend(backend_snippets(root, manifest, ports, failures)?);
+    }
+    let oidc_keycloak = oidc_clients_use_bundled_keycloak(root, manifest)?;
+    if components.mobile() {
+        expected.extend(mobile_snippets(ports, oidc_keycloak));
+    }
+    if components.web() {
+        expected.extend(web_snippets(ports, oidc_keycloak));
+    }
+    if provider_clients_use_bundled_keycloak(root, manifest)? {
+        expected.extend(provider_snippets(manifest, ports));
+    }
+    let mut expected = expected
+        .into_iter()
+        .map(|(path, snippet)| (path.to_owned(), snippet))
+        .collect::<Vec<_>>();
+    if components.backend() && oidc_keycloak {
+        expected.extend(rust_identity_snippets(root, manifest, ports)?);
+    }
+    Ok(expected)
+}
+
+fn backend_snippets(
+    root: &Path,
+    manifest: &Manifest,
+    ports: &PortConfiguration,
+    failures: &mut Vec<String>,
+) -> Result<Vec<Snippet>> {
+    let redis_port = validate_compose_ports(root, manifest, ports, failures)?;
+    let container_port = |name: &str, host: u16| {
+        manifest
+            .ports
+            .get(name)
+            .and_then(PortDeclaration::as_mapping)
+            .and_then(|port| port.container)
+            .unwrap_or(host)
+    };
+    let mut expected = vec![
+        ("Makefile", format!("HTTP__PORT={}", ports.api)),
+        ("Makefile", format!("OPS__PORT={}", ports.ops)),
+        (
+            "deploy/values.yaml",
+            format!("http: {}", container_port("api", ports.api)),
+        ),
+        (
+            "deploy/values.yaml",
+            format!("ops: {}", container_port("ops", ports.ops)),
+        ),
+    ];
+    if doctor_layout::uses_redis(root, manifest)? {
+        expected.push((
+            "Makefile",
+            format!("REDIS_URL=redis://127.0.0.1:{redis_port}/"),
+        ));
+    }
+    if uses_bundled_keycloak(root, manifest)? {
+        expected.extend([
+            ("Makefile", format!("localhost:{}/realms/", ports.keycloak)),
+            ("scripts/pkce-login.py", format!("localhost:{}", ports.api)),
+        ]);
+    }
+    Ok(expected)
+}
+
+fn mobile_snippets(ports: &PortConfiguration, oidc_keycloak: bool) -> Vec<Snippet> {
+    let mut expected = vec![
+        ("mobile/.env.example", format!("localhost:{}", ports.api)),
+        ("mobile/src/api.ts", format!("localhost:{}", ports.api)),
+    ];
+    if oidc_keycloak {
+        let realm = format!("localhost:{}/realms/", ports.keycloak);
+        expected.extend([
+            ("mobile/.env.example", realm.clone()),
+            ("mobile/app.config.ts", realm.clone()),
+            ("mobile/src/auth.ts", realm),
+            (
+                "mobile/src/delete-profile.ts",
+                format!("localhost:{}", ports.api),
+            ),
+        ]);
+    }
+    expected
+}
+
+fn web_snippets(ports: &PortConfiguration, oidc_keycloak: bool) -> Vec<Snippet> {
+    let mut expected = vec![
+        ("web/.env.example", format!("localhost:{}", ports.api)),
+        ("web/src/api.ts", format!("localhost:{}", ports.api)),
+    ];
+    if oidc_keycloak {
+        let realm = format!("localhost:{}/realms/", ports.keycloak);
+        expected.extend([
+            ("web/.env.example", realm.clone()),
+            ("web/src/auth.ts", realm),
+            (
+                "web/src/delete-profile.ts",
+                format!("localhost:{}", ports.api),
+            ),
+            (
+                "web/e2e/stack/keycloak.ts",
+                format!("localhost:{}", ports.keycloak),
+            ),
+        ]);
+    }
+    expected
+}
+
+fn provider_snippets(manifest: &Manifest, ports: &PortConfiguration) -> Vec<Snippet> {
+    let components = manifest.capabilities.components;
+    let realm = format!("localhost:{}/realms/", ports.keycloak);
+    let mut expected = Vec::new();
+    if components.web() {
+        expected.push(("web/.env.example", realm.clone()));
+    }
+    if components.mobile() {
+        expected.push(("mobile/.env.example", realm));
+        let qa_port = format!("{QA_KEYCLOAK_PORT_VARIABLE}{QA_KEYCLOAK_PORT}");
+        for script in QA_KEYCLOAK_SCRIPTS {
+            expected.push((script, qa_port.clone()));
+        }
+    }
+    expected
+}
+
+fn rust_identity_snippets(
+    root: &Path,
+    manifest: &Manifest,
+    ports: &PortConfiguration,
+) -> Result<Vec<(String, String)>> {
+    let mut expected = Vec::new();
+    for krate in doctor_layout::rust_crates(root, manifest)? {
+        for path in krate.sources {
+            let source = fs::read_to_string(&path)?;
+            let relative = path.strip_prefix(root)?.to_string_lossy().into_owned();
+            if source.contains("identity_admin_realm:") {
+                expected.push((
+                    relative.clone(),
+                    format!("localhost:{}/realms/", ports.keycloak),
+                ));
+            }
+            if source.contains("identity_admin_base_url:") {
+                expected.push((relative, format!("localhost:{}", ports.keycloak)));
+            }
+        }
+    }
+    Ok(expected)
+}
+
+fn snippet_mismatches(
+    relative: &str,
+    snippet: &str,
+    source: String,
+    ports: &PortConfiguration,
+) -> Result<bool> {
+    let source = if relative == "Makefile" {
+        resolve_makefile_variables(&source)
+    } else {
+        source
+    };
+    if snippet.starts_with(QA_KEYCLOAK_PORT_VARIABLE) {
+        return Ok(has_mismatched_qa_keycloak_port(&source, ports));
+    }
+    if relative == "Makefile" && snippet.starts_with("REDIS_URL=") {
+        return redis_url_mismatches(snippet, &source);
+    }
+    if relative.ends_with(".rs")
+        || is_environment_capable_source(relative)
+        || (relative == "Makefile" && snippet.contains("/realms/"))
+    {
+        return loopback_snippet_mismatches(relative, snippet, &source, ports);
+    }
+    Ok(!source.contains(snippet))
+}
+
+fn redis_url_mismatches(snippet: &str, source: &str) -> Result<bool> {
+    let expected_port = loopback_ports(snippet, false)
+        .first()
+        .copied()
+        .context("expected Redis port")?;
+    let redis_sources = source
+        .split("redis://")
+        .skip(1)
+        .map(|tail| {
+            tail.split(|character: char| {
+                character.is_whitespace() || matches!(character, '}' | '\'' | '"')
+            })
+            .next()
+            .unwrap_or_default()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let actual_ports = loopback_ports(&redis_sources, false);
+    Ok(actual_ports.is_empty() || actual_ports.iter().any(|port| *port != expected_port))
+}
+
+fn loopback_snippet_mismatches(
+    relative: &str,
+    snippet: &str,
+    source: &str,
+    ports: &PortConfiguration,
+) -> Result<bool> {
+    let expected_port =
+        localhost_port(snippet).context("expected snippet has no localhost port")?;
+    let issuer = snippet.contains("/realms/");
+    let source = source.replace("${KEYCLOAK_PORT}", &ports.keycloak.to_string());
+    let source = if relative.ends_with(".rs") && !issuer {
+        source
+            .split("identity_admin_base_url:")
+            .skip(1)
+            .filter_map(|field| field.split(',').next())
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        source
+    };
+    if matches!(relative, "mobile/src/api.ts" | "web/src/api.ts") {
+        return Ok(loopback_ports(&source, issuer).iter().any(|port| {
+            *port != expected_port && !(issuer && ports.keycloak_extra.contains(port))
+        }));
+    }
+    Ok(has_mismatched_loopback_port(
+        &source,
+        expected_port,
+        &ports.keycloak_extra,
+        issuer,
+    ))
 }
 
 pub(crate) fn is_environment_capable_source(relative: &str) -> bool {
@@ -442,6 +497,11 @@ impl ComposePort {
     }
 }
 
+const POSTGRES_CONTAINER_PORT: u16 = 5432;
+const KEYCLOAK_CONTAINER_PORT: u16 = 8080;
+const REDIS_CONTAINER_PORT: u16 = 6379;
+
+/// Checks compose.yaml port mappings and returns the host port Redis publishes.
 pub(crate) fn validate_compose_ports(
     root: &Path,
     manifest: &Manifest,
@@ -454,13 +514,32 @@ pub(crate) fn validate_compose_ports(
     }
     let compose: ComposeFile = serde_yaml_ng::from_str(&fs::read_to_string(&path)?)
         .context("could not parse compose.yaml")?;
-    let mut mappings = vec![("postgres", 5432, ports.postgres)];
+    let mut mappings = vec![("postgres", POSTGRES_CONTAINER_PORT, ports.postgres)];
     if uses_bundled_keycloak(root, manifest)? {
-        mappings.push(("keycloak", 8080, ports.keycloak));
+        mappings.push(("keycloak", KEYCLOAK_CONTAINER_PORT, ports.keycloak));
     }
     if doctor_layout::uses_redis(root, manifest)? {
-        mappings.push(("redis", 6379, ports.redis));
+        mappings.push(("redis", REDIS_CONTAINER_PORT, ports.redis));
     }
+    validate_declared_compose_ports(&compose, manifest, failures);
+    validate_offset_compose_ports(&compose, manifest, &mappings, failures);
+    Ok(compose_redis_port(&compose, manifest).unwrap_or(ports.redis))
+}
+
+fn default_compose_service<'a>(compose: &ComposeFile, port_name: &'a str) -> &'a str {
+    match port_name {
+        "api" | "ops" if compose.services.contains_key("backend") => "backend",
+        "api" | "ops" => "api",
+        "fake_provider" => "fake-provider",
+        name => name,
+    }
+}
+
+fn validate_declared_compose_ports(
+    compose: &ComposeFile,
+    manifest: &Manifest,
+    failures: &mut Vec<String>,
+) {
     for (name, declaration) in &manifest.ports {
         let Some(mapping) = declaration.as_mapping() else {
             continue;
@@ -468,18 +547,10 @@ pub(crate) fn validate_compose_ports(
         let Some(container) = mapping.container else {
             continue;
         };
-        let default_service = match name.as_str() {
-            "api" | "ops" => {
-                if compose.services.contains_key("backend") {
-                    "backend"
-                } else {
-                    "api"
-                }
-            }
-            "fake_provider" => "fake-provider",
-            name => name,
-        };
-        let service_name = mapping.service.as_deref().unwrap_or(default_service);
+        let service_name = mapping
+            .service
+            .as_deref()
+            .unwrap_or_else(|| default_compose_service(compose, name));
         let Some(service) = compose.services.get(service_name) else {
             continue;
         };
@@ -497,10 +568,21 @@ pub(crate) fn validate_compose_ports(
                 .iter()
                 .any(|port| (port.0 == container || port.1 == mapping.host) && *port != expected)
         {
-            failures.push(format!("compose.yaml service `{service_name}` must publish declared ports.{} host {} to container {}", name, mapping.host, container));
+            failures.push(format!(
+                "compose.yaml service `{service_name}` must publish declared ports.{name} host {} to container {container}",
+                mapping.host
+            ));
         }
     }
-    for (service_name, target, expected) in mappings {
+}
+
+fn validate_offset_compose_ports(
+    compose: &ComposeFile,
+    manifest: &Manifest,
+    mappings: &[(&str, u16, u16)],
+    failures: &mut Vec<String>,
+) {
+    for &(service_name, target, expected) in mappings {
         if manifest.ports.contains_key(service_name) {
             continue;
         }
@@ -522,25 +604,22 @@ pub(crate) fn validate_compose_ports(
             ));
         }
     }
-    let redis_port = compose
+}
+
+fn compose_redis_port(compose: &ComposeFile, manifest: &Manifest) -> Option<u16> {
+    let service_name = manifest
+        .ports
+        .get("redis")
+        .and_then(PortDeclaration::as_mapping)
+        .and_then(|mapping| mapping.service.as_deref())
+        .unwrap_or("redis");
+    compose
         .services
-        .get(
-            manifest
-                .ports
-                .get("redis")
-                .and_then(PortDeclaration::as_mapping)
-                .and_then(|mapping| mapping.service.as_deref())
-                .unwrap_or("redis"),
-        )
-        .and_then(|service| {
-            service
-                .ports
-                .iter()
-                .filter_map(ComposePort::parameterized_default_mapping)
-                .find_map(|(target, published)| (target == 6379).then_some(published))
-        })
-        .unwrap_or(ports.redis);
-    Ok(redis_port)
+        .get(service_name)?
+        .ports
+        .iter()
+        .filter_map(ComposePort::parameterized_default_mapping)
+        .find_map(|(target, published)| (target == REDIS_CONTAINER_PORT).then_some(published))
 }
 
 pub(crate) fn localhost_port(snippet: &str) -> Option<u16> {

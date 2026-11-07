@@ -6,10 +6,7 @@ use std::{
 
 use anyhow::{Context, Result};
 
-use crate::{
-    AuthProvider, Manifest,
-    doctor::{quoted_string, source_constant},
-};
+use crate::{AuthProvider, Manifest};
 
 fn sources(directory: &Path, extension: &str, output: &mut Vec<PathBuf>) -> Result<()> {
     if !directory.is_dir() {
@@ -77,11 +74,27 @@ pub(super) fn uncommented(source: &str, rust: bool) -> String {
 }
 
 pub(super) fn identity_code(source: &str, rust: bool) -> String {
-    let mut code = source.as_bytes().to_vec();
-    let bytes = source.as_bytes();
+    let mut masked = quoted_ranges(source.as_bytes(), rust)
+        .into_iter()
+        .peekable();
+    let mut code = String::with_capacity(source.len());
+    for (offset, character) in source.char_indices() {
+        while masked.next_if(|range| range.end <= offset).is_some() {}
+        let quoted = masked.peek().is_some_and(|range| range.contains(&offset));
+        if character != '\n' && quoted {
+            code.extend(std::iter::repeat_n(' ', character.len_utf8()));
+        } else {
+            code.push(character);
+        }
+    }
+    code
+}
+
+/// Byte ranges of quoted literals, quotes included; an unterminated literal runs to the end.
+fn quoted_ranges(bytes: &[u8], rust: bool) -> Vec<std::ops::Range<usize>> {
+    let mut ranges = Vec::new();
     let mut index = 0;
-    while index < bytes.len() {
-        let quote = bytes[index];
+    while let Some(&quote) = bytes.get(index) {
         let lifetime = rust
             && quote == b'\''
             && bytes
@@ -94,24 +107,19 @@ pub(super) fn identity_code(source: &str, rust: bool) -> String {
         }
         let start = index;
         index += 1;
-        while index < bytes.len() {
-            if bytes[index] == b'\\' {
+        while let Some(&byte) = bytes.get(index) {
+            if byte == b'\\' {
                 index += 2;
-            } else if bytes[index] == quote {
-                index += 1;
-                break;
             } else {
                 index += 1;
+                if byte == quote {
+                    break;
+                }
             }
         }
-        let end = index.min(bytes.len());
-        for character in &mut code[start..end] {
-            if *character != b'\n' {
-                *character = b' ';
-            }
-        }
+        ranges.push(start..index.min(bytes.len()));
     }
-    String::from_utf8(code).expect("masking complete strings preserves UTF-8")
+    ranges
 }
 
 fn identity_constant<'a>(source: &'a str, name: &str, rust: bool) -> Option<&'a str> {
@@ -307,8 +315,8 @@ pub(super) fn validate_admin_realm(
     failures: &mut Vec<String>,
 ) -> Result<()> {
     for krate in crate::doctor_layout::backend_crates(root, manifest)? {
-        for path in krate.sources {
-            let source = fs::read_to_string(&path)?;
+        for path in &krate.sources {
+            let source = fs::read_to_string(path)?;
             let source = uncommented(source.split("#[cfg(test)]").next().unwrap_or(&source), true);
             for declaration in source.split("identity_admin_realm:").skip(1) {
                 let Some(expression) = declaration
@@ -321,7 +329,7 @@ pub(super) fn validate_admin_realm(
                 };
                 let value = quoted_string(expression)
                     .map(str::to_owned)
-                    .or(resolve_binding(&path, &source, expression)?);
+                    .or(resolve_binding(path, &source, expression)?);
                 if let Some(value) = value
                     && value != realm
                 {
@@ -410,8 +418,8 @@ fn rust_identity(
     let mut count = 0;
     for krate in crates {
         let modules = library_sources(&krate.library)?;
-        for path in krate.sources {
-            let source = fs::read_to_string(&path)?;
+        for path in &krate.sources {
+            let source = fs::read_to_string(path)?;
             let source = uncommented(source.split("#[cfg(test)]").next().unwrap_or(&source), true);
             let code = identity_code(&source, true);
             let consumers = ["ConfigLoader::new(", "ServiceInfo::new("];
@@ -431,7 +439,7 @@ fn rust_identity(
                 let local_binding = expression
                     .strip_prefix("crate::")
                     .filter(|_| {
-                        path == krate.library
+                        *path == krate.library
                             || path.file_name().is_some_and(|name| name == "main.rs")
                             || path.parent().is_some_and(|parent| {
                                 parent.file_name().is_some_and(|name| name == "bin")
@@ -445,27 +453,7 @@ fn rust_identity(
                     .map(str::to_owned);
                 let value = match value {
                     Some(value) => Some(value),
-                    None => {
-                        let library = &krate.library;
-                        let library_source = if library.is_file() {
-                            uncommented(&fs::read_to_string(library)?, true)
-                        } else {
-                            String::new()
-                        };
-                        let crate_name = krate.name.replace('-', "_");
-                        let binding = imported_rust_binding(&source, &crate_name, expression)
-                            .or_else(|| {
-                                modules
-                                    .contains(&path)
-                                    .then(|| imported_rust_binding(&source, "crate", expression))
-                                    .flatten()
-                            });
-                        binding.and_then(|binding| {
-                            identity_constant(&library_source, &binding, true)
-                                .and_then(quoted_string)
-                                .map(str::to_owned)
-                        })
-                    }
+                    None => imported_rust_identity(&krate, &modules, path, &source, expression)?,
                 };
                 if let Some(value) = value {
                     if manifest.capabilities.auth == Some(AuthProvider::Oidc)
@@ -487,6 +475,34 @@ fn rust_identity(
         failures.push("backend config consumers use inconsistent product identities".to_owned());
     }
     Ok((count, names))
+}
+
+/// Resolves an identity expression imported from the crate library.
+fn imported_rust_identity(
+    krate: &crate::doctor_layout::RustCrate,
+    modules: &BTreeSet<PathBuf>,
+    path: &Path,
+    source: &str,
+    expression: &str,
+) -> Result<Option<String>> {
+    let library = &krate.library;
+    let library_source = if library.is_file() {
+        uncommented(&fs::read_to_string(library)?, true)
+    } else {
+        String::new()
+    };
+    let crate_name = krate.name.replace('-', "_");
+    let binding = imported_rust_binding(source, &crate_name, expression).or_else(|| {
+        modules
+            .contains(path)
+            .then(|| imported_rust_binding(source, "crate", expression))
+            .flatten()
+    });
+    Ok(binding.and_then(|binding| {
+        identity_constant(&library_source, &binding, true)
+            .and_then(quoted_string)
+            .map(str::to_owned)
+    }))
 }
 
 fn static_rust_identity(expression: &str) -> bool {
@@ -515,4 +531,21 @@ pub(super) fn validate(
         successes.push("consumed product identities are consistent".to_owned());
     }
     Ok(())
+}
+
+fn source_constant<'a>(source: &'a str, name: &str) -> Option<&'a str> {
+    source.split("const ").skip(1).find_map(|statement| {
+        let (binding, initializer) = statement.split_once('=')?;
+        let binding = binding.split(':').next()?.trim();
+        if binding != name {
+            return None;
+        }
+        Some(initializer.split_once(';')?.0.trim())
+    })
+}
+
+fn quoted_string(value: &str) -> Option<&str> {
+    ['\'', '"']
+        .into_iter()
+        .find_map(|quote| value.strip_prefix(quote)?.strip_suffix(quote))
 }

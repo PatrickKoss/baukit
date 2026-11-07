@@ -16,38 +16,71 @@ pub(crate) fn validate_auth_provider(
     let Some(provider) = manifest.capabilities.auth else {
         return Ok(());
     };
-    let name = match provider {
+    let name = provider_name(provider);
+    let before = failures.len();
+    validate_auth_config(root, provider, failures)?;
+    validate_auth_sdk_dependencies(root, manifest, provider, failures)?;
+    if provider == AuthProvider::Workos && manifest.capabilities.components.mobile() {
+        validate_workos_mobile_configuration(root, failures)?;
+    }
+    if failures.len() == before {
+        successes.push(format!(
+            "auth provider `{name}` matches config and frontend SDK wiring"
+        ));
+    }
+    Ok(())
+}
+
+const fn provider_name(provider: AuthProvider) -> &'static str {
+    match provider {
         AuthProvider::Oidc => "oidc",
         AuthProvider::Clerk => "clerk",
         AuthProvider::Workos => "workos",
-    };
-    let before = failures.len();
-    let config_path = root.join("config/local.toml");
-    if config_path.is_file() {
-        let config: toml::Value = toml::from_str(&fs::read_to_string(config_path)?)?;
-        if let Some(actual) = config
-            .get("auth")
-            .and_then(|auth| auth.get("provider"))
-            .and_then(toml::Value::as_str)
-            && actual != name
-        {
-            failures.push(format!(
-                "config/local.toml auth.provider is `{actual}`, but baukit.toml selects `{name}`"
-            ));
-        }
-        if provider != AuthProvider::Oidc
-            && let Some(mcp) = config.get("mcp")
-            && (mcp.get("introspection_client_id").is_some()
-                || mcp.get("introspection_client_secret").is_some())
-        {
-            failures.push(format!(
-                "`{name}` does not support the generated Keycloak MCP introspection policy"
-            ));
-        }
     }
+}
+
+fn validate_auth_config(
+    root: &Path,
+    provider: AuthProvider,
+    failures: &mut Vec<String>,
+) -> Result<()> {
+    let config_path = root.join("config/local.toml");
+    if !config_path.is_file() {
+        return Ok(());
+    }
+    let name = provider_name(provider);
+    let config: toml::Value = toml::from_str(&fs::read_to_string(config_path)?)?;
+    if let Some(actual) = config
+        .get("auth")
+        .and_then(|auth| auth.get("provider"))
+        .and_then(toml::Value::as_str)
+        && actual != name
+    {
+        failures.push(format!(
+            "config/local.toml auth.provider is `{actual}`, but baukit.toml selects `{name}`"
+        ));
+    }
+    if provider != AuthProvider::Oidc
+        && let Some(mcp) = config.get("mcp")
+        && (mcp.get("introspection_client_id").is_some()
+            || mcp.get("introspection_client_secret").is_some())
+    {
+        failures.push(format!(
+            "`{name}` does not support the generated Keycloak MCP introspection policy"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_auth_sdk_dependencies(
+    root: &Path,
+    manifest: &Manifest,
+    provider: AuthProvider,
+    failures: &mut Vec<String>,
+) -> Result<()> {
     let native_dependency = match provider {
         AuthProvider::Clerk => "@clerk/expo",
-        _ => "@baukit/auth-native",
+        AuthProvider::Oidc | AuthProvider::Workos => "@baukit/auth-native",
     };
     let web_dependency = if web_renders_expo_routes(root)? {
         native_dependency
@@ -58,39 +91,26 @@ pub(crate) fn validate_auth_provider(
             AuthProvider::Oidc => "@baukit/auth-web",
         }
     };
+    let components = manifest.capabilities.components;
     for (enabled, directory, dependency) in [
-        (
-            manifest.capabilities.components.web(),
-            "web",
-            web_dependency,
-        ),
-        (
-            manifest.capabilities.components.mobile(),
-            "mobile",
-            native_dependency,
-        ),
+        (components.web(), "web", web_dependency),
+        (components.mobile(), "mobile", native_dependency),
     ] {
-        if !enabled {
-            continue;
-        }
         let path = root.join(directory).join("package.json");
-        if !path.is_file() {
+        if !enabled || !path.is_file() {
             continue;
         }
         let package: serde_json::Value = serde_json::from_str(&fs::read_to_string(path)?)?;
-        if package["dependencies"][dependency].is_null() {
+        if package
+            .get("dependencies")
+            .and_then(|dependencies| dependencies.get(dependency))
+            .is_none_or(serde_json::Value::is_null)
+        {
             failures.push(format!(
-                "{directory}/package.json is missing `{dependency}` for auth provider `{name}`"
+                "{directory}/package.json is missing `{dependency}` for auth provider `{}`",
+                provider_name(provider)
             ));
         }
-    }
-    if provider == AuthProvider::Workos && manifest.capabilities.components.mobile() {
-        validate_workos_mobile_configuration(root, failures)?;
-    }
-    if failures.len() == before {
-        successes.push(format!(
-            "auth provider `{name}` matches config and frontend SDK wiring"
-        ));
     }
     Ok(())
 }

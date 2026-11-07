@@ -116,8 +116,22 @@ enum GenerateCommand {
 }
 
 fn main() -> ExitCode {
-    match run() {
-        Ok(()) => ExitCode::SUCCESS,
+    report(run())
+}
+
+#[expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "CLI user output: the single place the binary writes to the terminal"
+)]
+fn report(outcome: Result<Vec<String>>) -> ExitCode {
+    match outcome {
+        Ok(lines) => {
+            for line in lines {
+                println!("{line}");
+            }
+            ExitCode::SUCCESS
+        }
         Err(error) => {
             eprintln!("error: {error:#}");
             ExitCode::FAILURE
@@ -125,51 +139,56 @@ fn main() -> ExitCode {
     }
 }
 
-fn run() -> Result<()> {
+fn run() -> Result<Vec<String>> {
     match Cli::parse().command {
-        Commands::New(command) => {
-            let components = command.components();
-            let destination = generate_new(&NewOptions {
-                name: command.name,
-                directory: command.dir,
-                components,
-                auth: command.auth,
-                force: command.force,
-                into_existing: command.into_existing,
-                resolve_lockfiles: !command.skip_lockfiles,
-                baukit_path: command.baukit_path,
-                port_offset: command.port_offset,
-                quality: command.quality,
-            })?;
-            println!("generated {}", destination.display());
-        }
-        Commands::Doctor => {
-            let current = env::current_dir()?;
-            for result in doctor(&current)? {
-                if result.starts_with("note: ") {
-                    println!("{result}");
-                } else {
-                    println!("ok: {result}");
-                }
-            }
-            println!("doctor: product is healthy");
-        }
+        Commands::New(command) => new_product(command),
+        Commands::Doctor => doctor_report(),
         Commands::Generate {
             command: GenerateCommand::Dockerfile { check },
         } => {
             let path = generate_dockerfile(&env::current_dir()?, check)?;
-            println!(
-                "{} {}",
-                if check { "checked" } else { "generated" },
-                path.display()
-            );
+            let verb = if check { "checked" } else { "generated" };
+            Ok(vec![format!("{verb} {}", path.display())])
         }
         Commands::Generate {
             command: GenerateCommand::OpenapiClient,
         } => {
             generate_openapi_client(&env::current_dir()?)?;
-            println!("generated TypeScript declarations from the committed OpenAPI schema");
+            Ok(vec![
+                "generated TypeScript declarations from the committed OpenAPI schema".to_owned(),
+            ])
         }
     }
-    Ok(())
+}
+
+fn new_product(command: NewCommand) -> Result<Vec<String>> {
+    let components = command.components();
+    let destination = generate_new(&NewOptions {
+        name: command.name,
+        directory: command.dir,
+        components,
+        auth: command.auth,
+        force: command.force,
+        into_existing: command.into_existing,
+        resolve_lockfiles: !command.skip_lockfiles,
+        baukit_path: command.baukit_path,
+        port_offset: command.port_offset,
+        quality: command.quality,
+    })?;
+    Ok(vec![format!("generated {}", destination.display())])
+}
+
+fn doctor_report() -> Result<Vec<String>> {
+    let mut lines = doctor(&env::current_dir()?)?
+        .into_iter()
+        .map(|result| {
+            if result.starts_with("note: ") {
+                result
+            } else {
+                format!("ok: {result}")
+            }
+        })
+        .collect::<Vec<_>>();
+    lines.push("doctor: product is healthy".to_owned());
+    Ok(lines)
 }

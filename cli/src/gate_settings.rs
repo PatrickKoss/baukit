@@ -346,10 +346,9 @@ fn invalid_glob(glob: &str) -> bool {
         || glob.split('/').any(|part| part == ".." || part.is_empty())
 }
 
-pub fn validate(
+fn validate_android(
     quality: &QualityManifest,
     capabilities: &Capabilities,
-    gate: Option<&GateSteps>,
     failures: &mut Vec<String>,
 ) {
     if let Some(port) = quality.android_emulator_port {
@@ -386,6 +385,15 @@ pub fn validate(
             ));
         }
     }
+}
+
+pub fn validate(
+    quality: &QualityManifest,
+    capabilities: &Capabilities,
+    gate: Option<&GateSteps>,
+    failures: &mut Vec<String>,
+) {
+    validate_android(quality, capabilities, failures);
     let budget = &quality.gate_budget_minutes;
     if budget.full == 0 || budget.affected == 0 {
         failures.push("quality.gate_budget_minutes values must be greater than zero".to_owned());

@@ -99,131 +99,84 @@ pub(crate) struct TemplateContext {
     pub(crate) ops_container_port: u16,
 }
 
+pub(crate) type RenderedFiles = BTreeMap<PathBuf, Vec<u8>>;
+
+struct Renderer<'a> {
+    environment: Environment<'a>,
+    context: &'a TemplateContext,
+    rendered: RenderedFiles,
+}
+
+impl<'a> Renderer<'a> {
+    fn new(context: &'a TemplateContext) -> Self {
+        let mut environment = Environment::new();
+        environment.set_keep_trailing_newline(true);
+        Self {
+            environment,
+            context,
+            rendered: BTreeMap::new(),
+        }
+    }
+
+    fn directory(&mut self, directory: &Dir<'_>) -> Result<()> {
+        render_directory(
+            directory,
+            &self.environment,
+            self.context,
+            &mut self.rendered,
+            false,
+        )
+    }
+
+    /// Renders a component template and, for products with auth, its `__auth__` overlay.
+    fn component(&mut self, directory: &Dir<'_>) -> Result<()> {
+        self.directory(directory)?;
+        if self.context.auth.enabled()
+            && let Some(overlay) = directory.get_dir("__auth__")
+        {
+            render_directory(
+                overlay,
+                &self.environment,
+                self.context,
+                &mut self.rendered,
+                true,
+            )?;
+        }
+        Ok(())
+    }
+}
+
 pub(crate) fn render_product(
     context: &TemplateContext,
     options: &NewOptions,
-) -> Result<BTreeMap<PathBuf, Vec<u8>>> {
-    let mut environment = Environment::new();
-    environment.set_keep_trailing_newline(true);
-    let mut rendered = BTreeMap::new();
-    render_directory(
-        &COMMON_TEMPLATE,
-        &environment,
-        context,
-        &mut rendered,
-        false,
-    )?;
-    if let Some(guide) = rendered.get(Path::new("CLAUDE.md")).cloned() {
-        rendered.insert(PathBuf::from("AGENTS.md"), guide);
-    }
-    rendered.insert(
-        PathBuf::from("tests/fixtures/resource-budget-measurements-v1.json"),
-        include_bytes!("../../../fixtures/limits/resource-budget-measurements-v1.json").to_vec(),
-    );
-    if options.components.backend() {
-        render_directory(
-            &BACKEND_TEMPLATE,
-            &environment,
-            context,
-            &mut rendered,
-            false,
-        )?;
-        if context.auth.enabled()
-            && let Some(overlay) = BACKEND_TEMPLATE.get_dir("__auth__")
-        {
-            render_directory(overlay, &environment, context, &mut rendered, true)?;
-        }
-        if options.components.worker() {
-            render_directory(
-                &WORKER_TEMPLATE,
-                &environment,
-                context,
-                &mut rendered,
-                false,
-            )?;
+) -> Result<RenderedFiles> {
+    let components = options.components;
+    let mut renderer = Renderer::new(context);
+    renderer.directory(&COMMON_TEMPLATE)?;
+    add_common_files(&mut renderer.rendered);
+    if components.backend() {
+        renderer.component(&BACKEND_TEMPLATE)?;
+        if components.worker() {
+            renderer.directory(&WORKER_TEMPLATE)?;
         }
     }
-    if options.components.mobile() {
-        render_directory(
-            &MOBILE_TEMPLATE,
-            &environment,
-            context,
-            &mut rendered,
-            false,
-        )?;
-        if context.auth.enabled()
-            && let Some(overlay) = MOBILE_TEMPLATE.get_dir("__auth__")
-        {
-            render_directory(overlay, &environment, context, &mut rendered, true)?;
-        }
+    if components.mobile() {
+        renderer.component(&MOBILE_TEMPLATE)?;
+        add_mobile_worker_scripts(&mut renderer.rendered)?;
     }
-    if options.components.mobile() {
-        for name in ["build-sw.mjs", "build-sw.test.mjs"] {
-            let source = WEB_TEMPLATE
-                .get_file(format!("web/scripts/{name}"))
-                .ok_or_else(|| anyhow!("web template is missing {name}"))?;
-            rendered.insert(
-                PathBuf::from(format!("mobile/scripts/{name}")),
-                source.contents().to_vec(),
-            );
-        }
-    }
-    if options.components.web() {
-        render_directory(&WEB_TEMPLATE, &environment, context, &mut rendered, false)?;
-        if context.auth.enabled()
-            && let Some(overlay) = WEB_TEMPLATE.get_dir("__auth__")
-        {
-            render_directory(overlay, &environment, context, &mut rendered, true)?;
-        }
+    if components.web() {
+        renderer.component(&WEB_TEMPLATE)?;
     }
     if context.components.mcp() {
-        render_directory(
-            &MCP_REMOTE_TEMPLATE,
-            &environment,
-            context,
-            &mut rendered,
-            false,
-        )?;
+        renderer.directory(&MCP_REMOTE_TEMPLATE)?;
     }
     if context.components.platform() {
-        render_directory(
-            &PLATFORM_TEMPLATE,
-            &environment,
-            context,
-            &mut rendered,
-            false,
-        )?;
-        if context.auth.enabled()
-            && let Some(overlay) = PLATFORM_TEMPLATE.get_dir("__auth__")
-        {
-            render_directory(overlay, &environment, context, &mut rendered, true)?;
-        }
-        if context.components.worker() {
-            rendered.remove(Path::new(&format!(
-                "backend/crates/{}-bin/src/bin/platform-purge.rs",
-                context.app_name
-            )));
-        }
-        let schema_path = Path::new("backend/openapi.json");
-        let mut schema: serde_json::Value = serde_json::from_slice(
-            rendered
-                .get(schema_path)
-                .ok_or_else(|| anyhow!("backend OpenAPI schema is missing"))?,
-        )?;
-        schema["paths"]["/platform/inbound"] =
-            serde_json::from_str(include_str!("../../resources/platform-openapi.json"))?;
-        rendered.insert(
-            schema_path.to_path_buf(),
-            format!("{}\n", serde_json::to_string_pretty(&schema)?).into_bytes(),
-        );
-        rendered.insert(
-            PathBuf::from(&context.platform_migration),
-            include_bytes!("../../../rust/crates/baukit-suite/migrations/004_platform.sql")
-                .to_vec(),
-        );
+        renderer.component(&PLATFORM_TEMPLATE)?;
+        add_platform_files(context, &mut renderer.rendered)?;
     }
+    let mut rendered = renderer.rendered;
     let source = render_manifest(context, options);
-    if options.components.backend() {
+    if components.backend() {
         let manifest: Manifest = toml::from_str(&source)?;
         rendered.insert(
             PathBuf::from("backend/Dockerfile"),
@@ -234,11 +187,67 @@ pub(crate) fn render_product(
     Ok(rendered)
 }
 
+fn add_common_files(rendered: &mut RenderedFiles) {
+    if let Some(guide) = rendered.get(Path::new("CLAUDE.md")).cloned() {
+        rendered.insert(PathBuf::from("AGENTS.md"), guide);
+    }
+    rendered.insert(
+        PathBuf::from("tests/fixtures/resource-budget-measurements-v1.json"),
+        include_bytes!("../../../fixtures/limits/resource-budget-measurements-v1.json").to_vec(),
+    );
+}
+
+/// The Expo web export builds its PWA worker with the web template's scripts.
+fn add_mobile_worker_scripts(rendered: &mut RenderedFiles) -> Result<()> {
+    for name in ["build-sw.mjs", "build-sw.test.mjs"] {
+        let source = WEB_TEMPLATE
+            .get_file(format!("web/scripts/{name}"))
+            .ok_or_else(|| anyhow!("web template is missing {name}"))?;
+        rendered.insert(
+            PathBuf::from(format!("mobile/scripts/{name}")),
+            source.contents().to_vec(),
+        );
+    }
+    Ok(())
+}
+
+fn add_platform_files(context: &TemplateContext, rendered: &mut RenderedFiles) -> Result<()> {
+    if context.components.worker() {
+        rendered.remove(Path::new(&format!(
+            "backend/crates/{}-bin/src/bin/platform-purge.rs",
+            context.app_name
+        )));
+    }
+    let schema_path = Path::new("backend/openapi.json");
+    let mut schema: serde_json::Value = serde_json::from_slice(
+        rendered
+            .get(schema_path)
+            .ok_or_else(|| anyhow!("backend OpenAPI schema is missing"))?,
+    )?;
+    schema
+        .get_mut("paths")
+        .and_then(serde_json::Value::as_object_mut)
+        .ok_or_else(|| anyhow!("backend OpenAPI schema has no paths object"))?
+        .insert(
+            "/platform/inbound".to_owned(),
+            serde_json::from_str(include_str!("../../resources/platform-openapi.json"))?,
+        );
+    rendered.insert(
+        schema_path.to_path_buf(),
+        format!("{}\n", serde_json::to_string_pretty(&schema)?).into_bytes(),
+    );
+    rendered.insert(
+        PathBuf::from(&context.platform_migration),
+        include_bytes!("../../../rust/crates/baukit-suite/migrations/004_platform.sql").to_vec(),
+    );
+    Ok(())
+}
+
 pub(crate) fn render_directory(
     directory: &Dir<'_>,
     environment: &Environment<'_>,
     context: &TemplateContext,
-    rendered: &mut BTreeMap<PathBuf, Vec<u8>>,
+    rendered: &mut RenderedFiles,
     auth_overlay: bool,
 ) -> Result<()> {
     for file in directory.files() {

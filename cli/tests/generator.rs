@@ -1,3 +1,7 @@
+#![expect(
+    clippy::too_many_lines,
+    reason = "each test generates one product scenario and asserts every file of that scenario in sequence"
+)]
 use std::{
     collections::BTreeMap,
     fs,
@@ -57,8 +61,9 @@ fn frontend_options(parent: &Path, name: &str, mobile: bool, web: bool) -> NewOp
 
 fn verify_corepack_bootstrap(path: &Path) -> anyhow::Result<()> {
     let workflow: serde_yaml_ng::Value = serde_yaml_ng::from_str(&fs::read_to_string(path)?)?;
-    let jobs = workflow["jobs"]
-        .as_mapping()
+    let jobs = workflow
+        .get("jobs")
+        .and_then(serde_yaml_ng::Value::as_mapping)
         .ok_or_else(|| anyhow::anyhow!("{} has no jobs", path.display()))?;
     let mut invocations = 0;
     for (name, job) in jobs {

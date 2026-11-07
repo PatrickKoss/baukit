@@ -1238,8 +1238,9 @@ fn doctor_requires_every_template_gate_step_for_the_capabilities() -> anyhow::Re
 fn drop_vite_web_client(root: &Path, expo_routes: bool) -> anyhow::Result<()> {
     let package_path = root.join("web/package.json");
     let mut package: serde_json::Value = serde_json::from_str(&fs::read_to_string(&package_path)?)?;
-    let dependencies = package["dependencies"]
-        .as_object_mut()
+    let dependencies = package
+        .get_mut("dependencies")
+        .and_then(serde_json::Value::as_object_mut)
         .ok_or_else(|| anyhow::anyhow!("web/package.json has no dependencies"))?;
     dependencies.remove("@baukit/auth-web");
     if expo_routes {

@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use anyhow::{Context, Result, anyhow, bail};
 
 use crate::{
@@ -6,6 +8,17 @@ use crate::{
     EXPECTED_WEB_AUTH_DEV_DEPENDENCIES, MOBILE_PURCHASES_DEPENDENCIES, TEMPLATE_VERSION,
     generate::NewOptions,
 };
+
+const BASE_CRATES: [&str; 8] = [
+    "baukit-core",
+    "baukit-config",
+    "baukit-http",
+    "baukit-openapi",
+    "baukit-ops",
+    "baukit-runtime",
+    "baukit-telemetry",
+    "baukit-test",
+];
 
 pub(crate) struct DependencyContext {
     pub(crate) cargo: String,
@@ -17,169 +30,174 @@ pub(crate) struct DependencyContext {
     pub(crate) typescript_description: String,
 }
 
-pub(crate) fn dependency_context(options: &NewOptions) -> Result<DependencyContext> {
-    let path = options.baukit_path.as_deref();
-    let (mobile, web, pwa) = (
-        options.components.mobile(),
-        options.components.web(),
-        options.components.pwa(),
-    );
+/// The Baukit crates and TypeScript packages a product with these options depends on.
+struct BaukitPackages {
+    crates: Vec<&'static str>,
+    web: Vec<&'static str>,
+    web_dev: &'static [&'static str],
+    mobile: Vec<&'static str>,
+}
+
+impl BaukitPackages {
+    fn for_options(options: &NewOptions) -> Self {
+        let components = options.components;
+        let (mobile, web, pwa) = (components.mobile(), components.web(), components.pwa());
+        let auth_enabled = options.auth.is_some();
+        let mut web_packages = typescript_packages(false, false, web && auth_enabled);
+        if pwa && web {
+            web_packages.push("@baukit/pwa-web");
+        }
+        let mut mobile_packages = typescript_packages(mobile, mobile && auth_enabled, false);
+        if pwa && mobile && !web {
+            mobile_packages.push("@baukit/pwa-web");
+        }
+        Self {
+            crates: baukit_crates(options),
+            web: web_packages,
+            web_dev: if web && auth_enabled {
+                EXPECTED_WEB_AUTH_DEV_DEPENDENCIES
+            } else {
+                &[]
+            },
+            mobile: mobile_packages,
+        }
+    }
+
+    fn typescript(&self) -> impl Iterator<Item = &&'static str> {
+        self.web.iter().chain(self.web_dev).chain(&self.mobile)
+    }
+}
+
+fn baukit_crates(options: &NewOptions) -> Vec<&'static str> {
+    let components = options.components;
     let auth_enabled = options.auth.is_some();
-    let (worker, mcp, platform) = (
-        options.components.worker(),
-        options.components.mcp(),
-        options.components.platform(),
-    );
-    let mut web_packages = typescript_packages(false, false, web && auth_enabled);
-    if pwa && web {
-        web_packages.push("@baukit/pwa-web");
+    let mut names = BASE_CRATES.to_vec();
+    if auth_enabled {
+        names.extend(["baukit-auth", "baukit-erasure", "baukit-ratelimit"]);
     }
-    let web_dev_packages: &[&str] = if web && auth_enabled {
-        EXPECTED_WEB_AUTH_DEV_DEPENDENCIES
-    } else {
-        &[]
+    if components.worker() || auth_enabled {
+        names.push("baukit-jobs");
+    }
+    if components.mcp() {
+        names.push("baukit-mcp");
+    }
+    if components.platform() {
+        names.extend(["baukit-suite", "baukit-egress"]);
+    }
+    names
+}
+
+pub(crate) fn dependency_context(options: &NewOptions) -> Result<DependencyContext> {
+    let packages = BaukitPackages::for_options(options);
+    match options.baukit_path.as_deref() {
+        Some(path) => path_dependency_context(path, &packages, options),
+        None => Ok(registry_dependency_context(&packages)),
+    }
+}
+
+fn path_dependency_context(
+    path: &Path,
+    packages: &BaukitPackages,
+    options: &NewOptions,
+) -> Result<DependencyContext> {
+    let path = path.canonicalize().with_context(|| {
+        format!(
+            "--baukit-path {} does not resolve; point it at the repository's rust directory",
+            path.display()
+        )
+    })?;
+    if !path.join("crates/baukit-config/Cargo.toml").is_file() {
+        bail!(
+            "--baukit-path {} is not a Baukit Rust workspace (missing crates/baukit-config/Cargo.toml)",
+            path.display()
+        );
+    }
+    let display = path.display().to_string().replace('\\', "\\\\");
+    let cargo = packages
+        .crates
+        .iter()
+        .map(|name| format!("{name} = {{ path = \"{display}/crates/{name}\" }}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let typescript_root = path
+        .parent()
+        .ok_or_else(|| anyhow!("Baukit Rust workspace has no repository parent"))?
+        .join("typescript");
+    if options.components.mobile() || options.components.web() {
+        ensure_local_typescript_packages(&path, &typescript_root, packages)?;
+    }
+    let typescript_display = typescript_root
+        .display()
+        .to_string()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+    let render_typescript = |packages: &[&str]| {
+        render_package_entries(packages, |package| {
+            let directory = package.trim_start_matches("@baukit/");
+            format!("file:{typescript_display}/packages/{directory}")
+        })
     };
-    let mut mobile_packages = typescript_packages(mobile, mobile && auth_enabled, false);
-    if pwa && mobile && !web {
-        mobile_packages.push("@baukit/pwa-web");
-    }
-    if let Some(path) = path {
-        let path = path.canonicalize().with_context(|| {
-            format!(
-                "--baukit-path {} does not resolve; point it at the repository's rust directory",
-                path.display()
-            )
-        })?;
-        let crates = path.join("crates");
-        if !crates.join("baukit-config/Cargo.toml").is_file() {
+    Ok(DependencyContext {
+        cargo,
+        web_typescript: render_typescript(&packages.web),
+        web_dev_typescript: render_leading_entries(&render_typescript(packages.web_dev)),
+        mobile_typescript: render_typescript(&packages.mobile),
+        manifest: format!("source = \"path\"\npath = \"{display}\""),
+        description: format!("local path `{}`", path.display()),
+        typescript_description: format!("local path `{}`", typescript_root.display()),
+    })
+}
+
+fn ensure_local_typescript_packages(
+    path: &Path,
+    typescript_root: &Path,
+    packages: &BaukitPackages,
+) -> Result<()> {
+    for package in packages.typescript() {
+        let directory = package.trim_start_matches("@baukit/");
+        if !typescript_root
+            .join("packages")
+            .join(directory)
+            .join("package.json")
+            .is_file()
+        {
             bail!(
-                "--baukit-path {} is not a Baukit Rust workspace (missing crates/baukit-config/Cargo.toml)",
-                path.display()
+                "--baukit-path {} has no matching TypeScript package `{package}` at {}",
+                path.display(),
+                typescript_root.display()
             );
         }
-        let display = path.display().to_string().replace('\\', "\\\\");
-        let mut names = vec![
-            "baukit-core",
-            "baukit-config",
-            "baukit-http",
-            "baukit-openapi",
-            "baukit-ops",
-            "baukit-runtime",
-            "baukit-telemetry",
-            "baukit-test",
-        ];
-        if auth_enabled {
-            names.extend(["baukit-auth", "baukit-erasure", "baukit-ratelimit"]);
-        }
-        if worker || auth_enabled {
-            names.push("baukit-jobs");
-        }
-        if mcp {
-            names.push("baukit-mcp");
-        }
-        if platform {
-            names.extend(["baukit-suite", "baukit-egress"]);
-        }
-        let cargo = names
-            .iter()
-            .map(|name| format!("{name} = {{ path = \"{display}/crates/{name}\" }}"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let repository = path
-            .parent()
-            .ok_or_else(|| anyhow!("Baukit Rust workspace has no repository parent"))?;
-        let typescript_root = repository.join("typescript");
-        if mobile || web {
-            for package in web_packages
-                .iter()
-                .chain(web_dev_packages)
-                .chain(&mobile_packages)
-            {
-                let directory = package.trim_start_matches("@baukit/");
-                if !typescript_root
-                    .join("packages")
-                    .join(directory)
-                    .join("package.json")
-                    .is_file()
-                {
-                    bail!(
-                        "--baukit-path {} has no matching TypeScript package `{package}` at {}",
-                        path.display(),
-                        typescript_root.display()
-                    );
-                }
-            }
-        }
-        let typescript_display = typescript_root
-            .display()
-            .to_string()
-            .replace('\\', "\\\\")
-            .replace('"', "\\\"");
-        let render_typescript = |packages: &[&str]| {
-            packages
-                .iter()
-                .map(|package| {
-                    let directory = package.trim_start_matches("@baukit/");
-                    format!("    \"{package}\": \"file:{typescript_display}/packages/{directory}\"")
-                })
-                .collect::<Vec<_>>()
-                .join(",\n")
-        };
-        Ok(DependencyContext {
-            cargo,
-            web_typescript: render_typescript(&web_packages),
-            web_dev_typescript: render_leading_entries(&render_typescript(web_dev_packages)),
-            mobile_typescript: render_typescript(&mobile_packages),
-            manifest: format!("source = \"path\"\npath = \"{display}\""),
-            description: format!("local path `{}`", path.display()),
-            typescript_description: format!("local path `{}`", typescript_root.display()),
-        })
-    } else {
-        let version = TEMPLATE_VERSION;
-        let mut names = vec![
-            "baukit-core",
-            "baukit-config",
-            "baukit-http",
-            "baukit-openapi",
-            "baukit-ops",
-            "baukit-runtime",
-            "baukit-telemetry",
-            "baukit-test",
-        ];
-        if auth_enabled {
-            names.extend(["baukit-auth", "baukit-erasure", "baukit-ratelimit"]);
-        }
-        if worker || auth_enabled {
-            names.push("baukit-jobs");
-        }
-        if mcp {
-            names.push("baukit-mcp");
-        }
-        if platform {
-            names.extend(["baukit-suite", "baukit-egress"]);
-        }
-        let cargo = names
-            .iter()
-            .map(|name| format!("{name} = \"{version}\""))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let render_typescript = |packages: &[&str]| {
-            packages
-                .iter()
-                .map(|package| format!("    \"{package}\": \"{version}\""))
-                .collect::<Vec<_>>()
-                .join(",\n")
-        };
-        Ok(DependencyContext {
-            cargo,
-            web_typescript: render_typescript(&web_packages),
-            web_dev_typescript: render_leading_entries(&render_typescript(web_dev_packages)),
-            mobile_typescript: render_typescript(&mobile_packages),
-            manifest: format!("source = \"registry\"\nversion = \"{version}\""),
-            description: format!("crates.io version `{version}`"),
-            typescript_description: format!("npm version `{version}`"),
-        })
     }
+    Ok(())
+}
+
+fn registry_dependency_context(packages: &BaukitPackages) -> DependencyContext {
+    let version = TEMPLATE_VERSION;
+    let cargo = packages
+        .crates
+        .iter()
+        .map(|name| format!("{name} = \"{version}\""))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let render_typescript =
+        |packages: &[&str]| render_package_entries(packages, |_| version.to_owned());
+    DependencyContext {
+        cargo,
+        web_typescript: render_typescript(&packages.web),
+        web_dev_typescript: render_leading_entries(&render_typescript(packages.web_dev)),
+        mobile_typescript: render_typescript(&packages.mobile),
+        manifest: format!("source = \"registry\"\nversion = \"{version}\""),
+        description: format!("crates.io version `{version}`"),
+        typescript_description: format!("npm version `{version}`"),
+    }
+}
+
+fn render_package_entries(packages: &[&str], specifier: impl Fn(&str) -> String) -> String {
+    packages
+        .iter()
+        .map(|package| format!("    \"{package}\": \"{}\"", specifier(package)))
+        .collect::<Vec<_>>()
+        .join(",\n")
 }
 
 pub(crate) fn render_leading_entries(entries: &str) -> String {
