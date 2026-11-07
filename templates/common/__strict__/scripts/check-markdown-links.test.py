@@ -7,7 +7,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-
 SOURCE_SCRIPT = Path(__file__).with_name("check-markdown-links.py")
 
 
@@ -101,8 +100,7 @@ class MarkdownLinkCheckTest(unittest.TestCase):
     def test_reports_the_full_parenthesized_missing_target(self) -> None:
         self.write(
             "README.md",
-            "[missing](mobile/app/(tabs)/missing.tsx)\n"
-            "[quoted](<docs/(route group)/missing.md>)\n",
+            "[missing](mobile/app/(tabs)/missing.tsx)\n[quoted](<docs/(route group)/missing.md>)\n",
         )
         self.add_all()
 
@@ -118,9 +116,7 @@ class MarkdownLinkCheckTest(unittest.TestCase):
         self.add_all()
         self.write("docs/untracked.md", "[missing](absent.md)\n")
         self.write("notes/tracked.md", "[missing](absent.md)\n")
-        subprocess.run(
-            ["git", "-C", str(self.root), "add", "notes/tracked.md"], check=True
-        )
+        subprocess.run(["git", "-C", str(self.root), "add", "notes/tracked.md"], check=True)
 
         completed = self.run_check("README.md", "docs")
 

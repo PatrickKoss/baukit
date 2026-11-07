@@ -13,7 +13,8 @@ gate = importlib.util.module_from_spec(spec)
 sys.modules["gate"] = gate
 spec.loader.exec_module(gate)
 
-STEPS = gate.parse_steps(textwrap.dedent("""
+STEPS = gate.parse_steps(
+    textwrap.dedent("""
     rust-fmt fast - always -
     openapi fast - always -
     rust-clippy backend - always -
@@ -25,7 +26,8 @@ STEPS = gate.parse_steps(textwrap.dedent("""
     mobile-unit mobile - selected -
     android-e2e mobile mobile-unit selected native
     drift-only fast openapi affected -
-"""))
+""")
+)
 
 AFFECTED = {
     "backend/crates/**": ["backend"],
@@ -55,13 +57,24 @@ class MatcherTests(unittest.TestCase):
     def test_one_crate_change_selects_backend(self):
         selection = gate.select(["backend/crates/a/src/lib.rs"], AFFECTED, SHARED)
         self.assertFalse(selection.full)
-        self.assertEqual(names(gate.plan(STEPS, selection)), ["rust-fmt", "openapi", "rust-clippy", "rust-tests", "drift-only"])
+        self.assertEqual(
+            names(gate.plan(STEPS, selection)),
+            ["rust-fmt", "openapi", "rust-clippy", "rust-tests", "drift-only"],
+        )
 
     def test_web_only_change_skips_backend_and_mobile(self):
         selection = gate.select(["web/src/App.tsx"], AFFECTED, SHARED)
         self.assertEqual(
             names(gate.plan(STEPS, selection)),
-            ["rust-fmt", "openapi", "rust-clippy", "web-build", "web-unit", "playwright", "drift-only"],
+            [
+                "rust-fmt",
+                "openapi",
+                "rust-clippy",
+                "web-build",
+                "web-unit",
+                "playwright",
+                "drift-only",
+            ],
         )
 
     def test_spec_change_selects_only_browser_steps(self):
@@ -81,18 +94,29 @@ class MatcherTests(unittest.TestCase):
         self.assertIn("android-e2e", names(gate.plan(STEPS, selection)))
 
     def test_maestro_only_change_selects_the_android_steps_in_any_lane(self):
-        steps = gate.parse_steps(textwrap.dedent("""
+        steps = gate.parse_steps(
+            textwrap.dedent("""
             mobile-unit mobile - selected -
             android-build native mobile-unit selected -
             android-e2e native android-build selected -
-        """))
+        """)
+        )
         affected = {"mobile/.maestro/**": ["mobile", "android-build", "android-e2e"]}
         selection = gate.select(["mobile/.maestro/smoke.yaml"], affected, SHARED)
-        self.assertEqual(names(gate.plan(steps, selection)), ["mobile-unit", "android-build", "android-e2e"])
+        self.assertEqual(
+            names(gate.plan(steps, selection)), ["mobile-unit", "android-build", "android-e2e"]
+        )
 
     def test_shared_paths_run_the_full_gate(self):
-        for path in ("backend/Cargo.lock", "web/pnpm-lock.yaml", "backend/migrations/0002_x.sql", "baukit.toml",
-                     "limits.json", "scripts/quality-gate.sh", "backend/openapi.json"):
+        for path in (
+            "backend/Cargo.lock",
+            "web/pnpm-lock.yaml",
+            "backend/migrations/0002_x.sql",
+            "baukit.toml",
+            "limits.json",
+            "scripts/quality-gate.sh",
+            "backend/openapi.json",
+        ):
             with self.subTest(path=path):
                 selection = gate.select(["web/src/App.tsx", path], AFFECTED, SHARED)
                 self.assertTrue(selection.full)
@@ -107,16 +131,27 @@ class MatcherTests(unittest.TestCase):
 
     def test_docs_only_change_runs_fast_checks(self):
         selection = gate.select(["docs/a.md"], AFFECTED, SHARED)
-        self.assertEqual(names(gate.plan(STEPS, selection)), ["rust-fmt", "openapi", "rust-clippy", "drift-only"])
+        self.assertEqual(
+            names(gate.plan(STEPS, selection)), ["rust-fmt", "openapi", "rust-clippy", "drift-only"]
+        )
 
     def test_unknown_tokens_are_reported(self):
-        self.assertEqual(gate.unknown_tokens({"a/**": ["backend", "playwright:@auth", "nope"]}, STEPS), ["nope"])
+        self.assertEqual(
+            gate.unknown_tokens({"a/**": ["backend", "playwright:@auth", "nope"]}, STEPS), ["nope"]
+        )
 
     def test_shared_paths_include_openapi_and_extra_entries(self):
-        settings = {"openapi": {"schema": "backend/openapi.json", "consumers": ["web/src/api.d.ts"]},
-                    "quality": {"shared": ["deploy/**"]}}
+        settings = {
+            "openapi": {"schema": "backend/openapi.json", "consumers": ["web/src/api.d.ts"]},
+            "quality": {"shared": ["deploy/**"]},
+        }
         paths = gate.shared_paths(settings)
-        for expected in ("backend/openapi.json", "backend/mcp-tools.json", "web/src/api.d.ts", "deploy/**"):
+        for expected in (
+            "backend/openapi.json",
+            "backend/mcp-tools.json",
+            "web/src/api.d.ts",
+            "deploy/**",
+        ):
             self.assertIn(expected, paths)
 
 
@@ -134,9 +169,15 @@ class PackageTests(unittest.TestCase):
     def metadata(self, root):
         def package(name, directory, dependencies=()):
             return {
-                "id": name, "name": name, "manifest_path": str(root / directory / "Cargo.toml"),
-                "dependencies": [{"name": dependency, "path": str(root / dependency)} for dependency in dependencies],
+                "id": name,
+                "name": name,
+                "manifest_path": str(root / directory / "Cargo.toml"),
+                "dependencies": [
+                    {"name": dependency, "path": str(root / dependency)}
+                    for dependency in dependencies
+                ],
             }
+
         packages = [
             package("domain", "backend/crates/domain"),
             package("services", "backend/crates/services", ["domain"]),
@@ -149,11 +190,20 @@ class PackageTests(unittest.TestCase):
         root = Path("/repo")
         members, dependents = gate.workspace_members(self.metadata(root), root)
         self.assertEqual(
-            gate.affected_packages(["backend/crates/domain/src/lib.rs"], "backend", members, dependents),
+            gate.affected_packages(
+                ["backend/crates/domain/src/lib.rs"], "backend", members, dependents
+            ),
             ["api", "domain", "services"],
         )
-        self.assertEqual(gate.affected_packages(["backend/crates/tools/src/lib.rs"], "backend", members, dependents), ["tools"])
-        self.assertIsNone(gate.affected_packages(["backend/Cargo.toml"], "backend", members, dependents))
+        self.assertEqual(
+            gate.affected_packages(
+                ["backend/crates/tools/src/lib.rs"], "backend", members, dependents
+            ),
+            ["tools"],
+        )
+        self.assertIsNone(
+            gate.affected_packages(["backend/Cargo.toml"], "backend", members, dependents)
+        )
 
 
 class WorkerTests(unittest.TestCase):
@@ -179,21 +229,32 @@ class WorkerTests(unittest.TestCase):
 
 class BudgetTests(unittest.TestCase):
     def test_within_budget(self):
-        report = gate.budget_report({"a": 5, "b": 9}, {"x": ["a", "b"]}, {"x": 14}, 14, 30, "full")
+        report = gate.budget_report(
+            {"a": 5, "b": 9}, {"x": ["a", "b"]}, {"x": 14}, 14, budget_minutes=30, mode="full"
+        )
         self.assertEqual(report[1].split(), ["b", "9", "s"])
         self.assertIn("within the 30 minute full budget", report[-1])
 
     def test_over_budget_warns_with_the_slowest_lane(self):
         timings = {"rust-tests": 900, "rust-clippy": 120, "web-build": 60}
         lanes = {"backend": ["rust-clippy", "rust-tests"], "web": ["web-build"]}
-        report = gate.budget_report(timings, lanes, {"backend": 1020, "web": 60}, 1020, 15, "affected")
-        self.assertIn("gate: warning: 1020 s is over the 15 minute affected budget by 120 s", report)
-        self.assertIn("gate: warning: lane backend set the wall time: rust-tests 900 s, rust-clippy 120 s", report)
+        report = gate.budget_report(
+            timings, lanes, {"backend": 1020, "web": 60}, 1020, budget_minutes=15, mode="affected"
+        )
+        self.assertIn(
+            "gate: warning: 1020 s is over the 15 minute affected budget by 120 s", report
+        )
+        self.assertIn(
+            "gate: warning: lane backend set the wall time: rust-tests 900 s, rust-clippy 120 s",
+            report,
+        )
 
     def test_budget_defaults(self):
         self.assertEqual(gate.budget_minutes({}, "full"), 10)
         self.assertEqual(gate.budget_minutes({}, "affected"), 5)
-        self.assertEqual(gate.budget_minutes({"quality": {"gate_budget_minutes": {"full": 40}}}, "full"), 40)
+        self.assertEqual(
+            gate.budget_minutes({"quality": {"gate_budget_minutes": {"full": 40}}}, "full"), 40
+        )
 
 
 class CoreBudgetTests(unittest.TestCase):
@@ -233,7 +294,9 @@ class CoreBudgetTests(unittest.TestCase):
         planned = gate.plan(STEPS, gate.Selection(True, []))
         light = frozenset({"images", "web-unit"})
         self.assertEqual(gate.heavy_lanes(planned, light), ["backend", "web", "mobile"])
-        self.assertEqual(gate.heavy_lanes(planned, frozenset({"images", "mobile"})), ["backend", "web"])
+        self.assertEqual(
+            gate.heavy_lanes(planned, frozenset({"images", "mobile"})), ["backend", "web"]
+        )
         self.assertEqual(gate.unknown_light(frozenset({"images", "nope"}), STEPS), ["nope"])
 
 
@@ -242,25 +305,51 @@ class RunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             script = root / "steps.sh"
-            script.write_text(textwrap.dedent(f"""\
-                if [ "$1" = --list-steps ]; then printf '%s\\n' {' '.join(repr(line) for line in steps)}; exit 0; fi
+            script.write_text(
+                textwrap.dedent(f"""\
+                if [ "$1" = --list-steps ]; then printf '%s\\n' {" ".join(repr(line) for line in steps)}; exit 0; fi
                 echo "ran $2" >> "{root}/ran"
-                case " {' '.join(failing)} " in *" $2 "*) exit 3 ;; esac
-            """) + script_body)
+                case " {" ".join(failing)} " in *" $2 "*) exit 3 ;; esac
+            """)
+                + script_body
+            )
             settings = root / "settings.toml"
             settings.write_text(settings_text)
             result = subprocess.run(
-                [sys.executable, str(SCRIPT), "run", "--script", f"sh {script}", "--settings", str(settings),
-                 "--log-dir", str(root / "logs"), *extra],
-                capture_output=True, text=True, check=False, env={"PATH": "/usr/bin:/bin", "BAUKIT_GATE_CORES": "4"},
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "run",
+                    "--script",
+                    f"sh {script}",
+                    "--settings",
+                    str(settings),
+                    "--log-dir",
+                    str(root / "logs"),
+                    *extra,
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                env={"PATH": "/usr/bin:/bin", "BAUKIT_GATE_CORES": "4"},
             )
             ran = (root / "ran").read_text().split("\n") if (root / "ran").exists() else []
-            timings = (root / "logs/timings.txt").read_text() if (root / "logs/timings.txt").exists() else ""
-            lanes = sorted(path.name for path in (root / "logs").glob("*.log")) if (root / "logs").exists() else []
+            timings = (
+                (root / "logs/timings.txt").read_text()
+                if (root / "logs/timings.txt").exists()
+                else ""
+            )
+            lanes = (
+                sorted(path.name for path in (root / "logs").glob("*.log"))
+                if (root / "logs").exists()
+                else []
+            )
             return result, ran, timings, lanes
 
     def test_lanes_run_and_write_timings_and_logs(self):
-        result, ran, timings, lanes = self.run_gate(["a fast - always -", "b web a selected -", "c mobile - selected -"], [])
+        result, ran, timings, lanes = self.run_gate(
+            ["a fast - always -", "b web a selected -", "c mobile - selected -"], []
+        )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertLess(ran.index("ran a"), ran.index("ran b"))
         self.assertIn("ran c", ran)
@@ -272,11 +361,15 @@ class RunnerTests(unittest.TestCase):
         self.assertIn("workers: 4 cores across 2 lanes (web, mobile)", result.stdout)
 
     def test_failed_lane_is_listed_and_dependents_do_not_run(self):
-        result, ran, _, _ = self.run_gate(["a fast - always -", "b web a selected -", "c mobile - selected -"], ["a"])
+        result, ran, _, _ = self.run_gate(
+            ["a fast - always -", "b web a selected -", "c mobile - selected -"], ["a"]
+        )
         self.assertEqual(result.returncode, 1)
         self.assertNotIn("ran b", ran)
         self.assertIn("ran c", ran)
-        self.assertIn("gate: failed lanes: fast (a failed with exit 3), web (b blocked by a)", result.stdout)
+        self.assertIn(
+            "gate: failed lanes: fast (a failed with exit 3), web (b blocked by a)", result.stdout
+        )
 
     def test_running_steps_share_one_budget(self):
         body = textwrap.dedent("""\
@@ -284,9 +377,16 @@ class RunnerTests(unittest.TestCase):
             sleep 0.3
         """)
         result, ran, _, _ = self.run_gate(
-                ["a fast - always -", "b web - selected -", "c mobile - selected -", "android-e2e mobile c selected -",
-             "d docs - selected -"],
-            [], settings_text='[quality]\nlight = ["docs"]\nandroid_emulators = 1\n', script_body=body,
+            [
+                "a fast - always -",
+                "b web - selected -",
+                "c mobile - selected -",
+                "android-e2e mobile c selected -",
+                "d docs - selected -",
+            ],
+            [],
+            settings_text='[quality]\nlight = ["docs"]\nandroid_emulators = 1\n',
+            script_body=body,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("env b 2 2 2", ran)
@@ -301,7 +401,9 @@ class RunnerTests(unittest.TestCase):
         )
 
     def test_unknown_light_names_fail(self):
-        result, ran, _, _ = self.run_gate(["a fast - always -"], [], settings_text='[quality]\nlight = ["nope"]\n')
+        result, ran, _, _ = self.run_gate(
+            ["a fast - always -"], [], settings_text='[quality]\nlight = ["nope"]\n'
+        )
         self.assertEqual(result.returncode, 2)
         self.assertIn("quality.light names unknown lanes or steps: nope", result.stderr)
         self.assertEqual(ran, [])

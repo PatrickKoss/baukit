@@ -7,7 +7,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-
 sys.dont_write_bytecode = True
 SCRIPT = Path(__file__).with_name("reconcile-env.py")
 SPEC = importlib.util.spec_from_file_location("reconcile_env", SCRIPT)
@@ -65,8 +64,7 @@ class ReconcileEnvTest(unittest.TestCase):
             example = root / ".env.example"
             env = root / ".env"
             example.write_bytes(
-                b"# defaults\nFIRST=example\nexport SECOND=\"two words\"\n"
-                b"BLANK=\n# DISABLED=no\n"
+                b'# defaults\nFIRST=example\nexport SECOND="two words"\nBLANK=\n# DISABLED=no\n'
             )
             original = b"# local choices\r\nFIRST='custom value'\r\nBLANK=\r\nTAIL=yes"
             env.write_bytes(original)
@@ -74,9 +72,7 @@ class ReconcileEnvTest(unittest.TestCase):
             added = reconcile(example, env)
 
             self.assertEqual(added, ["SECOND"])
-            self.assertEqual(
-                env.read_bytes(), original + b'\nexport SECOND="two words"\n'
-            )
+            self.assertEqual(env.read_bytes(), original + b'\nexport SECOND="two words"\n')
 
     def test_creates_file_from_active_assignments(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

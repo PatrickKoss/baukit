@@ -1,0 +1,21 @@
+target-version = "py311"
+line-length = 100
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "PL"]
+ignore = [
+  # ruff format owns wrapping; the long lines left are expected-output string literals.
+  "E501",
+  # Repository scripts run fixed tool commands built from repo paths, never from untrusted input.
+  "S603",
+  "S607",
+  # Scripts compare against literal exit codes, ports, HTTP statuses and versions.
+  "PLR2004",
+  # Keyword-only flags count as arguments; PLR0917 still caps positional ones.
+  "PLR0913",
+]
+
+[lint.per-file-ignores]
+# unittest suites narrow importlib specs with assert and use fake credentials as inputs.
+"**/test_*.py" = ["S101", "S105"]
+"**/*.test.py" = ["S101", "S105"]

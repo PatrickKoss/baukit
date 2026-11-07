@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-repository_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+repository_root=$(CDPATH='' cd -- "$script_dir/.." && pwd)
 
 uses_git_dependency=false
 if grep -Eq '^source[[:space:]]*=[[:space:]]*"git"' "$repository_root/baukit.toml"; then
@@ -13,11 +13,11 @@ if [ "${BAUKIT_PREBUILT_IMAGES:-false}" = "true" ]; then
   echo "preflight: prebuilt-image mode skips build-only SSH checks"
 elif [ "$uses_git_dependency" = "true" ]; then
   if [ -z "${SSH_AUTH_SOCK:-}" ]; then
-    echo 'preflight: SSH_AUTH_SOCK is unset; start an agent with `eval "$(ssh-agent -s)"`, then load a key with `ssh-add ~/.ssh/<private-key>`.' >&2
+    echo "preflight: SSH_AUTH_SOCK is unset; start an agent with \`eval \"\$(ssh-agent -s)\"\`, then load a key with \`ssh-add ~/.ssh/<private-key>\`." >&2
     exit 1
   fi
   if [ ! -S "$SSH_AUTH_SOCK" ]; then
-    echo 'preflight: SSH_AUTH_SOCK does not point to a socket; restart the agent, then load a key with `ssh-add ~/.ssh/<private-key>`.' >&2
+    echo "preflight: SSH_AUTH_SOCK does not point to a socket; restart the agent, then load a key with \`ssh-add ~/.ssh/<private-key>\`." >&2
     exit 1
   fi
   if ! command -v ssh-add >/dev/null 2>&1; then
@@ -31,11 +31,11 @@ elif [ "$uses_git_dependency" = "true" ]; then
   case "$ssh_add_status" in
     0) ;;
     1)
-      echo 'preflight: the SSH agent has no loaded identities; add one with `ssh-add ~/.ssh/<private-key>`.' >&2
+      echo "preflight: the SSH agent has no loaded identities; add one with \`ssh-add ~/.ssh/<private-key>\`." >&2
       exit 1
       ;;
     2)
-      echo 'preflight: the SSH agent is unusable; restart it, then add a key with `ssh-add ~/.ssh/<private-key>`.' >&2
+      echo "preflight: the SSH agent is unusable; restart it, then add a key with \`ssh-add ~/.ssh/<private-key>\`." >&2
       exit 1
       ;;
     *)
@@ -78,7 +78,7 @@ if [ "$has_playwright" = "true" ]; then
       for (const browser of [chromium, webkit]) {
         const executable = fs.realpathSync(browser.executablePath());
         const relative = path.relative(cache, executable);
-        if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+        if (relative === ".." || relative.startsWith(".." + path.sep) || path.isAbsolute(relative)) {
           throw new Error("Playwright executable resolved outside PLAYWRIGHT_BROWSERS_PATH");
         }
         fs.accessSync(executable, fs.constants.X_OK);

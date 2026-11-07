@@ -3,7 +3,6 @@
     reason = "each test generates one product scenario and asserts every file of that scenario in sequence"
 )]
 use std::{
-    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     process::Command,
@@ -13,12 +12,13 @@ use baukit_cli::{
     AuthProvider, Component, Components, NewOptions, OpenApiCompatibility, QualityProfile, doctor,
     generate_new,
 };
-use sha2::{Digest, Sha256};
-
 #[path = "support/snapshot_flavors.rs"]
 mod snapshot_flavors;
+#[path = "support/snapshot_tree.rs"]
+mod snapshot_tree;
 
 use snapshot_flavors::snapshot_flavors;
+use snapshot_tree::{read_tree, render_hash_snapshot, sha256_hex, symlink_target};
 
 #[cfg(unix)]
 use std::{
@@ -198,6 +198,9 @@ fn generated_text_is_whitespace_clean_in_every_snapshot_flavor() -> anyhow::Resu
     for (flavor, generated) in flavors {
         let root = generate_new(&generated)?;
         for (path, bytes) in read_tree(&root)? {
+            if symlink_target(&bytes).is_some() {
+                continue;
+            }
             let Ok(text) = std::str::from_utf8(&bytes) else {
                 continue;
             };
@@ -882,11 +885,15 @@ fn strict_generation_is_capability_driven_and_matches_golden_tree() -> anyhow::R
         let workflow = fs::read_to_string(root.join(".github/workflows/ci.yml"))?;
         assert!(workflow.contains("  strict-quality:"));
         assert_eq!(
-            workflow.contains("taiki-e/install-action@cargo-llvm-cov"),
+            workflow.contains("tool: cargo-llvm-cov,cargo-nextest"),
             backend
         );
         assert_eq!(workflow.contains("playwright install --with-deps"), web);
-        assert_eq!(workflow.contains("actions/setup-java@v6"), mobile);
+        assert_eq!(
+            workflow
+                .contains("actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1"),
+            mobile
+        );
     }
 
     let parent = tempfile::tempdir()?;
@@ -2787,18 +2794,29 @@ fn doctor_requires_root_workspace_membership_for_every_app() -> anyhow::Result<(
 }
 
 #[test]
-fn generated_agent_guidance_is_a_regular_file() -> anyhow::Result<()> {
+fn generated_agent_guidance_links_agents_md_to_claude_md() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let root = generate_new(&options(parent.path(), "agent-guidance"))?;
     assert!(
         fs::symlink_metadata(root.join("AGENTS.md"))?
             .file_type()
-            .is_file()
+            .is_symlink()
     );
     assert_eq!(
-        fs::read(root.join("AGENTS.md"))?,
-        fs::read(root.join("CLAUDE.md"))?
+        fs::read_link(root.join("AGENTS.md"))?,
+        Path::new("CLAUDE.md")
     );
+    let guide = fs::read_to_string(root.join("CLAUDE.md"))?;
+    let rules = include_str!("../../lint/agent-rules.md");
+    assert!(guide.contains(&format!(
+        "<!-- baukit:agent-rules:start -->\n{rules}<!-- baukit:agent-rules:end -->\n"
+    )));
+    let report = baukit_cli::check::run_check(&baukit_cli::check::CheckRequest {
+        root: root.clone(),
+        rules: vec!["agent-docs".to_owned()],
+        options: baukit_cli::check::CheckOptions::default(),
+    })?;
+    assert!(!report.failed, "{}", report.lines.join("\n"));
     Ok(())
 }
 
@@ -3124,45 +3142,6 @@ fn assert_deterministic_snapshot(
     );
     assert_eq!(render_hash_snapshot(&first_tree), expected);
     Ok(())
-}
-
-fn read_tree(root: &Path) -> anyhow::Result<BTreeMap<PathBuf, Vec<u8>>> {
-    fn visit(
-        root: &Path,
-        directory: &Path,
-        files: &mut BTreeMap<PathBuf, Vec<u8>>,
-    ) -> anyhow::Result<()> {
-        for entry in fs::read_dir(directory)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_dir() {
-                visit(root, &path, files)?;
-            } else {
-                files.insert(path.strip_prefix(root)?.to_path_buf(), fs::read(path)?);
-            }
-        }
-        Ok(())
-    }
-
-    let mut files = BTreeMap::new();
-    visit(root, root, &mut files)?;
-    Ok(files)
-}
-
-fn render_hash_snapshot(tree: &BTreeMap<PathBuf, Vec<u8>>) -> String {
-    let mut snapshot = String::new();
-    for (path, contents) in tree {
-        let digest = sha256_hex(contents);
-        snapshot.push_str(&format!("{digest}  {}\n", path.display()));
-    }
-    snapshot
-}
-
-fn sha256_hex(contents: &[u8]) -> String {
-    Sha256::digest(contents)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
 }
 
 #[test]

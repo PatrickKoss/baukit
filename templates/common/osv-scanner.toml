@@ -1,0 +1,2 @@
+# Add an [[IgnoredVulns]] entry only for an advisory without a fix, with an ignoreUntil date at most
+# 90 days out and a reason that names the dependency path.

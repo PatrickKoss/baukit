@@ -27,6 +27,16 @@ corepack pnpm@12.9.1 --dir mobile test
 
 `scripts/setup.sh` creates each local `.env` from its matching `.env.example` and appends newly added example assignments on later runs. It never replaces existing bytes. Existing assignments, including blank and exported assignments, count as local choices. If either file repeats a key, the first example assignment is the append candidate and any existing occurrence suppresses the append.
 
+## Agent rules
+
+The block at the end of this file holds the shared Baukit agent rules. `AGENTS.md` is a symlink to this file, so every agent reads the same text. Do not edit the block by hand. After a Baukit upgrade, refresh it from the matching Baukit checkout:
+
+```sh
+cargo run --manifest-path <baukit>/cli/Cargo.toml --bin baukit -- check agent-docs --fix --root .
+```
+
+`baukit check agent-docs file-size suppressions` fails when the block drifts, `AGENTS.md` is not the symlink, a source file grows past its line limit, or a suppression lacks a reason or exceeds the counts in `baukit-check.toml`. Those counts only go down.
+
 {% if context.quality_strict %}Run the complete strict profile with:
 
 ```sh
@@ -63,7 +73,7 @@ Use `make qa-android` or `make qa-ios` to open an isolated release build for exp
 
 {% endif %}## Boundaries
 
-{% if context.backend %}The backend uses hexagonal layers. Domain code owns rules and validation. Ports define boundary traits. Services coordinate use cases. API, PostgreSQL, and other adapters implement boundaries. The binary crate owns configuration and composition. Do not import Axum or SQLx into the domain crate, or adapter crates into services.
+{% if context.backend %}The backend crates follow the hexagonal split in the shared rules below. API, PostgreSQL, and other adapters implement the ports. The binary crate owns configuration and composition. Do not import Axum or SQLx into the domain crate, or adapter crates into services.
 
 {% if context.auth_enabled %}Keep provider-specific authentication behavior inside the authentication adapter. Other backend code depends on verified identity, not provider names or claims.
 
@@ -76,3 +86,6 @@ Use semantic tokens from `@baukit/ui-tokens` for colors, spacing, typography, an
 {% endif %}If the product enables offline sync later, every synced row needs an owner, stable client-generated ID, revision, `updated_at`, and soft-delete marker. Allocate the owner's next revision in the same transaction as each write. Local reads and writes stay inside the active identity partition, and the UI must not report success while pending or rejected mutations remain.
 
 Full-stack external-service E2E is required only for changes that cross a real adapter boundary or alter the product-owned full-stack harness. Unit tests and hermetic browser tests remain the default for other changes.
+
+<!-- baukit:agent-rules:start -->
+<!-- baukit:agent-rules:end -->

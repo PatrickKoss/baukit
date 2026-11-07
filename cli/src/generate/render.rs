@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
 use include_dir::Dir;
 use minijinja::{Environment, context};
 use serde::{Serialize, Serializer, ser::SerializeMap};
@@ -154,7 +154,7 @@ pub(crate) fn render_product(
     let components = options.components;
     let mut renderer = Renderer::new(context);
     renderer.directory(&COMMON_TEMPLATE)?;
-    add_common_files(&mut renderer.rendered);
+    add_common_files(&mut renderer.rendered)?;
     if components.backend() {
         renderer.component(&BACKEND_TEMPLATE)?;
         if components.worker() {
@@ -188,14 +188,38 @@ pub(crate) fn render_product(
     Ok(rendered)
 }
 
-fn add_common_files(rendered: &mut RenderedFiles) {
-    if let Some(guide) = rendered.get(Path::new("CLAUDE.md")).cloned() {
-        rendered.insert(PathBuf::from("AGENTS.md"), guide);
-    }
+/// Symlinks written next to the rendered files, as `(link, target)` pairs relative to the product root.
+pub(crate) const RENDERED_SYMLINKS: &[(&str, &str)] = &[("AGENTS.md", AGENT_GUIDE)];
+
+const AGENT_GUIDE: &str = "CLAUDE.md";
+const AGENT_RULES: &str = include_str!("../../../lint/agent-rules.md");
+const AGENT_RULES_START: &str = "<!-- baukit:agent-rules:start -->\n";
+const AGENT_RULES_END: &str = "<!-- baukit:agent-rules:end -->\n";
+
+fn add_common_files(rendered: &mut RenderedFiles) -> Result<()> {
+    let guide_path = Path::new(AGENT_GUIDE);
+    let guide = rendered
+        .get(guide_path)
+        .ok_or_else(|| anyhow!("common template is missing {AGENT_GUIDE}"))?;
+    let guide = with_agent_rules(std::str::from_utf8(guide)?)?;
+    rendered.insert(guide_path.to_path_buf(), guide.into_bytes());
     rendered.insert(
         PathBuf::from("tests/fixtures/resource-budget-measurements-v1.json"),
         include_bytes!("../../../fixtures/limits/resource-budget-measurements-v1.json").to_vec(),
     );
+    Ok(())
+}
+
+/// Fills the empty managed block in the agent guide with baukit's shared agent rules.
+fn with_agent_rules(guide: &str) -> Result<String> {
+    let empty_block = format!("{AGENT_RULES_START}{AGENT_RULES_END}");
+    if guide.matches(&empty_block).count() != 1 {
+        bail!("{AGENT_GUIDE} template must hold exactly one empty managed agent-rules block");
+    }
+    Ok(guide.replace(
+        &empty_block,
+        &format!("{AGENT_RULES_START}{AGENT_RULES}{AGENT_RULES_END}"),
+    ))
 }
 
 /// The Expo web export builds its PWA worker with the web template's scripts.

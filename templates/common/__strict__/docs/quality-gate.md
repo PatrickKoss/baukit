@@ -6,7 +6,7 @@
 
 | Lane | Steps in order |
 | --- | --- |
-| fast | openapi, rust-fmt, migrations, mcp-drift, scripts-tests, markdown-links, preflight, baukit-doctor, metric-names, spec-purposes |
+| fast | openapi, rust-fmt, migrations, mcp-drift, scripts-tests, markdown-links, preflight, baukit-doctor, baukit-check, workflow-lint, secret-scan, osv, python-lint, shell-lint, metric-names, spec-purposes |
 | backend | rust-clippy, rust-msrv, rust-tests, rust-doctests |
 | images | images |
 | web | web-install, web-build, web-lint, web-unit, web-service-worker, {% if context.auth_enabled and not context.auth_oidc %}web-bundle, {% endif %}playwright, webkit-repeats |
@@ -16,6 +16,8 @@
 A product only gets the lanes and steps its capabilities need. Lanes run at the same time. Steps inside a lane run in order and stop at the first failure. Two steps also wait on a step in another lane: `web-build` and `mobile-typecheck` wait for `openapi`, because the OpenAPI step regenerates the client those builds import. `mcp-drift` waits for `openapi` too.
 
 Each lane writes `.quality-gate/<lane>.log`. Every step appends `name seconds` to `.quality-gate/timings.txt`, which also gets `lane:<lane> seconds` and `total seconds` lines. The gate prints the step table slowest first at the end. When a lane fails, the gate prints the last 40 lines of its log, lists every failed lane, and exits 1. Set `BAUKIT_GATE_LOG_DIR` to write the logs elsewhere. `sh scripts/quality-gate.sh --plan` prints the chosen steps and stops.
+
+`baukit-check` runs `baukit check agent-docs file-size suppressions` from the same Baukit checkout as `baukit-doctor`, with the limits in `baukit-check.toml`. The other five fast steps call `sh scripts/repo-lint.sh`, which runs actionlint and zizmor on `.github/workflows`, gitleaks, osv-scanner on the committed lockfiles, ruff on Python files and shellcheck on shell scripts. `mise install` installs the versions pinned in `mise.toml`.
 
 ## Workers
 
