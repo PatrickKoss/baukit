@@ -64,7 +64,7 @@ impl ReqwestSuitePeerClient {
                 status: status.as_u16(),
                 retry_after: class.retry_after(),
             }),
-            Err(e) => Err(peer_error(e)),
+            Err(e) => Err(peer_error(&e)),
         }
     }
 }
@@ -87,7 +87,7 @@ impl SuitePeerClient for ReqwestSuitePeerClient {
                     ),
             )
             .await
-            .map_err(peer_error)?;
+            .map_err(|e| peer_error(&e))?;
         if response.status().as_u16() != 201 {
             return Err(SuitePeerError::InvalidResponse);
         }
@@ -115,7 +115,7 @@ fn endpoint(peer: &ActivePeer, path: &str) -> Result<Url, SuitePeerError> {
     url.set_path(&format!("{}{}", url.path().trim_end_matches('/'), path));
     Ok(url)
 }
-fn peer_error(e: EgressError) -> SuitePeerError {
+fn peer_error(e: &EgressError) -> SuitePeerError {
     match e {
         EgressError::Timeout => SuitePeerError::Timeout,
         EgressError::Resolve => SuitePeerError::Dns,

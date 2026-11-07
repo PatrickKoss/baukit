@@ -197,7 +197,7 @@ impl ReadinessRegistry {
     where
         C: ReadinessCheck,
     {
-        self.register_arc(name.into(), timeout, Arc::new(check), true)
+        self.register_arc(&name.into(), timeout, Arc::new(check), true)
     }
 
     /// Registers `check` with [`DEFAULT_READINESS_TIMEOUT`].
@@ -252,7 +252,7 @@ impl ReadinessRegistry {
     where
         C: ReadinessCheck,
     {
-        self.register_arc(name.into(), timeout, Arc::new(check), false)
+        self.register_arc(&name.into(), timeout, Arc::new(check), false)
     }
 
     /// Registers a non-gating diagnostic `check` with [`DEFAULT_READINESS_TIMEOUT`].
@@ -309,7 +309,7 @@ impl ReadinessRegistry {
 
     fn register_arc(
         &self,
-        name: String,
+        name: &str,
         timeout: Duration,
         check: Arc<dyn ReadinessCheck>,
         gating: bool,

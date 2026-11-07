@@ -433,6 +433,7 @@ mod guarded_transport_tests {
     };
 
     #[tokio::test]
+    #[expect(clippy::too_many_lines, reason = "scenario test reads top to bottom")]
     async fn guarded_batches_keep_accepted_tickets_when_receipts_fail()
     -> Result<(), Box<dyn std::error::Error>> {
         let sends = Arc::new(AtomicUsize::new(0));

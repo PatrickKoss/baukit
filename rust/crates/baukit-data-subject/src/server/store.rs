@@ -111,10 +111,8 @@ impl PostgresDataSubjectStore {
         let normalized = Zeroizing::new(serde_json::to_vec(request)?);
         let request_hash = self.hash(b"data-subject-request\0", &[&normalized]);
         let mut transaction = self.pool.begin().await?;
-        let mut lock_bytes = [0; 8];
-        lock_bytes.copy_from_slice(&key_hash[..8]);
         sqlx::query("SELECT pg_advisory_xact_lock($1)")
-            .bind(i64::from_be_bytes(lock_bytes))
+            .bind(advisory_lock_key(&key_hash)?)
             .execute(&mut *transaction)
             .await?;
         let previous = sqlx::query("SELECT id, kind, status, subject_reference, created_at, completed_at, categories, restrictions, parts, receipt, error_code, request_hash FROM data_subject_operations WHERE client_id = $1 AND kind = $2 AND key_hash = $3")
@@ -123,7 +121,7 @@ impl PostgresDataSubjectStore {
             if row.try_get::<Vec<u8>, _>("request_hash")? != request_hash {
                 return Err(DataSubjectError::Conflict);
             }
-            return resource(row);
+            return resource(&row);
         }
         let mut subjects = product
             .resolve(&mut transaction, request.identifiers())
@@ -149,7 +147,7 @@ impl PostgresDataSubjectStore {
                 .idempotency_key(id.to_string()),
             )
             .await?;
-        let operation = resource(row)?;
+        let operation = resource(&row)?;
         transaction.commit().await?;
         Ok(operation)
     }
@@ -164,7 +162,7 @@ impl PostgresDataSubjectStore {
         let kind = serde_json::to_value(kind)?;
         sqlx::query("SELECT id, kind, status, subject_reference, created_at, completed_at, categories, restrictions, parts, receipt, error_code FROM data_subject_operations WHERE id = $1 AND client_id = $2 AND kind = $3")
             .bind(id).bind(client_id).bind(kind.as_str().ok_or(DataSubjectError::Result)?)
-            .fetch_optional(&self.pool).await?.map(resource).transpose()
+            .fetch_optional(&self.pool).await?.map(|row| resource(&row)).transpose()
     }
 
     /// Returns exact bytes only for an owned, completed, unexpired export part.
@@ -183,7 +181,7 @@ impl PostgresDataSubjectStore {
             return Ok(None);
         };
         let expires_at: Option<DateTime<Utc>> = row.try_get("export_expires_at")?;
-        let operation = resource(row)?;
+        let operation = resource(&row)?;
         if operation.status == OperationStatus::Pending {
             return Err(DataSubjectError::ExportNotReady);
         }
@@ -249,10 +247,16 @@ pub(super) async fn load_for_execution(
     id: Uuid,
 ) -> Result<Option<OperationResource>, DataSubjectError> {
     sqlx::query("SELECT id, kind, status, subject_reference, created_at, completed_at, categories, restrictions, parts, receipt, error_code FROM data_subject_operations WHERE id = $1 FOR UPDATE")
-        .bind(id).fetch_optional(connection).await?.map(resource).transpose()
+        .bind(id).fetch_optional(connection).await?.map(|row| resource(&row)).transpose()
 }
 
-fn resource(row: PgRow) -> Result<OperationResource, DataSubjectError> {
+fn advisory_lock_key(hash: &[u8]) -> Result<i64, sqlx::Error> {
+    hash.first_chunk::<8>()
+        .map(|bytes| i64::from_be_bytes(*bytes))
+        .ok_or_else(|| sqlx::Error::Protocol("advisory lock hash is shorter than 8 bytes".into()))
+}
+
+fn resource(row: &PgRow) -> Result<OperationResource, DataSubjectError> {
     let receipt: Option<Value> = row.try_get("receipt")?;
     let error_code: Option<String> = row.try_get("error_code")?;
     Ok(OperationResource {

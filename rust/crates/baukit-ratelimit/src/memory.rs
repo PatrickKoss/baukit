@@ -46,10 +46,14 @@ impl InMemoryRateLimitStore {
         if max_entries == 0 {
             return Err(InMemoryStoreError::ZeroCapacity);
         }
-        Ok(Self {
+        Ok(Self::with_max_entries(max_entries))
+    }
+
+    fn with_max_entries(max_entries: usize) -> Self {
+        Self {
             inner: std::sync::Arc::new(Mutex::new(State::default())),
             max_entries,
-        })
+        }
     }
 
     fn check_at(
@@ -77,14 +81,14 @@ impl InMemoryRateLimitStore {
             }
         }
 
-        let capacity = quota.capacity() as f64;
+        let capacity = as_tokens(quota.capacity());
         let entry = state.entries.entry(key.to_owned()).or_insert(Entry {
             tokens: capacity,
             last_refill: now,
             expires_at: expires_at(now, quota),
         });
         let elapsed = now.saturating_duration_since(entry.last_refill);
-        let refill = elapsed.as_secs_f64() * quota.requests_per_period() as f64
+        let refill = elapsed.as_secs_f64() * as_tokens(quota.requests_per_period())
             / quota.period().as_secs_f64();
         entry.tokens = (entry.tokens + refill).min(capacity);
         entry.last_refill = now;
@@ -92,12 +96,12 @@ impl InMemoryRateLimitStore {
 
         if entry.tokens >= 1.0 {
             entry.tokens -= 1.0;
-            Ok(RateLimitDecision::allowed(entry.tokens.floor() as u64))
+            Ok(RateLimitDecision::allowed(whole_tokens(entry.tokens)))
         } else {
             let seconds = (1.0 - entry.tokens) * quota.period().as_secs_f64()
-                / quota.requests_per_period() as f64;
+                / as_tokens(quota.requests_per_period());
             Ok(RateLimitDecision::limited(
-                entry.tokens.floor() as u64,
+                whole_tokens(entry.tokens),
                 std::time::Duration::from_secs_f64(seconds.max(0.000_001)),
             ))
         }
@@ -202,6 +206,23 @@ fn remove_earliest_amount_entry(state: &mut State) {
     }
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "request counts stay far below 2^53, where u64 to f64 is exact; the token bucket works in f64"
+)]
+const fn as_tokens(count: u64) -> f64 {
+    count as f64
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "a bucket holds a finite, non-negative token count no larger than its u64 capacity"
+)]
+fn whole_tokens(tokens: f64) -> u64 {
+    tokens.floor() as u64
+}
+
 fn expires_at(now: Instant, quota: Quota) -> Instant {
     now.checked_add(quota.idle_ttl())
         .unwrap_or_else(|| now + std::time::Duration::from_secs(365 * 24 * 60 * 60))
@@ -209,7 +230,7 @@ fn expires_at(now: Instant, quota: Quota) -> Instant {
 
 impl Default for InMemoryRateLimitStore {
     fn default() -> Self {
-        Self::new(DEFAULT_MAX_ENTRIES).expect("the default capacity is non-zero")
+        Self::with_max_entries(DEFAULT_MAX_ENTRIES)
     }
 }
 

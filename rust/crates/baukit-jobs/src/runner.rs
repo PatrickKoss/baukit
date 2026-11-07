@@ -176,7 +176,7 @@ impl WorkerRunner {
     pub async fn run(self, shutdown: ShutdownToken) -> Result<(), RunnerError> {
         let mut running = JoinSet::new();
         loop {
-            drain_finished(&mut running).await?;
+            drain_finished(&mut running)?;
             if shutdown.is_cancelled() {
                 break;
             }
@@ -248,7 +248,7 @@ fn spawn_attempt(
     running.spawn(async move { process_claimed_job(store, handler, config, job).await });
 }
 
-async fn drain_finished(running: &mut JoinSet<Result<(), RunnerError>>) -> Result<(), RunnerError> {
+fn drain_finished(running: &mut JoinSet<Result<(), RunnerError>>) -> Result<(), RunnerError> {
     while let Some(result) = running.try_join_next() {
         result??;
     }
@@ -268,81 +268,84 @@ async fn process_claimed_job(
 ) -> Result<(), RunnerError> {
     let started = Instant::now();
     let cancellation = JobCancellation::new(&config.worker_id);
-    let result = {
-        let future = handler.handle(&job, cancellation.clone());
-        tokio::pin!(future);
-        let timeout = tokio::time::sleep(config.job_timeout);
-        tokio::pin!(timeout);
-        let cancellation_poll =
-            wait_for_cancellation(store.as_ref(), job.id, config.cancellation_poll_interval);
-        tokio::pin!(cancellation_poll);
-
-        tokio::select! {
-            result = &mut future => AttemptResult::Handled(result),
-            () = &mut timeout => {
-                cancellation.cancel();
-                AttemptResult::Handled(Err(JobError::retryable("job timed out")))
-            }
-            result = &mut cancellation_poll => {
-                result?;
-                cancellation.cancel();
-                AttemptResult::Cancelled
-            }
-        }
+    let result = run_attempt(
+        store.as_ref(),
+        handler.as_ref(),
+        &config,
+        &job,
+        &cancellation,
+    )
+    .await?;
+    let outcome = if cancellation.was_completed_in_transaction() {
+        SUCCESS
+    } else {
+        settle_attempt(store.as_ref(), &config, &job, result).await?
     };
+    metrics::record(
+        &job.job_type,
+        handler.job_types(),
+        outcome,
+        started.elapsed(),
+    );
+    Ok(())
+}
 
-    if cancellation.was_completed_in_transaction() {
-        metrics::record(
-            &job.job_type,
-            handler.job_types(),
-            SUCCESS,
-            started.elapsed(),
-        );
-        return Ok(());
-    }
+async fn run_attempt(
+    store: &dyn JobStore,
+    handler: &dyn JobHandler,
+    config: &WorkerConfig,
+    job: &ClaimedJob,
+    cancellation: &JobCancellation,
+) -> Result<AttemptResult, RunnerError> {
+    let future = handler.handle(job, cancellation.clone());
+    tokio::pin!(future);
+    let timeout = tokio::time::sleep(config.job_timeout);
+    tokio::pin!(timeout);
+    let cancellation_poll = wait_for_cancellation(store, job.id, config.cancellation_poll_interval);
+    tokio::pin!(cancellation_poll);
 
+    Ok(tokio::select! {
+        result = &mut future => AttemptResult::Handled(result),
+        () = &mut timeout => {
+            cancellation.cancel();
+            AttemptResult::Handled(Err(JobError::retryable("job timed out")))
+        }
+        result = &mut cancellation_poll => {
+            result?;
+            cancellation.cancel();
+            AttemptResult::Cancelled
+        }
+    })
+}
+
+async fn settle_attempt(
+    store: &dyn JobStore,
+    config: &WorkerConfig,
+    job: &ClaimedJob,
+    result: AttemptResult,
+) -> Result<&'static str, RunnerError> {
     match result {
         AttemptResult::Cancelled => {
             ensure_transition(
                 store.cancel(job.id, &config.worker_id, Utc::now()).await?,
                 job.id,
             )?;
-            metrics::record(
-                &job.job_type,
-                handler.job_types(),
-                FAILURE,
-                started.elapsed(),
-            );
+            Ok(FAILURE)
         }
         AttemptResult::Handled(Ok(())) => {
             let now = Utc::now();
             if store.complete(job.id, &config.worker_id, now).await? {
-                metrics::record(
-                    &job.job_type,
-                    handler.job_types(),
-                    SUCCESS,
-                    started.elapsed(),
-                );
-            } else if store.cancellation_requested(job.id).await?
-                && store.cancel(job.id, &config.worker_id, now).await?
-            {
-                metrics::record(
-                    &job.job_type,
-                    handler.job_types(),
-                    FAILURE,
-                    started.elapsed(),
-                );
-            } else {
-                return Err(RunnerError::LeaseLost { job_id: job.id });
+                return Ok(SUCCESS);
             }
+            cancel_after_lost_transition(store, config, job, now).await
         }
         AttemptResult::Handled(Err(error)) => {
             let now = Utc::now();
             let delay = error
                 .retry_after()
-                .unwrap_or_else(|| retry_delay(&config, job.attempts));
+                .unwrap_or_else(|| retry_delay(config, job.attempts));
             let retry_at = add_duration(now, delay)?;
-            if let Some(disposition) = store
+            let disposition = store
                 .record_failure(
                     job.id,
                     &config.worker_id,
@@ -351,33 +354,31 @@ async fn process_claimed_job(
                     &error.to_string(),
                     now,
                 )
-                .await?
-            {
-                let outcome = match disposition {
-                    FailureDisposition::Retry => RETRY,
-                    FailureDisposition::Failed => FAILURE,
-                };
-                metrics::record(
-                    &job.job_type,
-                    handler.job_types(),
-                    outcome,
-                    started.elapsed(),
-                );
-            } else if store.cancellation_requested(job.id).await?
-                && store.cancel(job.id, &config.worker_id, now).await?
-            {
-                metrics::record(
-                    &job.job_type,
-                    handler.job_types(),
-                    FAILURE,
-                    started.elapsed(),
-                );
-            } else {
-                return Err(RunnerError::LeaseLost { job_id: job.id });
+                .await?;
+            match disposition {
+                Some(FailureDisposition::Retry) => Ok(RETRY),
+                Some(FailureDisposition::Failed) => Ok(FAILURE),
+                None => cancel_after_lost_transition(store, config, job, now).await,
             }
         }
     }
-    Ok(())
+}
+
+/// A completion or failure write that matched no lease is a cancellation only
+/// when one was requested; otherwise another worker owns the job.
+async fn cancel_after_lost_transition(
+    store: &dyn JobStore,
+    config: &WorkerConfig,
+    job: &ClaimedJob,
+    now: chrono::DateTime<Utc>,
+) -> Result<&'static str, RunnerError> {
+    if store.cancellation_requested(job.id).await?
+        && store.cancel(job.id, &config.worker_id, now).await?
+    {
+        Ok(FAILURE)
+    } else {
+        Err(RunnerError::LeaseLost { job_id: job.id })
+    }
 }
 
 async fn wait_for_cancellation(
@@ -475,7 +476,7 @@ fn validate_config(
         ));
     }
     for (index, job) in job_types.iter().enumerate() {
-        if job_types[..index].contains(job) {
+        if job_types.iter().take(index).any(|earlier| earlier == job) {
             return Err(RunnerError::InvalidConfig(format!(
                 "duplicate job type `{job}`"
             )));
@@ -874,22 +875,27 @@ mod tests {
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .push(job_types.iter().map(|job| (*job).to_owned()).collect());
-                let mut jobs = self
-                    .jobs
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                let position = jobs
-                    .iter()
-                    .position(|job| job_types.contains(&job.job_type.as_str()));
-                let claimed = position.and_then(|position| jobs.remove(position));
+                let claimed = {
+                    let mut jobs = self
+                        .jobs
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    let position = jobs
+                        .iter()
+                        .position(|job| job_types.contains(&job.job_type.as_str()));
+                    position.and_then(|position| jobs.remove(position))
+                };
                 if claimed.as_ref().is_some_and(|job| job.created_at > now) {
                     return Err(StoreError::InvalidInput(
                         "updated_at would precede created_at".to_owned(),
                     ));
                 }
                 if self.enqueue_during_claim.swap(false, Ordering::SeqCst) {
-                    std::thread::sleep(Duration::from_millis(2));
-                    jobs.push_back(fake_job(100));
+                    tokio::time::sleep(Duration::from_millis(2)).await;
+                    self.jobs
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .push_back(fake_job(100));
                 }
                 Ok(claimed)
             })

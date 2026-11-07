@@ -17,7 +17,8 @@ use rmcp::transport::streamable_http_server::{
 use serde_json::{Value, json};
 
 use crate::{
-    AuthenticationPolicy, McpConfig, McpConfigError, McpServices, PolicyDenial,
+    AuthenticationPolicy, McpConfig, McpConfigError, McpServices, PolicyDenial, Principal,
+    VerifiedPrincipal,
     server::{ProductServer, RegisteredServices, permitted_scopes, valid_scope},
 };
 
@@ -95,28 +96,36 @@ pub async fn router(
     Ok(mcp.merge(discovery))
 }
 
+fn single_header(headers: &HeaderMap, name: header::HeaderName) -> Option<&HeaderValue> {
+    let mut values = headers.get_all(name).iter();
+    let first = values.next()?;
+    values.next().is_none().then_some(first)
+}
+
 fn allowed(headers: &HeaderMap, config: &McpConfig) -> bool {
-    let hosts = headers.get_all(header::HOST).iter().collect::<Vec<_>>();
-    if hosts.len() != 1
-        || !hosts[0].to_str().ok().is_some_and(|host| {
+    let host_allowed = single_header(headers, header::HOST)
+        .and_then(|host| host.to_str().ok())
+        .is_some_and(|host| {
             host.parse::<http::uri::Authority>().is_ok()
                 && config
                     .allowed_hosts
                     .iter()
                     .any(|allowed| host.eq_ignore_ascii_case(allowed))
-        })
-    {
+        });
+    if !host_allowed {
         return false;
     }
-    let origins = headers.get_all(header::ORIGIN).iter().collect::<Vec<_>>();
-    origins.is_empty()
-        || origins.len() == 1
-            && origins[0].to_str().ok().is_some_and(|origin| {
-                config
-                    .allowed_origins
-                    .iter()
-                    .any(|allowed| origin == allowed)
-            })
+    if headers.get(header::ORIGIN).is_none() {
+        return true;
+    }
+    single_header(headers, header::ORIGIN)
+        .and_then(|origin| origin.to_str().ok())
+        .is_some_and(|origin| {
+            config
+                .allowed_origins
+                .iter()
+                .any(|allowed| origin == allowed)
+        })
 }
 
 async fn check_authority(State(state): State<Security>, request: Request, next: Next) -> Response {
@@ -135,37 +144,65 @@ async fn authorize(State(state): State<Security>, request: Request, next: Next) 
     response
 }
 
-async fn authorize_inner(state: &Security, mut request: Request, next: Next) -> Response {
-    if !allowed(request.headers(), &state.config) {
-        return error(StatusCode::FORBIDDEN, "invalid_host_or_origin");
+async fn authorize_inner(state: &Security, request: Request, next: Next) -> Response {
+    match admit(state, request).await {
+        Ok(request) => {
+            let mut response = next.run(request).await;
+            response
+                .headers_mut()
+                .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+            response
+        }
+        Err(response) => *response,
     }
-    let values = request
-        .headers()
-        .get_all(header::AUTHORIZATION)
-        .iter()
-        .collect::<Vec<_>>();
-    let token = if values.len() == 1 {
-        values[0].to_str().ok().and_then(|value| {
-            let (scheme, token) = value.split_once(' ')?;
-            (scheme.eq_ignore_ascii_case("Bearer")
-                && !token.is_empty()
-                && token.len() <= MAX_BEARER_TOKEN_BYTES
-                && !token.bytes().any(|byte| byte.is_ascii_whitespace()))
-            .then_some(token)
-        })
+}
+
+async fn admit(state: &Security, request: Request) -> Result<Request, Box<Response>> {
+    if !allowed(request.headers(), &state.config) {
+        return Err(Box::new(error(
+            StatusCode::FORBIDDEN,
+            "invalid_host_or_origin",
+        )));
+    }
+    let Some(token) = bearer_token(request.headers()) else {
+        return Err(Box::new(invalid_token(state)));
+    };
+    let verified = verify(state, token).await?;
+    consume_quota(state, &verified).await?;
+    let principal = apply_policy(state, &verified, token).await?;
+    let mut request = if request.method() == Method::POST {
+        screen_post_body(state, request, &principal).await?
     } else {
-        None
+        request
     };
-    let Some(token) = token else {
-        return challenge(
-            state,
-            StatusCode::UNAUTHORIZED,
-            "invalid_token",
-            &state.services.scopes(),
-        );
-    };
-    let principal = match state.verifier.verify(token).await {
-        Ok(principal) => principal,
+    request.extensions_mut().insert(principal);
+    Ok(request)
+}
+
+fn bearer_token(headers: &HeaderMap) -> Option<&str> {
+    let value = single_header(headers, header::AUTHORIZATION)?
+        .to_str()
+        .ok()?;
+    let (scheme, token) = value.split_once(' ')?;
+    (scheme.eq_ignore_ascii_case("Bearer")
+        && !token.is_empty()
+        && token.len() <= MAX_BEARER_TOKEN_BYTES
+        && !token.bytes().any(|byte| byte.is_ascii_whitespace()))
+    .then_some(token)
+}
+
+fn invalid_token(state: &Security) -> Response {
+    challenge(
+        state,
+        StatusCode::UNAUTHORIZED,
+        "invalid_token",
+        &state.services.scopes(),
+    )
+}
+
+async fn verify(state: &Security, token: &str) -> Result<VerifiedPrincipal, Box<Response>> {
+    match state.verifier.verify(token).await {
+        Ok(principal) => Ok(principal),
         Err(cause) if cause.is_unavailable() => {
             tracing::error!(error = %cause, "identity verification infrastructure failed");
             let mut response = error(StatusCode::SERVICE_UNAVAILABLE, "identity_unavailable");
@@ -173,42 +210,54 @@ async fn authorize_inner(state: &Security, mut request: Request, next: Next) -> 
                 header::RETRY_AFTER,
                 HeaderValue::from(IDENTITY_UNAVAILABLE_RETRY_AFTER_SECONDS),
             );
-            return response;
+            Err(Box::new(response))
         }
         Err(cause) if cause.is_misconfigured() => {
             tracing::error!(error = %cause, "identity verification infrastructure failed");
-            return error(StatusCode::INTERNAL_SERVER_ERROR, "identity_misconfigured");
+            Err(Box::new(error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "identity_misconfigured",
+            )))
         }
-        Err(_) => {
-            return challenge(
-                state,
-                StatusCode::UNAUTHORIZED,
-                "invalid_token",
-                &state.services.scopes(),
-            );
-        }
-    };
+        Err(_) => Err(Box::new(invalid_token(state))),
+    }
+}
+
+async fn consume_quota(
+    state: &Security,
+    principal: &VerifiedPrincipal,
+) -> Result<(), Box<Response>> {
     let key = format!(
         "mcp:{}:{}:{}",
         state.config.resource_url,
         principal.issuer().unwrap_or_default(),
         principal.subject()
     );
-    let decision = match state.store.check_and_consume(&key, state.quota).await {
-        Ok(decision) => decision,
-        Err(_) => return error(StatusCode::SERVICE_UNAVAILABLE, "rate_limit_unavailable"),
+    let Ok(decision) = state.store.check_and_consume(&key, state.quota).await else {
+        return Err(Box::new(error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "rate_limit_unavailable",
+        )));
     };
     metrics::counter!("http_rate_limit_decisions_total", "scope" => "mcp", "outcome" => if decision.allowed { "allowed" } else { "limited" }).increment(1);
-    if !decision.allowed {
-        let mut response = error(StatusCode::TOO_MANY_REQUESTS, "rate_limited");
-        if let Ok(value) = HeaderValue::from_str(&decision.retry_after.as_secs().max(1).to_string())
-        {
-            response.headers_mut().insert(header::RETRY_AFTER, value);
-        }
-        return response;
+    if decision.allowed {
+        return Ok(());
     }
+    let mut response = error(StatusCode::TOO_MANY_REQUESTS, "rate_limited");
+    response.headers_mut().insert(
+        header::RETRY_AFTER,
+        HeaderValue::from(decision.retry_after.as_secs().max(1)),
+    );
+    Err(Box::new(response))
+}
+
+async fn apply_policy(
+    state: &Security,
+    verified: &VerifiedPrincipal,
+    token: &str,
+) -> Result<Principal, Box<Response>> {
     let started = Instant::now();
-    let result = state.policy.authenticate(&principal, token).await;
+    let result = state.policy.authenticate(verified, token).await;
     let outcome = match &result {
         Ok(_) => "allowed",
         Err(PolicyDenial::Inactive) => "inactive",
@@ -220,47 +269,58 @@ async fn authorize_inner(state: &Security, mut request: Request, next: Next) -> 
         .increment(1);
     metrics::histogram!("mcp_authentication_policy_duration_seconds")
         .record(started.elapsed().as_secs_f64());
-    let principal = match result {
-        Ok(principal) => principal,
-        Err(denial) => return policy_denial(state, denial),
+    result.map_err(|denial| Box::new(policy_denial(state, denial)))
+}
+
+/// Buffers a POST body to reject batches, answer cancellation notifications, and check tool scopes.
+async fn screen_post_body(
+    state: &Security,
+    request: Request,
+    principal: &Principal,
+) -> Result<Request, Box<Response>> {
+    let (parts, body) = request.into_parts();
+    let Ok(bytes) = to_bytes(body, state.config.max_request_body_bytes).await else {
+        return Err(Box::new(error(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "request_too_large",
+        )));
     };
-    if request.method() == Method::POST {
-        let (parts, body) = request.into_parts();
-        let bytes = match to_bytes(body, state.config.max_request_body_bytes).await {
-            Ok(bytes) => bytes,
-            Err(_) => return error(StatusCode::PAYLOAD_TOO_LARGE, "request_too_large"),
-        };
-        if let Ok(message) = serde_json::from_slice::<Value>(&bytes) {
-            if message.is_array() {
-                return error(StatusCode::BAD_REQUEST, "batch_not_supported");
-            }
-            if message.get("jsonrpc").and_then(Value::as_str) == Some("2.0")
-                && message.get("id").is_none()
-                && message.get("method").and_then(Value::as_str) == Some("notifications/cancelled")
-            {
-                if let Some(id) = message
-                    .pointer("/params/requestId")
-                    .and_then(|id| serde_json::from_value(id.clone()).ok())
-                {
-                    state.services.requests.cancel(&principal, &id);
-                }
-                return (StatusCode::ACCEPTED, [(header::CACHE_CONTROL, "no-store")])
-                    .into_response();
-            }
-            if let Some(scopes) = state.services.required_scopes(&message)
-                && !permitted_scopes(&principal, &scopes)
-            {
-                return challenge(state, StatusCode::FORBIDDEN, "insufficient_scope", &scopes);
-            }
+    if let Ok(message) = serde_json::from_slice::<Value>(&bytes) {
+        if message.is_array() {
+            return Err(Box::new(error(
+                StatusCode::BAD_REQUEST,
+                "batch_not_supported",
+            )));
         }
-        request = Request::from_parts(parts, Body::from(bytes));
+        if is_cancel_notification(&message) {
+            if let Some(id) = message
+                .pointer("/params/requestId")
+                .and_then(|id| serde_json::from_value(id.clone()).ok())
+            {
+                state.services.requests.cancel(principal, &id);
+            }
+            return Err(Box::new(
+                (StatusCode::ACCEPTED, [(header::CACHE_CONTROL, "no-store")]).into_response(),
+            ));
+        }
+        if let Some(scopes) = state.services.required_scopes(&message)
+            && !permitted_scopes(principal, &scopes)
+        {
+            return Err(Box::new(challenge(
+                state,
+                StatusCode::FORBIDDEN,
+                "insufficient_scope",
+                &scopes,
+            )));
+        }
     }
-    request.extensions_mut().insert(principal);
-    let mut response = next.run(request).await;
-    response
-        .headers_mut()
-        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    response
+    Ok(Request::from_parts(parts, Body::from(bytes)))
+}
+
+fn is_cancel_notification(message: &Value) -> bool {
+    message.get("jsonrpc").and_then(Value::as_str) == Some("2.0")
+        && message.get("id").is_none()
+        && message.get("method").and_then(Value::as_str) == Some("notifications/cancelled")
 }
 
 fn policy_denial(state: &Security, denial: PolicyDenial) -> Response {

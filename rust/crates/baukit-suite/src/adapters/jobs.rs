@@ -59,7 +59,7 @@ impl JobHandler for SuiteJobHandler {
                         ));
                     }
                 }
-                .map_err(service_job_error)?;
+                .map_err(|error| service_job_error(&error))?;
                 match action {
                     DeliveryAction::Retry { after: Some(delay) } => Err(JobError::retryable_after(
                         SuiteErrorCode::SuitePeerUnreachable.as_str(),
@@ -88,7 +88,7 @@ impl JobHandler for SuiteJobHandler {
     }
 }
 
-fn service_job_error(error: SuiteServiceError) -> JobError {
+fn service_job_error(error: &SuiteServiceError) -> JobError {
     tracing::warn!(code = error.code(), "Suite job service failed");
     match error {
         SuiteServiceError::Protocol(
@@ -288,24 +288,24 @@ mod tests {
     #[test]
     fn storage_retries_but_corruption_and_cipher_errors_are_permanent() {
         let storage =
-            service_job_error(SuiteStoreError::Storage("database unavailable".into()).into());
+            service_job_error(&SuiteStoreError::Storage("database unavailable".into()).into());
         assert!(storage.is_retryable());
         assert_eq!(storage.to_string(), "internal_error");
         for error in [
             SuiteServiceError::Cipher,
             SuiteStoreError::InvalidData("corrupt job".into()).into(),
         ] {
-            let job_error = service_job_error(error);
+            let job_error = service_job_error(&error);
             assert!(!job_error.is_retryable());
             assert_eq!(job_error.to_string(), "internal_error");
         }
         let payload = service_job_error(
-            SuiteStoreError::PayloadInvalid(PayloadError::InvalidPayload("typed payload".into()))
+            &SuiteStoreError::PayloadInvalid(PayloadError::InvalidPayload("typed payload".into()))
                 .into(),
         );
         assert!(!payload.is_retryable());
         assert_eq!(payload.to_string(), "suite_payload_invalid");
-        let disabled = service_job_error(LinkProtocolError::Disabled.into());
+        let disabled = service_job_error(&LinkProtocolError::Disabled.into());
         assert!(!disabled.is_retryable());
         assert_eq!(disabled.to_string(), "suite_link_disabled");
     }

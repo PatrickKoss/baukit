@@ -156,7 +156,7 @@ mod tests {
             (status = 404, description = "Missing", body = ErrorEnvelope)
         )
     )]
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "OpenAPI path stub: only its annotation is used")]
     fn update_item() {}
 
     #[utoipa::path(
@@ -164,7 +164,7 @@ mod tests {
         path = "/settings",
         responses((status = 200, description = "Updated", body = Item))
     )]
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "OpenAPI path stub: only its annotation is used")]
     fn patch_settings() {}
 
     #[utoipa::path(
@@ -176,7 +176,7 @@ mod tests {
             (status = 404, description = "Missing", body = ErrorEnvelope)
         )
     )]
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "OpenAPI path stub: only its annotation is used")]
     fn get_item() {}
 
     #[derive(utoipa::OpenApi)]

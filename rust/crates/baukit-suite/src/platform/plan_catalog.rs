@@ -83,6 +83,15 @@ pub fn feature_key_drift<'a>(
 
 /// Contract-test assertion: panics with both differences when the product's
 /// keys and the recorded hub catalog disagree.
+///
+/// # Panics
+///
+/// Panics when the catalog cannot be read or the key sets differ. Use
+/// [`feature_key_drift`] when the caller should handle the result.
+#[expect(
+    clippy::panic,
+    reason = "contract-test assertion: panicking is its documented contract; feature_key_drift is the fallible form"
+)]
 pub fn assert_feature_keys_match<'a>(
     catalog_json: &str,
     product_id: &str,

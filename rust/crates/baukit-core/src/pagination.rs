@@ -344,9 +344,8 @@ impl Cursor {
         T: FromStr,
         K: FromStr,
     {
-        let (value, id) = match self.0.k.as_slice() {
-            [value, id] => (value, id),
-            _ => return Err(PaginationError::InvalidCursor),
+        let [value, id] = self.0.k.as_slice() else {
+            return Err(PaginationError::InvalidCursor);
         };
         let value = value
             .parse::<T>()
@@ -372,7 +371,7 @@ where
     let bytes =
         serde_json::to_vec(normalized_filters).map_err(|_| PaginationError::InvalidCursor)?;
     let hash = digest::digest(&digest::SHA256, &bytes);
-    Ok(hash.as_ref()[..FILTER_HASH_BYTES].iter().fold(
+    Ok(hash.as_ref().iter().take(FILTER_HASH_BYTES).fold(
         String::with_capacity(FILTER_HASH_BYTES * 2),
         |mut out, byte| {
             use std::fmt::Write as _;

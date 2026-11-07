@@ -71,79 +71,9 @@ impl DataSubjectHandler {
         {
             return Err(DataSubjectError::Jobs);
         }
-        let mut identity_deadline = None;
-        if let Some(mut operation) = load_for_execution(&mut transaction, id).await?
-            && operation.status == OperationStatus::Pending
-        {
-            if operation.kind == OperationKind::Export {
-                if job.job_type != EXPORT_JOB_TYPE {
-                    return Err(DataSubjectError::Result);
-                }
-                self.export_result(
-                    &mut transaction,
-                    operation,
-                    subjects.ok_or(DataSubjectError::Result)?,
-                )
-                .await?;
-            } else if let Some(subjects) = subjects {
-                let mut fenced = HashSet::new();
-                let mut waiting = false;
-                for subject in &subjects {
-                    if let Some(authentication_subject) = &subject.authentication_subject
-                        && fenced.insert(authentication_subject)
-                    {
-                        let identity = self
-                            .store
-                            .config
-                            .erasure
-                            .fence_as_operator_in_transaction(
-                                &mut transaction,
-                                authentication_subject,
-                            )
-                            .await
-                            .map_err(|_| DataSubjectError::Database)?;
-                        if identity.status == ErasureState::Pending {
-                            waiting = true;
-                            sqlx::query("INSERT INTO data_subject_identity_operations (operation_id, identity_operation_id) VALUES ($1, $2)")
-                                .bind(id).bind(identity.operation_id).execute(&mut *transaction).await?;
-                        }
-                    }
-                    let report = self.product.erase(&mut transaction, subject).await?;
-                    operation.categories.extend(report.categories);
-                    operation.restrictions.extend(report.restrictions);
-                }
-                if waiting {
-                    let started_at: DateTime<Utc> = sqlx::query_scalar("UPDATE data_subject_operations SET categories = $2, restrictions = $3, identity_deletion_started_at = clock_timestamp() WHERE id = $1 RETURNING identity_deletion_started_at")
-                        .bind(id).bind(serde_json::to_value(operation.categories)?)
-                        .bind(serde_json::to_value(operation.restrictions)?)
-                        .fetch_one(&mut *transaction).await?;
-                    identity_deadline =
-                        Some(started_at + self.store.config.identity_deletion_timeout);
-                } else {
-                    operation.status = result_status(subjects.is_empty(), &operation);
-                    self.sign_result(&mut transaction, operation).await?;
-                }
-            } else {
-                let started_at: Option<DateTime<Utc>> = sqlx::query_scalar("SELECT identity_deletion_started_at FROM data_subject_operations WHERE id = $1")
-                    .bind(id).fetch_one(&mut *transaction).await?;
-                let deadline = started_at.ok_or(DataSubjectError::Result)?
-                    + self.store.config.identity_deletion_timeout;
-                let states: Vec<String> = sqlx::query_scalar("SELECT identity_operation.state FROM erasure_operations AS identity_operation JOIN data_subject_identity_operations AS dependency ON dependency.identity_operation_id = identity_operation.id WHERE dependency.operation_id = $1")
-                    .bind(id).fetch_all(&mut *transaction).await?;
-                if states.is_empty() {
-                    return Err(DataSubjectError::Result);
-                }
-                if states.iter().any(|state| state == "failed") || Utc::now() >= deadline {
-                    sqlx::query("UPDATE data_subject_operations SET status = 'failed', completed_at = now(), error_code = $2 WHERE id = $1")
-                        .bind(id).bind(codes::OPERATION_FAILED).execute(&mut *transaction).await?;
-                } else if states.iter().any(|state| state != "completed") {
-                    identity_deadline = Some(deadline);
-                } else {
-                    operation.status = result_status(false, &operation);
-                    self.sign_result(&mut transaction, operation).await?;
-                }
-            }
-        }
+        let identity_deadline = self
+            .advance_operation(&mut transaction, job, id, subjects)
+            .await?;
         if !jobs
             .complete_in_transaction(
                 &mut transaction,
@@ -160,22 +90,162 @@ impl DataSubjectHandler {
             .execute(&mut *transaction)
             .await?;
         if let Some(deadline) = identity_deadline {
-            let delay = TimeDelta::seconds((1_i64 << check_count.min(6)).min(60));
-            let run_after = (Utc::now() + delay).min(deadline);
-            jobs.enqueue_in_transaction(
-                &mut transaction,
-                NewJob::new(
-                    FINALIZATION_JOB_TYPE,
-                    serde_json::json!({"operationId": id, "checkCount": check_count}),
-                    self.store.config.max_attempts,
-                )
-                .idempotency_key(id.to_string())
-                .run_after(run_after),
-            )
-            .await?;
+            self.schedule_finalization(&jobs, &mut transaction, id, check_count, deadline)
+                .await?;
         }
         transaction.commit().await?;
         cancellation.mark_completed_in_transaction();
+        Ok(())
+    }
+
+    /// Returns the identity-deletion deadline when the operation must be checked again.
+    async fn advance_operation(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        job: &ClaimedJob,
+        id: Uuid,
+        subjects: Option<Vec<LocalSubject>>,
+    ) -> Result<Option<DateTime<Utc>>, DataSubjectError> {
+        let Some(operation) = load_for_execution(transaction, id).await? else {
+            return Ok(None);
+        };
+        if operation.status != OperationStatus::Pending {
+            return Ok(None);
+        }
+        if operation.kind == OperationKind::Export {
+            if job.job_type != EXPORT_JOB_TYPE {
+                return Err(DataSubjectError::Result);
+            }
+            self.export_result(
+                transaction,
+                operation,
+                subjects.ok_or(DataSubjectError::Result)?,
+            )
+            .await?;
+            return Ok(None);
+        }
+        match subjects {
+            Some(subjects) => {
+                self.erase_subjects(transaction, id, operation, &subjects)
+                    .await
+            }
+            None => {
+                self.finish_identity_deletion(transaction, id, operation)
+                    .await
+            }
+        }
+    }
+
+    async fn erase_subjects(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        id: Uuid,
+        mut operation: OperationResource,
+        subjects: &[LocalSubject],
+    ) -> Result<Option<DateTime<Utc>>, DataSubjectError> {
+        let mut fenced = HashSet::new();
+        let mut waiting = false;
+        for subject in subjects {
+            if let Some(authentication_subject) = &subject.authentication_subject
+                && fenced.insert(authentication_subject)
+            {
+                waiting |= self
+                    .fence_identity(transaction, id, authentication_subject)
+                    .await?;
+            }
+            let report = self.product.erase(transaction, subject).await?;
+            operation.categories.extend(report.categories);
+            operation.restrictions.extend(report.restrictions);
+        }
+        if waiting {
+            let started_at: DateTime<Utc> = sqlx::query_scalar("UPDATE data_subject_operations SET categories = $2, restrictions = $3, identity_deletion_started_at = clock_timestamp() WHERE id = $1 RETURNING identity_deletion_started_at")
+                .bind(id).bind(serde_json::to_value(operation.categories)?)
+                .bind(serde_json::to_value(operation.restrictions)?)
+                .fetch_one(&mut **transaction).await?;
+            return Ok(Some(
+                started_at + self.store.config.identity_deletion_timeout,
+            ));
+        }
+        operation.status = result_status(subjects.is_empty(), &operation);
+        self.sign_result(transaction, operation).await?;
+        Ok(None)
+    }
+
+    /// Fences one authentication subject and returns whether its identity deletion is still pending.
+    async fn fence_identity(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        id: Uuid,
+        authentication_subject: &str,
+    ) -> Result<bool, DataSubjectError> {
+        let identity = self
+            .store
+            .config
+            .erasure
+            .fence_as_operator_in_transaction(transaction, authentication_subject)
+            .await
+            .map_err(|_| DataSubjectError::Database)?;
+        if identity.status != ErasureState::Pending {
+            return Ok(false);
+        }
+        sqlx::query("INSERT INTO data_subject_identity_operations (operation_id, identity_operation_id) VALUES ($1, $2)")
+            .bind(id).bind(identity.operation_id).execute(&mut **transaction).await?;
+        Ok(true)
+    }
+
+    async fn finish_identity_deletion(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        id: Uuid,
+        mut operation: OperationResource,
+    ) -> Result<Option<DateTime<Utc>>, DataSubjectError> {
+        let started_at: Option<DateTime<Utc>> = sqlx::query_scalar(
+            "SELECT identity_deletion_started_at FROM data_subject_operations WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_one(&mut **transaction)
+        .await?;
+        let deadline = started_at.ok_or(DataSubjectError::Result)?
+            + self.store.config.identity_deletion_timeout;
+        let states: Vec<String> = sqlx::query_scalar("SELECT identity_operation.state FROM erasure_operations AS identity_operation JOIN data_subject_identity_operations AS dependency ON dependency.identity_operation_id = identity_operation.id WHERE dependency.operation_id = $1")
+            .bind(id).fetch_all(&mut **transaction).await?;
+        if states.is_empty() {
+            return Err(DataSubjectError::Result);
+        }
+        if states.iter().any(|state| state == "failed") || Utc::now() >= deadline {
+            sqlx::query("UPDATE data_subject_operations SET status = 'failed', completed_at = now(), error_code = $2 WHERE id = $1")
+                .bind(id).bind(codes::OPERATION_FAILED).execute(&mut **transaction).await?;
+            return Ok(None);
+        }
+        if states.iter().any(|state| state != "completed") {
+            return Ok(Some(deadline));
+        }
+        operation.status = result_status(false, &operation);
+        self.sign_result(transaction, operation).await?;
+        Ok(None)
+    }
+
+    async fn schedule_finalization(
+        &self,
+        jobs: &PostgresJobStore,
+        transaction: &mut Transaction<'_, Postgres>,
+        id: Uuid,
+        check_count: u32,
+        deadline: DateTime<Utc>,
+    ) -> Result<(), DataSubjectError> {
+        let delay = TimeDelta::seconds((1_i64 << check_count.min(6)).min(60));
+        let run_after = (Utc::now() + delay).min(deadline);
+        jobs.enqueue_in_transaction(
+            transaction,
+            NewJob::new(
+                FINALIZATION_JOB_TYPE,
+                serde_json::json!({"operationId": id, "checkCount": check_count}),
+                self.store.config.max_attempts,
+            )
+            .idempotency_key(id.to_string())
+            .run_after(run_after),
+        )
+        .await?;
         Ok(())
     }
 
@@ -225,7 +295,7 @@ impl DataSubjectHandler {
         for part in parts {
             sqlx::query("INSERT INTO data_subject_export_parts (operation_id, part_number, json_bytes, sha256, bytes, expires_at) VALUES ($1, $2, $3, $4, $5, $6)")
                 .bind(operation.operation_id).bind(i64::from(part.metadata.part_number))
-                .bind(part.bytes).bind(part.metadata.sha256).bind(part.metadata.bytes as i64).bind(expires_at)
+                .bind(part.bytes).bind(part.metadata.sha256).bind(i64::try_from(part.metadata.bytes).map_err(|_| DataSubjectError::Result)?).bind(expires_at)
                 .execute(&mut *execution).await?;
         }
         self.sign_result(&mut execution, operation).await?;

@@ -30,6 +30,14 @@
 //! ```
 
 #![deny(missing_docs)]
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::missing_panics_doc,
+    clippy::too_many_lines,
+    reason = "test-support library: its assertion helpers and conformance scenarios fail the calling test by panicking"
+)]
 
 mod api_token;
 mod auth;

@@ -1,4 +1,8 @@
 //! Connect to a generated remote MCP server with an already-issued access token.
+#![allow(
+    clippy::print_stdout,
+    reason = "example binary: printed protocol results are its output"
+)]
 use std::{env, error::Error};
 
 use rmcp::{

@@ -5,6 +5,7 @@ use sha2::{Digest as _, Sha256};
 use url::Url;
 
 use super::*;
+use crate::adapters::postgres::SuiteTransaction;
 
 pub struct SuiteLinkService {
     pub(super) context: Arc<SuiteContext>,
@@ -152,26 +153,9 @@ impl SuiteLinkService {
                 .map_err(|_| SuiteServiceError::Cipher)?,
         )
         .map_err(|_| SuiteServiceError::Cipher)?;
-        let prepared = match request.exchange {
-            Some(exchange) => exchange,
-            None => {
-                let mut secret = [0_u8; 32];
-                rand::rng().fill_bytes(&mut secret);
-                let exchange = PreparedExchange {
-                    link_id: Uuid::now_v7(),
-                    secret: self
-                        .context
-                        .cipher
-                        .encrypt(id, "link_secret", &secret)
-                        .map_err(|_| SuiteServiceError::Cipher)?,
-                };
-                self.context
-                    .store
-                    .prepare_exchange_in_transaction(&mut tx, id, user.id, &exchange)
-                    .await?;
-                exchange
-            }
-        };
+        let prepared = self
+            .prepared_exchange(&mut tx, id, user.id, request.exchange.clone())
+            .await?;
         self.context.store.commit_transaction(tx).await?;
         let secret = URL_SAFE_NO_PAD.encode(
             self.context
@@ -191,29 +175,7 @@ impl SuiteLinkService {
             initiator_suite_subject: user.suite_subject.clone(),
             initiator_display_name: identity.display_name,
         };
-        let result = match self.context.peer.exchange(peer, &exchange).await {
-            Err(SuitePeerError::Timeout) => self.context.peer.exchange(peer, &exchange).await,
-            r => r,
-        };
-        let response = result.map_err(|e| match e {
-            SuitePeerError::Rejected { status: 409, .. } => {
-                SuiteServiceError::Protocol(LinkProtocolError::AccountMismatch)
-            }
-            SuitePeerError::Rejected { status: 422, .. } => {
-                SuiteServiceError::Protocol(LinkProtocolError::CodeInvalid)
-            }
-            _ => SuiteServiceError::PeerUnreachable,
-        })?;
-        if response.authorizer_sends != peer.receives
-            || response.initiator_sends != peer.sends
-            || response.link_id.get_version_num() != 7
-            || !subject_valid(&response.subject)
-            || response.display_name.as_ref().is_some_and(|s| {
-                s.chars().count() > SUITE_MAX_TEXT_CHARACTERS || s.chars().any(char::is_control)
-            })
-        {
-            return Err(SuiteServiceError::PeerUnreachable);
-        }
+        let response = self.exchange_with_peer(peer, &exchange).await?;
         let shared = shared_suite_subject(
             user.suite_subject.as_deref(),
             response.suite_subject.as_deref(),
@@ -231,10 +193,74 @@ impl SuiteLinkService {
             secret,
             now,
         })?;
+        self.persist_completed(&user, id, &request.peer_app, &link, now)
+            .await
+    }
+    /// Calls the peer's exchange once more after a timeout and checks its answer.
+    async fn exchange_with_peer(
+        &self,
+        peer: &ActivePeer,
+        exchange: &ExchangeRequest,
+    ) -> Result<ExchangeResponse, SuiteServiceError> {
+        let result = match self.context.peer.exchange(peer, exchange).await {
+            Err(SuitePeerError::Timeout) => self.context.peer.exchange(peer, exchange).await,
+            r => r,
+        };
+        let response = result.map_err(|e| match e {
+            SuitePeerError::Rejected { status: 409, .. } => {
+                SuiteServiceError::Protocol(LinkProtocolError::AccountMismatch)
+            }
+            SuitePeerError::Rejected { status: 422, .. } => {
+                SuiteServiceError::Protocol(LinkProtocolError::CodeInvalid)
+            }
+            _ => SuiteServiceError::PeerUnreachable,
+        })?;
+        if !exchange_response_valid(&response, peer) {
+            return Err(SuiteServiceError::PeerUnreachable);
+        }
+        Ok(response)
+    }
+    async fn prepared_exchange(
+        &self,
+        tx: &mut SuiteTransaction,
+        id: Uuid,
+        owner: Uuid,
+        existing: Option<PreparedExchange>,
+    ) -> Result<PreparedExchange, SuiteServiceError> {
+        let prepared = match existing {
+            Some(exchange) => exchange,
+            None => {
+                let mut secret = [0_u8; 32];
+                rand::rng().fill_bytes(&mut secret);
+                let exchange = PreparedExchange {
+                    link_id: Uuid::now_v7(),
+                    secret: self
+                        .context
+                        .cipher
+                        .encrypt(id, "link_secret", &secret)
+                        .map_err(|_| SuiteServiceError::Cipher)?,
+                };
+                self.context
+                    .store
+                    .prepare_exchange_in_transaction(tx, id, owner, &exchange)
+                    .await?;
+                exchange
+            }
+        };
+        Ok(prepared)
+    }
+    async fn persist_completed(
+        &self,
+        user: &SuiteUser,
+        id: Uuid,
+        peer_app: &str,
+        link: &SuiteLink,
+        now: DateTime<Utc>,
+    ) -> Result<SuiteLink, SuiteServiceError> {
         let mut tx = self.context.store.begin_transaction().await?;
         self.context
             .store
-            .active_link_for_update(&mut tx, user.id, &request.peer_app)
+            .active_link_for_update(&mut tx, user.id, peer_app)
             .await?;
         let current = self
             .context
@@ -260,12 +286,12 @@ impl SuiteLinkService {
             .store
             .consume_request_in_transaction(&mut tx, id, user.id, now)
             .await?;
-        self.replace(&mut tx, &link, now).await?;
+        self.replace(&mut tx, link, now).await?;
         self.context
             .store
             .record_request_link_in_transaction(&mut tx, id, user.id, link.id)
             .await?;
-        self.initial_replay(&mut tx, &link, now).await?;
+        self.initial_replay(&mut tx, link, now).await?;
         let persisted = self.context.store.link_for_update(&mut tx, link.id).await?;
         self.context.store.commit_transaction(tx).await?;
         Ok(persisted)
@@ -340,7 +366,7 @@ impl SuiteLinkService {
     }
     pub fn deny(
         &self,
-        input: AuthorizationDeny,
+        input: &AuthorizationDeny,
     ) -> Result<AuthorizationResponse, SuiteServiceError> {
         let peer = self.context.active_peer(&input.client)?;
         if !token_valid(&input.state) {
@@ -639,4 +665,14 @@ fn endpoint(base: &str, path: &str) -> Result<Url, SuiteServiceError> {
     let mut url = Url::parse(base).map_err(|_| SuiteServiceError::PayloadInvalid)?;
     url.set_path(&format!("{}{}", url.path().trim_end_matches('/'), path));
     Ok(url)
+}
+
+fn exchange_response_valid(response: &ExchangeResponse, peer: &ActivePeer) -> bool {
+    !(response.authorizer_sends != peer.receives
+        || response.initiator_sends != peer.sends
+        || response.link_id.get_version_num() != 7
+        || !subject_valid(&response.subject)
+        || response.display_name.as_ref().is_some_and(|s| {
+            s.chars().count() > SUITE_MAX_TEXT_CHARACTERS || s.chars().any(char::is_control)
+        }))
 }

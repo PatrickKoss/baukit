@@ -528,6 +528,10 @@ pub fn check_no_drift(
 /// Panics with a drift summary or serialization/I/O error. Use [`check_no_drift`] when the caller
 /// should handle the error.
 #[track_caller]
+#[expect(
+    clippy::panic,
+    reason = "assertion helper: panicking is its documented contract; the check_* function is the fallible form"
+)]
 pub fn assert_no_drift(openapi: &OpenApi, committed_path: impl AsRef<Path>) {
     if let Err(error) = check_no_drift(openapi, committed_path) {
         panic!("{error}");
@@ -557,6 +561,10 @@ pub fn check_camel_case_names(openapi: &OpenApi, exemptions: &[&str]) -> Result<
 /// Panics with one line per violation, or with a serialization error. Use
 /// [`check_camel_case_names`] when the caller should handle the error.
 #[track_caller]
+#[expect(
+    clippy::panic,
+    reason = "assertion helper: panicking is its documented contract; the check_* function is the fallible form"
+)]
 pub fn assert_camel_case_names(openapi: &OpenApi, exemptions: &[&str]) {
     if let Err(error) = check_camel_case_names(openapi, exemptions) {
         panic!("{error}");
@@ -777,9 +785,8 @@ mod tests {
 
         let mut generated_has_more = document();
         generated_has_more.info.description = Some("Additional documentation".to_owned());
-        let error = match check_no_drift(&generated_has_more, &path) {
-            Err(error) => error,
-            Ok(()) => panic!("generated addition should be detected as drift"),
+        let Err(error) = check_no_drift(&generated_has_more, &path) else {
+            panic!("generated addition should be detected as drift");
         };
         assert!(error.is_drift());
         assert!(error.to_string().contains("schema drift detected"));
@@ -790,9 +797,8 @@ mod tests {
         );
 
         write_schema(&generated_has_more, &path)?;
-        let error = match check_no_drift(&base, &path) {
-            Err(error) => error,
-            Ok(()) => panic!("generated removal should be detected as drift"),
+        let Err(error) = check_no_drift(&base, &path) else {
+            panic!("generated removal should be detected as drift");
         };
         assert!(error.is_drift());
         Ok(())
@@ -801,9 +807,8 @@ mod tests {
     #[test]
     fn missing_committed_schema_is_drift() -> Result<(), Box<dyn std::error::Error>> {
         let directory = tempdir()?;
-        let error = match check_no_drift(&document(), directory.path().join("missing.json")) {
-            Err(error) => error,
-            Ok(()) => panic!("a missing committed schema should be detected as drift"),
+        let Err(error) = check_no_drift(&document(), directory.path().join("missing.json")) else {
+            panic!("a missing committed schema should be detected as drift");
         };
         assert!(error.is_drift());
         Ok(())

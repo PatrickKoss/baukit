@@ -1,3 +1,10 @@
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::too_many_lines,
+    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
+)]
 use async_trait::async_trait;
 use axum::{
     Router,
@@ -796,7 +803,7 @@ async fn outbox_rollbacks_xp_signatures_retry_and_terminal_health() -> TestResul
     let (db, c, owner) = authorizer_fixture().await?;
     let service = SuiteLinkService::new(c.clone());
     let (link, _) = exchange_link(&service, owner, None, None).await?;
-    let outbox = make_outbox(db.pool.clone(), c.clone(), true);
+    let outbox = make_outbox(db.pool.clone(), &c.clone(), true);
     let event = activity(3, Some(17));
     let mut event = event;
     event.natural_key = (Utc::now().date_naive()).to_string();
@@ -840,7 +847,7 @@ async fn outbox_rollbacks_xp_signatures_retry_and_terminal_health() -> TestResul
         c.store
             .update_preferences(owner, link.id, Some(per_link), None, Utc::now())
             .await?;
-        let outbox = make_outbox(db.pool.clone(), c.clone(), global);
+        let outbox = make_outbox(db.pool.clone(), &c.clone(), global);
         let event = activity(2, Some(9));
         let mut event = event;
         event.natural_key = (Utc::now().date_naive()
@@ -1675,7 +1682,7 @@ fn make_context(pool: &PgPool, registry: Arc<PeerRegistry>) -> Arc<SuiteContext>
 }
 fn make_outbox(
     pool: PgPool,
-    context: Arc<SuiteContext>,
+    context: &Arc<SuiteContext>,
     share_xp: bool,
 ) -> PostgresSuiteEventOutbox {
     PostgresSuiteEventOutbox::new(

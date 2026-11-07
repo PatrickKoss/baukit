@@ -230,6 +230,7 @@ impl ShutdownToken {
     /// Returns a child which is cancelled by this token.
     ///
     /// Triggering the child deliberately triggers the shared process token too.
+    #[must_use]
     pub fn child_token(&self) -> Self {
         Self {
             observed: self.observed.child_token(),
@@ -286,18 +287,21 @@ impl ShutdownToken {
     where
         F: FnOnce() + Send + 'static,
     {
-        let mut hook = Some(Box::new(hook) as DrainHook);
-        {
+        let hook: DrainHook = Box::new(hook);
+        let late_hook = {
             let mut hooks = self
                 .state
                 .drain_hooks
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             if self.state.started_at.get().is_none() {
-                hooks.push(hook.take().expect("drain hook is available"));
+                hooks.push(hook);
+                None
+            } else {
+                Some(hook)
             }
-        }
-        if let Some(hook) = hook
+        };
+        if let Some(hook) = late_hook
             && catch_unwind(AssertUnwindSafe(hook)).is_err()
         {
             tracing::error!("a late shutdown drain hook panicked");

@@ -1,3 +1,10 @@
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::too_many_lines,
+    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
+)]
 mod support;
 
 use std::{
@@ -1139,7 +1146,7 @@ impl ToolService for ConflictTool {
     }
 }
 
-fn request(method: &str, params: Value) -> Value {
+fn request(method: &str, params: &Value) -> Value {
     json!({"jsonrpc":"2.0","id":42,"method":method,"params":params})
 }
 
@@ -1187,7 +1194,7 @@ async fn scope_denials_record_the_http_status_before_dispatch() -> Result<(), Bo
         let recorder = DebuggingRecorder::new();
         let snapshotter = recorder.snapshotter();
         let _guard = metrics::set_default_local_recorder(&recorder);
-        let (status, headers, body) = send(&app, Some(&token), request(method, params)).await?;
+        let (status, headers, body) = send(&app, Some(&token), request(method, &params)).await?;
         assert_eq!(status, StatusCode::FORBIDDEN, "{method}");
         assert_eq!(body, json!({"error":"insufficient_scope"}));
         assert_eq!(headers[header::CACHE_CONTROL], "no-store");
@@ -1278,7 +1285,7 @@ async fn text_only_errors_preserve_a_success_output_schema() -> Result<(), Box<d
     let (status, _, body) = send(
         &app,
         Some(&token),
-        request("tools/call", json!({"name":"draft","arguments":{}})),
+        request("tools/call", &json!({"name":"draft","arguments":{}})),
     )
     .await?;
     assert_eq!(status, StatusCode::OK);
@@ -1327,7 +1334,7 @@ async fn optional_capabilities_use_the_real_router_and_scope_grants() -> Result<
     )
     .await?;
     let (_, _, discovered) =
-        send(&app, Some(&token), request("server/discover", json!({}))).await?;
+        send(&app, Some(&token), request("server/discover", &json!({}))).await?;
     assert_eq!(discovered["result"]["capabilities"]["resources"], json!({}));
     assert_eq!(discovered["result"]["capabilities"]["prompts"], json!({}));
     for (method, params) in [
@@ -1341,7 +1348,7 @@ async fn optional_capabilities_use_the_real_router_and_scope_grants() -> Result<
         ),
         ("tools/call", json!({"name":"save","arguments":{}})),
     ] {
-        let message = request(method, params);
+        let message = request(method, &params);
         let (status, headers, body) = send(&app, None, message.clone()).await?;
         assert_eq!(status, StatusCode::UNAUTHORIZED, "{method}");
         assert_eq!(body, json!({"error":"invalid_token"}));
@@ -1457,7 +1464,7 @@ async fn optional_capabilities_use_the_real_router_and_scope_grants() -> Result<
         let (status, _, _) = send(
             &app,
             Some(&token),
-            request("resources/read", json!({"uri":uri})),
+            request("resources/read", &json!({"uri":uri})),
         )
         .await?;
         assert_eq!(status, StatusCode::FORBIDDEN);
@@ -1470,7 +1477,7 @@ async fn optional_capabilities_use_the_real_router_and_scope_grants() -> Result<
         let (_, _, body) = send(
             &app,
             Some(&token),
-            request("resources/read", json!({"uri":uri})),
+            request("resources/read", &json!({"uri":uri})),
         )
         .await?;
         assert_eq!(body["error"]["code"], code);
@@ -1483,14 +1490,14 @@ async fn optional_capabilities_use_the_real_router_and_scope_grants() -> Result<
         json!({"name":"next-steps","arguments":{"language":"de","extra":"value"}}),
         json!({"name":"unknown"}),
     ] {
-        let (_, _, body) = send(&app, Some(&token), request("prompts/get", params)).await?;
+        let (_, _, body) = send(&app, Some(&token), request("prompts/get", &params)).await?;
         assert_eq!(body["error"]["code"], -32602);
     }
     assert_eq!(recommendations.0.lock().expect("prompts").len(), count);
     let (_, _, result) = send(
         &app,
         Some(&token),
-        request("prompts/get", json!({"name":"recommend-next-steps"})),
+        request("prompts/get", &json!({"name":"recommend-next-steps"})),
     )
     .await?;
     assert_eq!(result["result"]["messages"][0]["role"], "user");
@@ -1499,7 +1506,7 @@ async fn optional_capabilities_use_the_real_router_and_scope_grants() -> Result<
         Some(&token),
         request(
             "prompts/get",
-            json!({"name":"next-steps","arguments":{"language":"unavailable"}}),
+            &json!({"name":"next-steps","arguments":{"language":"unavailable"}}),
         ),
     )
     .await?;
@@ -1555,13 +1562,13 @@ async fn overlapping_resource_grants_and_effective_policy_scopes_cannot_be_bypas
     for scopes in ["items:read", "private:read"] {
         let token = issuer.mint(&claims.clone().claim("scope", scopes))?;
         let (status, _, result) =
-            send(&app, Some(&token), request("resources/list", json!({}))).await?;
+            send(&app, Some(&token), request("resources/list", &json!({}))).await?;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(result["result"]["resources"], json!([]));
         let (status, _, _) = send(
             &app,
             Some(&token),
-            request("resources/read", json!({"uri":"product://items/42"})),
+            request("resources/read", &json!({"uri":"product://items/42"})),
         )
         .await?;
         assert_eq!(status, StatusCode::FORBIDDEN);
@@ -1571,7 +1578,7 @@ async fn overlapping_resource_grants_and_effective_policy_scopes_cannot_be_bypas
     let (_, _, result) = send(
         &app,
         Some(&token),
-        request("resources/read", json!({"uri":"product://items/42"})),
+        request("resources/read", &json!({"uri":"product://items/42"})),
     )
     .await?;
     let content: Value = serde_json::from_str(
@@ -1580,12 +1587,12 @@ async fn overlapping_resource_grants_and_effective_policy_scopes_cannot_be_bypas
             .ok_or("text")?,
     )?;
     assert_eq!(content["subject"], "linked-account");
-    let (_, _, result) = send(&app, Some(&token), request("prompts/list", json!({}))).await?;
+    let (_, _, result) = send(&app, Some(&token), request("prompts/list", &json!({}))).await?;
     assert_eq!(result["result"]["prompts"], json!([]));
     let (status, _, _) = send(
         &app,
         Some(&token),
-        request("prompts/get", json!({"name":"recommend-next-steps"})),
+        request("prompts/get", &json!({"name":"recommend-next-steps"})),
     )
     .await?;
     assert_eq!(status, StatusCode::FORBIDDEN);
@@ -1753,7 +1760,7 @@ async fn product_identity_instructions_and_success_prefix_preserve_structured_co
         Some(&token),
         request(
             "initialize",
-            json!({
+            &json!({
                 "protocolVersion": "2025-11-25", "capabilities": {},
                 "clientInfo": {"name":"protocol-test","version":"1"}
             }),
@@ -1788,7 +1795,7 @@ async fn product_identity_instructions_and_success_prefix_preserve_structured_co
         Some(&token),
         request(
             "tools/call",
-            json!({
+            &json!({
                 "name": "identity", "arguments": {"unexpected": true}
             }),
         ),

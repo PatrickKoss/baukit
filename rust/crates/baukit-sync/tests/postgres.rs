@@ -1,3 +1,10 @@
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::too_many_lines,
+    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
+)]
 use std::{error::Error, path::PathBuf, sync::Arc};
 
 use sqlx::PgPool;
@@ -117,7 +124,10 @@ async fn concurrent_writers_for_one_owner_never_share_a_revision() -> Result<(),
     }
     revisions.sort_unstable();
 
-    assert_eq!(revisions, (1..=writers as i64).collect::<Vec<_>>());
+    assert_eq!(
+        revisions,
+        (1..=i64::try_from(writers).expect("writer count fits i64")).collect::<Vec<_>>()
+    );
 
     pool.close().await;
     drop(fixture);

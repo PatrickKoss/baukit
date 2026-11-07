@@ -126,7 +126,7 @@ impl DataSubjectProduct for Product {
                 report.categories.push(CategoryEntry {
                     category: "invoices".into(),
                     action: CategoryAction::Retained,
-                    count: retained as u64,
+                    count: u64::try_from(retained).expect("retained count is positive"),
                 });
                 report.restrictions.push(Restriction {
                     category: "invoices".into(),
@@ -381,7 +381,7 @@ impl Fixture {
         &self,
         token: Option<&str>,
         keys: &[&str],
-        body: Value,
+        body: &Value,
     ) -> Result<Request<Body>, Box<dyn Error>> {
         let mut request = Request::builder()
             .method("POST")
@@ -394,7 +394,7 @@ impl Fixture {
         for key in keys {
             request = request.header("idempotency-key", *key);
         }
-        Ok(request.body(Body::from(serde_json::to_vec(&body)?))?)
+        Ok(request.body(Body::from(serde_json::to_vec(body)?))?)
     }
 
     pub fn get_request(
@@ -444,7 +444,7 @@ impl Fixture {
         body: Value,
     ) -> Result<(StatusCode, OperationResource), Box<dyn Error>> {
         let (status, _, body) = self
-            .send(self.post_request(Some(token), &[key], body)?)
+            .send(self.post_request(Some(token), &[key], &body)?)
             .await?;
         Ok((status, serde_json::from_value(body)?))
     }

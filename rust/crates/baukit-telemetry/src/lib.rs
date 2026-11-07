@@ -122,20 +122,43 @@ pub const WORKER_DURATION_BUCKETS: &[f64] = &[
 const RUST_VERSION: &str = env!("BAUKIT_RUST_VERSION");
 
 static INITIALIZED: AtomicBool = AtomicBool::new(false);
-static EMAIL_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b")
-        .expect("the email scrubber regex is valid")
-});
-static BEARER_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\bbearer\s+[A-Z0-9._~+/=-]+")
-        .expect("the bearer-token scrubber regex is valid")
-});
+static EMAIL_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| scrubber(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b"));
+static BEARER_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| scrubber(r"(?i)\bbearer\s+[A-Z0-9._~+/=-]+"));
 static SECRET_ASSIGNMENT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r#"(?i)\b(authorization|cookie|token|password)\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)"#,
-    )
-    .expect("the secret-assignment scrubber regex is valid")
+    scrubber(r#"(?i)\b(authorization|cookie|token|password)\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)"#)
 });
+const METRIC_BUCKETS: [(&str, &[f64]); 3] = [
+    ("http_request_duration_seconds", HTTP_DURATION_BUCKETS),
+    (
+        "db_pool_acquire_duration_seconds",
+        DB_POOL_ACQUIRE_DURATION_BUCKETS,
+    ),
+    ("worker_job_duration_seconds", WORKER_DURATION_BUCKETS),
+];
+
+#[expect(
+    clippy::expect_used,
+    reason = "scrubber patterns are string literals in this file, compiled by every redaction test"
+)]
+fn scrubber(pattern: &str) -> Regex {
+    Regex::new(pattern).expect("scrubber patterns are valid regexes")
+}
+
+#[expect(
+    clippy::expect_used,
+    reason = "set_buckets_for_metric fails only for empty buckets, and every METRIC_BUCKETS entry is a non-empty literal"
+)]
+fn prometheus_builder() -> PrometheusBuilder {
+    METRIC_BUCKETS
+        .iter()
+        .fold(PrometheusBuilder::new(), |builder, (metric, buckets)| {
+            builder
+                .set_buckets_for_metric(Matcher::Full((*metric).to_owned()), buckets)
+                .expect("metric buckets are non-empty")
+        })
+}
 
 /// Errors returned while initializing or shutting down telemetry.
 #[derive(Debug, thiserror::Error)]
@@ -188,18 +211,21 @@ impl TelemetryBuilder {
     }
 
     /// Overrides `RUST_LOG` with an explicit [`EnvFilter`] directive string.
+    #[must_use]
     pub fn filter(mut self, filter: impl Into<String>) -> Self {
         self.filter = Some(filter.into());
         self
     }
 
     /// Overrides automatic JSON-versus-pretty log selection.
+    #[must_use]
     pub const fn log_format(mut self, log_format: LogFormat) -> Self {
         self.log_format = log_format;
         self
     }
 
     /// Overrides `OTEL_EXPORTER_OTLP_ENDPOINT` for OTLP trace export.
+    #[must_use]
     pub fn otlp_endpoint(mut self, endpoint: impl Into<String>) -> Self {
         self.otlp_endpoint = Some(endpoint.into());
         self
@@ -208,6 +234,7 @@ impl TelemetryBuilder {
     /// Sets parent-based trace sampling to a ratio clamped to `0.0..=1.0`.
     ///
     /// The default ratio is `1.0`, meaning all traces are sampled.
+    #[must_use]
     pub fn sampling_ratio(mut self, ratio: f64) -> Self {
         self.sampling_ratio = if ratio.is_nan() {
             1.0
@@ -222,6 +249,7 @@ impl TelemetryBuilder {
     /// This overrides `OTEL_SDK_DISABLED`. When disabled, Baukit does not build
     /// a tracer provider or exporter; structured logging and Prometheus metrics
     /// remain active.
+    #[must_use]
     pub const fn sdk_disabled(mut self, disabled: bool) -> Self {
         self.sdk_disabled = Some(disabled);
         self
@@ -254,59 +282,43 @@ impl TelemetryBuilder {
         }
     }
 
+    fn tracer_provider(&self) -> Result<SdkTracerProvider, TelemetryError> {
+        let endpoint = self.resolve_endpoint()?;
+        let root_sampler = if self.sampling_ratio == 1.0 {
+            Sampler::AlwaysOn
+        } else {
+            Sampler::TraceIdRatioBased(self.sampling_ratio)
+        };
+        let mut provider_builder = SdkTracerProvider::builder()
+            .with_resource(resource_for(&self.identity))
+            .with_sampler(Sampler::ParentBased(Box::new(root_sampler)));
+        if let Some(endpoint) = endpoint {
+            let exporter = opentelemetry_otlp::SpanExporter::builder()
+                .with_tonic()
+                .with_endpoint(endpoint)
+                .build()
+                .map_err(TelemetryError::OtlpExporter)?;
+            provider_builder = provider_builder.with_batch_exporter(exporter);
+        }
+        Ok(provider_builder.build())
+    }
+
     fn try_init(self) -> Result<Telemetry, TelemetryError> {
         if tracing::dispatcher::has_been_set() {
             return Err(TelemetryError::TracingAlreadyInitialized);
         }
 
         let sdk_disabled = self.sdk_disabled.unwrap_or_else(otel_sdk_disabled_from_env);
-        let mut provider = None;
-        let otel_layer = if sdk_disabled {
+        let mut provider = if sdk_disabled {
             None
         } else {
-            let endpoint = self.resolve_endpoint()?;
-            let resource = resource_for(&self.identity);
-            let root_sampler = if self.sampling_ratio == 1.0 {
-                Sampler::AlwaysOn
-            } else {
-                Sampler::TraceIdRatioBased(self.sampling_ratio)
-            };
-            let sampler = Sampler::ParentBased(Box::new(root_sampler));
-            let mut provider_builder = SdkTracerProvider::builder()
-                .with_resource(resource)
-                .with_sampler(sampler);
-
-            if let Some(endpoint) = endpoint {
-                let exporter = opentelemetry_otlp::SpanExporter::builder()
-                    .with_tonic()
-                    .with_endpoint(endpoint)
-                    .build()
-                    .map_err(TelemetryError::OtlpExporter)?;
-                provider_builder = provider_builder.with_batch_exporter(exporter);
-            }
-
-            let tracer_provider = provider_builder.build();
-            let tracer = tracer_provider.tracer(self.identity.service_name());
-            provider = Some(tracer_provider);
-            Some(tracing_opentelemetry::layer().with_tracer(tracer))
+            Some(self.tracer_provider()?)
         };
-        let recorder = PrometheusBuilder::new()
-            .set_buckets_for_metric(
-                Matcher::Full("http_request_duration_seconds".to_owned()),
-                HTTP_DURATION_BUCKETS,
-            )
-            .expect("HTTP_DURATION_BUCKETS is non-empty")
-            .set_buckets_for_metric(
-                Matcher::Full("db_pool_acquire_duration_seconds".to_owned()),
-                DB_POOL_ACQUIRE_DURATION_BUCKETS,
-            )
-            .expect("DB_POOL_ACQUIRE_DURATION_BUCKETS is non-empty")
-            .set_buckets_for_metric(
-                Matcher::Full("worker_job_duration_seconds".to_owned()),
-                WORKER_DURATION_BUCKETS,
-            )
-            .expect("WORKER_DURATION_BUCKETS is non-empty")
-            .build_recorder();
+        let otel_layer = provider.as_ref().map(|provider| {
+            tracing_opentelemetry::layer()
+                .with_tracer(provider.tracer(self.identity.service_name()))
+        });
+        let recorder = prometheus_builder().build_recorder();
         let prometheus_handle = recorder.handle();
         if let Err(error) = metrics::set_global_recorder(recorder) {
             if let Some(provider) = provider.take() {

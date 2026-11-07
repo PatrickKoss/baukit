@@ -1,0 +1,9 @@
+allow-expect-in-tests = true
+allow-unwrap-in-tests = true
+allow-indexing-slicing-in-tests = true
+allow-panic-in-tests = true
+allow-print-in-tests = true
+too-many-lines-threshold = 80
+disallowed-methods = [
+  { path = "std::thread::sleep", reason = "blocks the async runtime; use tokio::time::sleep or a notify-based wait" },
+]

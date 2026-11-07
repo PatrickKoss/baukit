@@ -31,6 +31,7 @@ impl Principal {
     }
 
     /// Maps the verified identity to a product account after a trusted lookup.
+    #[must_use]
     pub fn with_subject(mut self, subject: impl Into<String>) -> Self {
         self.subject = subject.into();
         self
@@ -38,6 +39,7 @@ impl Principal {
 
     /// Restricts effective scopes to verified OIDC scopes or API-token grants.
     /// Policies cannot add scopes or restore scopes removed by an earlier call.
+    #[must_use]
     pub fn with_scopes(mut self, scopes: impl IntoIterator<Item = String>) -> Self {
         self.scopes = scopes
             .into_iter()

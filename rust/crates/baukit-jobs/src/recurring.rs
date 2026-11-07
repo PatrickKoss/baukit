@@ -91,15 +91,30 @@ impl FixedUtcInterval {
         key: &str,
         jitter: FixedUtcJitter,
     ) -> Result<DateTime<Utc>, FixedUtcIntervalError> {
-        let bound =
-            ((self.seconds as f64 * jitter.fraction).floor() as u64).min(self.seconds as u64 - 1);
+        let seconds = u64::try_from(self.seconds).map_err(|_| FixedUtcIntervalError::OutOfRange)?;
+        let bound = jitter_bound(seconds, jitter.fraction);
         let offset = fnv1a(key.as_bytes()) % (bound + 1);
-        let offset = chrono::Duration::try_seconds(offset as i64)
-            .ok_or(FixedUtcIntervalError::OutOfRange)?;
+        let offset = i64::try_from(offset).map_err(|_| FixedUtcIntervalError::OutOfRange)?;
+        let offset =
+            chrono::Duration::try_seconds(offset).ok_or(FixedUtcIntervalError::OutOfRange)?;
         slot.starts_at
             .checked_add_signed(offset)
             .ok_or(FixedUtcIntervalError::OutOfRange)
     }
+}
+
+/// Returns `min(floor(seconds * fraction), seconds - 1)`, or zero for a zero-second interval.
+#[expect(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "the documented jitter bound is a binary64 product; with fraction in (0, 1] it is finite and within 0..=seconds"
+)]
+fn jitter_bound(seconds: u64, fraction: f64) -> u64 {
+    let Some(last_second) = seconds.checked_sub(1) else {
+        return 0;
+    };
+    ((seconds as f64 * fraction).floor() as u64).min(last_second)
 }
 
 /// A validated fraction of a fixed UTC interval available for per-key jitter.
@@ -332,7 +347,7 @@ mod tests {
                 - slot.starts_at())
             .num_seconds();
             assert!((0..=599).contains(&offset));
-            buckets[offset as usize / 60] += 1;
+            buckets[usize::try_from(offset).expect("offset is non-negative") / 60] += 1;
             endpoints[0] |= offset == 0;
             endpoints[1] |= offset == 599;
         }
@@ -430,5 +445,14 @@ mod tests {
             interval.run_at(slot, "", FixedUtcJitter::new(1.0).expect("jitter")),
             Err(FixedUtcIntervalError::OutOfRange)
         );
+    }
+
+    #[test]
+    fn jitter_bound_stays_inside_short_intervals() {
+        assert_eq!(super::jitter_bound(0, 1.0), 0);
+        assert_eq!(super::jitter_bound(1, 1.0), 0);
+        assert_eq!(super::jitter_bound(1, 0.5), 0);
+        assert_eq!(super::jitter_bound(10, 1.0), 9);
+        assert_eq!(super::jitter_bound(10, 0.25), 2);
     }
 }

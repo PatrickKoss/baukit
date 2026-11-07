@@ -71,37 +71,49 @@ tokio::task_local! {
 /// The defaults stack inserts this value into request extensions, so handlers
 /// can use it directly as an Axum extractor.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct RequestId(String);
+pub struct RequestId {
+    text: String,
+    header: HeaderValue,
+}
 
 impl RequestId {
     fn from_headers(headers: &HeaderMap) -> Self {
         headers
             .get(&X_REQUEST_ID)
-            .and_then(|value| value.to_str().ok())
-            .filter(|value| !value.is_empty())
-            .map_or_else(Self::generate, |value| Self(value.to_owned()))
+            .and_then(|value| {
+                let text = value.to_str().ok().filter(|text| !text.is_empty())?;
+                Some(Self {
+                    text: text.to_owned(),
+                    header: value.clone(),
+                })
+            })
+            .unwrap_or_else(Self::generate)
     }
 
+    #[expect(
+        clippy::expect_used,
+        reason = "hyphenated UUID text is ASCII hex digits and hyphens, always a valid header value"
+    )]
     fn generate() -> Self {
-        Self(Uuid::new_v4().to_string())
+        let text = Uuid::new_v4().to_string();
+        let header = HeaderValue::from_str(&text).expect("UUID text is a valid header value");
+        Self { text, header }
     }
 
     /// Returns the request identifier text.
     #[must_use]
     pub fn as_str(&self) -> &str {
-        &self.0
+        &self.text
     }
 
-    pub(crate) fn header_value(
-        &self,
-    ) -> Result<HeaderValue, axum::http::header::InvalidHeaderValue> {
-        HeaderValue::from_str(&self.0)
+    pub(crate) fn header_value(&self) -> HeaderValue {
+        self.header.clone()
     }
 }
 
 impl fmt::Display for RequestId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
+        formatter.write_str(&self.text)
     }
 }
 
@@ -313,12 +325,9 @@ async fn lifecycle_inner(options: HttpOptions, request: Request, next: Next) -> 
         )
         .record(started.elapsed().as_secs_f64());
 
-        response.headers_mut().insert(
-            X_REQUEST_ID,
-            current_request_id()
-                .header_value()
-                .expect("request IDs originate from a valid header or UUID"),
-        );
+        response
+            .headers_mut()
+            .insert(X_REQUEST_ID, current_request_id().header_value());
         inject_current_trace_context(response.headers_mut());
         apply_cache_policy(options.response_cache_policy, response.headers_mut());
         response

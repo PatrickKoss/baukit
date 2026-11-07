@@ -308,6 +308,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[expect(clippy::too_many_lines, reason = "scenario test reads top to bottom")]
     async fn introspection_restricts_grants_and_rejects_invalid_responses()
     -> Result<(), Box<dyn Error>> {
         let state = Endpoint {

@@ -68,7 +68,7 @@ pub enum RequestLocaleConfigError {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RequestLocaleConfig {
     supported: Vec<String>,
-    fallback_index: usize,
+    fallback: String,
     query_override: LocaleQueryOverride,
 }
 
@@ -102,10 +102,11 @@ impl RequestLocaleConfig {
             }
         }
 
-        let fallback_index = supported
+        let fallback = supported
             .iter()
-            .position(|locale| locale.eq_ignore_ascii_case(fallback.as_ref()))
-            .ok_or(RequestLocaleConfigError::UnsupportedFallback)?;
+            .find(|locale| locale.eq_ignore_ascii_case(fallback.as_ref()))
+            .ok_or(RequestLocaleConfigError::UnsupportedFallback)?
+            .clone();
 
         if let LocaleQueryOverride::Parameter(name) = &query_override {
             LocaleQueryOverride::parameter(name.clone())?;
@@ -113,13 +114,13 @@ impl RequestLocaleConfig {
 
         Ok(Self {
             supported,
-            fallback_index,
+            fallback,
             query_override,
         })
     }
 
     fn fallback(&self) -> &str {
-        &self.supported[self.fallback_index]
+        &self.fallback
     }
 }
 
@@ -226,27 +227,24 @@ fn query_override<'a>(
 }
 
 fn decode_query_component(value: &str) -> Result<String, RequestLocaleRejection> {
-    let bytes = value.as_bytes();
-    let mut decoded = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-    while index < bytes.len() {
-        match bytes[index] {
+    let mut rest = value.as_bytes();
+    let mut decoded = Vec::with_capacity(rest.len());
+    while let [byte, tail @ ..] = rest {
+        rest = tail;
+        match byte {
             b'+' => decoded.push(b' '),
             b'%' => {
-                let high = bytes
-                    .get(index + 1)
-                    .and_then(|byte| hex_value(*byte))
-                    .ok_or(RequestLocaleRejection::MalformedQuery)?;
-                let low = bytes
-                    .get(index + 2)
-                    .and_then(|byte| hex_value(*byte))
-                    .ok_or(RequestLocaleRejection::MalformedQuery)?;
+                let [high, low, tail @ ..] = rest else {
+                    return Err(RequestLocaleRejection::MalformedQuery);
+                };
+                let (Some(high), Some(low)) = (hex_value(*high), hex_value(*low)) else {
+                    return Err(RequestLocaleRejection::MalformedQuery);
+                };
                 decoded.push((high << 4) | low);
-                index += 2;
+                rest = tail;
             }
-            byte => decoded.push(byte),
+            byte => decoded.push(*byte),
         }
-        index += 1;
     }
     String::from_utf8(decoded).map_err(|_| RequestLocaleRejection::MalformedQuery)
 }

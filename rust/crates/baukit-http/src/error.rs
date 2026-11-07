@@ -61,6 +61,10 @@ impl ApiError {
     ///
     /// `code` should be a stable snake_case identifier and `message` must not
     /// contain internal or sensitive information.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `code` is not a non-empty `snake_case` identifier.
     pub fn new(status: StatusCode, code: impl Into<String>, message: impl Into<String>) -> Self {
         let code = code.into();
         assert!(
@@ -99,11 +103,7 @@ impl ApiError {
     /// Adds a `Retry-After` response header using delta seconds.
     #[must_use]
     pub fn with_retry_after(self, seconds: u64) -> Self {
-        self.with_header(
-            RETRY_AFTER,
-            HeaderValue::from_str(&seconds.to_string())
-                .expect("unsigned integers are valid header values"),
-        )
+        self.with_header(RETRY_AFTER, HeaderValue::from(seconds))
     }
 
     /// Returns a `400 bad_request` error with a safe message.
@@ -372,12 +372,9 @@ impl IntoResponse for ApiError {
         if let Some(headers) = self.headers {
             response.headers_mut().extend(*headers);
         }
-        response.headers_mut().insert(
-            crate::X_REQUEST_ID,
-            request_id
-                .header_value()
-                .expect("request IDs originate from a valid header or UUID"),
-        );
+        response
+            .headers_mut()
+            .insert(crate::X_REQUEST_ID, request_id.header_value());
         response
     }
 }

@@ -81,6 +81,10 @@ impl RateLimitOptions {
 }
 
 impl Default for RateLimitOptions {
+    #[expect(
+        clippy::expect_used,
+        reason = "RateLimitConfig::default() always passes from_config validation"
+    )]
     fn default() -> Self {
         Self::from_config(&RateLimitConfig::default())
             .expect("the standard rate-limit defaults are valid")
