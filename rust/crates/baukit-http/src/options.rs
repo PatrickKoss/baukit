@@ -106,6 +106,7 @@ pub struct HttpOptions {
     pub(crate) additional_exposed_headers: Vec<HeaderName>,
     pub(crate) response_cache_policy: ResponseCachePolicy,
     pub(crate) json_rejection_codes: JsonRejectionCodes,
+    pub(crate) hsts_max_age: Option<Duration>,
 }
 
 impl HttpOptions {
@@ -130,7 +131,7 @@ impl HttpOptions {
     /// Adds request headers to the standard CORS allowlist.
     ///
     /// The built-in `Authorization`, `Content-Type`, `If-Match`, `Idempotency-Key`,
-    /// `x-request-id`, `traceparent`, and `tracestate` headers remain allowed. Duplicate header
+    /// `x-request-id`, `X-Baukit-Session`, `traceparent`, and `tracestate` headers remain allowed. Duplicate header
     /// names are ignored.
     pub fn with_additional_allowed_headers<I, S>(
         mut self,
@@ -204,6 +205,22 @@ impl HttpOptions {
         &self.json_rejection_codes
     }
 
+    /// Sends `Strict-Transport-Security: max-age=<seconds>` on every response.
+    ///
+    /// Off by default. Requests whose `Host` is `localhost`, `*.localhost`,
+    /// `127.0.0.1` or `[::1]` never get the header.
+    #[must_use]
+    pub const fn with_hsts(mut self, max_age: Duration) -> Self {
+        self.hsts_max_age = Some(max_age);
+        self
+    }
+
+    /// Returns the HSTS `max-age`, or `None` when HSTS is off.
+    #[must_use]
+    pub const fn hsts_max_age(&self) -> Option<Duration> {
+        self.hsts_max_age
+    }
+
     /// Builds options from Baukit's standard public-listener configuration.
     ///
     /// Listener address and port are intentionally ignored because they belong
@@ -219,6 +236,7 @@ impl HttpOptions {
             additional_exposed_headers: Vec::new(),
             response_cache_policy: ResponseCachePolicy::default(),
             json_rejection_codes: JsonRejectionCodes::default(),
+            hsts_max_age: None,
         }
         .validate()
     }
@@ -249,6 +267,7 @@ impl Default for HttpOptions {
             additional_exposed_headers: Vec::new(),
             response_cache_policy: ResponseCachePolicy::default(),
             json_rejection_codes: JsonRejectionCodes::default(),
+            hsts_max_age: None,
         }
     }
 }
