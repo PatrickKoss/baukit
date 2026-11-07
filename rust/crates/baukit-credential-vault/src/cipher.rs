@@ -234,7 +234,9 @@ fn decrypt_field(
         return Err(CredentialVaultError::DecryptionFailed);
     };
     let plaintext_length = plaintext.len();
-    buffer[plaintext_length..].zeroize();
+    if let Some(tail) = buffer.get_mut(plaintext_length..) {
+        tail.zeroize();
+    }
     buffer.truncate(plaintext_length);
     if buffer.is_empty() {
         return Err(CredentialVaultError::DecryptionFailed);

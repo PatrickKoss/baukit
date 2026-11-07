@@ -32,7 +32,9 @@ pub const MAX_API_TOKEN_GRANT_LENGTH: usize = 128;
 const MAX_POLICY_CODE_LENGTH: usize = 64;
 const MAX_POLICY_DETAIL_COUNT: usize = 8;
 const MAX_POLICY_DETAIL_NAME_LENGTH: usize = 64;
-const BASE62: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+const BASE62_LEN: u8 = 62;
+const BASE62: &[u8; BASE62_LEN as usize] =
+    b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
 /// Boxed future returned by [`ApiTokenStore`] operations.
 pub type ApiTokenStoreFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -593,7 +595,7 @@ impl ApiTokenFormat {
     /// remainder directly would make the first eight characters slightly more
     /// common.
     fn generate(&self, random: &SystemRandom) -> Result<String, ApiTokenError> {
-        const LIMIT: u8 = 256_u16.div_euclid(BASE62.len() as u16) as u8 * BASE62.len() as u8;
+        const LIMIT: u8 = u8::MAX / BASE62_LEN * BASE62_LEN;
 
         let mut secret = String::with_capacity(self.marker.len() + SECRET_LENGTH);
         secret.push_str(&self.marker);
@@ -606,7 +608,7 @@ impl ApiTokenFormat {
             })?;
             for byte in buffer {
                 if byte < LIMIT && secret.len() < self.marker.len() + SECRET_LENGTH {
-                    secret.push(char::from(BASE62[usize::from(byte % BASE62.len() as u8)]));
+                    secret.push(base62_char(byte % BASE62_LEN)?);
                 }
             }
         }
@@ -617,6 +619,17 @@ impl ApiTokenFormat {
     fn display_prefix<'a>(&self, secret: &'a str) -> &'a str {
         &secret[..self.marker.len() + DISPLAY_PREFIX_LENGTH]
     }
+}
+
+fn base62_char(digit: u8) -> Result<char, ApiTokenError> {
+    BASE62
+        .get(usize::from(digit))
+        .map(|byte| char::from(*byte))
+        .ok_or_else(|| {
+            ApiTokenError::Storage(ApiTokenStoreError::internal(
+                "base62 digit is outside the alphabet",
+            ))
+        })
 }
 
 /// Failure raised while configuring a token marker.
@@ -1063,7 +1076,10 @@ mod tests {
         let mut full = ApiTokenPolicyRejection::new("limit_exceeded").expect("valid code");
         for index in 0..MAX_POLICY_DETAIL_COUNT {
             full = full
-                .with_detail(format!("detail{index}"), index as u32)
+                .with_detail(
+                    format!("detail{index}"),
+                    u32::try_from(index).expect("detail index fits u32"),
+                )
                 .expect("detail within limit");
         }
         assert_eq!(

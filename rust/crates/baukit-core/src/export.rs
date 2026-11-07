@@ -138,12 +138,12 @@ const fn is_valid_null_marker(marker: &str) -> bool {
     if bytes.is_empty() {
         return false;
     }
-    let mut index = 0;
-    while index < bytes.len() {
-        if matches!(bytes[index], b'"' | b',' | b'\r' | b'\n') {
+    let mut rest = bytes;
+    while let [byte, tail @ ..] = rest {
+        if matches!(byte, b'"' | b',' | b'\r' | b'\n') {
             return false;
         }
-        index += 1;
+        rest = tail;
     }
     true
 }
@@ -333,8 +333,9 @@ fn is_json_number(value: &str) -> bool {
 }
 
 fn skip_digits(bytes: &[u8], start: usize) -> usize {
-    bytes[start..]
+    bytes
         .iter()
+        .skip(start)
         .position(|byte| !byte.is_ascii_digit())
         .map_or(bytes.len(), |offset| start + offset)
 }

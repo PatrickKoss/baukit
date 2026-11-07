@@ -129,7 +129,7 @@ impl JwtClaims {
 
 /// Encodes claims as an HS256 JWT with a test-only shared secret.
 pub fn hs256_token(secret: &[u8], claims: &JwtClaims) -> Result<String, JwtFixtureError> {
-    encode_token(json!({"alg": "HS256", "typ": "JWT"}), claims, |message| {
+    encode_token(&json!({"alg": "HS256", "typ": "JWT"}), claims, |message| {
         let key = hmac::Key::new(hmac::HMAC_SHA256, secret);
         Ok(hmac::sign(&key, message).as_ref().to_vec())
     })
@@ -157,7 +157,7 @@ pub fn rs256_token_with_key_id(
     if let Some(key_id) = key_id {
         header["kid"] = Value::String(key_id.to_owned());
     }
-    encode_token(header, claims, |message| {
+    encode_token(&header, claims, |message| {
         let mut output = vec![0; key_pair.public_modulus_len()];
         key_pair
             .sign(
@@ -178,11 +178,11 @@ pub fn unsigned_token(claims: &JwtClaims) -> Result<String, JwtFixtureError> {
     Ok(format!("{header}.{claims}."))
 }
 
-fn encode_token<F>(header: Value, claims: &JwtClaims, sign: F) -> Result<String, JwtFixtureError>
+fn encode_token<F>(header: &Value, claims: &JwtClaims, sign: F) -> Result<String, JwtFixtureError>
 where
     F: FnOnce(&[u8]) -> Result<Vec<u8>, JwtFixtureError>,
 {
-    let header = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header)?);
+    let header = URL_SAFE_NO_PAD.encode(serde_json::to_vec(header)?);
     let claims = URL_SAFE_NO_PAD.encode(serde_json::to_vec(claims)?);
     let signing_input = format!("{header}.{claims}");
     let signature = URL_SAFE_NO_PAD.encode(sign(signing_input.as_bytes())?);

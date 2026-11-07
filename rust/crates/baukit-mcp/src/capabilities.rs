@@ -105,12 +105,14 @@ impl McpServices {
     }
 
     /// Sets the product name, version and optional display metadata in initialize.
+    #[must_use]
     pub fn with_server_info(mut self, server_info: crate::Implementation) -> Self {
         self.server_info = server_info;
         self
     }
 
     /// Sets the instructions returned during initialize.
+    #[must_use]
     pub fn with_instructions(mut self, instructions: impl Into<String>) -> Self {
         self.instructions = Some(instructions.into());
         self
@@ -118,16 +120,19 @@ impl McpServices {
 
     /// Prepends text to successful tool content. Structured content and errors are unchanged.
     /// Include any required separator in the prefix.
+    #[must_use]
     pub fn with_success_text_prefix(mut self, prefix: impl Into<String>) -> Self {
         self.success_text_prefix = Some(prefix.into());
         self
     }
 
+    #[must_use]
     pub fn with_resources(mut self, resources: Arc<dyn ResourceService>) -> Self {
         self.resources = Some(resources);
         self
     }
 
+    #[must_use]
     pub fn with_prompts(mut self, prompts: Arc<dyn PromptService>) -> Self {
         self.prompts = Some(prompts);
         self

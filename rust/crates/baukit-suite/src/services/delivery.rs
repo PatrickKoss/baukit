@@ -50,7 +50,7 @@ impl SuiteDeliveryService {
                 },
             )
             .await;
-        let action = peer_action(response);
+        let action = peer_action(&response);
         if action == DeliveryAction::Delivered
             && let Some((job_id, worker_id)) = completion
         {
@@ -105,7 +105,7 @@ impl SuiteDeliveryService {
                 },
             )
             .await;
-        Ok(peer_action(response))
+        Ok(peer_action(&response))
     }
     pub async fn replay(
         &self,
@@ -181,7 +181,7 @@ impl SuiteDeliveryService {
         Ok(self.context.store.cleanup(now).await?)
     }
 }
-fn peer_action(response: Result<SuitePeerResponse, SuitePeerError>) -> DeliveryAction {
+fn peer_action(response: &Result<SuitePeerResponse, SuitePeerError>) -> DeliveryAction {
     map_delivery_result(match response {
         Ok(r) => DeliveryResult::Http {
             status: r.status,
@@ -191,7 +191,7 @@ fn peer_action(response: Result<SuitePeerResponse, SuitePeerError>) -> DeliveryA
         Err(SuitePeerError::Dns) => DeliveryResult::Dns,
         Err(SuitePeerError::Transport) => DeliveryResult::Transport,
         Err(SuitePeerError::Rejected { status, .. }) => DeliveryResult::Http {
-            status,
+            status: *status,
             retry_after: None,
         },
         Err(SuitePeerError::InvalidResponse) => DeliveryResult::Http {

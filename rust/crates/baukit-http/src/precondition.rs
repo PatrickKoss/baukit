@@ -153,6 +153,11 @@ impl<'a> RevisionEtag<'a> {
 
     /// Returns the quoted ETag as an `ETag` response header value.
     #[must_use]
+    #[expect(
+        clippy::expect_used,
+        clippy::missing_panics_doc,
+        reason = "the constructor admits only ASCII alphanumerics and `._:-` in the prefix, so the quoted tag is always a valid header value"
+    )]
     pub fn header_value(&self, revision: Revision) -> HeaderValue {
         HeaderValue::from_str(&self.format(revision))
             .expect("a validated prefix and a decimal revision form a valid header value")
@@ -359,13 +364,12 @@ const fn is_valid_prefix(prefix: &str) -> bool {
     if bytes.len() > MAX_ETAG_PREFIX_BYTES {
         return false;
     }
-    let mut index = 0;
-    while index < bytes.len() {
-        let byte = bytes[index];
+    let mut rest = bytes;
+    while let [byte, tail @ ..] = rest {
         if !(byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-')) {
             return false;
         }
-        index += 1;
+        rest = tail;
     }
     true
 }

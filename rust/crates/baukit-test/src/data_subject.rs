@@ -563,7 +563,7 @@ async fn respond(state: Arc<Mutex<TargetState>>, request: Request) -> Response {
         state.purge();
         route(
             &mut state,
-            request.method,
+            &request.method,
             request.uri.path(),
             &request.headers,
             parsed,
@@ -596,13 +596,13 @@ type Reply = (Response, Option<Duration>);
 
 fn route(
     state: &mut TargetState,
-    method: Method,
+    method: &Method,
     path: &str,
     headers: &HeaderMap,
     body: Option<Value>,
     identity: Option<(String, Vec<String>)>,
 ) -> Reply {
-    if method == Method::GET && path == DISCOVERY {
+    if *method == Method::GET && path == DISCOVERY {
         return (
             (
                 [(header::CACHE_CONTROL, "public, max-age=300")],
@@ -640,10 +640,10 @@ fn route(
             None,
         );
     }
-    if method == Method::POST && segments.len() == 1 {
+    if *method == Method::POST && segments.len() == 1 {
         return create(state, kind, client, headers, body);
     }
-    if method == Method::GET
+    if *method == Method::GET
         && (segments.len() == 2
             || (kind == OperationKind::Export && segments.len() == 4 && segments[2] == "parts"))
     {

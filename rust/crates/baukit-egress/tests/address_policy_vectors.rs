@@ -1,3 +1,10 @@
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::too_many_lines,
+    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
+)]
 //! Runs the shared vectors in `fixtures/egress/address-policy-v1.json`.
 
 use std::{
@@ -100,7 +107,7 @@ enum NetworkOutcome {
     EmptyList,
 }
 
-fn network_outcome<T>(result: Result<T, PrivateNetworkError>) -> NetworkOutcome {
+fn network_outcome<T>(result: &Result<T, PrivateNetworkError>) -> NetworkOutcome {
     match result {
         Ok(_) => NetworkOutcome::Accepted,
         Err(PrivateNetworkError::InvalidNotation) => NetworkOutcome::InvalidNotation,
@@ -263,7 +270,7 @@ async fn resolution_cases_check_every_answer_of_every_lookup() {
 fn network_construction_cases_match_typed_errors() {
     for case in vectors().network_cases {
         let parsed = case.network.parse::<PrivateNetwork>();
-        assert_eq!(network_outcome(parsed), case.expected, "{}", case.network);
+        assert_eq!(network_outcome(&parsed), case.expected, "{}", case.network);
         if let Some((address, prefix)) = case.network.split_once('/')
             && let (Ok(address), Ok(prefix)) = (address.parse(), prefix.parse())
         {
@@ -285,7 +292,7 @@ fn network_list_cases_require_a_non_empty_list() {
             .iter()
             .map(|network| network.parse().expect("valid network"));
         assert_eq!(
-            network_outcome(PrivateNetworks::new(networks)),
+            network_outcome(&PrivateNetworks::new(networks)),
             case.expected,
             "{:?}",
             case.networks

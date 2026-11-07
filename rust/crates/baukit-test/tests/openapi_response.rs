@@ -1,3 +1,10 @@
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::too_many_lines,
+    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
+)]
 use axum::{body::to_bytes, http::header::CONTENT_TYPE, response::IntoResponse};
 use baukit_http::{ApiError, ErrorBody, ErrorEnvelope};
 use baukit_openapi::{ErrorResponseRules, OperationCondition};
@@ -24,8 +31,8 @@ struct WidgetDto {
     params(("id" = String, Path)),
     responses((status = 200, description = "Widget", body = WidgetDto))
 )]
-#[allow(dead_code)]
-async fn get_widget() {}
+#[allow(dead_code, reason = "OpenAPI path stub: only its annotation is used")]
+fn get_widget() {}
 
 #[derive(OpenApi)]
 #[openapi(

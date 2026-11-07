@@ -105,12 +105,12 @@ fn validate_value(key: &str, value: &Value, kind: FieldKind<'_>) -> Result<(), P
     let out_of_bounds = || PayloadError::OutOfBounds(key.to_owned());
     match kind {
         FieldKind::Integer { minimum, maximum } => {
-            let number = if let Some(number) = value.as_i64() {
-                number
-            } else if value.as_u64().is_some() {
-                return Err(out_of_bounds());
-            } else {
-                return Err(invalid_type());
+            let Some(number) = value.as_i64() else {
+                return Err(if value.as_u64().is_some() {
+                    out_of_bounds()
+                } else {
+                    invalid_type()
+                });
             };
             if !(minimum..=maximum).contains(&number) {
                 return Err(out_of_bounds());

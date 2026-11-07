@@ -953,7 +953,7 @@ fn invalid_prefix(app_name: &str) -> LoadError {
 
 fn require_non_zero<T>(value: T, path: &str, errors: &mut Vec<ValidationError>)
 where
-    T: Default + PartialEq,
+    T: Copy + Default + PartialEq,
 {
     if value == T::default() {
         errors.push(ValidationError::new(path, "must be non-zero"));

@@ -152,7 +152,10 @@ pub struct ReplayConformanceInputs {
 ///
 /// Bind the adapter to a database that holds no replay records another test
 /// needs, because the cleanup case purges every expired record.
-#[allow(async_fn_in_trait)]
+#[allow(
+    async_fn_in_trait,
+    reason = "the harness awaits adapters on the test task, so their futures need no Send bound"
+)]
 pub trait ReplaySafeMutationAdapter {
     /// Product owner key, the caller scope.
     type Owner: Clone;

@@ -75,13 +75,13 @@ fn authorize(
     let client = principal
         .client_id()
         .filter(|id| store.config.allowed_client_ids.contains(*id));
-    if principal.grants().is_some() || client.is_none() {
+    let Some(client) = client.filter(|_| principal.grants().is_none()) else {
         return Err(ApiError::new(
             StatusCode::FORBIDDEN,
             codes::CLIENT_NOT_ALLOWED,
             "The machine client is not allowed",
         ));
-    }
+    };
     let scope = match kind {
         OperationKind::Erasure => "data-subject.erase",
         OperationKind::Export => "data-subject.export",
@@ -93,7 +93,7 @@ fn authorize(
             "The required scope is missing",
         ));
     }
-    Ok(client.expect("checked client identity").to_owned())
+    Ok(client.to_owned())
 }
 
 async fn start_erasure(
@@ -123,14 +123,18 @@ async fn start_operation(
 ) -> Result<Response, ApiError> {
     let client = authorize(&state.store, principal, kind)?;
     let values = headers.get_all("Idempotency-Key");
-    let key = values.iter().next().and_then(|header| header.to_str().ok());
-    if values.iter().count() != 1 || validate_idempotency_key(key).is_err() {
+    let key = values
+        .iter()
+        .next()
+        .and_then(|header| header.to_str().ok())
+        .filter(|key| values.iter().count() == 1 && validate_idempotency_key(Some(key)).is_ok());
+    let Some(key) = key else {
         return Err(ApiError::new(
             StatusCode::BAD_REQUEST,
             codes::IDEMPOTENCY_KEY_INVALID,
             "A valid Idempotency-Key is required",
         ));
-    }
+    };
     let Json(request) = body.map_err(|_| {
         ApiError::new(
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -150,7 +154,6 @@ async fn start_operation(
             "The data subject request is invalid",
         )
     })?;
-    let key = key.expect("validated key");
     let operation = match kind {
         OperationKind::Erasure => {
             state

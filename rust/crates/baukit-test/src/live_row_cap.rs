@@ -5,7 +5,10 @@ use std::fmt;
 /// Bind one adapter to a clean owner, parent, or time-bucket scope. Calls to
 /// [`Self::create_row`] must obtain independent database connections when they
 /// overlap.
-#[allow(async_fn_in_trait)]
+#[allow(
+    async_fn_in_trait,
+    reason = "the harness awaits adapters on the test task, so their futures need no Send bound"
+)]
 pub trait PostgresLiveRowCapAdapter {
     /// Product row returned after creation.
     type Row;
@@ -283,7 +286,8 @@ mod tests {
     use super::*;
     use crate::{LiveRowLimitAdapter, check_update_at_capacity, start_postgres};
 
-    const LIMIT: usize = 2;
+    const LIMIT_U8: u8 = 2;
+    const LIMIT: usize = LIMIT_U8 as usize;
     const LIMIT_CODE: &str = "row_cap_per_scope";
     const EMPIRICAL_RACE_RUNS: i64 = 16;
     const MAX_SERIALIZATION_ATTEMPTS: usize = 3;
@@ -406,7 +410,7 @@ mod tests {
             .fetch_one(&mut *transaction)
             .await?;
             let count = count_rows(&mut transaction, self.strategy, self.scope_id).await?;
-            if count >= LIMIT as i64 {
+            if count >= i64::from(LIMIT_U8) {
                 self.observations
                     .row_lock_limit_reads
                     .fetch_add(1, Ordering::Relaxed);
@@ -460,7 +464,7 @@ mod tests {
             if attempt == 0 {
                 self.wait_for_racer_read(sequence).await;
             }
-            if count >= LIMIT as i64 {
+            if count >= i64::from(LIMIT_U8) {
                 return Err(TestError::Limit);
             }
             let row = Self::insert(
@@ -484,7 +488,7 @@ mod tests {
             )
             .bind(self.strategy.name())
             .bind(self.scope_id)
-            .bind(LIMIT as i32)
+            .bind(i32::from(LIMIT_U8))
             .fetch_optional(&mut *transaction)
             .await?;
             if reserved.is_none() {
@@ -517,7 +521,7 @@ mod tests {
             )
             .bind(self.strategy.name())
             .bind(self.scope_id)
-            .bind(LIMIT as i32)
+            .bind(i32::from(LIMIT_U8))
             .fetch_optional(&mut *transaction)
             .await?;
             self.wait_for_racer_read(sequence).await;
@@ -729,7 +733,7 @@ mod tests {
                 .bind(scope_id)
                 .fetch_one(&mut *transaction)
                 .await?;
-                if count >= LIMIT as i64 {
+                if count >= i64::from(LIMIT_U8) {
                     return Err(TestError::Limit);
                 }
                 barrier.wait().await;

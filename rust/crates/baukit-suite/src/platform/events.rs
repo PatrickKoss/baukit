@@ -169,7 +169,10 @@ impl PlatformEventDecoder {
             || source_app.len() > MAX_HUB_IDENTIFIER_BYTES
             || event_type_prefix.is_empty()
             || event_type_prefix.len() > MAX_HUB_IDENTIFIER_BYTES
-            || !event_type_prefix.as_bytes()[0].is_ascii_lowercase()
+            || !event_type_prefix
+                .bytes()
+                .next()
+                .is_some_and(|b| b.is_ascii_lowercase())
             || !event_type_prefix
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')

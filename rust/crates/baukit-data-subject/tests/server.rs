@@ -1,3 +1,10 @@
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::too_many_lines,
+    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
+)]
 #![cfg(feature = "server")]
 
 #[path = "support/server_fixture.rs"]
@@ -75,7 +82,7 @@ async fn discovery_auth_and_validation_errors_use_the_contract_envelope() -> Tes
             f.post_request(
                 token.as_deref(),
                 &["valid-request-key-01"],
-                request_body(&["erase@example.invalid"]),
+                &request_body(&["erase@example.invalid"]),
             )?,
             status,
             code,
@@ -99,7 +106,7 @@ async fn discovery_auth_and_validation_errors_use_the_contract_envelope() -> Tes
             f.post_request(
                 Some(&token),
                 &keys,
-                request_body(&["erase@example.invalid"]),
+                &request_body(&["erase@example.invalid"]),
             )?,
             400,
             codes::IDEMPOTENCY_KEY_INVALID,
@@ -122,7 +129,7 @@ async fn discovery_auth_and_validation_errors_use_the_contract_envelope() -> Tes
     ];
     for body in invalid {
         f.assert_error(
-            f.post_request(Some(&token), &["valid-request-key-01"], body)?,
+            f.post_request(Some(&token), &["valid-request-key-01"], &body)?,
             422,
             codes::REQUEST_INVALID,
         )
@@ -142,7 +149,7 @@ async fn discovery_auth_and_validation_errors_use_the_contract_envelope() -> Tes
             .body(Body::from(raw))?;
         f.assert_error(request, 422, codes::REQUEST_INVALID).await?;
     }
-    f.assert_error(f.post_request(Some(&token), &["valid-request-key-01"], json!({"subjectReference":"opaque-reference-01", "identifiers":[{"type":"x-loyalty", "value":"value"}]}))?, 422, codes::IDENTIFIER_TYPE_UNSUPPORTED).await?;
+    f.assert_error(f.post_request(Some(&token), &["valid-request-key-01"], &json!({"subjectReference":"opaque-reference-01", "identifiers":[{"type":"x-loyalty", "value":"value"}]}))?, 422, codes::IDENTIFIER_TYPE_UNSUPPORTED).await?;
     assert_eq!(f.operation_count().await?, 0);
     assert_eq!(f.job_count().await?, 0);
     assert_eq!(f.product.resolves.load(Ordering::SeqCst), 0);
@@ -169,7 +176,7 @@ async fn concurrent_posts_replay_conflict_and_isolate_client_and_kind() -> TestR
         let request = f.post_request(
             Some(&token),
             &["concurrent-key-001"],
-            request_body(&[" ERASE@EXAMPLE.INVALID "]),
+            &request_body(&[" ERASE@EXAMPLE.INVALID "]),
         )?;
         let barrier = barrier.clone();
         tasks.push(tokio::spawn(async move {
@@ -206,7 +213,7 @@ async fn concurrent_posts_replay_conflict_and_isolate_client_and_kind() -> TestR
         f.post_request(
             Some(&token),
             &["concurrent-key-001"],
-            request_body(&["other@example.invalid"]),
+            &request_body(&["other@example.invalid"]),
         )?,
         409,
         codes::IDEMPOTENCY_CONFLICT,
@@ -215,7 +222,7 @@ async fn concurrent_posts_replay_conflict_and_isolate_client_and_kind() -> TestR
     let mut different_reference = request_body(&["erase@example.invalid"]);
     different_reference["subjectReference"] = json!("another-reference-01");
     f.assert_error(
-        f.post_request(Some(&token), &["concurrent-key-001"], different_reference)?,
+        f.post_request(Some(&token), &["concurrent-key-001"], &different_reference)?,
         409,
         codes::IDEMPOTENCY_CONFLICT,
     )
@@ -489,7 +496,7 @@ async fn acceptance_rolls_back_when_resolution_or_enqueue_fails() -> TestResult 
         f.post_request(
             Some(&token),
             &["resolve-failure-001"],
-            request_body(&["erase@example.invalid"]),
+            &request_body(&["erase@example.invalid"]),
         )?,
         500,
         "internal",
@@ -502,7 +509,7 @@ async fn acceptance_rolls_back_when_resolution_or_enqueue_fails() -> TestResult 
         f.post_request(
             Some(&token),
             &["enqueue-failure-001"],
-            request_body(&["erase@example.invalid"]),
+            &request_body(&["erase@example.invalid"]),
         )?,
         500,
         "internal",
@@ -679,7 +686,7 @@ async fn identifiers_never_enter_any_table_job_payload_receipt_error_or_captured
         f.post_request(
             Some(&token),
             &["private-failure-key-01"],
-            request_body(&["erase@example.invalid"]),
+            &request_body(&["erase@example.invalid"]),
         )?,
         500,
         "internal",
@@ -1034,7 +1041,7 @@ async fn post_export(
         .send(as_export(f.post_request(
             Some(token),
             &[key],
-            request_body(inputs),
+            &request_body(inputs),
         )?))
         .await?;
     Ok((status, serde_json::from_value(body)?))
@@ -1053,7 +1060,7 @@ async fn exports_are_opt_in_and_enforce_auth_scope_owner_and_kind_on_every_route
         as_export(disabled.post_request(
             Some(&token),
             &["disabled-export-001"],
-            request_body(&["erase@example.invalid"]),
+            &request_body(&["erase@example.invalid"]),
         )?),
         as_export(disabled.get_request(Some(&token), Uuid::now_v7())?),
         part_request(&disabled, Some(&token), Uuid::now_v7(), "1")?,
@@ -1105,7 +1112,7 @@ async fn exports_are_opt_in_and_enforce_auth_scope_owner_and_kind_on_every_route
             as_export(f.post_request(
                 token.as_deref(),
                 &["export-auth-key-01"],
-                request_body(&["erase@example.invalid"]),
+                &request_body(&["erase@example.invalid"]),
             )?),
             as_export(f.get_request(token.as_deref(), Uuid::now_v7())?),
             part_request(&f, token.as_deref(), Uuid::now_v7(), "1")?,
@@ -1119,7 +1126,7 @@ async fn exports_are_opt_in_and_enforce_auth_scope_owner_and_kind_on_every_route
         f.post_request(
             Some(&export),
             &["export-auth-key-01"],
-            request_body(&["erase@example.invalid"]),
+            &request_body(&["erase@example.invalid"]),
         )?,
         403,
         codes::INSUFFICIENT_SCOPE,
@@ -1219,7 +1226,7 @@ async fn export_replays_conflicts_validation_and_failed_job_reconciliation() -> 
         ),
     ] {
         f.assert_error(
-            as_export(f.post_request(Some(&token), &keys, body)?),
+            as_export(f.post_request(Some(&token), &keys, &body)?),
             status,
             code,
         )
@@ -1249,7 +1256,7 @@ async fn export_replays_conflicts_validation_and_failed_job_reconciliation() -> 
         json!({"subjectReference":"another-reference-01","identifiers":[{"type":"email","value":"erase@example.invalid"}]}),
     ] {
         f.assert_error(
-            as_export(f.post_request(Some(&token), &["export-replay-key-01"], body)?),
+            as_export(f.post_request(Some(&token), &["export-replay-key-01"], &body)?),
             409,
             codes::IDEMPOTENCY_CONFLICT,
         )
@@ -1423,7 +1430,10 @@ async fn client_downloads_every_deterministic_part_over_http_and_verifies_the_si
         let mut downloaded = Vec::new();
         let mut records = std::collections::BTreeMap::<String, Vec<Value>>::new();
         for (index, part) in payload.parts.iter().enumerate() {
-            assert_eq!(part.part_number, index as u32 + 1);
+            assert_eq!(
+                part.part_number,
+                u32::try_from(index + 1).expect("part number fits u32")
+            );
             let response = client
                 .get(format!(
                     "{url}/api/v1/data-subject/exports/{}/parts/{}",
@@ -1448,7 +1458,10 @@ async fn client_downloads_every_deterministic_part_over_http_and_verifies_the_si
                 .bind(pending.operation_id).bind(i64::from(part.part_number)).fetch_one(&f.pool).await?;
             assert_eq!(stored.as_slice(), bytes.as_ref());
             assert_eq!(hash, sha256);
-            assert_eq!(length as u64, part.bytes);
+            assert_eq!(
+                u64::try_from(length).expect("stored length is non-negative"),
+                part.bytes
+            );
             assert_eq!(expires_at, payload.completed_at + TimeDelta::days(7));
             let document: Value = serde_json::from_slice(&bytes)?;
             records
@@ -1628,7 +1641,7 @@ async fn expired_parts_purge_in_bounded_batches_without_removing_receipts_or_oth
             .bind(pending.operation_id)
             .fetch_one(&f.pool)
             .await?,
-            remaining as i64
+            i64::try_from(remaining).expect("remaining count fits i64")
         );
     }
     f.assert_error(

@@ -52,6 +52,7 @@ impl PlatformReceiver {
             body_limit: SUITE_MAX_BODY_BYTES,
         })
     }
+    #[must_use]
     pub fn with_clock(mut self, clock: Arc<dyn PlatformClock>) -> Self {
         self.clock = clock;
         self

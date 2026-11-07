@@ -260,7 +260,7 @@ fn insert_rate_limit_headers(
 }
 
 fn number_header(value: u64) -> HeaderValue {
-    HeaderValue::from_str(&value.to_string()).expect("unsigned integers are valid header values")
+    HeaderValue::from(value)
 }
 
 fn duration_seconds_ceil(duration: Duration) -> u64 {

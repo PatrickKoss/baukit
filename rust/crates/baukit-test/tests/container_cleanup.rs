@@ -1,3 +1,10 @@
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::too_many_lines,
+    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
+)]
 use std::{collections::BTreeMap, error::Error, process::Command, time::SystemTime};
 
 #[tokio::test]
@@ -81,6 +88,10 @@ mod watchdog {
     }
 
     impl Drop for ChildContainer {
+        #[expect(
+            clippy::print_stderr,
+            reason = "Drop cannot return the cleanup failure; stderr is the only report path"
+        )]
         fn drop(&mut self) {
             if self
                 .child
@@ -108,6 +119,10 @@ mod watchdog {
         }
     }
 
+    #[expect(
+        clippy::print_stdout,
+        reason = "the parent test reads the container id from the child's stdout"
+    )]
     fn child() -> Result<(), Box<dyn Error>> {
         tokio::runtime::Runtime::new()?.block_on(async {
             let postgres = baukit_test::start_postgres().await?;
@@ -121,6 +136,10 @@ mod watchdog {
 
     #[test]
     #[ignore = "requires Docker and Unix signals"]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "synchronous test polling a child process; no async runtime runs on this thread"
+    )]
     fn sigterm_removes_container_and_terminates_child() -> Result<(), Box<dyn Error>> {
         if std::env::var_os("BAUKIT_WATCHDOG_CHILD").is_some() {
             return child();

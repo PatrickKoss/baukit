@@ -120,7 +120,10 @@ pub async fn assert_limit_boundaries<Payload, ValidationError, Build, Validate, 
 /// Product adapter exercised by the live-row capacity checks.
 ///
 /// Bind an adapter instance to the owner or parent whose rows share a cap.
-#[allow(async_fn_in_trait)]
+#[allow(
+    async_fn_in_trait,
+    reason = "the harness awaits adapters on the test task, so their futures need no Send bound"
+)]
 pub trait LiveRowLimitAdapter {
     /// Product row returned after creation.
     type Row;

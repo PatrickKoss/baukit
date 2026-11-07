@@ -110,8 +110,8 @@ tenancy and rate-limit audit of the products (S-08).
   plus a shared `clippy.toml` to `rust/`, `cli/` and the backend template; fix all violations in baukit.
   Acceptance: `make ci` green with `-D warnings`, no new `#[allow]`, each `#[expect]` has a reason.
 - [ ] P1.2 `missing_errors_doc` on core, http, config, auth first, then the rest (255 docs).
-- [~] P1.3 cargo-deny: `allow-wildcard-paths`, full `check` for `rust/`, new `cli/deny.toml`, template `deny.toml`.
-- [ ] P1.4 `baukit check` subcommand framework (also: `patterns` runs lint/ast-grep with ast-grep 0.51.1, skips
+- [~] P1.3 (rust/ and cli/ done in W1-D; template deny.toml open) cargo-deny: `allow-wildcard-paths`, full `check` for `rust/`, new `cli/deny.toml`, template `deny.toml`.
+- [~] P1.4 (W3-1 running: lints, file-size, suppressions, patterns, agent-docs; `template-files` moves to the template wave as P1.4b) `baukit check` subcommand framework (also: `patterns` runs lint/ast-grep with ast-grep 0.51.1, skips
   `vendor/`, `target/`, `node_modules`, and rejects `ast-grep-ignore` comments without a `-- reason`) in the CLI, with rules:
   `lints` (baseline subset check for Cargo lint tables and clippy.toml), `file-size` (Rust/TS, shrinking
   allowlist in `baukit.toml`), `agent-docs` (Q-09), `template-files` (Q-07). Unit + CLI tests.
@@ -125,8 +125,8 @@ tenancy and rate-limit audit of the products (S-08).
   Fix the ~114 violations in baukit packages.
 - [~] P1.7 Shared type guards: one `isRecord`/validation helper module, remove the 10 copies and the
   avoidable `as unknown as` casts.
-- [~] P1.8 ruff + shellcheck for `scripts/` in baukit and the template gate; fix findings.
-- [ ] P1.9 Refactors to meet the limits: split `cli/src/lib.rs`, `supervise_task`, `authorize_inner`,
+- [~] P1.8 (baukit done in W1-D/W1-D2 for every tracked file except templates/; template gate open) ruff + shellcheck for `scripts/` in baukit and the template gate; fix findings.
+- [~] P1.9 (cli split merged in W1-B; Rust splits in W1-A and navigation in W1-C await merge; template `api.rs::run` open) Refactors to meet the limits: split `cli/src/lib.rs`, `supervise_task`, `authorize_inner`,
   `worker.rs::execute`, navigation `native.tsx` components, template `api.rs::run` (composition builder).
 - [ ] P1.10 `SuiteComposition` builder in baukit-suite; template uses it (Q-08).
 - [ ] P1.11 `baukit check observability` replacing the five product linters (Q-13).
@@ -136,15 +136,15 @@ tenancy and rate-limit audit of the products (S-08).
 - [~] P2.1 (baukit-http layer merged in W2-2; web CSP, chart edge config, HSTS config field and fixture header checks wait for the template wave) `SecurityHeadersLayer` in baukit-http on by default (nosniff, Referrer-Policy, frame-ancestors via
   CSP for HTML, `Cache-Control: no-store` on authenticated JSON, HSTS behind config); CSP for the web template
   and the chart's edge config; header assertions in the fixture gate.
-- [~] P2.2 (ADR task 2 headers merged; W2-1 baukit-auth BFF running; auth-web waits for W1-C; design: ADR 0006 accepted; implementation = its 4 tasks) auth-web token storage per D2, with a test that no storage write contains a refresh token.
+- [~] P2.2 (ADR task 2 headers merged; W2-1 BFF in rework; auth-web waits for W1-C; design: ADR 0006 accepted; implementation = its 4 tasks) auth-web token storage per D2, with a test that no storage write contains a refresh token.
 - [ ] P2.3 `IssuedApiToken` and every secret-holding type: redacting Debug / `SecretString`.
 - [ ] P2.4 Clerk missing-azp opt-in; negative tests for every token profile.
-- [~] P2.5 Supply chain: SHA-pin all actions in baukit and the template workflows, renovate digest pinning,
+- [~] P2.5 (baukit done in W1-D; template workflows open) Supply chain: SHA-pin all actions in baukit and the template workflows, renovate digest pinning,
   zizmor + actionlint step, gitleaks with fixture allowlist, osv-scanner over Cargo.lock and pnpm-lock.yaml.
-- [~] P2.6 Fuzzing: `rust/fuzz` with targets for JWT header/claims decode, sync push batch decode, event
+- [~] P2.6 (6 targets and the gate lane merged; sync batch decode has no public entry point; template scaffold open) Fuzzing: `rust/fuzz` with targets for JWT header/claims decode, sync push batch decode, event
   envelope, MCP JSON-RPC dispatch, idempotency-key and locale header parsers; time-boxed `fuzz` gate step
   (nightly, 60 s per target locally, longer on schedule). Template gets a `backend/fuzz` scaffold and the step.
-- [~] P2.7 Property tests: credential vault (roundtrip, any AAD change fails), media grants (Rust signer and
+- [~] P2.7 (vault, media grants, HLC merged; sync owner isolation needs Postgres and moves to P2.8) Property tests: credential vault (roundtrip, any AAD change fails), media grants (Rust signer and
   njs verifier agree, single-byte mutations rejected), sync merge (idempotent, owner isolation).
 - [ ] P2.8 `baukit-test` security helpers: auth negative suite and `assert_cross_tenant_denied` that walks the
   OpenAPI routes; template integration test that uses both.
@@ -228,6 +228,16 @@ tenancy and rate-limit audit of the products (S-08).
   credentials scope, Keycloak idle note), accepted and merged. Worktree removed.
 - 2026-11-07: W2-1 (ADR 0006 task 1, baukit-auth BFF) and W2-2 (task 2, baukit-http headers) started in
   parallel with W1-A; both check against the new lint set via CLIPPY_CONF_DIR without editing the lint table.
+- 2026-11-07: W1-F merged after re-running its 3 property suites and 15 s smoke runs of jwt_verify and
+  mcp_jsonrpc. The orchestrator wired a `fuzz` gate lane and CI job (fmt, clippy, 60 s per target).
+  W1-D2 merged: osv ignores 46 to 37, all on typescript/pnpm-lock.yaml or with no fix; ruff and shellcheck
+  cover every tracked file except templates/. W1-B merged: fmt, clippy and every test including Docker ones
+  re-run, snapshots unchanged, 5 suppressions with reasons.
+  Sent back: W1-A (merge main, lint the new headers and property tests, P2.13), W1-C (a disable comment the
+  report claimed had a reason did not have one; enforce `require-description`; type-guards wiring for
+  fixtures; TS lock bumps), W2-1 (verify the ID token signature, baukit-ratelimit adapter). ADR 0006 now states
+  the real Quota semantics (rpm + burst admitted).
+  Open: templates/ Python and shell lint (template wave).
 - 2026-11-07: W2-2 merged (ADR 0006 task 2). Re-read the layer against ADR section 7, re-ran its 9 tests, and
   grepped rust/, cli/ and templates/ for HTML-serving routes (none, so the API CSP on every response is safe).
   Follow-up: `hsts_max_age` in baukit-config `HttpConfig`, so products set HSTS from config (template wave).

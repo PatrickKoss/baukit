@@ -146,6 +146,12 @@ shared Redis store:
   `auth-session-id`, 12 requests per minute, burst 4. Exchange has no session
   yet and uses only the IP bucket.
 
+A baukit-ratelimit `Quota` admits `requests_per_minute + burst` from a full
+bucket, so a client gets 40 IP requests and 16 session requests in its first
+minute, then the per-minute rate. baukit-auth defines the limiter as a port
+(`BrowserSessionRateLimiter`), because baukit-ratelimit depends on baukit-auth.
+The adapter lives in baukit-ratelimit behind its `browser-session` feature.
+
 Logout is limited per IP only. Fail mode follows `RateLimitOptions.fail_mode`
 (fail closed in the template). A refused request gets `429` with
 `Retry-After`; the client treats it like a network error and keeps the account
@@ -326,8 +332,8 @@ Generated products pick all of this up from the template.
   one tick it revokes the family; two concurrent refreshes produce exactly one
   IdP call and one successor; rotating the successor clears its grace token;
   AAD from another row fails to decrypt the grace token.
-- Rate limit (Rust integration with Redis testcontainer): the 31st exchange per
-  minute from one IP and the 13th refresh per session id return 429 with
+- Rate limit (Rust integration with Redis testcontainer): the 41st exchange per
+  minute from one IP and the 17th refresh per session id return 429 with
   `Retry-After`; a second session id from the same IP still passes the session
   bucket.
 - Credentials (TS unit): only session calls use `credentials: 'include'`; an

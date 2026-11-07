@@ -497,7 +497,7 @@ async fn read_error_body(mut response: reqwest::Response, limit: usize) -> Optio
     let mut body = Vec::new();
     while let Some(chunk) = response.chunk().await.ok()? {
         let remaining = limit - body.len();
-        body.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+        body.extend(chunk.iter().take(remaining));
         if body.len() == limit {
             let complete = length == u64::try_from(limit).ok();
             return Some(ErrorBody::new(body, !complete, content_type));
