@@ -8,49 +8,20 @@ import {
   requiredUrl,
 } from './oidc-helpers.js';
 
+import { OidcError } from './oidc-errors.js';
+import {
+  discoverProvider,
+  isStoredTokens,
+  isTokenResponse,
+  readProviderError,
+  readTransaction,
+  type StoredTokens,
+} from './oidc-validation.js';
+
+export { OidcError, safeAuthErrorMessage, type OidcErrorCode } from './oidc-errors.js';
 export { buildAuthorizationUrl, normalizeIssuer } from './oidc-helpers.js';
 export * from './silent-token-broker.js';
 export { CALLBACK_MESSAGE, completeSilentTokenCallback } from './silent-token-browser.js';
-
-export type OidcErrorCode =
-  | 'authorization_failed'
-  | 'callback_state_mismatch'
-  | 'discovery_failed'
-  | 'invalid_discovery_document'
-  | 'invalid_token_response'
-  | 'issuer_mismatch'
-  | 'refresh_failed'
-  | 'token_exchange_failed';
-
-const SAFE_ERROR_MESSAGES = {
-  authorization_failed: 'OIDC authorization failed.',
-  callback_state_mismatch: 'OIDC callback state did not match the login transaction.',
-  discovery_failed: 'OIDC provider discovery failed.',
-  invalid_discovery_document: 'OIDC provider returned invalid discovery metadata.',
-  invalid_token_response: 'OIDC token endpoint returned an invalid response.',
-  issuer_mismatch: 'OIDC provider issuer did not match the configured issuer.',
-  refresh_failed: 'OIDC token refresh failed.',
-  token_exchange_failed: 'OIDC token exchange failed.',
-} as const satisfies Record<OidcErrorCode, string>;
-
-/** An authentication failure whose message is safe to display or log. */
-export class OidcError extends Error {
-  public readonly code: OidcErrorCode;
-  public readonly status: number | undefined;
-  /** True only when retrying the failed operation may succeed without signing in again. */
-  public readonly retryable: boolean;
-
-  public constructor(
-    code: OidcErrorCode,
-    options: { readonly retryable?: boolean; readonly status?: number } = {},
-  ) {
-    super(SAFE_ERROR_MESSAGES[code]);
-    this.name = 'OidcError';
-    this.code = code;
-    this.status = options.status;
-    this.retryable = options.retryable ?? false;
-  }
-}
 
 export interface OidcClientConfig {
   readonly issuer: string;
@@ -100,26 +71,6 @@ interface NormalizedConfig {
   readonly storageKeyPrefix: string;
 }
 
-interface StoredTokens {
-  readonly accessToken: string;
-  readonly refreshToken?: string;
-  readonly idToken?: string;
-  readonly issuedAt: number;
-  readonly expiresAt: number;
-}
-
-interface LoginTransaction {
-  readonly state: string;
-  readonly verifier: string;
-}
-
-interface TokenResponse {
-  readonly access_token: string;
-  readonly expires_in: number;
-  readonly refresh_token?: string;
-  readonly id_token?: string;
-}
-
 export type SessionExpiredReason = 'refresh_rejected' | 'refresh_unavailable' | 'profile_erased';
 
 export interface ClearSessionOptions {
@@ -133,21 +84,9 @@ export interface SessionExpiredEvent {
 
 type SessionExpiredListener = (event: SessionExpiredEvent) => void;
 
-interface RawProviderMetadata {
-  readonly issuer: string;
-  readonly authorization_endpoint: string;
-  readonly token_endpoint: string;
-  readonly end_session_endpoint?: string;
-}
-
 export interface PkceAuthorizationRequest {
   readonly state: string;
   readonly challenge: string;
-}
-
-/** Returns an allowlisted message without reflecting untrusted error content. */
-export function safeAuthErrorMessage(cause: unknown): string {
-  return cause instanceof OidcError ? SAFE_ERROR_MESSAGES[cause.code] : 'OIDC login failed.';
 }
 
 /** Browser OIDC authorization-code client. It has no React dependency. */
@@ -463,15 +402,6 @@ export class OidcClient {
   }
 }
 
-async function readProviderError(response: Response): Promise<string | undefined> {
-  try {
-    const value: unknown = await response.json();
-    return isObject(value) && typeof value['error'] === 'string' ? value['error'] : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 function isTerminalRefreshRejection(status: number, providerError: string | undefined): boolean {
   return (
     status === 400 ||
@@ -493,41 +423,6 @@ function transientRefreshError(cause: unknown): OidcError {
     retryable: true,
     ...(cause instanceof OidcError && cause.status !== undefined ? { status: cause.status } : {}),
   });
-}
-
-async function discoverProvider(
-  issuer: string,
-  fetchImplementation: typeof globalThis.fetch,
-): Promise<OidcProviderMetadata> {
-  let response: Response;
-  try {
-    response = await fetchImplementation(`${issuer}/.well-known/openid-configuration`);
-  } catch {
-    throw new OidcError('discovery_failed');
-  }
-  if (!response.ok) {
-    throw new OidcError('discovery_failed', { status: response.status });
-  }
-  let value: unknown;
-  try {
-    value = await response.json();
-  } catch {
-    throw new OidcError('invalid_discovery_document');
-  }
-  if (!isProviderMetadata(value)) {
-    throw new OidcError('invalid_discovery_document');
-  }
-  if (normalizeIssuer(value.issuer) !== issuer) {
-    throw new OidcError('issuer_mismatch');
-  }
-  return {
-    issuer,
-    authorizationEndpoint: value.authorization_endpoint,
-    tokenEndpoint: value.token_endpoint,
-    ...(value.end_session_endpoint === undefined
-      ? {}
-      : { endSessionEndpoint: value.end_session_endpoint }),
-  };
 }
 
 function normalizeConfig(config: OidcClientConfig): NormalizedConfig {
@@ -569,80 +464,8 @@ function hasCallbackParameters(url: URL): boolean {
   );
 }
 
-function readTransaction(raw: string | null): LoginTransaction | undefined {
-  if (raw === null) {
-    return undefined;
-  }
-  try {
-    const value: unknown = JSON.parse(raw);
-    return isObject(value) &&
-      typeof value['state'] === 'string' &&
-      value['state'].length > 0 &&
-      typeof value['verifier'] === 'string' &&
-      value['verifier'].length > 0
-      ? { state: value['state'], verifier: value['verifier'] }
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 function refreshWindowMs(issuedAt: number, expiresAt: number, configuredLeewayMs: number): number {
   return Math.min(configuredLeewayMs, (expiresAt - issuedAt) / 2);
-}
-
-function isStoredTokens(value: unknown): value is StoredTokens {
-  return (
-    isObject(value) &&
-    typeof value['accessToken'] === 'string' &&
-    value['accessToken'].length > 0 &&
-    typeof value['issuedAt'] === 'number' &&
-    Number.isFinite(value['issuedAt']) &&
-    typeof value['expiresAt'] === 'number' &&
-    Number.isFinite(value['expiresAt']) &&
-    (value['refreshToken'] === undefined || typeof value['refreshToken'] === 'string') &&
-    (value['idToken'] === undefined || typeof value['idToken'] === 'string')
-  );
-}
-
-function isTokenResponse(value: unknown): value is TokenResponse {
-  return (
-    isObject(value) &&
-    typeof value['access_token'] === 'string' &&
-    value['access_token'].length > 0 &&
-    typeof value['expires_in'] === 'number' &&
-    Number.isFinite(value['expires_in']) &&
-    value['expires_in'] > 0 &&
-    (value['refresh_token'] === undefined || typeof value['refresh_token'] === 'string') &&
-    (value['id_token'] === undefined || typeof value['id_token'] === 'string')
-  );
-}
-
-function isProviderMetadata(value: unknown): value is RawProviderMetadata {
-  if (
-    !isObject(value) ||
-    typeof value['issuer'] !== 'string' ||
-    typeof value['authorization_endpoint'] !== 'string' ||
-    typeof value['token_endpoint'] !== 'string' ||
-    (value['end_session_endpoint'] !== undefined &&
-      typeof value['end_session_endpoint'] !== 'string')
-  ) {
-    return false;
-  }
-  try {
-    requiredUrl(value['authorization_endpoint'], 'OIDC authorization endpoint');
-    requiredUrl(value['token_endpoint'], 'OIDC token endpoint');
-    if (value['end_session_endpoint'] !== undefined) {
-      requiredUrl(value['end_session_endpoint'], 'OIDC end-session endpoint');
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }
 
 function browserEnvironment(): OidcClientEnvironment {

@@ -6,6 +6,8 @@ import { homedir } from 'node:os';
 import { dirname, join, parse, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
+import { isNonEmptyString, isRecord } from '@baukit/type-guards';
+
 import { AuthNodeError } from './errors.js';
 
 const CACHE_VERSION = 1;
@@ -258,23 +260,47 @@ function parseDocument(contents: string, namespace: string): CacheDocument {
 function validateProfile(value: unknown): asserts value is CachedTokenProfile {
   if (
     !isRecord(value) ||
-    !nonEmptyString(value['accessToken']) ||
-    (value['refreshToken'] !== undefined && !nonEmptyString(value['refreshToken'])) ||
-    (value['idToken'] !== undefined && !nonEmptyString(value['idToken'])) ||
-    !nonEmptyString(value['tokenType']) ||
-    typeof value['issuedAt'] !== 'number' ||
-    !Number.isFinite(value['issuedAt']) ||
-    typeof value['expiresAt'] !== 'number' ||
-    !Number.isFinite(value['expiresAt']) ||
-    value['expiresAt'] <= 0 ||
-    !nonEmptyString(value['issuer']) ||
-    !nonEmptyString(value['clientId']) ||
-    !Array.isArray(value['scopes']) ||
-    !value['scopes'].every(nonEmptyString) ||
-    (value['audience'] !== undefined && !nonEmptyString(value['audience']))
+    !hasValidTokens(value) ||
+    !hasValidTimes(value) ||
+    !hasValidClient(value)
   ) {
     throw new AuthNodeError('cache_corrupt');
   }
+}
+
+function optionalNonEmptyString(value: unknown): boolean {
+  return value === undefined || isNonEmptyString(value);
+}
+
+function hasValidTokens(value: Record<string, unknown>): boolean {
+  return (
+    isNonEmptyString(value['accessToken']) &&
+    optionalNonEmptyString(value['refreshToken']) &&
+    optionalNonEmptyString(value['idToken']) &&
+    isNonEmptyString(value['tokenType'])
+  );
+}
+
+function hasValidTimes(value: Record<string, unknown>): boolean {
+  const { issuedAt, expiresAt } = value;
+  return (
+    typeof issuedAt === 'number' &&
+    Number.isFinite(issuedAt) &&
+    typeof expiresAt === 'number' &&
+    Number.isFinite(expiresAt) &&
+    expiresAt > 0
+  );
+}
+
+function hasValidClient(value: Record<string, unknown>): boolean {
+  const scopes = value['scopes'];
+  return (
+    isNonEmptyString(value['issuer']) &&
+    isNonEmptyString(value['clientId']) &&
+    Array.isArray(scopes) &&
+    scopes.every(isNonEmptyString) &&
+    optionalNonEmptyString(value['audience'])
+  );
 }
 
 async function preparePrivateDirectory(path: string, platform: NodeJS.Platform): Promise<void> {
@@ -344,14 +370,6 @@ function nodeError(error: unknown, code: string): boolean {
   return (
     error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === code
   );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function nonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0;
 }
 
 function ownProfile(

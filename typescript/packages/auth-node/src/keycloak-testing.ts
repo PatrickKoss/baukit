@@ -162,8 +162,8 @@ export async function allowKeycloakWebOrigin(
     postLogoutRedirectUris.includes(SAME_AS_REDIRECT_URIS) ||
     postLogoutRedirectUris.includes(redirectUri);
   if (
-    client.redirectUris?.includes(redirectUri) &&
-    client.webOrigins?.includes(origin) &&
+    client.redirectUris?.includes(redirectUri) === true &&
+    client.webOrigins?.includes(origin) === true &&
     logoutAllowed
   ) {
     return;

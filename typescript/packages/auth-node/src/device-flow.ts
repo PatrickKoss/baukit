@@ -2,17 +2,36 @@
 
 import { createHash, randomBytes } from 'node:crypto';
 
-import { isAllowedWebScheme } from './api-origin.js';
+import { isRecord } from '@baukit/type-guards';
+
 import { NodeTokenCache, type CachedTokenProfile, type NodeTokenCacheOptions } from './cache.js';
+import {
+  normalizeConfig,
+  normalizePolicy,
+  normalizeWebUrl,
+  optionalPositiveInteger,
+  optionalString,
+  positiveInteger,
+  requiredPositiveInteger,
+  requiredString,
+  validateDiscoveredEndpoint,
+  validateWebUrl,
+  type NormalizedConfig,
+} from './device-flow-config.js';
+import {
+  abortableDelay,
+  combineSignals,
+  mapAbort,
+  postForm,
+  requestJson,
+  throwIfAborted,
+  timeoutSignal,
+  type JsonResponse,
+} from './device-flow-http.js';
 import { AuthNodeError } from './errors.js';
 
-const DEFAULT_SCOPES = ['openid', 'profile', 'offline_access'] as const;
 const DEFAULT_DEVICE_INTERVAL_SECONDS = 5;
 const SLOW_DOWN_INCREMENT_SECONDS = 5;
-const DEFAULT_MAX_RESPONSE_BYTES = 64 * 1024;
-const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
-const DEFAULT_LOGIN_TIMEOUT_MS = 10 * 60 * 1000;
-const DEFAULT_REFRESH_LEEWAY_SECONDS = 60;
 const DISPLAY_CLAIMS_MAX_BYTES = 16 * 1024;
 const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
 
@@ -85,19 +104,6 @@ export interface DisplayOnlyClaims {
   readonly preferredUsername?: string;
   readonly email?: string;
   readonly expiresAt?: number;
-}
-
-interface NormalizedConfig {
-  readonly issuer: string;
-  readonly clientId: string;
-  readonly scopes: readonly string[];
-  readonly audience?: string;
-  readonly profile: string;
-  readonly endpointPolicy: Required<EndpointPolicy>;
-  readonly maxResponseBytes: number;
-  readonly requestTimeoutMs: number;
-  readonly loginTimeoutMs: number;
-  readonly refreshLeewayMs: number;
 }
 
 interface DeviceAuthorization {
@@ -197,7 +203,7 @@ export class DeviceFlowClient {
 
   public async accessToken(options: AccessTokenOptions = {}): Promise<string> {
     const environmentToken = (await this.#environment.environmentToken?.())?.trim();
-    if (environmentToken) return environmentToken;
+    if (environmentToken !== undefined && environmentToken !== '') return environmentToken;
     const signal = combineSignals(this.#environment.signal, options.signal);
     throwIfAborted(signal);
     const cached = await this.#cache.read(this.#config.profile);
@@ -249,10 +255,12 @@ export class DeviceFlowClient {
         code_challenge_method: 'S256',
         ...(this.#config.audience === undefined ? {} : { audience: this.#config.audience }),
       },
-      this.#environment.fetch,
-      this.#requestOptions(signal),
-      'invalid_device_response',
-      'device_authorization_failed',
+      {
+        fetchImplementation: this.#environment.fetch,
+        options: this.#requestOptions(signal),
+        invalidResponseCode: 'invalid_device_response',
+        requestFailureCode: 'device_authorization_failed',
+      },
     );
     if (!response.response.ok) {
       throw new AuthNodeError('device_authorization_failed', { status: response.response.status });
@@ -298,10 +306,12 @@ export class DeviceFlowClient {
           client_id: this.#config.clientId,
           code_verifier: device.codeVerifier,
         },
-        this.#environment.fetch,
-        this.#requestOptions(signal),
-        'invalid_token_response',
-        'device_authorization_failed',
+        {
+          fetchImplementation: this.#environment.fetch,
+          options: this.#requestOptions(signal),
+          invalidResponseCode: 'invalid_token_response',
+          requestFailureCode: 'device_authorization_failed',
+        },
       );
       if (result.response.ok) {
         await presentation?.showStatus?.('authorized');
@@ -347,10 +357,12 @@ export class DeviceFlowClient {
           client_id: this.#config.clientId,
           ...(this.#config.audience === undefined ? {} : { audience: this.#config.audience }),
         },
-        this.#environment.fetch,
-        this.#requestOptions(signal),
-        'invalid_token_response',
-        'refresh_failed',
+        {
+          fetchImplementation: this.#environment.fetch,
+          options: this.#requestOptions(signal),
+          invalidResponseCode: 'invalid_token_response',
+          requestFailureCode: 'refresh_failed',
+        },
       );
       if (!result.response.ok) {
         throw new AuthNodeError('refresh_failed', {
@@ -435,10 +447,12 @@ export async function discoverDeviceProvider(
     result = await requestJson(
       discoveryUrl,
       { headers: { Accept: 'application/json' } },
-      fetchImplementation,
-      requestOptions,
-      'invalid_discovery_document',
-      'discovery_failed',
+      {
+        fetchImplementation: fetchImplementation,
+        options: requestOptions,
+        invalidResponseCode: 'invalid_discovery_document',
+        requestFailureCode: 'discovery_failed',
+      },
     );
   } catch (error) {
     if (error instanceof AuthNodeError) throw error;
@@ -497,87 +511,6 @@ export function decodeDisplayOnlyClaims(token: string): DisplayOnlyClaims | unde
   }
 }
 
-interface JsonResponse {
-  readonly response: Response;
-  readonly body: Record<string, unknown>;
-}
-
-async function postForm(
-  endpoint: string,
-  fields: Record<string, string>,
-  fetchImplementation: typeof globalThis.fetch,
-  options: DeviceProviderRequestOptions,
-  invalidResponseCode:
-    'invalid_device_response' | 'invalid_discovery_document' | 'invalid_token_response',
-  requestFailureCode: 'device_authorization_failed' | 'discovery_failed' | 'refresh_failed',
-): Promise<JsonResponse> {
-  return requestJson(
-    endpoint,
-    {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams(fields),
-    },
-    fetchImplementation,
-    options,
-    invalidResponseCode,
-    requestFailureCode,
-  );
-}
-
-async function requestJson(
-  input: string,
-  init: RequestInit,
-  fetchImplementation: typeof globalThis.fetch,
-  options: DeviceProviderRequestOptions,
-  invalidResponseCode:
-    'invalid_device_response' | 'invalid_discovery_document' | 'invalid_token_response',
-  requestFailureCode: 'device_authorization_failed' | 'discovery_failed' | 'refresh_failed',
-): Promise<JsonResponse> {
-  const requestTimeout = timeoutSignal(options.signal, options.requestTimeoutMs);
-  try {
-    const response = await fetchImplementation(input, { ...init, signal: requestTimeout.signal });
-    const declaredLength = Number(response.headers.get('content-length'));
-    if (Number.isFinite(declaredLength) && declaredLength > options.maxResponseBytes) {
-      throw new AuthNodeError(invalidResponseCode);
-    }
-    let text = '';
-    if (response.body !== null) {
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let bytes = 0;
-      for (;;) {
-        const chunk = await reader.read();
-        if (chunk.done) break;
-        bytes += chunk.value.byteLength;
-        if (bytes > options.maxResponseBytes) {
-          await reader.cancel().catch(() => undefined);
-          throw new AuthNodeError(invalidResponseCode);
-        }
-        text += decoder.decode(chunk.value, { stream: true });
-      }
-      text += decoder.decode();
-    }
-    let value: unknown;
-    try {
-      value = JSON.parse(text) as unknown;
-    } catch {
-      throw new AuthNodeError(invalidResponseCode);
-    }
-    if (!isRecord(value)) throw new AuthNodeError(invalidResponseCode);
-    return { response, body: value };
-  } catch (error) {
-    const mapped = mapAbort(error, options.signal, requestTimeout.didTimeout());
-    if (mapped instanceof AuthNodeError) throw mapped;
-    throw new AuthNodeError(requestFailureCode, { retryable: true });
-  } finally {
-    requestTimeout.dispose();
-  }
-}
-
 function parseTokenResponse(body: Record<string, unknown>): TokenResponse {
   const refreshToken = optionalString(body, 'refresh_token');
   const idToken = optionalString(body, 'id_token');
@@ -588,242 +521,4 @@ function parseTokenResponse(body: Record<string, unknown>): TokenResponse {
     tokenType: optionalString(body, 'token_type') ?? 'Bearer',
     expiresIn: requiredPositiveInteger(body, 'expires_in', 'invalid_token_response'),
   };
-}
-
-function normalizeConfig(config: DeviceFlowClientConfig): NormalizedConfig {
-  const policy = normalizePolicy(config.endpointPolicy ?? {});
-  const issuer = normalizeWebUrl(config.issuer, policy.allowLoopbackHttp, 'issuer');
-  const clientId = requiredText(config.clientId, 'OIDC client ID');
-  const scopes = normalizeScopes(config.scopes);
-  return {
-    issuer,
-    clientId,
-    scopes,
-    ...(config.audience === undefined
-      ? {}
-      : { audience: requiredText(config.audience, 'audience') }),
-    profile: config.profile ?? 'default',
-    endpointPolicy: policy,
-    maxResponseBytes: positiveInteger(
-      config.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
-      'maximum response size',
-    ),
-    requestTimeoutMs: positiveInteger(
-      config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
-      'request timeout',
-    ),
-    loginTimeoutMs: positiveInteger(
-      config.loginTimeoutMs ?? DEFAULT_LOGIN_TIMEOUT_MS,
-      'login timeout',
-    ),
-    refreshLeewayMs:
-      nonNegativeInteger(
-        config.refreshLeewaySeconds ?? DEFAULT_REFRESH_LEEWAY_SECONDS,
-        'refresh leeway',
-      ) * 1000,
-  };
-}
-
-function normalizePolicy(policy: EndpointPolicy): Required<EndpointPolicy> {
-  const allowLoopbackHttp = policy.allowLoopbackHttp ?? false;
-  return {
-    allowLoopbackHttp,
-    issuerAllowlist: (policy.issuerAllowlist ?? []).map((issuer) =>
-      normalizeWebUrl(issuer, allowLoopbackHttp, 'issuer'),
-    ),
-    endpointOriginAllowlist: (policy.endpointOriginAllowlist ?? []).map((origin) => {
-      const url = parseUrl(origin, 'config');
-      if (url.origin !== url.toString().replace(/\/$/u, '') || url.username || url.password) {
-        throw new TypeError('endpoint origin allowlist entries must contain only an origin.');
-      }
-      validateWebUrl(url.toString(), allowLoopbackHttp);
-      return url.origin;
-    }),
-  };
-}
-
-function validateDiscoveredEndpoint(
-  value: string,
-  issuer: string,
-  policy: Required<EndpointPolicy>,
-): string {
-  const endpoint = parseUrl(value, 'provider');
-  validateWebUrl(endpoint.toString(), policy.allowLoopbackHttp);
-  if (endpoint.username || endpoint.password || endpoint.hash) {
-    throw new AuthNodeError('endpoint_policy_violation');
-  }
-  const issuerUrl = parseUrl(issuer, 'provider');
-  const originAllowed =
-    endpoint.origin === issuerUrl.origin ||
-    policy.endpointOriginAllowlist.includes(endpoint.origin);
-  if (!originAllowed) throw new AuthNodeError('endpoint_policy_violation');
-  if (endpoint.origin === issuerUrl.origin) {
-    const issuerPath = issuerUrl.pathname.replace(/\/$/u, '');
-    const relatedPath =
-      issuerPath.length === 0 ||
-      endpoint.pathname === issuerPath ||
-      endpoint.pathname.startsWith(`${issuerPath}/`);
-    if (!relatedPath) throw new AuthNodeError('endpoint_policy_violation');
-  }
-  return endpoint.toString();
-}
-
-function normalizeWebUrl(value: string, allowLoopbackHttp: boolean, label: string): string {
-  const url = parseUrl(requiredText(value, `OIDC ${label}`), 'config');
-  if (url.search || url.hash || url.username || url.password) {
-    throw new TypeError(`OIDC ${label} must not contain credentials, a query, or a fragment.`);
-  }
-  validateWebUrl(url.toString(), allowLoopbackHttp);
-  return url.toString().replace(/\/+$/u, '');
-}
-
-function validateWebUrl(value: string, allowLoopbackHttp: boolean): void {
-  if (!isAllowedWebScheme(parseUrl(value, 'provider'), allowLoopbackHttp)) {
-    throw new AuthNodeError('endpoint_policy_violation');
-  }
-}
-
-function parseUrl(value: string, source: 'config' | 'provider'): URL {
-  try {
-    return new URL(value);
-  } catch {
-    if (source === 'config') throw new TypeError('OIDC URL is invalid.');
-    throw new AuthNodeError('endpoint_policy_violation');
-  }
-}
-
-function normalizeScopes(scopes: readonly string[] | undefined): readonly string[] {
-  const values = scopes ?? DEFAULT_SCOPES;
-  const normalized = values.map((scope) => requiredText(scope, 'OIDC scope'));
-  if (!normalized.includes('openid')) normalized.unshift('openid');
-  return [...new Set(normalized)];
-}
-
-function requiredString(
-  value: Record<string, unknown>,
-  key: string,
-  code: 'invalid_device_response' | 'invalid_discovery_document' | 'invalid_token_response',
-): string {
-  const result = optionalString(value, key);
-  if (result === undefined) throw new AuthNodeError(code);
-  return result;
-}
-
-function optionalString(value: Record<string, unknown>, key: string): string | undefined {
-  const result = value[key];
-  return typeof result === 'string' && result.length > 0 ? result : undefined;
-}
-
-function requiredPositiveInteger(
-  value: Record<string, unknown>,
-  key: string,
-  code: 'invalid_device_response' | 'invalid_token_response',
-): number {
-  const result = optionalPositiveInteger(value, key, code);
-  if (result === undefined) throw new AuthNodeError(code);
-  return result;
-}
-
-function optionalPositiveInteger(
-  value: Record<string, unknown>,
-  key: string,
-  code: 'invalid_device_response' | 'invalid_token_response',
-): number | undefined {
-  const result = value[key];
-  if (result === undefined) return undefined;
-  if (!Number.isSafeInteger(result) || (result as number) <= 0) throw new AuthNodeError(code);
-  return result as number;
-}
-
-function requiredText(value: string, label: string): string {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) throw new TypeError(`${label} must not be empty.`);
-  return trimmed;
-}
-
-function positiveInteger(value: number, label: string): number {
-  if (!Number.isSafeInteger(value) || value <= 0)
-    throw new RangeError(`${label} must be positive.`);
-  return value;
-}
-
-function nonNegativeInteger(value: number, label: string): number {
-  if (!Number.isSafeInteger(value) || value < 0) {
-    throw new RangeError(`${label} must be a non-negative integer.`);
-  }
-  return value;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function throwIfAborted(signal?: AbortSignal): void {
-  if (signal?.aborted === true) throw new AuthNodeError('aborted');
-}
-
-function mapAbort(
-  error: unknown,
-  parentSignal: AbortSignal | undefined,
-  timedOut: boolean,
-): unknown {
-  if (parentSignal?.aborted === true) return new AuthNodeError('aborted');
-  if (timedOut) return new AuthNodeError('login_timeout', { retryable: true });
-  return error;
-}
-
-function combineSignals(
-  first: AbortSignal | undefined,
-  second: AbortSignal | undefined,
-): AbortSignal | undefined {
-  if (first === undefined) return second;
-  if (second === undefined) return first;
-  return AbortSignal.any([first, second]);
-}
-
-function timeoutSignal(
-  parent: AbortSignal | undefined,
-  milliseconds: number,
-): {
-  readonly signal: AbortSignal;
-  readonly didTimeout: () => boolean;
-  readonly dispose: () => void;
-} {
-  const controller = new AbortController();
-  let timedOut = false;
-  const timeout = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, milliseconds);
-  const abortFromParent = (): void => {
-    controller.abort();
-  };
-  parent?.addEventListener('abort', abortFromParent, { once: true });
-  if (parent?.aborted === true) controller.abort();
-  return {
-    signal: controller.signal,
-    didTimeout: () => timedOut,
-    dispose: () => {
-      clearTimeout(timeout);
-      parent?.removeEventListener('abort', abortFromParent);
-    },
-  };
-}
-
-function abortableDelay(milliseconds: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolveDelay, reject) => {
-    if (signal?.aborted === true) {
-      reject(new AuthNodeError('aborted'));
-      return;
-    }
-    const onAbort = (): void => {
-      clearTimeout(timeout);
-      reject(new AuthNodeError('aborted'));
-    };
-    const timeout = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      resolveDelay();
-    }, milliseconds);
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
 }

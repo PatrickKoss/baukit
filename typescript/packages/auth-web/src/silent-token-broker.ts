@@ -1,3 +1,4 @@
+import { isNonEmptyString, isRecord } from '@baukit/type-guards';
 import { createLocalJWKSet, jwtVerify, type JSONWebKeySet } from 'jose';
 import {
   base64UrlEncode,
@@ -242,7 +243,8 @@ export class SilentTokenBroker {
       target = this.environment.open(interactive);
       if (interactive) {
         popupPoll = setInterval(() => {
-          if (target?.closed) controller.abort(new AuthorizationError('interaction_cancelled'));
+          if (target?.closed === true)
+            controller.abort(new AuthorizationError('interaction_cancelled'));
         }, POPUP_POLL_INTERVAL_MS);
       }
       return await abortable(
@@ -312,9 +314,7 @@ export class SilentTokenBroker {
     const tokens = validateTokenResponse(value, receivedAt);
     const signedExpiresAt = await this.verifyTokenClaims(
       product,
-      metadata.jwksUri,
-      tokens,
-      transaction.nonce,
+      { jwksUri: metadata.jwksUri, tokens, nonce: transaction.nonce },
       signal,
     );
     signal.throwIfAborted();
@@ -325,13 +325,12 @@ export class SilentTokenBroker {
 
   private async verifyTokenClaims(
     product: SilentTokenProduct,
-    jwksUri: string,
-    tokens: TokenResponse,
-    nonce: string,
+    { jwksUri, tokens, nonce }: TokenVerification,
     signal: AbortSignal,
   ): Promise<number> {
     const { value: jwks } = await this.json(jwksUri, signal);
-    const keys = createLocalJWKSet(jwks as unknown as JSONWebKeySet);
+    if (!isJsonWebKeySet(jwks)) throw new SilentTokenError('invalid_response');
+    const keys = createLocalJWKSet(jwks);
     const options = {
       issuer: product.issuer,
       algorithms: ['RS256'],
@@ -353,7 +352,7 @@ export class SilentTokenBroker {
       audience: product.audience,
     });
     if (
-      !id.sub ||
+      !isNonEmptyString(id.sub) ||
       access.sub !== id.sub ||
       access['azp'] !== product.clientId ||
       access[this.accountBinding.claim] !== this.accountBinding.value
@@ -403,9 +402,8 @@ export class SilentTokenBroker {
     if (!response.ok) throw new SilentTokenError('http_error');
     const value: unknown = await response.json();
     signal.throwIfAborted();
-    if (typeof value !== 'object' || value === null || Array.isArray(value))
-      throw new SilentTokenError('invalid_response');
-    return { value: value as Record<string, unknown>, receivedAt };
+    if (!isRecord(value)) throw new SilentTokenError('invalid_response');
+    return { value, receivedAt };
   }
 }
 
@@ -432,13 +430,24 @@ function validateTokenResponse(tokens: Record<string, unknown>, receivedAt: numb
 
 function callbackCode(callback: string, product: SilentTokenProduct, state: string): string {
   const returned = new URL(callback);
-  const expected = new URL(product.redirectUri);
+  assertCallbackShape(returned, new URL(product.redirectUri));
+  if (returned.searchParams.get('state') !== state) throw new SilentTokenError('invalid_state');
+  if (returned.searchParams.get('iss') !== product.issuer)
+    throw new SilentTokenError('invalid_issuer');
+  const error = returned.searchParams.get('error');
+  if (error !== null) throw callbackError(error, returned.searchParams.has('code'));
+  const code = returned.searchParams.get('code');
+  if (!isNonEmptyString(code)) throw new SilentTokenError('missing_code');
+  return code;
+}
+
+function assertCallbackShape(returned: URL, expected: URL): void {
   if (
     returned.origin !== expected.origin ||
     returned.pathname !== expected.pathname ||
-    returned.hash ||
-    returned.username ||
-    returned.password
+    returned.hash !== '' ||
+    returned.username !== '' ||
+    returned.password !== ''
   ) {
     throw new SilentTokenError('invalid_callback');
   }
@@ -446,23 +455,30 @@ function callbackCode(callback: string, product: SilentTokenProduct, state: stri
     if (returned.searchParams.getAll(field).length > 1)
       throw new SilentTokenError('invalid_callback');
   }
-  if (returned.searchParams.get('state') !== state) throw new SilentTokenError('invalid_state');
-  if (returned.searchParams.get('iss') !== product.issuer)
-    throw new SilentTokenError('invalid_issuer');
-  const error = returned.searchParams.get('error');
-  if (error !== null) {
-    if (returned.searchParams.has('code')) throw new SilentTokenError('invalid_callback');
-    if (
-      error === 'login_required' ||
-      error === 'interaction_required' ||
-      error === 'consent_required'
-    )
-      throw new AuthorizationError(error);
-    throw new SilentTokenError('authorization_rejected');
-  }
-  const code = returned.searchParams.get('code');
-  if (!code) throw new SilentTokenError('missing_code');
-  return code;
+}
+
+function callbackError(error: string, hasCode: boolean): Error {
+  if (hasCode) return new SilentTokenError('invalid_callback');
+  if (
+    error === 'login_required' ||
+    error === 'interaction_required' ||
+    error === 'consent_required'
+  )
+    return new AuthorizationError(error);
+  return new SilentTokenError('authorization_rejected');
+}
+
+interface TokenVerification {
+  readonly jwksUri: string;
+  readonly tokens: TokenResponse;
+  readonly nonce: string;
+}
+
+function isJsonWebKeySet(
+  value: Record<string, unknown>,
+): value is Record<string, unknown> & JSONWebKeySet {
+  const keys = value['keys'];
+  return Array.isArray(keys) && keys.every((key) => isRecord(key) && isNonEmptyString(key['kty']));
 }
 
 function failureResult(
