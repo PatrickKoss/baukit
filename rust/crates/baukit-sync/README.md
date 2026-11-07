@@ -132,6 +132,25 @@ Deleting a row outright instead of setting `deleted_at` is the bug this conventi
 prevent: the row simply stops appearing in pulls, and every client that already has it keeps it
 forever.
 
+### Keep the owner in the key
+
+A client generates `id`, so two owners can send the same one, by accident or on purpose. Key the
+table by `PRIMARY KEY (owner_id, id)`. A table that keeps a global `id` key must still put the owner
+in the `WHERE` of every write. Never upsert with a bare `ON CONFLICT (id)` on a global id: the
+second owner's push overwrites the first owner's row. Put the owner in the conflict target and in
+the update's `WHERE`:
+
+```sql
+INSERT INTO product_records (owner_id, id, deleted_at, revision)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (owner_id, id) DO UPDATE
+SET deleted_at = EXCLUDED.deleted_at, revision = EXCLUDED.revision, updated_at = now()
+WHERE product_records.owner_id = EXCLUDED.owner_id;
+```
+
+The reference migration's comment still shows `id UUID PRIMARY KEY`. It stays unchanged because
+products have applied it and SQLx checksums applied migrations; follow this section instead.
+
 ## Tombstone purge horizons
 
 Tombstones cannot stay forever, but deleting one breaks every client whose cursor is still below
@@ -149,7 +168,8 @@ cascades, so erasing an owner's counter also removes the horizon.
 
 The product supplies one `TombstoneTable` per syncable table. The selector binds the cutoff as `$1`
 and the batch limit as `$2`, returns `id`, `owner_id`, and `revision`, and locks its rows with
-`FOR UPDATE SKIP LOCKED`. The delete binds the selected ids as `$1`. A child table joins its parent
+`FOR UPDATE SKIP LOCKED`. The delete binds the selected ids as `$1` and their owners as `$2`, in the same order, and must
+delete exactly those `(owner_id, id)` pairs. A child table joins its parent
 for `owner_id`, and a parent selector skips rows that still have children:
 
 ```rust
@@ -162,7 +182,8 @@ const LIST_ITEMS: TombstoneTable = TombstoneTable::new(
      WHERE item.deleted_at < $1
      ORDER BY item.deleted_at, item.id LIMIT $2
      FOR UPDATE OF item SKIP LOCKED",
-    "DELETE FROM list_items WHERE id = ANY($1)",
+    "DELETE FROM list_items item USING lists list, UNNEST($1::uuid[], $2::uuid[]) AS purged (id, owner_id)
+     WHERE item.id = purged.id AND list.id = item.list_id AND list.owner_id = purged.owner_id",
 );
 
 const LISTS: TombstoneTable = TombstoneTable::new(
@@ -172,7 +193,8 @@ const LISTS: TombstoneTable = TombstoneTable::new(
        AND NOT EXISTS (SELECT 1 FROM list_items item WHERE item.list_id = list.id)
      ORDER BY list.deleted_at, list.id LIMIT $2
      FOR UPDATE SKIP LOCKED",
-    "DELETE FROM lists WHERE id = ANY($1)",
+    "DELETE FROM lists record USING UNNEST($1::uuid[], $2::uuid[]) AS purged (id, owner_id)
+     WHERE record.id = purged.id AND record.owner_id = purged.owner_id",
 );
 
 const PURGE_ORDER: [TombstoneTable; 2] = [LIST_ITEMS, LISTS];
@@ -206,7 +228,8 @@ const RECORDS: TombstoneTable = TombstoneTable::new(
     "SELECT id, owner_id, revision FROM product_records
      WHERE deleted_at < $1 ORDER BY deleted_at, id LIMIT $2
      FOR UPDATE SKIP LOCKED",
-    "DELETE FROM product_records WHERE id = ANY($1)",
+    "DELETE FROM product_records record USING UNNEST($1::uuid[], $2::uuid[]) AS purged (id, owner_id)
+     WHERE record.id = purged.id AND record.owner_id = purged.owner_id",
 );
 const TOMBSTONE_RETENTION: TimeDelta = TimeDelta::days(30);
 const PURGE_BATCH: NonZeroU32 = NonZeroU32::new(1_000).expect("batch size is not zero");

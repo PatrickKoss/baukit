@@ -143,10 +143,10 @@ tenancy and rate-limit audit of the products (S-08).
   auth-providers.md:90 line are left for the backend template wave) Clerk missing-azp opt-in; negative tests for every token profile.
 - [x] P2.5 (baukit in W1-D, template workflows and repo-lint in W5-T3) Supply chain: SHA-pin all actions in baukit and the template workflows, renovate digest pinning,
   zizmor + actionlint step, gitleaks with fixture allowlist, osv-scanner over Cargo.lock and pnpm-lock.yaml.
-- [~] P2.6 (6 targets and the gate lane merged; sync batch decode has no public entry point; template scaffold open) Fuzzing: `rust/fuzz` with targets for JWT header/claims decode, sync push batch decode, event
+- [~] P2.6 (6 targets and the gate lane merged; template scaffold open; baukit has no sync push decode because the wire protocol is product-owned, so push batch fuzzing moves to the P4.2 rollout) Fuzzing: `rust/fuzz` with targets for JWT header/claims decode, sync push batch decode, event
   envelope, MCP JSON-RPC dispatch, idempotency-key and locale header parsers; time-boxed `fuzz` gate step
   (nightly, 60 s per target locally, longer on schedule). Template gets a `backend/fuzz` scaffold and the step.
-- [~] P2.7 (vault, media grants, HLC merged; sync owner isolation needs Postgres and moves to P2.8) Property tests: credential vault (roundtrip, any AAD change fails), media grants (Rust signer and
+- [x] P2.7 (vault, media grants, HLC merged; F5 added a two-owner proptest over the crate's revision and purge calls on Postgres, which found purge deleting another owner's row with the same id; `TombstoneTable` delete now binds owners as `$2`; push/pull isolation stays product-owned and moves to the P4.2 rollout) Property tests: credential vault (roundtrip, any AAD change fails), media grants (Rust signer and
   njs verifier agree, single-byte mutations rejected), sync merge (idempotent, owner isolation).
 - [ ] P2.8 `baukit-test` security helpers: auth negative suite and `assert_cross_tenant_denied` that walks the
   OpenAPI routes; template integration test that uses both.

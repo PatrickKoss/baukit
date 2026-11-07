@@ -43,7 +43,11 @@ use crate::horizon::{FULL_RESYNC_CURSOR, PullCursorError, check_pull_cursor};
 /// still have children, so that no cascade removes a tombstone the horizon did
 /// not count.
 ///
-/// `delete` binds the selected ids as `$1` (`uuid[]`) and deletes those rows.
+/// `delete` binds the selected ids as `$1` (`uuid[]`) and their owners as `$2`
+/// (`uuid[]`, same order) and deletes exactly those `(owner_id, id)` pairs. An
+/// id is unique only per owner when the table's key is `(owner_id, id)`, so a
+/// delete by id alone can remove another owner's row without raising that
+/// owner's horizon.
 /// Remove non-synced dependents with a foreign-key cascade or a data-modifying
 /// `WITH` clause in the same statement.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -169,12 +173,13 @@ pub async fn purge_tombstone_batch(
             deleted: 0,
         });
     }
-    let ids = purged
+    let (ids, owners): (Vec<Uuid>, Vec<Uuid>) = purged
         .iter()
-        .map(|candidate| candidate.id)
-        .collect::<Vec<_>>();
+        .map(|candidate| (candidate.id, candidate.owner_id))
+        .unzip();
     let deleted = sqlx::query(table.delete)
         .bind(&ids)
+        .bind(&owners)
         .execute(&mut **transaction)
         .await?
         .rows_affected();
