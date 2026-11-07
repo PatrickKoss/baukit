@@ -20,7 +20,7 @@ ade7c683334dd1c305c83db8de75b04413a0ae36123c5095d8b7a8ed7ee9b8be  CHANGELOG.md
 5eff47648470ef46c43d291809badc2a9143dd620b08ff9078379fe2393d4b77  backend/crates/snapshot-app-api/Cargo.toml
 4966d0284333e4c9b23faffd7a91359083592b383f2b8159b6858fa735f2e2dc  backend/crates/snapshot-app-api/src/lib.rs
 05873aa8bcd14168220c57b0a7d5f255c6187f9247d606f584f991ef379367e5  backend/crates/snapshot-app-bin/Cargo.toml
-f27b5fe98b0525721db6be42333dd1f3de6e7c1ca734eed7ce973cbe563d2303  backend/crates/snapshot-app-bin/src/bin/api.rs
+8edae2db4aab7e3a6036cc616c44395abc959142108c7488002234c5d63853fc  backend/crates/snapshot-app-bin/src/bin/api.rs
 749cfc6eddf5da6fc03098fd2e5f3f849d18c901f73c772939b0785587b508fb  backend/crates/snapshot-app-bin/src/bin/migrate.rs
 5c76cff169307e504f0eae77e32463a45fe8278b1af010034476bd859c0d0587  backend/crates/snapshot-app-bin/src/bin/openapi.rs
 aded1f92faa0068d3b5a5f02aafe52c576086549ebe896f97503f8f2e7c58d73  backend/crates/snapshot-app-bin/src/browser_session.rs

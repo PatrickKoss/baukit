@@ -209,7 +209,8 @@ async fn compose_api(
             browser_session_router(&config.product.auth.browser_session, dependencies).await?,
         );
     }
-{% if context.platform %}    let mut platform = {{ context.app_crate }}_bin::platform::compose(backend.pool.clone(), &config.product)?;
+{% if context.platform %}    let pool = backend.pool.clone();
+    let mut platform = {{ context.app_crate }}_bin::platform::compose(pool, &config.product)?;
     platform.router = rate_limited(platform.router, limits.as_ref());
 {% endif %}    let api = protect_routes(
         routes(backend.api_state.clone()),
@@ -256,7 +257,7 @@ async fn mcp_caller_verifier(
     backend: &Backend,
 ) -> Result<Arc<dyn IdentityVerifier>, Box<dyn Error>> {
     if config.product.mcp.enabled {
-        return Ok(mcp_verifier(&config.product.auth, &config.product.mcp).await?);
+        return mcp_verifier(&config.product.auth, &config.product.mcp).await;
     }
     Ok(backend.verifier.clone())
 }
@@ -274,7 +275,8 @@ fn compose_api(
     let api = routes(ApiState {
         items: backend.item_service.clone(),
     });
-{% if context.platform %}    let platform = {{ context.app_crate }}_bin::platform::compose(backend.pool.clone(), &config.product)?;
+{% if context.platform %}    let pool = backend.pool.clone();
+    let platform = {{ context.app_crate }}_bin::platform::compose(pool, &config.product)?;
     let api = api.merge(platform.router);
 {% endif %}    let api = rate_limited(api, limits.as_ref());
 {% if context.platform %}    let api = api.layer(axum::Extension(platform.entitlements));

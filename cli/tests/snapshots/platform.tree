@@ -22,7 +22,7 @@ fee23a1e072c5585a93ef9076fdbac27dec0fab1478ef158afb160f2885a65a2  backend/Docker
 2e1024f278faf12653f8e006f4d7552e1f75a28998f56a78b693d64a6d8c1713  backend/crates/snapshot-app-api/src/lib.rs
 1bcf8d1c737e01b6cfab42cc2ce995767e827724b3829a999f8ee2cbac1ee2b6  backend/crates/snapshot-app-api/src/platform.rs
 f65678c9782beea9f2712e5286d6390874be0a2aba76bd7202882140a4a0e5f4  backend/crates/snapshot-app-bin/Cargo.toml
-af8fc714f7d566beb76217f8f27c1e5491096b24aa94b8268b5d0ee4e273a112  backend/crates/snapshot-app-bin/src/bin/api.rs
+c30e60f583e1048d9114e8eb2152669fd9cade2ea0d150c6fa8d920329d35fd2  backend/crates/snapshot-app-bin/src/bin/api.rs
 749cfc6eddf5da6fc03098fd2e5f3f849d18c901f73c772939b0785587b508fb  backend/crates/snapshot-app-bin/src/bin/migrate.rs
 5c76cff169307e504f0eae77e32463a45fe8278b1af010034476bd859c0d0587  backend/crates/snapshot-app-bin/src/bin/openapi.rs
 626c45ccb948923a4cbb8af049f11a64da42dd9bee1b045442e7cd2422fc1b35  backend/crates/snapshot-app-bin/src/bin/worker.rs
