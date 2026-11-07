@@ -6,7 +6,7 @@ export interface Item {
   readonly name: string;
 }
 
-const configuredBaseUrl: unknown = import.meta.env['VITE_API_URL'];
+const configuredBaseUrl: unknown = import.meta.env.VITE_API_URL;
 const api = createApiRuntime({
   baseUrl: typeof configuredBaseUrl === 'string' ? configuredBaseUrl : 'http://localhost:{{ context.api_host_port }}',
   environment: import.meta.env.MODE,

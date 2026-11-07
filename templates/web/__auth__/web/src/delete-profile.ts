@@ -46,7 +46,7 @@ function durableKeys(): IdempotencyKeyStorage {
 
 export async function createDeleteProfileClient(subject: string): Promise<ProfileErasureClient> {
   const token = await authClient.accessToken();
-  const configuredBaseUrl: unknown = import.meta.env['VITE_API_URL'];
+  const configuredBaseUrl: unknown = import.meta.env.VITE_API_URL;
   const runtime = createApiRuntime({
     baseUrl:
       typeof configuredBaseUrl === 'string'

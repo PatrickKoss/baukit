@@ -14,6 +14,11 @@ test("the scanner names each kind of local sign-in leftover", () => {
   assert.deepEqual(findLocalSignInMarkers("['localhost','127.0.0.1'].includes(host)"), []);
 });
 
+test("the scanner reports an inlined Vite env object by its canary value", () => {
+  assert.deepEqual(findLocalSignInMarkers('const env = {"VITE_X":"canary-1"}', "canary-1"), ["inlined Vite env object"]);
+  assert.deepEqual(findLocalSignInMarkers("const key = 'pk_test'", "canary-1"), []);
+});
+
 test("the bundle scan reports the file and marker", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "bundle-scan-"));
   t.after(() => rm(directory, { recursive: true }));

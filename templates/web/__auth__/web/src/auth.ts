@@ -4,12 +4,12 @@ import { PRODUCT_NAME } from './product';
 import type { SignInPort } from './sign-in/port';
 import { createSignInPort } from './sign-in/provider-client';
 
-const configuredIssuer: unknown = import.meta.env['VITE_OIDC_ISSUER'];
-const configuredClientId: unknown = import.meta.env['VITE_OIDC_CLIENT_ID'];
-const configuredAudience: unknown = import.meta.env['VITE_OIDC_AUDIENCE'];
-const configuredResource: unknown = import.meta.env['VITE_OIDC_RESOURCE'];
-const configuredScopes: unknown = import.meta.env['VITE_OIDC_SCOPES'];
-const offlineAccess = import.meta.env['VITE_OIDC_OFFLINE_ACCESS'] !== 'false';
+const configuredIssuer: unknown = import.meta.env.VITE_OIDC_ISSUER;
+const configuredClientId: unknown = import.meta.env.VITE_OIDC_CLIENT_ID;
+const configuredAudience: unknown = import.meta.env.VITE_OIDC_AUDIENCE;
+const configuredResource: unknown = import.meta.env.VITE_OIDC_RESOURCE;
+const configuredScopes: unknown = import.meta.env.VITE_OIDC_SCOPES;
+const offlineAccess = import.meta.env.VITE_OIDC_OFFLINE_ACCESS !== 'false';
 
 export const authClient: SignInPort = createSignInPort(
   'local Keycloak',
