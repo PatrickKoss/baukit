@@ -202,3 +202,67 @@ fn baukit_repository_passes_its_own_checks() -> Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn gitignored_paths_are_skipped_by_every_rule() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let init = Command::new("git")
+        .args(["init", "--quiet"])
+        .current_dir(root.path())
+        .status()?;
+    ensure!(init.success(), "git init failed");
+    write(root.path(), ".gitignore", "target-msrv/\n")?;
+    write(root.path(), "deploy/.gitignore", ".local-state/\n")?;
+    for directory in ["target-msrv/debug/out", "deploy/.local-state/snapshot"] {
+        write(
+            root.path(),
+            &format!("{directory}/big.rs"),
+            &"x\n".repeat(2000),
+        )?;
+        write(
+            root.path(),
+            &format!("{directory}/allow.rs"),
+            "#[allow(x)]\nfn a() {}\n",
+        )?;
+        write(
+            root.path(),
+            &format!("{directory}/cast.ts"),
+            "export const v = i as unknown as string;\n",
+        )?;
+        write(
+            root.path(),
+            &format!("{directory}/Cargo.toml"),
+            "[package]\nname = \"x\"\n",
+        )?;
+    }
+    let (code, output) = baukit_check(
+        root.path(),
+        &["file-size", "suppressions", "lints", "patterns"],
+    )?;
+    ensure!(code == 0, "{output}");
+    assert_eq!(
+        output,
+        "lints: ok\nfile-size: ok\nsuppressions: ok\npatterns: ok\n"
+    );
+    Ok(())
+}
+
+#[test]
+fn non_git_root_still_skips_build_and_dependency_directories() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    for directory in ["target/debug", "node_modules/pkg"] {
+        write(
+            root.path(),
+            &format!("{directory}/big.rs"),
+            &"x\n".repeat(2000),
+        )?;
+        write(
+            root.path(),
+            &format!("{directory}/allow.rs"),
+            "#[allow(x)]\n",
+        )?;
+    }
+    let (code, output) = baukit_check(root.path(), &["file-size", "suppressions"])?;
+    ensure!(code == 0, "{output}");
+    Ok(())
+}

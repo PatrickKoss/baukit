@@ -1,4 +1,11 @@
-use std::{env, error::Error, io, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{
+    env,
+    error::Error,
+    io::{self, Write},
+    net::SocketAddr,
+    path::PathBuf,
+    sync::Arc,
+};
 
 use baukit_config::{BaukitConfig, ConfigLoader, Environment};
 use baukit_ops::TrafficGate;
@@ -15,13 +22,13 @@ const PRODUCT: &str = "minimal-api";
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let Some(arguments) = Arguments::parse()? else {
-        print_usage();
+        print_usage()?;
         return Ok(());
     };
 
     if let Some(path) = arguments.openapi_out {
         baukit_openapi::write_schema(&openapi_document(), &path)?;
-        println!("wrote {}", path.display());
+        writeln!(io::stdout(), "wrote {}", path.display())?;
         return Ok(());
     }
 
@@ -163,10 +170,11 @@ impl Arguments {
     }
 }
 
-fn print_usage() {
-    println!(
+fn print_usage() -> io::Result<()> {
+    writeln!(
+        io::stdout(),
         "Usage: minimal-api [--environment local|testing|staging|production] [--openapi]\n\
          MINIMAL_API_ENVIRONMENT selects the deployment environment.\n\
          OPENAPI_OUT writes the schema to that path and exits."
-    );
+    )
 }

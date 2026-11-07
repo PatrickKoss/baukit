@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use ignore::WalkBuilder;
 
 const SKIPPED_DIRECTORIES: &[&str] = &[
     ".git",
@@ -13,29 +14,31 @@ const SKIPPED_DIRECTORIES: &[&str] = &[
     ".generated-fixture",
 ];
 
-/// Lists every regular file under `root` that `keep` accepts, sorted, without following
-/// symlinks and without entering build, dependency or VCS directories.
+/// Lists every regular file under `root` that `keep` accepts, sorted. It honours `.gitignore`
+/// files (also outside a git repository), `.git/info/exclude` and the global excludes, does not
+/// follow symlinks, and never enters build, dependency or VCS directories.
 pub fn files(root: &Path, keep: impl Fn(&Path) -> bool) -> Result<Vec<PathBuf>> {
+    let walker = WalkBuilder::new(root)
+        .hidden(false)
+        .git_ignore(true)
+        .git_exclude(true)
+        .git_global(true)
+        .require_git(false)
+        .follow_links(false)
+        .filter_entry(|entry| !is_skipped(entry.path()))
+        .build();
     let mut found = Vec::new();
-    let mut pending = vec![root.to_path_buf()];
-    while let Some(directory) = pending.pop() {
-        for entry in read_dir(&directory)? {
-            let entry = entry.with_context(|| format!("failed to list {}", directory.display()))?;
-            let file_type = entry.file_type()?;
-            let path = entry.path();
-            if file_type.is_dir() && !is_skipped(&path) {
-                pending.push(path);
-            } else if file_type.is_file() && keep(&path) {
-                found.push(path);
-            }
+    for entry in walker {
+        let entry = entry.with_context(|| format!("failed to list {}", root.display()))?;
+        let is_file = entry
+            .file_type()
+            .is_some_and(|file_type| file_type.is_file());
+        if is_file && keep(entry.path()) {
+            found.push(entry.into_path());
         }
     }
     found.sort();
     Ok(found)
-}
-
-fn read_dir(directory: &Path) -> Result<fs::ReadDir> {
-    fs::read_dir(directory).with_context(|| format!("failed to list {}", directory.display()))
 }
 
 fn is_skipped(path: &Path) -> bool {
@@ -72,6 +75,30 @@ mod tests {
         }
         let listed = files(root.path(), |_| true)?;
         assert_eq!(listed, vec![root.path().join("src/a.rs")]);
+        Ok(())
+    }
+
+    #[test]
+    fn honours_gitignore_for_directories_outside_the_fixed_list() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        fs::write(root.path().join(".gitignore"), "target-msrv/\n")?;
+        fs::create_dir_all(root.path().join("deploy/.local-state/snap"))?;
+        fs::write(root.path().join("deploy/.gitignore"), ".local-state/\n")?;
+        for path in [
+            "target-msrv/out/lib.rs",
+            "deploy/.local-state/snap/a.rs",
+            "src/.hidden.rs",
+        ] {
+            let file = root.path().join(path);
+            if let Some(parent) = file.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(file, "")?;
+        }
+        let listed = files(root.path(), |path| {
+            path.extension().is_some_and(|ext| ext == "rs")
+        })?;
+        assert_eq!(listed, vec![root.path().join("src/.hidden.rs")]);
         Ok(())
     }
 }
