@@ -405,6 +405,8 @@ class ReleaseTrainFilesTest(unittest.TestCase):
             executable(
                 binaries / "corepack",
                 """#!/bin/sh
+printf '%s\\n' "$*" >> "$TEST_REPO_ROOT/corepack.calls"
+[ "$2" = version-packages ] || exit 0
 python3 - <<'PYTHON'
 from pathlib import Path
 path = Path("packages/analytics-core/CHANGELOG.md")
@@ -440,6 +442,10 @@ PYTHON
                     self.assertIn(relative, result.stderr)
                 return
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                (root / "corepack.calls").read_text().splitlines(),
+                ["pnpm version-packages", "pnpm install --lockfile-only"],
+            )
             after = (root / "templates/common/CHANGELOG.md").read_text()
             self.assertEqual(
                 after,

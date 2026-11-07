@@ -77,6 +77,7 @@ if [[ "$actual_ts" != "$next" ]]; then
   done
 fi
 
+(cd typescript && corepack pnpm install --lockfile-only)
 python3 scripts/release_packages.py --cut-changelogs "$next"
 python3 scripts/check-example-lockfiles.py --refresh
 
@@ -87,6 +88,9 @@ TRAIN_VERSION="$next" perl -0pi -e \
   's{^(baukit-[a-z-]+ = \{ version = ")=[^"]+(".*)$}{$1."=".$ENV{TRAIN_VERSION}.$2}egm' \
   rust/Cargo.toml
 cargo update --manifest-path rust/Cargo.toml --workspace
+if [[ -f rust/fuzz/Cargo.toml ]]; then
+  cargo update --manifest-path rust/fuzz/Cargo.toml --workspace
+fi
 
 TRAIN_VERSION="$next" perl -0pi -e \
   's{(\[package\]\nname = "baukit-cli"\nversion = ")[^"]+(")}{$1$ENV{TRAIN_VERSION}$2}' \
