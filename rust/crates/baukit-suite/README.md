@@ -107,7 +107,8 @@ unauthenticated callback, exchange and peer revoke routes through the builder's
 The default is 60 requests per minute with a burst of 10, one trusted proxy hop,
 and fail closed. Set `.public_rate_limit(SuitePublicRateLimit::from_options(&rate_limit)?)`
 to take proxy trust, fail mode and key prefix from the product. Signed inbound events
-keep their per-link and per-source buckets. The raw `adapters::http::router` has no IP limit.
+keep their per-link and per-source buckets. There is no unlimited router: `adapters::public_limit::limited_router(state, store,
+limit)` is the only other way to mount the suite routes.
 
 ## Hosted authorize pages
 

@@ -267,7 +267,8 @@ a product prefix or labels.
    `SuiteContext::new(registry, catalog, dependencies, SuiteServiceConfig)`.
    The service config carries the cipher, metric prefix, initial replay days
    and global XP switch. Build link, delivery and ingest services, then
-   `SuiteModule`. Mount `adapters::http::router(SuiteHttpState { api })` and
+   `SuiteModule`. Mount `PostgresSuite::router(api)` or
+   `adapters::public_limit::limited_router(SuiteHttpState { api }, store, limit)` and
    merge `SuiteOpenApi` into the product's OpenAPI document.
 6. Emit `SuiteEvent { event_type, natural_key, occurred_at, payload }` at the
    product's domain write points. Before locking or writing product rows, call
