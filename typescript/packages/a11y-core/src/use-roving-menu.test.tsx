@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
-/* eslint-disable react-hooks/refs -- this .ts test builds elements with createElement, the JSX factory; passing a ref object as the `ref` prop never reads `.current` during render, but the rule treats the factory as an arbitrary function call. */
 import { act, cleanup, fireEvent, render, renderHook } from '@testing-library/react';
-import { createElement, Fragment, useRef, useState, type RefObject } from 'react';
+import { createElement, useRef, useState, type RefObject } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const platform = { OS: 'web' as string };
@@ -102,39 +101,39 @@ function Menu({ items, nestedField = false, onAction, onClose, open, triggerRef 
   });
   if (!open) return null;
 
-  return createElement(
-    'div',
-    {
-      ref: containerRef,
-      role: 'dialog',
-      tabIndex: -1,
-      onKeyDown: overlay.containerProps.onKeyDown as never,
-    },
-    createElement('button', { id: 'close', onClick: onClose, type: 'button' }, 'Close'),
-    createElement(
-      'div',
-      { role: 'menu' },
-      items.map((item, index) => {
-        const props = menu.itemProps(index);
-        return createElement(
-          'div',
-          {
-            'aria-disabled': item.disabled === true ? 'true' : undefined,
-            id: item.label,
-            key: item.label,
-            onClick: () => {
-              if (item.disabled !== true) onAction(item);
-            },
-            onKeyDown: props.onKeyDown as never,
-            ref: props.ref,
-            role: 'menuitem',
-            tabIndex: props.tabIndex,
-          },
-          item.label,
-          nestedField && index === 0 ? createElement('input', { id: 'nested-field' }) : null,
-        );
-      }),
-    ),
+  return (
+    <div
+      ref={containerRef}
+      role="dialog"
+      tabIndex={-1}
+      onKeyDown={overlay.containerProps.onKeyDown}
+    >
+      <button id="close" onClick={onClose} type="button">
+        Close
+      </button>
+      <div role="menu">
+        {items.map((item, index) => {
+          const props = menu.itemProps(index);
+          return (
+            <div
+              aria-disabled={item.disabled === true ? 'true' : undefined}
+              id={item.label}
+              key={item.label}
+              onClick={() => {
+                if (item.disabled !== true) onAction(item);
+              }}
+              onKeyDown={props.onKeyDown}
+              ref={props.ref}
+              role="menuitem"
+              tabIndex={props.tabIndex}
+            >
+              {item.label}
+              {nestedField && index === 0 ? <input id="nested-field" /> : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -155,24 +154,22 @@ function App({ initialOpen = true, items, nestedField = false, onAction }: AppPr
     setOpen(true);
   };
 
-  return createElement(
-    Fragment,
-    null,
-    createElement(
-      'button',
-      { id: 'trigger', onClick: reopen, ref: triggerRef, type: 'button' },
-      'Open',
-    ),
-    createElement(Menu, {
-      items,
-      nestedField,
-      onAction: (item: Item) => {
-        onAction?.(item, close, reopen);
-      },
-      onClose: close,
-      open,
-      triggerRef,
-    }),
+  return (
+    <>
+      <button id="trigger" onClick={reopen} ref={triggerRef} type="button">
+        Open
+      </button>
+      <Menu
+        items={items}
+        nestedField={nestedField}
+        onAction={(item: Item) => {
+          onAction?.(item, close, reopen);
+        }}
+        onClose={close}
+        open={open}
+        triggerRef={triggerRef}
+      />
+    </>
   );
 }
 
