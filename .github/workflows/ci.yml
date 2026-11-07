@@ -499,6 +499,13 @@ jobs:
         with:
           workspaces: cli -> target
           key: generated-fixture-cli
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          version: 2026.8.11
+          cache: false
+          install_args: >-
+            aqua:rhysd/actionlint aqua:zizmorcore/zizmor aqua:gitleaks/gitleaks
+            aqua:google/osv-scanner aqua:astral-sh/ruff aqua:koalaman/shellcheck
       - name: Generate and verify the fixture
         env:
           BAUKIT_FIXTURE_FLAVORS: ${{ matrix.flavor }}

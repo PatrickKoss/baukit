@@ -9,7 +9,7 @@ import re
 import sys
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import SplitResult, urlsplit
 
 ENVIRONMENT_CLASSES = ("development",)
 TLS_LEVELS = {"none": 0, "external": 1, "all": 2}
@@ -48,6 +48,57 @@ def policy_integer(policies: dict[str, str | None], name: str) -> int | None:
     return int(value)
 
 
+def is_positive_integer(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 1
+
+
+def password_policy_failures(password: object) -> list[str]:
+    if not isinstance(password, dict):
+        return ["policy password must be an object"]
+    failures: list[str] = []
+    minimum = password.get("minimumLength")
+    maximum = password.get("maximumLength")
+    if not is_positive_integer(minimum):
+        failures.append("policy password.minimumLength must be a positive integer")
+    if not is_positive_integer(maximum):
+        failures.append("policy password.maximumLength must be a positive integer")
+    if isinstance(minimum, int) and isinstance(maximum, int) and minimum > maximum:
+        failures.append("policy password minimumLength cannot exceed maximumLength")
+    failures.extend(
+        f"policy password.{name} must be true or false"
+        for name in ("excludeUsername", "excludeEmail")
+        if not isinstance(password.get(name), bool)
+    )
+    return failures
+
+
+def redirect_policy_failures(redirects: object) -> list[str]:
+    if not isinstance(redirects, dict):
+        return ["policy redirectUris must be an object"]
+    failures: list[str] = []
+    if not is_positive_integer(redirects.get("maximumPerClient")):
+        failures.append("policy redirectUris.maximumPerClient must be a positive integer")
+    if not isinstance(redirects.get("allowDevelopmentLoopbackHttp"), bool):
+        failures.append("policy redirectUris.allowDevelopmentLoopbackHttp must be true or false")
+    schemes = redirects.get("allowedCustomSchemes")
+    if not isinstance(schemes, list) or not all(
+        isinstance(scheme, str) and scheme for scheme in schemes
+    ):
+        failures.append("policy redirectUris.allowedCustomSchemes must be a string array")
+    return failures
+
+
+def service_account_roles_valid(roles: object) -> bool:
+    return isinstance(roles, dict) and all(
+        isinstance(client, str)
+        and client
+        and isinstance(names, list)
+        and names
+        and all(isinstance(name, str) and name for name in names)
+        for client, names in roles.items()
+    )
+
+
 def validate_policy_document(policy: dict[str, Any], environment_class: str) -> list[str]:
     failures: list[str] = []
     declared_class = policy.get("environmentClass")
@@ -55,122 +106,95 @@ def validate_policy_document(policy: dict[str, Any], environment_class: str) -> 
         failures.append(
             f"policy environmentClass must be {environment_class!r}, got {declared_class!r}"
         )
-    password = policy.get("password")
-    if not isinstance(password, dict):
-        failures.append("policy password must be an object")
-    else:
-        minimum = password.get("minimumLength")
-        maximum = password.get("maximumLength")
-        if not isinstance(minimum, int) or isinstance(minimum, bool) or minimum < 1:
-            failures.append("policy password.minimumLength must be a positive integer")
-        if not isinstance(maximum, int) or isinstance(maximum, bool) or maximum < 1:
-            failures.append("policy password.maximumLength must be a positive integer")
-        if isinstance(minimum, int) and isinstance(maximum, int) and minimum > maximum:
-            failures.append("policy password minimumLength cannot exceed maximumLength")
-        for name in ("excludeUsername", "excludeEmail"):
-            if not isinstance(password.get(name), bool):
-                failures.append(f"policy password.{name} must be true or false")
+    failures.extend(password_policy_failures(policy.get("password")))
     if not isinstance(policy.get("requireBruteForceProtection"), bool):
         failures.append("policy requireBruteForceProtection must be true or false")
-    minimum_tls = policy.get("minimumTls")
-    if minimum_tls not in TLS_LEVELS:
+    if policy.get("minimumTls") not in TLS_LEVELS:
         failures.append("policy minimumTls must be one of none, external, or all")
-    redirects = policy.get("redirectUris")
-    if not isinstance(redirects, dict):
-        failures.append("policy redirectUris must be an object")
-    else:
-        maximum = redirects.get("maximumPerClient")
-        if not isinstance(maximum, int) or isinstance(maximum, bool) or maximum < 1:
-            failures.append("policy redirectUris.maximumPerClient must be a positive integer")
-        allow_http = redirects.get("allowDevelopmentLoopbackHttp")
-        if not isinstance(allow_http, bool):
-            failures.append(
-                "policy redirectUris.allowDevelopmentLoopbackHttp must be true or false"
-            )
-        schemes = redirects.get("allowedCustomSchemes")
-        if not isinstance(schemes, list) or not all(
-            isinstance(scheme, str) and scheme for scheme in schemes
-        ):
-            failures.append("policy redirectUris.allowedCustomSchemes must be a string array")
-    roles = policy.get("serviceAccountRoles", {})
-    if not isinstance(roles, dict) or not all(
-        isinstance(client, str)
-        and client
-        and isinstance(names, list)
-        and names
-        and all(isinstance(name, str) and name for name in names)
-        for client, names in roles.items()
-    ):
+    failures.extend(redirect_policy_failures(policy.get("redirectUris")))
+    if not service_account_roles_valid(policy.get("serviceAccountRoles", {})):
         failures.append("policy serviceAccountRoles must map client ids to non-empty role arrays")
     return failures
 
 
-def validate_redirect_uri(uri: object, policy: dict[str, Any]) -> str | None:
-    if not isinstance(uri, str) or not uri:
-        return "must be a non-empty string"
-    if uri == "*":
+def http_redirect_problem(
+    parsed: SplitResult, candidate: str, allow_loopback_http: bool
+) -> str | None:
+    if not parsed.hostname:
+        return "must include a host"
+    if "*" in parsed.netloc:
+        return "cannot wildcard the host or port"
+    if "*" in candidate:
         return "has an unbounded wildcard"
+    loopback = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+    if parsed.scheme == "http" and not (allow_loopback_http and loopback):
+        return "uses HTTP outside an allowed development loopback address"
+    return None
+
+
+def validate_redirect_uri(uri: object, policy: dict[str, Any]) -> str | None:
+    if not isinstance(uri, str) or not uri or uri == "*":
+        return "must be a non-empty string" if uri != "*" else "has an unbounded wildcard"
     candidate = uri[:-1] if uri.endswith("/*") else uri
     parsed = urlsplit(candidate)
     if not parsed.scheme or parsed.username or parsed.password or parsed.fragment:
         return "must be an absolute URI without user information or a fragment"
     redirect_policy = policy["redirectUris"]
     if parsed.scheme in ("http", "https"):
-        if not parsed.hostname:
-            return "must include a host"
-        if "*" in parsed.netloc:
-            return "cannot wildcard the host or port"
-        if "*" in candidate:
-            return "has an unbounded wildcard"
-        if parsed.scheme == "http":
-            loopback = parsed.hostname in ("localhost", "127.0.0.1", "::1")
-            allowed = redirect_policy["allowDevelopmentLoopbackHttp"] and loopback
-            if not allowed:
-                return "uses HTTP outside an allowed development loopback address"
-        return None
+        return http_redirect_problem(
+            parsed, candidate, redirect_policy["allowDevelopmentLoopbackHttp"]
+        )
     if parsed.scheme not in redirect_policy["allowedCustomSchemes"]:
         return f"uses custom scheme {parsed.scheme!r}, which the policy does not allow"
-    if "*" in candidate:
-        return "has an unbounded wildcard"
-    return None
+    return "has an unbounded wildcard" if "*" in candidate else None
 
 
-def validate_realm(
-    realm: dict[str, Any], policy: dict[str, Any], environment_class: str
-) -> list[str]:
-    failures = validate_policy_document(policy, environment_class)
-    if failures:
-        return failures
-
+def realm_password_failures(realm: dict[str, Any], policy: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
     password = policy["password"]
     parsed_password = parse_password_policy(realm.get("passwordPolicy"))
     minimum = policy_integer(parsed_password, "length")
     maximum = policy_integer(parsed_password, "maxLength")
     if minimum is None or minimum < password["minimumLength"]:
-        failures.append(
-            f"passwordPolicy length must be at least {password['minimumLength']}"
-        )
+        failures.append(f"passwordPolicy length must be at least {password['minimumLength']}")
     if maximum is None or maximum > password["maximumLength"]:
-        failures.append(
-            f"passwordPolicy maxLength must be at most {password['maximumLength']}"
-        )
+        failures.append(f"passwordPolicy maxLength must be at most {password['maximumLength']}")
     if password["excludeUsername"] and "notUsername" not in parsed_password:
         failures.append("passwordPolicy must include notUsername")
     if password["excludeEmail"] and "notEmail" not in parsed_password:
         failures.append("passwordPolicy must include notEmail")
     if policy["requireBruteForceProtection"] and realm.get("bruteForceProtected") is not True:
         failures.append("bruteForceProtected must be true")
-
     realm_tls = realm.get("sslRequired")
     if realm_tls not in TLS_LEVELS:
         failures.append("sslRequired must be one of none, external, or all")
     elif TLS_LEVELS[realm_tls] < TLS_LEVELS[policy["minimumTls"]]:
         failures.append(f"sslRequired must be at least {policy['minimumTls']}")
+    return failures
 
-    clients = realm.get("clients")
-    if not isinstance(clients, list):
-        failures.append("clients must be an array")
+
+def public_client_failures(client: dict[str, Any], label: str, policy: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    attributes = client.get("attributes")
+    pkce = attributes.get("pkce.code.challenge.method") if isinstance(attributes, dict) else None
+    if pkce != "S256":
+        failures.append(f"public client {label!r} must require PKCE S256")
+    redirect_uris = client.get("redirectUris", [])
+    if not isinstance(redirect_uris, list):
+        failures.append(f"public client {label!r} redirectUris must be an array")
         return failures
+    maximum_count = policy["redirectUris"]["maximumPerClient"]
+    if len(redirect_uris) > maximum_count:
+        failures.append(f"public client {label!r} has more than {maximum_count} redirect URIs")
+    for uri in redirect_uris:
+        problem = validate_redirect_uri(uri, policy)
+        if problem:
+            failures.append(f"public client {label!r} redirect URI {uri!r} {problem}")
+    return failures
+
+
+def client_failures(clients: list[Any], policy: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
     for index, client in enumerate(clients):
         if not isinstance(client, dict):
             failures.append(f"clients[{index}] must be an object")
@@ -179,43 +203,62 @@ def validate_realm(
         label = client_id if isinstance(client_id, str) else f"clients[{index}]"
         if client.get("directAccessGrantsEnabled") is not False:
             failures.append(f"client {label!r} must disable direct-access grants")
-        if client.get("publicClient") is not True:
-            continue
-        attributes = client.get("attributes")
-        pkce = attributes.get("pkce.code.challenge.method") if isinstance(attributes, dict) else None
-        if pkce != "S256":
-            failures.append(f"public client {label!r} must require PKCE S256")
-        redirect_uris = client.get("redirectUris", [])
-        if not isinstance(redirect_uris, list):
-            failures.append(f"public client {label!r} redirectUris must be an array")
-            continue
-        maximum_count = policy["redirectUris"]["maximumPerClient"]
-        if len(redirect_uris) > maximum_count:
-            failures.append(
-                f"public client {label!r} has more than {maximum_count} redirect URIs"
-            )
-        for uri in redirect_uris:
-            problem = validate_redirect_uri(uri, policy)
-            if problem:
-                failures.append(f"public client {label!r} redirect URI {uri!r} {problem}")
-    users = realm.get("users", [])
-    if not isinstance(users, list):
-        users = []
+        if client.get("publicClient") is True:
+            failures.extend(public_client_failures(client, label, policy))
+    return failures
+
+
+def service_account_failures(
+    clients: list[Any], users: list[Any], policy: dict[str, Any]
+) -> list[str]:
+    failures: list[str] = []
     for client_id, required_roles in policy.get("serviceAccountRoles", {}).items():
         client = next(
-            (value for value in clients if isinstance(value, dict) and value.get("clientId") == client_id),
+            (
+                value
+                for value in clients
+                if isinstance(value, dict) and value.get("clientId") == client_id
+            ),
             {},
         )
-        if client.get("serviceAccountsEnabled") is not True or client.get("publicClient") is not False:
+        if (
+            client.get("serviceAccountsEnabled") is not True
+            or client.get("publicClient") is not False
+        ):
             failures.append(f"client {client_id!r} must enable a confidential service account")
         account = next(
-            (user for user in users if isinstance(user, dict) and user.get("serviceAccountClientId") == client_id),
+            (
+                user
+                for user in users
+                if isinstance(user, dict) and user.get("serviceAccountClientId") == client_id
+            ),
             {},
         )
         mappings = account.get("clientRoles")
         roles = mappings.get("realm-management", []) if isinstance(mappings, dict) else []
         if not isinstance(roles, list) or not all(role in roles for role in required_roles):
-            failures.append(f"client {client_id!r} service account is missing required realm-management roles")
+            failures.append(
+                f"client {client_id!r} service account is missing required realm-management roles"
+            )
+    return failures
+
+
+def validate_realm(
+    realm: dict[str, Any], policy: dict[str, Any], environment_class: str
+) -> list[str]:
+    failures = validate_policy_document(policy, environment_class)
+    if failures:
+        return failures
+    failures = realm_password_failures(realm, policy)
+    clients = realm.get("clients")
+    if not isinstance(clients, list):
+        failures.append("clients must be an array")
+        return failures
+    failures.extend(client_failures(clients, policy))
+    users = realm.get("users", [])
+    failures.extend(
+        service_account_failures(clients, users if isinstance(users, list) else [], policy)
+    )
     return failures
 
 

@@ -140,7 +140,7 @@ async fn real_keycloak_audience_expiry_protocol_introspection_and_logout()
         "http://127.0.0.1:{}",
         container.get_host_port_ipv4(8080).await?
     );
-    let client = Client::builder().no_proxy().build()?;
+    let client = baukit_test::test_http_client().no_proxy().build()?;
     let admin: Value = client
         .post(format!(
             "{base}/realms/master/protocol/openid-connect/token"

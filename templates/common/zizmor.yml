@@ -1,0 +1,7 @@
+rules:
+  # Every ad-hoc install pins an exact version (corepack@0.36.0). Global CLIs have no lockfile,
+  # so bump them together with the setup-node version.
+  adhoc-packages:
+    ignore:
+      - ci.yml
+      - native.yml

@@ -362,3 +362,28 @@ async fn endpoint_dns_accepts_public_private_shared_and_loopback_answers()
     assert_eq!(resolved, expected);
     Ok(())
 }
+
+#[test]
+fn endpoint_from_url_pins_scheme_host_and_effective_port() -> Result<(), Box<dyn Error>> {
+    let https = AllowedEndpoint::from_url(&Url::parse("https://idp.example.com/realms/app")?)?;
+    assert_eq!((https.host(), https.port()), ("idp.example.com", 443));
+    assert!(https.matches(&Url::parse("https://idp.example.com/other")?));
+    assert!(!https.matches(&Url::parse("http://idp.example.com/")?));
+
+    let local = AllowedEndpoint::from_url(&Url::parse("http://[::1]:8080/")?)?;
+    assert_eq!((local.host(), local.port()), ("[::1]", 8080));
+    assert!(local.matches(&Url::parse("http://[::1]:8080/token")?));
+    assert!(!local.matches(&Url::parse("https://[::1]:8080/token")?));
+
+    for rejected in [
+        "ftp://idp.example.com/",
+        "https://user:secret@idp.example.com/",
+        "http://169.254.169.254/latest",
+    ] {
+        assert!(
+            AllowedEndpoint::from_url(&Url::parse(rejected)?).is_err(),
+            "{rejected}"
+        );
+    }
+    Ok(())
+}

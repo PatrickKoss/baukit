@@ -43,19 +43,21 @@ class FakeApi:
         self.updates.append(("realm", realm))
 
     def find(self, realm, collection, key, value):
-        values = {"clients": self.clients, "users": self.users, "client-scopes": self.scopes}[collection]
-        return [
-            copy.deepcopy(item)
-            for item in values.values()
-            if item.get(key) == value
+        values = {"clients": self.clients, "users": self.users, "client-scopes": self.scopes}[
+            collection
         ]
+        return [copy.deepcopy(item) for item in values.values() if item.get(key) == value]
 
     def get(self, realm, collection, identity):
-        values = {"clients": self.clients, "users": self.users, "client-scopes": self.scopes}[collection]
+        values = {"clients": self.clients, "users": self.users, "client-scopes": self.scopes}[
+            collection
+        ]
         return copy.deepcopy(values[identity])
 
     def create(self, realm, collection, value):
-        values = {"clients": self.clients, "users": self.users, "client-scopes": self.scopes}[collection]
+        values = {"clients": self.clients, "users": self.users, "client-scopes": self.scopes}[
+            collection
+        ]
         identity = f"{collection}-{len(values) + 1}"
         created = copy.deepcopy(value)
         created["id"] = identity
@@ -66,18 +68,28 @@ class FakeApi:
         self.updates.append((f"create-{collection}", value.get("clientId", value.get("username"))))
 
     def update(self, realm, collection, identity, value):
-        values = {"clients": self.clients, "users": self.users, "client-scopes": self.scopes}[collection]
+        values = {"clients": self.clients, "users": self.users, "client-scopes": self.scopes}[
+            collection
+        ]
         if collection == "clients":
             self.client_updates.append(copy.deepcopy(value))
             values[identity].update(copy.deepcopy(value))
         elif collection == "client-scopes":
-            values[identity].update({key: copy.deepcopy(value) for key, value in value.items() if key != "protocolMappers"})
+            values[identity].update(
+                {
+                    key: copy.deepcopy(value)
+                    for key, value in value.items()
+                    if key != "protocolMappers"
+                }
+            )
         else:
             values[identity] = copy.deepcopy(value)
         self.updates.append((f"update-{collection}", identity))
 
     def delete(self, realm, collection, identity):
-        values = {"clients": self.clients, "users": self.users, "client-scopes": self.scopes}[collection]
+        values = {"clients": self.clients, "users": self.users, "client-scopes": self.scopes}[
+            collection
+        ]
         del values[identity]
 
     def scope_bindings(self, realm, collection, client=None):
@@ -172,9 +184,7 @@ class RealmReconcilerTests(unittest.TestCase):
                     "email": "test@example.test",
                     "enabled": True,
                     "realmRoles": ["offline_access"],
-                    "credentials": [
-                        {"type": "password", "value": "private", "temporary": False}
-                    ],
+                    "credentials": [{"type": "password", "value": "private", "temporary": False}],
                 }
             ],
         }
@@ -246,13 +256,9 @@ class RealmReconcilerTests(unittest.TestCase):
         )
         reconciler = reconcile_keycloak.RealmReconciler(api)
         reconciler.reconcile(desired, config, set())
-        self.assertEqual(
-            api.scopes["scope-read"]["attributes"]["include.in.token.scope"], "true"
-        )
+        self.assertEqual(api.scopes["scope-read"]["attributes"]["include.in.token.scope"], "true")
         self.assertEqual(api.scopes["scope-read"]["productOwned"], "preserved")
-        self.assertEqual(
-            {scope["name"] for scope in api.scopes.values()}, {"read", "basic"}
-        )
+        self.assertEqual({scope["name"] for scope in api.scopes.values()}, {"read", "basic"})
         client_id = next(iter(api.clients))
         for collection, client, name in [
             ("default-default-client-scopes", None, "basic"),
@@ -327,8 +333,11 @@ class RealmReconcilerTests(unittest.TestCase):
 
     def test_scope_binding_names_reject_invalid_values(self):
         for value in (None, "read", [""], [7]):
-            with self.subTest(value=value), self.assertRaisesRegex(
-                reconcile_keycloak.ReconcileError, "array of non-empty strings"
+            with (
+                self.subTest(value=value),
+                self.assertRaisesRegex(
+                    reconcile_keycloak.ReconcileError, "array of non-empty strings"
+                ),
             ):
                 reconcile_keycloak.scope_names(value, "optionalClientScopes")
 
@@ -355,9 +364,7 @@ class RealmReconcilerTests(unittest.TestCase):
         reconciler.reconcile_client("fixture", desired, self.config["clients"][0])
         updated = api.clients["client"]
         self.assertEqual(updated["protocolMappers"][0]["id"], "mapper")
-        self.assertEqual(
-            updated["protocolMappers"][0]["config"]["access.token.claim"], "true"
-        )
+        self.assertEqual(updated["protocolMappers"][0]["config"]["access.token.claim"], "true")
         self.assertEqual(updated["optionalClientScopes"], ["read", "private-scope"])
         api.updates.clear()
         reconciler.reconcile_client("fixture", desired, self.config["clients"][0])
@@ -392,11 +399,13 @@ class RealmReconcilerTests(unittest.TestCase):
 
     def test_exact_mcp_mappers_remove_stale_audiences_and_preserve_server_ids(self):
         desired = copy.deepcopy(self.desired["clients"][0])
-        desired["protocolMappers"] = [{
-            "name": "mcp-audience",
-            "protocolMapper": "oidc-audience-mapper",
-            "config": {"included.custom.audience": "https://new.example/mcp"},
-        }]
+        desired["protocolMappers"] = [
+            {
+                "name": "mcp-audience",
+                "protocolMapper": "oidc-audience-mapper",
+                "config": {"included.custom.audience": "https://new.example/mcp"},
+            }
+        ]
         existing = {
             **desired,
             "id": "client",
@@ -422,9 +431,15 @@ class RealmReconcilerTests(unittest.TestCase):
         api = FakeApi({"realm": "fixture"}, clients={"client": existing})
         reconciler = reconcile_keycloak.RealmReconciler(api)
         reconciler.reconcile_client("fixture", desired, selection)
-        self.assertEqual(api.clients["client"]["protocolMappers"], [{
-            **desired["protocolMappers"][0], "id": "mapper-current",
-        }])
+        self.assertEqual(
+            api.clients["client"]["protocolMappers"],
+            [
+                {
+                    **desired["protocolMappers"][0],
+                    "id": "mapper-current",
+                }
+            ],
+        )
         api.updates.clear()
         reconciler.reconcile_client("fixture", desired, selection)
         self.assertEqual(api.updates, [])
@@ -460,7 +475,10 @@ class RealmReconcilerTests(unittest.TestCase):
     def test_exact_reconciliation_options_require_booleans(self):
         for field in ("exactRedirectUris", "exactProtocolMappers"):
             for value in ("true", 1, None):
-                with self.subTest(field=field, value=value), tempfile.TemporaryDirectory() as directory:
+                with (
+                    self.subTest(field=field, value=value),
+                    tempfile.TemporaryDirectory() as directory,
+                ):
                     config = copy.deepcopy(self.config)
                     config["clients"][0][field] = value
                     path = Path(directory) / "reconcile.json"
@@ -481,9 +499,7 @@ class RealmReconcilerTests(unittest.TestCase):
 
     def test_fresh_realm_creates_selected_client_and_user(self):
         api = FakeApi({"realm": "fixture"})
-        reconcile_keycloak.RealmReconciler(api).reconcile(
-            self.desired, self.config, set()
-        )
+        reconcile_keycloak.RealmReconciler(api).reconcile(self.desired, self.config, set())
         self.assertEqual(len(api.clients), 1)
         self.assertEqual(len(api.users), 1)
         client = next(iter(api.clients.values()))
@@ -494,17 +510,30 @@ class RealmReconcilerTests(unittest.TestCase):
         realm = json.loads((TEST_DIRECTORY / "fixtures/development-realm.json").read_text())
         for service_account in (False, True):
             with self.subTest(service_account=service_account):
-                desired = {"clientId": "backend", "publicClient": False,
-                           "serviceAccountsEnabled": service_account,
-                           "directAccessGrantsEnabled": False, "secret": "creation-secret"}
+                desired = {
+                    "clientId": "backend",
+                    "publicClient": False,
+                    "serviceAccountsEnabled": service_account,
+                    "directAccessGrantsEnabled": False,
+                    "secret": "creation-secret",
+                }
                 candidate = {**realm, "clients": [*realm["clients"], desired], "users": []}
-                config = {**self.config, "clients": [{"clientId": "backend",
-                          "activeOrigins": [], "activeRedirectUris": []}], "users": []}
+                config = {
+                    **self.config,
+                    "clients": [
+                        {"clientId": "backend", "activeOrigins": [], "activeRedirectUris": []}
+                    ],
+                    "users": [],
+                }
                 reconcile_keycloak.validate_inputs(candidate, policy, config)
 
     def test_confidential_creation_keeps_secret_and_reconciliation_preserves_rotation(self):
-        desired = {"clientId": "backend", "publicClient": False,
-                   "serviceAccountsEnabled": True, "secret": "creation-secret"}
+        desired = {
+            "clientId": "backend",
+            "publicClient": False,
+            "serviceAccountsEnabled": True,
+            "secret": "creation-secret",
+        }
         selection = {"clientId": "backend", "activeOrigins": [], "activeRedirectUris": []}
         api = FakeApi({"realm": "fixture"})
         reconciler = reconcile_keycloak.RealmReconciler(api)
@@ -540,9 +569,7 @@ class RealmReconcilerTests(unittest.TestCase):
             },
             {"client-1": stale_client},
         )
-        reconcile_keycloak.RealmReconciler(api).reconcile(
-            self.desired, self.config, set()
-        )
+        reconcile_keycloak.RealmReconciler(api).reconcile(self.desired, self.config, set())
         self.assertEqual(api.realm_value["displayName"], "Fixture development")
         self.assertEqual(api.realm_value["loginTheme"], "baukit-accessible")
         self.assertEqual(api.realm_value["productOwned"], "preserved")
@@ -594,9 +621,9 @@ class RecoveryTests(unittest.TestCase):
             authenticate,
             ("admin", "private"),
             lambda token: events.append("reconciled"),
-            lambda username, password: events.append("recovery-started"),
-            lambda token, username, password: events.append("admin-repaired"),
-            lambda token, username: events.append("temporary-removed"),
+            start_recovery=lambda username, password: events.append("recovery-started"),
+            repair=lambda token, username, password: events.append("admin-repaired"),
+            cleanup=lambda token, username: events.append("temporary-removed"),
         )
         self.assertTrue(recovered)
         self.assertEqual(
@@ -623,9 +650,9 @@ class RecoveryTests(unittest.TestCase):
                 authenticate,
                 ("admin", "private"),
                 lambda token: (_ for _ in ()).throw(KeyboardInterrupt()),
-                lambda username, password: events.append("recovery-started"),
-                lambda token, username, password: events.append("admin-repaired"),
-                lambda token, username: events.append("temporary-removed"),
+                start_recovery=lambda username, password: events.append("recovery-started"),
+                repair=lambda token, username, password: events.append("admin-repaired"),
+                cleanup=lambda token, username: events.append("temporary-removed"),
             )
         self.assertEqual(events, ["recovery-started", "admin-repaired", "temporary-removed"])
 
@@ -643,9 +670,11 @@ class RecoveryTests(unittest.TestCase):
                 authenticate,
                 ("admin", "private-secret"),
                 lambda token: None,
-                lambda username, password: None,
-                lambda token, username, password: None,
-                lambda token, username: (_ for _ in ()).throw(RuntimeError("private-secret")),
+                start_recovery=lambda username, password: None,
+                repair=lambda token, username, password: None,
+                cleanup=lambda token, username: (_ for _ in ()).throw(
+                    RuntimeError("private-secret")
+                ),
             )
         self.assertNotIn("private-secret", str(raised.exception))
 

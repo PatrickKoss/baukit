@@ -3,6 +3,8 @@
 
 #[cfg(feature = "api-providers")]
 mod api;
+#[cfg(any(feature = "api-providers", feature = "keycloak"))]
+mod egress;
 #[cfg(feature = "keycloak")]
 mod keycloak;
 mod store;

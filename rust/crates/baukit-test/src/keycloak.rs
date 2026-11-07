@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{fmt, time::Duration};
 
 use aws_lc_rs::digest;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -32,7 +32,9 @@ pub struct KeycloakTestContainer {
 }
 
 /// One user's PKCE authorization-code login against a public client.
-#[derive(Clone, Debug)]
+///
+/// Debug output redacts the password.
+#[derive(Clone)]
 pub struct KeycloakLogin<'a> {
     /// Public client that has the authorization-code flow and PKCE S256.
     pub client_id: &'a str,
@@ -44,6 +46,19 @@ pub struct KeycloakLogin<'a> {
     pub password: &'a str,
     /// Space-separated scopes to request.
     pub scope: &'a str,
+}
+
+impl fmt::Debug for KeycloakLogin<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("KeycloakLogin")
+            .field("client_id", &self.client_id)
+            .field("redirect_uri", &self.redirect_uri)
+            .field("username", &self.username)
+            .field("password", &"<redacted>")
+            .field("scope", &self.scope)
+            .finish()
+    }
 }
 
 impl KeycloakTestContainer {
@@ -87,7 +102,7 @@ impl KeycloakTestContainer {
         &self,
         login: &KeycloakLogin<'_>,
     ) -> Result<String, KeycloakTestError> {
-        let client = reqwest::Client::builder()
+        let client = crate::test_http_client()
             .redirect(Policy::none())
             .timeout(REQUEST_TIMEOUT)
             .build()?;
@@ -213,5 +228,22 @@ mod tests {
         assert_eq!(login_form_action(page)?, "http://kc/a?b=1&c=2");
         assert!(login_form_action("<form action=\"x\"></form>").is_err());
         Ok(())
+    }
+
+    #[test]
+    fn login_debug_redacts_password() {
+        let login = KeycloakLogin {
+            client_id: "web",
+            redirect_uri: "http://localhost/callback",
+            username: "alice",
+            password: "hunter2-password",
+            scope: "openid",
+        };
+
+        let debug = format!("{login:?}");
+
+        assert!(!debug.contains("hunter2-password"));
+        assert!(debug.contains("alice"));
+        assert!(debug.contains("<redacted>"));
     }
 }

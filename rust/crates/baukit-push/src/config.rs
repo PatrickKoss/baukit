@@ -253,7 +253,7 @@ pub enum PushOptionsError {
 
 fn validated_endpoints(endpoint: &str) -> Result<(String, String), PushOptionsError> {
     let endpoint = endpoint.trim();
-    let parsed = reqwest::Url::parse(endpoint)
+    let parsed = url::Url::parse(endpoint)
         .map_err(|_| PushOptionsError::InvalidEndpoint(endpoint.to_owned()))?;
     if !matches!(parsed.scheme(), "http" | "https")
         || parsed.host_str().is_none()

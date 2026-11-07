@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `compose::PostgresSuite::builder(pool, settings, limiter)` replaces the `SuiteComposition` copied into product bins (P1.10). It takes `SuiteSettings` (`new` parses the catalog JSON, `with_catalog` takes a parsed one) plus the identity, replay, applier and erasure owner lookup ports, and exposes `context`, `outbox`, `store`, `delivery`, `erasure`, `module()`, `module_with(applier)`, `api()`, `notifier()`, `erasure_notifier(links)`, `router(api)` and, with `jobs`, `worker(store)`, `worker_with(store, delivery, config)` and `default_worker_config()`.
+- Security: `PostgresSuite::router` limits `GET /suite/links/callback`, `POST /suite/links/exchange` and `POST /suite/links/{id}/revoke` per client IP (`SuitePublicRateLimit`, default 60 per minute, burst 10, fail closed). Before, a product that merged the suite routes outside `baukit_ratelimit::layers` left them unlimited.
+- `adapters::http::{public_router, inbound_router, user_router}` split `router`, which still merges all three.
+- `LinkCompleteRequest` and `LinkCallbackQuery` redact the authorization code in `Debug` output.
 - `PostgresSuiteLinkStore::find_link_for_owner` scopes by owner in SQL and runs failure accounting only for the owner's link; a foreign id returns `None` without a write.
 
 ## [0.18.3] - 2026-11-07

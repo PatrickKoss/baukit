@@ -2,8 +2,8 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
-use baukit_http::{classify_http_status, classify_transport_error};
+use axum::http::{HeaderMap, HeaderValue, header};
+use baukit_egress::{AddressPolicy, AllowedEndpoint, EgressOptions, GuardedClient};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -24,11 +24,12 @@ const OK_STATUS: &str = "ok";
 /// As a [`PushReceiptSource`] it reads those receipts later, up to
 /// [`MAX_RECEIPT_BATCH_SIZE`] IDs per request.
 ///
-/// Cloning is cheap; the inner `reqwest` client shares its connection pool.
+/// Requests go through a [`GuardedClient`] that reaches only the scheme, host
+/// and port of the configured endpoint. Cloning is cheap and shares its
+/// connection pool.
 #[derive(Clone)]
 pub struct ExpoPushSender {
-    client: reqwest::Client,
-    guarded: Option<baukit_egress::GuardedClient>,
+    client: GuardedClient,
     options: PushOptions,
 }
 
@@ -77,7 +78,6 @@ impl std::fmt::Debug for ExpoPushSender {
         f.debug_struct("ExpoPushSender")
             .field("batch_size", &self.options.batch_size())
             .field("request_timeout", &self.options.request_timeout())
-            .field("guarded", &self.guarded.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -90,24 +90,18 @@ impl ExpoPushSender {
 
     /// Builds a sender from validated options.
     pub fn with_options(options: PushOptions) -> Result<Self, PushOptionsError> {
-        let client = reqwest::Client::builder()
-            .timeout(options.request_timeout())
-            .build()
-            .map_err(|error| PushOptionsError::InvalidEndpoint(error.to_string()))?;
-        Ok(Self {
-            client,
-            options,
-            guarded: None,
-        })
+        let client = endpoint_client(&options)?;
+        Ok(Self { client, options })
     }
 
     /// Sends ticket requests and immediate or deferred receipt requests through `client`.
     ///
+    /// Replaces the default client, which reaches only the configured endpoint.
     /// The client's policy, timeouts and response limits apply. Configure its
     /// request timeout explicitly if it should match [`PushOptions::request_timeout`].
     #[must_use]
-    pub fn with_guarded_client(mut self, client: baukit_egress::GuardedClient) -> Self {
-        self.guarded = Some(client);
+    pub fn with_guarded_client(mut self, client: GuardedClient) -> Self {
+        self.client = client;
         self
     }
 
@@ -204,34 +198,6 @@ impl ExpoPushSender {
         endpoint: &str,
         payload: &impl Serialize,
     ) -> Result<T, PushError> {
-        if let Some(client) = &self.guarded {
-            return self.post_guarded(client, endpoint, payload).await;
-        }
-        let mut request = self.client.post(endpoint).json(payload);
-        if let Some(token) = self.options.access_token() {
-            request = request.bearer_auth(token);
-        }
-        let response = request.send().await.map_err(|error| {
-            tracing::debug!(target: "baukit_push", %error, endpoint, "expo request failed");
-            PushError::Transport {
-                class: classify_transport_error(error.is_timeout()),
-            }
-        })?;
-        let status = response.status();
-        if !status.is_success() {
-            return Err(transport_error(status, response.headers()));
-        }
-        response.json::<T>().await.map_err(|error| {
-            PushError::InvalidResponse(format!("{endpoint} response did not parse: {error}"))
-        })
-    }
-
-    async fn post_guarded<T: serde::de::DeserializeOwned>(
-        &self,
-        client: &baukit_egress::GuardedClient,
-        endpoint: &str,
-        payload: &impl Serialize,
-    ) -> Result<T, PushError> {
         let url = endpoint
             .parse()
             .map_err(|_| PushError::InvalidResponse("invalid endpoint".into()))?;
@@ -249,7 +215,8 @@ impl ExpoPushSender {
         }
         let body = serde_json::to_vec(payload)
             .map_err(|_| PushError::InvalidResponse("invalid request".into()))?;
-        let response = client
+        let response = self
+            .client
             .execute(
                 baukit_egress::EgressRequest::post(url)
                     .with_headers(headers)
@@ -264,12 +231,19 @@ impl ExpoPushSender {
     }
 }
 
-fn transport_error(status: StatusCode, headers: &HeaderMap) -> PushError {
-    // Expo rejects a whole request for a bad token or a rate limit, so a 4xx
-    // that is not one of those still classifies as permanent and the caller
-    // learns not to retry it.
-    let class = classify_http_status(status, headers, &[]);
-    PushError::Transport { class }
+fn endpoint_client(options: &PushOptions) -> Result<GuardedClient, PushOptionsError> {
+    let invalid =
+        || PushOptionsError::InvalidEndpoint("endpoint cannot form an egress allowance".to_owned());
+    let url = url::Url::parse(options.endpoint()).map_err(|_| invalid())?;
+    let host = url.host_str().ok_or_else(invalid)?;
+    let port = url.port_or_known_default().ok_or_else(invalid)?;
+    let endpoint =
+        AllowedEndpoint::new(host, port, url.scheme() == "http").map_err(|_| invalid())?;
+    let egress = EgressOptions::default()
+        .with_policy(AddressPolicy::OnlyEndpoint(endpoint))
+        .with_request_timeout(options.request_timeout())
+        .map_err(|_| invalid())?;
+    GuardedClient::new(egress).map_err(|_| invalid())
 }
 
 fn ticket_id(id: Option<String>) -> Result<PushTicketId, PushError> {
@@ -324,10 +298,6 @@ impl PushReceiptSource for ExpoPushSender {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
-    use baukit_http::RetryClass;
-
     use super::*;
 
     fn message(token: &str) -> PushMessage {
@@ -394,43 +364,76 @@ mod tests {
             Some(PushRejection::MessageTooBig)
         );
     }
-
-    #[test]
-    fn upstream_statuses_classify_into_transport_errors() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            axum::http::header::RETRY_AFTER,
-            axum::http::HeaderValue::from_static("12"),
-        );
-        assert_eq!(
-            transport_error(StatusCode::TOO_MANY_REQUESTS, &headers).retry_after(),
-            Some(Duration::from_secs(12))
-        );
-        assert!(matches!(
-            transport_error(StatusCode::UNAUTHORIZED, &HeaderMap::new()),
-            PushError::Transport {
-                class: RetryClass::Revoked
-            }
-        ));
-        assert!(matches!(
-            transport_error(StatusCode::BAD_GATEWAY, &HeaderMap::new()),
-            PushError::Transport {
-                class: RetryClass::Unavailable
-            }
-        ));
-        assert!(!transport_error(StatusCode::BAD_REQUEST, &HeaderMap::new()).is_retryable());
-    }
 }
 
 #[cfg(test)]
 mod guarded_transport_tests {
     use super::*;
-    use axum::{Json, Router, routing::post};
+    use axum::{Json, Router, http::StatusCode, routing::post};
+    use baukit_http::RetryClass;
     use serde_json::{Value, json};
     use std::sync::{
         Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     };
+
+    async fn send_with_status(
+        status: StatusCode,
+        retry_after: Option<&'static str>,
+    ) -> Result<PushError, Box<dyn std::error::Error>> {
+        let app = Router::new().route(
+            "/push/send",
+            post(move || async move {
+                let mut headers = HeaderMap::new();
+                if let Some(value) = retry_after {
+                    headers.insert(header::RETRY_AFTER, HeaderValue::from_static(value));
+                }
+                (status, headers, Json(json!({})))
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let endpoint = format!("http://{}/push/send", listener.local_addr()?);
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("Expo fixture");
+        });
+        let sender = ExpoPushSender::with_options(PushOptions::new(&endpoint)?)?;
+        let message = PushMessage::new(crate::DeviceToken::new("token")?, "Reminder", "Ready");
+        let error = sender
+            .send(vec![message])
+            .await
+            .expect_err("non-success status fails the batch");
+        task.abort();
+        Ok(error)
+    }
+
+    #[tokio::test]
+    async fn upstream_statuses_classify_into_transport_errors()
+    -> Result<(), Box<dyn std::error::Error>> {
+        assert_eq!(
+            send_with_status(StatusCode::TOO_MANY_REQUESTS, Some("12"))
+                .await?
+                .retry_after(),
+            Some(std::time::Duration::from_secs(12))
+        );
+        assert!(matches!(
+            send_with_status(StatusCode::UNAUTHORIZED, None).await?,
+            PushError::Transport {
+                class: RetryClass::Revoked
+            }
+        ));
+        assert!(matches!(
+            send_with_status(StatusCode::BAD_GATEWAY, None).await?,
+            PushError::Transport {
+                class: RetryClass::Unavailable
+            }
+        ));
+        assert!(
+            !send_with_status(StatusCode::BAD_REQUEST, None)
+                .await?
+                .is_retryable()
+        );
+        Ok(())
+    }
 
     #[tokio::test]
     #[expect(clippy::too_many_lines, reason = "scenario test reads top to bottom")]

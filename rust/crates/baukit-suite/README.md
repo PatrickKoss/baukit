@@ -72,6 +72,43 @@ baukit-suite = { version = "0.10.0", default-features = false }
 baukit-suite = { version = "0.10.0", features = ["http", "jobs", "delivery"] }
 ```
 
+## Product composition
+
+`compose::PostgresSuite` (feature `delivery`) wires the registry, outbox, link store,
+peer client, delivery service and erasure adapter. A product supplies its four
+port implementations and catalog constants:
+
+```rust
+let cipher = config.credential_vault.cipher()?;
+let settings = SuiteSettings::new(APP_ID, PEERS_JSON, CATALOG_JSON, &config.suite, cipher)?;
+let suite = PostgresSuite::builder(pool.clone(), settings, limiter)
+    .identity(Arc::new(ProductSuiteIdentitySource::new(pool.clone())))
+    .replay(Arc::new(ProductSuiteReplaySource))
+    .applier(Arc::new(ProductSuiteEventApplier))
+    .erasure_lookup(
+        Arc::new(ProductSuiteErasureOwnerLookup::new(pool.clone())),
+        Arc::new(PostgresProfileErasure),
+    )
+    .build()?;
+let routes = Router::new().nest("/api/v1", suite.router(suite.api()));
+let worker = suite.worker(Arc::new(job_store))?; // feature `jobs`
+let notifier = suite.notifier(); // Some when erasure_lookup was set
+```
+
+`build` validates `SuiteConfig` and fails without a cipher when peers are configured.
+`app_id` is also the metric prefix. `share_xp(false)` overrides the configuration for
+products that never emit XP. An applier that needs the outbox goes to
+`suite.module_with(applier)` after the repository exists. Wrap `suite.module()` or
+`suite.delivery` for product decorators.
+
+`suite.router(api)` (feature `http`) applies a per-client-IP limit to the
+unauthenticated callback, exchange and peer revoke routes through the builder's
+`RateLimitStore`, even when the product mounts it outside `baukit_ratelimit::layers`.
+The default is 60 requests per minute with a burst of 10, one trusted proxy hop,
+and fail closed. Set `.public_rate_limit(SuitePublicRateLimit::from_options(&rate_limit)?)`
+to take proxy trust, fail mode and key prefix from the product. Signed inbound events
+keep their per-link and per-source buckets. The raw `adapters::http::router` has no IP limit.
+
 ## Hosted authorize pages
 
 See [hosted authorize pages](../../../docs/platform/suite-events.md#hosted-authorize-pages)

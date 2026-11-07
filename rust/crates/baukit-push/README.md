@@ -303,8 +303,10 @@ foreign key, call `PendingReceiptStore::erase_owner`, or
 
 ## Guarded transport
 
-Route ticket requests and immediate or deferred receipt requests through
-`baukit-egress` with `ExpoPushSender::with_guarded_client`:
+Every ticket and receipt request goes through a `baukit-egress`
+`GuardedClient`. By default it reaches only the scheme, host and port of the
+configured endpoint, with the push request timeout. Replace it with
+`ExpoPushSender::with_guarded_client` to use another policy:
 
 ```rust,no_run
 use baukit_egress::{EgressOptions, GuardedClient};
@@ -324,9 +326,8 @@ The supplied client's policy, timeouts, response limits and retry classification
 apply to every provider request. Its defaults require public HTTPS. Set the
 egress request timeout explicitly to use the push timeout, as above.
 Guarded errors omit provider bodies. The sender's `Debug` output omits
-credentials and endpoint URLs. The existing transport remains available when
-no guarded client is supplied. The egress dependency is always available;
-there is no extra feature flag.
+credentials and endpoint URLs. There is no unguarded transport and no extra
+feature flag.
 
 If an immediate receipt fetch fails after Expo accepts a ticket, `send` returns
 `PushDeliveryStatus::Accepted(ticket)` for it. Store these tickets with

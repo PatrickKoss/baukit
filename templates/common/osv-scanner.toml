@@ -1,0 +1,23 @@
+# Add an [[IgnoredVulns]] entry only for an advisory without a fix, with an ignoreUntil date at most
+# 90 days out and a reason that names the dependency path.
+{% if context.backend %}
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0440"
+ignoreUntil = 2027-02-05
+reason = "No fix available: astral-tokio-tar is unmaintained with no patched release; reached through testcontainers in baukit-test, a backend dev-dependency. Mirrors baukit's ignore."
+{% endif %}{% if context.mobile %}
+[[IgnoredVulns]]
+id = "GHSA-gcqx-w48m-w2h4"
+ignoreUntil = 2027-02-05
+reason = "No fix available: deepmerge has no patched release; reached through @expo/config in mobile/. Mirrors baukit's ignore."
+
+[[IgnoredVulns]]
+id = "GHSA-qr28-fpjm-wq7f"
+ignoreUntil = 2027-02-05
+reason = "No compatible fix: expo-router requires query-string 7.1.3, which calls require('decode-uri-component') as a function; the fixed 0.5.x is ESM-only with a default export, so an override breaks URL parsing."
+
+[[IgnoredVulns]]
+id = "GHSA-vcc3-ghjq-m6fr"
+ignoreUntil = 2027-02-05
+reason = "No compatible fix: expo-router requires query-string 7.1.3, which calls require('decode-uri-component') as a function; the fixed 0.5.x is ESM-only with a default export, so an override breaks URL parsing."
+{% endif -%}

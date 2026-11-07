@@ -6,4 +6,8 @@ allow-print-in-tests = true
 too-many-lines-threshold = 80
 disallowed-methods = [
   { path = "std::thread::sleep", reason = "blocks the async runtime; use tokio::time::sleep or a notify-based wait" },
+  { path = "reqwest::Client::new", reason = "raw HTTP client skips the SSRF guard; send outbound requests through baukit_egress::GuardedClient" },
+  { path = "reqwest::Client::builder", reason = "raw HTTP client skips the SSRF guard; send outbound requests through baukit_egress::GuardedClient" },
+  { path = "reqwest::ClientBuilder::new", reason = "raw HTTP client skips the SSRF guard; send outbound requests through baukit_egress::GuardedClient" },
+  { path = "reqwest::get", reason = "raw HTTP client skips the SSRF guard; send outbound requests through baukit_egress::GuardedClient" },
 ]

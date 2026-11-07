@@ -16,7 +16,7 @@ USAGE
   *) exec docker "$@" ;;
 esac
 
-repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+repository_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)
 if [ -z "${CARGO_TARGET_CACHE_PREFIX:-}" ]; then
   if command -v sha256sum >/dev/null 2>&1; then
     checkout_hash=$(printf %s "$repository_root" | sha256sum)

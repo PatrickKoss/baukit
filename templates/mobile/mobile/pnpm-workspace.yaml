@@ -8,6 +8,8 @@ catalog:
 overrides:
   '@react-native/metro-config': 0.86.3
   expo-constants: 'catalog:'
+  glob@13: 14.0.2
+  minimatch@10: 11.0.1
   react-dom: 19.2.3
 {{ context.baukit_pnpm_overrides }}
 peerDependencyRules:

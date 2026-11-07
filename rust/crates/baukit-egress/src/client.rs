@@ -390,6 +390,10 @@ enum Transport {
     PlainHttp,
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the guarded client is the one place that builds a raw reqwest client; it pins DNS to checked answers and disables redirects and proxies"
+)]
 fn build_client(
     resolver: Arc<dyn Resolver>,
     options: &EgressOptions,

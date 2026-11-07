@@ -275,6 +275,12 @@ fn known_tokens(capabilities: &Capabilities, quality: &QualityManifest) -> Vec<&
         "markdown-links",
         "preflight",
         "baukit-doctor",
+        "baukit-check",
+        "workflow-lint",
+        "secret-scan",
+        "osv",
+        "python-lint",
+        "shell-lint",
         "metric-names",
     ];
     if capabilities.components.backend() {

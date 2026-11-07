@@ -106,7 +106,8 @@ async fn clerk_checks_an_audience_only_when_one_is_configured() -> Result<(), Bo
     )?;
     let claims = session_claims(&server, "user_clerk")?
         .claim("email", "clerk@example.com")
-        .claim("scope", "records:read");
+        .claim("scope", "records:read")
+        .claim("azp", "https://app.example.com");
     let principal = default.verify(&server.mint(&claims)?).await?;
     assert_eq!(principal.scopes(), &scopes(["records:read"]));
     assert!(principal.profile_claims().is_empty());
@@ -236,7 +237,8 @@ async fn every_token_profile_exposes_authentication_time() -> Result<(), Box<dyn
     let profiles: [&dyn baukit_auth::IdentityVerifier; 3] = [&oidc, &clerk, &workos];
     let base = server
         .claims("subject", "api", LIFETIME)?
-        .claim("client_id", "client_01ABC");
+        .claim("client_id", "client_01ABC")
+        .claim("azp", "https://app.example");
     for verifier in profiles {
         assert_eq!(
             verifier

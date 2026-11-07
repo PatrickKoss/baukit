@@ -57,6 +57,24 @@ impl AllowedEndpoint {
         })
     }
 
+    /// Allows exactly the scheme, host and effective port of a configured URL.
+    ///
+    /// `http` URLs select HTTP only and `https` URLs HTTPS only. Other schemes,
+    /// URLs without a host and URLs with credentials are rejected.
+    pub fn from_url(url: &Url) -> Result<Self, AllowedEndpointError> {
+        let allow_http = match url.scheme() {
+            "http" => true,
+            "https" => false,
+            _ => return Err(AllowedEndpointError),
+        };
+        if !url.username().is_empty() || url.password().is_some() {
+            return Err(AllowedEndpointError);
+        }
+        let host = url.host_str().ok_or(AllowedEndpointError)?;
+        let port = url.port_or_known_default().ok_or(AllowedEndpointError)?;
+        Self::new(host, port, allow_http)
+    }
+
     /// Returns whether the URL has exactly this scheme, host and effective port.
     #[must_use]
     pub fn matches(&self, url: &Url) -> bool {

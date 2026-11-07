@@ -38,19 +38,50 @@ class ErasureRoleTests(unittest.TestCase):
         reconciler = reconcile_keycloak.RealmReconciler(api)
         reconciler.reconcile_service_account_roles("fixture", "backend", ["manage-users"])
         reconciler.reconcile_service_account_roles("fixture", "backend", ["manage-users"])
-        self.assertEqual(api.additions, [("backend-account", "realm-management", [{"id": "role-manage-users", "name": "manage-users"}])])
+        self.assertEqual(
+            api.additions,
+            [
+                (
+                    "backend-account",
+                    "realm-management",
+                    [{"id": "role-manage-users", "name": "manage-users"}],
+                )
+            ],
+        )
 
     def test_policy_requires_the_declared_mapping(self):
         fixtures = Path(__file__).resolve().parent / "fixtures"
         policy = keycloak_policy.load_json(fixtures / "development-policy.json")
         realm = keycloak_policy.load_json(fixtures / "development-realm.json")
         policy["serviceAccountRoles"] = {"backend": ["manage-users"]}
-        realm["clients"].append({"clientId": "backend", "publicClient": False, "directAccessGrantsEnabled": False, "serviceAccountsEnabled": True})
-        self.assertTrue(any("missing required" in issue for issue in keycloak_policy.validate_realm(realm, policy, "development")))
-        realm.setdefault("users", []).append({"serviceAccountClientId": "backend", "clientRoles": {"realm-management": ["manage-users"]}})
+        realm["clients"].append(
+            {
+                "clientId": "backend",
+                "publicClient": False,
+                "directAccessGrantsEnabled": False,
+                "serviceAccountsEnabled": True,
+            }
+        )
+        self.assertTrue(
+            any(
+                "missing required" in issue
+                for issue in keycloak_policy.validate_realm(realm, policy, "development")
+            )
+        )
+        realm.setdefault("users", []).append(
+            {
+                "serviceAccountClientId": "backend",
+                "clientRoles": {"realm-management": ["manage-users"]},
+            }
+        )
         self.assertEqual(keycloak_policy.validate_realm(realm, policy, "development"), [])
         realm["clients"][-1]["publicClient"] = True
-        self.assertTrue(any("confidential service account" in issue for issue in keycloak_policy.validate_realm(realm, policy, "development")))
+        self.assertTrue(
+            any(
+                "confidential service account" in issue
+                for issue in keycloak_policy.validate_realm(realm, policy, "development")
+            )
+        )
 
     def test_config_and_policy_must_agree(self):
         fixtures = Path(__file__).resolve().parent / "fixtures"
@@ -67,10 +98,13 @@ class ErasureRoleTests(unittest.TestCase):
         realm = keycloak_policy.load_json(fixtures / "development-realm.json")
         policy["serviceAccountRoles"] = {"backend": ["manage-users"]}
         realm["clients"].append(None)
-        realm["users"] = [None, {
-            "serviceAccountClientId": "backend",
-            "clientRoles": "manage-users",
-        }]
+        realm["users"] = [
+            None,
+            {
+                "serviceAccountClientId": "backend",
+                "clientRoles": "manage-users",
+            },
+        ]
         failures = keycloak_policy.validate_realm(realm, policy, "development")
         self.assertTrue(any("confidential service account" in issue for issue in failures))
         self.assertTrue(any("missing required" in issue for issue in failures))

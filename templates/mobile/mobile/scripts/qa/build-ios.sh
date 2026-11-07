@@ -14,6 +14,8 @@ export EXPO_PUBLIC_OIDC_CLIENT_ID="{{ context.app_name }}-mobile"
 
 if [[ -f "$root/mobile/.env" ]]; then
   set -a
+  # The developer-owned .env is optional and absent when shellcheck runs.
+  # shellcheck source=/dev/null
   source "$root/mobile/.env"
   set +a
 fi

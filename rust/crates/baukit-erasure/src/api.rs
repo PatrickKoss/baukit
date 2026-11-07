@@ -1,8 +1,10 @@
 use crate::{ErasureFuture, IdentityAccountDeleter, IdentityDeletionError};
+use axum::http::StatusCode;
 use baukit_config::Secret;
-use reqwest::{Client, StatusCode};
-use std::time::Duration;
+use baukit_egress::{EgressRequest, GuardedClient};
 use url::Url;
+
+use crate::egress::{bearer, endpoint_client, status};
 
 /// API credentials for an identity provider. The key never appears in errors.
 #[derive(Clone, Debug)]
@@ -17,7 +19,7 @@ pub struct ApiDeletionConfig {
 
 #[derive(Clone)]
 struct ApiDeleter {
-    client: Client,
+    client: GuardedClient,
     base: Url,
     key: Secret<String>,
 }
@@ -37,13 +39,7 @@ impl ApiDeleter {
         {
             return Err(IdentityDeletionError::Permanent);
         }
-        let client = Client::builder()
-            .no_proxy()
-            .connect_timeout(Duration::from_secs(2))
-            .timeout(Duration::from_secs(5))
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .map_err(|_| IdentityDeletionError::Permanent)?;
+        let client = endpoint_client(&base)?;
         Ok(Self {
             client,
             base,
@@ -61,14 +57,9 @@ impl ApiDeleter {
             .pop_if_empty()
             .extend(parts)
             .push(subject);
-        let status = self
-            .client
-            .delete(url)
-            .bearer_auth(self.key.expose())
-            .send()
-            .await
-            .map_err(|_| IdentityDeletionError::Retryable)?
-            .status();
+        let request = EgressRequest::new(axum::http::Method::DELETE, url)
+            .with_headers(bearer(self.key.expose())?);
+        let status = status(&self.client, request).await?;
         if status.is_success() || status == StatusCode::NOT_FOUND {
             return Ok(());
         }

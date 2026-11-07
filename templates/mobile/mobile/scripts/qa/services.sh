@@ -4,7 +4,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 state_dir="$root/mobile/.qa"
 action="${1:-start}"
-compose_project="${BAUKIT_QA_COMPOSE_PROJECT:-{{ context.app_name }}-mobile-qa}"
+{% if context.backend %}compose_project="${BAUKIT_QA_COMPOSE_PROJECT:-{{ context.app_name }}-mobile-qa}"
 postgres_port="${BAUKIT_QA_POSTGRES_PORT:-15432}"
 redis_port="${BAUKIT_QA_REDIS_PORT:-16379}"
 api_port="${BAUKIT_QA_API_PORT:-18080}"
@@ -18,7 +18,7 @@ compose=(
   -f "$root/compose.yaml"
   -f "$root/mobile/scripts/qa/docker-compose.qa.yml"
 )
-
+{% endif %}
 api_running() {
   kill -0 "$1" 2>/dev/null && [[ "$(ps -o stat= -p "$1")" != Z* ]]
 }

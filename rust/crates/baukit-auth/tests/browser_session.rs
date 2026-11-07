@@ -203,7 +203,7 @@ fn login_form_action(page: &str) -> Result<String, TestError> {
 }
 
 async fn authorize(keycloak: &KeycloakTestContainer) -> Result<Authorization, TestError> {
-    let client = reqwest::Client::builder()
+    let client = baukit_test::test_http_client()
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(20))
         .build()?;
@@ -373,7 +373,8 @@ async fn keycloak_refresh_status(
     keycloak: &KeycloakTestContainer,
     refresh_token: &str,
 ) -> Result<reqwest::StatusCode, TestError> {
-    let response = reqwest::Client::new()
+    let response = baukit_test::test_http_client()
+        .build()?
         .post(format!(
             "{}/protocol/openid-connect/token",
             keycloak.issuer()

@@ -41,9 +41,11 @@
 
 mod api_token;
 mod auth;
+mod auth_negative;
 mod connector;
 mod container_labels;
 mod credential_probe;
+mod cross_tenant;
 #[cfg(feature = "data-subject")]
 mod data_subject;
 #[cfg(feature = "data-subject")]
@@ -51,6 +53,7 @@ mod data_subject_conformance;
 mod erasure;
 #[cfg(test)]
 mod fixture_tests;
+mod http_client;
 mod identity_deleter;
 mod identity_erasure;
 mod inbox;
@@ -67,12 +70,17 @@ mod postgres_database;
 mod purge_horizon;
 mod redis;
 mod replay_safe_mutation;
+mod security_probe;
 mod tracing;
 mod webhook;
 
 pub use api_token::InMemoryApiTokenStore;
 pub use auth::{
     AuthConformanceError, assert_auth_router_conformance, check_auth_router_conformance,
+};
+pub use auth_negative::{
+    AuthNegativeCase, AuthNegativeError, AuthNegativeReport, InvalidCredential,
+    assert_auth_negative_suite, check_auth_negative_suite,
 };
 pub use baukit_openapi::{
     SchemaError as OpenApiDriftError, assert_camel_case_names as assert_openapi_camel_case,
@@ -88,6 +96,10 @@ pub use credential_probe::{
     CredentialProbeConformanceCases, CredentialProbeConformanceError, ScriptedCredentialProbeHttp,
     ScriptedCredentialProbeResponse, assert_credential_probe_conformance,
     check_credential_probe_conformance,
+};
+pub use cross_tenant::{
+    CrossTenantCase, CrossTenantError, CrossTenantReport, assert_cross_tenant_denied,
+    check_cross_tenant_denied,
 };
 #[cfg(feature = "data-subject")]
 pub use data_subject::{
@@ -105,6 +117,7 @@ pub use erasure::{
     CleanupKind, ErasureConformanceError, OwnedResourceCheck, ProductProfileErasureAdapter,
     check_product_profile_erasure_conformance,
 };
+pub use http_client::test_http_client;
 pub use identity_deleter::FakeIdentityAccountDeleter;
 pub use identity_erasure::{
     IdentityErasureAdapter, IdentityErasureConformanceError, IdentityErasureRequest,
@@ -165,6 +178,7 @@ pub use replay_safe_mutation::{
     ReplayOperation, ReplayOutcome, ReplayRequest, ReplaySafeMutationAdapter, ReplaySnapshot,
     assert_replay_safe_mutation_conformance, check_replay_safe_mutation_conformance,
 };
+pub use security_probe::{OperationFixtures, RouteExclusion, SecurityTarget};
 pub use tracing::init_test_tracing;
 pub use webhook::{
     MAX_SCRIPTED_WEBHOOK_BODY_BYTES, ReceivedWebhookRequest, ScriptedWebhookReceiver,

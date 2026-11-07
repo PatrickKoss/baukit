@@ -128,17 +128,19 @@ tenancy and rate-limit audit of the products (S-08).
 - [~] P1.8 (baukit done in W1-D/W1-D2 for every tracked file except templates/; template gate open) ruff + shellcheck for `scripts/` in baukit and the template gate; fix findings.
 - [~] P1.9 (cli split merged in W1-B; Rust splits in W1-A and navigation in W1-C await merge; template `api.rs::run` open) Refactors to meet the limits: split `cli/src/lib.rs`, `supervise_task`, `authorize_inner`,
   `worker.rs::execute`, navigation `native.tsx` components, template `api.rs::run` (composition builder).
-- [ ] P1.10 `SuiteComposition` builder in baukit-suite; template uses it (Q-08).
+- [ ] P1.10 `SuiteComposition` builder in baukit-suite; template uses it (Q-08). Crate part done (W4-G);
+  template and product adoption pending.
 - [ ] P1.11 `baukit check observability` replacing the five product linters (Q-13).
 
 ## Phase 2. Security tooling, tests and skills
 
-- [~] P2.1 (baukit-http layer merged in W2-2; web CSP, chart edge config, HSTS config field and fixture header checks wait for the template wave) `SecurityHeadersLayer` in baukit-http on by default (nosniff, Referrer-Policy, frame-ancestors via
+- [~] P2.1 (baukit-http layer merged in W2-2; HSTS config field merged in W4-F; web CSP, chart edge config and fixture header checks wait for the template wave) `SecurityHeadersLayer` in baukit-http on by default (nosniff, Referrer-Policy, frame-ancestors via
   CSP for HTML, `Cache-Control: no-store` on authenticated JSON, HSTS behind config); CSP for the web template
   and the chart's edge config; header assertions in the fixture gate.
 - [~] P2.2 (ADR tasks 1 and 2 merged: BFF in baukit-auth + ratelimit adapter, headers; task 3 auth-web/pwa-web after W1-C; task 4 templates; auth-web waits for W1-C; design: ADR 0006 accepted; implementation = its 4 tasks) auth-web token storage per D2, with a test that no storage write contains a refresh token.
-- [ ] P2.3 `IssuedApiToken` and every secret-holding type: redacting Debug / `SecretString`.
-- [ ] P2.4 Clerk missing-azp opt-in; negative tests for every token profile.
+- [x] P2.3 `IssuedApiToken` and every secret-holding type: redacting Debug / `SecretString`.
+- [~] P2.4 (crate part merged in W4-F; the template `auth.allow_missing_azp` flag and the stale
+  auth-providers.md:90 line are left for the backend template wave) Clerk missing-azp opt-in; negative tests for every token profile.
 - [~] P2.5 (baukit done in W1-D; template workflows open) Supply chain: SHA-pin all actions in baukit and the template workflows, renovate digest pinning,
   zizmor + actionlint step, gitleaks with fixture allowlist, osv-scanner over Cargo.lock and pnpm-lock.yaml.
 - [~] P2.6 (6 targets and the gate lane merged; sync batch decode has no public entry point; template scaffold open) Fuzzing: `rust/fuzz` with targets for JWT header/claims decode, sync push batch decode, event
@@ -148,7 +150,7 @@ tenancy and rate-limit audit of the products (S-08).
   njs verifier agree, single-byte mutations rejected), sync merge (idempotent, owner isolation).
 - [ ] P2.8 `baukit-test` security helpers: auth negative suite and `assert_cross_tenant_denied` that walks the
   OpenAPI routes; template integration test that uses both.
-- [ ] P2.9 clippy `disallowed-methods` for raw reqwest outside an allowlisted adapter module (template
+- [~] P2.9 (baukit merged in W4-C; template `clippy.toml` in W5-T1) clippy `disallowed-methods` for raw reqwest outside an allowlisted adapter module (template
   `clippy.toml`).
 - [~] P2.10 (threat-model + security-testing done in W1-E; code-conformance waits for the checks) Skills in `agent-skills/skills/`: `baukit-threat-model` (data classes, trust boundaries,
   STRIDE per boundary, threat → control → test table, output `docs/threat-model.md`),
@@ -327,3 +329,69 @@ tenancy and rate-limit audit of the products (S-08).
   - Accepted deviation: refresh on load happens only when an account hint exists.
   - Known break: the OIDC web template fails to compile until ADR task 4. Started W5-T2 for that: BFF mount,
     web client swap, CSP, e2e, and `@baukit/eslint-config` in the web and mobile templates.
+- 2026-11-07: W4-H merged (P2.8 crate part).
+  - `assert_cross_tenant_denied` walks every OpenAPI operation that has a path parameter. A missing fixture
+    id or a stale or blank exclusion fails. `assert_auth_negative_suite` runs 5 bad credentials against
+    secured operations.
+  - 2 reasoned `print_stdout` expects; rust-expect max raised to 31. The 6 self-tests pass on main.
+  - The template test waits for P2.12 (items owner scoping). The ready version is in
+    reports/test-helpers-template.rs.
+  - Fixed on main: `verify_exchanged_id_token` is now gated behind `browser-session`.
+    `cargo clippy -p baukit-auth` without the feature failed on dead code; the workspace build hid it
+    through feature unification.
+- 2026-11-07: W4-G merged (P1.10 crate part).
+  - `PostgresSuite::builder` replaces the `SuiteComposition` copied into each product bin.
+    `PostgresSuite::router` puts callback, exchange and revoke behind a per-IP bucket: 60 a minute, burst 10,
+    fail closed. Signed inbound events keep their per-link and per-source buckets in the ingest service.
+  - The plain `adapters::http::router` still mounts the routes without that bucket. It stays until the
+    template and the products switch to the builder.
+  - Review gap fixed on main: the report had no test for the fail-closed path. Added
+    `unavailable_limiter_rejects_public_routes_by_default`.
+  - Open: template and product adoption (backend template wave). Adoption notes in
+    reports/suite-builder-adoption.md.
+- 2026-11-07: W4-B merged (P2.3).
+  - Redacting `Debug` impls: `IssuedApiToken` (also lost `PartialEq`/`Eq`), `SessionRow`, `KeycloakLogin`,
+    and the link-code request types `LinkCompleteRequest` and `LinkCallbackQuery`.
+  - `IssuedApiToken` and `GeneratedApiToken` moved to `api_token/issued.rs`; api_token.rs allowlist
+    1977 -> 1910.
+  - The `rust-secret-debug` rule now also matches more field names (passphrase, credentials,
+    code_verifier, *_key), byte arrays and `Zeroizing` types. The 3 findings on main are gone.
+  - I checked the sweep claims against the diff. Nothing else derives Debug on a secret.
+- 2026-11-07: W4-F merged (P2.4 crate part, P2.1 HSTS field).
+  - `ClerkVerifier` now rejects tokens without `azp`. Clerk leaves `azp` out when the request has no Origin,
+    which is the case for native apps. `allow_missing_authorized_party()` turns acceptance back on. A present
+    `azp` must still be in the allowlist.
+  - New `tests/token_profiles.rs`: Oidc, Clerk, ClientBound and ScopeBound each get one valid token that must
+    verify, then 9 or 10 attacks, each checked for its exact error variant.
+  - `HttpConfig.hsts_max_age`: one year outside Local unless set. `0` turns it off. baukit-config/lib.rs
+    dropped from the allowlist (961 lines).
+  - Main after the merge: fmt, clippy (all features and without features for auth, config and http), 475
+    tests with Docker, and file-size, suppressions and agent-docs are all green.
+  - Rollout impact: 10 of the 12 products ship Clerk as a provider option and a mobile app. All except
+    runtime-analyzer and architecture-health-platform. The backend template wave adds
+    `auth.allow_missing_azp`, default on when `context.mobile`, and P4.2 wires it per product. Otherwise a
+    Clerk deployment rejects Expo tokens.
+- 2026-11-07: W4-C merged (P2.9 baukit part).
+  - auth (discovery and JWKS), erasure, MCP introspection and push now send outbound HTTP through
+    `GuardedClient`. Without an override, each client can reach only the exact scheme, host and port that was
+    configured. That blocks every other host, plus metadata and link-local addresses, which is stricter than
+    the old raw clients.
+  - `OidcConfig::with_egress_policy` overrides the policy. A JWKS URL named by discovery on another host gets
+    its own exact-endpoint allowance.
+  - clippy `disallowed-methods` now covers `reqwest::Client::{new,builder}`, `ClientBuilder::new` and
+    `reqwest::get`. 3 reasoned expects: the egress builder, baukit-test's `test_http_client`, and the rmcp
+    example.
+  - The `rust-raw-http-client` pattern findings are gone. `baukit check patterns` is green on main.
+  - Combining the W4-F and W4-H merges with this one broke the clippy gate. W4-H's `security_probe.rs` and
+    W4-F's `token_profiles.rs` used raw reqwest, so I fixed both on main with `test_http_client()`. Also synced
+    examples/minimal-api/clippy.toml and lowered verifier.rs to 1670.
+  - Main gate:
+    - fmt, clippy (all features and without features per crate) and cli clippy: green.
+    - 1292 workspace tests with Docker, 0 failed. MSRV 1.95 and cargo deny: green.
+    - Fixture backend flavor green. The auth flavor fails only on the web template (`OidcClient` is not a
+      `ProviderClient`), the known break until W5-T2.
+  - `baukit check`: everything green except `lints` (2 template eslint configs, W5-T2).
+  - Backend template wave brief written: prompts/W5-T1-template-backend.md. It starts after W5-T2 merges
+    (both edit the backend bin crate).
+  - Clerk fixture on main: 39 backend tests pass. Web fails in `src/sign-in/local.ts` with the same
+    `OidcClient` vs `ProviderClient` mismatch. Sent to W5-T2.

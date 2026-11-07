@@ -8,3 +8,5 @@ pub mod jobs;
 pub mod peer;
 #[cfg(feature = "postgres")]
 pub mod postgres;
+#[cfg(feature = "http")]
+pub mod public_limit;

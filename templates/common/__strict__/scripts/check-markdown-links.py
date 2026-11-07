@@ -7,9 +7,8 @@ import sys
 from pathlib import Path
 from urllib.parse import unquote
 
-
 INLINE_LINK_START = re.compile(r"!?\[[^\]]*\]\(\s*")
-INLINE_LINK_END = re.compile(r'''(?:\s+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?\s*\)''')
+INLINE_LINK_END = re.compile(r"""(?:\s+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?\s*\)""")
 ANGLE_DESTINATION = re.compile(r"<[^>\n]+>")
 REFERENCE_LINK = re.compile(r"^\s{0,3}\[[^\]]+\]:\s*(<[^>\n]+>|\S+)", re.MULTILINE)
 EXTERNAL_SCHEME = re.compile(r"^[a-z][a-z\d+.-]*:", re.IGNORECASE)
@@ -45,7 +44,7 @@ def markdown_files(repository_root: Path, roots: list[str]) -> list[Path]:
 
 
 def inline_destination(source: str, start: int) -> tuple[str, int] | None:
-    if source[start:start + 1] == "<":
+    if source[start : start + 1] == "<":
         match = ANGLE_DESTINATION.match(source, start)
         return (match.group(), match.end()) if match else None
 

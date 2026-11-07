@@ -13,39 +13,79 @@ jobs:
     name: Generated repository scripts
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: python3 scripts/reconcile-env.test.py
 {% if context.quality_strict %}      - run: python3 scripts/check-markdown-links.test.py
       - run: python3 scripts/check-markdown-links.py README.md CLAUDE.md AGENTS.md docs
 {% endif %}
-{% if not context.quality_strict %}  baukit-doctor:
+{% if not context.quality_strict %}  repository-lint:
+    name: Supply chain and script lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          version: 2026.8.11
+          cache: false
+          install_args: >-
+            aqua:rhysd/actionlint aqua:zizmorcore/zizmor aqua:gitleaks/gitleaks
+            aqua:google/osv-scanner aqua:astral-sh/ruff aqua:koalaman/shellcheck
+      - run: sh scripts/repo-lint.sh workflow-lint
+      - run: sh scripts/repo-lint.sh secret-scan
+      - run: sh scripts/repo-lint.sh osv
+      - run: sh scripts/repo-lint.sh python-lint
+      - run: sh scripts/repo-lint.sh shell-lint
+
+  baukit-doctor:
     name: Baukit doctor
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
       - name: Check the product with baukit doctor
         run: |
           git clone --branch v{{ context.template_version }} --depth 1 https://github.com/PatrickKoss/baukit.git "$RUNNER_TEMP/baukit"
           cargo run --quiet --locked --manifest-path "$RUNNER_TEMP/baukit/cli/Cargo.toml" --bin baukit -- doctor
+      # The lints and patterns rules join this list once the backend and frontend templates carry their baselines.
+      - name: Check agent docs, file sizes and suppressions with baukit check
+        run: cargo run --quiet --locked --manifest-path "$RUNNER_TEMP/baukit/cli/Cargo.toml" --bin baukit -- check agent-docs file-size suppressions --root .
 
 {% endif %}{% if context.quality_strict %}  strict-quality:
     name: Strict quality profile
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
-{% if context.backend %}      - uses: dtolnay/rust-toolchain@stable
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         with:
+          version: 2026.8.11
+          cache: false
+          install_args: >-
+            aqua:rhysd/actionlint aqua:zizmorcore/zizmor aqua:gitleaks/gitleaks
+            aqua:google/osv-scanner aqua:astral-sh/ruff aqua:koalaman/shellcheck
+{% if context.backend %}      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
           components: rustfmt, clippy, llvm-tools-preview
-      - uses: taiki-e/install-action@cargo-llvm-cov
-      - uses: taiki-e/install-action@nextest
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
+        with:
+          tool: cargo-llvm-cov,cargo-nextest
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: backend -> target
-{% endif %}{% if context.backend or context.web or context.mobile %}      - uses: actions/setup-node@v7.0.0
+{% endif %}{% if context.backend or context.web or context.mobile %}      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26.10.0
       - name: Install Corepack
@@ -56,20 +96,23 @@ jobs:
         run: |
           corepack pnpm@12.9.1 --dir web install --frozen-lockfile
           corepack pnpm@12.9.1 --dir web exec playwright install --with-deps chromium webkit
-{% endif %}{% if context.mobile %}      - uses: actions/setup-java@v6.0.1
+{% endif %}{% if context.mobile %}      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: "25.0.4+101.0.LTS"
 {% endif %}      - name: Select migration comparison base
         if: {% raw %}${{ hashFiles('backend/migrations/*.sql') != '' }}{% endraw %}
+        env:
+          EVENT_NAME: {% raw %}${{ github.event_name }}{% endraw %}
+          PULL_REQUEST_BASE: {% raw %}${{ github.event.pull_request.base.sha }}{% endraw %}
         run: |
-          if [ "{% raw %}${{ github.event_name }}{% endraw %}" = "pull_request" ]; then
-            echo "BAUKIT_BASE_REVISION={% raw %}${{ github.event.pull_request.base.sha }}{% endraw %}" >> "$GITHUB_ENV"
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            echo "BAUKIT_BASE_REVISION=$PULL_REQUEST_BASE" >> "$GITHUB_ENV"
           else
             echo "BAUKIT_BASE_REVISION=$(git rev-parse HEAD^ 2>/dev/null || git rev-list --max-parents=0 HEAD)" >> "$GITHUB_ENV"
           fi
       - run: sh scripts/quality-gate.sh
-{% if context.backend %}      - uses: actions/upload-artifact@v7.0.1
+{% if context.backend %}      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: {% raw %}${{ always() }}{% endraw %}
         with:
           name: backend-coverage
@@ -78,7 +121,7 @@ jobs:
             backend/target/llvm-cov/lcov.info
           if-no-files-found: warn
           retention-days: 7
-{% endif %}{% if context.web %}      - uses: actions/upload-artifact@v7.0.1
+{% endif %}{% if context.web %}      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: {% raw %}${{ failure() }}{% endraw %}
         with:
           name: playwright-failure
@@ -91,11 +134,14 @@ jobs:
 {% else %}{% if context.backend %}  backend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: backend -> target
       - run: cargo fmt --manifest-path backend/Cargo.toml --all --check
@@ -110,7 +156,9 @@ jobs:
     name: Backend minimum supported Rust version
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # Read the floor from the manifest so it is stated once. A literal here
       # would drift silently the first time Cargo.toml is bumped.
       - name: Read rust-version from the workspace manifest
@@ -127,10 +175,10 @@ jobs:
           ')"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Minimum supported Rust version: $version"
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: {% raw %}${{ steps.msrv.outputs.version }}{% endraw %}
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: backend -> target
           key: {% raw %}msrv-${{ steps.msrv.outputs.version }}{% endraw %}
@@ -140,12 +188,16 @@ jobs:
     name: OpenAPI specification and consumers
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: backend -> target
-{% if context.web or context.mobile %}      - uses: actions/setup-node@v7.0.0
+{% if context.web or context.mobile %}      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26.10.0
       - name: Install Corepack
@@ -176,10 +228,12 @@ jobs:
     name: Production backend image
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: docker/setup-buildx-action@v4.4.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       # Build only. Publishing belongs to the release workflow, not to CI.
-      - uses: docker/build-push-action@v7.4.0
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: backend/Dockerfile
@@ -194,8 +248,10 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: actions/setup-node@v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26.10.0
       - name: Install Corepack
@@ -212,8 +268,10 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: actions/setup-node@v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26.10.0
       - name: Install Corepack
@@ -221,7 +279,7 @@ jobs:
       - run: corepack pnpm@12.9.1 install --frozen-lockfile
       # Thresholds live in web/vitest.config.ts, so a local run fails the same way.
       - run: corepack pnpm@12.9.1 run test:coverage
-      - uses: actions/upload-artifact@v7.0.1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: {% raw %}${{ always() }}{% endraw %}
         with:
           name: web-coverage
@@ -248,8 +306,10 @@ jobs:
       CI: "true"
       E2E_WORKERS: "2"
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: actions/setup-node@v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26.10.0
       - name: Install Corepack
@@ -263,7 +323,7 @@ jobs:
       # no backend, database, or identity provider.
       - name: Run the qa specs
         run: corepack pnpm@12.9.1 exec playwright test --config e2e/playwright.config.ts {% raw %}${{ matrix.projects }}{% endraw %}
-      - uses: actions/upload-artifact@v7.0.1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: {% raw %}${{ failure() }}{% endraw %}
         with:
           name: playwright-failure-{% raw %}${{ matrix.browser }}{% endraw %}
@@ -279,8 +339,10 @@ jobs:
       run:
         working-directory: mobile
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: actions/setup-node@v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26.10.0
       - name: Install Corepack
@@ -305,8 +367,10 @@ jobs:
       run:
         working-directory: mobile
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: actions/setup-node@v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26.10.0
       - name: Install Corepack
@@ -315,7 +379,7 @@ jobs:
       - run: corepack pnpm@12.9.1 exec expo install --check
       # Thresholds live in mobile/jest.config.cjs, so a local run fails the same way.
       - run: corepack pnpm@12.9.1 run test:coverage
-      - uses: actions/upload-artifact@v7.0.1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: {% raw %}${{ always() }}{% endraw %}
         with:
           name: mobile-coverage
@@ -327,7 +391,9 @@ jobs:
     name: Observability metric names
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # The linter and the metric vocabulary it enforces live in Baukit. A
       # product lists its own metric names in the allowlist described in
       # docs/observability-lint.md.
