@@ -35,6 +35,11 @@ export default defineConfig(
     },
   },
   ...scripts({
-    files: ['scripts/**/*.mjs', 'packages/*/scripts/**/*.{mjs,cjs}', 'packages/*/*.{js,cjs}'],
+    files: [
+      'eslint.config.js',
+      'scripts/**/*.mjs',
+      'packages/*/scripts/**/*.{mjs,cjs}',
+      'packages/*/*.{js,cjs}',
+    ],
   }),
 );
