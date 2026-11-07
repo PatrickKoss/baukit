@@ -25,6 +25,11 @@ pub struct ExternalAccountId(String);
 
 impl ExternalAccountId {
     /// Validates and wraps an external account identifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidExternalAccountId::Empty`] for an empty value and
+    /// [`InvalidExternalAccountId::TooLong`] when it exceeds the byte limit.
     pub fn new(value: impl Into<String>) -> Result<Self, InvalidExternalAccountId> {
         let value = value.into();
         if value.is_empty() {

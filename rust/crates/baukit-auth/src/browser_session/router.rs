@@ -77,6 +77,12 @@ impl BrowserSessionState {
     /// so the CSRF origin check uses the CORS allowlist. Startup fails when that
     /// allowlist is empty, `allow_credentials` is off, or any check in
     /// [`BrowserSessionConfig::validate`] fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BrowserSessionError::Config`] when [`BrowserSessionConfig::validate`]
+    /// fails, and [`BrowserSessionError::Discovery`] when the IdP egress client
+    /// cannot be built or the issuer's discovery fails.
     pub async fn discover(
         config: BrowserSessionConfig,
         http: &baukit_http::HttpOptions,

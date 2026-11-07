@@ -30,6 +30,11 @@ pub enum LocaleQueryOverride {
 
 impl LocaleQueryOverride {
     /// Creates an enabled query override after validating its parameter name.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RequestLocaleConfigError::InvalidQueryParameter`] when `name` is
+    /// empty, too long, or contains bytes other than ASCII alphanumerics, `_` and `-`.
     pub fn parameter(name: impl Into<String>) -> Result<Self, RequestLocaleConfigError> {
         let name = name.into();
         if name.is_empty()
@@ -74,6 +79,13 @@ pub struct RequestLocaleConfig {
 
 impl RequestLocaleConfig {
     /// Validates supported locales, fallback, and query override behavior.
+    ///
+    /// # Errors
+    ///
+    /// Returns `EmptySupportedLocales` or `TooManySupportedLocales` for the size of
+    /// `supported`, `InvalidSupportedLocale` for an oversized, malformed or duplicate
+    /// tag, `UnsupportedFallback` when `fallback` is not supported, and
+    /// `InvalidQueryParameter` for a bad override name.
     pub fn new<I, L>(
         supported: I,
         fallback: impl AsRef<str>,

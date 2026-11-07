@@ -209,6 +209,12 @@ pub trait IntegrationConnector: Send + Sync {
     /// holds the shared secret, which is worth distinguishing in metrics.
     ///
     /// Header names in `headers` are lowercase.
+    ///
+    /// # Errors
+    ///
+    /// Return [`WebhookVerificationError::InvalidSignature`] when the signature is
+    /// missing or wrong, and [`WebhookVerificationError::InvalidEvent`] when a
+    /// correctly signed body cannot be reduced to work.
     fn verify_webhook(
         &self,
         headers: &BTreeMap<String, String>,

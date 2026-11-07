@@ -111,6 +111,11 @@ pub struct ScriptedCredentialProbeHttp {
 
 impl ScriptedCredentialProbeHttp {
     /// Starts a scripted server on an ephemeral loopback port.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`io::Error`] when the loopback listener cannot bind or report its
+    /// address.
     pub async fn start() -> io::Result<Self> {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let address = listener.local_addr()?;
@@ -358,6 +363,12 @@ impl std::error::Error for CredentialProbeConformanceError {}
 /// to call any path below that origin with a timeout shorter than two seconds.
 /// The supplied cases retain all provider headers and response parsing in the
 /// product test.
+///
+/// # Errors
+///
+/// Returns [`CredentialProbeConformanceError`] with one violation per case the
+/// probe classified wrongly, or a fixture violation when the scripted server
+/// cannot start.
 pub async fn check_credential_probe_conformance<MakeProbe, Probe>(
     cases: CredentialProbeConformanceCases,
     make_probe: MakeProbe,

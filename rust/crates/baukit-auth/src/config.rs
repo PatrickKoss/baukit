@@ -229,6 +229,12 @@ impl OidcConfig {
     ///
     /// Access tokens have no client allowlist by default. ID-token verification
     /// requires an explicit client ID through [`Self::with_client_id`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OidcConfigError::EmptyValue`] for an empty issuer or audience,
+    /// [`OidcConfigError::InvalidIssuer`] when the issuer is not an absolute URL, and
+    /// [`OidcConfigError::IssuerCannotBeBase`] when it cannot carry a path.
     pub fn new(
         issuer: impl AsRef<str>,
         audience: impl Into<String>,
@@ -341,6 +347,12 @@ impl OidcConfig {
     ///
     /// This is only a URL convention. Discovery and verification still use
     /// standard OIDC metadata and no Keycloak SDK or API.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OidcConfigError::EmptyValue`] for an empty realm or audience,
+    /// [`OidcConfigError::InvalidIssuer`] when `base_url` does not parse, and
+    /// [`OidcConfigError::IssuerCannotBeBase`] when it cannot carry a path.
     pub fn keycloak(
         base_url: impl AsRef<str>,
         realm: impl AsRef<str>,
@@ -362,6 +374,11 @@ impl OidcConfig {
     }
 
     /// Replaces the acceptable audiences. At least one non-empty value is required.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OidcConfigError::EmptyValue`] when `audiences` is empty or contains
+    /// an empty string.
     pub fn with_audiences<I, T>(mut self, audiences: I) -> Result<Self, OidcConfigError>
     where
         I: IntoIterator<Item = T>,
@@ -379,6 +396,10 @@ impl OidcConfig {
     /// ID tokens must include this client in `aud`. Several audiences require
     /// this exact client in `azp`, as does any present `azp` on an ID token.
     /// This does not restrict the clients allowed to send access tokens.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OidcConfigError::EmptyValue`] when `client_id` is empty.
     pub fn with_client_id(mut self, client_id: impl Into<String>) -> Result<Self, OidcConfigError> {
         let client_id = client_id.into();
         validate_nonempty("client ID", &client_id)?;
@@ -390,6 +411,11 @@ impl OidcConfig {
     ///
     /// At least one non-empty client ID is required. ID-token verification uses
     /// [`Self::with_client_id`] independently of this list.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OidcConfigError::EmptyValue`] when `clients` is empty or contains
+    /// an empty string.
     pub fn with_allowed_clients<I, T>(mut self, clients: I) -> Result<Self, OidcConfigError>
     where
         I: IntoIterator<Item = T>,
@@ -400,6 +426,10 @@ impl OidcConfig {
     }
 
     /// Replaces the signing-algorithm allowlist. At least one algorithm is required.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OidcConfigError::EmptyAlgorithmAllowlist`] when `algorithms` is empty.
     pub fn with_allowed_algorithms<I>(mut self, algorithms: I) -> Result<Self, OidcConfigError>
     where
         I: IntoIterator<Item = SigningAlgorithm>,
@@ -412,6 +442,10 @@ impl OidcConfig {
     }
 
     /// Sets how long a successfully fetched JWKS remains fresh.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OidcConfigError::ZeroDuration`] when `cache_ttl` is zero.
     pub fn with_jwks_cache_ttl(mut self, cache_ttl: Duration) -> Result<Self, OidcConfigError> {
         validate_duration("JWKS cache TTL", cache_ttl)?;
         self.cache_ttl = cache_ttl;
@@ -419,6 +453,10 @@ impl OidcConfig {
     }
 
     /// Sets the timeout applied independently to discovery and JWKS requests.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OidcConfigError::ZeroDuration`] when `request_timeout` is zero.
     pub fn with_request_timeout(
         mut self,
         request_timeout: Duration,

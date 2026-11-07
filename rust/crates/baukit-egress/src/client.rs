@@ -199,11 +199,20 @@ pub struct EgressClientError(#[source] reqwest::Error);
 
 impl GuardedClient {
     /// Builds a client that resolves through the operating system.
+    ///
+    /// # Errors
+    ///
+    /// Fails like [`Self::with_resolver`].
     pub fn new(options: EgressOptions) -> Result<Self, EgressClientError> {
         Self::with_resolver(Arc::new(SystemResolver), options)
     }
 
     /// Builds a client that resolves through `resolver`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EgressClientError`] when the underlying HTTP client cannot be built,
+    /// for example when the TLS backend fails to initialize.
     pub fn with_resolver(
         resolver: Arc<dyn Resolver>,
         options: EgressOptions,
@@ -236,6 +245,13 @@ impl GuardedClient {
     /// A `Retry-After` delay above [`EgressOptions::max_retry_after`] is clamped.
     /// `403` is revoked by default. [`EgressOptions::with_forbidden_rate_limit`]
     /// recognizes rate-limit headers on `403`; `401` always stays revoked.
+    ///
+    /// # Errors
+    ///
+    /// Fails like [`Self::execute_stream`] and also while buffering the body:
+    /// [`EgressError::Transport`] when a body read fails,
+    /// [`EgressError::Timeout`] when it outlasts the request timeout, and
+    /// [`EgressError::ResponseTooLarge`] when it exceeds the byte limit.
     pub async fn execute(&self, request: EgressRequest) -> Result<EgressResponse, EgressError> {
         let mut response = self.execute_stream(request).await?;
         let mut body = Vec::new();
@@ -255,6 +271,15 @@ impl GuardedClient {
     /// [`Self::execute`]. The whole-request timeout includes body reads. Each
     /// chunk counts toward the total byte limit. Dropping the response cancels
     /// the body. [`ResponseBody::Discard`] and opted-in redirects return no body.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EgressError::Destination`] or [`EgressError::BlockedAddress`] when
+    /// the URL or its resolved addresses fail the policy, [`EgressError::Resolve`]
+    /// when DNS fails or finds nothing, [`EgressError::Timeout`] or
+    /// [`EgressError::Transport`] when the request does not complete,
+    /// [`EgressError::Status`] for a non-`2xx`, and [`EgressError::ResponseTooLarge`]
+    /// when `Content-Length` exceeds the byte limit.
     pub async fn execute_stream(
         &self,
         request: EgressRequest,
@@ -352,6 +377,12 @@ impl GuardedClient {
 /// an IP address must pass the policy before the client connects.
 /// A plain `http` literal must pass
 /// [`AddressPolicy::permits_plain_http`]. Host names are checked when they resolve.
+///
+/// # Errors
+///
+/// Returns [`EgressError::Destination`] when the URL misses the allowed endpoint,
+/// uses a disallowed scheme, carries credentials or a fragment, or has no host,
+/// and [`EgressError::BlockedAddress`] when an IP literal fails the policy.
 pub fn validate_destination(url: &Url, policy: &AddressPolicy) -> Result<(), EgressError> {
     if let AddressPolicy::OnlyEndpoint(endpoint) = policy
         && !endpoint.matches(url)
@@ -540,6 +571,12 @@ impl EgressStreamResponse {
     ///
     /// Chunk boundaries depend on the transport. After the body ends or a read
     /// fails, further calls return `None`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EgressError::Transport`] when the read fails,
+    /// [`EgressError::Timeout`] when the request timeout passes, and
+    /// [`EgressError::ResponseTooLarge`] when the body exceeds the byte limit.
     pub async fn chunk(&mut self) -> Result<Option<Vec<u8>>, EgressError> {
         let Some(response) = &mut self.response else {
             return Ok(None);

@@ -46,6 +46,12 @@ const MOBILE_RUNTIME_DEPENDENCIES: &[&str] = &[
 
 const WEB_RUNTIME_DEPENDENCIES: &[&str] = &["@tanstack/react-query", "vite"];
 
+/// Checks a generated product root and returns the passing findings.
+///
+/// # Errors
+///
+/// Fails when `baukit.toml` cannot be read, a declared path is invalid, a checked
+/// file cannot be read, or any check reports a failure; the error lists each one.
 pub fn doctor(root: &Path) -> Result<Vec<String>> {
     doctor_with_host(root, &SystemDoctorHost)
 }

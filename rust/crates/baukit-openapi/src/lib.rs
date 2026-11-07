@@ -399,6 +399,10 @@ fn line_value(line: Option<&str>) -> String {
 /// Object keys are recursively sorted after Utoipa serialization. This also stabilizes extension
 /// maps whose backing collection can otherwise have nondeterministic iteration order.
 /// Missing response descriptions are filled in a copy of the document before serialization.
+///
+/// # Errors
+///
+/// Returns a [`SchemaError`] when the document cannot be serialized to JSON.
 pub fn serialize_schema(openapi: &OpenApi) -> Result<String, SchemaError> {
     let mut openapi = openapi.clone();
     fill_missing_response_descriptions(&mut openapi);
@@ -428,6 +432,12 @@ fn sort_json_objects(value: &mut Value) {
 ///
 /// The temporary file is created beside the destination so the final rename stays on the same
 /// filesystem.
+///
+/// # Errors
+///
+/// Returns a [`SchemaError`] when the document cannot be serialized, the parent
+/// directories or temporary file cannot be created, or writing, syncing or
+/// renaming the temporary file fails.
 pub fn write_schema(openapi: &OpenApi, path: impl AsRef<Path>) -> Result<(), SchemaError> {
     let path = path.as_ref();
     let json = serialize_schema(openapi)?;
@@ -502,6 +512,12 @@ fn create_temporary_file(path: &Path, parent: &Path) -> Result<(File, PathBuf), 
 ///
 /// A missing committed file is reported as schema drift, while other read failures are reported as
 /// I/O errors.
+///
+/// # Errors
+///
+/// Returns a [`SchemaError`] when the document cannot be serialized, when the
+/// committed file exists but cannot be read, or, as drift, when the file is
+/// missing or differs from the generated schema.
 pub fn check_no_drift(
     openapi: &OpenApi,
     committed_path: impl AsRef<Path>,
@@ -542,6 +558,11 @@ pub fn assert_no_drift(openapi: &OpenApi, committed_path: impl AsRef<Path>) {
 ///
 /// See [`find_naming_violations`] for what the check covers. `exemptions` names standard-defined
 /// fields, such as OAuth 2.0 `access_token`, that keep their external spelling.
+///
+/// # Errors
+///
+/// Returns a [`SchemaError`] when the document cannot be serialized, or listing
+/// every non-camelCase property or parameter name not in `exemptions`.
 pub fn check_camel_case_names(openapi: &OpenApi, exemptions: &[&str]) -> Result<(), SchemaError> {
     let document = serde_json::to_value(openapi)?;
     let violations = find_naming_violations(&document, exemptions);

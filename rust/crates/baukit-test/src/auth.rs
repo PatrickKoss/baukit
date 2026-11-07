@@ -43,6 +43,12 @@ impl std::error::Error for AuthConformanceError {}
 /// `router` must contain a protected GET route at `path`, use the supplied
 /// mock issuer, and be wrapped in `baukit-http`'s request lifecycle. The helper
 /// exercises expired, wrong-audience, wrong-issuer, and unsigned tokens.
+///
+/// # Errors
+///
+/// Returns [`AuthConformanceError`] when a fixture token cannot be built, or
+/// listing each invalid token that was not rejected with the standard `401`
+/// envelope.
 pub async fn check_auth_router_conformance(
     router: &Router,
     path: &str,

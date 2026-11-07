@@ -88,24 +88,42 @@ impl EgressOptions {
     }
 
     /// Sets the timeout for one DNS lookup.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EgressOptionsError::ZeroTimeout`] when `timeout` is zero.
     pub fn with_resolve_timeout(mut self, timeout: Duration) -> Result<Self, EgressOptionsError> {
         self.resolve_timeout = non_zero(timeout, "resolve")?;
         Ok(self)
     }
 
     /// Sets the timeout for establishing one TCP connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EgressOptionsError::ZeroTimeout`] when `timeout` is zero.
     pub fn with_connect_timeout(mut self, timeout: Duration) -> Result<Self, EgressOptionsError> {
         self.connect_timeout = non_zero(timeout, "connect")?;
         Ok(self)
     }
 
     /// Sets the timeout for a whole request, from connect to the last body byte.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EgressOptionsError::ZeroTimeout`] when `timeout` is zero.
     pub fn with_request_timeout(mut self, timeout: Duration) -> Result<Self, EgressOptionsError> {
         self.request_timeout = non_zero(timeout, "request")?;
         Ok(self)
     }
 
     /// Sets the largest response body the client reads.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EgressOptionsError::ZeroResponseLimit`] when `limit` is zero and
+    /// [`EgressOptionsError::ErrorBodyLimitTooLarge`] when it is below the configured
+    /// error body limit.
     pub fn with_max_response_bytes(mut self, limit: usize) -> Result<Self, EgressOptionsError> {
         if limit == 0 {
             return Err(EgressOptionsError::ZeroResponseLimit);
@@ -125,6 +143,12 @@ impl EgressOptions {
     /// [`ErrorBody::problem_code`](crate::ErrorBody::problem_code).
     /// If reading fails or times out, the status and retry class are preserved
     /// and the captured body is `None`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EgressOptionsError::ZeroErrorBodyLimit`] when `limit` is zero and
+    /// [`EgressOptionsError::ErrorBodyLimitTooLarge`] when it exceeds
+    /// [`Self::max_response_bytes`].
     pub fn with_error_body_limit(mut self, limit: usize) -> Result<Self, EgressOptionsError> {
         if limit == 0 {
             return Err(EgressOptionsError::ZeroErrorBodyLimit);
@@ -139,6 +163,10 @@ impl EgressOptions {
     /// Sets the largest `Retry-After` delay a status error reports.
     ///
     /// Longer delays from the upstream are clamped to `max`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EgressOptionsError::ZeroRetryAfterCap`] when `max` is zero.
     pub fn with_max_retry_after(mut self, max: Duration) -> Result<Self, EgressOptionsError> {
         if max.is_zero() {
             return Err(EgressOptionsError::ZeroRetryAfterCap);

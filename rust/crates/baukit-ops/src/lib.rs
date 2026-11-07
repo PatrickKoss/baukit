@@ -188,6 +188,13 @@ impl ReadinessRegistry {
     /// Registers `check` with an explicit timeout.
     ///
     /// Names must be non-empty and unique. A zero timeout is rejected.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RegistrationError::EmptyName`] for a blank name,
+    /// [`RegistrationError::ReservedName`] for the traffic gate's name,
+    /// [`RegistrationError::DuplicateName`] when the name is taken, and
+    /// [`RegistrationError::ZeroTimeout`] for a zero timeout.
     pub fn register<C>(
         &self,
         name: impl Into<String>,
@@ -201,6 +208,10 @@ impl ReadinessRegistry {
     }
 
     /// Registers `check` with [`DEFAULT_READINESS_TIMEOUT`].
+    ///
+    /// # Errors
+    ///
+    /// Fails like [`Self::register`].
     pub fn register_default<C>(
         &self,
         name: impl Into<String>,
@@ -213,6 +224,10 @@ impl ReadinessRegistry {
     }
 
     /// Registers an async closure with an explicit timeout.
+    ///
+    /// # Errors
+    ///
+    /// Fails like [`Self::register`].
     pub fn register_fn<F, Fut>(
         &self,
         name: impl Into<String>,
@@ -227,6 +242,10 @@ impl ReadinessRegistry {
     }
 
     /// Registers an async closure with [`DEFAULT_READINESS_TIMEOUT`].
+    ///
+    /// # Errors
+    ///
+    /// Fails like [`Self::register`].
     pub fn register_fn_default<F, Fut>(
         &self,
         name: impl Into<String>,
@@ -243,6 +262,10 @@ impl ReadinessRegistry {
     ///
     /// Diagnostic results appear in `/readyz`, but failures and timeouts never
     /// affect aggregate readiness or its HTTP status.
+    ///
+    /// # Errors
+    ///
+    /// Fails like [`Self::register`]: a blank, reserved or duplicate name, or a zero timeout.
     pub fn register_diagnostic<C>(
         &self,
         name: impl Into<String>,
@@ -256,6 +279,10 @@ impl ReadinessRegistry {
     }
 
     /// Registers a non-gating diagnostic `check` with [`DEFAULT_READINESS_TIMEOUT`].
+    ///
+    /// # Errors
+    ///
+    /// Fails like [`Self::register`].
     pub fn register_diagnostic_default<C>(
         &self,
         name: impl Into<String>,
@@ -268,6 +295,10 @@ impl ReadinessRegistry {
     }
 
     /// Registers a non-gating diagnostic async closure with an explicit timeout.
+    ///
+    /// # Errors
+    ///
+    /// Fails like [`Self::register`].
     pub fn register_diagnostic_fn<F, Fut>(
         &self,
         name: impl Into<String>,
@@ -282,6 +313,10 @@ impl ReadinessRegistry {
     }
 
     /// Registers a non-gating diagnostic async closure with [`DEFAULT_READINESS_TIMEOUT`].
+    ///
+    /// # Errors
+    ///
+    /// Fails like [`Self::register`].
     pub fn register_diagnostic_fn_default<F, Fut>(
         &self,
         name: impl Into<String>,

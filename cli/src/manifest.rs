@@ -179,6 +179,12 @@ impl OpenApiPaths {
     }
 }
 
+/// Reads and validates `baukit.toml` at `root`.
+///
+/// # Errors
+///
+/// Fails when the file cannot be read, is not valid TOML for [`Manifest`], or its
+/// backend image section does not validate.
 pub fn read_manifest(root: &Path) -> Result<Manifest> {
     let path = root.join("baukit.toml");
     let source = fs::read_to_string(&path).with_context(|| {

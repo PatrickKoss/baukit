@@ -27,6 +27,12 @@ impl AllowedEndpoint {
     /// Validates an exact DNS host or IP literal and port.
     /// IPv6 literals must be bracketed. URLs and wildcards are rejected.
     /// `allow_http` selects HTTP only when true and HTTPS only when false.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AllowedEndpointError`] for port zero, an empty host, a host with
+    /// whitespace, a wildcard or URL characters, an unbracketed IPv6 literal, or a
+    /// domain that does not parse or starts or ends with a dot.
     pub fn new(host: &str, port: u16, allow_http: bool) -> Result<Self, AllowedEndpointError> {
         if port == 0
             || host.is_empty()
@@ -61,6 +67,11 @@ impl AllowedEndpoint {
     ///
     /// `http` URLs select HTTP only and `https` URLs HTTPS only. Other schemes,
     /// URLs without a host and URLs with credentials are rejected.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AllowedEndpointError`] for a scheme other than `http` or `https`,
+    /// a URL with credentials or without a host, or a host [`Self::new`] rejects.
     pub fn from_url(url: &Url) -> Result<Self, AllowedEndpointError> {
         let allow_http = match url.scheme() {
             "http" => true,

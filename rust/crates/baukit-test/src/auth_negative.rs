@@ -155,6 +155,12 @@ impl<'a> AuthNegativeCase<'a> {
 /// top-level `security` if it has none, lists at least one requirement and
 /// no empty (anonymous) requirement. Path parameters take the fixture value,
 /// or a nil UUID when the fixture has none.
+///
+/// # Errors
+///
+/// Returns [`AuthNegativeError`] when the document or tokens cannot be prepared,
+/// or listing each bad exclusion and each secured operation that accepted an
+/// invalid token or answered without the expected `401`.
 pub async fn check_auth_negative_suite(
     document: &Value,
     target: &SecurityTarget,

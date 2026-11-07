@@ -101,6 +101,13 @@ pub struct IngestOutcome {
 }
 
 /// Validates context-dependent and stable envelope rules.
+///
+/// # Errors
+///
+/// Returns [`EventValidationCode::EventSchemaUnsupported`] for another schema
+/// version, `EventIdInvalid` or `EventTypeInvalid` for a malformed id or type,
+/// `EventUserMismatch` when the envelope names another user, and `EventTooOld`
+/// when `occurred_at` is older than the allowed age at `now`.
 pub fn validate_event_envelope(
     envelope: &EventEnvelope,
     expected_user_id: &str,

@@ -25,6 +25,11 @@ impl JsonRejectionCodes {
     /// Creates a class-specific code set.
     ///
     /// Each code must be a non-empty snake_case identifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HttpOptionsError::InvalidJsonRejectionCode`] when any code is not a
+    /// non-empty snake_case identifier.
     pub fn new(
         body_too_large: impl Into<String>,
         content_type: impl Into<String>,
@@ -113,6 +118,11 @@ impl HttpOptions {
     /// Replaces the CORS origin allowlist.
     ///
     /// Each origin must be a valid HTTP header value and must not be `*`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HttpOptionsError::WildcardOrigin`] for `*` and
+    /// [`HttpOptionsError::InvalidOrigin`] for an origin that is not a valid header value.
     pub fn with_allowed_origins<I, S>(mut self, origins: I) -> Result<Self, HttpOptionsError>
     where
         I: IntoIterator<Item = S>,
@@ -133,6 +143,11 @@ impl HttpOptions {
     /// The built-in `Authorization`, `Content-Type`, `If-Match`, `Idempotency-Key`,
     /// `x-request-id`, `X-Baukit-Session`, `traceparent`, and `tracestate` headers remain allowed. Duplicate header
     /// names are ignored.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HttpOptionsError::InvalidHeaderName`] for a name that is not a valid
+    /// HTTP header name.
     pub fn with_additional_allowed_headers<I, S>(
         mut self,
         headers: I,
@@ -156,6 +171,11 @@ impl HttpOptions {
     /// The built-in `x-request-id`, `traceparent`, `tracestate`, `Retry-After`,
     /// `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`, `ETag`, and
     /// `Location` headers remain exposed. Duplicate header names are ignored.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HttpOptionsError::InvalidHeaderName`] for a name that is not a valid
+    /// HTTP header name.
     pub fn with_additional_exposed_headers<I, S>(
         mut self,
         headers: I,
@@ -225,6 +245,13 @@ impl HttpOptions {
     ///
     /// Listener address and port are intentionally ignored because they belong
     /// to runtime composition rather than an Axum layer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HttpOptionsError::WildcardOrigin`] or
+    /// [`HttpOptionsError::InvalidOrigin`] for a bad CORS origin, and
+    /// `ZeroRequestTimeout`, `ZeroBodySizeLimit` or `ZeroConcurrencyLimit` when the
+    /// matching config value is zero.
     pub fn from_config(config: &HttpConfig) -> Result<Self, HttpOptionsError> {
         Self {
             request_timeout: config.request_timeout,

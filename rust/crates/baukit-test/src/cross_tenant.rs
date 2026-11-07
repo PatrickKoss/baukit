@@ -166,6 +166,12 @@ impl std::error::Error for CrossTenantError {}
 ///     .await;
 /// # }
 /// ```
+///
+/// # Errors
+///
+/// Returns [`CrossTenantError`] with one violation per failing operation: an
+/// unreadable document, an exclusion naming no operation, a missing fixture, or a
+/// route that lets the second principal reach the first one's resource.
 pub async fn check_cross_tenant_denied(
     document: &Value,
     target: &SecurityTarget,

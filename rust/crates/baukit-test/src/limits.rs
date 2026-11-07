@@ -65,6 +65,12 @@ impl std::error::Error for LimitsConformanceError {}
 ///
 /// The first two payloads must pass validation and the last must fail. A limit
 /// of zero cannot express all three cases and is reported as a violation.
+///
+/// # Errors
+///
+/// Returns [`LimitsConformanceError`] when `limit` is zero or `usize::MAX`, when
+/// a payload at or below the limit fails validation, or when the payload above it
+/// passes.
 pub async fn check_limit_boundaries<Payload, ValidationError, Build, Validate, ValidateFuture>(
     limit: usize,
     mut build_payload: Build,
@@ -141,6 +147,11 @@ pub trait LiveRowLimitAdapter {
 }
 
 /// Fills a live-row cap, rejects one extra row, and checks that an update succeeds.
+///
+/// # Errors
+///
+/// Returns [`LimitsConformanceError`] when filling to `limit` fails, an extra row
+/// is accepted, or updating a row at capacity fails.
 pub async fn check_update_at_capacity<Adapter>(
     adapter: &mut Adapter,
     limit: usize,
@@ -173,6 +184,11 @@ where
 }
 
 /// Fills a live-row cap, soft-deletes one row, and checks that capacity is reusable.
+///
+/// # Errors
+///
+/// Returns [`LimitsConformanceError`] when filling to `limit` fails, an extra row
+/// is accepted, or soft-deleting a row does not free a slot for a new one.
 pub async fn check_soft_delete_capacity_reuse<Adapter>(
     adapter: &mut Adapter,
     limit: usize,
@@ -213,6 +229,11 @@ where
 ///
 /// `extract_reason` should return the public reason code from the output's
 /// error shape. Missing codes and duplicate or empty path names are violations.
+///
+/// # Errors
+///
+/// Returns [`LimitsConformanceError`] for an empty expected reason, empty or
+/// duplicate path names, no outputs, or an output without the expected code.
 pub fn check_reason_code_conformance<'a, Output, Outputs, ExtractReason>(
     expected_reason: &str,
     outputs: Outputs,
@@ -266,6 +287,10 @@ pub fn assert_reason_code_conformance<'a, Output, Outputs, ExtractReason>(
 }
 
 /// Invokes each named ingress and checks for one expected stable reason code.
+///
+/// # Errors
+///
+/// Fails like [`check_reason_code_conformance`] on the ingress outputs.
 pub async fn check_ingress_reason_code_parity<'a, Output, Ingresses, ExtractReason>(
     expected_reason: &str,
     ingresses: Ingresses,

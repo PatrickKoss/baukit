@@ -52,6 +52,10 @@ impl PostgresTestContainer {
     ///
     /// The database gets the container's app role grants and migrations. It is
     /// dropped when the returned value drops.
+    ///
+    /// # Errors
+    ///
+    /// Fails like [`PostgresTestDatabases::create`].
     #[cfg(feature = "sqlx-postgres")]
     pub async fn create_database(&self) -> Result<PostgresTestDatabase, PostgresTestError> {
         self.databases.create().await
@@ -145,6 +149,13 @@ impl PostgresTestOptions {
     /// queries, then prepares the app role and migrations.
     ///
     /// Docker is contacted only when this function is called.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PostgresTestError::Container`] when Docker cannot start the image or
+    /// report its address. With `sqlx-postgres`, also `Connect`, `Setup` or `Migrate`
+    /// when the server never accepts queries, the app role cannot be prepared, or a
+    /// migration fails.
     pub async fn start(self) -> Result<PostgresTestContainer, PostgresTestError> {
         let container = GenericImage::new(self.image_name, self.image_tag)
             .with_exposed_port(POSTGRES_PORT.tcp())
@@ -234,6 +245,10 @@ pub struct ForeignKeyDeleteMismatch {
 ///
 /// The default Testcontainers module credentials and database are all
 /// `postgres`. Docker is contacted only when this function is called.
+///
+/// # Errors
+///
+/// Fails like [`PostgresTestOptions::start`].
 pub async fn start_postgres() -> Result<PostgresTestContainer, PostgresTestError> {
     PostgresTestOptions::new().start().await
 }
@@ -242,6 +257,11 @@ pub async fn start_postgres() -> Result<PostgresTestContainer, PostgresTestError
 ///
 /// This helper is available with the `sqlx-postgres` feature. Migration files
 /// use SQLx's ordinary file naming and checksum rules.
+///
+/// # Errors
+///
+/// Fails like [`PostgresTestOptions::start`], including
+/// [`PostgresTestError::Migrate`] when a migration cannot be read or applied.
 #[cfg(feature = "sqlx-postgres")]
 pub async fn start_postgres_with_migrations(
     migrations_path: impl AsRef<Path>,
@@ -256,6 +276,11 @@ pub async fn start_postgres_with_migrations(
 ///
 /// Registry names may be unqualified table names or schema-qualified names.
 /// Unregistered direct references must use `ON DELETE CASCADE`.
+///
+/// # Errors
+///
+/// Returns [`sqlx::Error::RowNotFound`] when `user_root_table` does not exist, and
+/// any other [`sqlx::Error`] from the catalog queries.
 #[cfg(feature = "sqlx-postgres")]
 pub async fn audit_user_root_foreign_keys(
     pool: &sqlx::PgPool,

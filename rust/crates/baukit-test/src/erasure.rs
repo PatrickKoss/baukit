@@ -80,6 +80,12 @@ impl fmt::Display for ErasureConformanceError {
 impl std::error::Error for ErasureConformanceError {}
 
 /// Seeds, erases, and verifies a product adapter, then repeats the erasure.
+///
+/// # Errors
+///
+/// Returns [`ErasureConformanceError`] listing each violation: an invalid
+/// resource registry, a failed seed or erasure call, or a resource still present
+/// after erasure or its repeat.
 pub async fn check_product_profile_erasure_conformance<TAdapter>(
     adapter: &mut TAdapter,
     subject: &str,
