@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- `LinkCompleteRequest` and `LinkCallbackQuery` redact the authorization code in `Debug` output.
 - `PostgresSuiteLinkStore::find_link_for_owner` scopes by owner in SQL and runs failure accounting only for the owner's link; a foreign id returns `None` without a write.
 
 ## [0.18.3] - 2026-11-07

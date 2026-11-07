@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+- `KeycloakLogin` redacts the password in `Debug` output.
+
 ## [0.18.3] - 2026-11-07
 
 ## [0.18.2] - 2026-11-06

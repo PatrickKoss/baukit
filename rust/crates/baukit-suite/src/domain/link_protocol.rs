@@ -2,6 +2,7 @@ use crate::error_codes::SuiteErrorCode;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
+use std::fmt;
 use thiserror::Error;
 use url::Url;
 use uuid::Uuid;
@@ -26,10 +27,20 @@ pub struct LinkStartResponse {
     pub authorize_url: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+/// Debug output redacts the authorization code.
+#[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LinkCompleteRequest {
     pub code: String,
+}
+
+impl fmt::Debug for LinkCompleteRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LinkCompleteRequest")
+            .field("code", &"[REDACTED]")
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -151,7 +162,8 @@ pub fn validate_link_start<'a>(
     Ok(peer)
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+/// Debug output redacts the authorization code.
+#[derive(Clone, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct LinkCallbackQuery {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -162,6 +174,18 @@ pub struct LinkCallbackQuery {
     pub code: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+impl fmt::Debug for LinkCallbackQuery {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LinkCallbackQuery")
+            .field("state", &self.state)
+            .field("from", &self.from)
+            .field("code", &self.code.as_ref().map(|_| "[REDACTED]"))
+            .field("error", &self.error)
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]

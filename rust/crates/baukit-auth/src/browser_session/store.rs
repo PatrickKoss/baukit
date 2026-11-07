@@ -1,4 +1,4 @@
-use std::{future::Future, pin::Pin};
+use std::{fmt, future::Future, pin::Pin};
 
 use chrono::{DateTime, Utc};
 use sqlx::{PgExecutor, PgPool, Postgres, Transaction};
@@ -8,7 +8,8 @@ pub(crate) type StoreFuture<'a, T> =
     Pin<Box<dyn Future<Output = Result<T, sqlx::Error>> + Send + 'a>>;
 
 /// One row of `baukit_auth_browser_sessions`. Token columns hold sealed bytes.
-#[derive(Clone, Debug)]
+/// Debug output redacts the secret hash and every token column.
+#[derive(Clone)]
 pub(crate) struct SessionRow {
     pub(crate) id: Uuid,
     pub(crate) secret_hash: Vec<u8>,
@@ -26,6 +27,33 @@ pub(crate) struct SessionRow {
     pub(crate) grace_access_token: Option<Vec<u8>>,
     pub(crate) grace_expires_at: Option<DateTime<Utc>>,
     pub(crate) grace_until: Option<DateTime<Utc>>,
+}
+
+impl fmt::Debug for SessionRow {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SessionRow")
+            .field("id", &self.id)
+            .field("secret_hash", &"[REDACTED]")
+            .field("family_id", &self.family_id)
+            .field("subject", &self.subject)
+            .field("key_version", &self.key_version)
+            .field("refresh_token", &"[REDACTED]")
+            .field("id_token", &self.id_token.as_ref().map(|_| "[REDACTED]"))
+            .field("created_at", &self.created_at)
+            .field("last_used_at", &self.last_used_at)
+            .field("idle_expires_at", &self.idle_expires_at)
+            .field("absolute_expires_at", &self.absolute_expires_at)
+            .field("revoked_at", &self.revoked_at)
+            .field("rotated_to", &self.rotated_to)
+            .field(
+                "grace_access_token",
+                &self.grace_access_token.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("grace_expires_at", &self.grace_expires_at)
+            .field("grace_until", &self.grace_until)
+            .finish()
+    }
 }
 
 /// Session persistence port. Every operation runs inside one transaction.
@@ -311,4 +339,48 @@ where
         .await?
         .rows_affected();
     Ok(deleted)
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::Utc;
+    use uuid::Uuid;
+
+    use super::SessionRow;
+
+    #[test]
+    fn debug_redacts_hash_and_token_columns() {
+        let now = Utc::now();
+        let row = SessionRow {
+            id: Uuid::nil(),
+            secret_hash: b"hash-bytes-xyz".to_vec(),
+            family_id: Uuid::nil(),
+            subject: "user-1".to_owned(),
+            key_version: 1,
+            refresh_token: b"refresh-bytes-xyz".to_vec(),
+            id_token: Some(b"id-bytes-xyz".to_vec()),
+            created_at: now,
+            last_used_at: now,
+            idle_expires_at: now,
+            absolute_expires_at: now,
+            revoked_at: None,
+            rotated_to: None,
+            grace_access_token: Some(b"grace-bytes-xyz".to_vec()),
+            grace_expires_at: None,
+            grace_until: None,
+        };
+
+        let debug = format!("{row:?}");
+
+        for secret in [
+            row.secret_hash.as_slice(),
+            row.refresh_token.as_slice(),
+            b"id-bytes-xyz".as_slice(),
+            b"grace-bytes-xyz".as_slice(),
+        ] {
+            assert!(!debug.contains(&format!("{secret:?}")));
+        }
+        assert!(debug.contains("user-1"));
+        assert!(debug.contains("[REDACTED]"));
+    }
 }
