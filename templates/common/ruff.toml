@@ -19,3 +19,7 @@ ignore = [
 # unittest suites narrow importlib specs with assert and use fake credentials as inputs.
 "**/test_*.py" = ["S101", "S105"]
 "**/*.test.py" = ["S101", "S105"]
+# The Keycloak helpers open the local development issuer, its discovery document and the
+# redirects Keycloak returns; every URL comes from the developer's command line or that server.
+"**/scripts/pkce-login.py" = ["S310"]
+"**/scripts/reconcile_keycloak.py" = ["S310"]

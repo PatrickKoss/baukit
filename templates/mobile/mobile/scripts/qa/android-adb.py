@@ -1,13 +1,12 @@
 import hashlib
 import math
 import os
-from pathlib import Path
 import re
 import shutil
 import subprocess
 import sys
 import time
-
+from pathlib import Path
 
 DEFAULT_PROBE_TIMEOUT = 10
 DEFAULT_COMMAND_TIMEOUT = 60
@@ -45,7 +44,9 @@ def wait_for_boot(adb: str, serial: str, probe_timeout: float, boot_timeout: flo
         try:
             result = subprocess.run(
                 [adb, "-s", serial, "shell", "getprop", "sys.boot_completed"],
-                capture_output=True, text=True, check=False,
+                capture_output=True,
+                text=True,
+                check=False,
                 timeout=min(probe_timeout, remaining),
             )
             if result.returncode == 0 and result.stdout.strip() == "1":
@@ -60,7 +61,10 @@ def shell(adb: str, serial: str, timeout: float, *command: str) -> str | None:
     try:
         result = subprocess.run(
             [adb, "-s", serial, "shell", *command],
-            capture_output=True, text=True, check=False, timeout=timeout,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired:
         return None
@@ -88,13 +92,22 @@ def wait_for_wifi_route(adb: str, serial: str, probe_timeout: float, wifi_timeou
     while deadline - time.monotonic() > 0:
         route = shell(adb, serial, probe_timeout, "ip", "-4", "route", "get", HOST_ALIAS) or ""
         if " dev wlan0 " in f" {route} ":
-            print(f"qa: {serial} has a Wi-Fi route after {round(time.monotonic() - started)} s", file=sys.stderr)
+            print(
+                f"qa: {serial} has a Wi-Fi route after {round(time.monotonic() - started)} s",
+                file=sys.stderr,
+            )
             return 0
         time.sleep(min(poll_interval(), max(0, deadline - time.monotonic())))
     status = shell(adb, serial, probe_timeout, "cmd", "wifi", "status") or ""
-    print(f"qa: {serial} has no Wi-Fi route to {HOST_ALIAS}; offline flows need Wi-Fi", file=sys.stderr)
+    print(
+        f"qa: {serial} has no Wi-Fi route to {HOST_ALIAS}; offline flows need Wi-Fi",
+        file=sys.stderr,
+    )
     print(f"qa: last route: {route.strip() or 'none'}", file=sys.stderr)
-    print(f"qa: Wi-Fi status: {' | '.join(status.strip().splitlines()[:WIFI_STATUS_LINES]) or 'none'}", file=sys.stderr)
+    print(
+        f"qa: Wi-Fi status: {' | '.join(status.strip().splitlines()[:WIFI_STATUS_LINES]) or 'none'}",
+        file=sys.stderr,
+    )
     return 124
 
 
@@ -129,8 +142,15 @@ def busy_cores(before: tuple[int, int, int], after: tuple[int, int, int]) -> flo
     return 0.0 if total <= 0 else (after[1] - before[1]) / total * after[2]
 
 
-def settle(adb: str, serial: str, probe_timeout: float, settle_timeout: float,
-           clock=time.monotonic, sleep=time.sleep) -> int:
+def settle(
+    adb: str,
+    serial: str,
+    probe_timeout: float,
+    settle_timeout: float,
+    *,
+    clock=time.monotonic,
+    sleep=time.sleep,
+) -> int:
     start = clock()
     deadline = start + settle_timeout
     shell(adb, serial, max(probe_timeout, deadline - clock()), "cmd", "package", "bg-dexopt-job")
@@ -180,7 +200,7 @@ def loaded_snapshots(avd_name: str, proc: Path = Path("/proc")) -> set[str]:
             args = cmdline.read_bytes().decode(errors="replace").split("\0")
         except OSError:
             continue
-        pairs = dict(zip(args, args[1:]))
+        pairs = dict(zip(args, args[1:], strict=False))
         if pairs.get("-avd") == avd_name and "-snapshot" in pairs:
             loaded.add(pairs["-snapshot"])
     return loaded
@@ -190,7 +210,8 @@ def prune_snapshots(avd_dir: Path, keep: str, loaded: set[str]) -> int:
     """Delete older baukit snapshots except loaded ones and the newest complete older one."""
     snapshots = avd_dir / "snapshots"
     older = [
-        entry for entry in (snapshots.iterdir() if snapshots.is_dir() else ())
+        entry
+        for entry in (snapshots.iterdir() if snapshots.is_dir() else ())
         if entry.name.startswith(SNAPSHOT_PREFIX) and entry.name != keep and entry.is_dir()
     ]
     complete = [entry for entry in older if (avd_dir / f"{entry.name}.ready").is_file()]
@@ -212,7 +233,11 @@ def prune_snapshots(avd_dir: Path, keep: str, loaded: set[str]) -> int:
 def attached(adb: str, serial: str, timeout: float) -> int:
     try:
         result = subprocess.run(
-            [adb, "-s", serial, "get-state"], capture_output=True, text=True, check=False, timeout=timeout,
+            [adb, "-s", serial, "get-state"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired:
         return 124
@@ -223,7 +248,10 @@ def wait_for_stop(adb: str, serial: str, timeout: float) -> int:
     deadline = time.monotonic() + timeout
     while (remaining := deadline - time.monotonic()) > 0:
         result = subprocess.run(
-            [adb, "devices"], capture_output=True, text=True, check=False,
+            [adb, "devices"],
+            capture_output=True,
+            text=True,
+            check=False,
             timeout=remaining,
         )
         if result.returncode != 0:
@@ -242,7 +270,9 @@ def health_result(status: int, serial: str, lines: list[str], report: Path | Non
     if report is not None:
         report.parent.mkdir(parents=True, exist_ok=True)
         with report.open("a") as output:
-            output.write(f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} {serial} status={status}\n")
+            output.write(
+                f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} {serial} status={status}\n"
+            )
             output.write("\n".join(lines) + "\n")
     return status
 
@@ -251,7 +281,10 @@ def anr_details(adb: str, serial: str, timeout: float) -> tuple[list[str], set[s
     try:
         result = subprocess.run(
             [adb, "-s", serial, "shell", "dumpsys", "activity", "lastanr"],
-            capture_output=True, text=True, check=False, timeout=timeout,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired:
         return ["qa: Android ANR diagnostics timed out"], set()
@@ -260,7 +293,9 @@ def anr_details(adb: str, serial: str, timeout: float) -> tuple[list[str], set[s
     prefixes = ("ANR time:", "ANR in ", "PID:", "Reason:", "ErrorId:", "Frozen:")
     lines = [line for line in result.stdout.splitlines() if line.strip().startswith(prefixes)]
     packages = {
-        package for package in CRITICAL_PACKAGES for line in lines
+        package
+        for package in CRITICAL_PACKAGES
+        for line in lines
         if re.search(rf"(?<![\w.]){re.escape(package)}(?![\w.])", line)
     }
     return lines, packages
@@ -270,12 +305,17 @@ def check_health(adb: str, serial: str, timeout: float, report: Path | None = No
     try:
         result = subprocess.run(
             [adb, "-s", serial, "logcat", "-d", "-b", "events", "-s", "am_anr", "am_crash"],
-            capture_output=True, text=True, check=False, timeout=timeout,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired:
         return health_result(124, serial, ["qa: Android system health probe timed out"], report)
     if result.returncode != 0:
-        return health_result(result.returncode, serial, ["qa: Android system health probe failed"], report)
+        return health_result(
+            result.returncode, serial, ["qa: Android system health probe failed"], report
+        )
     evidence = []
     anr_packages = set()
     for line in result.stdout.splitlines():
@@ -287,7 +327,9 @@ def check_health(adb: str, serial: str, timeout: float, report: Path | None = No
                 anr_packages.add(package)
     details, dumpsys_packages = anr_details(adb, serial, timeout)
     if anr_packages and not anr_packages & dumpsys_packages:
-        evidence.append("qa: logcat am_anr shows the ANR above; dumpsys lastanr has no record of it")
+        evidence.append(
+            "qa: logcat am_anr shows the ANR above; dumpsys lastanr has no record of it"
+        )
     for package in sorted(dumpsys_packages - anr_packages):
         evidence.append(f"qa: dumpsys lastanr reports an ANR in {package}")
     if dumpsys_packages or (anr_packages and details[:1] and details[0].startswith("qa: ")):
@@ -295,30 +337,57 @@ def check_health(adb: str, serial: str, timeout: float, report: Path | None = No
     return health_result(int(bool(evidence)), serial, evidence, report)
 
 
-def main() -> int:
-    probe_timeout = timeout_setting(ADB_TIMEOUT_SETTING, DEFAULT_PROBE_TIMEOUT)
-    if sys.argv[1] == "--check-health":
-        report = Path(sys.argv[4]) if len(sys.argv) > 4 else None
-        return check_health(sys.argv[2], sys.argv[3], probe_timeout, report)
-    if sys.argv[1] == "--wait-for-idle":
-        idle_timeout = timeout_setting("BAUKIT_QA_IDLE_TIMEOUT_SECONDS", DEFAULT_IDLE_TIMEOUT)
-        return wait_for_idle(sys.argv[2], sys.argv[3], probe_timeout, idle_timeout)
-    if sys.argv[1] == "--settle":
-        settle_timeout = timeout_setting("BAUKIT_QA_SETTLE_TIMEOUT_SECONDS", DEFAULT_SETTLE_TIMEOUT)
-        return settle(sys.argv[2], sys.argv[3], probe_timeout, settle_timeout)
-    if sys.argv[1] == "--snapshot-name":
-        print(snapshot_name(Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4], sys.argv[5], sys.argv[6]))
-        return 0
-    if sys.argv[1] == "--prune-snapshots":
-        return prune_snapshots(Path(sys.argv[2]), sys.argv[3], loaded_snapshots(sys.argv[4]))
-    if sys.argv[1] == "--wait-for-wifi-route":
-        wifi_timeout = timeout_setting("BAUKIT_QA_WIFI_TIMEOUT_SECONDS", DEFAULT_WIFI_TIMEOUT)
-        return wait_for_wifi_route(sys.argv[2], sys.argv[3], probe_timeout, wifi_timeout)
-    if sys.argv[1] == "--attached":
-        return attached(sys.argv[2], sys.argv[3], probe_timeout)
-    if sys.argv[1] == "--wait-for-boot":
-        boot_timeout = timeout_setting("BAUKIT_QA_BOOT_TIMEOUT_SECONDS", DEFAULT_BOOT_TIMEOUT)
-        return wait_for_boot(sys.argv[2], sys.argv[3], probe_timeout, boot_timeout)
+def timed_mode(name: str, setting: str, default: float, action):
+    def run(probe_timeout: float) -> int:
+        return action(sys.argv[2], sys.argv[3], probe_timeout, timeout_setting(setting, default))
+
+    return name, run
+
+
+def check_health_mode(probe_timeout: float) -> int:
+    report = Path(sys.argv[4]) if len(sys.argv) > 4 else None
+    return check_health(sys.argv[2], sys.argv[3], probe_timeout, report)
+
+
+def snapshot_name_mode(_probe_timeout: float) -> int:
+    print(
+        snapshot_name(Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4], sys.argv[5], sys.argv[6])
+    )
+    return 0
+
+
+def prune_snapshots_mode(_probe_timeout: float) -> int:
+    return prune_snapshots(Path(sys.argv[2]), sys.argv[3], loaded_snapshots(sys.argv[4]))
+
+
+def attached_mode(probe_timeout: float) -> int:
+    return attached(sys.argv[2], sys.argv[3], probe_timeout)
+
+
+MODES = dict(
+    [
+        ("--check-health", check_health_mode),
+        timed_mode(
+            "--wait-for-idle", "BAUKIT_QA_IDLE_TIMEOUT_SECONDS", DEFAULT_IDLE_TIMEOUT, wait_for_idle
+        ),
+        timed_mode("--settle", "BAUKIT_QA_SETTLE_TIMEOUT_SECONDS", DEFAULT_SETTLE_TIMEOUT, settle),
+        ("--snapshot-name", snapshot_name_mode),
+        ("--prune-snapshots", prune_snapshots_mode),
+        timed_mode(
+            "--wait-for-wifi-route",
+            "BAUKIT_QA_WIFI_TIMEOUT_SECONDS",
+            DEFAULT_WIFI_TIMEOUT,
+            wait_for_wifi_route,
+        ),
+        ("--attached", attached_mode),
+        timed_mode(
+            "--wait-for-boot", "BAUKIT_QA_BOOT_TIMEOUT_SECONDS", DEFAULT_BOOT_TIMEOUT, wait_for_boot
+        ),
+    ]
+)
+
+
+def run_adb_command(probe_timeout: float) -> int:
     try:
         if sys.argv[1] == "--wait-for-stop":
             return wait_for_stop(sys.argv[2], sys.argv[3], probe_timeout)
@@ -327,6 +396,11 @@ def main() -> int:
     except subprocess.TimeoutExpired:
         print(f"qa: ADB command timed out: {' '.join(sys.argv[1:])}", file=sys.stderr)
         return 124
+
+
+def main() -> int:
+    probe_timeout = timeout_setting(ADB_TIMEOUT_SETTING, DEFAULT_PROBE_TIMEOUT)
+    return MODES.get(sys.argv[1], run_adb_command)(probe_timeout)
 
 
 if __name__ == "__main__":

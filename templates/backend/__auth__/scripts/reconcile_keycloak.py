@@ -9,8 +9,9 @@ import os
 import secrets
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, NoReturn
+from typing import Any, NoReturn
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
@@ -52,6 +53,9 @@ RECONCILABLE_REALM_FIELDS = SCOPE_REALM_FIELDS | {
 }
 
 
+DEFAULT_KEYCLOAK_URL = "http://localhost:{{ context.keycloak_host_port }}"
+
+
 class ReconcileError(RuntimeError):
     pass
 
@@ -62,6 +66,19 @@ class AuthenticationError(ReconcileError):
 
 def fail(message: str) -> NoReturn:
     raise ReconcileError(message)
+
+
+def validate_client_selection(client: object) -> None:
+    if not isinstance(client, dict) or not isinstance(client.get("clientId"), str):
+        fail("each reconciliation client must have a string clientId")
+    for field in ("exactRedirectUris", "exactProtocolMappers"):
+        if field in client and not isinstance(client[field], bool):
+            fail(f"reconciliation {field} must be a boolean")
+    for field in ("activeOrigins", "activeRedirectUris"):
+        if not isinstance(client.get(field), list) or not all(
+            isinstance(value, str) for value in client[field]
+        ):
+            fail(f"reconciliation client {field} must be a string array")
 
 
 def load_reconcile_config(path: Path) -> dict[str, Any]:
@@ -80,16 +97,7 @@ def load_reconcile_config(path: Path) -> dict[str, Any]:
         if not isinstance(config.get(collection), list):
             fail(f"reconciliation config {collection} must be an array")
     for client in config["clients"]:
-        if not isinstance(client, dict) or not isinstance(client.get("clientId"), str):
-            fail("each reconciliation client must have a string clientId")
-        for field in ("exactRedirectUris", "exactProtocolMappers"):
-            if field in client and not isinstance(client[field], bool):
-                fail(f"reconciliation {field} must be a boolean")
-        for field in ("activeOrigins", "activeRedirectUris"):
-            if not isinstance(client.get(field), list) or not all(
-                isinstance(value, str) for value in client[field]
-            ):
-                fail(f"reconciliation client {field} must be a string array")
+        validate_client_selection(client)
     if not all(isinstance(username, str) and username for username in config["users"]):
         fail("reconciliation config users must contain non-empty usernames")
     roles = config.get("serviceAccountRoles", {})
@@ -151,19 +159,23 @@ def apply_client_overrides(
         selected[client_id][field] = merge_unique(selected[client_id][field], [value])
 
 
+def validate_realm_fields(realm: dict[str, Any], realm_fields: list[str]) -> None:
+    for field in realm_fields:
+        if field in SCOPE_REALM_FIELDS and field not in realm:
+            fail(f"selected realm field {field!r} is absent from the realm file")
+    if "clientScopes" in realm_fields:
+        values_by_key(realm["clientScopes"], "name", "clientScopes")
+    for field, _ in REALM_SCOPE_BINDINGS:
+        if field in realm_fields:
+            scope_names(realm[field], field)
+
+
 def validate_inputs(
     realm: dict[str, Any],
     policy: dict[str, Any],
     config: dict[str, Any],
 ) -> None:
-    for field in config.get("realmFields", []):
-        if field in SCOPE_REALM_FIELDS and field not in realm:
-            fail(f"selected realm field {field!r} is absent from the realm file")
-    if "clientScopes" in config.get("realmFields", []):
-        values_by_key(realm["clientScopes"], "name", "clientScopes")
-    for field, _ in REALM_SCOPE_BINDINGS:
-        if field in config.get("realmFields", []):
-            scope_names(realm[field], field)
+    validate_realm_fields(realm, config.get("realmFields", []))
     desired_clients = values_by_key(realm.get("clients"), "clientId", "clients")
     candidate = json.loads(json.dumps(realm))
     candidate_clients = values_by_key(candidate.get("clients"), "clientId", "clients")
@@ -194,9 +206,7 @@ def validate_inputs(
 
 
 def scope_names(value: object, field: str) -> list[str]:
-    if not isinstance(value, list) or not all(
-        isinstance(name, str) and name for name in value
-    ):
+    if not isinstance(value, list) or not all(isinstance(name, str) and name for name in value):
         fail(f"{field} must be an array of non-empty strings")
     return value
 
@@ -221,11 +231,13 @@ def replace_protocol_mappers(existing: object, desired: object) -> list[dict[str
         config = mapper.get("config", {})
         if not isinstance(config, dict):
             fail("protocol mapper config must be an object")
-        selected.append({
-            **current.get(name, {}),
-            **{field: value for field, value in mapper.items() if field != "id"},
-            "config": dict(config),
-        })
+        selected.append(
+            {
+                **current.get(name, {}),
+                **{field: value for field, value in mapper.items() if field != "id"},
+                "config": dict(config),
+            }
+        )
     return selected
 
 
@@ -260,9 +272,7 @@ class KeycloakApi:
             with urlopen(request, timeout=15) as response:
                 body = response.read()
         except HTTPError as error:
-            raise ReconcileError(
-                f"Keycloak {method} {path} returned HTTP {error.code}"
-            ) from None
+            raise ReconcileError(f"Keycloak {method} {path} returned HTTP {error.code}") from None
         except (URLError, TimeoutError) as error:
             reason = getattr(error, "reason", type(error).__name__)
             raise ReconcileError(f"Keycloak {method} {path} failed: {reason}") from None
@@ -304,9 +314,7 @@ class KeycloakApi:
             f"/admin/realms/{quote(realm, safe='')}/{collection}",
             query={key: value, "exact": "true"},
         )
-        if not isinstance(response, list) or not all(
-            isinstance(item, dict) for item in response
-        ):
+        if not isinstance(response, list) or not all(isinstance(item, dict) for item in response):
             fail(f"Keycloak returned invalid {collection} search data")
         return [item for item in response if item.get(key) == value]
 
@@ -320,13 +328,9 @@ class KeycloakApi:
         return response
 
     def create(self, realm: str, collection: str, value: dict[str, Any]) -> None:
-        self.request(
-            "POST", f"/admin/realms/{quote(realm, safe='')}/{collection}", payload=value
-        )
+        self.request("POST", f"/admin/realms/{quote(realm, safe='')}/{collection}", payload=value)
 
-    def update(
-        self, realm: str, collection: str, identity: str, value: dict[str, Any]
-    ) -> None:
+    def update(self, realm: str, collection: str, identity: str, value: dict[str, Any]) -> None:
         self.request(
             "PUT",
             f"/admin/realms/{quote(realm, safe='')}/{collection}/{quote(identity, safe='')}",
@@ -346,9 +350,7 @@ class KeycloakApi:
         if client is not None:
             prefix += f"/clients/{quote(client, safe='')}"
         response = self.request("GET", f"{prefix}/{collection}")
-        if not isinstance(response, list) or not all(
-            isinstance(scope, dict) for scope in response
-        ):
+        if not isinstance(response, list) or not all(isinstance(scope, dict) for scope in response):
             fail("Keycloak returned invalid client scope bindings")
         return response
 
@@ -362,9 +364,7 @@ class KeycloakApi:
         return response
 
     def create_scope_mapper(self, realm: str, scope: str, mapper: dict[str, Any]) -> None:
-        self.create(
-            realm, f"client-scopes/{quote(scope, safe='')}/protocol-mappers/models", mapper
-        )
+        self.create(realm, f"client-scopes/{quote(scope, safe='')}/protocol-mappers/models", mapper)
 
     def update_scope_mapper(
         self, realm: str, scope: str, identity: str, mapper: dict[str, Any]
@@ -418,7 +418,9 @@ class KeycloakApi:
             fail("Keycloak returned invalid service account role data")
         return response
 
-    def add_user_client_roles(self, realm: str, user_id: str, client_id: str, roles: list[dict[str, Any]]) -> None:
+    def add_user_client_roles(
+        self, realm: str, user_id: str, client_id: str, roles: list[dict[str, Any]]
+    ) -> None:
         self.request(
             "POST",
             f"/admin/realms/{quote(realm, safe='')}/users/{quote(user_id, safe='')}/role-mappings/clients/{quote(client_id, safe='')}",
@@ -443,9 +445,7 @@ class KeycloakApi:
             fail("Keycloak returned invalid user role data")
         return response
 
-    def add_user_realm_roles(
-        self, realm: str, user_id: str, roles: list[dict[str, Any]]
-    ) -> None:
+    def add_user_realm_roles(self, realm: str, user_id: str, roles: list[dict[str, Any]]) -> None:
         self.request(
             "POST",
             f"/admin/realms/{quote(realm, safe='')}/users/{quote(user_id, safe='')}/role-mappings/realm",
@@ -509,9 +509,7 @@ class RealmReconciler:
         if not matches:
             created = {field: value for field, value in desired.items() if field != "id"}
             if "protocolMappers" in created:
-                created["protocolMappers"] = merge_protocol_mappers(
-                    [], created["protocolMappers"]
-                )
+                created["protocolMappers"] = merge_protocol_mappers([], created["protocolMappers"])
             self.api.create(realm, "client-scopes", created)
             return
         if len(matches) != 1 or not isinstance(matches[0].get("id"), str):
@@ -533,9 +531,7 @@ class RealmReconciler:
             self.reconcile_scope_mappers(realm, identity, desired["protocolMappers"])
 
     def reconcile_scope_mappers(self, realm: str, scope: str, desired: object) -> None:
-        existing = values_by_key(
-            self.api.scope_mappers(realm, scope), "name", "protocolMappers"
-        )
+        existing = values_by_key(self.api.scope_mappers(realm, scope), "name", "protocolMappers")
         for mapper in merge_protocol_mappers([], desired):
             current = existing.get(mapper["name"])
             if current is None:
@@ -552,8 +548,7 @@ class RealmReconciler:
         self, realm: str, collection: str, names: list[str], client: str | None = None
     ) -> None:
         existing = {
-            scope.get("name")
-            for scope in self.api.scope_bindings(realm, collection, client)
+            scope.get("name") for scope in self.api.scope_bindings(realm, collection, client)
         }
         for name in names:
             if name in existing:
@@ -567,17 +562,22 @@ class RealmReconciler:
         clients = self.api.find(realm, "clients", "clientId", client_id)
         managers = self.api.find(realm, "clients", "clientId", "realm-management")
         if len(clients) != 1 or len(managers) != 1:
-            fail("service account role mapping requires existing backend and realm-management clients")
+            fail(
+                "service account role mapping requires existing backend and realm-management clients"
+            )
         account = self.api.service_account(realm, clients[0]["id"])
         manager_id = managers[0]["id"]
-        existing = {role.get("name") for role in self.api.user_client_roles(realm, account["id"], manager_id)}
-        missing = [self.api.client_role(realm, manager_id, role) for role in roles if role not in existing]
+        existing = {
+            role.get("name")
+            for role in self.api.user_client_roles(realm, account["id"], manager_id)
+        }
+        missing = [
+            self.api.client_role(realm, manager_id, role) for role in roles if role not in existing
+        ]
         if missing:
             self.api.add_user_client_roles(realm, account["id"], manager_id, missing)
 
-    def reconcile_realm(
-        self, realm_name: str, desired: dict[str, Any], fields: list[str]
-    ) -> None:
+    def reconcile_realm(self, realm_name: str, desired: dict[str, Any], fields: list[str]) -> None:
         existing = self.api.realm(realm_name)
         merged = dict(existing)
         for field in fields:
@@ -642,9 +642,7 @@ class RealmReconciler:
         )
         if selection.get("exactRedirectUris", False):
             allowed = merge_unique(desired.get("redirectUris"), selection["activeRedirectUris"])
-            merged["redirectUris"] = [
-                uri for uri in merged["redirectUris"] if uri in allowed
-            ]
+            merged["redirectUris"] = [uri for uri in merged["redirectUris"] if uri in allowed]
         if merged != existing:
             self.api.update(realm_name, "clients", identity, merged)
 
@@ -703,8 +701,7 @@ class ComposeRecovery:
         result = subprocess.run(
             command,
             env=environment,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
             check=False,
         )
@@ -783,6 +780,7 @@ def run_with_recovery(
     authenticate: Callable[[str, str], str],
     administrator: tuple[str, str],
     action: Callable[[str], None],
+    *,
     start_recovery: Callable[[str, str], None],
     repair: Callable[[str, str, str], None],
     cleanup: Callable[[str, str], None],
@@ -808,14 +806,12 @@ def run_with_recovery(
         try:
             cleanup(token, temporary_username)
         except BaseException as error:
-            cleanup_error = ReconcileError(
-                "temporary recovery administrator cleanup failed"
-            )
+            cleanup_error = ReconcileError("temporary recovery administrator cleanup failed")
             if pending is not None:
                 raise cleanup_error from pending
             raise cleanup_error from error
         if pending is not None:
-            raise pending
+            raise pending from pending.__cause__
         return True
     action(token)
     return False
@@ -826,9 +822,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--realm", type=Path, default=Path("keycloak/realm.json"))
     parser.add_argument("--policy", type=Path, default=Path("keycloak/realm-policy.json"))
     parser.add_argument("--config", type=Path, default=Path("keycloak/reconcile.json"))
-    parser.add_argument(
-        "--keycloak-url", default="http://localhost:{{ context.keycloak_host_port }}"
-    )
+    parser.add_argument("--keycloak-url", default=DEFAULT_KEYCLOAK_URL)
     parser.add_argument("--compose-file", type=Path, default=Path("compose.yaml"))
     parser.add_argument("--compose-service", default="keycloak")
     parser.add_argument("--admin-username", default="admin")
@@ -866,11 +860,11 @@ def main(argv: list[str] | None = None) -> int:
             authenticate,
             (arguments.admin_username, admin_password),
             reconcile,
-            recovery.start,
-            lambda token, username, password: repair_master_admin(
+            start_recovery=recovery.start,
+            repair=lambda token, username, password: repair_master_admin(
                 KeycloakApi(arguments.keycloak_url, token), username, password
             ),
-            lambda token, username: delete_master_user(
+            cleanup=lambda token, username: delete_master_user(
                 KeycloakApi(arguments.keycloak_url, token), username
             ),
         )

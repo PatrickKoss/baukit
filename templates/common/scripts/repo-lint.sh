@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repository_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+repository_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)
 cd "$repository_root"
 
 usage() {
@@ -10,7 +10,7 @@ usage() {
 }
 
 in_git_repository() {
-  git rev-parse --is-inside-work-tree >/dev/null 2>&1
+  [ "$(git rev-parse --show-toplevel 2>/dev/null)" = "$repository_root" ]
 }
 
 # Prints NUL-separated repository files matching the patterns, tracked or not, without ignored files.
@@ -30,7 +30,7 @@ has_files() {
 }
 
 workflow_lint() {
-  actionlint
+  actionlint .github/workflows/*.yml
   zizmor --offline --persona regular --config zizmor.yml .github/workflows
 }
 
