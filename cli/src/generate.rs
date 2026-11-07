@@ -18,7 +18,8 @@ use crate::{
     doctor_layout,
     generate::dependencies::dependency_context,
     generate::render::{
-        AuthContext, DeclaredPorts, TemplateContext, product_description, render_product,
+        AuthContext, DeclaredPorts, RENDERED_SYMLINKS, TemplateContext, product_description,
+        render_product,
     },
     manifest::{AuthProvider, Manifest, QualityProfile},
     openapi_client::{command_exists, run_checked},
@@ -189,6 +190,11 @@ fn write_rendered(destination: &Path, rendered: BTreeMap<PathBuf, Vec<u8>>) -> R
         fs::write(&output, bytes)
             .with_context(|| format!("could not write {}", output.display()))?;
     }
+    for (link, target) in RENDERED_SYMLINKS {
+        if !write_symlink(destination, Path::new(link), Path::new(target))? {
+            conflicts.push(PathBuf::from(link));
+        }
+    }
     if conflicts.is_empty() {
         return Ok(());
     }
@@ -207,6 +213,33 @@ fn write_rendered(destination: &Path, rendered: BTreeMap<PathBuf, Vec<u8>>) -> R
         "generation found {} conflict(s); no modified file was overwritten. See {}",
         conflicts.len(),
         conflict_path.display()
+    )
+}
+
+/// Creates `link` pointing at `target`; returns false when a different file already holds the path.
+fn write_symlink(destination: &Path, link: &Path, target: &Path) -> Result<bool> {
+    let output = destination.join(link);
+    match fs::symlink_metadata(&output) {
+        Ok(metadata) => Ok(metadata.file_type().is_symlink() && fs::read_link(&output)? == target),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            create_symlink(target, &output)?;
+            Ok(true)
+        }
+        Err(error) => Err(error).with_context(|| format!("could not inspect {}", output.display())),
+    }
+}
+
+#[cfg(unix)]
+fn create_symlink(target: &Path, output: &Path) -> Result<()> {
+    std::os::unix::fs::symlink(target, output)
+        .with_context(|| format!("could not create symlink {}", output.display()))
+}
+
+#[cfg(not(unix))]
+fn create_symlink(_target: &Path, output: &Path) -> Result<()> {
+    bail!(
+        "creating the symlink {} needs a Unix host",
+        output.display()
     )
 }
 

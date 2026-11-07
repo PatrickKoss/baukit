@@ -25,6 +25,8 @@ export EXPO_PUBLIC_OIDC_CLIENT_ID="{{ context.app_name }}-mobile"
 
 if [[ -f "$root/mobile/.env" ]]; then
   set -a
+  # The developer-owned .env is optional and absent when shellcheck runs.
+  # shellcheck source=/dev/null
   source "$root/mobile/.env"
   set +a
   export EXPO_PUBLIC_API_URL="http://localhost:${BAUKIT_QA_API_PORT:-18080}"

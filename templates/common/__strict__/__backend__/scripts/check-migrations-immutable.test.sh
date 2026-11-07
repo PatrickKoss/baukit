@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repository_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 guard="$repository_root/scripts/check-migrations-immutable.sh"
 test_root=$(mktemp -d)
 trap 'rm -rf "$test_root"' EXIT

@@ -1,0 +1,15 @@
+# Settings for `baukit check`. Limits may only go down.
+
+[file_size]
+rust-max-lines = 1000
+ts-max-lines = 500
+
+# Files over the limit. Entries only shrink: split a file and drop its entry.
+[file_size.allowlist]
+
+# Suppression budget. Counts may only go down; `baukit check suppressions --update` lowers them.
+[suppressions.max]
+rust-allow = 0
+rust-expect = 0
+eslint-disable = 0
+ast-grep-ignore = 0

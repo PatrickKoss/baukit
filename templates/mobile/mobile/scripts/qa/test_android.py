@@ -1,13 +1,13 @@
 import os
-import time
-from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
-
+from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent
+AUTH_ENABLED: bool = "{{ context.auth_enabled }}".lower() == "true"
 
 
 class AndroidScriptsTest(unittest.TestCase):
@@ -37,7 +37,9 @@ class AndroidScriptsTest(unittest.TestCase):
     def prepare_sdk(self) -> Path:
         tools = self.sdk / "cmdline-tools/16111833/bin"
         self.executable(tools / "sdkmanager", "exit 0\n")
-        self.executable(tools / "avdmanager", r'''
+        self.executable(
+            tools / "avdmanager",
+            r"""
 printf '%s\n' "$*" >> "$EVENTS"
 config="$ANDROID_AVD_HOME/test-qa.avd/config.ini"
 case "$1" in
@@ -50,7 +52,8 @@ case "$1" in
     printf 'image.sysdir.1=%s/\nhw.device.name=pixel_6\nhw.ramSize=1536\nhw.keyboard=no\nhw.cpu.ncore=2\n' "$image" > "$config"
     ;;
 esac
-''')
+""",
+        )
         config = self.avds / "test-qa.avd/config.ini"
         config.parent.mkdir(parents=True)
         return config
@@ -63,7 +66,11 @@ esac
     def run_script(self, name: str) -> None:
         result = subprocess.run(
             ["bash", str(self.scripts / name)],
-            env=self.environment, capture_output=True, text=True, check=False, timeout=15,
+            env=self.environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -94,33 +101,54 @@ esac
         )
         for _ in range(2):
             self.run_script("android-sdk.sh")
-            self.assertEqual(config.read_text().splitlines(), [
-                "image.sysdir.1=system-images/android-36/google_apis/x86_64/",
-                "hw.device.name=pixel_6", "abi.type=x86_64",
-                "hw.ramSize=8192", "hw.keyboard=yes", "hw.cpu.ncore=4",
-                "hw.gpu.mode=swiftshader",
-            ])
+            self.assertEqual(
+                config.read_text().splitlines(),
+                [
+                    "image.sysdir.1=system-images/android-36/google_apis/x86_64/",
+                    "hw.device.name=pixel_6",
+                    "abi.type=x86_64",
+                    "hw.ramSize=8192",
+                    "hw.keyboard=yes",
+                    "hw.cpu.ncore=4",
+                    "hw.gpu.mode=swiftshader",
+                ],
+            )
         self.assertEqual(self.events.read_text().splitlines(), ["list avd", "list avd"])
 
     def test_malformed_avd_overrides_fail_before_sdk_setup(self) -> None:
-        for value in ("hw.ramSize", "=4096", "hw.ramSize=", "hw.ramSize==4096", "hw.ramSize=4096 bad/key=1"):
+        for value in (
+            "hw.ramSize",
+            "=4096",
+            "hw.ramSize=",
+            "hw.ramSize==4096",
+            "hw.ramSize=4096 bad/key=1",
+        ):
             with self.subTest(value=value):
                 result = subprocess.run(
                     ["bash", str(self.scripts / "android-sdk.sh")],
                     env={**self.environment, "BAUKIT_QA_AVD_CONFIG": value},
-                    capture_output=True, text=True, check=False, timeout=5,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=5,
                 )
                 self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
-                self.assertIn("BAUKIT_QA_AVD_CONFIG must be a whitespace-separated list of key=value entries", result.stderr)
+                self.assertIn(
+                    "BAUKIT_QA_AVD_CONFIG must be a whitespace-separated list of key=value entries",
+                    result.stderr,
+                )
                 self.assertFalse(self.sdk.exists())
 
     def test_new_avd_uses_stock_pixel_6(self) -> None:
         config = self.prepare_sdk()
         self.run_script("android-sdk.sh")
-        self.assertEqual(self.events.read_text().splitlines(), [
-            "list avd",
-            "create avd --force --name test-qa --package system-images;android-36;google_apis;x86_64 --device pixel_6",
-        ])
+        self.assertEqual(
+            self.events.read_text().splitlines(),
+            [
+                "list avd",
+                "create avd --force --name test-qa --package system-images;android-36;google_apis;x86_64 --device pixel_6",
+            ],
+        )
         self.assertIn("hw.ramSize=1536\nhw.keyboard=no\nhw.cpu.ncore=2\n", config.read_text())
 
     def test_legacy_avd_is_recreated_once(self) -> None:
@@ -134,11 +162,18 @@ esac
                 )
                 self.events.unlink(missing_ok=True)
                 self.run_script("android-sdk.sh")
-                self.assertEqual(self.events.read_text().splitlines(), [
-                    "delete avd --name test-qa", "list avd",
-                    "create avd --force --name test-qa --package system-images;android-36;google_apis;x86_64 --device pixel_6",
-                ])
-                self.assertIn("hw.device.name=pixel_6\nhw.ramSize=1536\nhw.keyboard=no\nhw.cpu.ncore=2\n", config.read_text())
+                self.assertEqual(
+                    self.events.read_text().splitlines(),
+                    [
+                        "delete avd --name test-qa",
+                        "list avd",
+                        "create avd --force --name test-qa --package system-images;android-36;google_apis;x86_64 --device pixel_6",
+                    ],
+                )
+                self.assertIn(
+                    "hw.device.name=pixel_6\nhw.ramSize=1536\nhw.keyboard=no\nhw.cpu.ncore=2\n",
+                    config.read_text(),
+                )
                 self.events.unlink()
                 self.run_script("android-sdk.sh")
                 self.assertEqual(self.events.read_text().splitlines(), ["list avd"])
@@ -162,27 +197,36 @@ esac
         self.executable(self.sdk / "cmdline-tools/latest/bin/sdkmanager", "exit 99\n")
         self.run_script("android-sdk.sh")
         events = self.events.read_text().splitlines()
-        self.assertEqual(events, [
-            f"pinned-sdk --sdk_root={self.sdk} --licenses",
-            f"pinned-sdk --sdk_root={self.sdk} platform-tools emulator platforms;android-36 "
-            "build-tools;36.0.0 system-images;android-36;google_apis;x86_64",
-        ])
+        self.assertEqual(
+            events,
+            [
+                f"pinned-sdk --sdk_root={self.sdk} --licenses",
+                f"pinned-sdk --sdk_root={self.sdk} platform-tools emulator platforms;android-36 "
+                "build-tools;36.0.0 system-images;android-36;google_apis;x86_64",
+            ],
+        )
 
     def test_installed_packages_skip_sdkmanager(self) -> None:
         tools = self.sdk / "cmdline-tools/16111833/bin"
         self.executable(tools / "sdkmanager", 'printf "sdk %s\\n" "$*" >> "$EVENTS"\n')
         self.executable(tools / "avdmanager", 'echo "Name: test-qa"\n')
         installed = [
-            "platform-tools", "emulator", "platforms/android-36", "build-tools/36.0.0",
+            "platform-tools",
+            "emulator",
+            "platforms/android-36",
+            "build-tools/36.0.0",
         ]
         for directory in installed:
             (self.sdk / directory).mkdir(parents=True)
             (self.sdk / directory / "package.xml").write_text("<package/>")
         self.run_script("android-sdk.sh")
-        self.assertEqual(self.events.read_text().splitlines(), [
-            f"sdk --sdk_root={self.sdk} --licenses",
-            f"sdk --sdk_root={self.sdk} system-images;android-36;google_apis;x86_64",
-        ])
+        self.assertEqual(
+            self.events.read_text().splitlines(),
+            [
+                f"sdk --sdk_root={self.sdk} --licenses",
+                f"sdk --sdk_root={self.sdk} system-images;android-36;google_apis;x86_64",
+            ],
+        )
 
         image = self.sdk / "system-images/android-36/google_apis/x86_64"
         image.mkdir(parents=True)
@@ -200,28 +244,42 @@ esac
             with self.subTest(system=system, machine=machine):
                 sdk = self.root / platform
                 binaries = self.root / "bin"
-                self.executable(binaries / "uname", f'if [[ "$1" == -s ]]; then echo {system}; else echo {machine}; fi\n')
-                self.executable(binaries / "curl", r'''
+                self.executable(
+                    binaries / "uname",
+                    f'if [[ "$1" == -s ]]; then echo {system}; else echo {machine}; fi\n',
+                )
+                self.executable(
+                    binaries / "curl",
+                    r"""
 while [[ "$1" != --output ]]; do shift; done
 zip=$2
 printf '%s\n' "$3" > "$EVENTS"
 touch "$zip"
-''')
-                self.executable(binaries / "unzip", r'''
+""",
+                )
+                self.executable(
+                    binaries / "unzip",
+                    r"""
 while [[ "$1" != -d ]]; do shift; done
 tools="$2/cmdline-tools/bin"
 mkdir -p "$tools"
 printf '#!/bin/sh\nexit 0\n' > "$tools/sdkmanager"
 printf '#!/bin/sh\necho "Name: test-qa"\n' > "$tools/avdmanager"
 chmod +x "$tools/sdkmanager" "$tools/avdmanager"
-''')
-                self.environment.update({
-                    "PATH": str(binaries) + os.pathsep + os.environ["PATH"],
-                    "ANDROID_HOME": str(sdk), "ANDROID_SDK_ROOT": str(sdk),
-                })
+""",
+                )
+                self.environment.update(
+                    {
+                        "PATH": str(binaries) + os.pathsep + os.environ["PATH"],
+                        "ANDROID_HOME": str(sdk),
+                        "ANDROID_SDK_ROOT": str(sdk),
+                    }
+                )
                 self.run_script("android-sdk.sh")
-                self.assertEqual(self.events.read_text().strip(),
-                    f"https://dl.google.com/android/repository/commandlinetools-{platform}-16111833_latest.zip")
+                self.assertEqual(
+                    self.events.read_text().strip(),
+                    f"https://dl.google.com/android/repository/commandlinetools-{platform}-16111833_latest.zip",
+                )
                 self.assertTrue((sdk / "cmdline-tools/16111833/bin/sdkmanager").is_file())
 
     def test_release_build_sets_loopback_without_host_interface_discovery(self) -> None:
@@ -229,23 +287,31 @@ chmod +x "$tools/sdkmanager" "$tools/avdmanager"
         self.executable(bin_dir / "corepack", 'printf "corepack %s\\n" "$*" >> "$EVENTS"\n')
         self.environment["PATH"] = str(bin_dir) + os.pathsep + self.environment["PATH"]
         self.environment["JAVA_TOOL_OPTIONS"] = "-Dqa.test=1"
-        self.executable(self.root / "mobile/node_modules/.bin/expo", 'printf "expo %s\\n" "$*" >> "$EVENTS"\n')
-        self.executable(self.root / "mobile/android/gradlew", r'''
+        self.executable(
+            self.root / "mobile/node_modules/.bin/expo", 'printf "expo %s\\n" "$*" >> "$EVENTS"\n'
+        )
+        self.executable(
+            self.root / "mobile/android/gradlew",
+            r"""
 printf 'gradle %s\n' "$*" >> "$EVENTS"
 printf 'java-options %s\n' "$JAVA_TOOL_OPTIONS" >> "$EVENTS"
 apk="$(dirname "$0")/app/build/outputs/apk/release/app-release.apk"
 mkdir -p "$(dirname "$apk")"
 touch "$apk"
-''')
+""",
+        )
         self.run_script("build-android.sh")
-        self.assertEqual(self.events.read_text().splitlines(), [
-            f"corepack pnpm@12.9.1 --dir {self.root}/mobile install --frozen-lockfile",
-            f"corepack pnpm@12.9.1 --dir {self.root}/mobile run tokens",
-            "expo prebuild --clean --platform android --no-install",
-            f"gradle -p {self.root}/mobile/android --no-daemon --build-cache "
-            "-PreactNativeDevServerIp=127.0.0.1 -PreactNativeArchitectures=x86_64 assembleRelease",
-            "java-options -Dqa.test=1 --enable-native-access=ALL-UNNAMED",
-        ])
+        self.assertEqual(
+            self.events.read_text().splitlines(),
+            [
+                f"corepack pnpm@12.9.1 --dir {self.root}/mobile install --frozen-lockfile",
+                f"corepack pnpm@12.9.1 --dir {self.root}/mobile run tokens",
+                "expo prebuild --clean --platform android --no-install",
+                f"gradle -p {self.root}/mobile/android --no-daemon --build-cache "
+                "-PreactNativeDevServerIp=127.0.0.1 -PreactNativeArchitectures=x86_64 assembleRelease",
+                "java-options -Dqa.test=1 --enable-native-access=ALL-UNNAMED",
+            ],
+        )
 
     def test_gate_build_compiles_debug_and_release_from_one_prebuild(self) -> None:
         bin_dir = self.root / "bin"
@@ -253,21 +319,29 @@ touch "$apk"
         self.environment["PATH"] = str(bin_dir) + os.pathsep + self.environment["PATH"]
         self.environment["BAUKIT_QA_ASSEMBLE_DEBUG"] = "1"
         self.environment["BAUKIT_QA_GRADLE_WORKERS"] = "3"
-        self.executable(self.root / "mobile/node_modules/.bin/expo", 'printf "expo %s\\n" "$*" >> "$EVENTS"\n')
-        self.executable(self.root / "mobile/android/gradlew", r'''
+        self.executable(
+            self.root / "mobile/node_modules/.bin/expo", 'printf "expo %s\\n" "$*" >> "$EVENTS"\n'
+        )
+        self.executable(
+            self.root / "mobile/android/gradlew",
+            r"""
 printf 'gradle %s\n' "$*" >> "$EVENTS"
 apk="$(dirname "$0")/app/build/outputs/apk/release/app-release.apk"
 mkdir -p "$(dirname "$apk")"
 touch "$apk"
-''')
+""",
+        )
         self.run_script("build-android.sh")
         events = self.events.read_text().splitlines()
         self.assertEqual(events.count("expo prebuild --clean --platform android --no-install"), 1)
         common = f"gradle -p {self.root}/mobile/android --no-daemon --build-cache -PreactNativeDevServerIp=127.0.0.1 --max-workers 3"
-        self.assertEqual([event for event in events if event.startswith("gradle")], [
-            f"{common} --stacktrace assembleDebug",
-            f"{common} -PreactNativeArchitectures=x86_64 assembleRelease",
-        ])
+        self.assertEqual(
+            [event for event in events if event.startswith("gradle")],
+            [
+                f"{common} --stacktrace assembleDebug",
+                f"{common} -PreactNativeArchitectures=x86_64 assembleRelease",
+            ],
+        )
 
     def test_native_jobs_cap_cmake_through_the_init_script(self) -> None:
         bin_dir = self.root / "bin"
@@ -275,12 +349,15 @@ touch "$apk"
         self.environment["PATH"] = str(bin_dir) + os.pathsep + self.environment["PATH"]
         self.environment["BAUKIT_QA_NATIVE_JOBS"] = "2"
         self.executable(self.root / "mobile/node_modules/.bin/expo", "exit 0\n")
-        self.executable(self.root / "mobile/android/gradlew", r'''
+        self.executable(
+            self.root / "mobile/android/gradlew",
+            r"""
 printf 'gradle %s jobs=%s\n' "$*" "$BAUKIT_QA_NATIVE_JOBS" >> "$EVENTS"
 apk="$(dirname "$0")/app/build/outputs/apk/release/app-release.apk"
 mkdir -p "$(dirname "$apk")"
 touch "$apk"
-''')
+""",
+        )
         self.run_script("build-android.sh")
         init_script = self.scripts / "native-jobs.init.gradle"
         self.assertIn(f"--init-script {init_script} ", self.events.read_text())
@@ -292,7 +369,10 @@ touch "$apk"
             with self.subTest(arguments=arguments):
                 result = subprocess.run(
                     ["bash", str(self.scripts.parent / "android-java.sh"), *arguments],
-                    env=self.environment, capture_output=True, text=True, check=False,
+                    env=self.environment,
+                    capture_output=True,
+                    text=True,
+                    check=False,
                 )
                 self.assertEqual(result.returncode, expected_status, result.stdout + result.stderr)
 
@@ -309,14 +389,20 @@ touch "$apk"
                 self.run_script("android-sdk.sh")
                 self.assertIn("delete avd --name test-qa", self.events.read_text())
                 self.assertIn("create avd", self.events.read_text())
-                self.assertIn("image.sysdir.1=system-images/android-36/google_apis/x86_64/", config.read_text())
+                self.assertIn(
+                    "image.sysdir.1=system-images/android-36/google_apis/x86_64/",
+                    config.read_text(),
+                )
                 self.events.unlink()
                 self.run_script("android-sdk.sh")
                 self.assertNotIn("delete avd", self.events.read_text())
                 self.assertNotIn("create avd", self.events.read_text())
         self.environment["BAUKIT_QA_ANDROID_IMAGE_TAG"] = "google_apis_playstore"
         self.run_script("android-sdk.sh")
-        self.assertIn("image.sysdir.1=system-images/android-36/google_apis_playstore/x86_64/", config.read_text())
+        self.assertIn(
+            "image.sysdir.1=system-images/android-36/google_apis_playstore/x86_64/",
+            config.read_text(),
+        )
 
     def test_hanging_adb_commands_and_boot_probes_are_bounded(self) -> None:
         adb = self.sdk / "platform-tools/adb"
@@ -328,7 +414,11 @@ touch "$apk"
                 started = time.monotonic()
                 result = subprocess.run(
                     ["python3", str(self.scripts / "android-adb.py"), *arguments],
-                    env=self.environment, capture_output=True, text=True, timeout=5, check=False,
+                    env=self.environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
                 )
                 self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
                 self.assertIn("timed out", result.stderr)
@@ -338,25 +428,35 @@ touch "$apk"
 
     def health_probe(self, report: Path | None = None) -> subprocess.CompletedProcess[str]:
         arguments = [
-            "python3", str(self.scripts / "android-adb.py"), "--check-health",
-            str(self.sdk / "platform-tools/adb"), "emulator-5556",
+            "python3",
+            str(self.scripts / "android-adb.py"),
+            "--check-health",
+            str(self.sdk / "platform-tools/adb"),
+            "emulator-5556",
         ]
         if report is not None:
             arguments.append(str(report))
         return subprocess.run(
-            arguments, env=self.environment, capture_output=True, text=True,
-            check=False, timeout=5,
+            arguments,
+            env=self.environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
         )
 
     def test_health_probe_appends_triggering_events_and_matching_anr_summary(self) -> None:
-        self.executable(self.sdk / "platform-tools/adb", r'''
+        self.executable(
+            self.sdk / "platform-tools/adb",
+            r"""
 case "$*" in
   *logcat*)
     printf 'am_anr: [0,123,com.android.systemui,1,first reason]\nam_crash: [0,456,com.android.inputmethod.latin,1,second reason]\n' ;;
   *'dumpsys activity lastanr')
     printf 'ANR time: 2026-10-09 12:00:00\nPID: 123\nReason: executing service com.android.systemui/.SystemUIService\nErrorId: 1234\nFrozen: false\nprivate stack frame\n' ;;
 esac
-''')
+""",
+        )
         report = self.root / "mobile/.qa/android-health.log"
         first = self.health_probe(report)
         self.assertEqual(first.returncode, 1, first.stderr)
@@ -365,9 +465,11 @@ esac
         for line in (
             "am_anr: [0,123,com.android.systemui,1,first reason]",
             "am_crash: [0,456,com.android.inputmethod.latin,1,second reason]",
-            "ANR time: 2026-10-09 12:00:00", "PID: 123",
+            "ANR time: 2026-10-09 12:00:00",
+            "PID: 123",
             "Reason: executing service com.android.systemui/.SystemUIService",
-            "ErrorId: 1234", "Frozen: false",
+            "ErrorId: 1234",
+            "Frozen: false",
         ):
             self.assertIn(line, first.stderr)
             self.assertIn(line, evidence)
@@ -378,17 +480,23 @@ esac
         self.assertEqual(report.read_text().count("emulator-5556 status=1"), 2)
 
     def test_health_probe_rejects_anr_details_for_another_package(self) -> None:
-        self.executable(self.sdk / "platform-tools/adb", r'''
+        self.executable(
+            self.sdk / "platform-tools/adb",
+            r"""
 case "$*" in
   *logcat*) echo 'am_anr: [0,123,com.android.systemui,1,reason]' ;;
   *'dumpsys activity lastanr')
     printf 'ANR in com.android.systemui.extra\nPID: 456\nReason: unrelated ANR\nstack: com.android.systemui\n' ;;
 esac
-''')
+""",
+        )
         report = self.root / "mobile/.qa/android-health.log"
         result = self.health_probe(report)
         self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn("qa: logcat am_anr shows the ANR above; dumpsys lastanr has no record of it", result.stderr)
+        self.assertIn(
+            "qa: logcat am_anr shows the ANR above; dumpsys lastanr has no record of it",
+            result.stderr,
+        )
         self.assertNotIn("PID: 456", result.stderr)
         self.assertNotIn("com.android.systemui.extra", report.read_text())
 
@@ -400,12 +508,15 @@ esac
             ("exec sleep 60", "Android ANR diagnostics timed out"),
         ):
             with self.subTest(command=command):
-                self.executable(self.sdk / "platform-tools/adb", f'''
+                self.executable(
+                    self.sdk / "platform-tools/adb",
+                    f"""
 case "$*" in
   *logcat*) echo 'am_anr: [0,123,com.android.systemui,1,reason]' ;;
   *'dumpsys activity lastanr') {command} ;;
 esac
-''')
+""",
+                )
                 result = self.health_probe(report)
                 self.assertEqual(result.returncode, 1, result.stderr)
                 self.assertIn("am_anr: [0,123,com.android.systemui,1,reason]", result.stderr)
@@ -413,13 +524,16 @@ esac
                 self.assertIn(message, report.read_text())
 
     def test_manual_health_probe_without_report_retains_event(self) -> None:
-        self.executable(self.sdk / "platform-tools/adb", r'''
+        self.executable(
+            self.sdk / "platform-tools/adb",
+            r"""
 if [[ "$*" == *logcat* ]]; then
   echo 'am_crash: [0,123,com.android.systemui,1,reason]'
 else
   exit 99
 fi
-''')
+""",
+        )
         result = self.health_probe()
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("am_crash: [0,123,com.android.systemui,1,reason]", result.stderr)
@@ -432,9 +546,18 @@ fi
             for value in ("0", "-1", "nan", "inf"):
                 with self.subTest(setting=setting, value=value):
                     result = subprocess.run(
-                        ["python3", str(self.scripts / "android-adb.py"), "--wait-for-boot", str(adb), "emulator-5556"],
-                        env={**self.environment, setting: value}, capture_output=True,
-                        text=True, timeout=5, check=False,
+                        [
+                            "python3",
+                            str(self.scripts / "android-adb.py"),
+                            "--wait-for-boot",
+                            str(adb),
+                            "emulator-5556",
+                        ],
+                        env={**self.environment, setting: value},
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                        check=False,
                     )
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn(f"{setting} must be a positive finite number", result.stderr)
@@ -443,7 +566,9 @@ fi
     def test_android_setup_is_idempotent_and_prepares_oidc_browser(self) -> None:
         emulator_args = self.root / "emulator-args"
         self.environment["EMULATOR_ARGS"] = str(emulator_args)
-        self.executable(self.sdk / "platform-tools/adb", r'''
+        self.executable(
+            self.sdk / "platform-tools/adb",
+            r"""
 printf '%s\n' "$*" >> "$EVENTS"
 if [[ "$*" == devices ]]; then printf 'List of devices attached\n'; fi
 if [[ "$*" == *'getprop sys.boot_completed' && -f "$EMULATOR_ARGS" ]]; then echo 1; fi
@@ -452,17 +577,21 @@ if [[ "$*" == *'dumpsys window displays' ]]; then echo '  mCurrentFocus=Window{1
 if [[ "$*" == *'cat /proc/stat' ]]; then printf 'cpu  10 0 10 80 0 0 0 0 0 0\ncpu0 10 0 10 80 0 0 0 0 0 0\n'; fi
 if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/test-qa.avd/snapshots/${@: -1}"; fi
 if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 10.0.2.16 uid 0'; fi
-''')
+""",
+        )
         self.environment["BAUKIT_QA_POLL_SECONDS"] = "0"
-        self.executable(self.sdk / "emulator/emulator", '{ flock 9; printf "%s\\n" "$@" -- >> "$EMULATOR_ARGS"; } 9>"$EMULATOR_ARGS.lock"\n')
+        self.executable(
+            self.sdk / "emulator/emulator",
+            '{ flock 9; printf "%s\\n" "$@" -- >> "$EMULATOR_ARGS"; } 9>"$EMULATOR_ARGS.lock"\n',
+        )
         self.executable(self.scripts / "services.sh", "exit 0\n")
         apk = self.root / "mobile/android/app/build/outputs/apk/release/app-release.apk"
         apk.parent.mkdir(parents=True)
         apk.touch()
-{% if context.auth_enabled %}        flags = '-s emulator-5556 shell echo "chrome --disable-fre --no-first-run --no-default-browser-check" > /data/local/tmp/chrome-command-line'
-        debug = '-s emulator-5556 shell settings put global debug_app com.android.chrome'
-        stop = '-s emulator-5556 shell am force-stop com.android.chrome'
-{% endif %}        for headless, wifi in (("0", "1"), ("1", "1"), ("1", "0")):
+        flags = '-s emulator-5556 shell echo "chrome --disable-fre --no-first-run --no-default-browser-check" > /data/local/tmp/chrome-command-line'
+        debug = "-s emulator-5556 shell settings put global debug_app com.android.chrome"
+        stop = "-s emulator-5556 shell am force-stop com.android.chrome"
+        for headless, wifi in (("0", "1"), ("1", "1"), ("1", "0")):
             self.environment["BAUKIT_QA_HEADLESS"] = headless
             self.environment["BAUKIT_QA_ANDROID_WIFI"] = wifi
             self.events.unlink(missing_ok=True)
@@ -474,16 +603,26 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
             features = "-WiFiPacketStream" if wifi == "1" else ""
             snapshot = self.snapshot_name(features=features)
             expected_args = [
-                "-avd", "test-qa", "-port", "5556",
-                "-no-snapshot-save", "-no-audio", "-no-boot-anim", "-gpu", "swiftshader_indirect",
-                *(["-feature", features] if features else []), "-no-snapshot-load",
+                "-avd",
+                "test-qa",
+                "-port",
+                "5556",
+                "-no-snapshot-save",
+                "-no-audio",
+                "-no-boot-anim",
+                "-gpu",
+                "swiftshader_indirect",
+                *(["-feature", features] if features else []),
+                "-no-snapshot-load",
             ]
             if headless == "1":
                 expected_args.append("-no-window")
             cold, *shared, rest = emulator_args.read_text().split("--\n")
             self.assertEqual(cold.splitlines(), expected_args)
             self.assertEqual(rest, "")
-            for port, launch in zip(("5556", "5558"), sorted(shared, key=lambda args: args.split()[3]), strict=True):
+            for port, launch in zip(
+                ("5556", "5558"), sorted(shared, key=lambda args: args.split()[3]), strict=True
+            ):
                 quick = [*expected_args[:3], port, *expected_args[4:]]
                 load = quick.index("-no-snapshot-load")
                 quick[load : load + 1] = ["-snapshot", snapshot, "-read-only"]
@@ -495,22 +634,30 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
             self.assertFalse(any("monkey" in event for event in events))
             self.assertEqual(events.count(f"-s emulator-5556 emu avd snapshot save {snapshot}"), 1)
             if wifi == "0":
-                self.assertFalse(any("svc wifi" in event or "route get" in event for event in events))
+                self.assertFalse(
+                    any("svc wifi" in event or "route get" in event for event in events)
+                )
             for serial in ("emulator-5556", "emulator-5558") if wifi == "1" else ():
                 enable = events.index(f"-s {serial} shell svc wifi enable")
-                self.assertLess(events.index(f"-s {serial} shell cmd connectivity airplane-mode disable"), enable)
+                self.assertLess(
+                    events.index(f"-s {serial} shell cmd connectivity airplane-mode disable"),
+                    enable,
+                )
                 self.assertLess(enable, events.index(f"-s {serial} shell ip -4 route get 10.0.2.2"))
-{% if context.auth_enabled %}            for command in (flags, debug, stop):
-                self.assertEqual(events.count(command), 1)
-                self.assertLess(events.index(command), launch)
-            self.assertLess(events.index(stop), events.index(flags))
-{% else %}            self.assertFalse(any("chrome" in event for event in events))
-{% endif %}
+            if AUTH_ENABLED:
+                for command in (flags, debug, stop):
+                    self.assertEqual(events.count(command), 1)
+                    self.assertLess(events.index(command), launch)
+                self.assertLess(events.index(stop), events.index(flags))
+            else:
+                self.assertFalse(any("chrome" in event for event in events))
 
     def test_hanging_app_install_is_bounded(self) -> None:
         emulator_args = self.root / "emulator-args"
         self.environment["EMULATOR_ARGS"] = str(emulator_args)
-        self.executable(self.sdk / "platform-tools/adb", r'''
+        self.executable(
+            self.sdk / "platform-tools/adb",
+            r"""
 if [[ "$*" == *'install -r '* ]]; then exec sleep 60; fi
 if [[ "$*" == devices ]]; then printf 'List of devices attached\n'; fi
 if [[ "$*" == *'getprop sys.boot_completed' && -f "$EMULATOR_ARGS" ]]; then echo 1; fi
@@ -518,8 +665,11 @@ if [[ "$*" == *'pidof com.android.systemui' ]]; then echo 321; fi
 if [[ "$*" == *'dumpsys window displays' ]]; then echo '  mCurrentFocus=Window{1 u0 launcher}'; fi
 if [[ "$*" == *'cat /proc/stat' ]]; then printf 'cpu  10 0 10 80 0 0 0 0 0 0\ncpu0 10 0 10 80 0 0 0 0 0 0\n'; fi
 if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/test-qa.avd/snapshots/${@: -1}"; fi
-''')
-        self.executable(self.sdk / "emulator/emulator", 'printf "%s\\n" "$@" -- >> "$EMULATOR_ARGS"\n')
+""",
+        )
+        self.executable(
+            self.sdk / "emulator/emulator", 'printf "%s\\n" "$@" -- >> "$EMULATOR_ARGS"\n'
+        )
         self.executable(self.scripts / "services.sh", "exit 0\n")
         apk = self.root / "mobile/android/app/build/outputs/apk/release/app-release.apk"
         apk.parent.mkdir(parents=True)
@@ -534,7 +684,10 @@ if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/te
                 "BAUKIT_QA_ANDROID_WIFI": "0",
                 "BAUKIT_QA_ADB_TIMEOUT_SECONDS": "2",
             },
-            capture_output=True, text=True, check=False, timeout=30,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
         )
         self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
         self.assertIn("ADB command timed out", result.stderr)
@@ -542,12 +695,26 @@ if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/te
         self.assertLess(time.monotonic() - started, 30)
 
     def snapshot_name(
-        self, gpu: str = "swiftshader_indirect", version: str = "{{ context.template_version }}", features: str = "",
+        self,
+        gpu: str = "swiftshader_indirect",
+        version: str = "{{ context.template_version }}",
+        features: str = "",
     ) -> str:
         result = subprocess.run(
-            ["python3", str(self.scripts / "android-adb.py"), "--snapshot-name",
-             str(self.avds / "test-qa.avd/config.ini"), str(self.sdk), gpu, features, version],
-            capture_output=True, text=True, check=True, timeout=15,
+            [
+                "python3",
+                str(self.scripts / "android-adb.py"),
+                "--snapshot-name",
+                str(self.avds / "test-qa.avd/config.ini"),
+                str(self.sdk),
+                gpu,
+                features,
+                version,
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=15,
         )
         return result.stdout.strip()
 
@@ -567,17 +734,23 @@ if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/te
             with self.subTest(probe=probe):
                 owned.touch()
                 self.events.unlink(missing_ok=True)
-                self.executable(self.sdk / "platform-tools/adb", f'''
+                self.executable(
+                    self.sdk / "platform-tools/adb",
+                    f"""
 if [[ "$*" == devices ]]; then
   printf 'List of devices attached\\nemulator-5556\\tdevice\\n'
   {probe}
 fi
 if [[ "$*" == *'getprop sys.boot_completed' ]]; then echo 1; fi
-''')
+""",
+                )
                 result = subprocess.run(
                     ["bash", str(self.scripts / "android-env.sh")],
                     env={**self.environment, "BAUKIT_QA_ADB_TIMEOUT_SECONDS": "0.2"},
-                    capture_output=True, text=True, check=False, timeout=5,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=5,
                 )
                 self.assertEqual(result.returncode, expected_status, result.stdout + result.stderr)
                 self.assertEqual(self.events.read_text().splitlines(), ["services"])

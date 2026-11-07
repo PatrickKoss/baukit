@@ -1,0 +1,8 @@
+# Repository lint tools. CI installs the same versions with jdx/mise-action; run `mise install` locally.
+[tools]
+"aqua:rhysd/actionlint" = "1.7.12"
+"aqua:zizmorcore/zizmor" = "1.32.0"
+"aqua:gitleaks/gitleaks" = "8.30.1"
+"aqua:google/osv-scanner" = "2.7.0"
+"aqua:astral-sh/ruff" = "0.17.4"
+"aqua:koalaman/shellcheck" = "0.11.0"

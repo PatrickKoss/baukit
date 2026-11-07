@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repository_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 
 found_example=false
 for example in "$repository_root/.env.example" "$repository_root/web/.env.example" "$repository_root/mobile/.env.example"; do

@@ -1,5 +1,7 @@
 packages:
   - .
-{% if context.baukit_pnpm_overrides %}
+
 overrides:
-{{ context.baukit_pnpm_overrides }}{% endif %}
+  glob@13: 14.0.2
+  minimatch@10: 11.0.1
+{{ context.baukit_pnpm_overrides }}

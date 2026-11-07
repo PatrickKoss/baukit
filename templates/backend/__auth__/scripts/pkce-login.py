@@ -48,7 +48,8 @@ class CallbackRedirectHandler(urllib.request.HTTPRedirectHandler):
         super().__init__()
         self.redirect = urllib.parse.urlsplit(redirect_uri)
 
-    def redirect_request(self, request, file_pointer, code, message, headers, new_url):
+    def redirect_request(self, request, *response):
+        *_, new_url = response
         target = urllib.parse.urlsplit(new_url)
         if (target.scheme, target.netloc, target.path) == (
             self.redirect.scheme,
@@ -56,7 +57,7 @@ class CallbackRedirectHandler(urllib.request.HTTPRedirectHandler):
             self.redirect.path,
         ):
             raise CallbackCaptured(new_url)
-        return super().redirect_request(request, file_pointer, code, message, headers, new_url)
+        return super().redirect_request(request, *response)
 
 
 class LocalDevelopmentCookiePolicy(http.cookiejar.DefaultCookiePolicy):
@@ -98,22 +99,24 @@ def login(
 ) -> str:
     verifier = base64.urlsafe_b64encode(secrets.token_bytes(64)).decode().rstrip("=")
     challenge = (
-        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
-        .decode()
-        .rstrip("=")
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
     )
     state = secrets.token_urlsafe(24)
-    authorization_url = metadata["authorization_endpoint"] + "?" + urllib.parse.urlencode(
-        {
-            "client_id": client_id,
-            "redirect_uri": redirect_uri,
-            "response_type": "code",
-            "scope": scope,
-            "state": state,
-            "code_challenge": challenge,
-            "code_challenge_method": "S256",
-            **({"resource": resource} if resource else {}),
-        }
+    authorization_url = (
+        metadata["authorization_endpoint"]
+        + "?"
+        + urllib.parse.urlencode(
+            {
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "response_type": "code",
+                "scope": scope,
+                "state": state,
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+                **({"resource": resource} if resource else {}),
+            }
+        )
     )
     with client.open(authorization_url, timeout=20) as response:
         login_page = response.read().decode()

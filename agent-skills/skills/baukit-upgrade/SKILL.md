@@ -25,7 +25,13 @@ Upgrade every Baukit component as one release train. Do not invent or call a `ba
 2. Change every `@baukit/*` git dependency in `mobile/package.json` and/or `web/package.json` to that same tag while preserving each package's `path:typescript/packages/...` selector.
 3. Update `baukit.toml` so `template_version` and `[dependencies.baukit].tag` describe the target train. Apply release-note migrations to template-owned files deliberately; preserve product-owned behavior and surface conflicts for review.
    Preserve `[quality]` thresholds, critical paths, the full-stack E2E opt-in, and every `openapi.consumers` entry. Add generated strict-profile scripts only when the product selects `profile = "strict"`.
-4. Refresh Cargo and pnpm lockfiles. Do not mix unrelated dependency upgrades into this change, and do not switch to public registries while the project remains private-first.
+4. Refresh the managed agent-rules block at the end of `CLAUDE.md` from the target checkout. There is no `baukit upgrade` command for it; `check agent-docs --fix` rewrites the block and turns a copied `AGENTS.md` into the symlink to `CLAUDE.md`:
+
+   ```sh
+   cargo run --manifest-path <target-baukit>/cli/Cargo.toml --bin baukit -- check agent-docs --fix --root .
+   ```
+
+5. Refresh Cargo and pnpm lockfiles. Do not mix unrelated dependency upgrades into this change, and do not switch to public registries while the project remains private-first.
 
 ## Validate and verify
 
@@ -33,6 +39,7 @@ Run from the product root:
 
 ```sh
 baukit doctor
+baukit check agent-docs file-size suppressions --root .
 ```
 
 `doctor` checks the OpenAPI schema and consumer paths declared in `baukit.toml`.

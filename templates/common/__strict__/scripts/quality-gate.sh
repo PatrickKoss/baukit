@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repository_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repository_root"
 
 usage() {
@@ -52,7 +52,7 @@ use_baukit_root() {
     return
   fi
   if [ "$(manifest_value dependencies.baukit.source)" = "path" ]; then
-    baukit_root=$(CDPATH= cd -- "$(manifest_value dependencies.baukit.path)/.." && pwd)
+    baukit_root=$(CDPATH='' cd -- "$(manifest_value dependencies.baukit.path)/.." && pwd)
     return
   fi
   baukit_root=$(mktemp -d)
@@ -101,6 +101,12 @@ migrations fast - always -
 markdown-links fast - always -
 preflight fast - always -
 baukit-doctor fast - always -
+baukit-check fast - always -
+workflow-lint fast - always -
+secret-scan fast - always -
+osv fast - always -
+python-lint fast - always -
+shell-lint fast - always -
 metric-names fast - always -
 {% if context.web %}spec-purposes fast - always -
 {% endif %}{% if context.backend %}rust-clippy backend - always -
@@ -149,6 +155,33 @@ step_preflight() {
 step_baukit_doctor() {
   use_baukit_root
   cargo run --quiet --locked --manifest-path "$baukit_root/cli/Cargo.toml" --bin baukit -- doctor
+}
+
+# The lints and patterns rules join this list once the backend and frontend templates carry their baselines.
+step_baukit_check() {
+  use_baukit_root
+  cargo run --quiet --locked --manifest-path "$baukit_root/cli/Cargo.toml" --bin baukit -- \
+    check agent-docs file-size suppressions --root .
+}
+
+step_workflow_lint() {
+  sh scripts/repo-lint.sh workflow-lint
+}
+
+step_secret_scan() {
+  sh scripts/repo-lint.sh secret-scan
+}
+
+step_osv() {
+  sh scripts/repo-lint.sh osv
+}
+
+step_python_lint() {
+  sh scripts/repo-lint.sh python-lint
+}
+
+step_shell_lint() {
+  sh scripts/repo-lint.sh shell-lint
 }
 
 step_metric_names() {
@@ -370,7 +403,7 @@ step_playwright() {
     --project=desktop-chromium --project=mobile-chrome \
     --project=webkit-desktop --project=mobile-safari
   if [ "$gate_mode" = affected ] && ! has_token web; then
-    grep=$(printf '%s\n' ${BAUKIT_GATE_TOKENS:-} | sed -n 's/^playwright:\(@.*\)$/\1/p' | paste -sd '|' -)
+    grep=$(printf '%s\n' "${BAUKIT_GATE_TOKENS:-}" | tr -s ' ' '\n' | sed -n 's/^playwright:\(@.*\)$/\1/p' | paste -sd '|' -)
     if has_token web-e2e || [ -z "$grep" ]; then
       set -- "$@" --only-changed="$BAUKIT_GATE_BASE"
     else

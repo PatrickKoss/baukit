@@ -5,10 +5,7 @@ import re
 import sys
 from pathlib import Path
 
-
-ASSIGNMENT = re.compile(
-    rb"^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)[ \t]*="
-)
+ASSIGNMENT = re.compile(rb"^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)[ \t]*=")
 
 
 def assignments(source: bytes) -> dict[bytes, bytes]:
@@ -24,11 +21,7 @@ def reconcile(example_path: Path, env_path: Path) -> list[str]:
     example = example_path.read_bytes()
     current = env_path.read_bytes() if env_path.exists() else b""
     current_keys = set(assignments(current))
-    missing = [
-        (key, line)
-        for key, line in assignments(example).items()
-        if key not in current_keys
-    ]
+    missing = [(key, line) for key, line in assignments(example).items() if key not in current_keys]
     if not missing:
         return []
 
@@ -43,9 +36,7 @@ def stale_keys(example_path: Path, env_path: Path) -> list[str]:
         return []
     example_keys = set(assignments(example_path.read_bytes()))
     return [
-        key.decode("ascii")
-        for key in assignments(env_path.read_bytes())
-        if key not in example_keys
+        key.decode("ascii") for key in assignments(env_path.read_bytes()) if key not in example_keys
     ]
 
 
