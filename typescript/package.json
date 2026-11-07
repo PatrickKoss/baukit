@@ -9,7 +9,7 @@
   "scripts": {
     "build": "turbo run build",
     "test": "turbo run test",
-    "lint": "turbo run lint",
+    "lint": "turbo run lint && eslint scripts eslint.config.js vitest.config.ts --max-warnings=0",
     "format:check": "turbo run format:check",
     "check": "turbo run build lint test format:check",
     "changeset": "changeset",
@@ -17,6 +17,7 @@
     "test:source-maps": "node --test scripts/packed-source-maps.test.mjs"
   },
   "devDependencies": {
+    "@baukit/eslint-config": "workspace:*",
     "@changesets/cli": "3.0.3",
     "@eslint/js": "10.0.1",
     "eslint": "10.12.0",

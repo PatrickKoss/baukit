@@ -1,0 +1,70 @@
+{
+  "name": "@baukit/eslint-config",
+  "version": "0.18.3",
+  "description": "Shared ESLint flat configs for Baukit packages and the products built on them.",
+  "license": "MIT",
+  "author": "Patrick Koss",
+  "homepage": "https://github.com/PatrickKoss/baukit#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PatrickKoss/baukit.git",
+    "directory": "typescript/packages/eslint-config"
+  },
+  "bugs": {
+    "url": "https://github.com/PatrickKoss/baukit/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js",
+      "default": "./index.js"
+    },
+    "./react-web": {
+      "types": "./react-web.d.ts",
+      "import": "./react-web.js",
+      "default": "./react-web.js"
+    }
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "react-web.js",
+    "react-web.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test index.test.js",
+    "lint": "eslint . --max-warnings=0",
+    "format:check": "prettier --check *.js *.d.ts package.json README.md"
+  },
+  "dependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "typescript-eslint": "8.71.0",
+    "globals": "17.13.0"
+  },
+  "peerDependencies": {
+    "eslint": "^10.11.0",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "typescript": "^6.0.3"
+  },
+  "peerDependenciesMeta": {
+    "eslint-plugin-jsx-a11y": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "eslint": "10.12.0",
+    "eslint-plugin-jsx-a11y": "6.10.2",
+    "typescript": "6.0.3"
+  }
+}

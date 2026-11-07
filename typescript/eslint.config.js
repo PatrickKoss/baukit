@@ -1,28 +1,40 @@
-import eslint from '@eslint/js';
+import { react, scripts } from '@baukit/eslint-config';
+import { reactWeb } from '@baukit/eslint-config/react-web';
 import { defineConfig } from 'eslint/config';
-import tseslint from 'typescript-eslint';
+
+const sourceFiles = ['packages/*/src/**/*.{ts,tsx}', 'packages/*/type-tests/**/*.ts'];
+const toolConfigFiles = ['vitest.config.ts', 'packages/*/vitest*.config.ts'];
 
 export default defineConfig(
   {
-    ignores: ['**/dist/**', '**/node_modules/**'],
+    ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', '**/.turbo/**'],
   },
-  eslint.configs.recommended,
-  ...tseslint.configs.strictTypeChecked,
-  ...tseslint.configs.stylisticTypeChecked,
+  ...reactWeb({ files: sourceFiles, domFiles: ['packages/navigation/src/web.tsx'] }),
   {
-    files: ['packages/*/src/**/*.ts'],
+    files: sourceFiles,
     languageOptions: {
       parserOptions: {
         project: [
           './packages/*/tsconfig.json',
           './packages/*/tsconfig.test.json',
           './packages/data-contracts-dexie/tsconfig.browser.json',
+          './packages/sync-client/tsconfig.exports.json',
         ],
         tsconfigRootDir: import.meta.dirname,
       },
     },
-    rules: {
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+  },
+  ...react({ files: toolConfigFiles }),
+  {
+    files: toolConfigFiles,
+    languageOptions: {
+      parserOptions: {
+        projectService: { allowDefaultProject: toolConfigFiles },
+        tsconfigRootDir: import.meta.dirname,
+      },
     },
   },
+  ...scripts({
+    files: ['scripts/**/*.mjs', 'packages/*/scripts/**/*.{mjs,cjs}', 'packages/*/*.{js,cjs}'],
+  }),
 );
