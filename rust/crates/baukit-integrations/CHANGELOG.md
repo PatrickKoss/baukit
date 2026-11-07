@@ -4,6 +4,8 @@ All notable changes to `baukit-integrations` are documented here.
 
 ## [Unreleased]
 
+- Security: feature `oauth-state` adds `oauth_state::OAuthStateService` for provider-linking flows. `start` returns a 256-bit opaque `state`, an optional PKCE `S256` challenge and a browser binding for the `__Host-baukit-oauth` cookie (HttpOnly, Secure, SameSite=Lax). `complete` consumes the flow once within 10 minutes, checks the cookie hash in constant time and returns the user, provider and PKCE verifier. Failures are `Unknown`, `Expired`, `AlreadyUsed` and `BrowserMismatch`. Port `OAuthStateStore` with `InMemoryOAuthStateStore`, feature `postgres` adds `PostgresOAuthStateStore` and `OAUTH_STATE_MIGRATION_SQL`, feature `axum` adds the cookie helpers. Types that hold the state, binding or verifier redact `Debug`.
+
 ## [0.18.3] - 2026-11-07
 
 ## [0.18.2] - 2026-11-06

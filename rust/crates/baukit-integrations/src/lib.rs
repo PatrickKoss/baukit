@@ -1,7 +1,7 @@
 //! Provider-neutral contracts for external providers.
 //!
-//! The crate is a port and nothing else. It carries no HTTP client, no
-//! database, and no provider adapter, so a product can name the connector shape
+//! Without features the crate is a port and nothing else. It carries no HTTP
+//! client, no database, and no provider adapter, so a product can name the connector shape
 //! without inheriting a driver it never calls.
 //!
 //! [`IntegrationConnector`] is the paged-import seam. An implementation fetches one
@@ -39,6 +39,12 @@
 //! [`IntegrationConnector::fetch_page`] and turns the error class into a
 //! `JobError`. The README walks through that mapping.
 //!
+//! # OAuth state
+//!
+//! With the `oauth-state` feature, `oauth_state` issues single-use, browser-bound
+//! `state` values with PKCE for provider-linking flows. `postgres` adds the
+//! PostgreSQL store and `axum` the cookie helpers. The README shows the routes.
+//!
 //! # Testing
 //!
 //! `baukit_test::FakeConnector` scripts paged-import failures.
@@ -49,6 +55,8 @@
 
 mod credential_probe;
 mod health;
+#[cfg(feature = "oauth-state")]
+pub mod oauth_state;
 mod port;
 
 pub use baukit_http::RetryClass;

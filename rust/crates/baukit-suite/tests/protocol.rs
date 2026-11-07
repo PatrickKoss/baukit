@@ -1781,13 +1781,28 @@ mod common {
         }
         next.run(request).await
     }
+    const TEST_PUBLIC_REQUESTS_PER_MINUTE: u64 = 10_000;
+
+    pub fn limited(state: baukit_suite::adapters::http::SuiteHttpState) -> Router {
+        baukit_suite::adapters::public_limit::limited_router(
+            state,
+            Arc::new(InMemoryRateLimitStore::default()),
+            baukit_suite::adapters::public_limit::SuitePublicRateLimit::new()
+                .and_then(|limit| {
+                    Ok(limit.with_quota(baukit_ratelimit::Quota::new(
+                        TEST_PUBLIC_REQUESTS_PER_MINUTE,
+                        std::time::Duration::from_secs(60),
+                        TEST_PUBLIC_REQUESTS_PER_MINUTE,
+                    )?))
+                })
+                .expect("test suite public quota is valid"),
+        )
+    }
     pub fn app_with_suite(_pool: &PgPool, api: Arc<dyn SuiteApi>) -> Router {
         Router::new()
             .nest(
                 "/api/v1",
-                baukit_suite::adapters::http::router(
-                    baukit_suite::adapters::http::SuiteHttpState { api },
-                ),
+                limited(baukit_suite::adapters::http::SuiteHttpState { api }),
             )
             .layer(axum::middleware::from_fn(principal))
     }
@@ -2253,10 +2268,10 @@ async fn in_process_peer_links_the_second_app_and_delivers_to_its_real_router() 
     let b_applier = Arc::new(Applier::default());
     let a_api = module(&db.pool, a_context.clone(), Arc::new(Applier::default()));
     let b_api = module(&db.pool, b_context.clone(), b_applier.clone());
-    to_a.mount(baukit_suite::adapters::http::router(
+    to_a.mount(common::limited(
         baukit_suite::adapters::http::SuiteHttpState { api: a_api.clone() },
     ))?;
-    to_b.mount(baukit_suite::adapters::http::router(
+    to_b.mount(common::limited(
         baukit_suite::adapters::http::SuiteHttpState { api: b_api.clone() },
     ))?;
     let a = common::app_with_suite(&db.pool, a_api.clone());

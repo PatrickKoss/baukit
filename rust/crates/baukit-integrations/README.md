@@ -182,6 +182,56 @@ text after classification. `CredentialProbeError` contains no dynamic string,
 so public errors and outcome logs cannot accidentally include a token or
 provider body.
 
+## OAuth state for provider linking
+
+A callback that trusts a signed `state` carrying the user id is open to login
+CSRF. An attacker starts a flow, sends the authorize URL to a victim, and the
+victim's provider account ends up linked to the attacker's user. The
+`oauth-state` feature closes that. `state` is 256 random bits and the server
+keeps only its hash. A `__Host-baukit-oauth` cookie binds the flow to the
+browser that started it, and `complete` consumes the record once, within 10
+minutes. With PKCE, an intercepted code is useless without the verifier.
+
+Enable `features = ["postgres", "axum"]`, copy `OAUTH_STATE_MIGRATION_SQL` into
+your migrations and run `purge_expired` from a daily job. The start route
+belongs to an authenticated user. The callback carries no bearer, so put it
+inside the rate limiter like every other route.
+
+```rust,ignore
+use baukit_integrations::oauth_state::{
+    OAuthState, OAuthStateService, Pkce, StartOAuthFlow,
+    axum::{binding_clear_cookie, binding_from_headers, binding_set_cookie},
+    postgres::PostgresOAuthStateStore,
+};
+
+let states = OAuthStateService::new(Arc::new(PostgresOAuthStateStore::new(pool)));
+
+// GET /me/integrations/{provider}/start
+let started = states
+    .start(StartOAuthFlow { user: user_id.to_string(), provider, redirect, pkce: Pkce::S256 })
+    .await?;
+let url = provider_authorize_url(started.state.expose(), started.pkce_challenge.as_deref());
+let cookie = binding_set_cookie(&started.binding, started.max_age)?;
+// respond 303 to `url` with `Set-Cookie: cookie`
+
+// GET /integrations/{provider}/callback?code=..&state=..
+let state = OAuthState::parse(&query.state)?;
+let binding = binding_from_headers(&headers)?;
+let flow = states.complete(&state, &binding).await?;
+// check flow.provider matches the path, exchange `code` with
+// flow.pkce_verifier, link the account to flow.user,
+// respond with `Set-Cookie: binding_clear_cookie()`
+```
+
+Map the errors to one response. `Unknown`, `Expired`, `AlreadyUsed` and
+`BrowserMismatch` are separate variants for logs and metrics. Do not tell the
+browser which one fired. A browser holds one binding cookie, so starting a
+second flow in another tab makes the first one fail with `BrowserMismatch`.
+
+Products move to this during P4.2: drop the signed user-carrying `state`, take
+the user from `complete`, and add a callback test where a second browser's
+cookie is denied.
+
 ## What stays in your product
 
 Per-provider persistence, token exchange and refresh, the provider-specific

@@ -985,16 +985,9 @@ async fn inbound(
     ))
 }
 
-/// Mounts the suite routes under the product API prefix. Auth middleware must insert `SuiteUser`.
-/// Prefer `crate::compose::PostgresSuite::router`, which IP-limits [`public_router`].
-pub fn router(state: SuiteHttpState) -> axum::Router {
-    public_router(state.clone())
-        .merge(inbound_router(state.clone()))
-        .merge(user_router(state))
-}
-
-/// Unauthenticated callback, exchange and peer revoke routes.
-pub fn public_router(state: SuiteHttpState) -> axum::Router {
+/// Unauthenticated callback, exchange and peer revoke routes. Only
+/// [`super::public_limit::limited_router`] mounts them, behind the per-IP bucket.
+pub(super) fn public_router(state: SuiteHttpState) -> axum::Router {
     use axum::routing::{get as route_get, post};
     axum::Router::new()
         .route("/suite/links/callback", route_get(callback))
