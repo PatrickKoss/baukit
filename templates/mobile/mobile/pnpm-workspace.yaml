@@ -9,7 +9,7 @@ overrides:
   '@react-native/metro-config': 0.86.3
   expo-constants: 'catalog:'
   react-dom: 19.2.3
-
+{{ context.baukit_pnpm_overrides }}
 peerDependencyRules:
   allowedVersions:
     'eslint-plugin-react-native-a11y>eslint': '10'

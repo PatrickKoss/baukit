@@ -137,6 +137,7 @@ fn template_context(
         baukit_web_typescript_dependencies: dependency.web_typescript,
         baukit_web_typescript_dev_dependencies: dependency.web_dev_typescript,
         baukit_mobile_typescript_dependencies: dependency.mobile_typescript,
+        baukit_pnpm_overrides: dependency.pnpm_overrides,
         baukit_manifest: dependency.manifest,
         baukit_dependency_description: dependency.description,
         baukit_typescript_dependency_description: dependency.typescript_description,
