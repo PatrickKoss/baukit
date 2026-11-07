@@ -419,3 +419,18 @@ tenancy and rate-limit audit of the products (S-08).
     (W5-T2).
   - Fixture gate on main with the merged binary: backend, web, mobile, mobile-pwa and platform-standalone pass.
     Repo-lint ran in every fixture: zizmor no findings, gitleaks no leaks, osv, ruff and shellcheck clean.
+- 2026-11-07: W5-T2 first report (ADR 0006 task 4, eslint config in templates). Not merged yet.
+  - Delivered:
+    - backend BFF mount and web `BrowserSessionClient`;
+    - CSP from the build with script hashes, checked against the served header;
+    - 6 browser-session stack e2e specs and a header check in the fixture gate;
+    - `@baukit/eslint-config` in web and mobile, with real splits and 0 suppressions;
+    - all 11 flavors passed at least once.
+  - Sent back. The clerk stack test "two tabs refresh once" fails in about 2 of 5 runs: an auth-web race in
+    `refreshUnlessSettled`. The BroadcastChannel message can land after the lock is released, so the waiting
+    tab refreshes again. The second refresh stays inside the 10 s reuse grace, so nobody is logged out. It
+    still costs an extra request and makes the gate flaky.
+  - The rework also covers a dev-dependency slot for mobile, the mcp-remote TS filter, and surfacing the
+    swallowed `session()` error.
+  - Follow-ups (not in this wave): the CSP `policy.ts` duplicated between web and mobile, and COOP/COEP
+    headers in the chart nginx config.
