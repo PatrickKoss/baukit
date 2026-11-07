@@ -9,7 +9,7 @@ use super::{
 };
 
 /// Tables `oauth_states` and `oauth_states_used`.
-pub const OAUTH_STATE_MIGRATION_SQL: &str = include_str!("../../migrations/001_oauth_state.sql");
+pub const OAUTH_STATE_MIGRATION_SQL: &str = include_str!("../../migrations/0001_baukit_integrations_oauth_state.sql");
 
 const CONSUME_SQL: &str = "WITH consumed AS (
     DELETE FROM oauth_states WHERE state_hash = $1
