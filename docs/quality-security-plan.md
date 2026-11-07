@@ -104,14 +104,14 @@ Added with the raised cap: W1-E skills + baukit threat model (P2.10, P2.11), W1-
 W1-G ast-grep rules (P1.5 rules only), W1-H ADR 0006 browser token handling (P2.2 design), W1-I read-only
 tenancy and rate-limit audit of the products (S-08).
 
-- [~] P1.1 (rust/ and cli/ done; template clippy.toml in W5-T1) Rust lint baseline: add the E1 set (expect_used, indexing_slicing, cast_*, too_many_lines at 80,
+- [x] P1.1 (rust/, cli/ and the backend template baseline with clippy.toml from W5-T1) Rust lint baseline: add the E1 set (expect_used, indexing_slicing, cast_*, too_many_lines at 80,
   allow_attributes(+_without_reason), missing_panics_doc, return_self_not_must_use, unused_async(+trait_impl),
   needless_pass_by_value, manual_let_else, struct_excessive_bools, print_stdout/stderr, disallowed_methods)
   plus a shared `clippy.toml` to `rust/`, `cli/` and the backend template; fix all violations in baukit.
   Acceptance: `make ci` green with `-D warnings`, no new `#[allow]`, each `#[expect]` has a reason.
 - [x] P1.2 (F1a/F1b: every pub Result fn documented after tracing its Err sites; lint on in rust/ and cli/, not in the product baseline) `missing_errors_doc` on core, http, config, auth first, then the rest (255 docs).
 - [~] P1.3 (rust/ and cli/ done in W1-D; template deny.toml open) cargo-deny: `allow-wildcard-paths`, full `check` for `rust/`, new `cli/deny.toml`, template `deny.toml`.
-- [~] P1.4 (all seven rules merged: lints, file-size, suppressions, patterns, agent-docs, observability, template-files with `.baukit/template-files.toml` and the `scripts/quality-gate.local.sh` hook; wiring the last two into the generated gate is W5-T1) `baukit check` subcommand framework (also: `patterns` runs lint/ast-grep with ast-grep 0.51.1, skips
+- [x] P1.4 (all seven rules merged: lints, file-size, suppressions, patterns, agent-docs, observability, template-files with `.baukit/template-files.toml` and the `scripts/quality-gate.local.sh` hook; the generated CI and strict gate run all seven since W5-T1) `baukit check` subcommand framework (also: `patterns` runs lint/ast-grep with ast-grep 0.51.1, skips
   `vendor/`, `target/`, `node_modules`, and rejects `ast-grep-ignore` comments without a `-- reason`) in the CLI, with rules:
   `lints` (baseline subset check for Cargo lint tables and clippy.toml), `file-size` (Rust/TS, shrinking
   allowlist in `baukit.toml`), `agent-docs` (Q-09), `template-files` (Q-07). Unit + CLI tests.
@@ -126,7 +126,7 @@ tenancy and rate-limit audit of the products (S-08).
 - [x] P1.7 (no `as unknown as` left in production code; the remaining test-file casts are DOM/Expo/RevenueCat test doubles; the last isRecord copies now import @baukit/type-guards) Shared type guards: one `isRecord`/validation helper module, remove the 10 copies and the
   avoidable `as unknown as` casts.
 - [x] P1.8 (baukit in W1-D/W1-D2, templates in W5-T3) ruff + shellcheck for `scripts/` in baukit and the template gate; fix findings.
-- [~] P1.9 (cli, Rust and navigation splits merged; template `api.rs::run` in W5-T1) Refactors to meet the limits: split `cli/src/lib.rs`, `supervise_task`, `authorize_inner`,
+- [x] P1.9 (cli, Rust and navigation splits merged; template `api.rs` split into `compose_api` and `rate_limits.rs` in W5-T1) Refactors to meet the limits: split `cli/src/lib.rs`, `supervise_task`, `authorize_inner`,
   `worker.rs::execute`, navigation `native.tsx` components, template `api.rs::run` (composition builder).
 - [ ] P1.10 `SuiteComposition` builder in baukit-suite; template uses it (Q-08). Crate part done (W4-G);
   template and product adoption pending.
@@ -134,7 +134,7 @@ tenancy and rate-limit audit of the products (S-08).
 
 ## Phase 2. Security tooling, tests and skills
 
-- [~] P2.1 (baukit-http layer merged in W2-2; HSTS config field merged in W4-F; web CSP, chart edge config and fixture header checks wait for the template wave) `SecurityHeadersLayer` in baukit-http on by default (nosniff, Referrer-Policy, frame-ancestors via
+- [x] P2.1 (baukit-http layer in W2-2; HSTS field in W4-F; web CSP and fixture header checks in W5-T2; `@baukit/csp` as the one policy source plus COOP/CORP `same-origin` in vite preview and the chart in T4, COEP left unset, ADR 0006 section 7) `SecurityHeadersLayer` in baukit-http on by default (nosniff, Referrer-Policy, frame-ancestors via
   CSP for HTML, `Cache-Control: no-store` on authenticated JSON, HSTS behind config); CSP for the web template
   and the chart's edge config; header assertions in the fixture gate.
 - [~] P2.2 (ADR tasks 1 and 2 merged: BFF in baukit-auth + ratelimit adapter, headers; task 3 auth-web/pwa-web after W1-C; task 4 templates; auth-web waits for W1-C; design: ADR 0006 accepted; implementation = its 4 tasks) auth-web token storage per D2, with a test that no storage write contains a refresh token.
@@ -148,15 +148,15 @@ tenancy and rate-limit audit of the products (S-08).
   (nightly, 60 s per target locally, longer on schedule). Template gets a `backend/fuzz` scaffold and the step.
 - [x] P2.7 (vault, media grants, HLC merged; F5 added a two-owner proptest over the crate's revision and purge calls on Postgres, which found purge deleting another owner's row with the same id; `TombstoneTable` delete now binds owners as `$2`; push/pull isolation stays product-owned and moves to the P4.2 rollout) Property tests: credential vault (roundtrip, any AAD change fails), media grants (Rust signer and
   njs verifier agree, single-byte mutations rejected), sync merge (idempotent, owner isolation).
-- [~] P2.8 (crate helpers merged; the template test lands with P2.12 in W5-T1) `baukit-test` security helpers: auth negative suite and `assert_cross_tenant_denied` that walks the
+- [x] P2.8 (crate helpers merged; template `tests/support/owner_scoping.rs` in W5-T1) `baukit-test` security helpers: auth negative suite and `assert_cross_tenant_denied` that walks the
   OpenAPI routes; template integration test that uses both.
-- [~] P2.9 (baukit merged in W4-C; template `clippy.toml` in W5-T1) clippy `disallowed-methods` for raw reqwest outside an allowlisted adapter module (template
+- [x] P2.9 (baukit in W4-C; template `clippy.toml` in W5-T1) clippy `disallowed-methods` for raw reqwest outside an allowlisted adapter module (template
   `clippy.toml`).
 - [x] P2.10 (threat-model and security-testing in W1-E, code-conformance in F3) Skills in `agent-skills/skills/`: `baukit-threat-model` (data classes, trust boundaries,
   STRIDE per boundary, threat → control → test table, output `docs/threat-model.md`),
   `baukit-security-testing` (when and how to add fuzz, property and negative auth tests),
   `baukit-code-conformance` (fixing lint and check failures without suppressing them).
-- [ ] P2.12 Template `items` example: owner column, `(owner, id)` in every query, cross-tenant test in the
+- [x] P2.12 (W5-T1: `owner_id` column, owner in every WHERE, server-generated UUIDv7 ids, second-owner test) Template `items` example: owner column, `(owner, id)` in every query, cross-tenant test in the
   generated backend (S-12). Lands with the template wave.
 - [x] P2.13 (merged with W1-A; Docker test `foreign_owner_lookup_returns_none_without_accounting_failures`) baukit-suite `find_link_for_owner` (`adapters/postgres/mod.rs:539`) loads by id, runs
   `refresh_failures` on the foreign id, then filters the owner in Rust. Move `user_id` into the WHERE and refresh
@@ -171,7 +171,7 @@ tenancy and rate-limit audit of the products (S-08).
 - [x] P3.2 (W5-T3; markers are `baukit:agent-rules:start/end`, filled from lint/agent-rules.md at generation) Template managed block `<!-- baukit:begin -->`/`<!-- baukit:end -->` in the generated CLAUDE.md
   with the shared rules; `baukit upgrade` refreshes it; `baukit check agent-docs` verifies it and the D3
   file convention.
-- [x] P3.3 (agent-skills/README.md lists all 14 skills; the generated CLAUDE.md skills section is in W5-T1) Skills index and install docs updated.
+- [x] P3.3 (agent-skills/README.md lists all 14 skills; the generated CLAUDE.md has a skills section since W5-T1) Skills index and install docs updated.
 
 ## Phase 4. Release and rollout
 
@@ -461,4 +461,20 @@ tenancy and rate-limit audit of the products (S-08).
   delete SQL now gets owners as `$2`.
 - Gotcha: the kache rustc wrapper can serve a stale `baukit` binary after new template files land
   (`include_dir!`); `cargo clean -p baukit-cli` fixes it.
-
+- T4: `@baukit/csp` replaces the two template copies of `policy.ts` (vectors checked byte-equal against the old
+  output by the orchestrator). COOP and CORP `same-origin` in vite preview and the chart, COEP unset. The
+  agent's ADR note claimed a COOP-free callback page would keep the `SilentTokenBroker` popup's `opener`; the
+  popup inherits the opener's COOP, so the issuer hop already cuts it. Corrected: a product that adds the popup
+  needs `same-origin-allow-popups` on its app pages and no COOP on the callback.
+- W5-T1: owner-scoped items, a rate limiter on every template route, the Clerk `allow_missing_azp` opt-in for
+  mobile, the strict lint baseline, a cargo-fuzz scaffold, and cargo-deny, fuzz and all seven `baukit check`
+  rules in the generated gate. Orchestrator fix: `/mcp` sat outside every limiter for invalid tokens, because
+  baukit_mcp keys its own limiter on the verified caller. The MCP router is now wrapped in the IP limiter.
+  Products without auth use an in-memory IP limiter, so each replica keeps its own buckets.
+- Release prep: `@baukit/type-guards`, `@baukit/eslint-config` and `@baukit/csp` have never been on npm, and
+  npm sets up trusted publishing only for existing packages. The user publishes 0.19.0 once by hand, then
+  configures trusted publishers. Follow-up: the baukit-upgrade skill still describes git-tag pins; products
+  pin registry versions.
+- Product rollout brief: prompts/P4.2-rollout.md. architecture-health-platform's main checkout has 4 deleted
+  tracked fixtures under `node_modules/` and `target/` paths, probably from a broad cleanup. The brief allows only
+  `git clean -ffdX`.
