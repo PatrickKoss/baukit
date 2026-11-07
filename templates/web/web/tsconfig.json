@@ -18,11 +18,12 @@
     "noUnusedParameters": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "noEmit": true,
     "jsx": "react-jsx",
     "types": ["vite/client", "vitest/globals", "node"]
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "csp", "vite.config.ts"]
 }

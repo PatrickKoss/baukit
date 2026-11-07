@@ -47,7 +47,7 @@ Products configure browser cases in `e2e/qa.config.ts`. Per-case API stubs overr
 
 For QA files generated before this template version, `field` and `value` still work for one-field submit targets, and a missing `recoveryRole` still means `button`. Migrate new or edited forms to `fields` and `invalidField`. Keep the synthetic local-storage token and identity responses separate from development and production credentials.
 
-{% else %}Vitest covers both sign-in adapters against the port: the local adapter with a mocked discovery and token endpoint, and the production adapter with the provider SDK mocked. The browser gate stubs the API and runs the local adapter, since `vite preview` and the dev server do not use `--mode production`.
+{% else %}Vitest covers both sign-in adapters against the port: the local adapter with a mocked discovery and token endpoint, and the production adapter with the provider SDK mocked. The browser gate stubs the API and runs the local adapter, since `pnpm test:e2e` builds with `--mode e2e`.
 
 {% endif %}{% if context.auth_oidc or context.backend %}## Keycloak stack test
 

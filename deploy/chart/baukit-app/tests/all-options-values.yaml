@@ -140,3 +140,10 @@ networkPolicy:
       ports:
         - protocol: TCP
           port: 4317
+web:
+  enabled: true
+  contentSecurityPolicy: "default-src 'self'; script-src 'self'; style-src 'self'; frame-ancestors 'none'"
+  ingress:
+    enabled: true
+    hosts:
+      - host: web.example.com

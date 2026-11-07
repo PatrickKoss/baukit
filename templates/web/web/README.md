@@ -46,6 +46,10 @@ Load the copied artifact with `importScripts('/baukit-pwa-worker.js')` in a prod
 Run `pnpm build:sw:check` in CI to reject a missing or stale copy. When PWA support remains disabled,
 the check verifies that no copied artifact is present.
 
+## Content Security Policy
+
+`vite build` writes `dist/csp.txt` from `csp/origins.ts` and the `VITE_*` values the app uses, with a `'sha256-...'` source for every inline script, and `node csp/check-build.ts dist` then fails the build if any inline script lacks its hash. Scripts never get `'unsafe-inline'`; CSS ships as files, so `style-src` is `'self'`. `vite preview` sends the built policy, and only `vite` dev sends the relaxed variant with inline styles and the HMR socket. Set `VITE_POSTHOG_HOST`, `VITE_MEDIA_ORIGIN` or `VITE_SUITE_HUB_API_URL` when the app talks to those origins. Deploy with the `Dockerfile` here and the chart's `web` component: `--set-file web.contentSecurityPolicy=web/dist/csp.txt`.
+
 ## Checks
 
 ```sh
@@ -71,7 +75,7 @@ overrides it. These ports do not follow `port_offset`. Re-render the affected
 files after changing the manifest, then run `baukit doctor`.
 {% endif %}## Browser quality gate
 
-`pnpm test:e2e` builds the app, serves it with `vite preview`, and runs the `qa-*` Playwright specs against Chromium and WebKit at desktop and mobile viewports. The specs stub every API path themselves, so the gate needs no backend, database, or identity provider.
+`pnpm test:e2e` builds the app with `--mode e2e`, serves it with `vite preview`, and runs the `qa-*` Playwright specs against Chromium and WebKit at desktop and mobile viewports. The specs stub every API path themselves, so the gate needs no backend, database, or identity provider.
 
 `e2e/qa.config.ts` is the only file a product edits. It lists routes, overlays, submit targets, deep links that must land in a route state, protected routes, geometry selectors, authentication state, and API stubs. Cases can add their own stubs, mark an authenticated load, use a regular expression for a heading, select a control role, override the screen selector, or opt out of the scroll check. Each spec reads that file. Add product routes and selectors there instead of editing a spec.
 

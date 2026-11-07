@@ -314,6 +314,36 @@ browserSession:
     name: ""
     key: keys
 
+# Static web app or Expo web export, served by nginx with the product's CSP
+# (ADR 0006 section 7). Build the image FROM nginxinc/nginx-unprivileged with
+# the build output in /usr/share/nginx/html; the chart owns the server config.
+web:
+  enabled: false
+  replicas: 1
+  image:
+    repository: ghcr.io/example/minimal-web
+    tag: latest
+    pullPolicy: IfNotPresent
+  port: 8080
+  # Required when enabled. Pass the build's policy unchanged:
+  # --set-file web.contentSecurityPolicy=web/dist/csp.txt
+  contentSecurityPolicy: ""
+  resources:
+    requests:
+      cpu: 10m
+      memory: 16Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+  service:
+    type: ClusterIP
+    port: 80
+  ingress:
+    enabled: false
+    hosts:
+      - host: minimal-web.example.com
+    tls: []
+
 # Optional API-only hub receiver secret. Values contain references, never secrets.
 platform:
   receiverSecretRef:

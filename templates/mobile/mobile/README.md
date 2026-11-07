@@ -104,6 +104,7 @@ dependencies matched to Expo 57 and exports a single-page app to `dist/`.
 corepack pnpm exec expo export --platform web
 corepack pnpm run build:sw
 corepack pnpm run build:sw:check
+corepack pnpm run csp
 ```
 
 The worker build copies `@baukit/pwa-web/worker` into `dist/baukit-pwa-worker.js` after export.
@@ -114,7 +115,9 @@ the host to serve `index.html` for app routes. Expo SQLite on web needs the host
 Add a product-owned manifest, icons, `sw.js` and registration code under `public/` before
 exporting. The worker loads the Baukit helpers with `importScripts('/baukit-pwa-worker.js')`.
 Products own the cache policy and offline behavior. `baukit doctor` checks the worker wiring,
-and the strict runner exports the site before building and checking the worker.
+and the strict runner exports the site before building and checking the worker. Pass the fetch event's `Request` to the handler unchanged. The decider reads its headers, so requests carrying `Authorization` and every `/auth/session/*` call stay network-only and never land in a cache.
+
+After `expo export --platform web`, `pnpm csp` writes `dist/csp.txt` with a hash for every inline script and fails on one it cannot match. `style-src` keeps `'unsafe-inline'` because react-native-web injects `<style>` elements at runtime; scripts never get it. Serve the export through the Helm chart's `web` component with `--set-file web.contentSecurityPolicy=mobile/dist/csp.txt`.
 {% else %}The generated manifest keeps `capabilities.pwa = false`. A product without a web app can serve a PWA
 from the Expo web export. Set `capabilities.pwa = true` in the product-root `baukit.toml`, add
 `@baukit/pwa-web` and the `build:sw` and `build:sw:check` scripts to this package, and write
@@ -122,7 +125,7 @@ from the Expo web export. Set `capabilities.pwa = true` in the product-root `bau
 Expo copies `public/` into the web export, so a product-owned `public/sw.js` loads it with
 `importScripts('/baukit-pwa-worker.js')`. `baukit doctor` checks the scripts, the dependency, and
 the copy source, and the strict runner calls `build:sw:check`. A product that also has a web app
-keeps the worker in `web/` instead. Pass the fetch event's `Request` to the handler unchanged. The decider reads its headers, so requests carrying `Authorization` and every `/auth/session/*` call stay network-only and never land in a cache.
+keeps the worker in `web/` instead.
 {% endif %}
 ## Checks
 
