@@ -6,7 +6,10 @@ use std::{
 
 use anyhow::{Context, Result};
 
-use crate::{AuthProvider, Manifest, quoted_string, source_constant};
+use crate::{
+    AuthProvider, Manifest,
+    doctor::{quoted_string, source_constant},
+};
 
 fn sources(directory: &Path, extension: &str, output: &mut Vec<PathBuf>) -> Result<()> {
     if !directory.is_dir() {

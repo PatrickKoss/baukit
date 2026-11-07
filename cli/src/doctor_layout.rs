@@ -9,7 +9,7 @@ use anyhow::{Context, Result, bail};
 use globset::Glob;
 use serde::{Deserialize, Serialize};
 
-use crate::{DoctorHost, Manifest, identity};
+use crate::{Manifest, doctor_host::DoctorHost, identity};
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]

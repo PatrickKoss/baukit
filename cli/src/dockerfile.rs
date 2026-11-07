@@ -8,7 +8,7 @@ use anyhow::{Context, Result, bail, ensure};
 use minijinja::{Environment, context};
 use serde::{Deserialize, Serialize};
 
-use crate::{Manifest, doctor_layout, read_manifest, validate_name};
+use crate::{Manifest, doctor_layout, generate::validate_name, read_manifest};
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]

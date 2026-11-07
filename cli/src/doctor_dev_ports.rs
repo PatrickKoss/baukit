@@ -2,7 +2,11 @@ use std::{fs, path::Path};
 
 use anyhow::Result;
 
-use crate::{Manifest, ports::PortConfiguration};
+use crate::{
+    Manifest,
+    doctor_ports::{loopback_ports, resolve_makefile_variables, uses_bundled_keycloak},
+    ports::PortConfiguration,
+};
 
 pub(crate) fn validate(
     root: &Path,
@@ -22,7 +26,7 @@ pub(crate) fn validate(
             port,
             failures,
         )?;
-        if crate::uses_bundled_keycloak(root, manifest)? {
+        if uses_bundled_keycloak(root, manifest)? {
             check_keycloak_origins(root, manifest, ports, &browser_ports, failures)?;
         }
         check_authorized_parties(root, manifest, &browser_ports, failures)?;
@@ -206,7 +210,7 @@ fn check_authorized_parties(
 }
 
 fn check_browser_origins(relative: &str, source: &str, ports: &[u16], failures: &mut Vec<String>) {
-    for found in crate::loopback_ports(source, false) {
+    for found in loopback_ports(source, false) {
         if !ports.contains(&found) {
             failures.push(format!(
                 "generated file `{relative}` does not match declared ports.web browser origins (accepted ports {ports:?}, found port {found})"
@@ -228,7 +232,7 @@ fn check_redirect_default(root: &Path, port: u16, failures: &mut Vec<String>) ->
 }
 
 fn check_origins(relative: &str, source: &str, port: u16, failures: &mut Vec<String>) {
-    for found in crate::loopback_ports(source, false) {
+    for found in loopback_ports(source, false) {
         if found != port {
             check_port(relative, "web", port, Some(found), failures);
         }
@@ -321,7 +325,7 @@ fn check_metro_file(root: &Path, path: &Path, port: u16, failures: &mut Vec<Stri
     let Ok(source) = std::str::from_utf8(&bytes) else {
         return Ok(());
     };
-    let resolved_source = crate::resolve_makefile_variables(source);
+    let resolved_source = resolve_makefile_variables(source);
     let relative = path.strip_prefix(root)?.to_string_lossy();
     for (original_line, line) in source.lines().zip(resolved_source.lines()) {
         for (_, tail) in line
