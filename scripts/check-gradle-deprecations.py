@@ -13,7 +13,9 @@ from pathlib import Path
 DEPRECATION = re.compile(r"has been deprecated|This behavior has been deprecated")
 SOURCE_WARNING = re.compile(r"^(?:w: |Note: |C/C\+\+: )|\.(?:java|kt):\d+: ")
 SCRIPT_FRAME = re.compile(r"\(([^()]+\.gradle(?:\.kts)?):(\d+)\)")
-PLUGIN_FRAME = re.compile(r"^\s*at ((?:com\.android|org\.jetbrains\.kotlin|com\.facebook|expo\.modules)[\w.$]*)")
+PLUGIN_FRAME = re.compile(
+    r"^\s*at ((?:com\.android|org\.jetbrains\.kotlin|com\.facebook|expo\.modules)[\w.$]*)"
+)
 PROPERTY = re.compile(r"Use assignment \('(\w+) = <value>'\)")
 FRAME_WINDOW = 200
 TEMPLATE_ARCHIVE = Path("node_modules/expo/template.tgz")
@@ -27,7 +29,7 @@ class Deprecation:
 
 
 def first_line(message: str) -> str:
-    return message.split(". ")[0]
+    return message.split(". ", maxsplit=1)[0]
 
 
 def frames_after(lines: list[str], index: int) -> list[str]:
@@ -89,7 +91,9 @@ def owner_of(project: Path, source: str, line: int | None, message: str) -> str:
     path = Path(source).resolve()
     if "node_modules" in path.parts:
         return "third-party package"
-    if path.is_relative_to(project / "android") and from_expo_template(project, path, line, message):
+    if path.is_relative_to(project / "android") and from_expo_template(
+        project, path, line, message
+    ):
         return "expo template"
     return "baukit"
 
@@ -113,7 +117,9 @@ def collect(project: Path, log: str) -> list[Deprecation]:
         source, number = locate(line, frames_after(lines, index))
         prop = PROPERTY.search(line)
         message = f"{first_line(line)} ({prop.group(1)})" if prop else first_line(line)
-        entry = Deprecation(message, display(project, source, number), owner_of(project, source, number, line))
+        entry = Deprecation(
+            message, display(project, source, number), owner_of(project, source, number, line)
+        )
         found[(entry.message, entry.source)] = entry
     return sorted(found.values(), key=lambda item: (item.owner, item.source, item.message))
 

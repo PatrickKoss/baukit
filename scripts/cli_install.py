@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Check CLI install instructions and update their concrete release tags."""
+
 from __future__ import annotations
 
 import argparse
@@ -16,9 +17,16 @@ INSTALL = re.compile(r"cargo\s+install[^\n`]*")
 
 
 def instruction_files(root: Path) -> list[Path]:
-    result = subprocess.run(["git", "ls-files", "-z"], cwd=root, capture_output=True, text=True, check=True)
-    return [root / name for name in result.stdout.split("\0") if name and (root / name).is_file() and
-            (name.endswith((".md", ".md.jinja")) or Path(name).name == "Makefile")]
+    result = subprocess.run(
+        ["git", "ls-files", "-z"], cwd=root, capture_output=True, text=True, check=True
+    )
+    return [
+        root / name
+        for name in result.stdout.split("\0")
+        if name
+        and (root / name).is_file()
+        and (name.endswith((".md", ".md.jinja")) or Path(name).name == "Makefile")
+    ]
 
 
 def problems(source: str, version: str) -> list[str]:
@@ -40,7 +48,14 @@ def problems(source: str, version: str) -> list[str]:
 def update_tags(root: Path, version: str) -> None:
     for path in instruction_files(root):
         source = path.read_text()
-        updated = CANONICAL.sub(lambda match: PREFIX + (version if re.fullmatch(r"\d+\.\d+\.\d+", match[1]) else match[1]) + SUFFIX, source)
+        updated = CANONICAL.sub(
+            lambda match: (
+                PREFIX
+                + (version if re.fullmatch(r"\d+\.\d+\.\d+", match[1]) else match[1])
+                + SUFFIX
+            ),
+            source,
+        )
         if updated != source:
             path.write_text(updated)
 
@@ -52,7 +67,11 @@ def main() -> None:
     version = arguments.update or (ROOT / "templates/VERSION").read_text().strip()
     if arguments.update:
         update_tags(ROOT, version)
-    failures = [f"{path.relative_to(ROOT)}: {problem}" for path in instruction_files(ROOT) for problem in problems(path.read_text(), version)]
+    failures = [
+        f"{path.relative_to(ROOT)}: {problem}"
+        for path in instruction_files(ROOT)
+        for problem in problems(path.read_text(), version)
+    ]
     if failures:
         raise SystemExit("\n".join(failures))
 

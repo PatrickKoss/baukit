@@ -30,7 +30,10 @@ def config(*packages: dict) -> dict:
 
 class ChangesetCoverageTest(unittest.TestCase):
     def test_one_fixed_group_covering_all_packages_passes(self) -> None:
-        self.assertEqual(check.changeset_problems({"fixed": [["@baukit/navigation"]]}, {"@baukit/navigation"}), [])
+        self.assertEqual(
+            check.changeset_problems({"fixed": [["@baukit/navigation"]]}, {"@baukit/navigation"}),
+            [],
+        )
 
     def test_a_package_missing_from_the_fixed_group_is_reported(self) -> None:
         self.assertEqual(
@@ -46,7 +49,9 @@ class ChangesetCoverageTest(unittest.TestCase):
 
     def test_duplicate_packages_are_reported(self) -> None:
         self.assertEqual(
-            check.changeset_problems({"fixed": [["@baukit/navigation", "@baukit/navigation"]]}, {"@baukit/navigation"}),
+            check.changeset_problems(
+                {"fixed": [["@baukit/navigation", "@baukit/navigation"]]}, {"@baukit/navigation"}
+            ),
             ["Changesets fixed group contains duplicate packages"],
         )
 

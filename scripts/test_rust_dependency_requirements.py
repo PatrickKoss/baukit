@@ -36,11 +36,12 @@ def exact_pins(document: dict) -> set[tuple[str, str]]:
         if table not in DEPENDENCY_TABLES:
             pins.update(exact_pins(entries))
             continue
-        for alias, requirement in entries.items():
+        for alias, declared in entries.items():
             package = alias
-            if isinstance(requirement, dict):
-                package = requirement.get("package", alias)
-                requirement = requirement.get("version", "")
+            requirement = declared
+            if isinstance(declared, dict):
+                package = declared.get("package", alias)
+                requirement = declared.get("version", "")
             if package.startswith("baukit-"):
                 continue
             if re.search(r"(?:^|,)\s*=(?!=)", requirement):
@@ -56,8 +57,7 @@ class RustDependencyRequirementsTest(unittest.TestCase):
             with self.subTest(manifest=relative):
                 document = parse_manifest(path.read_text())
                 found.update(
-                    (relative, package, version)
-                    for package, version in exact_pins(document)
+                    (relative, package, version) for package, version in exact_pins(document)
                 )
         self.assertEqual(
             found,
@@ -69,7 +69,7 @@ class RustDependencyRequirementsTest(unittest.TestCase):
                 self.assertTrue(reason.strip(), "Exact pin exceptions need a reason")
 
     def test_detects_string_inline_and_multiline_dependency_pins(self) -> None:
-        document = parse_manifest('''
+        document = parse_manifest("""
             [workspace.dependencies]
             tokio = "=1.53.1"
             serde = { version = "=1.0.229", features = ["derive"] }
@@ -77,14 +77,19 @@ class RustDependencyRequirementsTest(unittest.TestCase):
             version = " =0.23.45"
             [target.'cfg(unix)'.build-dependencies]
             cc = " >=1.0, =1.2.0"
-        ''')
-        self.assertEqual(exact_pins(document), {
-            ("tokio", "=1.53.1"), ("serde", "=1.0.229"),
-            ("rustls", " =0.23.45"), ("cc", " >=1.0, =1.2.0"),
-        })
+        """)
+        self.assertEqual(
+            exact_pins(document),
+            {
+                ("tokio", "=1.53.1"),
+                ("serde", "=1.0.229"),
+                ("rustls", " =0.23.45"),
+                ("cc", " >=1.0, =1.2.0"),
+            },
+        )
 
     def test_caret_requirements_and_exact_baukit_dependencies_are_allowed(self) -> None:
-        document = parse_manifest('''
+        document = parse_manifest("""
             [package]
             version = "0.6.0"
             [dependencies]
@@ -94,18 +99,18 @@ class RustDependencyRequirementsTest(unittest.TestCase):
             uuid = "^1.26.1"
             sqlx = "0.9.0"
             serde = { workspace = true }
-        ''')
+        """)
         self.assertEqual(exact_pins(document), set())
 
     def test_baukit_alias_does_not_hide_a_third_party_pin(self) -> None:
-        document = parse_manifest('''
+        document = parse_manifest("""
             [dependencies]
             baukit-tokio = { package = "tokio", version = "=1.53.1" }
-        ''')
+        """)
         self.assertEqual(exact_pins(document), {("tokio", "=1.53.1")})
 
     def test_templates_are_checked_inside_conditional_blocks(self) -> None:
-        document = parse_manifest('''
+        document = parse_manifest("""
             [workspace]
             members = ["crates/{{ context.app_name }}-domain"]
             [workspace.dependencies]
@@ -113,7 +118,7 @@ class RustDependencyRequirementsTest(unittest.TestCase):
             {% if context.worker %}tokio = { version = "=1.53.1" }
             {% endif %}
             {{ context.app_crate }}-domain = { path = "crates/{{ context.app_name }}-domain" }
-        ''')
+        """)
         self.assertEqual(exact_pins(document), {("tokio", "=1.53.1")})
 
 

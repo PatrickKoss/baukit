@@ -8,7 +8,7 @@ from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parent / "expo-android-conformance.sh"
 
-DRIVER = r'''
+DRIVER = r"""
 set -euo pipefail
 source "$1"
 expo_android_init "$2" dev.baukit.conformance
@@ -24,7 +24,7 @@ corepack() {
 adb() { printf 'adb %s\n' "$*" >> "$EVENTS"; }
 expo_android_prepare @baukit/data-contracts
 echo device-phase >> "$EVENTS"
-'''
+"""
 
 
 class ExpoAndroidPhaseTest(unittest.TestCase):
@@ -106,22 +106,26 @@ class ExpoAndroidPhaseTest(unittest.TestCase):
         wrapper.parent.mkdir()
         wrapper.write_text('#!/bin/sh\nprintf "gradle %s\\n" "$*" >> "$EVENTS"\n')
         wrapper.chmod(0o755)
-        driver = r'''
+        driver = r"""
 set -euo pipefail
 source "$1"
 expo_android_init "$2" dev.baukit.conformance
 adb() { printf 'adb %s\n' "$*" >> "$EVENTS"; }
 expo_android_install
-'''
+"""
         result = subprocess.run(
             ["bash", "-c", driver, "test", str(SCRIPT), str(self.example)],
             env={**os.environ, "EVENTS": str(self.events)},
-            text=True, capture_output=True, check=False,
+            text=True,
+            capture_output=True,
+            check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.read_events()[0],
+        self.assertEqual(
+            self.read_events()[0],
             f"gradle -p {self.example}/android --no-daemon --stacktrace --warning-mode all "
-            "-PreactNativeDevServerIp=127.0.0.1 assembleDebug")
+            "-PreactNativeDevServerIp=127.0.0.1 assembleDebug",
+        )
 
     def test_preparation_failures_stop_both_all_and_prepare_phases(self) -> None:
         for phase in ("all", "prepare"):
@@ -132,9 +136,7 @@ expo_android_install
 
                     self.assertEqual(result.returncode, 7)
                     self.assertNotIn("device-phase", self.read_events())
-                    self.assertFalse(
-                        any(event.startswith("adb ") for event in self.read_events())
-                    )
+                    self.assertFalse(any(event.startswith("adb ") for event in self.read_events()))
 
     def test_debug_build_grants_native_access_and_preserves_jvm_options(self) -> None:
         wrapper = self.example / "android/gradlew"
@@ -143,21 +145,23 @@ expo_android_install
             '#!/bin/sh\nprintf "java-options %s\\n" "$JAVA_TOOL_OPTIONS" >> "$EVENTS"\n'
         )
         wrapper.chmod(0o755)
-        driver = r'''
+        driver = r"""
 set -euo pipefail
 source "$1"
 expo_android_init "$2" dev.baukit.conformance
 adb() { printf 'adb %s\n' "$*" >> "$EVENTS"; }
 expo_android_install
 printf 'caller-options %s\n' "${JAVA_TOOL_OPTIONS:-}" >> "$EVENTS"
-'''
+"""
         for options in ("", "-Dqa.test=1"):
             with self.subTest(options=options):
                 self.events.unlink(missing_ok=True)
                 result = subprocess.run(
                     ["bash", "-c", driver, "test", str(SCRIPT), str(self.example)],
                     env={**os.environ, "EVENTS": str(self.events), "JAVA_TOOL_OPTIONS": options},
-                    text=True, capture_output=True, check=False,
+                    text=True,
+                    capture_output=True,
+                    check=False,
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
                 expected = f"{options} " if options else ""
@@ -174,20 +178,26 @@ class ExpoAndroidSerialTest(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         example = Path(directory.name) / "examples/conformance"
         example.mkdir(parents=True)
-        driver = 'set -euo pipefail\nsource "$1"\nexpo_android_init "$2" dev.baukit.conformance\ntrap - EXIT\n' + body
+        driver = (
+            'set -euo pipefail\nsource "$1"\nexpo_android_init "$2" dev.baukit.conformance\ntrap - EXIT\n'
+            + body
+        )
         environment = os.environ.copy()
         environment.pop("ANDROID_SERIAL", None)
         if serial:
             environment["ANDROID_SERIAL"] = serial
         return subprocess.run(
             ["bash", "-c", driver, "test", str(SCRIPT), str(example)],
-            env=environment, text=True, capture_output=True, check=False,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
         )
 
     def test_picks_the_first_port_no_attached_device_uses(self) -> None:
         result = self.run_driver(
             "adb() { printf 'List of devices attached\\nemulator-5554\\tdevice\\nemulator-5556\\tdevice\\n'; }\n"
-            "expo_android_pick_serial\necho \"$android_serial\"\n"
+            'expo_android_pick_serial\necho "$android_serial"\n'
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -195,7 +205,7 @@ class ExpoAndroidSerialTest(unittest.TestCase):
 
     def test_honors_android_serial_and_pins_every_adb_call(self) -> None:
         result = self.run_driver(
-            "adb() { echo \"adb $*\"; }\nexpo_android_pick_serial\nexpo_adb emu kill\n",
+            'adb() { echo "adb $*"; }\nexpo_android_pick_serial\nexpo_adb emu kill\n',
             serial="emulator-5590",
         )
 
@@ -212,7 +222,7 @@ class ExpoAndroidSerialTest(unittest.TestCase):
         result = self.run_driver(
             "EMULATOR_EXIT_SECONDS=1\nadb() { :; }\nsleep 600 &\nemulator_pid=$!\n"
             "android_serial=emulator-5554\nstart=$SECONDS\nexpo_android_cleanup\n"
-            "kill -0 \"$emulator_pid\" 2>/dev/null && exit 3\necho $((SECONDS - start))\n"
+            'kill -0 "$emulator_pid" 2>/dev/null && exit 3\necho $((SECONDS - start))\n'
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)

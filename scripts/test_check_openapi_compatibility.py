@@ -269,7 +269,11 @@ BREAKING_CHANGES: list[tuple[str, Mutation, str]] = [
         set_value(list_items, "security", [{"bearer": ["items:read"]}]),
         "GET /v1/items security",
     ),
-    ("parameter-removed", set_value(list_items, "parameters", []), "GET /v1/items parameter query limit"),
+    (
+        "parameter-removed",
+        set_value(list_items, "parameters", []),
+        "GET /v1/items parameter query limit",
+    ),
     (
         "parameter-required",
         set_value(limit_parameter, "required", True),
@@ -303,13 +307,21 @@ BREAKING_CHANGES: list[tuple[str, Mutation, str]] = [
         ),
         "GET /v1/health response 200 text/plain",
     ),
-    ("type-changed", set_value(save_property("count"), "type", "string"), f"{CREATE_REQUEST} $.count"),
+    (
+        "type-changed",
+        set_value(save_property("count"), "type", "string"),
+        f"{CREATE_REQUEST} $.count",
+    ),
     (
         "type-changed",
         set_value(item_property("id"), "type", ["string", "null"]),
         f"{LIST_RESPONSE} $[].id",
     ),
-    ("enum-narrowed", set_value(save_property("status"), "enum", ["open"]), f"{CREATE_REQUEST} $.status"),
+    (
+        "enum-narrowed",
+        set_value(save_property("status"), "enum", ["open"]),
+        f"{CREATE_REQUEST} $.status",
+    ),
     (
         "enum-widened",
         set_value(item_property("status"), "enum", ["open", "closed", "archived"]),
@@ -330,22 +342,56 @@ BREAKING_CHANGES: list[tuple[str, Mutation, str]] = [
         set_value(save_item, "required", ["name", "status"]),
         f"{CREATE_REQUEST} $.status",
     ),
-    ("required-removed", set_value(item, "required", ["id", "status"]), f"{LIST_RESPONSE} $[].name"),
+    (
+        "required-removed",
+        set_value(item, "required", ["id", "status"]),
+        f"{LIST_RESPONSE} $[].name",
+    ),
     (
         "additional-properties-closed",
         set_value(save_item, "additionalProperties", False),
         f"{CREATE_REQUEST} $",
     ),
-    ("constraint-narrowed", set_value(save_property("name"), "maxLength", 40), f"{CREATE_REQUEST} $.name"),
-    ("constraint-narrowed", set_value(limit_parameter, "schema", {"type": "integer", "minimum": 5}), "GET /v1/items parameter query limit $"),
-    ("constraint-widened", set_value(item_property("name"), "maxLength", 200), f"{LIST_RESPONSE} $[].name"),
-    ("constraint-widened", delete_key(item_property("name"), "maxLength"), f"{LIST_RESPONSE} $[].name"),
-    ("pattern-changed", set_value(save_property("name"), "pattern", "^[a-z]"), f"{CREATE_REQUEST} $.name"),
-    ("format-changed", set_value(id_parameter, "format", "uri"), "GET /v1/items/{id} parameter path id $"),
-    ("default-changed", set_value(save_property("status"), "default", "closed"), f"{CREATE_REQUEST} $.status"),
+    (
+        "constraint-narrowed",
+        set_value(save_property("name"), "maxLength", 40),
+        f"{CREATE_REQUEST} $.name",
+    ),
+    (
+        "constraint-narrowed",
+        set_value(limit_parameter, "schema", {"type": "integer", "minimum": 5}),
+        "GET /v1/items parameter query limit $",
+    ),
+    (
+        "constraint-widened",
+        set_value(item_property("name"), "maxLength", 200),
+        f"{LIST_RESPONSE} $[].name",
+    ),
+    (
+        "constraint-widened",
+        delete_key(item_property("name"), "maxLength"),
+        f"{LIST_RESPONSE} $[].name",
+    ),
+    (
+        "pattern-changed",
+        set_value(save_property("name"), "pattern", "^[a-z]"),
+        f"{CREATE_REQUEST} $.name",
+    ),
+    (
+        "format-changed",
+        set_value(id_parameter, "format", "uri"),
+        "GET /v1/items/{id} parameter path id $",
+    ),
+    (
+        "default-changed",
+        set_value(save_property("status"), "default", "closed"),
+        f"{CREATE_REQUEST} $.status",
+    ),
     (
         "composition-changed",
-        set_value(item_property("parent"), "oneOf", [{"type": "null"}, ref("Item"), {"type": "string"}]),
+        set_value(
+            item_property("parent"), "oneOf", [{"type": "null"}, ref("Item"), {"type": "string"}]
+        ),
         f"{LIST_RESPONSE} $[].parent",
     ),
 ]
@@ -476,29 +522,45 @@ class CompatibilityRuleTests(unittest.TestCase):
     def test_reordered_primitive_members_still_detect_changed_constraints(self) -> None:
         base = copy.deepcopy(BASE)
         save_property("count")(base).clear()
-        save_property("count")(base)["anyOf"] = [{"type": "integer", "minimum": 0}, {"type": "null"}]
+        save_property("count")(base)["anyOf"] = [
+            {"type": "integer", "minimum": 0},
+            {"type": "null"},
+        ]
         self.documents.write(self.documents.base, base)
         current = copy.deepcopy(base)
-        save_property("count")(current)["anyOf"] = [{"type": "null"}, {"type": "integer", "minimum": 10}]
+        save_property("count")(current)["anyOf"] = [
+            {"type": "null"},
+            {"type": "integer", "minimum": 10},
+        ]
         self.documents.write(self.documents.current, current)
         status, _, stderr = self.documents.compare("--enforce")
         self.assertEqual(status, 1, stderr)
         self.assertIn("constraint-narrowed", stderr)
 
     def test_equal_count_replacement_reports_added_response_member(self) -> None:
-        self.documents.changed(set_value(item_property("parent"), "oneOf", [ref("Item"), {"type": "string"}]))
+        self.documents.changed(
+            set_value(item_property("parent"), "oneOf", [ref("Item"), {"type": "string"}])
+        )
         status, _, stderr = self.documents.compare("--enforce")
         self.assertEqual(status, 1, stderr)
         self.assertIn('oneOf member {"type": "string"} was added', stderr)
 
     def test_structural_matching_preserves_duplicate_type_and_untyped_members(self) -> None:
-        members = [{"type": "string", "enum": ["a"]}, {"type": "string", "enum": ["b"]}, {"const": "c"}]
+        members = [
+            {"type": "string", "enum": ["a"]},
+            {"type": "string", "enum": ["b"]},
+            {"const": "c"},
+        ]
         pairs, removed, added = check.match_composition_members(members, list(reversed(members)))
-        self.assertEqual([(old, new) for _, old, new in pairs], [(member, member) for member in members])
+        self.assertEqual(
+            [(old, new) for _, old, new in pairs], [(member, member) for member in members]
+        )
         self.assertEqual(removed, [])
         self.assertEqual(added, [])
 
-    def test_request_additions_and_response_removals_keep_their_compatibility_direction(self) -> None:
+    def test_request_additions_and_response_removals_keep_their_compatibility_direction(
+        self,
+    ) -> None:
         base = copy.deepcopy(BASE)
         save_property("count")(base).clear()
         save_property("count")(base)["anyOf"] = [{"type": "integer"}]
@@ -552,7 +614,9 @@ class AcceptedBreakTests(unittest.TestCase):
         )
 
         self.assertEqual(status, 0, stderr)
-        self.assertIn("note: accepted break no longer occurs: operation-removed GET /v1/gone", stdout)
+        self.assertIn(
+            "note: accepted break no longer occurs: operation-removed GET /v1/gone", stdout
+        )
         self.assertIn("passed", stdout)
 
     def test_rejects_invalid_accepted_entries(self) -> None:

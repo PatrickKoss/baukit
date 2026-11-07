@@ -20,15 +20,22 @@ class PackedDependenciesTest(unittest.TestCase):
     def test_local_specifiers_are_rejected_in_every_published_group(self) -> None:
         for group in check.DEPENDENCY_GROUPS:
             for protocol in check.LOCAL_PROTOCOLS:
-                with self.subTest(group=group, protocol=protocol):
-                    with tempfile.TemporaryDirectory() as temporary:
-                        directory = Path(temporary)
-                        (directory / "package.json").write_text(json.dumps({
-                            "name": "@baukit/pack-test", "version": "1.0.0",
-                            group: {"@baukit/sibling": protocol + "*"},
-                        }))
-                        with self.assertRaisesRegex(ValueError, f"{group}.*{protocol}"):
-                            check.check_package(directory)
+                with (
+                    self.subTest(group=group, protocol=protocol),
+                    tempfile.TemporaryDirectory() as temporary,
+                ):
+                    directory = Path(temporary)
+                    (directory / "package.json").write_text(
+                        json.dumps(
+                            {
+                                "name": "@baukit/pack-test",
+                                "version": "1.0.0",
+                                group: {"@baukit/sibling": protocol + "*"},
+                            }
+                        )
+                    )
+                    with self.assertRaisesRegex(ValueError, f"{group}.*{protocol}"):
+                        check.check_package(directory)
 
     def test_pack_output_of_npm_11_and_npm_12_is_read(self) -> None:
         entry = {"name": "@baukit/pack-test", "filename": "baukit-pack-test-1.0.0.tgz"}
@@ -44,14 +51,24 @@ class PackedDependenciesTest(unittest.TestCase):
     def test_registry_ranges_and_local_dev_dependencies_are_accepted(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
-            (directory / "package.json").write_text(json.dumps({
-                "name": "@baukit/pack-test", "version": "1.0.0",
-                **{group: {"@baukit/sibling": "^1.0.0"} for group in check.DEPENDENCY_GROUPS},
-                "devDependencies": {"@baukit/sibling": "workspace:*"},
-            }))
+            (directory / "package.json").write_text(
+                json.dumps(
+                    {
+                        "name": "@baukit/pack-test",
+                        "version": "1.0.0",
+                        **{
+                            group: {"@baukit/sibling": "^1.0.0"}
+                            for group in check.DEPENDENCY_GROUPS
+                        },
+                        "devDependencies": {"@baukit/sibling": "workspace:*"},
+                    }
+                )
+            )
             result = subprocess.run(
                 [sys.executable, str(Path(check.__file__)), str(directory)],
-                capture_output=True, text=True,
+                capture_output=True,
+                text=True,
+                check=False,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("Checked npm dependency specifiers in 1 packed packages", result.stdout)
@@ -60,7 +77,7 @@ class PackedDependenciesTest(unittest.TestCase):
         manifests = check.typescript_manifests(check.ROOT)
         self.assertIn("@baukit/suite-client", manifests)
         result = subprocess.run(
-            [sys.executable, str(Path(check.__file__))], capture_output=True, text=True,
+            [sys.executable, str(Path(check.__file__))], capture_output=True, text=True, check=False
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn(f"in {len(manifests)} packed packages", result.stdout)
@@ -68,13 +85,20 @@ class PackedDependenciesTest(unittest.TestCase):
     def test_command_fails_for_a_workspace_dependency(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
-            (directory / "package.json").write_text(json.dumps({
-                "name": "@baukit/pack-test", "version": "1.0.0",
-                "dependencies": {"@baukit/sibling": "workspace:*"},
-            }))
+            (directory / "package.json").write_text(
+                json.dumps(
+                    {
+                        "name": "@baukit/pack-test",
+                        "version": "1.0.0",
+                        "dependencies": {"@baukit/sibling": "workspace:*"},
+                    }
+                )
+            )
             result = subprocess.run(
                 [sys.executable, str(Path(check.__file__)), str(directory)],
-                capture_output=True, text=True,
+                capture_output=True,
+                text=True,
+                check=False,
             )
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("dependencies: @baukit/sibling requires workspace:*", result.stderr)
@@ -104,24 +128,50 @@ class PackedDependenciesTest(unittest.TestCase):
             for manifest in packed_manifests.values():
                 packed = subprocess.run(
                     ["npm", "pack", "--json", "--ignore-scripts", "--pack-destination", temporary],
-                    cwd=manifest.parent, capture_output=True, text=True,
+                    cwd=manifest.parent,
+                    capture_output=True,
+                    text=True,
+                    check=False,
                 )
                 self.assertEqual(packed.returncode, 0, packed.stdout + packed.stderr)
                 archives.append(str(consumer / check.packed_filename(packed.stdout, consumer)))
-            (consumer / "package.json").write_text(json.dumps({
-                "name": "suite-client-consumer", "version": "0.0.0", "private": True,
-            }))
+            (consumer / "package.json").write_text(
+                json.dumps(
+                    {
+                        "name": "suite-client-consumer",
+                        "version": "0.0.0",
+                        "private": True,
+                    }
+                )
+            )
             installed = subprocess.run(
-                ["npm", "install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund", *archives],
-                cwd=consumer, capture_output=True, text=True,
+                [
+                    "npm",
+                    "install",
+                    "--offline",
+                    "--ignore-scripts",
+                    "--no-audit",
+                    "--no-fund",
+                    *archives,
+                ],
+                cwd=consumer,
+                capture_output=True,
+                text=True,
+                check=False,
             )
             self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
             for name, manifest in packed_manifests.items():
-                package = json.loads((consumer / "node_modules" / name / "package.json").read_text())
+                package = json.loads(
+                    (consumer / "node_modules" / name / "package.json").read_text()
+                )
                 self.assertEqual(package["name"], name)
                 self.assertEqual(package["version"], json.loads(manifest.read_text())["version"])
             verified = subprocess.run(
-                ["node", "--input-type=module", "-e", """
+                [
+                    "node",
+                    "--input-type=module",
+                    "-e",
+                    """
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -136,7 +186,12 @@ const cjs = createRequire(import.meta.url)('@baukit/suite-client/entitlements');
 assert.deepEqual(cjs.verifyTicket(vector.ticket, fixture.jwks, {
   issuer: fixture.issuer, audience: vector.audience, now: vector.now,
 }), vector.claims);
-""", str(check.ROOT / "fixtures/entitlement-tickets/v1/vectors.json")],
-                cwd=consumer, capture_output=True, text=True,
+""",
+                    str(check.ROOT / "fixtures/entitlement-tickets/v1/vectors.json"),
+                ],
+                cwd=consumer,
+                capture_output=True,
+                text=True,
+                check=False,
             )
             self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)

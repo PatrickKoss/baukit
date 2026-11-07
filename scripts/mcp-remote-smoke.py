@@ -10,13 +10,13 @@ import importlib.util
 import json
 import os
 import signal
-import sys
-from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 
 def wait_ready(url: str, process: subprocess.Popen) -> None:
@@ -60,7 +60,10 @@ def reconcile_scopes(fixture: Path, issuer: str) -> None:
             return super().request(method, path, payload, query, form)
 
     api = RecordingApi(issuer.split("/realms/", 1)[0])
-    api.token = api.authenticate(os.environ.get("KEYCLOAK_ADMIN_USERNAME", "admin"), os.environ.get("KEYCLOAK_ADMIN_PASSWORD", "admin"))
+    api.token = api.authenticate(
+        os.environ.get("KEYCLOAK_ADMIN_USERNAME", "admin"),
+        os.environ.get("KEYCLOAK_ADMIN_PASSWORD", "admin"),
+    )
     desired = json.loads((fixture / "keycloak/realm.json").read_text())
     realm = desired["realm"]
     config = reconcile.load_reconcile_config(fixture / "keycloak/reconcile.json")
@@ -88,14 +91,14 @@ def reconcile_scopes(fixture: Path, issuer: str) -> None:
     )
     desired["defaultOptionalClientScopes"].append("reconcile:read")
     desired_client = next(
-        client for client in desired["clients"]
-        if client["clientId"] == f"{fixture.name}-mcp"
+        client for client in desired["clients"] if client["clientId"] == f"{fixture.name}-mcp"
     )
     desired_client["optionalClientScopes"].append("reconcile:read")
     scope = api.find(realm, "client-scopes", "name", audience_scope["name"])[0]
     api.create_scope_mapper(realm, scope["id"], audience_scope["protocolMappers"][0])
     mapper = next(
-        mapper for mapper in api.scope_mappers(realm, scope["id"])
+        mapper
+        for mapper in api.scope_mappers(realm, scope["id"])
         if mapper["protocolMapper"] == "oidc-audience-mapper"
     )
     wrong_mapper = {
@@ -114,16 +117,13 @@ def reconcile_scopes(fixture: Path, issuer: str) -> None:
     reconciler = reconcile.RealmReconciler(api)
     reconciler.reconcile(desired, config, set())
     updated = next(
-        value for value in api.scope_mappers(realm, scope["id"])
-        if value["id"] == mapper["id"]
+        value for value in api.scope_mappers(realm, scope["id"]) if value["id"] == mapper["id"]
     )
     expected = next(
-        value for value in audience_scope["protocolMappers"]
-        if value["name"] == mapper["name"]
+        value for value in audience_scope["protocolMappers"] if value["name"] == mapper["name"]
     )
     mismatched = [
-        key for key, value in expected["config"].items()
-        if updated["config"].get(key) != value
+        key for key, value in expected["config"].items() if updated["config"].get(key) != value
     ]
     if mismatched:
         raise RuntimeError("scope audience mapper was not repaired: " + ", ".join(mismatched))
@@ -134,9 +134,7 @@ def reconcile_scopes(fixture: Path, issuer: str) -> None:
         ("default-optional-client-scopes", None, "reconcile:read"),
         ("optional-client-scopes", client["id"], "reconcile:read"),
     ]:
-        names = {
-            value["name"] for value in api.scope_bindings(realm, collection, identity)
-        }
+        names = {value["name"] for value in api.scope_bindings(realm, collection, identity)}
         if name not in names:
             raise RuntimeError(f"scope binding was not repaired in {collection}")
     api.mutations.clear()
@@ -144,111 +142,223 @@ def reconcile_scopes(fixture: Path, issuer: str) -> None:
     if api.mutations:
         writes = ", ".join(f"{method} {path}" for method, path in api.mutations)
         raise RuntimeError("a second realm reconciliation changed Keycloak: " + writes)
-    print("Keycloak: repaired scopes, bindings and audience mappers; second reconciliation made no writes", flush=True)
+    print(
+        "Keycloak: repaired scopes, bindings and audience mappers; second reconciliation made no writes",
+        flush=True,
+    )
+
+
+def start_backend(fixture: Path, environment: dict[str, str], output) -> subprocess.Popen:
+    backend = subprocess.Popen(
+        [str(fixture / "backend/target/debug/api")],
+        env=environment,
+        stdout=output,
+        stderr=subprocess.STDOUT,
+    )
+    wait_ready("http://localhost:9090/readyz", backend)
+    return backend
+
+
+def stop_backend(backend: subprocess.Popen) -> None:
+    backend.terminate()
+    try:
+        backend.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        backend.kill()
+        backend.wait()
+
+
+def load_pkce(fixture: Path):
+    module_path = fixture / "scripts/pkce-login.py"
+    spec = importlib.util.spec_from_file_location("mcp_pkce", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load generated PKCE helper")
+    pkce = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pkce)
+    return pkce
+
+
+def pkce_login(pkce, issuer: str, redirect_uri: str, **login: str) -> str:
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPCookieProcessor(
+            http.cookiejar.CookieJar(policy=pkce.LocalDevelopmentCookiePolicy())
+        ),
+        pkce.CallbackRedirectHandler(redirect_uri),
+    )
+    return pkce.login(
+        opener,
+        pkce.discover(opener, issuer),
+        username="test",
+        password="development-password",
+        redirect_uri=redirect_uri,
+        **login,
+    )
+
+
+def check_mcp_claims(token: str, issuer: str, resource: str) -> None:
+    payload = token.split(".")[1]
+    claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+    audience = claims.get("aud", [])
+    if isinstance(audience, str):
+        audience = [audience]
+    if claims.get("iss") != issuer or resource not in audience or not claims.get("sub"):
+        raise RuntimeError("issued token lacks the expected issuer, resource audience, or subject")
+    if "items:read" not in claims.get("scope", "").split():
+        raise RuntimeError("issued token lacks items:read")
+
+
+def create_item(web_token: str, item_name: str) -> None:
+    request = urllib.request.Request(
+        "http://localhost:8080/items",
+        data=json.dumps({"name": item_name}).encode(),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {web_token}",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=5) as response:
+        item = json.load(response)
+        if response.status != 201 or item["name"] != item_name:
+            raise RuntimeError("REST did not create the smoke item")
+
+
+def check_rest_rejects(web_token: str) -> None:
+    denied = urllib.request.Request(
+        "http://localhost:8080/me", headers={"Authorization": f"Bearer {web_token}"}
+    )
+    try:
+        urllib.request.urlopen(denied, timeout=5).close()
+    except urllib.error.HTTPError as error:
+        if error.code != 401:
+            raise
+    else:
+        raise RuntimeError("REST accepted a token from a client outside authorized_parties")
+
+
+def check_resource_metadata(resource: str, issuer: str) -> None:
+    with urllib.request.urlopen(
+        "http://localhost:8080/.well-known/oauth-protected-resource", timeout=5
+    ) as response:
+        metadata = json.load(response)
+    if metadata["resource"] != resource or metadata["authorization_servers"] != [issuer]:
+        raise RuntimeError(f"incorrect resource metadata: {metadata}")
+    print("metadata: " + json.dumps(metadata, sort_keys=True), flush=True)
+
+
+def run_connect_example(repository: Path, resource: str, token: str, item_name: str) -> None:
+    client_environment = os.environ.copy()
+    client_environment.update(
+        {
+            "MCP_RESOURCE_URL": resource,
+            "MCP_ACCESS_TOKEN": token,
+            "MCP_EXPECT_ITEM_NAME": item_name,
+        }
+    )
+    subprocess.run(
+        [str(repository / "rust/target/debug/examples/connect")],
+        env=client_environment,
+        check=True,
+    )
+
+
+def backend_environment(name: str, prefix: str, internal_jwks: str) -> dict[str, str]:
+    environment = os.environ.copy()
+    environment[f"{prefix}__DATABASE__URL"] = (
+        f"postgres://postgres:postgres@postgres:5432/{name.replace('-', '_')}"
+    )
+    environment[f"{prefix}__RATE_LIMIT__REDIS_URL"] = "redis://redis:6379/"
+    environment[f"{prefix}__AUTH__JWKS_URI"] = internal_jwks
+    environment[f"{prefix}__AUTH__AUTHORIZED_PARTIES"] = json.dumps([f"{name}-web"])
+    return environment
+
+
+def mcp_environment(prefix: str, name: str, internal_jwks: str, resource: str) -> dict[str, str]:
+    return {
+        f"{prefix}__MCP__ENABLED": "true",
+        f"{prefix}__MCP__JWKS_URI": internal_jwks,
+        f"{prefix}__MCP__RESOURCE_URL": resource,
+        f"{prefix}__MCP__ISSUER": f"http://localhost:8081/realms/{name}",
+        f"{prefix}__MCP__ALLOWED_HOSTS": '["localhost:8080"]',
+        f"{prefix}__MCP__ALLOWED_ORIGINS": "[]",
+    }
 
 
 def run_backend(fixture: Path, repository: Path) -> None:
     name = fixture.name
     prefix = name.upper().replace("-", "_")
-    environment = os.environ.copy()
-    environment[f"{prefix}__DATABASE__URL"] = f"postgres://postgres:postgres@postgres:5432/{name.replace('-', '_')}"
-    environment[f"{prefix}__RATE_LIMIT__REDIS_URL"] = "redis://redis:6379/"
     internal_jwks = f"http://smoke:8081/realms/{name}/protocol/openid-connect/certs"
-    environment[f"{prefix}__AUTH__JWKS_URI"] = internal_jwks
-    environment[f"{prefix}__AUTH__AUTHORIZED_PARTIES"] = json.dumps([f"{name}-web"])
+    environment = backend_environment(name, prefix, internal_jwks)
+    resource = "http://localhost:8080/mcp"
+    issuer = f"http://localhost:8081/realms/{name}"
+    item_name = "MCP smoke item"
     backend = None
     with tempfile.TemporaryFile(mode="w+") as output:
         try:
-            subprocess.run([str(fixture / "backend/target/debug/migrate")], env=environment, check=True)
-            resource = "http://localhost:8080/mcp"
-            environment.update({
-                f"{prefix}__MCP__ENABLED": "true",
-                f"{prefix}__MCP__JWKS_URI": internal_jwks,
-                f"{prefix}__MCP__RESOURCE_URL": resource,
-                f"{prefix}__MCP__ISSUER": f"http://localhost:8081/realms/{name}",
-                f"{prefix}__MCP__ALLOWED_HOSTS": '["localhost:8080"]',
-                f"{prefix}__MCP__ALLOWED_ORIGINS": "[]",
-            })
-            backend = subprocess.Popen([str(fixture / "backend/target/debug/api")], env=environment, stdout=output, stderr=subprocess.STDOUT)
-            wait_ready("http://localhost:9090/readyz", backend)
-            module_path = fixture / "scripts/pkce-login.py"
-            spec = importlib.util.spec_from_file_location("mcp_pkce", module_path)
-            if spec is None or spec.loader is None:
-                raise RuntimeError("cannot load generated PKCE helper")
-            pkce = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(pkce)
-            issuer = f"http://localhost:8081/realms/{name}"
+            subprocess.run(
+                [str(fixture / "backend/target/debug/migrate")], env=environment, check=True
+            )
+            environment.update(mcp_environment(prefix, name, internal_jwks, resource))
+            backend = start_backend(fixture, environment, output)
+            pkce = load_pkce(fixture)
             reconcile_scopes(fixture, issuer)
-            opener = urllib.request.build_opener(
-                urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar(policy=pkce.LocalDevelopmentCookiePolicy())),
-                pkce.CallbackRedirectHandler("http://localhost:18888/callback"),
+            token = pkce_login(
+                pkce,
+                issuer,
+                "http://localhost:18888/callback",
+                client_id=f"{name}-mcp",
+                scope="openid items:read",
+                resource=resource,
             )
-            token = pkce.login(opener, pkce.discover(opener, issuer), username="test", password="development-password", client_id=f"{name}-mcp", redirect_uri="http://localhost:18888/callback", scope="openid items:read", resource=resource)
-            payload = token.split(".")[1]
-            claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
-            audience = claims.get("aud", [])
-            if isinstance(audience, str):
-                audience = [audience]
-            if claims.get("iss") != issuer or resource not in audience or not claims.get("sub"):
-                raise RuntimeError("issued token lacks the expected issuer, resource audience, or subject")
-            if "items:read" not in claims.get("scope", "").split():
-                raise RuntimeError("issued token lacks items:read")
-            web_opener = urllib.request.build_opener(
-                urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar(policy=pkce.LocalDevelopmentCookiePolicy())),
-                pkce.CallbackRedirectHandler("http://localhost:5173/auth/callback"),
+            check_mcp_claims(token, issuer, resource)
+            web_token = pkce_login(
+                pkce,
+                issuer,
+                "http://localhost:5173/auth/callback",
+                client_id=f"{name}-web",
+                scope="openid profile email offline_access",
             )
-            web_token = pkce.login(web_opener, pkce.discover(web_opener, issuer), username="test", password="development-password", client_id=f"{name}-web", redirect_uri="http://localhost:5173/auth/callback", scope="openid profile email offline_access")
-            item_name = "MCP smoke item"
-            request = urllib.request.Request(
-                "http://localhost:8080/items",
-                data=json.dumps({"name": item_name}).encode(),
-                headers={"Content-Type": "application/json", "Authorization": f"Bearer {web_token}"},
-                method="POST",
-            )
-            with urllib.request.urlopen(request, timeout=5) as response:
-                item = json.load(response)
-                if response.status != 201 or item["name"] != item_name:
-                    raise RuntimeError("REST did not create the smoke item")
+            create_item(web_token, item_name)
             # The same valid backend token must fail when its client is absent from the allowlist.
-            backend.terminate()
-            backend.wait(timeout=30)
-            environment[f"{prefix}__AUTH__AUTHORIZED_PARTIES"] = json.dumps(["another-product-client"])
-            backend = subprocess.Popen([str(fixture / "backend/target/debug/api")], env=environment, stdout=output, stderr=subprocess.STDOUT)
-            wait_ready("http://localhost:9090/readyz", backend)
-            denied = urllib.request.Request("http://localhost:8080/me", headers={"Authorization": f"Bearer {web_token}"})
-            try:
-                urllib.request.urlopen(denied, timeout=5).close()
-            except urllib.error.HTTPError as error:
-                if error.code != 401:
-                    raise
-            else:
-                raise RuntimeError("REST accepted a token from a client outside authorized_parties")
-            print("REST: accepted the allowed web azp and rejected it outside the allowlist", flush=True)
-            print("OAuth: authorization code + PKCE S256, scope items:read, resource http://localhost:8080/mcp", flush=True)
-            with urllib.request.urlopen("http://localhost:8080/.well-known/oauth-protected-resource", timeout=5) as response:
-                metadata = json.load(response)
-            if metadata["resource"] != resource or metadata["authorization_servers"] != [issuer]:
-                raise RuntimeError(f"incorrect resource metadata: {metadata}")
-            print("metadata: " + json.dumps(metadata, sort_keys=True), flush=True)
-            client_environment = os.environ.copy()
-            client_environment.update({"MCP_RESOURCE_URL": resource, "MCP_ACCESS_TOKEN": token, "MCP_EXPECT_ITEM_NAME": item_name})
-            subprocess.run([str(repository / "rust/target/debug/examples/connect")], env=client_environment, check=True)
+            stop_backend(backend)
+            environment[f"{prefix}__AUTH__AUTHORIZED_PARTIES"] = json.dumps(
+                ["another-product-client"]
+            )
+            backend = start_backend(fixture, environment, output)
+            check_rest_rejects(web_token)
+            print(
+                "REST: accepted the allowed web azp and rejected it outside the allowlist",
+                flush=True,
+            )
+            print(
+                "OAuth: authorization code + PKCE S256, scope items:read, resource http://localhost:8080/mcp",
+                flush=True,
+            )
+            check_resource_metadata(resource, issuer)
+            run_connect_example(repository, resource, token, item_name)
         except BaseException:
             output.seek(0)
             print(output.read())
             raise
         finally:
             if backend is not None:
-                backend.terminate()
-                try:
-                    backend.wait(timeout=30)
-                except subprocess.TimeoutExpired:
-                    backend.kill()
-                    backend.wait()
+                stop_backend(backend)
 
 
 def run(fixture: Path, repository: Path) -> None:
-    subprocess.run(["cargo", "build", "--manifest-path", str(repository / "rust/Cargo.toml"), "-p", "baukit-mcp", "--example", "connect"], check=True)
+    subprocess.run(
+        [
+            "cargo",
+            "build",
+            "--manifest-path",
+            str(repository / "rust/Cargo.toml"),
+            "-p",
+            "baukit-mcp",
+            "--example",
+            "connect",
+        ],
+        check=True,
+    )
     project = f"baukit-mcp-smoke-{os.getpid()}"
     with tempfile.TemporaryDirectory(prefix="baukit-mcp-compose-") as temporary:
         override = Path(temporary) / "compose.yaml"
@@ -281,10 +391,33 @@ def run(fixture: Path, repository: Path) -> None:
     cpus: 2
     mem_limit: 1g
 """)
-        compose = ["docker", "compose", "--project-name", project, "--file", str(fixture / "compose.yaml"), "--file", str(override)]
+        compose = [
+            "docker",
+            "compose",
+            "--project-name",
+            project,
+            "--file",
+            str(fixture / "compose.yaml"),
+            "--file",
+            str(override),
+        ]
         try:
-            subprocess.run([*compose, "up", "--detach", "--wait", "postgres", "keycloak", "redis"], check=True)
-            subprocess.run([*compose, "exec", "--no-TTY", "smoke", "python3", str(Path(__file__).resolve()), str(fixture), "--inside"], check=True)
+            subprocess.run(
+                [*compose, "up", "--detach", "--wait", "postgres", "keycloak", "redis"], check=True
+            )
+            subprocess.run(
+                [
+                    *compose,
+                    "exec",
+                    "--no-TTY",
+                    "smoke",
+                    "python3",
+                    str(Path(__file__).resolve()),
+                    str(fixture),
+                    "--inside",
+                ],
+                check=True,
+            )
         finally:
             subprocess.run([*compose, "down", "--volumes"], check=True)
 
