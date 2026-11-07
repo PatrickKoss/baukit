@@ -124,6 +124,10 @@ pub fn default_affected(capabilities: &Capabilities) -> BTreeMap<String, Vec<Str
     }
     if capabilities.mobile {
         add("mobile/**", &["mobile"]);
+        add(
+            "mobile/.maestro/**",
+            &["mobile", "android-build", "android-e2e"],
+        );
     }
     affected
 }
@@ -544,6 +548,10 @@ mod tests {
         assert!(!backend_only.contains_key("web/src/**"));
         let all = default_affected(&capabilities(true, true, true));
         assert_eq!(all["mobile/**"], ["mobile"]);
+        assert_eq!(
+            all["mobile/.maestro/**"],
+            ["mobile", "android-build", "android-e2e"]
+        );
         assert_eq!(all["web/e2e/**"], ["web-e2e"]);
         assert!(all["docs/**"].is_empty());
     }

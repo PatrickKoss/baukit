@@ -13,7 +13,7 @@
     "build:sw": "node scripts/build-sw.mjs{% if context.pwa and not context.web %} --output-dir dist{% endif %}",
     "build:sw:check": "node scripts/build-sw.mjs{% if context.pwa and not context.web %} --output-dir dist{% endif %} --check",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint app app.config.ts src --max-warnings=0",
+    "lint": "eslint app app.config.ts src scripts --max-warnings=0",
     "test": "jest && node --test scripts/build-sw.test.mjs{% if not context.auth_oidc %} scripts/check-production-bundle.test.mjs scripts/sign-in-config.test.mjs{% endif %} scripts/qa-build-flag.test.mjs",
 {% if not context.auth_oidc %}    "check:bundle": "node scripts/check-production-bundle.mjs",
 {% endif %}    "test:coverage": "jest --coverage"

@@ -104,7 +104,7 @@ async function sourceMap(file, path, copiedPublicFiles) {
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
     if (copiedPublicFiles.has(path)) return UNMAPPED_PUBLIC_FILE;
-    throw new Error(`missing source map for ${path}`);
+    throw new Error(`missing source map for ${path}`, { cause: error });
   }
 }
 

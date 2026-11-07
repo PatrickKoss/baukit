@@ -16,6 +16,12 @@ export default defineConfig(
   ...tseslint.configs.stylisticTypeChecked,
   reactHooks.configs.flat.recommended,
   {
+    rules: {
+      'preserve-caught-error': 'error',
+      '@typescript-eslint/no-dynamic-delete': 'error',
+    },
+  },
+  {
     files: ['**/*.tsx'],
     plugins: {
       'react-native-a11y': fixupPluginRules(reactNativeA11y),
@@ -41,5 +47,10 @@ export default defineConfig(
         tsconfigRootDir: import.meta.dirname,
       },
     },
+  },
+  {
+    files: ['scripts/**/*.{js,mjs,cjs}'],
+    ...tseslint.configs.disableTypeChecked,
+    languageOptions: { globals: globals.node },
   },
 );
