@@ -3,6 +3,7 @@ import {
   type PreferenceKey,
   type PreferenceRegistry,
   type PreferenceSideEffectContext,
+  type PreferenceSideEffectFailurePolicy,
 } from './definitions.js';
 import type { PreferenceStore } from './store.js';
 import type { OptionalWireValue } from './wire.js';
@@ -133,16 +134,12 @@ class DefaultPreferenceController<TValues extends object> implements PreferenceC
     try {
       for (const key of changedKeys) {
         const effect = this.#definitions[key].sideEffect;
-        if (effect?.mode === 'preview-with-rollback') {
-          previewed.push(key);
-          try {
-            await effect.preview(this.#effectContext(key, previousValues, values));
-          } catch (error) {
-            if (effect.onError === 'report') {
-              throw error;
-            }
-          }
+        if (effect?.mode !== 'preview-with-rollback') {
+          continue;
         }
+        previewed.push(key);
+        const context = this.#effectContext(key, previousValues, values);
+        await runPreview(() => effect.preview(context), effect.onError);
       }
       persisted = normalizePreferences(this.#definitions, await store.patch(normalizedPatch));
     } catch (error) {
@@ -359,4 +356,17 @@ export function createPreferenceController<TValues extends object>(
   options: CreatePreferenceControllerOptions<TValues>,
 ): PreferenceController<TValues> {
   return new DefaultPreferenceController(options);
+}
+
+async function runPreview(
+  preview: () => Promise<void> | void,
+  onError: PreferenceSideEffectFailurePolicy,
+): Promise<void> {
+  try {
+    await preview();
+  } catch (error) {
+    if (onError === 'report') {
+      throw error;
+    }
+  }
 }

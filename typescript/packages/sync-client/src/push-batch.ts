@@ -96,7 +96,7 @@ export function rankPushBatch<T extends PushCandidate>(
   });
 
   return [...grouped.values()]
-    .filter(({ change }) => !isHeldBack?.(change))
+    .filter(({ change }) => isHeldBack?.(change) !== true)
     .sort(
       (left, right) =>
         rank(left.change.entityType) - rank(right.change.entityType) || left.order - right.order,

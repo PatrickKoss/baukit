@@ -176,7 +176,7 @@ export function resolveActiveNavigation<Icon>(
   const item =
     subItem === null
       ? bestMatch(items, pathname)
-      : (items.find((parent) => parent.children?.includes(subItem)) ?? null);
+      : (items.find((parent) => parent.children?.includes(subItem) === true) ?? null);
   return { item, subItem };
 }
 
@@ -221,15 +221,11 @@ export function navigationReducer(
   };
 }
 
-export function validateNavigation(
-  items: readonly NavigationItem[],
-  profile?: NavigationProfile,
-): void {
+function validateItems(items: readonly NavigationItem[], ids: Set<string>): void {
   if (items.length > NAVIGATION_MAX_MAIN_ITEMS)
     throw new RangeError(
       `Navigation supports at most ${String(NAVIGATION_MAX_MAIN_ITEMS)} main items plus profile.`,
     );
-  const ids = new Set<string>();
   for (const item of items.flatMap((parent) => [parent, ...(parent.children ?? [])])) {
     if (item.id.trim() === '' || ids.has(item.id))
       throw new Error(`Duplicate or empty navigation id: ${item.id}`);
@@ -237,18 +233,28 @@ export function validateNavigation(
     if (item.label.trim() === '') throw new Error(`Navigation label is empty: ${item.id}`);
     if (item.href.trim() === '') throw new Error(`Navigation href is empty: ${item.id}`);
   }
+}
+
+function validateProfileMenu(menu: readonly NavigationProfileMenuEntry[], ids: Set<string>): void {
+  if (menu.length === 0) throw new Error('Profile menu is empty.');
+  for (const entry of menu) {
+    if (entry.id.trim() === '' || ids.has(entry.id))
+      throw new Error(`Duplicate or empty navigation id: ${entry.id}`);
+    ids.add(entry.id);
+    if (entry.label.trim() === '' || entry.href?.trim() === '')
+      throw new Error(`Profile entry is empty: ${entry.id}`);
+  }
+}
+
+export function validateNavigation(
+  items: readonly NavigationItem[],
+  profile?: NavigationProfile,
+): void {
+  const ids = new Set<string>();
+  validateItems(items, ids);
   if (profile === undefined) return;
   if (profile.label.trim() === '' || profile.initials.trim() === '')
     throw new Error('Profile needs a label and initials.');
   if (profile.href?.trim() === '') throw new Error('Profile href is empty.');
-  if (profile.menu !== undefined) {
-    if (profile.menu.length === 0) throw new Error('Profile menu is empty.');
-    for (const entry of profile.menu) {
-      if (entry.id.trim() === '' || ids.has(entry.id))
-        throw new Error(`Duplicate or empty navigation id: ${entry.id}`);
-      ids.add(entry.id);
-      if (entry.label.trim() === '' || entry.href?.trim() === '')
-        throw new Error(`Profile entry is empty: ${entry.id}`);
-    }
-  }
+  if (profile.menu !== undefined) validateProfileMenu(profile.menu, ids);
 }

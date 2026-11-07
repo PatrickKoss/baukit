@@ -34,6 +34,7 @@ function resolveDocument(document: BrowserSyncDocument | undefined): BrowserSync
 }
 
 function resolveWindow(window: BrowserSyncWindow | undefined): BrowserSyncWindow {
+  // `window` is absent outside browsers, and the DOM `Window` type is wider than this sync seam.
   const globalWindow = globalThis.window as unknown as BrowserSyncWindow | undefined;
   const resolved = window ?? globalWindow;
   if (resolved === undefined) {
@@ -56,6 +57,7 @@ export function createBrowserSyncEnvironment(
 ): SyncSchedulerEnvironment {
   const browserDocument = resolveDocument(options.document);
   const browserWindow = resolveWindow(options.window);
+  // The DOM returns numeric interval ids; the scheduler stores them as opaque timer handles.
   const timers: BrowserSyncTimers = options.timers ?? {
     setInterval: (callback, milliseconds) =>
       browserWindow.setInterval(callback, milliseconds) as unknown as SyncSchedulerTimer,

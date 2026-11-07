@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+/* eslint-disable react-hooks/refs -- this .ts test builds elements with createElement, the JSX factory; passing a ref object as the `ref` prop never reads `.current` during render, but the rule treats the factory as an arbitrary function call. */
 import { act, cleanup, fireEvent, render, renderHook } from '@testing-library/react';
 import { createElement, Fragment, useRef, useState, type RefObject } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';

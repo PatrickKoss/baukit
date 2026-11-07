@@ -189,7 +189,7 @@ class FakeSQLiteConnection {
         .filter((row) => row.namespace === namespace && row.id > afterId)
         .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))
         .slice(0, limit)
-        .map((row) => ({ id: row.id, payload: row.payload }) as T),
+        .map((row) => pageRow(row) as T),
     );
   }
 
@@ -671,3 +671,7 @@ describe('shared database coordination', () => {
     await expect(held.done).resolves.toBeUndefined();
   });
 });
+
+function pageRow(row: { readonly id: string; readonly payload: unknown }): Record<string, unknown> {
+  return { id: row.id, payload: row.payload };
+}

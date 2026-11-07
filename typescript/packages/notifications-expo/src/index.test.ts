@@ -92,11 +92,11 @@ class ExpoNotificationsMock {
         const identifier = request.identifier ?? 'generated';
         this.faults.beforeSchedule(identifier);
         this.scheduled.push(request);
-        this.requests.set(identifier, {
-          identifier,
-          content: request.content,
-          trigger: request.trigger,
-        } as NotificationRequest);
+        const pending: Pick<NotificationRequest, 'identifier'> & {
+          readonly content: NotificationRequestInput['content'];
+          readonly trigger: NotificationRequestInput['trigger'];
+        } = { identifier, content: request.content, trigger: request.trigger };
+        this.requests.set(identifier, pending as NotificationRequest);
         return identifier;
       }),
   };
@@ -223,10 +223,8 @@ describe('Expo owned notification scheduler', () => {
     ['authorized', IOS_STATUS.AUTHORIZED],
   ])('treats iOS %s authorization as granted', async (_label, iosStatus) => {
     const { mock, scheduler } = setup();
-    mock.permissionOverride = {
-      ...permissionStatus('undetermined'),
-      ios: { status: iosStatus },
-    } as NotificationPermissionsStatus;
+    const override = { ...permissionStatus('undetermined'), ios: { status: iosStatus } };
+    mock.permissionOverride = override as NotificationPermissionsStatus;
     expect(
       await scheduler.replaceOwned(OWNER, [desired('a', { content: { title: 'x' } })]),
     ).toMatchObject({ status: 'complete', scheduled: ['a'] });

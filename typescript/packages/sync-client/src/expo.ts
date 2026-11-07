@@ -18,6 +18,7 @@ interface ExpoNetworkModule {
   addNetworkStateListener?: (listener: (state: Network.NetworkState) => void) => { remove(): void };
 }
 
+// React Native and Node return different interval handle types; the scheduler keeps them opaque.
 const defaultTimers: ExpoSyncTimers = {
   setInterval: (callback, milliseconds) =>
     globalThis.setInterval(callback, milliseconds) as unknown as SyncSchedulerTimer,

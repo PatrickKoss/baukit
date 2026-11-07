@@ -10,7 +10,7 @@ function escapeKeySegment(segment: string): string {
 function enumerableProperties(value: object): readonly [string, unknown][] | null {
   try {
     return Object.entries(Object.getOwnPropertyDescriptors(value))
-      .filter(([, descriptor]) => descriptor.enumerable)
+      .filter(([, descriptor]) => descriptor.enumerable === true)
       .map(([key, descriptor]) => [key, 'value' in descriptor ? descriptor.value : undefined]);
   } catch {
     return null;

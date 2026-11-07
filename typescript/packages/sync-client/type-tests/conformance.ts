@@ -31,8 +31,4 @@ const fixture: SyncConformanceChange = {
   logicalTime: 1,
 };
 
-void tests;
-void fixture;
-void outcome;
-void fullResync;
-void staleCursor;
+export { fixture, fullResync, outcome, staleCursor, tests };

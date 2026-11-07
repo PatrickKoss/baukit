@@ -52,7 +52,7 @@
     "prepare": "pnpm run build",
     "test": "tsc -p tsconfig.test.json && vitest run --config vitest.config.ts --maxWorkers=4 && jest --config jest.config.cjs --maxWorkers=4 && node ../../scripts/test-packed-exports.mjs",
     "lint": "eslint . --max-warnings=0",
-    "format:check": "prettier --check src *.json *.ts *.js *.cjs",
+    "format:check": "prettier --check src *.json *.ts *.cjs",
     "test:browser": "vitest run --config vitest.browser.config.ts --maxWorkers=4"
   },
   "devDependencies": {

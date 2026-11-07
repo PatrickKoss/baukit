@@ -193,89 +193,116 @@ export function createSqliteMigrationConformanceTests(
   adapter: SqliteMigrationConformanceAdapter,
 ): readonly SqliteMigrationConformanceTestCase[] {
   return [
-    {
-      name: 'applies every step to a fresh database',
-      run: () =>
-        withDatabaseFile(async (file) => {
-          const database = file.connect();
-          await adapter.migrate(database, CURRENT_STEPS);
-          await assertCurrentSchema(database);
-        }),
-    },
-    {
-      name: 'upgrades an older database and keeps its rows',
-      run: () =>
-        withDatabaseFile(async (file) => {
-          let database = file.connect();
-          await adapter.migrate(database, [CREATE_ITEMS]);
-          await database.runAsync(
-            `INSERT INTO ${ITEMS_TABLE} (id, label) VALUES (?, ?)`,
-            'kept',
-            'written before the upgrade',
-          );
-          database = await file.restart(database);
-          await adapter.migrate(database, CURRENT_STEPS);
-          await assertCurrentSchema(database);
-          const kept = await database.getFirstAsync<{ readonly rank: number }>(
-            `SELECT ${RANK_COLUMN} AS rank FROM ${ITEMS_TABLE} WHERE id = ?`,
-            'kept',
-          );
-          assert(kept?.rank === 0, 'a row written before the upgrade was lost or not defaulted');
-        }),
-    },
-    {
-      name: 'applies nothing again after a restart',
-      run: () =>
-        withDatabaseFile(async (file) => {
-          let database = file.connect();
-          await adapter.migrate(database, CURRENT_STEPS);
-          const before = await snapshot(database);
-          database = await file.restart(database);
-          await adapter.migrate(database, CURRENT_STEPS);
-          await assertCurrentSchema(database);
-          assert(
-            (await snapshot(database)) === before,
-            'running the same steps again changed the database',
-          );
-        }),
-    },
-    {
-      name: 'rolls back a failed step completely and applies it after a fix',
-      run: () =>
-        withDatabaseFile(async (file) => {
-          let database = file.connect();
-          const failed = await rejects(() =>
-            adapter.migrate(database, [CREATE_ITEMS, SEED_SETTINGS, FAILING_ADD_RANK]),
-          );
-          assert(failed, 'a step whose last statement fails did not reject');
-          assert(
-            !(await tableNames(database)).has(PARTIAL_TABLE),
-            'a failed step left a table from its earlier statements (partially applied migration)',
-          );
-          assert(
-            !(await columnNames(database, ITEMS_TABLE)).has(RANK_COLUMN),
-            'a failed step left a column from its earlier statements (partially applied migration)',
-          );
-          database = await file.restart(database);
-          await adapter.migrate(database, CURRENT_STEPS);
-          await assertCurrentSchema(database);
-        }),
-    },
-    {
-      name: 'refuses a database written by a newer build and leaves it unchanged',
-      run: () =>
-        withDatabaseFile(async (file) => {
-          let database = file.connect();
-          await adapter.migrate(database, [...CURRENT_STEPS, NEWER_BUILD_STEP]);
-          database = await file.restart(database);
-          const before = await snapshot(database);
-          const refused = await rejects(() => adapter.migrate(database, CURRENT_STEPS));
-          assert(refused, 'an older build accepted a database that a newer build migrated');
-          assert(
-            (await snapshot(database)) === before,
-            'refusing a newer database still changed it',
-          );
-        }),
-    },
+    freshInstallCase(adapter),
+    upgradeCase(adapter),
+    restartCase(adapter),
+    rollbackCase(adapter),
+    newerBuildCase(adapter),
   ];
+}
+
+function freshInstallCase(
+  adapter: SqliteMigrationConformanceAdapter,
+): SqliteMigrationConformanceTestCase {
+  return {
+    name: 'applies every step to a fresh database',
+    run: () =>
+      withDatabaseFile(async (file) => {
+        const database = file.connect();
+        await adapter.migrate(database, CURRENT_STEPS);
+        await assertCurrentSchema(database);
+      }),
+  };
+}
+
+function upgradeCase(
+  adapter: SqliteMigrationConformanceAdapter,
+): SqliteMigrationConformanceTestCase {
+  return {
+    name: 'upgrades an older database and keeps its rows',
+    run: () =>
+      withDatabaseFile(async (file) => {
+        let database = file.connect();
+        await adapter.migrate(database, [CREATE_ITEMS]);
+        await database.runAsync(
+          `INSERT INTO ${ITEMS_TABLE} (id, label) VALUES (?, ?)`,
+          'kept',
+          'written before the upgrade',
+        );
+        database = await file.restart(database);
+        await adapter.migrate(database, CURRENT_STEPS);
+        await assertCurrentSchema(database);
+        const kept = await database.getFirstAsync<{ readonly rank: number }>(
+          `SELECT ${RANK_COLUMN} AS rank FROM ${ITEMS_TABLE} WHERE id = ?`,
+          'kept',
+        );
+        assert(kept?.rank === 0, 'a row written before the upgrade was lost or not defaulted');
+      }),
+  };
+}
+
+function restartCase(
+  adapter: SqliteMigrationConformanceAdapter,
+): SqliteMigrationConformanceTestCase {
+  return {
+    name: 'applies nothing again after a restart',
+    run: () =>
+      withDatabaseFile(async (file) => {
+        let database = file.connect();
+        await adapter.migrate(database, CURRENT_STEPS);
+        const before = await snapshot(database);
+        database = await file.restart(database);
+        await adapter.migrate(database, CURRENT_STEPS);
+        await assertCurrentSchema(database);
+        assert(
+          (await snapshot(database)) === before,
+          'running the same steps again changed the database',
+        );
+      }),
+  };
+}
+
+function rollbackCase(
+  adapter: SqliteMigrationConformanceAdapter,
+): SqliteMigrationConformanceTestCase {
+  return {
+    name: 'rolls back a failed step completely and applies it after a fix',
+    run: () =>
+      withDatabaseFile(async (file) => {
+        let database = file.connect();
+        const failed = await rejects(() =>
+          adapter.migrate(database, [CREATE_ITEMS, SEED_SETTINGS, FAILING_ADD_RANK]),
+        );
+        assert(failed, 'a step whose last statement fails did not reject');
+        assert(
+          !(await tableNames(database)).has(PARTIAL_TABLE),
+          'a failed step left a table from its earlier statements (partially applied migration)',
+        );
+        assert(
+          !(await columnNames(database, ITEMS_TABLE)).has(RANK_COLUMN),
+          'a failed step left a column from its earlier statements (partially applied migration)',
+        );
+        database = await file.restart(database);
+        await adapter.migrate(database, CURRENT_STEPS);
+        await assertCurrentSchema(database);
+      }),
+  };
+}
+
+function newerBuildCase(
+  adapter: SqliteMigrationConformanceAdapter,
+): SqliteMigrationConformanceTestCase {
+  return {
+    name: 'refuses a database written by a newer build and leaves it unchanged',
+    run: () =>
+      withDatabaseFile(async (file) => {
+        let database = file.connect();
+        await adapter.migrate(database, [...CURRENT_STEPS, NEWER_BUILD_STEP]);
+        database = await file.restart(database);
+        const before = await snapshot(database);
+        const refused = await rejects(() => adapter.migrate(database, CURRENT_STEPS));
+        assert(refused, 'an older build accepted a database that a newer build migrated');
+        assert((await snapshot(database)) === before, 'refusing a newer database still changed it');
+      }),
+  };
 }

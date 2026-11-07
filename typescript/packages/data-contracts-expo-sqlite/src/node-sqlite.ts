@@ -58,7 +58,7 @@ export class NodeSqliteConnection {
     await nextTurn();
     const { statement, named, positional } = this.prepare(source, params);
     const row = statement.get(named, ...positional);
-    return row === undefined ? null : ({ ...row } as T);
+    return row === undefined ? null : (copyRow(row) as T);
   }
 
   public getAllAsync<T>(source: string, params: SQLiteBindParams): Promise<T[]>;
@@ -66,7 +66,7 @@ export class NodeSqliteConnection {
   public async getAllAsync<T>(source: string, ...params: unknown[]): Promise<T[]> {
     await nextTurn();
     const { statement, named, positional } = this.prepare(source, params);
-    return statement.all(named, ...positional).map((row) => ({ ...row }) as T);
+    return statement.all(named, ...positional).map((row) => copyRow(row) as T);
   }
 
   private prepare(source: string, params: readonly unknown[]): PreparedCall {
@@ -202,4 +202,8 @@ function toSqlValue(value: unknown): SQLInputValue {
     return new Uint8Array(value);
   }
   return value as SQLInputValue;
+}
+
+function copyRow(row: object): Record<string, unknown> {
+  return { ...row };
 }

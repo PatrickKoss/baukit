@@ -20,6 +20,10 @@ function input(id: string): HTMLInputElement {
   return node;
 }
 
+/** The handler ignores the event payload, so one shared stand-in serves every submit. */
+const SUBMIT_EVENT_PAYLOAD = {};
+const SUBMIT_EVENT = SUBMIT_EVENT_PAYLOAD as never;
+
 afterEach(() => {
   cleanup();
   document.body.innerHTML = '';
@@ -39,13 +43,13 @@ describe('useEnterToNext on web', () => {
     expect(second.returnKeyType).toBe('done');
 
     act(() => {
-      first.onSubmitEditing?.({} as never);
+      first.onSubmitEditing?.(SUBMIT_EVENT);
     });
     expect(document.activeElement?.id).toBe('second');
     expect(onSubmit).not.toHaveBeenCalled();
 
     act(() => {
-      second.onSubmitEditing?.({} as never);
+      second.onSubmitEditing?.(SUBMIT_EVENT);
     });
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
@@ -65,7 +69,7 @@ describe('useEnterToNext on web', () => {
     expect(third.returnKeyType).toBe('done');
 
     act(() => {
-      first.onSubmitEditing?.({} as never);
+      first.onSubmitEditing?.(SUBMIT_EVENT);
     });
     expect(document.activeElement?.id).toBe('third');
   });
@@ -76,7 +80,7 @@ describe('useEnterToNext on web', () => {
     view.result.current.registerField(1);
 
     act(() => {
-      view.result.current.registerField(0).onSubmitEditing?.({} as never);
+      view.result.current.registerField(0).onSubmitEditing?.(SUBMIT_EVENT);
     });
 
     expect(onSubmit).toHaveBeenCalledTimes(1);

@@ -3,12 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   InMemoryScopedPersistenceRegistryStore,
   PersistenceIdentityMismatchError,
-  ScopedPersistenceLifecycle,
   deriveScopedStoreName,
   recheckServerSubjectBeforeSyncAdoption,
   removeScopedPersistenceRegistryEntry,
   resolveScopedStore,
 } from './identity.js';
+import { ScopedPersistenceLifecycle } from './scoped-lifecycle.js';
 
 const digest = (value: string): Promise<string> =>
   Promise.resolve(value.endsWith(':account-e') ? 'e'.repeat(64) : 'f'.repeat(64));

@@ -41,7 +41,10 @@ function stubMatchMedia(matches: boolean) {
     matchMedia,
     removeEventListener,
     change(next: boolean) {
-      for (const listener of listeners) listener({ matches: next } as MediaQueryListEvent);
+      for (const listener of listeners) {
+        const event: Pick<MediaQueryListEvent, 'matches'> = { matches: next };
+        listener(event as MediaQueryListEvent);
+      }
     },
   };
 }

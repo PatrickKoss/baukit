@@ -91,17 +91,12 @@ export function reduceConnectionState(
   switch (event.type) {
     case 'server_state':
       return connectionStateFromServer(event.snapshot);
-    case 'connect_requested': {
-      const action = state.status === 'needs_reconnect' ? 'reconnect' : 'connect';
-      if (!state.availableActions.includes(action)) return state;
-      return makeConnectionState('connecting', { operation: action });
-    }
+    case 'connect_requested':
+      return requestConnect(state);
     case 'auth_started':
       return state.status === 'connecting'
         ? state
-        : makeConnectionState('connecting', {
-            operation: state.status === 'needs_reconnect' ? 'reconnect' : 'connect',
-          });
+        : makeConnectionState('connecting', { operation: connectOperation(state.status) });
     case 'auth_returned':
       return makeConnectionState('connected');
     case 'auth_cancelled':
@@ -109,10 +104,7 @@ export function reduceConnectionState(
         ? makeConnectionState('needs_reconnect', { operation: 'reconnect' })
         : makeConnectionState('disconnected');
     case 'auth_timed_out':
-      return makeConnectionState('error', {
-        diagnostic: clientDiagnostic(event.diagnosticCode ?? 'oauth_timed_out'),
-        operation: state.operation === 'reconnect' ? 'reconnect' : 'connect',
-      });
+      return timedOut(state, event.diagnosticCode);
     case 'disconnect_requested':
       return state.availableActions.includes('disconnect')
         ? makeConnectionState('disconnecting', { operation: 'disconnect' })
@@ -123,13 +115,34 @@ export function reduceConnectionState(
         operation: 'disconnect',
       });
     case 'retry':
-      if (!state.availableActions.includes('retry')) return state;
-      return state.operation === 'disconnect'
-        ? makeConnectionState('disconnecting', { operation: 'disconnect' })
-        : makeConnectionState('connecting', {
-            operation: state.operation === 'reconnect' ? 'reconnect' : 'connect',
-          });
+      return retry(state);
   }
+}
+
+function connectOperation(status: ConnectionStatus): 'connect' | 'reconnect' {
+  return status === 'needs_reconnect' ? 'reconnect' : 'connect';
+}
+
+function requestConnect(state: ConnectionState): ConnectionState {
+  const action = connectOperation(state.status);
+  if (!state.availableActions.includes(action)) return state;
+  return makeConnectionState('connecting', { operation: action });
+}
+
+function timedOut(state: ConnectionState, diagnosticCode: string | undefined): ConnectionState {
+  return makeConnectionState('error', {
+    diagnostic: clientDiagnostic(diagnosticCode ?? 'oauth_timed_out'),
+    operation: state.operation === 'reconnect' ? 'reconnect' : 'connect',
+  });
+}
+
+function retry(state: ConnectionState): ConnectionState {
+  if (!state.availableActions.includes('retry')) return state;
+  return state.operation === 'disconnect'
+    ? makeConnectionState('disconnecting', { operation: 'disconnect' })
+    : makeConnectionState('connecting', {
+        operation: state.operation === 'reconnect' ? 'reconnect' : 'connect',
+      });
 }
 
 function makeConnectionState(
