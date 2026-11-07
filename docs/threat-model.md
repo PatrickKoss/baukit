@@ -11,6 +11,7 @@ Baukit is a library, so this model covers the controls the crates, packages, tem
 | Identity claims (subject, email, org) | personal | PostgreSQL via `baukit-auth` principal, logs as hashed or bounded fields | `baukit-erasure`, `baukit-data-subject` |
 | Access and refresh tokens | credential | browser storage via `@baukit/auth-web` (S-01), native secure store via `@baukit/auth-native` | token lifetime |
 | API tokens | credential | PostgreSQL, hashed (`baukit-auth/src/api_token.rs`) | revocation and expiry |
+| Pending OAuth flows (state hash, binding hash, user, provider, PKCE verifier) | credential | PostgreSQL `oauth_states` and `oauth_states_used` via `baukit-integrations` `oauth-state` | 10 minute TTL, `purge_expired` |
 | Third-party secrets | credential | PostgreSQL, AES-256-GCM (`baukit-credential-vault`) | deleted with the connection |
 | Synced user content | product-defined | PostgreSQL, device SQLite and IndexedDB (`@baukit/data-contracts-*`) | `baukit-sync` purge horizons |
 | Media | content | object storage behind the njs edge | product-defined |
@@ -25,6 +26,7 @@ Baukit is a library, so this model covers the controls the crates, packages, tem
 | client to njs media edge | grant query string | HMAC grant |
 | IdP to API | discovery and JWKS fetch | issuer URL |
 | API to third parties | `baukit-egress` `GuardedClient` | product credentials |
+| OAuth provider redirect to API callback | `baukit-integrations` `oauth_state` complete, `__Host-baukit-oauth` cookie | single-use `state` bound to the starting browser |
 | inbound webhooks and suite hub | `baukit-core` webhook signatures, `baukit-suite` receiver | shared secret or peer signature |
 
 ## Threats
@@ -48,6 +50,9 @@ Baukit is a library, so this model covers the controls the crates, packages, tem
 | B-15 | client to njs media edge | S, T | Forged, altered or expired media grant | Rust signer and njs verifier with fixed query shape, expiry cap, constant-time compare (`rust/crates/baukit-core/src/media_grant.rs`, `deploy/media-grants/njs/media-grant.js`) | `deploy/media-grants/njs/media-grant.test.mjs`, `rust/crates/baukit-core/src/media_grant.rs` vector tests | covered |
 | B-16 | browser and native app to API | T, I | Sync write lands under another owner's revision counter | per-owner revisions (`rust/crates/baukit-sync/src/revision.rs`) | `rust/crates/baukit-sync/tests/postgres.rs::owners_have_independent_counters` | covered |
 | B-17 | browser and native app to API | R | No proof that an erasure or export request was honoured | signed receipts (`rust/crates/baukit-data-subject/src/receipt.rs`) | `rust/crates/baukit-test/src/data_subject_conformance.rs` | covered |
+| B-18 | OAuth provider redirect to API callback | S, E | Login CSRF: victim completes an attacker-started authorize URL and links the victim's provider account to the attacker's user | opaque random `state`, binding cookie hash checked in constant time (`rust/crates/baukit-integrations/src/oauth_state/mod.rs`, `rust/crates/baukit-integrations/src/oauth_state/token.rs`) | `rust/crates/baukit-integrations/src/oauth_state/tests.rs::another_browser_is_rejected_and_burns_the_state`, `::mutated_state_or_cookie_never_succeeds` | covered |
+| B-19 | OAuth provider redirect to API callback | S, T | Replayed or raced callback completes a flow twice | atomic `DELETE ... RETURNING` plus used marker, 10 minute TTL (`rust/crates/baukit-integrations/src/oauth_state/postgres.rs`) | `rust/crates/baukit-integrations/tests/oauth_state_postgres.rs::concurrent_completes_have_exactly_one_winner`, `rust/crates/baukit-integrations/src/oauth_state/tests.rs::second_complete_is_already_used`, `::expired_state_is_expired_and_burned` | covered |
+| B-20 | OAuth provider redirect to API callback | I | Intercepted authorization code redeemed by someone else; verifier or binding printed in logs | PKCE `S256`, redacting `Debug` on state, binding, verifier and flow types (`rust/crates/baukit-integrations/src/oauth_state/token.rs`) | `rust/crates/baukit-integrations/src/oauth_state/tests.rs::debug_output_redacts_secrets`, `rust/fuzz/fuzz_targets/oauth_state_parse.rs` | covered |
 | S-01 | browser to API | I | XSS reads access and refresh tokens from `localStorage` | none, tokens stored by `typescript/packages/auth-web/src/index.ts` | to write: no storage write contains a refresh token | gap, P2.2 |
 | S-02 | browser to API | T, I | Clickjacking, MIME sniffing, no CSP to contain XSS | none in `baukit-http`, templates or chart | to write: header assertions in the fixture gate | gap, P2.1 |
 | S-03 | supply chain | T, E | Retagged GitHub Action runs with release permissions | none, actions pinned by tag | to write: zizmor and actionlint gate step | gap, P2.5 |
