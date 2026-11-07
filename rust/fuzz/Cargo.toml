@@ -1,0 +1,72 @@
+[package]
+name = "baukit-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+axum = "0.8.9"
+baukit-auth = { path = "../crates/baukit-auth" }
+baukit-core = { path = "../crates/baukit-core", features = ["media-grants"] }
+baukit-events = { path = "../crates/baukit-events" }
+baukit-http = { path = "../crates/baukit-http" }
+baukit-mcp = { path = "../crates/baukit-mcp" }
+baukit-ratelimit = { path = "../crates/baukit-ratelimit" }
+baukit-sync = { path = "../crates/baukit-sync", default-features = false }
+baukit-test = { path = "../crates/baukit-test", default-features = false }
+chrono = "0.4.45"
+http = "1.5.0"
+serde_json = "1.0.151"
+tokio = { version = "1.53.2", features = ["full"] }
+tower = { version = "0.5.3", features = ["util"] }
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "jwt_verify"
+path = "fuzz_targets/jwt_verify.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "event_envelope"
+path = "fuzz_targets/event_envelope.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sync_hlc"
+path = "fuzz_targets/sync_hlc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "http_headers"
+path = "fuzz_targets/http_headers.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "media_grant_verify"
+path = "fuzz_targets/media_grant_verify.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mcp_jsonrpc"
+path = "fuzz_targets/mcp_jsonrpc.rs"
+test = false
+doc = false
+bench = false
