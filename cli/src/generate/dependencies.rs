@@ -97,11 +97,7 @@ fn baukit_crates(options: &NewOptions) -> Vec<&'static str> {
     let auth_enabled = options.auth.is_some();
     let mut names = BASE_CRATES.to_vec();
     if auth_enabled {
-        names.extend([
-            "baukit-auth",
-            "baukit-credential-vault",
-            "baukit-erasure",
-        ]);
+        names.extend(["baukit-auth", "baukit-credential-vault", "baukit-erasure"]);
     }
     if components.worker() || auth_enabled {
         names.push("baukit-jobs");

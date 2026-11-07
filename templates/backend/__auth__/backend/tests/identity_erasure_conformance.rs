@@ -334,40 +334,7 @@ async fn identity_configuration_requires_production_secrets_and_https() -> Resul
 #[ignore = "requires Docker PostgreSQL"]
 async fn retained_identity_reonboards_with_a_new_profile_and_rejects_old_sessions()
 -> Result<(), TestError> {
-    let migrations = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
-    let fixture = baukit_test::start_postgres_with_migrations(&migrations).await?;
-    let pool = PgPool::connect(fixture.connection_url()).await?;
-    let store = PostgresErasureStore::new(
-        pool.clone(),
-        Secret::new("test-hash-key-with-at-least-32-bytes".into()),
-    )?;
-    let issuer = MockOidcServer::start().await?;
-    let verifier = OidcVerifier::discover(OidcConfig::new(issuer.issuer(), AUDIENCE)?).await?;
-    let service = ErasureService::new(store.clone(), IdentityRetention::Retain)?;
-    let app = router(
-        ApiState {
-            items: ItemService::new(Arc::new(PostgresItemRepository::new(pool.clone()))),
-            users: UserService::new(Arc::new(PostgresUserRepository::new(
-                pool.clone(),
-                store.clone(),
-            ))),
-            auth: AuthState::new(verifier),
-            erasure: ErasureApi {
-                service,
-                product: Arc::new(PostgresProfileErasure),
-            },
-        },
-        &HttpConfig::default(),
-    )?;
-    let adapter = EndpointAdapter {
-        pool,
-        issuer,
-        store,
-        app: Some(app),
-        handler: None,
-        subject: String::new(),
-        prefix: "",
-    };
+    let (_fixture, adapter) = retaining_adapter().await?;
     let original = adapter
         .send("returning-subject", "GET", "/me", None)
         .await?;
@@ -430,4 +397,43 @@ async fn retained_identity_reonboards_with_a_new_profile_and_rejects_old_session
     assert_eq!(same_profile.body, onboarded.body);
     adapter.pool.close().await;
     Ok(())
+}
+
+async fn retaining_adapter()
+-> Result<(baukit_test::PostgresTestContainer, EndpointAdapter), TestError> {
+    let migrations = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
+    let fixture = baukit_test::start_postgres_with_migrations(&migrations).await?;
+    let pool = PgPool::connect(fixture.connection_url()).await?;
+    let store = PostgresErasureStore::new(
+        pool.clone(),
+        Secret::new("test-hash-key-with-at-least-32-bytes".into()),
+    )?;
+    let issuer = MockOidcServer::start().await?;
+    let verifier = OidcVerifier::discover(OidcConfig::new(issuer.issuer(), AUDIENCE)?).await?;
+    let service = ErasureService::new(store.clone(), IdentityRetention::Retain)?;
+    let app = router(
+        ApiState {
+            items: ItemService::new(Arc::new(PostgresItemRepository::new(pool.clone()))),
+            users: UserService::new(Arc::new(PostgresUserRepository::new(
+                pool.clone(),
+                store.clone(),
+            ))),
+            auth: AuthState::new(verifier),
+            erasure: ErasureApi {
+                service,
+                product: Arc::new(PostgresProfileErasure),
+            },
+        },
+        &HttpConfig::default(),
+    )?;
+    let adapter = EndpointAdapter {
+        pool,
+        issuer,
+        store,
+        app: Some(app),
+        handler: None,
+        subject: String::new(),
+        prefix: "",
+    };
+    Ok((fixture, adapter))
 }

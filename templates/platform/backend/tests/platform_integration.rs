@@ -385,11 +385,9 @@ async fn platform_routes_sit_inside_the_rate_limiter() -> Result<(), Box<dyn Err
         options,
     };
 {% if context.auth_enabled %}    let issuer = baukit_test::MockOidcServer::start().await?;
-    let verifier = baukit_auth::OidcVerifier::discover(baukit_auth::OidcConfig::new(
-        issuer.issuer(),
-        "api",
-    )?)
-    .await?;
+    let verifier =
+        baukit_auth::OidcVerifier::discover(baukit_auth::OidcConfig::new(issuer.issuer(), "api")?)
+            .await?;
     let app = {{ context.app_crate }}_bin::protect_routes(
         Router::new(),
         [services.router],

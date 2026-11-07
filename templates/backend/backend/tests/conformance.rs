@@ -1,7 +1,9 @@
 {% if context.auth_enabled %}#[path = "support/erasure.rs"]
 mod erasure;
+{% endif %}#[path = "support/owner_scoping.rs"]
+mod owner_scoping;
 
-{% endif %}use std::{error::Error, sync::Arc{% if context.auth_enabled %}, time::Duration{% endif %}};
+use std::{error::Error, sync::Arc{% if context.auth_enabled %}, time::Duration{% endif %}};
 
 use axum::{
     body::{Body, to_bytes},
@@ -192,3 +194,91 @@ async fn limit_errors_keep_measurements_in_http_responses() -> Result<(), Box<dy
     assert_eq!(body["error"]["details"], serde_json::json!({}));
     Ok(())
 }
+
+#[tokio::test]
+async fn in_memory_items_are_owner_scoped() -> Result<(), Box<dyn Error>> {
+    owner_scoping::assert_items_are_owner_scoped(&InMemoryItemRepository::new()).await
+}
+{% if context.auth_enabled %}
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn item_routes_deny_other_tenants_and_invalid_tokens() -> Result<(), Box<dyn Error>> {
+    let fixture = erasure::erasure_fixture().await?;
+    let issuer = baukit_test::MockOidcServer::start().await?;
+    let verifier = OidcVerifier::discover(OidcConfig::new(issuer.issuer(), AUDIENCE)?).await?;
+    let api = router(
+        ApiState {
+            items: ItemService::new(Arc::new(InMemoryItemRepository::new())),
+            users: UserService::new(Arc::new(InMemoryUserRepository::new())),
+            auth: AuthState::new(verifier),
+            erasure: fixture.erasure.clone(),
+        },
+        &HttpConfig::default(),
+    )?;
+    let token = |subject: &str| -> Result<String, Box<dyn Error>> {
+        Ok(issuer.mint(&issuer.claims(subject, AUDIENCE, Duration::from_secs(60))?)?)
+    };
+    let item_id = create_item(&api, &token("alice")?, "alice-private-item").await?;
+    let document = serde_json::to_value({{ context.app_crate }}_api::openapi_document())?;
+    let target = baukit_test::SecurityTarget::router(api);
+    let fixtures = baukit_test::OperationFixtures::new()
+        .path_value("id", &item_id)
+        .path_value("operationId", "00000000-0000-0000-0000-000000000000")
+        .body(
+            "put",
+            "/items/{id}",
+            serde_json::json!({"name": "bob-overwrite"}),
+        );
+    let cross_tenant = baukit_test::assert_cross_tenant_denied(
+        &document,
+        &target,
+        &fixtures,
+        &baukit_test::CrossTenantCase::new(token("bob")?)
+            .leak_marker("alice-private-item")
+            .exclude(
+                "get",
+                "/me/erasures/{operationId}",
+                "erasure status is scoped to the caller's own operation id",
+            ),
+    )
+    .await;
+    assert!(!cross_tenant.probed.is_empty(), "{cross_tenant}");
+    let negative = baukit_test::assert_auth_negative_suite(
+        &document,
+        &target,
+        &fixtures,
+        &baukit_test::AuthNegativeCase::new(&issuer, AUDIENCE),
+    )
+    .await;
+    assert!(!negative.probed.is_empty(), "{negative}");
+    Ok(())
+}
+
+async fn create_item(
+    api: &axum::Router,
+    token: &str,
+    name: &str,
+) -> Result<String, Box<dyn Error>> {
+    let created = api
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/items")
+                .header(
+                    header::AUTHORIZATION,
+                    baukit_test::authorization_header(token)?,
+                )
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(serde_json::json!({ "name": name }).to_string()))?,
+        )
+        .await?;
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let item: Value = serde_json::from_slice(&to_bytes(created.into_body(), usize::MAX).await?)?;
+    Ok(item
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or("created item has no id")?
+        .to_owned())
+}
+{% endif %}

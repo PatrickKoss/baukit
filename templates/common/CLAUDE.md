@@ -27,6 +27,19 @@ corepack pnpm@12.9.1 --dir mobile test
 
 `scripts/setup.sh` creates each local `.env` from its matching `.env.example` and appends newly added example assignments on later runs. It never replaces existing bytes. Existing assignments, including blank and exported assignments, count as local choices. If either file repeats a key, the first example assignment is the append candidate and any existing occurrence suppresses the append.
 
+## Agent skills
+
+Baukit ships agent skills for the work this guide asks for. Install them from a Baukit checkout:
+
+```sh
+<baukit-repo>/agent-skills/install.sh --target . --claude --codex
+```
+
+- `baukit-code-conformance` checks a change against the agent rules below before you call it done.
+- `baukit-threat-model` updates `docs/threat-model.md` when you add a route, webhook, integration, queue or upload.
+- `baukit-security-testing` writes the tests that prove those controls, such as the second-principal denial test.
+- `baukit-quality-gates` explains each gate step and how to fix a red one.
+
 ## Agent rules
 
 The block at the end of this file holds the shared Baukit agent rules. `AGENTS.md` is a symlink to this file, so every agent reads the same text. Do not edit the block by hand. After a Baukit upgrade, refresh it from the matching Baukit checkout:
@@ -35,7 +48,7 @@ The block at the end of this file holds the shared Baukit agent rules. `AGENTS.m
 cargo run --manifest-path <baukit>/cli/Cargo.toml --bin baukit -- check agent-docs --fix --root .
 ```
 
-`baukit check agent-docs file-size suppressions` fails when the block drifts, `AGENTS.md` is not the symlink, a source file grows past its line limit, or a suppression lacks a reason or exceeds the counts in `baukit-check.toml`. Those counts only go down.
+`baukit check agent-docs file-size suppressions lints patterns observability template-files` fails when the block drifts, `AGENTS.md` is not the symlink, a source file grows past its line limit, or a suppression lacks a reason or exceeds the counts in `baukit-check.toml`, the backend lints drift from the Baukit baseline, an ast-grep pattern matches, a dashboard names an unknown metric, or a Baukit-owned file changed. Those counts only go down.
 
 {% if context.quality_strict %}Run the complete strict profile with:
 

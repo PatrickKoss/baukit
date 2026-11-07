@@ -10,6 +10,7 @@ members = [
 {% if context.mcp %}  "crates/{{ context.app_name }}-mcp",
 {% endif %}{% if context.worker %}  "crates/{{ context.app_name }}-worker",
 {% endif %}]
+exclude = ["fuzz"]
 
 [workspace.package]
 version = "0.1.0"

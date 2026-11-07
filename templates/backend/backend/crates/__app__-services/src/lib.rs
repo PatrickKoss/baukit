@@ -64,7 +64,12 @@ impl UserService {
         self.repository.create(item).await.map_err(Into::into)
     }
 
-    pub async fn update(&self, owner_id: &str, id: Uuid, name: String) -> Result<Item, ServiceError> {
+    pub async fn update(
+        &self,
+        owner_id: &str,
+        id: Uuid,
+        name: String,
+    ) -> Result<Item, ServiceError> {
         let item = Item::new(id, owner_id, name)?;
         self.repository
             .update(item)

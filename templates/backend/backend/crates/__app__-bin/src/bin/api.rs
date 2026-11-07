@@ -1,7 +1,8 @@
 use std::{env, error::Error, net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::Router;
-{% if context.auth_enabled %}use baukit_auth::{AuthState, IdentityVerifier};
+{% if context.auth_enabled %}use baukit_auth::AuthState;
+{% endif %}{% if context.mcp %}use baukit_auth::IdentityVerifier;
 {% endif %}use baukit_config::{BaukitConfig, Environment};
 {% if context.auth_enabled %}use baukit_jobs::{PostgresJobStore, WorkerConfig, WorkerRunner};
 {% endif %}use baukit_ops::{PoolMetricsSampler, TrafficGate, spawn_pool_metrics_sampler};
@@ -99,8 +100,8 @@ struct Backend {
     item_service: ItemService,
 {% if context.auth_enabled %}    api_state: ApiState,
     auth: AuthState,
-    verifier: Arc<dyn IdentityVerifier>,
-    erasure_runner: WorkerRunner,
+{% if context.mcp %}    verifier: Arc<dyn IdentityVerifier>,
+{% endif %}    erasure_runner: WorkerRunner,
 {% endif %}}
 
 impl Backend {
@@ -128,7 +129,7 @@ impl Backend {
             erasure_service.store().clone(),
         )));
         let verifier = auth_verifier(&config.product.auth).await?;
-        let auth = AuthState::from_shared(verifier.clone());
+        let auth = AuthState::from_shared(verifier{% if context.mcp %}.clone(){% endif %});
         let api_state = ApiState {
             items: item_service.clone(),
             users,
@@ -144,8 +145,8 @@ impl Backend {
             item_service,
             api_state,
             auth,
-            verifier,
-            erasure_runner,
+{% if context.mcp %}            verifier,
+{% endif %}            erasure_runner,
         })
     }
 {% elif context.platform %}    async fn connect(config: &BaukitConfig<ProductConfig>) -> Result<Self, Box<dyn Error>> {
@@ -208,7 +209,8 @@ async fn compose_api(
             browser_session_router(&config.product.auth.browser_session, dependencies).await?,
         );
     }
-{% if context.mcp %}    late.push(mcp_router(config, backend, limits.as_ref()).await?);
+{% if context.mcp %}    // baukit_mcp limits its own routes with the same store, keyed by the verified MCP caller.
+    let mcp = mcp_router(config, backend, limits.as_ref()).await?;
 {% endif %}{% if context.platform %}    let platform = {{ context.app_crate }}_bin::platform::compose(backend.pool.clone(), &config.product)?;
     late.push(platform.router);
 {% endif %}    let api = protect_routes(
@@ -217,7 +219,8 @@ async fn compose_api(
         backend.auth.clone(),
         limits.as_ref(),
     )?;
-{% if context.platform %}    let api = api.layer(axum::Extension(platform.entitlements));
+{% if context.mcp %}    let api = api.merge(mcp);
+{% endif %}{% if context.platform %}    let api = api.layer(axum::Extension(platform.entitlements));
 {% endif %}    Ok(finalize_with_options(api, http))
 }
 {% if context.mcp %}
@@ -329,9 +332,9 @@ async fn serve(
         pool_metrics.shutdown().await;
     }
     shutdown
-        .run_during_drain(async move {
-            tokio::task::spawn_blocking(move || telemetry.shutdown()).await
-        })
+        .run_during_drain(
+            async move { tokio::task::spawn_blocking(move || telemetry.shutdown()).await },
+        )
         .await???;
     result?;
     Ok(())

@@ -28,7 +28,7 @@ mod config;
 {% if context.platform %}pub mod platform;
 {% endif %}mod rate_limits;
 pub use config::config_loader;
-pub use rate_limits::{RateLimits, rate_limited{% if context.auth_enabled %}, protect_routes{% endif %}};
+pub use rate_limits::{RateLimits, {% if context.auth_enabled %}protect_routes, {% endif %}rate_limited};
 
 {% if context.auth_enabled %}mod browser_session;
 mod identity;

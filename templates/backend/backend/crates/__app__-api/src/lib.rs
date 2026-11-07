@@ -531,8 +531,8 @@ mod tests {
         assert_eq!(error.status(), StatusCode::BAD_REQUEST);
         assert_eq!(error.code(), "out_of_range");
 
-        let error =
-            Item::new(Uuid::nil(), "owner", "x".repeat(201)).expect_err("name should exceed the limit");
+        let error = Item::new(Uuid::nil(), "owner", "x".repeat(201))
+            .expect_err("name should exceed the limit");
         let error = map_service_error(ServiceError::Invalid(error));
         assert_eq!(error.status(), StatusCode::BAD_REQUEST);
         assert_eq!(error.code(), "text_too_long");

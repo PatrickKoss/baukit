@@ -22,11 +22,13 @@ pub struct RateLimits {
 /// Wraps `router` in the IP and identity limiter. `None` means rate limiting is disabled.
 pub fn rate_limited(router: Router, limits: Option<&RateLimits>) -> Router {
     match limits {
-        Some(limits) => baukit_ratelimit::layers(router, limits.store.clone(), limits.options.clone()),
+        Some(limits) => {
+            baukit_ratelimit::layers(router, limits.store.clone(), limits.options.clone())
+        }
         None => router,
     }
-}
-{% if context.auth_enabled %}
+}{% if context.auth_enabled %}
+
 /// Authenticates and limits `items`, then merges each router in `late` behind its own limiter.
 ///
 /// Routers in `late` verify callers themselves (MCP, browser sessions, signed webhooks), so
@@ -56,9 +58,9 @@ pub fn protect_routes(
         auth,
         baukit_auth::establish_principal,
     ));
-    Ok(late
-        .into_iter()
-        .fold(items, |router, late| router.merge(rate_limited(late, limits))))
+    Ok(late.into_iter().fold(items, |router, late| {
+        router.merge(rate_limited(late, limits))
+    }))
 }
 
 fn item_write_options(
@@ -81,5 +83,4 @@ fn is_item_write(request: &Request) -> bool {
         *request.method(),
         Method::POST | Method::PUT | Method::PATCH | Method::DELETE
     )
-}
-{% endif %}
+}{% endif %}

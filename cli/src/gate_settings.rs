@@ -293,6 +293,8 @@ fn known_tokens(capabilities: &Capabilities, quality: &QualityManifest) -> Vec<&
             "rust-msrv",
             "rust-tests",
             "rust-doctests",
+            "cargo-deny",
+            "fuzz",
             "images",
         ]);
         if capabilities.components.mcp() {

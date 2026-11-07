@@ -7,9 +7,9 @@ use std::{path::PathBuf, process::Command};
 use axum::{
     Router,
     body::{Body, to_bytes},
-    response::Response,
     http::{Method, Request, StatusCode, header},
     middleware,
+    response::Response,
 };
 use baukit_auth::{AuthState, OidcConfig, OidcVerifier};
 use baukit_config::HttpConfig;
@@ -176,7 +176,7 @@ async fn assert_refresh_rotation(
     concurrent_a?;
     concurrent_b?;
     assert_eq!(issuer.refresh_request_count(), 3);
-    let response = get_me(&app, refreshed.access_token()).await?;
+    let response = get_me(app, refreshed.access_token()).await?;
     assert_eq!(response.status(), StatusCode::OK);
 
     assert!(issuer.reject_refresh(session.refresh_token()));

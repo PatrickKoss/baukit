@@ -5,7 +5,7 @@ repository_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)
 cd "$repository_root"
 
 usage() {
-  echo "usage: sh scripts/repo-lint.sh workflow-lint|secret-scan|osv|python-lint|shell-lint" >&2
+  echo "usage: sh scripts/repo-lint.sh workflow-lint|secret-scan|osv|deny|python-lint|shell-lint" >&2
   exit 2
 }
 
@@ -56,6 +56,14 @@ osv() {
   osv-scanner scan source --config osv-scanner.toml "$@"
 }
 
+deny() {
+  if [ ! -f backend/Cargo.toml ]; then
+    echo "repo lint: no Rust backend to check"
+    return
+  fi
+  cargo deny --manifest-path backend/Cargo.toml --config backend/deny.toml check
+}
+
 python_lint() {
   if ! has_files '*.py'; then
     echo "repo lint: no Python files"
@@ -78,6 +86,7 @@ case "$1" in
   workflow-lint) workflow_lint ;;
   secret-scan) secret_scan ;;
   osv) osv ;;
+  deny) deny ;;
   python-lint) python_lint ;;
   shell-lint) shell_lint ;;
   *) usage ;;

@@ -23,7 +23,9 @@ async fn durable_outbox_runs_the_generated_demo_handler() -> Result<(), Box<dyn 
     let fixture = baukit_test::start_postgres_with_migrations(&migrations).await?;
     let pool = sqlx::PgPool::connect(fixture.connection_url()).await?;
     let service = ItemService::new(Arc::new(PostgresItemRepository::new(pool.clone())));
-    let item = service.create("worker-owner", "worker fixture".to_owned()).await?;
+    let item = service
+        .create("worker-owner", "worker fixture".to_owned())
+        .await?;
     let (job_id, status, payload): (uuid::Uuid, String, serde_json::Value) =
         sqlx::query_as("SELECT id, status, payload FROM job_outbox WHERE idempotency_key = $1")
             .bind(format!("item-created:{}", item.id))
@@ -32,29 +34,7 @@ async fn durable_outbox_runs_the_generated_demo_handler() -> Result<(), Box<dyn 
     assert_eq!(status, "pending");
     assert_eq!(payload["item_id"], item.id.to_string());
 
-{% if context.auth_enabled %}    let fake = Arc::new(baukit_test::FakeIdentityAccountDeleter::default());
-    fake.push_outcome(Err(IdentityDeletionError::Retryable));
-    let erasure = ErasureService::new(
-        PostgresErasureStore::new(
-            pool.clone(),
-            Secret::new("worker-test-hash-key-with-at-least-32-bytes".into()),
-        )?,
-        IdentityRetention::Delete {
-            deleter: fake.clone(),
-            provider_id: "keycloak".into(),
-            inline_timeout: Duration::from_secs(1),
-            max_attempts: 3,
-        },
-    )?;
-    let operation = erasure
-        .erase(
-            "worker-erasure-subject",
-            None,
-            "worker-erasure-key-001",
-            &PostgresProfileErasure,
-        )
-        .await?;
-    assert_eq!(operation.status, ErasureState::Pending);
+{% if context.auth_enabled %}    let (fake, erasure, operation) = pending_erasure(&pool).await?;
 
 {% endif %}    let service_info = ServiceInfo::new(
         "{{ context.app_name }}",
@@ -65,21 +45,7 @@ async fn durable_outbox_runs_the_generated_demo_handler() -> Result<(), Box<dyn 
     let telemetry = TelemetryBuilder::new(service_info.telemetry_identity().clone())
         .filter("off")
         .init()?;
-    let runner = WorkerRunner::new(
-        Arc::new(PostgresJobStore::new(pool.clone())),
-        Arc::new(DemoJobHandler::new()),
-        WorkerConfig {
-            worker_id: "generated-worker-test".to_owned(),
-            concurrency: 1,
-            poll_interval: Duration::from_millis(10),
-            lease_duration: Duration::from_secs(5),
-            job_timeout: Duration::from_secs(2),
-            cancellation_poll_interval: Duration::from_millis(10),
-            retry_initial: Duration::from_millis(10),
-            retry_max: Duration::from_millis(20),
-            ..WorkerConfig::default()
-        },
-    )?;
+    let runner = demo_runner(&pool)?;
     runner.ready().await?;
     let (ops, readiness) = worker_operations_router(
         runner.clone(),
@@ -93,24 +59,7 @@ async fn durable_outbox_runs_the_generated_demo_handler() -> Result<(), Box<dyn 
         baukit_test::MetricsConformanceOptions::new().require_worker_metrics(),
     );
 
-    let shutdown = ShutdownToken::new(Duration::from_secs(2));
-    let task = tokio::spawn(runner.run(shutdown.clone()));
-    tokio::time::timeout(Duration::from_secs(5), async {
-        loop {
-            let status: String = sqlx::query_scalar("SELECT status FROM job_outbox WHERE id = $1")
-                .bind(job_id)
-                .fetch_one(&pool)
-                .await
-                .expect("job status query succeeds");
-            if status == "succeeded" {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await?;
-    shutdown.trigger();
-    task.await??;
+    run_until_succeeded(runner, &pool, job_id).await?;
 
     let status: String = sqlx::query_scalar("SELECT status FROM job_outbox WHERE id = $1")
         .bind(job_id)
@@ -136,5 +85,85 @@ async fn durable_outbox_runs_the_generated_demo_handler() -> Result<(), Box<dyn 
 {% endif %}    telemetry.shutdown()?;
     pool.close().await;
     drop(fixture);
+    Ok(())
+}
+{% if context.auth_enabled %}
+async fn pending_erasure(
+    pool: &sqlx::PgPool,
+) -> Result<
+    (
+        Arc<baukit_test::FakeIdentityAccountDeleter>,
+        ErasureService,
+        baukit_erasure::ErasureOutcome,
+    ),
+    Box<dyn Error>,
+> {
+    let fake = Arc::new(baukit_test::FakeIdentityAccountDeleter::default());
+    fake.push_outcome(Err(IdentityDeletionError::Retryable));
+    let erasure = ErasureService::new(
+        PostgresErasureStore::new(
+            pool.clone(),
+            Secret::new("worker-test-hash-key-with-at-least-32-bytes".into()),
+        )?,
+        IdentityRetention::Delete {
+            deleter: fake.clone(),
+            provider_id: "keycloak".into(),
+            inline_timeout: Duration::from_secs(1),
+            max_attempts: 3,
+        },
+    )?;
+    let operation = erasure
+        .erase(
+            "worker-erasure-subject",
+            None,
+            "worker-erasure-key-001",
+            &PostgresProfileErasure,
+        )
+        .await?;
+    assert_eq!(operation.status, ErasureState::Pending);
+    Ok((fake, erasure, operation))
+}
+{% endif %}
+fn demo_runner(pool: &sqlx::PgPool) -> Result<WorkerRunner, Box<dyn Error>> {
+    Ok(WorkerRunner::new(
+        Arc::new(PostgresJobStore::new(pool.clone())),
+        Arc::new(DemoJobHandler::new()),
+        WorkerConfig {
+            worker_id: "generated-worker-test".to_owned(),
+            concurrency: 1,
+            poll_interval: Duration::from_millis(10),
+            lease_duration: Duration::from_secs(5),
+            job_timeout: Duration::from_secs(2),
+            cancellation_poll_interval: Duration::from_millis(10),
+            retry_initial: Duration::from_millis(10),
+            retry_max: Duration::from_millis(20),
+            ..WorkerConfig::default()
+        },
+    )?)
+}
+
+async fn run_until_succeeded(
+    runner: WorkerRunner,
+    pool: &sqlx::PgPool,
+    job_id: uuid::Uuid,
+) -> Result<(), Box<dyn Error>> {
+    let shutdown = ShutdownToken::new(Duration::from_secs(2));
+    let task = tokio::spawn(runner.run(shutdown.clone()));
+    let finished = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let status: String = sqlx::query_scalar("SELECT status FROM job_outbox WHERE id = $1")
+                .bind(job_id)
+                .fetch_one(pool)
+                .await?;
+            if status == "succeeded" {
+                return Ok::<_, sqlx::Error>(());
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    shutdown.trigger();
+    task.await??;
+    finished??;
     Ok(())
 }

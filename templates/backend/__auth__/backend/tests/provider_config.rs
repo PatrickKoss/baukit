@@ -331,20 +331,10 @@ async fn configured_provider_authenticates_the_product_route_with_the_same_ident
     let users = UserService::new(Arc::new(InMemoryUserRepository::new()));
     let mut user_id = None;
     for provider in ["oidc", "clerk", "workos"] {
-        let file = tempfile::Builder::new().suffix(".toml").tempfile()?;
-        let jwks = format!("jwks_uri = {:?}\n", server.jwks_url());
-        std::fs::write(
-            file.path(),
-            format!(
-                "[auth]\nprovider = {provider:?}\nissuer = {:?}\naudience = \"api\"\nclient_id = \"client_app\"\nauthorized_parties = [\"https://app.example\"]\n{jwks}",
-                issuer,
-            ),
-        )?;
-        let config: BaukitConfig<ProductConfig> =
-            ConfigLoader::new("provider-route-test", Environment::Local)?
-                .local_file(file.path())
-                .without_dotenv()
-                .load()?;
+        let config = load_auth_config(&format!(
+            "[auth]\nprovider = {provider:?}\nissuer = {issuer:?}\naudience = \"api\"\nclient_id = \"client_app\"\nauthorized_parties = [\"https://app.example\"]\njwks_uri = {:?}\n",
+            server.jwks_url(),
+        ))?;
         let verifier = auth_verifier(&config.product.auth).await?;
         let app = router(
             ApiState {
@@ -399,4 +389,15 @@ async fn configured_provider_authenticates_the_product_route_with_the_same_ident
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
     Ok(())
+}
+
+fn load_auth_config(toml: &str) -> Result<BaukitConfig<ProductConfig>, Box<dyn Error>> {
+    let file = tempfile::Builder::new().suffix(".toml").tempfile()?;
+    std::fs::write(file.path(), toml)?;
+    Ok(
+        ConfigLoader::new("provider-route-test", Environment::Local)?
+            .local_file(file.path())
+            .without_dotenv()
+            .load()?,
+    )
 }

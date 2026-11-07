@@ -82,9 +82,9 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
     pool.close().await;
     pool_metrics.shutdown().await;
     shutdown
-        .run_during_drain(async move {
-            tokio::task::spawn_blocking(move || telemetry.shutdown()).await
-        })
+        .run_during_drain(
+            async move { tokio::task::spawn_blocking(move || telemetry.shutdown()).await },
+        )
         .await???;
     server_result?;
     Ok(())

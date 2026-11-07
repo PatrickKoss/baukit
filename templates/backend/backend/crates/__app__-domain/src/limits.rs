@@ -188,7 +188,9 @@ impl LimitError {
         match self {
             Self::Exceeded { reason, .. } => reason.as_str(),
             Self::OutOfRange { .. } => LimitReason::OutOfRange.as_str(),
-            Self::InvalidRange(_) | Self::JsonEncoding { .. } | Self::PolicyUnavailable(_) => "internal",
+            Self::InvalidRange(_) | Self::JsonEncoding { .. } | Self::PolicyUnavailable(_) => {
+                "internal"
+            }
         }
     }
 
@@ -215,7 +217,9 @@ impl LimitError {
                 ("minimum".to_owned(), Value::from(minimum)),
                 ("maximum".to_owned(), Value::from(maximum)),
             ]),
-            Self::InvalidRange(_) | Self::JsonEncoding { .. } | Self::PolicyUnavailable(_) => BTreeMap::new(),
+            Self::InvalidRange(_) | Self::JsonEncoding { .. } | Self::PolicyUnavailable(_) => {
+                BTreeMap::new()
+            }
         }
     }
 }
@@ -378,7 +382,9 @@ mod tests {
 
     #[test]
     fn range_errors_preserve_details_and_reject_inverted_bounds() {
-        let bounds = limits_policy().expect("embedded policy should parse").ranges["interval_seconds"];
+        let bounds = limits_policy()
+            .expect("embedded policy should parse")
+            .ranges["interval_seconds"];
         for measured in [bounds.minimum, 86400, bounds.maximum] {
             assert_eq!(
                 check_range("intervalSeconds", measured, bounds.minimum, bounds.maximum),
@@ -412,7 +418,10 @@ mod tests {
     fn loads_the_shared_product_fixture() {
         let parsed = parse_limits_policy(include_str!("../../../../limits.json"))
             .expect("shared limits fixture should parse");
-        assert_eq!(limits_policy().expect("embedded policy should parse"), &parsed);
+        assert_eq!(
+            limits_policy().expect("embedded policy should parse"),
+            &parsed
+        );
         assert_eq!(parsed.version, SUPPORTED_POLICY_VERSION);
     }
 

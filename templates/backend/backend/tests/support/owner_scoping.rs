@@ -10,7 +10,11 @@ pub async fn assert_items_are_owner_scoped(
     repository: &dyn ItemRepository,
 ) -> Result<(), Box<dyn Error>> {
     let item = repository
-        .create(Item::new(Uuid::now_v7(), "first-owner", "first owner's item")?)
+        .create(Item::new(
+            Uuid::now_v7(),
+            "first-owner",
+            "first owner's item",
+        )?)
         .await?;
     assert_eq!(repository.get("second-owner", item.id).await?, None);
     assert!(repository.list("second-owner").await?.is_empty());

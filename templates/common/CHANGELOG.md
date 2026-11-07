@@ -5,7 +5,7 @@
 - Breaking: `AGENTS.md` is a symlink to `CLAUDE.md`, and `CLAUDE.md` ends with the managed Baukit agent-rules block. Replace an existing `AGENTS.md` copy with the symlink, then run `baukit check agent-docs --fix --root .` from the matching Baukit checkout.
 - Every workflow action is pinned to a commit SHA with its version in a comment, and every checkout sets `persist-credentials: false`. `rust-toolchain` and `install-action` take the toolchain and tools as inputs.
 - `scripts/repo-lint.sh` runs actionlint and zizmor, gitleaks, osv-scanner, ruff and shellcheck. `mise.toml` pins those tools, and `zizmor.yml`, `osv-scanner.toml`, `ruff.toml` and `.shellcheckrc` configure them. {% if context.quality_strict %}`scripts/quality-gate.sh` runs them as fast-lane steps{% else %}A `repository-lint` CI job runs them{% endif %}.
-- {% if context.quality_strict %}The `baukit-check` gate step{% else %}The `baukit-doctor` CI job{% endif %} runs `baukit check agent-docs file-size suppressions` with the limits in `baukit-check.toml`.
+- {% if context.quality_strict %}The `baukit-check` gate step{% else %}The `baukit-doctor` CI job{% endif %} runs `baukit check agent-docs file-size suppressions lints patterns observability template-files` with the limits in `baukit-check.toml`.
 
 ## [0.18.3] - 2026-11-07
 

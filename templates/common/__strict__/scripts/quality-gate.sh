@@ -105,7 +105,8 @@ baukit-check fast - always -
 workflow-lint fast - always -
 secret-scan fast - always -
 osv fast - always -
-python-lint fast - always -
+{% if context.backend %}cargo-deny fast - always -
+{% endif %}python-lint fast - always -
 shell-lint fast - always -
 metric-names fast - always -
 {% if context.web %}spec-purposes fast - always -
@@ -113,6 +114,7 @@ metric-names fast - always -
 rust-msrv backend rust-clippy selected -
 rust-tests backend rust-msrv selected -
 rust-doctests backend rust-tests selected -
+fuzz fuzz - selected -
 images images - selected -
 {% endif %}{% if context.web %}web-install web - always -
 web-build web web-install{% if context.backend %},openapi{% endif %} selected web-e2e,playwright
@@ -160,11 +162,10 @@ step_baukit_doctor() {
   cargo run --quiet --locked --manifest-path "$baukit_root/cli/Cargo.toml" --bin baukit -- doctor
 }
 
-# The lints and patterns rules join this list once the backend and frontend templates carry their baselines.
 step_baukit_check() {
   use_baukit_root
   cargo run --quiet --locked --manifest-path "$baukit_root/cli/Cargo.toml" --bin baukit -- \
-    check agent-docs file-size suppressions --root .
+    check agent-docs file-size suppressions lints patterns observability template-files --root .
 }
 
 step_workflow_lint() {
@@ -177,6 +178,10 @@ step_secret_scan() {
 
 step_osv() {
   sh scripts/repo-lint.sh osv
+}
+
+step_cargo_deny() {
+  sh scripts/repo-lint.sh deny
 }
 
 step_python_lint() {
@@ -256,6 +261,22 @@ step_rust_tests() {
 
 step_rust_doctests() {
   cargo test --manifest-path backend/Cargo.toml --workspace --doc
+}
+
+# Runs each cargo-fuzz target in backend/fuzz for BAUKIT_FUZZ_SECONDS and fails on any crash.
+step_fuzz() {
+  fuzz_seconds=${BAUKIT_FUZZ_SECONDS:-60}
+  cargo fmt --manifest-path backend/fuzz/Cargo.toml --all --check
+  (
+    cd backend/fuzz
+    cargo +nightly fuzz build
+    for target in $(cargo +nightly fuzz list); do
+      mkdir -p "corpus/$target" "artifacts/$target"
+      cargo +nightly fuzz run "$target" "corpus/$target" -- \
+        -max_total_time="$fuzz_seconds" \
+        -artifact_prefix="artifacts/$target/"
+    done
+  )
 }
 {% if context.mcp %}
 step_mcp_drift() {
