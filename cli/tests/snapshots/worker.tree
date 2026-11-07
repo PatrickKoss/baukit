@@ -6,6 +6,7 @@ b25e4a2d0a7562470f166e8082f1ff2ee01bcd01cc222935e4fcffb15febfc4f  .cargo/config.
 7c6b980688278da8c17a3b651a7fa3fe81b2b259fb7b2cad1792496b3158111f  .github/workflows/ci.yml
 c0a6fc8826102974f1d682422ed60824f905c64bd0fb8d6110a4aa411ef855da  .github/workflows/native.yml
 ba72f505a223cdc491c7097a43ac6397d6bf32b99a0628ecf825abf9d6a913ca  .gitignore
+d988257944c62057e452c7198d18ff118cb8ae1de35668a0318ee09d46bad6ae  .gitleaks.toml
 7eb998b9767225d73d919e6aa0f548df3e6b7d4cf44f9b863e26c54363b07f06  .shellcheckrc
 -> CLAUDE.md  AGENTS.md
 78ce1b4a08dfc65d259a80a40e627baeffcae1b437896b848b99cd1d3a44d7a4  CHANGELOG.md

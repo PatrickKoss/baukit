@@ -1,6 +1,7 @@
 54605905c2cc7fd8e91c111a3ef2c8907499c84e0cc89cb6dc93fbf3a7853a7e  .baukit/template-files.toml
 de050f96982f758e8d787786ceb49e48cda5bf41931090211ca4fcbd5fc8547b  .github/workflows/ci.yml
 98238345ced7e6b6c84b76f4626d1dafaab7c5f8a2931be68db2cde8748b82b2  .github/workflows/native.yml
+d988257944c62057e452c7198d18ff118cb8ae1de35668a0318ee09d46bad6ae  .gitleaks.toml
 7eb998b9767225d73d919e6aa0f548df3e6b7d4cf44f9b863e26c54363b07f06  .shellcheckrc
 -> CLAUDE.md  AGENTS.md
 8221a1090e9f016965c469dbb433fe7de6a6661bc25fdc0d18411a397cc82a47  CHANGELOG.md
