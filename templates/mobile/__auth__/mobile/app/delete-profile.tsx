@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, type ReactElement } from 'react';
 import { Stack } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type { ProfileErasureClient } from '@baukit/api-runtime/erasure';
@@ -9,7 +9,7 @@ import { createDeleteProfileClient, deleteProfile } from '../src/delete-profile'
 import { DeleteProfileScreen } from '../src/delete-profile-screen';
 import { useAuthenticatedLocalData } from '../src/local-data';
 
-export default function DeleteProfileRoute() {
+export default function DeleteProfileRoute(): ReactElement {
   const { t } = useTranslation('home');
   const headerOptions = { title: t('erasure.title') };
   const auth = useAuth();

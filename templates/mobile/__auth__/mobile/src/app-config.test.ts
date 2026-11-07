@@ -5,25 +5,34 @@ const variables = ['NODE_ENV', 'BAUKIT_QA_BUILD', 'EXPO_PUBLIC_LOCAL_OIDC_ISSUER
 
 type AppConfig = (context: ConfigContext) => ExpoConfig;
 
-function extraFor(environment: Record<string, string>): Record<string, unknown> {
+type BuildEnvironment = Record<string, string> & Pick<NodeJS.ProcessEnv, 'NODE_ENV'>;
+
+function extraFor(environment: BuildEnvironment): Record<string, unknown> {
   const saved = process.env;
-  process.env = {
+  const next: NodeJS.ProcessEnv = {
     ...Object.fromEntries(Object.entries(saved).filter(([name]) => !variables.includes(name))),
     ...environment,
-  } as NodeJS.ProcessEnv;
+  };
+  process.env = next;
   try {
     let appConfig: AppConfig | undefined;
     jest.isolateModules(() => {
       appConfig = jest.requireActual<{ default: AppConfig }>('../app.config').default;
     });
     if (appConfig === undefined) throw new Error('app.config.ts has no default export');
-    return appConfig({ config: {} } as ConfigContext).extra ?? {};
+    const context: ConfigContext = {
+      projectRoot: process.cwd(),
+      staticConfigPath: null,
+      packageJsonPath: null,
+      config: {},
+    };
+    return appConfig(context).extra ?? {};
   } finally {
     process.env = saved;
   }
 }
 
-const cases: readonly [string, Record<string, string>, boolean][] = [
+const cases: readonly [string, BuildEnvironment, boolean][] = [
   ['development', { NODE_ENV: 'development', EXPO_PUBLIC_LOCAL_OIDC_ISSUER: localIssuer }, true],
   ['production', { NODE_ENV: 'production', EXPO_PUBLIC_LOCAL_OIDC_ISSUER: localIssuer }, false],
   [

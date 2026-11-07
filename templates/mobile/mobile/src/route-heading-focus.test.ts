@@ -30,7 +30,7 @@ describe('Expo Router route heading focus adapter', () => {
 
   it('passes the mounted heading to the web controller and returns its cleanup', () => {
     const heading = { focus: jest.fn() } as unknown as RouteFocusTarget;
-    const headingRef = { current: heading } as RefObject<object | null>;
+    const headingRef: RefObject<object | null> = { current: heading };
     const cleanup = jest.fn();
     let target: (() => RouteFocusTarget | null) | undefined;
     const controller = {
@@ -51,7 +51,7 @@ describe('Expo Router route heading focus adapter', () => {
   it('does nothing before the heading is ready', () => {
     const controller = { enterRoute: jest.fn(), dispose: jest.fn() } satisfies RouteFocusController;
     const requestFrame = jest.spyOn(globalThis, 'requestAnimationFrame');
-    const headingRef = { current: null } as RefObject<object | null>;
+    const headingRef: RefObject<object | null> = { current: null };
 
     expect(createRouteHeadingFocusEffect(controller, headingRef, false)).toBeUndefined();
     expect(createRouteHeadingFocusEffect(null, headingRef, false)).toBeUndefined();
@@ -65,7 +65,7 @@ describe('Expo Router route heading focus adapter', () => {
       frameCallback = callback;
       return 7;
     });
-    const headingRef = { current: {} } as RefObject<object | null>;
+    const headingRef: RefObject<object | null> = { current: {} };
 
     createRouteHeadingFocusEffect(null, headingRef, true);
     expect(mockFocusAccessibilityElement).not.toHaveBeenCalled();
@@ -91,7 +91,7 @@ describe('Expo Router route heading focus adapter', () => {
       return 9;
     });
     const cancelFrame = jest.spyOn(globalThis, 'cancelAnimationFrame').mockReturnValue(undefined);
-    const headingRef = { current: {} } as RefObject<object | null>;
+    const headingRef: RefObject<object | null> = { current: {} };
 
     const { rerender, unmount } = await renderHook(
       ({ ready }: { ready: boolean }) => {

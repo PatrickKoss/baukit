@@ -1,298 +1,115 @@
-import { useEffect, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { ReactElement } from 'react';
+import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { useAriaHiddenInert } from '@baukit/a11y-core/web';
-import type { ConsentState } from '@baukit/analytics-core';
-import { safeAuthErrorMessage, type SessionExpiredReason } from '@baukit/auth-web';
-import {
-  isPersistenceIdentityMismatchError,
-  recheckServerSubjectBeforeSyncAdoption,
-} from '@baukit/data-contracts';
 
 import { AccessibleDialogExample } from './accessible-dialog';
-import { analytics } from './analytics';
 import { NavigationShell } from './navigation-shell';
-import { currentUser, listItems, type CurrentUser, type Item } from './api';
-import { authClient } from './auth';
-import type { SignInSession } from './sign-in/port';
-import { backOrReplace, browserNavigation } from './back-or-replace';
-import { deriveDetailRouteState } from './route-state';
-import { DetailRouteStateView } from './route-state-view';
-import { useAuthenticatedLocalData } from './local-data';
+import { listItems, type Item } from './api';
+import { useConsent, useItemsViewedEvent, useLocationSearch } from './app-hooks';
+import { ConsentPanel, ItemDetail, ItemList } from './app-panels';
+import { useAuthSession, type AuthSession } from './auth-session';
+import { IdentityPanel } from './identity-panel';
 import { DeleteProfileRoute } from './delete-profile-route';
 import { deleteProfileCopy } from './delete-profile-copy';
 
 import { PRODUCT_NAME } from './product';
 
-const ITEM_ID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+function ItemsPanel({
+  session,
+  items,
+}: {
+  readonly session: AuthSession;
+  readonly items: UseQueryResult<readonly Item[]>;
+}): ReactElement {
+  const { partition } = session;
+  return (
+    <section className="panel" aria-labelledby="items-title">
+      <h2 id="items-title">Items</h2>
+      {session.localData.state.status === 'initializing' ? (
+        <p className="muted" role="status">Preparing local account data…</p>
+      ) : null}
+      {partition !== undefined && items.isPending ? <p className="muted">Loading items…</p> : null}
+      {items.error === null ? null : <p className="error">{items.error.message}</p>}
+      {!session.authenticated ? <p className="muted">Sign in to open your local data partition.</p> : null}
+      {partition !== undefined && items.data?.length === 0 ? <p className="muted">No items yet.</p> : null}
+      <ItemList items={items.data} />
+    </section>
+  );
+}
 
-export function App() {
+function AccountNavigation({
+  session,
+  onLocationChange,
+}: {
+  readonly session: AuthSession;
+  readonly onLocationChange: () => void;
+}): ReactElement {
+  return (
+{% raw %}
+    <NavigationShell
+      onLocationChange={onLocationChange}
+      profile={{
+        label: 'Account',
+        initials: 'A',
+        menu: [
+          { id: 'account', label: 'Profile', href: '/#identity-title' },
+          {
+            id: 'delete-profile',
+            label: deleteProfileCopy(navigator.language).title,
+            href: '/?page=delete-profile',
+          },
+          {
+            id: 'signout',
+            label: 'Sign out',
+            onSelect: () => {
+              void session.signOut();
+            },
+          },
+        ],
+      }}
+    />
+{% endraw %}
+  );
+}
+
+export function App(): ReactElement {
   useAriaHiddenInert();
-  const queryClient = useQueryClient();
-  const [authenticated, setAuthenticated] = useState(authClient.hasSession());
-  const [sessionExpiredReason, setSessionExpiredReason] = useState<SessionExpiredReason>();
-  const [authError, setAuthError] = useState<string>();
-  const [user, setUser] = useState<CurrentUser>();
-  const [signInSession, setSignInSession] = useState<SignInSession>();
-  const localData = useAuthenticatedLocalData(user?.id, sessionExpiredReason, queryClient);
-  const blockIdentityMismatch = localData.blockIdentityMismatch;
-  const partition =
-    localData.state.status === 'ready' &&
-    localData.state.partition.subject === user?.id &&
-    sessionExpiredReason === undefined
-      ? localData.state.partition
-      : undefined;
+  const session = useAuthSession(useQueryClient());
+  const { partition, user } = session;
   const items = useQuery({
     queryKey: ['items', partition?.subject],
     queryFn: () => listItems(),
     enabled: partition !== undefined,
   });
-  const [consent, setConsent] = useState<ConsentState>(analytics.consent);
-  const [search, setSearch] = useState(window.location.search);
+  const { consent, choose } = useConsent();
+  const [search, refreshSearch] = useLocationSearch();
   const searchParams = new URLSearchParams(search);
-  const detailId = searchParams.get('item');
-  const deletingProfile = searchParams.get('page') === 'delete-profile';
-  const detailState = deriveDetailRouteState({
-    id: detailId,
-    isValidId: (id) => ITEM_ID_PATTERN.test(id),
-    loading: items.isPending,
-    error: items.error,
-    value: items.data?.find((item) => item.id === detailId),
-  });
-
-  useEffect(() => {
-    const unsubscribe = authClient.subscribeSessionExpired((event) => {
-      setSessionExpiredReason(event.reason);
-      setAuthenticated(false);
-      setUser(undefined);
-    });
-    void authClient
-      .handleCallback()
-      .then((handled) => {
-        if (handled) {
-          setSessionExpiredReason(undefined);
-          setAuthenticated(true);
-        }
-      })
-      .catch((cause: unknown) => {
-        setAuthError(safeAuthErrorMessage(cause));
-      });
-    return unsubscribe;
-  }, []);
-
-  useEffect(() => {
-    if (!authenticated) {
-      return;
-    }
-    let active = true;
-    void authClient
-      .session()
-      .then((nextSession) => {
-        if (active) setSignInSession(nextSession);
-      })
-      .catch(() => undefined);
-    void currentUser()
-      .then((nextUser) => {
-        if (active) setUser(nextUser);
-      })
-      .catch((cause: unknown) => {
-        if (active) {
-          setAuthError(cause instanceof Error ? cause.message : 'Could not confirm account identity.');
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [authenticated]);
-
-  useEffect(() => {
-    if (partition === undefined || user === undefined) return;
-    void recheckServerSubjectBeforeSyncAdoption({
-      partitionSubject: partition.subject,
-      readServerSubject: () => Promise.resolve(user.id),
-      adopt: () => {
-        analytics.identify(user.id);
-      },
-    }).catch((cause: unknown) => {
-      if (isPersistenceIdentityMismatchError(cause)) {
-        void blockIdentityMismatch(cause).catch(() => {
-          setAuthError('Could not safely close local account data.');
-        });
-      }
-    });
-  }, [blockIdentityMismatch, partition, user]);
-
-  useEffect(() => {
-    if (items.data !== undefined && consent === 'granted') {
-      analytics.capture({ name: 'items_viewed', properties: { count: items.data.length } });
-    }
-  }, [consent, items.data]);
-
-  function chooseConsent(nextConsent: ConsentState): void {
-    analytics.setConsent(nextConsent);
-    setConsent(nextConsent);
-  }
-
-  async function signOut(): Promise<void> {
-    setAuthError(undefined);
-    try {
-      await localData.clear();
-      setAuthenticated(false);
-      setUser(undefined);
-      await authClient.signOut();
-    } catch (cause) {
-      setAuthError(cause instanceof Error ? cause.message : 'Could not close local account data.');
-    }
-  }
+  useItemsViewedEvent(items.data, consent);
 
   return (
     <main className="shell">
-{% raw %}
-      <NavigationShell
-        onLocationChange={() => {
-          setSearch(window.location.search);
-        }}
-        profile={{
-          label: 'Account',
-          initials: 'A',
-          menu: [
-            { id: 'account', label: 'Profile', href: '/#identity-title' },
-            {
-              id: 'delete-profile',
-              label: deleteProfileCopy(navigator.language).title,
-              href: '/?page=delete-profile',
-            },
-            {
-              id: 'signout',
-              label: 'Sign out',
-              onSelect: () => {
-                void signOut();
-              },
-            },
-          ],
-        }}
-      />
-{% endraw %}
+      <AccountNavigation session={session} onLocationChange={refreshSearch} />
       <p className="eyebrow">BAUKIT WEB</p>
       <h1>{PRODUCT_NAME}</h1>
       <p className="lede">Sign in to open your account.</p>
 
-      {deletingProfile ? <DeleteProfileRoute
-        subject={user?.subject}
-        ready={partition !== undefined}
-        eraseLocalPartition={() => localData.erase(user?.id ?? '')}
-        onSignedOut={() => {
-          setAuthenticated(false);
-          setUser(undefined);
-        }}
-      /> : null}
-
-      {detailId === null ? null : (
-        <DetailRouteStateView<Item>
-          state={detailState}
-          onExit={() => {
-            backOrReplace(browserNavigation(), '/');
-          }}
-          renderReady={(item) => (
-            <section className="panel" aria-labelledby="detail-title">
-              <h2 id="detail-title">Item detail</h2>
-              <p>{item.name}</p>
-              <button
-                className="action secondary"
-                type="button"
-                onClick={() => {
-                  backOrReplace(browserNavigation(), '/');
-                }}
-              >
-                Back to items
-              </button>
-            </section>
-          )}
+      {searchParams.get('page') === 'delete-profile' ? (
+        <DeleteProfileRoute
+          subject={user?.subject}
+          ready={partition !== undefined}
+          eraseLocalPartition={() => session.localData.erase(user?.id ?? '')}
+          onSignedOut={session.markSignedOut}
         />
-      )}
+      ) : null}
 
-      <section className="panel" aria-labelledby="identity-title">
-        <h2 id="identity-title">Identity</h2>
-        {authError === undefined ? null : <p className="error">{authError}</p>}
-        {localData.state.status === 'blocked' ? (
-          <p className="error" role="alert">
-            Local account data is blocked. Sign in again or contact support before continuing.
-          </p>
-        ) : null}
-        {authenticated ? (
-          <>
-            <p className="muted">
-              Signed in as {user?.subject ?? 'confirming…'}; internal user ID{' '}
-              {user?.id ?? 'confirming…'}. Local data: {localData.state.status}.
-            </p>
-            {signInSession?.organization === undefined ? null : (
-              <p className="muted">Organization {signInSession.organization.id}</p>
-            )}
-            <button
-              className="action secondary"
-              type="button"
-              onClick={() => {
-                void signOut();
-              }}
-            >
-              Sign out
-            </button>
-            <a className="action secondary" href="/?page=delete-profile">
-              {deleteProfileCopy(navigator.language).title}
-            </a>
-          </>
-        ) : (
-          <button className="action" type="button" onClick={() => void authClient.signIn()}>
-            Sign in with {authClient.providerLabel}
-          </button>
-        )}
-      </section>
-
-      <section className="panel" aria-labelledby="items-title">
-        <h2 id="items-title">Items</h2>
-        {localData.state.status === 'initializing' ? (
-          <p className="muted" role="status">Preparing local account data…</p>
-        ) : null}
-        {partition !== undefined && items.isPending ? <p className="muted">Loading items…</p> : null}
-        {items.error === null ? null : <p className="error">{items.error.message}</p>}
-        {!authenticated ? <p className="muted">Sign in to open your local data partition.</p> : null}
-        {partition !== undefined && items.data?.length === 0 ? <p className="muted">No items yet.</p> : null}
-        <ul className="items">
-          {items.data?.map((item) => (
-            <li className="item" key={item.id}>
-              <strong>{item.name}</strong>
-              <span className="item-id">{item.id}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
-
+      <ItemDetail detailId={searchParams.get('item')} items={items} />
+      <IdentityPanel session={session} />
+      <ItemsPanel session={session} items={items} />
       <AccessibleDialogExample />
 
-      <aside className="consent" aria-labelledby="privacy-title">
-        <h2 id="privacy-title">Analytics privacy</h2>
-        <p className="muted">Consent is {consent}. No events leave the app by default.</p>
-        <div className="actions">
-          <button
-            className="action"
-            type="button"
-            onClick={() => {
-              chooseConsent('granted');
-            }}
-          >
-            Allow analytics
-          </button>
-          <button
-            className="action secondary"
-            type="button"
-            onClick={() => {
-              chooseConsent('denied');
-            }}
-          >
-            Deny analytics
-          </button>
-        </div>
-      </aside>
+      <ConsentPanel onChoose={choose}>
+        Consent is {consent}. No events leave the app by default.
+      </ConsentPanel>
     </main>
   );
 }

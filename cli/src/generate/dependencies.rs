@@ -24,6 +24,9 @@ const BASE_CRATES: [&str; 8] = [
 /// resolves those dependencies from npm, so path mode pins them to the checkout with overrides.
 const LOCAL_TRANSITIVE_PACKAGES: [&str; 1] = ["@baukit/type-guards"];
 
+/// Lint presets every generated web and mobile client extends.
+const ESLINT_CONFIG_PACKAGE: &str = "@baukit/eslint-config";
+
 pub(crate) struct DependencyContext {
     pub(crate) cargo: String,
     pub(crate) web_typescript: String,
@@ -39,7 +42,7 @@ pub(crate) struct DependencyContext {
 struct BaukitPackages {
     crates: Vec<&'static str>,
     web: Vec<&'static str>,
-    web_dev: &'static [&'static str],
+    web_dev: Vec<&'static str>,
     mobile: Vec<&'static str>,
 }
 
@@ -56,20 +59,27 @@ impl BaukitPackages {
         if pwa && mobile && !web {
             mobile_packages.push("@baukit/pwa-web");
         }
+        // The mobile template has no devDependencies slot, so the preset sits with its runtime packages.
+        if mobile {
+            mobile_packages.push(ESLINT_CONFIG_PACKAGE);
+        }
+        let mut web_dev = Vec::new();
+        if web {
+            web_dev.push(ESLINT_CONFIG_PACKAGE);
+            if auth_enabled {
+                web_dev.extend(EXPECTED_WEB_AUTH_DEV_DEPENDENCIES);
+            }
+        }
         Self {
             crates: baukit_crates(options),
             web: web_packages,
-            web_dev: if web && auth_enabled {
-                EXPECTED_WEB_AUTH_DEV_DEPENDENCIES
-            } else {
-                &[]
-            },
+            web_dev,
             mobile: mobile_packages,
         }
     }
 
     fn typescript(&self) -> impl Iterator<Item = &&'static str> {
-        self.web.iter().chain(self.web_dev).chain(&self.mobile)
+        self.web.iter().chain(&self.web_dev).chain(&self.mobile)
     }
 }
 
@@ -160,7 +170,7 @@ fn path_dependency_context(
     Ok(DependencyContext {
         cargo,
         web_typescript: render_typescript(&with_transitive(&packages.web)),
-        web_dev_typescript: render_leading_entries(&render_typescript(packages.web_dev)),
+        web_dev_typescript: render_leading_entries(&render_typescript(&packages.web_dev)),
         mobile_typescript: render_typescript(&with_transitive(&packages.mobile)),
         pnpm_overrides,
         manifest: format!("source = \"path\"\npath = \"{display}\""),
@@ -205,7 +215,7 @@ fn registry_dependency_context(packages: &BaukitPackages) -> DependencyContext {
     DependencyContext {
         cargo,
         web_typescript: render_typescript(&packages.web),
-        web_dev_typescript: render_leading_entries(&render_typescript(packages.web_dev)),
+        web_dev_typescript: render_leading_entries(&render_typescript(&packages.web_dev)),
         mobile_typescript: render_typescript(&packages.mobile),
         pnpm_overrides: String::new(),
         manifest: format!("source = \"registry\"\nversion = \"{version}\""),

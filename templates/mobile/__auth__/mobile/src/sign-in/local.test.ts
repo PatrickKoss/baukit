@@ -83,7 +83,8 @@ const accessToken = unsignedJwt({
 });
 
 function json(body: unknown): Response {
-  return { ok: true, status: 200, json: () => Promise.resolve(body) } as Response;
+  const response: Pick<Response, 'ok' | 'status' | 'json'> = { ok: true, status: 200, json: () => Promise.resolve(body) };
+  return response as Response;
 }
 
 describe('local Keycloak sign-in adapter', () => {

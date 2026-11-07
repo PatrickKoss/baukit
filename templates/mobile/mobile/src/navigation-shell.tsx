@@ -1,4 +1,5 @@
 {% raw %}
+import type { ReactElement } from 'react';
 import { Text, useWindowDimensions } from "react-native";
 import { usePathname, useRouter } from "expo-router";
 import {
@@ -82,7 +83,7 @@ export function NavigationBar({
   profile,
 }: {
   readonly profile?: NavigationProfile;
-}) {
+}): ReactElement {
   const { items, labels } = useNavigationItems();
   const router = useRouter();
   const pathname = usePathname();
@@ -105,7 +106,7 @@ export function NavigationBar({
     />
   );
 }
-export function WorkspacePicker() {
+export function WorkspacePicker(): ReactElement {
   const { workspace, labels } = useNavigationItems();
   const router = useRouter();
   const pathname = usePathname();

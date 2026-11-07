@@ -1,3 +1,4 @@
+import type { ReactElement } from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
 
 import { useTheme, type AppTheme } from './theme';
@@ -14,7 +15,7 @@ export function ActionButton({
   label,
   onPress,
   secondary = false,
-}: ActionButtonProps) {
+}: ActionButtonProps): ReactElement {
   const { theme } = useTheme();
   const styles = createStyles(theme);
   return (

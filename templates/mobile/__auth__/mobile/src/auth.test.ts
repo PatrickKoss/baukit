@@ -30,11 +30,12 @@ class MemoryStorage implements SecureStoragePort {
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
-  return {
+  const response: Pick<Response, 'ok' | 'status' | 'json'> = {
     ok: status >= 200 && status < 300,
     status,
     json: () => Promise.resolve(body),
-  } as Response;
+  };
+  return response as Response;
 }
 
 const issuer = 'https://identity.example.test/tenant';

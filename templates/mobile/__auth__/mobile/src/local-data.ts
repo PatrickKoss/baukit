@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useState,
+  type ReactElement,
 } from 'react';
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
@@ -89,7 +90,7 @@ export function AuthenticatedLocalDataProvider({
   children,
   profileId,
   sessionExpiredReason,
-}: AuthenticatedLocalDataProviderProps) {
+}: AuthenticatedLocalDataProviderProps): ReactElement {
   const localData = useAuthenticatedLocalDataState(profileId, sessionExpiredReason);
   return createElement(AuthenticatedLocalDataContext.Provider, { value: localData }, children);
 }

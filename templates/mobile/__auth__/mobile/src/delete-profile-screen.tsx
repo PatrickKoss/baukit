@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { announce, focusAccessibilityElement } from '@baukit/a11y-core';
 import type { ProductProfileErasureResult } from '@baukit/data-contracts';
@@ -17,56 +17,53 @@ interface DeleteProfileScreenProps {
 
 type State =
   'idle' | 'confirming' | 'erasing' | 'preparation-failure' | ProductProfileErasureResult;
+type StatusError = 'unavailable' | 'expired' | null;
+type Styles = ReturnType<typeof createStyles>;
 
-export function DeleteProfileScreen({ erase, poll, available = true }: DeleteProfileScreenProps) {
-  const { t } = useTranslation('home');
-  const { theme } = useTheme();
-  const styles = createStyles(theme);
-  const [state, setState] = useState<State>('idle');
+const RESULT_MESSAGES = {
+  erased: 'erasure.erased',
+  pending: 'erasure.pending',
+  ambiguous: 'erasure.ambiguous',
+  'server-failure': 'erasure.serverFailure',
+  'local-failure': 'erasure.localFailure',
+  'signout-failure': 'erasure.signoutFailure',
+} as const satisfies Record<ProductProfileErasureResult['status'], string>;
+
+/** The translation key for the latest outcome; later stages win over earlier ones. */
+function messageKey(
+  state: State,
+  statusError: StatusError,
+  operation: ProfileErasureOperation | undefined,
+): string | undefined {
+  if (operation?.status === 'failed') return 'erasure.failed';
+  if (operation?.status === 'completed') return 'erasure.erased';
+  if (statusError === 'expired') return 'erasure.statusExpired';
+  if (statusError === 'unavailable') return 'erasure.statusError';
+  if (state === 'preparation-failure') return 'erasure.preparationFailure';
+  if (state === 'erasing') return 'erasure.busy';
+  return typeof state === 'string' ? undefined : RESULT_MESSAGES[state.status];
+}
+
+function isRetryable(state: State): boolean {
+  if (state === 'preparation-failure') return true;
+  return typeof state !== 'string' && (state.status === 'server-failure' || state.status === 'ambiguous');
+}
+
+interface StatusPolling {
+  readonly operation: ProfileErasureOperation | undefined;
+  readonly statusError: StatusError;
+  readonly checking: boolean;
+  readonly recheck: () => void;
+}
+
+function useStatusPolling(
+  poll: DeleteProfileScreenProps['poll'],
+  pendingId: string | null,
+): StatusPolling {
   const [operation, setOperation] = useState<ProfileErasureOperation>();
-  const [statusError, setStatusError] = useState<'unavailable' | 'expired' | null>(null);
+  const [statusError, setStatusError] = useState<StatusError>(null);
   const [pollRound, setPollRound] = useState(0);
   const [finishedRound, setFinishedRound] = useState<number | null>(null);
-  const running = useRef(false);
-  const heading = useRef<Text>(null);
-  const status = useRef<Text>(null);
-  const result = typeof state === 'string' ? undefined : state;
-  const resultMessage =
-    result === undefined
-      ? undefined
-      : t(
-          {
-            erased: 'erasure.erased',
-            pending: 'erasure.pending',
-            ambiguous: 'erasure.ambiguous',
-            'server-failure': 'erasure.serverFailure',
-            'local-failure': 'erasure.localFailure',
-            'signout-failure': 'erasure.signoutFailure',
-          }[result.status],
-        );
-  let message = state === 'erasing' ? t('erasure.busy') : resultMessage;
-  if (state === 'preparation-failure') message = t('erasure.preparationFailure');
-  if (statusError === 'unavailable') message = t('erasure.statusError');
-  if (statusError === 'expired') message = t('erasure.statusExpired');
-  if (operation?.status === 'completed') message = t('erasure.erased');
-  if (operation?.status === 'failed') message = t('erasure.failed');
-  const retryable =
-    state === 'preparation-failure' ||
-    result?.status === 'server-failure' ||
-    result?.status === 'ambiguous';
-  const pendingId = result?.status === 'pending' ? result.receipt.operationId : null;
-  const checking = poll !== undefined && pendingId !== null && finishedRound !== pollRound;
-  const canCheck =
-    statusError !== 'expired' &&
-    poll !== undefined &&
-    pendingId !== null &&
-    (operation === undefined || operation.status === 'pending');
-
-  useEffect(() => {
-    focusAccessibilityElement(message === undefined ? heading : status);
-    if (message !== undefined) announce(message);
-    else if (state === 'confirming') announce(t('erasure.confirmation'));
-  }, [message, state, t]);
 
   useEffect(() => {
     if (poll === undefined || pendingId === null) return;
@@ -93,6 +90,22 @@ export function DeleteProfileScreen({ erase, poll, available = true }: DeletePro
     };
   }, [pendingId, poll, pollRound]);
 
+  return {
+    operation,
+    statusError,
+    checking: poll !== undefined && pendingId !== null && finishedRound !== pollRound,
+    recheck: () => {
+      setStatusError(null);
+      setPollRound((round) => round + 1);
+    },
+  };
+}
+
+function useErasure(
+  erase: DeleteProfileScreenProps['erase'],
+): [State, (state: State) => void, () => Promise<void>] {
+  const [state, setState] = useState<State>('idle');
+  const running = useRef(false);
   async function submit(): Promise<void> {
     if (running.current) return;
     running.current = true;
@@ -105,20 +118,31 @@ export function DeleteProfileScreen({ erase, poll, available = true }: DeletePro
       running.current = false;
     }
   }
+  return [state, setState, submit];
+}
 
+interface ErasureActionsProps {
+  readonly state: State;
+  readonly available: boolean;
+  readonly canCheck: boolean;
+  readonly polling: StatusPolling;
+  readonly setState: (state: State) => void;
+  readonly submit: () => Promise<void>;
+  readonly styles: Styles;
+}
+
+function ErasureActions({
+  state,
+  available,
+  canCheck,
+  polling,
+  setState,
+  submit,
+  styles,
+}: ErasureActionsProps): ReactElement {
+  const { t } = useTranslation('home');
   return (
-    <ScrollView contentContainerStyle={styles.content}>
-      <Text ref={heading} accessibilityRole="header" style={styles.heading}>
-        {t('erasure.title')}
-      </Text>
-      <Text style={styles.text}>
-        {state === 'confirming' ? t('erasure.confirmation') : t('erasure.description')}
-      </Text>
-      {message === undefined ? null : (
-        <Text ref={status} accessibilityLiveRegion="polite" style={styles.text}>
-          {message}
-        </Text>
-      )}
+    <>
       {state === 'idle' ? (
         <ActionButton
           disabled={!available}
@@ -146,7 +170,7 @@ export function DeleteProfileScreen({ erase, poll, available = true }: DeletePro
           />
         </View>
       ) : null}
-      {retryable ? (
+      {isRetryable(state) ? (
         <ActionButton
           label={t('erasure.retry')}
           onPress={() => {
@@ -156,15 +180,66 @@ export function DeleteProfileScreen({ erase, poll, available = true }: DeletePro
       ) : null}
       {canCheck ? (
         <ActionButton
-          disabled={checking}
+          disabled={polling.checking}
           label={t('erasure.checkStatus')}
-          onPress={() => {
-            setStatusError(null);
-            setPollRound((round) => round + 1);
-          }}
+          onPress={polling.recheck}
           secondary
         />
       ) : null}
+    </>
+  );
+}
+
+export function DeleteProfileScreen({
+  erase,
+  poll,
+  available = true,
+}: DeleteProfileScreenProps): ReactElement {
+  const { t } = useTranslation('home');
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
+  const [state, setState, submit] = useErasure(erase);
+  const heading = useRef<Text>(null);
+  const status = useRef<Text>(null);
+  const pendingId =
+    typeof state !== 'string' && state.status === 'pending' ? state.receipt.operationId : null;
+  const polling = useStatusPolling(poll, pendingId);
+  const key = messageKey(state, polling.statusError, polling.operation);
+  const message = key === undefined ? undefined : t(key);
+  const canCheck =
+    polling.statusError !== 'expired' &&
+    poll !== undefined &&
+    pendingId !== null &&
+    (polling.operation === undefined || polling.operation.status === 'pending');
+
+  useEffect(() => {
+    focusAccessibilityElement(message === undefined ? heading : status);
+    if (message !== undefined) announce(message);
+    else if (state === 'confirming') announce(t('erasure.confirmation'));
+  }, [message, state, t]);
+
+  return (
+    <ScrollView contentContainerStyle={styles.content}>
+      <Text ref={heading} accessibilityRole="header" style={styles.heading}>
+        {t('erasure.title')}
+      </Text>
+      <Text style={styles.text}>
+        {state === 'confirming' ? t('erasure.confirmation') : t('erasure.description')}
+      </Text>
+      {message === undefined ? null : (
+        <Text ref={status} accessibilityLiveRegion="polite" style={styles.text}>
+          {message}
+        </Text>
+      )}
+      <ErasureActions
+        state={state}
+        available={available}
+        canCheck={canCheck}
+        polling={polling}
+        setState={setState}
+        submit={submit}
+        styles={styles}
+      />
     </ScrollView>
   );
 }

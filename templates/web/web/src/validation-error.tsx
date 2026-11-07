@@ -1,10 +1,12 @@
+import type { ReactElement } from 'react';
+
 export function ValidationError({
   error,
   id,
 }: {
   readonly error?: string | undefined;
   readonly id: string;
-}) {
+}): ReactElement | null {
   if (error === undefined) {
     return null;
   }

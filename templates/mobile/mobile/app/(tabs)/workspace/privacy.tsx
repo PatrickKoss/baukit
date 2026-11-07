@@ -1,8 +1,9 @@
 {% raw %}
+import type { ReactElement } from 'react';
 import { StyleSheet, Text, View } from "react-native";
 import { WorkspacePicker } from "../../../src/navigation-shell";
 import { useTheme } from "../../../src/theme";
-export default function PrivacyScreen() {
+export default function PrivacyScreen(): ReactElement {
   const { theme } = useTheme();
   return (
     <View

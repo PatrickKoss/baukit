@@ -1,7 +1,17 @@
 import { describe, expect, it, jest } from '@jest/globals';
-import type { PurchasesPort } from '@baukit/purchases-core';
+import type { PurchasePackage, PurchasesPort } from '@baukit/purchases-core';
 
 import { createPurchasesPort, readPurchasesConfig } from './purchases-config';
+
+const monthly: PurchasePackage = {
+  id: 'monthly',
+  offeringId: 'default',
+  productId: 'pro_monthly',
+  kind: 'subscription',
+  title: 'Pro',
+  description: 'Monthly',
+  priceLabel: '1 EUR',
+};
 
 const extra = {
   revenueCat: { iosApiKey: ' appl_key ', androidApiKey: 'goog_key', offeringId: 'default' },
@@ -29,11 +39,18 @@ describe('purchases configuration', () => {
 
     expect(revenueCat).not.toHaveBeenCalled();
     await expect(port.offerings()).resolves.toEqual({ current: null, all: {} });
-    await expect(port.purchase({} as never)).rejects.toMatchObject({ code: 'unavailable' });
+    await expect(port.purchase(monthly)).rejects.toMatchObject({ code: 'unavailable' });
   });
 
   it('builds the RevenueCat port with the configured key', () => {
-    const configured = {} as PurchasesPort;
+    const configured: PurchasesPort = {
+      identify: () => Promise.resolve(),
+      reset: () => Promise.resolve(),
+      offerings: () => Promise.resolve({ current: null, all: {} }),
+      purchase: () => Promise.resolve(),
+      restore: () => Promise.resolve(),
+      onCustomerUpdate: () => () => undefined,
+    };
     const revenueCat = jest.fn<(apiKey: string) => PurchasesPort>(() => configured);
 
     expect(createPurchasesPort({ apiKey: 'goog_key', offeringId: null }, revenueCat)).toBe(configured);

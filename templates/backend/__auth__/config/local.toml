@@ -21,8 +21,7 @@ enabled = true
 {% else %}issuer = "http://localhost:{{ context.keycloak_host_port }}/realms/{{ context.app_name }}"
 jwks_uri = "http://localhost:{{ context.keycloak_host_port }}/realms/{{ context.app_name }}/protocol/openid-connect/certs"
 {% if context.auth_clerk %}required_scopes = ["items:read"]
-{% endif %}{% endif %}{% endif %}
-{% if context.web %}
+{% endif %}{% endif %}{% endif %}{% if context.web %}
 [http]
 cors_allowed_origins = ["http://localhost:{{ context.web_port }}"]
 {% endif %}

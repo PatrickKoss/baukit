@@ -69,7 +69,7 @@ export function deleteProfile(options: {
   readonly client: ProfileErasureClient;
   readonly eraseLocalPartition: () => Promise<void>;
   readonly onSignedOut: () => void;
-}) {
+}): ReturnType<typeof eraseProductProfile> {
   let keyCleanupError: ProfileErasureKeyCleanupError | undefined;
   return eraseProductProfile({
     eraseServerProfile: async () => {

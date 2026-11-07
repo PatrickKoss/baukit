@@ -1,21 +1,19 @@
+import { react, scripts } from '@baukit/eslint-config';
 import uiTokens from '@baukit/ui-tokens/eslint';
 import { fixupPluginRules } from '@eslint/compat';
-import eslint from '@eslint/js';
 import { defineConfig } from 'eslint/config';
-import reactHooks from 'eslint-plugin-react-hooks';
 import reactNativeA11y from 'eslint-plugin-react-native-a11y';
 import globals from 'globals';
-import tseslint from 'typescript-eslint';
+
+const appFiles = ['**/*.{ts,tsx}'];
 
 export default defineConfig(
   {
-    ignores: ['node_modules/**', '.expo/**', 'coverage/**'],
+    ignores: ['node_modules/**', '.expo/**', 'coverage/**', 'dist/**'],
   },
-  eslint.configs.recommended,
-  ...tseslint.configs.strictTypeChecked,
-  ...tseslint.configs.stylisticTypeChecked,
-  reactHooks.configs.flat.recommended,
+  ...react({ files: appFiles }),
   {
+    files: appFiles,
     rules: {
       'preserve-caught-error': 'error',
       '@typescript-eslint/no-dynamic-delete': 'error',
@@ -29,7 +27,7 @@ export default defineConfig(
     rules: reactNativeA11y.configs.all.rules,
   },
   {
-    files: ['**/*.{ts,tsx}'],
+    files: appFiles,
     plugins: { '@baukit/ui-tokens': uiTokens },
     rules: {
       '@baukit/ui-tokens/no-raw-color': [
@@ -48,9 +46,5 @@ export default defineConfig(
       },
     },
   },
-  {
-    files: ['scripts/**/*.{js,mjs,cjs}'],
-    ...tseslint.configs.disableTypeChecked,
-    languageOptions: { globals: globals.node },
-  },
+  ...scripts({ files: ['scripts/**/*.{js,mjs,cjs}'] }),
 );

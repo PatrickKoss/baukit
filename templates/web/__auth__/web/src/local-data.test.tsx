@@ -115,7 +115,7 @@ describe('useAuthenticatedLocalData', () => {
     );
     await waitFor(() => { expect(result.current.state.status).toBe('ready'); });
     queryClient.setQueryData(['private'], 'erased data');
-    if (closed) {
+    if (closed !== false) {
       rerender({ profileId: undefined, sessionExpiredReason: closed === 'refresh_rejected' ? closed : undefined });
       await waitFor(() => {
         expect(result.current.state.status).toBe(closed === 'refresh_rejected' ? 'blocked' : 'signed-out');

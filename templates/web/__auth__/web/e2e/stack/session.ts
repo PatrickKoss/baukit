@@ -1,4 +1,4 @@
-import { expect, type BrowserContext, type Page } from '@playwright/test';
+import { expect, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { createKeycloakTestUser, signInWithKeycloak, type KeycloakTestUser } from '@baukit/auth-node/keycloak-testing';
 
 import { stack } from './keycloak';
@@ -7,11 +7,11 @@ export const apiUrl = process.env['E2E_API_URL'] ?? 'http://localhost:{{ context
 export const refreshUrl = `${apiUrl}/auth/session/refresh`;
 const JWT = /eyJ[\w-]+\.[\w-]+\.[\w-]+/u;
 
-export function signedIn(page: Page, user: KeycloakTestUser) {
+export function signedIn(page: Page, user: KeycloakTestUser): Locator {
   return page.getByText(`Signed in as ${user.subject}`);
 }
 
-export function signInButton(page: Page) {
+export function signInButton(page: Page): Locator {
   return page.getByRole('button', { name: /^Sign in with / });
 }
 

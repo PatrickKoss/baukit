@@ -1,3 +1,4 @@
+import type { ReactElement } from 'react';
 import { Stack } from 'expo-router';
 
 import { AppShell } from '../src/app-shell';
@@ -5,7 +6,7 @@ import { useTheme } from '../src/theme';
 
 const tabOptions = { headerShown: false };
 
-export default function RootLayout() {
+export default function RootLayout(): ReactElement {
   return (
     <AppShell>
       <RootNavigator />

@@ -175,7 +175,7 @@ describe('authenticated local data', () => {
     const { result, rerender } = await renderReady(`erased-profile-${String(closed)}`);
     const state = result.current.state;
     if (state.status !== 'ready') throw new Error('Expected a ready partition.');
-    if (closed) {
+    if (closed !== false) {
       await rerender({ profileId: undefined, sessionExpiredReason: closed === 'refresh_rejected' ? closed : undefined });
       await waitFor(() => {
         expect(result.current.state.status).toBe(closed === 'refresh_rejected' ? 'blocked' : 'signed-out');

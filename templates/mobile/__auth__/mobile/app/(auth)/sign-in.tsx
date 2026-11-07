@@ -1,3 +1,4 @@
+import type { ReactElement } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -7,7 +8,7 @@ import { useTheme, type AppTheme } from '../../src/theme';
 
 import { PRODUCT_NAME } from '../../src/product';
 
-export default function SignInScreen() {
+export default function SignInScreen(): ReactElement {
   const auth = useAuth();
   const insets = useSafeAreaInsets();
   const { mode, theme } = useTheme();
