@@ -1,4 +1,5 @@
 {% raw %}
+import type { ReactElement } from 'react';
 import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Link } from "expo-router";
@@ -9,7 +10,7 @@ import { ActionButton } from "../../src/action-button";
 import { useAppPreferences } from "../../src/app-shell";
 import { signOutWithPreferenceReset } from "../../src/preference-sign-out";
 
-export default function ProfileScreen() {
+export default function ProfileScreen(): ReactElement {
   const [error, setError] = useState<string>();
   const auth = useAuth();
   const { t } = useTranslation("home");

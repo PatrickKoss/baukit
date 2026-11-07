@@ -1,5 +1,5 @@
 {% raw %}
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import {
   AppNavigation,
   SectionPicker,
@@ -68,7 +68,7 @@ export function NavigationShell({
 }: {
   readonly profile?: NavigationProfile;
   readonly onLocationChange?: () => void;
-}) {
+}): ReactElement {
   const copy =
     navigator.language.toLowerCase().split("-")[0] === "de"
       ? germanCatalog.navigation

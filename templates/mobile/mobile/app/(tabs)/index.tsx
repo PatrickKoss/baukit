@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
@@ -15,17 +15,18 @@ import { PRODUCT_NAME } from '../../src/product';
 
 const routeHeadingFocusProps = Platform.OS === 'web' ? { tabIndex: -1 } : {};
 
-export default function TodayScreen() {
-  const { t } = useTranslation(['bootstrap', 'home']);
-  const { theme } = useTheme();
-  const styles = createStyles(theme);
-  const { analytics, consent, setConsent } = useAnalyticsConsent();
+type Styles = ReturnType<typeof createStyles>;
+
+interface ItemsState {
+  readonly items: readonly Item[];
+  readonly error: string | undefined;
+  readonly loading: boolean;
+}
+
+function useItems(): ItemsState {
   const [items, setItems] = useState<readonly Item[]>([]);
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
-  const headingRef = useRef<Text>(null);
-
-  useRouteHeadingFocus(headingRef, !loading);
 
   useEffect(() => {
     let active = true;
@@ -54,12 +55,92 @@ export default function TodayScreen() {
     };
   }, []);
 
+  return { items, error, loading };
+}
+
+function ItemsCard({
+  state,
+  styles,
+  accent,
+}: {
+  readonly state: ItemsState;
+  readonly styles: Styles;
+  readonly accent: string;
+}): ReactElement {
+  const { t } = useTranslation(['bootstrap', 'home']);
+  const { items, error, loading } = state;
+  return (
+    <View style={styles.card}>
+      <Text style={styles.sectionTitle}>{t('itemsTitle', { ns: 'home' })}</Text>
+      {loading ? (
+        <View style={styles.loading}>
+          <ActivityIndicator color={accent} />
+          <Text style={styles.muted}>{t('loadingItems', { ns: 'bootstrap' })}</Text>
+        </View>
+      ) : null}
+      {error === undefined ? null : <Text style={styles.error}>{error}</Text>}
+      {!loading && error === undefined && items.length === 0 ? (
+        <Text style={styles.muted}>{t('emptyItems', { ns: 'home' })}</Text>
+      ) : null}
+      {items.map((item) => (
+        <View key={item.id} style={styles.item}>
+          <Text style={styles.itemName}>{item.name}</Text>
+          <Text style={styles.itemId}>{item.id}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function AnalyticsPrivacy({
+  itemCount,
+  styles,
+}: {
+  readonly itemCount: number;
+  readonly styles: Styles;
+}): ReactElement {
+  const { analytics, consent, setConsent } = useAnalyticsConsent();
+
   async function chooseConsent(nextConsent: ConsentState): Promise<void> {
     await setConsent(nextConsent);
     if (nextConsent === 'granted') {
-      analytics?.capture({ name: 'items_viewed', properties: { count: items.length } });
+      analytics?.capture({ name: 'items_viewed', properties: { count: itemCount } });
     }
   }
+
+  return (
+    <View style={styles.settings}>
+      <Text style={styles.sectionTitle}>Analytics privacy</Text>
+      <Text style={styles.muted}>
+        Current consent: {consent}. Analytics uses a no-op transport until you configure a
+        provider.
+      </Text>
+      <View style={styles.actions}>
+        <ActionButton
+          label="Allow"
+          onPress={() => {
+            void chooseConsent('granted');
+          }}
+        />
+        <ActionButton
+          label="Deny"
+          onPress={() => {
+            void chooseConsent('denied');
+          }}
+          secondary
+        />
+      </View>
+    </View>
+  );
+}
+
+export default function TodayScreen(): ReactElement {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
+  const itemsState = useItems();
+  const headingRef = useRef<Text>(null);
+
+  useRouteHeadingFocus(headingRef, !itemsState.loading);
 
   return (
     <View style={styles.safeArea}>
@@ -75,53 +156,14 @@ export default function TodayScreen() {
         </Text>
         <Text style={styles.subtitle}>Items from the shared backend API</Text>
 
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>{t('itemsTitle', { ns: 'home' })}</Text>
-          {loading ? (
-            <View style={styles.loading}>
-              <ActivityIndicator color={theme.color.accent} />
-              <Text style={styles.muted}>{t('loadingItems', { ns: 'bootstrap' })}</Text>
-            </View>
-          ) : null}
-          {error === undefined ? null : <Text style={styles.error}>{error}</Text>}
-          {!loading && error === undefined && items.length === 0 ? (
-            <Text style={styles.muted}>{t('emptyItems', { ns: 'home' })}</Text>
-          ) : null}
-          {items.map((item) => (
-            <View key={item.id} style={styles.item}>
-              <Text style={styles.itemName}>{item.name}</Text>
-              <Text style={styles.itemId}>{item.id}</Text>
-            </View>
-          ))}
-        </View>
+        <ItemsCard state={itemsState} styles={styles} accent={theme.color.accent} />
 
         <View style={styles.settings}>
           <Text style={styles.sectionTitle}>Appearance</Text>
           <ThemeModeControl />
         </View>
 
-        <View style={styles.settings}>
-          <Text style={styles.sectionTitle}>Analytics privacy</Text>
-          <Text style={styles.muted}>
-            Current consent: {consent}. Analytics uses a no-op transport until you configure a
-            provider.
-          </Text>
-          <View style={styles.actions}>
-            <ActionButton
-              label="Allow"
-              onPress={() => {
-                void chooseConsent('granted');
-              }}
-            />
-            <ActionButton
-              label="Deny"
-              onPress={() => {
-                void chooseConsent('denied');
-              }}
-              secondary
-            />
-          </View>
-        </View>
+        <AnalyticsPrivacy itemCount={itemsState.items.length} styles={styles} />
       </ScrollView>
     </View>
   );

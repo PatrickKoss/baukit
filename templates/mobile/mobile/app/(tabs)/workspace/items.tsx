@@ -1,8 +1,9 @@
 {% raw %}
+import type { ReactElement } from 'react';
 import { StyleSheet, View } from "react-native";
 import TodayScreen from "../index";
 import { WorkspacePicker } from "../../../src/navigation-shell";
-export default function ItemsScreen() {
+export default function ItemsScreen(): ReactElement {
   return (
     <View style={styles.screen}>
       <WorkspacePicker />

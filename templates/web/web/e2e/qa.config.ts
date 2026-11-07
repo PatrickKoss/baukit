@@ -111,7 +111,10 @@ export interface QaStorageEntry {
 }
 
 export interface QaAuthentication {
+  /** Holds the account hint only; tokens never reach browser storage. */
   readonly localStorage: readonly QaStorageEntry[];
+  /** Stands in for the backend session routes that issue the in-memory access token. */
+  readonly apiStubs: readonly QaApiStub[];
 }
 
 export interface QaConfig {
@@ -175,7 +178,7 @@ export const qaConfig: QaConfig = {
       focusRingRole: 'button',
       screenSelector: '.shell',
       apiStubs: ITEM_API_STUBS,
-{% if context.auth_oidc %}      authenticated: true,
+{% if context.auth_enabled %}      authenticated: true,
 {% endif %}
     },
   ],
@@ -188,7 +191,7 @@ export const qaConfig: QaConfig = {
       initialFocus: 'Example name',
       dismiss: 'Cancel',
       apiStubs: ITEM_API_STUBS,
-{% if context.auth_oidc %}      authenticated: true,
+{% if context.auth_enabled %}      authenticated: true,
 {% endif %}
     },
   ],
@@ -205,7 +208,7 @@ export const qaConfig: QaConfig = {
       submit: 'Save example',
       result: 'Saved once.',
       apiStubs: ITEM_API_STUBS,
-{% if context.auth_oidc %}      authenticated: true,
+{% if context.auth_enabled %}      authenticated: true,
 {% endif %}
     },
   ],
@@ -217,7 +220,7 @@ export const qaConfig: QaConfig = {
       recovery: 'Back to items',
       recoveryRole: 'button',
       apiStubs: ITEM_API_STUBS,
-{% if context.auth_oidc %}      authenticated: true,
+{% if context.auth_enabled %}      authenticated: true,
 {% endif %}
     },
     {
@@ -227,7 +230,7 @@ export const qaConfig: QaConfig = {
       recovery: 'Back to items',
       recoveryRole: 'link',
       apiStubs: ITEM_API_STUBS,
-{% if context.auth_oidc %}      authenticated: true,
+{% if context.auth_enabled %}      authenticated: true,
 {% endif %}
     },
   ],
@@ -236,11 +239,11 @@ export const qaConfig: QaConfig = {
       name: 'items',
       path: '/',
       api: '**/items',
-{% if context.auth_oidc %}      expiredMessage: 'Sign in to open your local data partition.',
+{% if context.auth_enabled %}      expiredMessage: 'Sign in to open your local data partition.',
 {% else %}      expiredMessage: 'HTTP 401',
 {% endif %}
       privateText: 'Owner item',
-{% if context.auth_oidc %}      authenticated: true,
+{% if context.auth_enabled %}      authenticated: true,
 {% endif %}
     },
   ],
@@ -249,7 +252,7 @@ export const qaConfig: QaConfig = {
       name: 'owner',
       apiStubs: [
         { url: '**/items', status: 200, body: OWNER_ITEMS },
-{% if context.auth_oidc %}        {
+{% if context.auth_enabled %}        {
           url: '**/me',
           status: 200,
           body: { id: '00000000-0000-4000-8000-000000000001', subject: 'qa-owner' },
@@ -261,7 +264,7 @@ export const qaConfig: QaConfig = {
       name: 'other',
       apiStubs: [
         { url: '**/items', status: 200, body: OTHER_ITEMS },
-{% if context.auth_oidc %}        {
+{% if context.auth_enabled %}        {
           url: '**/me',
           status: 200,
           body: { id: '00000000-0000-4000-8000-000000000002', subject: 'qa-other' },
@@ -281,21 +284,28 @@ export const qaConfig: QaConfig = {
   },
   apiStubs: [
     ...ITEM_API_STUBS,
-{% if context.auth_oidc %}    {
+{% if context.auth_enabled %}    {
       url: '**/me',
       status: 200,
       body: { id: '00000000-0000-4000-8000-000000000001', subject: 'qa-owner' },
     },
 {% endif %}  ],
-{% if context.auth_oidc %}  authentication: {
+{% if context.auth_enabled %}  authentication: {
     localStorage: [
       {
-        key: `${PRODUCT_NAME}:oidc:tokens`,
-        value: JSON.stringify({
+        key: `${PRODUCT_NAME}:{{ "oidc" if context.auth_oidc else "local-oidc" }}:account`,
+        value: JSON.stringify({ subject: 'qa-owner', signedInAt: Date.now() }),
+      },
+    ],
+    apiStubs: [
+      {
+        url: '**/auth/session/refresh',
+        status: 200,
+        body: {
           accessToken: 'qa-access-token',
-          issuedAt: Date.now(),
           expiresAt: Date.now() + 60 * 60 * 1000,
-        }),
+          subject: 'qa-owner',
+        },
       },
     ],
   },

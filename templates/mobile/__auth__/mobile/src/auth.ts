@@ -1,7 +1,10 @@
 import {
   createContext,
   createElement,
+  type Dispatch,
   type PropsWithChildren,
+  type ReactElement,
+  type SetStateAction,
   useCallback,
   useContext,
   useEffect,
@@ -89,7 +92,7 @@ export interface ProductAuth {
 
 const AuthContext = createContext<ProductAuth | undefined>(undefined);
 
-export function AuthProvider({ children }: PropsWithChildren) {
+export function AuthProvider({ children }: PropsWithChildren): ReactElement {
   const auth = useAuthState();
   const content = createElement(AuthContext.Provider, { value: auth }, children);
   return signInAdapter.Provider === undefined
@@ -105,7 +108,18 @@ export function useAuth(): ProductAuth {
   return auth;
 }
 
-function useAuthState(): ProductAuth {
+interface ClientSessionState {
+  readonly session: OidcSession | undefined;
+  readonly ready: boolean;
+  readonly error: string | undefined;
+  readonly announcement: string | undefined;
+  readonly sessionExpiredReason: SessionExpiredReason | undefined;
+  readonly setError: Dispatch<SetStateAction<string | undefined>>;
+  readonly setAnnouncement: Dispatch<SetStateAction<string | undefined>>;
+  readonly setSessionExpiredReason: Dispatch<SetStateAction<SessionExpiredReason | undefined>>;
+}
+
+function useClientSession(): ClientSessionState {
   const [session, setSession] = useState<OidcSession>();
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string>();
@@ -146,6 +160,22 @@ function useAuthState(): ProductAuth {
     };
   }, []);
 
+  return {
+    session,
+    ready,
+    error,
+    announcement,
+    sessionExpiredReason,
+    setError,
+    setAnnouncement,
+    setSessionExpiredReason,
+  };
+}
+
+function useTokenRenewal(
+  session: OidcSession | undefined,
+  setError: Dispatch<SetStateAction<string | undefined>>,
+): void {
   useEffect(() => {
     if (session === undefined) {
       return;
@@ -159,7 +189,21 @@ function useAuthState(): ProductAuth {
     return () => {
       clearTimeout(timeout);
     };
-  }, [session]);
+  }, [session, setError]);
+}
+
+function useAuthState(): ProductAuth {
+  const {
+    session,
+    ready,
+    error,
+    announcement,
+    sessionExpiredReason,
+    setError,
+    setAnnouncement,
+    setSessionExpiredReason,
+  } = useClientSession();
+  useTokenRenewal(session, setError);
 
   const signIn = useCallback(
     async (appearance?: ThemePreference): Promise<SignInResult | undefined> => {
@@ -179,7 +223,7 @@ function useAuthState(): ProductAuth {
         return undefined;
       }
     },
-    [],
+    [setAnnouncement, setError, setSessionExpiredReason],
   );
 
   const signOut = useCallback(async (): Promise<SignOutResult | undefined> => {
@@ -191,7 +235,7 @@ function useAuthState(): ProductAuth {
       setError(safeAuthErrorMessage(cause));
       return undefined;
     }
-  }, []);
+  }, [setAnnouncement, setError]);
 
   const signInSession =
     session === undefined ? undefined : unverifiedSignInSessionFromJwt(session.accessToken);

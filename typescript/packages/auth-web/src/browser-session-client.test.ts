@@ -5,98 +5,27 @@ import {
   BROWSER_SESSION_HEADER,
   BrowserSessionClient,
   OidcError,
-  type BrowserSessionClientConfig,
   type SessionExpiredEvent,
 } from './index.js';
 import {
-  discoveryResponse,
-  fakeBrowser,
   jsonResponse,
   problem,
   readLoginTransaction,
   requestUrl,
   required,
-  type Browser,
-  type Tab,
 } from './test-support/browser-session.js';
-
-const API = 'https://api.example.test';
-const ACCESS_TOKEN = 'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c2VyLTEifQ.signature-one';
-const ROTATED_TOKEN = 'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c2VyLTEifQ.signature-two';
-const LIFETIME_MS = 300_000;
-
-const CONFIG: BrowserSessionClientConfig = {
-  issuer: 'https://identity.example.test/realm',
-  clientId: 'product-web',
-  redirectUri: 'https://app.example.test/',
-  storageKeyPrefix: 'product',
-  apiBaseUrl: `${API}/`,
-};
-
-interface Backend {
-  readonly fetch: typeof globalThis.fetch;
-  readonly calls: { readonly url: string; readonly init: RequestInit | undefined }[];
-  refresh: () => Response | Promise<Response>;
-  logout: () => Response;
-}
-
-function backend(browserNow: () => number, lifetimeMs = LIFETIME_MS): Backend {
-  const state: Backend = {
-    calls: [],
-    refresh: () =>
-      jsonResponse({
-        accessToken: ROTATED_TOKEN,
-        expiresAt: browserNow() + lifetimeMs,
-        subject: 'user-1',
-      }),
-    logout: () => new Response(null, { status: 204 }),
-    fetch: (input, init) => {
-      const url = requestUrl(input);
-      state.calls.push({ url, init });
-      if (url.endsWith('/.well-known/openid-configuration')) {
-        return Promise.resolve(discoveryResponse());
-      }
-      if (url === `${API}/auth/session/exchange`) {
-        return Promise.resolve(
-          jsonResponse({
-            accessToken: ACCESS_TOKEN,
-            expiresAt: browserNow() + lifetimeMs,
-            subject: 'user-1',
-          }),
-        );
-      }
-      if (url === `${API}/auth/session/refresh`) {
-        return Promise.resolve(state.refresh());
-      }
-      if (url === `${API}/auth/session/logout`) {
-        return Promise.resolve(state.logout());
-      }
-      return Promise.resolve(new Response('{}', { status: 200 }));
-    },
-  };
-  return state;
-}
-
-function setup(lifetimeMs = LIFETIME_MS): { browser: Browser; server: Backend; now: () => number } {
-  const clock = { browser: undefined as Browser | undefined };
-  const now = () => required(clock.browser).now();
-  const server = backend(now, lifetimeMs);
-  const browser = fakeBrowser((input, init) => server.fetch(input, init));
-  clock.browser = browser;
-  return { browser, server, now };
-}
-
-async function signIn(tab: Tab, client = new BrowserSessionClient(CONFIG, tab.environment)) {
-  await client.login();
-  const state = required(new URL(required(tab.navigations.at(-1))).searchParams.get('state'));
-  tab.setCurrentUrl(`https://app.example.test/?code=one-time-code&state=${state}`);
-  await expect(client.handleCallback()).resolves.toBe(true);
-  return client;
-}
-
-function sessionCalls(server: Backend, endpoint: string) {
-  return server.calls.filter(({ url }) => url === `${API}/auth/session/${endpoint}`);
-}
+import {
+  ACCESS_TOKEN,
+  API,
+  backend,
+  CONFIG,
+  LIFETIME_MS,
+  ROTATED_TOKEN,
+  sessionCalls,
+  setup,
+  signIn,
+  storageEntries,
+} from './test-support/session-backend.js';
 
 describe('BrowserSessionClient', () => {
   it('redeems the code at the backend and keeps only an account hint in storage', async () => {
@@ -128,7 +57,12 @@ describe('BrowserSessionClient', () => {
       redirectUri: 'https://app.example.test/',
     });
     expect(tab.sessionStorage.length).toBe(0);
-    expect(browser.localStorage.length).toBe(1);
+    expect(
+      storageEntries(browser.localStorage)
+        .map(([key]) => key)
+        .sort(),
+    ).toEqual(['product:account', 'product:session-generation']);
+    expect(browser.localStorage.getItem('product:session-generation')).toBe('1');
     expect(JSON.parse(required(browser.localStorage.getItem('product:account')))).toEqual({
       subject: 'user-1',
       signedInAt: 1_000_000,

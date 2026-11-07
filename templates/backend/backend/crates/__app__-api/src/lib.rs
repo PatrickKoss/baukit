@@ -80,13 +80,19 @@ pub fn routes(state: ApiState) -> Router {
 /// Applies the Baukit HTTP layers last, so CORS, request IDs, and the cache
 /// policy also cover responses from authentication and rate-limit layers.
 pub fn finalize_api(router: Router, config: &HttpConfig) -> Result<Router, HttpOptionsError> {
-    Ok(baukit_http::finalize(
-        router,
-        HttpOptions::from_config(config)?{% if context.mcp %}
-            .with_additional_allowed_headers(baukit_mcp::ALLOWED_HEADERS)?
-            .with_additional_exposed_headers(["www-authenticate"])?
-            {% endif %}.with_json_rejection_codes(JsonRejectionCodes::default()),
-    ))
+    Ok(finalize_with_options(router, http_options(config)?))
+}
+
+/// The HTTP options `finalize_api` applies, for callers that adjust them first.
+pub fn http_options(config: &HttpConfig) -> Result<HttpOptions, HttpOptionsError> {
+    Ok(HttpOptions::from_config(config)?{% if context.mcp %}
+        .with_additional_allowed_headers(baukit_mcp::ALLOWED_HEADERS)?
+        .with_additional_exposed_headers(["www-authenticate"])?
+        {% endif %}.with_json_rejection_codes(JsonRejectionCodes::default()))
+}
+
+pub fn finalize_with_options(router: Router, options: HttpOptions) -> Router {
+    baukit_http::finalize(router, options)
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]

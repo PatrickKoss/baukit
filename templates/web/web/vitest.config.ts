@@ -3,7 +3,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['src/**/*.test.{ts,tsx}'],
+    include: ['src/**/*.test.{ts,tsx}', 'csp/**/*.test.ts'],
 {% if context.auth_enabled and not context.auth_oidc %}    // Inlined so adapter tests can mock the provider SDK the package imports.
     server: { deps: { inline: ['@baukit/auth-web'] } },
 {% endif %}

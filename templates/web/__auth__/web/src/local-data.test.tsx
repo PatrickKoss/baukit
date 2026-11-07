@@ -84,6 +84,19 @@ describe('useAuthenticatedLocalData', () => {
     });
   });
 
+  it('clears local data when another tab signs out', async () => {
+    const { result, rerender } = renderLocalData({ profileId: 'account-a', sessionExpiredReason: undefined });
+    await waitFor(() => {
+      expect(result.current.state.status).toBe('ready');
+    });
+
+    rerender({ profileId: 'account-a', sessionExpiredReason: 'signed_out' });
+
+    await waitFor(() => {
+      expect(result.current.state.status).toBe('signed-out');
+    });
+  });
+
   it('clears on request', async () => {
     const { result } = renderLocalData({ profileId: 'account-a', sessionExpiredReason: undefined });
     await waitFor(() => {
@@ -102,7 +115,7 @@ describe('useAuthenticatedLocalData', () => {
     );
     await waitFor(() => { expect(result.current.state.status).toBe('ready'); });
     queryClient.setQueryData(['private'], 'erased data');
-    if (closed) {
+    if (closed !== false) {
       rerender({ profileId: undefined, sessionExpiredReason: closed === 'refresh_rejected' ? closed : undefined });
       await waitFor(() => {
         expect(result.current.state.status).toBe(closed === 'refresh_rejected' ? 'blocked' : 'signed-out');

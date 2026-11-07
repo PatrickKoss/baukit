@@ -42,9 +42,13 @@ The generated manifest keeps `capabilities.pwa = false`. To add a PWA, first add
 `public/baukit-pwa-worker.js`. It does not generate `sw.js`, registration code, a manifest, icons,
 routes, cache names, offline copy, or identity partition keys.
 
-Load the copied artifact with `importScripts('/baukit-pwa-worker.js')` in a product-owned `sw.js`.
+Load the copied artifact with `importScripts('/baukit-pwa-worker.js')` in a product-owned `sw.js`. Pass the fetch event's `Request` to the handler unchanged. The decider reads its headers, so requests carrying `Authorization` and every `/auth/session/*` call stay network-only and never land in a cache.
 Run `pnpm build:sw:check` in CI to reject a missing or stale copy. When PWA support remains disabled,
 the check verifies that no copied artifact is present.
+
+## Content Security Policy
+
+`vite build` writes `dist/csp.txt` from `csp/origins.ts` and the `VITE_*` values the app uses, with a `'sha256-...'` source for every inline script, and `node csp/check-build.ts dist` then fails the build if any inline script lacks its hash. Scripts never get `'unsafe-inline'`; CSS ships as files, so `style-src` is `'self'`. `vite preview` sends the built policy, and only `vite` dev sends the relaxed variant with inline styles and the HMR socket. Set `VITE_POSTHOG_HOST`, `VITE_MEDIA_ORIGIN` or `VITE_SUITE_HUB_API_URL` when the app talks to those origins. Deploy with the `Dockerfile` here and the chart's `web` component: `--set-file web.contentSecurityPolicy=web/dist/csp.txt`.
 
 ## Checks
 
@@ -71,13 +75,13 @@ overrides it. These ports do not follow `port_offset`. Re-render the affected
 files after changing the manifest, then run `baukit doctor`.
 {% endif %}## Browser quality gate
 
-`pnpm test:e2e` builds the app, serves it with `vite preview`, and runs the `qa-*` Playwright specs against Chromium and WebKit at desktop and mobile viewports. The specs stub every API path themselves, so the gate needs no backend, database, or identity provider.
+`pnpm test:e2e` builds the app with `--mode e2e`, serves it with `vite preview`, and runs the `qa-*` Playwright specs against Chromium and WebKit at desktop and mobile viewports. The specs stub every API path themselves, so the gate needs no backend, database, or identity provider.
 
 `e2e/qa.config.ts` is the only file a product edits. It lists routes, overlays, submit targets, deep links that must land in a route state, protected routes, geometry selectors, authentication state, and API stubs. Cases can add their own stubs, mark an authenticated load, use a regular expression for a heading, select a control role, override the screen selector, or opt out of the scroll check. Each spec reads that file. Add product routes and selectors there instead of editing a spec.
 
 Submit targets accept `fields` plus `invalidField`, so the failed-submit check fills every required field, clears the named field, and confirms that all values survive validation. `recoveryRole` accepts `button` or `link` and defaults to `button`.
 
-When updating QA files generated before this template version, replace `field` and `value` with a `fields` array and set `invalidField`. Add `authentication.localStorage` before marking any case `authenticated`; the gate throws a setup error if authenticated state is missing. Keep credentials out of this hermetic fixture. Use synthetic, non-production tokens and stub every identity API call.
+When updating QA files generated before this template version, replace `field` and `value` with a `fields` array and set `invalidField`. Add `authentication.localStorage` (the account hint) and `authentication.apiStubs` (the `/auth/session/refresh` response) before marking any case `authenticated`; the gate throws a setup error if authenticated state is missing. Keep credentials out of this hermetic fixture. Use synthetic, non-production tokens and stub every identity API call.
 
 | Spec                 | What it proves                                                                                                                       |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |

@@ -25,3 +25,41 @@ export function collectUnexpectedConsoleWarnings(page: Page): string[] {
   });
   return unexpected;
 }
+
+export interface CspViolation {
+  readonly directive: string;
+  readonly blockedUri: string;
+  readonly sample: string;
+}
+
+const CSP_CONSOLE_MARKER = 'Content Security Policy';
+
+/**
+ * Collects every CSP violation the page reports, both as console errors and as
+ * `securitypolicyviolation` events. There is no allowlist: the policy must fit the app.
+ */
+export async function collectContentSecurityPolicyViolations(page: Page): Promise<string[]> {
+  const violations: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error' && message.text().includes(CSP_CONSOLE_MARKER)) {
+      violations.push(message.text());
+    }
+  });
+  await page.exposeFunction('reportCspViolation', (violation: CspViolation) => {
+    violations.push(
+      `securitypolicyviolation ${violation.directive} blocked ${violation.blockedUri} ${violation.sample}`.trim(),
+    );
+  });
+  await page.addInitScript(() => {
+    document.addEventListener('securitypolicyviolation', (event) => {
+      const report = (window as unknown as { reportCspViolation: (violation: CspViolation) => void })
+        .reportCspViolation;
+      report({
+        directive: event.effectiveDirective,
+        blockedUri: event.blockedURI,
+        sample: event.sample,
+      });
+    });
+  });
+  return violations;
+}

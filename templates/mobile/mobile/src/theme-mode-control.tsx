@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactElement } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { ThemePreference } from './app-preferences';
@@ -13,7 +13,7 @@ const modes: readonly {
   { label: 'Dark', value: 'dark' },
 ];
 
-export function ThemeModeControl() {
+export function ThemeModeControl(): ReactElement {
   const { mode, setMode, theme } = useTheme();
   const styles = createStyles(theme);
   const [error, setError] = useState<string>();

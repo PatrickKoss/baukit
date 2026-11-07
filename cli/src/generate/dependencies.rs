@@ -24,11 +24,15 @@ const BASE_CRATES: [&str; 8] = [
 /// resolves those dependencies from npm, so path mode pins them to the checkout with overrides.
 const LOCAL_TRANSITIVE_PACKAGES: [&str; 1] = ["@baukit/type-guards"];
 
+/// Lint presets every generated web and mobile client extends.
+const ESLINT_CONFIG_PACKAGE: &str = "@baukit/eslint-config";
+
 pub(crate) struct DependencyContext {
     pub(crate) cargo: String,
     pub(crate) web_typescript: String,
     pub(crate) web_dev_typescript: String,
     pub(crate) mobile_typescript: String,
+    pub(crate) mobile_dev_typescript: String,
     pub(crate) pnpm_overrides: String,
     pub(crate) manifest: String,
     pub(crate) description: String,
@@ -39,8 +43,9 @@ pub(crate) struct DependencyContext {
 struct BaukitPackages {
     crates: Vec<&'static str>,
     web: Vec<&'static str>,
-    web_dev: &'static [&'static str],
+    web_dev: Vec<&'static str>,
     mobile: Vec<&'static str>,
+    mobile_dev: Vec<&'static str>,
 }
 
 impl BaukitPackages {
@@ -56,20 +61,33 @@ impl BaukitPackages {
         if pwa && mobile && !web {
             mobile_packages.push("@baukit/pwa-web");
         }
+        let mobile_dev = if mobile {
+            vec![ESLINT_CONFIG_PACKAGE]
+        } else {
+            Vec::new()
+        };
+        let mut web_dev = Vec::new();
+        if web {
+            web_dev.push(ESLINT_CONFIG_PACKAGE);
+            if auth_enabled {
+                web_dev.extend(EXPECTED_WEB_AUTH_DEV_DEPENDENCIES);
+            }
+        }
         Self {
             crates: baukit_crates(options),
             web: web_packages,
-            web_dev: if web && auth_enabled {
-                EXPECTED_WEB_AUTH_DEV_DEPENDENCIES
-            } else {
-                &[]
-            },
+            web_dev,
             mobile: mobile_packages,
+            mobile_dev,
         }
     }
 
     fn typescript(&self) -> impl Iterator<Item = &&'static str> {
-        self.web.iter().chain(self.web_dev).chain(&self.mobile)
+        self.web
+            .iter()
+            .chain(&self.web_dev)
+            .chain(&self.mobile)
+            .chain(&self.mobile_dev)
     }
 }
 
@@ -78,7 +96,12 @@ fn baukit_crates(options: &NewOptions) -> Vec<&'static str> {
     let auth_enabled = options.auth.is_some();
     let mut names = BASE_CRATES.to_vec();
     if auth_enabled {
-        names.extend(["baukit-auth", "baukit-erasure", "baukit-ratelimit"]);
+        names.extend([
+            "baukit-auth",
+            "baukit-credential-vault",
+            "baukit-erasure",
+            "baukit-ratelimit",
+        ]);
     }
     if components.worker() || auth_enabled {
         names.push("baukit-jobs");
@@ -155,8 +178,9 @@ fn path_dependency_context(
     Ok(DependencyContext {
         cargo,
         web_typescript: render_typescript(&with_transitive(&packages.web)),
-        web_dev_typescript: render_leading_entries(&render_typescript(packages.web_dev)),
+        web_dev_typescript: render_leading_entries(&render_typescript(&packages.web_dev)),
         mobile_typescript: render_typescript(&with_transitive(&packages.mobile)),
+        mobile_dev_typescript: render_leading_entries(&render_typescript(&packages.mobile_dev)),
         pnpm_overrides,
         manifest: format!("source = \"path\"\npath = \"{display}\""),
         description: format!("local path `{}`", path.display()),
@@ -200,8 +224,9 @@ fn registry_dependency_context(packages: &BaukitPackages) -> DependencyContext {
     DependencyContext {
         cargo,
         web_typescript: render_typescript(&packages.web),
-        web_dev_typescript: render_leading_entries(&render_typescript(packages.web_dev)),
+        web_dev_typescript: render_leading_entries(&render_typescript(&packages.web_dev)),
         mobile_typescript: render_typescript(&packages.mobile),
+        mobile_dev_typescript: render_leading_entries(&render_typescript(&packages.mobile_dev)),
         pnpm_overrides: String::new(),
         manifest: format!("source = \"registry\"\nversion = \"{version}\""),
         description: format!("crates.io version `{version}`"),

@@ -1,38 +1,30 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactElement, type RefObject } from 'react';
 import { announce } from '@baukit/a11y-core/web';
 import type { ProductProfileErasureResult } from '@baukit/data-contracts';
 import { ApiError } from '@baukit/api-runtime';
 import type { ProfileErasureOperation } from '@baukit/api-runtime/erasure';
 
-import { deleteProfileCopy } from './delete-profile-copy';
+import { deleteProfileCopy, type ErasureCopy } from './delete-profile-copy';
+
+type PollStatus = (operationId: string, signal: AbortSignal) => Promise<ProfileErasureOperation>;
 
 interface DeleteProfileScreenProps {
   readonly erase: () => Promise<ProductProfileErasureResult>;
-  readonly poll?: (operationId: string, signal: AbortSignal) => Promise<ProfileErasureOperation>;
+  readonly poll?: PollStatus;
   readonly language?: string;
   readonly available?: boolean;
 }
 
 type State =
   'idle' | 'confirming' | 'erasing' | 'preparation-failure' | ProductProfileErasureResult;
+type StatusError = 'unavailable' | 'expired' | null;
 
-export function DeleteProfileScreen({
-  erase,
-  poll,
-  available = true,
-  language = navigator.language,
-}: DeleteProfileScreenProps) {
-  const copy = deleteProfileCopy(language);
-  const [state, setState] = useState<State>('idle');
-  const [operation, setOperation] = useState<ProfileErasureOperation>();
-  const [statusError, setStatusError] = useState<'unavailable' | 'expired' | null>(null);
-  const [pollRound, setPollRound] = useState(0);
-  const [finishedRound, setFinishedRound] = useState<number | null>(null);
-  const running = useRef(false);
-  const heading = useRef<HTMLHeadingElement>(null);
-  const cancel = useRef<HTMLButtonElement>(null);
-  const status = useRef<HTMLParagraphElement>(null);
-  const result = typeof state === 'string' ? undefined : state;
+const HTTP_UNAUTHORIZED = 401;
+
+function resultMessage(copy: ErasureCopy, state: State): string | undefined {
+  if (state === 'erasing') return copy.busy;
+  if (state === 'preparation-failure') return copy.preparationFailure;
+  if (typeof state === 'string') return undefined;
   const messages = {
     erased: copy.erased,
     pending: copy.pending,
@@ -41,59 +33,80 @@ export function DeleteProfileScreen({
     'local-failure': copy.localFailure,
     'signout-failure': copy.signoutFailure,
   };
-  const resultMessage = result === undefined ? undefined : messages[result.status];
-  let message = state === 'erasing' ? copy.busy : resultMessage;
-  if (state === 'preparation-failure') message = copy.preparationFailure;
-  if (statusError === 'unavailable') message = copy.statusError;
-  if (statusError === 'expired') message = copy.statusExpired;
-  if (operation?.status === 'completed') message = copy.erased;
-  if (operation?.status === 'failed') message = copy.failed;
-  const retryable =
-    state === 'preparation-failure' ||
-    result?.status === 'server-failure' ||
-    result?.status === 'ambiguous';
-  const pendingId = result?.status === 'pending' ? result.receipt.operationId : null;
-  const checking = poll !== undefined && pendingId !== null && finishedRound !== pollRound;
-  const canCheck =
-    statusError !== 'expired' &&
-    poll !== undefined &&
-    pendingId !== null &&
-    (operation === undefined || operation.status === 'pending');
+  return messages[state.status];
+}
 
-  useEffect(() => {
-    if (state === 'confirming') cancel.current?.focus();
-    else if (message === undefined) heading.current?.focus();
-    else {
-      status.current?.focus();
-      announce(message);
-    }
-  }, [message, state]);
+function screenMessage(
+  copy: ErasureCopy,
+  state: State,
+  statusError: StatusError,
+  operation: ProfileErasureOperation | undefined,
+): string | undefined {
+  if (operation?.status === 'failed') return copy.failed;
+  if (operation?.status === 'completed') return copy.erased;
+  if (statusError === 'expired') return copy.statusExpired;
+  if (statusError === 'unavailable') return copy.statusError;
+  return resultMessage(copy, state);
+}
+
+function isRetryable(state: State): boolean {
+  if (state === 'preparation-failure') return true;
+  return typeof state !== 'string' && (state.status === 'server-failure' || state.status === 'ambiguous');
+}
+
+function pendingOperationId(state: State): string | null {
+  return typeof state !== 'string' && state.status === 'pending' ? state.receipt.operationId : null;
+}
+
+/** Polls a pending erasure once per round; a new round starts a new request. */
+function useOperationStatus(poll: PollStatus | undefined, pendingId: string | null) {
+  const [operation, setOperation] = useState<ProfileErasureOperation>();
+  const [statusError, setStatusError] = useState<StatusError>(null);
+  const [pollRound, setPollRound] = useState(0);
+  const [finishedRound, setFinishedRound] = useState<number | null>(null);
 
   useEffect(() => {
     if (poll === undefined || pendingId === null) return;
-    const readStatus = poll;
-    const operationId = pendingId;
     const controller = new AbortController();
-    async function checkStatus(): Promise<void> {
+    async function checkStatus(readStatus: PollStatus, operationId: string): Promise<void> {
       try {
         const next = await readStatus(operationId, controller.signal);
         if (!controller.signal.aborted) setOperation(next);
       } catch (cause) {
         if (!controller.signal.aborted) {
           setStatusError(
-            cause instanceof ApiError && cause.status === 401 ? 'expired' : 'unavailable',
+            cause instanceof ApiError && cause.status === HTTP_UNAUTHORIZED ? 'expired' : 'unavailable',
           );
         }
       } finally {
         if (!controller.signal.aborted) setFinishedRound(pollRound);
       }
     }
-    void checkStatus();
+    void checkStatus(poll, pendingId);
     return () => {
       controller.abort();
     };
   }, [pendingId, poll, pollRound]);
 
+  const active = poll !== undefined && pendingId !== null;
+  return {
+    operation,
+    statusError,
+    checking: active && finishedRound !== pollRound,
+    canCheck:
+      active &&
+      statusError !== 'expired' &&
+      (operation === undefined || operation.status === 'pending'),
+    checkAgain: (): void => {
+      setStatusError(null);
+      setPollRound((round) => round + 1);
+    },
+  };
+}
+
+function useErasure(erase: () => Promise<ProductProfileErasureResult>) {
+  const [state, setState] = useState<State>('idle');
+  const running = useRef(false);
   async function submit(): Promise<void> {
     if (running.current) return;
     running.current = true;
@@ -106,19 +119,80 @@ export function DeleteProfileScreen({
       running.current = false;
     }
   }
+  return { state, setState, submit };
+}
+
+interface FocusTargets {
+  readonly heading: RefObject<HTMLHeadingElement | null>;
+  readonly cancel: RefObject<HTMLButtonElement | null>;
+  readonly status: RefObject<HTMLParagraphElement | null>;
+}
+
+function useScreenFocus(state: State, message: string | undefined, targets: FocusTargets): void {
+  useEffect(() => {
+    if (state === 'confirming') targets.cancel.current?.focus();
+    else if (message === undefined) targets.heading.current?.focus();
+    else {
+      targets.status.current?.focus();
+      announce(message);
+    }
+  }, [message, state, targets]);
+}
+
+function ConfirmActions({
+  copy,
+  cancelRef,
+  onCancel,
+  onConfirm,
+}: {
+  readonly copy: ErasureCopy;
+  readonly cancelRef: RefObject<HTMLButtonElement | null>;
+  readonly onCancel: () => void;
+  readonly onConfirm: () => void;
+}): ReactElement {
+  return (
+    <div className="actions">
+      <button ref={cancelRef} className="action secondary" type="button" onClick={onCancel}>
+        {copy.cancel}
+      </button>
+      <button className="action" type="button" onClick={onConfirm}>
+        {copy.confirm}
+      </button>
+    </div>
+  );
+}
+
+export function DeleteProfileScreen({
+  erase,
+  poll,
+  available = true,
+  language = navigator.language,
+}: DeleteProfileScreenProps): ReactElement {
+  const copy = deleteProfileCopy(language);
+  const { state, setState, submit } = useErasure(erase);
+  const status = useOperationStatus(poll, pendingOperationId(state));
+  const heading = useRef<HTMLHeadingElement>(null);
+  const cancel = useRef<HTMLButtonElement>(null);
+  const statusLine = useRef<HTMLParagraphElement>(null);
+  const [targets] = useState<FocusTargets>(() => ({ heading, cancel, status: statusLine }));
+  const message = screenMessage(copy, state, status.statusError, status.operation);
+  useScreenFocus(state, message, targets);
+  const run = (): void => {
+    void submit();
+  };
 
   return (
     <section
       className="panel"
       aria-labelledby="delete-profile-title"
-      aria-busy={state === 'erasing' || checking}
+      aria-busy={state === 'erasing' || status.checking}
     >
       <h2 id="delete-profile-title" ref={heading} tabIndex={-1}>
         {copy.title}
       </h2>
       <p>{state === 'confirming' ? copy.confirmation : copy.description}</p>
       {message === undefined ? null : (
-        <p ref={status} tabIndex={-1} role="status">
+        <p ref={statusLine} tabIndex={-1} role="status">
           {message}
         </p>
       )}
@@ -135,48 +209,26 @@ export function DeleteProfileScreen({
         </button>
       ) : null}
       {state === 'confirming' ? (
-        <div className="actions">
-          <button
-            ref={cancel}
-            className="action secondary"
-            type="button"
-            onClick={() => {
-              setState('idle');
-            }}
-          >
-            {copy.cancel}
-          </button>
-          <button
-            className="action"
-            type="button"
-            onClick={() => {
-              void submit();
-            }}
-          >
-            {copy.confirm}
-          </button>
-        </div>
-      ) : null}
-      {retryable ? (
-        <button
-          className="action"
-          type="button"
-          onClick={() => {
-            void submit();
+        <ConfirmActions
+          copy={copy}
+          cancelRef={cancel}
+          onCancel={() => {
+            setState('idle');
           }}
-        >
+          onConfirm={run}
+        />
+      ) : null}
+      {isRetryable(state) ? (
+        <button className="action" type="button" onClick={run}>
           {copy.retry}
         </button>
       ) : null}
-      {canCheck ? (
+      {status.canCheck ? (
         <button
           className="action secondary"
           type="button"
-          disabled={checking}
-          onClick={() => {
-            setStatusError(null);
-            setPollRound((round) => round + 1);
-          }}
+          disabled={status.checking}
+          onClick={status.checkAgain}
         >
           {copy.checkStatus}
         </button>

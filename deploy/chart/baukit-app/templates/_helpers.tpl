@@ -99,6 +99,27 @@ baukit.dev/process: {{ .process }}
 {{- $_ := set $overrides "MCP__MAX_REQUEST_BODY_BYTES" (toString $root.Values.mcp.maxRequestBodyBytes) -}}
 {{- $_ := set $overrides "MCP__REQUESTS_PER_MINUTE" (toString $root.Values.mcp.requestsPerMinute) -}}
 {{- end }}
+{{- if $root.Values.browserSession.enabled }}
+{{- $session := $root.Values.browserSession -}}
+{{- if empty $session.allowedOrigins }}
+{{- fail "browserSession.allowedOrigins must list the web origins when browser sessions are enabled" }}
+{{- end }}
+{{- if empty $session.redirectUris }}
+{{- fail "browserSession.redirectUris must not be empty when browser sessions are enabled" }}
+{{- end }}
+{{- $_ := set $overrides "AUTH__BROWSER_SESSION__ENABLED" "true" -}}
+{{- $_ := set $overrides "HTTP__CORS_ALLOWED_ORIGINS" (toJson $session.allowedOrigins) -}}
+{{- $_ := set $overrides "AUTH__BROWSER_SESSION__REDIRECT_URIS" (toJson $session.redirectUris) -}}
+{{- $_ := set $overrides "AUTH__BROWSER_SESSION__PUBLIC_API_ORIGIN" (required "browserSession.publicApiOrigin is required" $session.publicApiOrigin) -}}
+{{- with $session.postLogoutRedirectUri }}
+{{- $_ := set $overrides "AUTH__BROWSER_SESSION__POST_LOGOUT_REDIRECT_URI" . -}}
+{{- end }}
+- name: {{ printf "%s__AUTH__BROWSER_SESSION__CREDENTIAL_KEYS" $prefix }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ required "browserSession.credentialKeysSecretRef.name is required" $session.credentialKeysSecretRef.name | quote }}
+      key: {{ required "browserSession.credentialKeysSecretRef.key is required" $session.credentialKeysSecretRef.key | quote }}
+{{- end }}
 {{- with $root.Values.platform.receiverSecretRef.name }}
 - name: {{ printf "%s__PLATFORM__RECEIVER_SECRET" $prefix }}
   valueFrom:

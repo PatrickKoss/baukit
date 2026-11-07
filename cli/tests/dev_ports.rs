@@ -39,6 +39,8 @@ const RENDERED_FILES: &[&str] = &[
     "keycloak/realm.json",
     "keycloak/reconcile.json",
     "backend/crates/dev-ports-product-bin/src/lib.rs",
+    "backend/crates/dev-ports-product-bin/src/browser_session.rs",
+    "config/local.toml",
     "scripts/pkce-login.py",
     "scripts/test-keycloak-theme-patches.sh",
 ];

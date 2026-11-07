@@ -28,7 +28,11 @@ mod config;
 {% if context.platform %}pub mod platform;
 {% endif %}pub use config::config_loader;
 
-{% if context.auth_enabled %}mod identity;
+{% if context.auth_enabled %}mod browser_session;
+mod identity;
+pub use browser_session::{
+    BrowserSessionDependencies, BrowserSessionSettings, browser_session_router,
+};
 {% if context.mcp %}pub use identity::{auth_verifier, mcp_policy, mcp_verifier};
 {% else %}pub use identity::auth_verifier;
 {% endif %}
@@ -123,6 +127,7 @@ pub struct AuthConfig {
     pub identity_admin_realm: String,
     pub identity_admin_client_secret: Option<baukit_config::Secret<String>>,
     pub erasure_hash_key: Option<baukit_config::Secret<String>>,
+    pub browser_session: BrowserSessionSettings,
 }
 
 impl Default for AuthConfig {
@@ -139,6 +144,7 @@ impl Default for AuthConfig {
             identity_admin_realm: PRODUCT.to_owned(),
             identity_admin_client_secret: None,
             erasure_hash_key: None,
+            browser_session: BrowserSessionSettings::default(),
         }
     }
 }
@@ -157,6 +163,9 @@ impl Validate for AuthConfig {
                 "auth.client_id",
                 "WorkOS requires its application client ID",
             ));
+        }
+        if let Err(browser_session) = self.browser_session.validate() {
+            errors.extend(browser_session.into_errors());
         }
         if errors.is_empty() {
             Ok(())

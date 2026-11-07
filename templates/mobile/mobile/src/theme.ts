@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  type ReactElement,
 } from 'react';
 import {
   DarkTheme,
@@ -207,7 +208,7 @@ export function AppThemeProvider({
   children,
   mode,
   persistMode,
-}: AppThemeProviderProps) {
+}: AppThemeProviderProps): ReactElement {
   const systemScheme = useColorScheme();
   const resolvedScheme = resolveThemeScheme(mode, systemScheme);
   const theme = themes[resolvedScheme];

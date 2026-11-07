@@ -1,6 +1,7 @@
 import {
   createContext,
   type PropsWithChildren,
+  type ReactElement,
   useCallback,
   useContext,
   useEffect,
@@ -52,23 +53,15 @@ const AppPreferencesContext = createContext<
   AppPreferencesContextValue | undefined
 >(undefined);
 
-export function AppShell({ children, preferenceSubjectId }: AppShellProps) {
-  const subjectId =
-    preferenceSubjectId === undefined
-      ? DEVICE_PREFERENCE_SUBJECT
-      : preferenceSubjectId;
+interface PreferenceServices {
+  readonly recordStore: RecordStore<AppPreferenceRecord> | undefined;
+  readonly analytics: AnalyticsClient<ProductEvent> | undefined;
+}
+
+function usePreferenceServices(): PreferenceServices {
   const [recordStore, setRecordStore] =
     useState<RecordStore<AppPreferenceRecord>>();
   const [analytics, setAnalytics] = useState<AnalyticsClient<ProductEvent>>();
-  const [preferences, setPreferences] = useState(defaultAppPreferences);
-  const [ready, setReady] = useState(false);
-  const purchases = purchaseFlow();
-
-  useEffect(() => {
-    if (preferenceSubjectId === null) {
-      void purchases.signOut().catch(() => undefined);
-    }
-  }, [preferenceSubjectId, purchases]);
 
   useEffect(() => {
     let active = true;
@@ -101,6 +94,22 @@ export function AppShell({ children, preferenceSubjectId }: AppShellProps) {
     };
   }, []);
 
+  return { recordStore, analytics };
+}
+
+interface PreferenceRuntimeState {
+  readonly runtime: AppPreferenceRuntime | undefined;
+  readonly preferences: AppPreferences;
+  readonly ready: boolean;
+  readonly applyPreferences: (values: AppPreferences) => Promise<void>;
+}
+
+function usePreferenceRuntime(
+  { recordStore, analytics }: PreferenceServices,
+  subjectId: string | null,
+): PreferenceRuntimeState {
+  const [preferences, setPreferences] = useState(defaultAppPreferences);
+  const [ready, setReady] = useState(false);
   const runtime = useMemo(
     () =>
       recordStore === undefined
@@ -144,6 +153,20 @@ export function AppShell({ children, preferenceSubjectId }: AppShellProps) {
     };
   }, [analytics, applyPreferences, runtime, subjectId]);
 
+  return { runtime, preferences, ready, applyPreferences };
+}
+
+interface PreferenceActions {
+  readonly updatePreferences: AppPreferencesContextValue['updatePreferences'];
+  readonly resetPreferenceIdentity: () => Promise<void>;
+  readonly setConsent: (consent: ConsentState) => Promise<void>;
+  readonly persistThemeMode: (mode: ThemePreference) => Promise<void>;
+}
+
+function usePreferenceActions({
+  runtime,
+  applyPreferences,
+}: PreferenceRuntimeState): PreferenceActions {
   const updatePreferences = useCallback(
     async (patch: Partial<AppPreferences>): Promise<AppPreferences> => {
       if (runtime === undefined) {
@@ -179,6 +202,28 @@ export function AppShell({ children, preferenceSubjectId }: AppShellProps) {
     [updatePreferences],
   );
 
+  return { updatePreferences, resetPreferenceIdentity, setConsent, persistThemeMode };
+}
+
+export function AppShell({ children, preferenceSubjectId }: AppShellProps): ReactElement {
+  const subjectId =
+    preferenceSubjectId === undefined
+      ? DEVICE_PREFERENCE_SUBJECT
+      : preferenceSubjectId;
+  const purchases = purchaseFlow();
+  const services = usePreferenceServices();
+  const state = usePreferenceRuntime(services, subjectId);
+  const { preferences } = state;
+  const { analytics } = services;
+  const { resetPreferenceIdentity, setConsent, updatePreferences, persistThemeMode } =
+    usePreferenceActions(state);
+
+  useEffect(() => {
+    if (preferenceSubjectId === null) {
+      void purchases.signOut().catch(() => undefined);
+    }
+  }, [preferenceSubjectId, purchases]);
+
   const contextValue = useMemo<AppPreferencesContextValue>(
     () => ({
       analytics,
@@ -197,7 +242,7 @@ export function AppShell({ children, preferenceSubjectId }: AppShellProps) {
     ],
   );
 
-  if (!ready) {
+  if (!state.ready) {
     return (
       <View style={styles.bootstrap}>
         <ActivityIndicator color={lightTheme.color.accent} />

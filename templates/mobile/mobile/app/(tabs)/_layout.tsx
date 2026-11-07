@@ -1,4 +1,5 @@
 {% raw %}
+import type { ReactElement } from 'react';
 import { Tabs } from "expo-router";
 import { useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -7,7 +8,7 @@ import { getNavigationLayout } from "@baukit/navigation";
 import { NavigationBar } from "../../src/navigation-shell";
 import { useTheme } from "../../src/theme";
 
-export default function TabLayout() {
+export default function TabLayout(): ReactElement {
   const { theme } = useTheme();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();

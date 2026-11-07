@@ -215,6 +215,25 @@ Redis uses a fixed image-specific UID/GID security context (`999:1000`), drops a
 | `networkPolicy.additionalIngress` | `[]` | Raw NetworkPolicy ingress-rule list admitted to every process. |
 | `networkPolicy.additionalEgress` | `[]` | Raw NetworkPolicy egress-rule list appended after TCP/UDP DNS. |
 
+## Web app and CSP
+
+`web.enabled` adds an nginx Deployment, Service, optional Ingress and NetworkPolicy for the
+static web app or the Expo web export. Build the image `FROM nginxinc/nginx-unprivileged` with the
+build output in `/usr/share/nginx/html`. The chart mounts its own `default.conf`, which sends the
+product CSP (ADR 0006 section 7), `X-Content-Type-Options: nosniff` and `Referrer-Policy:
+no-referrer` on every response and falls back to `index.html` for client routes.
+
+The policy comes from the build, which hashes every inline script into `dist/csp.txt`:
+
+```sh
+helm upgrade --install app deploy/chart/baukit-app --set web.enabled=true \
+  --set-file web.contentSecurityPolicy=web/dist/csp.txt
+```
+
+Rendering fails when the policy is empty, spans lines, contains a double quote or allows
+`'unsafe-inline'` scripts. `web.ingress` reuses the API ingress class, annotations and cert-manager
+issuer. Serve web and API on one registrable domain (ADR 0006 section 8).
+
 ## Local validation
 
 ```sh

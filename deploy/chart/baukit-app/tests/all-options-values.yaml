@@ -1,6 +1,16 @@
 product: chart-options
 fullnameOverride: chart-options
 
+browserSession:
+  enabled: true
+  allowedOrigins: [https://app.chart-options.example]
+  redirectUris: [https://app.chart-options.example/]
+  postLogoutRedirectUri: https://app.chart-options.example/
+  publicApiOrigin: https://api.chart-options.example
+  credentialKeysSecretRef:
+    name: chart-options-browser-session
+    key: keys
+
 platform:
   receiverSecretRef:
     name: chart-options-platform
@@ -130,3 +140,10 @@ networkPolicy:
       ports:
         - protocol: TCP
           port: 4317
+web:
+  enabled: true
+  contentSecurityPolicy: "default-src 'self'; script-src 'self'; style-src 'self'; frame-ancestors 'none'"
+  ingress:
+    enabled: true
+    hosts:
+      - host: web.example.com

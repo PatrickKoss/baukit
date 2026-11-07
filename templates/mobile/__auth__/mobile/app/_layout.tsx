@@ -1,3 +1,4 @@
+import type { ReactElement } from 'react';
 import { Text } from 'react-native';
 import { Stack } from 'expo-router';
 
@@ -9,7 +10,7 @@ import { useTheme } from '../src/theme';
 
 const groupOptions = { headerShown: false };
 
-export default function RootLayout() {
+export default function RootLayout(): ReactElement {
   return (
     <AuthProvider>
       <AuthGate />

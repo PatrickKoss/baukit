@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useId, useRef, useState, type ReactElement, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 
 import { useFocusTrap, useInert, useSingleFlight } from '@baukit/a11y-core/web';
@@ -20,7 +20,7 @@ export function AccessibleDialog({
   onClose,
   open,
   title,
-}: AccessibleDialogProps) {
+}: AccessibleDialogProps): ReactElement | null {
   const backdropRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const titleId = useId();
@@ -56,14 +56,57 @@ export function AccessibleDialog({
   );
 }
 
-export function AccessibleDialogExample() {
+interface ValidatedFieldProps {
+  readonly id: string;
+  readonly label: string;
+  readonly help: string;
+  readonly inputRef: RefObject<HTMLInputElement | null>;
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+  readonly error: string | undefined;
+}
+
+function ValidatedField({
+  id,
+  label,
+  help,
+  inputRef,
+  value,
+  onChange,
+  error,
+}: ValidatedFieldProps): ReactElement {
+  return (
+    <>
+      <label htmlFor={id}>{label}</label>
+      <input
+        id={id}
+        ref={inputRef}
+        value={value}
+        onChange={(event) => {
+          onChange(event.currentTarget.value);
+        }}
+        {...validationAccessibilityProps({
+          describedBy: `${id}-help`,
+          error,
+          errorId: `${id}-error`,
+        })}
+      />
+      <p className="field-help" id={`${id}-help`}>
+        {help}
+      </p>
+      <ValidationError error={error} id={`${id}-error`} />
+    </>
+  );
+}
+
+function useExampleForm() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [note, setNote] = useState('');
   const [nameError, setNameError] = useState<string>();
   const [noteError, setNoteError] = useState<string>();
   const [saved, setSaved] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
   const noteRef = useRef<HTMLInputElement>(null);
   const runMutation = useSingleFlight();
 
@@ -83,7 +126,7 @@ export function AccessibleDialogExample() {
       setNoteError(nextNoteError);
       if (nextNameError !== undefined || nextNoteError !== undefined) {
         focusFirstInvalid([
-          { invalid: nextNameError !== undefined, element: inputRef.current },
+          { invalid: nextNameError !== undefined, element: nameRef.current },
           { invalid: nextNoteError !== undefined, element: noteRef.current },
         ]);
         return Promise.resolve();
@@ -93,6 +136,21 @@ export function AccessibleDialogExample() {
     });
   }
 
+  return {
+    open,
+    show: (): void => {
+      setOpen(true);
+    },
+    close,
+    submit,
+    saved,
+    name: { value: name, onChange: setName, error: nameError, inputRef: nameRef },
+    note: { value: note, onChange: setNote, error: noteError, inputRef: noteRef },
+  };
+}
+
+export function AccessibleDialogExample(): ReactElement {
+  const form = useExampleForm();
   return (
     <section className="panel" aria-labelledby="interaction-title">
       <h2 id="interaction-title">Interaction reference</h2>
@@ -103,62 +161,36 @@ export function AccessibleDialogExample() {
       <button
         className="action"
         type="button"
-        onClick={() => {
-          setOpen(true);
-        }}
+        onClick={form.show}
       >
         Open dialog example
       </button>
       <AccessibleDialog
-        initialFocusRef={inputRef}
-        onClose={close}
-        open={open}
+        initialFocusRef={form.name.inputRef}
+        onClose={form.close}
+        open={form.open}
         title="Accessible dialog example"
       >
-        <form onSubmit={submit} noValidate>
-          <label htmlFor="dialog-name">Example name</label>
-          <input
+        <form onSubmit={form.submit} noValidate>
+          <ValidatedField
             id="dialog-name"
-            ref={inputRef}
-            value={name}
-            onChange={(event) => {
-              setName(event.currentTarget.value);
-            }}
-            {...validationAccessibilityProps({
-              describedBy: 'dialog-name-help',
-              error: nameError,
-              errorId: 'dialog-name-error',
-            })}
+            label="Example name"
+            help="Validation keeps its help and error linked to this field."
+            {...form.name}
           />
-          <p className="field-help" id="dialog-name-help">
-            Validation keeps its help and error linked to this field.
-          </p>
-          <ValidationError error={nameError} id="dialog-name-error" />
-          <label htmlFor="dialog-note">Example note</label>
-          <input
+          <ValidatedField
             id="dialog-note"
-            ref={noteRef}
-            value={note}
-            onChange={(event) => {
-              setNote(event.currentTarget.value);
-            }}
-            {...validationAccessibilityProps({
-              describedBy: 'dialog-note-help',
-              error: noteError,
-              errorId: 'dialog-note-error',
-            })}
+            label="Example note"
+            help="Submit guards must retain every entered field after another field fails validation."
+            {...form.note}
           />
-          <p className="field-help" id="dialog-note-help">
-            Submit guards must retain every entered field after another field fails validation.
-          </p>
-          <ValidationError error={noteError} id="dialog-note-error" />
-          {saved ? (
+          {form.saved ? (
             <p className="success" aria-live="polite" role="status">
               Saved once.
             </p>
           ) : null}
           <div className="actions dialog-actions">
-            <button className="action secondary" type="button" onClick={close}>
+            <button className="action secondary" type="button" onClick={form.close}>
               Cancel
             </button>
             <button className="action" type="submit">

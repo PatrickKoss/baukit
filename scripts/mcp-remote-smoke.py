@@ -151,6 +151,7 @@ def reconcile_scopes(fixture: Path, issuer: str) -> None:
 def start_backend(fixture: Path, environment: dict[str, str], output) -> subprocess.Popen:
     backend = subprocess.Popen(
         [str(fixture / "backend/target/debug/api")],
+        cwd=fixture,
         env=environment,
         stdout=output,
         stderr=subprocess.STDOUT,

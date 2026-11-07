@@ -1,5 +1,6 @@
-import { OidcClient, type OidcClientEnvironment } from '@baukit/auth-web';
+import { BrowserSessionClient, type BrowserSessionEnvironment } from '@baukit/auth-web';
 
+import { apiBaseUrl } from '../api-base-url';
 import { PRODUCT_NAME } from '../product';
 import type { SignInPort } from './port';
 import { createSignInPort } from './provider-client';
@@ -7,9 +8,10 @@ import { createSignInPort } from './provider-client';
 const configuredIssuer: unknown = import.meta.env.VITE_LOCAL_OIDC_ISSUER;
 
 /** Authorization code with PKCE against the product's local Keycloak realm. */
-export function createLocalSignIn(environment?: OidcClientEnvironment): SignInPort {
+export function createLocalSignIn(environment?: BrowserSessionEnvironment): SignInPort {
   return createSignInPort('local Keycloak', () => {
     const config = {
+      apiBaseUrl,
       issuer:
         typeof configuredIssuer === 'string' && configuredIssuer !== ''
           ? configuredIssuer
@@ -20,6 +22,8 @@ export function createLocalSignIn(environment?: OidcClientEnvironment): SignInPo
       offlineAccess: false,
       storageKeyPrefix: `${PRODUCT_NAME}:local-oidc`,
     };
-    return environment === undefined ? new OidcClient(config) : new OidcClient(config, environment);
+    return environment === undefined
+      ? new BrowserSessionClient(config)
+      : new BrowserSessionClient(config, environment);
   });
 }

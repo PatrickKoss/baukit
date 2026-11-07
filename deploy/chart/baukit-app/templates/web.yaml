@@ -1,0 +1,189 @@
+{{- if .Values.web.enabled }}
+{{- $policy := trim .Values.web.contentSecurityPolicy }}
+{{- if not $policy }}
+{{- fail "web.contentSecurityPolicy is required; pass the build's csp.txt with --set-file" }}
+{{- end }}
+{{- if or (contains "\"" $policy) (contains "\n" $policy) (contains "'unsafe-inline'" (regexFind "script-src[^;]*" $policy)) }}
+{{- fail "web.contentSecurityPolicy must be one line without double quotes and without 'unsafe-inline' scripts" }}
+{{- end }}
+{{- $name := printf "%s-web" (include "baukit-app.fullname" .) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "baukit-app.processLabels" (dict "root" . "process" "web") | nindent 4 }}
+data:
+  default.conf: |
+    server {
+        listen {{ .Values.web.port }};
+        server_name _;
+        root /usr/share/nginx/html;
+        server_tokens off;
+
+        add_header Content-Security-Policy "{{ $policy }}" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+
+        location = /healthz {
+            access_log off;
+            default_type text/plain;
+            return 200 "ok\n";
+        }
+
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "baukit-app.processLabels" (dict "root" . "process" "web") | nindent 4 }}
+spec:
+  replicas: {{ .Values.web.replicas }}
+  selector:
+    matchLabels:
+      {{- include "baukit-app.processSelectorLabels" (dict "root" . "process" "web") | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ $policy | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "baukit-app.processLabels" (dict "root" . "process" "web") | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountToken }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: web
+          image: {{ include "baukit-app.image" .Values.web.image | quote }}
+          imagePullPolicy: {{ .Values.web.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.web.port }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          resources:
+            {{- toYaml .Values.web.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /var/cache/nginx
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $name }}
+        - name: tmp
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "baukit-app.processLabels" (dict "root" . "process" "web") | nindent 4 }}
+    baukit.dev/endpoint: web
+spec:
+  type: {{ .Values.web.service.type }}
+  selector:
+    {{- include "baukit-app.processSelectorLabels" (dict "root" . "process" "web") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.web.service.port }}
+      targetPort: http
+      protocol: TCP
+{{- if .Values.web.ingress.enabled }}
+{{- $annotations := deepCopy .Values.ingress.annotations }}
+{{- with .Values.ingress.certManager.clusterIssuer }}
+{{- $_ := set $annotations "cert-manager.io/cluster-issuer" . }}
+{{- end }}
+{{- with .Values.ingress.rateLimitMiddleware }}
+{{- $_ := set $annotations "traefik.ingress.kubernetes.io/router.middlewares" . }}
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "baukit-app.processLabels" (dict "root" . "process" "web") | nindent 4 }}
+  {{- with $annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.web.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range .Values.web.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $name }}
+                port:
+                  number: {{ $.Values.web.service.port }}
+    {{- end }}
+{{- end }}
+{{- if .Values.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}-ingress
+  labels:
+    {{- include "baukit-app.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "baukit-app.processSelectorLabels" (dict "root" . "process" "web") | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            {{- toYaml .Values.networkPolicy.ingressController.namespaceSelector | nindent 12 }}
+          podSelector:
+            {{- toYaml .Values.networkPolicy.ingressController.podSelector | nindent 12 }}
+      ports:
+        - port: {{ .Values.web.port }}
+          protocol: TCP
+{{- end }}
+{{- end }}

@@ -1,6 +1,7 @@
 import type { FetchImplementation } from '@baukit/api-runtime';
 
 import { createAuthenticatedApiRuntime } from './authenticated-api';
+import { apiBaseUrl } from './api-base-url';
 import { authClient } from './auth';
 
 export interface Item {
@@ -13,15 +14,9 @@ export interface CurrentUser {
   readonly subject: string;
 }
 
-const configuredBaseUrl: unknown = import.meta.env.VITE_API_URL;
 const api = createAuthenticatedApiRuntime({
   auth: authClient,
-  baseUrl:
-    typeof configuredBaseUrl === 'string'
-      ? configuredBaseUrl
-      : import.meta.env.MODE === 'production'
-        ? window.location.origin
-        : 'http://localhost:{{ context.api_host_port }}',
+  baseUrl: apiBaseUrl,
   environment: import.meta.env.MODE,
 });
 

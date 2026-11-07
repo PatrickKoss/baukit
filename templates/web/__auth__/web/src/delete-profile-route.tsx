@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, type ReactElement } from 'react';
 import type { ProfileErasureClient } from '@baukit/api-runtime/erasure';
 
 import { createDeleteProfileClient, deleteProfile } from './delete-profile';
@@ -14,7 +14,7 @@ export function DeleteProfileRoute({
   readonly eraseLocalPartition: () => Promise<void>;
   readonly onSignedOut: () => void;
   readonly ready: boolean;
-}) {
+}): ReactElement {
   const client = useRef<ProfileErasureClient | null>(null);
   const poll = useCallback((operationId: string, signal: AbortSignal) => {
     if (client.current === null) return Promise.reject(new Error('No deletion request to check.'));

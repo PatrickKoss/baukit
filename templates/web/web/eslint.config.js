@@ -1,23 +1,20 @@
+import { base, react, scripts, testRelaxedRules } from '@baukit/eslint-config';
 import uiTokens from '@baukit/ui-tokens/eslint';
-import eslint from '@eslint/js';
 import { defineConfig } from 'eslint/config';
-import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 import globals from 'globals';
-import tseslint from 'typescript-eslint';
+
+const appFiles = ['src/**/*.{ts,tsx}', 'csp/**/*.ts', 'vite.config.ts'];
+const e2eFiles = ['e2e/**/*.ts'];
 
 export default defineConfig(
   {
     ignores: ['dist/**', 'node_modules/**', 'coverage/**'],
   },
-  eslint.configs.recommended,
-  ...tseslint.configs.strictTypeChecked,
-  ...tseslint.configs.stylisticTypeChecked,
-  reactHooks.configs.flat.recommended,
-  reactRefresh.configs.vite,
+  ...react({ files: appFiles }),
+  { ...reactRefresh.configs.vite, files: ['src/**/*.tsx'] },
   {
-    files: ['**/*.{ts,tsx}'],
-    ignores: ['e2e/**'],
+    files: appFiles,
     plugins: { '@baukit/ui-tokens': uiTokens },
     rules: {
       '@baukit/ui-tokens/no-raw-color': [
@@ -33,8 +30,9 @@ export default defineConfig(
       },
     },
   },
+  ...base({ files: e2eFiles }),
   {
-    files: ['e2e/**/*.ts'],
+    files: e2eFiles,
     languageOptions: {
       globals: globals.node,
       parserOptions: {
@@ -51,4 +49,6 @@ export default defineConfig(
       '@typescript-eslint/no-unnecessary-condition': 'off',
     },
   },
+  { files: ['e2e/**/*.spec.ts'], rules: testRelaxedRules },
+  ...scripts({ files: ['scripts/**/*.mjs'] }),
 );

@@ -9,7 +9,11 @@
     "loginWithEmailAllowed",
     "loginTheme",
     "passwordPolicy",
-    "bruteForceProtected"{% if context.mcp %},
+    "bruteForceProtected",
+    "accessTokenLifespan",
+    "offlineSessionIdleTimeout",
+    "offlineSessionMaxLifespanEnabled",
+    "offlineSessionMaxLifespan"{% if context.mcp %},
     "clientScopes",
     "defaultDefaultClientScopes",
     "defaultOptionalClientScopes"{% endif %}

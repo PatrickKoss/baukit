@@ -7,7 +7,8 @@ use {{ context.app_crate }}_bin::{ProductConfig, config_loader};
 const CHILD_MODE: &str = "BAUKIT_CONFIG_LOADER_TEST_MODE";
 const ENV_PREFIX: &str = "{{ context.app_env }}";
 const ORIGINS: &str = r#"["https://app.example.com", "http://127.0.0.1:5173"]"#;
-{% if context.mcp %}const HOSTS: &str = r#"["mcp.example.com", "localhost:8080"]"#;
+{% if context.auth_enabled %}const REDIRECT_URIS: &str = r#"["https://app.example.com/", "https://app.example.com/callback"]"#;
+{% endif %}{% if context.mcp %}const HOSTS: &str = r#"["mcp.example.com", "localhost:8080"]"#;
 {% endif %}
 #[test]
 fn parses_json_array_environment_values() -> Result<(), Box<dyn Error>> {
@@ -32,6 +33,15 @@ fn parses_json_array_environment_values() -> Result<(), Box<dyn Error>> {
             features
         );
 {% endif %}{% if context.auth_enabled %}        assert_eq!(config.product.auth.authorized_parties, origins);
+        if mode != "empty" {
+            assert_eq!(
+                config.product.auth.browser_session.redirect_uris,
+                vec![
+                    "https://app.example.com/",
+                    "https://app.example.com/callback"
+                ]
+            );
+        }
 {% endif %}{% if context.mcp %}        assert_eq!(config.product.mcp.allowed_origins, origins);
         let hosts = if mode == "empty" {
             Vec::new()
@@ -100,6 +110,12 @@ fn shared_mcp_environment_reaches_database_setup_in_every_command() -> Result<()
         )
         .env(format!("{ENV_PREFIX}__AUTH__CLIENT_ID"), "config-test")
         .env(format!("{ENV_PREFIX}__AUTH__AUTHORIZED_PARTIES"), origins);
+    if mode != "empty" {
+        command.env(
+            format!("{ENV_PREFIX}__AUTH__BROWSER_SESSION__REDIRECT_URIS"),
+            REDIRECT_URIS,
+        );
+    }
 {% endif %}{% if context.mcp %}    let hosts = if mode == "empty" { "[]" } else { HOSTS };
     command
         .env(format!("{ENV_PREFIX}__MCP__ALLOWED_HOSTS"), hosts)

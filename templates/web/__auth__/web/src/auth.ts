@@ -1,5 +1,6 @@
-{% if context.auth_oidc %}import { OidcClient } from '@baukit/auth-web';
+{% if context.auth_oidc %}import { BrowserSessionClient } from '@baukit/auth-web';
 
+import { apiBaseUrl } from './api-base-url';
 import { PRODUCT_NAME } from './product';
 import type { SignInPort } from './sign-in/port';
 import { createSignInPort } from './sign-in/provider-client';
@@ -14,7 +15,8 @@ const offlineAccess = import.meta.env.VITE_OIDC_OFFLINE_ACCESS !== 'false';
 export const authClient: SignInPort = createSignInPort(
   'local Keycloak',
   () =>
-    new OidcClient({
+    new BrowserSessionClient({
+      apiBaseUrl,
       issuer:
         typeof configuredIssuer === 'string'
           ? configuredIssuer

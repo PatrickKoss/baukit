@@ -12,7 +12,7 @@ export function DetailRouteStateView<T>({
   state,
   onExit,
   renderReady,
-}: DetailRouteStateViewProps<T>) {
+}: DetailRouteStateViewProps<T>): ReactNode {
   if (state.status === 'ready') {
     return renderReady(state.value);
   }
