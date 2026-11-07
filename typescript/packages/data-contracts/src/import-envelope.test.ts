@@ -1,4 +1,5 @@
 import { expect, it, vi } from 'vitest';
+import { isRecord } from '@baukit/type-guards';
 
 import fixtureCorpus from '../../../../fixtures/import-envelope/import-envelope-v1.json' with { type: 'json' };
 
@@ -71,10 +72,6 @@ const conformanceFixtures: ImportEnvelopeConformanceFixtures = {
   mixedVersions: fixture('mixed-versions'),
   failureHalfwayThroughCommit: fixture('failure-halfway-through-commit'),
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function decodeFixtureEnvelope(source: ImportEnvelopeSource) {
   if (typeof source !== 'string') throw new Error('fixture_source_invalid');
