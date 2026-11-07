@@ -52,6 +52,35 @@ describe('decideCacheStrategy', () => {
     ).toBe(CACHE_STRATEGIES.networkOnly);
   });
 
+  it('keeps browser session routes network-only on any origin, whatever the options say', () => {
+    const options = {
+      appOrigin: APP_ORIGIN,
+      apiPathPrefixes: ['/auth'],
+      apiStrategy: CACHE_STRATEGIES.cacheFirst,
+      defaultStrategy: CACHE_STRATEGIES.cacheFirst,
+    };
+    for (const url of [
+      `${APP_ORIGIN}/auth/session`,
+      `${APP_ORIGIN}/auth/session/refresh`,
+      'https://api.example.com/auth/session/exchange',
+    ]) {
+      expect(decideCacheStrategy({ url }, options)).toBe(CACHE_STRATEGIES.networkOnly);
+    }
+    expect(decideCacheStrategy({ url: `${APP_ORIGIN}/auth/sessions` }, options)).toBe(
+      CACHE_STRATEGIES.cacheFirst,
+    );
+  });
+
+  it('never caches a request that carries an Authorization header', () => {
+    const headers = new Headers({ Authorization: 'Bearer token' });
+    for (const url of [`${APP_ORIGIN}/api/v1/me`, `${APP_ORIGIN}/logo.png`, `${APP_ORIGIN}/`]) {
+      expect(decideCacheStrategy({ url, headers }, OPTIONS)).toBe(CACHE_STRATEGIES.networkOnly);
+    }
+    expect(
+      decideCacheStrategy({ url: `${APP_ORIGIN}/logo.png`, headers: new Headers() }, OPTIONS),
+    ).toBe(CACHE_STRATEGIES.cacheFirst);
+  });
+
   it('leaves the sync path unconfigured by default', () => {
     expect(decideCacheStrategy({ url: `${APP_ORIGIN}/api/v1/sync` }, OPTIONS)).toBe(
       CACHE_STRATEGIES.networkFirst,

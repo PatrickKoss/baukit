@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Major Changes
+
+- Add `BrowserSessionClient` (ADR 0006). It redeems the authorization code through the product
+  backend's `/auth/session/{exchange,refresh,logout}` routes with `credentials: 'include'` and
+  `X-Baukit-Session: 1`, keeps the access token in memory only, refreshes once on load, coordinates
+  refresh across tabs with Web Locks and `BroadcastChannel`, broadcasts sign-out, and keeps only
+  `{ subject, signedInAt }` in `localStorage[<prefix>:account]`. A network error, 429 or 5xx on
+  refresh is retryable and keeps the account hint; only a 401 signs out.
+- `OidcClient` no longer stores, refreshes or reads tokens and no longer touches
+  `<prefix>:tokens`. It keeps `discover()` and `login()` and gains `completeCallback()`,
+  `requireFreshLogin()`, `confirmFreshLogin()` and `clearTransaction()`. `accessToken()`,
+  `handleCallback()`, `hasSession()`, `logout()`, `clearSession()`, `subscribeSessionExpired()`,
+  `postLogoutRedirectUri` and `refreshLeewaySeconds` moved to `BrowserSessionClient`. No
+  compatibility mode.
+- `SessionExpiredReason` drops `refresh_unavailable` and adds `signed_out`. New `OidcErrorCode`
+  `logout_failed`.
+
 ## 0.18.3
 
 ### Patch Changes

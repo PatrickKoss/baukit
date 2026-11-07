@@ -1,10 +1,10 @@
 import { createClient, LoginRequiredError, RefreshError } from '@workos-inc/authkit-js';
-import {
-  OidcError,
-  type ClearSessionOptions,
-  type SessionExpiredEvent,
-  type SessionExpiredReason,
-} from './index.js';
+import { OidcError } from './oidc-errors.js';
+import type {
+  ClearSessionOptions,
+  SessionExpiredEvent,
+  SessionExpiredReason,
+} from './session-events.js';
 
 export interface WorkOsWebConfig {
   readonly clientId: string;

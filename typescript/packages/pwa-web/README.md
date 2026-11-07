@@ -23,9 +23,12 @@ decideCacheStrategy(
 
 The rules run in this order:
 
-1. A path under any `neverCachedPathPrefixes` entry is `network-only`. The list is empty by
-   default, so no endpoint is special until a product names one. A sync endpoint belongs here:
-   replaying a stale delta corrupts the local database.
+1. A path under `/auth/session/` (`ALWAYS_NETWORK_ONLY_PATH_PREFIXES`, on any origin), a request
+   with an `Authorization` header (pass `headers`, as a service worker `Request` does), and a path
+   under any `neverCachedPathPrefixes` entry are `network-only`. Options cannot override the first
+   two: session responses and bearer-authorized responses never reach the Cache API. The
+   configurable list is empty by default. A sync endpoint belongs there: replaying a stale delta
+   corrupts the local database.
 2. Any non-GET method is `network-only`.
 3. A path under any `apiPathPrefixes` entry (default `['/api']`) gets `apiStrategy`, default
    `network-first`.
