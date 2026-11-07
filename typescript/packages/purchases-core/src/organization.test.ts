@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, renderHook, waitFor } from '@testing-library/react';
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -210,5 +210,24 @@ describe('useFeature with an organization plan', () => {
     await waitFor(() => {
       expect(view.result.current).toEqual({ status: 'unavailable' });
     });
+  });
+
+  it('reads the plan again on retry after the hub was unavailable', async () => {
+    const organizationEntitlement = vi
+      .fn<(id: string) => Promise<VerifiedEntitlement | null>>()
+      .mockRejectedValueOnce(new AccountPlanError(503, 'entitlements_unavailable', 5))
+      .mockResolvedValueOnce(studio);
+    const backend = { organizationEntitlement };
+    const view = renderHook(() => useOrganizationPlan(backend, STUDIO));
+    await waitFor(() => {
+      expect(view.result.current.status).toBe('unavailable');
+    });
+    act(() => {
+      view.result.current.retry();
+    });
+    await waitFor(() => {
+      expect(view.result.current).toMatchObject({ status: 'ready', entitlement: studio });
+    });
+    expect(organizationEntitlement).toHaveBeenCalledTimes(2);
   });
 });

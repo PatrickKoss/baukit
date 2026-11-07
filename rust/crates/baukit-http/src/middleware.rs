@@ -34,6 +34,8 @@ use crate::{ApiError, HttpOptions, IDEMPOTENCY_KEY, ResponseCachePolicy};
 
 /// The standard request ID header.
 pub const X_REQUEST_ID: HeaderName = HeaderName::from_static("x-request-id");
+/// The request header that names the organization a request acts for.
+pub const X_ORGANIZATION_ID: HeaderName = HeaderName::from_static("x-organization-id");
 
 const TRACEPARENT: HeaderName = HeaderName::from_static("traceparent");
 const TRACESTATE: HeaderName = HeaderName::from_static("tracestate");
@@ -169,6 +171,7 @@ fn cors_layer(options: &HttpOptions) -> CorsLayer {
             IF_MATCH,
             IDEMPOTENCY_KEY,
             X_REQUEST_ID,
+            X_ORGANIZATION_ID,
             TRACEPARENT,
             TRACESTATE,
         ],

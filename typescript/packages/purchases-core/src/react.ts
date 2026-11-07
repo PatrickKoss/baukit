@@ -2,6 +2,7 @@ import {
   createContext,
   createElement,
   Fragment,
+  useCallback,
   useContext,
   useEffect,
   useState,
@@ -81,12 +82,19 @@ function organizationFailure(error: unknown): OrganizationPlanState {
   return { status: 'unavailable' };
 }
 
+/** An organization's plan state with `retry`, which reads the plan again. */
+export type OrganizationPlan = OrganizationPlanState & { readonly retry: () => void };
+
 /** Loads the plan of the organization the account acts for. */
 export function useOrganizationPlan(
   backend: Pick<EntitlementBackend, 'organizationEntitlement'>,
   organizationId: string,
-): OrganizationPlanState {
+): OrganizationPlan {
   const [state, setState] = useState<OrganizationPlanState>({ status: 'loading' });
+  const [attempt, setAttempt] = useState(0);
+  const retry = useCallback(() => {
+    setAttempt((previous) => previous + 1);
+  }, []);
   useEffect(() => {
     let active = true;
     setState({ status: 'loading' });
@@ -105,8 +113,8 @@ export function useOrganizationPlan(
     return () => {
       active = false;
     };
-  }, [backend, organizationId]);
-  return state;
+  }, [backend, organizationId, attempt]);
+  return { ...state, retry };
 }
 
 export interface LockedFeatureProps {
