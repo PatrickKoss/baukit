@@ -9,11 +9,12 @@ mkdir -p .generated-fixture
 fixture_parent=$(mktemp -d "$repo_root/.generated-fixture/gate-XXXXXX")
 trap 'rm -rf "$fixture_parent"' EXIT
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$fixture_parent/target}"
+export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$repo_root/typescript/.playwright-browsers}"
 
 cargo build --manifest-path cli/Cargo.toml --bin baukit --target-dir cli/target
 if [[ "${BAUKIT_TYPESCRIPT_BUILT:-0}" != 1 ]]; then
     corepack pnpm --dir typescript install --frozen-lockfile
-    corepack pnpm --dir typescript --filter @baukit/type-guards --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/auth-native --filter @baukit/auth-node --filter @baukit/data-contracts --filter @baukit/ui-tokens --filter @baukit/navigation --filter @baukit/purchases-core --filter @baukit/purchases-revenuecat --filter @baukit/pwa-web run build
+    corepack pnpm --dir typescript --filter @baukit/type-guards --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/auth-native --filter @baukit/auth-node --filter @baukit/auth-web --filter @baukit/data-contracts --filter @baukit/ui-tokens --filter @baukit/navigation --filter @baukit/purchases-core --filter @baukit/purchases-revenuecat --filter @baukit/pwa-web run build
 fi
 
 flavors=(backend web mobile mobile-pwa combined mcp auth clerk workos platform-standalone platform)
@@ -63,6 +64,9 @@ for flavor in "${flavors[@]}"; do
         corepack pnpm --dir "$fixture/web" lint
         corepack pnpm --dir "$fixture/web" test
         corepack pnpm --dir "$fixture/web" run test:coverage
+        scripts/with-loopback-network.sh sh scripts/check-web-headers.sh "$fixture/web"
+        corepack pnpm --dir "$fixture/web" exec playwright install chromium
+        scripts/with-loopback-network.sh corepack pnpm --dir "$fixture/web" run test:e2e --project=desktop-chromium
     fi
     if "$mobile"; then
         corepack pnpm --dir "$fixture/mobile" install --frozen-lockfile
@@ -80,6 +84,11 @@ for flavor in "${flavors[@]}"; do
         corepack pnpm --dir "$fixture/mobile" exec expo export --platform web --max-workers 4
         corepack pnpm --dir "$fixture/mobile" run build:sw
         corepack pnpm --dir "$fixture/mobile" run build:sw:check
+        corepack pnpm --dir "$fixture/mobile" run csp
+    fi
+    if [[ "$flavor" == auth || "$flavor" == clerk || "$flavor" == workos ]]; then
+        cargo build --manifest-path "$fixture/backend/Cargo.toml" -p "$name-bin" --bins
+        python3 scripts/web-session-stack.py "$fixture"
     fi
     if "$mcp"; then
         cargo test --manifest-path "$fixture/backend/Cargo.toml" -p "$name-mcp" --test tool_drift
