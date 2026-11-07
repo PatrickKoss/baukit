@@ -236,7 +236,10 @@ async fn send_to_router(router: &Router, probe: ProbeRequest<'_>) -> Result<Prob
 async fn send_to_url(base_url: &str, probe: ProbeRequest<'_>) -> Result<ProbeResponse, String> {
     let method = reqwest::Method::from_bytes(probe.method.to_uppercase().as_bytes())
         .map_err(|error| error.to_string())?;
-    let mut request = reqwest::Client::new().request(method, format!("{base_url}{}", probe.uri));
+    let client = crate::test_http_client()
+        .build()
+        .map_err(|error| error.to_string())?;
+    let mut request = client.request(method, format!("{base_url}{}", probe.uri));
     for (name, value) in probe.headers {
         request = request.header(name, value);
     }

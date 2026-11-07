@@ -175,7 +175,13 @@ fn attacks(
 async fn every_token_profile_rejects_forged_foreign_and_stale_tokens() -> Result<(), Box<dyn Error>>
 {
     let server = MockOidcServer::start().await?;
-    let public_jwks = reqwest::get(server.jwks_url()).await?.bytes().await?;
+    let public_jwks = baukit_test::test_http_client()
+        .build()?
+        .get(server.jwks_url())
+        .send()
+        .await?
+        .bytes()
+        .await?;
     for profile in profiles(&server)? {
         profile
             .verifier
