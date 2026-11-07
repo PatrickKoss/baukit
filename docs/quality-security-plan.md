@@ -111,7 +111,7 @@ tenancy and rate-limit audit of the products (S-08).
   Acceptance: `make ci` green with `-D warnings`, no new `#[allow]`, each `#[expect]` has a reason.
 - [ ] P1.2 `missing_errors_doc` on core, http, config, auth first, then the rest (255 docs).
 - [~] P1.3 (rust/ and cli/ done in W1-D; template deny.toml open) cargo-deny: `allow-wildcard-paths`, full `check` for `rust/`, new `cli/deny.toml`, template `deny.toml`.
-- [ ] P1.4 `baukit check` subcommand framework (also: `patterns` runs lint/ast-grep with ast-grep 0.51.1, skips
+- [~] P1.4 (W3-1 running: lints, file-size, suppressions, patterns, agent-docs; `template-files` moves to the template wave as P1.4b) `baukit check` subcommand framework (also: `patterns` runs lint/ast-grep with ast-grep 0.51.1, skips
   `vendor/`, `target/`, `node_modules`, and rejects `ast-grep-ignore` comments without a `-- reason`) in the CLI, with rules:
   `lints` (baseline subset check for Cargo lint tables and clippy.toml), `file-size` (Rust/TS, shrinking
   allowlist in `baukit.toml`), `agent-docs` (Q-09), `template-files` (Q-07). Unit + CLI tests.
