@@ -134,12 +134,13 @@ tenancy and rate-limit audit of the products (S-08).
 
 ## Phase 2. Security tooling, tests and skills
 
-- [~] P2.1 (baukit-http layer merged in W2-2; web CSP, chart edge config, HSTS config field and fixture header checks wait for the template wave) `SecurityHeadersLayer` in baukit-http on by default (nosniff, Referrer-Policy, frame-ancestors via
+- [~] P2.1 (baukit-http layer merged in W2-2; HSTS config field merged in W4-F; web CSP, chart edge config and fixture header checks wait for the template wave) `SecurityHeadersLayer` in baukit-http on by default (nosniff, Referrer-Policy, frame-ancestors via
   CSP for HTML, `Cache-Control: no-store` on authenticated JSON, HSTS behind config); CSP for the web template
   and the chart's edge config; header assertions in the fixture gate.
 - [~] P2.2 (ADR tasks 1 and 2 merged: BFF in baukit-auth + ratelimit adapter, headers; task 3 auth-web/pwa-web after W1-C; task 4 templates; auth-web waits for W1-C; design: ADR 0006 accepted; implementation = its 4 tasks) auth-web token storage per D2, with a test that no storage write contains a refresh token.
 - [x] P2.3 `IssuedApiToken` and every secret-holding type: redacting Debug / `SecretString`.
-- [ ] P2.4 Clerk missing-azp opt-in; negative tests for every token profile.
+- [~] P2.4 (crate part merged in W4-F; the template `auth.allow_missing_azp` flag and the stale
+  auth-providers.md:90 line are left for the backend template wave) Clerk missing-azp opt-in; negative tests for every token profile.
 - [~] P2.5 (baukit done in W1-D; template workflows open) Supply chain: SHA-pin all actions in baukit and the template workflows, renovate digest pinning,
   zizmor + actionlint step, gitleaks with fixture allowlist, osv-scanner over Cargo.lock and pnpm-lock.yaml.
 - [~] P2.6 (6 targets and the gate lane merged; sync batch decode has no public entry point; template scaffold open) Fuzzing: `rust/fuzz` with targets for JWT header/claims decode, sync push batch decode, event
@@ -356,3 +357,17 @@ tenancy and rate-limit audit of the products (S-08).
   - The `rust-secret-debug` rule now also matches more field names (passphrase, credentials,
     code_verifier, *_key), byte arrays and `Zeroizing` types. The 3 findings on main are gone.
   - I checked the sweep claims against the diff. Nothing else derives Debug on a secret.
+- 2026-11-07: W4-F merged (P2.4 crate part, P2.1 HSTS field).
+  - `ClerkVerifier` now rejects tokens without `azp`. Clerk leaves `azp` out when the request has no Origin,
+    which is the case for native apps. `allow_missing_authorized_party()` turns acceptance back on. A present
+    `azp` must still be in the allowlist.
+  - New `tests/token_profiles.rs`: Oidc, Clerk, ClientBound and ScopeBound each get one valid token that must
+    verify, then 9 or 10 attacks, each checked for its exact error variant.
+  - `HttpConfig.hsts_max_age`: one year outside Local unless set. `0` turns it off. baukit-config/lib.rs
+    dropped from the allowlist (961 lines).
+  - Main after the merge: fmt, clippy (all features and without features for auth, config and http), 475
+    tests with Docker, and file-size, suppressions and agent-docs are all green.
+  - Rollout impact: 10 of the 12 products ship Clerk as a provider option and a mobile app. All except
+    runtime-analyzer and architecture-health-platform. The backend template wave adds
+    `auth.allow_missing_azp`, default on when `context.mobile`, and P4.2 wires it per product. Otherwise a
+    Clerk deployment rejects Expo tokens.
