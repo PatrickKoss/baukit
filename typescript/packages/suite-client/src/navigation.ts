@@ -9,9 +9,26 @@ interface PendingNotice {
   announced: boolean;
 }
 
-export type SuiteNavigationStore = ReturnType<typeof createSuiteNavigationStore>;
+export interface ConsumedSuiteNotice {
+  readonly notice: SuiteNavigationNotice;
+  readonly announce: boolean;
+}
 
-export function createSuiteNavigationStore(randomUUID: () => string) {
+export interface SuiteNavigationStore {
+  createSuiteConnectionNotice(requestId: string): string;
+  claimSuiteConnectionAnnouncement(requestId: string): boolean;
+  createSuiteErrorNotice(code: string): string;
+  consumeSuiteNotice(token: unknown): ConsumedSuiteNotice | null;
+}
+
+export interface SuiteNoticeStore {
+  getSnapshot(): SuiteNavigationNotice | null;
+  subscribe(listener: () => void): () => void;
+  receive(params: { suiteResult: string | undefined; suiteError: string | undefined }): boolean;
+  clear(): void;
+}
+
+export function createSuiteNavigationStore(randomUUID: () => string): SuiteNavigationStore {
   const connectionNotices = new Map<string, PendingNotice>();
   const pendingNotices = new Map<string, PendingNotice>();
 
@@ -45,7 +62,7 @@ export function createSuiteNavigationStore(randomUUID: () => string) {
     return createNotice({ connected: false, errorCode: code }).token;
   }
 
-  function consumeSuiteNotice(token: unknown) {
+  function consumeSuiteNotice(token: unknown): ConsumedSuiteNotice | null {
     if (typeof token !== 'string') return null;
     const pending = pendingNotices.get(token);
     if (!pending) return null;
@@ -63,11 +80,11 @@ export function createSuiteNavigationStore(randomUUID: () => string) {
   };
 }
 
-export function createSuiteNoticeStore(navigation: SuiteNavigationStore) {
+export function createSuiteNoticeStore(navigation: SuiteNavigationStore): SuiteNoticeStore {
   let notice: SuiteNavigationNotice | null = null;
   let receivedToken: string | undefined;
   const listeners = new Set<() => void>();
-  function publish(next: SuiteNavigationNotice | null) {
+  function publish(next: SuiteNavigationNotice | null): void {
     notice = next;
     for (const listener of listeners) listener();
   }

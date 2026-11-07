@@ -1,3 +1,4 @@
+import { isNonEmptyString } from '@baukit/type-guards';
 import {
   OAuthSessionCoordinator,
   type OAuthSessionCoordinatorOptions,
@@ -78,7 +79,12 @@ export class SuiteSession {
       throw new SuiteFlowError(params['code'] ?? 'suite_code_invalid');
     const requestId = params['request'];
     const code = params['code'];
-    if (!requestId || !code || params['status']) throw new SuiteFlowError('suite_code_invalid');
+    if (
+      !isNonEmptyString(requestId) ||
+      !isNonEmptyString(code) ||
+      isNonEmptyString(params['status'])
+    )
+      throw new SuiteFlowError('suite_code_invalid');
     return {
       type: 'connected',
       requestId,

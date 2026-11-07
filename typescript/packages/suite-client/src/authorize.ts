@@ -1,3 +1,4 @@
+import { isNonEmptyString } from '@baukit/type-guards';
 import {
   SuiteClient,
   suiteErrorCode,
@@ -114,7 +115,8 @@ export function parseSuiteAuthorizeQuery(
   const client = query.get('client');
   const state = query.get('state');
   const codeChallenge = query.get('code_challenge');
-  if (!client || !state || !codeChallenge) return null;
+  if (!isNonEmptyString(client) || !isNonEmptyString(state) || !isNonEmptyString(codeChallenge))
+    return null;
   const hint = query.get('hint');
   const hintDomain = query.get('hint_domain');
   return {

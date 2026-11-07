@@ -35,6 +35,6 @@ export function selectOffering(
   offerings: PurchaseOfferings,
   configuredId?: string,
 ): PurchaseOffering | null {
-  if (configuredId) return offerings.all[configuredId] ?? null;
+  if (configuredId !== undefined && configuredId !== '') return offerings.all[configuredId] ?? null;
   return offerings.current;
 }

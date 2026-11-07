@@ -82,6 +82,13 @@ function organizationFailure(error: unknown): OrganizationPlanState {
   return { status: 'unavailable' };
 }
 
+interface SettledOrganizationPlan {
+  readonly backend: Pick<EntitlementBackend, 'organizationEntitlement'>;
+  readonly organizationId: string;
+  readonly attempt: number;
+  readonly state: OrganizationPlanState;
+}
+
 /** An organization's plan state with `retry`, which reads the plan again. */
 export type OrganizationPlan = OrganizationPlanState & { readonly retry: () => void };
 
@@ -90,30 +97,36 @@ export function useOrganizationPlan(
   backend: Pick<EntitlementBackend, 'organizationEntitlement'>,
   organizationId: string,
 ): OrganizationPlan {
-  const [state, setState] = useState<OrganizationPlanState>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
+  const [settled, setSettled] = useState<SettledOrganizationPlan | null>(null);
   const retry = useCallback(() => {
     setAttempt((previous) => previous + 1);
   }, []);
   useEffect(() => {
     let active = true;
-    setState({ status: 'loading' });
+    const settle = (state: OrganizationPlanState): void => {
+      if (active) setSettled({ backend, organizationId, attempt, state });
+    };
     const load = backend.organizationEntitlement?.(organizationId) ?? Promise.resolve(null);
     load.then(
       (entitlement) => {
-        if (active)
-          setState(
-            entitlement === null ? { status: 'not_accessible' } : { status: 'ready', entitlement },
-          );
+        settle(
+          entitlement === null ? { status: 'not_accessible' } : { status: 'ready', entitlement },
+        );
       },
       (error: unknown) => {
-        if (active) setState(organizationFailure(error));
+        settle(organizationFailure(error));
       },
     );
     return () => {
       active = false;
     };
   }, [backend, organizationId, attempt]);
+  const current =
+    settled?.backend === backend &&
+    settled.organizationId === organizationId &&
+    settled.attempt === attempt;
+  const state: OrganizationPlanState = current ? settled.state : { status: 'loading' };
   return { ...state, retry };
 }
 
