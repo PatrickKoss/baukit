@@ -118,6 +118,7 @@ step_rust_tests() {
 
 step_rust_check() {
   cargo check --manifest-path rust/Cargo.toml --workspace --all-targets
+  RUSTDOCFLAGS="-D warnings" cargo doc --manifest-path rust/Cargo.toml --workspace --all-features --no-deps
 }
 step_suite_features() { ./scripts/check-suite-features.sh; }
 step_rust_msrv() {
@@ -139,7 +140,10 @@ step_cli_clippy() {
 step_cli_tests() {
   cargo test --manifest-path cli/Cargo.toml -- --include-ignored --test-threads "$workers"
 }
-step_cli_check() { cargo check --manifest-path cli/Cargo.toml --all-targets; }
+step_cli_check() {
+  cargo check --manifest-path cli/Cargo.toml --all-targets
+  RUSTDOCFLAGS="-D warnings" cargo doc --manifest-path cli/Cargo.toml --no-deps
+}
 step_baukit_check() {
   cargo run --manifest-path cli/Cargo.toml --bin baukit -- check --root .
 }

@@ -80,7 +80,7 @@ impl ApiTokenFormat {
     /// Uses the system CSPRNG and rejection sampling. Show the secret once in
     /// the creation response. Store only [`GeneratedApiToken::secret_hash`]
     /// and optionally [`GeneratedApiToken::display_prefix`]. Look up presented
-    /// credentials by `hash_api_token(presented)`, as [`ApiTokenVerifier`] does.
+    /// credentials by `hash_api_token(presented)`, as [`ApiTokenVerifier`](crate::ApiTokenVerifier) does.
     ///
     /// # Errors
     ///
