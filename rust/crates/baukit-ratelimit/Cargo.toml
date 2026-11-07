@@ -15,6 +15,10 @@ readme = "README.md"
 [lints]
 workspace = true
 
+[features]
+# Adapter for the baukit-auth browser session rate-limit port.
+browser-session = ["baukit-auth/browser-session"]
+
 [dependencies]
 axum.workspace = true
 baukit-auth.workspace = true

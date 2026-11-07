@@ -14,6 +14,8 @@
 
 mod amount_budget;
 mod axum_layer;
+#[cfg(feature = "browser-session")]
+mod browser_session;
 mod memory;
 mod options;
 mod redis_store;
@@ -29,6 +31,8 @@ pub use axum_layer::{
     authenticated_route_group, layers, resolve_client_ip,
 };
 pub use baukit_config::RateLimitFailMode;
+#[cfg(feature = "browser-session")]
+pub use browser_session::StoreBrowserSessionRateLimiter;
 pub use memory::{InMemoryRateLimitStore, InMemoryStoreError};
 pub use options::{
     AuthenticatedRouteGroupOptions, AuthenticatedRouteGroupOptionsError, RateLimitOptions,

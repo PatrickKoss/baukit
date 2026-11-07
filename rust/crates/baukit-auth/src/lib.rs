@@ -77,6 +77,8 @@
 
 mod api_token;
 mod axum_integration;
+#[cfg(feature = "browser-session")]
+pub mod browser_session;
 mod config;
 #[cfg(feature = "sqlx-postgres")]
 mod postgres;
