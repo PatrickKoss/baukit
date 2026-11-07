@@ -1,3 +1,10 @@
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::too_many_lines,
+    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
+)]
 use async_trait::async_trait;
 use axum::{
     Router,
@@ -796,7 +803,7 @@ async fn outbox_rollbacks_xp_signatures_retry_and_terminal_health() -> TestResul
     let (db, c, owner) = authorizer_fixture().await?;
     let service = SuiteLinkService::new(c.clone());
     let (link, _) = exchange_link(&service, owner, None, None).await?;
-    let outbox = make_outbox(db.pool.clone(), c.clone(), true);
+    let outbox = make_outbox(db.pool.clone(), &c.clone(), true);
     let event = activity(3, Some(17));
     let mut event = event;
     event.natural_key = (Utc::now().date_naive()).to_string();
@@ -840,7 +847,7 @@ async fn outbox_rollbacks_xp_signatures_retry_and_terminal_health() -> TestResul
         c.store
             .update_preferences(owner, link.id, Some(per_link), None, Utc::now())
             .await?;
-        let outbox = make_outbox(db.pool.clone(), c.clone(), global);
+        let outbox = make_outbox(db.pool.clone(), &c.clone(), global);
         let event = activity(2, Some(9));
         let mut event = event;
         event.natural_key = (Utc::now().date_naive()
@@ -1675,7 +1682,7 @@ fn make_context(pool: &PgPool, registry: Arc<PeerRegistry>) -> Arc<SuiteContext>
 }
 fn make_outbox(
     pool: PgPool,
-    context: Arc<SuiteContext>,
+    context: &Arc<SuiteContext>,
     share_xp: bool,
 ) -> PostgresSuiteEventOutbox {
     PostgresSuiteEventOutbox::new(
@@ -3900,5 +3907,50 @@ async fn read_only_link_service_port_keeps_owner_isolation() -> TestResult {
         assert_eq!(links[0].id, id);
         assert_eq!(links[0].user_id, owner);
     }
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn foreign_owner_lookup_returns_none_without_accounting_failures() -> TestResult {
+    let db = common::postgres_database().await?;
+    let context = make_context(&db.pool, registry("alpha", "beta", 12340, 12341));
+    let owner = user(&db.pool, "suite-owner-a").await?;
+    let stranger = user(&db.pool, "suite-owner-b").await?;
+    let links = SuiteLinkService::new(context.clone());
+    let (link, _) = exchange_link(&links, owner, None, None).await?;
+    let job = PostgresJobStore::new(db.pool.clone())
+        .enqueue(NewJob::new(
+            SUITE_EVENTS_DELIVER_JOB_TYPE,
+            json!({"link_id":link.id.to_string()}),
+            1,
+        ))
+        .await?
+        .job;
+    sqlx::query("UPDATE job_outbox SET status='failed',last_error='suite_peer_unreachable',failure_reason='permanent',updated_at=now() WHERE id=$1")
+        .bind(job.id)
+        .execute(&db.pool)
+        .await?;
+    let snapshot = || async {
+        sqlx::query_as::<_, (i32, chrono::DateTime<Utc>, bool)>(
+            "SELECT l.consecutive_failures, l.updated_at, f.accounted FROM suite_links l JOIN suite_failed_delivery_jobs f ON f.link_id=l.id WHERE l.id=$1",
+        )
+        .bind(link.id)
+        .fetch_one(&db.pool)
+        .await
+    };
+    let before = snapshot().await?;
+    assert!(!before.2);
+    assert!(
+        context
+            .store
+            .find_link_for_owner(link.id, stranger)
+            .await?
+            .is_none()
+    );
+    assert_eq!(snapshot().await?, before);
+    let own = context.store.find_link_for_owner(link.id, owner).await?;
+    assert_eq!(own.map(|found| found.id), Some(link.id));
+    assert!(snapshot().await?.2);
     Ok(())
 }

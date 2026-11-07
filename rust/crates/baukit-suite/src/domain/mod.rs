@@ -28,7 +28,8 @@ pub const SUITE_JOB_TYPES: [&str; 2] = [SUITE_EVENTS_DELIVER_JOB_TYPE, SUITE_LIN
 pub const SUITE_QUEUE: &str = "suite-events";
 pub const SUITE_CIRCUIT_FAILURES: u32 = 20;
 pub const SUITE_MAX_ATTEMPTS: u32 = 10;
-pub const SUITE_SIGNATURE_WINDOW_SECONDS: u64 = 300;
+const SIGNATURE_WINDOW_SECONDS: i64 = 300;
+pub const SUITE_SIGNATURE_WINDOW_SECONDS: u64 = SIGNATURE_WINDOW_SECONDS.unsigned_abs();
 pub const SUITE_UNAVAILABLE_RETRY_SECONDS: u64 = 300;
 pub const SUITE_RATE_WINDOW_SECONDS: u64 = 60;
 pub const SUITE_EXCHANGE_FAILURE_LIMIT: u32 = 20;
@@ -140,6 +141,7 @@ impl PeerUrls {
         }
     }
 
+    #[must_use]
     pub fn with_authorize_url(mut self, url: impl Into<String>) -> Self {
         self.authorize_url = Some(url.into());
         self
@@ -156,6 +158,7 @@ pub struct PeerRegistrySettings {
 }
 
 impl PeerRegistrySettings {
+    #[must_use]
     pub fn with_public_urls(
         mut self,
         api_url: impl Into<String>,
@@ -166,11 +169,13 @@ impl PeerRegistrySettings {
         self
     }
 
+    #[must_use]
     pub fn with_peer(mut self, id: impl Into<String>, urls: PeerUrls) -> Self {
         self.peers.insert(id.into(), urls);
         self
     }
 
+    #[must_use]
     pub fn with_allow_loopback(mut self, allow: bool) -> Self {
         self.allow_loopback = allow;
         self
@@ -492,8 +497,7 @@ pub fn validate_inbound(
         if replay { envelope.occurred_at } else { now },
     )
     .map_err(InboundValidationError::Envelope)?;
-    if envelope.occurred_at > now + chrono::Duration::seconds(SUITE_SIGNATURE_WINDOW_SECONDS as i64)
-    {
+    if envelope.occurred_at > now + chrono::Duration::seconds(SIGNATURE_WINDOW_SECONDS) {
         return Err(InboundValidationError::FutureOccurrence);
     }
     if envelope.source_app != link.peer_app {

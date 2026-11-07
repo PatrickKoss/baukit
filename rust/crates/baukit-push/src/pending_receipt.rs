@@ -216,7 +216,8 @@ fn count(len: usize) -> u64 {
     u64::try_from(len).unwrap_or(u64::MAX)
 }
 
-#[cfg(all(test, feature = "test-support"))]
+#[cfg(test)]
+#[cfg(feature = "test-support")]
 mod tests {
     use super::*;
     use crate::{

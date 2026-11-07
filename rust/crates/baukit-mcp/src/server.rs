@@ -75,12 +75,14 @@ impl ToolError {
     }
 
     /// Replaces the default {code,message} payload. The message is the text content.
+    #[must_use]
     pub fn with_structured_content(mut self, value: Value) -> Self {
         self.content = ErrorContent::Structured(value);
         self
     }
 
     /// Returns an isError result with text content and no structured content.
+    #[must_use]
     pub fn text_only(mut self) -> Self {
         self.content = ErrorContent::TextOnly;
         self

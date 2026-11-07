@@ -27,15 +27,18 @@ use utoipa::OpenApi as _;
 
 use super::*;
 
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "fields are read only through the derived OpenAPI params"
+)]
 #[derive(serde::Deserialize, utoipa::IntoParams)]
 struct InferredListQuery {
     tag: Vec<String>,
 }
 
 #[utoipa::path(get, path = "/inferred-items", params(InferredListQuery))]
-#[allow(dead_code)]
-async fn inferred_list_query(Query(query): Query<InferredListQuery>) {
+#[allow(dead_code, reason = "OpenAPI path stub: only its annotation is used")]
+fn inferred_list_query(Query(query): Query<InferredListQuery>) {
     let _ = query.tag;
 }
 

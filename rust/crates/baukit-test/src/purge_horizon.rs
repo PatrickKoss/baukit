@@ -70,7 +70,10 @@ impl PullPause {
 /// Bind the adapter to a database with no other tombstones. The check purges
 /// every table the adapter covers, so it must not share the database with
 /// data another test needs.
-#[allow(async_fn_in_trait)]
+#[allow(
+    async_fn_in_trait,
+    reason = "the harness awaits adapters on the test task, so their futures need no Send bound"
+)]
 pub trait PurgeHorizonAdapter {
     /// Product owner key.
     type Owner: Clone;

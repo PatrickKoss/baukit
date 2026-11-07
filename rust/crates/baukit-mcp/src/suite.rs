@@ -113,12 +113,15 @@ fn link_page(
     }
     links.sort_unstable_by_key(|link| link.id);
     links.retain(|link| after.is_none_or(|after| link.id > after));
-    let next = (links.len() > PAGE_SIZE).then(|| links[PAGE_SIZE - 1].id);
-    let links: Vec<_> = links.into_iter().take(PAGE_SIZE).map(link_view).collect();
+    let next = links
+        .get(PAGE_SIZE)
+        .and_then(|_| links.get(PAGE_SIZE - 1))
+        .map(|link| link.id);
+    let links: Vec<_> = links.iter().take(PAGE_SIZE).map(link_view).collect();
     Ok(json!({"links":links,"nextCursor":next}))
 }
 
-fn link_view(link: SuiteLink) -> Value {
+fn link_view(link: &SuiteLink) -> Value {
     json!({
         "id":link.id, "peerApp":link.peer_app, "sends":link.sends, "receives":link.receives,
         "status":link.status, "createdAt":link.created_at, "updatedAt":link.updated_at
@@ -179,6 +182,7 @@ impl ToolService for WithSuiteLinks {
 
 impl McpServices {
     /// Adds the opt-in `links:read` tool alongside the product's existing tools.
+    #[must_use]
     pub fn with_suite_links(
         mut self,
         service: Arc<dyn SuiteLinksRead>,

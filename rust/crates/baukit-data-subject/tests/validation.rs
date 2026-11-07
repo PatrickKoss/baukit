@@ -1,3 +1,10 @@
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::too_many_lines,
+    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
+)]
 use baukit_data_subject::{
     CustomIdentifierType, DataSubjectRequest, Identifier, IdentifierType, Limits, ValidationError,
     codes, normalize_request, validate_idempotency_key, validate_subject_reference,

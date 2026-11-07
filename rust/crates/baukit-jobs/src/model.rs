@@ -106,12 +106,14 @@ impl NewJob {
     }
 
     /// Sets the earliest claim time.
+    #[must_use]
     pub const fn run_after(mut self, run_after: DateTime<Utc>) -> Self {
         self.run_after = run_after;
         self
     }
 
     /// Sets an idempotency key unique within this job type.
+    #[must_use]
     pub fn idempotency_key(mut self, key: impl Into<String>) -> Self {
         self.idempotency_key = Some(key.into());
         self

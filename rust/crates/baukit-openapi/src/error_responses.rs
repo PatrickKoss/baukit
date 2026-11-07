@@ -183,11 +183,7 @@ impl ErrorResponseRules {
 }
 
 struct OperationFacts {
-    secured: bool,
-    has_request_body: bool,
-    has_path_parameter: bool,
-    unsafe_method: bool,
-    has_idempotency_key: bool,
+    satisfied: Vec<OperationCondition>,
 }
 
 impl OperationFacts {
@@ -198,30 +194,44 @@ impl OperationFacts {
         document_security: &Option<Vec<SecurityRequirement>>,
     ) -> Self {
         let security = operation.security.as_ref().or(document_security.as_ref());
-        Self {
-            secured: security.is_some_and(|requirements| requirements.iter().any(names_a_scheme)),
-            has_request_body: operation.request_body.is_some(),
-            has_path_parameter: path.contains(PATH_PARAMETER_START),
-            unsafe_method: matches!(
-                method,
-                HttpMethod::Post | HttpMethod::Put | HttpMethod::Patch | HttpMethod::Delete
+        let facts = [
+            (
+                OperationCondition::Secured,
+                security.is_some_and(|requirements| requirements.iter().any(names_a_scheme)),
             ),
-            has_idempotency_key: operation.parameters.iter().flatten().any(|parameter| {
-                matches!(parameter, RefOr::T(parameter) if parameter.parameter_in == ParameterIn::Header
-                    && parameter.name.eq_ignore_ascii_case(IDEMPOTENCY_KEY_HEADER))
-            }),
+            (
+                OperationCondition::HasRequestBody,
+                operation.request_body.is_some(),
+            ),
+            (
+                OperationCondition::HasPathParameter,
+                path.contains(PATH_PARAMETER_START),
+            ),
+            (
+                OperationCondition::UnsafeMethod,
+                matches!(
+                    method,
+                    HttpMethod::Post | HttpMethod::Put | HttpMethod::Patch | HttpMethod::Delete
+                ),
+            ),
+            (
+                OperationCondition::HasIdempotencyKey,
+                operation.parameters.iter().flatten().any(|parameter| {
+                    matches!(parameter, RefOr::T(parameter) if parameter.parameter_in == ParameterIn::Header
+                        && parameter.name.eq_ignore_ascii_case(IDEMPOTENCY_KEY_HEADER))
+                }),
+            ),
+        ];
+        Self {
+            satisfied: facts
+                .into_iter()
+                .filter_map(|(condition, holds)| holds.then_some(condition))
+                .collect(),
         }
     }
 
-    const fn matches(&self, condition: OperationCondition) -> bool {
-        match condition {
-            OperationCondition::Always => true,
-            OperationCondition::Secured => self.secured,
-            OperationCondition::HasRequestBody => self.has_request_body,
-            OperationCondition::HasPathParameter => self.has_path_parameter,
-            OperationCondition::UnsafeMethod => self.unsafe_method,
-            OperationCondition::HasIdempotencyKey => self.has_idempotency_key,
-        }
+    fn matches(&self, condition: OperationCondition) -> bool {
+        condition == OperationCondition::Always || self.satisfied.contains(&condition)
     }
 }
 
@@ -341,7 +351,7 @@ mod tests {
         json!({"200": {"description": "OK"}})
     }
 
-    fn document(paths: Value) -> OpenApi {
+    fn document(paths: &Value) -> OpenApi {
         serde_json::from_value(json!({
             "openapi": "3.1.0",
             "info": {"title": "test", "version": "1"},
@@ -360,7 +370,7 @@ mod tests {
             .is_some()
     }
 
-    fn matched(condition: OperationCondition, paths: Value) -> Vec<(String, String)> {
+    fn matched(condition: OperationCondition, paths: &Value) -> Vec<(String, String)> {
         let mut document = document(paths);
         ErrorResponseRules::new()
             .status(condition, 418, "Matched")
@@ -387,7 +397,7 @@ mod tests {
 
     #[test]
     fn status_rule_adds_an_envelope_response_with_the_product_description() {
-        let mut document = document(json!({"/items": {"get": {"responses": ok()}}}));
+        let mut document = document(&json!({"/items": {"get": {"responses": ok()}}}));
 
         ErrorResponseRules::new()
             .status(OperationCondition::Always, 500, "Internal failure")
@@ -403,7 +413,7 @@ mod tests {
 
     #[test]
     fn status_rule_keeps_a_status_the_handler_documents() {
-        let mut document = document(json!({"/items": {"post": {"responses": {
+        let mut document = document(&json!({"/items": {"post": {"responses": {
             "400": {"description": "Invalid item"}
         }}}}));
 
@@ -419,7 +429,7 @@ mod tests {
 
     #[test]
     fn secured_follows_operation_then_document_security_and_ignores_anonymous_only() {
-        let mut document = document(json!({
+        let mut document = document(&json!({
             "/inherited": {"get": {"responses": ok()}},
             "/own": {"get": {"responses": ok(), "security": [{"apiKey": []}]}},
             "/public": {"get": {"responses": ok(), "security": []}},
@@ -448,7 +458,7 @@ mod tests {
     fn secured_is_false_without_any_security() {
         let paths = json!({"/items": {"get": {"responses": ok()}}});
 
-        assert!(matched(OperationCondition::Secured, paths).is_empty());
+        assert!(matched(OperationCondition::Secured, &paths).is_empty());
     }
 
     #[test]
@@ -469,15 +479,15 @@ mod tests {
         });
 
         assert_eq!(
-            matched(OperationCondition::HasRequestBody, paths.clone()),
+            matched(OperationCondition::HasRequestBody, &paths.clone()),
             pairs(&[("post", "/items")])
         );
         assert_eq!(
-            matched(OperationCondition::HasPathParameter, paths.clone()).len(),
+            matched(OperationCondition::HasPathParameter, &paths.clone()).len(),
             6
         );
         assert_eq!(
-            matched(OperationCondition::UnsafeMethod, paths),
+            matched(OperationCondition::UnsafeMethod, &paths),
             pairs(&[
                 ("delete", "/items/{id}"),
                 ("patch", "/items/{id}"),
@@ -500,14 +510,14 @@ mod tests {
         });
 
         assert_eq!(
-            matched(OperationCondition::HasIdempotencyKey, paths),
+            matched(OperationCondition::HasIdempotencyKey, &paths),
             pairs(&[("post", "/a")])
         );
     }
 
     #[test]
     fn standard_headers_document_request_id_retry_after_and_challenge() {
-        let mut document = document(json!({"/items": {"get": {
+        let mut document = document(&json!({"/items": {"get": {
             "responses": ok(),
             "security": [{"bearer": []}]
         }}}));
@@ -545,7 +555,7 @@ mod tests {
 
     #[test]
     fn header_rule_keeps_an_existing_header_of_any_case_and_skips_references() {
-        let mut document = document(json!({"/items": {"get": {"responses": {
+        let mut document = document(&json!({"/items": {"get": {"responses": {
             "200": {"description": "OK", "headers": {
                 "x-request-id": {"schema": {"type": "string"}, "description": "Product"}
             }},
@@ -578,7 +588,7 @@ mod tests {
             .status(OperationCondition::Always, 400, "Invalid")
             .status(OperationCondition::HasPathParameter, 404, "Missing")
             .standard_headers();
-        let mut document = document(json!({"/items/{id}": {"get": {"responses": ok()}}}));
+        let mut document = document(&json!({"/items/{id}": {"get": {"responses": ok()}}}));
 
         rules.apply(&mut document);
         let once = to_json(&document);
@@ -589,7 +599,7 @@ mod tests {
 
     #[test]
     fn apply_where_limits_rules_to_selected_operations() {
-        let mut document = document(json!({
+        let mut document = document(&json!({
             "/items/{id}": {"get": {"responses": ok()}, "patch": {"responses": ok()}},
             "/settings": {"patch": {"responses": ok()}}
         }));
@@ -608,7 +618,7 @@ mod tests {
 
     #[test]
     fn precondition_responses_keep_their_descriptions_and_gain_rule_headers() {
-        let mut document = document(json!({"/items/{id}": {"put": {"responses": ok()}}}));
+        let mut document = document(&json!({"/items/{id}": {"put": {"responses": ok()}}}));
         let operation = document
             .paths
             .paths

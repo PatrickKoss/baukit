@@ -1,17 +1,24 @@
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::too_many_lines,
+    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
+)]
 use std::{fmt::Debug, fs, path::Path};
 
 use baukit_data_subject::*;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 
-fn round_trip<T>(expected: Value) -> T
+fn round_trip<T>(expected: &Value) -> T
 where
     T: DeserializeOwned + Serialize + PartialEq + Debug,
 {
     let parsed: T = serde_json::from_value(expected.clone()).expect("parse wire fields");
     assert_eq!(
         serde_json::to_value(&parsed).expect("serialize wire fields"),
-        expected
+        *expected
     );
     let encoded = serde_json::to_vec(&parsed).expect("encode");
     let decoded: T = serde_json::from_slice(&encoded).expect("decode");
@@ -21,7 +28,7 @@ where
 
 #[test]
 fn discovery_and_nested_fields_match_the_contract() {
-    let discovery = round_trip::<DiscoveryDocument>(json!({
+    let discovery = round_trip::<DiscoveryDocument>(&json!({
         "contractVersion": "1",
         "service": {"name": "fixture", "version": "1.0.0"},
         "operations": ["erasure", "export"],
@@ -33,44 +40,44 @@ fn discovery_and_nested_fields_match_the_contract() {
     }));
     assert_eq!(discovery.limits, Limits::default());
     assert_eq!(discovery.scopes, Scopes::default());
-    round_trip::<Service>(json!({"name":"fixture", "version":"1"}));
-    round_trip::<Scopes>(json!({"erasure":"data-subject.erase", "export":"data-subject.export"}));
+    round_trip::<Service>(&json!({"name":"fixture", "version":"1"}));
+    round_trip::<Scopes>(&json!({"erasure":"data-subject.erase", "export":"data-subject.export"}));
     round_trip::<Limits>(
-        json!({"maxIdentifiers":16, "maxIdentifierLength":256, "maxExportPartBytes":8388608}),
+        &json!({"maxIdentifiers":16, "maxIdentifierLength":256, "maxExportPartBytes":8388608}),
     );
     round_trip::<ReceiptKey>(
-        json!({"keyId":"fixture-key-id", "algorithm":"ed25519", "publicKeyPem":"fixture-public-key", "status":"previous"}),
+        &json!({"keyId":"fixture-key-id", "algorithm":"ed25519", "publicKeyPem":"fixture-public-key", "status":"previous"}),
     );
 }
 
 #[test]
 fn identifiers_and_request_fields_match_the_contract() {
-    round_trip::<Identifier>(json!({"type":"accountId", "value":"synthetic-fixture"}));
+    round_trip::<Identifier>(&json!({"type":"accountId", "value":"synthetic-fixture"}));
     round_trip::<DataSubjectRequest>(
-        json!({"subjectReference":"fixture-reference-01", "identifiers":[{"type":"email", "value":"fixture@example.invalid"}]}),
+        &json!({"subjectReference":"fixture-reference-01", "identifiers":[{"type":"email", "value":"fixture@example.invalid"}]}),
     );
     for name in ["email", "accountId", "customerId", "phone", "x-fixture-id"] {
-        assert_eq!(round_trip::<IdentifierType>(json!(name)).as_str(), name);
+        assert_eq!(round_trip::<IdentifierType>(&json!(name)).as_str(), name);
     }
 }
 
 #[test]
 fn category_restriction_export_and_error_fields_match_the_contract() {
-    round_trip::<CategoryEntry>(json!({"category":"records", "action":"erased", "count":3}));
+    round_trip::<CategoryEntry>(&json!({"category":"records", "action":"erased", "count":3}));
     round_trip::<Restriction>(
-        json!({"category":"invoices", "reason":"Statutory retention", "legalBasis":"Fixture obligation", "retainUntil":"2030-12-31"}),
+        &json!({"category":"invoices", "reason":"Statutory retention", "legalBasis":"Fixture obligation", "retainUntil":"2030-12-31"}),
     );
     round_trip::<Restriction>(
-        json!({"category":"invoices", "reason":"Statutory retention", "legalBasis":"Fixture obligation", "retainUntil":null}),
+        &json!({"category":"invoices", "reason":"Statutory retention", "legalBasis":"Fixture obligation", "retainUntil":null}),
     );
-    round_trip::<ExportPart>(json!({"partNumber":1, "sha256":"00".repeat(32), "bytes":42}));
-    round_trip::<OperationError>(json!({"code":"fixture_failure"}));
+    round_trip::<ExportPart>(&json!({"partNumber":1, "sha256":"00".repeat(32), "bytes":42}));
+    round_trip::<OperationError>(&json!({"code":"fixture_failure"}));
     assert!(serde_json::from_value::<Restriction>(json!({"category":"invoices", "reason":"fixture", "legalBasis":"fixture", "retainUntil":"2030-02-30"})).is_err());
 }
 
 #[test]
 fn pending_resource_preserves_nulls_and_empty_arrays() {
-    round_trip::<OperationResource>(json!({
+    round_trip::<OperationResource>(&json!({
         "operationId":"00000000-0000-4000-8000-000000000001",
         "kind":"erasure", "status":"pending", "subjectReference":"fixture-reference-01",
         "createdAt":"2026-10-20T10:00:00Z", "completedAt":null,
@@ -81,8 +88,8 @@ fn pending_resource_preserves_nulls_and_empty_arrays() {
 #[test]
 fn terminal_resource_and_dsse_fields_match_the_contract() {
     let envelope = json!({"payloadType":RECEIPT_PAYLOAD_TYPE, "payload":"e30=", "signatures":[{"keyid":"fixture-key-id", "sig":"AA=="}]});
-    round_trip::<DsseEnvelope>(envelope.clone());
-    round_trip::<DsseSignature>(json!({"keyid":"fixture-key-id", "sig":"AA=="}));
+    round_trip::<DsseEnvelope>(&envelope.clone());
+    round_trip::<DsseSignature>(&json!({"keyid":"fixture-key-id", "sig":"AA=="}));
     let mut resource = json!({
         "operationId":"00000000-0000-4000-8000-000000000001",
         "kind":"export", "status":"completed", "subjectReference":"fixture-reference-01",
@@ -91,16 +98,16 @@ fn terminal_resource_and_dsse_fields_match_the_contract() {
         "restrictions":[], "parts":[{"partNumber":1, "sha256":"00".repeat(32), "bytes":42}],
         "receipt":envelope, "error":null
     });
-    round_trip::<OperationResource>(resource.clone());
+    round_trip::<OperationResource>(&resource.clone());
     resource["status"] = json!("failed");
     resource["receipt"] = Value::Null;
     resource["error"] = json!({"code":"fixture_failure"});
-    round_trip::<OperationResource>(resource);
+    round_trip::<OperationResource>(&resource);
 }
 
 #[test]
 fn receipt_payload_fields_match_the_contract() {
-    round_trip::<ReceiptPayload>(json!({
+    round_trip::<ReceiptPayload>(&json!({
         "receiptType":"baukit.data-subject.receipt.v1", "contractVersion":"1",
         "operationId":"00000000-0000-4000-8000-000000000001",
         "kind":"erasure", "status":"restricted", "subjectReference":"fixture-reference-01",
@@ -121,20 +128,20 @@ fn enum_values_and_terminal_states_are_pinned() {
         ("restricted", OperationStatus::Restricted, true, true),
         ("failed", OperationStatus::Failed, true, false),
     ] {
-        assert_eq!(round_trip::<OperationStatus>(json!(name)), status);
+        assert_eq!(round_trip::<OperationStatus>(&json!(name)), status);
         assert_eq!(status.is_terminal(), terminal);
         assert_eq!(status.has_receipt(), receipt);
     }
     for name in ["erasure", "export"] {
-        round_trip::<OperationKind>(json!(name));
+        round_trip::<OperationKind>(&json!(name));
     }
     for name in ["erased", "exported", "retained"] {
-        round_trip::<CategoryAction>(json!(name));
+        round_trip::<CategoryAction>(&json!(name));
     }
     for name in ["current", "previous"] {
-        round_trip::<ReceiptKeyStatus>(json!(name));
+        round_trip::<ReceiptKeyStatus>(&json!(name));
     }
-    round_trip::<ReceiptKeyAlgorithm>(json!("ed25519"));
+    round_trip::<ReceiptKeyAlgorithm>(&json!("ed25519"));
     assert!(serde_json::from_value::<OperationStatus>(json!("not_found")).is_err());
     assert!(serde_json::from_value::<ReceiptKeyAlgorithm>(json!("Ed25519")).is_err());
 }

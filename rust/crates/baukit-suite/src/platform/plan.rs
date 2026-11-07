@@ -355,6 +355,7 @@ impl HubAccountPlan {
         })
     }
     /// Enables organization subjects. `HubOrganizations` needs `organizations:read`.
+    #[must_use]
     pub fn with_organizations(mut self, grants: Arc<dyn OrganizationGrants>) -> Self {
         self.organizations = Some(HubOrganizationPlans::new(
             self.product_id.clone(),

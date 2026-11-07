@@ -462,7 +462,7 @@ impl JobStore for PostgresJobStore {
                 .await
                 .map_err(StoreError::database)?;
             transaction.commit().await.map_err(StoreError::database)?;
-            row.map(row_to_job).transpose()
+            row.as_ref().map(row_to_job).transpose()
         }))
     }
 
@@ -637,7 +637,7 @@ async fn enqueue_on(
         .map_err(StoreError::database)?;
     if let Some(row) = inserted {
         return Ok(EnqueueOutcome {
-            job: row_to_job(row)?,
+            job: row_to_job(&row)?,
             created: true,
         });
     }
@@ -654,7 +654,7 @@ async fn enqueue_on(
         .await
         .map_err(StoreError::database)?;
     Ok(EnqueueOutcome {
-        job: row_to_job(row)?,
+        job: row_to_job(&row)?,
         created: false,
     })
 }
@@ -698,7 +698,7 @@ async fn enqueue_deduplicated_on(
             .map_err(StoreError::database)?;
         if let Some(row) = inserted {
             return Ok(EnqueueOutcome {
-                job: row_to_job(row)?,
+                job: row_to_job(&row)?,
                 created: true,
             });
         }
@@ -714,7 +714,7 @@ async fn enqueue_deduplicated_on(
             .map_err(StoreError::database)?;
         if let Some(row) = existing {
             return Ok(EnqueueOutcome {
-                job: row_to_job(row)?,
+                job: row_to_job(&row)?,
                 created: false,
             });
         }
@@ -803,7 +803,7 @@ fn count_cancellation_statuses(statuses: Vec<String>) -> Result<CancellationOutc
     Ok(outcome)
 }
 
-fn row_to_job(row: sqlx::postgres::PgRow) -> Result<Job, StoreError> {
+fn row_to_job(row: &sqlx::postgres::PgRow) -> Result<Job, StoreError> {
     let attempts = row.try_get::<i32, _>("attempts")?;
     let max_attempts = row.try_get::<i32, _>("max_attempts")?;
     Ok(Job {

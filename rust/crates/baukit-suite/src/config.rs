@@ -277,9 +277,8 @@ mod tests {
         .without_dotenv()
         .without_local_file()
         .load::<Product>();
-        let error = match result {
-            Ok(_) => panic!("accepted invalid hosted URL"),
-            Err(error) => error,
+        let Err(error) = result else {
+            panic!("accepted invalid hosted URL");
         };
         assert!(
             error.to_string().contains("suite.peers.beta.authorize_url"),

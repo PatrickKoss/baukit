@@ -1,3 +1,10 @@
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::too_many_lines,
+    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
+)]
 //! Checks that errors, request debug output, and telemetry never carry URL
 //! secrets or raw error bodies. Runs as its own test binary so its subscriber
 //! sees every callsite.

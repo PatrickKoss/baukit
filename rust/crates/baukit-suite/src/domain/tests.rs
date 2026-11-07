@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_lines, reason = "scenario tests read top to bottom")]
+
 use super::*;
 use baukit_core::webhook_signature::{
     sign_webhook_hmac_sha256, verify_webhook_hmac_sha256, webhook_signing_input,

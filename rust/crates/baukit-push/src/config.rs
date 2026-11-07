@@ -206,6 +206,10 @@ impl PushOptions {
 }
 
 impl Default for PushOptions {
+    #[expect(
+        clippy::expect_used,
+        reason = "PushConfig::default() always passes from_config validation"
+    )]
     fn default() -> Self {
         Self::from_config(&PushConfig::default()).expect("the standard push defaults are valid")
     }

@@ -68,6 +68,7 @@ impl DataSubjectConfig {
     }
 
     /// Enables export discovery and routes using a product that implements the export port.
+    #[must_use]
     pub fn with_export(mut self, product: Arc<dyn DataSubjectExportProduct>) -> Self {
         self.export_product = Some(product);
         self

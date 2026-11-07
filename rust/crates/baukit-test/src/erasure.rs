@@ -23,7 +23,10 @@ pub struct OwnedResourceCheck {
 }
 
 /// Product adapter exercised by the erasure conformance harness.
-#[allow(async_fn_in_trait)]
+#[allow(
+    async_fn_in_trait,
+    reason = "the harness awaits adapters on the test task, so their futures need no Send bound"
+)]
 pub trait ProductProfileErasureAdapter {
     /// Adapter-specific failure type. Its message is not included in harness output.
     type Error: std::error::Error + Send + Sync + 'static;

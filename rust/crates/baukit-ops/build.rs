@@ -1,3 +1,8 @@
+#![expect(
+    clippy::expect_used,
+    reason = "build script: failing the build is the error path"
+)]
+
 use std::{env, process::Command};
 
 fn main() {

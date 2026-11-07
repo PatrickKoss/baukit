@@ -373,7 +373,7 @@ impl SuiteApi for SuiteModule {
         self.links.authorize(u, i, n).await
     }
     async fn deny(&self, i: AuthorizationDeny) -> Result<AuthorizationResponse, SuiteServiceError> {
-        self.links.deny(i)
+        self.links.deny(&i)
     }
     async fn exchange(
         &self,

@@ -242,10 +242,14 @@ impl PostgresErasureStore {
     }
 }
 async fn lock(transaction: &mut Transaction<'_, Postgres>, hash: &[u8]) -> Result<(), sqlx::Error> {
-    let mut bytes = [0; 8];
-    bytes.copy_from_slice(&hash[..8]);
+    let key = hash
+        .first_chunk::<8>()
+        .map(|bytes| i64::from_be_bytes(*bytes))
+        .ok_or_else(|| {
+            sqlx::Error::Protocol("advisory lock hash is shorter than 8 bytes".into())
+        })?;
     sqlx::query("SELECT pg_advisory_xact_lock($1)")
-        .bind(i64::from_be_bytes(bytes))
+        .bind(key)
         .execute(&mut **transaction)
         .await?;
     Ok(())

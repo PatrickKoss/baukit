@@ -25,6 +25,10 @@ struct State {
 }
 
 impl State {
+    #[expect(
+        clippy::expect_used,
+        reason = "`fake-ticket-<n>` is a short non-empty ASCII id, always a valid ticket id"
+    )]
     fn status(&mut self, token: &DeviceToken) -> PushDeliveryStatus {
         if let Some(rejection) = self.rejections.get(token) {
             return PushDeliveryStatus::Rejected(rejection.clone());

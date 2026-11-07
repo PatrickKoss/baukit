@@ -111,7 +111,7 @@ impl PostgresSuiteEventOutbox {
             metrics::counter!(format!("{metric_prefix}_suite_emission_skipped_total"), "reason" => reason.as_str()).increment(0);
         }
         Self {
-            jobs: PostgresJobStore::new(pool.clone()),
+            jobs: PostgresJobStore::new(pool),
             catalog,
             identities,
             metric_prefix,
@@ -200,21 +200,21 @@ impl PostgresSuiteEventOutbox {
         owner: Uuid,
         events: &[SuiteEvent],
     ) -> Result<u64, SuiteEmissionError> {
-        if self.registry.standalone() || events.is_empty() {
+        let Some(first) = events.first().filter(|_| !self.registry.standalone()) else {
             return Ok(0);
-        }
+        };
         if !super::try_lock_owner(tx, owner)
             .await
-            .map_err(|error| SuiteEmissionError::new(&events[0].event_type, error))?
+            .map_err(|error| SuiteEmissionError::new(&first.event_type, error))?
         {
             return Err(SuiteEmissionError::new(
-                &events[0].event_type,
+                &first.event_type,
                 SuiteStoreError::Timeout,
             ));
         }
         super::account_owner_failures(tx, owner)
             .await
-            .map_err(|error| SuiteEmissionError::new(&events[0].event_type, error))?;
+            .map_err(|error| SuiteEmissionError::new(&first.event_type, error))?;
         let links = sqlx::query_as::<_, LinkRow>(
             r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,

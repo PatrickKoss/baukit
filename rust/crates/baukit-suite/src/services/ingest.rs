@@ -3,6 +3,7 @@ use baukit_events::{EventEnvelope, IngestOutcomeStatus};
 use sha2::{Digest as _, Sha256};
 
 use super::*;
+use crate::adapters::postgres::SuiteTransaction;
 
 #[derive(Clone, Debug)]
 pub struct SignedHeaders {
@@ -187,58 +188,28 @@ impl SuiteIngestService {
             return Err(SuiteServiceError::PayloadInvalid);
         }
         validate_inbound(&self.context.catalog, &envelope, &link, now, h.replay)?;
-        let mut tx = self.context.store.begin_transaction().await?;
-        self.context
-            .store
-            .lock_ingest_user(&mut tx, link.user_id)
-            .await?;
-        if let Some(applier) = &self.applier {
-            applier.lock_owner(&mut tx, link.user_id).await?;
-        }
-        let mut link = self.context.store.link_for_update(&mut tx, id).await?;
+        let (mut tx, mut link) = self.lock_link(id, link.user_id).await?;
         self.verify(&link, &h, &body, now)?;
         let payload = validate_inbound(&self.context.catalog, &envelope, &link, now, h.replay)?;
         let payload = match &payload {
             ValidatedInbound::Activity(payload) => payload,
             ValidatedInbound::ConnectionTest => {
-                self.context
-                    .store
-                    .record_received_in_transaction(&mut tx, id, now)
-                    .await?;
-                self.context.store.commit_transaction(tx).await?;
-                ingest_metric(&self.context.metric_prefix, "no_rule");
-                return Ok(IngestResult {
-                    duplicate: false,
-                    outcome: IngestOutcome {
-                        outcome: IngestOutcomeStatus::NoRule,
-                        ledger_entry_id: None,
-                    },
-                });
+                return self
+                    .acknowledge_received(tx, id, now, "no_rule", IngestResult::no_rule())
+                    .await;
             }
         };
-        let payload_hash = Sha256::digest(
-            serde_json::to_vec(&envelope.payload).map_err(|_| SuiteServiceError::PayloadInvalid)?,
-        )
-        .into();
+        let payload_hash = payload_hash(&envelope)?;
         if let InboxLookup::Duplicate(stored) = self
             .context
             .store
             .inbox_in_transaction(&mut tx, id, &envelope.event_id, payload_hash)
             .await?
         {
-            self.context
-                .store
-                .record_received_in_transaction(&mut tx, id, now)
-                .await?;
-            self.context.store.commit_transaction(tx).await?;
-            ingest_metric(&self.context.metric_prefix, "duplicate");
-            return Ok(IngestResult {
-                duplicate: true,
-                outcome: IngestOutcome {
-                    outcome: IngestOutcomeStatus::Duplicate,
-                    ledger_entry_id: stored.ledger_entry_id,
-                },
-            });
+            let result = IngestResult::duplicate(stored.ledger_entry_id);
+            return self
+                .acknowledge_received(tx, id, now, "duplicate", result)
+                .await;
         }
         let mut inbound = SuiteInboundEvent {
             link_id: id,
@@ -262,10 +233,7 @@ impl SuiteIngestService {
             link.reward_mode = RewardMode::Off;
         }
         let outcome = self
-            .applier
-            .as_ref()
-            .ok_or(SuiteServiceError::Unavailable)?
-            .apply(
+            .apply_inbound(
                 &mut tx,
                 SuiteApplyEvent {
                     owner_id: link.user_id,
@@ -279,7 +247,62 @@ impl SuiteIngestService {
                 },
             )
             .await?;
-        if h.replay
+        inbound.outcome = outcome.clone();
+        self.context
+            .store
+            .record_inbound_in_transaction(&mut tx, &inbound)
+            .await?;
+        self.context.store.commit_transaction(tx).await?;
+        ingest_metric(&self.context.metric_prefix, outcome_label(outcome.outcome));
+        Ok(IngestResult {
+            duplicate: false,
+            outcome: outcome.into(),
+        })
+    }
+    /// Opens the ingest transaction holding the owner locks and the locked link row.
+    async fn lock_link(
+        &self,
+        id: Uuid,
+        owner: Uuid,
+    ) -> Result<(SuiteTransaction, SuiteLink), SuiteServiceError> {
+        let mut tx = self.context.store.begin_transaction().await?;
+        self.context.store.lock_ingest_user(&mut tx, owner).await?;
+        if let Some(applier) = &self.applier {
+            applier.lock_owner(&mut tx, owner).await?;
+        }
+        let link = self.context.store.link_for_update(&mut tx, id).await?;
+        Ok((tx, link))
+    }
+    /// Records receipt without applying the event and commits.
+    async fn acknowledge_received(
+        &self,
+        mut tx: SuiteTransaction,
+        id: Uuid,
+        now: DateTime<Utc>,
+        metric_outcome: &'static str,
+        result: IngestResult,
+    ) -> Result<IngestResult, SuiteServiceError> {
+        self.context
+            .store
+            .record_received_in_transaction(&mut tx, id, now)
+            .await?;
+        self.context.store.commit_transaction(tx).await?;
+        ingest_metric(&self.context.metric_prefix, metric_outcome);
+        Ok(result)
+    }
+    /// Runs the product applier and rejects a replay that granted a reward.
+    async fn apply_inbound(
+        &self,
+        tx: &mut SuiteTransaction,
+        event: SuiteApplyEvent<'_>,
+    ) -> Result<AppliedOutcome, SuiteServiceError> {
+        let outcome = self
+            .applier
+            .as_ref()
+            .ok_or(SuiteServiceError::Unavailable)?
+            .apply(tx, event)
+            .await?;
+        if event.replay
             && (outcome.outcome == AppliedOutcomeStatus::Granted
                 || outcome.ledger_entry_id.is_some())
         {
@@ -287,24 +310,7 @@ impl SuiteIngestService {
                 SuiteStoreError::InvalidData("replay applier granted a reward".to_owned()).into(),
             );
         }
-        inbound.outcome = outcome.clone();
-        self.context
-            .store
-            .record_inbound_in_transaction(&mut tx, &inbound)
-            .await?;
-        self.context.store.commit_transaction(tx).await?;
-        ingest_metric(
-            &self.context.metric_prefix,
-            match outcome.outcome {
-                AppliedOutcomeStatus::Granted => "granted",
-                AppliedOutcomeStatus::NoRule => "no_rule",
-                AppliedOutcomeStatus::Capped => "capped",
-            },
-        );
-        Ok(IngestResult {
-            duplicate: false,
-            outcome: outcome.into(),
-        })
+        Ok(outcome)
     }
     pub async fn revoke_from_peer(
         &self,
@@ -339,4 +345,39 @@ impl SuiteIngestService {
         self.context.store.commit_transaction(tx).await?;
         Ok(())
     }
+}
+
+fn outcome_label(status: AppliedOutcomeStatus) -> &'static str {
+    match status {
+        AppliedOutcomeStatus::Granted => "granted",
+        AppliedOutcomeStatus::NoRule => "no_rule",
+        AppliedOutcomeStatus::Capped => "capped",
+    }
+}
+
+impl IngestResult {
+    fn no_rule() -> Self {
+        Self {
+            duplicate: false,
+            outcome: IngestOutcome {
+                outcome: IngestOutcomeStatus::NoRule,
+                ledger_entry_id: None,
+            },
+        }
+    }
+    fn duplicate(ledger_entry_id: Option<String>) -> Self {
+        Self {
+            duplicate: true,
+            outcome: IngestOutcome {
+                outcome: IngestOutcomeStatus::Duplicate,
+                ledger_entry_id,
+            },
+        }
+    }
+}
+
+fn payload_hash(envelope: &EventEnvelope) -> Result<[u8; 32], SuiteServiceError> {
+    let bytes =
+        serde_json::to_vec(&envelope.payload).map_err(|_| SuiteServiceError::PayloadInvalid)?;
+    Ok(Sha256::digest(bytes).into())
 }
