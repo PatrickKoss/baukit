@@ -128,7 +128,8 @@ tenancy and rate-limit audit of the products (S-08).
 - [~] P1.8 (baukit done in W1-D/W1-D2 for every tracked file except templates/; template gate open) ruff + shellcheck for `scripts/` in baukit and the template gate; fix findings.
 - [~] P1.9 (cli split merged in W1-B; Rust splits in W1-A and navigation in W1-C await merge; template `api.rs::run` open) Refactors to meet the limits: split `cli/src/lib.rs`, `supervise_task`, `authorize_inner`,
   `worker.rs::execute`, navigation `native.tsx` components, template `api.rs::run` (composition builder).
-- [ ] P1.10 `SuiteComposition` builder in baukit-suite; template uses it (Q-08).
+- [ ] P1.10 `SuiteComposition` builder in baukit-suite; template uses it (Q-08). Crate part done (W4-G);
+  template and product adoption pending.
 - [ ] P1.11 `baukit check observability` replacing the five product linters (Q-13).
 
 ## Phase 2. Security tooling, tests and skills
@@ -137,7 +138,7 @@ tenancy and rate-limit audit of the products (S-08).
   CSP for HTML, `Cache-Control: no-store` on authenticated JSON, HSTS behind config); CSP for the web template
   and the chart's edge config; header assertions in the fixture gate.
 - [~] P2.2 (ADR tasks 1 and 2 merged: BFF in baukit-auth + ratelimit adapter, headers; task 3 auth-web/pwa-web after W1-C; task 4 templates; auth-web waits for W1-C; design: ADR 0006 accepted; implementation = its 4 tasks) auth-web token storage per D2, with a test that no storage write contains a refresh token.
-- [ ] P2.3 `IssuedApiToken` and every secret-holding type: redacting Debug / `SecretString`.
+- [x] P2.3 `IssuedApiToken` and every secret-holding type: redacting Debug / `SecretString`.
 - [ ] P2.4 Clerk missing-azp opt-in; negative tests for every token profile.
 - [~] P2.5 (baukit done in W1-D; template workflows open) Supply chain: SHA-pin all actions in baukit and the template workflows, renovate digest pinning,
   zizmor + actionlint step, gitleaks with fixture allowlist, osv-scanner over Cargo.lock and pnpm-lock.yaml.
@@ -337,3 +338,21 @@ tenancy and rate-limit audit of the products (S-08).
   - Fixed on main: `verify_exchanged_id_token` is now gated behind `browser-session`.
     `cargo clippy -p baukit-auth` without the feature failed on dead code; the workspace build hid it
     through feature unification.
+- 2026-11-07: W4-G merged (P1.10 crate part).
+  - `PostgresSuite::builder` replaces the `SuiteComposition` copied into each product bin.
+    `PostgresSuite::router` puts callback, exchange and revoke behind a per-IP bucket: 60 a minute, burst 10,
+    fail closed. Signed inbound events keep their per-link and per-source buckets in the ingest service.
+  - The plain `adapters::http::router` still mounts the routes without that bucket. It stays until the
+    template and the products switch to the builder.
+  - Review gap fixed on main: the report had no test for the fail-closed path. Added
+    `unavailable_limiter_rejects_public_routes_by_default`.
+  - Open: template and product adoption (backend template wave). Adoption notes in
+    reports/suite-builder-adoption.md.
+- 2026-11-07: W4-B merged (P2.3).
+  - Redacting `Debug` impls: `IssuedApiToken` (also lost `PartialEq`/`Eq`), `SessionRow`, `KeycloakLogin`,
+    and the link-code request types `LinkCompleteRequest` and `LinkCallbackQuery`.
+  - `IssuedApiToken` and `GeneratedApiToken` moved to `api_token/issued.rs`; api_token.rs allowlist
+    1977 -> 1910.
+  - The `rust-secret-debug` rule now also matches more field names (passphrase, credentials,
+    code_verifier, *_key), byte arrays and `Zeroizing` types. The 3 findings on main are gone.
+  - I checked the sweep claims against the diff. Nothing else derives Debug on a secret.

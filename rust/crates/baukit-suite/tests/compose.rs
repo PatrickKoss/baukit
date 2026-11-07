@@ -5,7 +5,9 @@ use axum::{
     body::Body,
     http::{Method, Request, StatusCode, header},
 };
-use baukit_ratelimit::{InMemoryRateLimitStore, Quota, RateLimitStore};
+use baukit_ratelimit::{
+    InMemoryRateLimitStore, Quota, RateLimitDecision, RateLimitStore, RateLimitStoreError,
+};
 use baukit_suite::{
     adapters::public_limit::SuitePublicRateLimit,
     compose::{PostgresSuite, PostgresSuiteBuilder, SuiteComposeError, SuiteSettings},
@@ -52,11 +54,33 @@ impl SuiteReplaySource for NoReplay {
     }
 }
 
-fn builder() -> Result<PostgresSuiteBuilder, Box<dyn std::error::Error>> {
+struct UnavailableStore;
+impl RateLimitStore for UnavailableStore {
+    fn check_and_consume<'a>(
+        &'a self,
+        _key: &'a str,
+        _quota: Quota,
+    ) -> std::pin::Pin<
+        Box<dyn Future<Output = Result<RateLimitDecision, RateLimitStoreError>> + Send + 'a>,
+    > {
+        Box::pin(async {
+            Err(RateLimitStoreError::new(std::io::Error::other(
+                "store unavailable",
+            )))
+        })
+    }
+}
+
+fn builder_with(
+    limiter: Arc<dyn RateLimitStore>,
+) -> Result<PostgresSuiteBuilder, Box<dyn std::error::Error>> {
     let pool = PgPool::connect_lazy("postgres://suite:suite@127.0.0.1:1/suite")?;
     let settings = SuiteSettings::new(APP_ID, PEERS, CATALOG, &SuiteConfig::default(), None)?;
-    let limiter: Arc<dyn RateLimitStore> = Arc::new(InMemoryRateLimitStore::default());
     Ok(PostgresSuite::builder(pool, settings, limiter))
+}
+
+fn builder() -> Result<PostgresSuiteBuilder, Box<dyn std::error::Error>> {
+    builder_with(Arc::new(InMemoryRateLimitStore::default()))
 }
 
 fn suite() -> Result<PostgresSuite, Box<dyn std::error::Error>> {
@@ -105,6 +129,20 @@ async fn hammering_exchange_returns_429_with_retry_after() -> TestResult {
     let limited = router.oneshot(post("/suite/links/exchange")?).await?;
     assert_eq!(limited.status(), StatusCode::TOO_MANY_REQUESTS);
     assert!(limited.headers().contains_key(header::RETRY_AFTER));
+    Ok(())
+}
+
+#[tokio::test]
+async fn unavailable_limiter_rejects_public_routes_by_default() -> TestResult {
+    let suite = builder_with(Arc::new(UnavailableStore))?
+        .identity(Arc::new(NoIdentity))
+        .replay(Arc::new(NoReplay))
+        .build()?;
+    let response = suite
+        .router(suite.api())
+        .oneshot(post("/suite/links/exchange")?)
+        .await?;
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
     Ok(())
 }
 
