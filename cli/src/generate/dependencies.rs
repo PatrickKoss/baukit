@@ -28,6 +28,9 @@ const LOCAL_TRANSITIVE_PACKAGES: [&str; 1] = ["@baukit/type-guards"];
 /// Lint presets every generated web and mobile client extends.
 const ESLINT_CONFIG_PACKAGE: &str = "@baukit/eslint-config";
 
+/// Content Security Policy builder the web build and the mobile web export run.
+const CSP_PACKAGE: &str = "@baukit/csp";
+
 pub(crate) struct DependencyContext {
     pub(crate) cargo: String,
     pub(crate) web_typescript: String,
@@ -63,13 +66,13 @@ impl BaukitPackages {
             mobile_packages.push("@baukit/pwa-web");
         }
         let mobile_dev = if mobile {
-            vec![ESLINT_CONFIG_PACKAGE]
+            vec![CSP_PACKAGE, ESLINT_CONFIG_PACKAGE]
         } else {
             Vec::new()
         };
         let mut web_dev = Vec::new();
         if web {
-            web_dev.push(ESLINT_CONFIG_PACKAGE);
+            web_dev.extend([CSP_PACKAGE, ESLINT_CONFIG_PACKAGE]);
             if auth_enabled {
                 web_dev.extend(EXPECTED_WEB_AUTH_DEV_DEPENDENCIES);
             }

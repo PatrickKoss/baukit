@@ -1,7 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 
-import { unhashedInlineScripts } from './policy.ts';
+import { unhashedInlineScripts } from '@baukit/csp';
 import { POLICY_FILE, sha256Base64 } from './vite-plugin.ts';
 
 async function htmlFiles(directory: string): Promise<string[]> {

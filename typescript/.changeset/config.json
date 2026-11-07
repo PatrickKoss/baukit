@@ -12,6 +12,7 @@
       "@baukit/auth-native",
       "@baukit/auth-node",
       "@baukit/auth-web",
+      "@baukit/csp",
       "@baukit/data-contracts",
       "@baukit/data-contracts-dexie",
       "@baukit/data-contracts-expo-sqlite",

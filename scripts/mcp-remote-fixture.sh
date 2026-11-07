@@ -10,7 +10,7 @@ fixture="$fixture_parent/$fixture_name"
 cargo build --manifest-path cli/Cargo.toml --bin baukit
 if [[ "${BAUKIT_TYPESCRIPT_BUILT:-0}" != 1 ]]; then
     corepack pnpm --dir typescript install --frozen-lockfile
-    corepack pnpm --dir typescript --filter @baukit/type-guards --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/auth-native --filter @baukit/auth-node --filter @baukit/auth-web --filter @baukit/data-contracts --filter @baukit/ui-tokens --filter @baukit/navigation --filter @baukit/purchases-core --filter @baukit/purchases-revenuecat --filter @baukit/pwa-web run build
+    corepack pnpm --dir typescript --filter @baukit/type-guards --filter @baukit/csp --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/auth-native --filter @baukit/auth-node --filter @baukit/auth-web --filter @baukit/data-contracts --filter @baukit/ui-tokens --filter @baukit/navigation --filter @baukit/purchases-core --filter @baukit/purchases-revenuecat --filter @baukit/pwa-web run build
 fi
 cli/target/debug/baukit new "$fixture_name" --backend --web --mobile --worker --mcp --auth oidc --dir "$fixture_parent" --baukit-path rust
 cargo fmt --manifest-path "$fixture/backend/Cargo.toml" --all --check

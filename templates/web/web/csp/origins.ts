@@ -1,5 +1,5 @@
-{% if context.auth_clerk %}import { clerkFrontendApiOrigin, originOf, type PolicyOrigins } from './policy.ts';
-{% else %}import { originOf, type PolicyOrigins } from './policy.ts';
+{% if context.auth_clerk %}import { clerkFrontendApiOrigin, originOf, type PolicyOrigins } from '@baukit/csp';
+{% else %}import { originOf, type PolicyOrigins } from '@baukit/csp';
 {% endif %}
 export type BuildEnv = Readonly<Record<string, string | undefined>>;
 

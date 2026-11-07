@@ -3,17 +3,18 @@ import { readFile } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { resolve } from 'node:path';
 
-import type { Plugin, ResolvedConfig } from 'vite';
-
-import type { BuildEnv } from './origins.ts';
 import {
   contentSecurityPolicy,
   developmentContentSecurityPolicy,
   hashSource,
   inlineScripts,
   type PolicyOrigins,
+  SECURITY_HEADERS,
   type StyleSources,
-} from './policy.ts';
+} from '@baukit/csp';
+import type { Plugin, ResolvedConfig } from 'vite';
+
+import type { BuildEnv } from './origins.ts';
 
 export const POLICY_FILE = 'csp.txt';
 export const CSP_HEADER = 'Content-Security-Policy';
@@ -95,7 +96,9 @@ export function contentSecurityPolicyPlugin(options: CspPluginOptions): Plugin {
       const policy = (await readFile(resolve(outDir, POLICY_FILE), 'utf8')).trim();
       server.middlewares.use((_request, response, next) => {
         response.setHeader(CSP_HEADER, policy);
-        response.setHeader('X-Content-Type-Options', 'nosniff');
+        for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+          response.setHeader(name, value);
+        }
         next();
       });
     },

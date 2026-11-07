@@ -4,13 +4,9 @@ import { existsSync } from "node:fs";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 
+import { contentSecurityPolicy, hashSource, inlineScripts, unhashedInlineScripts } from "@baukit/csp";
+
 import { policyOrigins } from "../src/csp/origins.ts";
-import {
-  contentSecurityPolicy,
-  hashSource,
-  inlineScripts,
-  unhashedInlineScripts,
-} from "../src/csp/policy.ts";
 
 export const POLICY_FILE = "csp.txt";
 
