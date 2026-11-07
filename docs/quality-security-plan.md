@@ -150,7 +150,7 @@ tenancy and rate-limit audit of the products (S-08).
   njs verifier agree, single-byte mutations rejected), sync merge (idempotent, owner isolation).
 - [ ] P2.8 `baukit-test` security helpers: auth negative suite and `assert_cross_tenant_denied` that walks the
   OpenAPI routes; template integration test that uses both.
-- [ ] P2.9 clippy `disallowed-methods` for raw reqwest outside an allowlisted adapter module (template
+- [~] P2.9 (baukit merged in W4-C; template `clippy.toml` in W5-T1) clippy `disallowed-methods` for raw reqwest outside an allowlisted adapter module (template
   `clippy.toml`).
 - [~] P2.10 (threat-model + security-testing done in W1-E; code-conformance waits for the checks) Skills in `agent-skills/skills/`: `baukit-threat-model` (data classes, trust boundaries,
   STRIDE per boundary, threat → control → test table, output `docs/threat-model.md`),
@@ -371,3 +371,25 @@ tenancy and rate-limit audit of the products (S-08).
     runtime-analyzer and architecture-health-platform. The backend template wave adds
     `auth.allow_missing_azp`, default on when `context.mobile`, and P4.2 wires it per product. Otherwise a
     Clerk deployment rejects Expo tokens.
+- 2026-11-07: W4-C merged (P2.9 baukit part).
+  - auth (discovery and JWKS), erasure, MCP introspection and push now send outbound HTTP through
+    `GuardedClient`. Without an override, each client can reach only the exact scheme, host and port that was
+    configured. That blocks every other host, plus metadata and link-local addresses, which is stricter than
+    the old raw clients.
+  - `OidcConfig::with_egress_policy` overrides the policy. A JWKS URL named by discovery on another host gets
+    its own exact-endpoint allowance.
+  - clippy `disallowed-methods` now covers `reqwest::Client::{new,builder}`, `ClientBuilder::new` and
+    `reqwest::get`. 3 reasoned expects: the egress builder, baukit-test's `test_http_client`, and the rmcp
+    example.
+  - The `rust-raw-http-client` pattern findings are gone. `baukit check patterns` is green on main.
+  - Combining the W4-F and W4-H merges with this one broke the clippy gate. W4-H's `security_probe.rs` and
+    W4-F's `token_profiles.rs` used raw reqwest, so I fixed both on main with `test_http_client()`. Also synced
+    examples/minimal-api/clippy.toml and lowered verifier.rs to 1670.
+  - Main gate:
+    - fmt, clippy (all features and without features per crate) and cli clippy: green.
+    - 1292 workspace tests with Docker, 0 failed. MSRV 1.95 and cargo deny: green.
+    - Fixture backend flavor green. The auth flavor fails only on the web template (`OidcClient` is not a
+      `ProviderClient`), the known break until W5-T2.
+  - `baukit check`: everything green except `lints` (2 template eslint configs, W5-T2).
+  - Backend template wave brief written: prompts/W5-T1-template-backend.md. It starts after W5-T2 merges
+    (both edit the backend bin crate).
