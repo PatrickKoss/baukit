@@ -32,17 +32,20 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout main with release history
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
+          toolchain: stable
           components: clippy,rustfmt
 
-      - uses: actions/setup-node@v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: typescript/.nvmrc
+          package-manager-cache: false
 
       - name: Enable pinned pnpm
         working-directory: typescript
@@ -57,7 +60,9 @@ jobs:
 
       - name: Prepare Rust, TypeScript, and template versions
         id: train
-        run: scripts/release-train.sh '${{ inputs.version_bump }}'
+        env:
+          VERSION_BUMP: ${{ inputs.version_bump }}
+        run: scripts/release-train.sh "$VERSION_BUMP"
 
       - name: Verify Rust workspace
         run: |
@@ -76,7 +81,7 @@ jobs:
           cargo test --manifest-path examples/minimal-api/Cargo.toml
 
       - name: Open or update release-train PR
-        uses: peter-evans/create-pull-request@v8.1.1
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
           base: main
           branch: release-plz-v${{ steps.train.outputs.version }}
@@ -97,15 +102,19 @@ jobs:
       contents: write
     steps:
       - name: Checkout tagged train
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
 
-      - uses: actions/setup-node@v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: typescript/.nvmrc
+          package-manager-cache: false
 
       - name: Enable pinned pnpm
         working-directory: typescript
@@ -119,7 +128,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Validate unified tag and versions
-        run: scripts/check-version-coherence.py --tag '${{ github.ref_name }}'
+        run: scripts/check-version-coherence.py --tag "$GITHUB_REF_NAME"
 
       - name: Verify tagged train
         run: |
@@ -155,16 +164,20 @@ jobs:
       id-token: write
     steps:
       - name: Checkout tagged train
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
 
       - name: Validate unified tag and versions
-        run: scripts/check-version-coherence.py --tag '${{ github.ref_name }}'
+        run: scripts/check-version-coherence.py --tag "$GITHUB_REF_NAME"
 
       - name: Mint a short-lived crates.io token
         id: auth
-        uses: rust-lang/crates-io-auth-action@v1.0.5
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
 
       - name: Publish crates in dependency order
         env:
@@ -182,11 +195,14 @@ jobs:
       id-token: write
     steps:
       - name: Checkout tagged train
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: typescript/.nvmrc
+          package-manager-cache: false
           registry-url: https://registry.npmjs.org
 
       - name: Enable pinned pnpm
@@ -199,11 +215,11 @@ jobs:
       # Trusted publishing needs the OIDC exchange added in npm 11.5.1.
       - name: Ensure npm supports trusted publishing
         run: |
-          npm install -g npm@latest
+          npm install --global npm@12.2.2
           npm --version
 
       - name: Validate unified tag and versions
-        run: scripts/check-version-coherence.py --tag '${{ github.ref_name }}'
+        run: scripts/check-version-coherence.py --tag "$GITHUB_REF_NAME"
 
       - name: Install TypeScript dependencies
         working-directory: typescript

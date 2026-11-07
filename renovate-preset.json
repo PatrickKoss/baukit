@@ -15,10 +15,12 @@
     "cargo",
     "dockerfile",
     "flux",
+    "github-actions",
     "helm-values",
     "helmv3",
     "kubernetes",
     "kustomize",
+    "mise",
     "npm"
   ],
   "flux": {
