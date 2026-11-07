@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.18.3] - 2026-11-07
+
+- `baukit new` writes `"mobile/.maestro/**" = ["mobile", "android-build", "android-e2e"]` into a strict mobile product's `quality.affected` table.
+
 ## [0.18.2] - 2026-11-06
 
 - Doctor rejects `BAUKIT_QA_BUILD` in `mobile/.env.example` and `mobile/.env`, and no longer expects the API port in `mobile/app.config.ts`.

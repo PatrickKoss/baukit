@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## [0.18.3] - 2026-11-07
+
+- The production sign-in adapter reads its provider key with static `import.meta.env` access. `check:bundle` builds with a random `VITE_BUNDLE_CHECK_CANARY` value and fails when the bundle carries it.
+
 ## [0.18.2] - 2026-11-06
 
 ## [0.18.1] - 2026-11-05
