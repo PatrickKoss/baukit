@@ -2,8 +2,9 @@ use std::{env, path::PathBuf, process::ExitCode};
 
 use anyhow::Result;
 use baukit_cli::{
-    AuthProvider, Component, Components, NewOptions, QualityProfile, doctor, generate_dockerfile,
-    generate_new, generate_openapi_client,
+    AuthProvider, Component, Components, NewOptions, QualityProfile,
+    check::{CheckOptions, CheckRequest, run_check},
+    doctor, generate_dockerfile, generate_new, generate_openapi_client,
 };
 use clap::{Args, Parser, Subcommand};
 
@@ -29,7 +30,30 @@ enum Commands {
         #[command(subcommand)]
         command: GenerateCommand,
     },
+    /// Enforce the shared baukit rules; exits 1 on findings, 2 on usage or config errors.
+    Check(CheckCommand),
 }
+
+#[derive(Debug, Args)]
+struct CheckCommand {
+    /// Rules to run: lints, file-size, suppressions, patterns, agent-docs. Default: all.
+    rules: Vec<String>,
+    /// Repository root to check.
+    #[arg(long, default_value = ".")]
+    root: PathBuf,
+    /// Also print hint-level pattern matches.
+    #[arg(long)]
+    verbose: bool,
+    /// agent-docs: write the managed CLAUDE.md block and the AGENTS.md symlink.
+    #[arg(long)]
+    fix: bool,
+    /// suppressions: lower the maxima in baukit-check.toml to the current counts.
+    #[arg(long)]
+    update: bool,
+}
+
+const CHECK_FINDINGS_EXIT: u8 = 1;
+const CHECK_USAGE_EXIT: u8 = 2;
 
 #[derive(Debug, Args)]
 #[expect(
@@ -116,7 +140,45 @@ enum GenerateCommand {
 }
 
 fn main() -> ExitCode {
-    report(run())
+    match Cli::parse().command {
+        Commands::Check(command) => check(&command),
+        Commands::New(command) => report(new_product(command)),
+        Commands::Doctor => report(doctor_report()),
+        Commands::Generate { command } => report(generate(&command)),
+    }
+}
+
+#[expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "CLI user output: `baukit check` prints findings and maps them to its exit code"
+)]
+fn check(command: &CheckCommand) -> ExitCode {
+    let request = CheckRequest {
+        root: command.root.clone(),
+        rules: command.rules.clone(),
+        options: CheckOptions {
+            verbose: command.verbose,
+            fix: command.fix,
+            update: command.update,
+        },
+    };
+    match run_check(&request) {
+        Ok(report) => {
+            for line in &report.lines {
+                println!("{line}");
+            }
+            if report.failed {
+                ExitCode::from(CHECK_FINDINGS_EXIT)
+            } else {
+                ExitCode::SUCCESS
+            }
+        }
+        Err(error) => {
+            eprintln!("error: {error:#}");
+            ExitCode::from(CHECK_USAGE_EXIT)
+        }
+    }
 }
 
 #[expect(
@@ -139,20 +201,14 @@ fn report(outcome: Result<Vec<String>>) -> ExitCode {
     }
 }
 
-fn run() -> Result<Vec<String>> {
-    match Cli::parse().command {
-        Commands::New(command) => new_product(command),
-        Commands::Doctor => doctor_report(),
-        Commands::Generate {
-            command: GenerateCommand::Dockerfile { check },
-        } => {
+fn generate(command: &GenerateCommand) -> Result<Vec<String>> {
+    match *command {
+        GenerateCommand::Dockerfile { check } => {
             let path = generate_dockerfile(&env::current_dir()?, check)?;
             let verb = if check { "checked" } else { "generated" };
             Ok(vec![format!("{verb} {}", path.display())])
         }
-        Commands::Generate {
-            command: GenerateCommand::OpenapiClient,
-        } => {
+        GenerateCommand::OpenapiClient => {
             generate_openapi_client(&env::current_dir()?)?;
             Ok(vec![
                 "generated TypeScript declarations from the committed OpenAPI schema".to_owned(),

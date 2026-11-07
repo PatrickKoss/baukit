@@ -321,10 +321,16 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: cli -> target
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          version: 2026.8.11
+          cache: false
+          install_args: aqua:ast-grep/ast-grep
       - run: scripts/ci-gate.sh --step cli-fmt
       - run: scripts/ci-gate.sh --step cli-clippy
       - run: scripts/ci-gate.sh --step cli-tests
       - run: scripts/ci-gate.sh --step cli-check
+      - run: scripts/ci-gate.sh --step baukit-check
 
   fuzz:
     name: Fuzz targets (60 s each)
