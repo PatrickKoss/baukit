@@ -45,10 +45,12 @@ class MobileReactVersionsTest(unittest.TestCase):
                 source = (base / "package.json").read_text()
                 source = re.sub(r"\{%.*?%\}", "", source)
                 package = json.loads(
-                    source.replace("{{ context.app_name }}", "fixture").replace(
+                    source.replace("{{ context.app_name }}", "fixture")
+                    .replace(
                         "{{ context.baukit_mobile_typescript_dependencies }}",
                         '"@baukit/fixture": "0.7.0"',
                     )
+                    .replace("{{ context.baukit_mobile_typescript_dev_dependencies }}", "")
                 )
                 self.assertEqual(package["dependencies"]["expo"], published["expo"])
                 for name in ("react", "react-native"):
