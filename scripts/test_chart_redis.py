@@ -15,9 +15,14 @@ class RedisChartImageTest(unittest.TestCase):
             with self.subTest(replicas=replicas):
                 result = subprocess.run(
                     [
-                        "helm", "template", "redis-image-test", str(CHART),
-                        "--set", "redis.enabled=true",
-                        "--set", f"redis.replicas={replicas}",
+                        "helm",
+                        "template",
+                        "redis-image-test",
+                        str(CHART),
+                        "--set",
+                        "redis.enabled=true",
+                        "--set",
+                        f"redis.replicas={replicas}",
                     ],
                     capture_output=True,
                     text=True,

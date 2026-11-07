@@ -2,7 +2,11 @@ use std::{fs, path::Path};
 
 use anyhow::Result;
 
-use crate::{Manifest, ports::PortConfiguration};
+use crate::{
+    Manifest,
+    doctor_ports::{loopback_ports, resolve_makefile_variables, uses_bundled_keycloak},
+    ports::PortConfiguration,
+};
 
 pub(crate) fn validate(
     root: &Path,
@@ -22,7 +26,7 @@ pub(crate) fn validate(
             port,
             failures,
         )?;
-        if crate::uses_bundled_keycloak(root, manifest)? {
+        if uses_bundled_keycloak(root, manifest)? {
             check_keycloak_origins(root, manifest, ports, &browser_ports, failures)?;
         }
         check_authorized_parties(root, manifest, &browser_ports, failures)?;
@@ -152,11 +156,13 @@ fn check_keycloak_origins(
             continue;
         };
         let json: serde_json::Value = serde_json::from_str(&source)?;
-        let Some(clients) = json["clients"].as_array() else {
+        let Some(clients) = json.get("clients").and_then(serde_json::Value::as_array) else {
             continue;
         };
         for client in clients {
-            if manifest.capabilities.mcp && client["clientId"].as_str() == Some(&mcp_client) {
+            if manifest.capabilities.components.mcp()
+                && client.get("clientId").and_then(serde_json::Value::as_str) == Some(&mcp_client)
+            {
                 continue;
             }
             let accepted = if client["clientId"].as_str() == Some(&local_client) {
@@ -206,7 +212,7 @@ fn check_authorized_parties(
 }
 
 fn check_browser_origins(relative: &str, source: &str, ports: &[u16], failures: &mut Vec<String>) {
-    for found in crate::loopback_ports(source, false) {
+    for found in loopback_ports(source, false) {
         if !ports.contains(&found) {
             failures.push(format!(
                 "generated file `{relative}` does not match declared ports.web browser origins (accepted ports {ports:?}, found port {found})"
@@ -228,7 +234,7 @@ fn check_redirect_default(root: &Path, port: u16, failures: &mut Vec<String>) ->
 }
 
 fn check_origins(relative: &str, source: &str, port: u16, failures: &mut Vec<String>) {
-    for found in crate::loopback_ports(source, false) {
+    for found in loopback_ports(source, false) {
         if found != port {
             check_port(relative, "web", port, Some(found), failures);
         }
@@ -241,7 +247,10 @@ fn check_expo_scripts(root: &Path, port: u16, failures: &mut Vec<String>) -> Res
         return Ok(());
     };
     let package: serde_json::Value = serde_json::from_str(&source)?;
-    let Some(scripts) = package["scripts"].as_object() else {
+    let Some(scripts) = package
+        .get("scripts")
+        .and_then(serde_json::Value::as_object)
+    else {
         return Ok(());
     };
     for (name, command) in scripts
@@ -251,10 +260,16 @@ fn check_expo_scripts(root: &Path, port: u16, failures: &mut Vec<String>) -> Res
         for command in command.split(['&', ';', '|', '\n']) {
             let words = command.split_whitespace().collect::<Vec<_>>();
             for (index, pair) in words.windows(2).enumerate() {
-                if pair[0] != "expo" || !(pair[1] == "start" || pair[1].starts_with("run:")) {
+                let [program, subcommand] = pair else {
+                    continue;
+                };
+                if *program != "expo" || !(*subcommand == "start" || subcommand.starts_with("run:"))
+                {
                     continue;
                 }
-                let flags = &words[index + 2..];
+                let Some(flags) = words.get(index + 2..) else {
+                    continue;
+                };
                 let found = expo_port_flags(flags);
                 let relative = format!("{relative} scripts.{name}");
                 if found.is_empty() {
@@ -321,7 +336,7 @@ fn check_metro_file(root: &Path, path: &Path, port: u16, failures: &mut Vec<Stri
     let Ok(source) = std::str::from_utf8(&bytes) else {
         return Ok(());
     };
-    let resolved_source = crate::resolve_makefile_variables(source);
+    let resolved_source = resolve_makefile_variables(source);
     let relative = path.strip_prefix(root)?.to_string_lossy();
     for (original_line, line) in source.lines().zip(resolved_source.lines()) {
         for (_, tail) in line

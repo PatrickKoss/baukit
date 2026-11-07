@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from cli_install import ROOT, PREFIX, SUFFIX, instruction_files, problems, update_tags
+from cli_install import PREFIX, ROOT, SUFFIX, instruction_files, problems, update_tags
 
 
 class CliInstallTest(unittest.TestCase):
@@ -16,7 +16,13 @@ class CliInstallTest(unittest.TestCase):
                 self.assertEqual(problems(path.read_text(), version), [])
 
     def test_rejects_stale_tags_and_registry_installs(self):
-        for command in [PREFIX + "0.1.2" + SUFFIX, "cargo install baukit-cli", "cargo install --locked baukit-cli", "cargo install baukit", "cargo install --path cli --locked"]:
+        for command in [
+            PREFIX + "0.1.2" + SUFFIX,
+            "cargo install baukit-cli",
+            "cargo install --locked baukit-cli",
+            "cargo install baukit",
+            "cargo install --path cli --locked",
+        ]:
             with self.subTest(command=command):
                 self.assertTrue(problems(command, "0.7.0"))
         self.assertEqual(problems(PREFIX + "0.7.0" + SUFFIX, "0.7.0"), [])

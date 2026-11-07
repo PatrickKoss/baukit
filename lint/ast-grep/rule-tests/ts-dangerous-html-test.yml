@@ -1,0 +1,19 @@
+id: ts-dangerous-html
+valid:
+  - |
+    el.innerHTML = "";
+  - |
+    el.innerHTML = `<p>static</p>`;
+  - |
+    const x = <div>{text}</div>;
+  - |
+    el.textContent = html;
+  - |
+    document.body.innerHTML = renderToStaticMarkup(<main>{view}</main>);
+invalid:
+  - |
+    const x = <div dangerouslySetInnerHTML={{ __html: html }} />;
+  - |
+    el.innerHTML = html;
+  - |
+    el.outerHTML = `<p>${name}</p>`;

@@ -10,7 +10,6 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
-
 SAMPLE_NAME = re.compile(r"^([A-Za-z_:][A-Za-z0-9_:]*)")
 
 
@@ -88,32 +87,63 @@ def known_gaps(direct: list[str], paths: list[Path]) -> set[str]:
     return gaps
 
 
-def main() -> int:
-    args = arguments()
-    observability = args.observability_root.resolve()
-    linter = load_linter(observability / "lint" / "check-metric-names.py")
-
+def read_scrapes(values: list[str]) -> dict[str, set[str]]:
     scrapes: dict[str, set[str]] = {}
-    try:
-        for value in args.metrics:
-            process, path = metric_argument(value)
-            if process in scrapes:
-                raise ValueError(f"duplicate process name in --metrics: {process}")
-            scrapes[process] = exported_names(path)
-    except (OSError, ValueError) as error:
-        print(f"cannot read metrics: {error}", file=sys.stderr)
-        return 2
+    for value in values:
+        process, path = metric_argument(value)
+        if process in scrapes:
+            raise ValueError(f"duplicate process name in --metrics: {process}")
+        scrapes[process] = exported_names(path)
+    return scrapes
 
-    application_names = set().union(*scrapes.values())
-    rule_paths = sorted(
+
+def rule_paths(observability: Path) -> list[Path]:
+    return sorted(
         list((observability / "recording-rules").glob("*.yml"))
         + list((observability / "recording-rules").glob("*.yaml"))
         + list((observability / "alerts").glob("*.yml"))
         + list((observability / "alerts").glob("*.yaml"))
     )
+
+
+def report_unresolved(unresolved: dict[str, set[str]]) -> None:
+    if not unresolved:
+        print("Unresolved observability metric names: none")
+        return
+    print("Unresolved observability metric names:", file=sys.stderr)
+    for location, names in sorted(unresolved.items()):
+        print(f"- {location}: {', '.join(sorted(names))}", file=sys.stderr)
+
+
+def check_known_gaps(actual_names: set[str], expected_names: set[str]) -> int:
+    if actual_names != expected_names:
+        print(
+            "Known-gap allowlist mismatch: "
+            f"expected {sorted(expected_names)}, found {sorted(actual_names)}",
+            file=sys.stderr,
+        )
+        return 1
+    if expected_names:
+        print(f"Known-gap allowlist confirmed: {', '.join(sorted(expected_names))}")
+    return 0
+
+
+def main() -> int:
+    args = arguments()
+    observability = args.observability_root.resolve()
+    linter = load_linter(observability / "lint" / "check-metric-names.py")
+
+    try:
+        scrapes = read_scrapes(args.metrics)
+    except (OSError, ValueError) as error:
+        print(f"cannot read metrics: {error}", file=sys.stderr)
+        return 2
+
+    application_names = set().union(*scrapes.values())
+    paths = rule_paths(observability)
     local_recordings: set[str] = set()
     rule_documents: list[tuple[Path, str]] = []
-    for path in rule_paths:
+    for path in paths:
         content = path.read_text(encoding="utf-8")
         rule_documents.append((path, content))
         local_recordings.update(linter.RECORD_NAME.findall(content))
@@ -138,16 +168,10 @@ def main() -> int:
     for process, names in sorted(scrapes.items()):
         print(f"{process} exported metric names ({len(names)}): {', '.join(sorted(names))}")
     print(
-        f"Checked {len(dashboard_paths)} dashboard(s), {len(rule_paths)} rule file(s), "
+        f"Checked {len(dashboard_paths)} dashboard(s), {len(paths)} rule file(s), "
         f"and {len(local_recordings)} recording rule(s)."
     )
-
-    if unresolved:
-        print("Unresolved observability metric names:", file=sys.stderr)
-        for location, names in sorted(unresolved.items()):
-            print(f"- {location}: {', '.join(sorted(names))}", file=sys.stderr)
-    else:
-        print("Unresolved observability metric names: none")
+    report_unresolved(unresolved)
 
     actual_names = set().union(*unresolved.values()) if unresolved else set()
     try:
@@ -155,16 +179,7 @@ def main() -> int:
     except OSError as error:
         print(f"cannot read known-gap allowlist: {error}", file=sys.stderr)
         return 2
-    if actual_names != expected_names:
-        print(
-            "Known-gap allowlist mismatch: "
-            f"expected {sorted(expected_names)}, found {sorted(actual_names)}",
-            file=sys.stderr,
-        )
-        return 1
-    if expected_names:
-        print(f"Known-gap allowlist confirmed: {', '.join(sorted(expected_names))}")
-    return 0
+    return check_known_gaps(actual_names, expected_names)
 
 
 if __name__ == "__main__":

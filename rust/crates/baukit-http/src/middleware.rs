@@ -30,7 +30,10 @@ use tracing::Instrument as _;
 use tracing_opentelemetry::OpenTelemetrySpanExt as _;
 use uuid::Uuid;
 
-use crate::{ApiError, HttpOptions, IDEMPOTENCY_KEY, ResponseCachePolicy};
+use crate::{
+    ApiError, HttpOptions, IDEMPOTENCY_KEY, ResponseCachePolicy,
+    security_headers::{SecurityHeadersLayer, X_BAUKIT_SESSION},
+};
 
 /// The standard request ID header.
 pub const X_REQUEST_ID: HeaderName = HeaderName::from_static("x-request-id");
@@ -154,6 +157,7 @@ where
     let cors = cors_layer(&options);
     let body_size_limit = options.body_size_limit;
     let concurrency_limit = options.concurrency_limit;
+    let security_headers = SecurityHeadersLayer::new(options.hsts_max_age);
 
     router
         .layer(RequestBodyLimitLayer::new(body_size_limit))
@@ -161,6 +165,7 @@ where
         .layer(cors)
         .layer(CatchPanicLayer::custom(panic_response))
         .layer(middleware::from_fn_with_state(options, request_lifecycle))
+        .layer(security_headers)
 }
 
 fn cors_layer(options: &HttpOptions) -> CorsLayer {
@@ -172,6 +177,7 @@ fn cors_layer(options: &HttpOptions) -> CorsLayer {
             IDEMPOTENCY_KEY,
             X_REQUEST_ID,
             X_ORGANIZATION_ID,
+            X_BAUKIT_SESSION,
             TRACEPARENT,
             TRACESTATE,
         ],

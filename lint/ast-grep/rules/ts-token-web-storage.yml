@@ -1,0 +1,35 @@
+id: ts-token-web-storage
+language: tsx
+severity: error
+message: Token-like value written to web storage. Keep access tokens in memory; the refresh token lives in the httpOnly BFF cookie (decision D2).
+note: localStorage, sessionStorage and IndexedDB are readable by any script on the origin, so one XSS bug leaks the session.
+ignores:
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/*.spec.ts"
+  - "**/*.spec.tsx"
+  - "**/__tests__/**"
+  - "**/test/**"
+  - "**/tests/**"
+  - "**/e2e/**"
+  - "**/test-utils/**"
+  - "**/testing/**"
+rule:
+  any:
+    - all:
+        - pattern: $S.setItem($$$)
+        - has:
+            field: function
+            has:
+              field: object
+              regex: '(local|session)Storage$'
+        - has:
+            field: arguments
+            regex: '(?i)token|refresh|jwt|secret'
+    - all:
+        - pattern: $S.put($$$)
+        - regex: '(?i)(access|refresh|id|auth|bearer|session)_?tokens?\b|jwt|client_?secret|credentials?\b'
+        - inside:
+            kind: program
+            stopBy: end
+            regex: '(?i)indexedDB|dexie|from "idb"'

@@ -100,6 +100,7 @@ mod options;
 mod precondition;
 pub mod retry;
 mod routing;
+mod security_headers;
 
 pub use baukit_openapi::{ErrorBody, ErrorEnvelope, ResponseEnvelope, Rfc3339DateTime};
 pub use error::ApiError;
@@ -131,6 +132,7 @@ pub use retry::{
     retry_after_from_headers_with_options_at,
 };
 pub use routing::finalize;
+pub use security_headers::{SecurityHeaders, SecurityHeadersLayer, X_BAUKIT_SESSION};
 
 /// The metrics facade used by the HTTP lifecycle middleware.
 ///

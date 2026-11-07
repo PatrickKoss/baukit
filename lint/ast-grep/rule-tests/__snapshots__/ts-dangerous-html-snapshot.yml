@@ -1,0 +1,24 @@
+id: ts-dangerous-html
+snapshots:
+  "const x = <div dangerouslySetInnerHTML={{ __html: html }} />;\n":
+    labels:
+    - source: "dangerouslySetInnerHTML={{ __html: html }}"
+      style: primary
+      start: 15
+      end: 57
+    - source: dangerouslySetInnerHTML
+      style: secondary
+      start: 15
+      end: 38
+  "el.innerHTML = html;\n":
+    labels:
+    - source: el.innerHTML = html
+      style: primary
+      start: 0
+      end: 19
+  "el.outerHTML = `<p>${name}</p>`;\n":
+    labels:
+    - source: el.outerHTML = `<p>${name}</p>`
+      style: primary
+      start: 0
+      end: 31

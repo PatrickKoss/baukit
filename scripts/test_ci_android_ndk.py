@@ -1,9 +1,8 @@
 import os
-from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts/ci-android-ndk.sh"
@@ -44,9 +43,13 @@ class CiAndroidNdkTest(unittest.TestCase):
             catalog = project / "node_modules/react-native/gradle/libs.versions.toml"
             catalog.parent.mkdir(parents=True)
             catalog.write_text(f'[versions]\nndkVersion = "{PINNED}"\n')
-            result = self.run_script("version", str(project), ANDROID_HOME="/sdk", ANDROID_SDK_ROOT="/sdk")
+            result = self.run_script(
+                "version", str(project), ANDROID_HOME="/sdk", ANDROID_SDK_ROOT="/sdk"
+            )
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(result.stdout.splitlines(), [f"version={PINNED}", f"path=/sdk/ndk/{PINNED}"])
+            self.assertEqual(
+                result.stdout.splitlines(), [f"version={PINNED}", f"path=/sdk/ndk/{PINNED}"]
+            )
 
     def test_install_keeps_only_the_pinned_ndk_and_skips_a_restored_one(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

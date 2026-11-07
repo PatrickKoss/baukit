@@ -1,0 +1,68 @@
+id: ts-token-web-storage
+snapshots:
+  "import Dexie from \"dexie\";\nawait db.credentials.put({ id: 1, refreshToken });\n":
+    labels:
+    - source: "db.credentials.put({ id: 1, refreshToken })"
+      style: primary
+      start: 33
+      end: 76
+    - source: |
+        import Dexie from "dexie";
+        await db.credentials.put({ id: 1, refreshToken });
+      style: secondary
+      start: 0
+      end: 78
+  "localStorage.setItem(\"accessToken\", token);\n":
+    labels:
+    - source: localStorage.setItem("accessToken", token)
+      style: primary
+      start: 0
+      end: 42
+    - source: localStorage
+      style: secondary
+      start: 0
+      end: 12
+    - source: localStorage
+      style: secondary
+      start: 0
+      end: 12
+    - source: ("accessToken", token)
+      style: secondary
+      start: 20
+      end: 42
+  "localStorage.setItem(\"auth\", JSON.stringify({ jwt }));\n":
+    labels:
+    - source: localStorage.setItem("auth", JSON.stringify({ jwt }))
+      style: primary
+      start: 0
+      end: 53
+    - source: localStorage
+      style: secondary
+      start: 0
+      end: 12
+    - source: localStorage
+      style: secondary
+      start: 0
+      end: 12
+    - source: ("auth", JSON.stringify({ jwt }))
+      style: secondary
+      start: 20
+      end: 53
+  "window.sessionStorage.setItem(KEY, session.refresh);\n":
+    labels:
+    - source: window.sessionStorage.setItem(KEY, session.refresh)
+      style: primary
+      start: 0
+      end: 51
+    - source: window.sessionStorage
+      style: secondary
+      start: 0
+      end: 21
+    - source: window.sessionStorage
+      style: secondary
+      start: 0
+      end: 21
+    - source: (KEY, session.refresh)
+      style: secondary
+      start: 29
+      end: 51
