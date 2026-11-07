@@ -189,6 +189,9 @@ tenancy and rate-limit audit of the products (S-08).
       hebkit, tiefgang, kassensturz. Each product also gets its own push/pull owner-isolation test and a fuzz
       target for its push batch decode, since baukit-sync leaves the wire format to products.
     - Clerk products that sign in from mobile opt in to `allow_missing_azp` (W4-F).
+    - OAuth provider linking moves to `baukit_integrations::oauth_state` (F4): solo-leveling-system,
+      lesezeichen and every other product with an integration callback. Suite consumers mount public routes
+      through `PostgresSuite::router` or `limited_router`; the plain `adapters::http::router` is gone.
     - Suite builder adoption (reports/suite-builder-adoption.md) and the per-product tenancy findings
       (reports/I-tenancy-ratelimit.md).
   Tenancy and rate-limit fixes from W1-I (`docs/quality-security/I-tenancy-ratelimit.md`), verified by the
