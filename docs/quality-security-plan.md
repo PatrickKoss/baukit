@@ -125,7 +125,7 @@ tenancy and rate-limit audit of the products (S-08).
   Fix the ~114 violations in baukit packages.
 - [~] P1.7 Shared type guards: one `isRecord`/validation helper module, remove the 10 copies and the
   avoidable `as unknown as` casts.
-- [~] P1.8 (baukit done in W1-D/W1-D2 for every tracked file except templates/; template gate open) ruff + shellcheck for `scripts/` in baukit and the template gate; fix findings.
+- [x] P1.8 (baukit in W1-D/W1-D2, templates in W5-T3) ruff + shellcheck for `scripts/` in baukit and the template gate; fix findings.
 - [~] P1.9 (cli split merged in W1-B; Rust splits in W1-A and navigation in W1-C await merge; template `api.rs::run` open) Refactors to meet the limits: split `cli/src/lib.rs`, `supervise_task`, `authorize_inner`,
   `worker.rs::execute`, navigation `native.tsx` components, template `api.rs::run` (composition builder).
 - [ ] P1.10 `SuiteComposition` builder in baukit-suite; template uses it (Q-08). Crate part done (W4-G);
@@ -141,7 +141,7 @@ tenancy and rate-limit audit of the products (S-08).
 - [x] P2.3 `IssuedApiToken` and every secret-holding type: redacting Debug / `SecretString`.
 - [~] P2.4 (crate part merged in W4-F; the template `auth.allow_missing_azp` flag and the stale
   auth-providers.md:90 line are left for the backend template wave) Clerk missing-azp opt-in; negative tests for every token profile.
-- [~] P2.5 (baukit done in W1-D; template workflows open) Supply chain: SHA-pin all actions in baukit and the template workflows, renovate digest pinning,
+- [x] P2.5 (baukit in W1-D, template workflows and repo-lint in W5-T3) Supply chain: SHA-pin all actions in baukit and the template workflows, renovate digest pinning,
   zizmor + actionlint step, gitleaks with fixture allowlist, osv-scanner over Cargo.lock and pnpm-lock.yaml.
 - [~] P2.6 (6 targets and the gate lane merged; sync batch decode has no public entry point; template scaffold open) Fuzzing: `rust/fuzz` with targets for JWT header/claims decode, sync push batch decode, event
   envelope, MCP JSON-RPC dispatch, idempotency-key and locale header parsers; time-boxed `fuzz` gate step
@@ -168,7 +168,7 @@ tenancy and rate-limit audit of the products (S-08).
 - [x] P3.1 baukit `CLAUDE.md`: coding rules (no panics in prod paths, `#[expect]` with reason, size limits,
   scoped queries, egress only, no tokens in web storage, threat model on new boundaries), the new checks,
   and remove the duplicated `ci-gate.sh` paragraph.
-- [ ] P3.2 Template managed block `<!-- baukit:begin -->`/`<!-- baukit:end -->` in the generated CLAUDE.md
+- [x] P3.2 (W5-T3; markers are `baukit:agent-rules:start/end`, filled from lint/agent-rules.md at generation) Template managed block `<!-- baukit:begin -->`/`<!-- baukit:end -->` in the generated CLAUDE.md
   with the shared rules; `baukit upgrade` refreshes it; `baukit check agent-docs` verifies it and the D3
   file convention.
 - [ ] P3.3 Skills index and install docs updated.
@@ -395,3 +395,27 @@ tenancy and rate-limit audit of the products (S-08).
     (both edit the backend bin crate).
   - Clerk fixture on main: 39 backend tests pass. Web fails in `src/sign-in/local.ts` with the same
     `OidcClient` vs `ProviderClient` mismatch. Sent to W5-T2.
+- 2026-11-07: W5-T3 merged after one rework (P2.5 template part, P3.2, P1.8 template part).
+  - Generated workflows:
+    - every action is pinned to a verified SHA, with `persist-credentials: false`;
+    - PR inputs reach the shell through `env:`;
+    - new `repository-lint` job: actionlint, zizmor, gitleaks, osv, ruff, shellcheck;
+    - `baukit check agent-docs file-size suppressions` runs in CI and the strict gate.
+  - Generated CLAUDE.md gets the managed block from lint/agent-rules.md, and AGENTS.md is a symlink (D3).
+  - First report: the new lint steps were red in every generated product, and the fixture gate didn't run
+    them. Sent back. The rework:
+    - fixed the ruff and shellcheck findings in the template scripts with real splits;
+    - added 2 reasoned S310 per-file ignores and 2 `source=/dev/null` lines;
+    - bumped vite and added glob/minimatch overrides;
+    - added dated osv ignores (until 2027-02-05) for 4 advisories with no usable fix. decode-uri-component
+      0.5 is ESM-only and breaks expo-router's query-string;
+    - fixed two repo-lint.sh bugs (nested git repo, actionlint path);
+    - added repo-lint to `generated-fixture-gate.sh`.
+  - The rework claimed `baukit check` counts gitignored `dist/`. Not reproducible on main or in a fresh
+    worktree with a planted `dist/probe.js`: suppressions ok.
+  - The report's green run of the combined, auth, mcp and platform flavors came from a branch cut before
+    W4-E. On main those flavors wait for W5-T2.
+  - Main after the merge: cli fmt and clippy green, 292 cli tests, `baukit check` green except `lints`
+    (W5-T2).
+  - Fixture gate on main with the merged binary: backend, web, mobile, mobile-pwa and platform-standalone pass.
+    Repo-lint ran in every fixture: zizmor no findings, gitleaks no leaks, osv, ruff and shellcheck clean.
