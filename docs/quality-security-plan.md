@@ -184,6 +184,13 @@ tenancy and rate-limit audit of the products (S-08).
   - [ ] eigenruhe  - [ ] hebkit  - [ ] leitbild  - [ ] redemut
   - [ ] schlauzug  - [ ] tiefgang  - [ ] solo-leveling-system  - [ ] lesezeichen
   - [ ] schluesselbund  - [ ] kassensturz  - [ ] runtime-analyzer  - [ ] architecture-health-platform
+  - Product-specific items gathered from baukit work packages:
+    - `TombstoneTable.delete` binds owners as `$2` and deletes `(owner_id, id)` pairs (F5): eigenruhe,
+      hebkit, tiefgang, kassensturz. Each product also gets its own push/pull owner-isolation test and a fuzz
+      target for its push batch decode, since baukit-sync leaves the wire format to products.
+    - Clerk products that sign in from mobile opt in to `allow_missing_azp` (W4-F).
+    - Suite builder adoption (reports/suite-builder-adoption.md) and the per-product tenancy findings
+      (reports/I-tenancy-ratelimit.md).
   Tenancy and rate-limit fixes from W1-I (`docs/quality-security/I-tenancy-ratelimit.md`), verified by the
   orchestrator unless marked:
   - kassensturz, lesezeichen, schluesselbund: delete or owner-scope the template `items` routes (S-12).
