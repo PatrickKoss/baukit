@@ -1,4 +1,4 @@
-import type { OidcClientEnvironment } from '@baukit/auth-web';
+import type { BrowserSessionEnvironment } from '@baukit/auth-web';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createLocalSignIn } from './local';
@@ -52,7 +52,8 @@ const expectedSession = {
 {% endif %}};
 
 interface Harness {
-  readonly environment: OidcClientEnvironment;
+  readonly environment: BrowserSessionEnvironment;
+  readonly localStorage: Storage;
   readonly fetch: ReturnType<typeof vi.fn<(url: string, init?: RequestInit) => Promise<Response>>>;
   readonly navigations: string[];
   currentUrl: string;
@@ -72,19 +73,33 @@ function harness(): Harness {
         }),
       );
     }
-    return Promise.resolve(
-      Response.json({ access_token: unsignedJwt(realmClaims), expires_in: 300, refresh_token: 'refresh' }),
-    );
+    if (url.endsWith('/auth/session/exchange')) {
+      return Promise.resolve(
+        Response.json({
+          accessToken: unsignedJwt(realmClaims),
+          expiresAt: Date.now() + 300_000,
+          subject: 'local-user',
+        }),
+      );
+    }
+    if (url.endsWith('/auth/session/logout')) {
+      return Promise.resolve(
+        Response.json({ endSessionUrl: 'http://localhost:8080/realms/product/protocol/openid-connect/logout' }),
+      );
+    }
+    return Promise.resolve(new Response(null, { status: 404 }));
   });
+  const localStorage = memoryStorage();
   const state: Harness = {
     navigations,
     fetch,
+    localStorage,
     currentUrl: `${ORIGIN}/`,
     environment: {
       fetch: (input, init) =>
         fetch(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, init),
       crypto: globalThis.crypto,
-      localStorage: memoryStorage(),
+      localStorage,
       sessionStorage: memoryStorage(),
       currentUrl: () => state.currentUrl,
       navigate: (url) => {
@@ -127,21 +142,30 @@ describe('local Keycloak sign-in adapter', () => {
     run.currentUrl = `${ORIGIN}/?code=local-code&state=${authorization.searchParams.get('state') ?? ''}`;
     await expect(signIn.handleCallback()).resolves.toBe(true);
 
-    const tokenRequest = run.fetch.mock.calls.find(([url]) => url.endsWith('/token'));
-    const body = new URLSearchParams(tokenRequest?.[1]?.body as string);
-    expect(body.get('grant_type')).toBe('authorization_code');
-    expect(body.get('code')).toBe('local-code');
-    expect(body.get('code_verifier')).toMatch(/^[\w-]{43,}$/u);
+    const exchange = run.fetch.mock.calls.find(([url]) => url.endsWith('/auth/session/exchange'));
+    expect(exchange?.[0]).toMatch(/^http:\/\/localhost:\d+\/auth\/session\/exchange$/u);
+    expect(exchange?.[1]?.credentials).toBe('include');
+    expect(exchange?.[1]?.headers).toMatchObject({ 'X-Baukit-Session': '1' });
+    const rawBody = exchange?.[1]?.body;
+    expect(typeof rawBody).toBe('string');
+    const body: unknown = JSON.parse(typeof rawBody === 'string' ? rawBody : '');
+    expect(body).toMatchObject({ code: 'local-code', codeVerifier: expect.stringMatching(/^[\w-]{43,}$/u) as unknown });
+    expect(run.fetch.mock.calls.some(([url]) => url.endsWith('/token'))).toBe(false);
+    const stored = Array.from({ length: run.localStorage.length }, (_, index) =>
+      run.localStorage.getItem(run.localStorage.key(index) ?? ''),
+    ).join('\n');
+    expect(stored).not.toContain('header.');
     expect(signIn.hasSession()).toBe(true);
     await expect(signIn.session()).resolves.toEqual(expectedSession);
   });
 
-  it('signs out through the realm end-session endpoint', async () => {
+  it('signs out through the backend, which returns the realm end-session URL', async () => {
     const run = harness();
     const signIn = createLocalSignIn(run.environment);
 
     await expect(signIn.signOut()).resolves.toBe(true);
 
+    expect(run.fetch.mock.calls.some(([url]) => url.endsWith('/auth/session/logout'))).toBe(true);
     expect(new URL(run.navigations[0] ?? '').pathname).toMatch(/\/protocol\/openid-connect\/logout$/u);
     expect(signIn.hasSession()).toBe(false);
   });

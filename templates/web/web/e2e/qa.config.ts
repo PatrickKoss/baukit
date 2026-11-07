@@ -111,7 +111,10 @@ export interface QaStorageEntry {
 }
 
 export interface QaAuthentication {
+  /** Holds the account hint only; tokens never reach browser storage. */
   readonly localStorage: readonly QaStorageEntry[];
+  /** Stands in for the backend session routes that issue the in-memory access token. */
+  readonly apiStubs: readonly QaApiStub[];
 }
 
 export interface QaConfig {
@@ -290,12 +293,19 @@ export const qaConfig: QaConfig = {
 {% if context.auth_oidc %}  authentication: {
     localStorage: [
       {
-        key: `${PRODUCT_NAME}:oidc:tokens`,
-        value: JSON.stringify({
+        key: `${PRODUCT_NAME}:oidc:account`,
+        value: JSON.stringify({ subject: 'qa-owner', signedInAt: Date.now() }),
+      },
+    ],
+    apiStubs: [
+      {
+        url: '**/auth/session/refresh',
+        status: 200,
+        body: {
           accessToken: 'qa-access-token',
-          issuedAt: Date.now(),
           expiresAt: Date.now() + 60 * 60 * 1000,
-        }),
+          subject: 'qa-owner',
+        },
       },
     ],
   },

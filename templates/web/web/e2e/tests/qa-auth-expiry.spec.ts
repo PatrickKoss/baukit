@@ -1,7 +1,12 @@
 import { expect, test } from '@playwright/test';
 
 import { qaConfig } from '../qa.config';
-import { expireSession, openRoute, stubApi } from './qa';
+import {
+  expireAuthenticatedSession,
+  openRoute,
+  restoreAuthenticatedSession,
+  stubApi,
+} from './qa';
 
 /**
  * When the session ends, private data must leave the screen and the app must
@@ -17,7 +22,7 @@ test.describe('auth expiry', () => {
       await openRoute(page, route.path, route.authenticated);
       await expect(page.getByText(route.privateText, { exact: false }).first()).toBeVisible();
 
-      await expireSession(page, route.api);
+      await expireAuthenticatedSession(page, route.api);
       await page.reload();
 
       await expect(page.getByText(route.expiredMessage, { exact: false }).first()).toBeVisible();
@@ -26,12 +31,12 @@ test.describe('auth expiry', () => {
 
     test(`${route.name} recovers once the session is valid again`, async ({ page }) => {
       await stubApi(page, qaConfig.apiStubs);
-      await expireSession(page, route.api);
       await openRoute(page, route.path, route.authenticated);
+      await expireAuthenticatedSession(page, route.api);
+      await page.reload();
       await expect(page.getByText(route.expiredMessage, { exact: false }).first()).toBeVisible();
 
-      await page.unroute(route.api);
-      await stubApi(page, qaConfig.apiStubs);
+      await restoreAuthenticatedSession(page, route.api);
       await page.reload();
 
       await expect(page.getByText(route.privateText, { exact: false }).first()).toBeVisible();

@@ -122,7 +122,7 @@ from the Expo web export. Set `capabilities.pwa = true` in the product-root `bau
 Expo copies `public/` into the web export, so a product-owned `public/sw.js` loads it with
 `importScripts('/baukit-pwa-worker.js')`. `baukit doctor` checks the scripts, the dependency, and
 the copy source, and the strict runner calls `build:sw:check`. A product that also has a web app
-keeps the worker in `web/` instead.
+keeps the worker in `web/` instead. Pass the fetch event's `Request` to the handler unchanged. The decider reads its headers, so requests carrying `Authorization` and every `/auth/session/*` call stay network-only and never land in a cache.
 {% endif %}
 ## Checks
 

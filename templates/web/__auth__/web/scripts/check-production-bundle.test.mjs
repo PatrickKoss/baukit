@@ -8,7 +8,7 @@ import { findLocalSignInMarkers, scanBundle } from "./check-production-bundle.mj
 
 test("the scanner names each kind of local sign-in leftover", () => {
   assert.deepEqual(findLocalSignInMarkers("Sign in with local Keycloak"), ["Keycloak adapter"]);
-  assert.deepEqual(findLocalSignInMarkers("product:local-oidc:tokens"), ["Keycloak adapter"]);
+  assert.deepEqual(findLocalSignInMarkers("product:local-oidc:account"), ["Keycloak adapter"]);
   assert.deepEqual(findLocalSignInMarkers("https://login.example/realms/product"), ["local realm URL"]);
   assert.deepEqual(findLocalSignInMarkers("fetch('http://127.0.0.1:8080/me')"), ["loopback URL"]);
   assert.deepEqual(findLocalSignInMarkers("['localhost','127.0.0.1'].includes(host)"), []);

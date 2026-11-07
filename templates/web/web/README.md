@@ -42,7 +42,7 @@ The generated manifest keeps `capabilities.pwa = false`. To add a PWA, first add
 `public/baukit-pwa-worker.js`. It does not generate `sw.js`, registration code, a manifest, icons,
 routes, cache names, offline copy, or identity partition keys.
 
-Load the copied artifact with `importScripts('/baukit-pwa-worker.js')` in a product-owned `sw.js`.
+Load the copied artifact with `importScripts('/baukit-pwa-worker.js')` in a product-owned `sw.js`. Pass the fetch event's `Request` to the handler unchanged. The decider reads its headers, so requests carrying `Authorization` and every `/auth/session/*` call stay network-only and never land in a cache.
 Run `pnpm build:sw:check` in CI to reject a missing or stale copy. When PWA support remains disabled,
 the check verifies that no copied artifact is present.
 
@@ -77,7 +77,7 @@ files after changing the manifest, then run `baukit doctor`.
 
 Submit targets accept `fields` plus `invalidField`, so the failed-submit check fills every required field, clears the named field, and confirms that all values survive validation. `recoveryRole` accepts `button` or `link` and defaults to `button`.
 
-When updating QA files generated before this template version, replace `field` and `value` with a `fields` array and set `invalidField`. Add `authentication.localStorage` before marking any case `authenticated`; the gate throws a setup error if authenticated state is missing. Keep credentials out of this hermetic fixture. Use synthetic, non-production tokens and stub every identity API call.
+When updating QA files generated before this template version, replace `field` and `value` with a `fields` array and set `invalidField`. Add `authentication.localStorage` (the account hint) and `authentication.apiStubs` (the `/auth/session/refresh` response) before marking any case `authenticated`; the gate throws a setup error if authenticated state is missing. Keep credentials out of this hermetic fixture. Use synthetic, non-production tokens and stub every identity API call.
 
 | Spec                 | What it proves                                                                                                                       |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |

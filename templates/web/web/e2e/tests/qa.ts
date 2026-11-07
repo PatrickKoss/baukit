@@ -28,6 +28,25 @@ export async function expireSession(page: Page, url: string): Promise<void> {
   });
 }
 
+/** Rejects the API and the session routes, as when the backend session has ended. */
+export async function expireAuthenticatedSession(page: Page, apiUrl: string): Promise<void> {
+  await expireSession(page, apiUrl);
+  for (const stub of qaConfig.authentication?.apiStubs ?? []) {
+    await expireSession(page, stub.url);
+  }
+}
+
+/** Serves the API and the session routes again after an expiry. */
+export async function restoreAuthenticatedSession(page: Page, apiUrl: string): Promise<void> {
+  const sessionStubs = qaConfig.authentication?.apiStubs ?? [];
+  await page.unroute(apiUrl);
+  for (const stub of sessionStubs) {
+    await page.unroute(stub.url);
+  }
+  await stubApi(page, qaConfig.apiStubs);
+  await stubApi(page, sessionStubs);
+}
+
 export async function expectInitialDialogFocus(dialog: Locator, name: string): Promise<void> {
   await expect(dialog.locator(':focus')).toHaveAccessibleName(name);
 }
@@ -43,6 +62,7 @@ export async function openRoute(page: Page, path: string, authenticated = false)
         localStorage.setItem(entry.key, entry.value);
       }
     }, authentication.localStorage);
+    await stubApi(page, authentication.apiStubs);
   }
   await page.goto(path);
 }

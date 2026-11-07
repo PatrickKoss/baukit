@@ -37,7 +37,7 @@ const fakeClient = vi.hoisted(
 
 vi.mock('@baukit/auth-web', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@baukit/auth-web')>()),
-  OidcClient: fakeClient(),
+  BrowserSessionClient: fakeClient(),
 }));
 {% if not context.auth_oidc %}vi.mock('{{ "@baukit/auth-web/clerk" if context.auth_clerk else "@baukit/auth-web/workos" }}', () => ({
   {{ "ClerkWebClient" if context.auth_clerk else "WorkOsWebClient" }}: fakeClient(),
@@ -111,6 +111,7 @@ describe('authClient in the browser', () => {
 
     expect(oidc.constructed).toHaveLength(1);
     expect(oidc.constructed[0]).toMatchObject({
+      apiBaseUrl: expect.stringMatching(/^http:\/\/localhost:\d+$/) as unknown,
       issuer: expect.stringMatching(/^http:\/\/localhost:\d+\/realms\/[^/]+$/) as unknown,
       clientId: expect.stringMatching(/-web$/) as unknown,
       redirectUri: 'https://app.example.test/',
@@ -127,11 +128,13 @@ describe('authClient in the browser', () => {
     vi.stubEnv('VITE_OIDC_RESOURCE', 'https://api.example.test');
     vi.stubEnv('VITE_OIDC_SCOPES', 'openid api/read');
     vi.stubEnv('VITE_OIDC_OFFLINE_ACCESS', 'false');
+    vi.stubEnv('VITE_API_URL', 'https://api.example.test');
     const authClient = await loadAuthClient();
 
     authClient.hasSession();
 
     expect(oidc.constructed[0]).toMatchObject({
+      apiBaseUrl: 'https://api.example.test',
       issuer: 'https://login.example.test/realms/product',
       clientId: 'product-web',
       audience: 'https://api.example.test',
@@ -150,6 +153,7 @@ describe('authClient in the browser', () => {
 
     expect(oidc.constructed).toEqual([
       {
+        apiBaseUrl: expect.stringMatching(/^http:\/\/localhost:\d+$/) as unknown,
         issuer: expect.stringMatching(/^http:\/\/localhost:\d+\/realms\/[^/]+$/) as unknown,
         clientId: expect.stringMatching(/-web$/) as unknown,
         redirectUri: 'https://app.example.test/',

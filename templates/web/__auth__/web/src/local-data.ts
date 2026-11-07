@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
 import {
   PersistenceIdentityMismatchError,
+  type ScopedPersistenceLifecycle,
   type ScopedPersistenceLifecycleState,
   type ScopedPersistenceRegistryStore,
 } from '@baukit/data-contracts';
@@ -66,13 +67,7 @@ export function useAuthenticatedLocalData(
 
   useEffect(() => {
     let active = true;
-    const transition = sessionExpiredReason !== undefined
-      ? sessionExpiredReason === 'profile_erased'
-        ? lifecycle.handleProfileErased()
-        : lifecycle.handleSessionExpired()
-      : selectedProfileId === undefined
-        ? lifecycle.clear()
-        : lifecycle.selectSubject(selectedProfileId);
+    const transition = sessionTransition(lifecycle, sessionExpiredReason, selectedProfileId);
     const updateState = () => {
       if (active) setState(lifecycle.state);
     };
@@ -107,4 +102,21 @@ export function useAuthenticatedLocalData(
   );
 
   return { state, clear, erase, blockIdentityMismatch };
+}
+
+function sessionTransition(
+  lifecycle: ScopedPersistenceLifecycle<CachePartition>,
+  reason: SessionExpiredReason | undefined,
+  profileId: string | undefined,
+): Promise<unknown> {
+  switch (reason) {
+    case 'profile_erased':
+      return lifecycle.handleProfileErased();
+    case 'refresh_rejected':
+      return lifecycle.handleSessionExpired();
+    case 'signed_out':
+      return lifecycle.clear();
+    case undefined:
+      return profileId === undefined ? lifecycle.clear() : lifecycle.selectSubject(profileId);
+  }
 }
