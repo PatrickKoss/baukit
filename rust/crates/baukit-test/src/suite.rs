@@ -42,6 +42,10 @@ impl InProcessSuitePeer {
         Self::default()
     }
     /// Installs the other role's router. Poisoned locks are reported as errors.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SuitePeerError::Transport`] when the router lock is poisoned.
     pub fn mount(&self, router: Router) -> Result<(), SuitePeerError> {
         *self.router.write().map_err(|_| SuitePeerError::Transport)? = Some(router);
         Ok(())

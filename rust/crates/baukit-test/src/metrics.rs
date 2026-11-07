@@ -110,6 +110,10 @@ impl MetricsConformanceOptions {
 /// allowlisted from email/UUID shape checks. It cannot prove that an ordinary
 /// path segment, opaque identifier, token, or error message is safe; product
 /// tests must still review label sources and cardinality.
+///
+/// # Errors
+///
+/// Fails like [`check_metrics_conformance_with_options`].
 pub fn check_metrics_conformance(
     exposition: impl AsRef<str>,
     http_serving: bool,
@@ -127,6 +131,12 @@ pub fn check_metrics_conformance(
 /// Unlike [`check_metrics_conformance`], this entry point can opt into the
 /// worker families from telemetry-spec section 2.4 through
 /// [`MetricsConformanceOptions::require_worker_metrics`].
+///
+/// # Errors
+///
+/// Returns [`MetricsConformanceError`] listing each unparsable sample, forbidden
+/// name or label value, missing build info, or missing required HTTP or worker
+/// metric family.
 pub fn check_metrics_conformance_with_options(
     exposition: impl AsRef<str>,
     options: MetricsConformanceOptions,

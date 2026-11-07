@@ -83,6 +83,12 @@ impl std::error::Error for LiveRowCapConformanceError {}
 /// fills `limit - 1` slots, polls both final creates concurrently, and requires
 /// exactly one success. It then updates at capacity, soft-deletes one row, and
 /// creates a replacement.
+///
+/// # Errors
+///
+/// Returns [`LiveRowCapConformanceError`] for invalid cases, a table that is not
+/// empty at start, a failed fill, both or neither final create succeeding, or a
+/// failed update, soft delete or replacement create.
 pub async fn check_postgres_live_row_cap_conformance<Adapter, ExtractLimitCode>(
     adapter: &Adapter,
     cases: LiveRowCapConformanceCases<'_>,

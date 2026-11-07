@@ -26,6 +26,13 @@ pub struct ClerkVerifier {
 
 impl ClerkVerifier {
     /// Uses the Clerk instance's Frontend API URL as issuer and JWKS host.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProviderVerifierError::Configuration`] when the Frontend API URL is
+    /// not a valid issuer or `authorized_parties` is empty or holds an empty value,
+    /// and [`ProviderVerifierError::Verification`] when the egress client for the
+    /// JWKS endpoint cannot be built.
     pub fn new<I, T>(
         frontend_api_url: impl AsRef<str>,
         authorized_parties: I,
@@ -42,6 +49,13 @@ impl ClerkVerifier {
     /// Uses an explicit JWKS endpoint while retaining Clerk claim validation.
     ///
     /// This is useful for a private proxy, an emulator, or an integration test.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProviderVerifierError::Configuration`] for an invalid issuer or
+    /// authorized-party list, and [`ProviderVerifierError::Verification`] with
+    /// [`VerificationError::InvalidJwksUri`] when `jwks_uri` does not parse or with
+    /// an egress error when the HTTP client cannot be built.
     pub fn from_jwks_uri<I, T>(
         frontend_api_url: impl AsRef<str>,
         authorized_parties: I,
@@ -67,6 +81,11 @@ impl ClerkVerifier {
     /// Also requires the token's `aud` claim to contain one of `audiences`.
     ///
     /// Use this when Clerk JWT templates add an audience the product must check.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProviderVerifierError::Configuration`] when `audiences` is empty or
+    /// contains an empty string.
     pub fn with_audiences<I, T>(self, audiences: I) -> Result<Self, ProviderVerifierError>
     where
         I: IntoIterator<Item = T>,
@@ -115,6 +134,10 @@ impl ClerkVerifier {
     }
 
     /// Verifies one Clerk session token.
+    ///
+    /// # Errors
+    ///
+    /// Fails like [`OidcVerifier::verify`].
     pub async fn verify(&self, token: &str) -> Result<Principal, VerificationError> {
         self.inner.verify(token).await
     }
@@ -145,6 +168,12 @@ pub struct ClerkOAuthVerifier {
 
 impl ClerkOAuthVerifier {
     /// Uses the Clerk instance's Frontend API URL and signing keys.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProviderVerifierError::Configuration`] for an empty `client_id` or an
+    /// invalid issuer URL, and [`ProviderVerifierError::Verification`] when the egress
+    /// client for the JWKS endpoint cannot be built.
     pub fn new(
         issuer: impl AsRef<str>,
         client_id: impl Into<String>,
@@ -156,6 +185,12 @@ impl ClerkOAuthVerifier {
     }
 
     /// Uses an explicit signing-key endpoint with the same OAuth client binding.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProviderVerifierError::Configuration`] for an empty `client_id` or an
+    /// invalid issuer URL, and [`ProviderVerifierError::Verification`] when
+    /// `jwks_uri` does not parse or the egress client cannot be built.
     pub fn from_jwks_uri(
         issuer: impl AsRef<str>,
         client_id: impl Into<String>,
@@ -192,6 +227,12 @@ pub struct ClerkMcpVerifier {
 
 impl ClerkMcpVerifier {
     /// Uses the Clerk instance's Frontend API URL as issuer and JWKS host.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProviderVerifierError::Configuration`] for an invalid issuer URL or
+    /// an empty or blank-entry `required_scopes`, and
+    /// [`ProviderVerifierError::Verification`] when the egress client cannot be built.
     pub fn new<I, T>(
         issuer: impl AsRef<str>,
         required_scopes: I,
@@ -208,6 +249,13 @@ impl ClerkMcpVerifier {
     }
 
     /// Uses an explicit signing-key endpoint with the same scope binding.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProviderVerifierError::Configuration`] for an invalid issuer URL or
+    /// an empty or blank-entry `required_scopes`, and
+    /// [`ProviderVerifierError::Verification`] when `jwks_uri` does not parse or the
+    /// egress client cannot be built.
     pub fn from_jwks_uri<I, T>(
         issuer: impl AsRef<str>,
         required_scopes: I,
@@ -246,11 +294,21 @@ pub struct WorkOsVerifier {
 
 impl WorkOsVerifier {
     /// Uses WorkOS's default issuer and client-specific signing-key endpoint.
+    ///
+    /// # Errors
+    ///
+    /// Fails like [`Self::with_issuer`] with the default WorkOS issuer.
     pub fn new(client_id: impl Into<String>) -> Result<Self, ProviderVerifierError> {
         Self::with_issuer(WORKOS_ISSUER, client_id)
     }
 
     /// Uses a custom AuthKit issuer and WorkOS's client-specific signing-key endpoint.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProviderVerifierError::Configuration`] for an empty `client_id` or an
+    /// invalid issuer URL, and [`ProviderVerifierError::Verification`] when the egress
+    /// client for the JWKS endpoint cannot be built.
     pub fn with_issuer(
         issuer: impl AsRef<str>,
         client_id: impl Into<String>,
@@ -263,6 +321,12 @@ impl WorkOsVerifier {
     /// Uses explicit issuer and JWKS endpoints while retaining WorkOS claim validation.
     ///
     /// This supports WorkOS Emulate, a private proxy, and integration tests.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProviderVerifierError::Configuration`] for an empty `client_id` or an
+    /// invalid issuer URL, and [`ProviderVerifierError::Verification`] when
+    /// `jwks_uri` does not parse or the egress client cannot be built.
     pub fn from_jwks_uri(
         issuer: impl AsRef<str>,
         client_id: impl Into<String>,
@@ -275,6 +339,11 @@ impl WorkOsVerifier {
     }
 
     /// Also requires the token's `aud` claim to contain one of `audiences`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProviderVerifierError::Configuration`] when `audiences` is empty or
+    /// contains an empty string.
     pub fn with_audiences<I, T>(self, audiences: I) -> Result<Self, ProviderVerifierError>
     where
         I: IntoIterator<Item = T>,
@@ -306,6 +375,10 @@ impl WorkOsVerifier {
     }
 
     /// Verifies one WorkOS AuthKit session token.
+    ///
+    /// # Errors
+    ///
+    /// Fails like [`OidcVerifier::verify`].
     pub async fn verify(&self, token: &str) -> Result<Principal, VerificationError> {
         self.inner.verify(token).await
     }

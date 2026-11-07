@@ -40,6 +40,13 @@ pub struct NewOptions {
     pub quality: QualityProfile,
 }
 
+/// Generates a product from the templates and returns its root directory.
+///
+/// # Errors
+///
+/// Fails for an invalid product name or an inconsistent component selection, when
+/// an existing `baukit.toml` does not parse, when the destination already holds
+/// output it may not overwrite, or when rendering or writing a file fails.
 pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
     validate_name(&options.name)?;
     validate_component_selection(options)?;

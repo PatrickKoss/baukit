@@ -265,6 +265,14 @@ impl TelemetryBuilder {
     /// [`TelemetryBuilder::sdk_disabled`] explicitly disables tracing. When an
     /// endpoint is configured, call this from within the process's Tokio runtime
     /// so the tonic gRPC exporter can use it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TelemetryError::AlreadyInitialized`] on a second call,
+    /// `MissingOtlpEndpoint` for a deployed process without an endpoint,
+    /// `OtlpExporter` when the exporter cannot be built, and
+    /// `TracingAlreadyInitialized` or `MetricsAlreadyInitialized` when another
+    /// subscriber or recorder is installed.
     pub fn init(self) -> Result<Telemetry, TelemetryError> {
         if INITIALIZED
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -406,6 +414,11 @@ impl Telemetry {
     ///
     /// Repeated calls, local no-exporter mode, and disabled-SDK mode are
     /// successful no-ops.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TelemetryError::TraceShutdown`] when the tracer provider fails to
+    /// flush or shut down.
     pub fn shutdown(&self) -> Result<(), TelemetryError> {
         let provider = self
             .provider
