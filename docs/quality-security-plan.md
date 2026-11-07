@@ -156,7 +156,7 @@ tenancy and rate-limit audit of the products (S-08).
   `baukit-code-conformance` (fixing lint and check failures without suppressing them).
 - [ ] P2.12 Template `items` example: owner column, `(owner, id)` in every query, cross-tenant test in the
   generated backend (S-12). Lands with the template wave.
-- [ ] P2.13 baukit-suite `find_link_for_owner` (`adapters/postgres/mod.rs:539`) loads by id, runs
+- [x] P2.13 (merged with W1-A; Docker test `foreign_owner_lookup_returns_none_without_accounting_failures`) baukit-suite `find_link_for_owner` (`adapters/postgres/mod.rs:539`) loads by id, runs
   `refresh_failures` on the foreign id, then filters the owner in Rust. Move `user_id` into the WHERE and refresh
   only after the owner matches. After W1-A merges (it owns the crate's lint fixes).
 - [x] P2.11 baukit's own `docs/threat-model.md`, written with the new skill.
@@ -228,6 +228,11 @@ tenancy and rate-limit audit of the products (S-08).
   credentials scope, Keycloak idle note), accepted and merged. Worktree removed.
 - 2026-11-07: W2-1 (ADR 0006 task 1, baukit-auth BFF) and W2-2 (task 2, baukit-http headers) started in
   parallel with W1-A; both check against the new lint set via CLIPPY_CONF_DIR without editing the lint table.
+- 2026-11-07: W1-A merged after its second round: re-ran fmt, clippy `--all-features -D warnings` and the
+  P2.13 Docker test, and reviewed the jitter, suppression and suite diffs. 93 suppressions with reasons; about 60 of
+  them are the same file-level allow in integration tests, where allow-*-in-tests does not reach helper
+  functions. W2-1 round 2 verified (ID token signature through `OidcVerifier`, `StoreBrowserSessionRateLimiter`
+  in baukit-ratelimit, auth and ratelimit tests re-run with Docker). It now rebases onto the lint set.
 - 2026-11-07: W1-F merged after re-running its 3 property suites and 15 s smoke runs of jwt_verify and
   mcp_jsonrpc. The orchestrator wired a `fuzz` gate lane and CI job (fmt, clippy, 60 s per target).
   W1-D2 merged: osv ignores 46 to 37, all on typescript/pnpm-lock.yaml or with no fix; ruff and shellcheck
