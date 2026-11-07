@@ -163,7 +163,7 @@ tenancy and rate-limit audit of the products (S-08).
 
 ## Phase 3. Agent instructions
 
-- [ ] P3.1 baukit `CLAUDE.md`: coding rules (no panics in prod paths, `#[expect]` with reason, size limits,
+- [x] P3.1 baukit `CLAUDE.md`: coding rules (no panics in prod paths, `#[expect]` with reason, size limits,
   scoped queries, egress only, no tokens in web storage, threat model on new boundaries), the new checks,
   and remove the duplicated `ci-gate.sh` paragraph.
 - [ ] P3.2 Template managed block `<!-- baukit:begin -->`/`<!-- baukit:end -->` in the generated CLAUDE.md
