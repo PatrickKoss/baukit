@@ -393,3 +393,5 @@ tenancy and rate-limit audit of the products (S-08).
   - `baukit check`: everything green except `lints` (2 template eslint configs, W5-T2).
   - Backend template wave brief written: prompts/W5-T1-template-backend.md. It starts after W5-T2 merges
     (both edit the backend bin crate).
+  - Clerk fixture on main: 39 backend tests pass. Web fails in `src/sign-in/local.ts` with the same
+    `OidcClient` vs `ProviderClient` mismatch. Sent to W5-T2.
