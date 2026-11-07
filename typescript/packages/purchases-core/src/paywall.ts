@@ -1,4 +1,8 @@
-import type { BillingChannel, VerifiedEntitlement } from './entitlement.js';
+import type {
+  BillingChannel,
+  EntitlementOrganization,
+  VerifiedEntitlement,
+} from './entitlement.js';
 import { plansLink } from './plans-link.js';
 
 /** What a locked feature may offer. Only `purchase` sells anything. */
@@ -34,22 +38,35 @@ export interface PaywallContext {
 export function paywallFor(entitlement: VerifiedEntitlement, context: PaywallContext): Paywall {
   if (entitlement.mode === 'standalone') return { kind: 'none' };
   const organization = entitlement.organization;
-  if (organization) {
-    if (context.feature === undefined || entitlement.features.includes(context.feature))
-      return { kind: 'covered', channel: 'organization' };
-    return {
-      kind: 'organization_managed',
-      organizationId: organization.organizationId,
-      organizationName: organization.name,
-    };
-  }
-  const link =
-    entitlement.plansUrl === null
-      ? null
-      : plansLink(entitlement.plansUrl, {
-          from: context.productId,
-          ...(context.feature === undefined ? {} : { feature: context.feature }),
-        });
+  if (organization !== undefined && organization !== null)
+    return organizationPaywall(entitlement, organization, context);
+  const link = paywallLink(entitlement, context);
+  return channelPaywall(entitlement, link);
+}
+
+function organizationPaywall(
+  entitlement: VerifiedEntitlement,
+  organization: EntitlementOrganization,
+  context: PaywallContext,
+): Paywall {
+  if (context.feature === undefined || entitlement.features.includes(context.feature))
+    return { kind: 'covered', channel: 'organization' };
+  return {
+    kind: 'organization_managed',
+    organizationId: organization.organizationId,
+    organizationName: organization.name,
+  };
+}
+
+function paywallLink(entitlement: VerifiedEntitlement, context: PaywallContext): string | null {
+  if (entitlement.plansUrl === null) return null;
+  return plansLink(entitlement.plansUrl, {
+    from: context.productId,
+    ...(context.feature === undefined ? {} : { feature: context.feature }),
+  });
+}
+
+function channelPaywall(entitlement: VerifiedEntitlement, link: string | null): Paywall {
   const channel: BillingChannel | undefined = entitlement.billing?.channel;
   switch (channel) {
     case 'web':

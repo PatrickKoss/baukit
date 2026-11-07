@@ -1,3 +1,4 @@
+import { isRecord, isString } from '@baukit/type-guards';
 import type { DesignTokens, ThemeColor } from './schema.js';
 
 export interface ValidationIssue {
@@ -7,10 +8,6 @@ export interface ValidationIssue {
 
 const TOKEN_NAME = /^[a-z][A-Za-z0-9]*$/u;
 const HEX_COLOR = /^#[\dA-Fa-f]{3}(?:[\dA-Fa-f]{3})?$/u;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 
 function issue(issues: ValidationIssue[], path: string, message: string): void {
   issues.push({ path, message });
@@ -156,14 +153,9 @@ function findColor(value: unknown, path: string): ThemeColor | undefined {
     }
     current = current[segment];
   }
-  if (
-    isRecord(current) &&
-    typeof current['light'] === 'string' &&
-    typeof current['dark'] === 'string'
-  ) {
-    return current as unknown as ThemeColor;
-  }
-  return undefined;
+  if (!isRecord(current)) return undefined;
+  const { light, dark } = current;
+  return isString(light) && isString(dark) ? { light, dark } : undefined;
 }
 
 function validateContrastPairs(value: unknown, colors: unknown, issues: ValidationIssue[]): void {

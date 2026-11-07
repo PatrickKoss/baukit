@@ -85,13 +85,22 @@ function hasInvalidUrlCharacters(value: string): boolean {
   return false;
 }
 
+function isLoopbackHost(hostname: string): boolean {
+  return (
+    hostname === 'localhost' ||
+    hostname === '[::1]' ||
+    /^127\.(?:\d{1,3}\.){2}\d{1,3}$/.test(hostname)
+  );
+}
+
+function hasAllowedScheme(url: URL, allowLoopback: boolean): boolean {
+  if (url.protocol === 'https:') return true;
+  return url.protocol === 'http:' && allowLoopback && isLoopbackHost(url.hostname);
+}
+
 function authorizeEndpoint(value: string, allowLoopback = false): URL {
   const url = new URL(value);
   const authority = value.split('://')[1]?.split(/[/?#]/, 1)[0];
-  const loopback =
-    url.hostname === 'localhost' ||
-    url.hostname === '[::1]' ||
-    /^127\.(?:\d{1,3}\.){2}\d{1,3}$/.test(url.hostname);
   if (
     authority === undefined ||
     authority.includes('@') ||
@@ -100,7 +109,7 @@ function authorizeEndpoint(value: string, allowLoopback = false): URL {
     url.password !== '' ||
     value.includes('?') ||
     value.includes('#') ||
-    (url.protocol !== 'https:' && !(url.protocol === 'http:' && allowLoopback && loopback))
+    !hasAllowedScheme(url, allowLoopback)
   ) {
     throw new TypeError('Invalid suite authorize URL.');
   }

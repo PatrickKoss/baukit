@@ -1,3 +1,4 @@
+import { isRecord, isString } from '@baukit/type-guards';
 import type { Rule } from 'eslint';
 import type { Node } from 'estree';
 
@@ -121,52 +122,72 @@ function propertyKeyName(node: WithParent): string | undefined {
  * style-named property or JSX attribute, a CSS tagged template, or a nested
  * object or array under one of those.
  */
+function isCssTemplateTag(current: WithParent): boolean {
+  if (current.type !== 'TaggedTemplateExpression') return false;
+  const tag = current.tag as WithParent;
+  if (tag.type === 'Identifier') return CSS_TEMPLATE_TAGS.has(tag.name);
+  return (
+    tag.type === 'MemberExpression' &&
+    tag.object.type === 'Identifier' &&
+    CSS_TEMPLATE_TAGS.has(tag.object.name)
+  );
+}
+
+function isStyleProperty(
+  current: WithParent,
+  child: WithParent | undefined,
+  styleNames: ReadonlySet<string>,
+): boolean {
+  if (current.type !== 'Property' || child === undefined || current.value !== (child as Node))
+    return false;
+  const name = propertyKeyName(child);
+  return name !== undefined && styleNames.has(name);
+}
+
+function isStyleVariable(current: WithParent): boolean {
+  if (current.type !== 'VariableDeclarator') return false;
+  const id = current.id as WithParent;
+  return id.type === 'Identifier' && looksLikeStyleName(id.name);
+}
+
+function isStyleNode(
+  current: WithParent,
+  child: WithParent | undefined,
+  styleNames: ReadonlySet<string>,
+): boolean {
+  const jsxName = jsxAttributeName(current);
+  return (
+    isCssTemplateTag(current) ||
+    isStyleProperty(current, child, styleNames) ||
+    (jsxName !== undefined && styleNames.has(jsxName)) ||
+    isStyleVariable(current) ||
+    isStyleSheetCall(current)
+  );
+}
+
+/**
+ * Walks up from a literal to decide whether it lands in a styling position: a
+ * style-named property or JSX attribute, a CSS tagged template, or a nested
+ * object or array under one of those.
+ */
 function isStyleContext(node: WithParent, styleNames: ReadonlySet<string>): boolean {
   let current: WithParent | null | undefined = node;
   let child: WithParent | undefined;
-
   while (current !== undefined && current !== null) {
-    if (current.type === 'TaggedTemplateExpression') {
-      const tag = current.tag as WithParent;
-      if (tag.type === 'Identifier' && CSS_TEMPLATE_TAGS.has(tag.name)) return true;
-      if (
-        tag.type === 'MemberExpression' &&
-        tag.object.type === 'Identifier' &&
-        CSS_TEMPLATE_TAGS.has(tag.object.name)
-      ) {
-        return true;
-      }
-    }
-
-    if (current.type === 'Property' && child !== undefined && current.value === (child as Node)) {
-      const name = propertyKeyName(child);
-      if (name !== undefined && styleNames.has(name)) return true;
-    }
-
-    const jsxName = jsxAttributeName(current);
-    if (jsxName !== undefined && styleNames.has(jsxName)) return true;
-
-    if (current.type === 'VariableDeclarator') {
-      const id = current.id as WithParent;
-      if (id.type === 'Identifier' && looksLikeStyleName(id.name)) return true;
-    }
-
-    if (isStyleSheetCall(current)) return true;
-
+    if (isStyleNode(current, child, styleNames)) return true;
     child = current;
     current = current.parent;
   }
   return false;
 }
 
-interface JsxAttributeLike {
-  readonly type: string;
-  readonly name?: { readonly name?: string };
-}
-
+// ESTree `Node` has no JSX members, so JSXAttribute nodes from the JSX parser are read as records.
 function jsxAttributeName(current: WithParent): string | undefined {
-  const candidate = current as unknown as JsxAttributeLike;
-  return candidate.type === 'JSXAttribute' ? candidate.name?.name : undefined;
+  const type: string = current.type;
+  if (type !== 'JSXAttribute') return undefined;
+  const name: unknown = Reflect.get(current, 'name');
+  if (!isRecord(name)) return undefined;
+  return isString(name['name']) ? name['name'] : undefined;
 }
 
 function looksLikeStyleName(name: string): boolean {

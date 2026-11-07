@@ -4,3 +4,6 @@ packages:
 allowBuilds:
   browser-tabs-lock: false
   core-js: false
+{% if context.baukit_pnpm_overrides %}
+overrides:
+{{ context.baukit_pnpm_overrides }}{% endif %}

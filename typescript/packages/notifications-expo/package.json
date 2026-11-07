@@ -38,7 +38,7 @@
     "build": "tsc -p tsconfig.json",
     "prepare": "pnpm run build",
     "test": "tsc -p tsconfig.test.json && vitest run --config ../../vitest.config.ts && node ../../scripts/test-packed-exports.mjs",
-    "lint": "eslint src --max-warnings=0",
+    "lint": "eslint . --max-warnings=0",
     "format:check": "prettier --check src package.json tsconfig.json tsconfig.test.json"
   },
   "devDependencies": {
@@ -46,7 +46,7 @@
     "@baukit/notifications-core": "workspace:*",
     "expo-notifications": "57.0.21",
     "typescript": "6.0.3",
-    "vitest": "5.0.3"
+    "vitest": "5.0.5"
   },
   "peerDependencies": {
     "@baukit/notifications-core": "^0.18.3",

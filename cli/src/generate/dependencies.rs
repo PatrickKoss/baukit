@@ -20,11 +20,16 @@ const BASE_CRATES: [&str; 8] = [
     "baukit-test",
 ];
 
+/// Unreleased `@baukit/*` packages that other Baukit packages depend on. A `file:` install
+/// resolves those dependencies from npm, so path mode pins them to the checkout with overrides.
+const LOCAL_TRANSITIVE_PACKAGES: [&str; 1] = ["@baukit/type-guards"];
+
 pub(crate) struct DependencyContext {
     pub(crate) cargo: String,
     pub(crate) web_typescript: String,
     pub(crate) web_dev_typescript: String,
     pub(crate) mobile_typescript: String,
+    pub(crate) pnpm_overrides: String,
     pub(crate) manifest: String,
     pub(crate) description: String,
     pub(crate) typescript_description: String,
@@ -131,17 +136,28 @@ fn path_dependency_context(
         .to_string()
         .replace('\\', "\\\\")
         .replace('"', "\\\"");
-    let render_typescript = |packages: &[&str]| {
-        render_package_entries(packages, |package| {
-            let directory = package.trim_start_matches("@baukit/");
-            format!("file:{typescript_display}/packages/{directory}")
-        })
+    let local_specifier = |package: &str| {
+        let directory = package.trim_start_matches("@baukit/");
+        format!("file:{typescript_display}/packages/{directory}")
     };
+    let render_typescript = |packages: &[&str]| render_package_entries(packages, local_specifier);
+    let with_transitive = |packages: &[&'static str]| {
+        let mut packages = packages.to_vec();
+        if !packages.is_empty() {
+            packages.extend(LOCAL_TRANSITIVE_PACKAGES);
+        }
+        packages
+    };
+    let pnpm_overrides = LOCAL_TRANSITIVE_PACKAGES
+        .iter()
+        .map(|package| format!("  '{package}': '{}'\n", local_specifier(package)))
+        .collect();
     Ok(DependencyContext {
         cargo,
-        web_typescript: render_typescript(&packages.web),
+        web_typescript: render_typescript(&with_transitive(&packages.web)),
         web_dev_typescript: render_leading_entries(&render_typescript(packages.web_dev)),
-        mobile_typescript: render_typescript(&packages.mobile),
+        mobile_typescript: render_typescript(&with_transitive(&packages.mobile)),
+        pnpm_overrides,
         manifest: format!("source = \"path\"\npath = \"{display}\""),
         description: format!("local path `{}`", path.display()),
         typescript_description: format!("local path `{}`", typescript_root.display()),
@@ -153,7 +169,7 @@ fn ensure_local_typescript_packages(
     typescript_root: &Path,
     packages: &BaukitPackages,
 ) -> Result<()> {
-    for package in packages.typescript() {
+    for package in packages.typescript().chain(&LOCAL_TRANSITIVE_PACKAGES) {
         let directory = package.trim_start_matches("@baukit/");
         if !typescript_root
             .join("packages")
@@ -186,6 +202,7 @@ fn registry_dependency_context(packages: &BaukitPackages) -> DependencyContext {
         web_typescript: render_typescript(&packages.web),
         web_dev_typescript: render_leading_entries(&render_typescript(packages.web_dev)),
         mobile_typescript: render_typescript(&packages.mobile),
+        pnpm_overrides: String::new(),
         manifest: format!("source = \"registry\"\nversion = \"{version}\""),
         description: format!("crates.io version `{version}`"),
         typescript_description: format!("npm version `{version}`"),

@@ -1,3 +1,5 @@
+import { isRecord } from '@baukit/type-guards';
+
 export interface FeatureKeyDrift {
   /** Declared by the product but granted by no catalog plan. */
   notInCatalog: string[];
@@ -7,10 +9,6 @@ export interface FeatureKeyDrift {
 
 export class PlanCatalogError extends Error {
   override readonly name = 'PlanCatalogError';
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function stringList(value: unknown): string[] {

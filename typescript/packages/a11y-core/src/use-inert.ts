@@ -44,7 +44,10 @@ export function useAriaHiddenInert(): void {
   useEffect(() => {
     if (!hasDocument()) return;
 
-    const root = document.body as unknown as QueryRoot;
+    const body = document.body;
+    const root: QueryRoot = {
+      querySelectorAll: (selector) => Array.from(body.querySelectorAll(selector)),
+    };
     syncAriaHiddenInert(root);
     const observer = new MutationObserver(() => {
       syncAriaHiddenInert(root);

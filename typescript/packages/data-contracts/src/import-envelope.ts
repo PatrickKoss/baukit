@@ -120,13 +120,11 @@ export async function prepareImportEnvelope<TContext, TCollection extends string
       });
     }
     const allowedFields = allowlistFor(options.fieldAllowlist, row.collection, rowIndex);
-    const fields = sanitizeFields(
-      row.fields,
-      allowedFields,
-      row.collection,
+    const fields = sanitizeFields(row.fields, allowedFields, {
+      collection: row.collection,
       rowIndex,
-      options.limits.maxStringBytes,
-    );
+      maxStringBytes: options.limits.maxStringBytes,
+    });
     decodedRows.push(
       await options.decodeRow({
         context: envelope.context,
@@ -179,9 +177,11 @@ function allowlistFor<TCollection extends string>(
 function sanitizeFields(
   fields: Readonly<Record<string, unknown>>,
   allowedFields: ReadonlySet<string>,
-  collection: string,
-  rowIndex: number,
-  maxStringBytes: number,
+  {
+    collection,
+    rowIndex,
+    maxStringBytes,
+  }: { readonly collection: string; readonly rowIndex: number; readonly maxStringBytes: number },
 ): Readonly<Record<string, unknown>> {
   if (Object.getOwnPropertySymbols(fields).length > 0) {
     throw new ImportEnvelopeError('invalid_row_value', { collection, rowIndex });

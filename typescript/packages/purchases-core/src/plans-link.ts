@@ -12,9 +12,15 @@ const httpUrl = /^https?:\/\/[^\s/?#@]+(?:[/?]\S*)?$/u;
 export function plansLink(plansUrl: string, context: PlansLinkContext = {}): string {
   if (!httpUrl.test(plansUrl)) throw new TypeError('The plans URL must be an HTTP(S) URL.');
   const parameters: string[] = [];
-  if (context.from) parameters.push(`from=${encodeURIComponent(context.from)}`);
-  if (context.from && context.feature)
-    parameters.push(`feature=${encodeURIComponent(context.feature)}`);
+  const { from, feature } = context;
+  if (from === undefined || from === '') return plansUrlWith(plansUrl, parameters);
+  parameters.push(`from=${encodeURIComponent(from)}`);
+  if (feature !== undefined && feature !== '')
+    parameters.push(`feature=${encodeURIComponent(feature)}`);
+  return plansUrlWith(plansUrl, parameters);
+}
+
+function plansUrlWith(plansUrl: string, parameters: readonly string[]): string {
   const query = parameters.join('&');
   if (query === '') return plansUrl;
   return `${plansUrl}${plansUrl.includes('?') ? '&' : '?'}${query}`;

@@ -19,7 +19,7 @@ type LegacyJson =
   null | boolean | number | string | readonly LegacyJson[] | { readonly [key: string]: LegacyJson };
 interface LegacyHlcStorage {
   get(key: string): Promise<unknown>;
-  set(key: string, value: { readonly [key: string]: LegacyJson }): Promise<void>;
+  set(key: string, value: Readonly<Record<string, LegacyJson>>): Promise<void>;
 }
 declare const legacyStorage: LegacyHlcStorage;
 const physicalClock: HlcPhysicalClock = () => 1_000;

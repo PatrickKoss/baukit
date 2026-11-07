@@ -50,12 +50,15 @@
     "test": "tsc -p tsconfig.test.json && vitest run --config ../../vitest.config.ts && node ../../scripts/test-packed-exports.mjs --load ./keycloak-testing",
     "test:conformance": "vitest run --config ../../vitest.config.ts src/conformance.test.ts",
     "test:conformance:keycloak": "pnpm run build && node scripts/keycloak-conformance.mjs",
-    "lint": "eslint src --max-warnings=0",
+    "lint": "eslint . --max-warnings=0",
     "format:check": "prettier --check src scripts package.json tsconfig.json tsconfig.test.json"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
     "@types/node": "26.6.4",
     "typescript": "6.0.3"
+  },
+  "dependencies": {
+    "@baukit/type-guards": "^0.18.3"
   }
 }

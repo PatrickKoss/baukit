@@ -6,8 +6,8 @@
     [
       "@baukit/a11y-core",
       "@baukit/analytics-core",
-      "@baukit/analytics-posthog-web",
       "@baukit/analytics-posthog-native",
+      "@baukit/analytics-posthog-web",
       "@baukit/api-runtime",
       "@baukit/auth-native",
       "@baukit/auth-node",
@@ -15,6 +15,7 @@
       "@baukit/data-contracts",
       "@baukit/data-contracts-dexie",
       "@baukit/data-contracts-expo-sqlite",
+      "@baukit/eslint-config",
       "@baukit/events",
       "@baukit/integrations-client",
       "@baukit/localization-core",
@@ -27,6 +28,7 @@
       "@baukit/pwa-web",
       "@baukit/suite-client",
       "@baukit/sync-client",
+      "@baukit/type-guards",
       "@baukit/ui-tokens"
     ]
   ],

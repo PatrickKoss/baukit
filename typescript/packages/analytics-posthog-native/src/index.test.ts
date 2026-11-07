@@ -329,14 +329,15 @@ describe('native adapter composed with analytics core', () => {
     expect(posthog.capture).not.toHaveBeenCalled();
 
     analytics.setConsent('granted');
-    analytics.capture({
+    const unlisted: ProductEvent & { properties: { unlisted: string } } = {
       name: 'onboarding_started',
       properties: {
         source: 'organic',
         contact: 'person@example.com',
         unlisted: 'must not arrive',
       },
-    } as ProductEvent);
+    };
+    analytics.capture(unlisted);
     await analytics.flush();
 
     expect(posthog.capture).toHaveBeenCalledOnce();

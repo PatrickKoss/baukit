@@ -54,7 +54,7 @@ export function featureAccess(
   context: Omit<PaywallContext, 'feature'>,
 ): FeatureAccess {
   const { entitlement, entitlementStatus } = state;
-  if (entitlement?.features.includes(feature)) {
+  if (entitlement?.features.includes(feature) === true) {
     return { status: 'granted', entitlement };
   }
   if (entitlement !== null) {

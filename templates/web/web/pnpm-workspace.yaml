@@ -1,2 +1,5 @@
 packages:
   - .
+{% if context.baukit_pnpm_overrides %}
+overrides:
+{{ context.baukit_pnpm_overrides }}{% endif %}

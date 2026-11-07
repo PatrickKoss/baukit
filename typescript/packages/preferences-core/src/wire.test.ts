@@ -1,6 +1,3 @@
-// eslint-disable-next-line @typescript-eslint/triple-slash-reference
-/// <reference path="./raw.d.ts" />
-
 import { describe, expect, it } from 'vitest';
 
 import fixtureJson from '../../../../fixtures/product-experience/optional-wire-values.json?raw';

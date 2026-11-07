@@ -1,379 +1,68 @@
 import {
-  useEffect,
   useId,
   useLayoutEffect,
   useRef,
-  useState,
   useSyncExternalStore,
-  type ComponentPropsWithRef,
-  type MouseEvent,
+  type CSSProperties,
   type ReactNode,
   type RefObject,
 } from 'react';
-import { flushSync } from 'react-dom';
 import {
-  announce,
   useAriaHiddenInert,
   useReducedMotionPreference,
   useRovingMenu,
 } from '@baukit/a11y-core/web';
 import {
   getNavigationLayout,
-  getNavigationProfileLabel,
   NAVIGATION_DIMENSIONS,
-  navigationMatches,
   nextSectionHref,
-  resolveActiveNavigation,
-  resolveActiveMenuEntry,
   validateNavigation,
   type NavigationItem,
   type NavigationSlots,
   type NavigationProfile,
-  type NavigationProfileMenuEntry,
+  type NavigationSubItem,
 } from './index.js';
-import { useNavigationState, type CollapseProps } from './use-navigation-state.js';
+import {
+  useNavigationState,
+  type CollapseProps,
+  type NavigationStateHandle,
+} from './use-navigation-state.js';
+import {
+  follow,
+  Link,
+  type Navigate,
+  type NavigationIcon,
+  type NavigationLinkRenderer,
+} from './web-link.js';
+import { Profile } from './web-profile.js';
+import { SectionPicker as Picker } from './web-section-picker.js';
 
-export interface NavigationIconState {
-  readonly active: boolean;
-  readonly size: number;
-}
-export type NavigationIcon = (state: NavigationIconState) => ReactNode;
-export type NavigationLinkProps = ComponentPropsWithRef<'a'> & {
-  readonly href: string;
-  readonly replace?: boolean;
-};
-export type NavigationLinkRenderer = (props: NavigationLinkProps) => ReactNode;
-export type Navigate = (
-  href: string,
-  event: MouseEvent<HTMLAnchorElement>,
-  options?: { readonly replace: boolean },
-) => void;
+export {
+  isNavigationClick,
+  type Navigate,
+  type NavigationIcon,
+  type NavigationIconState,
+  type NavigationLinkProps,
+  type NavigationLinkRenderer,
+} from './web-link.js';
+export type { SectionPickerProps } from './web-section-picker.js';
+// A local binding keeps the export a plain property, so Jest can spy on it like before the split.
+export const SectionPicker: typeof Picker = Picker;
 
-export function isNavigationClick(event: MouseEvent<HTMLAnchorElement>): boolean {
-  return (
-    !event.defaultPrevented &&
-    event.button === 0 &&
-    !event.metaKey &&
-    !event.ctrlKey &&
-    !event.shiftKey &&
-    !event.altKey
-  );
-}
+const ICON_SIZE = 24;
+const CHILD_ICON_SIZE = 20;
 
-function follow(href: string, event: MouseEvent<HTMLAnchorElement>, onNavigate?: Navigate) {
-  if (!isNavigationClick(event) || onNavigate === undefined) return;
-  event.preventDefault();
-  onNavigate(href, event);
-}
-
-function subscribeWidth(change: () => void) {
+function subscribeWidth(change: () => void): () => void {
   window.addEventListener('resize', change);
   return () => {
     window.removeEventListener('resize', change);
   };
 }
-function viewportWidth() {
+function viewportWidth(): number {
   return window.innerWidth;
 }
-function serverWidth() {
+function serverWidth(): number {
   return 0;
-}
-function Link({
-  renderLink,
-  replace,
-  ...props
-}: NavigationLinkProps & { readonly renderLink: NavigationLinkRenderer | undefined }) {
-  return renderLink === undefined ? (
-    <a {...props} />
-  ) : (
-    renderLink(replace === undefined ? props : { ...props, replace })
-  );
-}
-
-interface MenuProps {
-  readonly replace?: boolean;
-  readonly entries: readonly NavigationProfileMenuEntry[];
-  readonly id: string;
-  readonly label: string;
-  readonly closeLabel: string;
-  readonly triggerRef: RefObject<HTMLButtonElement | null>;
-  readonly onClose: () => void;
-  readonly onNavigate: Navigate | undefined;
-  readonly renderLink: NavigationLinkRenderer | undefined;
-  readonly pathname: string;
-  readonly maxHeight?: number | undefined;
-  readonly subtitle?: string | undefined;
-}
-
-function Menu({
-  replace,
-  entries,
-  id,
-  label,
-  closeLabel,
-  triggerRef,
-  onClose,
-  onNavigate,
-  renderLink,
-  pathname,
-  maxHeight,
-  subtitle,
-}: MenuProps) {
-  const activeEntry = resolveActiveMenuEntry(entries, pathname);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const roving = useRovingMenu({
-    active: true,
-    options: entries.map((entry) => ({ disabled: entry.disabled })),
-  });
-  useEffect(() => {
-    const menu = menuRef.current;
-    const first = menu?.querySelector<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])');
-    (first ?? menu)?.focus();
-  }, []);
-  useEffect(() => {
-    function outside(event: PointerEvent) {
-      if (
-        !(event.target instanceof Node) ||
-        containerRef.current?.contains(event.target) ||
-        triggerRef.current?.contains(event.target)
-      )
-        return;
-      onClose();
-    }
-    document.addEventListener('pointerdown', outside);
-    return () => {
-      document.removeEventListener('pointerdown', outside);
-    };
-  }, [onClose, triggerRef]);
-  function closeAndRestore() {
-    flushSync(onClose);
-    triggerRef.current?.focus();
-  }
-  return (
-    <div
-      className="bk-navigation-menu"
-      style={maxHeight === undefined ? undefined : { maxHeight }}
-      ref={containerRef}
-      onKeyDown={(event) => {
-        if (event.key === 'Escape') {
-          event.preventDefault();
-          event.stopPropagation();
-          closeAndRestore();
-        }
-        if (event.key === 'Tab') {
-          // Move focus to the trigger before removing the focused menu item. The browser continues Tab normally.
-          triggerRef.current?.focus();
-          onClose();
-        }
-      }}
-    >
-      <div
-        className="bk-navigation-menu-content"
-        id={id}
-        role="menu"
-        aria-label={subtitle === undefined ? label : `${label}, ${subtitle}`}
-        tabIndex={-1}
-        ref={menuRef}
-      >
-        {subtitle === undefined ? null : (
-          <div className="bk-navigation-menu-profile" aria-hidden="true">
-            <span className="bk-navigation-label">{label}</span>
-            <span className="bk-navigation-subtitle">{subtitle}</span>
-          </div>
-        )}
-        <div className="bk-navigation-menu-items">
-          {entries.map((entry, index) => {
-            const props = {
-              ...roving.itemProps(index),
-              className: 'bk-navigation-item',
-              role: 'menuitem',
-              'aria-disabled': entry.disabled === true ? true : undefined,
-              'data-active': entry === activeEntry ? 'page' : undefined,
-              'data-tone': entry.tone,
-            } as const;
-            return entry.href !== undefined ? (
-              <Link
-                {...props}
-                {...(replace === undefined ? {} : { replace })}
-                renderLink={renderLink}
-                href={entry.href}
-                key={entry.id}
-                aria-current={entry === activeEntry ? 'page' : undefined}
-                onClick={(event) => {
-                  if (entry.disabled === true) {
-                    event.preventDefault();
-                    return;
-                  }
-                  if (!isNavigationClick(event)) return;
-                  closeAndRestore();
-                  follow(entry.href, event, onNavigate);
-                }}
-                onKeyDown={(event) => {
-                  props.onKeyDown(event);
-                  if (event.key === ' ' && entry.disabled !== true) {
-                    event.preventDefault();
-                    event.currentTarget.click();
-                  }
-                }}
-              >
-                {entry.label}
-              </Link>
-            ) : (
-              <button
-                {...props}
-                type="button"
-                disabled={entry.disabled}
-                key={entry.id}
-                onClick={() => {
-                  closeAndRestore();
-                  entry.onSelect();
-                }}
-              >
-                {entry.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-      <button type="button" className="bk-navigation-menu-close" onClick={closeAndRestore}>
-        {closeLabel}
-      </button>
-    </div>
-  );
-}
-
-function Avatar({
-  profile,
-  active,
-}: {
-  readonly profile: NavigationProfile;
-  readonly active: boolean;
-}) {
-  const [failedUrl, setFailedUrl] = useState<string>();
-  if (profile.renderAvatar !== undefined) {
-    return (
-      <span className="bk-navigation-avatar bk-navigation-avatar-custom" aria-hidden="true">
-        {profile.renderAvatar({ active, size: NAVIGATION_DIMENSIONS.avatar })}
-      </span>
-    );
-  }
-  return (
-    <span className="bk-navigation-avatar" aria-hidden="true">
-      {profile.imageUrl !== undefined && failedUrl !== profile.imageUrl ? (
-        <img
-          src={profile.imageUrl}
-          alt=""
-          onError={() => {
-            setFailedUrl(profile.imageUrl);
-          }}
-        />
-      ) : (
-        profile.initials
-      )}
-    </span>
-  );
-}
-
-interface ProfileProps {
-  readonly closeLabel: string;
-  readonly profile: NavigationProfile;
-  readonly pathname: string;
-  readonly collapsed: boolean;
-  readonly itemProps: ReturnType<ReturnType<typeof useRovingMenu>['itemProps']>;
-  readonly onNavigate: Navigate | undefined;
-  readonly renderLink: NavigationLinkRenderer | undefined;
-}
-function Profile({
-  closeLabel,
-  profile,
-  pathname,
-  collapsed,
-  itemProps,
-  onNavigate,
-  renderLink,
-}: ProfileProps) {
-  const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const id = useId();
-  const active =
-    profile.href !== undefined
-      ? navigationMatches({ id: 'profile', label: profile.label, href: profile.href }, pathname)
-      : resolveActiveMenuEntry(profile.menu, pathname) !== null;
-  const content = (
-    <>
-      <Avatar profile={profile} active={active} />
-      <span className="bk-navigation-profile-copy">
-        <span className="bk-navigation-label">{profile.label}</span>
-        {profile.subtitle === undefined ? null : (
-          <span className="bk-navigation-subtitle">{profile.subtitle}</span>
-        )}
-      </span>
-    </>
-  );
-  const common = {
-    ...itemProps,
-    className: 'bk-navigation-item',
-    'aria-label': getNavigationProfileLabel(profile),
-    'data-active': active ? 'page' : undefined,
-    title: collapsed ? getNavigationProfileLabel(profile) : undefined,
-  };
-  return (
-    <div className="bk-navigation-profile">
-      {profile.href !== undefined ? (
-        <Link
-          {...common}
-          renderLink={renderLink}
-          href={profile.href}
-          aria-current={active ? 'page' : undefined}
-          onClick={(event) => {
-            follow(profile.href, event, onNavigate);
-          }}
-        >
-          {content}
-        </Link>
-      ) : (
-        <button
-          {...common}
-          type="button"
-          ref={(node) => {
-            triggerRef.current = node;
-            itemProps.ref(node);
-          }}
-          aria-haspopup="menu"
-          aria-expanded={open}
-          aria-controls={open ? id : undefined}
-          onClick={() => {
-            setOpen((value) => !value);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-              event.preventDefault();
-              setOpen(true);
-            } else itemProps.onKeyDown(event);
-          }}
-        >
-          {content}
-        </button>
-      )}
-      {open && profile.menu !== undefined ? (
-        <Menu
-          closeLabel={closeLabel}
-          entries={profile.menu}
-          id={id}
-          label={profile.label}
-          subtitle={profile.subtitle}
-          triggerRef={triggerRef}
-          onClose={() => {
-            setOpen(false);
-          }}
-          pathname={pathname}
-          onNavigate={onNavigate}
-          renderLink={renderLink}
-        />
-      ) : null}
-    </div>
-  );
 }
 
 export interface AppNavigationProps extends CollapseProps, NavigationSlots {
@@ -390,23 +79,29 @@ export interface AppNavigationProps extends CollapseProps, NavigationSlots {
   readonly className?: string;
 }
 
-export function AppNavigation(props: AppNavigationProps) {
-  const { items, pathname, profile, onNavigate, renderLink, label, collapseLabel, expandLabel } =
-    props;
-  validateNavigation(items, profile);
-  useAriaHiddenInert();
-  const measuredWidth = useSyncExternalStore(subscribeWidth, viewportWidth, serverWidth);
-  const layout = getNavigationLayout(props.width ?? measuredWidth);
-  const state = useNavigationState(items, pathname, props);
-  const collapsed = layout === 'rail' && state.collapsed;
-  const { reducedMotion, resolved } = useReducedMotionPreference();
-  const id = useId();
-  const navigationRef = useRef<HTMLElement>(null);
+type NavigationLayout = ReturnType<typeof getNavigationLayout>;
+type VisibleItem = NavigationItem<NavigationIcon> | NavigationSubItem<NavigationIcon>;
+
+interface NavigationModel {
+  readonly props: AppNavigationProps;
+  readonly layout: NavigationLayout;
+  readonly collapsed: boolean;
+  readonly state: NavigationStateHandle<NavigationIcon>;
+  readonly id: string;
+  readonly visible: readonly VisibleItem[];
+  readonly roving: ReturnType<typeof useRovingMenu>;
+}
+
+function useBarHeightReport(
+  navigationRef: RefObject<HTMLElement | null>,
+  layout: NavigationLayout,
+  onBarHeightChange: ((height: number) => void) | undefined,
+): void {
   useLayoutEffect(() => {
     const navigation = navigationRef.current;
-    if (layout !== 'bar' || navigation === null || props.onBarHeightChange === undefined) return;
-    const measure = () => {
-      props.onBarHeightChange?.(navigation.getBoundingClientRect().height);
+    if (layout !== 'bar' || navigation === null || onBarHeightChange === undefined) return;
+    const measure = (): void => {
+      onBarHeightChange(navigation.getBoundingClientRect().height);
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -414,286 +109,249 @@ export function AppNavigation(props: AppNavigationProps) {
     return () => {
       observer.disconnect();
     };
-  }, [layout, props.onBarHeightChange]);
-  const slotState = { layout, collapsed };
-  const brand = props.renderBrand?.(slotState);
-  const accessory = props.renderAccessory?.(slotState);
-  const hasBrand = brand != null && typeof brand !== 'boolean';
-  const hasAccessory = accessory != null && typeof accessory !== 'boolean';
-  const visible = items.flatMap((item) =>
-    layout === 'rail' && !collapsed && state.openIds.includes(item.id)
-      ? [item, ...(item.children ?? [])]
-      : [item],
+  }, [navigationRef, layout, onBarHeightChange]);
+}
+
+function visibleItems(
+  items: readonly NavigationItem<NavigationIcon>[],
+  expanded: boolean,
+  openIds: readonly string[],
+): VisibleItem[] {
+  return items.flatMap((item) =>
+    expanded && openIds.includes(item.id) ? [item, ...(item.children ?? [])] : [item],
   );
+}
+
+function useNavigationModel(props: AppNavigationProps): NavigationModel {
+  const { items, pathname, profile } = props;
+  validateNavigation(items, profile);
+  useAriaHiddenInert();
+  const measuredWidth = useSyncExternalStore(subscribeWidth, viewportWidth, serverWidth);
+  const layout = getNavigationLayout(props.width ?? measuredWidth);
+  const state = useNavigationState(items, pathname, props);
+  const collapsed = layout === 'rail' && state.collapsed;
+  const id = useId();
+  const visible = visibleItems(items, layout === 'rail' && !collapsed, state.openIds);
   const activeId = visible.some((item) => item.id === state.active.subItem?.id)
     ? state.active.subItem?.id
     : state.active.item?.id;
   const roving = useRovingMenu({
     active: true,
     options: [
-      ...visible.map((item) => ({
-        selected: item.id === activeId,
-      })),
+      ...visible.map((item) => ({ selected: item.id === activeId })),
       ...(profile === undefined ? [] : [{}]),
     ],
   });
+  return { props, layout, collapsed, state, id, visible, roving };
+}
+
+function rendersSomething(node: ReactNode): boolean {
+  return node !== null && node !== undefined && typeof node !== 'boolean';
+}
+
+function Slots({ model }: { readonly model: NavigationModel }): ReactNode {
+  const slotState = { layout: model.layout, collapsed: model.collapsed };
+  const brand = model.props.renderBrand?.(slotState);
+  const accessory = model.props.renderAccessory?.(slotState);
+  const hasBrand = rendersSomething(brand);
+  const hasAccessory = rendersSomething(accessory);
+  if (!hasBrand && !hasAccessory) return null;
+  return (
+    <div className="bk-navigation-slots">
+      {!hasBrand ? null : <div className="bk-navigation-brand">{brand}</div>}
+      {!hasAccessory ? null : <div className="bk-navigation-accessory">{accessory}</div>}
+    </div>
+  );
+}
+
+function CollapseToggle({ model }: { readonly model: NavigationModel }): ReactNode {
+  const { collapsed, props } = model;
+  return (
+    <button
+      className="bk-navigation-toggle"
+      type="button"
+      aria-label={collapsed ? props.expandLabel : props.collapseLabel}
+      aria-expanded={!collapsed}
+      onClick={() => {
+        model.state.setCollapsed(!collapsed);
+      }}
+    >
+      <span aria-hidden="true">{collapsed ? '›' : '‹'}</span>
+    </button>
+  );
+}
+
+function SectionChildren({
+  model,
+  item,
+  groupId,
+  open,
+}: {
+  readonly model: NavigationModel;
+  readonly item: NavigationItem<NavigationIcon>;
+  readonly groupId: string;
+  readonly open: boolean;
+}): ReactNode {
+  const { state, roving, visible, props } = model;
+  return (
+    <div
+      className="bk-navigation-children"
+      id={groupId}
+      role="group"
+      aria-label={item.label}
+      hidden={!open}
+    >
+      {(item.children ?? []).map((child) => {
+        const selected = state.active.subItem?.id === child.id;
+        return (
+          <Link
+            {...roving.itemProps(visible.indexOf(child))}
+            renderLink={props.renderLink}
+            key={child.id}
+            className="bk-navigation-item"
+            href={child.href}
+            aria-current={selected ? 'page' : undefined}
+            data-active={selected ? 'page' : undefined}
+            onClick={(event) => {
+              follow(child.href, event, props.onNavigate);
+            }}
+          >
+            {child.icon === undefined ? null : (
+              <span className="bk-navigation-icon" aria-hidden="true">
+                {child.icon({ active: selected, size: CHILD_ICON_SIZE })}
+              </span>
+            )}
+            {child.label}
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
+function activeMarker(active: boolean, ancestor: boolean): 'ancestor' | 'page' | undefined {
+  if (!active) return undefined;
+  return ancestor ? 'ancestor' : 'page';
+}
+
+function sectionHref(item: NavigationItem, cycle: boolean, pathname: string): string {
+  return cycle ? nextSectionHref(item, pathname) : item.href;
+}
+
+function NavigationSection({
+  model,
+  item,
+  index,
+}: {
+  readonly model: NavigationModel;
+  readonly item: NavigationItem<NavigationIcon>;
+  readonly index: number;
+}): ReactNode {
+  const { layout, collapsed, state, props } = model;
+  const active = state.active.item?.id === item.id;
+  const rail = layout === 'rail';
+  const ancestor = active && rail && !collapsed && state.active.subItem !== null;
+  const group = rail && (item.children ?? []).length > 0;
+  const open = !collapsed && state.openIds.includes(item.id);
+  const groupId = `${model.id}-${String(index)}`;
+  const content = (
+    <>
+      <span className="bk-navigation-icon" aria-hidden="true">
+        {item.icon({ active, size: ICON_SIZE })}
+      </span>
+      <span className="bk-navigation-label">{item.label}</span>
+    </>
+  );
+  const common = {
+    ...model.roving.itemProps(model.visible.indexOf(item)),
+    className: 'bk-navigation-item',
+    'aria-label': item.label,
+    'data-active': activeMarker(active, ancestor),
+    title: collapsed ? item.label : undefined,
+  };
+  const href = sectionHref(item, layout === 'bar' && active, props.pathname);
+  return (
+    <div className="bk-navigation-section" data-open={open}>
+      {group ? (
+        <button
+          {...common}
+          type="button"
+          aria-expanded={open}
+          aria-controls={groupId}
+          onClick={() => {
+            state.toggleGroup(item.id);
+          }}
+        >
+          {content}
+        </button>
+      ) : (
+        <Link
+          {...common}
+          renderLink={props.renderLink}
+          href={href}
+          aria-current={active ? 'page' : undefined}
+          onClick={(event) => {
+            follow(href, event, props.onNavigate);
+          }}
+        >
+          {content}
+        </Link>
+      )}
+      {group ? <SectionChildren model={model} item={item} groupId={groupId} open={open} /> : null}
+    </div>
+  );
+}
+
+function barGridStyle(model: NavigationModel): CSSProperties | undefined {
+  if (model.layout !== 'bar') return undefined;
+  const { items, profile } = model.props;
+  const columns = Math.max(1, items.length + (profile === undefined ? 0 : 1));
+  return {
+    gridTemplateColumns: `repeat(${String(columns)}, minmax(${String(NAVIGATION_DIMENSIONS.target)}px, 1fr))`,
+  };
+}
+
+function motionState(resolved: boolean, reducedMotion: boolean): string {
+  if (!resolved) return 'unresolved';
+  return reducedMotion ? 'reduced' : 'standard';
+}
+
+export function AppNavigation(props: AppNavigationProps): ReactNode {
+  const model = useNavigationModel(props);
+  const { layout, collapsed } = model;
+  const { reducedMotion, resolved } = useReducedMotionPreference();
+  const navigationRef = useRef<HTMLElement>(null);
+  useBarHeightReport(navigationRef, layout, props.onBarHeightChange);
+  const profile = props.profile;
   return (
     <nav
       ref={navigationRef}
-      style={
-        layout === 'bar'
-          ? {
-              gridTemplateColumns: `repeat(${String(Math.max(1, items.length + (profile === undefined ? 0 : 1)))}, minmax(${String(NAVIGATION_DIMENSIONS.target)}px, 1fr))`,
-            }
-          : undefined
-      }
-      aria-label={label}
+      style={barGridStyle(model)}
+      aria-label={props.label}
       className={`bk-navigation ${props.className ?? ''}`}
       data-testid="primary-navigation"
       data-layout={layout}
       data-collapsed={collapsed}
-      data-motion={!resolved ? 'unresolved' : reducedMotion ? 'reduced' : 'standard'}
+      data-motion={motionState(resolved, reducedMotion)}
     >
-      {!hasBrand && !hasAccessory ? null : (
-        <div className="bk-navigation-slots">
-          {!hasBrand ? null : <div className="bk-navigation-brand">{brand}</div>}
-          {!hasAccessory ? null : <div className="bk-navigation-accessory">{accessory}</div>}
-        </div>
-      )}
-      {layout === 'rail' ? (
-        <button
-          className="bk-navigation-toggle"
-          type="button"
-          aria-label={collapsed ? expandLabel : collapseLabel}
-          aria-expanded={!collapsed}
-          onClick={() => {
-            state.setCollapsed(!collapsed);
-          }}
-        >
-          <span aria-hidden="true">{collapsed ? '›' : '‹'}</span>
-        </button>
-      ) : null}
+      <Slots model={model} />
+      {layout === 'rail' ? <CollapseToggle model={model} /> : null}
       <div className="bk-navigation-items">
-        {items.map((item, index) => {
-          const active = state.active.item?.id === item.id;
-          const ancestor =
-            active && layout === 'rail' && !collapsed && state.active.subItem !== null;
-          const children = item.children ?? [];
-          const open = !collapsed && state.openIds.includes(item.id);
-          const groupId = `${id}-${String(index)}`;
-          const itemProps = roving.itemProps(visible.indexOf(item));
-          const content = (
-            <>
-              <span className="bk-navigation-icon" aria-hidden="true">
-                {item.icon({ active, size: 24 })}
-              </span>
-              <span className="bk-navigation-label">{item.label}</span>
-            </>
-          );
-          const common = {
-            ...itemProps,
-            className: 'bk-navigation-item',
-            'aria-label': item.label,
-            'data-active': active ? (ancestor ? 'ancestor' : 'page') : undefined,
-            title: collapsed ? item.label : undefined,
-          };
-          const href = layout === 'bar' && active ? nextSectionHref(item, pathname) : item.href;
-          return (
-            <div className="bk-navigation-section" key={item.id} data-open={open}>
-              {layout === 'rail' && children.length > 0 ? (
-                <button
-                  {...common}
-                  type="button"
-                  aria-expanded={open}
-                  aria-controls={groupId}
-                  onClick={() => {
-                    state.toggleGroup(item.id);
-                  }}
-                >
-                  {content}
-                </button>
-              ) : (
-                <Link
-                  {...common}
-                  renderLink={renderLink}
-                  href={href}
-                  aria-current={active ? 'page' : undefined}
-                  onClick={(event) => {
-                    follow(href, event, onNavigate);
-                  }}
-                >
-                  {content}
-                </Link>
-              )}
-              {layout === 'rail' && children.length > 0 ? (
-                <div
-                  className="bk-navigation-children"
-                  id={groupId}
-                  role="group"
-                  aria-label={item.label}
-                  hidden={!open}
-                >
-                  {children.map((child) => {
-                    const selected = state.active.subItem?.id === child.id;
-                    return (
-                      <Link
-                        {...roving.itemProps(visible.indexOf(child))}
-                        renderLink={renderLink}
-                        key={child.id}
-                        className="bk-navigation-item"
-                        href={child.href}
-                        aria-current={selected ? 'page' : undefined}
-                        data-active={selected ? 'page' : undefined}
-                        onClick={(event) => {
-                          follow(child.href, event, onNavigate);
-                        }}
-                      >
-                        {child.icon === undefined ? null : (
-                          <span className="bk-navigation-icon" aria-hidden="true">
-                            {child.icon({ active: selected, size: 20 })}
-                          </span>
-                        )}
-                        {child.label}
-                      </Link>
-                    );
-                  })}
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
+        {props.items.map((item, index) => (
+          <NavigationSection key={item.id} model={model} item={item} index={index} />
+        ))}
       </div>
       {profile === undefined ? null : (
         <Profile
           closeLabel={props.closeLabel}
           profile={profile}
-          pathname={pathname}
+          pathname={props.pathname}
           collapsed={collapsed}
-          itemProps={roving.itemProps(visible.length)}
-          onNavigate={onNavigate}
-          renderLink={renderLink}
+          itemProps={model.roving.itemProps(model.visible.length)}
+          onNavigate={props.onNavigate}
+          renderLink={props.renderLink}
         />
       )}
-    </nav>
-  );
-}
-
-const SECTION_MENU_GAP = 8;
-
-function useSectionMenuHeight(open: boolean, triggerRef: RefObject<HTMLButtonElement | null>) {
-  const [height, setHeight] = useState<number>();
-  const measuredHeight = useRef<number | undefined>(undefined);
-  useLayoutEffect(() => {
-    const trigger = triggerRef.current;
-    if (!open || trigger === null) return;
-    function measure() {
-      const bar = document.querySelector<HTMLElement>(".bk-navigation[data-layout='bar']");
-      if (trigger === null) return;
-      const viewportBottom =
-        (window.visualViewport?.height ?? window.innerHeight) +
-        (window.visualViewport?.offsetTop ?? 0);
-      const bottom = Math.min(viewportBottom, bar?.getBoundingClientRect().top ?? viewportBottom);
-      const nextHeight = Math.max(
-        0,
-        bottom - trigger.getBoundingClientRect().bottom - SECTION_MENU_GAP * 2,
-      );
-      if (measuredHeight.current === nextHeight) return;
-      measuredHeight.current = nextHeight;
-      setHeight(nextHeight);
-    }
-    measure();
-    const observer = 'ResizeObserver' in window ? new ResizeObserver(measure) : undefined;
-    for (
-      let element: HTMLElement | null = trigger;
-      element !== null;
-      element = element.parentElement
-    ) {
-      observer?.observe(element);
-    }
-    const navigation = document.querySelector('.bk-navigation');
-    if (navigation !== null) observer?.observe(navigation);
-    window.addEventListener('resize', measure);
-    window.addEventListener('scroll', measure, true);
-    window.visualViewport?.addEventListener('resize', measure);
-    return () => {
-      observer?.disconnect();
-      window.removeEventListener('resize', measure);
-      window.removeEventListener('scroll', measure, true);
-      window.visualViewport?.removeEventListener('resize', measure);
-    };
-  }, [open, triggerRef]);
-  return height;
-}
-
-export interface SectionPickerProps {
-  readonly replace?: boolean;
-  readonly closeLabel: string;
-  readonly item: NavigationItem<NavigationIcon>;
-  readonly pathname: string;
-  readonly onNavigate?: Navigate;
-  readonly renderLink?: NavigationLinkRenderer;
-}
-export function SectionPicker({
-  replace = false,
-  item,
-  pathname,
-  onNavigate,
-  renderLink,
-  closeLabel,
-}: SectionPickerProps) {
-  const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const maxHeight = useSectionMenuHeight(open, triggerRef);
-  const id = useId();
-  const active = resolveActiveNavigation([item], pathname).subItem ?? item.children?.[0];
-  const entries = item.children ?? [];
-  if (entries.length === 0) return null;
-  const label = `${item.label}, ${active?.label ?? ''}`;
-  return (
-    <nav aria-label={item.label} className="bk-navigation-picker">
-      <button
-        className="bk-navigation-picker-trigger"
-        type="button"
-        ref={triggerRef}
-        aria-label={label}
-        aria-expanded={open}
-        aria-haspopup="menu"
-        aria-controls={open ? id : undefined}
-        onClick={() => {
-          setOpen((value) => !value);
-        }}
-      >
-        <span>
-          <span className="bk-navigation-picker-section">{item.label}</span>
-          <span>{active?.label}</span>
-        </span>
-        <span aria-hidden="true">⌄</span>
-      </button>
-      {open ? (
-        <Menu
-          {...(replace ? { replace } : {})}
-          closeLabel={closeLabel}
-          entries={entries}
-          maxHeight={maxHeight}
-          id={id}
-          label={item.label}
-          triggerRef={triggerRef}
-          onClose={() => {
-            setOpen(false);
-          }}
-          pathname={pathname}
-          onNavigate={
-            onNavigate === undefined
-              ? undefined
-              : (href, event) => {
-                  announce(entries.find((entry) => entry.href === href)?.label ?? item.label);
-                  if (replace) onNavigate(href, event, { replace: true });
-                  else onNavigate(href, event);
-                }
-          }
-          renderLink={renderLink}
-        />
-      ) : null}
     </nav>
   );
 }

@@ -9,14 +9,16 @@
   "scripts": {
     "build": "turbo run build",
     "test": "turbo run test",
-    "lint": "turbo run lint",
+    "lint": "turbo run lint && pnpm run lint:root",
+    "lint:root": "eslint eslint.config.js scripts vitest.config.ts --max-warnings=0",
     "format:check": "turbo run format:check",
-    "check": "turbo run build lint test format:check",
+    "check": "turbo run build lint test format:check && pnpm run lint:root",
     "changeset": "changeset",
     "version-packages": "changeset version",
     "test:source-maps": "node --test scripts/packed-source-maps.test.mjs"
   },
   "devDependencies": {
+    "@baukit/eslint-config": "workspace:*",
     "@changesets/cli": "3.0.3",
     "@eslint/js": "10.0.1",
     "eslint": "10.12.0",
@@ -24,6 +26,6 @@
     "turbo": "2.11.7",
     "typescript": "6.0.3",
     "typescript-eslint": "8.71.0",
-    "vitest": "5.0.3"
+    "vitest": "5.0.5"
   }
 }

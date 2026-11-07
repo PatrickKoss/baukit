@@ -278,7 +278,7 @@ export class SyncTransport {
     const forwardAbort = (): void => {
       controller.abort(callerSignal?.reason);
     };
-    if (callerSignal?.aborted) forwardAbort();
+    if (callerSignal?.aborted === true) forwardAbort();
     callerSignal?.addEventListener('abort', forwardAbort, { once: true });
     let timer: ReturnType<typeof setTimeout> | undefined;
     const deadline = new Promise<never>((_, reject) => {

@@ -197,7 +197,7 @@ export function parseLimitsPolicy<const Schema extends LimitsPolicySchema>(
   const allowZero = new Set(schema.allowZero ?? []);
   const rangeKeys = new Set(schema.rangeKeys ?? []);
   for (const [section, keys] of Object.entries(schema.sections)) {
-    checkPolicySection(policy, section, keys, allowZero, rangeKeys);
+    checkPolicySection(policy, { section, keys, allowZero, rangeKeys });
   }
   return policy as LimitsPolicy<Schema>;
 }
@@ -229,18 +229,22 @@ function assertPolicySchema(schema: LimitsPolicySchema): void {
   }
   for (const path of schema.rangeKeys ?? []) {
     if (!known.has(path)) throw new TypeError(`Limits policy rangeKeys names unknown ${path}`);
-    if (schema.allowZero?.includes(path)) {
+    if (schema.allowZero?.includes(path) === true) {
       throw new TypeError(`Limits policy range key ${path} cannot also use allowZero`);
     }
   }
 }
 
+interface PolicySection {
+  readonly section: string;
+  readonly keys: readonly string[];
+  readonly allowZero: ReadonlySet<string>;
+  readonly rangeKeys: ReadonlySet<string>;
+}
+
 function checkPolicySection(
   policy: Record<string, unknown>,
-  section: string,
-  keys: readonly string[],
-  allowZero: ReadonlySet<string>,
-  rangeKeys: ReadonlySet<string>,
+  { section, keys, allowZero, rangeKeys }: PolicySection,
 ): void {
   const path = `${POLICY_ROOT}.${section}`;
   const values = expectPolicyObject(policy[section], path);
@@ -352,35 +356,38 @@ function assertJsonValue(value: unknown, ancestors: WeakSet<object>): void {
 
   ancestors.add(value);
   try {
-    if (Object.getOwnPropertySymbols(value).length > 0) {
-      throw new ResourceMeasurementError('unsupported_json_value');
-    }
-    if (Array.isArray(value)) {
-      for (let index = 0; index < value.length; index += 1) {
-        const descriptor = Object.getOwnPropertyDescriptor(value, index);
-        if (descriptor === undefined || !('value' in descriptor)) {
-          throw new ResourceMeasurementError('unsupported_json_value');
-        }
-        assertJsonValue(descriptor.value, ancestors);
-      }
-      return;
-    }
-
-    const prototype = Object.getPrototypeOf(value) as object | null;
-    if (prototype !== Object.prototype && prototype !== null) {
-      throw new ResourceMeasurementError('unsupported_json_value');
-    }
-    for (const key of Object.keys(value)) {
-      unicodeScalars(key);
-      const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      if (descriptor === undefined || !('value' in descriptor)) {
-        throw new ResourceMeasurementError('unsupported_json_value');
-      }
-      assertJsonValue(descriptor.value, ancestors);
-    }
+    assertJsonContainer(value, ancestors);
   } finally {
     ancestors.delete(value);
   }
+}
+
+function assertJsonContainer(value: object, ancestors: WeakSet<object>): void {
+  if (Object.getOwnPropertySymbols(value).length > 0) {
+    throw new ResourceMeasurementError('unsupported_json_value');
+  }
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      assertJsonValue(ownDataValue(value, index), ancestors);
+    }
+    return;
+  }
+  const prototype = Object.getPrototypeOf(value) as object | null;
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new ResourceMeasurementError('unsupported_json_value');
+  }
+  for (const key of Object.keys(value)) {
+    unicodeScalars(key);
+    assertJsonValue(ownDataValue(value, key), ancestors);
+  }
+}
+
+function ownDataValue(value: object, key: PropertyKey): unknown {
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+  if (descriptor === undefined || !('value' in descriptor)) {
+    throw new ResourceMeasurementError('unsupported_json_value');
+  }
+  return descriptor.value;
 }
 
 function utf8ByteLength(value: string): number {

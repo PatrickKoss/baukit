@@ -93,6 +93,23 @@ function startsWithAny(pathname: string, prefixes: readonly string[]): boolean {
   return prefixes.some((prefix) => prefix.length > 0 && pathname.startsWith(prefix));
 }
 
+function isStaticAsset(
+  request: CacheStrategyRequest,
+  pathname: string,
+  options: CacheStrategyOptions,
+): boolean {
+  const {
+    staticPathPrefixes = [],
+    staticDestinations = DEFAULT_STATIC_DESTINATIONS,
+    staticExtensions = DEFAULT_STATIC_EXTENSIONS,
+  } = options;
+  return (
+    (request.destination !== undefined && staticDestinations.includes(request.destination)) ||
+    hasStaticExtension(pathname, staticExtensions) ||
+    startsWithAny(pathname, staticPathPrefixes)
+  );
+}
+
 export function decideCacheStrategyDecision(
   request: CacheStrategyRequest,
   options: CacheStrategyOptions,
@@ -102,9 +119,6 @@ export function decideCacheStrategyDecision(
     apiPathPrefixes = DEFAULT_API_PATH_PREFIXES,
     navigationFallback,
     neverCachedPathPrefixes = [],
-    staticPathPrefixes = [],
-    staticDestinations = DEFAULT_STATIC_DESTINATIONS,
-    staticExtensions = DEFAULT_STATIC_EXTENSIONS,
     apiStrategy = CACHE_STRATEGIES.networkFirst,
     staticStrategy = CACHE_STRATEGIES.cacheFirst,
     defaultStrategy = CACHE_STRATEGIES.networkFirst,
@@ -134,11 +148,7 @@ export function decideCacheStrategyDecision(
     return { strategy: defaultStrategy };
   }
 
-  const staticAsset =
-    (request.destination !== undefined && staticDestinations.includes(request.destination)) ||
-    hasStaticExtension(pathname, staticExtensions) ||
-    startsWithAny(pathname, staticPathPrefixes);
-
+  const staticAsset = isStaticAsset(request, pathname, options);
   return { strategy: sameOrigin && staticAsset ? staticStrategy : defaultStrategy };
 }
 

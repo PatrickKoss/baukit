@@ -1,6 +1,16 @@
+import {
+  isNonNegativeSafeInteger,
+  isRecord,
+  isString,
+  isStringArray,
+  nullable,
+} from '@baukit/type-guards';
 import type {
+  BillingChannel,
+  BillingClaim,
   CreditBalanceSnapshot,
   EntitlementBackend,
+  EntitlementOrganization,
   VerifiedEntitlement,
 } from './entitlement.js';
 
@@ -40,61 +50,116 @@ export interface AccountPlanBackendOptions {
   readonly headers?: () => Promise<Record<string, string>> | Record<string, string>;
 }
 
-type Json = Record<string, unknown>;
+const billingChannels: readonly BillingChannel[] = [
+  'web',
+  'app_store',
+  'play_store',
+  'family',
+  'organization',
+  'promo',
+];
 
-function record(value: unknown): value is Json {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+const isNullableString = nullable(isString);
+const isNullableCount = nullable(isNonNegativeSafeInteger);
+
+function isBillingChannel(value: unknown): value is BillingChannel {
+  return billingChannels.some((channel) => channel === value);
 }
-function count(value: unknown): value is number {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+
+function invalidEntitlement(): never {
+  throw new TypeError('The API returned an invalid entitlement.');
 }
-function nullable(value: unknown, check: (value: unknown) => boolean): boolean {
-  return value === null || check(value);
+
+function invalidBalance(): never {
+  throw new TypeError('The API returned an invalid credit balance.');
 }
-function text(value: unknown): value is string {
-  return typeof value === 'string';
+
+function parseBilling(value: unknown): BillingClaim | null {
+  if (value === null) return null;
+  if (!isRecord(value) || !isBillingChannel(value['channel'])) return invalidEntitlement();
+  const { soldBy, manageUrl } = value;
+  if (![soldBy, manageUrl].every((field) => field === undefined || isString(field)))
+    return invalidEntitlement();
+  return {
+    channel: value['channel'],
+    ...(isString(soldBy) ? { soldBy } : {}),
+    ...(isString(manageUrl) ? { manageUrl } : {}),
+  };
+}
+
+function parseOrganization(value: unknown): EntitlementOrganization | null {
+  if (value === null) return null;
+  if (!isRecord(value) || !isString(value['organizationId']) || !isNullableString(value['name']))
+    return invalidEntitlement();
+  return { organizationId: value['organizationId'], name: value['name'] };
 }
 
 function parseEntitlement(value: unknown): VerifiedEntitlement {
+  if (!isRecord(value)) return invalidEntitlement();
+  const { mode, suiteSubject, tier, features, revision, plansUrl } = value;
   if (
-    !record(value) ||
-    (value['mode'] !== 'hub' && value['mode'] !== 'standalone') ||
-    !text(value['suiteSubject']) ||
-    !text(value['tier']) ||
-    !Array.isArray(value['features']) ||
-    !value['features'].every(text) ||
-    !count(value['revision']) ||
-    !nullable(value['plansUrl'], text) ||
-    !nullable(value['billing'], record) ||
-    !(value['organization'] === undefined || nullable(value['organization'], organization))
+    (mode !== 'hub' && mode !== 'standalone') ||
+    !isString(suiteSubject) ||
+    !isString(tier) ||
+    !isStringArray(features) ||
+    !isNonNegativeSafeInteger(revision) ||
+    !isNullableString(plansUrl)
   ) {
-    throw new TypeError('The API returned an invalid entitlement.');
+    return invalidEntitlement();
   }
-  return value as unknown as VerifiedEntitlement;
+  const entitlement: VerifiedEntitlement = {
+    mode,
+    suiteSubject,
+    tier,
+    features,
+    revision,
+    plansUrl,
+    billing: parseBilling(value['billing']),
+  };
+  if (value['organization'] === undefined) return entitlement;
+  return { ...entitlement, organization: parseOrganization(value['organization']) };
 }
 
-function organization(value: unknown): boolean {
-  return record(value) && text(value['organizationId']) && nullable(value['name'], text);
+function parsePack(value: unknown): CreditBalanceSnapshot['packs'][number] {
+  if (
+    !isRecord(value) ||
+    !isNonNegativeSafeInteger(value['available']) ||
+    !isNonNegativeSafeInteger(value['expiresAt'])
+  )
+    return invalidBalance();
+  return { available: value['available'], expiresAt: value['expiresAt'] };
+}
+
+function parseGrant(value: unknown): CreditBalanceSnapshot['grant'] {
+  if (
+    !isRecord(value) ||
+    !isNonNegativeSafeInteger(value['available']) ||
+    !isNullableCount(value['expiresAt'])
+  )
+    return invalidBalance();
+  return { available: value['available'], expiresAt: value['expiresAt'] };
 }
 
 function parseBalance(value: unknown): CreditBalanceSnapshot {
-  const grant = record(value) ? value['grant'] : undefined;
-  const packs = record(value) ? value['packs'] : undefined;
+  if (!isRecord(value)) return invalidBalance();
+  const { suiteSubject, wallet, revision, total, packs } = value;
   if (
-    !record(value) ||
-    !text(value['suiteSubject']) ||
-    !text(value['wallet']) ||
-    !count(value['revision']) ||
-    !count(value['total']) ||
-    !record(grant) ||
-    !count(grant['available']) ||
-    !nullable(grant['expiresAt'], count) ||
-    !Array.isArray(packs) ||
-    !packs.every((pack) => record(pack) && count(pack['available']) && count(pack['expiresAt']))
+    !isString(suiteSubject) ||
+    !isString(wallet) ||
+    !isNonNegativeSafeInteger(revision) ||
+    !isNonNegativeSafeInteger(total) ||
+    !Array.isArray(packs)
   ) {
-    throw new TypeError('The API returned an invalid credit balance.');
+    return invalidBalance();
   }
-  return value as unknown as CreditBalanceSnapshot;
+  return {
+    suiteSubject,
+    wallet,
+    revision,
+    total,
+    grant: parseGrant(value['grant']),
+    packs: packs.map(parsePack),
+  };
 }
 
 async function failure(response: Response): Promise<AccountPlanError> {
@@ -102,8 +167,8 @@ async function failure(response: Response): Promise<AccountPlanError> {
   let code = 'internal_error';
   try {
     const body: unknown = await response.json();
-    const error = record(body) ? body['error'] : undefined;
-    if (record(error) && text(error['code'])) code = error['code'];
+    const error = isRecord(body) ? body['error'] : undefined;
+    if (isRecord(error) && isString(error['code'])) code = error['code'];
   } catch {
     code = 'internal_error';
   }

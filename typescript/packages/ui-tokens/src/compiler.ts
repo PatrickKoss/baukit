@@ -1,12 +1,9 @@
+import { isRecord } from '@baukit/type-guards';
 import type { DesignTokens, ThemeColor } from './schema.js';
 
 interface FlatToken {
   readonly path: string;
   readonly value: number | string;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function isThemeColor(value: unknown): value is ThemeColor {

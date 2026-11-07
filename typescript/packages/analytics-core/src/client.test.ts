@@ -178,7 +178,7 @@ describe('AnalyticsClient capture pipeline', () => {
     const client = createClient({ transport });
     client.setConsent('granted');
 
-    client.capture({
+    const undeclared: ProductEvent & { properties: { unknown_email: string } } = {
       name: 'onboarding_started',
       properties: {
         source: 'organic',
@@ -186,7 +186,8 @@ describe('AnalyticsClient capture pipeline', () => {
         api_token: 'short-secret',
         unknown_email: 'leaked@example.com',
       },
-    } as ProductEvent);
+    };
+    client.capture(undeclared);
     await client.flush();
 
     expect(transport.envelopes[0]).toMatchObject({

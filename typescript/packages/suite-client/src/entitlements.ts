@@ -1,4 +1,11 @@
 import { ed25519 } from '@noble/curves/ed25519';
+import {
+  isNonEmptyString,
+  isNonNegativeSafeInteger,
+  isRecord,
+  isSafeInteger,
+  isStringArray,
+} from '@baukit/type-guards';
 
 export type TicketErrorCode = 'ticket_invalid' | 'ticket_expired' | 'ticket_wrong_audience';
 
@@ -62,14 +69,8 @@ function invalid(): never {
   throw new TicketVerificationError('ticket_invalid');
 }
 function record(value: unknown): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) invalid();
-  return value as Record<string, unknown>;
-}
-function nonempty(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0;
-}
-function integer(value: unknown): value is number {
-  return typeof value === 'number' && Number.isSafeInteger(value);
+  if (!isRecord(value)) invalid();
+  return value;
 }
 function decode(value: string): Uint8Array {
   if (!/^[A-Za-z0-9_-]+$/u.test(value) || value.length % 4 === 1) invalid();
@@ -96,7 +97,7 @@ function json(value: string): Record<string, unknown> {
   ).join('');
   return record(JSON.parse(decodeURIComponent(escaped)) as unknown);
 }
-const billingChannels: readonly string[] = [
+const billingChannels: readonly BillingChannel[] = [
   'web',
   'app_store',
   'play_store',
@@ -104,60 +105,77 @@ const billingChannels: readonly string[] = [
   'organization',
   'promo',
 ];
+function isBillingChannel(value: unknown): value is BillingChannel {
+  return billingChannels.some((channel) => channel === value);
+}
 // Hermes has no complete URL class, so the check stays a pattern.
 const httpUrlPattern = /^https?:\/\/[^\s/?#@]+(?:[/?#]\S*)?$/u;
 function httpUrl(value: string): boolean {
   return httpUrlPattern.test(value);
 }
-function validBilling(value: unknown): boolean {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
-  const claim = value as Record<string, unknown>;
-  const channel = claim['channel'];
+function billingClaim(value: unknown): BillingClaim | undefined {
+  if (!isRecord(value)) return undefined;
+  const channel = value['channel'];
   if (
-    Object.keys(claim).some((key) => !['channel', 'soldBy', 'manageUrl'].includes(key)) ||
-    typeof channel !== 'string' ||
-    !billingChannels.includes(channel)
+    Object.keys(value).some((key) => !['channel', 'soldBy', 'manageUrl'].includes(key)) ||
+    !isBillingChannel(channel)
   )
-    return false;
+    return undefined;
   const store = channel === 'app_store' || channel === 'play_store';
-  if ('soldBy' in claim && !(store && nonempty(claim['soldBy']))) return false;
-  const manageUrl = claim['manageUrl'];
-  return (
-    !('manageUrl' in claim) ||
-    (channel === 'web' && typeof manageUrl === 'string' && httpUrl(manageUrl))
-  );
-}
-function claims(value: Record<string, unknown>, options: TicketVerificationOptions): TicketClaims {
-  const allowed = [
-    'iss',
-    'sub',
-    'aud',
-    'tier',
-    'features',
-    'rev',
-    'iat',
-    'exp',
-    'grace',
-    'billing',
-  ];
+  const soldBy = value['soldBy'];
+  if ('soldBy' in value && !(store && isNonEmptyString(soldBy))) return undefined;
+  const manageUrl = value['manageUrl'];
   if (
-    Object.keys(value).some((key) => !allowed.includes(key)) ||
-    !nonempty(value['iss']) ||
-    !nonempty(value['sub']) ||
-    !nonempty(value['aud']) ||
-    !nonempty(value['tier']) ||
-    !Array.isArray(value['features']) ||
-    !value['features'].every((feature: unknown) => typeof feature === 'string') ||
-    !integer(value['rev']) ||
-    value['rev'] < 0 ||
-    !integer(value['iat']) ||
-    value['iat'] < 0 ||
-    !integer(value['exp']) ||
-    ('grace' in value && !integer(value['grace'])) ||
-    ('billing' in value && !validBilling(value['billing']))
+    'manageUrl' in value &&
+    !(channel === 'web' && typeof manageUrl === 'string' && httpUrl(manageUrl))
+  )
+    return undefined;
+  return {
+    channel,
+    ...(typeof soldBy === 'string' ? { soldBy } : {}),
+    ...(typeof manageUrl === 'string' ? { manageUrl } : {}),
+  };
+}
+const allowedClaims = [
+  'iss',
+  'sub',
+  'aud',
+  'tier',
+  'features',
+  'rev',
+  'iat',
+  'exp',
+  'grace',
+  'billing',
+];
+function optionalClaims(value: Record<string, unknown>): Pick<TicketClaims, 'grace' | 'billing'> {
+  const grace = value['grace'];
+  if ('grace' in value && !isSafeInteger(grace)) invalid();
+  const billing = 'billing' in value ? billingClaim(value['billing']) : undefined;
+  if ('billing' in value && billing === undefined) invalid();
+  return {
+    ...(isSafeInteger(grace) ? { grace } : {}),
+    ...(billing === undefined ? {} : { billing }),
+  };
+}
+function parseClaims(value: Record<string, unknown>): TicketClaims {
+  const { iss, sub, aud, tier, features, rev, iat, exp } = value;
+  if (
+    Object.keys(value).some((key) => !allowedClaims.includes(key)) ||
+    !isNonEmptyString(iss) ||
+    !isNonEmptyString(sub) ||
+    !isNonEmptyString(aud) ||
+    !isNonEmptyString(tier) ||
+    !isStringArray(features) ||
+    !isNonNegativeSafeInteger(rev) ||
+    !isNonNegativeSafeInteger(iat) ||
+    !isSafeInteger(exp)
   )
     invalid();
-  const result = value as unknown as TicketClaims;
+  return { iss, sub, aud, tier, features, rev, iat, exp, ...optionalClaims(value) };
+}
+function claims(value: Record<string, unknown>, options: TicketVerificationOptions): TicketClaims {
+  const result = parseClaims(value);
   if (
     result.iss !== options.issuer ||
     result.iat > options.now + iatLeewaySeconds ||
@@ -170,6 +188,59 @@ function claims(value: Record<string, unknown>, options: TicketVerificationOptio
   return result;
 }
 
+interface TicketParts {
+  readonly header: string;
+  readonly payload: string;
+  readonly signature: string;
+}
+function ticketParts(ticket: string, options: TicketVerificationOptions): TicketParts {
+  if (
+    ticket.length > maxTicketBytes ||
+    !isSafeInteger(options.now) ||
+    options.issuer === '' ||
+    options.audience === ''
+  )
+    invalid();
+  const [header, payload, signature, extra] = ticket.split('.');
+  if (
+    !isNonEmptyString(header) ||
+    !isNonEmptyString(payload) ||
+    !isNonEmptyString(signature) ||
+    extra !== undefined
+  )
+    invalid();
+  return { header, payload, signature };
+}
+function headerKid(header: Record<string, unknown>): string {
+  const kid = header['kid'];
+  if (
+    header['alg'] !== 'EdDSA' ||
+    !isNonEmptyString(kid) ||
+    kid.length > maxKidLength ||
+    ('typ' in header && header['typ'] !== 'JWT') ||
+    Object.keys(header).some((key) => !['alg', 'kid', 'typ'].includes(key))
+  )
+    invalid();
+  return kid;
+}
+function verificationKey(jwks: TicketJwks, kid: string): TicketJwk {
+  if (
+    jwks.keys.length > maxJwksKeys ||
+    new Set(jwks.keys.map((key) => key.kid)).size !== jwks.keys.length
+  )
+    invalid();
+  const key = jwks.keys.find((candidate) => candidate.kid === kid);
+  if (
+    key?.kty !== 'OKP' ||
+    key.crv !== 'Ed25519' ||
+    (key.alg !== undefined && key.alg !== 'EdDSA') ||
+    (key.use !== undefined && key.use !== 'sig') ||
+    key.key_ops?.includes('verify') === false
+  )
+    invalid();
+  return key;
+}
+
 /** Verify offline against trusted, embedded or previously fetched hub public keys.
  * Compare the returned sub with the current suite subject before granting access.
  * Refresh keys on an unknown kid through the product's trusted network adapter.
@@ -180,41 +251,12 @@ export function verifyTicket(
   options: TicketVerificationOptions,
 ): TicketClaims {
   try {
-    if (
-      ticket.length > maxTicketBytes ||
-      !integer(options.now) ||
-      !options.issuer ||
-      !options.audience
-    )
+    const parts = ticketParts(ticket, options);
+    const key = verificationKey(jwks, headerKid(json(parts.header)));
+    const input = Uint8Array.from(`${parts.header}.${parts.payload}`, (char) => char.charCodeAt(0));
+    if (!ed25519.verify(decode(parts.signature), input, decode(key.x), { zip215: false }))
       invalid();
-    const [headerPart, payloadPart, signaturePart, extra] = ticket.split('.');
-    if (!headerPart || !payloadPart || !signaturePart || extra !== undefined) invalid();
-    const header = json(headerPart);
-    if (
-      header['alg'] !== 'EdDSA' ||
-      !nonempty(header['kid']) ||
-      header['kid'].length > maxKidLength ||
-      ('typ' in header && header['typ'] !== 'JWT') ||
-      Object.keys(header).some((key) => !['alg', 'kid', 'typ'].includes(key))
-    )
-      invalid();
-    if (
-      jwks.keys.length > maxJwksKeys ||
-      new Set(jwks.keys.map((key) => key.kid)).size !== jwks.keys.length
-    )
-      invalid();
-    const key = jwks.keys.find((key) => key.kid === header['kid']);
-    if (
-      key?.kty !== 'OKP' ||
-      key.crv !== 'Ed25519' ||
-      (key.alg !== undefined && key.alg !== 'EdDSA') ||
-      (key.use !== undefined && key.use !== 'sig') ||
-      key.key_ops?.includes('verify') === false
-    )
-      invalid();
-    const input = Uint8Array.from(`${headerPart}.${payloadPart}`, (char) => char.charCodeAt(0));
-    if (!ed25519.verify(decode(signaturePart), input, decode(key.x), { zip215: false })) invalid();
-    return claims(json(payloadPart), options);
+    return claims(json(parts.payload), options);
   } catch (error) {
     if (error instanceof TicketVerificationError) throw error;
     return invalid();

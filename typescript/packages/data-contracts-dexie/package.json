@@ -40,17 +40,17 @@
     "test": "tsc -p tsconfig.test.json && vitest run --config ../../vitest.config.ts --exclude 'src/**/*.browser.test.ts' && node ../../scripts/test-packed-exports.mjs",
     "test:browser": "tsc -p tsconfig.browser.json && vitest run --config vitest.browser.config.ts",
     "check": "pnpm run build && pnpm run lint && pnpm run test && pnpm run format:check && pnpm run test:browser",
-    "lint": "eslint src --max-warnings=0",
+    "lint": "eslint . --max-warnings=0",
     "format:check": "prettier --check src package.json tsconfig.json tsconfig.test.json tsconfig.browser.json vitest.browser.config.ts"
   },
   "devDependencies": {
     "@baukit/data-contracts": "workspace:*",
-    "@vitest/browser-playwright": "5.0.3",
+    "@vitest/browser-playwright": "5.0.5",
     "dexie": "4.4.6",
     "fake-indexeddb": "6.2.5",
     "playwright": "1.63.0",
     "typescript": "6.0.3",
-    "vitest": "5.0.3"
+    "vitest": "5.0.5"
   },
   "peerDependencies": {
     "@baukit/data-contracts": "^0.18.3",

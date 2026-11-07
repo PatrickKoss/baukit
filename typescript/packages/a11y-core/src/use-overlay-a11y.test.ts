@@ -34,7 +34,8 @@ const CONTAINER = { id: 'container' };
 const TRIGGER = { id: 'trigger' };
 
 function ref(current: unknown): RefObject<View | null> {
-  return { current } as RefObject<View | null>;
+  const holder: RefObject<unknown> = { current };
+  return holder as RefObject<View | null>;
 }
 
 function flushInteractions(): void {

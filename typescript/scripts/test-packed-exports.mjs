@@ -38,6 +38,16 @@ function pack(destination) {
   });
 }
 
+// Unreleased `@baukit/*` siblings are not on npm yet, so install them from the workspace.
+function workspaceOverrides(dependencies) {
+  const packagesRoot = join(packageRoot, '..');
+  return Object.fromEntries(
+    Object.keys(dependencies)
+      .filter((name) => name.startsWith('@baukit/'))
+      .map((name) => [name, `file:${join(packagesRoot, name.slice('@baukit/'.length))}`]),
+  );
+}
+
 async function installPacked() {
   pack(workDirectory);
   const archives = (await readdir(workDirectory)).filter((name) => name.endsWith('.tgz'));
@@ -57,6 +67,10 @@ async function installPacked() {
     await writeFile(
       join(workDirectory, 'package.json'),
       JSON.stringify({ private: true, dependencies }),
+    );
+    await writeFile(
+      join(workDirectory, 'pnpm-workspace.yaml'),
+      `overrides: ${JSON.stringify(workspaceOverrides(dependencies))}\n`,
     );
     const [command, prefix] = pnpmCommand();
     execFileSync(

@@ -119,7 +119,7 @@ export function createOwnedNotificationScheduler<TContent>(
       const namespace = owner.namespace;
       const snapshot = [...desired];
       return enqueue(queues, namespace, () =>
-        replaceNow(platform, namespace, snapshot, replaceOptions, pendingLimit),
+        replaceNow({ platform, namespace, pendingLimit }, snapshot, replaceOptions),
       );
     },
   };
@@ -164,12 +164,16 @@ function start(
     });
 }
 
+interface ReplacementTarget<TContent> {
+  readonly platform: NotificationPlatform<TContent>;
+  readonly namespace: string;
+  readonly pendingLimit: number;
+}
+
 async function replaceNow<TContent>(
-  platform: NotificationPlatform<TContent>,
-  namespace: string,
+  { platform, namespace, pendingLimit }: ReplacementTarget<TContent>,
   desired: readonly OwnedNotification<TContent>[],
   options: NotificationReplacementOptions,
-  pendingLimit: number,
 ): Promise<OwnedNotificationReplacementOutcome> {
   let pending: readonly PendingNotification[];
   try {

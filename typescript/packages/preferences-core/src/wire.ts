@@ -22,12 +22,16 @@ export function encodeOptionalWireValue<TKey extends string, TValue>(
   key: TKey,
   value: OptionalWireValue<TValue>,
 ): Partial<Record<TKey, TValue | null>> {
+  const encoded: Partial<Record<TKey, TValue | null>> = {};
   switch (value.state) {
     case 'absent':
-      return {};
+      break;
     case 'null':
-      return { [key]: null } as Record<TKey, null>;
+      encoded[key] = null;
+      break;
     case 'value':
-      return { [key]: value.value } as Record<TKey, TValue>;
+      encoded[key] = value.value;
+      break;
   }
+  return encoded;
 }
