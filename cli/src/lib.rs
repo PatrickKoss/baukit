@@ -1,3 +1,4 @@
+pub mod check;
 mod components;
 mod dockerfile;
 mod doctor;

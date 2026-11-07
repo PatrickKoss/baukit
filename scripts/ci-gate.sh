@@ -41,6 +41,7 @@ examples-test rust rust-msrv selected -
 cli-clippy cli - always -
 cli-tests cli cli-clippy selected -
 cli-check cli cli-tests selected -
+baukit-check cli cli-check selected -
 ts-install ts - always -
 ts-check ts ts-install selected -
 package-dependencies ts ts-check selected -
@@ -139,6 +140,9 @@ step_cli_tests() {
   cargo test --manifest-path cli/Cargo.toml -- --include-ignored --test-threads "$workers"
 }
 step_cli_check() { cargo check --manifest-path cli/Cargo.toml --all-targets; }
+step_baukit_check() {
+  cargo run --manifest-path cli/Cargo.toml --bin baukit -- check --root .
+}
 
 step_ts_install() { corepack pnpm --dir typescript install --frozen-lockfile; }
 step_ts_check() {

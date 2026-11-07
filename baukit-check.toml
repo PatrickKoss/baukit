@@ -1,0 +1,33 @@
+# Settings for `baukit check`. Limits may only go down; see lint/README.md.
+
+[file_size]
+rust-max-lines = 1000
+ts-max-lines = 500
+
+# Files over the limit when the rule landed. Entries only shrink: split a file and drop its entry.
+[file_size.allowlist]
+"cli/src/dockerfile.rs" = 1251
+"cli/src/doctor_layout.rs" = 1106
+"examples/expo-sqlite-conformance/src/conformance.ts" = 1174
+"rust/crates/baukit-auth/src/api_token.rs" = 1977
+"rust/crates/baukit-auth/src/verifier.rs" = 1704
+"rust/crates/baukit-config/src/lib.rs" = 1009
+"rust/crates/baukit-jobs/src/runner.rs" = 1095
+"rust/crates/baukit-jobs/src/store.rs" = 1016
+"rust/crates/baukit-runtime/src/lib.rs" = 1049
+"rust/crates/baukit-suite/src/adapters/http.rs" = 1075
+"rust/crates/baukit-suite/src/adapters/postgres/mod.rs" = 1169
+"rust/crates/baukit-test/src/data_subject.rs" = 1019
+"rust/crates/baukit-test/src/data_subject_conformance.rs" = 1094
+"rust/crates/baukit-test/src/jwt.rs" = 1197
+"typescript/packages/auth-native/src/index.ts" = 542
+"typescript/packages/auth-node/src/device-flow.ts" = 524
+"typescript/packages/auth-web/src/silent-token-broker.ts" = 543
+"typescript/packages/data-contracts/src/durable-draft.ts" = 502
+
+# Suppression budget. Counts may only go down; `baukit check suppressions --update` lowers them.
+[suppressions.max]
+rust-allow = 76
+rust-expect = 29
+eslint-disable = 1
+ast-grep-ignore = 0
