@@ -12,6 +12,7 @@ export interface CacheStrategyRequest {
   readonly method?: string;
   readonly mode?: string;
   readonly destination?: string;
+  readonly headers?: { has(name: string): boolean };
 }
 
 export interface CacheStrategyOptions {
@@ -31,6 +32,9 @@ export interface CacheStrategyDecision {
   readonly strategy: CacheStrategy;
   readonly navigationFallback?: string;
 }
+
+/** Browser session routes: never cached, whatever the options say. */
+export const ALWAYS_NETWORK_ONLY_PATH_PREFIXES: readonly string[] = ['/auth/session/'];
 
 const DEFAULT_API_PATH_PREFIXES: readonly string[] = ['/api'];
 
@@ -110,6 +114,18 @@ function isStaticAsset(
   );
 }
 
+function isNeverCached(
+  request: CacheStrategyRequest,
+  pathname: string,
+  neverCachedPathPrefixes: readonly string[],
+): boolean {
+  return (
+    matchesAnyPathPrefix(pathname, ALWAYS_NETWORK_ONLY_PATH_PREFIXES) ||
+    matchesAnyPathPrefix(pathname, neverCachedPathPrefixes) ||
+    request.headers?.has('authorization') === true
+  );
+}
+
 export function decideCacheStrategyDecision(
   request: CacheStrategyRequest,
   options: CacheStrategyOptions,
@@ -128,7 +144,7 @@ export function decideCacheStrategyDecision(
   const { pathname } = parsed;
   const sameOrigin = parsed.origin === appOrigin;
 
-  if (matchesAnyPathPrefix(pathname, neverCachedPathPrefixes)) {
+  if (isNeverCached(request, pathname, neverCachedPathPrefixes)) {
     return { strategy: CACHE_STRATEGIES.networkOnly };
   }
 

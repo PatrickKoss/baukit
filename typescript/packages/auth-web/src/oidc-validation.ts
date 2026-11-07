@@ -2,26 +2,11 @@ import { isRecord } from '@baukit/type-guards';
 
 import { OidcError } from './oidc-errors.js';
 import { normalizeIssuer, requiredUrl } from './oidc-helpers.js';
-import type { OidcProviderMetadata } from './index.js';
-
-export interface StoredTokens {
-  readonly accessToken: string;
-  readonly refreshToken?: string;
-  readonly idToken?: string;
-  readonly issuedAt: number;
-  readonly expiresAt: number;
-}
+import type { OidcProviderMetadata } from './oidc-client.js';
 
 export interface LoginTransaction {
   readonly state: string;
   readonly verifier: string;
-}
-
-export interface TokenResponse {
-  readonly access_token: string;
-  readonly expires_in: number;
-  readonly refresh_token?: string;
-  readonly id_token?: string;
 }
 
 export interface RawProviderMetadata {
@@ -29,15 +14,6 @@ export interface RawProviderMetadata {
   readonly authorization_endpoint: string;
   readonly token_endpoint: string;
   readonly end_session_endpoint?: string;
-}
-
-export async function readProviderError(response: Response): Promise<string | undefined> {
-  try {
-    const value: unknown = await response.json();
-    return isRecord(value) && typeof value['error'] === 'string' ? value['error'] : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 export function readTransaction(raw: string | null): LoginTransaction | undefined {
@@ -56,33 +32,6 @@ export function readTransaction(raw: string | null): LoginTransaction | undefine
   } catch {
     return undefined;
   }
-}
-
-export function isStoredTokens(value: unknown): value is StoredTokens {
-  return (
-    isRecord(value) &&
-    typeof value['accessToken'] === 'string' &&
-    value['accessToken'].length > 0 &&
-    typeof value['issuedAt'] === 'number' &&
-    Number.isFinite(value['issuedAt']) &&
-    typeof value['expiresAt'] === 'number' &&
-    Number.isFinite(value['expiresAt']) &&
-    (value['refreshToken'] === undefined || typeof value['refreshToken'] === 'string') &&
-    (value['idToken'] === undefined || typeof value['idToken'] === 'string')
-  );
-}
-
-export function isTokenResponse(value: unknown): value is TokenResponse {
-  return (
-    isRecord(value) &&
-    typeof value['access_token'] === 'string' &&
-    value['access_token'].length > 0 &&
-    typeof value['expires_in'] === 'number' &&
-    Number.isFinite(value['expires_in']) &&
-    value['expires_in'] > 0 &&
-    (value['refresh_token'] === undefined || typeof value['refresh_token'] === 'string') &&
-    (value['id_token'] === undefined || typeof value['id_token'] === 'string')
-  );
 }
 
 export function isProviderMetadata(value: unknown): value is RawProviderMetadata {

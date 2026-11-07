@@ -5,6 +5,7 @@ export type OidcErrorCode =
   | 'invalid_discovery_document'
   | 'invalid_token_response'
   | 'issuer_mismatch'
+  | 'logout_failed'
   | 'refresh_failed'
   | 'token_exchange_failed';
 
@@ -13,8 +14,9 @@ const SAFE_ERROR_MESSAGES = {
   callback_state_mismatch: 'OIDC callback state did not match the login transaction.',
   discovery_failed: 'OIDC provider discovery failed.',
   invalid_discovery_document: 'OIDC provider returned invalid discovery metadata.',
-  invalid_token_response: 'OIDC token endpoint returned an invalid response.',
+  invalid_token_response: 'The session endpoint returned an invalid response.',
   issuer_mismatch: 'OIDC provider issuer did not match the configured issuer.',
+  logout_failed: 'Sign-out failed.',
   refresh_failed: 'OIDC token refresh failed.',
   token_exchange_failed: 'OIDC token exchange failed.',
 } as const satisfies Record<OidcErrorCode, string>;

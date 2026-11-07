@@ -1,4 +1,4 @@
-import type { OidcClientConfig, PkceAuthorizationRequest } from './index.js';
+import type { OidcClientConfig, PkceAuthorizationRequest } from './oidc-client.js';
 
 /** Removes trailing issuer slashes while rejecting query strings and fragments. */
 export function normalizeIssuer(issuer: string): string {

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
   OidcClient,
@@ -6,405 +6,112 @@ import {
   buildAuthorizationUrl,
   normalizeIssuer,
   safeAuthErrorMessage,
-  type OidcClientEnvironment,
 } from './index.js';
+import {
+  discoveryResponse,
+  fakeBrowser,
+  jsonResponse,
+  readLoginTransaction,
+  required,
+  type Tab,
+} from './test-support/browser-session.js';
 
-class MemoryStorage implements Storage {
-  private readonly values = new Map<string, string>();
+const CONFIG = {
+  issuer: 'https://identity.example.test/realm',
+  clientId: 'product-web',
+  redirectUri: 'https://app.example.test/callback',
+  storageKeyPrefix: 'oidc',
+};
 
-  public get length(): number {
-    return this.values.size;
-  }
-
-  public clear(): void {
-    this.values.clear();
-  }
-
-  public getItem(key: string): string | null {
-    return this.values.get(key) ?? null;
-  }
-
-  public key(index: number): string | null {
-    return [...this.values.keys()][index] ?? null;
-  }
-
-  public removeItem(key: string): void {
-    this.values.delete(key);
-  }
-
-  public setItem(key: string, value: string): void {
-    this.values.set(key, value);
-  }
+function setup(fetch: typeof globalThis.fetch = () => Promise.resolve(discoveryResponse())) {
+  const browser = fakeBrowser(fetch);
+  const tab = browser.tab({ coordinated: false });
+  return { browser, tab, client: new OidcClient(CONFIG, tab.environment) };
 }
 
-interface TestEnvironment {
-  readonly environment: OidcClientEnvironment;
-  readonly localStorage: MemoryStorage;
-  readonly sessionStorage: MemoryStorage;
-  readonly navigations: string[];
-  readonly replacements: string[];
-  setCurrentUrl(url: string): void;
-  setNow(value: number): void;
-}
-
-function makeEnvironment(fetchImplementation: typeof globalThis.fetch): TestEnvironment {
-  const localStorage = new MemoryStorage();
-  const sessionStorage = new MemoryStorage();
-  const navigations: string[] = [];
-  const replacements: string[] = [];
-  let currentUrl = 'https://app.example.test/';
-  let now = 1_000_000;
-  return {
-    environment: {
-      fetch: fetchImplementation,
-      crypto: globalThis.crypto,
-      localStorage,
-      sessionStorage,
-      currentUrl: () => currentUrl,
-      navigate: (url) => navigations.push(url),
-      replaceUrl: (url) => replacements.push(url),
-      now: () => now,
-    },
-    localStorage,
-    sessionStorage,
-    navigations,
-    replacements,
-    setCurrentUrl: (url) => {
-      currentUrl = url;
-    },
-    setNow: (value) => {
-      now = value;
-    },
-  };
-}
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
-}
-
-function required<T>(value: T | null | undefined): T {
-  if (value === undefined || value === null) {
-    throw new Error('Expected test value to be present.');
-  }
-  return value;
-}
-
-function discoveryResponse(): Response {
-  return jsonResponse({
-    issuer: 'https://identity.example.test/tenant',
-    authorization_endpoint: 'https://login.example.test/oauth/authorize',
-    token_endpoint: 'https://login.example.test/oauth/token',
-  });
-}
-
-function storedTokens(overrides: Record<string, unknown> = {}): string {
-  return JSON.stringify({
-    accessToken: 'stored-access',
-    refreshToken: 'stored-refresh',
-    idToken: 'stored-id',
-    issuedAt: 0,
-    expiresAt: 900,
-    ...overrides,
-  });
-}
-
-function makeClient(test: TestEnvironment): OidcClient {
-  return new OidcClient(
-    {
-      issuer: 'https://identity.example.test/tenant',
-      clientId: 'product-web',
-      redirectUri: 'https://app.example.test/callback',
-      storageKeyPrefix: 'lifecycle',
-    },
-    test.environment,
-  );
+async function loginState(client: OidcClient, tab: Tab): Promise<string> {
+  await client.login();
+  return required(new URL(required(tab.navigations.at(-1))).searchParams.get('state'));
 }
 
 describe('OidcClient', () => {
-  it.each([
-    { expiresIn: 10, leeway: undefined, refreshAt: 1_005_000 },
-    { expiresIn: 3600, leeway: undefined, refreshAt: 4_570_000 },
-    { expiresIn: 10, leeway: 0, refreshAt: 1_010_000 },
-    { expiresIn: 10, leeway: 2, refreshAt: 1_008_000 },
-  ])(
-    'refreshes a $expiresIn s token with leeway $leeway at $refreshAt',
-    async ({ expiresIn, leeway, refreshAt }) => {
-      let refreshCalls = 0;
-      const test = makeEnvironment((input, init) => {
-        const url = input instanceof Request ? input.url : input.toString();
-        if (url.includes('.well-known')) return Promise.resolve(discoveryResponse());
-        if (!(init?.body instanceof URLSearchParams)) throw new Error('Expected a token request.');
-        const refresh = init.body.get('grant_type') === 'refresh_token';
-        if (refresh) refreshCalls += 1;
-        return Promise.resolve(
-          jsonResponse({
-            access_token: refresh ? 'refreshed-access' : 'access-secret',
-            refresh_token: 'refresh-secret',
-            expires_in: expiresIn,
-          }),
-        );
-      });
-      const client = new OidcClient(
-        {
-          issuer: 'https://identity.example.test/tenant',
-          clientId: 'product-web',
-          redirectUri: 'https://app.example.test/callback',
-          storageKeyPrefix: 'lifecycle',
-          ...(leeway === undefined ? {} : { refreshLeewaySeconds: leeway }),
-        },
-        test.environment,
-      );
-      await client.login();
-      const state = required(new URL(required(test.navigations.at(-1))).searchParams.get('state'));
-      test.setCurrentUrl(`https://app.example.test/callback?code=one-time-code&state=${state}`);
-      await expect(client.handleCallback()).resolves.toBe(true);
-
-      for (const now of [1_000_000, 1_001_000, 1_002_000, refreshAt - 1]) {
-        test.setNow(now);
-        await expect(client.accessToken()).resolves.toBe('access-secret');
-      }
-      expect(refreshCalls).toBe(0);
-      expect(JSON.parse(required(test.localStorage.getItem('lifecycle:tokens')))).toMatchObject({
-        issuedAt: 1_000_000,
-        expiresAt: 1_000_000 + expiresIn * 1000,
-      });
-
-      test.setNow(refreshAt);
-      await expect(Promise.all([client.accessToken(), client.accessToken()])).resolves.toEqual([
-        'refreshed-access',
-        'refreshed-access',
-      ]);
-      await expect(client.accessToken()).resolves.toBe('refreshed-access');
-      expect(refreshCalls).toBe(1);
-      expect(JSON.parse(required(test.localStorage.getItem('lifecycle:tokens')))).toMatchObject({
-        issuedAt: refreshAt,
-        expiresAt: refreshAt + expiresIn * 1000,
-      });
-    },
-  );
-
-  it('discards persisted tokens without issuedAt', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>();
-    const test = makeEnvironment(fetch);
-    test.localStorage.setItem(
-      'lifecycle:tokens',
-      storedTokens({ issuedAt: undefined, expiresAt: 2_000_000 }),
-    );
-    const client = makeClient(test);
-
-    expect(client.hasSession()).toBe(false);
-    await expect(client.accessToken()).resolves.toBeUndefined();
-    expect(test.localStorage.getItem('lifecycle:tokens')).toBeNull();
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it('clears silently without a reason and leaves normal login unchanged', async () => {
-    const test = makeEnvironment(() => Promise.resolve(discoveryResponse()));
-    const client = makeClient(test);
-    const expired = vi.fn();
-    client.subscribeSessionExpired(expired);
-    test.localStorage.setItem('lifecycle:tokens', storedTokens());
-    test.sessionStorage.setItem('lifecycle:transaction', '{}');
-
-    client.clearSession();
-
-    expect(client.hasSession()).toBe(false);
-    expect(test.localStorage.length).toBe(0);
-    expect(test.sessionStorage.length).toBe(0);
-    expect(expired).not.toHaveBeenCalled();
-    await client.login();
-    expect(new URL(required(test.navigations.at(-1))).searchParams.has('prompt')).toBe(false);
-  });
-
-  it('persists fresh authentication after erasure until a successful callback', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(discoveryResponse());
-    const test = makeEnvironment(fetch);
-    const client = makeClient(test);
-    test.localStorage.setItem('lifecycle:tokens', storedTokens());
-    test.sessionStorage.setItem('lifecycle:transaction', '{}');
-    const throwing = vi.fn(() => {
-      throw new Error('observer');
-    });
-    const observed: { hasSession: boolean; marker: string | null }[] = [];
-    const expired = vi.fn(() => {
-      observed.push({
-        hasSession: client.hasSession(),
-        marker: test.localStorage.getItem('lifecycle:force-login'),
-      });
-    });
-    client.subscribeSessionExpired(throwing);
-    client.subscribeSessionExpired(expired);
-
-    expect(() => {
-      client.clearSession({ reason: 'profile_erased' });
-    }).not.toThrow();
-
-    expect(throwing).toHaveBeenCalledTimes(1);
-    expect(expired).toHaveBeenCalledTimes(1);
-    expect(expired).toHaveBeenCalledWith({ type: 'session-expired', reason: 'profile_erased' });
-    expect(observed).toEqual([{ hasSession: false, marker: '1' }]);
-    expect(test.sessionStorage.length).toBe(0);
-    expect(test.localStorage.getItem('lifecycle:tokens')).toBeNull();
-    client.clearSession();
-    expect(expired).toHaveBeenCalledTimes(1);
-
-    const reloaded = makeClient(test);
-    await reloaded.login();
-    const authorization = new URL(required(test.navigations.at(-1)));
-    expect(authorization.searchParams.get('prompt')).toBe('login');
-    test.setCurrentUrl(
-      `https://app.example.test/callback?code=fresh&state=${required(authorization.searchParams.get('state'))}`,
-    );
-    fetch.mockResolvedValue(jsonResponse({ access_token: 'fresh-access', expires_in: 60 }));
-    await expect(reloaded.handleCallback()).resolves.toBe(true);
-    expect(test.localStorage.getItem('lifecycle:force-login')).toBeNull();
-    await expect(reloaded.accessToken()).resolves.toBe('fresh-access');
-    await reloaded.login();
-    expect(new URL(required(test.navigations.at(-1))).searchParams.has('prompt')).toBe(false);
-  });
-
-  it.each(['exchange', 'state', 'provider'] as const)(
-    'keeps fresh authentication after a failed %s callback',
-    async (failure) => {
-      const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(discoveryResponse());
-      const test = makeEnvironment(fetch);
-      const client = makeClient(test);
-      client.clearSession({ reason: 'profile_erased' });
-      await client.login();
-      const authorization = new URL(required(test.navigations.at(-1)));
-      const state =
-        failure === 'state' ? 'wrong' : required(authorization.searchParams.get('state'));
-      test.setCurrentUrl(
-        `https://app.example.test/callback?state=${state}&${failure === 'provider' ? 'error=access_denied' : 'code=fresh'}`,
-      );
-      fetch.mockResolvedValue(jsonResponse({ error: 'invalid_grant' }, 400));
-
-      await expect(client.handleCallback()).rejects.toBeInstanceOf(OidcError);
-
-      expect(test.localStorage.getItem('lifecycle:force-login')).toBe('1');
-      expect(client.hasSession()).toBe(false);
-      fetch.mockResolvedValue(discoveryResponse());
-      await makeClient(test).login();
-      expect(new URL(required(test.navigations.at(-1))).searchParams.get('prompt')).toBe('login');
-    },
-  );
-
-  it('keeps the erasure marker when a callback finishes after local clearing', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(discoveryResponse());
-    const test = makeEnvironment(fetch);
-    const client = makeClient(test);
-    await client.login();
-    const state = required(new URL(required(test.navigations.at(-1))).searchParams.get('state'));
-    test.setCurrentUrl(`https://app.example.test/callback?state=${state}&code=fresh`);
-    let complete: ((response: Response) => void) | undefined;
-    fetch.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          complete = resolve;
-        }),
-    );
-    const callback = client.handleCallback();
-    await vi.waitFor(() => {
-      expect(complete).toBeDefined();
-    });
-
-    client.clearSession({ reason: 'profile_erased' });
-    required(complete)(jsonResponse({ access_token: 'late-access', expires_in: 60 }));
-    await callback;
-
-    expect(client.hasSession()).toBe(false);
-    expect(test.localStorage.getItem('lifecycle:force-login')).toBe('1');
-  });
-
-  it('discovers endpoints and completes login, deduplicated callback, refresh, and logout', async () => {
-    const requests: { readonly url: string; readonly init: RequestInit | undefined }[] = [];
-    let tokenCalls = 0;
-    const mockedFetch: typeof globalThis.fetch = (input, init) => {
-      const url = input instanceof Request ? input.url : input.toString();
-      requests.push({ url, init });
-      if (url.endsWith('/.well-known/openid-configuration')) {
-        return Promise.resolve(
-          jsonResponse({
-            issuer: 'https://identity.example.test/tenant',
-            authorization_endpoint: 'https://login.example.test/oauth/authorize',
-            token_endpoint: 'https://login.example.test/oauth/token',
-            end_session_endpoint: 'https://login.example.test/session/end',
-          }),
-        );
-      }
-      tokenCalls += 1;
-      return Promise.resolve(
-        tokenCalls === 1
-          ? jsonResponse({
-              access_token: 'access-secret',
-              refresh_token: 'refresh-secret',
-              id_token: 'identity-secret',
-              expires_in: 60,
-            })
-          : jsonResponse({ access_token: 'refreshed-secret', expires_in: 120 }),
-      );
-    };
-    const test = makeEnvironment(mockedFetch);
-    const client = new OidcClient(
-      {
-        issuer: 'https://identity.example.test/tenant///',
-        clientId: 'product-web',
-        redirectUri: 'https://app.example.test/callback',
-        scopes: ['profile', 'email', 'profile'],
-        offlineAccess: true,
-        storageKeyPrefix: 'test-auth',
-        audience: 'https://api.example.test',
-        resource: 'https://api.example.test',
-      },
-      test.environment,
-    );
-
-    await client.login();
-    const authorization = new URL(required(test.navigations[0]));
+  it('redirects with S256 PKCE and returns the verified code for the backend', async () => {
+    const { tab, client } = setup();
+    const state = await loginState(client, tab);
+    const authorization = new URL(required(tab.navigations.at(-1)));
     expect(authorization.origin + authorization.pathname).toBe(
-      'https://login.example.test/oauth/authorize',
+      'https://identity.example.test/realm/authorize',
     );
-    expect(authorization.searchParams.get('scope')).toBe('openid profile email offline_access');
-    expect(authorization.searchParams.get('audience')).toBe('https://api.example.test');
-    expect(authorization.searchParams.get('resource')).toBe('https://api.example.test');
     expect(authorization.searchParams.get('code_challenge_method')).toBe('S256');
-    expect(authorization.searchParams.get('code_challenge')).toMatch(/^[\w-]{43}$/u);
+    expect(authorization.searchParams.has('prompt')).toBe(false);
+    const { verifier } = readLoginTransaction(tab.sessionStorage, 'oidc:transaction');
 
-    const transaction = JSON.parse(
-      required(test.sessionStorage.getItem('test-auth:transaction')),
-    ) as {
-      readonly state: string;
-    };
-    test.setCurrentUrl(
-      `https://app.example.test/callback?code=one-time-code&state=${transaction.state}&session_state=private&iss=https%3A%2F%2Fidentity.example.test%2Ftenant&kept=yes`,
+    tab.setCurrentUrl(
+      `https://app.example.test/callback?code=one-time&state=${state}&iss=${encodeURIComponent(CONFIG.issuer)}`,
     );
-    const firstCallback = client.handleCallback();
-    const repeatedCallback = client.handleCallback();
-    expect(firstCallback).toBe(repeatedCallback);
-    await expect(Promise.all([firstCallback, repeatedCallback])).resolves.toEqual([true, true]);
-    expect(tokenCalls).toBe(1);
-    expect(test.replacements).toEqual(['https://app.example.test/callback?kept=yes']);
-    expect(await client.accessToken()).toBe('access-secret');
 
-    test.setNow(1_031_000);
-    await expect(Promise.all([client.accessToken(), client.accessToken()])).resolves.toEqual([
-      'refreshed-secret',
-      'refreshed-secret',
-    ]);
-    expect(tokenCalls).toBe(2);
-    const refreshBody = requests.at(-1)?.init?.body as URLSearchParams;
-    expect(refreshBody.get('grant_type')).toBe('refresh_token');
-    expect(refreshBody.get('refresh_token')).toBe('refresh-secret');
+    expect(client.completeCallback()).toEqual({
+      code: 'one-time',
+      codeVerifier: verifier,
+      redirectUri: CONFIG.redirectUri,
+    });
+    expect(tab.sessionStorage.length).toBe(0);
+  });
 
-    await expect(client.logout()).resolves.toBe(true);
-    const logout = new URL(required(test.navigations.at(-1)));
-    expect(logout.origin + logout.pathname).toBe('https://login.example.test/session/end');
-    expect(logout.searchParams.get('id_token_hint')).toBe('identity-secret');
-    expect(client.hasSession()).toBe(false);
-    expect(requests.filter(({ url }) => url.includes('.well-known')).length).toBe(1);
+  it('ignores a URL without callback parameters', () => {
+    const { client } = setup();
+    expect(client.completeCallback()).toBeUndefined();
+  });
+
+  it.each([
+    {
+      name: 'a wrong state',
+      query: (state: string) => `code=c&state=${state}x`,
+      code: 'callback_state_mismatch',
+    },
+    {
+      name: 'a missing code',
+      query: (state: string) => `state=${state}`,
+      code: 'callback_state_mismatch',
+    },
+    {
+      name: 'a foreign issuer',
+      query: (state: string) => `code=c&state=${state}&iss=https://evil.example.test`,
+      code: 'issuer_mismatch',
+    },
+    {
+      name: 'a provider error',
+      query: (state: string) => `error=access_denied&state=${state}`,
+      code: 'authorization_failed',
+    },
+  ])('rejects $name and consumes the transaction', async ({ query, code }) => {
+    const { tab, client } = setup();
+    const state = await loginState(client, tab);
+    tab.setCurrentUrl(`https://app.example.test/callback?${query(state)}`);
+
+    expect(() => client.completeCallback()).toThrow(expect.objectContaining({ code }));
+    expect(tab.sessionStorage.length).toBe(0);
+  });
+
+  it('requests prompt=login until a fresh sign-in is confirmed', async () => {
+    const { browser, tab, client } = setup();
+    client.requireFreshLogin();
+    await loginState(client, tab);
+    expect(new URL(required(tab.navigations.at(-1))).searchParams.get('prompt')).toBe('login');
+    expect(browser.localStorage.getItem('oidc:force-login')).toBe('1');
+
+    client.confirmFreshLogin();
+    await loginState(client, tab);
+    expect(new URL(required(tab.navigations.at(-1))).searchParams.has('prompt')).toBe(false);
+  });
+
+  it('never touches a token storage key', async () => {
+    const { browser, tab, client } = setup();
+    const state = await loginState(client, tab);
+    tab.setCurrentUrl(`https://app.example.test/callback?code=c&state=${state}`);
+    client.completeCallback();
+    expect(browser.localStorage.getItem('oidc:tokens')).toBeNull();
+    expect(browser.localStorage.length).toBe(0);
   });
 
   it('uses only discovered endpoints and makes offline access opt-in', () => {
@@ -419,245 +126,42 @@ describe('OidcClient', () => {
     );
     expect(url.pathname).toBe('/non-keycloak/authorize');
     expect(url.searchParams.get('scope')).toBe('openid custom');
-    expect(url.searchParams.has('offline_access')).toBe(false);
     expect(normalizeIssuer('https://provider.example.test/path///')).toBe(
       'https://provider.example.test/path',
     );
   });
 
-  it('shares one refresh across proactive and forced callers', async () => {
-    let resolveRefresh: ((response: Response) => void) | undefined;
-    let refreshCalls = 0;
-    const test = makeEnvironment((input) => {
-      const url = input instanceof Request ? input.url : input.toString();
-      if (url.includes('.well-known')) {
-        return Promise.resolve(discoveryResponse());
-      }
-      refreshCalls += 1;
-      return new Promise((resolve) => {
-        resolveRefresh = resolve;
-      });
-    });
-    test.localStorage.setItem('lifecycle:tokens', storedTokens());
-    const client = makeClient(test);
-
-    const proactive = client.accessToken();
-    const forced = client.accessToken({ forceRefresh: true });
-    await vi.waitFor(() => {
-      expect(refreshCalls).toBe(1);
-    });
-    resolveRefresh?.(
-      jsonResponse({
-        access_token: 'shared-access',
-        expires_in: 120,
-      }),
-    );
-
-    await expect(Promise.all([proactive, forced])).resolves.toEqual([
-      'shared-access',
-      'shared-access',
-    ]);
-    expect(refreshCalls).toBe(1);
-  });
-
-  it('does not restore a session cleared while refresh is pending', async () => {
-    let resolveRefresh: ((response: Response) => void) | undefined;
-    const test = makeEnvironment((input) => {
-      const url = input instanceof Request ? input.url : input.toString();
-      if (url.includes('.well-known')) {
-        return Promise.resolve(discoveryResponse());
-      }
-      return new Promise((resolve) => {
-        resolveRefresh = resolve;
-      });
-    });
-    test.localStorage.setItem('lifecycle:tokens', storedTokens());
-    const client = makeClient(test);
-
-    const pending = client.accessToken();
-    await vi.waitFor(() => {
-      expect(resolveRefresh).toBeDefined();
-    });
-    client.clearSession();
-    resolveRefresh?.(jsonResponse({ access_token: 'stale-access', expires_in: 120 }));
-
-    await expect(pending).resolves.toBeUndefined();
-    expect(client.hasSession()).toBe(false);
-  });
-
-  it('forces refresh outside the proactive window and retains token rotation state', async () => {
-    let tokenCalls = 0;
-    const test = makeEnvironment((input) => {
-      const url = input instanceof Request ? input.url : input.toString();
-      if (url.includes('.well-known')) {
-        return Promise.resolve(discoveryResponse());
-      }
-      tokenCalls += 1;
-      return Promise.resolve(
-        jsonResponse({
-          access_token: 'forced-access',
-          expires_in: 120,
-        }),
-      );
-    });
-    test.localStorage.setItem('lifecycle:tokens', storedTokens({ expiresAt: 2_000_000 }));
-    const client = makeClient(test);
-
-    await expect(client.accessToken({ forceRefresh: true })).resolves.toBe('forced-access');
-    expect(tokenCalls).toBe(1);
-    expect(JSON.parse(required(test.localStorage.getItem('lifecycle:tokens')))).toMatchObject({
-      refreshToken: 'stored-refresh',
-      idToken: 'stored-id',
-    });
-  });
-
-  it('preserves the session and exposes a retryable transient refresh failure', async () => {
-    const test = makeEnvironment((input) => {
-      const url = input instanceof Request ? input.url : input.toString();
-      return Promise.resolve(
-        url.includes('.well-known')
-          ? discoveryResponse()
-          : jsonResponse({ error: 'temporarily_unavailable' }, 503),
-      );
-    });
-    test.localStorage.setItem('lifecycle:tokens', storedTokens());
-    const client = makeClient(test);
-
-    await expect(client.accessToken()).rejects.toMatchObject({
-      code: 'refresh_failed',
-      retryable: true,
-      status: 503,
-    });
-    expect(client.hasSession()).toBe(true);
-    expect(test.localStorage.getItem('lifecycle:tokens')).not.toBeNull();
-  });
-
-  it.each([
-    [401, { error: 'provider_error' }],
-    [403, { error: 'invalid_grant' }],
-  ] as const)('expires the session for terminal refresh rejection %#', async (status, body) => {
-    const test = makeEnvironment((input) => {
-      const url = input instanceof Request ? input.url : input.toString();
-      return Promise.resolve(
-        url.includes('.well-known') ? discoveryResponse() : jsonResponse(body, status),
-      );
-    });
-    test.localStorage.setItem('lifecycle:tokens', storedTokens());
-    const client = makeClient(test);
-    const expired: unknown[] = [];
-    client.subscribeSessionExpired((event) => expired.push(event));
-
-    await expect(client.accessToken()).resolves.toBeUndefined();
-    expect(client.hasSession()).toBe(false);
-    expect(expired).toEqual([{ type: 'session-expired', reason: 'refresh_rejected' }]);
-  });
-
-  it('sanitizes provider errors, response content, and unknown errors', async () => {
+  it('sanitizes provider errors and unknown errors', async () => {
     const leakedDescription = 'private content access-token-secret';
-    const fetchImplementation: typeof globalThis.fetch = () =>
-      Promise.resolve(
-        jsonResponse({
-          issuer: 'https://identity.example.test',
-          authorization_endpoint: 'https://identity.example.test/authorize',
-          token_endpoint: 'https://identity.example.test/token',
-        }),
-      );
-    const test = makeEnvironment(fetchImplementation);
-    test.sessionStorage.setItem(
-      'safe:transaction',
-      JSON.stringify({ state: 'expected', verifier: 'verifier' }),
-    );
-    test.setCurrentUrl(
-      `https://app.example.test/callback?error=access_denied&error_description=${encodeURIComponent(leakedDescription)}&state=expected`,
-    );
-    const client = new OidcClient(
-      {
-        issuer: 'https://identity.example.test',
-        clientId: 'client',
-        redirectUri: 'https://app.example.test/callback',
-        storageKeyPrefix: 'safe',
-      },
-      test.environment,
+    const { tab, client } = setup();
+    const state = await loginState(client, tab);
+    tab.setCurrentUrl(
+      `https://app.example.test/callback?error=access_denied&error_description=${encodeURIComponent(leakedDescription)}&state=${state}`,
     );
 
     let caught: unknown;
     try {
-      await client.handleCallback();
+      client.completeCallback();
     } catch (cause) {
       caught = cause;
     }
     expect(caught).toBeInstanceOf(OidcError);
     expect(safeAuthErrorMessage(caught)).toBe('OIDC authorization failed.');
-    expect(safeAuthErrorMessage(caught)).not.toContain(leakedDescription);
     expect(safeAuthErrorMessage(new Error(leakedDescription))).toBe('OIDC login failed.');
-    expect(test.replacements[0]).not.toContain('error_description');
-  });
-
-  it('does not expose a token endpoint error body or authorization code', async () => {
-    const fetchImplementation: typeof globalThis.fetch = (input) => {
-      const url = input instanceof Request ? input.url : input.toString();
-      return Promise.resolve(
-        url.includes('.well-known')
-          ? jsonResponse({
-              issuer: 'https://identity.example.test',
-              authorization_endpoint: 'https://identity.example.test/authorize',
-              token_endpoint: 'https://identity.example.test/token',
-            })
-          : new Response('private-content access-token-secret one-time-code', { status: 400 }),
-      );
-    };
-    const test = makeEnvironment(fetchImplementation);
-    test.sessionStorage.setItem(
-      'http-error:transaction',
-      JSON.stringify({ state: 'expected', verifier: 'verifier' }),
-    );
-    test.setCurrentUrl('https://app.example.test/callback?code=one-time-code&state=expected');
-    const client = new OidcClient(
-      {
-        issuer: 'https://identity.example.test',
-        clientId: 'client',
-        redirectUri: 'https://app.example.test/callback',
-        storageKeyPrefix: 'http-error',
-      },
-      test.environment,
-    );
-
-    let caught: unknown;
-    try {
-      await client.handleCallback();
-    } catch (cause) {
-      caught = cause;
-    }
-    expect(caught).toMatchObject({ code: 'token_exchange_failed', status: 400 });
-    expect(safeAuthErrorMessage(caught)).toBe('OIDC token exchange failed.');
-    expect(String(caught)).not.toContain('private-content');
-    expect(String(caught)).not.toContain('one-time-code');
   });
 
   it('rejects mismatched discovery issuers without exposing metadata content', async () => {
-    const fetchImplementation: typeof globalThis.fetch = () =>
+    const { client } = setup(() =>
       Promise.resolve(
         jsonResponse({
           issuer: 'https://attacker.example.test/token-secret',
           authorization_endpoint: 'https://attacker.example.test/authorize',
           token_endpoint: 'https://attacker.example.test/token',
         }),
-      );
-    const test = makeEnvironment(fetchImplementation);
-    const client = new OidcClient(
-      {
-        issuer: 'https://identity.example.test',
-        clientId: 'client',
-        redirectUri: 'https://app.example.test/callback',
-      },
-      test.environment,
+      ),
     );
-    await expect(client.discover()).rejects.toMatchObject({ code: 'issuer_mismatch' });
-    await client.discover().catch((error: unknown) => {
-      expect(safeAuthErrorMessage(error)).toBe(
-        'OIDC provider issuer did not match the configured issuer.',
-      );
-      expect(safeAuthErrorMessage(error)).not.toContain('token-secret');
-    });
+    const failure = await client.discover().catch((error: unknown) => error);
+    expect(failure).toMatchObject({ code: 'issuer_mismatch' });
+    expect(safeAuthErrorMessage(failure)).not.toContain('token-secret');
   });
 });

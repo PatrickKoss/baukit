@@ -1,7 +1,7 @@
 {
   "name": "@baukit/auth-web",
   "version": "0.18.3",
-  "description": "Framework-neutral browser OIDC authorization-code client with S256 PKCE, provider discovery, and callback deduplication.",
+  "description": "Browser sign-in for baukit products: OIDC authorization code with S256 PKCE redeemed by the product backend, a memory-only access token, and cross-tab session coordination.",
   "license": "MIT",
   "author": "Patrick Koss",
   "homepage": "https://github.com/PatrickKoss/baukit#readme",
@@ -52,6 +52,7 @@
     "format:check": "prettier --check src package.json tsconfig.json tsconfig.test.json"
   },
   "devDependencies": {
+    "@baukit/api-runtime": "workspace:*",
     "@clerk/clerk-js": "6.38.0",
     "@workos-inc/authkit-js": "0.20.4",
     "jsdom": "30.1.1",

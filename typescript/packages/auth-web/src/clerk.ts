@@ -1,5 +1,9 @@
 import { Clerk } from '@clerk/clerk-js';
-import type { ClearSessionOptions, SessionExpiredEvent, SessionExpiredReason } from './index.js';
+import type {
+  ClearSessionOptions,
+  SessionExpiredEvent,
+  SessionExpiredReason,
+} from './session-events.js';
 
 export interface ClerkWebConfig {
   readonly publishableKey: string;

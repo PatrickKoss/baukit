@@ -5,6 +5,7 @@ export {
   type CacheCleanupResult,
 } from './cache-cleanup.js';
 export {
+  ALWAYS_NETWORK_ONLY_PATH_PREFIXES,
   CACHE_STRATEGIES,
   createCacheStrategyDecider,
   decideCacheStrategy,

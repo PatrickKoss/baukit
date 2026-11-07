@@ -1,40 +1,88 @@
 # `@baukit/auth-web`
 
-Framework-neutral browser OIDC authorization-code client with S256 PKCE, standard provider discovery, refresh tokens, and callback deduplication for repeated UI effects.
+Browser sign-in for baukit products. `BrowserSessionClient` runs the OIDC authorization-code
+redirect with S256 PKCE, hands the code to the product backend's `/auth/session` routes
+(`baukit_auth::browser_session::router`), and keeps the access token in memory only. The backend
+redeems the code, keeps the refresh token in its session table and sets an HttpOnly
+`__Host-` cookie. Design and threat model: [ADR 0006](../../../docs/adr/0006-browser-token-handling.md).
 
 ```ts
-import { OidcClient } from '@baukit/auth-web';
+import { BrowserSessionClient } from '@baukit/auth-web';
 
-const auth = new OidcClient({
+const auth = new BrowserSessionClient({
   issuer: 'https://identity.example.com/realms/product/',
   clientId: 'product-web',
-  redirectUri: `${window.location.origin}/auth/callback`,
-  scopes: ['openid', 'profile', 'email'],
-  offlineAccess: true,
+  redirectUri: `${window.location.origin}/`,
+  apiBaseUrl: 'https://api.example.com',
 });
 
-await auth.login();
-await auth.handleCallback();
-const accessToken = await auth.accessToken();
+await auth.handleCallback(); // after the IdP redirect; false on any other URL
+await auth.restore(); // on load: one refresh when this browser signed in before
+const accessToken = await auth.getAccessToken(); // send as `Authorization: Bearer`
 ```
 
-The issuer is normalized and resolved only through `/.well-known/openid-configuration`; the client never assumes provider-specific authorization, token, or logout paths. `handleCallback()` returns the same promise when called repeatedly on one client, making a one-time PKCE exchange safe under React Strict Mode without depending on React.
+| Call                            | Request                                                                  | What the client does                                                                                                                                                        |
+| ------------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `handleCallback()`              | `POST /auth/session/exchange` with `{ code, codeVerifier, redirectUri }` | Checks state and issuer, strips the callback parameters, stores the token in memory and the account hint. Repeated calls share one promise.                                 |
+| `getAccessToken()`, `restore()` | `POST /auth/session/refresh`                                             | Returns the memory token until `expiresAt - min(refreshLeewaySeconds, lifetime / 2)`, then refreshes. `{ forceRefresh: true }` refreshes now, for example after an API 401. |
+| `logout()`                      | `POST /auth/session/logout`                                              | Signs out every tab first, then navigates to the `endSessionUrl` the backend returns (http or https only). Resolves `false` on `204`.                                       |
 
-Pass a unique `storageKeyPrefix` when more than one client for the same issuer/client ID shares an origin. Set `offlineAccess` to add `offline_access` without duplicating it. `openid` is always included because it distinguishes OIDC from plain OAuth.
+Session calls are the only calls with `credentials: 'include'`. Each sends `X-Baukit-Session: 1`
+(`BROWSER_SESSION_HEADER`) and `cache: 'no-store'`. API calls should keep the default
+`same-origin` credentials and send the bearer token.
 
-`offlineAccess` defaults to `false`; enable it deliberately only for providers configured to issue refresh tokens for that scope. Concurrent `accessToken()` calls share one refresh. `accessToken({ forceRefresh: true })` bypasses the proactive window after a 401 while joining any refresh already in flight. Refresh rotation retains the previous refresh or ID token when a response omits a replacement, and expiry is anchored to local token receipt time.
+### What lives where
 
-`refreshLeewaySeconds` defaults to 30 seconds; the refresh window is the smaller of that value and half the token lifetime, measured as `expiresAt - issuedAt`.
+- The access token, its expiry and subject live in the client object. Reload means one refresh.
+- `localStorage[<storageKeyPrefix>:account]` holds `{ subject, signedInAt }` and nothing else.
+  `account()` reads it, so an offline reload can open the right local profile. `hasSession()` is
+  true while a token is in memory or the hint exists.
+- `sessionStorage[<storageKeyPrefix>:transaction]` holds the PKCE `state` and `verifier` between
+  `login()` and the callback.
+- `localStorage[<storageKeyPrefix>:force-login]` is `1` after `clearSession({ reason:
+'profile_erased' })`, so the next `login()` sends `prompt=login`. A successful exchange removes it.
 
-Stored tokens record `issuedAt` and `expiresAt` in epoch milliseconds; tokens without `issuedAt` are discarded as corrupt state.
+Nothing token-shaped goes to localStorage, sessionStorage, IndexedDB or the Cache API, and the
+package never reads a `<prefix>:tokens` key.
 
-Terminal refresh rejection (`invalid_grant`, `invalid_token`, or HTTP 400/401) clears tokens, emits `subscribeSessionExpired()`, and resolves to `undefined`. Transient network/provider failures preserve the session and reject with a sanitized `OidcError` whose `retryable` property is `true`.
+### Tabs
 
-`subscribeSessionExpired()` reports `refresh_rejected`, `refresh_unavailable`, or `profile_erased`. On a backend 401 with code `profile_erased`, call `clearSession({ reason: 'profile_erased' })`. It clears the local session and emits the reason once per call. Plain `clearSession()` emits nothing. OIDC persists a force-login marker under `storageKeyPrefix`, so the next `login()` requests `prompt=login` even after a reload. A failed or cancelled login keeps the marker; a successful sign-in removes it. Fresh authentication gives the provider a new `auth_time` for profile re-onboarding.
+A refresh runs under the Web Lock `<storageKeyPrefix>:refresh`. The winner posts
+`{ accessToken, expiresAt, subject }` on `BroadcastChannel('<storageKeyPrefix>:session')`; a tab
+that was waiting for the lock takes that token instead of refreshing. Sign-out, expiry and
+`clearSession()` are broadcast too, and other tabs drop their token and emit
+`onSessionExpired`. Without Web Locks each tab refreshes on its own and the backend's 10-second
+grace window answers the loser. Call `dispose()` to close the channel.
 
-The browser marker uses localStorage key `<storageKeyPrefix>:force-login` and is removed only after a successful callback token exchange stores the new session.
+### Failures and offline
 
-Display `safeAuthErrorMessage(error)` at the UI boundary. It returns only library-owned allowlisted messages and never provider descriptions, response bodies, authorization codes, or token content.
+| Refresh outcome                               | Result                                                                                          |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `401` (`session_expired`)                     | Clears the token and account hint in every tab, emits `refresh_rejected`, resolves `undefined`. |
+| Network error, `429`, `5xx`                   | Rejects with `OidcError('refresh_failed', { retryable: true })`. The account hint stays.        |
+| Any other status, such as `403 csrf_rejected` | Rejects with a non-retryable `refresh_failed`. The account hint stays.                          |
+
+Only a 401 signs the browser out. Queue sync and API calls while `getAccessToken()` rejects with a
+retryable error and open local data from the account hint.
+
+`onSessionExpired()` (alias `subscribeSessionExpired()`) reports `refresh_rejected`,
+`profile_erased`, or `signed_out` when another tab logged out or cleared the session. This tab's
+own `logout()` and plain `clearSession()` emit nothing. `accessToken()` is an alias of
+`getAccessToken()`, so the client fits the same provider contract as the Clerk and WorkOS
+adapters.
+
+Display `safeAuthErrorMessage(error)` at the UI boundary. It returns only library-owned
+allowlisted messages and never provider descriptions, response bodies, authorization codes, or
+token content.
+
+### `OidcClient`
+
+`OidcClient` is the redirect half on its own: `discover()`, `login()`, `completeCallback()`
+(returns `{ code, codeVerifier, redirectUri }` or `undefined`), `requireFreshLogin()`,
+`confirmFreshLogin()` and `clearTransaction()`. It never redeems a code and holds no token. The
+issuer is normalized and resolved only through `/.well-known/openid-configuration`. Pass a unique
+`storageKeyPrefix` when more than one client for the same issuer and client ID shares an origin.
+`offlineAccess` (default `false`) adds `offline_access`; `openid` is always included.
 
 ## Silent tokens for several products
 
@@ -159,13 +207,10 @@ the main page or changes cookie policy.
 
 ## Boundaries
 
-The package handles the OIDC authorization-code flow and the tokens it produces. It renders no UI,
+The package handles the browser side of the OIDC authorization-code flow. It renders no UI,
 depends on no framework or router, and makes no authorization decision: what a signed-in user is
-allowed to do is the product's question, and the server's.
-
-`OidcClient` token storage uses browser storage under `storageKeyPrefix`. That is a deliberate tradeoff rather
-than an oversight, and it is why `safeAuthErrorMessage` exists: provider bodies, authorization
-codes, and token contents never reach a message the UI can render or a logger can capture.
+allowed to do is the product's question, and the server's. The refresh token never reaches the
+browser; the product backend holds it.
 
 `@baukit/auth-native` is the same contract for React Native and Expo.
 
@@ -179,7 +224,7 @@ refresh and sign-out without exposing its SDK to product components.
 `@baukit/auth-web/workos` exports `WorkOsWebClient`, using the optional
 `@workos-inc/authkit-js` peer. Supply the public AuthKit client ID and redirect
 URI. Network refresh failures retain the session; terminal rejection emits the
-same session-expired event as OIDC. Both adapters implement `hasSession`,
+same session-expired event as `BrowserSessionClient`. Both adapters implement `hasSession`,
 `handleCallback`, `login`, `accessToken`, `clearSession`, `logout` and
 `subscribeSessionExpired`.
 

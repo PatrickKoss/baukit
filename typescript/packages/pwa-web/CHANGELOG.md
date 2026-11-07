@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Minor Changes
+
+- Always treat `/auth/session/` and any request with an `Authorization` header as `network-only`,
+  so the service worker never caches browser session or bearer-authorized responses (ADR 0006).
+  `CacheStrategyRequest` gains an optional `headers` field and `ALWAYS_NETWORK_ONLY_PATH_PREFIXES`
+  is exported.
+
 ## 0.18.3
 
 ### Patch Changes

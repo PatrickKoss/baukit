@@ -71,6 +71,25 @@ describe('createFetchHandler', () => {
     expect(puts).toEqual([]);
   });
 
+  it.each([
+    { name: 'a session route', request: { url: `${APP_ORIGIN}/auth/session/refresh` } },
+    {
+      name: 'an authorized API request',
+      request: {
+        url: `${APP_ORIGIN}/api/v1/me`,
+        headers: new Headers({ authorization: 'Bearer token' }),
+      },
+    },
+  ])('neither reads nor writes the cache for $name', async ({ request }) => {
+    const { ports, fetchCalls, puts, matchCalls } = harness({ cached: { body: 'stale' } });
+    const handle = createFetchHandler({ appOrigin: APP_ORIGIN, ports });
+
+    await expect(handle(request)).resolves.toEqual({ body: 'network' });
+    expect(fetchCalls).toEqual([{ url: request.url, noStore: true }]);
+    expect(puts).toEqual([]);
+    expect(matchCalls).toEqual([]);
+  });
+
   it('serves a cache-first hit without touching the network', async () => {
     const { ports, fetchCalls } = harness({ cached: { body: 'cached-icon' } });
     const handle = createFetchHandler({ appOrigin: APP_ORIGIN, ports });
