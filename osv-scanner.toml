@@ -3,229 +3,184 @@
 [[IgnoredVulns]]
 id = "GHSA-2m5v-pch6-74hx"
 ignoreUntil = 2027-02-05
-reason = "undici: dev-only transitive dependency in typescript/pnpm-lock.yaml; fixed in undici 8.12.2, pending a lockfile refresh owned by the typescript workspace"
+reason = "typescript/pnpm-lock.yaml only (undici); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-3g3m-2fjr-6pw4"
 ignoreUntil = 2027-02-05
-reason = "glob: build-time transitive dependency, not shipped; fixed in 14.0.2, pending a lockfile refresh"
+reason = "typescript/pnpm-lock.yaml only (glob); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-4487-j8r4-4g2f"
 ignoreUntil = 2027-02-05
-reason = "node-forge: transitive dependency of Expo/React Native dev tooling, not shipped in published packages; fixed in 1.4.1 (GHSA-86w9 has no fix yet), pending a lockfile refresh"
+reason = "typescript/pnpm-lock.yaml only (node-forge); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-4642-5mcj-2rqw"
 ignoreUntil = 2027-02-05
-reason = "node-forge: transitive dependency of Expo/React Native dev tooling, not shipped in published packages; fixed in 1.4.1 (GHSA-86w9 has no fix yet), pending a lockfile refresh"
+reason = "typescript/pnpm-lock.yaml only (node-forge); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-4qv8-2p9j-2685"
 ignoreUntil = 2027-02-05
-reason = "undici: dev-only transitive dependency in typescript/pnpm-lock.yaml; fixed in undici 8.12.2, pending a lockfile refresh owned by the typescript workspace"
+reason = "typescript/pnpm-lock.yaml only (undici); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-4w7w-5xrc-9h26"
 ignoreUntil = 2027-02-05
-reason = "undici: dev-only transitive dependency in typescript/pnpm-lock.yaml; fixed in undici 8.12.2, pending a lockfile refresh owned by the typescript workspace"
+reason = "typescript/pnpm-lock.yaml only (undici); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-525v-9gp9-w22h"
 ignoreUntil = 2027-02-05
-reason = "node-forge: transitive dependency of Expo/React Native dev tooling, not shipped in published packages; fixed in 1.4.1 (GHSA-86w9 has no fix yet), pending a lockfile refresh"
+reason = "typescript/pnpm-lock.yaml only (node-forge); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-55wc-3pg8-jfw6"
 ignoreUntil = 2027-02-05
-reason = "undici: dev-only transitive dependency in typescript/pnpm-lock.yaml; fixed in undici 8.12.2, pending a lockfile refresh owned by the typescript workspace"
+reason = "typescript/pnpm-lock.yaml only (undici); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-587h-7wmj-h5pm"
 ignoreUntil = 2027-02-05
-reason = "launch-editor, vite: dev server only, not shipped; fixed in 8.3.3, pending a lockfile refresh owned by the typescript workspace (launch-editor fixed in 2.14.2)"
+reason = "typescript/pnpm-lock.yaml only (launch-editor, vite); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-5cwg-6vw7-rj6p"
 ignoreUntil = 2027-02-05
-reason = "node-forge: transitive dependency of Expo/React Native dev tooling, not shipped in published packages; fixed in 1.4.1 (GHSA-86w9 has no fix yet), pending a lockfile refresh"
+reason = "typescript/pnpm-lock.yaml only (node-forge); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-5x38-2vff-x55p"
 ignoreUntil = 2027-02-05
-reason = "node-forge: transitive dependency of Expo/React Native dev tooling, not shipped in published packages; fixed in 1.4.1 (GHSA-86w9 has no fix yet), pending a lockfile refresh"
+reason = "typescript/pnpm-lock.yaml only (node-forge); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-698v-4r3x-3vcv"
 ignoreUntil = 2027-02-05
-reason = "launch-editor, vite: dev server only, not shipped; fixed in 8.3.3, pending a lockfile refresh owned by the typescript workspace (launch-editor fixed in 2.14.2)"
+reason = "typescript/pnpm-lock.yaml only (launch-editor, vite); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-6wvx-3r32-xmcg"
 ignoreUntil = 2027-02-05
-reason = "node-forge: transitive dependency of Expo/React Native dev tooling, not shipped in published packages; fixed in 1.4.1 (GHSA-86w9 has no fix yet), pending a lockfile refresh"
+reason = "typescript/pnpm-lock.yaml only (node-forge); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-7wch-p9px-956x"
 ignoreUntil = 2027-02-05
-reason = "node-forge: transitive dependency of Expo/React Native dev tooling, not shipped in published packages; fixed in 1.4.1 (GHSA-86w9 has no fix yet), pending a lockfile refresh"
+reason = "typescript/pnpm-lock.yaml only (node-forge); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-86w9-cpqp-85rv"
 ignoreUntil = 2027-02-05
-reason = "node-forge: transitive dependency of Expo/React Native dev tooling, not shipped in published packages; fixed in 1.4.1 (GHSA-86w9 has no fix yet), pending a lockfile refresh"
+reason = "typescript/pnpm-lock.yaml only (node-forge 1.4.0); no node-forge release fixes it yet."
 
 [[IgnoredVulns]]
 id = "GHSA-8hrf-8g6f-7xwp"
 ignoreUntil = 2027-02-05
-reason = "node-forge: transitive dependency of Expo/React Native dev tooling, not shipped in published packages; fixed in 1.4.1 (GHSA-86w9 has no fix yet), pending a lockfile refresh"
+reason = "typescript/pnpm-lock.yaml only (node-forge); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-9fm3-97px-rjf6"
 ignoreUntil = 2027-02-05
-reason = "undici: dev-only transitive dependency in typescript/pnpm-lock.yaml; fixed in undici 8.12.2, pending a lockfile refresh owned by the typescript workspace"
+reason = "typescript/pnpm-lock.yaml only (undici); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-9jrq-w75r-8gcw"
 ignoreUntil = 2027-02-05
-reason = "vite: dev server only, not shipped; fixed in 8.3.3, pending a lockfile refresh owned by the typescript workspace"
+reason = "typescript/pnpm-lock.yaml only (vite); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-c6gr-qvv4-5v3f"
 ignoreUntil = 2027-02-05
-reason = "dompurify: dev-only transitive dependency in typescript/pnpm-lock.yaml; fixed in 3.4.17, pending a lockfile refresh"
-
-[[IgnoredVulns]]
-id = "GHSA-c8m5-c952-6cm4"
-ignoreUntil = 2027-02-05
-reason = "rustls: examples/minimal-api/Cargo.lock only (rust/ and cli/ are clean); fixed in 0.23.46, pending a lockfile refresh of the example"
+reason = "typescript/pnpm-lock.yaml only (dompurify); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-cg2g-xh64-v4q7"
 ignoreUntil = 2027-02-05
-reason = "dompurify: dev-only transitive dependency in typescript/pnpm-lock.yaml; fixed in 3.4.17, pending a lockfile refresh"
+reason = "typescript/pnpm-lock.yaml only (dompurify); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-f72v-6w45-q472"
 ignoreUntil = 2027-02-05
-reason = "undici: dev-only transitive dependency in typescript/pnpm-lock.yaml; fixed in undici 8.12.2, pending a lockfile refresh owned by the typescript workspace"
+reason = "typescript/pnpm-lock.yaml only (undici); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-g3hv-75wg-m249"
 ignoreUntil = 2027-02-05
-reason = "minimatch: build-time transitive dependency, not shipped; fixed in 11.0.1, pending a lockfile refresh"
+reason = "typescript/pnpm-lock.yaml only (minimatch); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-gcqx-w48m-w2h4"
 ignoreUntil = 2027-02-05
-reason = "deepmerge: build-time transitive dependency of Expo/Jest tooling, no fixed release yet"
-
-[[IgnoredVulns]]
-id = "GHSA-h2v8-394m-p7vv"
-ignoreUntil = 2027-02-05
-reason = "rustls: examples/minimal-api/Cargo.lock only (rust/ and cli/ are clean); fixed in 0.23.46, pending a lockfile refresh of the example"
+reason = "No fix available: deepmerge has no patched release; reached through @expo/config in typescript/ and both expo examples."
 
 [[IgnoredVulns]]
 id = "GHSA-h6cr-wjv9-3cpp"
 ignoreUntil = 2027-02-05
-reason = "node-forge: transitive dependency of Expo/React Native dev tooling, not shipped in published packages; fixed in 1.4.1 (GHSA-86w9 has no fix yet), pending a lockfile refresh"
+reason = "typescript/pnpm-lock.yaml only (node-forge); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-hqq3-7jhf-c5jx"
 ignoreUntil = 2027-02-05
-reason = "node-forge: transitive dependency of Expo/React Native dev tooling, not shipped in published packages; fixed in 1.4.1 (GHSA-86w9 has no fix yet), pending a lockfile refresh"
+reason = "typescript/pnpm-lock.yaml only (node-forge); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-jc66-7q78-782g"
 ignoreUntil = 2027-02-05
-reason = "node-forge: transitive dependency of Expo/React Native dev tooling, not shipped in published packages; fixed in 1.4.1 (GHSA-86w9 has no fix yet), pending a lockfile refresh"
+reason = "typescript/pnpm-lock.yaml only (node-forge); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-mrhx-c7xc-m3w5"
 ignoreUntil = 2027-02-05
-reason = "zod: transitive dependency; fixed in 4.6.6, pending a lockfile refresh owned by the typescript workspace and examples"
+reason = "No fix available for zod 3.x, which @expo/cli requires (^3.25.76); the fix exists only in zod 4.6.6, a major that @expo/cli does not accept. typescript/ also has zod 4.6.5, which the deferred typescript lockfile bump moves to 4.6.6."
 
 [[IgnoredVulns]]
 id = "GHSA-mrv2-3pqr-j5jr"
 ignoreUntil = 2027-02-05
-reason = "dompurify: dev-only transitive dependency in typescript/pnpm-lock.yaml; fixed in 3.4.17, pending a lockfile refresh"
+reason = "typescript/pnpm-lock.yaml only (dompurify); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-p458-7748-mcp3"
 ignoreUntil = 2027-02-05
-reason = "@vitest/browser, @vitest/ui: test runner only, not shipped; fixed in 5.0.5, pending a lockfile refresh; test runner only, not shipped; fixed in 5.0.5, pending a lockfile refresh"
+reason = "typescript/pnpm-lock.yaml only (@vitest/browser, @vitest/ui); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-qrxm-fqhp-jwvm"
 ignoreUntil = 2027-02-05
-reason = "undici: dev-only transitive dependency in typescript/pnpm-lock.yaml; fixed in undici 8.12.2, pending a lockfile refresh owned by the typescript workspace"
+reason = "typescript/pnpm-lock.yaml only (undici); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-r825-w8mm-5pxw"
 ignoreUntil = 2027-02-05
-reason = "launch-editor, vite: dev server only, not shipped; fixed in 8.3.3, pending a lockfile refresh owned by the typescript workspace (launch-editor fixed in 2.14.2)"
+reason = "typescript/pnpm-lock.yaml only (launch-editor, vite); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-rq7h-c2jc-7f22"
 ignoreUntil = 2027-02-05
-reason = "vite: dev server only, not shipped; fixed in 8.3.3, pending a lockfile refresh owned by the typescript workspace"
+reason = "typescript/pnpm-lock.yaml only (vite); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-vfpm-58rq-9qcg"
 ignoreUntil = 2027-02-05
-reason = "vite: dev server only, not shipped; fixed in 8.3.3, pending a lockfile refresh owned by the typescript workspace"
-
-[[IgnoredVulns]]
-id = "GHSA-vp88-798v-h67f"
-ignoreUntil = 2027-02-05
-reason = "rustls: examples/minimal-api/Cargo.lock only (rust/ and cli/ are clean); fixed in 0.23.46, pending a lockfile refresh of the example"
-
-[[IgnoredVulns]]
-id = "GHSA-w44r-93j7-qv28"
-ignoreUntil = 2027-02-05
-reason = "rustls: examples/minimal-api/Cargo.lock only (rust/ and cli/ are clean); fixed in 0.23.46, pending a lockfile refresh of the example"
+reason = "typescript/pnpm-lock.yaml only (vite); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "GHSA-w5hq-g745-h8pq"
 ignoreUntil = 2027-02-05
-reason = "uuid: transitive dependency of Expo tooling pinned to uuid 7; the v3/v5/v6 buf path is not used by baukit, pending an upstream bump"
+reason = "No fix available for uuid 7.x, which xcode 3.0.1 (via @expo/config-plugins) requires; fixes start at uuid 11.1.1, a major change xcode does not accept."
 
 [[IgnoredVulns]]
 id = "GHSA-xjj6-f33q-929c"
 ignoreUntil = 2027-02-05
-reason = "undici: dev-only transitive dependency in typescript/pnpm-lock.yaml; fixed in undici 8.12.2, pending a lockfile refresh owned by the typescript workspace"
+reason = "typescript/pnpm-lock.yaml only (undici); fixed upstream, waiting for the deferred typescript lockfile bump."
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2024-0449"
 ignoreUntil = 2027-02-05
-reason = "unsafe-libyaml: unmaintained, no successor release; reached only through serde_yaml_ng in the CLI; mirrors the cli/deny.toml ignore"
-
-[[IgnoredVulns]]
-id = "RUSTSEC-2026-0346"
-ignoreUntil = 2027-02-05
-reason = "rustls: examples/minimal-api/Cargo.lock only (rust/ and cli/ are clean); fixed in 0.23.46, pending a lockfile refresh of the example"
-
-[[IgnoredVulns]]
-id = "RUSTSEC-2026-0347"
-ignoreUntil = 2027-02-05
-reason = "rustls: examples/minimal-api/Cargo.lock only (rust/ and cli/ are clean); fixed in 0.23.46, pending a lockfile refresh of the example"
-
-[[IgnoredVulns]]
-id = "RUSTSEC-2026-0348"
-ignoreUntil = 2027-02-05
-reason = "rustls: examples/minimal-api/Cargo.lock only (rust/ and cli/ are clean); fixed in 0.23.46, pending a lockfile refresh of the example"
-
-[[IgnoredVulns]]
-id = "RUSTSEC-2026-0349"
-ignoreUntil = 2027-02-05
-reason = "rustls: examples/minimal-api/Cargo.lock only (rust/ and cli/ are clean); fixed in 0.23.46, pending a lockfile refresh of the example"
-
-[[IgnoredVulns]]
-id = "RUSTSEC-2026-0382"
-ignoreUntil = 2027-02-05
-reason = "rustls-webpki: examples/minimal-api/Cargo.lock only; fixed in 0.103.16, pending a lockfile refresh of the example"
+reason = "No fix available: unsafe-libyaml is unmaintained with no successor release; reached through serde_yaml_ng in cli/. Mirrors the cli/deny.toml ignore."
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0440"
 ignoreUntil = 2027-02-05
-reason = "astral-tokio-tar: unmaintained, no patched release; reached only through testcontainers in baukit-test; mirrors the rust/deny.toml ignore"
+reason = "No fix available: astral-tokio-tar is unmaintained with no patched release; reached through testcontainers in baukit-test. Mirrors the rust/deny.toml ignore."

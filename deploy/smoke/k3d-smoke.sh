@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-deploy_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+deploy_root=$(CDPATH='' cd -- "$script_dir/.." && pwd)
 chart=${BAUKIT_SMOKE_CHART:-$deploy_root/chart/baukit-app}
 observability_chart=${BAUKIT_SMOKE_OBSERVABILITY_CHART:-$deploy_root/observability}
 
@@ -93,9 +93,12 @@ for port_mapping in $k3d_ports; do
 done
 created_cluster=true
 k3d "$@"
-# Image references cannot contain whitespace, so intentional shell splitting is
-# the simplest portable interface for this disposable local harness.
-k3d image import --cluster "$cluster_name" $images
+# Image references cannot contain whitespace, so the list splits on spaces.
+set -- image import --cluster "$cluster_name"
+for image in $images; do
+    set -- "$@" "$image"
+done
+k3d "$@"
 
 kubectl create namespace "$namespace"
 if [ "$observability_namespace" != "$namespace" ]; then

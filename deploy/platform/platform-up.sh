@@ -123,7 +123,7 @@ start_git_daemon() {
   mv -- "$git_tmp" "$git_root"
 
   nohup python3 "$platform_dir/local-git-http.py" \
-    --root "$git_root" --port "$git_port" \
+    --host 0.0.0.0 --root "$git_root" --port "$git_port" \
     >"$state_dir/git-http.log" 2>&1 &
   printf '%s\n' "$!" >"$git_pid_file"
 
