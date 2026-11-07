@@ -1,5 +1,6 @@
 use std::{borrow::Cow, collections::BTreeSet, time::Duration};
 
+use baukit_egress::AddressPolicy;
 use reqwest::Url;
 use thiserror::Error;
 
@@ -219,6 +220,7 @@ pub struct OidcConfig {
     pub(crate) clock_skew: Duration,
     pub(crate) claim_mapping: PrincipalClaimMapping,
     pub(crate) token_profile: TokenProfile,
+    pub(crate) egress_policy: Option<AddressPolicy>,
 }
 
 impl OidcConfig {
@@ -245,6 +247,7 @@ impl OidcConfig {
             clock_skew: Duration::from_secs(60),
             claim_mapping: PrincipalClaimMapping::new(),
             token_profile: TokenProfile::Oidc,
+            egress_policy: None,
         })
     }
 
@@ -269,6 +272,7 @@ impl OidcConfig {
             clock_skew: Duration::from_secs(5),
             claim_mapping: PrincipalClaimMapping::clerk(),
             token_profile: TokenProfile::Clerk { authorized_parties },
+            egress_policy: None,
         })
     }
 
@@ -290,6 +294,7 @@ impl OidcConfig {
             clock_skew: Duration::from_secs(60),
             claim_mapping: PrincipalClaimMapping::client_bound(),
             token_profile: TokenProfile::ClientBound { client_id },
+            egress_policy: None,
         })
     }
 
@@ -314,6 +319,7 @@ impl OidcConfig {
             clock_skew: Duration::ZERO,
             claim_mapping: PrincipalClaimMapping::client_bound(),
             token_profile: TokenProfile::ScopeBound { required_scopes },
+            egress_policy: None,
         })
     }
 
@@ -406,6 +412,17 @@ impl OidcConfig {
         validate_duration("request timeout", request_timeout)?;
         self.request_timeout = request_timeout;
         Ok(self)
+    }
+
+    /// Overrides the egress address policy for discovery and JWKS requests.
+    ///
+    /// By default the verifier reaches only the exact scheme, host and port of
+    /// the issuer, or of the explicit JWKS URL, and of the JWKS URL that discovery
+    /// names.
+    #[must_use]
+    pub fn with_egress_policy(mut self, policy: AddressPolicy) -> Self {
+        self.egress_policy = Some(policy);
+        self
     }
 
     /// Sets allowed clock skew for `exp` and `nbf` checks.

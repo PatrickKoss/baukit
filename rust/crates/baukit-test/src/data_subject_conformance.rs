@@ -186,7 +186,7 @@ pub async fn check_data_subject_conformance<A: DataSubjectConformanceAdapter>(
 ) -> Result<(), DataSubjectConformanceError> {
     let mut http = Http {
         endpoint,
-        client: reqwest::Client::builder()
+        client: crate::test_http_client()
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
             .timeout(DEADLINE)

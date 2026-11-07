@@ -1357,7 +1357,7 @@ async fn client_downloads_every_deterministic_part_over_http_and_verifies_the_si
         }
     }
     let _server = StopServer(server);
-    let client = reqwest::Client::builder().no_proxy().build()?;
+    let client = baukit_test::test_http_client().no_proxy().build()?;
     let discovery: DiscoveryDocument = client
         .get(format!("{url}/.well-known/baukit/data-subject"))
         .send()

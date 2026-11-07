@@ -4,10 +4,13 @@ use std::{
 };
 
 use aws_lc_rs::digest;
+use axum::http::{HeaderMap, HeaderValue, header};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use baukit_config::Secret;
-use reqwest::Client;
+use baukit_egress::{AddressPolicy, AllowedEndpoint, EgressOptions, EgressRequest, GuardedClient};
 use serde::Deserialize;
 use tokio::{sync::Mutex, time::Instant};
+use url::Url;
 
 use crate::{
     AuthenticationPolicy, McpConfigError, PolicyDenial, PolicyFuture, Principal, VerifiedPrincipal,
@@ -26,6 +29,21 @@ fn encode_client_credential(value: &str) -> String {
     let mut encoded = url::form_urlencoded::Serializer::new(String::new());
     encoded.append_key_only(value);
     encoded.finish()
+}
+
+fn introspection_client(
+    endpoint: &Url,
+    timeout: Duration,
+) -> Result<GuardedClient, McpConfigError> {
+    let allowed = AllowedEndpoint::from_url(endpoint)
+        .map_err(|_| McpConfigError::Invalid("issuer cannot be used as an egress endpoint"))?;
+    let options = EgressOptions::default()
+        .with_policy(AddressPolicy::OnlyEndpoint(allowed))
+        .with_request_timeout(timeout)
+        .and_then(|options| options.with_max_response_bytes(MAX_RESPONSE_BYTES))
+        .map_err(|_| McpConfigError::Invalid("invalid introspection egress options"))?;
+    GuardedClient::new(options)
+        .map_err(|_| McpConfigError::Invalid("cannot build introspection client"))
 }
 
 /// Credentials for a separate confidential Keycloak resource-server client.
@@ -58,13 +76,16 @@ impl KeycloakIntrospectionConfig {
 
 /// RFC 7662 introspection with bounded successful-result caching and no stale fallback.
 ///
+/// Requests go through a [`GuardedClient`] that reaches only the issuer's exact
+/// scheme, host and port.
+///
 /// API-token principals return [`PolicyDenial::Inactive`] without sending their
 /// bearer tokens to Keycloak. Products accepting both credential kinds must
 /// route verified API-token principals through their own policy branch.
 pub struct KeycloakIntrospectionPolicy {
     config: KeycloakIntrospectionConfig,
-    endpoint: String,
-    client: Client,
+    endpoint: Url,
+    client: GuardedClient,
     cache: Mutex<BTreeMap<[u8; 32], CacheEntry>>,
 }
 
@@ -98,16 +119,13 @@ impl KeycloakIntrospectionPolicy {
                 "introspection requires credentials, timeout in (0, 30s], cache TTL in [0, 30s], and capacity in [1, 4096]",
             ));
         }
-        let client = Client::builder()
-            .timeout(config.timeout)
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .map_err(|_| McpConfigError::Invalid("cannot build introspection client"))?;
+        let endpoint = crate::config::endpoint(&format!(
+            "{}/protocol/openid-connect/token/introspect",
+            config.issuer.trim_end_matches('/')
+        ))?;
+        let client = introspection_client(&endpoint, config.timeout)?;
         Ok(Self {
-            endpoint: format!(
-                "{}/protocol/openid-connect/token/introspect",
-                config.issuer.trim_end_matches('/')
-            ),
+            endpoint,
             config,
             client,
             cache: Mutex::new(BTreeMap::new()),
@@ -115,32 +133,35 @@ impl KeycloakIntrospectionPolicy {
     }
 
     async fn fetch(&self, token: &str) -> Result<Introspection, PolicyDenial> {
-        let mut response = self
+        let credentials = format!(
+            "{}:{}",
+            encode_client_credential(&self.config.client_id),
+            encode_client_credential(self.config.client_secret.expose())
+        );
+        let mut authorization =
+            HeaderValue::from_str(&format!("Basic {}", STANDARD.encode(credentials)))
+                .map_err(|_| PolicyDenial::Unavailable)?;
+        authorization.set_sensitive(true);
+        let mut headers = HeaderMap::new();
+        headers.insert(header::AUTHORIZATION, authorization);
+        headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/x-www-form-urlencoded"),
+        );
+        let body = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("token", token)
+            .append_pair("token_type_hint", "access_token")
+            .finish();
+        let response = self
             .client
-            .post(&self.endpoint)
-            .basic_auth(
-                encode_client_credential(&self.config.client_id),
-                Some(encode_client_credential(self.config.client_secret.expose())),
+            .execute(
+                EgressRequest::post(self.endpoint.clone())
+                    .with_headers(headers)
+                    .with_body(body),
             )
-            .form(&[("token", token), ("token_type_hint", "access_token")])
-            .send()
             .await
             .map_err(|_| PolicyDenial::Unavailable)?;
-        if !response.status().is_success() {
-            return Err(PolicyDenial::Unavailable);
-        }
-        let mut body = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|_| PolicyDenial::Unavailable)?
-        {
-            if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
-                return Err(PolicyDenial::Unavailable);
-            }
-            body.extend_from_slice(&chunk);
-        }
-        serde_json::from_slice(&body).map_err(|_| PolicyDenial::Unavailable)
+        serde_json::from_slice(response.body()).map_err(|_| PolicyDenial::Unavailable)
     }
 
     async fn cached(&self, key: &[u8; 32]) -> Option<Introspection> {

@@ -48,7 +48,11 @@ pub async fn check_ops_base_url_conformance(
     base_url: &str,
     readiness: &ReadinessRegistry,
 ) -> Result<(), OpsConformanceError> {
-    let client = reqwest::Client::new();
+    let client = crate::test_http_client()
+        .build()
+        .map_err(|error| OpsConformanceError {
+            violations: vec![format!("HTTP client could not be built: {error}")],
+        })?;
     let base_url = base_url.trim_end_matches('/');
     let mut violations = Vec::new();
 

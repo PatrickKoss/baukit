@@ -15,6 +15,10 @@ use rmcp::{
 };
 
 #[tokio::main]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "rmcp's streamable HTTP transport takes a reqwest::Client; this developer tool connects to an MCP URL the developer passes in"
+)]
 async fn main() -> Result<(), Box<dyn Error>> {
     let resource = env::var("MCP_RESOURCE_URL")?;
     let token = env::var("MCP_ACCESS_TOKEN")?;

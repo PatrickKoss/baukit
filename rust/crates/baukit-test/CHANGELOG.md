@@ -4,6 +4,10 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- `test_http_client()` returns the raw `reqwest::ClientBuilder` that tests use to drive servers under test. It is the one place in test support that builds a raw client, so the `disallowed-methods` lint for raw `reqwest` constructors needs no suppression elsewhere.
+
 ## [0.18.3] - 2026-11-07
 
 ## [0.18.2] - 2026-11-06

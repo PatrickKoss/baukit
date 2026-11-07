@@ -234,7 +234,7 @@ async fn deletes_user_treats_404_as_success_and_requires_manage_users() -> Resul
         container.get_host().await?,
         container.get_host_port_ipv4(8080).await?
     );
-    let client = Client::builder().no_proxy().build()?;
+    let client = baukit_test::test_http_client().no_proxy().build()?;
     let token = admin(&client, &base).await?;
     reconcile_generated_realm(&client, &base, &token).await?;
     client.post(format!("{base}/admin/realms")).bearer_auth(&token)

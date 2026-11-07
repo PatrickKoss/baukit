@@ -396,7 +396,7 @@ impl MockOidcServer {
             grant_type: "refresh_token",
             refresh_token,
         })?;
-        let response = reqwest::Client::builder()
+        let response = crate::test_http_client()
             .timeout(Duration::from_secs(5))
             .build()?
             .post(format!(

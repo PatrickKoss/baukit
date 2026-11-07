@@ -87,7 +87,7 @@ impl KeycloakTestContainer {
         &self,
         login: &KeycloakLogin<'_>,
     ) -> Result<String, KeycloakTestError> {
-        let client = reqwest::Client::builder()
+        let client = crate::test_http_client()
             .redirect(Policy::none())
             .timeout(REQUEST_TIMEOUT)
             .build()?;
