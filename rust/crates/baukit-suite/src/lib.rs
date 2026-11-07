@@ -35,6 +35,8 @@
 //! after the runtime migration to install this behavior.
 
 pub mod adapters;
+#[cfg(feature = "delivery")]
+pub mod compose;
 pub mod config;
 pub mod domain;
 mod error_codes;
