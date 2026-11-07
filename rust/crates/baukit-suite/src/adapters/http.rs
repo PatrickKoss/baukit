@@ -986,14 +986,39 @@ async fn inbound(
 }
 
 /// Mounts the suite routes under the product API prefix. Auth middleware must insert `SuiteUser`.
+/// Prefer `crate::compose::PostgresSuite::router`, which IP-limits [`public_router`].
 pub fn router(state: SuiteHttpState) -> axum::Router {
+    public_router(state.clone())
+        .merge(inbound_router(state.clone()))
+        .merge(user_router(state))
+}
+
+/// Unauthenticated callback, exchange and peer revoke routes.
+pub fn public_router(state: SuiteHttpState) -> axum::Router {
+    use axum::routing::{get as route_get, post};
+    axum::Router::new()
+        .route("/suite/links/callback", route_get(callback))
+        .route("/suite/links/exchange", post(exchange))
+        .route("/suite/links/{id}/revoke", post(revoke))
+        .layer(DefaultBodyLimit::max(SUITE_MAX_BODY_BYTES))
+        .with_state(state)
+}
+
+/// Signed inbound events, limited per link and source by the ingest service.
+pub fn inbound_router(state: SuiteHttpState) -> axum::Router {
+    axum::Router::new()
+        .route("/suite/inbound/{id}", axum::routing::post(inbound))
+        .layer(DefaultBodyLimit::max(SUITE_MAX_BODY_BYTES))
+        .with_state(state)
+}
+
+/// Routes that require a `SuiteUser` extension.
+pub fn user_router(state: SuiteHttpState) -> axum::Router {
     use axum::routing::{get as route_get, post};
     axum::Router::new()
         .route("/suite/peers", route_get(peers))
         .route("/suite/links", route_get(list).post(start))
         .route("/suite/links/requests/{id}/complete", post(complete))
-        .route("/suite/links/callback", route_get(callback))
-        .route("/suite/links/exchange", post(exchange))
         .route(
             "/suite/links/{id}",
             route_get(get).patch(update).delete(disconnect),
@@ -1002,11 +1027,9 @@ pub fn router(state: SuiteHttpState) -> axum::Router {
         .route("/suite/links/{id}/reenable", post(reenable))
         .route("/suite/links/{id}/replay", post(replay))
         .route("/suite/links/{id}/deliveries", route_get(deliveries))
-        .route("/suite/links/{id}/revoke", post(revoke))
         .route("/suite/authorizations/preview", route_get(preview))
         .route("/suite/authorizations", post(authorize))
         .route("/suite/authorizations/deny", post(deny))
-        .route("/suite/inbound/{id}", post(inbound))
         .layer(DefaultBodyLimit::max(SUITE_MAX_BODY_BYTES))
         .with_state(state)
 }
@@ -1019,57 +1042,5 @@ pub fn router(state: SuiteHttpState) -> axum::Router {
 pub struct SuiteOpenApi;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use utoipa::OpenApi;
-    #[test]
-    fn delivery_error_codes_preserve_every_protocol_code() {
-        for code in crate::SUITE_ERROR_CODES {
-            let mapped = SuiteDeliveryFailureCode::from(*code);
-            assert_eq!(mapped.as_str(), *code);
-            assert_eq!(serde_json::to_value(mapped).expect("code"), *code);
-        }
-        assert_eq!(
-            SuiteDeliveryFailureCode::from("unknown").as_str(),
-            "internal_error"
-        );
-    }
-    #[test]
-    fn openapi_error_codes_match_protocol() {
-        let document = serde_json::to_value(SuiteOpenApi::openapi()).expect("OpenAPI");
-        let schemas = &document["components"]["schemas"];
-        assert_eq!(
-            schemas["SuiteErrorCode"]["enum"],
-            serde_json::json!(crate::SUITE_ERROR_CODES)
-        );
-        assert_eq!(
-            schemas["SuiteErrorBody"]["properties"]["code"]["$ref"],
-            "#/components/schemas/SuiteErrorCode"
-        );
-    }
-    #[test]
-    fn openapi_uses_the_event_envelope_wire_name_and_generic_app_ids() {
-        let document = serde_json::to_value(SuiteOpenApi::openapi()).expect("OpenAPI");
-        let schemas = &document["components"]["schemas"];
-        let properties = &schemas["SuiteEnvelope"]["properties"];
-        assert!(properties.get("sourceApp").is_some());
-        assert!(properties.get("source").is_none());
-        assert!(
-            schemas["StartRequest"]["properties"]["peerApp"]
-                .get("enum")
-                .is_none()
-        );
-        assert!(
-            document["paths"]["/suite/inbound/{linkId}"]["post"]["responses"]["422"]["description"]
-                .as_str()
-                .expect("payload rejection description")
-                .contains("suite_payload_invalid")
-        );
-        assert_eq!(document["paths"].as_object().expect("paths").len(), 15);
-        assert!(
-            schemas["PeerResponse"]["properties"]
-                .get("mappableMetrics")
-                .is_none()
-        );
-    }
-}
+#[path = "http_tests.rs"]
+mod tests;
