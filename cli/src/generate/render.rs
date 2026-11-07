@@ -6,13 +6,60 @@ use std::{
 use anyhow::{Result, anyhow};
 use include_dir::Dir;
 use minijinja::{Environment, context};
-use serde::Serialize;
+use serde::{Serialize, Serializer, ser::SerializeMap};
 
 use crate::{
     BACKEND_TEMPLATE, COMMON_TEMPLATE, MCP_REMOTE_TEMPLATE, MOBILE_TEMPLATE, PLATFORM_TEMPLATE,
-    WEB_TEMPLATE, WORKER_TEMPLATE, dockerfile::render_dockerfile, generate::NewOptions,
-    generate::manifest_source::render_manifest, manifest::Manifest,
+    WEB_TEMPLATE, WORKER_TEMPLATE, components::Components, dockerfile::render_dockerfile,
+    generate::NewOptions, generate::manifest_source::render_manifest, manifest::AuthProvider,
+    manifest::Manifest,
 };
+
+/// Template variables for the selected auth provider.
+#[derive(Debug)]
+pub(crate) struct AuthContext(pub(crate) Option<AuthProvider>);
+
+impl AuthContext {
+    pub(crate) const fn enabled(&self) -> bool {
+        self.0.is_some()
+    }
+
+    pub(crate) fn is(&self, provider: AuthProvider) -> bool {
+        self.0 == Some(provider)
+    }
+
+    const fn provider_name(&self) -> &'static str {
+        match self.0 {
+            Some(AuthProvider::Oidc) => "oidc",
+            Some(AuthProvider::Clerk) => "clerk",
+            Some(AuthProvider::Workos) => "workos",
+            None => "",
+        }
+    }
+}
+
+impl Serialize for AuthContext {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(5))?;
+        map.serialize_entry("auth_enabled", &self.enabled())?;
+        map.serialize_entry("auth_oidc", &self.is(AuthProvider::Oidc))?;
+        map.serialize_entry("auth_clerk", &self.is(AuthProvider::Clerk))?;
+        map.serialize_entry("auth_workos", &self.is(AuthProvider::Workos))?;
+        map.serialize_entry("auth_provider", self.provider_name())?;
+        map.end()
+    }
+}
+
+/// Which optional port groups `baukit.toml` declares explicitly.
+#[derive(Debug, Serialize)]
+pub(crate) struct DeclaredPorts {
+    #[serde(rename = "dev_ports_declared")]
+    pub(crate) dev: bool,
+    #[serde(rename = "web_preview_declared")]
+    pub(crate) web_preview: bool,
+    #[serde(rename = "service_ports_declared")]
+    pub(crate) service: bool,
+}
 
 #[derive(Debug, Serialize)]
 pub(crate) struct TemplateContext {
@@ -28,20 +75,12 @@ pub(crate) struct TemplateContext {
     pub(crate) baukit_dependency_description: String,
     pub(crate) baukit_typescript_dependency_description: String,
     pub(crate) product_description: String,
-    pub(crate) backend: bool,
-    pub(crate) worker: bool,
-    pub(crate) mobile: bool,
-    pub(crate) web: bool,
-    pub(crate) pwa: bool,
-    pub(crate) mcp: bool,
-    pub(crate) platform: bool,
+    #[serde(flatten)]
+    pub(crate) components: Components,
     pub(crate) platform_migration: String,
     pub(crate) remote_mcp_client_scopes: &'static str,
-    pub(crate) auth_enabled: bool,
-    pub(crate) auth_oidc: bool,
-    pub(crate) auth_clerk: bool,
-    pub(crate) auth_workos: bool,
-    pub(crate) auth_provider: &'static str,
+    #[serde(flatten)]
+    pub(crate) auth: AuthContext,
     pub(crate) quality_strict: bool,
     pub(crate) port_offset: u32,
     pub(crate) postgres_host_port: u16,
@@ -54,9 +93,8 @@ pub(crate) struct TemplateContext {
     pub(crate) web_preview_port: u16,
     pub(crate) metro_port: Option<u16>,
     pub(crate) local_callback_port: u16,
-    pub(crate) dev_ports_declared: bool,
-    pub(crate) web_preview_declared: bool,
-    pub(crate) service_ports_declared: bool,
+    #[serde(flatten)]
+    pub(crate) declared_ports: DeclaredPorts,
     pub(crate) api_container_port: u16,
     pub(crate) ops_container_port: u16,
 }
@@ -82,7 +120,7 @@ pub(crate) fn render_product(
         PathBuf::from("tests/fixtures/resource-budget-measurements-v1.json"),
         include_bytes!("../../../fixtures/limits/resource-budget-measurements-v1.json").to_vec(),
     );
-    if options.backend {
+    if options.components.backend() {
         render_directory(
             &BACKEND_TEMPLATE,
             &environment,
@@ -90,12 +128,12 @@ pub(crate) fn render_product(
             &mut rendered,
             false,
         )?;
-        if context.auth_enabled
+        if context.auth.enabled()
             && let Some(overlay) = BACKEND_TEMPLATE.get_dir("__auth__")
         {
             render_directory(overlay, &environment, context, &mut rendered, true)?;
         }
-        if options.worker {
+        if options.components.worker() {
             render_directory(
                 &WORKER_TEMPLATE,
                 &environment,
@@ -105,7 +143,7 @@ pub(crate) fn render_product(
             )?;
         }
     }
-    if options.mobile {
+    if options.components.mobile() {
         render_directory(
             &MOBILE_TEMPLATE,
             &environment,
@@ -113,13 +151,13 @@ pub(crate) fn render_product(
             &mut rendered,
             false,
         )?;
-        if context.auth_enabled
+        if context.auth.enabled()
             && let Some(overlay) = MOBILE_TEMPLATE.get_dir("__auth__")
         {
             render_directory(overlay, &environment, context, &mut rendered, true)?;
         }
     }
-    if options.mobile {
+    if options.components.mobile() {
         for name in ["build-sw.mjs", "build-sw.test.mjs"] {
             let source = WEB_TEMPLATE
                 .get_file(format!("web/scripts/{name}"))
@@ -130,15 +168,15 @@ pub(crate) fn render_product(
             );
         }
     }
-    if options.web {
+    if options.components.web() {
         render_directory(&WEB_TEMPLATE, &environment, context, &mut rendered, false)?;
-        if context.auth_enabled
+        if context.auth.enabled()
             && let Some(overlay) = WEB_TEMPLATE.get_dir("__auth__")
         {
             render_directory(overlay, &environment, context, &mut rendered, true)?;
         }
     }
-    if context.mcp {
+    if context.components.mcp() {
         render_directory(
             &MCP_REMOTE_TEMPLATE,
             &environment,
@@ -147,7 +185,7 @@ pub(crate) fn render_product(
             false,
         )?;
     }
-    if context.platform {
+    if context.components.platform() {
         render_directory(
             &PLATFORM_TEMPLATE,
             &environment,
@@ -155,12 +193,12 @@ pub(crate) fn render_product(
             &mut rendered,
             false,
         )?;
-        if context.auth_enabled
+        if context.auth.enabled()
             && let Some(overlay) = PLATFORM_TEMPLATE.get_dir("__auth__")
         {
             render_directory(overlay, &environment, context, &mut rendered, true)?;
         }
-        if context.worker {
+        if context.components.worker() {
             rendered.remove(Path::new(&format!(
                 "backend/crates/{}-bin/src/bin/platform-purge.rs",
                 context.app_name
@@ -185,7 +223,7 @@ pub(crate) fn render_product(
         );
     }
     let source = render_manifest(context, options);
-    if options.backend {
+    if options.components.backend() {
         let manifest: Manifest = toml::from_str(&source)?;
         rendered.insert(
             PathBuf::from("backend/Dockerfile"),
@@ -208,22 +246,25 @@ pub(crate) fn render_directory(
         if relative == Path::new("backend/Dockerfile.jinja") {
             continue;
         }
-        if !context.auth_oidc && !context.backend && is_client_stack_only(relative) {
+        if !context.auth.is(AuthProvider::Oidc)
+            && !context.components.backend()
+            && is_client_stack_only(relative)
+        {
             continue;
         }
-        if context.auth_oidc && is_provider_shaped_realm_only(relative) {
+        if context.auth.is(AuthProvider::Oidc) && is_provider_shaped_realm_only(relative) {
             continue;
         }
         if is_python_cache_artifact(relative) {
             continue;
         }
-        if is_auth_only(relative) && (!context.auth_enabled || !auth_overlay) {
+        if is_auth_only(relative) && (!context.auth.enabled() || !auth_overlay) {
             continue;
         }
         if is_strict_only(relative) && !context.quality_strict {
             continue;
         }
-        if is_backend_only(relative) && !context.backend {
+        if is_backend_only(relative) && !context.components.backend() {
             continue;
         }
         let source = file
@@ -248,7 +289,10 @@ pub(crate) fn render_directory(
         rendered.insert(output_path, output.into_bytes());
     }
     for child in directory.dirs() {
-        if !context.auth_oidc && !context.backend && is_client_stack_only(child.path()) {
+        if !context.auth.is(AuthProvider::Oidc)
+            && !context.components.backend()
+            && is_client_stack_only(child.path())
+        {
             continue;
         }
         if is_python_cache_artifact(child.path()) {
@@ -260,7 +304,7 @@ pub(crate) fn render_directory(
         if is_strict_only(child.path()) && !context.quality_strict {
             continue;
         }
-        if is_backend_only(child.path()) && !context.backend {
+        if is_backend_only(child.path()) && !context.components.backend() {
             continue;
         }
         render_directory(child, environment, context, rendered, auth_overlay)?;
@@ -270,19 +314,19 @@ pub(crate) fn render_directory(
 
 pub(crate) fn product_description(options: &NewOptions) -> String {
     let mut capabilities = Vec::new();
-    if options.backend {
+    if options.components.backend() {
         capabilities.push("Rust backend");
     }
-    if options.worker {
+    if options.components.worker() {
         capabilities.push("durable worker");
     }
-    if options.web {
+    if options.components.web() {
         capabilities.push("web app");
     }
-    if options.mobile {
+    if options.components.mobile() {
         capabilities.push("mobile app");
     }
-    if options.mcp {
+    if options.components.mcp() {
         capabilities.push("MCP server");
     }
     format!("Baukit product with {}", capabilities.join(", "))
@@ -338,8 +382,9 @@ mod generator_tests {
     use include_dir::{Dir, DirEntry, File};
     use minijinja::Environment;
 
-    use super::{TemplateContext, render_directory};
+    use super::{AuthContext, DeclaredPorts, TemplateContext, render_directory};
     use crate::REMOTE_MCP_CLIENT_SCOPES;
+    use crate::{Component, Components};
 
     static PYTHON_CACHE_ENTRIES: &[DirEntry<'_>] = &[DirEntry::File(File::new(
         "__pycache__/template.cpython-313.pyc",
@@ -367,20 +412,10 @@ mod generator_tests {
             baukit_dependency_description: String::new(),
             baukit_typescript_dependency_description: String::new(),
             product_description: String::new(),
-            backend: true,
-            worker: false,
-            mobile: false,
-            web: false,
-            pwa: false,
-            mcp: false,
-            platform: false,
+            components: Components::from([Component::Backend]),
             platform_migration: crate::PLATFORM_MIGRATION_PATH.to_owned(),
             remote_mcp_client_scopes: REMOTE_MCP_CLIENT_SCOPES,
-            auth_enabled: false,
-            auth_oidc: false,
-            auth_clerk: false,
-            auth_workos: false,
-            auth_provider: "",
+            auth: AuthContext(None),
             quality_strict: false,
             port_offset: 0,
             postgres_host_port: 5432,
@@ -393,9 +428,11 @@ mod generator_tests {
             web_preview_port: 4173,
             metro_port: None,
             local_callback_port: crate::ports::LOCAL_CALLBACK_PORT,
-            dev_ports_declared: false,
-            web_preview_declared: false,
-            service_ports_declared: false,
+            declared_ports: DeclaredPorts {
+                dev: false,
+                web_preview: false,
+                service: false,
+            },
             api_container_port: 8080,
             ops_container_port: 9090,
         };

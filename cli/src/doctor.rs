@@ -85,12 +85,12 @@ pub(crate) fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec
         if manifest.quality.profile != QualityProfile::Strict {
             failures.push("quality.openapi_compatibility requires the strict profile".to_owned());
         }
-        if !manifest.capabilities.backend {
+        if !manifest.capabilities.components.backend() {
             failures
                 .push("quality.openapi_compatibility requires the backend capability".to_owned());
         }
     }
-    if !manifest.capabilities.web && !manifest.quality.critical_paths.is_empty() {
+    if !manifest.capabilities.components.web() && !manifest.quality.critical_paths.is_empty() {
         failures.push("quality.critical_paths requires the web capability".to_owned());
     }
     for critical_path in &manifest.quality.critical_paths {
@@ -105,27 +105,28 @@ pub(crate) fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec
             failures.push(format!(
                 "critical path `{critical_path}` must be an e2e/tests/*.spec.ts file"
             ));
-        } else if manifest.capabilities.web && !root.join("web").join(path).is_file() {
+        } else if manifest.capabilities.components.web() && !root.join("web").join(path).is_file() {
             failures.push(format!(
                 "critical path `web/{critical_path}` does not exist"
             ));
         }
     }
-    if manifest.capabilities.pwa && pwa_app_directory(&manifest.capabilities).is_none() {
+    if manifest.capabilities.components.pwa() && pwa_app_directory(&manifest.capabilities).is_none()
+    {
         failures.push("the PWA capability requires the web or mobile capability".to_owned());
     }
-    if manifest.capabilities.platform && !manifest.capabilities.backend {
+    if manifest.capabilities.components.platform() && !manifest.capabilities.components.backend() {
         failures.push("the platform capability requires the backend capability".to_owned());
     }
-    if manifest.capabilities.platform != manifest.platform.is_some() {
+    if manifest.capabilities.components.platform() != manifest.platform.is_some() {
         failures.push(
             "capabilities.platform and the [platform] migration must be set together".to_owned(),
         );
     }
-    if manifest.capabilities.mcp && !manifest.capabilities.backend {
+    if manifest.capabilities.components.mcp() && !manifest.capabilities.components.backend() {
         failures.push("the MCP capability requires the backend capability".to_owned());
     }
-    if manifest.capabilities.mcp && manifest.capabilities.auth.is_none() {
+    if manifest.capabilities.components.mcp() && manifest.capabilities.auth.is_none() {
         failures.push("remote MCP OAuth requires an auth provider".to_owned());
     }
     if manifest.schema_version == MANIFEST_SCHEMA_VERSION {
@@ -153,11 +154,11 @@ pub(crate) fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec
     validate_auth_provider(root, &manifest, &mut successes, &mut failures)?;
     validate_product_constants(root, &manifest, &mut successes, &mut failures)?;
     validate_port_configuration(root, &manifest, &mut successes, &mut failures)?;
-    if manifest.capabilities.backend {
+    if manifest.capabilities.components.backend() {
         validate_openapi_paths(root, &manifest.openapi, &mut successes, &mut failures);
         doctor_layout::validate_backend_wiring(root, &manifest, &mut successes, &mut failures)?;
         validate_migrations(root, &manifest, &mut successes, &mut failures)?;
-        if manifest.capabilities.worker {
+        if manifest.capabilities.components.worker() {
             validate_jobs_migration(root, &manifest, &mut successes, &mut failures)?;
         }
         if uses_bundled_keycloak(root, &manifest)? {
@@ -169,10 +170,10 @@ pub(crate) fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec
                 &mut failures,
             )?;
         }
-        if manifest.capabilities.platform {
+        if manifest.capabilities.components.platform() {
             doctor_platform::validate(root, &manifest, &mut successes, &mut failures)?;
         }
-        if manifest.capabilities.mcp {
+        if manifest.capabilities.components.mcp() {
             validate_remote_mcp(root, &manifest, &mut successes, &mut failures)?;
         }
     }
@@ -202,7 +203,7 @@ pub(crate) fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec
             ));
         }
     }
-    if manifest.capabilities.mobile {
+    if manifest.capabilities.components.mobile() {
         let mut dependencies = vec![
             "expo",
             "expo-constants",
@@ -236,7 +237,7 @@ pub(crate) fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec
             doctor_layout::validate_mobile_auth_wiring(root, &manifest, &mut failures)?;
         }
     }
-    if manifest.capabilities.web {
+    if manifest.capabilities.components.web() {
         let mut dependencies = vec!["@tanstack/react-query", "vite"];
         if manifest.capabilities.analytics != AnalyticsAdapter::None {
             dependencies.push("@baukit/analytics-core");
@@ -250,7 +251,7 @@ pub(crate) fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec
         }
         validate_frontend_capability(root, "web", &dependencies, &mut successes, &mut failures)?;
     }
-    if manifest.capabilities.pwa
+    if manifest.capabilities.components.pwa()
         && let Some(app_directory) = pwa_app_directory(&manifest.capabilities)
     {
         validate_pwa_worker_build(root, app_directory, &mut successes, &mut failures)?;

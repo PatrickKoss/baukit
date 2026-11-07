@@ -1,3 +1,4 @@
+mod components;
 mod dockerfile;
 mod doctor;
 mod doctor_auth;
@@ -22,6 +23,7 @@ mod ports;
 
 pub use ports::{PortDeclaration, PortMapping};
 
+pub use components::{Component, Components};
 pub use dockerfile::{
     BackendImage, BackendManifest, BuildInput, Download, ImageVariant, PreBuildStep, RuntimeBinary,
     RuntimeFile, RuntimePackages, WritableDirectory, generate_dockerfile, render_dockerfile,

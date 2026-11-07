@@ -9,13 +9,7 @@ use crate::{
 pub(crate) fn options_capabilities(options: &NewOptions) -> Capabilities {
     Capabilities {
         analytics: AnalyticsAdapter::Posthog,
-        backend: options.backend,
-        worker: options.worker,
-        mobile: options.mobile,
-        web: options.web,
-        pwa: options.pwa,
-        mcp: options.mcp,
-        platform: options.platform,
+        components: options.components,
         auth: options.auth,
     }
 }
@@ -32,13 +26,17 @@ pub(crate) fn render_manifest(context: &TemplateContext, options: &NewOptions) -
     } else {
         format!("port_offset = {}\n", options.port_offset)
     };
-    let mcp = if options.mcp { "mcp = true\n" } else { "" };
-    let platform_capability = if options.platform {
+    let mcp = if options.components.mcp() {
+        "mcp = true\n"
+    } else {
+        ""
+    };
+    let platform_capability = if options.components.platform() {
         "platform = true\n"
     } else {
         ""
     };
-    let platform_manifest = if options.platform {
+    let platform_manifest = if options.components.platform() {
         format!(
             "\n[platform]\nmigration = {}\n",
             toml::Value::String(context.platform_migration.clone())
@@ -96,11 +94,11 @@ consumers = {}\n{}",
         default_backend_coverage_lines(),
         default_webkit_repeats(),
         quality_extras,
-        options.backend,
-        options.worker,
-        options.mobile,
-        options.web,
-        options.pwa,
+        options.components.backend(),
+        options.components.worker(),
+        options.components.mobile(),
+        options.components.web(),
+        options.components.pwa(),
         optional_capabilities,
         auth,
         context.baukit_manifest,

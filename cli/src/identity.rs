@@ -254,8 +254,8 @@ fn typescript_identities(
     let mut count = 0;
     let no_aliases = BTreeSet::new();
     for (directory, enabled) in [
-        ("mobile", manifest.capabilities.mobile),
-        ("web", manifest.capabilities.web),
+        ("mobile", manifest.capabilities.components.mobile()),
+        ("web", manifest.capabilities.components.web()),
     ] {
         if !enabled {
             continue;
@@ -402,7 +402,7 @@ fn rust_identity(
     manifest: &Manifest,
     failures: &mut Vec<String>,
 ) -> Result<(usize, BTreeSet<String>)> {
-    if !manifest.capabilities.backend {
+    if !manifest.capabilities.components.backend() {
         return Ok((0, BTreeSet::new()));
     }
     let crates = crate::doctor_layout::backend_crates(root, manifest)?;

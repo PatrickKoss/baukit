@@ -19,9 +19,17 @@ pub(crate) struct DependencyContext {
 
 pub(crate) fn dependency_context(options: &NewOptions) -> Result<DependencyContext> {
     let path = options.baukit_path.as_deref();
-    let (mobile, web, pwa) = (options.mobile, options.web, options.pwa);
+    let (mobile, web, pwa) = (
+        options.components.mobile(),
+        options.components.web(),
+        options.components.pwa(),
+    );
     let auth_enabled = options.auth.is_some();
-    let (worker, mcp, platform) = (options.worker, options.mcp, options.platform);
+    let (worker, mcp, platform) = (
+        options.components.worker(),
+        options.components.mcp(),
+        options.components.platform(),
+    );
     let mut web_packages = typescript_packages(false, false, web && auth_enabled);
     if pwa && web {
         web_packages.push("@baukit/pwa-web");

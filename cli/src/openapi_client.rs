@@ -10,7 +10,7 @@ use crate::{OPENAPI_TYPESCRIPT_PACKAGE, manifest::read_manifest};
 
 pub fn generate_openapi_client(root: &Path) -> Result<()> {
     let manifest = read_manifest(root)?;
-    if !manifest.capabilities.backend {
+    if !manifest.capabilities.components.backend() {
         bail!("this product has no backend capability");
     }
     let consumers = manifest.openapi.consumers();

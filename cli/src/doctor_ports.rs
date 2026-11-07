@@ -132,7 +132,7 @@ pub(crate) fn validate_port_configuration(
     }
     let initial_failure_count = failures.len();
     let mut expected = Vec::new();
-    if manifest.capabilities.backend {
+    if manifest.capabilities.components.backend() {
         let redis_port = validate_compose_ports(root, manifest, &ports, failures)?;
         expected.extend([
             ("Makefile", format!("HTTP__PORT={}", ports.api)),
@@ -175,7 +175,7 @@ pub(crate) fn validate_port_configuration(
             ]);
         }
     }
-    if manifest.capabilities.mobile {
+    if manifest.capabilities.components.mobile() {
         expected.extend([
             ("mobile/.env.example", format!("localhost:{}", ports.api)),
             ("mobile/src/api.ts", format!("localhost:{}", ports.api)),
@@ -201,7 +201,7 @@ pub(crate) fn validate_port_configuration(
             ]);
         }
     }
-    if manifest.capabilities.web {
+    if manifest.capabilities.components.web() {
         expected.extend([
             ("web/.env.example", format!("localhost:{}", ports.api)),
             ("web/src/api.ts", format!("localhost:{}", ports.api)),
@@ -229,10 +229,10 @@ pub(crate) fn validate_port_configuration(
     }
     if provider_clients_use_bundled_keycloak(root, manifest)? {
         let realm = format!("localhost:{}/realms/", ports.keycloak);
-        if manifest.capabilities.web {
+        if manifest.capabilities.components.web() {
             expected.push(("web/.env.example", realm.clone()));
         }
-        if manifest.capabilities.mobile {
+        if manifest.capabilities.components.mobile() {
             expected.push(("mobile/.env.example", realm));
             let qa_port = format!("{QA_KEYCLOAK_PORT_VARIABLE}{QA_KEYCLOAK_PORT}");
             for script in QA_KEYCLOAK_SCRIPTS {
@@ -244,7 +244,9 @@ pub(crate) fn validate_port_configuration(
         .into_iter()
         .map(|(path, snippet)| (path.to_owned(), snippet))
         .collect::<Vec<_>>();
-    if manifest.capabilities.backend && oidc_clients_use_bundled_keycloak(root, manifest)? {
+    if manifest.capabilities.components.backend()
+        && oidc_clients_use_bundled_keycloak(root, manifest)?
+    {
         for krate in doctor_layout::rust_crates(root, manifest)? {
             for path in krate.sources {
                 let source = fs::read_to_string(&path)?;

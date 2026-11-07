@@ -59,8 +59,16 @@ pub(crate) fn validate_auth_provider(
         }
     };
     for (enabled, directory, dependency) in [
-        (manifest.capabilities.web, "web", web_dependency),
-        (manifest.capabilities.mobile, "mobile", native_dependency),
+        (
+            manifest.capabilities.components.web(),
+            "web",
+            web_dependency,
+        ),
+        (
+            manifest.capabilities.components.mobile(),
+            "mobile",
+            native_dependency,
+        ),
     ] {
         if !enabled {
             continue;
@@ -76,7 +84,7 @@ pub(crate) fn validate_auth_provider(
             ));
         }
     }
-    if provider == AuthProvider::Workos && manifest.capabilities.mobile {
+    if provider == AuthProvider::Workos && manifest.capabilities.components.mobile() {
         validate_workos_mobile_configuration(root, failures)?;
     }
     if failures.len() == before {

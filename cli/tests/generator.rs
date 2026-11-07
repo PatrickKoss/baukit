@@ -6,7 +6,8 @@ use std::{
 };
 
 use baukit_cli::{
-    AuthProvider, NewOptions, OpenApiCompatibility, QualityProfile, doctor, generate_new,
+    AuthProvider, Component, Components, NewOptions, OpenApiCompatibility, QualityProfile, doctor,
+    generate_new,
 };
 use sha2::{Digest, Sha256};
 
@@ -25,13 +26,7 @@ fn options(parent: &Path, name: &str) -> NewOptions {
     NewOptions {
         name: name.to_owned(),
         directory: parent.to_path_buf(),
-        backend: true,
-        worker: false,
-        mobile: false,
-        web: false,
-        pwa: false,
-        mcp: false,
-        platform: false,
+        components: Components::from([Component::Backend]),
         auth: None,
         force: false,
         into_existing: false,
@@ -46,13 +41,10 @@ fn frontend_options(parent: &Path, name: &str, mobile: bool, web: bool) -> NewOp
     NewOptions {
         name: name.to_owned(),
         directory: parent.to_path_buf(),
-        backend: false,
-        worker: false,
-        mobile,
-        web,
-        pwa: false,
-        mcp: false,
-        platform: false,
+        components: [(Component::Mobile, mobile), (Component::Web, web)]
+            .into_iter()
+            .filter_map(|(component, enabled)| enabled.then_some(component))
+            .collect(),
         auth: None,
         force: false,
         into_existing: false,
@@ -107,9 +99,9 @@ fn verify_corepack_bootstrap(path: &Path) -> anyhow::Result<()> {
 fn workflow_jobs_install_corepack_before_invoking_it() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut combined = options(parent.path(), "corepack-product");
-    combined.web = true;
-    combined.mobile = true;
-    combined.mcp = true;
+    combined.components.insert(Component::Web);
+    combined.components.insert(Component::Mobile);
+    combined.components.insert(Component::Mcp);
     combined.auth = Some(AuthProvider::Oidc);
     combined.quality = QualityProfile::Strict;
     let root = generate_new(&combined)?;
@@ -130,10 +122,10 @@ fn longest_application_name_generates_every_capability() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let name = "a".repeat(41);
     let mut generated = options(parent.path(), &name);
-    generated.worker = true;
-    generated.mobile = true;
-    generated.web = true;
-    generated.mcp = true;
+    generated.components.insert(Component::Worker);
+    generated.components.insert(Component::Mobile);
+    generated.components.insert(Component::Web);
+    generated.components.insert(Component::Mcp);
     generated.auth = Some(AuthProvider::Oidc);
     let root = generate_new(&generated)?;
     let manifest = baukit_cli::read_manifest(&root)?;
@@ -172,11 +164,18 @@ fn generated_text_is_whitespace_clean_in_every_snapshot_flavor() -> anyhow::Resu
     let mut flavors: Vec<_> = snapshot_flavors(parent.path())
         .flat_map(|(flavor, generated)| {
             let mut extended = generated.clone();
-            extended.worker = extended.backend;
-            extended.pwa = extended.mobile || extended.web;
+            extended
+                .components
+                .set(Component::Worker, extended.components.backend());
+            extended.components.set(
+                Component::Pwa,
+                extended.components.mobile() || extended.components.web(),
+            );
             extended.quality = QualityProfile::Strict;
             extended.auth = Some(extended.auth.unwrap_or(AuthProvider::Oidc));
-            extended.mcp = extended.backend;
+            extended
+                .components
+                .set(Component::Mcp, extended.components.backend());
             [
                 (flavor.to_owned(), generated),
                 (format!("{flavor}-all-options"), extended),
@@ -184,9 +183,9 @@ fn generated_text_is_whitespace_clean_in_every_snapshot_flavor() -> anyhow::Resu
         })
         .collect();
     let mut documented = options(parent.path(), "long-product-name-fixture");
-    documented.mobile = true;
-    documented.web = true;
-    documented.mcp = true;
+    documented.components.insert(Component::Mobile);
+    documented.components.insert(Component::Web);
+    documented.components.insert(Component::Mcp);
     documented.auth = Some(AuthProvider::Oidc);
     flavors.push(("documented-mcp-oidc".to_owned(), documented));
 
@@ -253,9 +252,9 @@ fn worker_generation_matches_golden_tree_and_records_capability() -> anyhow::Res
     let first_parent = tempfile::tempdir()?;
     let second_parent = tempfile::tempdir()?;
     let mut first_options = options(first_parent.path(), "snapshot-app");
-    first_options.worker = true;
+    first_options.components.insert(Component::Worker);
     let mut second_options = options(second_parent.path(), "snapshot-app");
-    second_options.worker = true;
+    second_options.components.insert(Component::Worker);
 
     let first = generate_new(&first_options)?;
     let second = generate_new(&second_options)?;
@@ -267,8 +266,8 @@ fn worker_generation_matches_golden_tree_and_records_capability() -> anyhow::Res
     );
 
     let manifest = baukit_cli::read_manifest(&first)?;
-    assert!(manifest.capabilities.backend);
-    assert!(manifest.capabilities.worker);
+    assert!(manifest.capabilities.components.backend());
+    assert!(manifest.capabilities.components.worker());
     assert!(
         first
             .join("backend/crates/snapshot-app-worker/src/lib.rs")
@@ -312,8 +311,8 @@ fn generated_backend_is_rustfmt_clean_across_product_names() -> anyhow::Result<(
     }) {
         let parent = tempfile::tempdir()?;
         let mut generated_options = options(parent.path(), name);
-        generated_options.worker = worker;
-        generated_options.mcp = mcp;
+        generated_options.components.set(Component::Worker, worker);
+        generated_options.components.set(Component::Mcp, mcp);
         generated_options.auth = Some(auth);
         let root = generate_new(&generated_options)?;
         let tree = read_tree(&root.join("backend"))?;
@@ -367,7 +366,7 @@ fn generated_native_qa_targets_are_platform_specific_and_shell_valid() -> anyhow
 
     let combined_parent = tempfile::tempdir()?;
     let mut combined_options = options(combined_parent.path(), "qa-native");
-    combined_options.mobile = true;
+    combined_options.components.insert(Component::Mobile);
     combined_options.auth = Some(AuthProvider::Oidc);
     let combined = generate_new(&combined_options)?;
     let root_makefile = fs::read_to_string(combined.join("Makefile"))?;
@@ -428,8 +427,8 @@ fn generated_browser_qa_configures_authenticated_and_unauthenticated_cases() -> 
     ))?;
     let authenticated_parent = tempfile::tempdir()?;
     let mut authenticated_options = options(authenticated_parent.path(), "qa-private");
-    authenticated_options.mobile = true;
-    authenticated_options.web = true;
+    authenticated_options.components.insert(Component::Mobile);
+    authenticated_options.components.insert(Component::Web);
     authenticated_options.auth = Some(AuthProvider::Oidc);
     let authenticated = generate_new(&authenticated_options)?;
 
@@ -484,11 +483,11 @@ fn combined_generation_matches_golden_tree_and_records_capabilities() -> anyhow:
     let first_parent = tempfile::tempdir()?;
     let second_parent = tempfile::tempdir()?;
     let mut first_options = options(first_parent.path(), "snapshot-app");
-    first_options.mobile = true;
-    first_options.web = true;
+    first_options.components.insert(Component::Mobile);
+    first_options.components.insert(Component::Web);
     let mut second_options = options(second_parent.path(), "snapshot-app");
-    second_options.mobile = true;
-    second_options.web = true;
+    second_options.components.insert(Component::Mobile);
+    second_options.components.insert(Component::Web);
 
     let first = generate_new(&first_options)?;
     let second = generate_new(&second_options)?;
@@ -505,11 +504,11 @@ fn combined_generation_matches_golden_tree_and_records_capabilities() -> anyhow:
     );
 
     let manifest = baukit_cli::read_manifest(&first)?;
-    assert!(manifest.capabilities.backend);
-    assert!(!manifest.capabilities.worker);
-    assert!(manifest.capabilities.mobile);
-    assert!(manifest.capabilities.web);
-    assert!(!manifest.capabilities.pwa);
+    assert!(manifest.capabilities.components.backend());
+    assert!(!manifest.capabilities.components.worker());
+    assert!(manifest.capabilities.components.mobile());
+    assert!(manifest.capabilities.components.web());
+    assert!(!manifest.capabilities.components.pwa());
     assert_eq!(manifest.capabilities.auth, None);
     assert_eq!(manifest.quality.profile, QualityProfile::Standard);
     assert_eq!(manifest.quality.backend_coverage_lines, 70);
@@ -760,7 +759,7 @@ fn docker_callers_isolate_checkouts_and_preserve_overrides() -> anyhow::Result<(
 fn generated_compose_receives_the_checkout_cache_prefix() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut opts = options(parent.path(), "compose-cache");
-    opts.mcp = true;
+    opts.components.insert(Component::Mcp);
     opts.auth = Some(AuthProvider::Oidc);
     let root = generate_new(&opts)?;
     for override_prefix in [None, Some("custom-compose-cache")] {
@@ -843,8 +842,8 @@ fn strict_generation_is_capability_driven_and_matches_golden_tree() -> anyhow::R
         } else {
             frontend_options(parent.path(), &format!("strict-{name}"), mobile, web)
         };
-        strict.mobile = mobile;
-        strict.web = web;
+        strict.components.set(Component::Mobile, mobile);
+        strict.components.set(Component::Web, web);
         strict.quality = QualityProfile::Strict;
         let root = generate_new(&strict)?;
         let manifest = baukit_cli::read_manifest(&root)?;
@@ -887,8 +886,8 @@ fn strict_generation_is_capability_driven_and_matches_golden_tree() -> anyhow::R
 
     let parent = tempfile::tempdir()?;
     let mut combined = options(parent.path(), "snapshot-app");
-    combined.mobile = true;
-    combined.web = true;
+    combined.components.insert(Component::Mobile);
+    combined.components.insert(Component::Web);
     combined.quality = QualityProfile::Strict;
     let root = generate_new(&combined)?;
     assert_eq!(
@@ -949,7 +948,7 @@ fn mcp_flag_generates_the_rust_server_and_records_the_capability() -> anyhow::Re
 
     let root = parent.path().join("mcp-flag");
     let manifest = baukit_cli::read_manifest(&root)?;
-    assert!(manifest.capabilities.mcp);
+    assert!(manifest.capabilities.components.mcp());
     assert!(
         root.join("backend/crates/mcp-flag-mcp/Cargo.toml")
             .is_file()
@@ -981,8 +980,8 @@ fn generated_migration_guard_ports_failure_cases() -> anyhow::Result<()> {
 fn generated_environment_reconciler_is_tested_and_setup_is_idempotent() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut generated_options = options(parent.path(), "env-setup");
-    generated_options.mobile = true;
-    generated_options.web = true;
+    generated_options.components.insert(Component::Mobile);
+    generated_options.components.insert(Component::Web);
     let root = generate_new(&generated_options)?;
     for package in ["web/package.json", "mobile/package.json"] {
         assert!(
@@ -1100,8 +1099,8 @@ fn generated_markdown_link_check_fails_for_a_committed_missing_target() -> anyho
 fn combined_generation_applies_port_offset_to_host_ports() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut generated_options = options(parent.path(), "offset-app");
-    generated_options.mobile = true;
-    generated_options.web = true;
+    generated_options.components.insert(Component::Mobile);
+    generated_options.components.insert(Component::Web);
     generated_options.auth = Some(AuthProvider::Oidc);
     generated_options.port_offset = 100;
     let root = generate_new(&generated_options)?;
@@ -1180,8 +1179,8 @@ fn oidc_generation_is_deterministic_and_records_the_optional_capability() -> any
     let first_parent = tempfile::tempdir()?;
     let second_parent = tempfile::tempdir()?;
     let mut first_options = options(first_parent.path(), "snapshot-app");
-    first_options.mobile = true;
-    first_options.web = true;
+    first_options.components.insert(Component::Mobile);
+    first_options.components.insert(Component::Web);
     first_options.auth = Some(AuthProvider::Oidc);
     let mut second_options = first_options.clone();
     second_options.directory = second_parent.path().to_path_buf();
@@ -1298,7 +1297,7 @@ fn oidc_generation_is_deterministic_and_records_the_optional_capability() -> any
 fn oidc_realm_only_emits_selected_public_clients() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut selected = options(parent.path(), "web-product");
-    selected.web = true;
+    selected.components.insert(Component::Web);
     selected.auth = Some(AuthProvider::Oidc);
     let root = generate_new(&selected)?;
     let realm = fs::read_to_string(root.join("keycloak/realm.json"))?;
@@ -1318,8 +1317,8 @@ fn generated_keycloak_policy_and_reconciler_fixtures_pass() -> anyhow::Result<()
     let parent = tempfile::tempdir()?;
     let baukit_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust");
     let mut selected = options(parent.path(), "keycloak-tools");
-    selected.web = true;
-    selected.mobile = true;
+    selected.components.insert(Component::Web);
+    selected.components.insert(Component::Mobile);
     selected.auth = Some(AuthProvider::Oidc);
     selected.baukit_path = Some(baukit_path);
     let root = generate_new(&selected)?;
@@ -1378,7 +1377,7 @@ fn generated_keycloak_policy_rejects_a_weakened_realm() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let baukit_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust");
     let mut selected = options(parent.path(), "weak-realm");
-    selected.web = true;
+    selected.components.insert(Component::Web);
     selected.auth = Some(AuthProvider::Oidc);
     selected.baukit_path = Some(baukit_path);
     let root = generate_new(&selected)?;
@@ -1438,7 +1437,7 @@ fn oidc_dependencies_include_erasure_and_jobs_in_registry_and_path_modes() -> an
             let parent = tempfile::tempdir()?;
             let mut generated_options = options(parent.path(), "erasure-product");
             generated_options.auth = Some(AuthProvider::Oidc);
-            generated_options.worker = worker;
+            generated_options.components.set(Component::Worker, worker);
             if local_path {
                 generated_options.baukit_path = Some(baukit_path.clone());
             }
@@ -1474,8 +1473,8 @@ fn oidc_dependencies_include_erasure_and_jobs_in_registry_and_path_modes() -> an
 fn release_emission_uses_registry_versions_and_reproducibility_files() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut combined = options(parent.path(), "release-product");
-    combined.web = true;
-    combined.mobile = true;
+    combined.components.insert(Component::Web);
+    combined.components.insert(Component::Mobile);
     let root = generate_new(&combined)?;
 
     let cargo = fs::read_to_string(root.join("backend/Cargo.toml"))?;
@@ -1811,7 +1810,7 @@ fn at_least_one_capability_is_required() -> anyhow::Result<()> {
 fn worker_requires_backend() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut worker = frontend_options(parent.path(), "worker-only", false, false);
-    worker.worker = true;
+    worker.components.insert(Component::Worker);
     let error = generate_new(&worker).expect_err("worker without backend must fail");
     assert!(error.to_string().contains("--worker requires --backend"));
     Ok(())
@@ -1842,8 +1841,8 @@ fn doctor_validates_a_local_generated_product() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let baukit_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust");
     let mut local = options(parent.path(), "doctor-app");
-    local.mobile = true;
-    local.web = true;
+    local.components.insert(Component::Mobile);
+    local.components.insert(Component::Web);
     local.port_offset = 100;
     local.baukit_path = Some(baukit_path);
     let root = generate_new(&local)?;
@@ -1902,11 +1901,11 @@ fn doctor_validates_long_name_products_of_every_flavor() -> anyhow::Result<()> {
         ] {
             let parent = tempfile::tempdir()?;
             let mut local = options(parent.path(), "long-product-name-fixture");
-            local.backend = backend;
-            local.worker = backend;
-            local.mobile = mobile;
-            local.web = web;
-            local.mcp = mcp;
+            local.components.set(Component::Backend, backend);
+            local.components.set(Component::Worker, backend);
+            local.components.set(Component::Mobile, mobile);
+            local.components.set(Component::Web, web);
+            local.components.set(Component::Mcp, mcp);
             local.auth = auth;
             local.port_offset = offset;
             local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
@@ -1932,10 +1931,10 @@ fn doctor_validates_long_name_products_of_every_flavor() -> anyhow::Result<()> {
 fn doctor_rejects_drift_in_product_constants_and_url_defaults() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "long-product-name-fixture");
-    local.worker = true;
-    local.mobile = true;
-    local.web = true;
-    local.mcp = true;
+    local.components.insert(Component::Worker);
+    local.components.insert(Component::Mobile);
+    local.components.insert(Component::Web);
+    local.components.insert(Component::Mcp);
     local.auth = Some(AuthProvider::Oidc);
     local.port_offset = 100;
     local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
@@ -2041,9 +2040,9 @@ fn doctor_rejects_drift_in_product_constants_and_url_defaults() -> anyhow::Resul
 fn doctor_accepts_variable_url_configuration_and_formatted_constants() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "long-product-name-fixture");
-    local.mobile = true;
-    local.web = true;
-    local.mcp = true;
+    local.components.insert(Component::Mobile);
+    local.components.insert(Component::Web);
+    local.components.insert(Component::Mcp);
     local.auth = Some(AuthProvider::Oidc);
     local.port_offset = 100;
     local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
@@ -2104,9 +2103,9 @@ fn doctor_accepts_variable_url_configuration_and_formatted_constants() -> anyhow
 fn doctor_distinguishes_missing_constants_from_wrong_values() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "constant-diagnostics");
-    local.mobile = true;
-    local.web = true;
-    local.mcp = true;
+    local.components.insert(Component::Mobile);
+    local.components.insert(Component::Web);
+    local.components.insert(Component::Mcp);
     local.auth = Some(AuthProvider::Oidc);
     local.port_offset = 100;
     local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
@@ -2290,8 +2289,8 @@ fn doctor_checks_independent_host_and_container_port_declarations() -> anyhow::R
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "declared-ports");
     local.auth = Some(AuthProvider::Oidc);
-    local.mobile = true;
-    local.web = true;
+    local.components.insert(Component::Mobile);
+    local.components.insert(Component::Web);
     local.port_offset = 100;
     local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
     let root = generate_new(&local)?;
@@ -2399,8 +2398,8 @@ keycloak = { host = 17004, container = 8080 }
 fn doctor_accepts_custom_literal_ports_without_an_offset() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "custom-ports");
-    local.mobile = true;
-    local.web = true;
+    local.components.insert(Component::Mobile);
+    local.components.insert(Component::Web);
     local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
     let root = generate_new(&local)?;
     for relative in [
@@ -2582,7 +2581,7 @@ fn doctor_checks_pkce_ports_without_requiring_the_me_path() -> anyhow::Result<()
 fn doctor_accepts_web_without_unused_keycloak_test_helpers() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "web-without-e2e");
-    local.web = true;
+    local.components.insert(Component::Web);
     local.auth = Some(AuthProvider::Oidc);
     local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
     let root = generate_new(&local)?;
@@ -2605,7 +2604,7 @@ fn doctor_accepts_web_without_unused_keycloak_test_helpers() -> anyhow::Result<(
 fn doctor_accepts_auth_node_for_web_e2e_and_rejects_it_at_runtime() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "web-e2e");
-    local.web = true;
+    local.components.insert(Component::Web);
     local.auth = Some(AuthProvider::Oidc);
     local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
     let root = generate_new(&local)?;
@@ -2634,9 +2633,9 @@ fn doctor_accepts_product_guidance_names_and_keeps_machine_read_docs() -> anyhow
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "product-docs");
     local.auth = Some(AuthProvider::Oidc);
-    local.mobile = true;
-    local.web = true;
-    local.mcp = true;
+    local.components.insert(Component::Mobile);
+    local.components.insert(Component::Web);
+    local.components.insert(Component::Mcp);
     local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
     let root = generate_new(&local)?;
     for relative in [
@@ -2735,8 +2734,8 @@ fn doctor_accepts_root_workspaces_for_web_and_mobile_and_requires_a_workspace() 
 fn doctor_requires_root_workspace_membership_for_every_app() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "workspace-members");
-    local.mobile = true;
-    local.web = true;
+    local.components.insert(Component::Mobile);
+    local.components.insert(Component::Web);
     local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
     let root = generate_new(&local)?;
     doctor(&root)?;
@@ -2831,7 +2830,7 @@ fn doctor_checks_the_pwa_worker_build_in_a_mobile_only_product() -> anyhow::Resu
     let parent = tempfile::tempdir()?;
     let mut mobile_only = frontend_options(parent.path(), "pwa-mobile", true, false);
     mobile_only.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
-    mobile_only.pwa = true;
+    mobile_only.components.insert(Component::Pwa);
     let root = generate_new(&mobile_only)?;
     assert!(
         doctor(&root)?
@@ -2948,7 +2947,7 @@ fn doctor_accepts_a_timestamped_jobs_migration() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let baukit_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust");
     let mut local = options(parent.path(), "doctor-worker");
-    local.worker = true;
+    local.components.insert(Component::Worker);
     local.baukit_path = Some(baukit_path);
     let root = generate_new(&local)?;
     fs::rename(
@@ -3026,8 +3025,8 @@ fn typescript_source_is_independent_of_product_name_length() -> anyhow::Result<(
         let mut baseline = None;
         for name in ["fixture", "solo-leveling-system-companion", &maximum_name] {
             let mut generated = options(parent.path(), name);
-            generated.web = true;
-            generated.mobile = true;
+            generated.components.insert(Component::Web);
+            generated.components.insert(Component::Mobile);
             generated.port_offset = 100;
             generated.auth = auth;
             let root = generate_new(&generated)?;
@@ -3066,7 +3065,7 @@ fn typescript_source_is_independent_of_product_name_length() -> anyhow::Result<(
 fn mcp_requires_a_backend_and_auth_provider() {
     let parent = tempfile::tempdir().expect("temporary directory");
     let mut no_backend = frontend_options(parent.path(), "mcp-web", false, true);
-    no_backend.mcp = true;
+    no_backend.components.insert(Component::Mcp);
     assert!(
         generate_new(&no_backend)
             .expect_err("MCP without a backend must fail")
@@ -3075,7 +3074,7 @@ fn mcp_requires_a_backend_and_auth_provider() {
     );
 
     let mut no_oidc = options(parent.path(), "mcp-no-oidc");
-    no_oidc.mcp = true;
+    no_oidc.components.insert(Component::Mcp);
     assert!(
         generate_new(&no_oidc)
             .expect_err("MCP without OIDC must fail")
@@ -3095,7 +3094,12 @@ fn backend_without_mcp_has_no_mcp_files_dependencies_or_configuration() -> anyho
         assert!(!source.contains("modelcontextprotocol"));
         assert!(!source.contains("capabilities.mcp"));
     }
-    assert!(!baukit_cli::read_manifest(&root)?.capabilities.mcp);
+    assert!(
+        !baukit_cli::read_manifest(&root)?
+            .capabilities
+            .components
+            .mcp()
+    );
     Ok(())
 }
 
@@ -3160,9 +3164,9 @@ fn sha256_hex(contents: &[u8]) -> String {
 fn doctor_follows_relocated_identity_modules_and_binding_names() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "relocated-identity");
-    local.mobile = true;
-    local.web = true;
-    local.mcp = true;
+    local.components.insert(Component::Mobile);
+    local.components.insert(Component::Web);
+    local.components.insert(Component::Mcp);
     local.auth = Some(AuthProvider::Oidc);
     local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
     let root = generate_new(&local)?;
@@ -3232,9 +3236,9 @@ fn doctor_accepts_product_review_identity_layouts() -> anyhow::Result<()> {
     ] {
         let parent = tempfile::tempdir()?;
         let mut local = options(parent.path(), name);
-        local.mobile = true;
-        local.web = true;
-        local.mcp = name != "sl";
+        local.components.insert(Component::Mobile);
+        local.components.insert(Component::Web);
+        local.components.set(Component::Mcp, name != "sl");
         local.auth = (name != "sl").then_some(AuthProvider::Oidc);
         local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
         let root = generate_new(&local)?;
@@ -3484,9 +3488,9 @@ fn doctor_accepts_runtime_telemetry_identity_with_a_shared_loader() -> anyhow::R
 fn doctor_ignores_identity_examples_in_comments_and_strings() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "identity-examples");
-    local.mobile = true;
-    local.web = true;
-    local.mcp = true;
+    local.components.insert(Component::Mobile);
+    local.components.insert(Component::Web);
+    local.components.insert(Component::Mcp);
     local.auth = Some(AuthProvider::Oidc);
     local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
     let root = generate_new(&local)?;
@@ -3519,8 +3523,8 @@ fn doctor_accepts_renamed_crates_and_relocated_wiring() -> anyhow::Result<()> {
     ];
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "layout-product");
-    local.worker = true;
-    local.mobile = true;
+    local.components.insert(Component::Worker);
+    local.components.insert(Component::Mobile);
     local.auth = Some(AuthProvider::Oidc);
     local.port_offset = 100;
     local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
@@ -3850,8 +3854,8 @@ fn doctor_checks_declared_backend_paths_and_source_contents() -> anyhow::Result<
 fn doctor_reports_missing_wiring_instead_of_template_filenames() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "missing-wiring");
-    local.worker = true;
-    local.mobile = true;
+    local.components.insert(Component::Worker);
+    local.components.insert(Component::Mobile);
     local.auth = Some(AuthProvider::Oidc);
     local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
     let root = generate_new(&local)?;
@@ -4191,7 +4195,7 @@ fn doctor_resolves_crate_identity_in_library_modules() -> anyhow::Result<()> {
 fn doctor_accepts_registry_dependencies_without_a_checkout() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "registry-product");
-    local.mobile = true;
+    local.components.insert(Component::Mobile);
     let root = generate_new(&local)?;
     let manifest = baukit_cli::read_manifest(&root)?;
     assert!(matches!(
@@ -4250,8 +4254,8 @@ fn doctor_pin_census_rejects_malformed_manifests_outside_fixture_trees() -> anyh
 fn doctor_checks_each_registry_pin_and_names_its_file() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "registry-census");
-    local.mobile = true;
-    local.web = true;
+    local.components.insert(Component::Mobile);
+    local.components.insert(Component::Web);
     let root = generate_new(&local)?;
     let baukit_cli::BaukitDependency::Registry { version } =
         baukit_cli::read_manifest(&root)?.dependencies.baukit
@@ -4551,7 +4555,7 @@ fn doctor_checks_optional_pkce_tools_and_selected_realms() -> anyhow::Result<()>
 fn doctor_follows_route_reexports_and_reconciliation_tests() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "route-product");
-    local.mobile = true;
+    local.components.insert(Component::Mobile);
     local.auth = Some(AuthProvider::Oidc);
     local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
     let root = generate_new(&local)?;
@@ -4594,7 +4598,7 @@ fn doctor_follows_route_reexports_and_reconciliation_tests() -> anyhow::Result<(
 fn doctor_follows_imported_screen_wrappers() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "wrapped-route");
-    local.mobile = true;
+    local.components.insert(Component::Mobile);
     local.auth = Some(AuthProvider::Oidc);
     local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
     let root = generate_new(&local)?;
@@ -4801,7 +4805,7 @@ fn doctor_accepts_redis_url_environment_fallback() -> anyhow::Result<()> {
 fn generated_oidc_workers_retain_failed_identity_jobs() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "retained-erasure");
-    local.worker = true;
+    local.components.insert(Component::Worker);
     local.auth = Some(AuthProvider::Oidc);
     local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
     let root = generate_new(&local)?;
@@ -4862,7 +4866,7 @@ fn auth_conformance_does_not_wait_for_access_token_expiry() -> anyhow::Result<()
 fn pwa_requires_an_app_and_selects_the_web_host_first() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut backend = options(parent.path(), "pwa-backend");
-    backend.pwa = true;
+    backend.components.insert(Component::Pwa);
     assert_eq!(
         generate_new(&backend)
             .expect_err("PWA needs an app")
@@ -4875,12 +4879,17 @@ fn pwa_requires_an_app_and_selects_the_web_host_first() -> anyhow::Result<()> {
         ("auth-pwa", true, false, "mobile"),
     ] {
         let mut product = frontend_options(parent.path(), name, mobile, web);
-        product.pwa = true;
+        product.components.insert(Component::Pwa);
         if name == "auth-pwa" {
             product.auth = Some(AuthProvider::Oidc);
         }
         let root = generate_new(&product)?;
-        assert!(baukit_cli::read_manifest(&root)?.capabilities.pwa);
+        assert!(
+            baukit_cli::read_manifest(&root)?
+                .capabilities
+                .components
+                .pwa()
+        );
         let package: serde_json::Value =
             serde_json::from_slice(&fs::read(root.join(host).join("package.json"))?)?;
         assert_eq!(
@@ -4918,7 +4927,7 @@ fn mobile_pwa_host_generates_expo_web_export_configuration() -> anyhow::Result<(
         ("web-hosted-pwa", true, true, false),
     ] {
         let mut product = frontend_options(parent.path(), name, true, web);
-        product.pwa = pwa;
+        product.components.set(Component::Pwa, pwa);
         product.auth = auth.then_some(AuthProvider::Oidc);
         let root = generate_new(&product)?;
         let package: serde_json::Value =
@@ -4983,7 +4992,7 @@ fn mobile_pwa_host_generates_expo_web_export_configuration() -> anyhow::Result<(
 fn mobile_pwa_generation_matches_golden_tree() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut product = frontend_options(parent.path(), "snapshot-app", true, false);
-    product.pwa = true;
+    product.components.insert(Component::Pwa);
     let root = generate_new(&product)?;
     assert_eq!(
         render_hash_snapshot(&read_tree(&root)?),
@@ -4997,14 +5006,14 @@ fn remote_mcp_generation_matches_the_golden_tree() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut generated = options(parent.path(), "snapshot-app");
     generated.auth = Some(AuthProvider::Oidc);
-    generated.mcp = true;
+    generated.components.insert(Component::Mcp);
     let root = generate_new(&generated)?;
     assert_eq!(
         render_hash_snapshot(&read_tree(&root)?),
         include_str!("snapshots/mcp-remote.tree")
     );
     let manifest = baukit_cli::read_manifest(&root)?;
-    assert!(manifest.capabilities.mcp);
+    assert!(manifest.capabilities.components.mcp());
     assert!(!root.join("mcp").exists());
     let api = fs::read_to_string(root.join("backend/crates/snapshot-app-bin/src/bin/api.rs"))?;
     assert!(api.contains("mcp_policy("));
@@ -5023,7 +5032,7 @@ fn remote_mcp_generation_matches_the_golden_tree() -> anyhow::Result<()> {
 fn remote_mcp_requires_auth_and_backend() {
     let parent = tempfile::tempdir().expect("tempdir");
     let mut generated = options(parent.path(), "remote");
-    generated.mcp = true;
+    generated.components.insert(Component::Mcp);
     assert!(
         generate_new(&generated)
             .expect_err("OIDC required")
@@ -5031,7 +5040,7 @@ fn remote_mcp_requires_auth_and_backend() {
             .contains("requires --auth oidc")
     );
     generated.auth = Some(AuthProvider::Oidc);
-    generated.backend = false;
+    generated.components.remove(Component::Backend);
     assert!(
         generate_new(&generated)
             .expect_err("backend required")
@@ -5045,9 +5054,9 @@ fn remote_realm_preserves_oidc_scopes_and_binds_the_resource_audience() -> anyho
     let parent = tempfile::tempdir()?;
     let mut generated = options(parent.path(), "remote");
     generated.auth = Some(AuthProvider::Oidc);
-    generated.mcp = true;
-    generated.web = true;
-    generated.mobile = true;
+    generated.components.insert(Component::Mcp);
+    generated.components.insert(Component::Web);
+    generated.components.insert(Component::Mobile);
     let root = generate_new(&generated)?;
     let reconciliation: serde_json::Value =
         serde_json::from_slice(&fs::read(root.join("keycloak/reconcile.json"))?)?;
@@ -5165,7 +5174,7 @@ fn doctor_reports_each_missing_remote_mcp_connection() -> anyhow::Result<()> {
     ] {
         let parent = tempfile::tempdir()?;
         let mut generated = options(parent.path(), "remote");
-        generated.mcp = true;
+        generated.components.insert(Component::Mcp);
         generated.auth = Some(AuthProvider::Oidc);
         let root = generate_new(&generated)?;
         let path = root.join(relative);
@@ -5182,7 +5191,7 @@ fn doctor_reports_each_missing_remote_mcp_connection() -> anyhow::Result<()> {
 fn doctor_accepts_product_named_remote_tool_adapters() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut generated = options(parent.path(), "product-tools");
-    generated.mcp = true;
+    generated.components.insert(Component::Mcp);
     generated.auth = Some(AuthProvider::Oidc);
     let root = generate_new(&generated)?;
     for (relative, before, after) in [
@@ -5232,7 +5241,12 @@ fn doctor_accepts_non_typescript_files_in_a_root_mcp_directory() -> anyhow::Resu
         "pub const NAME: &str = \"rust-files\";",
     )?;
     doctor(&root)?;
-    assert!(!baukit_cli::read_manifest(&root)?.capabilities.mcp);
+    assert!(
+        !baukit_cli::read_manifest(&root)?
+            .capabilities
+            .components
+            .mcp()
+    );
     Ok(())
 }
 
@@ -5312,12 +5326,12 @@ fn managed_auth_providers_generate_every_flavor_with_a_provider_shaped_local_rea
         ] {
             let parent = tempfile::tempdir()?;
             let mut generated = options(parent.path(), "snapshot-app");
-            generated.backend = backend;
-            generated.web = web;
-            generated.mobile = mobile;
-            generated.mcp = mcp;
-            generated.worker = worker;
-            generated.pwa = pwa;
+            generated.components.set(Component::Backend, backend);
+            generated.components.set(Component::Web, web);
+            generated.components.set(Component::Mobile, mobile);
+            generated.components.set(Component::Mcp, mcp);
+            generated.components.set(Component::Worker, worker);
+            generated.components.set(Component::Pwa, pwa);
             generated.quality = quality;
             generated.auth = Some(provider);
             let root = generate_new(&generated)?;
@@ -5380,8 +5394,8 @@ fn doctor_reports_provider_config_and_sdk_mismatches() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut generated = options(parent.path(), "provider-wiring");
     generated.auth = Some(AuthProvider::Clerk);
-    generated.web = true;
-    generated.mcp = true;
+    generated.components.insert(Component::Web);
+    generated.components.insert(Component::Mcp);
     let root = generate_new(&generated)?;
     fs::write(
         root.join("config/local.toml"),
@@ -5444,7 +5458,7 @@ fn doctor_accepts_remote_mcp_modules_in_declared_crates() -> anyhow::Result<()> 
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "redemut-shaped");
     local.auth = Some(AuthProvider::Oidc);
-    local.mcp = true;
+    local.components.insert(Component::Mcp);
     let root = generate_new(&local)?;
     doctor(&root)?;
     let bin = root.join("backend/crates/redemut-shaped-bin/src");
@@ -5576,7 +5590,7 @@ fn doctor_accepts_mcp_composition_and_validation_across_backend_crates() -> anyh
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "graph-mcp");
     local.auth = Some(AuthProvider::Oidc);
-    local.mcp = true;
+    local.components.insert(Component::Mcp);
     let root = generate_new(&local)?;
     let entry = root.join("backend/crates/graph-mcp-bin/src/bin/api.rs");
     let source = fs::read_to_string(&entry)?;
@@ -5653,7 +5667,7 @@ fn doctor_requires_conditional_mcp_router_results_to_be_merged() -> anyhow::Resu
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "conditional-mcp");
     local.auth = Some(AuthProvider::Oidc);
-    local.mcp = true;
+    local.components.insert(Component::Mcp);
     let root = generate_new(&local)?;
     let entry = root.join("backend/crates/conditional-mcp-bin/src/bin/api.rs");
     let api = fs::read_to_string(&entry)?;
@@ -5710,7 +5724,7 @@ fn doctor_checks_mcp_values_under_the_application_chart() -> anyhow::Result<()> 
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "nested-mcp");
     local.auth = Some(AuthProvider::Oidc);
-    local.mcp = true;
+    local.components.insert(Component::Mcp);
     let root = generate_new(&local)?;
     let path = root.join("deploy/values.yaml");
     let mut values: serde_yaml_ng::Value = serde_yaml_ng::from_str(&fs::read_to_string(&path)?)?;
@@ -5757,7 +5771,7 @@ fn doctor_follows_a_returned_mcp_router_and_requires_its_result_to_be_merged() -
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "returned-mcp");
     local.auth = Some(AuthProvider::Oidc);
-    local.mcp = true;
+    local.components.insert(Component::Mcp);
     let root = generate_new(&local)?;
     let bin = root.join("backend/crates/returned-mcp-bin/src");
     let entry = bin.join("bin/api.rs");
@@ -5835,7 +5849,7 @@ fn doctor_follows_mcp_definitions_and_configuration_from_library_entry_points() 
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "module-mcp");
     local.auth = Some(AuthProvider::Oidc);
-    local.mcp = true;
+    local.components.insert(Component::Mcp);
     let root = generate_new(&local)?;
     let mcp = root.join("backend/crates/module-mcp-mcp/src");
     let library = fs::read_to_string(mcp.join("lib.rs"))?;
@@ -5908,7 +5922,7 @@ fn remote_mcp_compose_keeps_public_issuers_and_fetches_internal_keys() -> anyhow
         let parent = tempfile::tempdir()?;
         let mut local = options(parent.path(), "container-auth");
         local.auth = Some(provider);
-        local.mcp = true;
+        local.components.insert(Component::Mcp);
         let root = generate_new(&local)?;
         let compose: serde_yaml_ng::Value =
             serde_yaml_ng::from_str(&fs::read_to_string(root.join("compose.yaml"))?)?;
@@ -5945,7 +5959,7 @@ fn doctor_requires_a_consumed_remote_mcp_dependency() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut local = options(parent.path(), "mcp-dependency");
     local.auth = Some(AuthProvider::Oidc);
-    local.mcp = true;
+    local.components.insert(Component::Mcp);
     let root = generate_new(&local)?;
     for suffix in ["bin", "mcp", "api"] {
         let path = root.join(format!("backend/crates/mcp-dependency-{suffix}/Cargo.toml"));
@@ -5972,7 +5986,7 @@ fn authenticated_backends_copy_the_reonboarding_migration() -> anyhow::Result<()
         let parent = tempfile::tempdir()?;
         let mut generated = options(parent.path(), "returning");
         generated.auth = Some(provider);
-        generated.worker = true;
+        generated.components.insert(Component::Worker);
         let root = generate_new(&generated)?;
         assert_eq!(
             fs::read_to_string(
@@ -5991,16 +6005,16 @@ fn platform_requires_backend_and_rejects_runtime_settings_in_generation_manifest
 -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut generated = options(parent.path(), "platform-config");
-    generated.platform = true;
-    generated.backend = false;
-    generated.web = true;
+    generated.components.insert(Component::Platform);
+    generated.components.remove(Component::Backend);
+    generated.components.insert(Component::Web);
     assert!(
         generate_new(&generated)
             .expect_err("platform without backend")
             .to_string()
             .contains("--platform requires --backend")
     );
-    generated.backend = true;
+    generated.components.insert(Component::Backend);
     let root = generate_new(&generated)?;
     let path = root.join("baukit.toml");
     let source = fs::read_to_string(&path)?;
@@ -6028,13 +6042,13 @@ fn platform_flavors_keep_domain_free_of_transport_and_wire_the_receiver() -> any
         ("platform-workos", Some(AuthProvider::Workos), false),
     ] {
         let mut generated = options(parent.path(), name);
-        generated.platform = true;
+        generated.components.insert(Component::Platform);
         generated.auth = auth;
-        generated.worker = worker;
+        generated.components.set(Component::Worker, worker);
         generated.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
         let root = generate_new(&generated)?;
         let manifest = baukit_cli::read_manifest(&root)?;
-        assert!(manifest.capabilities.platform);
+        assert!(manifest.capabilities.components.platform());
         let migration = manifest.platform.as_ref().expect("platform metadata");
         assert_eq!(
             fs::read_to_string(root.join(&migration.migration))?,
@@ -6145,10 +6159,10 @@ fn platform_generation_matches_golden_trees() -> anyhow::Result<()> {
     ] {
         let parent = tempfile::tempdir()?;
         let mut generated = options(parent.path(), "snapshot-app");
-        generated.web = true;
-        generated.platform = true;
+        generated.components.insert(Component::Web);
+        generated.components.insert(Component::Platform);
         generated.auth = auth;
-        generated.worker = worker;
+        generated.components.set(Component::Worker, worker);
         let root = generate_new(&generated)?;
         assert_eq!(render_hash_snapshot(&read_tree(&root)?), expected);
     }
@@ -6164,7 +6178,7 @@ fn platform_existing_product_uses_the_next_free_migration_number() -> anyhow::Re
         let existing = root.join(format!("backend/migrations/{highest:04}_product.sql"));
         fs::write(&existing, "-- product-owned migration\n")?;
         let mut generated = options(&root, "existing-platform");
-        generated.platform = true;
+        generated.components.insert(Component::Platform);
         generated.into_existing = true;
         assert_eq!(generate_new(&generated)?, root);
         assert_eq!(
@@ -6206,7 +6220,7 @@ fn platform_existing_manifest_uses_its_migration_directory_without_platform_meta
         root.join("backend/schema/9999_notes.txt"),
         "not a migration\n",
     )?;
-    generated.platform = true;
+    generated.components.insert(Component::Platform);
     generated.into_existing = true;
     generated.directory = root.clone();
     assert_eq!(generate_new(&generated)?, root);
@@ -6220,7 +6234,7 @@ fn platform_existing_manifest_uses_its_migration_directory_without_platform_meta
 fn doctor_rejects_missing_platform_migration_and_capability_mismatch() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut generated = options(parent.path(), "platform-doctor");
-    generated.platform = true;
+    generated.components.insert(Component::Platform);
     generated.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
     let root = generate_new(&generated)?;
     fs::remove_file(root.join("backend/migrations/0008_platform.sql"))?;
@@ -6249,7 +6263,7 @@ fn doctor_rejects_missing_platform_migration_and_capability_mismatch() -> anyhow
 fn platform_rerender_uses_the_declared_product_migration_path() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut generated = options(parent.path(), "platform-rerender");
-    generated.platform = true;
+    generated.components.insert(Component::Platform);
     let root = generate_new(&generated)?;
     let manifest_path = root.join("baukit.toml");
     let source =
@@ -6272,8 +6286,8 @@ fn doctor_checks_local_realm_sites_of_provider_products() -> anyhow::Result<()> 
         let parent = tempfile::tempdir()?;
         let mut generated = options(parent.path(), "provider-realm");
         generated.auth = Some(provider);
-        generated.mobile = true;
-        generated.web = true;
+        generated.components.insert(Component::Mobile);
+        generated.components.insert(Component::Web);
         generated.port_offset = 100;
         generated.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
         let root = generate_new(&generated)?;
@@ -6338,7 +6352,7 @@ fn doctor_checks_workos_mobile_configuration() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut generated = options(parent.path(), "workos-mobile");
     generated.auth = Some(AuthProvider::Workos);
-    generated.mobile = true;
+    generated.components.insert(Component::Mobile);
     generated.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
     let root = generate_new(&generated)?;
     doctor(&root)?;

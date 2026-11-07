@@ -137,7 +137,7 @@ pub(super) fn cargo_workspaces(root: &Path, manifest: &Manifest) -> Result<Vec<P
             workspaces.push(path);
         }
     }
-    if manifest.capabilities.backend {
+    if manifest.capabilities.components.backend() {
         let backend = backend_manifest(root, manifest)?;
         if backend.is_file() {
             workspaces.push(backend);
@@ -521,7 +521,7 @@ pub(super) fn validate_backend_wiring(
         true,
         failures,
     )?;
-    if manifest.capabilities.worker {
+    if manifest.capabilities.components.worker() {
         require_source(
             root,
             manifest,

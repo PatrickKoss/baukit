@@ -5,8 +5,8 @@ use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    dockerfile, dockerfile::BackendManifest, doctor_layout::DoctorPaths, gate_settings,
-    ports::PortDeclaration,
+    components::Components, dockerfile, dockerfile::BackendManifest, doctor_layout::DoctorPaths,
+    gate_settings, ports::PortDeclaration,
 };
 
 pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
@@ -133,17 +133,8 @@ pub(crate) const fn default_webkit_repeats() -> u8 {
 pub struct Capabilities {
     #[serde(default)]
     pub analytics: AnalyticsAdapter,
-    pub backend: bool,
-    #[serde(default)]
-    pub worker: bool,
-    pub mobile: bool,
-    pub web: bool,
-    #[serde(default)]
-    pub pwa: bool,
-    #[serde(default)]
-    pub mcp: bool,
-    #[serde(default)]
-    pub platform: bool,
+    #[serde(flatten)]
+    pub components: Components,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth: Option<AuthProvider>,
 }

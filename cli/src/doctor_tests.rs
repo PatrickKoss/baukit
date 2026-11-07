@@ -7,7 +7,7 @@ use std::{
 };
 
 use crate::{
-    Capabilities,
+    Capabilities, Component, Components,
     doctor_auth::validate_mobile_qa_build_flag,
     doctor_frontend::{
         pwa_app_directory, validate_mobile_router_configuration, validate_pwa_worker_build,
@@ -148,16 +148,15 @@ fn mobile_router_configuration_requires_the_entry_point_and_scheme() -> anyhow::
 
 #[test]
 fn pwa_app_directory_prefers_the_web_app_and_falls_back_to_the_expo_web_export() {
-    let capabilities = |web, mobile| Capabilities {
-        analytics: crate::AnalyticsAdapter::Posthog,
-        backend: true,
-        worker: false,
-        mobile,
-        web,
-        pwa: true,
-        mcp: false,
-        platform: false,
-        auth: None,
+    let capabilities = |web, mobile| {
+        let mut components = Components::from([Component::Backend, Component::Pwa]);
+        components.set(Component::Web, web);
+        components.set(Component::Mobile, mobile);
+        Capabilities {
+            analytics: crate::AnalyticsAdapter::Posthog,
+            components,
+            auth: None,
+        }
     };
 
     assert_eq!(pwa_app_directory(&capabilities(true, true)), Some("web"));

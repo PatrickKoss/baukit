@@ -5,20 +5,20 @@ use std::{
 };
 
 use baukit_cli::{
-    AuthProvider, NewOptions, PortDeclaration, QualityProfile, doctor, generate_new, read_manifest,
+    AuthProvider, Component, Components, NewOptions, PortDeclaration, QualityProfile, doctor,
+    generate_new, read_manifest,
 };
 
 fn options(directory: &Path) -> NewOptions {
     NewOptions {
         name: "dev-ports-product".to_owned(),
         directory: directory.to_owned(),
-        backend: true,
-        worker: false,
-        mobile: true,
-        web: true,
-        pwa: false,
-        mcp: true,
-        platform: false,
+        components: Components::from([
+            Component::Backend,
+            Component::Mobile,
+            Component::Web,
+            Component::Mcp,
+        ]),
         auth: Some(AuthProvider::Oidc),
         force: true,
         into_existing: true,
@@ -838,11 +838,11 @@ fn metro_renders_in_every_mobile_auth_flavor() -> anyhow::Result<()> {
         let parent = tempfile::tempdir()?;
         let root = parent.path();
         let mut options = options(root);
-        options.backend = false;
-        options.mcp = false;
-        options.web = false;
+        options.components.remove(Component::Backend);
+        options.components.remove(Component::Mcp);
+        options.components.remove(Component::Web);
         options.auth = auth;
-        options.pwa = true;
+        options.components.insert(Component::Pwa);
         generate_new(&options)?;
         let path = root.join("baukit.toml");
         fs::write(

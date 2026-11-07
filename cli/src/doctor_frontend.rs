@@ -124,9 +124,9 @@ pub(crate) fn validate_frontend_capability(
 
 /// The app that serves the PWA: the web app, or the Expo web export when the product has no web app.
 pub(crate) fn pwa_app_directory(capabilities: &Capabilities) -> Option<&'static str> {
-    if capabilities.web {
+    if capabilities.components.web() {
         Some("web")
-    } else if capabilities.mobile {
+    } else if capabilities.components.mobile() {
         Some("mobile")
     } else {
         None

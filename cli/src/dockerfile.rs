@@ -188,10 +188,10 @@ pub(crate) fn validate(manifest: &Manifest) -> Result<()> {
         return Ok(());
     }
     ensure!(
-        manifest.capabilities.backend,
+        manifest.capabilities.components.backend(),
         "backend.image requires capabilities.backend = true"
     );
-    let binaries = validated_binaries(image, manifest.capabilities.worker)?;
+    let binaries = validated_binaries(image, manifest.capabilities.components.worker())?;
     if let Some(value) = &image.bin_crate {
         name(value)?;
     }
@@ -487,13 +487,13 @@ fn runtime_stages(image: &BackendImage, binaries: &[String]) -> Vec<RuntimeStage
 
 pub fn render_dockerfile(manifest: &Manifest) -> Result<String> {
     ensure!(
-        manifest.capabilities.backend,
+        manifest.capabilities.components.backend(),
         "Dockerfile generation requires capabilities.backend = true"
     );
     validate_name(&manifest.app.name)?;
     validate(manifest)?;
     let image = &manifest.backend.image;
-    let binaries = image.binaries(manifest.capabilities.worker);
+    let binaries = image.binaries(manifest.capabilities.components.worker());
     let builders = builder_stages(image);
     let stages = runtime_stages(image, &binaries);
     let packages_runtime = stages.iter().any(|stage| stage.slim);
@@ -635,7 +635,10 @@ schema = "backend/openapi.json"
             assert_image_pin(&output, key, image);
         }
         assert!(!output.contains("PACKAGES_RUNTIME_IMAGE"));
-        manifest.capabilities.worker = true;
+        manifest
+            .capabilities
+            .components
+            .insert(crate::Component::Worker);
         let output = render_dockerfile(&manifest)?;
         assert!(output.contains("--bin api --bin migrate --bin worker"));
         assert!(output.contains("FROM ${RUNTIME_IMAGE} AS worker"));
@@ -1196,7 +1199,10 @@ runtime_files = [{ stage = "api", source = "/generated/content/file", destinatio
             assert!(error.contains(expected), "{source}: {error}");
         }
         let mut frontend = manifest("cargo_build_jobs = 6")?;
-        frontend.capabilities.backend = false;
+        frontend
+            .capabilities
+            .components
+            .remove(crate::Component::Backend);
         assert!(
             validate(&frontend)
                 .expect_err("frontend image")

@@ -12,9 +12,13 @@ use anyhow::{Context, Result, anyhow, bail};
 
 use crate::{
     LAST_TEMPLATE_MIGRATION_VERSION, MAX_APPLICATION_NAME_LEN, PLATFORM_MIGRATION_PATH,
-    REMOTE_MCP_CLIENT_SCOPES, TEMPLATE_VERSION, doctor_layout,
+    REMOTE_MCP_CLIENT_SCOPES, TEMPLATE_VERSION,
+    components::Components,
+    doctor_layout,
     generate::dependencies::dependency_context,
-    generate::render::{TemplateContext, product_description, render_product},
+    generate::render::{
+        AuthContext, DeclaredPorts, TemplateContext, product_description, render_product,
+    },
     manifest::{AuthProvider, Manifest, QualityProfile},
     openapi_client::{command_exists, run_checked},
     ports,
@@ -24,13 +28,7 @@ use crate::{
 pub struct NewOptions {
     pub name: String,
     pub directory: PathBuf,
-    pub backend: bool,
-    pub worker: bool,
-    pub mobile: bool,
-    pub web: bool,
-    pub pwa: bool,
-    pub mcp: bool,
-    pub platform: bool,
+    pub components: Components,
     pub auth: Option<AuthProvider>,
     pub force: bool,
     pub into_existing: bool,
@@ -42,17 +40,17 @@ pub struct NewOptions {
 
 pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
     validate_name(&options.name)?;
-    if options.worker && !options.backend {
+    if options.components.worker() && !options.components.backend() {
         bail!("--worker requires --backend because it is generated in the backend workspace");
     }
-    if options.pwa && !options.mobile && !options.web {
+    if options.components.pwa() && !options.components.mobile() && !options.components.web() {
         bail!("--pwa requires --mobile or --web to serve the worker");
     }
-    if options.platform && !options.backend {
+    if options.components.platform() && !options.components.backend() {
         bail!("--platform requires --backend because the receiver uses PostgreSQL");
     }
     validate_mcp_options(options)?;
-    if !options.backend && !options.mobile && !options.web {
+    if !options.components.backend() && !options.components.mobile() && !options.components.web() {
         bail!("select at least one capability: --backend, --mobile, or --web");
     }
 
@@ -66,12 +64,12 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         .as_deref()
         .map(toml::from_str::<Manifest>)
         .transpose()?;
-    let platform_migration = if options.platform {
+    let platform_migration = if options.components.platform() {
         platform_migration_path(&destination, manifest.as_ref())?
     } else {
         PLATFORM_MIGRATION_PATH.to_owned()
     };
-    if options.platform {
+    if options.components.platform() {
         doctor_layout::product_path(&destination, &platform_migration)?;
         if Path::new(&platform_migration)
             .extension()
@@ -93,7 +91,6 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         );
     }
 
-    let auth_enabled = options.auth.is_some();
     let dependency = dependency_context(options)?;
     let context = TemplateContext {
         app_name: options.name.clone(),
@@ -108,25 +105,10 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         baukit_dependency_description: dependency.description,
         baukit_typescript_dependency_description: dependency.typescript_description,
         product_description: product_description(options),
-        backend: options.backend,
-        worker: options.worker,
-        mobile: options.mobile,
-        web: options.web,
-        pwa: options.pwa,
-        mcp: options.mcp,
-        platform: options.platform,
+        components: options.components,
         platform_migration,
         remote_mcp_client_scopes: REMOTE_MCP_CLIENT_SCOPES,
-        auth_enabled,
-        auth_oidc: options.auth == Some(AuthProvider::Oidc),
-        auth_clerk: options.auth == Some(AuthProvider::Clerk),
-        auth_workos: options.auth == Some(AuthProvider::Workos),
-        auth_provider: match options.auth {
-            Some(AuthProvider::Oidc) => "oidc",
-            Some(AuthProvider::Clerk) => "clerk",
-            Some(AuthProvider::Workos) => "workos",
-            None => "",
-        },
+        auth: AuthContext(options.auth),
         quality_strict: options.quality == QualityProfile::Strict,
         port_offset: ports.offset,
         postgres_host_port: ports.postgres,
@@ -139,13 +121,13 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
         web_preview_port: ports.web_preview.unwrap_or(ports::WEB_PREVIEW_PORT),
         metro_port: ports.metro,
         local_callback_port: ports.local_callback_port(),
-        web_preview_declared: ports.web_preview.is_some(),
-        service_ports_declared: ports.service_ports_declared,
+        declared_ports: DeclaredPorts {
+            dev: ports.web.is_some() || ports.web_preview.is_some() || ports.metro.is_some(),
+            web_preview: ports.web_preview.is_some(),
+            service: ports.service_ports_declared,
+        },
         api_container_port: ports.api_container,
         ops_container_port: ports.ops_container,
-        dev_ports_declared: ports.web.is_some()
-            || ports.web_preview.is_some()
-            || ports.metro.is_some(),
     };
     let mut rendered = render_product(&context, options)?;
     if let Some(source) = existing_manifest {
@@ -199,7 +181,7 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
 }
 
 pub(crate) fn resolve_lockfiles(destination: &Path, options: &NewOptions) -> Result<()> {
-    if options.backend && !destination.join("backend/Cargo.lock").is_file() {
+    if options.components.backend() && !destination.join("backend/Cargo.lock").is_file() {
         run_checked(
             Command::new("cargo").current_dir(destination).args([
                 "generate-lockfile",
@@ -210,9 +192,12 @@ pub(crate) fn resolve_lockfiles(destination: &Path, options: &NewOptions) -> Res
         )?;
     }
 
-    for capability in [(options.web, "web"), (options.mobile, "mobile")]
-        .into_iter()
-        .filter_map(|(enabled, name)| enabled.then_some(name))
+    for capability in [
+        (options.components.web(), "web"),
+        (options.components.mobile(), "mobile"),
+    ]
+    .into_iter()
+    .filter_map(|(enabled, name)| enabled.then_some(name))
     {
         if destination
             .join(capability)
@@ -295,10 +280,10 @@ pub(crate) fn platform_migration_path(
 }
 
 pub(crate) fn validate_mcp_options(options: &NewOptions) -> Result<()> {
-    if !options.mcp {
+    if !options.components.mcp() {
         return Ok(());
     }
-    if !options.backend {
+    if !options.components.backend() {
         bail!("--mcp requires --backend because the Rust server runs in the backend workspace");
     }
     if options.auth.is_none() {

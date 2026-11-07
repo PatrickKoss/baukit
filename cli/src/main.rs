@@ -2,8 +2,8 @@ use std::{env, path::PathBuf, process::ExitCode};
 
 use anyhow::Result;
 use baukit_cli::{
-    AuthProvider, NewOptions, QualityProfile, doctor, generate_dockerfile, generate_new,
-    generate_openapi_client,
+    AuthProvider, Component, Components, NewOptions, QualityProfile, doctor, generate_dockerfile,
+    generate_new, generate_openapi_client,
 };
 use clap::{Args, Parser, Subcommand};
 
@@ -32,6 +32,10 @@ enum Commands {
 }
 
 #[derive(Debug, Args)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "clap maps each on/off CLI flag to one bool field; NewCommand::components folds them into the typed Components set"
+)]
 struct NewCommand {
     /// Product name in lowercase kebab-case.
     name: String,
@@ -82,6 +86,23 @@ struct NewCommand {
     quality: QualityProfile,
 }
 
+impl NewCommand {
+    fn components(&self) -> Components {
+        [
+            (Component::Backend, self.backend),
+            (Component::Worker, self.worker),
+            (Component::Mobile, self.mobile),
+            (Component::Web, self.web),
+            (Component::Pwa, self.pwa),
+            (Component::Mcp, self.mcp),
+            (Component::Platform, self.platform),
+        ]
+        .into_iter()
+        .filter_map(|(component, enabled)| enabled.then_some(component))
+        .collect()
+    }
+}
+
 #[derive(Debug, Subcommand)]
 enum GenerateCommand {
     /// Render the backend Dockerfile from baukit.toml.
@@ -107,16 +128,11 @@ fn main() -> ExitCode {
 fn run() -> Result<()> {
     match Cli::parse().command {
         Commands::New(command) => {
+            let components = command.components();
             let destination = generate_new(&NewOptions {
                 name: command.name,
                 directory: command.dir,
-                backend: command.backend,
-                worker: command.worker,
-                mobile: command.mobile,
-                web: command.web,
-                pwa: command.pwa,
-                mcp: command.mcp,
-                platform: command.platform,
+                components,
                 auth: command.auth,
                 force: command.force,
                 into_existing: command.into_existing,

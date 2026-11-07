@@ -160,7 +160,9 @@ fn check_keycloak_origins(
             continue;
         };
         for client in clients {
-            if manifest.capabilities.mcp && client["clientId"].as_str() == Some(&mcp_client) {
+            if manifest.capabilities.components.mcp()
+                && client["clientId"].as_str() == Some(&mcp_client)
+            {
                 continue;
             }
             let accepted = if client["clientId"].as_str() == Some(&local_client) {
