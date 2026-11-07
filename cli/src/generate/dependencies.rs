@@ -32,6 +32,7 @@ pub(crate) struct DependencyContext {
     pub(crate) web_typescript: String,
     pub(crate) web_dev_typescript: String,
     pub(crate) mobile_typescript: String,
+    pub(crate) mobile_dev_typescript: String,
     pub(crate) pnpm_overrides: String,
     pub(crate) manifest: String,
     pub(crate) description: String,
@@ -44,6 +45,7 @@ struct BaukitPackages {
     web: Vec<&'static str>,
     web_dev: Vec<&'static str>,
     mobile: Vec<&'static str>,
+    mobile_dev: Vec<&'static str>,
 }
 
 impl BaukitPackages {
@@ -59,10 +61,11 @@ impl BaukitPackages {
         if pwa && mobile && !web {
             mobile_packages.push("@baukit/pwa-web");
         }
-        // The mobile template has no devDependencies slot, so the preset sits with its runtime packages.
-        if mobile {
-            mobile_packages.push(ESLINT_CONFIG_PACKAGE);
-        }
+        let mobile_dev = if mobile {
+            vec![ESLINT_CONFIG_PACKAGE]
+        } else {
+            Vec::new()
+        };
         let mut web_dev = Vec::new();
         if web {
             web_dev.push(ESLINT_CONFIG_PACKAGE);
@@ -75,11 +78,16 @@ impl BaukitPackages {
             web: web_packages,
             web_dev,
             mobile: mobile_packages,
+            mobile_dev,
         }
     }
 
     fn typescript(&self) -> impl Iterator<Item = &&'static str> {
-        self.web.iter().chain(&self.web_dev).chain(&self.mobile)
+        self.web
+            .iter()
+            .chain(&self.web_dev)
+            .chain(&self.mobile)
+            .chain(&self.mobile_dev)
     }
 }
 
@@ -172,6 +180,7 @@ fn path_dependency_context(
         web_typescript: render_typescript(&with_transitive(&packages.web)),
         web_dev_typescript: render_leading_entries(&render_typescript(&packages.web_dev)),
         mobile_typescript: render_typescript(&with_transitive(&packages.mobile)),
+        mobile_dev_typescript: render_leading_entries(&render_typescript(&packages.mobile_dev)),
         pnpm_overrides,
         manifest: format!("source = \"path\"\npath = \"{display}\""),
         description: format!("local path `{}`", path.display()),
@@ -217,6 +226,7 @@ fn registry_dependency_context(packages: &BaukitPackages) -> DependencyContext {
         web_typescript: render_typescript(&packages.web),
         web_dev_typescript: render_leading_entries(&render_typescript(&packages.web_dev)),
         mobile_typescript: render_typescript(&packages.mobile),
+        mobile_dev_typescript: render_leading_entries(&render_typescript(&packages.mobile_dev)),
         pnpm_overrides: String::new(),
         manifest: format!("source = \"registry\"\nversion = \"{version}\""),
         description: format!("crates.io version `{version}`"),
